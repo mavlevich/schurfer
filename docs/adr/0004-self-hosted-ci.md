@@ -16,13 +16,13 @@ GitHub Free даёт 2000 Actions минут/мес для приватных р
 
 ## Alternatives considered
 
-- GitHub-hosted (платный апгрейд) — $4/мес минимум за Pro
-- Forgejo Actions — отдельная админка, сложнее
-- Mix (lint hosted, heavy self-hosted) — может пригодиться позже
+- GitHub-hosted (платный апгрейд) - $4/мес минимум за Pro
+- Forgejo Actions - отдельная админка, сложнее
+- Mix (lint hosted, heavy self-hosted) - может пригодиться позже
 
 ## Consequences
 
 - Pro: 0 рублей, без лимитов
-- Pro: cache локально на runner — builds быстрее
+- Pro: cache локально на runner - builds быстрее
 - Con: сами поддерживаем runner, security настраиваем
 - Revisit: если runner overhead станет больше выигрыша

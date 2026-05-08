@@ -7,14 +7,14 @@ Created: 2026-05-08
 ## Hypothesis
 
 Низколиквидные токены, запампленные на 50-100%+ за короткий
-период (часы — сутки) с признаками exhaustion (близость к peak'у,
+период (часы - сутки) с признаками exhaustion (близость к peak'у,
 рост OI, экстремальный funding) часто откатываются к pre-pump
-уровню в течение дней — недель.
+уровню в течение дней - недель.
 
 ## Trigger conditions
 
 - `price_change_24h > 50%` AND `< 130%` (типичный диапазон)
-- Цена держится near top — recent peak в последние ~6 часов
+- Цена держится near top - recent peak в последние ~6 часов
 - Symbol доступен на perp хотя бы на одной из бирж в твоей юрисдикции
 
 ## Entry rules
@@ -44,15 +44,15 @@ Created: 2026-05-08
 
 ## Risk management gaps (для следующей итерации)
 
-1. **Risk per trade в % от капитала** — сейчас не задано
-2. **Funding rate filter** — не учитывается до входа
+1. **Risk per trade в % от капитала** - сейчас не задано
+2. **Funding rate filter** - не учитывается до входа
    (важно: на pumped токенах часто extreme funding,
    может съесть профит за дни holding)
-3. **OI как trigger condition** — не используется,
+3. **OI как trigger condition** - не используется,
    но даёт high-confidence сигналы
-4. **Stop loss formalization** — заменить "большой стоп"
+4. **Stop loss formalization** - заменить "большой стоп"
    на технический уровень
-5. **Exit formalization** — pre-pump price как конкретное число
+5. **Exit formalization** - pre-pump price как конкретное число
 
 ## Historical performance (paper-tracked)
 

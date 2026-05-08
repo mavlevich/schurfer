@@ -1,6 +1,6 @@
 # Schurfer
 
-> Private trading platform — analytics, signals, automated execution.
+> Private trading platform - analytics, signals, automated execution.
 
 ## Status
 
@@ -19,12 +19,12 @@
 
 ```
 apps/
-├── collectors/      Go    — exchange WS data ingestion
-├── execution/       Go    — order placement, risk manager
-├── api-gateway/     Go    — REST/WS API for web
-├── analytics/       Python — signals, backtests, news pipeline
-├── telegram-bot/    Python — alerts and approval interface
-└── web/             TS+React — dashboard
+├── collectors/      Go    - exchange WS data ingestion
+├── execution/       Go    - order placement, risk manager
+├── api-gateway/     Go    - REST/WS API for web
+├── analytics/       Python - signals, backtests, news pipeline
+├── telegram-bot/    Python - alerts and approval interface
+└── web/             TS+React - dashboard
 
 packages/
 ├── core/            shared types and utils

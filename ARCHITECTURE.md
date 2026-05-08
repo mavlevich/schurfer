@@ -11,24 +11,24 @@ One product, multiple services. Web UI behind login, no public exposure.
 
 ### Hot path (latency-sensitive)
 
-- **collectors** (Go) — one process per exchange. Maintains WebSocket
+- **collectors** (Go) - one process per exchange. Maintains WebSocket
   subscriptions for spot+perp markets. Normalizes events and publishes
   to NATS bus.
-- **execution** (Go) — receives signals from analytics, runs them through
+- **execution** (Go) - receives signals from analytics, runs them through
   risk manager, places orders on exchanges, tracks positions.
-- **api-gateway** (Go) — REST + WS endpoints for web UI. Reads from
+- **api-gateway** (Go) - REST + WS endpoints for web UI. Reads from
   Redis (hot state) and Postgres (cold storage).
 
 ### Warm path (analytical)
 
-- **analytics** (Python) — signal generation, backtests, news pipeline.
+- **analytics** (Python) - signal generation, backtests, news pipeline.
   Subscribes to NATS, computes indicators, publishes signals back.
-- **telegram-bot** (Python) — sends alerts to user's Telegram, accepts
+- **telegram-bot** (Python) - sends alerts to user's Telegram, accepts
   approve/skip actions on suggested trades.
 
 ### UI
 
-- **web** (TypeScript + React + Vite) — dashboard, journal, analytics
+- **web** (TypeScript + React + Vite) - dashboard, journal, analytics
   views, configuration. Communicates with api-gateway via REST + WS.
 
 ## Data flow
