@@ -1,0 +1,34 @@
+[project]
+name = "schurfer"
+version = "0.1.0"
+description = "Private trading platform"
+requires-python = ">=3.13"
+
+[tool.uv.workspace]
+members = ["apps/analytics", "apps/telegram-bot"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "N",   # pep8-naming
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "SIM", # flake8-simplify
+    "RUF", # ruff-specific
+]
+ignore = []
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.pytest.ini_options]
+testpaths = ["apps", "packages"]
+python_files = ["test_*.py", "*_test.py"]

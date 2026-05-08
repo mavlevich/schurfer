@@ -1,0 +1,109 @@
+# ============================================================
+# Schurfer .gitignore
+# ============================================================
+
+# === macOS ===
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.Spotlight-V100
+.Trashes
+
+# === IDE ===
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/launch.json
+!.vscode/tasks.json
+*.swp
+*.swo
+.zed/
+
+# === Python ===
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg
+*.egg-info/
+.eggs/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+venv/
+.venv/
+env/
+ENV/
+
+# === Node ===
+node_modules/
+.pnpm-debug.log*
+.pnpm-store/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.next/
+out/
+dist/
+build/
+.turbo/
+.vite/
+*.tsbuildinfo
+
+# === Go ===
+*.exe
+*.exe~
+*.dll
+*.so.*
+*.dylib
+*.test
+*.out
+go.work.sum
+vendor/
+bin/
+
+# === Logs ===
+*.log
+logs/
+
+# === Env / Secrets ===
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+.env.test
+*.pem
+*.key
+secrets/
+.secrets/
+
+# === Build outputs ===
+target/
+out/
+build/
+dist/
+
+# === Database / Storage ===
+*.sqlite
+*.sqlite3
+*.db
+data/
+storage/
+
+# === Docker ===
+.docker/
+
+# === Misc ===
+tmp/
+temp/
+.cache/
+coverage/
