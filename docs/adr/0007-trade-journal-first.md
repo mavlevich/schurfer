@@ -10,7 +10,7 @@ Status: Accepted
 
 ## Decision
 
-**Trade Journal — первый сервис который мы строим, до любых стратегий.**
+**Trade Journal - первый сервис который мы строим, до любых стратегий.**
 
 Каждое действие системы (signal generated, alert sent, trade opened,
 trade closed, funding paid, etc.) записывается в journal с полным
@@ -31,7 +31,7 @@ trade closed, funding paid, etc.) записывается в journal с пол�
 См. `packages/journal/` для actual implementation.
 Ключевые поля:
 - strategy_id + strategy_version
-- setup_context (JSONB) — все features
+- setup_context (JSONB) - все features
 - entry/exit prices, slippage, funding, fees
 - outcome_label (win/loss/breakeven)
 - outcome_quality (planned/lucky/mistake/force_majeure)

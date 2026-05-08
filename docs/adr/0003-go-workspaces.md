@@ -10,11 +10,11 @@ Status: Accepted
 
 ## Decision
 
-**Go workspaces** (`go.work`). Каждый сервис — отдельный module.
+**Go workspaces** (`go.work`). Каждый сервис - отдельный module.
 
 ## Alternatives considered
 
-- Один go.mod на весь репо — проще, но конфликты зависимостей
+- Один go.mod на весь репо - проще, но конфликты зависимостей
   между сервисами. Сложно вытащить отдельный сервис в свой репо.
 
 ## Consequences

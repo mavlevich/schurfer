@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Schurfer monorepo init script
 # Прогоняется ОДИН раз в папке ~/Desktop/Projects/schurfer
-# Идемпотентный — повторный прогон безопасен
+# Идемпотентный - повторный прогон безопасен
 
 set -e  # выйти если любая команда упала
 set -u  # ошибка если используется undefined variable
@@ -22,7 +22,7 @@ fi
 
 # Проверяем что git инициализирован
 if [[ ! -d ".git" ]]; then
-    echo "❌ Не вижу .git — git репозиторий не инициализирован"
+    echo "❌ Не вижу .git - git репозиторий не инициализирован"
     echo "   Прогони: git init && git branch -M main"
     exit 1
 fi
@@ -44,7 +44,7 @@ echo ""
 
 echo "🧹 Очистка..."
 
-# Удаляем .idea — мы на VS Code/Zed
+# Удаляем .idea - мы на VS Code/Zed
 if [[ -d ".idea" ]]; then
     rm -rf .idea
     echo "   Удалён .idea"
@@ -256,7 +256,7 @@ EOF
 cat > README.md <<'EOF'
 # Schurfer
 
-> Private trading platform — analytics, signals, automated execution.
+> Private trading platform - analytics, signals, automated execution.
 
 ## Status
 
@@ -275,12 +275,12 @@ cat > README.md <<'EOF'
 
 ```
 apps/
-├── collectors/      Go    — exchange WS data ingestion
-├── execution/       Go    — order placement, risk manager
-├── api-gateway/     Go    — REST/WS API for web
-├── analytics/       Python — signals, backtests, news pipeline
-├── telegram-bot/    Python — alerts and approval interface
-└── web/             TS+React — dashboard
+├── collectors/      Go    - exchange WS data ingestion
+├── execution/       Go    - order placement, risk manager
+├── api-gateway/     Go    - REST/WS API for web
+├── analytics/       Python - signals, backtests, news pipeline
+├── telegram-bot/    Python - alerts and approval interface
+└── web/             TS+React - dashboard
 
 packages/
 ├── core/            shared types and utils
@@ -346,24 +346,24 @@ One product, multiple services. Web UI behind login, no public exposure.
 
 ### Hot path (latency-sensitive)
 
-- **collectors** (Go) — one process per exchange. Maintains WebSocket
+- **collectors** (Go) - one process per exchange. Maintains WebSocket
   subscriptions for spot+perp markets. Normalizes events and publishes
   to NATS bus.
-- **execution** (Go) — receives signals from analytics, runs them through
+- **execution** (Go) - receives signals from analytics, runs them through
   risk manager, places orders on exchanges, tracks positions.
-- **api-gateway** (Go) — REST + WS endpoints for web UI. Reads from
+- **api-gateway** (Go) - REST + WS endpoints for web UI. Reads from
   Redis (hot state) and Postgres (cold storage).
 
 ### Warm path (analytical)
 
-- **analytics** (Python) — signal generation, backtests, news pipeline.
+- **analytics** (Python) - signal generation, backtests, news pipeline.
   Subscribes to NATS, computes indicators, publishes signals back.
-- **telegram-bot** (Python) — sends alerts to user's Telegram, accepts
+- **telegram-bot** (Python) - sends alerts to user's Telegram, accepts
   approve/skip actions on suggested trades.
 
 ### UI
 
-- **web** (TypeScript + React + Vite) — dashboard, journal, analytics
+- **web** (TypeScript + React + Vite) - dashboard, journal, analytics
   views, configuration. Communicates with api-gateway via REST + WS.
 
 ## Data flow
@@ -483,7 +483,7 @@ cat > Makefile <<'EOF'
 .PHONY: help install dev test lint format clean
 
 help:
-	@echo "Schurfer — common commands"
+	@echo "Schurfer - common commands"
 	@echo ""
 	@echo "  make install    Install all dependencies (uv, pnpm, go)"
 	@echo "  make dev        Start local dev environment"
@@ -564,9 +564,9 @@ Status: Accepted
 
 ## Alternatives considered
 
-- Polyrepo — отдельные репо. Отброшено: cross-service refactoring
+- Polyrepo - отдельные репо. Отброшено: cross-service refactoring
   становится болью, версии shared lib рассинхронизируются.
-- Hybrid (public + private + shared) — обсуждалось когда планировался
+- Hybrid (public + private + shared) - обсуждалось когда планировался
   публичный продукт. Отброшено когда решили что продукт полностью
   приватный (см. ADR-0002).
 
@@ -597,17 +597,17 @@ Status: Accepted
 
 1. Публичная часть, торгующая чужими деньгами, требует CASP лицензии
    под MiCA. Не делаем.
-2. Публичная аналитика без torgovли — отвлечение от core продукта.
-3. Один deployment, один auth, одна бекап стратегия — проще.
-4. Если когда-то будем монетизировать — можно открыть subscription
+2. Публичная аналитика без torgovли - отвлечение от core продукта.
+3. Один deployment, один auth, одна бекап стратегия - проще.
+4. Если когда-то будем монетизировать - можно открыть subscription
    на signals (информационный продукт, не финансовая услуга).
 
 ## Consequences
 
 - Pro: фокус, простота, никаких лицензий
-- Con: нет портфолио-эффекта (для CV — другие проекты)
+- Con: нет портфолио-эффекта (для CV - другие проекты)
 - Revisit: если доход от трейдинга стабилизируется и появится
-  желание делать SaaS — пересмотреть юридическую структуру
+  желание делать SaaS - пересмотреть юридическую структуру
 EOF
 
 cat > docs/adr/0003-go-workspaces.md <<'EOF'
@@ -623,11 +623,11 @@ Status: Accepted
 
 ## Decision
 
-**Go workspaces** (`go.work`). Каждый сервис — отдельный module.
+**Go workspaces** (`go.work`). Каждый сервис - отдельный module.
 
 ## Alternatives considered
 
-- Один go.mod на весь репо — проще, но конфликты зависимостей
+- Один go.mod на весь репо - проще, но конфликты зависимостей
   между сервисами. Сложно вытащить отдельный сервис в свой репо.
 
 ## Consequences
@@ -656,20 +656,20 @@ GitHub Free даёт 2000 Actions минут/мес для приватных р
 
 ## Alternatives considered
 
-- GitHub-hosted (платный апгрейд) — $4/мес минимум за Pro
-- Forgejo Actions — отдельная админка, сложнее
-- Mix (lint hosted, heavy self-hosted) — может пригодиться позже
+- GitHub-hosted (платный апгрейд) - $4/мес минимум за Pro
+- Forgejo Actions - отдельная админка, сложнее
+- Mix (lint hosted, heavy self-hosted) - может пригодиться позже
 
 ## Consequences
 
 - Pro: 0 рублей, без лимитов
-- Pro: cache локально на runner — builds быстрее
+- Pro: cache локально на runner - builds быстрее
 - Con: сами поддерживаем runner, security настраиваем
 - Revisit: если runner overhead станет больше выигрыша
 EOF
 
 cat > docs/adr/0005-frontend-stack.md <<'EOF'
-# ADR-0005: Frontend stack — React + Vite + Redux Toolkit
+# ADR-0005: Frontend stack - React + Vite + Redux Toolkit
 
 Date: 2026-05-08
 Status: Accepted
@@ -682,7 +682,7 @@ Status: Accepted
 
 ## Decision
 
-- **Vite** как bundler (не Next.js — SEO не нужен, это закрытый dashboard)
+- **Vite** как bundler (не Next.js - SEO не нужен, это закрытый dashboard)
 - **React 19** + **TypeScript**
 - **React Router 7** (популярнее TanStack Router, тот же effort)
 - **Redux Toolkit + RTK Query** для state и server state (одно решение)
@@ -698,7 +698,7 @@ Status: Accepted
 - Популярные на рынке (skill для CV)
 - Покрывают 100% наших нужд без custom workaround'ов
 
-Redux выбран над Zustand сознательно — больше boilerplate, но
+Redux выбран над Zustand сознательно - больше boilerplate, но
 гораздо более ценный skill на job market.
 
 ## Consequences
@@ -724,14 +724,14 @@ order execution, signal generation, ML/data analysis.
 
 - **Go** для всех networking сервисов (collectors, execution, api-gateway)
 - **Python** для analytics, news pipeline, telegram bot
-- **Rust** — НЕ используем сейчас. Добавим точечно если дойдём
+- **Rust** - НЕ используем сейчас. Добавим точечно если дойдём
   до latency-critical (MEV, sub-millisecond arbitrage)
 
 ## Rationale
 
 - Go: goroutines идеальны для тысяч WebSocket connections, простой
   deployment, хорошо учится, на Bayer уже в стеке
-- Python: ML/data ecosystem (pandas, numpy, scikit-learn) — не заменишь
+- Python: ML/data ecosystem (pandas, numpy, scikit-learn) - не заменишь
 - Rust: real edge только в latency-critical задачах. Schurfer не там.
   Добавление Rust удлинит time-to-market на месяцы.
 
@@ -739,7 +739,7 @@ order execution, signal generation, ML/data analysis.
 
 - Pro: фокус на двух языках (Go+Python) ускоряет development
 - Pro: знание Go растёт параллельно с работой на Bayer
-- Con: упрёмся в Go GC pauses если когда-то пойдём в HFT — тогда Rust
+- Con: упрёмся в Go GC pauses если когда-то пойдём в HFT - тогда Rust
 - Revisit: при разработке MEV/sniper модулей или sub-ms арбитража
 EOF
 
@@ -756,7 +756,7 @@ Status: Accepted
 
 ## Decision
 
-**Trade Journal — первый сервис который мы строим, до любых стратегий.**
+**Trade Journal - первый сервис который мы строим, до любых стратегий.**
 
 Каждое действие системы (signal generated, alert sent, trade opened,
 trade closed, funding paid, etc.) записывается в journal с полным
@@ -777,7 +777,7 @@ trade closed, funding paid, etc.) записывается в journal с пол�
 См. `packages/journal/` для actual implementation.
 Ключевые поля:
 - strategy_id + strategy_version
-- setup_context (JSONB) — все features
+- setup_context (JSONB) - все features
 - entry/exit prices, slippage, funding, fees
 - outcome_label (win/loss/breakeven)
 - outcome_quality (planned/lucky/mistake/force_majeure)
@@ -802,14 +802,14 @@ Created: 2026-05-08
 ## Hypothesis
 
 Низколиквидные токены, запампленные на 50-100%+ за короткий
-период (часы — сутки) с признаками exhaustion (близость к peak'у,
+период (часы - сутки) с признаками exhaustion (близость к peak'у,
 рост OI, экстремальный funding) часто откатываются к pre-pump
-уровню в течение дней — недель.
+уровню в течение дней - недель.
 
 ## Trigger conditions
 
 - `price_change_24h > 50%` AND `< 130%` (типичный диапазон)
-- Цена держится near top — recent peak в последние ~6 часов
+- Цена держится near top - recent peak в последние ~6 часов
 - Symbol доступен на perp хотя бы на одной из бирж в твоей юрисдикции
 
 ## Entry rules
@@ -839,15 +839,15 @@ Created: 2026-05-08
 
 ## Risk management gaps (для следующей итерации)
 
-1. **Risk per trade в % от капитала** — сейчас не задано
-2. **Funding rate filter** — не учитывается до входа
+1. **Risk per trade в % от капитала** - сейчас не задано
+2. **Funding rate filter** - не учитывается до входа
    (важно: на pumped токенах часто extreme funding,
    может съесть профит за дни holding)
-3. **OI как trigger condition** — не используется,
+3. **OI как trigger condition** - не используется,
    но даёт high-confidence сигналы
-4. **Stop loss formalization** — заменить "большой стоп"
+4. **Stop loss formalization** - заменить "большой стоп"
    на технический уровень
-5. **Exit formalization** — pre-pump price как конкретное число
+5. **Exit formalization** - pre-pump price как конкретное число
 
 ## Historical performance (paper-tracked)
 
@@ -871,23 +871,23 @@ EOF
 cat > docs/strategies/README.md <<'EOF'
 # Trading strategies
 
-Каждая стратегия — один markdown файл.
+Каждая стратегия - один markdown файл.
 
 ## Лайфцикл стратегии
 
-1. **draft** — идея, неформальное описание (текущий уровень
+1. **draft** - идея, неформальное описание (текущий уровень
    pump_short_v1)
-2. **paper** — формализована, торгуется в paper-mode
-3. **shadow** — paper рядом с real markets, логируется но не
+2. **paper** - формализована, торгуется в paper-mode
+3. **shadow** - paper рядом с real markets, логируется но не
    исполняется в live
-4. **live_micro** — live trading с минимальными размерами
-5. **live** — полный размер
-6. **deprecated** — отключена
+4. **live_micro** - live trading с минимальными размерами
+5. **live** - полный размер
+6. **deprecated** - отключена
 
 ## Naming
 
-`{strategy_type}_v{N}.md` — pump_short_v1, funding_arb_v1, etc.
-Major изменения в правилах — bump версии (v2).
+`{strategy_type}_v{N}.md` - pump_short_v1, funding_arb_v1, etc.
+Major изменения в правилах - bump версии (v2).
 
 ## Формат
 
@@ -1288,7 +1288,7 @@ echo ""
 
 echo "🚀 Создание GitHub repo и push..."
 
-# Проверяем — может уже есть remote
+# Проверяем - может уже есть remote
 if git remote -v | grep -q origin; then
     echo "   Remote 'origin' уже настроен:"
     git remote -v | grep origin
@@ -1298,7 +1298,7 @@ else
     echo "   Создаю repo через gh..."
     gh repo create schurfer \
         --public \
-        --description "Private trading platform — analytics, signals, automated execution" \
+        --description "Private trading platform - analytics, signals, automated execution" \
         --source=. \
         --remote=origin \
         --push
@@ -1313,4 +1313,4 @@ echo "Дальше:"
 echo "  1. Открой проект в VS Code: code ."
 echo "  2. Установи рекомендованные extensions (VS Code предложит сам)"
 echo "  3. Прогон pre-commit install: pre-commit install"
-echo "  4. Возвращайся в чат — обсудим что делать в Sprint 1"
+echo "  4. Возвращайся в чат - обсудим что делать в Sprint 1"

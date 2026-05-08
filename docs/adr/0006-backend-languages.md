@@ -12,14 +12,14 @@ order execution, signal generation, ML/data analysis.
 
 - **Go** для всех networking сервисов (collectors, execution, api-gateway)
 - **Python** для analytics, news pipeline, telegram bot
-- **Rust** — НЕ используем сейчас. Добавим точечно если дойдём
+- **Rust** - НЕ используем сейчас. Добавим точечно если дойдём
   до latency-critical (MEV, sub-millisecond arbitrage)
 
 ## Rationale
 
 - Go: goroutines идеальны для тысяч WebSocket connections, простой
   deployment, хорошо учится, на Bayer уже в стеке
-- Python: ML/data ecosystem (pandas, numpy, scikit-learn) — не заменишь
+- Python: ML/data ecosystem (pandas, numpy, scikit-learn) - не заменишь
 - Rust: real edge только в latency-critical задачах. Schurfer не там.
   Добавление Rust удлинит time-to-market на месяцы.
 
@@ -27,5 +27,5 @@ order execution, signal generation, ML/data analysis.
 
 - Pro: фокус на двух языках (Go+Python) ускоряет development
 - Pro: знание Go растёт параллельно с работой на Bayer
-- Con: упрёмся в Go GC pauses если когда-то пойдём в HFT — тогда Rust
+- Con: упрёмся в Go GC pauses если когда-то пойдём в HFT - тогда Rust
 - Revisit: при разработке MEV/sniper модулей или sub-ms арбитража

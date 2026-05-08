@@ -1,4 +1,4 @@
-# ADR-0005: Frontend stack — React + Vite + Redux Toolkit
+# ADR-0005: Frontend stack - React + Vite + Redux Toolkit
 
 Date: 2026-05-08
 Status: Accepted
@@ -11,7 +11,7 @@ Status: Accepted
 
 ## Decision
 
-- **Vite** как bundler (не Next.js — SEO не нужен, это закрытый dashboard)
+- **Vite** как bundler (не Next.js - SEO не нужен, это закрытый dashboard)
 - **React 19** + **TypeScript**
 - **React Router 7** (популярнее TanStack Router, тот же effort)
 - **Redux Toolkit + RTK Query** для state и server state (одно решение)
@@ -27,7 +27,7 @@ Status: Accepted
 - Популярные на рынке (skill для CV)
 - Покрывают 100% наших нужд без custom workaround'ов
 
-Redux выбран над Zustand сознательно — больше boilerplate, но
+Redux выбран над Zustand сознательно - больше boilerplate, но
 гораздо более ценный skill на job market.
 
 ## Consequences

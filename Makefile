@@ -1,7 +1,7 @@
 .PHONY: help install dev test lint format clean
 
 help:
-	@echo "Schurfer — common commands"
+	@echo "Schurfer - common commands"
 	@echo ""
 	@echo "  make install    Install all dependencies (uv, pnpm, go)"
 	@echo "  make dev        Start local dev environment"

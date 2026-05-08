@@ -15,9 +15,9 @@ Status: Accepted
 
 ## Alternatives considered
 
-- Polyrepo — отдельные репо. Отброшено: cross-service refactoring
+- Polyrepo - отдельные репо. Отброшено: cross-service refactoring
   становится болью, версии shared lib рассинхронизируются.
-- Hybrid (public + private + shared) — обсуждалось когда планировался
+- Hybrid (public + private + shared) - обсуждалось когда планировался
   публичный продукт. Отброшено когда решили что продукт полностью
   приватный (см. ADR-0002).
 
