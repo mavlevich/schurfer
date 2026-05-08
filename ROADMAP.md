@@ -58,6 +58,51 @@
 - [ ] Theme hunter (off-CEX memecoins)
 - [ ] Public AlphaScope-style read-only views (if monetization desired)
 
+## Future ideas (not in current sprint)
+
+### Detectors
+
+- [ ] Investigator-based short detector (ZachXBT, MetaSleuth, peckshield)
+- [ ] Pre-launch low-float VC token short detector (TGE-aware)
+- [ ] MM history database (DWF, Wintermute pattern matching)
+- [ ] Composite "sticky pump" signal (price + volume + OI + funding)
+- [ ] Theme hunter (off-CEX memecoins, hype-driven)
+
+### Strategy modes (cross-cutting)
+
+- [ ] Paper mode framework
+- [ ] Shadow mode framework
+- [ ] Live micro mode framework (small position sizes)
+
+### Research & validation
+
+- [ ] Signal contract v1 (market event -> feature snapshot -> signal -> order intent -> journal entry)
+- [ ] Replay / simulation harness with parity across paper, shadow, and live micro
+- [ ] Detector scorecard (hit rate, MFE/MAE, holding cost, funding drag, time-to-reversion)
+
+### Risk & execution
+
+- [ ] Portfolio risk budget engine (per exchange / theme / liquidity bucket / correlated basket)
+- [ ] Execution quality layer (slippage, partial fills, rejects, latency by venue)
+
+### Operational features
+
+- [ ] Task orchestrator (runtime tasks: "watch X for short", "wait for liquidity")
+  - Web UI to view, pause, cancel tasks
+- [ ] Multi-exchange capital management (Treasury module)
+  - Auto-suggest rebalance between Bybit / Hyperliquid
+- [ ] Cross-venue execution (best venue picker)
+
+### Security & infra
+
+- [ ] CodeQL + Semgrep in CI
+- [ ] SOPS + age for secrets
+- [ ] Self-hosted GitHub Actions runner on VPS
+
+### Tax / compliance
+
+- [ ] Trade journal tax export module (PIT-38 ready CSV)
+
 ## Technical debt / continuous
 
 - [ ] Property-based tests for math
