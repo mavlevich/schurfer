@@ -2,73 +2,84 @@
 
 > Living document. Updated as we progress.
 
+## Principles
+
+- Ship working product fast, iterate later
+- Architecture right from day one (service boundaries, NATS contracts), code can be dirty inside
+- Tests and structured logging everywhere from Sprint 1
+- UI progress on every sprint (Telegram + web)
+- Python first for speed, Go when it matters (collector rewrite)
+- Bybit as first exchange (Binance perps blocked in Poland)
+
 ## Sprint 1: Foundation (current)
 
 - [x] Decisions: monorepo, Go workspaces, frontend stack
 - [x] Repo init, structure, ADRs
-- [ ] Hetzner Tokyo VPS provisioned
-- [ ] Docker Compose for local dev (Postgres + Timescale + Redis + NATS)
-- [ ] CI: self-hosted runner on VPS
-- [ ] First Go collector skeleton (Binance perp BTCUSDT)
-- [ ] Trade Journal model in Postgres + migrations
-- [ ] Telegram bot skeleton
+- [ ] Docker Compose for local dev (Postgres + TimescaleDB + Redis + NATS)
+- [ ] Structured logging standard (Python: structlog, Go: slog)
+- [ ] Trade Journal schema + migrations (core layer, ADR-0007)
+- [ ] AWS EC2 t4g.medium Frankfurt provisioned
+- [ ] Domain + Cloudflare DNS + Tunnel
+- [ ] Tailscale for SSH access
+- [ ] CI: GitHub Actions self-hosted runner (spot instance)
+- [ ] Web scaffold: Vite + React + shadcn/ui, System Status page
 
-## Sprint 2: First strategy + alerts
+## Sprint 2: First vertical slice
 
-- [ ] Binance perp full collector (top 30 symbols)
-- [ ] Funding rate cross-exchange comparator
-- [ ] Pump detector v1 (price + volume)
-- [ ] Telegram alerts with approve/skip buttons
-- [ ] Paper trading framework
+- [ ] Bybit WS collector (Python, publishes to NATS)
+- [ ] NATS message format spec (contract for all downstream consumers)
+- [ ] Pump detector v1 (price_change > 50%, near peak)
+- [ ] Telegram bot: alert with approve/skip buttons
+- [ ] Web: trade journal table (read from Postgres)
+- [ ] Tests: detector logic, journal writes
 
-## Sprint 3: Multi-exchange + Bybit
+## Sprint 3: Execution + live trading
 
-- [ ] Bybit collector
-- [ ] Hyperliquid collector
-- [ ] OKX collector
+- [ ] Execution: approve -> ccxt places short on Bybit
+- [ ] Position tracking in journal
+- [ ] Funding rate filter in detector
+- [ ] Web: live positions, prices via WS, PnL view
+- [ ] Deploy to AWS EC2 (Docker Compose on VPS)
+
+## Sprint 4: Go collector + charts
+
+- [ ] Rewrite Bybit collector in Go (replace Python, same NATS contract)
+- [ ] Web: equity curve (Lightweight Charts), per-strategy stats
+- [ ] Second exchange collector (OKX or Hyperliquid)
 - [ ] OI integration into pump detector
-- [ ] Composite "sticky pump" signal
 
-## Sprint 4: Pump-short live
+## Sprint 5: ECS migration + news pipeline
 
-- [ ] Risk manager with all guardrails
-- [ ] Execution engine (Go)
-- [ ] Position tracking
-- [ ] Pump-short v1 paper → live (small size)
-- [ ] Dashboard v0: equity curve + per-strategy stats
-
-## Sprint 5: News pipeline
-
-- [ ] CryptoPanic + RSS sources
-- [ ] Telegram channel parsing (Telethon)
-- [ ] Two-stage AI scoring (Groq Llama → Gemini → Claude)
+- [ ] Migrate Docker Compose -> AWS ECS (EC2 launch type)
+- [ ] ECR for Docker images, CloudWatch for logs
+- [ ] CryptoPanic + RSS news sources
+- [ ] Two-stage AI scoring (Groq Llama -> Claude)
 - [ ] News-based alerts (manual approve only)
 
-## Sprint 6: Smart money + Polymarket
+## Sprint 6: Multi-exchange + advanced signals
+
+- [ ] Bybit + OKX + Hyperliquid full coverage
+- [ ] Composite "sticky pump" signal (price + volume + OI + funding)
+- [ ] Risk manager with guardrails
+- [ ] Paper trading framework
+
+## Sprint 7+: Advanced
 
 - [ ] Smart money tracker for Solana (Helius)
 - [ ] Polymarket CLOB integration
 - [ ] CEX-Polymarket lag arbitrage detector
-- [ ] Polymarket "No bot" baseline
-
-## Sprint 7+: Advanced
-
 - [ ] Pre-launch short detector (TGE-aware)
 - [ ] MM history database (DWF, Wintermute patterns)
-- [ ] Theme hunter (off-CEX memecoins)
-- [ ] Public AlphaScope-style read-only views (if monetization desired)
 
-## Future ideas (not in current sprint)
+## Future ideas (backlog)
 
 ### Detectors
 
 - [ ] Investigator-based short detector (ZachXBT, MetaSleuth, peckshield)
 - [ ] Pre-launch low-float VC token short detector (TGE-aware)
-- [ ] MM history database (DWF, Wintermute pattern matching)
-- [ ] Composite "sticky pump" signal (price + volume + OI + funding)
 - [ ] Theme hunter (off-CEX memecoins, hype-driven)
 
-### Strategy modes (cross-cutting)
+### Strategy modes
 
 - [ ] Paper mode framework
 - [ ] Shadow mode framework
@@ -88,16 +99,14 @@
 ### Operational features
 
 - [ ] Task orchestrator (runtime tasks: "watch X for short", "wait for liquidity")
-  - Web UI to view, pause, cancel tasks
 - [ ] Multi-exchange capital management (Treasury module)
-  - Auto-suggest rebalance between Bybit / Hyperliquid
 - [ ] Cross-venue execution (best venue picker)
 
 ### Security & infra
 
 - [ ] CodeQL + Semgrep in CI
 - [ ] SOPS + age for secrets
-- [ ] Self-hosted GitHub Actions runner on VPS
+- [ ] Reserved Instance / Savings Plan after 1 month usage data
 
 ### Tax / compliance
 
@@ -108,5 +117,5 @@
 - [ ] Property-based tests for math
 - [ ] Replay engine for backtests
 - [ ] Daily reconciliation (code vs exchange)
-- [ ] Monitoring (Grafana + Prometheus)
+- [ ] Monitoring (Grafana + Prometheus / CloudWatch)
 - [ ] Secrets management (sops + age)
