@@ -5,34 +5,34 @@ Status: Accepted
 
 ## Context
 
-Нужен web dashboard для приватного логина. Real-time данные
-(цены, OI, funding) через WebSocket. Сложная structured UI
+Need a web dashboard behind private login. Real-time data
+(prices, OI, funding) via WebSocket. Complex structured UI
 (charts, tables, forms).
 
 ## Decision
 
-- **Vite** как bundler (не Next.js - SEO не нужен, это закрытый dashboard)
+- **Vite** as bundler (not Next.js - no SEO needed, it's a private dashboard)
 - **React 19** + **TypeScript**
-- **React Router 7** (популярнее TanStack Router, тот же effort)
-- **Redux Toolkit + RTK Query** для state и server state (одно решение)
-- **shadcn/ui** на Radix для components (free, copy-paste)
-- **Tailwind 4** для стилей
-- **Lightweight Charts** (TradingView free) для графиков
-- **TanStack Table** для таблиц с виртуализацией
+- **React Router 7** (more popular than TanStack Router, same effort)
+- **Redux Toolkit + RTK Query** for state and server state (single solution)
+- **shadcn/ui** on Radix for components (free, copy-paste)
+- **Tailwind 4** for styles
+- **Lightweight Charts** (TradingView free) for charts
+- **TanStack Table** for tables with virtualization
 
 ## Rationale
 
-Все компоненты:
-- Бесплатные (MIT/Apache), никаких подписок
-- Популярные на рынке (skill для CV)
-- Покрывают 100% наших нужд без custom workaround'ов
+All components:
+- Free (MIT/Apache), no subscriptions
+- Popular in the market (skill for CV)
+- Cover 100% of our needs without custom workarounds
 
-Redux выбран над Zustand сознательно - больше boilerplate, но
-гораздо более ценный skill на job market.
+Redux was chosen over Zustand deliberately - more boilerplate, but
+a much more valuable skill on the job market.
 
 ## Consequences
 
-- Pro: всё стандартное, легко найти разработчиков, легко искать ответы
-- Pro: RTK Query закрывает и REST, и WebSocket subscriptions
-- Con: чуть больше кода чем с Zustand
-- Revisit: не планируется в обозримом
+- Pro: all standard, easy to find developers, easy to search for answers
+- Pro: RTK Query covers both REST and WebSocket subscriptions
+- Con: slightly more code than with Zustand
+- Revisit: not planned

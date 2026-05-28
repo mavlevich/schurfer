@@ -5,24 +5,24 @@ Status: Accepted
 
 ## Context
 
-GitHub Free даёт 2000 Actions минут/мес для приватных репо.
-При активной разработке (3-5 push/день × 10-15 мин CI) можно
-улететь в лимит.
+GitHub Free gives 2000 Actions minutes/month for private repos.
+With active development (3-5 pushes/day x 10-15 min CI) it's easy
+to hit the limit.
 
 ## Decision
 
-**Self-hosted runner** на Hetzner Tokyo VPS.
-Бесплатно, без лимита минут.
+**Self-hosted runner** on the production VPS (AWS EC2 spot instance).
+Free, no minute limits.
 
 ## Alternatives considered
 
-- GitHub-hosted (платный апгрейд) - $4/мес минимум за Pro
-- Forgejo Actions - отдельная админка, сложнее
-- Mix (lint hosted, heavy self-hosted) - может пригодиться позже
+- GitHub-hosted (paid upgrade) - $4/mo minimum for Pro
+- Forgejo Actions - separate admin, more complexity
+- Mix (lint hosted, heavy self-hosted) - may be useful later
 
 ## Consequences
 
-- Pro: 0 рублей, без лимитов
-- Pro: cache локально на runner - builds быстрее
-- Con: сами поддерживаем runner, security настраиваем
-- Revisit: если runner overhead станет больше выигрыша
+- Pro: $0 cost, no limits
+- Pro: cache is local on runner, builds are faster
+- Con: maintain the runner ourselves, handle security
+- Revisit: if runner overhead exceeds the benefit

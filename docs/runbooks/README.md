@@ -1,5 +1,5 @@
 # Runbooks
 
-Operational procedures для инцидентов и регулярных задач.
+Operational procedures for incidents and recurring tasks.
 
 TBD when first incident happens.

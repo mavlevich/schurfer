@@ -12,7 +12,7 @@
 - **Frontend**: React + Vite + TypeScript + Redux Toolkit
 - **Storage**: PostgreSQL + TimescaleDB, Redis
 - **Message bus**: NATS
-- **Infra**: Docker, Hetzner Tokyo VPS
+- **Infra**: Docker, AWS EC2 (Frankfurt), Cloudflare, Tailscale
 - **Languages**: Go 1.26, Python 3.13, TypeScript
 
 ## Project structure

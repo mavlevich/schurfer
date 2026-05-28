@@ -11,11 +11,12 @@ One product, multiple services. Web UI behind login, no public exposure.
 
 ### Hot path (latency-sensitive)
 
-- **collectors** (Go) - one process per exchange. Maintains WebSocket
-  subscriptions for spot+perp markets. Normalizes events and publishes
-  to NATS bus.
-- **execution** (Go) - receives signals from analytics, runs them through
-  risk manager, places orders on exchanges, tracks positions.
+- **collectors** (Python initially, Go later) - one process per exchange.
+  Maintains WebSocket subscriptions for spot+perp markets. Normalizes
+  events and publishes to NATS bus.
+- **execution** (Python initially, Go later) - receives signals from
+  analytics, runs them through risk manager, places orders on exchanges,
+  tracks positions.
 - **api-gateway** (Go) - REST + WS endpoints for web UI. Reads from
   Redis (hot state) and Postgres (cold storage).
 
@@ -35,19 +36,19 @@ One product, multiple services. Web UI behind login, no public exposure.
 
 ```
 Exchanges (WS)
-    ↓
-Collectors (Go) ──→ NATS ──→ Analytics (Python)
-                       │            │
-                       ↓            ↓
-                  Storage      Signals
-                  (Postgres,        ↓
-                   TimescaleDB,  Decision Engine
-                   Redis)            ↓
-                       ↑         Risk Manager
-                       │            ↓
-                       └──── Execution (Go)
-                                    ↓
-                                Exchanges (REST)
+    |
+Collectors (Python/Go) --> NATS --> Analytics (Python)
+                             |            |
+                             v            v
+                        Storage      Signals
+                        (Postgres,        |
+                         TimescaleDB,  Decision Engine
+                         Redis)            |
+                             ^         Risk Manager
+                             |            |
+                             +---- Execution (Python/Go)
+                                          |
+                                      Exchanges (REST)
 ```
 
 ## Storage
@@ -58,12 +59,33 @@ Collectors (Go) ──→ NATS ──→ Analytics (Python)
 | **TimescaleDB** | tick data, OHLCV, funding history, OI series |
 | **Redis** | hot state (current price, OI, funding), pub/sub for UI |
 
+## Exchanges
+
+| Exchange | Priority | Status |
+|---|---|---|
+| **Bybit** | First | Sprint 2 |
+| **OKX** | Second | Sprint 4 |
+| **Hyperliquid** | Third | Sprint 4-6 |
+
+Binance perps excluded (blocked in Poland).
+
 ## Deployment
 
-- **Production**: single Hetzner CCX23 VPS in Tokyo (close to exchanges)
-- **Dev**: local Docker Compose
+- **Production**: AWS EC2 t4g.medium (ARM/Graviton) in Frankfurt (eu-central-1)
+  - Docker Compose initially, migrate to ECS in Sprint 5
+  - ARM images for all services (Go and Python work natively)
+- **Dev**: local Docker Compose (same compose file, different config)
+- **CI**: GitHub Actions self-hosted runner on AWS spot instance
 - **Secrets**: sops + age, encrypted in repo
-- **Access**: Tailscale VPN to production, Cloudflare Tunnel for web UI
+- **Access**: Tailscale VPN for SSH, Cloudflare Tunnel for web UI
+- **DNS**: Cloudflare
+
+## Logging
+
+All services use structured JSON logging from day one:
+- Python: `structlog`
+- Go: `slog` (stdlib)
+- Collected via CloudWatch (production) or stdout (dev)
 
 ## Tax / regulatory
 

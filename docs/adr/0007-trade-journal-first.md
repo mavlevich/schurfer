@@ -1,37 +1,37 @@
-# ADR-0007: Trade Journal как core слой, не feature
+# ADR-0007: Trade Journal as core layer, not a feature
 
 Date: 2026-05-08
 Status: Accepted
 
 ## Context
 
-Главное требование от пользователя: "нужен чёткий винрейт и логи
-по аккаунтам, биржам, стратегиям. Чтобы улучшать алгоритмы и идеи".
+Core requirement: "need clear winrate and logs by account, exchange,
+strategy. To improve algorithms and ideas."
 
 ## Decision
 
-**Trade Journal - первый сервис который мы строим, до любых стратегий.**
+**Trade Journal is the first service we build, before any strategies.**
 
-Каждое действие системы (signal generated, alert sent, trade opened,
-trade closed, funding paid, etc.) записывается в journal с полным
-контекстом (`setup_context` JSONB с features которые повлияли
-на decision).
+Every system action (signal generated, alert sent, trade opened,
+trade closed, funding paid, etc.) is recorded in the journal with
+full context (`setup_context` JSONB with features that influenced
+the decision).
 
 ## Consequences
 
-- Каждая стратегия должна быть instrumented с первого дня
-- Можно делать SQL-запросы типа:
-  "winrate когда funding > 0.05% AND OI growth > 100%"
-- Готовая основа для tax export
-- Готовая основа для backtest validation
-- Нельзя deploy стратегию которая не пишет в journal
+- Every strategy must be instrumented from day one
+- Enables SQL queries like:
+  "winrate when funding > 0.05% AND OI growth > 100%"
+- Ready foundation for tax export
+- Ready foundation for backtest validation
+- Cannot deploy a strategy that doesn't write to the journal
 
 ## Schema highlights
 
-См. `packages/journal/` для actual implementation.
-Ключевые поля:
+See `packages/journal/` for actual implementation.
+Key fields:
 - strategy_id + strategy_version
-- setup_context (JSONB) - все features
+- setup_context (JSONB) - all features
 - entry/exit prices, slippage, funding, fees
 - outcome_label (win/loss/breakeven)
 - outcome_quality (planned/lucky/mistake/force_majeure)

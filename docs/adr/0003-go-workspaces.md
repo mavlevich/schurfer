@@ -1,24 +1,25 @@
-# ADR-0003: Go workspaces для backend сервисов
+# ADR-0003: Go workspaces for backend services
 
 Date: 2026-05-08
 Status: Accepted
 
 ## Context
 
-Несколько Go сервисов в одном репо: collectors, execution, api-gateway.
-Нужна модель управления Go модулями.
+Multiple Go services in one repo: collectors, execution, api-gateway.
+Need a model for managing Go modules.
 
 ## Decision
 
-**Go workspaces** (`go.work`). Каждый сервис - отдельный module.
+**Go workspaces** (`go.work`). Each service is a separate module.
 
 ## Alternatives considered
 
-- Один go.mod на весь репо - проще, но конфликты зависимостей
-  между сервисами. Сложно вытащить отдельный сервис в свой репо.
+- Single go.mod for the whole repo - simpler, but dependency
+  conflicts between services. Hard to extract a single service
+  into its own repo.
 
 ## Consequences
 
-- Pro: изоляция зависимостей, модулярность
-- Pro: каждый сервис может быть выпущен отдельно
-- Con: чуть больше boilerplate (go.mod в каждой папке)
+- Pro: dependency isolation, modularity
+- Pro: each service can be released independently
+- Con: slightly more boilerplate (go.mod in each directory)
