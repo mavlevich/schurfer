@@ -5,24 +5,24 @@ Status: Accepted
 
 ## Context
 
-Нужна структура репо для multi-service trading платформы с
-разными языками (Go, Python, TypeScript).
+Need a repo structure for a multi-service trading platform with
+different languages (Go, Python, TypeScript).
 
 ## Decision
 
-**Monorepo** с разделением `apps/` (запускаемые сервисы) и
-`packages/` (shared библиотеки).
+**Monorepo** with `apps/` (runnable services) and `packages/` (shared
+libraries) split.
 
 ## Alternatives considered
 
-- Polyrepo - отдельные репо. Отброшено: cross-service refactoring
-  становится болью, версии shared lib рассинхронизируются.
-- Hybrid (public + private + shared) - обсуждалось когда планировался
-  публичный продукт. Отброшено когда решили что продукт полностью
-  приватный (см. ADR-0002).
+- Polyrepo - separate repos. Rejected: cross-service refactoring
+  becomes painful, shared lib versions drift apart.
+- Hybrid (public + private + shared) - considered when a public
+  product was planned. Rejected when the product became fully
+  private (see ADR-0002).
 
 ## Consequences
 
-- Pro: атомарные изменения через несколько сервисов, единый CI
-- Con: репо растёт, нужен CI который умеет частичные builds
-- Revisit: если репо превысит 1GB или появится команда >5 человек
+- Pro: atomic changes across multiple services, single CI
+- Con: repo grows, need CI that supports partial builds
+- Revisit: if repo exceeds 1GB or team grows beyond 5 people

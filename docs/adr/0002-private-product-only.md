@@ -5,26 +5,27 @@ Status: Accepted
 
 ## Context
 
-Изначально рассматривалось разделение на публичный analytics
-продукт (Schurfer / dashboard) и приватный auto-trading engine.
+Originally considered splitting into a public analytics product
+(Schurfer dashboard) and a private auto-trading engine.
 
 ## Decision
 
-**Один приватный продукт.** Web UI за логином, доступ только
-владельцу. Никаких публичных компонентов.
+**One private product.** Web UI behind login, owner-only access.
+No public components.
 
 ## Rationale
 
-1. Публичная часть, торгующая чужими деньгами, требует CASP лицензии
-   под MiCA. Не делаем.
-2. Публичная аналитика без torgovли - отвлечение от core продукта.
-3. Один deployment, один auth, одна бекап стратегия - проще.
-4. Если когда-то будем монетизировать - можно открыть subscription
-   на signals (информационный продукт, не финансовая услуга).
+1. A public component trading third-party funds requires CASP
+   licensing under MiCA. Not doing that.
+2. Public analytics without trading is a distraction from the
+   core product.
+3. One deployment, one auth, one backup strategy - simpler.
+4. If monetization is desired later, can open a subscription
+   for signals (informational product, not a financial service).
 
 ## Consequences
 
-- Pro: фокус, простота, никаких лицензий
-- Con: нет портфолио-эффекта (для CV - другие проекты)
-- Revisit: если доход от трейдинга стабилизируется и появится
-  желание делать SaaS - пересмотреть юридическую структуру
+- Pro: focus, simplicity, no licensing requirements
+- Con: no portfolio effect (use other projects for CV)
+- Revisit: if trading income stabilizes and there is desire to
+  build a SaaS, review the legal structure

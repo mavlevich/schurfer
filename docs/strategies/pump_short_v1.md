@@ -6,66 +6,65 @@ Created: 2026-05-08
 
 ## Hypothesis
 
-Низколиквидные токены, запампленные на 50-100%+ за короткий
-период (часы - сутки) с признаками exhaustion (близость к peak'у,
-рост OI, экстремальный funding) часто откатываются к pre-pump
-уровню в течение дней - недель.
+Low-liquidity tokens pumped 50-100%+ in a short period (hours to days)
+with exhaustion signs (near peak, rising OI, extreme funding) tend to
+retrace to pre-pump levels within days to weeks.
 
 ## Trigger conditions
 
-- `price_change_24h > 50%` AND `< 130%` (типичный диапазон)
-- Цена держится near top - recent peak в последние ~6 часов
-- Symbol доступен на perp хотя бы на одной из бирж в твоей юрисдикции
+- `price_change_24h > 50%` AND `< 130%` (typical range)
+- Price is holding near the top - recent peak in the last ~6 hours
+- Symbol is available on perps on at least one supported exchange
 
 ## Entry rules
 
-- Open SHORT на perp
-- Размер позиции: пока вручную выбираешь "психологически приемлемую сумму"
-  → TODO: заменить на % от капитала с risk-based sizing
-- Плечо: до 10x исторически использовалось при широком стопе
+- Open SHORT on perps
+- Position size: manually chosen "psychologically acceptable amount"
+  for now -> TODO: replace with % of capital using risk-based sizing
+- Leverage: up to 10x historically used with wide stop
 
 ## Stop loss
 
-- Текущий подход: "большой стоп, маржи хватает"
-- Implicit stop ~+200% от entry (на широких плечах)
-- TODO: формализовать на технический уровень
-  (например: above recent ATH +15-20%)
+- Current approach: "wide stop, enough margin"
+- Implicit stop ~+200% from entry (on high leverage)
+- TODO: formalize to a technical level
+  (e.g. above recent ATH +15-20%)
 
 ## Exit rules (take profit)
 
-- Цена откат к pre-pump уровню (≈ цена за 24-48h до начала pump'а)
-- Решение "по ощущениям", по интуиции
-- TODO: формализовать через `target_price = price_t-48h × 1.05`
+- Price retraces to pre-pump level (approx. price 24-48h before pump start)
+- Decision based on feel/intuition
+- TODO: formalize via `target_price = price_t-48h * 1.05`
 
 ## Position management
 
-- Текущий: одно entry, manual exit
-- TODO: рассмотреть scaled entry в 2-3 транша
+- Current: single entry, manual exit
+- TODO: consider scaled entry in 2-3 tranches
 
-## Risk management gaps (для следующей итерации)
+## Risk management gaps (for next iteration)
 
-1. **Risk per trade в % от капитала** - сейчас не задано
-2. **Funding rate filter** - не учитывается до входа
-   (важно: на pumped токенах часто extreme funding,
-   может съесть профит за дни holding)
-3. **OI как trigger condition** - не используется,
-   но даёт high-confidence сигналы
-4. **Stop loss formalization** - заменить "большой стоп"
-   на технический уровень
-5. **Exit formalization** - pre-pump price как конкретное число
+1. **Risk per trade as % of capital** - not defined yet
+2. **Funding rate filter** - not checked before entry
+   (important: pumped tokens often have extreme funding,
+   can eat profit over days of holding)
+3. **OI as trigger condition** - not used yet,
+   but provides high-confidence signals
+4. **Stop loss formalization** - replace "wide stop"
+   with a technical level
+5. **Exit formalization** - pre-pump price as a concrete number
 
 ## Historical performance (paper-tracked)
 
-- Pre-Schurfer: успешные сделки по интуиции, чёткая статистика
-  не вёлась
-- TODO: восстановить ~10 последних трейдов из памяти/CSV для
+- Pre-Schurfer: successful trades based on intuition, no clear
+  statistics were kept
+- TODO: reconstruct ~10 recent trades from memory/CSV for
   baseline winrate
 
 ## Refinement TODO
 
-- [ ] Backtest на исторических pumps Q1 2026 (M, MEGA, RAVE,
+- [ ] Backtest on historical pumps Q1 2026 (M, MEGA, RAVE,
       SIREN, KAT, SPK style setups)
-- [ ] Определить optimal price_change_24h thresholds
+- [ ] Determine optimal price_change_24h thresholds
 - [ ] Funding rate as trigger / filter
 - [ ] OI growth as confidence multiplier
 - [ ] Position sizing formula (risk-based)

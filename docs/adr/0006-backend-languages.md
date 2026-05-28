@@ -1,31 +1,31 @@
-# ADR-0006: Go + Python для backend, Rust только точечно
+# ADR-0006: Go + Python for backend, Rust only if needed
 
 Date: 2026-05-08
 Status: Accepted
 
 ## Context
 
-Нужны языки для разных типов сервисов: networking-heavy (collectors),
+Need languages for different service types: networking-heavy (collectors),
 order execution, signal generation, ML/data analysis.
 
 ## Decision
 
-- **Go** для всех networking сервисов (collectors, execution, api-gateway)
-- **Python** для analytics, news pipeline, telegram bot
-- **Rust** - НЕ используем сейчас. Добавим точечно если дойдём
-  до latency-critical (MEV, sub-millisecond arbitrage)
+- **Go** for all networking services (collectors, execution, api-gateway)
+- **Python** for analytics, news pipeline, telegram bot
+- **Rust** - NOT using now. Will add selectively if we reach
+  latency-critical territory (MEV, sub-millisecond arbitrage)
 
 ## Rationale
 
-- Go: goroutines идеальны для тысяч WebSocket connections, простой
-  deployment, хорошо учится, на Bayer уже в стеке
-- Python: ML/data ecosystem (pandas, numpy, scikit-learn) - не заменишь
-- Rust: real edge только в latency-critical задачах. Schurfer не там.
-  Добавление Rust удлинит time-to-market на месяцы.
+- Go: goroutines are ideal for thousands of WebSocket connections,
+  simple deployment, already in the work stack at Bayer
+- Python: ML/data ecosystem (pandas, numpy, scikit-learn) is irreplaceable
+- Rust: real edge only in latency-critical tasks. Schurfer is not there.
+  Adding Rust would delay time-to-market by months.
 
 ## Consequences
 
-- Pro: фокус на двух языках (Go+Python) ускоряет development
-- Pro: знание Go растёт параллельно с работой на Bayer
-- Con: упрёмся в Go GC pauses если когда-то пойдём в HFT - тогда Rust
-- Revisit: при разработке MEV/sniper модулей или sub-ms арбитража
+- Pro: focus on two languages (Go+Python) speeds up development
+- Pro: Go skills grow in parallel with day job
+- Con: will hit Go GC pauses if HFT ever becomes a goal, then Rust
+- Revisit: when developing MEV/sniper modules or sub-ms arbitrage

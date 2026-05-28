@@ -1,51 +1,51 @@
-# ADR-0008: AWS EC2 Frankfurt для production hosting
+# ADR-0008: AWS EC2 Frankfurt for production hosting
 
 Date: 2026-05-28
 Status: Accepted
 
 ## Context
 
-Нужен production сервер. Требования:
-- Не супер дорогой (~$20-30/мес)
-- Популярный провайдер для прокачки skills (AWS)
-- IP не блокируется биржами
-- Достаточная производительность для 6 сервисов + databases
+Need a production server. Requirements:
+- Not too expensive (~$20-30/mo)
+- Popular cloud provider for skill building (AWS)
+- IP not blocked by exchanges
+- Enough performance for 6 services + databases
 
 ## Decision
 
-**AWS EC2 t4g.medium (ARM/Graviton)** в **Frankfurt (eu-central-1)**.
+**AWS EC2 t4g.medium (ARM/Graviton)** in **Frankfurt (eu-central-1)**.
 
-- Docker Compose для начала, миграция на ECS когда продукт стабилен
-- ARM образы для всех сервисов
-- Spot instance для CI runner
+- Docker Compose initially, migrate to ECS when product is stable
+- ARM images for all services
+- Spot instance for CI runner
 
 ## Alternatives considered
 
-- Hetzner Singapore (€7-15/мес) - дешевле, но AWS skills ценнее
-- AWS Singapore (ap-southeast-1) - дороже, нужен только для HFT latency
-- AWS EKS - +$73/мес за control plane, overkill для соло
-- DigitalOcean - средний вариант, но AWS доминирует на рынке
+- Hetzner Singapore (7-15 EUR/mo) - cheaper, but AWS skills are more valuable
+- AWS Singapore (ap-southeast-1) - more expensive, only needed for HFT latency
+- AWS EKS - +$73/mo for control plane, overkill for solo project
+- DigitalOcean - middle ground, but AWS dominates the market
 
 ## Why Frankfurt, not Singapore
 
-Стратегия pump_short - позиции держатся дни-недели. Latency
-150-200ms до бирж (Frankfurt -> Singapore) несущественна.
-Frankfurt - ближайший к Польше AWS регион, один из самых дешёвых.
+The pump_short strategy holds positions for days to weeks. 150-200ms
+latency to exchanges (Frankfurt to Singapore) is irrelevant.
+Frankfurt is the closest AWS region to Poland and one of the cheapest.
 
 ## Cost breakdown
 
-- EC2 t4g.medium: ~$24/мес (on-demand), ~$15/мес (reserved 1yr)
-- Spot instance CI: ~$3-5/мес
-- Cloudflare Tunnel: бесплатно
-- Tailscale: бесплатно
-- Total: ~$20-30/мес
+- EC2 t4g.medium: ~$24/mo (on-demand), ~$15/mo (reserved 1yr)
+- Spot instance CI: ~$3-5/mo
+- Cloudflare Tunnel: free
+- Tailscale: free
+- Total: ~$20-30/mo
 
 ## Consequences
 
 - Pro: AWS skills (IAM, VPC, CloudWatch, ECR, ECS path)
-- Pro: Европейский IP, нет блоков бирж
-- Pro: ARM - дешевле и быстрее чем x86
-- Con: дороже Hetzner (x3-4), но приемлемо
+- Pro: European IP, no exchange blocks
+- Pro: ARM is cheaper and faster than x86
+- Con: more expensive than Hetzner (3-4x), but acceptable
 - Con: ARM requires multi-arch Docker builds
-- Revisit: если latency станет критичной (HFT/арбитраж) - добавить
-  Singapore node для hot path
+- Revisit: if latency becomes critical (HFT/arbitrage), add a
+  Singapore node for hot path only
