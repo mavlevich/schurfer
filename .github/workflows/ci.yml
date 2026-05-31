@@ -96,8 +96,6 @@ jobs:
         with:
           node-version: '22'
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10
       - name: Install dependencies
         run: pnpm install
       - name: Check for TS projects
@@ -130,8 +128,6 @@ jobs:
         with:
           node-version: '22'
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10
       - name: Python dependency audit
         run: uv sync --extra dev && uv run pip-audit
       - name: Go vulnerability check
