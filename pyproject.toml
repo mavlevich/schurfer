@@ -3,6 +3,18 @@ name = "schurfer"
 version = "0.1.0"
 description = "Private trading platform"
 requires-python = ">=3.13"
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=6.0",
+    "pytest-asyncio>=0.24",
+    "mypy>=1.14",
+    "vulture>=2.14",
+    "pip-audit>=2.7",
+    "structlog>=24.4",
+]
 
 [tool.uv.workspace]
 members = ["apps/analytics", "apps/telegram-bot"]
@@ -13,22 +25,59 @@ target-version = "py313"
 
 [tool.ruff.lint]
 select = [
-    "E",   # pycodestyle errors
-    "W",   # pycodestyle warnings
-    "F",   # pyflakes
-    "I",   # isort
-    "N",   # pep8-naming
-    "UP",  # pyupgrade
-    "B",   # flake8-bugbear
-    "SIM", # flake8-simplify
-    "RUF", # ruff-specific
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "SIM",  # flake8-simplify
+    "RUF",  # ruff-specific
+    "S",    # flake8-bandit (security)
+    "T20",  # flake8-print (no print statements)
+    "PTH",  # flake8-use-pathlib
+    "ERA",  # eradicate (commented-out code)
+    "ICN",  # flake8-import-conventions
+    "RET",  # flake8-return
+    "TCH",  # flake8-type-checking
 ]
-ignore = []
+ignore = [
+    "S101",  # allow assert in tests
+]
+
+[tool.ruff.lint.per-file-ignores]
+"test_*.py" = ["S101"]
+"*_test.py" = ["S101"]
 
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
 
+[tool.mypy]
+python_version = "3.13"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+
 [tool.pytest.ini_options]
 testpaths = ["apps", "packages"]
 python_files = ["test_*.py", "*_test.py"]
+addopts = "--strict-markers --tb=short -q"
+
+[tool.coverage.run]
+source = ["apps", "packages"]
+omit = ["*/test_*", "*_test.py", "*/conftest.py"]
+
+[tool.coverage.report]
+fail_under = 70
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]

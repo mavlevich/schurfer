@@ -53,19 +53,19 @@ Collectors (Python/Go) --> NATS --> Analytics (Python)
 
 ## Storage
 
-| Database | Purpose |
-|---|---|
-| **PostgreSQL** | orders, positions, journal, configs, users |
-| **TimescaleDB** | tick data, OHLCV, funding history, OI series |
-| **Redis** | hot state (current price, OI, funding), pub/sub for UI |
+| Database        | Purpose                                                |
+| --------------- | ------------------------------------------------------ |
+| **PostgreSQL**  | orders, positions, journal, configs, users             |
+| **TimescaleDB** | tick data, OHLCV, funding history, OI series           |
+| **Redis**       | hot state (current price, OI, funding), pub/sub for UI |
 
 ## Exchanges
 
-| Exchange | Priority | Status |
-|---|---|---|
-| **Bybit** | First | Sprint 2 |
-| **OKX** | Second | Sprint 4 |
-| **Hyperliquid** | Third | Sprint 4-6 |
+| Exchange        | Priority | Status     |
+| --------------- | -------- | ---------- |
+| **Bybit**       | First    | Sprint 2   |
+| **OKX**         | Second   | Sprint 4   |
+| **Hyperliquid** | Third    | Sprint 4-6 |
 
 Binance perps excluded (blocked in Poland).
 
@@ -83,6 +83,7 @@ Binance perps excluded (blocked in Poland).
 ## Logging
 
 All services use structured JSON logging from day one:
+
 - Python: `structlog`
 - Go: `slog` (stdlib)
 - Collected via CloudWatch (production) or stdout (dev)

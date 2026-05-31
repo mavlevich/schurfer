@@ -23,6 +23,7 @@ Need a web dashboard behind private login. Real-time data
 ## Rationale
 
 All components:
+
 - Free (MIT/Apache), no subscriptions
 - Popular in the market (skill for CV)
 - Cover 100% of our needs without custom workarounds

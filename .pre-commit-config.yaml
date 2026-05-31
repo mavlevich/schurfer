@@ -1,25 +1,40 @@
-# Pre-commit hooks для Schurfer
-# Установка: uv tool install pre-commit && pre-commit install
-# Запуск вручную: pre-commit run --all-files
+# Pre-commit hooks for Schurfer
+# Install: uv tool install pre-commit && pre-commit install
+# Run manually: pre-commit run --all-files
 
 repos:
+  # --- General ---
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
       - id: check-yaml
+      - id: check-json
+      - id: check-toml
       - id: check-added-large-files
         args: ['--maxkb=1000']
       - id: check-merge-conflict
       - id: detect-private-key
       - id: mixed-line-ending
+      - id: no-commit-to-branch
+        args: ['--branch', 'main']
 
+  # --- Secrets ---
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.21.2
     hooks:
       - id: gitleaks
 
+  # --- Conventional commits ---
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v4.0.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]
+        args: [feat, fix, chore, docs, test, refactor, ci, perf, build]
+
+  # --- Python ---
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.8.4
     hooks:
@@ -27,8 +42,30 @@ repos:
         args: [--fix]
       - id: ruff-format
 
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.14.1
+    hooks:
+      - id: mypy
+        additional_dependencies: []
+        args: [--ignore-missing-imports]
+        pass_filenames: false
+
+  # --- Go ---
   - repo: https://github.com/dnephin/pre-commit-golang
     rev: v0.5.1
     hooks:
       - id: go-fmt
       - id: go-mod-tidy
+
+  - repo: https://github.com/golangci/golangci-lint
+    rev: v2.1.6
+    hooks:
+      - id: golangci-lint
+        args: [--config, .golangci.yml]
+
+  # --- TypeScript / JavaScript ---
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v4.0.0-alpha.8
+    hooks:
+      - id: prettier
+        types_or: [javascript, jsx, ts, tsx, json, yaml, markdown, css]
