@@ -1,0 +1,52 @@
+version: '2'
+
+run:
+  go: '1.26'
+  timeout: 5m
+
+linters:
+  enable:
+    - errcheck # unchecked errors
+    - govet # suspicious constructs
+    - staticcheck # advanced static analysis
+    - unused # unused code
+    - gosimple # simplifications
+    - ineffassign # useless assignments
+    - typecheck # type checking
+    - bodyclose # unclosed HTTP response bodies
+    - durationcheck # duration multiplication issues
+    - errname # error naming conventions
+    - exhaustive # exhaustive enum switches
+    - gocritic # opinionated linter
+    - gocyclo # cyclomatic complexity
+    - gosec # security issues
+    - misspell # spelling mistakes
+    - nilerr # nil error returns
+    - prealloc # slice preallocation
+    - revive # extensible linter
+    - unconvert # unnecessary type conversions
+    - unparam # unused function parameters
+    - wastedassign # wasted assignments
+
+linters-settings:
+  gocyclo:
+    min-complexity: 15
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - performance
+      - style
+  gosec:
+    severity: medium
+    confidence: medium
+  revive:
+    rules:
+      - name: exported
+        severity: warning
+
+issues:
+  exclude-dirs:
+    - vendor
+    - node_modules
+  max-issues-per-linter: 50
+  max-same-issues: 5

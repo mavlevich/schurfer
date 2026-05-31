@@ -6,6 +6,7 @@ Status: Accepted
 ## Context
 
 Need a production server. Requirements:
+
 - Not too expensive (~$20-30/mo)
 - Popular cloud provider for skill building (AWS)
 - IP not blocked by exchanges

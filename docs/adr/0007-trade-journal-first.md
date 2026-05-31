@@ -30,6 +30,7 @@ the decision).
 
 See `packages/journal/` for actual implementation.
 Key fields:
+
 - strategy_id + strategy_version
 - setup_context (JSONB) - all features
 - entry/exit prices, slippage, funding, fees
