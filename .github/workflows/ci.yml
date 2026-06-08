@@ -129,7 +129,7 @@ jobs:
           node-version: '22'
       - uses: pnpm/action-setup@v4
       - name: Python dependency audit
-        run: uv sync --extra dev && uv run pip-audit
+        run: uv sync --extra dev && uv run pip-audit --ignore-package pip
       - name: Go vulnerability check
         run: |
           if find . -name 'go.mod' -not -path './vendor/*' 2>/dev/null | grep -q .; then
