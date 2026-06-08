@@ -1,10 +1,14 @@
-.PHONY: help install dev test lint format clean security deadcode check
+.PHONY: help install dev dev-stop dev-reset dev-logs dev-test test lint format clean security deadcode check
 
 help:
 	@echo "Schurfer - common commands"
 	@echo ""
 	@echo "  make install    Install all dependencies"
-	@echo "  make dev        Start local dev environment"
+	@echo "  make dev        Start local dev environment (Docker)"
+	@echo "  make dev-stop   Stop dev environment"
+	@echo "  make dev-reset  Stop and remove all dev data"
+	@echo "  make dev-logs   Tail dev service logs"
+	@echo "  make dev-test   Smoke test dev environment"
 	@echo "  make test       Run all tests with coverage"
 	@echo "  make lint       Run all linters"
 	@echo "  make format     Format all code"
@@ -31,7 +35,23 @@ install:
 dev:
 	@echo "-> Starting Docker Compose..."
 	docker compose -f infra/docker/docker-compose.dev.yml up -d
-	@echo "-> Services: postgres, timescaledb, redis, nats"
+	@echo "-> Waiting for services..."
+	@docker compose -f infra/docker/docker-compose.dev.yml exec -T postgres pg_isready -U schurfer -q && echo "  postgres: ready" || echo "  postgres: starting..."
+	@docker compose -f infra/docker/docker-compose.dev.yml exec -T redis redis-cli ping -q && echo "  redis: ready" || echo "  redis: starting..."
+	@echo "-> Services up: postgres (5432), redis (6379), nats (4222)"
+
+dev-stop:
+	docker compose -f infra/docker/docker-compose.dev.yml down
+
+dev-reset:
+	docker compose -f infra/docker/docker-compose.dev.yml down -v
+	@echo "-> All data volumes removed"
+
+dev-logs:
+	docker compose -f infra/docker/docker-compose.dev.yml logs -f
+
+dev-test:
+	@bash infra/docker/smoke-test.sh
 
 test:
 	@echo "-> Running Python tests..."

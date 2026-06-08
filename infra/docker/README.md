@@ -1,7 +1,35 @@
 # Docker
 
-Local development environment via Docker Compose.
+Local development environment.
 
-Services: postgres+timescaledb, redis, nats.
+## Quick start
 
-Status: docker-compose.dev.yml in Sprint 1.
+```bash
+make dev        # start all services
+make dev-stop   # stop all services
+make dev-reset  # stop and remove all data
+```
+
+## Services
+
+| Service    | Port | Description                    |
+| ---------- | ---- | ------------------------------ |
+| PostgreSQL | 5432 | Main database with TimescaleDB |
+| Redis      | 6379 | Hot state cache, pub/sub       |
+| NATS       | 4222 | Message bus (with JetStream)   |
+| NATS HTTP  | 8222 | NATS monitoring dashboard      |
+
+## Connection strings
+
+```
+postgres://schurfer:schurfer_dev@localhost:5432/schurfer
+redis://localhost:6379
+nats://localhost:4222
+```
+
+## Notes
+
+- TimescaleDB is bundled in the `timescale/timescaledb` image (no separate container needed)
+- NATS runs with JetStream enabled for persistent messaging
+- Redis is configured with 128MB max memory and LRU eviction
+- Data is persisted in Docker volumes between restarts

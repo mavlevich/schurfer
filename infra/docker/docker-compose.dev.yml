@@ -1,0 +1,52 @@
+services:
+  postgres:
+    image: timescale/timescaledb:latest-pg17
+    container_name: schurfer-postgres
+    ports:
+      - '5432:5432'
+    environment:
+      POSTGRES_USER: schurfer
+      POSTGRES_PASSWORD: schurfer_dev
+      POSTGRES_DB: schurfer
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U schurfer']
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: schurfer-redis
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  nats:
+    image: nats:2-alpine
+    container_name: schurfer-nats
+    ports:
+      - '4222:4222'
+      - '8222:8222'
+    command: --jetstream --store_dir /data --http_port 8222
+    volumes:
+      - nats_data:/data
+    healthcheck:
+      test: ['CMD', 'wget', '--spider', '-q', 'http://localhost:8222/healthz']
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  postgres_data:
+  redis_data:
+  nats_data:
