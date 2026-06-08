@@ -131,7 +131,7 @@ jobs:
       - name: Python dependency audit
         run: |
           uv sync --extra dev
-          uv export --extra dev --no-emit-project --no-hashes | uv run pip-audit -r /dev/stdin
+          uv export --extra dev --no-emit-project --no-hashes | grep -v '^pip==' | uv run pip-audit -r /dev/stdin
       - name: Go vulnerability check
         run: |
           if find . -name 'go.mod' -not -path './vendor/*' 2>/dev/null | grep -q .; then
