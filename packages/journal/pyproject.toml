@@ -1,0 +1,18 @@
+[project]
+name = "schurfer-journal"
+version = "0.1.0"
+description = "Trade journal models and migrations"
+requires-python = ">=3.13"
+dependencies = [
+    "sqlalchemy>=2.0",
+    "alembic>=1.14",
+    "psycopg[binary]>=3.2",
+    "structlog>=24.4",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["schurfer_journal*"]
+
+[tool.uv]
+package = true
