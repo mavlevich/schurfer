@@ -17,7 +17,7 @@ dev = [
 ]
 
 [tool.uv.workspace]
-members = ["apps/analytics", "apps/telegram-bot"]
+members = ["apps/analytics", "apps/telegram-bot", "packages/journal"]
 
 [tool.ruff]
 line-length = 100
