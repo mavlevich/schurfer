@@ -1,6 +1,55 @@
 # api-gateway
 
-Go service exposing REST + WebSocket API to web frontend.
-Reads from Redis (hot state) and Postgres.
+Go service exposing REST + WebSocket API to the web frontend.
+Handles authentication (JWT in HttpOnly cookie) and infrastructure health checks.
 
-Status: empty, planned for Sprint 2.
+## Endpoints
+
+| Method | Path           | Auth   | Description                                        |
+| ------ | -------------- | ------ | -------------------------------------------------- |
+| POST   | `/auth/login`  | public | Login with password, sets JWT cookie               |
+| POST   | `/auth/logout` | JWT    | Clears JWT cookie                                  |
+| GET    | `/healthz`     | public | Liveness probe — always 200 while process is alive |
+| GET    | `/api/health`  | JWT    | Readiness probe — 200 all deps up, 503 otherwise   |
+| WS     | `/ws/status`   | JWT    | Live status stream, pushes every 5s                |
+
+## Environment variables
+
+| Variable              | Default                                                      | Required |
+| --------------------- | ------------------------------------------------------------ | -------- |
+| `DATABASE_URL`        | `postgresql://schurfer:schurfer_dev@localhost:5432/schurfer` |          |
+| `REDIS_ADDR`          | `localhost:6379`                                             |          |
+| `NATS_URL`            | `nats://localhost:4222`                                      |          |
+| `PORT`                | `8000`                                                       |          |
+| `ENV`                 | `development`                                                |          |
+| `ADMIN_PASSWORD_HASH` | —                                                            | yes      |
+| `JWT_SECRET`          | —                                                            | yes      |
+
+## Setup
+
+```bash
+# Generate password hash
+go run ./cmd/hash-password your_password
+
+# Generate JWT secret
+openssl rand -hex 32
+
+# Copy and fill .env (from project root)
+cp .env.example .env
+```
+
+## Run
+
+```bash
+# Local (from project root, with .env loaded)
+go run ./apps/api-gateway/cmd/api-gateway
+
+# Docker
+docker compose -f infra/docker/docker-compose.dev.yml up api-gateway
+```
+
+## Auth flow
+
+1. `POST /auth/login` with `{"password": "..."}` → sets `schurfer_token` HttpOnly cookie
+2. All subsequent requests carry the cookie automatically (browser / Capacitor)
+3. `POST /auth/logout` clears the cookie

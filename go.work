@@ -1,6 +1,3 @@
-go 1.26
+go 1.26.4
 
-// Use directives are added when Go modules are created in apps/ and packages/
-// Example:
-//   use ./apps/collectors/binance
-//   use ./packages/exchanges
+use ./apps/api-gateway

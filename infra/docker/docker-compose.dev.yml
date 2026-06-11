@@ -46,6 +46,34 @@ services:
       timeout: 3s
       retries: 5
 
+  api-gateway:
+    build:
+      context: ../../
+      dockerfile: apps/api-gateway/Dockerfile
+    container_name: schurfer-api-gateway
+    ports:
+      - '8000:8000'
+    environment:
+      DATABASE_URL: postgresql://schurfer:schurfer_dev@postgres:5432/schurfer
+      REDIS_ADDR: redis:6379
+      NATS_URL: nats://nats:4222
+      PORT: '8000'
+      ENV: development
+      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH}
+      JWT_SECRET: ${JWT_SECRET}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '--spider', '-q', 'http://localhost:8000/healthz']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
 volumes:
   postgres_data:
   redis_data:
