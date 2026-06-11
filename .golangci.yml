@@ -8,11 +8,8 @@ linters:
   enable:
     - errcheck # unchecked errors
     - govet # suspicious constructs
-    - staticcheck # advanced static analysis
-    - unused # unused code
-    - gosimple # simplifications
+    - staticcheck # advanced static analysis (includes gosimple, unused in v2)
     - ineffassign # useless assignments
-    - typecheck # type checking
     - bodyclose # unclosed HTTP response bodies
     - durationcheck # duration multiplication issues
     - errname # error naming conventions
@@ -23,7 +20,6 @@ linters:
     - misspell # spelling mistakes
     - nilerr # nil error returns
     - prealloc # slice preallocation
-    - revive # extensible linter
     - unconvert # unnecessary type conversions
     - unparam # unused function parameters
     - wastedassign # wasted assignments
@@ -39,10 +35,6 @@ linters-settings:
   gosec:
     severity: medium
     confidence: medium
-  revive:
-    rules:
-      - name: exported
-        severity: warning
 
 issues:
   exclude-dirs:

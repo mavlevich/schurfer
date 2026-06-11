@@ -63,11 +63,20 @@ repos:
       - id: go-fmt
       - id: go-mod-tidy
 
-  - repo: https://github.com/golangci/golangci-lint
-    rev: v2.1.6
+  # golangci-lint uses language: system (official recommendation, see
+  # https://golangci-lint.run/welcome/install/#pre-commit).
+  # Required: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.1.6
+  # Runs from the module dir because golangci-lint v2 cannot resolve ./...
+  # from a directory that is not listed in go.work.
+  - repo: local
     hooks:
       - id: golangci-lint
-        args: [--config, .golangci.yml]
+        name: golangci-lint
+        language: system
+        entry: bash -c 'ROOT=$(git rev-parse --show-toplevel) && cd "$ROOT/apps/api-gateway" && golangci-lint run --config "$ROOT/.golangci.yml" ./...'
+        pass_filenames: false
+        types: [go]
+        require_serial: true
 
   # --- TypeScript / JavaScript ---
   - repo: https://github.com/pre-commit/mirrors-prettier

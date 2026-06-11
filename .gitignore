@@ -69,6 +69,11 @@ build/
 go.work.sum
 vendor/
 bin/
+# compiled binaries at repo root (from go build ./apps/...)
+/api-gateway
+
+# === HTTP debug files ===
+cookies.txt
 
 # === Logs ===
 *.log
