@@ -152,7 +152,7 @@ jobs:
       - name: Node dependency audit
         run: pnpm install && pnpm audit --audit-level=high
       - name: Trivy vulnerability scan
-        uses: aquasecurity/trivy-action@0.30.0
+        uses: aquasecurity/trivy-action@0.36.0
         with:
           scan-type: fs
           scan-ref: .
