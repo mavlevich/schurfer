@@ -11,10 +11,10 @@ One product, multiple services. Web UI behind login, no public exposure.
 
 ### Hot path (latency-sensitive)
 
-- **collectors** (Python initially, Go later) - one process per exchange.
+- **collectors** (Go) - one process per exchange.
   Maintains WebSocket subscriptions for spot+perp markets. Normalizes
   events and publishes to NATS bus.
-- **execution** (Python initially, Go later) - receives signals from
+- **execution** (Go) - receives signals from
   analytics, runs them through risk manager, places orders on exchanges,
   tracks positions.
 - **api-gateway** (Go) - REST + WS endpoints for web UI. Reads from
@@ -37,16 +37,16 @@ One product, multiple services. Web UI behind login, no public exposure.
 ```
 Exchanges (WS)
     |
-Collectors (Python/Go) --> NATS --> Analytics (Python)
-                             |            |
-                             v            v
-                        Storage      Signals
-                        (Postgres,        |
-                         TimescaleDB,  Decision Engine
-                         Redis)            |
-                             ^         Risk Manager
-                             |            |
-                             +---- Execution (Python/Go)
+Collectors (Go) --> NATS --> Analytics (Python)
+                       |            |
+                       v            v
+                  Storage      Signals
+                  (Postgres,        |
+                   TimescaleDB,  Decision Engine
+                   Redis)            |
+                       ^         Risk Manager
+                       |            |
+                       +---- Execution (Go)
                                           |
                                       Exchanges (REST)
 ```

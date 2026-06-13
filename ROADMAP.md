@@ -8,7 +8,7 @@
 - Architecture right from day one (service boundaries, NATS contracts), code can be dirty inside
 - Tests and structured logging everywhere from Sprint 1
 - UI progress on every sprint (Telegram + web)
-- Python first for speed, Go when it matters (collector rewrite)
+- Go for hot path (collectors, execution); Python for analytics/ML
 - Bybit as first exchange (Binance perps blocked in Poland)
 
 ## Sprint 1: Foundation (current)
@@ -26,7 +26,7 @@
 
 ## Sprint 2: First vertical slice
 
-- [ ] Bybit WS collector (Python, publishes to NATS)
+- [x] Bybit WS collector (Go, publishes to NATS)
 - [ ] NATS message format spec (contract for all downstream consumers)
 - [ ] Pump detector v1 (price_change > 50%, near peak)
 - [ ] Telegram bot: alert with approve/skip buttons
@@ -41,9 +41,9 @@
 - [ ] Web: live positions, prices via WS, PnL view
 - [ ] Deploy to AWS EC2 (Docker Compose on VPS)
 
-## Sprint 4: Go collector + charts
+## Sprint 4: Second exchange + charts
 
-- [ ] Rewrite Bybit collector in Go (replace Python, same NATS contract)
+- [ ] Second exchange collector (OKX or Hyperliquid)
 - [ ] Web: equity curve (Lightweight Charts), per-strategy stats
 - [ ] Second exchange collector (OKX or Hyperliquid)
 - [ ] OI integration into pump detector
