@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Activity, Database, Radio, Zap } from 'lucide-react';
+import { Activity, Database, Radio, ScanSearch, Zap } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Nav } from '@/components/Nav';
@@ -7,6 +7,13 @@ import { StatusDot } from '@/components/shared/StatusDot';
 import { useWebSocket } from '@/hooks/useWebSocket';
 
 type ServiceStatus = 'up' | 'down' | 'unknown';
+
+interface ScannerState {
+  ts: number;
+  count: number;
+  scanned?: string[];
+  errors?: Record<string, string>;
+}
 
 interface ServiceState {
   postgres: ServiceStatus;
@@ -36,9 +43,17 @@ const WS_URL =
     ? `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws/status`
     : 'ws://localhost:8000/ws/status';
 
+function timeAgo(tsMs: number): string {
+  const secs = Math.floor((Date.now() - tsMs) / 1000);
+  if (secs < 60) return `${secs}s ago`;
+  if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
+  return `${Math.floor(secs / 3600)}h ago`;
+}
+
 export function StatusPage() {
   const [services, setServices] = useState<ServiceState>(INITIAL_STATE);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [scanner, setScanner] = useState<ScannerState | null>(null);
 
   const { status: wsStatus } = useWebSocket(WS_URL, {
     onMessage: (data) => {
@@ -71,6 +86,21 @@ export function StatusPage() {
     const interval = setInterval(poll, 10_000);
     return () => clearInterval(interval);
   }, [wsStatus]);
+
+  // Poll pump scanner stats
+  useEffect(() => {
+    const pollScanner = async () => {
+      try {
+        const res = await fetch('/api/pumps');
+        if (res.ok) setScanner((await res.json()) as ScannerState);
+      } catch {
+        // ignore
+      }
+    };
+    pollScanner();
+    const interval = setInterval(pollScanner, 30_000);
+    return () => clearInterval(interval);
+  }, []);
 
   const infra = [
     { key: 'postgres' as const, label: 'PostgreSQL', icon: Database },
@@ -168,6 +198,46 @@ export function StatusPage() {
                 </div>
               </div>
             ))}
+          </CardContent>
+        </Card>
+
+        {/* Pump scanner stats */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+              Pump Scanner
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 pt-0">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <ScanSearch className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm">Last scan</span>
+              </div>
+              <span className="text-xs text-muted-foreground">
+                {scanner?.ts ? timeAgo(scanner.ts) : '—'}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Activity className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm">Active pumps</span>
+              </div>
+              <span className="text-xs font-mono text-muted-foreground">
+                {scanner ? `${scanner.count} tokens` : '—'}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Radio className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm">Exchanges</span>
+              </div>
+              <span className="text-xs font-mono text-muted-foreground">
+                {scanner?.scanned
+                  ? `${scanner.scanned.length} ok${Object.keys(scanner.errors ?? {}).length ? ` · ${Object.keys(scanner.errors ?? {}).length} failed` : ''}`
+                  : '—'}
+              </span>
+            </div>
           </CardContent>
         </Card>
       </div>

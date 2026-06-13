@@ -68,7 +68,7 @@ no_implicit_optional = true
 
 # Third-party packages without bundled stubs or not installed in the mypy env.
 [[tool.mypy.overrides]]
-module = ["ccxt.*", "redis.*", "structlog.*", "sqlalchemy.*"]
+module = ["ccxt.*", "redis.*", "structlog.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

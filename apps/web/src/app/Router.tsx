@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { StatusPage } from '@/pages/status/StatusPage';
 import { LoginPage } from '@/pages/login/LoginPage';
 import { PumpsPage } from '@/pages/pumps/PumpsPage';
+import { TokenPage } from '@/pages/pumps/TokenPage';
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { isAuthenticated } = useAuth();
@@ -45,6 +46,14 @@ export function Router() {
             element={
               <RequireAuth>
                 <PumpsPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/pumps/:base"
+            element={
+              <RequireAuth>
+                <TokenPage />
               </RequireAuth>
             }
           />

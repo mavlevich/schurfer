@@ -71,6 +71,8 @@ func run() error {
 		r.Post("/auth/logout", authHandler.Logout)
 		r.Get("/api/health", healthHandler.Health)
 		r.Get("/api/pumps", pumpsHandler.List)
+		r.Get("/api/pumps/{base}", pumpsHandler.Token)
+		r.Get("/api/pumps/{base}/ohlcv", pumpsHandler.OHLCV)
 		r.Get("/ws/status", wsHandler.Status)
 	})
 
