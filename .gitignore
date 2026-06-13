@@ -106,6 +106,18 @@ storage/
 
 # === Docker ===
 .docker/
+# docker buildx stray output files that land in project root
+/=
+/api-gateway
+/collector
+/cookies.txt
+/exporting
+/extracting
+/transferring
+/unpacking
+/naming
+/resolve
+/sha256:*
 
 # === Misc ===
 tmp/

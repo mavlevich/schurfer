@@ -11,6 +11,7 @@ dev = [
     "pytest-cov>=6.0",
     "pytest-asyncio>=0.24",
     "mypy>=1.14",
+    "ruff>=0.8",
     "vulture>=2.14",
     "pip-audit>=2.7",
     "structlog>=24.4",
@@ -57,6 +58,7 @@ indent-style = "space"
 [tool.mypy]
 python_version = "3.13"
 strict = true
+explicit_package_bases = true
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
@@ -64,10 +66,16 @@ disallow_incomplete_defs = true
 check_untyped_defs = true
 no_implicit_optional = true
 
+# Third-party packages without bundled stubs or not installed in the mypy env.
+[[tool.mypy.overrides]]
+module = ["ccxt.*", "redis.*", "structlog.*", "sqlalchemy.*"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["apps", "packages"]
 python_files = ["test_*.py", "*_test.py"]
-addopts = "--strict-markers --tb=short -q"
+addopts = "--strict-markers --tb=short -q --import-mode=importlib"
+pythonpath = ["apps/analytics", "packages/journal"]
 
 [tool.coverage.run]
 source = ["apps", "packages"]

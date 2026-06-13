@@ -88,6 +88,21 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  analytics:
+    build:
+      context: ../../
+      dockerfile: apps/analytics/Dockerfile
+    container_name: schurfer-analytics
+    environment:
+      REDIS_ADDR: redis:6379
+      PUMP_EXCHANGES: ${PUMP_EXCHANGES:-}
+      PUMP_MIN_PCT: ${PUMP_MIN_PCT:-30}
+      SCAN_INTERVAL: ${SCAN_INTERVAL:-60}
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   redis_data:
