@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router';
 import { RefreshCw } from 'lucide-react';
 import { Nav } from '@/components/Nav';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -126,7 +127,14 @@ export function PumpsPage() {
                           key={p.base}
                           className="border-b last:border-0 hover:bg-accent/30 transition-colors"
                         >
-                          <td className="px-4 py-3 font-mono font-semibold">{p.base}</td>
+                          <td className="px-4 py-3 font-mono font-semibold">
+                            <Link
+                              to={`/pumps/${p.base}`}
+                              className="hover:text-primary transition-colors"
+                            >
+                              {p.base}
+                            </Link>
+                          </td>
                           <td
                             className={`px-4 py-3 text-right font-mono font-bold ${pctColor(p.max_change_pct)}`}
                           >
