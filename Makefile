@@ -1,9 +1,10 @@
-.PHONY: help install dev dev-stop dev-reset dev-logs dev-test test lint format clean security deadcode check
+.PHONY: help install dev dev-init dev-stop dev-reset dev-logs dev-test test lint format clean security deadcode check verify verify-docker
 
 help:
 	@echo "Schurfer - common commands"
 	@echo ""
 	@echo "  make install    Install all dependencies"
+	@echo "  make dev-init   Generate .env for local dev (run once)"
 	@echo "  make dev        Start local dev environment (Docker)"
 	@echo "  make dev-stop   Stop dev environment"
 	@echo "  make dev-reset  Stop and remove all dev data"
@@ -16,6 +17,8 @@ help:
 	@echo "  make deadcode   Detect unused code"
 	@echo "  make clean      Clean build artifacts"
 	@echo "  make check      Run lint + test + security (full CI locally)"
+	@echo "  make verify     Pre-PR gate: lock, lint, types, tests, build"
+	@echo "  make verify-docker  verify + analytics Docker import check"
 
 install:
 	@echo "-> Installing Python deps via uv..."
@@ -32,23 +35,31 @@ install:
 	pre-commit install
 	pre-commit install --hook-type commit-msg
 
+dev-init:
+	@test ! -f .env || (echo ".env already exists, skipping" && exit 0)
+	@HASH=$$(uv run --with bcrypt python3 -c "import bcrypt; print(bcrypt.hashpw(b'admin', bcrypt.gensalt(10)).decode())"); \
+	JWT=$$(python3 -c "import secrets; print(secrets.token_hex(32))"); \
+	printf "ADMIN_PASSWORD_HASH=%s\nJWT_SECRET=%s\n" "$$HASH" "$$JWT" > .env
+	@echo "-> .env created (password: admin)"
+
 dev:
+	@test -f .env || (echo "ERROR: .env not found. Run:\n  make dev-init\nto generate one." && exit 1)
 	@echo "-> Starting Docker Compose..."
-	docker compose -f infra/docker/docker-compose.dev.yml up -d
+	docker compose --env-file .env -f infra/docker/docker-compose.dev.yml up -d
 	@echo "-> Waiting for services..."
-	@docker compose -f infra/docker/docker-compose.dev.yml exec -T postgres pg_isready -U schurfer -q && echo "  postgres: ready" || echo "  postgres: starting..."
-	@docker compose -f infra/docker/docker-compose.dev.yml exec -T redis redis-cli ping -q && echo "  redis: ready" || echo "  redis: starting..."
+	@docker compose --env-file .env -f infra/docker/docker-compose.dev.yml exec -T postgres pg_isready -U schurfer -q && echo "  postgres: ready" || echo "  postgres: starting..."
+	@docker compose --env-file .env -f infra/docker/docker-compose.dev.yml exec -T redis redis-cli ping -q && echo "  redis: ready" || echo "  redis: starting..."
 	@echo "-> Services up: postgres (5432), redis (6379), nats (4222)"
 
 dev-stop:
-	docker compose -f infra/docker/docker-compose.dev.yml down
+	docker compose --env-file .env -f infra/docker/docker-compose.dev.yml down
 
 dev-reset:
-	docker compose -f infra/docker/docker-compose.dev.yml down -v
+	docker compose --env-file .env -f infra/docker/docker-compose.dev.yml down -v
 	@echo "-> All data volumes removed"
 
 dev-logs:
-	docker compose -f infra/docker/docker-compose.dev.yml logs -f
+	docker compose --env-file .env -f infra/docker/docker-compose.dev.yml logs -f
 
 dev-test:
 	@bash infra/docker/smoke-test.sh
@@ -79,9 +90,9 @@ lint:
 
 format:
 	@echo "-> Ruff format..."
-	uv run ruff format .
+	uv run --extra dev ruff format .
 	@echo "-> Ruff fix..."
-	uv run ruff check --fix .
+	uv run --extra dev ruff check --fix .
 	@echo "-> Go fmt..."
 	@if find . -name '*.go' 2>/dev/null | grep -q .; then \
 		go fmt ./...; \
@@ -128,3 +139,29 @@ clean:
 
 check: lint test security
 	@echo "-> All checks passed"
+
+verify:
+	@echo "=== [1/5] uv lock check ==="
+	uv lock --check
+	@echo "=== [2/5] Python: ruff + mypy + pytest ==="
+	uv run --extra dev ruff check apps/analytics packages
+	MYPYPATH=apps/analytics:packages/journal uv run --extra dev mypy apps/analytics/schurfer_analytics apps/analytics/tests packages/journal/schurfer_journal
+	uv run --extra dev --with ccxt --with redis --with structlog pytest apps/analytics -q
+	uv run --extra dev --with sqlalchemy --with alembic --with "psycopg[binary]" pytest packages/journal -q
+	@echo "=== [3/5] Go: test + vet ==="
+	go test ./apps/api-gateway/... ./apps/collector/...
+	go vet ./apps/api-gateway/... ./apps/collector/...
+	@echo "=== [4/5] Web: lint + typecheck + build ==="
+	pnpm --filter @schurfer/web lint
+	pnpm --filter @schurfer/web typecheck
+	pnpm --filter @schurfer/web build
+	@echo "=== [5/5] Compose config ==="
+	docker compose --env-file .env.ci -f infra/docker/docker-compose.dev.yml config --quiet
+	@echo "=== verify passed ==="
+
+verify-docker: verify
+	@echo "=== Docker: analytics build + import check ==="
+	docker build -f apps/analytics/Dockerfile -t schurfer-analytics:ci . -q
+	docker run --rm --entrypoint python schurfer-analytics:ci -c "import schurfer_analytics; print('ok')"
+	@docker rmi schurfer-analytics:ci --force > /dev/null
+	@echo "=== verify-docker passed ==="

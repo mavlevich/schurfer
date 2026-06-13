@@ -2,4 +2,18 @@
 name = "schurfer-analytics"
 version = "0.1.0"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "ccxt>=4.4.0",
+    "redis>=5.2",
+    "structlog>=24.4",
+]
+
+[project.scripts]
+pump-scanner = "schurfer_analytics.main:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["schurfer_analytics*"]
+
+[tool.uv]
+package = true
