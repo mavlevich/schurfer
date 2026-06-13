@@ -1,8 +1,9 @@
-FROM golang:1.24-alpine AS builder
+FROM golang:1.26.4-alpine AS builder
 WORKDIR /app
-COPY go.work go.work.sum* ./
-COPY apps/api-gateway/ apps/api-gateway/
-RUN GOWORK=on go build -o /api-gateway ./apps/api-gateway/cmd/api-gateway
+COPY apps/api-gateway/go.mod apps/api-gateway/go.sum ./
+RUN go mod download
+COPY apps/api-gateway/ .
+RUN CGO_ENABLED=0 GOOS=linux go build -o /api-gateway ./cmd/api-gateway
 
 FROM alpine:3.21
 RUN apk add --no-cache ca-certificates wget
