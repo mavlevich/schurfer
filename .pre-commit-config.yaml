@@ -73,7 +73,7 @@ repos:
       - id: golangci-lint
         name: golangci-lint
         language: system
-        entry: bash -c 'ROOT=$(git rev-parse --show-toplevel) && cd "$ROOT/apps/api-gateway" && golangci-lint run --config "$ROOT/.golangci.yml" ./...'
+        entry: bash -c 'ROOT=$(git rev-parse --show-toplevel) && LINT="$(go env GOPATH)/bin/golangci-lint" && grep "^use " "$ROOT/go.work" | awk "{print \$2}" | while read -r dir; do (cd "$ROOT/$dir" && "$LINT" run --config "$ROOT/.golangci.yml" ./...); done'
         pass_filenames: false
         types: [go]
         require_serial: true
