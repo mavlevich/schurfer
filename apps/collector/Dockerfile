@@ -1,0 +1,11 @@
+FROM golang:1.26.4-alpine AS builder
+WORKDIR /app
+COPY apps/collector/go.mod apps/collector/go.sum ./
+RUN go mod download
+COPY apps/collector/ .
+RUN CGO_ENABLED=0 GOOS=linux go build -o /collector ./cmd/collector
+
+FROM alpine:3.21
+RUN apk add --no-cache ca-certificates
+COPY --from=builder /collector /collector
+ENTRYPOINT ["/collector"]

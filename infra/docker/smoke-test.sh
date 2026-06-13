@@ -55,6 +55,10 @@ check "timeseries schema exists" \
 check "nats jetstream enabled" \
   "curl -sf http://localhost:8222/jsz | grep -q server_id"
 
+# Check api-gateway
+check "api-gateway liveness" \
+  "curl -sf http://localhost:8000/healthz"
+
 echo ""
 if [ $FAIL -eq 0 ]; then
   echo "All checks passed."

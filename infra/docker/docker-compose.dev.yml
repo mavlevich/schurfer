@@ -59,8 +59,8 @@ services:
       NATS_URL: nats://nats:4222
       PORT: '8000'
       ENV: development
-      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH}
-      JWT_SECRET: ${JWT_SECRET}
+      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:?Set ADMIN_PASSWORD_HASH in .env}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
     depends_on:
       postgres:
         condition: service_healthy
@@ -73,6 +73,20 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
+
+  collector:
+    build:
+      context: ../../
+      dockerfile: apps/collector/Dockerfile
+    container_name: schurfer-collector
+    environment:
+      NATS_URL: nats://nats:4222
+      BYBIT_SYMBOLS: ${BYBIT_SYMBOLS:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    depends_on:
+      nats:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   postgres_data:
