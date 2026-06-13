@@ -13,7 +13,9 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/mavlevich/schurfer/api-gateway/internal/auth"
 	"github.com/mavlevich/schurfer/api-gateway/internal/health"
+	"github.com/mavlevich/schurfer/api-gateway/internal/pumps"
 	"github.com/mavlevich/schurfer/api-gateway/internal/ws"
+	"github.com/redis/go-redis/v9"
 )
 
 func main() {
@@ -46,8 +48,12 @@ func run() error {
 		Secure:       cfg.Env == "production",
 	})
 
+	rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr})
+	defer func() { _ = rdb.Close() }()
+
 	healthHandler := health.NewHandler(checker)
 	wsHandler := ws.NewHandler(checker, 5*time.Second)
+	pumpsHandler := pumps.NewHandler(rdb)
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
@@ -63,7 +69,8 @@ func run() error {
 		r.Use(auth.Middleware(cfg.JWTSecret))
 
 		r.Post("/auth/logout", authHandler.Logout)
-		r.Get("/api/health", healthHandler.Health) // full health for UI
+		r.Get("/api/health", healthHandler.Health)
+		r.Get("/api/pumps", pumpsHandler.List)
 		r.Get("/ws/status", wsHandler.Status)
 	})
 
