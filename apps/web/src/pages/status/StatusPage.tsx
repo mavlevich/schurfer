@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Activity, Database, Radio, Zap } from 'lucide-react';
+import { Activity, Database, LogOut, Radio, Zap } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { StatusDot } from '@/components/shared/StatusDot';
 import { useWebSocket } from '@/hooks/useWebSocket';
+import { useAuth } from '@/contexts/AuthContext';
 
 type ServiceStatus = 'up' | 'down' | 'unknown';
 
@@ -36,6 +38,7 @@ const WS_URL =
     : 'ws://localhost:8000/ws/status';
 
 export function StatusPage() {
+  const { logout } = useAuth();
   const [services, setServices] = useState<ServiceState>(INITIAL_STATE);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
@@ -95,11 +98,16 @@ export function StatusPage() {
             <h1 className="text-2xl font-bold tracking-tight">Schurfer</h1>
             <p className="text-sm text-muted-foreground">System Status</p>
           </div>
-          <div className="flex items-center gap-2">
-            <StatusDot status={wsStatus === 'connected' ? 'up' : 'unknown'} />
-            <span className="text-xs text-muted-foreground">
-              {wsStatus === 'connected' ? 'Live' : 'Polling'}
-            </span>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <StatusDot status={wsStatus === 'connected' ? 'up' : 'unknown'} />
+              <span className="text-xs text-muted-foreground">
+                {wsStatus === 'connected' ? 'Live' : 'Polling'}
+              </span>
+            </div>
+            <Button variant="ghost" size="icon" onClick={logout} title="Sign out">
+              <LogOut className="h-4 w-4" />
+            </Button>
           </div>
         </div>
 
