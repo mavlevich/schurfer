@@ -177,12 +177,14 @@ export function TokenPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0 pb-2">
-            {ohlcv?.candles.length ? (
+            {loading ? (
+              <p className="py-12 text-center text-sm text-muted-foreground animate-pulse">
+                Loading chart...
+              </p>
+            ) : ohlcv?.candles.length ? (
               <div ref={chartContainerRef} className="h-[380px] w-full" />
             ) : (
-              !loading && (
-                <p className="py-12 text-center text-sm text-muted-foreground">Chart unavailable</p>
-              )
+              <p className="py-12 text-center text-sm text-muted-foreground">Chart unavailable</p>
             )}
           </CardContent>
         </Card>
