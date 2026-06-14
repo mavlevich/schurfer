@@ -51,16 +51,45 @@ _Goal: know what happened after a pump, drill into a single token, get notified 
 
 ## Sprint 4: Pump Analytics — "Short or Wait?"
 
-_Goal: answer "is this pump still going or time to short?" using real historical data._
+_Goal: answer "is this pump still going or time to short?" using real market structure data._
 
-Requires Sprint 3 data (a few weeks of history).
+Requires Sprint 3 data (a few weeks of history) for retrace stats.
 
-- [ ] Per-token stats: average retrace %, time-to-retrace after X% pump
-- [ ] Signal on active pumps page: "median retrace after +50% = −35% in 2h"
+**Open Interest analysis (cross-exchange)**
+
+- [ ] Fetch OI per exchange: Binance `/fapi/v1/openInterest`, Bybit `/v5/market/open-interest`, OKX `/api/v5/public/open-interest`
+- [ ] Aggregate total OI across exchanges → store snapshots in `oi_snapshots` table (base, exchange, oi_usd, ts)
+- [ ] OI delta: compare current OI vs OI at pump start (first_seen_at) — is new money still entering?
+- [ ] OI divergence signal: price rising + OI flat/declining = weak move, likely to retrace
+- [ ] OI spike signal: price +X% AND OI +Y% in same window = real accumulation, pump may continue
+- [ ] Per-exchange OI breakdown: which exchange has dominant position (carries the most risk)?
+
+**Funding rate**
+
+- [ ] Fetch current funding rate: Binance `/fapi/v1/premiumIndex`, Bybit `/v5/market/funding/history`, OKX `/api/v5/public/funding-rate`
+- [ ] Funding rate threshold: >0.1% per 8h = longs paying heavily = unsustainable, short setup
+- [ ] Funding annualized display: show as APR so easier to compare across coins
+
+**Composite short-readiness score** (`GET /api/pumps/{base}/signals`)
+
+```
+score components:
+  pump_age_hours      → >4h adds points (late)
+  price_change_pct    → >100% adds points (extended)
+  oi_trend            → declining OI adds points (distribution)
+  funding_rate        → >0.1% adds points (crowded longs)
+  price_velocity      → slowing 1h momentum adds points
+
+verdict: Pumping / Cooling off / Short setup / Prime short
+```
+
+- [ ] Show score on token detail page alongside chart
+- [ ] Historical stats: "after +80% pumps on Binance, median retrace was −42% in 4h"
+
+**Data**
+
+- [ ] Per-token stats: average retrace %, time-to-retrace after X% pump (needs weeks of history)
 - [ ] Age indicator: "token has been pumping for 3h — historically late to enter"
-- [ ] OI spike detector: sudden open interest growth = new money entering, not just price move
-- [ ] Funding rate filter: high funding = crowded short, factor into sizing recommendation
-- [ ] Composite score per pump: combines age, OI change, funding, historical retrace pattern
 
 ## Sprint 5: Cross-Market Signals (CEX Spot + DEX)
 
@@ -97,7 +126,14 @@ _Goal: know if the strategy is actually profitable, and handle taxes._
 
 _Goal: run in production without babysitting._
 
-- [ ] Web logs tab: SSE stream of structured logs from api-gateway (dev/ops tool)
+**Status page (extended)**
+
+- [ ] System resource metrics on Status page: CPU %, RAM used/total, disk, network I/O — exposed via lightweight sidecar (e.g. `node_exporter` or a small Go poller hitting `/proc`)
+- [ ] Per-service detail stats: analytics scan latency + exchange error rate, api-gateway request count + p95 latency, pump count trend (sparkline last 24h)
+- [ ] Web logs tab: SSE stream of structured logs from api-gateway (dev/ops tool, auth-gated)
+
+**Infra**
+
 - [ ] Grafana + Prometheus dashboards (collector throughput, scan latency, pump count)
 - [ ] AWS EC2 t4g.medium Frankfurt deploy (Docker Compose on VPS)
 - [ ] Domain + Cloudflare DNS + Tunnel
