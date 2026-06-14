@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { RefreshCw } from 'lucide-react';
 import { Nav } from '@/components/Nav';
@@ -29,6 +29,16 @@ interface PumpsResponse {
   scanned?: string[];
 }
 
+interface HistoryEntry {
+  base: string;
+  first_seen_at: number;
+  last_seen_at: number;
+  peak_pct: number;
+  last_pct: number;
+  is_live: boolean;
+  exchanges: ExchangeEntry[];
+}
+
 function fmtPct(n: number) {
   return `+${n.toFixed(1)}%`;
 }
@@ -45,32 +55,51 @@ function pctColor(pct: number) {
   return 'text-yellow-400';
 }
 
+function timeAgo(sec: number) {
+  const diff = Math.floor(Date.now() / 1000 - sec);
+  if (diff < 60) return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  return `${Math.floor(diff / 3600)}h ago`;
+}
+
 export function PumpsPage() {
   const [data, setData] = useState<PumpsResponse | null>(null);
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  // true only on the very first load — suppresses "No pumps" until we have a real response
+  const initialized = useRef(false);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
-  const fetch = async () => {
+  const load = async () => {
     try {
-      const res = await window.fetch('/api/pumps');
-      if (res.ok) {
-        setData((await res.json()) as PumpsResponse);
-        setLastUpdated(new Date());
-      }
+      const [liveRes, histRes] = await Promise.all([
+        window.fetch('/api/pumps'),
+        window.fetch('/api/pumps/history'),
+      ]);
+      if (liveRes.ok) setData((await liveRes.json()) as PumpsResponse);
+      if (histRes.ok) setHistory((await histRes.json()) as HistoryEntry[]);
+      setLastUpdated(new Date());
     } catch {
       // api-gateway not reachable
     } finally {
+      initialized.current = true;
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    void fetch();
-    const id = setInterval(() => void fetch(), 60_000);
+    void load();
+    const id = setInterval(() => void load(), 60_000);
     return () => clearInterval(id);
   }, []);
 
   const pumps = data?.pumps ?? [];
+  const liveSet = new Set(pumps.map((p) => p.base));
+  const historical = history.filter((h) => !liveSet.has(h.base));
+  const hasAny = pumps.length > 0 || historical.length > 0;
+
+  // "No pumps" only shows after first successful response with actually empty data
+  const showEmpty = !loading && initialized.current && data !== null && !hasAny;
 
   return (
     <div className="min-h-screen bg-background">
@@ -91,36 +120,41 @@ export function PumpsPage() {
 
         {loading && <p className="text-sm text-muted-foreground">Fetching pumps...</p>}
 
-        {!loading && pumps.length === 0 && (
+        {showEmpty && (
           <Card>
             <CardContent className="py-8 text-center text-sm text-muted-foreground">
-              No pumps found — scanner may still be warming up.
+              No pumps above {data?.min_change_pct ?? 30}% right now.
             </CardContent>
           </Card>
         )}
 
-        {pumps.length > 0 && (
+        {hasAny && (
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-                {pumps.length} tokens pumping
+                {pumps.length > 0
+                  ? `${pumps.length} active · ${historical.length} in 24h history`
+                  : `${historical.length} in 24h history`}
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0">
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[600px] text-sm">
+                <table className="w-full min-w-[640px] text-sm">
                   <thead>
                     <tr className="border-b text-xs text-muted-foreground">
                       <th className="px-4 py-2 text-left">Token</th>
-                      <th className="px-4 py-2 text-right">Max 24h</th>
+                      <th className="px-4 py-2 text-right">Peak 24h</th>
+                      <th className="px-4 py-2 text-right">Now</th>
                       <th className="px-4 py-2 text-left">Exchanges</th>
-                      <th className="px-4 py-2 text-right">Best price</th>
                       <th className="px-4 py-2 text-right">Volume</th>
                     </tr>
                   </thead>
                   <tbody>
                     {pumps.map((p) => {
-                      const best = p.exchanges[0];
+                      const hist = history.find((h) => h.base === p.base);
+                      const peakPct = hist
+                        ? Math.max(hist.peak_pct, p.max_change_pct)
+                        : p.max_change_pct;
                       const totalVol = p.exchanges.reduce((s, e) => s + e.volume_24h_usd, 0);
                       return (
                         <tr
@@ -136,7 +170,12 @@ export function PumpsPage() {
                             </Link>
                           </td>
                           <td
-                            className={`px-4 py-3 text-right font-mono font-bold ${pctColor(p.max_change_pct)}`}
+                            className={`px-4 py-3 text-right font-mono font-bold ${pctColor(peakPct)}`}
+                          >
+                            {fmtPct(peakPct)}
+                          </td>
+                          <td
+                            className={`px-4 py-3 text-right font-mono ${pctColor(p.max_change_pct)}`}
                           >
                             {fmtPct(p.max_change_pct)}
                           </td>
@@ -154,7 +193,50 @@ export function PumpsPage() {
                             </div>
                           </td>
                           <td className="px-4 py-3 text-right font-mono text-muted-foreground">
-                            ${best?.price ?? '—'}
+                            {fmtVol(totalVol)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+
+                    {historical.map((h) => {
+                      const totalVol = h.exchanges.reduce((s, e) => s + e.volume_24h_usd, 0);
+                      return (
+                        <tr
+                          key={h.base}
+                          className="border-b last:border-0 opacity-50 hover:opacity-70 transition-opacity"
+                        >
+                          <td className="px-4 py-3 font-mono font-semibold">
+                            <Link
+                              to={`/pumps/${h.base}`}
+                              className="hover:text-primary transition-colors"
+                            >
+                              {h.base}
+                            </Link>
+                            <span className="ml-2 text-xs text-muted-foreground font-normal">
+                              {timeAgo(h.last_seen_at)}
+                            </span>
+                          </td>
+                          <td
+                            className={`px-4 py-3 text-right font-mono font-bold ${pctColor(h.peak_pct)}`}
+                          >
+                            {fmtPct(h.peak_pct)}
+                          </td>
+                          <td className="px-4 py-3 text-right font-mono text-muted-foreground">
+                            {fmtPct(h.last_pct)}
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex flex-wrap gap-1">
+                              {h.exchanges.map((e) => (
+                                <Badge
+                                  key={e.exchange}
+                                  variant="outline"
+                                  className="text-xs font-normal opacity-60"
+                                >
+                                  {e.exchange}
+                                </Badge>
+                              ))}
+                            </div>
                           </td>
                           <td className="px-4 py-3 text-right font-mono text-muted-foreground">
                             {fmtVol(totalVol)}

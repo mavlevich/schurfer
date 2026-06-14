@@ -54,7 +54,7 @@ func NewChecker(ctx context.Context, cfg Config) (*Checker, error) {
 	// Without this option, a failed initial connect is permanent (no retry).
 	nc, err := nats.Connect(cfg.NATSUrl,
 		nats.MaxReconnects(-1), // reconnect indefinitely after initial connect
-		nats.ReconnectWait(2*time.Second),
+		nats.ReconnectWait(4*time.Second),
 		nats.RetryOnFailedConnect(true),
 	)
 	if err != nil {
@@ -65,6 +65,8 @@ func NewChecker(ctx context.Context, cfg Config) (*Checker, error) {
 
 	return &Checker{pool: pool, rdb: rdb, nc: nc}, nil
 }
+
+func (c *Checker) Pool() *pgxpool.Pool { return c.pool }
 
 func (c *Checker) Close() {
 	c.pool.Close()
@@ -86,7 +88,7 @@ func (c *Checker) Check(ctx context.Context) Report {
 }
 
 func (c *Checker) checkPostgres(ctx context.Context) Status {
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
 	if err := c.pool.Ping(ctx); err != nil {
 		return StatusDown
@@ -95,7 +97,7 @@ func (c *Checker) checkPostgres(ctx context.Context) Status {
 }
 
 func (c *Checker) checkRedis(ctx context.Context) Status {
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
 	if err := c.rdb.Ping(ctx).Err(); err != nil {
 		return StatusDown

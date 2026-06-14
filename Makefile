@@ -1,4 +1,4 @@
-.PHONY: help install dev dev-init dev-stop dev-reset dev-logs dev-test test lint format clean security deadcode check verify verify-docker
+.PHONY: help install dev dev-init dev-stop dev-reset dev-logs dev-test migrate test lint format clean security deadcode check verify verify-docker
 
 help:
 	@echo "Schurfer - common commands"
@@ -63,6 +63,11 @@ dev-logs:
 
 dev-test:
 	@bash infra/docker/smoke-test.sh
+
+migrate:
+	@echo "-> Running Alembic migrations..."
+	DATABASE_URL=$$(grep DATABASE_URL .env 2>/dev/null | cut -d= -f2 || echo "postgresql://schurfer:schurfer_dev@localhost:5432/schurfer") \
+	uv run --package schurfer-journal alembic -c packages/journal/alembic.ini upgrade head
 
 test:
 	@echo "-> Running Python tests..."
@@ -145,7 +150,7 @@ verify:
 	uv lock --check
 	@echo "=== [2/5] Python: ruff + mypy + pytest ==="
 	uv run --extra dev ruff check apps/analytics packages
-	MYPYPATH=apps/analytics:packages/journal uv run --extra dev --with sqlalchemy mypy apps/analytics/schurfer_analytics apps/analytics/tests packages/journal/schurfer_journal
+	MYPYPATH=apps/analytics:packages/journal uv run --extra dev --with sqlalchemy --with psycopg mypy apps/analytics/schurfer_analytics apps/analytics/tests packages/journal/schurfer_journal
 	uv run --extra dev --with ccxt --with redis --with structlog pytest apps/analytics -q
 	uv run --extra dev --with sqlalchemy --with alembic --with "psycopg[binary]" pytest packages/journal -q
 	@echo "=== [3/5] Go: test + vet ==="
