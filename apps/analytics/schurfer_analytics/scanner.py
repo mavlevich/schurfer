@@ -87,8 +87,8 @@ async def run_once(
     exchange_names: list[str],
     min_pct: float,
     rdb: aioredis.Redis,
-) -> int:
-    """Scan all exchanges, deduplicate, store result in Redis. Returns pump count."""
+) -> list[dict[str, Any]]:
+    """Scan all exchanges, deduplicate, store result in Redis. Returns pump list."""
     unknown = [n for n in exchange_names if n not in _FACTORIES]
     if unknown:
         log.warning("scanner.unknown_exchanges", unknown=unknown)
@@ -96,7 +96,7 @@ async def run_once(
     exchanges = {n: _FACTORIES[n]() for n in exchange_names if n in _FACTORIES}
     if not exchanges:
         log.error("scanner.no_valid_exchanges")
-        return 0
+        return []
 
     try:
         results: list[tuple[list[dict[str, Any]], str | None]] = await asyncio.gather(
@@ -113,7 +113,7 @@ async def run_once(
         # All sources failed — preserve the last known-good snapshot in Redis
         if errors and len(errors) == len(exchanges):
             log.error("scanner.all_failed", errors=errors)
-            return 0
+            return []
 
         pumps = _dedup(flat)
         payload = json.dumps(
@@ -128,7 +128,7 @@ async def run_once(
         )
         await rdb.set(REDIS_KEY, payload, ex=REDIS_TTL)
         log.info("scanner.stored", count=len(pumps), min_pct=min_pct, failed=len(errors))
-        return len(pumps)
+        return pumps
     finally:
         await asyncio.gather(
             *[ex.close() for ex in exchanges.values()],

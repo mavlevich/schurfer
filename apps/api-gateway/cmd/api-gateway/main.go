@@ -53,7 +53,7 @@ func run() error {
 
 	healthHandler := health.NewHandler(checker)
 	wsHandler := ws.NewHandler(checker, 5*time.Second)
-	pumpsHandler := pumps.NewHandler(rdb)
+	pumpsHandler := pumps.NewHandler(rdb, checker.Pool())
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
@@ -71,6 +71,7 @@ func run() error {
 		r.Post("/auth/logout", authHandler.Logout)
 		r.Get("/api/health", healthHandler.Health)
 		r.Get("/api/pumps", pumpsHandler.List)
+		r.Get("/api/pumps/history", pumpsHandler.History)
 		r.Get("/api/pumps/{base}", pumpsHandler.Token)
 		r.Get("/api/pumps/{base}/ohlcv", pumpsHandler.OHLCV)
 		r.Get("/ws/status", wsHandler.Status)

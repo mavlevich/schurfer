@@ -5,6 +5,7 @@ import redis.asyncio as aioredis
 import structlog
 
 from .config import Config
+from .persistence import upsert_pumps
 from .scanner import run_once
 
 log = structlog.get_logger()
@@ -25,12 +26,15 @@ async def _run(once: bool) -> None:
         exchanges=cfg.exchanges,
         min_pct=cfg.min_pct,
         interval=cfg.interval,
+        db=bool(cfg.db_url),
     )
 
     rdb: aioredis.Redis = aioredis.from_url(f"redis://{cfg.redis_addr}")
     try:
         while True:
-            await run_once(cfg.exchanges, cfg.min_pct, rdb)
+            pumps = await run_once(cfg.exchanges, cfg.min_pct, rdb)
+            if pumps and cfg.db_url:
+                await upsert_pumps(cfg.db_url, pumps)
             if once:
                 break
             await asyncio.sleep(cfg.interval)

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -43,12 +44,23 @@ type pumpsPayload struct {
 	Pumps        []pumpEntry `json:"pumps"`
 }
 
-type Handler struct {
-	rdb *redis.Client
+type historyEntry struct {
+	Base        string          `json:"base"`
+	FirstSeenAt int64           `json:"first_seen_at"`
+	LastSeenAt  int64           `json:"last_seen_at"`
+	PeakPct     float64         `json:"peak_pct"`
+	LastPct     float64         `json:"last_pct"`
+	IsLive      bool            `json:"is_live"`
+	Exchanges   json.RawMessage `json:"exchanges"`
 }
 
-func NewHandler(rdb *redis.Client) *Handler {
-	return &Handler{rdb: rdb}
+type Handler struct {
+	rdb  *redis.Client
+	pool *pgxpool.Pool
+}
+
+func NewHandler(rdb *redis.Client, pool *pgxpool.Pool) *Handler {
+	return &Handler{rdb: rdb, pool: pool}
 }
 
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
@@ -141,6 +153,55 @@ func (h *Handler) OHLCV(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(payload)
+}
+
+func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
+	rows, err := h.pool.Query(r.Context(), `
+		SELECT base,
+		       extract(epoch from first_seen_at)::bigint,
+		       extract(epoch from last_seen_at)::bigint,
+		       peak_pct, last_pct, exchanges
+		FROM app.pump_events
+		WHERE last_seen_at > NOW() - INTERVAL '24 hours'
+		ORDER BY peak_pct DESC
+		LIMIT 200
+	`)
+	if err != nil {
+		slog.Error("pumps.history.query", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	live := map[string]bool{}
+	if payload, err := h.loadPumps(r.Context()); err == nil {
+		for _, p := range payload.Pumps {
+			live[p.Base] = true
+		}
+	}
+
+	entries := make([]historyEntry, 0)
+	for rows.Next() {
+		var e historyEntry
+		var exJSON []byte
+		if err := rows.Scan(&e.Base, &e.FirstSeenAt, &e.LastSeenAt, &e.PeakPct, &e.LastPct, &exJSON); err != nil {
+			slog.Error("pumps.history.scan", "err", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		e.Exchanges = json.RawMessage(exJSON)
+		e.IsLive = live[e.Base]
+		entries = append(entries, e)
+	}
+	if err := rows.Err(); err != nil {
+		slog.Error("pumps.history.rows", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	out, _ := json.Marshal(entries)
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(out)
 }
 
 // pickExchange returns the best exchange for OHLCV data for the given base.
