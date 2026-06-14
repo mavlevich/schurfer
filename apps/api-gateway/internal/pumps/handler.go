@@ -128,6 +128,10 @@ func (h *Handler) OHLCV(w http.ResponseWriter, r *http.Request) {
 	}
 
 	exchange := h.pickExchange(r.Context(), base)
+	if exchange == "" {
+		http.Error(w, "no supported exchange for OHLCV", http.StatusNotFound)
+		return
+	}
 	cacheKey := fmt.Sprintf("ohlcv:%s:%s:%d:%d", exchange, base, interval, limit)
 
 	if cached, err := h.rdb.Get(r.Context(), cacheKey).Bytes(); err == nil {
@@ -204,24 +208,14 @@ func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(out)
 }
 
-// pickExchange returns the best exchange for OHLCV data for the given base.
-// Prefers Binance > Bybit > OKX; falls back to Bybit if none are available.
+// pickExchange returns the best supported exchange for OHLCV data.
+// Checks live Redis snapshot first; falls back to DB for historical tokens.
 func (h *Handler) pickExchange(ctx context.Context, base string) string {
-	preferred := []string{"binance", "bybit", "okx"}
+	preferred := []string{"binance", "bybit", "okx", "gate"}
 
-	payload, err := h.loadPumps(ctx)
-	if err != nil {
-		return "bybit"
-	}
-
-	available := map[string]bool{}
-	for _, p := range payload.Pumps {
-		if p.Base == base {
-			for _, ex := range p.Exchanges {
-				available[ex.Exchange] = true
-			}
-			break
-		}
+	available := h.liveExchanges(ctx, base)
+	if len(available) == 0 && h.pool != nil {
+		available = h.dbExchanges(ctx, base)
 	}
 
 	for _, ex := range preferred {
@@ -229,7 +223,46 @@ func (h *Handler) pickExchange(ctx context.Context, base string) string {
 			return ex
 		}
 	}
-	return "bybit"
+	return ""
+}
+
+func (h *Handler) liveExchanges(ctx context.Context, base string) map[string]bool {
+	payload, err := h.loadPumps(ctx)
+	if err != nil {
+		return nil
+	}
+	for _, p := range payload.Pumps {
+		if p.Base == base {
+			out := make(map[string]bool, len(p.Exchanges))
+			for _, ex := range p.Exchanges {
+				out[ex.Exchange] = true
+			}
+			return out
+		}
+	}
+	return nil
+}
+
+func (h *Handler) dbExchanges(ctx context.Context, base string) map[string]bool {
+	var raw []byte
+	err := h.pool.QueryRow(ctx,
+		`SELECT exchanges FROM app.pump_events WHERE base = $1 AND last_seen_at > NOW() - INTERVAL '24 hours'`,
+		base,
+	).Scan(&raw)
+	if err != nil || len(raw) == 0 {
+		return nil
+	}
+	var entries []struct {
+		Exchange string `json:"exchange"`
+	}
+	if err := json.Unmarshal(raw, &entries); err != nil {
+		return nil
+	}
+	out := make(map[string]bool, len(entries))
+	for _, e := range entries {
+		out[e.Exchange] = true
+	}
+	return out
 }
 
 func (h *Handler) loadPumps(ctx context.Context) (*pumpsPayload, error) {

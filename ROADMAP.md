@@ -90,6 +90,8 @@ verdict: Pumping / Cooling off / Short setup / Prime short
 
 - [ ] Per-token stats: average retrace %, time-to-retrace after X% pump (needs weeks of history)
 - [ ] Age indicator: "token has been pumping for 3h — historically late to enter"
+- [ ] Pump lifecycle tracking: record price snapshots at +1h, +4h, +24h after first detection — needed to build retrace distributions and entry/exit timing models
+- [ ] Leverage suggestion: based on retrace % distribution (e.g. median −42% → 2x short has high win rate), volatility-adjusted max leverage per token category
 
 ## Sprint 5: Cross-Market Signals (CEX Spot + DEX)
 
@@ -110,8 +112,19 @@ _Goal: go from signal to actual trade._
 
 - [ ] Approve flow: Telegram button → ccxt places short on Bybit/OKX
 - [ ] Position tracking in trade journal (entry, exit, PnL)
-- [ ] Risk guardrails: max position size, max open positions, funding drag check
+- [ ] Risk guardrails: max position size, max open positions cap (e.g. 3-5), funding drag check
 - [ ] Web: live positions page with unrealized PnL
+- [ ] TP/SL management: set take profit and stop loss on entry; auto-adjust both as price moves
+- [ ] Trailing stop on retrace: when a retrace is expected but position stays open, tighten SL toward entry (reduce risk without closing) — only close on SL hit, not on forecast alone
+- [ ] Liquidation price awareness: after position opens, check that liquidation price is at a safe distance; move margin (partial close or add margin) if it drifts too close
+
+**Signal prioritization (needed before any automation)**
+
+- [ ] Score each pump signal: weight by pump %, 24h volume (liquidity proxy), and exchange tier (binance > bybit > okx > gate)
+- [ ] Direction heuristic: if `current_pct` is close to `peak_pct` — momentum is still running, consider long; if peak is well above current — retrace already started, prefer short
+- [ ] Slot cap enforcement: keep at most N concurrent positions; queue stronger incoming signals and drop weaker ones that never got filled
+- [ ] Position rotation: if all slots are full and a new signal scores higher than the weakest open position, close the weakest (at market) and open the new one — only when PnL on the old one is not deeply negative (configurable threshold)
+- [ ] Cooldown per token: after closing a position on a token, ignore new signals for that token for X minutes to avoid re-entering a fading pump
 
 ## Sprint 7: Account Integration + Tax
 
@@ -164,9 +177,16 @@ _Goal: run in production without babysitting._
 - **Analytics: WebSocket ticker subscriptions** — replace REST `fetchTickers` polling with WS updates; reduces bandwidth ~10-20x (Sprint 4)
 - **Analytics: persistent exchange connections** — currently reconnects every scan; keep sessions alive between scans to reduce TLS handshake overhead
 - **Docker resource limits** — add `mem_limit` / `cpus` per service in docker-compose to prevent one container starving others
+- **Docker image pinning** — replace `timescale/timescaledb:latest-pg17` and similar with exact versions (e.g. `2.17.0-pg17`); avoids silent breakage on `docker pull`
+- **Docker restart policy** — `restart: unless-stopped` missing on postgres, redis, nats, api-gateway; add before production deploy
+- **Docker port binding** — ports 5432 and 6379 bind to `0.0.0.0` in dev; production compose should bind to `127.0.0.1` only
+- **NATS healthcheck** — uses `wget --spider` (HEAD); verify NATS monitoring endpoint handles HEAD or switch to GET like api-gateway
 - **Collector: limit symbols in dev** — BYBIT_SYMBOLS should default to a small set locally; subscribe to all only in production
 - **Scan interval tuning** — 120s in production is enough for pump detection; 60s only needed once we have execution
 - **ccxt footprint** — 500MB+ RAM for Python + ccxt; long-term consider native HTTP calls to exchange APIs for frequently-polled exchanges
+- **Telegram: seen_bases resets on restart** — in-memory set clears on analytics restart, causing alerts for all active tokens at startup (could be noisy); consider persisting seen_bases in Redis so restart is transparent
+- **Telegram: drop-below alerts** — currently only alerts on new pumps; consider sending a follow-up when a token drops back below threshold (e.g. "BTC back to +18%, was +45%")
+- **Telegram: alert deduplication window** — if a token stays above threshold for hours, no repeat alerts; might want a "still pumping" reminder after N hours
 
 ---
 
