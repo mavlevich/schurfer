@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, WifiOff } from 'lucide-react';
 import { Nav } from '@/components/Nav';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -62,9 +62,24 @@ function timeAgo(sec: number) {
   return `${Math.floor(diff / 3600)}h ago`;
 }
 
+function high24hPct(exchanges: ExchangeEntry[]): number {
+  let max = 0;
+  for (const e of exchanges) {
+    const price = parseFloat(e.price);
+    const high = parseFloat(e.high_24h);
+    if (price > 0 && high > 0 && e.change_pct > -100) {
+      const open = price / (1 + e.change_pct / 100);
+      const pct = ((high - open) / open) * 100;
+      if (pct > max) max = pct;
+    }
+  }
+  return max;
+}
+
 export function PumpsPage() {
   const [data, setData] = useState<PumpsResponse | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [offline, setOffline] = useState(false);
   // true only on the very first load — suppresses "No pumps" until we have a real response
   const initialized = useRef(false);
   const [loading, setLoading] = useState(true);
@@ -79,8 +94,9 @@ export function PumpsPage() {
       if (liveRes.ok) setData((await liveRes.json()) as PumpsResponse);
       if (histRes.ok) setHistory((await histRes.json()) as HistoryEntry[]);
       setLastUpdated(new Date());
+      setOffline(false);
     } catch {
-      // api-gateway not reachable
+      setOffline(true);
     } finally {
       initialized.current = true;
       setLoading(false);
@@ -113,8 +129,22 @@ export function PumpsPage() {
             </p>
           </div>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <RefreshCw className="h-3 w-3" />
-            {lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString()}` : 'Loading...'}
+            {offline ? (
+              <>
+                <WifiOff className="h-3 w-3 text-red-400" />
+                <span className="text-red-400">API offline</span>
+                {lastUpdated && (
+                  <span className="text-muted-foreground/60">
+                    · last seen {lastUpdated.toLocaleTimeString()}
+                  </span>
+                )}
+              </>
+            ) : (
+              <>
+                <RefreshCw className="h-3 w-3" />
+                {lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString()}` : 'Loading...'}
+              </>
+            )}
           </div>
         </div>
 
@@ -152,9 +182,11 @@ export function PumpsPage() {
                   <tbody>
                     {pumps.map((p) => {
                       const hist = history.find((h) => h.base === p.base);
-                      const peakPct = hist
-                        ? Math.max(hist.peak_pct, p.max_change_pct)
-                        : p.max_change_pct;
+                      const peakPct = Math.max(
+                        hist?.peak_pct ?? 0,
+                        p.max_change_pct,
+                        high24hPct(p.exchanges),
+                      );
                       const totalVol = p.exchanges.reduce((s, e) => s + e.volume_24h_usd, 0);
                       return (
                         <tr
@@ -204,7 +236,7 @@ export function PumpsPage() {
                       return (
                         <tr
                           key={h.base}
-                          className="border-b last:border-0 opacity-50 hover:opacity-70 transition-opacity"
+                          className="border-b last:border-0 opacity-50 hover:opacity-80 transition-opacity"
                         >
                           <td className="px-4 py-3 font-mono font-semibold">
                             <Link
@@ -213,9 +245,10 @@ export function PumpsPage() {
                             >
                               {h.base}
                             </Link>
-                            <span className="ml-2 text-xs text-muted-foreground font-normal">
+                            <div className="text-xs text-muted-foreground font-normal leading-tight">
+                              on radar {timeAgo(h.first_seen_at)} · last seen{' '}
                               {timeAgo(h.last_seen_at)}
-                            </span>
+                            </div>
                           </td>
                           <td
                             className={`px-4 py-3 text-right font-mono font-bold ${pctColor(h.peak_pct)}`}

@@ -24,11 +24,33 @@ ON CONFLICT (base) DO UPDATE SET
 """
 
 
+def _high_24h_pct(ex: dict[str, Any]) -> float:
+    """24h peak % via open reconstruction: open = price/(1+change_pct/100), peak = high/open-1."""
+    try:
+        price = float(ex["price"])
+        change_pct = float(ex["change_pct"])
+        high_24h = float(ex["high_24h"])
+        if price <= 0 or high_24h <= 0 or change_pct <= -100:
+            return 0.0
+        open_24h = price / (1 + change_pct / 100)
+        return round((high_24h / open_24h - 1) * 100, 2)
+    except (ValueError, ZeroDivisionError, KeyError):
+        return 0.0
+
+
+def _true_peak_pct(pump: dict[str, Any]) -> float:
+    """Best estimate of true 24h peak: max of current scan % and high_24h-derived %."""
+    candidates: list[float] = [float(pump["max_change_pct"])]
+    for ex in pump.get("exchanges", []):
+        candidates.append(_high_24h_pct(ex))
+    return max(candidates)
+
+
 async def upsert_pumps(db_url: str, pumps: list[dict[str, Any]]) -> None:
     if not pumps:
         return
     rows = [
-        (p["base"], p["max_change_pct"], p["max_change_pct"], json.dumps(p["exchanges"]))
+        (p["base"], _true_peak_pct(p), p["max_change_pct"], json.dumps(p["exchanges"]))
         for p in pumps
     ]
     try:

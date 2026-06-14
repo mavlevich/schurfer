@@ -151,7 +151,7 @@ verify:
 	@echo "=== [2/5] Python: ruff + mypy + pytest ==="
 	uv run --extra dev ruff check apps/analytics packages
 	MYPYPATH=apps/analytics:packages/journal uv run --extra dev --with sqlalchemy --with psycopg mypy apps/analytics/schurfer_analytics apps/analytics/tests packages/journal/schurfer_journal
-	uv run --extra dev --with ccxt --with redis --with structlog pytest apps/analytics -q
+	uv run --extra dev --with ccxt --with redis --with structlog --with "psycopg[binary]" pytest apps/analytics -q
 	uv run --extra dev --with sqlalchemy --with alembic --with "psycopg[binary]" pytest packages/journal -q
 	@echo "=== [3/5] Go: test + vet ==="
 	go test ./apps/api-gateway/... ./apps/collector/...
