@@ -4,40 +4,8 @@ import { RefreshCw, WifiOff } from 'lucide-react';
 import { Nav } from '@/components/Nav';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-
-interface ExchangeEntry {
-  exchange: string;
-  symbol: string;
-  price: string;
-  change_pct: number;
-  high_24h: string;
-  volume_24h_usd: number;
-}
-
-interface PumpEntry {
-  base: string;
-  max_change_pct: number;
-  exchanges: ExchangeEntry[];
-}
-
-interface PumpsResponse {
-  ts: number;
-  count: number;
-  min_change_pct: number | null;
-  pumps: PumpEntry[];
-  errors?: Record<string, string>;
-  scanned?: string[];
-}
-
-interface HistoryEntry {
-  base: string;
-  first_seen_at: number;
-  last_seen_at: number;
-  peak_pct: number;
-  last_pct: number;
-  is_live: boolean;
-  exchanges: ExchangeEntry[];
-}
+import { pumpsCache } from '@/lib/pumpsCache';
+import type { ExchangeEntry, PumpsResponse, HistoryEntry } from './types';
 
 function fmtPct(n: number) {
   return `+${n.toFixed(1)}%`;
@@ -77,13 +45,13 @@ function high24hPct(exchanges: ExchangeEntry[]): number {
 }
 
 export function PumpsPage() {
-  const [data, setData] = useState<PumpsResponse | null>(null);
-  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const cached = pumpsCache.get();
+  const [data, setData] = useState<PumpsResponse | null>(cached ? cached.live : null);
+  const [history, setHistory] = useState<HistoryEntry[]>(cached ? cached.history : []);
   const [offline, setOffline] = useState(false);
-  // true only on the very first load — suppresses "No pumps" until we have a real response
-  const initialized = useRef(false);
-  const [loading, setLoading] = useState(true);
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const initialized = useRef(cached !== null);
+  const [loading, setLoading] = useState(cached === null);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(cached ? new Date() : null);
 
   const load = async () => {
     try {
@@ -91,8 +59,16 @@ export function PumpsPage() {
         window.fetch('/api/pumps'),
         window.fetch('/api/pumps/history'),
       ]);
-      if (liveRes.ok) setData((await liveRes.json()) as PumpsResponse);
-      if (histRes.ok) setHistory((await histRes.json()) as HistoryEntry[]);
+      const live = liveRes.ok ? ((await liveRes.json()) as PumpsResponse) : null;
+      const hist = histRes.ok ? ((await histRes.json()) as HistoryEntry[]) : null;
+      if (live) {
+        setData(live);
+        setHistory((prev) => {
+          const next = hist ?? prev;
+          pumpsCache.set({ live, history: next });
+          return next;
+        });
+      }
       setLastUpdated(new Date());
       setOffline(false);
     } catch {

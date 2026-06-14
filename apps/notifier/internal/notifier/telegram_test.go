@@ -1,0 +1,125 @@
+package notifier
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
+
+func TestFormatAlert_SingleExchange(t *testing.T) {
+	p := pump{
+		Base:         "BTC",
+		MaxChangePct: 45.2,
+		Exchanges: []exchange{
+			{Exchange: "binance", ChangePct: 45.2, Price: "50000", High24h: "55000", VolumeUSD: 120_000_000},
+		},
+	}
+	text := formatAlert(p)
+	for _, want := range []string{"BTC", `\+45\.2%`, "$120M", "binance"} {
+		if !contains(text, want) {
+			t.Errorf("formatAlert missing %q in:\n%s", want, text)
+		}
+	}
+}
+
+func TestFormatAlert_PeakShownWhenHigher(t *testing.T) {
+	// price=100, change=+25% → open=80, high=160 → peak=+100%
+	p := pump{
+		Base:         "ETH",
+		MaxChangePct: 25.0,
+		Exchanges: []exchange{
+			{Exchange: "bybit", ChangePct: 25.0, Price: "100", High24h: "160", VolumeUSD: 10_000_000},
+		},
+	}
+	text := formatAlert(p)
+	if !contains(text, "peak") {
+		t.Errorf("expected peak line when peak > current, got:\n%s", text)
+	}
+}
+
+func TestFormatAlert_PeakHiddenWhenEqual(t *testing.T) {
+	// price=100, change=+25%, high=100 → peak < current
+	p := pump{
+		Base:         "SOL",
+		MaxChangePct: 35.0,
+		Exchanges: []exchange{
+			{Exchange: "okx", ChangePct: 35.0, Price: "100", High24h: "100", VolumeUSD: 5_000_000},
+		},
+	}
+	text := formatAlert(p)
+	if contains(text, "peak") {
+		t.Errorf("unexpected peak line when peak <= current, got:\n%s", text)
+	}
+}
+
+func TestFormatAlert_LargeVolume(t *testing.T) {
+	p := pump{
+		Base:         "BTC",
+		MaxChangePct: 30.0,
+		Exchanges: []exchange{
+			{Exchange: "binance", ChangePct: 30.0, Price: "50000", High24h: "51000", VolumeUSD: 2_500_000_000},
+		},
+	}
+	if !contains(formatAlert(p), `$2\.5B`) {
+		t.Error("expected $2.5B volume format")
+	}
+}
+
+func TestSendAlert_Success(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer srv.Close()
+
+	// Patch _telegramAPI for test
+	original := _telegramAPI
+	_telegramAPI = srv.URL + "/%s/sendMessage"
+	defer func() { _telegramAPI = original }()
+
+	p := pump{Base: "DOGE", MaxChangePct: 35.0, Exchanges: []exchange{
+		{Exchange: "bybit", ChangePct: 35.0, VolumeUSD: 5_000_000},
+	}}
+	if err := sendAlert(t.Context(), p, "test-token", "12345"); err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestSendAlert_ServerError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	original := _telegramAPI
+	_telegramAPI = srv.URL + "/%s/sendMessage"
+	defer func() { _telegramAPI = original }()
+
+	p := pump{Base: "BTC", MaxChangePct: 40.0, Exchanges: []exchange{}}
+	if err := sendAlert(t.Context(), p, "bad-token", "12345"); err == nil {
+		t.Error("expected error on 401, got nil")
+	}
+}
+
+func TestFormatAlert_SpecialCharsEscaped(t *testing.T) {
+	// Underscore in base and dot in exchange name must be escaped for MarkdownV2.
+	p := pump{
+		Base:         "ABC_DEF",
+		MaxChangePct: 30.0,
+		Exchanges: []exchange{
+			{Exchange: "gate.io", ChangePct: 30.0, VolumeUSD: 5_000_000},
+		},
+	}
+	text := formatAlert(p)
+	if !contains(text, `ABC\_DEF`) {
+		t.Errorf("underscore in base should be escaped for MarkdownV2, got:\n%s", text)
+	}
+	if !contains(text, `gate\.io`) {
+		t.Errorf("dot in exchange name should be escaped for MarkdownV2, got:\n%s", text)
+	}
+}
+
+func contains(s, substr string) bool {
+	return strings.Contains(s, substr)
+}

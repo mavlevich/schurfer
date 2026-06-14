@@ -83,8 +83,18 @@ func (c *Checker) Check(ctx context.Context) Report {
 		NATS:        c.checkNATS(),
 		Collector:   StatusUnknown, // populated via NATS heartbeats later
 		Execution:   StatusUnknown,
-		TelegramBot: StatusUnknown,
+		TelegramBot: c.checkTelegramBot(ctx),
 	}
+}
+
+func (c *Checker) checkTelegramBot(ctx context.Context) Status {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	exists, err := c.rdb.Exists(ctx, "notifier:heartbeat").Result()
+	if err != nil || exists == 0 {
+		return StatusDown
+	}
+	return StatusUp
 }
 
 func (c *Checker) checkPostgres(ctx context.Context) Status {

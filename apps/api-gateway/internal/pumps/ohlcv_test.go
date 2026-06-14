@@ -194,3 +194,63 @@ func TestParseRowShortRow(t *testing.T) {
 		t.Fatal("expected error for short row")
 	}
 }
+
+func TestParseGate(t *testing.T) {
+	cases := []struct {
+		name    string
+		raw     string
+		wantErr bool
+		wantLen int
+	}{
+		{
+			name:    "happy path",
+			raw:     `[{"t":1700000000,"o":"41900","h":"42000","l":"41800","c":"41950","v":90},{"t":1700003600,"o":"42000","h":"42100","l":"41900","c":"42050","v":100}]`,
+			wantLen: 2,
+		},
+		{
+			name:    "malformed json",
+			raw:     `not json`,
+			wantErr: true,
+		},
+		{
+			name:    "bad open price",
+			raw:     `[{"t":1700000000,"o":"not-a-price","h":"42000","l":"41800","c":"41950","v":90}]`,
+			wantErr: true,
+		},
+		{
+			name:    "empty array",
+			raw:     `[]`,
+			wantLen: 0,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			candles, err := parseGate([]byte(tc.raw))
+			if tc.wantErr && err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !tc.wantErr && len(candles) != tc.wantLen {
+				t.Fatalf("want %d candles, got %d", tc.wantLen, len(candles))
+			}
+		})
+	}
+}
+
+func TestParseGateChronologicalOrder(t *testing.T) {
+	// Gate returns oldest-first — no reversal needed, verify order is preserved.
+	raw := `[{"t":1700000000,"o":"41900","h":"42000","l":"41800","c":"41950","v":90},{"t":1700003600,"o":"42000","h":"42100","l":"41900","c":"42050","v":100},{"t":1700007200,"o":"42050","h":"42200","l":"42000","c":"42150","v":110}]`
+	candles, err := parseGate([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candles) != 3 {
+		t.Fatalf("want 3 candles, got %d", len(candles))
+	}
+	if candles[0].Time >= candles[1].Time || candles[1].Time >= candles[2].Time {
+		t.Fatal("candles not in chronological order")
+	}
+}
