@@ -66,8 +66,9 @@ dev-test:
 
 migrate:
 	@echo "-> Running Alembic migrations..."
-	DATABASE_URL=$$(grep DATABASE_URL .env 2>/dev/null | cut -d= -f2 || echo "postgresql://schurfer:schurfer_dev@localhost:5432/schurfer") \
-	uv run --package schurfer-journal alembic -c packages/journal/alembic.ini upgrade head
+	cd packages/journal && \
+	DATABASE_URL=$$(grep DATABASE_URL ../../.env 2>/dev/null | cut -d= -f2 || echo "postgresql://schurfer:schurfer_dev@localhost:5432/schurfer") \
+	uv run --package schurfer-journal alembic upgrade head
 
 test:
 	@echo "-> Running Python tests..."

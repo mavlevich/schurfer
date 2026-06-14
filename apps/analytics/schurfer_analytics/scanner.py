@@ -31,37 +31,61 @@ _FACTORIES: dict[str, Any] = {
 
 
 async def _fetch(
-    name: str, exchange: Any, min_pct: float
-) -> tuple[list[dict[str, Any]], str | None]:
-    """Returns (results, error) — error is None on success."""
+    name: str,
+    exchange: Any,
+    min_pct: float,
+    extra_bases: frozenset[str] = frozenset(),
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], str | None]:
+    """Returns (above_threshold, below_threshold_tracked, error)."""
     try:
         if not exchange.has.get("fetchTickers"):
             log.warning("exchange.no_fetch_tickers", exchange=name)
-            return [], None
+            return [], [], None
         tickers: dict[str, Any] = await exchange.fetch_tickers()
-        out = []
+        above: list[dict[str, Any]] = []
+        below: list[dict[str, Any]] = []
         for sym, t in tickers.items():
             if not sym.endswith("/USDT:USDT"):
                 continue
             pct = t.get("percentage")
-            if pct is None or float(pct) < min_pct:
+            if pct is None:
                 continue
-            out.append(
-                {
-                    "base": sym.split("/")[0],
-                    "exchange": name,
-                    "symbol": t.get("info", {}).get("symbol", sym),
-                    "price": str(t.get("last") or ""),
-                    "change_pct": round(float(pct), 2),
-                    "high_24h": str(t.get("high") or ""),
-                    "volume_24h_usd": float(t.get("quoteVolume") or 0),
-                }
-            )
-        log.info("exchange.scanned", exchange=name, pumps=len(out))
-        return out, None
+            pct_f = round(float(pct), 2)
+            base = sym.split("/")[0]
+            entry = {
+                "base": base,
+                "exchange": name,
+                "symbol": t.get("info", {}).get("symbol", sym),
+                "price": str(t.get("last") or ""),
+                "change_pct": pct_f,
+                "high_24h": str(t.get("high") or ""),
+                "volume_24h_usd": float(t.get("quoteVolume") or 0),
+            }
+            if pct_f >= min_pct:
+                above.append(entry)
+            elif base in extra_bases:
+                below.append(entry)
+        log.info("exchange.scanned", exchange=name, pumps=len(above), tracked=len(below))
+        return above, below, None
     except Exception as exc:
         log.warning("exchange.failed", exchange=name, err=str(exc))
-        return [], str(exc)
+        return [], [], str(exc)
+
+
+def _aggregate_below_updates(
+    flat_below: list[dict[str, Any]],
+    live_bases: set[str],
+) -> dict[str, float]:
+    """Max current % per tracked base, excluding bases that are still live above threshold."""
+    updates: dict[str, float] = {}
+    for entry in flat_below:
+        base = entry["base"]
+        if base in live_bases:
+            continue
+        pct = entry["change_pct"]
+        if pct > updates.get(base, float("-inf")):
+            updates[base] = pct
+    return updates
 
 
 def _dedup(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -87,8 +111,9 @@ async def run_once(
     exchange_names: list[str],
     min_pct: float,
     rdb: aioredis.Redis,
-) -> list[dict[str, Any]]:
-    """Scan all exchanges, deduplicate, store result in Redis. Returns pump list."""
+    extra_bases: frozenset[str] = frozenset(),
+) -> tuple[list[dict[str, Any]], dict[str, float]]:
+    """Scan all exchanges, store result in Redis. Returns (pumps, below_threshold_updates)."""
     unknown = [n for n in exchange_names if n not in _FACTORIES]
     if unknown:
         log.warning("scanner.unknown_exchanges", unknown=unknown)
@@ -96,26 +121,33 @@ async def run_once(
     exchanges = {n: _FACTORIES[n]() for n in exchange_names if n in _FACTORIES}
     if not exchanges:
         log.error("scanner.no_valid_exchanges")
-        return []
+        return [], {}
 
     try:
-        results: list[tuple[list[dict[str, Any]], str | None]] = await asyncio.gather(
-            *[_fetch(name, ex, min_pct) for name, ex in exchanges.items()]
+        results: list[
+            tuple[list[dict[str, Any]], list[dict[str, Any]], str | None]
+        ] = await asyncio.gather(
+            *[_fetch(name, ex, min_pct, extra_bases) for name, ex in exchanges.items()]
         )
         errors: dict[str, str] = {}
         flat: list[dict[str, Any]] = []
-        for name, (entries, err) in zip(exchanges, results, strict=True):
+        flat_below: list[dict[str, Any]] = []
+        for name, (above, below, err) in zip(exchanges, results, strict=True):
             if err is not None:
                 errors[name] = err
             else:
-                flat.extend(entries)
+                flat.extend(above)
+                flat_below.extend(below)
 
         # All sources failed — preserve the last known-good snapshot in Redis
         if errors and len(errors) == len(exchanges):
             log.error("scanner.all_failed", errors=errors)
-            return []
+            return [], {}
 
         pumps = _dedup(flat)
+        live_bases = {p["base"] for p in pumps}
+        below_updates = _aggregate_below_updates(flat_below, live_bases)
+
         payload = json.dumps(
             {
                 "ts": int(time.time() * 1000),
@@ -128,7 +160,7 @@ async def run_once(
         )
         await rdb.set(REDIS_KEY, payload, ex=REDIS_TTL)
         log.info("scanner.stored", count=len(pumps), min_pct=min_pct, failed=len(errors))
-        return pumps
+        return pumps, below_updates
     finally:
         await asyncio.gather(
             *[ex.close() for ex in exchanges.values()],

@@ -10,9 +10,14 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Override DB URL from env if set (used in production / CI)
+# Override DB URL from env if set (used in production / CI).
+# Normalize plain postgresql:// to postgresql+psycopg:// — we use psycopg3, not psycopg2.
 db_url = os.getenv("DATABASE_URL")
 if db_url:
+    for prefix in ("postgresql://", "postgres://"):
+        if db_url.startswith(prefix):
+            db_url = "postgresql+psycopg://" + db_url[len(prefix) :]
+            break
     config.set_main_option("sqlalchemy.url", db_url)
 
 target_metadata = Base.metadata

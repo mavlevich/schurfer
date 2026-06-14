@@ -46,6 +46,39 @@ def _true_peak_pct(pump: dict[str, Any]) -> float:
     return max(candidates)
 
 
+_UPDATE_LAST_PCT = (
+    "UPDATE app.pump_events SET last_pct = %s "
+    "WHERE base = %s AND last_seen_at > NOW() - INTERVAL '24 hours'"
+)
+
+
+async def get_tracked_bases(db_url: str) -> frozenset[str]:
+    """Return bases that have an active pump_event in the last 24h."""
+    try:
+        async with await psycopg.AsyncConnection.connect(db_url) as conn, conn.cursor() as cur:
+            await cur.execute(
+                "SELECT base FROM app.pump_events WHERE last_seen_at > NOW() - INTERVAL '24 hours'"
+            )
+            rows = await cur.fetchall()
+        return frozenset(r[0] for r in rows)
+    except Exception as exc:
+        log.warning("persistence.get_tracked.failed", err=str(exc))
+        return frozenset()
+
+
+async def update_last_pct(db_url: str, updates: dict[str, float]) -> None:
+    """Update only last_pct for tracked tokens that dropped below threshold."""
+    if not updates:
+        return
+    rows = [(pct, base) for base, pct in updates.items()]
+    try:
+        async with await psycopg.AsyncConnection.connect(db_url) as conn, conn.cursor() as cur:
+            await cur.executemany(_UPDATE_LAST_PCT, rows)
+        log.info("persistence.updated_last_pct", count=len(rows))
+    except Exception as exc:
+        log.warning("persistence.update_last_pct.failed", err=str(exc))
+
+
 async def upsert_pumps(db_url: str, pumps: list[dict[str, Any]]) -> None:
     if not pumps:
         return

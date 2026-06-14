@@ -53,6 +53,16 @@ function pctColor(pct: number) {
   return 'text-yellow-400';
 }
 
+function fmtPrice(s: string): string {
+  const n = parseFloat(s);
+  if (!isFinite(n) || s === '') return s;
+  if (n >= 1000) return n.toFixed(2);
+  if (n >= 0.01) return n.toFixed(4);
+  // Tiny prices: 4 significant digits, no scientific notation
+  const exp = Math.floor(Math.log10(n));
+  return n.toFixed(Math.min(-exp + 3, 10));
+}
+
 export function TokenPage() {
   const { base } = useParams<{ base: string }>();
   const [pump, setPump] = useState<PumpEntry | null>(null);
@@ -218,10 +228,10 @@ export function TokenPage() {
                           {fmtPct(e.change_pct)}
                         </td>
                         <td className="px-4 py-3 text-right font-mono text-muted-foreground">
-                          ${e.price}
+                          ${fmtPrice(e.price)}
                         </td>
                         <td className="px-4 py-3 text-right font-mono text-muted-foreground">
-                          ${e.high_24h}
+                          ${fmtPrice(e.high_24h)}
                         </td>
                         <td className="px-4 py-3 text-right font-mono text-muted-foreground">
                           {fmtVol(e.volume_24h_usd)}

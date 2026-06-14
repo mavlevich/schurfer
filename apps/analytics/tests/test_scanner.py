@@ -1,4 +1,4 @@
-from schurfer_analytics.scanner import _dedup
+from schurfer_analytics.scanner import _aggregate_below_updates, _dedup
 
 
 def _entry(base: str, exchange: str, pct: float) -> dict[str, object]:
@@ -47,3 +47,36 @@ def test_dedup_sorted_by_max_pct() -> None:
     result = _dedup(entries)
     pcts = [p["max_change_pct"] for p in result]
     assert pcts == sorted(pcts, reverse=True)
+
+
+# _aggregate_below_updates tests
+
+
+def test_aggregate_tracked_below_threshold() -> None:
+    flat_below = [_entry("DOGE", "bybit", 22.0)]
+    result = _aggregate_below_updates(flat_below, live_bases=set())
+    assert result == {"DOGE": 22.0}
+
+
+def test_aggregate_live_token_excluded() -> None:
+    flat_below = [_entry("BTC", "bybit", 20.0)]
+    result = _aggregate_below_updates(flat_below, live_bases={"BTC"})
+    assert "BTC" not in result
+
+
+def test_aggregate_mixed_exchanges_same_base_excluded() -> None:
+    # BTC is above threshold on binance (live), below on bybit — must not appear in updates
+    flat_below = [_entry("BTC", "bybit", 20.0), _entry("DOGE", "okx", 15.0)]
+    result = _aggregate_below_updates(flat_below, live_bases={"BTC"})
+    assert "BTC" not in result
+    assert result == {"DOGE": 15.0}
+
+
+def test_aggregate_picks_max_across_exchanges() -> None:
+    flat_below = [
+        _entry("DOGE", "bybit", 18.0),
+        _entry("DOGE", "okx", 25.0),
+        _entry("DOGE", "gate", 10.0),
+    ]
+    result = _aggregate_below_updates(flat_below, live_bases=set())
+    assert result == {"DOGE": 25.0}
