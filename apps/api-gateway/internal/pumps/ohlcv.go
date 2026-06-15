@@ -76,11 +76,27 @@ func parseBybit(raw []byte) ([]Candle, error) {
 	return candles, nil
 }
 
-func fetchBinance(ctx context.Context, base string, interval, limit int) ([]Candle, error) {
-	ivStr := fmt.Sprintf("%dm", interval)
-	if interval == 60 {
-		ivStr = "1h"
+func binanceInterval(minutes int) string {
+	switch minutes {
+	case 60:
+		return "1h"
+	case 120:
+		return "2h"
+	case 240:
+		return "4h"
+	case 360:
+		return "6h"
+	case 480:
+		return "8h"
+	case 720:
+		return "12h"
+	default:
+		return fmt.Sprintf("%dm", minutes)
 	}
+}
+
+func fetchBinance(ctx context.Context, base string, interval, limit int) ([]Candle, error) {
+	ivStr := binanceInterval(interval)
 	url := fmt.Sprintf(
 		"https://fapi.binance.com/fapi/v1/klines?symbol=%sUSDT&interval=%s&limit=%d",
 		base, ivStr, limit,
@@ -154,11 +170,27 @@ func parseBinance(raw []byte) ([]Candle, error) {
 	return candles, nil
 }
 
-func fetchOKX(ctx context.Context, base string, interval, limit int) ([]Candle, error) {
-	bar := fmt.Sprintf("%dm", interval)
-	if interval == 60 {
-		bar = "1H"
+func okxInterval(minutes int) string {
+	switch minutes {
+	case 60:
+		return "1H"
+	case 120:
+		return "2H"
+	case 240:
+		return "4H"
+	case 360:
+		return "6H"
+	case 480:
+		return "8H"
+	case 720:
+		return "12H"
+	default:
+		return fmt.Sprintf("%dm", minutes)
 	}
+}
+
+func fetchOKX(ctx context.Context, base string, interval, limit int) ([]Candle, error) {
+	bar := okxInterval(interval)
 	url := fmt.Sprintf(
 		"https://www.okx.com/api/v5/market/candles?instId=%s-USDT-SWAP&bar=%s&limit=%d",
 		base, bar, limit,
@@ -197,47 +229,6 @@ func parseOKX(raw []byte) ([]Candle, error) {
 	}
 	reverseCandles(candles) // OKX returns newest first
 	return candles, nil
-}
-
-// parseRow extracts a Candle from a string slice given field indices.
-// Returns an error if the row is too short or any value fails to parse.
-func parseRow(row []string, tsIdx, oIdx, hIdx, lIdx, cIdx, vIdx int) (Candle, error) {
-	need := max(tsIdx, oIdx, hIdx, lIdx, cIdx, vIdx) + 1
-	if len(row) < need {
-		return Candle{}, fmt.Errorf("short row: need %d fields, got %d", need, len(row))
-	}
-	ts, err := strconv.ParseInt(row[tsIdx], 10, 64)
-	if err != nil {
-		return Candle{}, fmt.Errorf("time=%q: %w", row[tsIdx], err)
-	}
-	parseF := func(s, name string) (float64, error) {
-		v, err := strconv.ParseFloat(s, 64)
-		if err != nil {
-			return 0, fmt.Errorf("%s=%q: %w", name, s, err)
-		}
-		return v, nil
-	}
-	o, err := parseF(row[oIdx], "open")
-	if err != nil {
-		return Candle{}, err
-	}
-	h, err := parseF(row[hIdx], "high")
-	if err != nil {
-		return Candle{}, err
-	}
-	l, err := parseF(row[lIdx], "low")
-	if err != nil {
-		return Candle{}, err
-	}
-	c, err := parseF(row[cIdx], "close")
-	if err != nil {
-		return Candle{}, err
-	}
-	v, err := parseF(row[vIdx], "volume")
-	if err != nil {
-		return Candle{}, err
-	}
-	return Candle{Time: ts, Open: o, High: h, Low: l, Close: c, Volume: v}, nil
 }
 
 func fetchGate(ctx context.Context, base string, interval, limit int) ([]Candle, error) {
@@ -300,6 +291,47 @@ func parseGate(raw []byte) ([]Candle, error) {
 		candles = append(candles, Candle{Time: row.T, Open: o, High: h, Low: l, Close: c, Volume: row.V})
 	}
 	return candles, nil
+}
+
+// parseRow extracts a Candle from a string slice given field indices.
+// Returns an error if the row is too short or any value fails to parse.
+func parseRow(row []string, tsIdx, oIdx, hIdx, lIdx, cIdx, vIdx int) (Candle, error) {
+	need := max(tsIdx, oIdx, hIdx, lIdx, cIdx, vIdx) + 1
+	if len(row) < need {
+		return Candle{}, fmt.Errorf("short row: need %d fields, got %d", need, len(row))
+	}
+	ts, err := strconv.ParseInt(row[tsIdx], 10, 64)
+	if err != nil {
+		return Candle{}, fmt.Errorf("time=%q: %w", row[tsIdx], err)
+	}
+	parseF := func(s, name string) (float64, error) {
+		v, err := strconv.ParseFloat(s, 64)
+		if err != nil {
+			return 0, fmt.Errorf("%s=%q: %w", name, s, err)
+		}
+		return v, nil
+	}
+	o, err := parseF(row[oIdx], "open")
+	if err != nil {
+		return Candle{}, err
+	}
+	h, err := parseF(row[hIdx], "high")
+	if err != nil {
+		return Candle{}, err
+	}
+	l, err := parseF(row[lIdx], "low")
+	if err != nil {
+		return Candle{}, err
+	}
+	c, err := parseF(row[cIdx], "close")
+	if err != nil {
+		return Candle{}, err
+	}
+	v, err := parseF(row[vIdx], "volume")
+	if err != nil {
+		return Candle{}, err
+	}
+	return Candle{Time: ts, Open: o, High: h, Low: l, Close: c, Volume: v}, nil
 }
 
 func reverseCandles(c []Candle) {

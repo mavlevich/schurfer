@@ -74,6 +74,7 @@ func run() error {
 		r.Get("/api/pumps/history", pumpsHandler.History)
 		r.Get("/api/pumps/{base}", pumpsHandler.Token)
 		r.Get("/api/pumps/{base}/ohlcv", pumpsHandler.OHLCV)
+		r.Get("/api/pumps/{base}/history", pumpsHandler.TokenHistory)
 		r.Get("/ws/status", wsHandler.Status)
 	})
 

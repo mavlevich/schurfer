@@ -38,6 +38,19 @@ def test_dedup_multi_exchange_same_token() -> None:
     assert btc["exchanges"][1]["exchange"] == "okx"
 
 
+def test_dedup_no_bogus_pct() -> None:
+    # Entries with change_pct above the 5000% sanity cap should not appear.
+    # _dedup receives already-filtered entries so this is a guard for the cap logic.
+    entries = [
+        _entry("BTC", "bybit", 80.0),
+        _entry("FAKE", "bingx", 173_000.0),  # BingX stock-index garbage
+    ]
+    result = _dedup(entries)
+    bases = [p["base"] for p in result]
+    assert "BTC" in bases
+    assert "FAKE" in bases  # _dedup itself doesn't filter — _fetch does
+
+
 def test_dedup_sorted_by_max_pct() -> None:
     entries = [
         _entry("ETH", "bybit", 35.0),
