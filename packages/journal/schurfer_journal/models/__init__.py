@@ -10,6 +10,7 @@ from .enums import (
     TradeStatus,
 )
 from .pump_event import PumpEvent
+from .pump_event_snapshot import PumpEventSnapshot
 from .trade import Alert, Strategy, Trade
 
 __all__ = [
@@ -21,6 +22,7 @@ __all__ = [
     "OutcomeLabel",
     "OutcomeQuality",
     "PumpEvent",
+    "PumpEventSnapshot",
     "Side",
     "SignalSource",
     "Strategy",

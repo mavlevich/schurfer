@@ -33,27 +33,41 @@
 - [x] `GET /api/pumps` in api-gateway
 - [x] Analytics service in Docker Compose
 
-## Sprint 3: Pump History + Token Detail + Alerts
+## Sprint 3: Pump History + Token Detail + Alerts ✅
 
 _Goal: know what happened after a pump, drill into a single token, get notified in real time._
 
-- [ ] PostgreSQL `pump_events` table (base, exchange, peak_pct, detected_at, retrace_pct, closed_at)
-- [ ] Scanner writes event on first detection and on token disappearance (retrace)
-- [ ] Tokens stay visible for 24h after first detection: show `peak_pct` (max during event) + `current_pct` (live or last seen); disappear only after 24h, not on retrace
-- [ ] `GET /api/pumps/history` with filters (exchange, base, date range)
-- [ ] Web history page: "COAI +78% peak → retraced to +12% · 4h ago"
-- [ ] Token detail page `/pumps/:base` — click any token in the table to open:
-  - Price chart (OHLCV fetched on demand via ccxt from best exchange)
-  - Exchange breakdown: which CEXs are pumping it and by how much
-  - Pump history for this token: previous events, peak %, retrace %, duration
-  - Basic stats: avg retrace, fastest/slowest retrace from history
-- [ ] Telegram bot: alert on new pump detection with exchange + % info
+- [x] PostgreSQL `pump_events` table (base, episode, peak_pct, last_pct, retrace_pct, closed_at, miss_count)
+- [x] Scanner writes event on first detection; cooling period (3 consecutive misses) before closing episode
+- [x] Multi-episode tracking per token: `(base, episode)` composite key, new episode opens automatically after prior one closes
+- [x] Snapshots at +1h/+4h/+24h stored per event regardless of episode state — feeds the historical dataset
+- [x] `GET /api/pumps/history` with filters (exchange, base, since/until); defaults to last 24h
+- [x] `GET /api/pumps/{base}/history` — all episodes for a single token
+- [x] Token detail page `/pumps/:base`:
+  - [x] Price chart (OHLCV) with interval selector: 5m / 15m / 1h / 4h; defaults to 15m
+  - [x] Chart picks exchange where pump was strongest (not just Binance-first)
+  - [x] Exchange breakdown: which CEXs are pumping and by how much
+  - [x] Pump episodes table: first seen, ended, peak %, retrace %, LIVE/closed status
+  - [ ] Basic stats: avg retrace, fastest/slowest retrace from history (Sprint 4 data)
+- [x] BingX sanity cap: `abs(pct) > 5000%` filtered in scanner (stock-index futures garbage)
+- [x] Scanner returns `(pumps, errors)` — retrace close skipped on any exchange error
+- [x] Telegram notifier: Go service, alerts on new pumps, deduplication via Redis `notifier:seen:*` 24h TTL
+
+**Data model notes:**
+
+- `pump_events` records _events_, not tokens — same token can have many rows (one per pump episode); no blacklisting
+- `notifier:seen:*` (24h TTL) deduplicates alerts within a single pump episode only; a new episode months later gets a fresh alert
+- `miss_count` tracks consecutive scan misses before closing — prevents false closes on single network blip
+- Token trading cooldown (Sprint 6) = "don't re-enter the same fading episode", not "avoid this token forever"
 
 ## Sprint 4: Pump Analytics — "Short or Wait?"
 
 _Goal: answer "is this pump still going or time to short?" using real market structure data._
 
 Requires Sprint 3 data (a few weeks of history) for retrace stats.
+
+**Why history matters even without trades:**
+Every pump event we record — whether we trade it or not — contributes to retrace distributions and timing models. A token that pumps 3x a year is more valuable in the dataset than one that pumped once. The goal is: "historically, after a +80% pump on Binance, median retrace was −42% in 4h" — this needs volume of data, not trades.
 
 **Open Interest analysis (cross-exchange)**
 
@@ -92,6 +106,15 @@ verdict: Pumping / Cooling off / Short setup / Prime short
 - [ ] Age indicator: "token has been pumping for 3h — historically late to enter"
 - [ ] Pump lifecycle tracking: record price snapshots at +1h, +4h, +24h after first detection — needed to build retrace distributions and entry/exit timing models
 - [ ] Leverage suggestion: based on retrace % distribution (e.g. median −42% → 2x short has high win rate), volatility-adjusted max leverage per token category
+
+**Professional-grade analytics (longer term within Sprint 4):**
+
+- [ ] Volume profile per pump event: where did volume cluster during the pump? high-volume nodes = likely support/resistance on retrace
+- [ ] Repeat-pumper detection: tokens that pump on a regular cadence (weekly/monthly pattern) flagged separately — higher confidence trades
+- [ ] Cross-event correlation: does a pump on Binance predict a follow-through on OKX within N minutes? lag analysis across exchanges
+- [ ] Retrace speed classification: fast retrace (< 1h back to baseline) vs slow bleed (12h+) — determines optimal TP placement
+- [ ] "Dead cat" filter: pumps that briefly recover then dump lower than pre-pump baseline — pattern to avoid on the long side
+- [ ] Historical replay: given a pump event from the past, show what the optimal entry/exit would have been — sanity check for strategy parameters
 
 ## Sprint 5: Cross-Market Signals (CEX Spot + DEX)
 
@@ -173,6 +196,16 @@ _Goal: run in production without babysitting._
 - **CodeQL + Semgrep in CI** — static analysis for SQL injection, secrets in code (Sprint 8)
 
 ## Technical debt / optimization
+
+**DX / CI quality (do before Sprint 4)**
+
+- **Pre-push hook** — add `make verify` as a pre-push stage in `.pre-commit-config.yaml` + `pre-commit install --hook-type pre-push`; right now broken code reaches CI before anyone notices locally
+- **CI caching** — no caching for Go modules, pnpm store, or uv cache; every run re-downloads everything including ccxt and miniredis; add `actions/cache@v4` for `~/.cache/go-build`, `~/go/pkg/mod`, `~/.local/share/pnpm/store`, `~/.cache/uv` keyed on lockfile hashes
+- **golangci-lint in `make verify`** — currently `verify` runs `go test` + `go vet` but golangci-lint only via pre-commit hook; someone running `make verify` without hooks installed misses the linter
+- **Remove recharts** — `recharts` is in `package.json` but unused in code; `lightweight-charts` covers all chart needs; saves ~200KB from the bundle (`pnpm --filter @schurfer/web remove recharts`)
+- **Coverage thresholds** — coverage is collected in CI but no minimum is enforced; set `fail_under = 70` in `[tool.coverage.report]` (Python) and add a threshold check after `go test -coverprofile` (Go)
+- **wrapcheck + goconst in golangci-lint** — `wrapcheck` enforces consistent `fmt.Errorf("...: %w", err)` wrapping for external package errors; `goconst` flags repeated string literals that should be constants
+- **Vitest for web utils** — `test-ts` CI job runs `pnpm run test` but there are no tests; add Vitest and cover `pumpsCache` TTL logic and `fmtVol`/`fmtPct` formatters
 
 - **Analytics: WebSocket ticker subscriptions** — replace REST `fetchTickers` polling with WS updates; reduces bandwidth ~10-20x (Sprint 4)
 - **Analytics: persistent exchange connections** — currently reconnects every scan; keep sessions alive between scans to reduce TLS handshake overhead

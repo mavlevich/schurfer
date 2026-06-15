@@ -51,6 +51,10 @@ async def _fetch(
             if pct is None:
                 continue
             pct_f = round(float(pct), 2)
+            # Sanity cap: values above 5000% indicate a data error (e.g. BingX
+            # stock-index futures reporting absolute price as a percentage).
+            if abs(pct_f) > 5000:
+                continue
             base = sym.split("/")[0]
             entry = {
                 "base": base,
@@ -112,8 +116,12 @@ async def run_once(
     min_pct: float,
     rdb: aioredis.Redis,
     extra_bases: frozenset[str] = frozenset(),
-) -> tuple[list[dict[str, Any]], dict[str, float]]:
-    """Scan all exchanges, store result in Redis. Returns (pumps, below_threshold_updates)."""
+) -> tuple[list[dict[str, Any]], dict[str, str], dict[str, float]]:
+    """Scan all exchanges, deduplicate, store result in Redis.
+
+    Returns (pumps, errors, below_updates).
+    On total failure returns ([], errors, {}) without writing to Redis.
+    """
     unknown = [n for n in exchange_names if n not in _FACTORIES]
     if unknown:
         log.warning("scanner.unknown_exchanges", unknown=unknown)
@@ -121,7 +129,7 @@ async def run_once(
     exchanges = {n: _FACTORIES[n]() for n in exchange_names if n in _FACTORIES}
     if not exchanges:
         log.error("scanner.no_valid_exchanges")
-        return [], {}
+        return [], {}, {}
 
     try:
         results: list[
@@ -142,7 +150,7 @@ async def run_once(
         # All sources failed — preserve the last known-good snapshot in Redis
         if errors and len(errors) == len(exchanges):
             log.error("scanner.all_failed", errors=errors)
-            return [], {}
+            return [], errors, {}
 
         pumps = _dedup(flat)
         live_bases = {p["base"] for p in pumps}
@@ -160,7 +168,7 @@ async def run_once(
         )
         await rdb.set(REDIS_KEY, payload, ex=REDIS_TTL)
         log.info("scanner.stored", count=len(pumps), min_pct=min_pct, failed=len(errors))
-        return pumps, below_updates
+        return pumps, errors, below_updates
     finally:
         await asyncio.gather(
             *[ex.close() for ex in exchanges.values()],

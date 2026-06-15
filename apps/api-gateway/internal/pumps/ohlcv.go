@@ -76,11 +76,27 @@ func parseBybit(raw []byte) ([]Candle, error) {
 	return candles, nil
 }
 
-func fetchBinance(ctx context.Context, base string, interval, limit int) ([]Candle, error) {
-	ivStr := fmt.Sprintf("%dm", interval)
-	if interval == 60 {
-		ivStr = "1h"
+func binanceInterval(minutes int) string {
+	switch minutes {
+	case 60:
+		return "1h"
+	case 120:
+		return "2h"
+	case 240:
+		return "4h"
+	case 360:
+		return "6h"
+	case 480:
+		return "8h"
+	case 720:
+		return "12h"
+	default:
+		return fmt.Sprintf("%dm", minutes)
 	}
+}
+
+func fetchBinance(ctx context.Context, base string, interval, limit int) ([]Candle, error) {
+	ivStr := binanceInterval(interval)
 	url := fmt.Sprintf(
 		"https://fapi.binance.com/fapi/v1/klines?symbol=%sUSDT&interval=%s&limit=%d",
 		base, ivStr, limit,
@@ -154,11 +170,27 @@ func parseBinance(raw []byte) ([]Candle, error) {
 	return candles, nil
 }
 
-func fetchOKX(ctx context.Context, base string, interval, limit int) ([]Candle, error) {
-	bar := fmt.Sprintf("%dm", interval)
-	if interval == 60 {
-		bar = "1H"
+func okxInterval(minutes int) string {
+	switch minutes {
+	case 60:
+		return "1H"
+	case 120:
+		return "2H"
+	case 240:
+		return "4H"
+	case 360:
+		return "6H"
+	case 480:
+		return "8H"
+	case 720:
+		return "12H"
+	default:
+		return fmt.Sprintf("%dm", minutes)
 	}
+}
+
+func fetchOKX(ctx context.Context, base string, interval, limit int) ([]Candle, error) {
+	bar := okxInterval(interval)
 	url := fmt.Sprintf(
 		"https://www.okx.com/api/v5/market/candles?instId=%s-USDT-SWAP&bar=%s&limit=%d",
 		base, bar, limit,

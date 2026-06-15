@@ -19,3 +19,6 @@ class Config:
     )
     min_pct: float = field(default_factory=lambda: float(os.getenv("PUMP_MIN_PCT", "30")))
     interval: int = field(default_factory=lambda: int(os.getenv("SCAN_INTERVAL", "60")))
+    close_after_misses: int = field(
+        default_factory=lambda: int(os.getenv("PUMP_CLOSE_AFTER_MISSES", "3"))
+    )

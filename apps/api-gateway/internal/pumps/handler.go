@@ -46,10 +46,13 @@ type pumpsPayload struct {
 
 type historyEntry struct {
 	Base        string          `json:"base"`
+	Episode     int             `json:"episode"`
 	FirstSeenAt int64           `json:"first_seen_at"`
 	LastSeenAt  int64           `json:"last_seen_at"`
+	ClosedAt    *int64          `json:"closed_at"`
 	PeakPct     float64         `json:"peak_pct"`
 	LastPct     float64         `json:"last_pct"`
+	RetracePct  *float64        `json:"retrace_pct"`
 	IsLive      bool            `json:"is_live"`
 	Exchanges   json.RawMessage `json:"exchanges"`
 }
@@ -160,16 +163,32 @@ func (h *Handler) OHLCV(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
-	rows, err := h.pool.Query(r.Context(), `
-		SELECT base,
+	q := r.URL.Query()
+
+	// Optional filters: ?exchange=binance&since=1700000000&until=1700099999
+	exchange := q.Get("exchange")
+	since := parseUnixParam(q.Get("since"))
+	until := parseUnixParam(q.Get("until"))
+
+	query := `
+		SELECT base, episode,
 		       extract(epoch from first_seen_at)::bigint,
 		       extract(epoch from last_seen_at)::bigint,
-		       peak_pct, last_pct, exchanges
+		       extract(epoch from closed_at)::bigint,
+		       peak_pct, last_pct, retrace_pct, exchanges
 		FROM app.pump_events
-		WHERE last_seen_at > NOW() - INTERVAL '24 hours'
+		WHERE ($1::text IS NULL OR exchanges @> jsonb_build_array(jsonb_build_object('exchange', $1::text)))
+		  AND ($2::bigint IS NULL OR extract(epoch from last_seen_at) >= $2)
+		  AND ($3::bigint IS NULL OR extract(epoch from first_seen_at) <= $3)
+		  AND (($2 IS NOT NULL OR $3 IS NOT NULL) OR last_seen_at > NOW() - INTERVAL '24 hours')
 		ORDER BY peak_pct DESC
-		LIMIT 200
-	`)
+		LIMIT 500`
+
+	rows, err := h.pool.Query(r.Context(), query,
+		nullableString(exchange),
+		since,
+		until,
+	)
 	if err != nil {
 		slog.Error("pumps.history.query", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -188,13 +207,18 @@ func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var e historyEntry
 		var exJSON []byte
-		if err := rows.Scan(&e.Base, &e.FirstSeenAt, &e.LastSeenAt, &e.PeakPct, &e.LastPct, &exJSON); err != nil {
+		if err := rows.Scan(
+			&e.Base, &e.Episode,
+			&e.FirstSeenAt, &e.LastSeenAt, &e.ClosedAt,
+			&e.PeakPct, &e.LastPct, &e.RetracePct,
+			&exJSON,
+		); err != nil {
 			slog.Error("pumps.history.scan", "err", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
 		e.Exchanges = json.RawMessage(exJSON)
-		e.IsLive = live[e.Base]
+		e.IsLive = live[e.Base] && e.ClosedAt == nil
 		entries = append(entries, e)
 	}
 	if err := rows.Err(); err != nil {
@@ -206,6 +230,86 @@ func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
 	out, _ := json.Marshal(entries)
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(out)
+}
+
+// TokenHistory returns all pump episodes for a single token, newest first.
+func (h *Handler) TokenHistory(w http.ResponseWriter, r *http.Request) {
+	base := strings.ToUpper(chi.URLParam(r, "base"))
+	if !validBase.MatchString(base) {
+		http.Error(w, "invalid token", http.StatusBadRequest)
+		return
+	}
+
+	rows, err := h.pool.Query(r.Context(), `
+		SELECT episode,
+		       extract(epoch from first_seen_at)::bigint,
+		       extract(epoch from last_seen_at)::bigint,
+		       extract(epoch from closed_at)::bigint,
+		       peak_pct, last_pct, retrace_pct, exchanges
+		FROM app.pump_events
+		WHERE base = $1
+		ORDER BY first_seen_at DESC
+		LIMIT 100`, base)
+	if err != nil {
+		slog.Error("pumps.token_history.query", "base", base, "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	live := map[string]bool{}
+	if payload, err := h.loadPumps(r.Context()); err == nil {
+		for _, p := range payload.Pumps {
+			live[p.Base] = true
+		}
+	}
+
+	entries := make([]historyEntry, 0)
+	for rows.Next() {
+		var e historyEntry
+		var exJSON []byte
+		e.Base = base
+		if err := rows.Scan(
+			&e.Episode,
+			&e.FirstSeenAt, &e.LastSeenAt, &e.ClosedAt,
+			&e.PeakPct, &e.LastPct, &e.RetracePct,
+			&exJSON,
+		); err != nil {
+			slog.Error("pumps.token_history.scan", "err", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		e.Exchanges = json.RawMessage(exJSON)
+		e.IsLive = live[e.Base] && e.ClosedAt == nil
+		entries = append(entries, e)
+	}
+	if err := rows.Err(); err != nil {
+		slog.Error("pumps.token_history.rows", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	out, _ := json.Marshal(entries)
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(out)
+}
+
+func parseUnixParam(s string) *int64 {
+	if s == "" {
+		return nil
+	}
+	v, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		return nil
+	}
+	return &v
+}
+
+func nullableString(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 // pickExchange returns the best supported exchange for OHLCV data.
