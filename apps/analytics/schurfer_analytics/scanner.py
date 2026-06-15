@@ -36,7 +36,10 @@ async def _fetch(
     min_pct: float,
     extra_bases: frozenset[str] = frozenset(),
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], str | None]:
-    """Returns (above_threshold, below_threshold_tracked, error)."""
+    """Returns (above_threshold, below_threshold_tracked, error).
+
+    extra_bases: tracked tokens to include even if below min_pct (watch-list).
+    """
     try:
         if not exchange.has.get("fetchTickers"):
             log.warning("exchange.no_fetch_tickers", exchange=name)
@@ -80,7 +83,7 @@ def _aggregate_below_updates(
     flat_below: list[dict[str, Any]],
     live_bases: set[str],
 ) -> dict[str, float]:
-    """Max current % per tracked base, excluding bases that are still live above threshold."""
+    """Max current % per tracked base, excluding bases still live above threshold."""
     updates: dict[str, float] = {}
     for entry in flat_below:
         base = entry["base"]
@@ -119,7 +122,10 @@ async def run_once(
 ) -> tuple[list[dict[str, Any]], dict[str, str], dict[str, float]]:
     """Scan all exchanges, deduplicate, store result in Redis.
 
-    Returns (pumps, errors, below_updates).
+    Returns (pumps, errors, below_updates):
+      - pumps: tokens above min_pct
+      - errors: exchange name → error string for failed exchanges
+      - below_updates: base → current % for tracked tokens that dropped below threshold
     On total failure returns ([], errors, {}) without writing to Redis.
     """
     unknown = [n for n in exchange_names if n not in _FACTORIES]
