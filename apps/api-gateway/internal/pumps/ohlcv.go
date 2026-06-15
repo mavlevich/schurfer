@@ -231,6 +231,68 @@ func parseOKX(raw []byte) ([]Candle, error) {
 	return candles, nil
 }
 
+func fetchGate(ctx context.Context, base string, interval, limit int) ([]Candle, error) {
+	ivStr := fmt.Sprintf("%dm", interval)
+	if interval == 60 {
+		ivStr = "1h"
+	}
+	url := fmt.Sprintf(
+		"https://fx-api.gateio.ws/api/v4/futures/usdt/candlesticks?contract=%s_USDT&interval=%s&limit=%d",
+		base, ivStr, limit,
+	)
+	raw, err := httpGet(ctx, url)
+	if err != nil {
+		return nil, err
+	}
+	candles, err := parseGate(raw)
+	if err != nil {
+		return nil, fmt.Errorf("gate/%s: %w", base, err)
+	}
+	return candles, nil
+}
+
+func parseGate(raw []byte) ([]Candle, error) {
+	var rows []struct {
+		T int64   `json:"t"`
+		O string  `json:"o"`
+		H string  `json:"h"`
+		L string  `json:"l"`
+		C string  `json:"c"`
+		V float64 `json:"v"`
+	}
+	if err := json.Unmarshal(raw, &rows); err != nil {
+		return nil, fmt.Errorf("json: %w", err)
+	}
+	candles := make([]Candle, 0, len(rows))
+	for i, row := range rows {
+		parseF := func(s, name string) (float64, error) {
+			v, err := strconv.ParseFloat(s, 64)
+			if err != nil {
+				return 0, fmt.Errorf("row %d %s=%q: %w", i, name, s, err)
+			}
+			return v, nil
+		}
+		o, err := parseF(row.O, "open")
+		if err != nil {
+			return nil, err
+		}
+		h, err := parseF(row.H, "high")
+		if err != nil {
+			return nil, err
+		}
+		l, err := parseF(row.L, "low")
+		if err != nil {
+			return nil, err
+		}
+		c, err := parseF(row.C, "close")
+		if err != nil {
+			return nil, err
+		}
+		candles = append(candles, Candle{Time: row.T, Open: o, High: h, Low: l, Close: c, Volume: row.V})
+	}
+	return candles, nil
+}
+
 // parseRow extracts a Candle from a string slice given field indices.
 // Returns an error if the row is too short or any value fails to parse.
 func parseRow(row []string, tsIdx, oIdx, hIdx, lIdx, cIdx, vIdx int) (Candle, error) {
