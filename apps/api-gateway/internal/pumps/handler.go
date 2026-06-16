@@ -73,13 +73,60 @@ type oiResponse struct {
 	PumpFirstSeenAt  *int64            `json:"pump_first_seen_at"`
 }
 
+// fundingElevatedThreshold is 0.1% per 8h — above this longs are paying heavily.
+const fundingElevatedThreshold = 0.001
+
+// fundingPeriodsPerYear converts an 8h funding rate to annualized APR.
+// 3 periods/day × 365 days = 1095.
+const fundingPeriodsPerYear = 1095
+
+type fundingEntry struct {
+	Exchange   string  `json:"exchange"`
+	Rate       float64 `json:"rate"`
+	RatePct    float64 `json:"rate_pct"`
+	AprPct     float64 `json:"apr_pct"`
+	IsElevated bool    `json:"is_elevated"`
+	RecordedAt int64   `json:"recorded_at"`
+}
+
+type fundingResponse struct {
+	Base            string         `json:"base"`
+	PumpFirstSeenAt *int64         `json:"pump_first_seen_at"`
+	Exchanges       []fundingEntry `json:"exchanges"`
+}
+
+// pgxRow is satisfied by pgx.Row from pgxpool — extracted into an interface
+// so tests can inject stubs without a live database connection.
+type pgxRow interface {
+	Scan(dest ...any) error
+}
+
+// pgxPool is the subset of *pgxpool.Pool used by Handler.
+// *pgxpool.Pool satisfies this interface; tests inject a stubQuerier.
+type pgxPool interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgxRow
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+}
+
+// poolAdapter wraps *pgxpool.Pool so its QueryRow return (pgx.Row struct)
+// is returned as the pgxRow interface.
+type poolAdapter struct{ inner *pgxpool.Pool }
+
+func (a *poolAdapter) QueryRow(ctx context.Context, sql string, args ...any) pgxRow {
+	return a.inner.QueryRow(ctx, sql, args...)
+}
+
+func (a *poolAdapter) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+	return a.inner.Query(ctx, sql, args...)
+}
+
 type Handler struct {
 	rdb  *redis.Client
-	pool *pgxpool.Pool
+	pool pgxPool
 }
 
 func NewHandler(rdb *redis.Client, pool *pgxpool.Pool) *Handler {
-	return &Handler{rdb: rdb, pool: pool}
+	return &Handler{rdb: rdb, pool: &poolAdapter{inner: pool}}
 }
 
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
@@ -378,6 +425,81 @@ func (h *Handler) OI(w http.ResponseWriter, r *http.Request) {
 		BaselineTotalUSD: baselineTotal,
 		DeltaPct:         deltaPct,
 		PumpFirstSeenAt:  firstSeenAt,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(out)
+}
+
+// Funding returns the latest funding rate per exchange for a token's current pump
+// episode (or the most recently closed one). Each entry includes the raw 8h rate,
+// rate_pct (×100), annualized APR, and an is_elevated flag (rate > 0.1% / 8h).
+func (h *Handler) Funding(w http.ResponseWriter, r *http.Request) {
+	base := strings.ToUpper(chi.URLParam(r, "base"))
+	if !validBase.MatchString(base) {
+		http.Error(w, "invalid token", http.StatusBadRequest)
+		return
+	}
+
+	var eventID *int64
+	var firstSeenAt *int64
+	err := h.pool.QueryRow(r.Context(),
+		`SELECT id, extract(epoch from first_seen_at)::bigint FROM app.pump_events
+		 WHERE base = $1 ORDER BY closed_at IS NULL DESC, first_seen_at DESC LIMIT 1`,
+		base,
+	).Scan(&eventID, &firstSeenAt)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		slog.Error("pumps.funding.episode_query", "base", base, "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	entries := make([]fundingEntry, 0)
+	if eventID != nil {
+		// Latest row per exchange via DISTINCT ON — gives the most recent rate for each.
+		rows, err := h.pool.Query(r.Context(),
+			`SELECT DISTINCT ON (exchange) exchange, rate,
+			        extract(epoch from recorded_at)::bigint
+			 FROM app.funding_rate_snapshots
+			 WHERE event_id = $1
+			 ORDER BY exchange, recorded_at DESC`,
+			*eventID,
+		)
+		if err != nil {
+			slog.Error("pumps.funding.query", "base", base, "err", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		defer rows.Close()
+
+		for rows.Next() {
+			var exchange string
+			var rate float64
+			var ts int64
+			if err := rows.Scan(&exchange, &rate, &ts); err != nil {
+				slog.Error("pumps.funding.scan", "err", err)
+				http.Error(w, "internal error", http.StatusInternalServerError)
+				return
+			}
+			entries = append(entries, fundingEntry{
+				Exchange:   exchange,
+				Rate:       rate,
+				RatePct:    rate * 100,
+				AprPct:     rate * fundingPeriodsPerYear * 100,
+				IsElevated: rate > fundingElevatedThreshold,
+				RecordedAt: ts,
+			})
+		}
+		if err := rows.Err(); err != nil {
+			slog.Error("pumps.funding.rows", "err", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	out := fundingResponse{
+		Base:            base,
+		PumpFirstSeenAt: firstSeenAt,
+		Exchanges:       entries,
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)

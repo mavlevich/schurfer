@@ -5,11 +5,13 @@ import redis.asyncio as aioredis
 import structlog
 
 from .config import Config
+from .funding import fetch_funding_rates_for_pumps
 from .oi import fetch_oi_for_pumps
 from .persistence import (
     close_retrace,
     get_open_episode_ids,
     get_tracked_bases,
+    insert_funding_rate_snapshots,
     insert_oi_snapshots,
     update_last_pct,
     upsert_pumps,
@@ -55,17 +57,24 @@ async def _run(once: bool) -> None:
                 if below_updates:
                     await update_last_pct(cfg.db_url, below_updates)
 
-                # OI for live + still-tracked (faded) pumps, so the retrace phase
-                # keeps accumulating data — not just while the pump is live.
+                # OI + funding rates for live + still-tracked (faded) pumps, so the
+                # retrace phase keeps accumulating data — not just while the pump is live.
                 oi_targets = pumps + tracked_pumps
                 if oi_targets:
-                    oi_rows = await fetch_oi_for_pumps(oi_targets)
-                    episode_ids = await get_open_episode_ids(
-                        cfg.db_url, {row["base"] for row in oi_rows}
+                    oi_rows, fr_rows = await asyncio.gather(
+                        fetch_oi_for_pumps(oi_targets),
+                        fetch_funding_rates_for_pumps(oi_targets),
                     )
+                    all_bases = {row["base"] for row in oi_rows} | {row["base"] for row in fr_rows}
+                    episode_ids = await get_open_episode_ids(cfg.db_url, all_bases)
                     for row in oi_rows:
                         row["event_id"] = episode_ids.get(row["base"])
-                    await insert_oi_snapshots(cfg.db_url, oi_rows)
+                    for row in fr_rows:
+                        row["event_id"] = episode_ids.get(row["base"])
+                    await asyncio.gather(
+                        insert_oi_snapshots(cfg.db_url, oi_rows),
+                        insert_funding_rate_snapshots(cfg.db_url, fr_rows),
+                    )
 
                 # Snapshots before close: a token that disappears this cycle can
                 # still get its due snapshot recorded before the episode is closed.

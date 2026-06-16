@@ -8,6 +8,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .base import Base
 
 if TYPE_CHECKING:
+    from .funding_rate_snapshot import FundingRateSnapshot
     from .oi_snapshot import OiSnapshot
     from .pump_event_snapshot import PumpEventSnapshot
 
@@ -37,4 +38,7 @@ class PumpEvent(Base):
     )
     oi_snapshots: Mapped[list["OiSnapshot"]] = relationship(
         "OiSnapshot", back_populates="event", cascade="all, delete-orphan"
+    )
+    funding_rate_snapshots: Mapped[list["FundingRateSnapshot"]] = relationship(
+        "FundingRateSnapshot", back_populates="event", cascade="all, delete-orphan"
     )
