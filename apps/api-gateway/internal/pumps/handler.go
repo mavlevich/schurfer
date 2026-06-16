@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 )
@@ -55,6 +56,21 @@ type historyEntry struct {
 	RetracePct  *float64        `json:"retrace_pct"`
 	IsLive      bool            `json:"is_live"`
 	Exchanges   json.RawMessage `json:"exchanges"`
+}
+
+type oiSnapshotEntry struct {
+	Exchange string  `json:"exchange"`
+	OiUSD    float64 `json:"oi_usd"`
+	TS       int64   `json:"ts"`
+}
+
+type oiResponse struct {
+	Base             string            `json:"base"`
+	Snapshots        []oiSnapshotEntry `json:"snapshots"`
+	CurrentTotalUSD  float64           `json:"current_total_usd"`
+	BaselineTotalUSD float64           `json:"baseline_total_usd"`
+	DeltaPct         *float64          `json:"delta_pct"`
+	PumpFirstSeenAt  *int64            `json:"pump_first_seen_at"`
 }
 
 type Handler struct {
@@ -292,6 +308,112 @@ func (h *Handler) TokenHistory(w http.ResponseWriter, r *http.Request) {
 	out, _ := json.Marshal(entries)
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(out)
+}
+
+// OI returns open interest history for a token plus the delta vs the start
+// of its pump episode, aggregated across exchanges. Scoped to a single
+// episode (the open one if there is one, else the most recently closed one)
+// so repeat pumps on the same token never mix OI data across episodes.
+func (h *Handler) OI(w http.ResponseWriter, r *http.Request) {
+	base := strings.ToUpper(chi.URLParam(r, "base"))
+	if !validBase.MatchString(base) {
+		http.Error(w, "invalid token", http.StatusBadRequest)
+		return
+	}
+
+	var eventID *int64
+	var firstSeenAt *int64
+	err := h.pool.QueryRow(r.Context(),
+		`SELECT id, extract(epoch from first_seen_at)::bigint FROM app.pump_events
+		 WHERE base = $1 ORDER BY closed_at IS NULL DESC, first_seen_at DESC LIMIT 1`,
+		base,
+	).Scan(&eventID, &firstSeenAt)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		slog.Error("pumps.oi.episode_query", "base", base, "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	snapshots := make([]oiSnapshotEntry, 0)
+	if eventID != nil {
+		// Latest 1000 rows first (DESC), then re-ordered ASC for the response —
+		// taking the oldest 1000 would make "latest" stale for long-lived episodes.
+		rows, err := h.pool.Query(r.Context(),
+			`SELECT exchange, oi_usd, ts FROM (
+				 SELECT exchange, oi_usd, extract(epoch from recorded_at)::bigint AS ts, recorded_at
+				 FROM app.oi_snapshots WHERE event_id = $1
+				 ORDER BY recorded_at DESC LIMIT 1000
+			 ) recent ORDER BY recorded_at ASC`,
+			*eventID,
+		)
+		if err != nil {
+			slog.Error("pumps.oi.query", "base", base, "err", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		defer rows.Close()
+
+		for rows.Next() {
+			var e oiSnapshotEntry
+			if err := rows.Scan(&e.Exchange, &e.OiUSD, &e.TS); err != nil {
+				slog.Error("pumps.oi.scan", "err", err)
+				http.Error(w, "internal error", http.StatusInternalServerError)
+				return
+			}
+			snapshots = append(snapshots, e)
+		}
+		if err := rows.Err(); err != nil {
+			slog.Error("pumps.oi.rows", "err", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	currentTotal, baselineTotal, deltaPct := aggregateOI(snapshots, firstSeenAt)
+
+	out := oiResponse{
+		Base:             base,
+		Snapshots:        snapshots,
+		CurrentTotalUSD:  currentTotal,
+		BaselineTotalUSD: baselineTotal,
+		DeltaPct:         deltaPct,
+		PumpFirstSeenAt:  firstSeenAt,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(out)
+}
+
+// aggregateOI computes current vs baseline total OI (summed across exchanges)
+// from a single episode's snapshots, ordered ascending by recorded_at.
+// baseline is each exchange's first snapshot at/after firstSeenAt (or its
+// first snapshot at all, if firstSeenAt is nil); current is each exchange's
+// latest snapshot. Pulled out of the handler so this logic — the part that
+// actually has edge cases (single snapshot, no baseline, etc.) — is unit
+// testable without a database.
+func aggregateOI(snapshots []oiSnapshotEntry, firstSeenAt *int64) (current, baseline float64, deltaPct *float64) {
+	latestByExchange := map[string]float64{}
+	baselineByExchange := map[string]float64{}
+	for _, e := range snapshots {
+		latestByExchange[e.Exchange] = e.OiUSD
+		if _, seen := baselineByExchange[e.Exchange]; !seen {
+			if firstSeenAt == nil || e.TS >= *firstSeenAt {
+				baselineByExchange[e.Exchange] = e.OiUSD
+			}
+		}
+	}
+
+	for _, v := range latestByExchange {
+		current += v
+	}
+	for _, v := range baselineByExchange {
+		baseline += v
+	}
+
+	if baseline > 0 {
+		d := (current - baseline) / baseline * 100
+		deltaPct = &d
+	}
+	return current, baseline, deltaPct
 }
 
 func parseUnixParam(s string) *int64 {

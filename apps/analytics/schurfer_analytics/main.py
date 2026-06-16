@@ -5,7 +5,15 @@ import redis.asyncio as aioredis
 import structlog
 
 from .config import Config
-from .persistence import close_retrace, get_tracked_bases, update_last_pct, upsert_pumps
+from .oi import fetch_oi_for_pumps
+from .persistence import (
+    close_retrace,
+    get_open_episode_ids,
+    get_tracked_bases,
+    insert_oi_snapshots,
+    update_last_pct,
+    upsert_pumps,
+)
 from .scanner import run_once
 from .snapshots import take_due_snapshots
 
@@ -37,7 +45,7 @@ async def _run(once: bool) -> None:
             if cfg.db_url:
                 extra_bases = await get_tracked_bases(cfg.db_url)
 
-            pumps, scan_errors, below_updates = await run_once(
+            pumps, scan_errors, below_updates, tracked_pumps = await run_once(
                 cfg.exchanges, cfg.min_pct, rdb, extra_bases
             )
 
@@ -46,6 +54,18 @@ async def _run(once: bool) -> None:
                     await upsert_pumps(cfg.db_url, pumps)
                 if below_updates:
                     await update_last_pct(cfg.db_url, below_updates)
+
+                # OI for live + still-tracked (faded) pumps, so the retrace phase
+                # keeps accumulating data — not just while the pump is live.
+                oi_targets = pumps + tracked_pumps
+                if oi_targets:
+                    oi_rows = await fetch_oi_for_pumps(oi_targets)
+                    episode_ids = await get_open_episode_ids(
+                        cfg.db_url, {row["base"] for row in oi_rows}
+                    )
+                    for row in oi_rows:
+                        row["event_id"] = episode_ids.get(row["base"])
+                    await insert_oi_snapshots(cfg.db_url, oi_rows)
 
                 # Snapshots before close: a token that disappears this cycle can
                 # still get its due snapshot recorded before the episode is closed.

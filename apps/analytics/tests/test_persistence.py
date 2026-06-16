@@ -1,11 +1,17 @@
 import asyncio
 import json
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from schurfer_analytics.persistence import (
+    _UPDATE_LAST_PCT,
     _high_24h_pct,
     _true_peak_pct,
     close_retrace,
+    get_open_episode_ids,
+    get_tracked_bases,
+    insert_oi_snapshots,
+    update_last_pct,
     upsert_pumps,
 )
 
@@ -218,6 +224,118 @@ def test_close_retrace_empty_live_increments_all() -> None:
 
     # SELECT_OPEN_ALL + 2 INCREMENT_MISS + CLOSE_DUE = 4
     assert mock_cur.execute.call_count == 4
+
+
+# --- insert_oi_snapshots ---
+
+
+def test_insert_oi_snapshots_empty_list_skips_db() -> None:
+    with patch("psycopg.AsyncConnection.connect") as mock_connect:
+        asyncio.run(insert_oi_snapshots("postgresql://test", []))
+    mock_connect.assert_not_called()
+
+
+def test_insert_oi_snapshots_executemany_rows() -> None:
+    mock_connect, _, mock_cur = _db_mocks()
+    snapshots = [
+        {"event_id": 42, "base": "BTC", "exchange": "okx", "oi_usd": 2_000_000.0},
+        {"event_id": 7, "base": "ETH", "exchange": "binance", "oi_usd": 1_000_000.0},
+    ]
+
+    with patch("psycopg.AsyncConnection.connect", mock_connect):
+        asyncio.run(insert_oi_snapshots("postgresql://test", snapshots))
+
+    mock_cur.executemany.assert_awaited_once()
+    rows = mock_cur.executemany.call_args[0][1]
+    assert rows == [(42, "BTC", "okx", 2_000_000.0), (7, "ETH", "binance", 1_000_000.0)]
+
+
+def test_insert_oi_snapshots_drops_rows_without_event_id() -> None:
+    mock_connect, _, mock_cur = _db_mocks()
+    snapshots: list[dict[str, Any]] = [
+        {"event_id": None, "base": "BTC", "exchange": "okx", "oi_usd": 2_000_000.0},
+        {"event_id": 7, "base": "ETH", "exchange": "binance", "oi_usd": 1_000_000.0},
+    ]
+
+    with patch("psycopg.AsyncConnection.connect", mock_connect):
+        asyncio.run(insert_oi_snapshots("postgresql://test", snapshots))
+
+    rows = mock_cur.executemany.call_args[0][1]
+    assert rows == [(7, "ETH", "binance", 1_000_000.0)]
+
+
+def test_insert_oi_snapshots_all_missing_event_id_skips_db() -> None:
+    snapshots: list[dict[str, Any]] = [
+        {"event_id": None, "base": "BTC", "exchange": "okx", "oi_usd": 1.0}
+    ]
+    with patch("psycopg.AsyncConnection.connect") as mock_connect:
+        asyncio.run(insert_oi_snapshots("postgresql://test", snapshots))
+    mock_connect.assert_not_called()
+
+
+# --- get_open_episode_ids ---
+
+
+def test_get_open_episode_ids_empty_bases_skips_db() -> None:
+    with patch("psycopg.AsyncConnection.connect") as mock_connect:
+        result = asyncio.run(get_open_episode_ids("postgresql://test", set()))
+    mock_connect.assert_not_called()
+    assert result == {}
+
+
+def test_get_open_episode_ids_maps_base_to_id() -> None:
+    mock_connect, _, mock_cur = _db_mocks()
+    mock_cur.fetchall = AsyncMock(return_value=[("BTC", 42), ("ETH", 7)])
+
+    with patch("psycopg.AsyncConnection.connect", mock_connect):
+        result = asyncio.run(get_open_episode_ids("postgresql://test", {"BTC", "ETH"}))
+
+    assert result == {"BTC": 42, "ETH": 7}
+
+
+# --- get_tracked_bases / update_last_pct must not touch closed episodes ---
+# Closed episodes keep retrace_pct frozen from the moment they closed; letting
+# later scans keep mutating last_pct on them would silently corrupt that
+# historical record and waste OI requests on tokens that are no longer live.
+
+
+def test_update_last_pct_query_excludes_closed_episodes() -> None:
+    assert "closed_at IS NULL" in _UPDATE_LAST_PCT
+
+
+def test_get_tracked_bases_query_excludes_closed_episodes() -> None:
+    mock_connect, _, mock_cur = _db_mocks()
+    mock_cur.fetchall = AsyncMock(return_value=[("BTC",), ("ETH",)])
+
+    with patch("psycopg.AsyncConnection.connect", mock_connect):
+        result = asyncio.run(get_tracked_bases("postgresql://test"))
+
+    assert result == frozenset({"BTC", "ETH"})
+    query = mock_cur.execute.call_args[0][0]
+    assert "closed_at IS NULL" in query
+
+
+def test_get_tracked_bases_db_error_returns_empty() -> None:
+    with patch("psycopg.AsyncConnection.connect", side_effect=RuntimeError("boom")):
+        result = asyncio.run(get_tracked_bases("postgresql://test"))
+    assert result == frozenset()
+
+
+def test_update_last_pct_empty_updates_skips_db() -> None:
+    with patch("psycopg.AsyncConnection.connect") as mock_connect:
+        asyncio.run(update_last_pct("postgresql://test", {}))
+    mock_connect.assert_not_called()
+
+
+def test_update_last_pct_executemany_rows() -> None:
+    mock_connect, _, mock_cur = _db_mocks()
+
+    with patch("psycopg.AsyncConnection.connect", mock_connect):
+        asyncio.run(update_last_pct("postgresql://test", {"DOGE": 22.0}))
+
+    mock_cur.executemany.assert_awaited_once()
+    rows = mock_cur.executemany.call_args[0][1]
+    assert rows == [(22.0, "DOGE")]
 
 
 def test_close_retrace_empty_open_events() -> None:

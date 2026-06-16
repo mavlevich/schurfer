@@ -81,16 +81,26 @@ def _true_peak_pct(pump: dict[str, Any]) -> float:
 
 _UPDATE_LAST_PCT = (
     "UPDATE app.pump_events SET last_pct = %s "
-    "WHERE base = %s AND last_seen_at > NOW() - INTERVAL '24 hours'"
+    "WHERE base = %s AND closed_at IS NULL AND last_seen_at > NOW() - INTERVAL '24 hours'"
+)
+
+_INSERT_OI_SNAPSHOT = (
+    "INSERT INTO app.oi_snapshots (event_id, base, exchange, oi_usd, recorded_at) "
+    "VALUES (%s, %s, %s, %s, NOW())"
+)
+
+_SELECT_OPEN_EPISODE_IDS = (
+    "SELECT base, id FROM app.pump_events WHERE base = ANY(%s) AND closed_at IS NULL"
 )
 
 
 async def get_tracked_bases(db_url: str) -> frozenset[str]:
-    """Return bases that have an active pump_event in the last 24h."""
+    """Return bases that have an active (still-open) pump_event in the last 24h."""
     try:
         async with await psycopg.AsyncConnection.connect(db_url) as conn, conn.cursor() as cur:
             await cur.execute(
-                "SELECT base FROM app.pump_events WHERE last_seen_at > NOW() - INTERVAL '24 hours'"
+                "SELECT base FROM app.pump_events "
+                "WHERE closed_at IS NULL AND last_seen_at > NOW() - INTERVAL '24 hours'"
             )
             rows = await cur.fetchall()
         return frozenset(r[0] for r in rows)
@@ -110,6 +120,42 @@ async def update_last_pct(db_url: str, updates: dict[str, float]) -> None:
         log.info("persistence.updated_last_pct", count=len(rows))
     except Exception as exc:
         log.warning("persistence.update_last_pct.failed", err=str(exc))
+
+
+async def get_open_episode_ids(db_url: str, bases: set[str]) -> dict[str, int]:
+    """Map base -> id of its currently open pump episode, for the given bases."""
+    if not bases:
+        return {}
+    try:
+        async with await psycopg.AsyncConnection.connect(db_url) as conn, conn.cursor() as cur:
+            await cur.execute(_SELECT_OPEN_EPISODE_IDS, (list(bases),))
+            rows = await cur.fetchall()
+        return {base: event_id for base, event_id in rows}
+    except Exception as exc:
+        log.warning("persistence.get_open_episode_ids_failed", err=str(exc))
+        return {}
+
+
+async def insert_oi_snapshots(db_url: str, snapshots: list[dict[str, Any]]) -> None:
+    """Insert one OI snapshot row per (base, exchange), scoped to its pump episode.
+
+    Snapshots without a resolved event_id are dropped — without an open episode
+    there is nothing to compare the OI delta against, so storing them would
+    mix data across unrelated episodes for the same token.
+    """
+    rows = [
+        (s["event_id"], s["base"], s["exchange"], s["oi_usd"])
+        for s in snapshots
+        if s.get("event_id") is not None
+    ]
+    if not rows:
+        return
+    try:
+        async with await psycopg.AsyncConnection.connect(db_url) as conn, conn.cursor() as cur:
+            await cur.executemany(_INSERT_OI_SNAPSHOT, rows)
+        log.info("persistence.oi_snapshots_inserted", count=len(rows))
+    except Exception as exc:
+        log.warning("persistence.insert_oi_snapshots_failed", err=str(exc))
 
 
 async def upsert_pumps(db_url: str, pumps: list[dict[str, Any]]) -> None:
