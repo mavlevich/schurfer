@@ -14,7 +14,7 @@ REDIS_TTL = 300  # 5 min — expire if scanner crashes
 
 _SWAP: dict[str, Any] = {"enableRateLimit": True, "options": {"defaultType": "swap"}}
 
-_FACTORIES: dict[str, Any] = {
+EXCHANGE_FACTORIES: dict[str, Any] = {
     "binance": lambda: ccxt.binance(_SWAP),
     "bybit": lambda: ccxt.bybit(_SWAP),
     "okx": lambda: ccxt.okx(_SWAP),
@@ -95,6 +95,18 @@ def _aggregate_below_updates(
     return updates
 
 
+def _tracked_pumps(
+    flat_below: list[dict[str, Any]],
+    live_bases: set[str],
+) -> list[dict[str, Any]]:
+    """Pumps-shaped entries for tracked tokens that fell below threshold.
+
+    Excludes bases still live above threshold (those are already in `pumps`).
+    Used to keep recording OI through the retrace phase, not just while live.
+    """
+    return [p for p in _dedup(flat_below) if p["base"] not in live_bases]
+
+
 def _dedup(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Group entries by base asset, keep all exchanges, sort by max pump."""
     by_base: dict[str, list[dict[str, Any]]] = {}
@@ -119,23 +131,26 @@ async def run_once(
     min_pct: float,
     rdb: aioredis.Redis,
     extra_bases: frozenset[str] = frozenset(),
-) -> tuple[list[dict[str, Any]], dict[str, str], dict[str, float]]:
+) -> tuple[list[dict[str, Any]], dict[str, str], dict[str, float], list[dict[str, Any]]]:
     """Scan all exchanges, deduplicate, store result in Redis.
 
-    Returns (pumps, errors, below_updates):
+    Returns (pumps, errors, below_updates, tracked_pumps):
       - pumps: tokens above min_pct
       - errors: exchange name → error string for failed exchanges
       - below_updates: base → current % for tracked tokens that dropped below threshold
-    On total failure returns ([], errors, {}) without writing to Redis.
+      - tracked_pumps: pumps-shaped entries (with per-exchange breakdown) for tracked
+        tokens that fell below threshold — needed so OI keeps being recorded through
+        the retrace phase, not just while the pump is still live
+    On total failure returns ([], errors, {}, []) without writing to Redis.
     """
-    unknown = [n for n in exchange_names if n not in _FACTORIES]
+    unknown = [n for n in exchange_names if n not in EXCHANGE_FACTORIES]
     if unknown:
         log.warning("scanner.unknown_exchanges", unknown=unknown)
 
-    exchanges = {n: _FACTORIES[n]() for n in exchange_names if n in _FACTORIES}
+    exchanges = {n: EXCHANGE_FACTORIES[n]() for n in exchange_names if n in EXCHANGE_FACTORIES}
     if not exchanges:
         log.error("scanner.no_valid_exchanges")
-        return [], {}, {}
+        return [], {}, {}, []
 
     try:
         results: list[
@@ -156,11 +171,12 @@ async def run_once(
         # All sources failed — preserve the last known-good snapshot in Redis
         if errors and len(errors) == len(exchanges):
             log.error("scanner.all_failed", errors=errors)
-            return [], errors, {}
+            return [], errors, {}, []
 
         pumps = _dedup(flat)
         live_bases = {p["base"] for p in pumps}
         below_updates = _aggregate_below_updates(flat_below, live_bases)
+        tracked_pumps = _tracked_pumps(flat_below, live_bases)
 
         payload = json.dumps(
             {
@@ -174,7 +190,7 @@ async def run_once(
         )
         await rdb.set(REDIS_KEY, payload, ex=REDIS_TTL)
         log.info("scanner.stored", count=len(pumps), min_pct=min_pct, failed=len(errors))
-        return pumps, errors, below_updates
+        return pumps, errors, below_updates, tracked_pumps
     finally:
         await asyncio.gather(
             *[ex.close() for ex in exchanges.values()],

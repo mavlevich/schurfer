@@ -9,6 +9,7 @@ from .enums import (
     SignalSource,
     TradeStatus,
 )
+from .oi_snapshot import OiSnapshot
 from .pump_event import PumpEvent
 from .pump_event_snapshot import PumpEventSnapshot
 from .trade import Alert, Strategy, Trade
@@ -19,6 +20,7 @@ __all__ = [
     "Base",
     "Exchange",
     "MarketType",
+    "OiSnapshot",
     "OutcomeLabel",
     "OutcomeQuality",
     "PumpEvent",

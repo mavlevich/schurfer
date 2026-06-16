@@ -1,4 +1,4 @@
-from schurfer_analytics.scanner import _aggregate_below_updates, _dedup
+from schurfer_analytics.scanner import _aggregate_below_updates, _dedup, _tracked_pumps
 
 
 def _entry(base: str, exchange: str, pct: float) -> dict[str, object]:
@@ -93,3 +93,29 @@ def test_aggregate_picks_max_across_exchanges() -> None:
     ]
     result = _aggregate_below_updates(flat_below, live_bases=set())
     assert result == {"DOGE": 25.0}
+
+
+# _tracked_pumps tests
+
+
+def test_tracked_pumps_includes_faded_tokens() -> None:
+    flat_below = [_entry("DOGE", "bybit", 18.0)]
+    result = _tracked_pumps(flat_below, live_bases=set())
+    assert len(result) == 1
+    assert result[0]["base"] == "DOGE"
+    assert result[0]["exchanges"][0]["exchange"] == "bybit"
+
+
+def test_tracked_pumps_excludes_live_tokens() -> None:
+    # BTC is below on bybit but still live (above threshold) on binance —
+    # it must not appear in tracked_pumps since it's already in `pumps`.
+    flat_below = [_entry("BTC", "bybit", 20.0), _entry("DOGE", "okx", 15.0)]
+    result = _tracked_pumps(flat_below, live_bases={"BTC"})
+    bases = [p["base"] for p in result]
+    assert bases == ["DOGE"]
+
+
+def test_tracked_pumps_empty_when_all_live() -> None:
+    flat_below = [_entry("BTC", "bybit", 20.0)]
+    result = _tracked_pumps(flat_below, live_bases={"BTC"})
+    assert result == []
