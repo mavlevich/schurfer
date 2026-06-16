@@ -197,6 +197,14 @@ _Goal: run in production without babysitting._
 
 ## Technical debt / optimization
 
+**Frontend bugs (do before Sprint 4)**
+
+- **Scrollbar layout shift** — switching between Status and Pump Scanner tabs causes the scrollbar to appear/disappear, shifting content width; fix with `scrollbar-gutter: stable` on `<html>` in `apps/web/src/index.css`
+- **Charts not always rendering** — OHLCV fetch silently fails for some tokens/exchanges showing "Chart unavailable"; investigate timeout vs missing exchange support, add fallback exchange or retry
+- **Interval switch re-renders full page** — changing candle interval re-fetches pump + history alongside OHLCV; split `useEffect` so pump+history only re-runs on `[base]`, OHLCV on `[base, chartInterval]`; also fix chart container height: should always be `h-[380px]` regardless of loaded state so the block doesn't shrink when showing "Chart unavailable"
+- **Candle period label** — each interval covers a different time window (5m→24h, 15m→48h, 1h→8d, 4h→30d) but nothing shows this in the UI; add a label like `"15m · last 48h"` near the selector
+- **Locale in dates and chart axis** — `fmtTs()` uses `toLocaleString(undefined, ...)` which picks browser locale, showing dates in Russian/Polish; replace `undefined` with `'en-US'`; also pass `localization: { locale: 'en-US' }` to lightweight-charts `createChart()`
+
 **DX / CI quality (do before Sprint 4)**
 
 - **Pre-push hook** — add `make verify` as a pre-push stage in `.pre-commit-config.yaml` + `pre-commit install --hook-type pre-push`; right now broken code reaches CI before anyone notices locally
