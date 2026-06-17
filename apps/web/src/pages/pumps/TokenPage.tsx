@@ -49,6 +49,94 @@ interface OHLCVResponse {
   candles: Candle[];
 }
 
+interface SignalComponent {
+  value: number;
+  points: number;
+  max: number;
+  note: string;
+}
+
+interface SignalsResponse {
+  base: string;
+  verdict: string;
+  score: number;
+  max_score: number;
+  episode: {
+    id: number;
+    first_seen_at: number;
+    age_hours: number;
+    peak_pct: number;
+    last_pct: number;
+    is_open: boolean;
+  };
+  components: {
+    pump_age: SignalComponent;
+    price_extent: SignalComponent;
+    oi_trend: SignalComponent;
+    funding_rate: SignalComponent;
+    retrace_from_peak: SignalComponent;
+  };
+  data_quality: {
+    oi: boolean;
+    funding: boolean;
+  };
+}
+
+const VERDICT_STYLES: Record<string, { label: string; badge: string; bar: string }> = {
+  pumping: {
+    label: 'Pumping',
+    badge: 'text-blue-400 bg-blue-400/10 border border-blue-400/20',
+    bar: 'bg-blue-400',
+  },
+  cooling_off: {
+    label: 'Cooling Off',
+    badge: 'text-yellow-400 bg-yellow-400/10 border border-yellow-400/20',
+    bar: 'bg-yellow-400',
+  },
+  short_setup: {
+    label: 'Short Setup',
+    badge: 'text-orange-400 bg-orange-400/10 border border-orange-400/20',
+    bar: 'bg-orange-400',
+  },
+  prime_short: {
+    label: 'Prime Short',
+    badge: 'text-red-400 bg-red-400/10 border border-red-400/20',
+    bar: 'bg-red-400',
+  },
+  insufficient_data: {
+    label: 'Insufficient Data',
+    badge: 'text-muted-foreground bg-muted border border-border',
+    bar: 'bg-muted-foreground',
+  },
+};
+
+const COMPONENT_ROWS: { key: keyof SignalsResponse['components']; label: string }[] = [
+  { key: 'pump_age', label: 'Pump Age' },
+  { key: 'price_extent', label: 'Price Extent' },
+  { key: 'oi_trend', label: 'OI Trend' },
+  { key: 'funding_rate', label: 'Funding Rate' },
+  { key: 'retrace_from_peak', label: 'Retrace from Peak' },
+];
+
+function PointsDots({ points, max }: { points: number; max: number }) {
+  return (
+    <span className="flex gap-0.5 justify-end">
+      {Array.from({ length: max }).map((_, i) => (
+        <span
+          key={i}
+          className={`inline-block h-2 w-2 rounded-full ${
+            i < points
+              ? points === max
+                ? 'bg-orange-400'
+                : 'bg-yellow-400'
+              : 'bg-muted-foreground/30'
+          }`}
+        />
+      ))}
+    </span>
+  );
+}
+
 function fmtPct(n: number) {
   return `${n >= 0 ? '+' : ''}${n.toFixed(1)}%`;
 }
@@ -96,6 +184,7 @@ export function TokenPage() {
   const [pump, setPump] = useState<PumpEntry | null>(null);
   const [ohlcv, setOHLCV] = useState<OHLCVResponse | null>(null);
   const [episodes, setEpisodes] = useState<TokenEpisode[]>([]);
+  const [signals, setSignals] = useState<SignalsResponse | null>(null);
   const [detailsLoading, setDetailsLoading] = useState(true);
   const [chartLoading, setChartLoading] = useState(true);
   const [chartInterval, setChartInterval] = useState(15);
@@ -107,6 +196,7 @@ export function TokenPage() {
 
     setPump(null);
     setEpisodes([]);
+    setSignals(null);
     setDetailsLoading(true);
 
     const controller = new AbortController();
@@ -114,12 +204,15 @@ export function TokenPage() {
 
     const loadDetails = async () => {
       try {
-        const [pumpRes, historyRes] = await Promise.all([
+        const [pumpRes, historyRes, signalsRes] = await Promise.all([
           window.fetch(`/api/pumps/${encoded}`, { signal: controller.signal }),
           window.fetch(`/api/pumps/${encoded}/history`, { signal: controller.signal }),
+          window.fetch(`/api/pumps/${encoded}/signals`, { signal: controller.signal }),
         ]);
         if (pumpRes.ok) setPump((await pumpRes.json()) as PumpEntry);
         if (historyRes.ok) setEpisodes((await historyRes.json()) as TokenEpisode[]);
+        // 404 = no open episode — card simply won't render
+        if (signalsRes.ok) setSignals((await signalsRes.json()) as SignalsResponse);
       } catch (err) {
         if (err instanceof Error && err.name === 'AbortError') return;
       } finally {
@@ -280,6 +373,79 @@ export function TokenPage() {
             </div>
           </CardContent>
         </Card>
+
+        {signals &&
+          (() => {
+            const v = VERDICT_STYLES[signals.verdict] ?? VERDICT_STYLES['insufficient_data'];
+            const scorePct = (signals.score / signals.max_score) * 100;
+            return (
+              <Card>
+                <CardHeader className="pb-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                      Short Readiness
+                    </CardTitle>
+                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${v.badge}`}>
+                      {v.label}
+                    </span>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-3xl font-bold font-mono">{signals.score}</span>
+                    <span className="text-lg text-muted-foreground">/ {signals.max_score}</span>
+                  </div>
+                  <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-500 ${v.bar}`}
+                      style={{ width: `${scorePct}%` }}
+                    />
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[480px] text-sm">
+                      <thead>
+                        <tr className="border-b text-xs text-muted-foreground">
+                          <th className="px-0 py-2 text-left font-normal">Signal</th>
+                          <th className="px-4 py-2 text-right font-normal">Points</th>
+                          <th className="px-4 py-2 text-left font-normal">Detail</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {COMPONENT_ROWS.map(({ key, label }) => {
+                          const c = signals.components[key];
+                          return (
+                            <tr key={key} className="border-b last:border-0">
+                              <td className="px-0 py-2.5 font-medium">{label}</td>
+                              <td className="px-4 py-2.5">
+                                <div className="flex justify-end">
+                                  <PointsDots points={c.points} max={c.max} />
+                                </div>
+                              </td>
+                              <td className="px-4 py-2.5 text-muted-foreground text-xs">
+                                {c.note}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  {(!signals.data_quality.oi || !signals.data_quality.funding) && (
+                    <p className="text-xs text-muted-foreground">
+                      ⚠ Data unavailable:{' '}
+                      {[
+                        !signals.data_quality.oi && 'OI',
+                        !signals.data_quality.funding && 'Funding',
+                      ]
+                        .filter(Boolean)
+                        .join(', ')}
+                      {' — affected components defaulted to 0 pts'}
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })()}
 
         {pump && pump.exchanges.length > 0 && (
           <Card>
