@@ -109,6 +109,17 @@ func (q *stubQuerier) Query(ctx context.Context, sql string, args ...any) (pgx.R
 	return q.onQuery(ctx, sql, args...)
 }
 
+// serveSignals routes a GET request through chi and returns the recorder.
+func serveSignals(q pgxPool, base string) *httptest.ResponseRecorder {
+	h := &Handler{pool: q}
+	r := chi.NewRouter()
+	r.Get("/api/pumps/{base}/signals", h.Signals)
+	req := httptest.NewRequest(http.MethodGet, "/api/pumps/"+base+"/signals", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	return w
+}
+
 // serveFunding routes a GET request through chi and returns the recorder.
 func serveFunding(q pgxPool, base string) *httptest.ResponseRecorder {
 	h := &Handler{pool: q}
@@ -464,6 +475,364 @@ func TestFundingHandler(t *testing.T) {
 			}
 			if tc.checkEntries != nil {
 				tc.checkEntries(t, resp.Exchanges)
+			}
+		})
+	}
+}
+
+// ---- TestScoreSignals ----
+
+func TestScoreSignals(t *testing.T) {
+	// baseEp is a "neutral" episode — score contributions come only from the
+	// parameters under test in each case.
+	baseEp := func(ageH, peakPct, lastPct float64) signalEpisode {
+		return signalEpisode{AgeHours: ageH, PeakPct: peakPct, LastPct: lastPct}
+	}
+
+	cases := []struct {
+		name        string
+		ep          signalEpisode
+		currentOI   float64
+		baselineOI  float64
+		maxFunding  float64
+		wantScore   int
+		wantVerdict string
+		checkComp   func(t *testing.T, c signalComponents)
+	}{
+		{
+			name:        "all zeros — verdict pumping",
+			ep:          baseEp(0, 0, 0),
+			wantScore:   0,
+			wantVerdict: "pumping",
+		},
+		{
+			name:        "early pump, moderate price, no OI/funding — verdict pumping",
+			ep:          baseEp(0.5, 20, 19),
+			wantScore:   0,
+			wantVerdict: "pumping",
+		},
+		{
+			name:        "mature pump >1h adds 1 pt",
+			ep:          baseEp(2, 0, 0),
+			wantScore:   1,
+			wantVerdict: "pumping",
+			checkComp: func(t *testing.T, c signalComponents) {
+				t.Helper()
+				if c.PumpAge.Points != 1 {
+					t.Errorf("PumpAge.Points = %d, want 1", c.PumpAge.Points)
+				}
+			},
+		},
+		{
+			name:        "late pump >4h adds 2 pts",
+			ep:          baseEp(6, 0, 0),
+			wantScore:   2,
+			wantVerdict: "pumping",
+			checkComp: func(t *testing.T, c signalComponents) {
+				t.Helper()
+				if c.PumpAge.Points != 2 {
+					t.Errorf("PumpAge.Points = %d, want 2", c.PumpAge.Points)
+				}
+			},
+		},
+		{
+			name:        "price >100% adds 2 pts",
+			ep:          baseEp(0, 150, 148),
+			wantScore:   2,
+			wantVerdict: "pumping",
+			checkComp: func(t *testing.T, c signalComponents) {
+				t.Helper()
+				if c.PriceExtent.Points != 2 {
+					t.Errorf("PriceExtent.Points = %d, want 2", c.PriceExtent.Points)
+				}
+			},
+		},
+		{
+			name:        "OI declining >5% adds 2 pts",
+			ep:          baseEp(0, 0, 0),
+			currentOI:   900_000,
+			baselineOI:  1_000_000,
+			wantScore:   2,
+			wantVerdict: "pumping",
+			checkComp: func(t *testing.T, c signalComponents) {
+				t.Helper()
+				if c.OiTrend.Points != 2 {
+					t.Errorf("OiTrend.Points = %d, want 2", c.OiTrend.Points)
+				}
+			},
+		},
+		{
+			name:        "OI growing >5% adds 0 pts",
+			ep:          baseEp(0, 0, 0),
+			currentOI:   1_100_000,
+			baselineOI:  1_000_000,
+			wantScore:   0,
+			wantVerdict: "pumping",
+			checkComp: func(t *testing.T, c signalComponents) {
+				t.Helper()
+				if c.OiTrend.Points != 0 {
+					t.Errorf("OiTrend.Points = %d, want 0", c.OiTrend.Points)
+				}
+			},
+		},
+		{
+			name:        "OI neutral (within ±5%) adds 1 pt",
+			ep:          baseEp(0, 0, 0),
+			currentOI:   1_020_000,
+			baselineOI:  1_000_000,
+			wantScore:   1,
+			wantVerdict: "pumping",
+			checkComp: func(t *testing.T, c signalComponents) {
+				t.Helper()
+				if c.OiTrend.Points != 1 {
+					t.Errorf("OiTrend.Points = %d, want 1", c.OiTrend.Points)
+				}
+			},
+		},
+		{
+			name:        "elevated funding >0.1% adds 2 pts",
+			ep:          baseEp(0, 0, 0),
+			maxFunding:  0.0015,
+			wantScore:   2,
+			wantVerdict: "pumping",
+			checkComp: func(t *testing.T, c signalComponents) {
+				t.Helper()
+				if c.FundingRate.Points != 2 {
+					t.Errorf("FundingRate.Points = %d, want 2", c.FundingRate.Points)
+				}
+			},
+		},
+		{
+			name:        "moderate funding 0.05-0.1% adds 1 pt",
+			ep:          baseEp(0, 0, 0),
+			maxFunding:  0.0007,
+			wantScore:   1,
+			wantVerdict: "pumping",
+		},
+		{
+			// peakPct=20 keeps priceExtent at 0 pts, so only retrace contributes.
+			name:        "retrace >15 pts from peak adds 2 pts",
+			ep:          baseEp(0, 20, 0),
+			wantScore:   2,
+			wantVerdict: "pumping",
+			checkComp: func(t *testing.T, c signalComponents) {
+				t.Helper()
+				if c.RetraceFromPeak.Points != 2 {
+					t.Errorf("RetraceFromPeak.Points = %d, want 2 (retrace=20)", c.RetraceFromPeak.Points)
+				}
+			},
+		},
+		{
+			// peakPct=20 keeps priceExtent at 0 pts, so only retrace contributes.
+			name:        "retrace 5-15 pts from peak adds 1 pt",
+			ep:          baseEp(0, 20, 12),
+			wantScore:   1,
+			wantVerdict: "pumping",
+		},
+		{
+			name:        "short_setup — age+price+funding",
+			ep:          baseEp(5, 120, 118),
+			maxFunding:  0.0015,
+			wantScore:   6, // age=2 + price=2 + funding=2
+			wantVerdict: "short_setup",
+		},
+		{
+			name:        "prime_short — all components maxed",
+			ep:          baseEp(6, 150, 120),
+			currentOI:   800_000,
+			baselineOI:  1_000_000,
+			maxFunding:  0.002,
+			wantScore:   10, // age=2 + price=2 + oi=2 + funding=2 + retrace=2
+			wantVerdict: "prime_short",
+		},
+		{
+			name:        "cooling_off boundary at score 4",
+			ep:          baseEp(2, 50, 44),
+			wantScore:   4, // age=1 + price=1 + retrace(6pts)=1 + oi=0 + funding(0.0007)=1
+			maxFunding:  0.0007,
+			wantVerdict: "cooling_off",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			comp, score := scoreSignals(tc.ep, tc.currentOI, tc.baselineOI, tc.maxFunding)
+			if score != tc.wantScore {
+				t.Errorf("score = %d, want %d", score, tc.wantScore)
+			}
+			if v := signalVerdict(score); v != tc.wantVerdict {
+				t.Errorf("verdict = %q, want %q", v, tc.wantVerdict)
+			}
+			if tc.checkComp != nil {
+				tc.checkComp(t, comp)
+			}
+		})
+	}
+}
+
+// ---- TestSignalsHandler ----
+
+func TestSignalsHandler(t *testing.T) {
+	// episodeRow returns vals for the episode QueryRow (no is_open — always true for open episodes).
+	episodeRow := func(id, firstSeenAt int64, peakPct, lastPct float64) []any {
+		return []any{id, firstSeenAt, peakPct, lastPct}
+	}
+
+	errRow := &stubRow{err: fmt.Errorf("db unavailable")}
+
+	cases := []struct {
+		name string
+		base string
+		// queryRowSeq: values returned by successive QueryRow calls.
+		// call 1 = episode, call 2 = current OI, call 3 = baseline OI, call 4 = max funding.
+		// nil → ErrNoRows for episode (404).
+		queryRowSeq [][]any
+		// errAtCall: if > 0, that call index (1-based) and all subsequent calls return errRow.
+		errAtCall  int
+		wantStatus int
+		checkResp  func(t *testing.T, resp signalsResponse)
+	}{
+		{
+			name:       "invalid base returns 400",
+			base:       "BTC-INVALID",
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:        "no open episode returns 404",
+			base:        "BTC",
+			queryRowSeq: nil,
+			wantStatus:  http.StatusNotFound,
+		},
+		{
+			name: "OI query fails — data_quality.oi=false, both OI+funding fail → insufficient_data",
+			base: "ETH",
+			queryRowSeq: [][]any{
+				episodeRow(1, 1000, 50.0, 49.0),
+			},
+			errAtCall:  2, // current OI fails; funding query also returns errRow
+			wantStatus: http.StatusOK,
+			checkResp: func(t *testing.T, resp signalsResponse) {
+				t.Helper()
+				if resp.DataQuality.OI {
+					t.Error("data_quality.oi = true, want false (OI query failed)")
+				}
+				if resp.DataQuality.Funding {
+					t.Error("data_quality.funding = true, want false")
+				}
+				if resp.Verdict != "insufficient_data" {
+					t.Errorf("verdict = %q, want insufficient_data", resp.Verdict)
+				}
+				if resp.Episode.IsOpen != true {
+					t.Error("episode.is_open = false, want true")
+				}
+			},
+		},
+		{
+			name: "elevated funding and declining OI — prime_short, data_quality all true",
+			base: "SOL",
+			queryRowSeq: [][]any{
+				episodeRow(2, 1000, 150.0, 120.0), // age≈years (mocked), peak>100, retrace=30pts
+				{float64(800_000)},                // current OI
+				{float64(1_000_000)},              // baseline OI (declining -20%)
+				{float64(0.002)},                  // max funding (elevated)
+			},
+			wantStatus: http.StatusOK,
+			checkResp: func(t *testing.T, resp signalsResponse) {
+				t.Helper()
+				if resp.Score != signalMaxScore {
+					t.Errorf("score = %d, want %d (all components maxed)", resp.Score, signalMaxScore)
+				}
+				if resp.Verdict != "prime_short" {
+					t.Errorf("verdict = %q, want prime_short", resp.Verdict)
+				}
+				if !resp.DataQuality.OI || !resp.DataQuality.Funding {
+					t.Errorf("data_quality = %+v, want both true", resp.DataQuality)
+				}
+			},
+		},
+		{
+			name: "growing OI with low funding — verdict pumping",
+			base: "DOGE",
+			queryRowSeq: [][]any{
+				episodeRow(3, 1000, 25.0, 25.0),
+				{float64(1_200_000)}, // current OI growing +20%
+				{float64(1_000_000)}, // baseline OI
+				{float64(0.0001)},    // low funding
+			},
+			wantStatus: http.StatusOK,
+			checkResp: func(t *testing.T, resp signalsResponse) {
+				t.Helper()
+				if resp.Components.OiTrend.Points != 0 {
+					t.Errorf("oi_trend.points = %d, want 0 (OI growing)", resp.Components.OiTrend.Points)
+				}
+				if resp.Verdict != "pumping" {
+					t.Errorf("verdict = %q, want pumping", resp.Verdict)
+				}
+				if !resp.DataQuality.OI || !resp.DataQuality.Funding {
+					t.Errorf("data_quality = %+v, want both true", resp.DataQuality)
+				}
+			},
+		},
+		{
+			name: "only funding fails — real verdict returned, data_quality.funding=false",
+			base: "ADA",
+			queryRowSeq: [][]any{
+				episodeRow(4, 1000, 60.0, 55.0),
+				{float64(900_000)},   // current OI (declining -10%)
+				{float64(1_000_000)}, // baseline OI
+				// call 4 (funding) will error
+			},
+			errAtCall:  4,
+			wantStatus: http.StatusOK,
+			checkResp: func(t *testing.T, resp signalsResponse) {
+				t.Helper()
+				if !resp.DataQuality.OI {
+					t.Error("data_quality.oi = false, want true")
+				}
+				if resp.DataQuality.Funding {
+					t.Error("data_quality.funding = true, want false")
+				}
+				// OI is fine so verdict is NOT insufficient_data.
+				if resp.Verdict == "insufficient_data" {
+					t.Error("verdict = insufficient_data, want a real verdict (funding alone failing is not enough)")
+				}
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var callIdx int
+			q := &stubQuerier{
+				onQueryRow: func(_ context.Context, _ string, _ ...any) pgxRow {
+					if tc.queryRowSeq == nil {
+						return &stubRow{err: pgx.ErrNoRows}
+					}
+					callIdx++
+					if tc.errAtCall > 0 && callIdx >= tc.errAtCall {
+						return errRow
+					}
+					if callIdx-1 >= len(tc.queryRowSeq) {
+						return &stubRow{err: fmt.Errorf("unexpected QueryRow call %d", callIdx)}
+					}
+					return &stubRow{vals: tc.queryRowSeq[callIdx-1]}
+				},
+			}
+			w := serveSignals(q, tc.base)
+
+			if w.Code != tc.wantStatus {
+				t.Fatalf("status = %d, want %d; body: %s", w.Code, tc.wantStatus, w.Body.String())
+			}
+			if tc.wantStatus != http.StatusOK {
+				return
+			}
+
+			var resp signalsResponse
+			if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+				t.Fatalf("unmarshal: %v; body: %s", err, w.Body.String())
+			}
+			if tc.checkResp != nil {
+				tc.checkResp(t, resp)
 			}
 		})
 	}
