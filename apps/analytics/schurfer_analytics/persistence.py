@@ -89,6 +89,11 @@ _INSERT_OI_SNAPSHOT = (
     "VALUES (%s, %s, %s, %s, NOW())"
 )
 
+_INSERT_FR_SNAPSHOT = (
+    "INSERT INTO app.funding_rate_snapshots (event_id, base, exchange, rate, recorded_at) "
+    "VALUES (%s, %s, %s, %s, NOW())"
+)
+
 _SELECT_OPEN_EPISODE_IDS = (
     "SELECT base, id FROM app.pump_events WHERE base = ANY(%s) AND closed_at IS NULL"
 )
@@ -156,6 +161,26 @@ async def insert_oi_snapshots(db_url: str, snapshots: list[dict[str, Any]]) -> N
         log.info("persistence.oi_snapshots_inserted", count=len(rows))
     except Exception as exc:
         log.warning("persistence.insert_oi_snapshots_failed", err=str(exc))
+
+
+async def insert_funding_rate_snapshots(db_url: str, snapshots: list[dict[str, Any]]) -> None:
+    """Insert one funding rate snapshot row per (base, exchange), scoped to its pump episode.
+
+    Snapshots without a resolved event_id are dropped — same rationale as OI snapshots.
+    """
+    rows = [
+        (s["event_id"], s["base"], s["exchange"], s["rate"])
+        for s in snapshots
+        if s.get("event_id") is not None
+    ]
+    if not rows:
+        return
+    try:
+        async with await psycopg.AsyncConnection.connect(db_url) as conn, conn.cursor() as cur:
+            await cur.executemany(_INSERT_FR_SNAPSHOT, rows)
+        log.info("persistence.fr_snapshots_inserted", count=len(rows))
+    except Exception as exc:
+        log.warning("persistence.insert_fr_snapshots_failed", err=str(exc))
 
 
 async def upsert_pumps(db_url: str, pumps: list[dict[str, Any]]) -> None:
