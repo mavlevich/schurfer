@@ -77,6 +77,7 @@ Every pump event we record — whether we trade it or not — contributes to ret
 - [ ] OI divergence signal: price rising + OI flat/declining = weak move, likely to retrace
 - [ ] OI spike signal: price +X% AND OI +Y% in same window = real accumulation, pump may continue
 - [ ] Per-exchange OI breakdown: which exchange has dominant position (carries the most risk)?
+- [ ] OI concentration ratio: if one exchange holds >60% of total OI, flag it — likely a single large actor; liquidation will be sharp and directional
 
 **Funding rate**
 
@@ -102,7 +103,7 @@ verdict: Pumping / Cooling off / Short setup / Prime short
 
 **Data**
 
-- [ ] Per-token stats: average retrace %, time-to-retrace after X% pump (needs weeks of history)
+- [ ] Per-token stats: average retrace %, time-to-retrace after X% pump (needs weeks of history); compare current pump % to token's own historical distribution — "for SOL, a +15% move is routine; for XYZ, it's a 3σ event"
 - [ ] Age indicator: "token has been pumping for 3h — historically late to enter"
 - [ ] Pump lifecycle tracking: record price snapshots at +1h, +4h, +24h after first detection — needed to build retrace distributions and entry/exit timing models
 - [ ] Leverage suggestion: based on retrace % distribution (e.g. median −42% → 2x short has high win rate), volatility-adjusted max leverage per token category
@@ -184,6 +185,36 @@ _Goal: run in production without babysitting._
 - [ ] MM history database (DWF, Wintermute patterns)
 - [ ] Investigator-based signals (ZachXBT, MetaSleuth)
 
+**Market microstructure**
+
+- [ ] Liquidation heatmap: fetch open interest by price level (Binance `/fapi/v1/openInterestHist`, Bybit `/v5/market/risk-limit`) — show price zones where cascade liquidations will occur; pump heading toward a short-liquidation cluster = continuation likely
+- [ ] Spot vs Perp divergence: price difference between CEX spot and perp for the same token; if perp > spot by >0.5% during a pump = leveraged demand, no real buyers; divergence closing = retrace imminent
+- [ ] Volume anomaly: compare current 1h volume to 30-day rolling average; pump at 1x average = weak, 5x+ = real event; filters noise from thin-book moves
+- [ ] Order book imbalance: bid/ask volume ratio in the top N levels of the order book; >80% on ask side during a pump = distribution, not accumulation
+- [ ] Thin book flag: tokens where moving the price 2% requires <$100K; easy to manipulate, pumps are less meaningful — separate risk tier
+- [ ] Taker/maker ratio: aggressive buy orders (takers) vs passive; rising taker ratio on buy side = real demand; price rising on maker bids = someone painting the tape
+
+**Macro timing signals**
+
+- [ ] BTC dominance shift: BTC.D falling = alt season, rising sharply = risk-off; overlay on pump scanner to avoid shorting alts into a bull market
+- [ ] Aggregate funding rate index: average funding across top-20 perp markets; when index >0.08% per 8h + Fear&Greed >75 = macro crowded-long, best window to fade individual pumps
+- [ ] Regulatory calendar: scheduled SEC/CFTC hearings, ETF approval dates, major unlock dates for top tokens — events that create predictable vol spikes
+
+**Overvaluation screening**
+
+- [ ] FDV vs Market Cap ratio: Fully Diluted Valuation / circulating market cap; ratio >20x means most supply is not yet in circulation — future dilution will suppress price; flag tokens where pump happens at extreme FDV ratios
+- [ ] TVL efficiency (DeFi): TVL / Market Cap; healthy range ~1:1 to 1:5; ratio >1:50 = protocol severely overvalued relative to actual usage
+- [ ] Token velocity: volume / market cap per day; very high velocity = nobody holds, purely speculative; very low = illiquid or dead token; context for interpreting pump significance
+
+**On-chain analytics**
+
+- [ ] Holder concentration (Gini): top-10 wallet % of total supply per chain (Etherscan, Solscan APIs); if one address holds >50% = price fully controlled by that entity; flag as "whale trap" on scanner
+- [ ] Token unlock / vesting calendar: aggregate unlock schedules from TokenUnlocks/Vestlab; pump 2 weeks before a major team/VC unlock = likely exit liquidity setup — highest-confidence short
+- [ ] Wallet clustering: group addresses that received tokens from the same source transaction; real concentration is always worse than visible — one actor behind 1000 addresses
+- [ ] Bridge flows: cross-chain inflows via Wormhole, LayerZero, Stargate for a specific token; targeted bridging into a thin-liquidity chain before a pump = coordinated move
+- [ ] Smart money identification: addresses that bought >5 days before a +50% move in the last 6 months; if such an address starts accumulating now = pre-pump signal
+- [ ] Wash trading detection: round-trip patterns (A→B→A within 1h, same size), exchange pairs with suspiciously high volume vs OI; flag exchanges where pump volume is likely artificial
+
 ---
 
 ## Security
@@ -236,7 +267,13 @@ _Goal: run in production without babysitting._
 - Tokenized assets (stocks/metals on Bybit/OKX) — separate scanner filter, same ccxt fetch
 - ECS migration (after proving out on EC2)
 - Paper trading / shadow mode framework
-- Replay / backtesting harness
+- Replay / backtesting harness — given a past pump event, show what optimal entry/exit would have been; validate score thresholds against accumulated history
+- Backtesting on own data — after 2-3 months of retrace snapshots (+1h/+4h/+24h), compute: at which score thresholds was win rate >60%? which OI+funding combinations predicted retrace >30%?
 - Portfolio risk budget engine (per exchange / correlated basket)
+- Real-time correlation matrix — if 5 open shorts all correlate 0.9 with BTC, that is one position at 5x size, not 5 independent positions; cap exposure by correlation-adjusted notional
 - Multi-exchange capital management (Treasury module)
 - Polymarket CLOB integration
+- Meme stock / short squeeze scanner — same mechanics as crypto pump: short interest + OI spike + price move = squeeze setup; applicable to GME-type events via Alpaca or IBKR API; lower priority than crypto but reuses all existing signal logic
+- Weighted social sentiment — sentiment score adjusted by source influence (1 tweet from an account followed by 50 known whales > 10,000 bot tweets); raw tweet volume is noise
+- Toxic flow detection — identify wallet/API-key patterns that consistently trade against market makers and win; if such a counterparty is on the other side of your signal, reconsider the trade
+- Cross-exchange arbitrage gaps — if Binance and Coinbase spot prices diverge >0.3% beyond normal basis, one market has not yet priced in a news event; information asymmetry window

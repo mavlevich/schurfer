@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -73,12 +74,24 @@ type oiResponse struct {
 	PumpFirstSeenAt  *int64            `json:"pump_first_seen_at"`
 }
 
-// fundingElevatedThreshold is 0.1% per 8h — above this longs are paying heavily.
-const fundingElevatedThreshold = 0.001
+const (
+	// fundingElevatedThreshold is 0.1% per 8h — above this longs are paying heavily.
+	fundingElevatedThreshold = 0.001
+	// fundingPeriodsPerYear converts an 8h funding rate to annualized APR (3 × 365).
+	fundingPeriodsPerYear = 1095
+	// fundingModerateThreshold is 0.05% per 8h — elevated but not yet crowded.
+	fundingModerateThreshold = 0.0005
 
-// fundingPeriodsPerYear converts an 8h funding rate to annualized APR.
-// 3 periods/day × 365 days = 1095.
-const fundingPeriodsPerYear = 1095
+	signalMaxScore = 10
+
+	pumpAgeLateHours     = 4.0 // >4h = pump is old, high time risk
+	pumpAgeMatureHours   = 1.0 // 1-4h = pump maturing
+	priceExtentHighPct   = 100.0
+	priceExtentMidPct    = 30.0
+	oiChangeThresholdPct = 5.0  // ±5% OI change = meaningful trend
+	retraceHighPts       = 15.0 // >15 pct-points below peak = notable retrace
+	retraceMidPts        = 5.0
+)
 
 type fundingEntry struct {
 	Exchange   string  `json:"exchange"`
@@ -500,6 +513,249 @@ func (h *Handler) Funding(w http.ResponseWriter, r *http.Request) {
 		Base:            base,
 		PumpFirstSeenAt: firstSeenAt,
 		Exchanges:       entries,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(out)
+}
+
+type signalComponent struct {
+	Value  float64 `json:"value"`
+	Points int     `json:"points"`
+	Max    int     `json:"max"`
+	Note   string  `json:"note"`
+}
+
+type signalComponents struct {
+	PumpAge         signalComponent `json:"pump_age"`
+	PriceExtent     signalComponent `json:"price_extent"`
+	OiTrend         signalComponent `json:"oi_trend"`
+	FundingRate     signalComponent `json:"funding_rate"`
+	RetraceFromPeak signalComponent `json:"retrace_from_peak"`
+}
+
+type signalEpisode struct {
+	ID          int64   `json:"id"`
+	FirstSeenAt int64   `json:"first_seen_at"`
+	AgeHours    float64 `json:"age_hours"`
+	PeakPct     float64 `json:"peak_pct"`
+	LastPct     float64 `json:"last_pct"`
+	IsOpen      bool    `json:"is_open"`
+}
+
+// signalDataQuality reports which data sources were successfully fetched.
+// If a source is false its component falls back to 0 pts — callers should
+// treat the verdict as provisional when either field is false.
+type signalDataQuality struct {
+	OI      bool `json:"oi"`
+	Funding bool `json:"funding"`
+}
+
+type signalsResponse struct {
+	Base        string            `json:"base"`
+	Verdict     string            `json:"verdict"`
+	Score       int               `json:"score"`
+	MaxScore    int               `json:"max_score"`
+	Episode     signalEpisode     `json:"episode"`
+	Components  signalComponents  `json:"components"`
+	DataQuality signalDataQuality `json:"data_quality"`
+}
+
+// scoreSignals computes the five signal components and their total score.
+// Extracted as a pure function so it is testable without a database or HTTP layer.
+func scoreSignals(ep signalEpisode, currentOI, baselineOI, maxFunding float64) (signalComponents, int) {
+	var c signalComponents
+
+	// 1. Pump age (0-2 pts)
+	c.PumpAge = signalComponent{Value: ep.AgeHours, Max: 2}
+	switch {
+	case ep.AgeHours > pumpAgeLateHours:
+		c.PumpAge.Points = 2
+		c.PumpAge.Note = fmt.Sprintf("extended pump (%.1fh), high time risk", ep.AgeHours)
+	case ep.AgeHours > pumpAgeMatureHours:
+		c.PumpAge.Points = 1
+		c.PumpAge.Note = fmt.Sprintf("pump maturing (%.1fh)", ep.AgeHours)
+	default:
+		c.PumpAge.Note = fmt.Sprintf("early pump (%.1fh), may continue", ep.AgeHours)
+	}
+
+	// 2. Price extent (0-2 pts) — uses peak_pct as the high-water mark.
+	c.PriceExtent = signalComponent{Value: ep.PeakPct, Max: 2}
+	switch {
+	case ep.PeakPct > priceExtentHighPct:
+		c.PriceExtent.Points = 2
+		c.PriceExtent.Note = fmt.Sprintf("very extended (+%.0f%%), distribution risk", ep.PeakPct)
+	case ep.PeakPct > priceExtentMidPct:
+		c.PriceExtent.Points = 1
+		c.PriceExtent.Note = fmt.Sprintf("significant pump (+%.0f%%)", ep.PeakPct)
+	default:
+		c.PriceExtent.Note = fmt.Sprintf("moderate move (+%.0f%%)", ep.PeakPct)
+	}
+
+	// 3. OI trend (0-2 pts) — compares latest per-exchange total vs earliest.
+	c.OiTrend = signalComponent{Max: 2}
+	if currentOI > 0 && baselineOI > 0 {
+		oiDeltaPct := (currentOI - baselineOI) / baselineOI * 100
+		c.OiTrend.Value = math.Round(oiDeltaPct*100) / 100
+		switch {
+		case oiDeltaPct < -oiChangeThresholdPct:
+			c.OiTrend.Points = 2
+			c.OiTrend.Note = fmt.Sprintf("OI declining (%.1f%%), distribution underway", oiDeltaPct)
+		case oiDeltaPct > oiChangeThresholdPct:
+			c.OiTrend.Note = fmt.Sprintf("OI growing (+%.1f%%), new money entering", oiDeltaPct)
+		default:
+			c.OiTrend.Points = 1
+			c.OiTrend.Note = fmt.Sprintf("OI neutral (%.1f%%)", oiDeltaPct)
+		}
+	} else {
+		c.OiTrend.Note = "no OI data"
+	}
+
+	// 4. Funding rate (0-2 pts) — max rate across all exchanges for this episode.
+	c.FundingRate = signalComponent{Value: maxFunding, Max: 2}
+	switch {
+	case maxFunding > fundingElevatedThreshold:
+		c.FundingRate.Points = 2
+		c.FundingRate.Note = fmt.Sprintf("crowded longs (%.3f%% per 8h)", maxFunding*100)
+	case maxFunding > fundingModerateThreshold:
+		c.FundingRate.Points = 1
+		c.FundingRate.Note = fmt.Sprintf("elevated funding (%.3f%% per 8h)", maxFunding*100)
+	default:
+		c.FundingRate.Note = fmt.Sprintf("normal funding (%.3f%% per 8h)", maxFunding*100)
+	}
+
+	// 5. Retrace from peak (0-2 pts) — percentage-point distance from peak_pct to last_pct.
+	retrace := ep.PeakPct - ep.LastPct
+	c.RetraceFromPeak = signalComponent{Value: retrace, Max: 2}
+	switch {
+	case retrace > retraceHighPts:
+		c.RetraceFromPeak.Points = 2
+		c.RetraceFromPeak.Note = fmt.Sprintf("notable retrace (%.1f pts from peak)", retrace)
+	case retrace > retraceMidPts:
+		c.RetraceFromPeak.Points = 1
+		c.RetraceFromPeak.Note = fmt.Sprintf("starting to cool (%.1f pts from peak)", retrace)
+	default:
+		c.RetraceFromPeak.Note = fmt.Sprintf("still near peak (%.1f pts from peak)", retrace)
+	}
+
+	total := c.PumpAge.Points + c.PriceExtent.Points + c.OiTrend.Points +
+		c.FundingRate.Points + c.RetraceFromPeak.Points
+	return c, total
+}
+
+func signalVerdict(score int) string {
+	switch {
+	case score >= 9:
+		return "prime_short"
+	case score >= 6:
+		return "short_setup"
+	case score >= 4:
+		return "cooling_off"
+	default:
+		return "pumping"
+	}
+}
+
+// Signals returns a composite short-readiness score for a token's active pump
+// episode. 404 if no open episode exists — signals only apply to live pumps.
+// Score 0-10 from five components: pump age, price extent, OI trend, funding
+// rate, and retrace from peak. Verdict: pumping / cooling_off / short_setup /
+// prime_short / insufficient_data (when both OI and funding queries failed).
+func (h *Handler) Signals(w http.ResponseWriter, r *http.Request) {
+	base := strings.ToUpper(chi.URLParam(r, "base"))
+	if !validBase.MatchString(base) {
+		http.Error(w, "invalid token", http.StatusBadRequest)
+		return
+	}
+
+	// Only score open episodes — age on a closed episode is meaningless for
+	// a forward-looking trade signal.
+	var eventID int64
+	var firstSeenAtUnix int64
+	var peakPct, lastPct float64
+	err := h.pool.QueryRow(r.Context(),
+		`SELECT id, extract(epoch from first_seen_at)::bigint, peak_pct, last_pct
+		 FROM app.pump_events
+		 WHERE base = $1 AND closed_at IS NULL
+		 LIMIT 1`,
+		base,
+	).Scan(&eventID, &firstSeenAtUnix, &peakPct, &lastPct)
+	if errors.Is(err, pgx.ErrNoRows) {
+		http.Error(w, "no open pump episode", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		slog.Error("pumps.signals.episode_query", "base", base, "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	ageHours := math.Round(time.Since(time.Unix(firstSeenAtUnix, 0)).Hours()*100) / 100
+	ep := signalEpisode{
+		ID:          eventID,
+		FirstSeenAt: firstSeenAtUnix,
+		AgeHours:    ageHours,
+		PeakPct:     peakPct,
+		LastPct:     lastPct,
+		IsOpen:      true,
+	}
+
+	// Latest total OI (DISTINCT ON exchange, most recent row per exchange, summed).
+	var currentOI float64
+	oiCurrentOK := h.pool.QueryRow(r.Context(),
+		`SELECT COALESCE(SUM(oi_usd), 0) FROM (
+		   SELECT DISTINCT ON (exchange) oi_usd
+		   FROM app.oi_snapshots WHERE event_id = $1
+		   ORDER BY exchange, recorded_at DESC
+		 ) t`,
+		eventID,
+	).Scan(&currentOI) == nil
+
+	// Earliest total OI per exchange — baseline at episode start.
+	var baselineOI float64
+	oiBaselineOK := h.pool.QueryRow(r.Context(),
+		`SELECT COALESCE(SUM(oi_usd), 0) FROM (
+		   SELECT DISTINCT ON (exchange) oi_usd
+		   FROM app.oi_snapshots WHERE event_id = $1
+		   ORDER BY exchange, recorded_at ASC
+		 ) t`,
+		eventID,
+	).Scan(&baselineOI) == nil
+
+	oiOK := oiCurrentOK && oiBaselineOK
+	if !oiOK {
+		slog.Warn("pumps.signals.oi_unavailable", "base", base,
+			"current_ok", oiCurrentOK, "baseline_ok", oiBaselineOK)
+	}
+
+	// Max funding rate across exchanges (latest rate per exchange).
+	var maxFunding float64
+	fundingOK := h.pool.QueryRow(r.Context(),
+		`SELECT COALESCE(MAX(rate), 0) FROM (
+		   SELECT DISTINCT ON (exchange) rate
+		   FROM app.funding_rate_snapshots WHERE event_id = $1
+		   ORDER BY exchange, recorded_at DESC
+		 ) t`,
+		eventID,
+	).Scan(&maxFunding) == nil
+
+	if !fundingOK {
+		slog.Warn("pumps.signals.funding_unavailable", "base", base)
+	}
+
+	components, score := scoreSignals(ep, currentOI, baselineOI, maxFunding)
+	verdict := signalVerdict(score)
+	if !oiOK && !fundingOK {
+		verdict = "insufficient_data"
+	}
+
+	out := signalsResponse{
+		Base:        base,
+		Verdict:     verdict,
+		Score:       score,
+		MaxScore:    signalMaxScore,
+		Episode:     ep,
+		Components:  components,
+		DataQuality: signalDataQuality{OI: oiOK, Funding: fundingOK},
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)
