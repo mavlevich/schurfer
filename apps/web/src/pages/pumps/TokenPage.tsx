@@ -54,7 +54,7 @@ function fmtPct(n: number) {
 }
 
 function fmtTs(unix: number) {
-  return new Date(unix * 1000).toLocaleString(undefined, {
+  return new Date(unix * 1000).toLocaleString('en-US', {
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
@@ -74,11 +74,11 @@ function pctColor(pct: number) {
   return 'text-yellow-400';
 }
 
-const INTERVALS: { label: string; minutes: number; limit: number }[] = [
-  { label: '5m', minutes: 5, limit: 288 },
-  { label: '15m', minutes: 15, limit: 192 },
-  { label: '1h', minutes: 60, limit: 200 },
-  { label: '4h', minutes: 240, limit: 180 },
+const INTERVALS: { label: string; range: string; minutes: number; limit: number }[] = [
+  { label: '5m', range: 'last 24h', minutes: 5, limit: 288 },
+  { label: '15m', range: 'last 48h', minutes: 15, limit: 192 },
+  { label: '1h', range: 'last 8d', minutes: 60, limit: 200 },
+  { label: '4h', range: 'last 30d', minutes: 240, limit: 180 },
 ];
 
 function fmtPrice(s: string): string {
@@ -96,44 +96,67 @@ export function TokenPage() {
   const [pump, setPump] = useState<PumpEntry | null>(null);
   const [ohlcv, setOHLCV] = useState<OHLCVResponse | null>(null);
   const [episodes, setEpisodes] = useState<TokenEpisode[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [detailsLoading, setDetailsLoading] = useState(true);
+  const [chartLoading, setChartLoading] = useState(true);
   const [chartInterval, setChartInterval] = useState(15);
   const chartContainerRef = useRef<HTMLDivElement>(null);
+  const selectedInterval = INTERVALS.find((i) => i.minutes === chartInterval) ?? INTERVALS[1];
 
   useEffect(() => {
     if (!base) return;
 
     setPump(null);
-    setOHLCV(null);
     setEpisodes([]);
-    setLoading(true);
+    setDetailsLoading(true);
 
     const controller = new AbortController();
     const encoded = encodeURIComponent(base);
-    const iv = INTERVALS.find((i) => i.minutes === chartInterval) ?? INTERVALS[1];
 
-    const load = async () => {
+    const loadDetails = async () => {
       try {
-        const [pumpRes, ohlcvRes, historyRes] = await Promise.all([
+        const [pumpRes, historyRes] = await Promise.all([
           window.fetch(`/api/pumps/${encoded}`, { signal: controller.signal }),
-          window.fetch(`/api/pumps/${encoded}/ohlcv?interval=${iv.minutes}&limit=${iv.limit}`, {
-            signal: controller.signal,
-          }),
           window.fetch(`/api/pumps/${encoded}/history`, { signal: controller.signal }),
         ]);
         if (pumpRes.ok) setPump((await pumpRes.json()) as PumpEntry);
-        if (ohlcvRes.ok) setOHLCV((await ohlcvRes.json()) as OHLCVResponse);
         if (historyRes.ok) setEpisodes((await historyRes.json()) as TokenEpisode[]);
       } catch (err) {
         if (err instanceof Error && err.name === 'AbortError') return;
       } finally {
-        setLoading(false);
+        setDetailsLoading(false);
       }
     };
 
-    void load();
+    void loadDetails();
     return () => controller.abort();
-  }, [base, chartInterval]);
+  }, [base]);
+
+  useEffect(() => {
+    if (!base) return;
+
+    setOHLCV(null);
+    setChartLoading(true);
+
+    const controller = new AbortController();
+    const encoded = encodeURIComponent(base);
+
+    const loadChart = async () => {
+      try {
+        const res = await window.fetch(
+          `/api/pumps/${encoded}/ohlcv?interval=${selectedInterval.minutes}&limit=${selectedInterval.limit}`,
+          { signal: controller.signal },
+        );
+        if (res.ok) setOHLCV((await res.json()) as OHLCVResponse);
+      } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') return;
+      } finally {
+        setChartLoading(false);
+      }
+    };
+
+    void loadChart();
+    return () => controller.abort();
+  }, [base, selectedInterval.limit, selectedInterval.minutes]);
 
   useEffect(() => {
     const container = chartContainerRef.current;
@@ -151,6 +174,7 @@ export function TokenPage() {
       autoSize: true,
       height: 380,
       timeScale: { timeVisible: true, secondsVisible: false },
+      localization: { locale: 'en-US' },
     });
 
     const series = chart.addSeries(CandlestickSeries, {
@@ -189,9 +213,9 @@ export function TokenPage() {
           Pump Scanner
         </Link>
 
-        {loading && <p className="text-sm text-muted-foreground">Loading...</p>}
+        {detailsLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
 
-        {!loading && !pump && !ohlcv && (
+        {!detailsLoading && !chartLoading && !pump && !ohlcv && episodes.length === 0 && (
           <p className="text-sm text-muted-foreground">Token not found.</p>
         )}
 
@@ -209,23 +233,24 @@ export function TokenPage() {
               {pump
                 ? `Active on ${pump.exchanges.length} exchange${pump.exchanges.length !== 1 ? 's' : ''}`
                 : 'No longer in pump list'}
-              {ohlcv &&
-                ` · ${INTERVALS.find((i) => i.minutes === chartInterval)?.label ?? '15m'} chart via ${ohlcv.exchange}`}
+              {ohlcv && ` · ${selectedInterval.label} chart via ${ohlcv.exchange}`}
             </p>
           </div>
         )}
 
         <Card>
           <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
                 Price chart
                 {ohlcv && ` · ${ohlcv.exchange}`}
+                {` · ${selectedInterval.label} · ${selectedInterval.range}`}
               </CardTitle>
               <div className="flex gap-1">
                 {INTERVALS.map((iv) => (
                   <button
                     key={iv.minutes}
+                    type="button"
                     onClick={() => setChartInterval(iv.minutes)}
                     className={`px-2 py-0.5 text-xs rounded font-mono transition-colors ${
                       chartInterval === iv.minutes
@@ -240,15 +265,19 @@ export function TokenPage() {
             </div>
           </CardHeader>
           <CardContent className="p-0 pb-2">
-            {loading ? (
-              <p className="py-12 text-center text-sm text-muted-foreground animate-pulse">
-                Loading chart...
-              </p>
-            ) : ohlcv?.candles.length ? (
-              <div ref={chartContainerRef} className="h-[380px] w-full" />
-            ) : (
-              <p className="py-12 text-center text-sm text-muted-foreground">Chart unavailable</p>
-            )}
+            <div className="relative h-[380px] w-full">
+              {chartLoading ? (
+                <p className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground animate-pulse">
+                  Loading chart...
+                </p>
+              ) : ohlcv?.candles.length ? (
+                <div ref={chartContainerRef} className="absolute inset-0" />
+              ) : (
+                <p className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
+                  Chart unavailable
+                </p>
+              )}
+            </div>
           </CardContent>
         </Card>
 
