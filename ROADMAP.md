@@ -117,6 +117,44 @@ verdict: Pumping / Cooling off / Short setup / Prime short
 - [ ] "Dead cat" filter: pumps that briefly recover then dump lower than pre-pump baseline — pattern to avoid on the long side
 - [ ] Historical replay: given a pump event from the past, show what the optimal entry/exit would have been — sanity check for strategy parameters
 
+## Sprint 5.5: Listing & Delisting Event Signals (future sprint)
+
+_Goal: exploit predictable price patterns around exchange listing and delisting announcements._
+
+Both events fit the existing short-readiness logic — different trigger, same framework. Historical data is free: exchanges publish announcement archives, OHLCV is available via their APIs retrospectively, so backtesting requires no custom data collection.
+
+**Listing pumps**
+
+Pattern: announcement → spot pump → perp listing → second pump wave → retrace.
+Often stretched over 2–3 days, giving more time to enter than a regular pump.
+
+- [ ] Monitor exchange listing announcement feeds (Binance/Bybit/OKX publish RSS/API)
+- [ ] Flag new perp contracts the moment they appear (compare current contract list vs cached)
+- [ ] Feed into existing pump scanner with "listing" tag on the signal
+- [ ] Backtest: pull historical listing dates from exchange archives + OHLCV → compute median retrace depth/speed
+
+**Delisting shorts**
+
+Pattern: announcement → sharp dump → dead cat bounce (+20–40%, short squeeze + "I'll buy the dip") → prolonged bleed to zero over ~1 week as holders withdraw.
+Swing position, longer hold than listing pump. Multiple delistings happen simultaneously → natural portfolio of uncorrelated shorts.
+
+- [ ] Monitor delisting notices (Binance publishes ~1 week ahead; Bybit/OKX similar)
+- [ ] Dead cat detector: detect the bounce phase using our existing pump scorer (the bounce looks like a pump)
+- [ ] Timeline tracker: show "N days until delisting" as a countdown on the signal card
+- [ ] Risk: some tokens have withdrawal period after delisting — longs can't exit cleanly → drives the bleed
+- [ ] Backtest: Binance has delistings going back to 2019; take 50+ events, compute typical dead-cat amplitude and duration
+
+**Historical backtest (no data collection needed)**
+
+Exchange listing/delisting announcement archives are public. OHLCV for the surrounding period is available via standard API endpoints. We can run the first backtest pass entirely on external data before building any infrastructure.
+
+- [ ] Script: pull last 100 Binance delisting events from announcement page (or community-maintained list)
+- [ ] For each: fetch OHLCV via Binance futures API from announcement date + 14 days
+- [ ] Compute: dump depth, dead-cat magnitude, time from announcement to dead cat, time to final floor
+- [ ] Output: distribution charts + recommended entry window ("short the dead cat when price recovers >20% from the dump low")
+
+---
+
 ## Sprint 5: Cross-Market Signals (CEX Spot + DEX)
 
 _Goal: catch pumps earlier by watching markets where they start before hitting perps._
@@ -214,6 +252,26 @@ _Goal: run in production without babysitting._
 - [ ] Bridge flows: cross-chain inflows via Wormhole, LayerZero, Stargate for a specific token; targeted bridging into a thin-liquidity chain before a pump = coordinated move
 - [ ] Smart money identification: addresses that bought >5 days before a +50% move in the last 6 months; if such an address starts accumulating now = pre-pump signal
 - [ ] Wash trading detection: round-trip patterns (A→B→A within 1h, same size), exchange pairs with suspiciously high volume vs OI; flag exchanges where pump volume is likely artificial
+
+**Squeeze protection**
+
+- [ ] Short squeeze scanner: funding rate deeply negative (shorts paying longs) + price rising = squeeze in progress; add "squeeze risk" flag that suppresses short_setup verdict — prevents entering a short into an ongoing squeeze
+- [ ] Squeeze magnitude estimate: size of short OI × funding rate × time since funding went negative = pressure gauge; higher = more violent the squeeze, avoid until it resolves
+
+**OI coiled spring**
+
+- [ ] OI spike without price move: if OI grows >15% while price moves <2% — someone is building a large position silently; fire a "coiled spring" alert; direction unknown but explosion imminent; use existing `oi_snapshots` data
+- [ ] Spring direction hint: if OI spike happens during a slow grind up = likely long accumulation; during sideways = ambiguous; monitor which way price breaks within 1h of the spike
+
+**Funding rate arbitrage (basis trade)**
+
+- [ ] Basis trade alert: when funding >0.3%/8h (≈328% APR), flag as "basis trade opportunity" — short perp + long spot captures funding with zero directional risk; show estimated daily yield at current rate and position size
+- [ ] Basis trade tracker: log when the threshold is crossed + how long it sustained; builds a dataset of which tokens have recurring elevated funding (chronic crowded-long = repeated short setups)
+
+**Correlation break detector**
+
+- [ ] BTC-relative move: compute each token's % change vs BTC % change over last 1h; if BTC is flat (±0.5%) and token is +10%+ → isolated pump, not market-wide move; fire earlier than pump scanner since no threshold breach required
+- [ ] Correlation score: rolling 24h correlation coefficient between token and BTC price; drop from >0.8 to <0.3 = decorrelation event = token being specifically targeted; early warning layer before our main scanner picks it up
 
 ---
 
