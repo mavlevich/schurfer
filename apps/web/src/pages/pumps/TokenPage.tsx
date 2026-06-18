@@ -82,6 +82,27 @@ interface SignalsResponse {
   };
 }
 
+interface TokenStats {
+  base: string;
+  episode_count: number;
+  retrace_count: number;
+  confidence: 'low' | 'medium' | 'high';
+  avg_peak_pct: number;
+  median_peak_pct: number;
+  avg_retrace_pct: number | null;
+  median_retrace_pct: number | null;
+  min_retrace_pct: number | null;
+  max_retrace_pct: number | null;
+  avg_duration_hours: number;
+  median_duration_hours: number;
+}
+
+const CONFIDENCE_STYLES: Record<string, string> = {
+  low: 'text-muted-foreground bg-muted border border-border',
+  medium: 'text-yellow-400 bg-yellow-400/10 border border-yellow-400/20',
+  high: 'text-green-400 bg-green-400/10 border border-green-400/20',
+};
+
 const VERDICT_STYLES: Record<string, { label: string; badge: string; bar: string }> = {
   pumping: {
     label: 'Pumping',
@@ -185,6 +206,7 @@ export function TokenPage() {
   const [ohlcv, setOHLCV] = useState<OHLCVResponse | null>(null);
   const [episodes, setEpisodes] = useState<TokenEpisode[]>([]);
   const [signals, setSignals] = useState<SignalsResponse | null>(null);
+  const [stats, setStats] = useState<TokenStats | null>(null);
   const [detailsLoading, setDetailsLoading] = useState(true);
   const [chartLoading, setChartLoading] = useState(true);
   const [chartInterval, setChartInterval] = useState(15);
@@ -197,6 +219,7 @@ export function TokenPage() {
     setPump(null);
     setEpisodes([]);
     setSignals(null);
+    setStats(null);
     setDetailsLoading(true);
 
     const controller = new AbortController();
@@ -220,7 +243,21 @@ export function TokenPage() {
       }
     };
 
+    // Stats are non-critical aggregates — fetched in parallel but don't gate the main render.
+    const loadStats = async () => {
+      try {
+        const res = await window.fetch(`/api/pumps/${encoded}/stats`, {
+          signal: controller.signal,
+        });
+        // 404 = no closed episodes yet — card simply won't render
+        if (res.ok) setStats((await res.json()) as TokenStats);
+      } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') return;
+      }
+    };
+
     void loadDetails();
+    void loadStats();
     return () => controller.abort();
   }, [base]);
 
@@ -543,6 +580,102 @@ export function TokenPage() {
                   </tbody>
                 </table>
               </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {stats && (
+          <Card>
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                  Historical stats · {stats.episode_count} episodes
+                </CardTitle>
+                <span
+                  className={`rounded px-2 py-0.5 text-xs font-medium ${CONFIDENCE_STYLES[stats.confidence]}`}
+                >
+                  {stats.confidence} confidence
+                </span>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 gap-6 sm:grid-cols-4">
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Avg peak</p>
+                  <p className={`text-lg font-mono font-bold ${pctColor(stats.avg_peak_pct)}`}>
+                    {fmtPct(stats.avg_peak_pct)}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    med {fmtPct(stats.median_peak_pct)}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">
+                    Avg retrace{' '}
+                    {stats.retrace_count < stats.episode_count && (
+                      <span className="text-yellow-500">
+                        ({stats.retrace_count}/{stats.episode_count})
+                      </span>
+                    )}
+                  </p>
+                  {stats.avg_retrace_pct != null ? (
+                    <>
+                      <p
+                        className={`text-lg font-mono font-bold ${pctColor(stats.avg_retrace_pct)}`}
+                      >
+                        {fmtPct(stats.avg_retrace_pct)}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        med{' '}
+                        {stats.median_retrace_pct != null ? fmtPct(stats.median_retrace_pct) : '—'}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-lg font-mono text-muted-foreground">—</p>
+                  )}
+                </div>
+
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Retrace range</p>
+                  {stats.min_retrace_pct != null && stats.max_retrace_pct != null ? (
+                    <>
+                      <p className="text-sm font-mono">
+                        <span className={pctColor(stats.max_retrace_pct)}>
+                          {fmtPct(stats.max_retrace_pct)}
+                        </span>
+                        {' → '}
+                        <span className={pctColor(stats.min_retrace_pct)}>
+                          {fmtPct(stats.min_retrace_pct)}
+                        </span>
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-0.5">best → worst</p>
+                    </>
+                  ) : (
+                    <p className="text-lg font-mono text-muted-foreground">—</p>
+                  )}
+                </div>
+
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Avg duration</p>
+                  <p className="text-lg font-mono font-bold">
+                    {stats.avg_duration_hours.toFixed(1)}h
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    med {stats.median_duration_hours.toFixed(1)}h
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {!detailsLoading && pump && !stats && (
+          <Card className="border-dashed">
+            <CardContent className="flex items-center gap-3 py-4 text-sm text-muted-foreground">
+              <span>
+                No historical stats yet — data will appear once the first pump episode closes.
+              </span>
             </CardContent>
           </Card>
         )}
