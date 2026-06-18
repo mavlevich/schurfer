@@ -28,6 +28,10 @@ func fetchOHLCV(ctx context.Context, exchange, base string, interval, limit int)
 		return fetchOKX(ctx, base, interval, limit)
 	case "gate":
 		return fetchGate(ctx, base, interval, limit)
+	case "bingx":
+		return fetchBingX(ctx, base, interval, limit)
+	case "mexc":
+		return fetchMEXC(ctx, base, interval, limit)
 	default:
 		return fetchBybit(ctx, base, interval, limit)
 	}
@@ -332,6 +336,210 @@ func parseRow(row []string, tsIdx, oIdx, hIdx, lIdx, cIdx, vIdx int) (Candle, er
 		return Candle{}, err
 	}
 	return Candle{Time: ts, Open: o, High: h, Low: l, Close: c, Volume: v}, nil
+}
+
+func bingxInterval(minutes int) string {
+	switch minutes {
+	case 1:
+		return "1m"
+	case 3:
+		return "3m"
+	case 5:
+		return "5m"
+	case 15:
+		return "15m"
+	case 30:
+		return "30m"
+	case 60:
+		return "1h"
+	case 120:
+		return "2h"
+	case 240:
+		return "4h"
+	case 360:
+		return "6h"
+	case 480:
+		return "8h"
+	case 720:
+		return "12h"
+	default:
+		return fmt.Sprintf("%dm", minutes)
+	}
+}
+
+func fetchBingX(ctx context.Context, base string, interval, limit int) ([]Candle, error) {
+	url := fmt.Sprintf(
+		"https://open-api.bingx.com/openApi/swap/v2/quote/klines?symbol=%s-USDT&interval=%s&limit=%d",
+		base, bingxInterval(interval), limit,
+	)
+	raw, err := httpGet(ctx, url)
+	if err != nil {
+		return nil, err
+	}
+	candles, err := parseBingX(raw)
+	if err != nil {
+		return nil, fmt.Errorf("bingx/%s: %w", base, err)
+	}
+	return candles, nil
+}
+
+func parseBingX(raw []byte) ([]Candle, error) {
+	var resp struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+		Data []struct {
+			Open   string `json:"open"`
+			High   string `json:"high"`
+			Low    string `json:"low"`
+			Close  string `json:"close"`
+			Volume string `json:"volume"`
+			Time   int64  `json:"time"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return nil, fmt.Errorf("json: %w", err)
+	}
+	if resp.Code != 0 {
+		return nil, fmt.Errorf("exchange error %d: %s", resp.Code, resp.Msg)
+	}
+	candles := make([]Candle, 0, len(resp.Data))
+	for i, d := range resp.Data {
+		parseF := func(s, name string) (float64, error) {
+			v, err := strconv.ParseFloat(s, 64)
+			if err != nil {
+				return 0, fmt.Errorf("row %d %s=%q: %w", i, name, s, err)
+			}
+			return v, nil
+		}
+		o, err := parseF(d.Open, "open")
+		if err != nil {
+			return nil, err
+		}
+		h, err := parseF(d.High, "high")
+		if err != nil {
+			return nil, err
+		}
+		l, err := parseF(d.Low, "low")
+		if err != nil {
+			return nil, err
+		}
+		c, err := parseF(d.Close, "close")
+		if err != nil {
+			return nil, err
+		}
+		v, err := parseF(d.Volume, "volume")
+		if err != nil {
+			return nil, err
+		}
+		candles = append(candles, Candle{Time: d.Time / 1000, Open: o, High: h, Low: l, Close: c, Volume: v})
+	}
+	return candles, nil
+}
+
+func mexcInterval(minutes int) string {
+	switch minutes {
+	case 1:
+		return "Min1"
+	case 5:
+		return "Min5"
+	case 15:
+		return "Min15"
+	case 30:
+		return "Min30"
+	case 60:
+		return "Min60"
+	case 240:
+		return "Hour4"
+	case 480:
+		return "Hour8"
+	case 1440:
+		return "Day1"
+	default:
+		return fmt.Sprintf("Min%d", minutes)
+	}
+}
+
+func fetchMEXC(ctx context.Context, base string, interval, limit int) ([]Candle, error) {
+	// MEXC futures contract API — matches the perp market where pumps are detected.
+	// start= anchors the window; without it the API returns only the latest ~100 candles.
+	start := time.Now().Unix() - int64(interval*limit*60)
+	url := fmt.Sprintf(
+		"https://contract.mexc.com/api/v1/contract/kline/%s_USDT?interval=%s&start=%d",
+		base, mexcInterval(interval), start,
+	)
+	raw, err := httpGet(ctx, url)
+	if err != nil {
+		return nil, err
+	}
+	candles, err := parseMEXC(raw)
+	if err != nil {
+		return nil, fmt.Errorf("mexc/%s: %w", base, err)
+	}
+	return candles, nil
+}
+
+// parseMEXC handles MEXC futures klines — columnar format where each field is
+// a separate array (time[], open[], high[], low[], close[], vol[]).
+// Timestamps are in seconds.
+func parseMEXC(raw []byte) ([]Candle, error) {
+	var resp struct {
+		Success bool   `json:"success"`
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+		Data    *struct {
+			Time  []int64  `json:"time"`
+			Open  []string `json:"open"`
+			High  []string `json:"high"`
+			Low   []string `json:"low"`
+			Close []string `json:"close"`
+			Vol   []string `json:"vol"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return nil, fmt.Errorf("json: %w", err)
+	}
+	if !resp.Success || resp.Code != 0 {
+		return nil, fmt.Errorf("exchange error %d: %s", resp.Code, resp.Message)
+	}
+	if resp.Data == nil || len(resp.Data.Time) == 0 {
+		return nil, nil
+	}
+	n := len(resp.Data.Time)
+	candles := make([]Candle, 0, n)
+	for i := 0; i < n; i++ {
+		parseF := func(arr []string, name string) (float64, error) {
+			if i >= len(arr) {
+				return 0, fmt.Errorf("row %d %s: out of range", i, name)
+			}
+			v, err := strconv.ParseFloat(arr[i], 64)
+			if err != nil {
+				return 0, fmt.Errorf("row %d %s=%q: %w", i, name, arr[i], err)
+			}
+			return v, nil
+		}
+		o, err := parseF(resp.Data.Open, "open")
+		if err != nil {
+			return nil, err
+		}
+		h, err := parseF(resp.Data.High, "high")
+		if err != nil {
+			return nil, err
+		}
+		l, err := parseF(resp.Data.Low, "low")
+		if err != nil {
+			return nil, err
+		}
+		c, err := parseF(resp.Data.Close, "close")
+		if err != nil {
+			return nil, err
+		}
+		v, err := parseF(resp.Data.Vol, "vol")
+		if err != nil {
+			return nil, err
+		}
+		candles = append(candles, Candle{Time: resp.Data.Time[i], Open: o, High: h, Low: l, Close: c, Volume: v})
+	}
+	return candles, nil
 }
 
 func reverseCandles(c []Candle) {
