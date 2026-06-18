@@ -657,6 +657,94 @@ func signalVerdict(score int) string {
 	}
 }
 
+type tokenStatsResponse struct {
+	Base             string   `json:"base"`
+	EpisodeCount     int      `json:"episode_count"`
+	RetraceCount     int      `json:"retrace_count"`
+	AvgPeakPct       float64  `json:"avg_peak_pct"`
+	MedianPeakPct    float64  `json:"median_peak_pct"`
+	AvgRetracePct    *float64 `json:"avg_retrace_pct"`
+	MedianRetracePct *float64 `json:"median_retrace_pct"`
+	MinRetracePct    *float64 `json:"min_retrace_pct"`
+	MaxRetracePct    *float64 `json:"max_retrace_pct"`
+	AvgDurationHours float64  `json:"avg_duration_hours"`
+	MedDurationHours float64  `json:"med_duration_hours"`
+}
+
+// Stats returns aggregate statistics across all closed pump episodes for a
+// token. 404 if no closed episodes exist yet. retrace_pct fields are null when
+// no episode has retrace data (retrace_pct = last_pct - peak_pct, always ≤ 0).
+func (h *Handler) Stats(w http.ResponseWriter, r *http.Request) {
+	base := strings.ToUpper(chi.URLParam(r, "base"))
+	if !validBase.MatchString(base) {
+		http.Error(w, "invalid token", http.StatusBadRequest)
+		return
+	}
+
+	var (
+		episodeCount     int
+		retraceCount     int
+		avgPeakPct       float64
+		medianPeakPct    float64
+		avgRetracePct    *float64
+		medianRetracePct *float64
+		minRetracePct    *float64
+		maxRetracePct    *float64
+		avgDurationHours float64
+		medDurationHours float64
+	)
+
+	err := h.pool.QueryRow(r.Context(), `
+		SELECT
+		  COUNT(*)                                                                        AS episode_count,
+		  COUNT(retrace_pct)                                                              AS retrace_count,
+		  COALESCE(AVG(peak_pct), 0)                                                     AS avg_peak_pct,
+		  COALESCE(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY peak_pct), 0)             AS median_peak_pct,
+		  AVG(retrace_pct)                                                                AS avg_retrace_pct,
+		  PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY retrace_pct)                       AS median_retrace_pct,
+		  MIN(retrace_pct)                                                                AS min_retrace_pct,
+		  MAX(retrace_pct)                                                                AS max_retrace_pct,
+		  COALESCE(AVG(EXTRACT(epoch FROM (closed_at - first_seen_at)) / 3600), 0)       AS avg_duration_hours,
+		  COALESCE(PERCENTILE_CONT(0.5) WITHIN GROUP (
+		    ORDER BY EXTRACT(epoch FROM (closed_at - first_seen_at)) / 3600
+		  ), 0)                                                                           AS med_duration_hours
+		FROM app.pump_events
+		WHERE base = $1
+		  AND closed_at IS NOT NULL`,
+		base,
+	).Scan(
+		&episodeCount, &retraceCount,
+		&avgPeakPct, &medianPeakPct,
+		&avgRetracePct, &medianRetracePct,
+		&minRetracePct, &maxRetracePct,
+		&avgDurationHours, &medDurationHours,
+	)
+	if err != nil {
+		slog.Error("pumps.stats.query", "base", base, "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if episodeCount == 0 {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(tokenStatsResponse{
+		Base:             base,
+		EpisodeCount:     episodeCount,
+		RetraceCount:     retraceCount,
+		AvgPeakPct:       avgPeakPct,
+		MedianPeakPct:    medianPeakPct,
+		AvgRetracePct:    avgRetracePct,
+		MedianRetracePct: medianRetracePct,
+		MinRetracePct:    minRetracePct,
+		MaxRetracePct:    maxRetracePct,
+		AvgDurationHours: avgDurationHours,
+		MedDurationHours: medDurationHours,
+	})
+}
+
 // Signals returns a composite short-readiness score for a token's active pump
 // episode. 404 if no open episode exists — signals only apply to live pumps.
 // Score 0-10 from five components: pump age, price extent, OI trend, funding

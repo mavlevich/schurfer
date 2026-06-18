@@ -889,3 +889,158 @@ func TestSignalsHandler(t *testing.T) {
 		})
 	}
 }
+
+// ---- TestStatsHandler ----
+
+func serveStats(q pgxPool, base string) *httptest.ResponseRecorder {
+	h := &Handler{pool: q}
+	r := chi.NewRouter()
+	r.Get("/api/pumps/{base}/stats", h.Stats)
+	req := httptest.NewRequest(http.MethodGet, "/api/pumps/"+base+"/stats", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	return w
+}
+
+func fptr(v float64) *float64 { return &v }
+
+func TestStatsHandler(t *testing.T) {
+	// statsRow returns the 10 values that Stats's QueryRow scans.
+	// Pass nil for nullable retrace fields when no retrace data exists.
+	statsRow := func(
+		episodeCount, retraceCount int,
+		avgPeak, medianPeak float64,
+		avgRetrace, medianRetrace, minRetrace, maxRetrace interface{},
+		avgDur, medDur float64,
+	) []any {
+		return []any{
+			int64(episodeCount), int64(retraceCount),
+			avgPeak, medianPeak,
+			avgRetrace, medianRetrace, minRetrace, maxRetrace,
+			avgDur, medDur,
+		}
+	}
+
+	cases := []struct {
+		name       string
+		base       string
+		row        []any // nil → no row / simulate scan error for 404 path
+		wantStatus int
+		checkResp  func(t *testing.T, resp tokenStatsResponse)
+	}{
+		{
+			name:       "invalid base returns 400",
+			base:       "BTC-INVALID",
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			// episode_count = 0 → no closed history → 404.
+			name:       "no closed episodes returns 404",
+			base:       "BTC",
+			row:        statsRow(0, 0, 0, 0, nil, nil, nil, nil, 0, 0),
+			wantStatus: http.StatusNotFound,
+		},
+		{
+			// 3 episodes, all have retrace data.
+			name: "full stats — 3 episodes with retrace",
+			base: "SOL",
+			row: statsRow(
+				3, 3,
+				65.0, 60.0,
+				fptr(-42.0), fptr(-38.0), fptr(-75.0), fptr(-20.0),
+				4.5, 3.5,
+			),
+			wantStatus: http.StatusOK,
+			checkResp: func(t *testing.T, resp tokenStatsResponse) {
+				t.Helper()
+				if resp.EpisodeCount != 3 {
+					t.Errorf("episode_count = %d, want 3", resp.EpisodeCount)
+				}
+				if resp.RetraceCount != 3 {
+					t.Errorf("retrace_count = %d, want 3", resp.RetraceCount)
+				}
+				if resp.AvgPeakPct != 65.0 {
+					t.Errorf("avg_peak_pct = %v, want 65.0", resp.AvgPeakPct)
+				}
+				if resp.AvgRetracePct == nil || *resp.AvgRetracePct != -42.0 {
+					t.Errorf("avg_retrace_pct = %v, want -42.0", resp.AvgRetracePct)
+				}
+				if resp.MinRetracePct == nil || *resp.MinRetracePct != -75.0 {
+					t.Errorf("min_retrace_pct = %v, want -75.0", resp.MinRetracePct)
+				}
+				if resp.MaxRetracePct == nil || *resp.MaxRetracePct != -20.0 {
+					t.Errorf("max_retrace_pct = %v, want -20.0", resp.MaxRetracePct)
+				}
+				if resp.AvgDurationHours != 4.5 {
+					t.Errorf("avg_duration_hours = %v, want 4.5", resp.AvgDurationHours)
+				}
+			},
+		},
+		{
+			// 3 episodes, none have retrace_pct yet — retrace fields must be null.
+			name: "episodes without retrace — retrace fields null",
+			base: "ETH",
+			row: statsRow(
+				3, 0,
+				50.0, 48.0,
+				nil, nil, nil, nil,
+				2.0, 1.5,
+			),
+			wantStatus: http.StatusOK,
+			checkResp: func(t *testing.T, resp tokenStatsResponse) {
+				t.Helper()
+				if resp.RetraceCount != 0 {
+					t.Errorf("retrace_count = %d, want 0", resp.RetraceCount)
+				}
+				if resp.AvgRetracePct != nil {
+					t.Errorf("avg_retrace_pct = %v, want nil", resp.AvgRetracePct)
+				}
+				if resp.MedianRetracePct != nil {
+					t.Errorf("median_retrace_pct = %v, want nil", resp.MedianRetracePct)
+				}
+				if resp.MinRetracePct != nil {
+					t.Errorf("min_retrace_pct = %v, want nil", resp.MinRetracePct)
+				}
+				if resp.MaxRetracePct != nil {
+					t.Errorf("max_retrace_pct = %v, want nil", resp.MaxRetracePct)
+				}
+				// Non-retrace fields should still be populated.
+				if resp.EpisodeCount != 3 {
+					t.Errorf("episode_count = %d, want 3", resp.EpisodeCount)
+				}
+				if resp.AvgPeakPct != 50.0 {
+					t.Errorf("avg_peak_pct = %v, want 50.0", resp.AvgPeakPct)
+				}
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			q := &stubQuerier{
+				onQueryRow: func(_ context.Context, _ string, _ ...any) pgxRow {
+					if tc.row == nil {
+						return &stubRow{err: fmt.Errorf("unexpected call")}
+					}
+					return &stubRow{vals: tc.row}
+				},
+			}
+			w := serveStats(q, tc.base)
+
+			if w.Code != tc.wantStatus {
+				t.Fatalf("status = %d, want %d; body: %s", w.Code, tc.wantStatus, w.Body.String())
+			}
+			if tc.wantStatus != http.StatusOK {
+				return
+			}
+
+			var resp tokenStatsResponse
+			if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+				t.Fatalf("unmarshal: %v; body: %s", err, w.Body.String())
+			}
+			if tc.checkResp != nil {
+				tc.checkResp(t, resp)
+			}
+		})
+	}
+}
