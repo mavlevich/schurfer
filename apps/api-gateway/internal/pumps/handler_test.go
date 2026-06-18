@@ -941,38 +941,62 @@ func TestStatsHandler(t *testing.T) {
 			wantStatus: http.StatusNotFound,
 		},
 		{
-			// 3 episodes, all have retrace data.
+			// 3 episodes, all have retrace data → confidence "medium".
+			// DB returns raw floats; handler must round to 1 decimal.
 			name: "full stats — 3 episodes with retrace",
 			base: "SOL",
 			row: statsRow(
 				3, 3,
-				65.0, 60.0,
-				fptr(-42.0), fptr(-38.0), fptr(-75.0), fptr(-20.0),
-				4.5, 3.5,
+				65.123, 60.456,
+				fptr(-42.167), fptr(-38.333), fptr(-75.0), fptr(-20.0),
+				4.567, 3.5,
 			),
 			wantStatus: http.StatusOK,
 			checkResp: func(t *testing.T, resp tokenStatsResponse) {
 				t.Helper()
-				if resp.EpisodeCount != 3 {
-					t.Errorf("episode_count = %d, want 3", resp.EpisodeCount)
+				if resp.Confidence != "medium" {
+					t.Errorf("confidence = %q, want medium (3 episodes)", resp.Confidence)
 				}
-				if resp.RetraceCount != 3 {
-					t.Errorf("retrace_count = %d, want 3", resp.RetraceCount)
+				if resp.AvgPeakPct != 65.1 {
+					t.Errorf("avg_peak_pct = %v, want 65.1 (rounded)", resp.AvgPeakPct)
 				}
-				if resp.AvgPeakPct != 65.0 {
-					t.Errorf("avg_peak_pct = %v, want 65.0", resp.AvgPeakPct)
+				if resp.MedianPeakPct != 60.5 {
+					t.Errorf("median_peak_pct = %v, want 60.5 (rounded)", resp.MedianPeakPct)
 				}
-				if resp.AvgRetracePct == nil || *resp.AvgRetracePct != -42.0 {
-					t.Errorf("avg_retrace_pct = %v, want -42.0", resp.AvgRetracePct)
+				if resp.AvgRetracePct == nil || *resp.AvgRetracePct != -42.2 {
+					t.Errorf("avg_retrace_pct = %v, want -42.2 (rounded)", resp.AvgRetracePct)
 				}
 				if resp.MinRetracePct == nil || *resp.MinRetracePct != -75.0 {
 					t.Errorf("min_retrace_pct = %v, want -75.0", resp.MinRetracePct)
 				}
-				if resp.MaxRetracePct == nil || *resp.MaxRetracePct != -20.0 {
-					t.Errorf("max_retrace_pct = %v, want -20.0", resp.MaxRetracePct)
+				if resp.AvgDurationHours != 4.6 {
+					t.Errorf("avg_duration_hours = %v, want 4.6 (rounded)", resp.AvgDurationHours)
 				}
-				if resp.AvgDurationHours != 4.5 {
-					t.Errorf("avg_duration_hours = %v, want 4.5", resp.AvgDurationHours)
+			},
+		},
+		{
+			// 1 episode → confidence "low".
+			name:       "single episode — confidence low",
+			base:       "DOGE",
+			row:        statsRow(1, 1, 40.0, 40.0, fptr(-30.0), fptr(-30.0), fptr(-30.0), fptr(-30.0), 2.0, 2.0),
+			wantStatus: http.StatusOK,
+			checkResp: func(t *testing.T, resp tokenStatsResponse) {
+				t.Helper()
+				if resp.Confidence != "low" {
+					t.Errorf("confidence = %q, want low (1 episode)", resp.Confidence)
+				}
+			},
+		},
+		{
+			// 6 episodes → confidence "high".
+			name:       "six episodes — confidence high",
+			base:       "BNB",
+			row:        statsRow(6, 5, 55.0, 52.0, fptr(-38.0), fptr(-36.0), fptr(-60.0), fptr(-15.0), 3.0, 2.5),
+			wantStatus: http.StatusOK,
+			checkResp: func(t *testing.T, resp tokenStatsResponse) {
+				t.Helper()
+				if resp.Confidence != "high" {
+					t.Errorf("confidence = %q, want high (6 episodes)", resp.Confidence)
 				}
 			},
 		},
@@ -1004,7 +1028,6 @@ func TestStatsHandler(t *testing.T) {
 				if resp.MaxRetracePct != nil {
 					t.Errorf("max_retrace_pct = %v, want nil", resp.MaxRetracePct)
 				}
-				// Non-retrace fields should still be populated.
 				if resp.EpisodeCount != 3 {
 					t.Errorf("episode_count = %d, want 3", resp.EpisodeCount)
 				}

@@ -658,17 +658,40 @@ func signalVerdict(score int) string {
 }
 
 type tokenStatsResponse struct {
-	Base             string   `json:"base"`
-	EpisodeCount     int      `json:"episode_count"`
-	RetraceCount     int      `json:"retrace_count"`
-	AvgPeakPct       float64  `json:"avg_peak_pct"`
-	MedianPeakPct    float64  `json:"median_peak_pct"`
-	AvgRetracePct    *float64 `json:"avg_retrace_pct"`
-	MedianRetracePct *float64 `json:"median_retrace_pct"`
-	MinRetracePct    *float64 `json:"min_retrace_pct"`
-	MaxRetracePct    *float64 `json:"max_retrace_pct"`
-	AvgDurationHours float64  `json:"avg_duration_hours"`
-	MedDurationHours float64  `json:"med_duration_hours"`
+	Base                string   `json:"base"`
+	EpisodeCount        int      `json:"episode_count"`
+	RetraceCount        int      `json:"retrace_count"`
+	Confidence          string   `json:"confidence"`
+	AvgPeakPct          float64  `json:"avg_peak_pct"`
+	MedianPeakPct       float64  `json:"median_peak_pct"`
+	AvgRetracePct       *float64 `json:"avg_retrace_pct"`
+	MedianRetracePct    *float64 `json:"median_retrace_pct"`
+	MinRetracePct       *float64 `json:"min_retrace_pct"`
+	MaxRetracePct       *float64 `json:"max_retrace_pct"`
+	AvgDurationHours    float64  `json:"avg_duration_hours"`
+	MedianDurationHours float64  `json:"median_duration_hours"`
+}
+
+// statsConfidence maps episode count to a data quality label so the UI can
+// warn when aggregates are based on very few observations.
+func statsConfidence(n int) string {
+	switch {
+	case n >= 6:
+		return "high"
+	case n >= 3:
+		return "medium"
+	default:
+		return "low"
+	}
+}
+
+func round1(v float64) float64 { return math.Round(v*10) / 10 }
+func roundPtr1(v *float64) *float64 {
+	if v == nil {
+		return nil
+	}
+	r := math.Round(*v*10) / 10
+	return &r
 }
 
 // Stats returns aggregate statistics across all closed pump episodes for a
@@ -682,16 +705,16 @@ func (h *Handler) Stats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var (
-		episodeCount     int
-		retraceCount     int
-		avgPeakPct       float64
-		medianPeakPct    float64
-		avgRetracePct    *float64
-		medianRetracePct *float64
-		minRetracePct    *float64
-		maxRetracePct    *float64
-		avgDurationHours float64
-		medDurationHours float64
+		episodeCount        int
+		retraceCount        int
+		avgPeakPct          float64
+		medianPeakPct       float64
+		avgRetracePct       *float64
+		medianRetracePct    *float64
+		minRetracePct       *float64
+		maxRetracePct       *float64
+		avgDurationHours    float64
+		medianDurationHours float64
 	)
 
 	err := h.pool.QueryRow(r.Context(), `
@@ -707,7 +730,7 @@ func (h *Handler) Stats(w http.ResponseWriter, r *http.Request) {
 		  COALESCE(AVG(EXTRACT(epoch FROM (closed_at - first_seen_at)) / 3600), 0)       AS avg_duration_hours,
 		  COALESCE(PERCENTILE_CONT(0.5) WITHIN GROUP (
 		    ORDER BY EXTRACT(epoch FROM (closed_at - first_seen_at)) / 3600
-		  ), 0)                                                                           AS med_duration_hours
+		  ), 0)                                                                           AS median_duration_hours
 		FROM app.pump_events
 		WHERE base = $1
 		  AND closed_at IS NOT NULL`,
@@ -717,7 +740,7 @@ func (h *Handler) Stats(w http.ResponseWriter, r *http.Request) {
 		&avgPeakPct, &medianPeakPct,
 		&avgRetracePct, &medianRetracePct,
 		&minRetracePct, &maxRetracePct,
-		&avgDurationHours, &medDurationHours,
+		&avgDurationHours, &medianDurationHours,
 	)
 	if err != nil {
 		slog.Error("pumps.stats.query", "base", base, "err", err)
@@ -731,17 +754,18 @@ func (h *Handler) Stats(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(tokenStatsResponse{
-		Base:             base,
-		EpisodeCount:     episodeCount,
-		RetraceCount:     retraceCount,
-		AvgPeakPct:       avgPeakPct,
-		MedianPeakPct:    medianPeakPct,
-		AvgRetracePct:    avgRetracePct,
-		MedianRetracePct: medianRetracePct,
-		MinRetracePct:    minRetracePct,
-		MaxRetracePct:    maxRetracePct,
-		AvgDurationHours: avgDurationHours,
-		MedDurationHours: medDurationHours,
+		Base:                base,
+		EpisodeCount:        episodeCount,
+		RetraceCount:        retraceCount,
+		Confidence:          statsConfidence(episodeCount),
+		AvgPeakPct:          round1(avgPeakPct),
+		MedianPeakPct:       round1(medianPeakPct),
+		AvgRetracePct:       roundPtr1(avgRetracePct),
+		MedianRetracePct:    roundPtr1(medianRetracePct),
+		MinRetracePct:       roundPtr1(minRetracePct),
+		MaxRetracePct:       roundPtr1(maxRetracePct),
+		AvgDurationHours:    round1(avgDurationHours),
+		MedianDurationHours: round1(medianDurationHours),
 	})
 }
 
