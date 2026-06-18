@@ -228,6 +228,18 @@ _Goal: run in production without babysitting._
 
 ## Technical debt / optimization
 
+**Token detail page (known issues + improvements)**
+
+- ~~**retrace_from_peak scoring is inverted**~~ — fixed: near peak now scores 2 pts, far below peak scores 0 pts
+- **Short Readiness card only shows short perspective** — same OI + funding + pump age data is useful for longs (e.g. low funding + OI growing = accumulation) and for long-term investment framing; consider a "Bias" toggle (Short / Long / Neutral) or a separate section that interprets data for each direction
+- **Token page nav label** — active nav item shows "Pump Scanner" when viewing a token; should be a breadcrumb `Pump Scanner / BTC` or a separate "Token" entry so the user knows where they are
+- **OHLCV chart is static** — loaded once on page open; add optional auto-refresh (e.g. every 60s for the active candle) so the current candle updates while the user is watching
+- **Pump episode markers on chart** — `first_seen_at` and `closed_at` are already available per episode; overlay flag markers on the OHLCV chart so the user can see "we detected the pump here" and "episode closed here" → visualises what happened after detection; lightweight-charts supports `series.setMarkers()`
+- **Chart history limited to exchange lookback** — OHLCV is fetched live from the exchange on each request; no historical data is stored; to show older pump episodes on the chart, start writing OHLCV candles to TimescaleDB (continuous storage) so the chart can go back months
+- **Real-time OI on token page** — OI is fetched once on load; add polling every 30-60s so the user sees OI moving while watching a pump
+- **Live prices on pump scanner** — scanner prices come from Redis cache updated every ~120s; frontend can poll `/api/pumps` every 30s for a near-live feel without websocket complexity
+- **Pump scanner pagination** — API returns up to 500 rows, all rendered at once; add pagination or virtual scrolling for when the list grows
+
 **Frontend bugs (do before Sprint 4)**
 
 - **Scrollbar layout shift** — switching between Status and Pump Scanner tabs causes the scrollbar to appear/disappear, shifting content width; fix with `scrollbar-gutter: stable` on `<html>` in `apps/web/src/index.css`
@@ -259,6 +271,58 @@ _Goal: run in production without babysitting._
 - **Telegram: seen_bases resets on restart** — in-memory set clears on analytics restart, causing alerts for all active tokens at startup (could be noisy); consider persisting seen_bases in Redis so restart is transparent
 - **Telegram: drop-below alerts** — currently only alerts on new pumps; consider sending a follow-up when a token drops back below threshold (e.g. "BTC back to +18%, was +45%")
 - **Telegram: alert deduplication window** — if a token stays above threshold for hours, no repeat alerts; might want a "still pumping" reminder after N hours
+
+---
+
+## Token Risk Profile (future sprint)
+
+_Goal: for each token, answer "how much leverage is safe and what is the real cost of holding?"_
+
+A great signal with wrong leverage = blown account. This module sits between signal detection and execution.
+
+**Inputs already available:**
+
+- `pump_event_snapshots` at +1h/+4h/+24h → proxy for Maximum Adverse Excursion (MAE)
+- `funding_rate_snapshots` → daily carry cost at given leverage
+- `pump_events.exchanges` JSONB → 24h volume as liquidity proxy
+- `retrace_pct` per episode → historical win rate and avg magnitude
+
+**Inputs still missing (need OHLCV storage first):**
+
+- ATR / volatility — how much does this token move per candle on average
+- Max intraday wick — worst-case spike that could trigger stop/liquidation before the retrace
+
+**What the module should produce:**
+
+```
+Token Risk Profile — SOL
+
+Risk rating: HIGH
+Max recommended leverage: 2x–3x
+
+Factors:
+- Historical MAE: up to +28% adverse before retrace started
+  → 3x short gets liquidated at +33% → safety margin is thin
+- Funding drag: 0.14%/8h → 5-day hold costs 6.3% of notional
+- Liquidity: $380M/24h volume → entry/exit realistic at normal size
+
+Position sizing guidance:
+- At 2x leverage: survives up to +40% adverse move
+- Suggested SL: +18% above entry (above historical MAE 95th percentile)
+- Historical base rate: 6 past episodes above 50% → 5 retraced >30% in 4h (83% hit TP)
+```
+
+**Components to build:**
+
+- [ ] MAE calculator: per token, per pump magnitude bucket (30-50%, 50-100%, >100%), compute p50/p75/p95 of adverse excursion from peak using existing snapshots
+- [ ] Funding drag calculator: given leverage N and funding rate R, show cost per day / per week
+- [ ] Leverage suggestion: `max_safe_leverage = (liquidation_buffer) / (MAE_p95)` — e.g. MAE p95 = 28%, want 20% margin → max leverage = 1/0.48 ≈ 2x
+- [ ] Historical base rate: for this token at this pump magnitude, how often did it retrace >X% within Y hours
+- [ ] Risk rating (Low / Medium / High / Extreme) from composite of volatility + MAE + funding + liquidity
+- [ ] Display on token detail page as "Risk Profile" card alongside Short Readiness
+
+**Kelly criterion (longer term):**
+After accumulating real trade P&L — compute optimal fraction of capital per trade as `f = (win_rate × avg_win - loss_rate × avg_loss) / avg_win`. Prevents both over-betting (ruin) and under-betting (missed edge).
 
 ---
 
