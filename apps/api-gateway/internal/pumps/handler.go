@@ -9,6 +9,7 @@ import (
 	"math"
 	"net/http"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -206,31 +207,52 @@ func (h *Handler) OHLCV(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	exchange := h.pickExchange(r.Context(), base)
-	if exchange == "" {
+	exchanges := h.rankedExchanges(r.Context(), base)
+	if len(exchanges) == 0 {
 		http.Error(w, "no supported exchange for OHLCV", http.StatusNotFound)
 		return
 	}
-	cacheKey := fmt.Sprintf("ohlcv:%s:%s:%d:%d", exchange, base, interval, limit)
 
+	cacheKey := fmt.Sprintf("ohlcv:%s:%d:%d", base, interval, limit)
 	if cached, err := h.rdb.Get(r.Context(), cacheKey).Bytes(); err == nil {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(cached)
 		return
 	}
 
-	candles, err := fetchOHLCV(r.Context(), exchange, base, interval, limit)
-	if err != nil {
-		slog.Error("pumps.ohlcv.fetch", "exchange", exchange, "base", base, "err", err)
-		http.Error(w, "failed to fetch OHLCV", http.StatusBadGateway)
+	// Stop trying once we have 80% of the requested candles; 20 is the
+	// absolute floor so a nearly-empty response doesn't prematurely win.
+	goodEnough := limit * 4 / 5
+	if goodEnough < 20 {
+		goodEnough = 20
+	}
+	var bestCandles []Candle
+	var bestExchange string
+	for _, ex := range exchanges {
+		candles, err := fetchOHLCV(r.Context(), ex, base, interval, limit)
+		if err != nil {
+			slog.Warn("pumps.ohlcv.fetch", "exchange", ex, "base", base, "err", err)
+			continue
+		}
+		if len(candles) > len(bestCandles) {
+			bestCandles = candles
+			bestExchange = ex
+		}
+		if len(candles) >= goodEnough {
+			break
+		}
+	}
+
+	if len(bestCandles) == 0 {
+		http.Error(w, "no OHLCV data available", http.StatusNotFound)
 		return
 	}
 
 	payload, _ := json.Marshal(map[string]any{
 		"base":     base,
-		"exchange": exchange,
+		"exchange": bestExchange,
 		"interval": interval,
-		"candles":  candles,
+		"candles":  bestCandles,
 	})
 	_ = h.rdb.Set(r.Context(), cacheKey, payload, 60*time.Second).Err()
 
@@ -931,22 +953,78 @@ func nullableString(s string) *string {
 	return &s
 }
 
-// pickExchange returns the best supported exchange for OHLCV data.
-// Checks live Redis snapshot first; falls back to DB for historical tokens.
-func (h *Handler) pickExchange(ctx context.Context, base string) string {
-	preferred := []string{"binance", "bybit", "okx", "gate"}
+// supportedOHLCV is the set of exchanges we can fetch OHLCV candles from.
+var supportedOHLCV = map[string]bool{
+	"binance": true,
+	"bybit":   true,
+	"okx":     true,
+	"gate":    true,
+	"bingx":   true,
+	"mexc":    true,
+}
 
-	available := h.liveExchanges(ctx, base)
-	if len(available) == 0 && h.pool != nil {
-		available = h.dbExchanges(ctx, base)
+// ohlcvPriority is a tie-breaker when volumes are equal (e.g. DB fallback
+// where all volumes are 0). Lower index = higher priority.
+var ohlcvPriority = map[string]int{
+	"binance": 0,
+	"bybit":   1,
+	"okx":     2,
+	"gate":    3,
+	"bingx":   4,
+	"mexc":    5,
+}
+
+// rankExchangeEntries filters entries to supportedOHLCV, sorts by volume
+// descending, and uses ohlcvPriority as a deterministic tie-breaker.
+// Pure function — extracted for testability.
+func rankExchangeEntries(entries []exchangeEntry) []string {
+	type exVol struct {
+		exchange string
+		volume   float64
 	}
-
-	for _, ex := range preferred {
-		if available[ex] {
-			return ex
+	var ranked []exVol
+	for _, ex := range entries {
+		if supportedOHLCV[ex.Exchange] {
+			ranked = append(ranked, exVol{ex.Exchange, ex.Volume24hUSD})
 		}
 	}
-	return ""
+	sort.Slice(ranked, func(i, j int) bool {
+		if ranked[i].volume != ranked[j].volume {
+			return ranked[i].volume > ranked[j].volume
+		}
+		return ohlcvPriority[ranked[i].exchange] < ohlcvPriority[ranked[j].exchange]
+	})
+	out := make([]string, len(ranked))
+	for i, e := range ranked {
+		out[i] = e.exchange
+	}
+	return out
+}
+
+// rankedExchanges returns exchanges available for base sorted by 24h volume
+// descending, filtered to those supported for OHLCV. Live Redis snapshot is
+// checked first (has volume); falls back to DB (no volume, order arbitrary).
+func (h *Handler) rankedExchanges(ctx context.Context, base string) []string {
+	if payload, err := h.loadPumps(ctx); err == nil {
+		for _, p := range payload.Pumps {
+			if p.Base == base {
+				if ranked := rankExchangeEntries(p.Exchanges); len(ranked) > 0 {
+					return ranked
+				}
+				break
+			}
+		}
+	}
+
+	if h.pool != nil {
+		var dbEntries []exchangeEntry
+		for ex := range h.dbExchanges(ctx, base) {
+			dbEntries = append(dbEntries, exchangeEntry{Exchange: ex})
+		}
+		return rankExchangeEntries(dbEntries)
+	}
+
+	return nil
 }
 
 func (h *Handler) liveExchanges(ctx context.Context, base string) map[string]bool {

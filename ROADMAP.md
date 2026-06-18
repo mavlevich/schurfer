@@ -117,6 +117,23 @@ verdict: Pumping / Cooling off / Short setup / Prime short
 - [ ] "Dead cat" filter: pumps that briefly recover then dump lower than pre-pump baseline — pattern to avoid on the long side
 - [ ] Historical replay: given a pump event from the past, show what the optimal entry/exit would have been — sanity check for strategy parameters
 
+## Revised shipping plan (agreed 2026-06-19)
+
+_Goal: get to a real trade as fast as possible. Analytics sprints (5, 5.5) are deprioritised — execution comes first._
+
+| #   | What                                                                                          | Branch / PR                                  |
+| --- | --------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| 1   | OHLCV exchange fallback — BingX + MEXC fetchers, volume-ranked retry                          | `feat/ohlcv-exchange-fallback` (in progress) |
+| 2   | BingX + MEXC API key storage (encrypted in DB) + read-only endpoints: balance, open positions | —                                            |
+| 3   | One-click short from Telegram approval button (BingX or MEXC)                                 | —                                            |
+| 4   | Position tracking in trade journal (entry, exit, PnL)                                         | —                                            |
+| 5   | Basic risk guardrails (max size, max open positions, funding check)                           | —                                            |
+| 6   | Hosting + domain + SSL + production deploy                                                    | —                                            |
+
+Sprint 5 (cross-market signals) and Sprint 5.5 (listing/delisting) are parked until after first real trade.
+
+---
+
 ## Sprint 5.5: Listing & Delisting Event Signals (future sprint)
 
 _Goal: exploit predictable price patterns around exchange listing and delisting announcements._

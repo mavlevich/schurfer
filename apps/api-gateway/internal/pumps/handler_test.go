@@ -1067,3 +1067,169 @@ func TestStatsHandler(t *testing.T) {
 		})
 	}
 }
+
+// ---- TestParseBingX ----
+
+func TestParseBingX(t *testing.T) {
+	t.Run("parses valid response", func(t *testing.T) {
+		raw := `{"code":0,"msg":"","data":[
+			{"time":1700000000000,"open":"100.0","high":"110.0","low":"90.0","close":"105.0","volume":"500.0"},
+			{"time":1700000060000,"open":"105.0","high":"115.0","low":"95.0","close":"108.0","volume":"600.0"}
+		]}`
+		candles, err := parseBingX([]byte(raw))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(candles) != 2 {
+			t.Fatalf("want 2 candles, got %d", len(candles))
+		}
+		if candles[0].Time != 1700000000 {
+			t.Errorf("want time=1700000000 (ms→s), got %d", candles[0].Time)
+		}
+		if candles[0].Open != 100.0 {
+			t.Errorf("want open=100.0, got %f", candles[0].Open)
+		}
+		if candles[0].Volume != 500.0 {
+			t.Errorf("want volume=500.0, got %f", candles[0].Volume)
+		}
+	})
+
+	t.Run("exchange error returns error", func(t *testing.T) {
+		raw := `{"code":80001,"msg":"Invalid symbol"}`
+		_, err := parseBingX([]byte(raw))
+		if err == nil {
+			t.Fatal("expected error for non-zero code")
+		}
+	})
+
+	t.Run("invalid json returns error", func(t *testing.T) {
+		_, err := parseBingX([]byte(`not json`))
+		if err == nil {
+			t.Fatal("expected error for invalid json")
+		}
+	})
+}
+
+// ---- TestParseMEXC ----
+
+func TestParseMEXC(t *testing.T) {
+	t.Run("parses valid futures columnar response", func(t *testing.T) {
+		raw := `{
+			"success": true,
+			"code": 0,
+			"data": {
+				"time":  [1700000000, 1700000900],
+				"open":  ["100.0", "105.0"],
+				"high":  ["110.0", "115.0"],
+				"low":   ["90.0",  "95.0"],
+				"close": ["105.0", "108.0"],
+				"vol":   ["500.0", "600.0"]
+			}
+		}`
+		candles, err := parseMEXC([]byte(raw))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(candles) != 2 {
+			t.Fatalf("want 2 candles, got %d", len(candles))
+		}
+		if candles[0].Time != 1700000000 {
+			t.Errorf("want time=1700000000 (already seconds), got %d", candles[0].Time)
+		}
+		if candles[1].Close != 108.0 {
+			t.Errorf("want close=108.0, got %f", candles[1].Close)
+		}
+		if candles[0].Volume != 500.0 {
+			t.Errorf("want volume=500.0, got %f", candles[0].Volume)
+		}
+	})
+
+	t.Run("exchange error returns error", func(t *testing.T) {
+		raw := `{"success":false,"code":2001,"message":"symbol not found"}`
+		_, err := parseMEXC([]byte(raw))
+		if err == nil {
+			t.Fatal("expected error for non-zero code")
+		}
+	})
+
+	t.Run("empty data returns nil candles", func(t *testing.T) {
+		raw := `{"success":true,"code":0,"data":{"time":[],"open":[],"high":[],"low":[],"close":[],"vol":[]}}`
+		candles, err := parseMEXC([]byte(raw))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(candles) != 0 {
+			t.Errorf("want 0 candles, got %d", len(candles))
+		}
+	})
+
+	t.Run("invalid json returns error", func(t *testing.T) {
+		_, err := parseMEXC([]byte(`not json`))
+		if err == nil {
+			t.Fatal("expected error for invalid json")
+		}
+	})
+}
+
+// ---- TestRankExchangeEntries ----
+
+func TestRankExchangeEntries(t *testing.T) {
+	t.Run("sorts by volume descending and filters unsupported", func(t *testing.T) {
+		entries := []exchangeEntry{
+			{Exchange: "mexc", Volume24hUSD: 1_000_000},
+			{Exchange: "gate", Volume24hUSD: 900_000},
+			{Exchange: "huobi", Volume24hUSD: 2_000_000}, // not in supportedOHLCV
+			{Exchange: "bingx", Volume24hUSD: 500_000},
+		}
+		got := rankExchangeEntries(entries)
+		want := []string{"mexc", "gate", "bingx"}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("want %v, got %v", want, got)
+		}
+	})
+
+	t.Run("empty input returns nil", func(t *testing.T) {
+		got := rankExchangeEntries(nil)
+		if len(got) != 0 {
+			t.Errorf("want empty, got %v", got)
+		}
+	})
+
+	t.Run("all unsupported returns empty", func(t *testing.T) {
+		entries := []exchangeEntry{
+			{Exchange: "huobi", Volume24hUSD: 1_000_000},
+			{Exchange: "kucoin", Volume24hUSD: 500_000},
+		}
+		got := rankExchangeEntries(entries)
+		if len(got) != 0 {
+			t.Errorf("want empty, got %v", got)
+		}
+	})
+
+	t.Run("single supported exchange", func(t *testing.T) {
+		entries := []exchangeEntry{
+			{Exchange: "bingx", Volume24hUSD: 800_000},
+			{Exchange: "huobi", Volume24hUSD: 5_000_000},
+		}
+		got := rankExchangeEntries(entries)
+		want := []string{"bingx"}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("want %v, got %v", want, got)
+		}
+	})
+
+	t.Run("equal volumes use deterministic priority tie-breaker", func(t *testing.T) {
+		// All volume=0 simulates DB fallback where no volume info is available.
+		entries := []exchangeEntry{
+			{Exchange: "mexc", Volume24hUSD: 0},
+			{Exchange: "binance", Volume24hUSD: 0},
+			{Exchange: "bingx", Volume24hUSD: 0},
+			{Exchange: "gate", Volume24hUSD: 0},
+		}
+		got := rankExchangeEntries(entries)
+		want := []string{"binance", "gate", "bingx", "mexc"}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("want %v, got %v", want, got)
+		}
+	})
+}
