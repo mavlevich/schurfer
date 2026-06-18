@@ -489,6 +489,12 @@ func TestScoreSignals(t *testing.T) {
 		return signalEpisode{AgeHours: ageH, PeakPct: peakPct, LastPct: lastPct}
 	}
 
+	// neutralRetrace produces an episode where retrace > 15 pts → 0 pts from
+	// RetraceFromPeak, so component-isolation tests stay unaffected by the inversion fix.
+	neutralRetrace := func(ageH, peakPct float64) signalEpisode {
+		return signalEpisode{AgeHours: ageH, PeakPct: peakPct, LastPct: 0}
+	}
+
 	cases := []struct {
 		name        string
 		ep          signalEpisode
@@ -500,20 +506,24 @@ func TestScoreSignals(t *testing.T) {
 		checkComp   func(t *testing.T, c signalComponents)
 	}{
 		{
+			// retrace=0 (still at peak) → 2 pts; all other inputs zero → total 2.
 			name:        "all zeros — verdict pumping",
 			ep:          baseEp(0, 0, 0),
-			wantScore:   0,
+			wantScore:   2,
 			wantVerdict: "pumping",
 		},
 		{
+			// retrace=1 (near peak) → 2 pts; age<1h, price<30%, no OI/funding → total 2.
 			name:        "early pump, moderate price, no OI/funding — verdict pumping",
 			ep:          baseEp(0.5, 20, 19),
-			wantScore:   0,
+			wantScore:   2,
 			wantVerdict: "pumping",
 		},
 		{
+			// neutralRetrace sets lastPct=0, peakPct=20 → retrace=20 > 15 → 0 pts.
+			// Only PumpAge contributes.
 			name:        "mature pump >1h adds 1 pt",
-			ep:          baseEp(2, 0, 0),
+			ep:          neutralRetrace(2, 20),
 			wantScore:   1,
 			wantVerdict: "pumping",
 			checkComp: func(t *testing.T, c signalComponents) {
@@ -525,7 +535,7 @@ func TestScoreSignals(t *testing.T) {
 		},
 		{
 			name:        "late pump >4h adds 2 pts",
-			ep:          baseEp(6, 0, 0),
+			ep:          neutralRetrace(6, 20),
 			wantScore:   2,
 			wantVerdict: "pumping",
 			checkComp: func(t *testing.T, c signalComponents) {
@@ -536,8 +546,9 @@ func TestScoreSignals(t *testing.T) {
 			},
 		},
 		{
+			// retrace=16 > 15 → 0 pts; only PriceExtent contributes.
 			name:        "price >100% adds 2 pts",
-			ep:          baseEp(0, 150, 148),
+			ep:          baseEp(0, 150, 134),
 			wantScore:   2,
 			wantVerdict: "pumping",
 			checkComp: func(t *testing.T, c signalComponents) {
@@ -549,7 +560,7 @@ func TestScoreSignals(t *testing.T) {
 		},
 		{
 			name:        "OI declining >5% adds 2 pts",
-			ep:          baseEp(0, 0, 0),
+			ep:          neutralRetrace(0, 20),
 			currentOI:   900_000,
 			baselineOI:  1_000_000,
 			wantScore:   2,
@@ -563,7 +574,7 @@ func TestScoreSignals(t *testing.T) {
 		},
 		{
 			name:        "OI growing >5% adds 0 pts",
-			ep:          baseEp(0, 0, 0),
+			ep:          neutralRetrace(0, 20),
 			currentOI:   1_100_000,
 			baselineOI:  1_000_000,
 			wantScore:   0,
@@ -577,7 +588,7 @@ func TestScoreSignals(t *testing.T) {
 		},
 		{
 			name:        "OI neutral (within ±5%) adds 1 pt",
-			ep:          baseEp(0, 0, 0),
+			ep:          neutralRetrace(0, 20),
 			currentOI:   1_020_000,
 			baselineOI:  1_000_000,
 			wantScore:   1,
@@ -591,7 +602,7 @@ func TestScoreSignals(t *testing.T) {
 		},
 		{
 			name:        "elevated funding >0.1% adds 2 pts",
-			ep:          baseEp(0, 0, 0),
+			ep:          neutralRetrace(0, 20),
 			maxFunding:  0.0015,
 			wantScore:   2,
 			wantVerdict: "pumping",
@@ -604,41 +615,56 @@ func TestScoreSignals(t *testing.T) {
 		},
 		{
 			name:        "moderate funding 0.05-0.1% adds 1 pt",
-			ep:          baseEp(0, 0, 0),
+			ep:          neutralRetrace(0, 20),
 			maxFunding:  0.0007,
 			wantScore:   1,
 			wantVerdict: "pumping",
 		},
 		{
-			// peakPct=20 keeps priceExtent at 0 pts, so only retrace contributes.
-			name:        "retrace >15 pts from peak adds 2 pts",
+			// peakPct=20 keeps priceExtent at 0 pts; retrace=20 > 15 → 0 pts (entry passed).
+			name:        "retrace >15 pts from peak adds 0 pts — entry likely passed",
 			ep:          baseEp(0, 20, 0),
-			wantScore:   2,
+			wantScore:   0,
 			wantVerdict: "pumping",
 			checkComp: func(t *testing.T, c signalComponents) {
 				t.Helper()
-				if c.RetraceFromPeak.Points != 2 {
-					t.Errorf("RetraceFromPeak.Points = %d, want 2 (retrace=20)", c.RetraceFromPeak.Points)
+				if c.RetraceFromPeak.Points != 0 {
+					t.Errorf("RetraceFromPeak.Points = %d, want 0 (retrace=20)", c.RetraceFromPeak.Points)
 				}
 			},
 		},
 		{
-			// peakPct=20 keeps priceExtent at 0 pts, so only retrace contributes.
+			// retrace=8, 5 < 8 ≤ 15 → 1 pt (cooling but still viable).
 			name:        "retrace 5-15 pts from peak adds 1 pt",
 			ep:          baseEp(0, 20, 12),
 			wantScore:   1,
 			wantVerdict: "pumping",
 		},
 		{
+			// retrace=2 ≤ 5 → 2 pts (still near peak, ideal entry).
+			name:        "retrace <5 pts from peak adds 2 pts — ideal entry window",
+			ep:          baseEp(0, 20, 18),
+			wantScore:   2,
+			wantVerdict: "pumping",
+			checkComp: func(t *testing.T, c signalComponents) {
+				t.Helper()
+				if c.RetraceFromPeak.Points != 2 {
+					t.Errorf("RetraceFromPeak.Points = %d, want 2 (retrace=2)", c.RetraceFromPeak.Points)
+				}
+			},
+		},
+		{
+			// retrace=16 > 15 → 0 pts; age+price+funding = 6.
 			name:        "short_setup — age+price+funding",
-			ep:          baseEp(5, 120, 118),
+			ep:          baseEp(5, 120, 104),
 			maxFunding:  0.0015,
 			wantScore:   6, // age=2 + price=2 + funding=2
 			wantVerdict: "short_setup",
 		},
 		{
+			// retrace=2 ≤ 5 → 2 pts; all five components maxed.
 			name:        "prime_short — all components maxed",
-			ep:          baseEp(6, 150, 120),
+			ep:          baseEp(6, 150, 148),
 			currentOI:   800_000,
 			baselineOI:  1_000_000,
 			maxFunding:  0.002,
@@ -646,9 +672,10 @@ func TestScoreSignals(t *testing.T) {
 			wantVerdict: "prime_short",
 		},
 		{
+			// retrace=6, 5 < 6 ≤ 15 → 1 pt; age=1 + price=1 + retrace=1 + funding=1 = 4.
 			name:        "cooling_off boundary at score 4",
 			ep:          baseEp(2, 50, 44),
-			wantScore:   4, // age=1 + price=1 + retrace(6pts)=1 + oi=0 + funding(0.0007)=1
+			wantScore:   4,
 			maxFunding:  0.0007,
 			wantVerdict: "cooling_off",
 		},
@@ -731,10 +758,10 @@ func TestSignalsHandler(t *testing.T) {
 			name: "elevated funding and declining OI — prime_short, data_quality all true",
 			base: "SOL",
 			queryRowSeq: [][]any{
-				episodeRow(2, 1000, 150.0, 120.0), // age≈years (mocked), peak>100, retrace=30pts
-				{float64(800_000)},                // current OI
-				{float64(1_000_000)},              // baseline OI (declining -20%)
-				{float64(0.002)},                  // max funding (elevated)
+				episodeRow(2, 1000, 150.0, 148.0), // age≈years (mocked), peak>100, retrace=2pts (near peak → 2pts)
+				{float64(800_000), int64(3)},      // current OI, 3 exchange rows
+				{float64(1_000_000), int64(3)},    // baseline OI (declining -20%), 3 rows
+				{float64(0.002), int64(3)},        // max funding (elevated), 3 rows
 			},
 			wantStatus: http.StatusOK,
 			checkResp: func(t *testing.T, resp signalsResponse) {
@@ -754,10 +781,10 @@ func TestSignalsHandler(t *testing.T) {
 			name: "growing OI with low funding — verdict pumping",
 			base: "DOGE",
 			queryRowSeq: [][]any{
-				episodeRow(3, 1000, 25.0, 25.0),
-				{float64(1_200_000)}, // current OI growing +20%
-				{float64(1_000_000)}, // baseline OI
-				{float64(0.0001)},    // low funding
+				episodeRow(3, 1000, 25.0, 9.0), // retrace=16 > 15 → 0 pts (entry passed)
+				{float64(1_200_000), int64(2)}, // current OI growing +20%, 2 exchange rows
+				{float64(1_000_000), int64(2)}, // baseline OI, 2 rows
+				{float64(0.0001), int64(2)},    // low funding, 2 rows
 			},
 			wantStatus: http.StatusOK,
 			checkResp: func(t *testing.T, resp signalsResponse) {
@@ -774,12 +801,37 @@ func TestSignalsHandler(t *testing.T) {
 			},
 		},
 		{
+			// Scan succeeds (COALESCE returns 0) but count=0 means no snapshot rows exist.
+			// data_quality must be false even though the query didn't error.
+			name: "OI query returns no rows (count=0) — data_quality.oi=false",
+			base: "LTC",
+			queryRowSeq: [][]any{
+				episodeRow(5, 1000, 40.0, 39.0),
+				{float64(0), int64(0)}, // current OI: scan ok, but no snapshot rows
+				{float64(0), int64(0)}, // baseline OI: same
+				{float64(0), int64(0)}, // funding: same
+			},
+			wantStatus: http.StatusOK,
+			checkResp: func(t *testing.T, resp signalsResponse) {
+				t.Helper()
+				if resp.DataQuality.OI {
+					t.Error("data_quality.oi = true, want false (no OI snapshot rows)")
+				}
+				if resp.DataQuality.Funding {
+					t.Error("data_quality.funding = true, want false (no funding snapshot rows)")
+				}
+				if resp.Verdict != "insufficient_data" {
+					t.Errorf("verdict = %q, want insufficient_data (both OI and funding missing)", resp.Verdict)
+				}
+			},
+		},
+		{
 			name: "only funding fails — real verdict returned, data_quality.funding=false",
 			base: "ADA",
 			queryRowSeq: [][]any{
 				episodeRow(4, 1000, 60.0, 55.0),
-				{float64(900_000)},   // current OI (declining -10%)
-				{float64(1_000_000)}, // baseline OI
+				{float64(900_000), int64(2)},   // current OI (declining -10%), 2 rows
+				{float64(1_000_000), int64(2)}, // baseline OI, 2 rows
 				// call 4 (funding) will error
 			},
 			errAtCall:  4,

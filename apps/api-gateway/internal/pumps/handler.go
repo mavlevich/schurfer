@@ -89,8 +89,8 @@ const (
 	priceExtentHighPct   = 100.0
 	priceExtentMidPct    = 30.0
 	oiChangeThresholdPct = 5.0  // ±5% OI change = meaningful trend
-	retraceHighPts       = 15.0 // >15 pct-points below peak = notable retrace
-	retraceMidPts        = 5.0
+	retraceHighPts       = 15.0 // >15 pct-points below peak = entry likely missed
+	retraceMidPts        = 5.0  // <5 pct-points below peak = still near peak, ideal entry
 )
 
 type fundingEntry struct {
@@ -623,18 +623,20 @@ func scoreSignals(ep signalEpisode, currentOI, baselineOI, maxFunding float64) (
 		c.FundingRate.Note = fmt.Sprintf("normal funding (%.3f%% per 8h)", maxFunding*100)
 	}
 
-	// 5. Retrace from peak (0-2 pts) — percentage-point distance from peak_pct to last_pct.
+	// 5. Retrace from peak (0-2 pts) — price still near its high = ideal short entry.
+	// Inverted: more points when retrace is SMALL (price has not moved far from peak yet).
+	// Large retrace means the optimal entry has already passed.
 	retrace := ep.PeakPct - ep.LastPct
 	c.RetraceFromPeak = signalComponent{Value: retrace, Max: 2}
 	switch {
-	case retrace > retraceHighPts:
+	case retrace <= retraceMidPts:
 		c.RetraceFromPeak.Points = 2
-		c.RetraceFromPeak.Note = fmt.Sprintf("notable retrace (%.1f pts from peak)", retrace)
-	case retrace > retraceMidPts:
+		c.RetraceFromPeak.Note = fmt.Sprintf("still near peak (%.1f pts) — ideal entry window", retrace)
+	case retrace <= retraceHighPts:
 		c.RetraceFromPeak.Points = 1
-		c.RetraceFromPeak.Note = fmt.Sprintf("starting to cool (%.1f pts from peak)", retrace)
+		c.RetraceFromPeak.Note = fmt.Sprintf("cooling from peak (%.1f pts) — entry still viable", retrace)
 	default:
-		c.RetraceFromPeak.Note = fmt.Sprintf("still near peak (%.1f pts from peak)", retrace)
+		c.RetraceFromPeak.Note = fmt.Sprintf("far from peak (%.1f pts) — optimal entry likely passed", retrace)
 	}
 
 	total := c.PumpAge.Points + c.PriceExtent.Points + c.OiTrend.Points +
@@ -700,26 +702,29 @@ func (h *Handler) Signals(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Latest total OI (DISTINCT ON exchange, most recent row per exchange, summed).
+	// COUNT(*) distinguishes "no snapshot rows" (count=0) from a real zero-OI result.
 	var currentOI float64
+	var currentOICount int
 	oiCurrentOK := h.pool.QueryRow(r.Context(),
-		`SELECT COALESCE(SUM(oi_usd), 0) FROM (
+		`SELECT COALESCE(SUM(oi_usd), 0), COUNT(*) FROM (
 		   SELECT DISTINCT ON (exchange) oi_usd
 		   FROM app.oi_snapshots WHERE event_id = $1
 		   ORDER BY exchange, recorded_at DESC
 		 ) t`,
 		eventID,
-	).Scan(&currentOI) == nil
+	).Scan(&currentOI, &currentOICount) == nil && currentOICount > 0
 
 	// Earliest total OI per exchange — baseline at episode start.
 	var baselineOI float64
+	var baselineOICount int
 	oiBaselineOK := h.pool.QueryRow(r.Context(),
-		`SELECT COALESCE(SUM(oi_usd), 0) FROM (
+		`SELECT COALESCE(SUM(oi_usd), 0), COUNT(*) FROM (
 		   SELECT DISTINCT ON (exchange) oi_usd
 		   FROM app.oi_snapshots WHERE event_id = $1
 		   ORDER BY exchange, recorded_at ASC
 		 ) t`,
 		eventID,
-	).Scan(&baselineOI) == nil
+	).Scan(&baselineOI, &baselineOICount) == nil && baselineOICount > 0
 
 	oiOK := oiCurrentOK && oiBaselineOK
 	if !oiOK {
@@ -728,15 +733,17 @@ func (h *Handler) Signals(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Max funding rate across exchanges (latest rate per exchange).
+	// COUNT(*) ensures quality=false when no funding snapshots exist yet.
 	var maxFunding float64
+	var fundingCount int
 	fundingOK := h.pool.QueryRow(r.Context(),
-		`SELECT COALESCE(MAX(rate), 0) FROM (
+		`SELECT COALESCE(MAX(rate), 0), COUNT(*) FROM (
 		   SELECT DISTINCT ON (exchange) rate
 		   FROM app.funding_rate_snapshots WHERE event_id = $1
 		   ORDER BY exchange, recorded_at DESC
 		 ) t`,
 		eventID,
-	).Scan(&maxFunding) == nil
+	).Scan(&maxFunding, &fundingCount) == nil && fundingCount > 0
 
 	if !fundingOK {
 		slog.Warn("pumps.signals.funding_unavailable", "base", base)
