@@ -17,6 +17,9 @@ dev = [
     "structlog>=24.4",
 ]
 
+[tool.uv]
+constraint-dependencies = ["msgpack>=1.2.1"]
+
 [tool.uv.workspace]
 members = ["apps/analytics", "apps/execution", "apps/telegram-bot", "packages/journal"]
 
@@ -90,3 +93,6 @@ exclude_lines = [
     "if TYPE_CHECKING:",
     "if __name__ == .__main__.:",
 ]
+
+[tool.vulture]
+ignore_names = ["cls"]

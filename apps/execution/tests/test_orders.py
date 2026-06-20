@@ -103,7 +103,7 @@ class TestLockBehavior:
                 set_token.append(value)
             return True
 
-        async def capture_eval(script: str, numkeys: int, *args: str) -> int:
+        async def capture_eval(_script: str, _numkeys: int, *args: str) -> int:
             if len(args) >= 2:
                 eval_token.append(args[1])  # ARGV[1] = token
             return 1
