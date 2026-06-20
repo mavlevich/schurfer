@@ -5,6 +5,7 @@ import { StatusPage } from '@/pages/status/StatusPage';
 import { LoginPage } from '@/pages/login/LoginPage';
 import { PumpsPage } from '@/pages/pumps/PumpsPage';
 import { TokenPage } from '@/pages/pumps/TokenPage';
+import { AccountPage } from '@/pages/account/AccountPage';
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { isAuthenticated } = useAuth();
@@ -54,6 +55,14 @@ export function Router() {
             element={
               <RequireAuth>
                 <TokenPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/account"
+            element={
+              <RequireAuth>
+                <AccountPage />
               </RequireAuth>
             }
           />
