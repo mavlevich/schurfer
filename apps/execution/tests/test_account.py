@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 from schurfer_execution.account import fetch_positions
 
 
-def _mock_exchange(positions: list, *, fail: bool = False) -> MagicMock:
+def _mock_exchange(positions: list[dict[str, object]], *, fail: bool = False) -> MagicMock:
     ex = MagicMock()
     if fail:
         ex.fetch_positions = AsyncMock(side_effect=Exception("network error"))

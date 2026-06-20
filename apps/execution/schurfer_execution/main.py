@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import contextlib
 from typing import TYPE_CHECKING, Any
 
@@ -11,6 +12,7 @@ from fastapi import FastAPI
 from .config import Config
 from .exchanges import build_exchanges, close_exchanges
 from .routers import account, control, orders
+from .tracker import run_pnl_tracker
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
@@ -36,9 +38,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     app.state.rdb = rdb
     app.state.exchanges = exchanges
 
+    tracker = asyncio.create_task(run_pnl_tracker(exchanges, rdb))
     log.info("execution.start", exchanges=list(exchanges.keys()))
     yield
 
+    tracker.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await tracker
     await close_exchanges(exchanges)
     await rdb.aclose()
 
