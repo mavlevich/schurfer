@@ -121,16 +121,85 @@ verdict: Pumping / Cooling off / Short setup / Prime short
 
 _Goal: get to a real trade as fast as possible. Analytics sprints (5, 5.5) are deprioritised — execution comes first._
 
-| #   | What                                                                                          | Branch / PR                                  |
-| --- | --------------------------------------------------------------------------------------------- | -------------------------------------------- |
-| 1   | OHLCV exchange fallback — BingX + MEXC fetchers, volume-ranked retry                          | `feat/ohlcv-exchange-fallback` (in progress) |
-| 2   | BingX + MEXC API key storage (encrypted in DB) + read-only endpoints: balance, open positions | —                                            |
-| 3   | One-click short from Telegram approval button (BingX or MEXC)                                 | —                                            |
-| 4   | Position tracking in trade journal (entry, exit, PnL)                                         | —                                            |
-| 5   | Basic risk guardrails (max size, max open positions, funding check)                           | —                                            |
-| 6   | Hosting + domain + SSL + production deploy                                                    | —                                            |
+| #   | What                                                                      | Branch / PR                              |
+| --- | ------------------------------------------------------------------------- | ---------------------------------------- |
+| 1   | OHLCV exchange fallback — BingX + MEXC fetchers, volume-ranked retry      | ✅ `feat/ohlcv-exchange-fallback` PR #32 |
+| 2   | `apps/account` service — balance + positions across all exchanges         | in progress                              |
+| 3   | Telegram approval button → short (first week manual, then switch to auto) | —                                        |
+| 4   | Full automation — auto-short when score ≥ threshold, no button needed     | —                                        |
+| 5   | Emergency stop + daily loss limit                                         | —                                        |
+| 6   | Trade queue + UI visualization                                            | —                                        |
+| 7   | Position tracking in trade journal (entry, exit, PnL)                     | —                                        |
+| 8   | Hosting + domain + SSL + production deploy                                | —                                        |
 
 Sprint 5 (cross-market signals) and Sprint 5.5 (listing/delisting) are parked until after first real trade.
+
+## apps/account service (Python/FastAPI + ccxt)
+
+_Single service for all exchange interactions. Decided 2026-06-19._
+
+**Architecture decisions:**
+
+- Python + ccxt — handles auth (HMAC, passphrase, nonce) for all exchanges out of the box
+- Go is for speed-critical path (pump detection, WebSocket); Python handles trading execution
+- Single service, not split — strategy logic stays here alongside balance/positions
+- API keys in `.env` only — no DB storage, no UI for key management; hosting platform encrypts env vars
+- Hyperliquid (Ethereum wallet auth) deferred — different paradigm, add later
+
+**Endpoints:**
+
+- `GET /balance` — aggregated balance across all configured exchanges
+- `GET /positions` — all open positions across exchanges
+- `POST /order` — place order (internal pre-checks before executing)
+- `GET /risk` — current slot usage, daily P&L, limits
+
+**Pre-trade checks (inside POST /order):**
+
+- `trading:enabled` Redis flag — if false, reject all orders (emergency stop)
+- Max open positions cap
+- Already have position in this token?
+- Sufficient margin?
+- Daily loss limit not breached?
+- Funding rate not too high (would eat PnL)?
+
+**Emergency stop:**
+
+- Redis key `trading:enabled` — checked before every order
+- `/stop` Telegram command → sets flag to false
+- Big red button in web UI
+- Daily loss limit auto-stop (e.g. -$X in 24h → pause automatically)
+
+**Trade queue + UI visualization:**
+
+```
+⏳ Analyzing BEAT...           (score calculation)
+🔄 BEAT short queued $200 2x  (order pending)
+✅ BEAT short open @ $0.0023  (active position)
+🏁 BEAT closed +$34           (completed)
+```
+
+## Go pump scanner (replaces Python analytics polling)
+
+_Discussed 2026-06-19. Currently Python ccxt polls exchanges every 5 min — up to 5 min detection lag._
+
+**Why Go:**
+
+- Go HTTP clients already built for OHLCV fallback — same pattern for tickers
+- <0.5% CPU constant vs Python 3-5% spike per cycle, no GIL
+- Natural stepping stone to WebSocket — swap `fetchTickers()` → `subscribeWS()` later
+
+**Plan:**
+
+- New Go service or extend `apps/collector`
+- One goroutine per exchange, parallel ticker fetch every 60s
+- Multi-stage alerts: +20% "on radar" → score threshold "short setup" → retrace started
+- Python analytics keeps OI, funding, stats (heavy analytics, ML-friendly long-term)
+
+**WebSocket follow-up (after Go polling stable):**
+
+- Same exchange clients, swap HTTP → WS
+- Binance: `!miniTicker@arr` (one connection, all futures, ~80KB/3s)
+- Detection latency: 5 min → 60s → ~3s
 
 ---
 
