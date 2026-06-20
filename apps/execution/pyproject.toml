@@ -1,0 +1,21 @@
+[project]
+name = "schurfer-execution"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = [
+    "ccxt>=4.4.0",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "redis>=5.2",
+    "structlog>=24.4",
+]
+
+[project.scripts]
+execution-service = "schurfer_execution.main:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["schurfer_execution*"]
+
+[tool.uv]
+package = true

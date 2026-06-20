@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/mavlevich/schurfer/api-gateway/internal/auth"
+	"github.com/mavlevich/schurfer/api-gateway/internal/execution"
 	"github.com/mavlevich/schurfer/api-gateway/internal/health"
 	"github.com/mavlevich/schurfer/api-gateway/internal/pumps"
 	"github.com/mavlevich/schurfer/api-gateway/internal/ws"
@@ -54,6 +55,7 @@ func run() error {
 	healthHandler := health.NewHandler(checker)
 	wsHandler := ws.NewHandler(checker, 5*time.Second)
 	pumpsHandler := pumps.NewHandler(rdb, checker.Pool())
+	accountHandler := execution.NewHandler(cfg.ExecutionURL)
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
@@ -79,6 +81,14 @@ func run() error {
 		r.Get("/api/pumps/{base}/funding", pumpsHandler.Funding)
 		r.Get("/api/pumps/{base}/stats", pumpsHandler.Stats)
 		r.Get("/api/pumps/{base}/signals", pumpsHandler.Signals)
+
+		r.Get("/api/account/balance", accountHandler.ServeHTTP)
+		r.Get("/api/account/positions", accountHandler.ServeHTTP)
+		r.Get("/api/account/risk", accountHandler.ServeHTTP)
+		r.Post("/api/account/order", accountHandler.ServeHTTP)
+		r.Post("/api/account/stop", accountHandler.ServeHTTP)
+		r.Post("/api/account/resume", accountHandler.ServeHTTP)
+
 		r.Get("/ws/status", wsHandler.Status)
 	})
 
@@ -108,6 +118,7 @@ type config struct {
 	JWTSecret    string
 	Port         string
 	Env          string
+	ExecutionURL string
 }
 
 func loadConfig() config {
@@ -119,6 +130,7 @@ func loadConfig() config {
 		JWTSecret:    mustEnv("JWT_SECRET"),
 		Port:         getEnv("PORT", "8000"),
 		Env:          getEnv("ENV", "development"),
+		ExecutionURL: getEnv("EXECUTION_URL", "http://localhost:8001"),
 	}
 }
 

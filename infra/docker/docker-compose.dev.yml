@@ -61,6 +61,7 @@ services:
       ENV: development
       ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:?Set ADMIN_PASSWORD_HASH in .env}
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      EXECUTION_URL: http://execution:8001
     depends_on:
       postgres:
         condition: service_healthy
@@ -102,6 +103,39 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  execution:
+    build:
+      context: ../../
+      dockerfile: apps/execution/Dockerfile
+    container_name: schurfer-execution
+    environment:
+      REDIS_ADDR: redis:6379
+      # Exchange API keys — add only the exchanges you have accounts on.
+      BINANCE_API_KEY: ${BINANCE_API_KEY:-}
+      BINANCE_API_SECRET: ${BINANCE_API_SECRET:-}
+      BYBIT_API_KEY: ${BYBIT_API_KEY:-}
+      BYBIT_API_SECRET: ${BYBIT_API_SECRET:-}
+      OKX_API_KEY: ${OKX_API_KEY:-}
+      OKX_API_SECRET: ${OKX_API_SECRET:-}
+      OKX_PASSPHRASE: ${OKX_PASSPHRASE:-}
+      GATE_API_KEY: ${GATE_API_KEY:-}
+      GATE_API_SECRET: ${GATE_API_SECRET:-}
+      KUCOIN_API_KEY: ${KUCOIN_API_KEY:-}
+      KUCOIN_API_SECRET: ${KUCOIN_API_SECRET:-}
+      KUCOIN_PASSPHRASE: ${KUCOIN_PASSPHRASE:-}
+      BINGX_API_KEY: ${BINGX_API_KEY:-}
+      BINGX_API_SECRET: ${BINGX_API_SECRET:-}
+      MEXC_API_KEY: ${MEXC_API_KEY:-}
+      MEXC_API_SECRET: ${MEXC_API_SECRET:-}
+      # Risk params
+      MAX_POSITIONS: ${MAX_POSITIONS:-5}
+      MAX_POSITION_USD: ${MAX_POSITION_USD:-500}
+      DAILY_LOSS_LIMIT_USD: ${DAILY_LOSS_LIMIT_USD:-200}
+    depends_on:
       redis:
         condition: service_healthy
     restart: unless-stopped

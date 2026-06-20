@@ -17,8 +17,11 @@ dev = [
     "structlog>=24.4",
 ]
 
+[tool.uv]
+constraint-dependencies = ["msgpack>=1.2.1"]
+
 [tool.uv.workspace]
-members = ["apps/analytics", "apps/telegram-bot", "packages/journal"]
+members = ["apps/analytics", "apps/execution", "apps/telegram-bot", "packages/journal"]
 
 [tool.ruff]
 line-length = 100
@@ -75,7 +78,8 @@ ignore_missing_imports = true
 testpaths = ["apps", "packages"]
 python_files = ["test_*.py", "*_test.py"]
 addopts = "--strict-markers --tb=short -q --import-mode=importlib"
-pythonpath = ["apps/analytics", "packages/journal"]
+asyncio_mode = "auto"
+pythonpath = ["apps/analytics", "apps/execution", "packages/journal"]
 
 [tool.coverage.run]
 source = ["apps", "packages"]
@@ -89,3 +93,6 @@ exclude_lines = [
     "if TYPE_CHECKING:",
     "if __name__ == .__main__.:",
 ]
+
+[tool.vulture]
+ignore_names = ["cls"]
