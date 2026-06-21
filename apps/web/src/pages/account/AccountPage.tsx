@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Play, Square } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -7,14 +7,27 @@ import { Nav } from '@/components/Nav';
 
 interface Balance {
   exchange: string;
+  wallet: string;
+  asset: string;
+  tradeable: boolean;
   free: number;
   used: number;
   total: number;
+  usd_value: number;
+}
+
+interface WalletRow {
+  exchange: string;
+  wallet: string;
+  tradeable: boolean;
+  usd_total: number;
 }
 
 interface BalanceData {
   balances: Balance[];
   total_usd: number;
+  total_usd_all: number;
+  failed_exchanges: string[];
 }
 
 interface Position {
@@ -109,6 +122,26 @@ export function AccountPage() {
     }
   }
 
+  const walletRows = useMemo<WalletRow[]>(() => {
+    if (!balance) return [];
+    const map = new Map<string, WalletRow>();
+    for (const b of balance.balances) {
+      const key = `${b.exchange}-${b.wallet}`;
+      const existing = map.get(key);
+      if (existing) {
+        existing.usd_total += b.usd_value;
+      } else {
+        map.set(key, {
+          exchange: b.exchange,
+          wallet: b.wallet,
+          tradeable: b.tradeable,
+          usd_total: b.usd_value,
+        });
+      }
+    }
+    return Array.from(map.values());
+  }, [balance]);
+
   const lossRatio = risk
     ? Math.min(1, Math.abs(Math.min(0, risk.daily_pnl_usd)) / risk.daily_loss_limit_usd)
     : 0;
@@ -134,12 +167,10 @@ export function AccountPage() {
           </div>
         </div>
 
-        {initialized && unavailable && (
+        {initialized && unavailable && !balance && (
           <Card>
             <CardContent className="py-4">
-              <p className="text-sm text-muted-foreground">
-                Execution service unavailable — configure exchange API keys to connect.
-              </p>
+              <p className="text-sm text-muted-foreground">Connecting to execution service...</p>
             </CardContent>
           </Card>
         )}
@@ -223,35 +254,60 @@ export function AccountPage() {
               <p className="text-sm text-muted-foreground">No exchanges configured</p>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[300px] text-sm">
+                <table className="w-full min-w-[280px] text-sm">
                   <thead>
                     <tr className="text-xs text-muted-foreground">
                       <th className="pb-2 text-left font-normal">Exchange</th>
-                      <th className="pb-2 text-right font-normal">Free</th>
-                      <th className="pb-2 text-right font-normal">Used</th>
-                      <th className="pb-2 text-right font-normal">Total</th>
+                      <th className="pb-2 text-left font-normal">Wallet</th>
+                      <th className="pb-2 text-right font-normal">Total (USD)</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
-                    {balance.balances.map((b) => (
-                      <tr key={b.exchange}>
-                        <td className="py-2 capitalize">{b.exchange}</td>
-                        <td className="py-2 text-right font-mono text-muted-foreground">
-                          ${usd(b.free)}
-                        </td>
-                        <td className="py-2 text-right font-mono text-muted-foreground">
-                          ${usd(b.used)}
-                        </td>
-                        <td className="py-2 text-right font-mono">${usd(b.total)}</td>
-                      </tr>
-                    ))}
+                    {walletRows.map((w) => {
+                      const failed = balance.failed_exchanges.includes(w.exchange);
+                      return (
+                        <tr
+                          key={`${w.exchange}-${w.wallet}`}
+                          className={failed ? 'opacity-50' : ''}
+                        >
+                          <td className="py-2 capitalize">
+                            {w.exchange}
+                            {failed && <span className="ml-1 text-xs text-warning">⚠</span>}
+                          </td>
+                          <td className="py-2">
+                            <span
+                              className={`text-xs ${w.tradeable ? 'text-foreground' : 'text-muted-foreground'}`}
+                            >
+                              {w.wallet === 'spot'
+                                ? 'Spot'
+                                : w.wallet === 'fund'
+                                  ? 'Funding'
+                                  : 'Futures'}
+                            </span>
+                          </td>
+                          <td
+                            className={`py-2 text-right font-mono ${failed ? 'text-muted-foreground' : ''}`}
+                          >
+                            {failed ? '—' : `$${usd(w.usd_total)}`}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                   <tfoot>
-                    <tr className="border-t border-border font-medium">
-                      <td className="pt-3" colSpan={3}>
-                        Total
+                    <tr className="border-t border-border text-muted-foreground">
+                      <td className="pt-3 text-xs" colSpan={2}>
+                        All assets
                       </td>
-                      <td className="pt-3 text-right font-mono">${usd(balance.total_usd)}</td>
+                      <td className="pt-3 text-right font-mono text-xs">
+                        ${usd(balance.total_usd_all)}
+                      </td>
+                    </tr>
+                    <tr className="font-medium">
+                      <td className="pt-1 text-xs" colSpan={2}>
+                        Tradeable USDT
+                      </td>
+                      <td className="pt-1 text-right font-mono">${usd(balance.total_usd)}</td>
                     </tr>
                   </tfoot>
                 </table>

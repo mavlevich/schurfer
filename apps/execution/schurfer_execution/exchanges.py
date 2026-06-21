@@ -22,6 +22,7 @@ def build_exchanges(cfg: Config) -> dict[str, ccxt.Exchange]:
                 "apiKey": cfg.bybit_api_key,
                 "secret": cfg.bybit_api_secret,
                 "options": {"defaultType": "linear"},
+                "adjustForTimeDifference": True,
             }
         )
 
@@ -40,7 +41,7 @@ def build_exchanges(cfg: Config) -> dict[str, ccxt.Exchange]:
             {
                 "apiKey": cfg.gate_api_key,
                 "secret": cfg.gate_api_secret,
-                "options": {"defaultType": "future"},
+                "options": {"defaultType": "swap"},
             }
         )
 
@@ -59,6 +60,7 @@ def build_exchanges(cfg: Config) -> dict[str, ccxt.Exchange]:
                 "apiKey": cfg.bingx_api_key,
                 "secret": cfg.bingx_api_secret,
                 "options": {"defaultType": "swap"},
+                "adjustForTimeDifference": True,
             }
         )
 

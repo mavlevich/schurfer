@@ -16,8 +16,19 @@ router = APIRouter()
 @router.get("/balance")
 async def get_balance(request: Request) -> dict[str, Any]:
     balances = await fetch_balance(request.app.state.exchanges)
-    total = sum(b["total"] for b in balances)
-    return {"balances": balances, "total_usd": round(total, 2)}
+    total_usdt = sum(
+        b["total"]
+        for b in balances
+        if b.get("tradeable", True) and b.get("asset", "USDT") == "USDT"
+    )
+    total_all = sum(b.get("usd_value", 0.0) for b in balances)
+    failed = list({b["exchange"] for b in balances if b.get("error")})
+    return {
+        "balances": balances,
+        "total_usd": round(total_usdt, 2),
+        "total_usd_all": round(total_all, 2),
+        "failed_exchanges": failed,
+    }
 
 
 @router.get("/positions")

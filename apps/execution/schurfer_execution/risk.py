@@ -50,7 +50,11 @@ def check_sufficient_margin(
     size_usd: float, balances: list[dict[str, Any]], exchange: str
 ) -> RiskCheck:
     for b in balances:
-        if b["exchange"] == exchange:
+        if (
+            b["exchange"] == exchange
+            and b.get("tradeable", True)
+            and b.get("asset", "USDT") == "USDT"
+        ):
             if b["free"] < size_usd:
                 return RiskCheck(
                     allowed=False,

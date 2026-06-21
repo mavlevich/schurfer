@@ -85,7 +85,7 @@ class TestLockBehavior:
 
         with (
             patch("schurfer_execution.orders.fetch_positions", return_value=([], set())),
-            patch("schurfer_execution.orders.fetch_balance", return_value=[]),
+            patch("schurfer_execution.orders.fetch_margin_balance", return_value=[]),
         ):
             result = await place_order(**_kwargs(rdb=rdb))
 
@@ -115,7 +115,7 @@ class TestLockBehavior:
 
         with (
             patch("schurfer_execution.orders.fetch_positions", return_value=([], set())),
-            patch("schurfer_execution.orders.fetch_balance", return_value=[]),
+            patch("schurfer_execution.orders.fetch_margin_balance", return_value=[]),
         ):
             await place_order(**_kwargs(rdb=rdb))
 
@@ -124,7 +124,7 @@ class TestLockBehavior:
 
     @patch("schurfer_execution.orders.fetch_positions", return_value=([], set()))
     @patch(
-        "schurfer_execution.orders.fetch_balance",
+        "schurfer_execution.orders.fetch_margin_balance",
         return_value=[{"exchange": "bingx", "free": 1000.0, "used": 0.0, "total": 1000.0}],
     )
     async def test_lock_release_failure_does_not_mask_order_result(
@@ -151,7 +151,7 @@ class TestLockBehavior:
 
 @patch("schurfer_execution.orders.fetch_positions", return_value=([], set()))
 @patch(
-    "schurfer_execution.orders.fetch_balance",
+    "schurfer_execution.orders.fetch_margin_balance",
     return_value=[{"exchange": "bingx", "free": 1000.0, "used": 0.0, "total": 1000.0}],
 )
 async def test_place_order_uses_contract_size_and_precision(
@@ -175,7 +175,7 @@ async def test_place_order_uses_contract_size_and_precision(
 
 @patch("schurfer_execution.orders.fetch_positions", return_value=([], set()))
 @patch(
-    "schurfer_execution.orders.fetch_balance",
+    "schurfer_execution.orders.fetch_margin_balance",
     return_value=[{"exchange": "bingx", "free": 1000.0, "used": 0.0, "total": 1000.0}],
 )
 async def test_place_order_rejects_unknown_symbol(
