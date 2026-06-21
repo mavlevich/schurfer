@@ -35,7 +35,7 @@ class TestOrderRequestValidation:
             exchange="bingx",
             side="short",
             size_usd=100.0,
-            **kw,  # type: ignore[arg-type]
+            **kw,
         )
 
     def test_lowercase_base_normalized(self) -> None:
