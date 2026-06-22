@@ -20,9 +20,20 @@ def _int(key: str, default: int) -> int:
         return default
 
 
+def _bool(key: str, default: bool) -> bool:
+    val = os.getenv(key)
+    if val is None:
+        return default
+    return val.strip().lower() not in ("0", "false", "no", "")
+
+
 @dataclass
 class Config:
     redis_addr: str = field(default_factory=lambda: os.getenv("REDIS_ADDR", "localhost:6379"))
+
+    # Set to true to route all exchanges to their sandbox/testnet endpoints.
+    # Requires testnet API keys in the exchange key env vars.
+    testnet: bool = field(default_factory=lambda: _bool("TESTNET", False))
 
     # Exchange API keys — only exchanges with keys configured are active.
     # OKX and KuCoin also require a passphrase.
@@ -56,3 +67,8 @@ class Config:
         default_factory=lambda: _float("DAILY_LOSS_LIMIT_USD", 200.0)
     )
     score_threshold: int = field(default_factory=lambda: _int("SCORE_THRESHOLD", 6))
+
+    # Exit parameters
+    take_profit_pct: float = field(default_factory=lambda: _float("TAKE_PROFIT_PCT", 15.0))
+    stop_loss_pct: float = field(default_factory=lambda: _float("STOP_LOSS_PCT", 5.0))
+    max_hold_minutes: int = field(default_factory=lambda: _int("MAX_HOLD_MINUTES", 60))

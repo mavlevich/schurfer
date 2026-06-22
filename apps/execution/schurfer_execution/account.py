@@ -175,6 +175,7 @@ async def fetch_positions(
                         "side": p.get("side", ""),
                         "size_usd": float(p.get("notional") or 0),
                         "entry_price": float(p.get("entryPrice") or 0),
+                        "mark_price": float(p.get("markPrice") or 0),
                         "unrealized_pnl": float(p.get("unrealizedPnl") or 0),
                         "leverage": float(p.get("leverage") or 1),
                         "liquidation_price": p.get("liquidationPrice"),

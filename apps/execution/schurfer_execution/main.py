@@ -11,6 +11,7 @@ from fastapi import FastAPI
 
 from .config import Config
 from .exchanges import build_exchanges, close_exchanges
+from .monitor import run_position_monitor
 from .routers import account, control, orders
 from .tracker import run_pnl_tracker
 
@@ -39,12 +40,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     app.state.exchanges = exchanges
 
     tracker = asyncio.create_task(run_pnl_tracker(exchanges, rdb))
+    monitor = asyncio.create_task(run_position_monitor(exchanges, rdb, cfg))
     log.info("execution.start", exchanges=list(exchanges.keys()))
     yield
 
     tracker.cancel()
+    monitor.cancel()
     with contextlib.suppress(asyncio.CancelledError):
         await tracker
+    with contextlib.suppress(asyncio.CancelledError):
+        await monitor
     await close_exchanges(exchanges)
     await rdb.aclose()
 

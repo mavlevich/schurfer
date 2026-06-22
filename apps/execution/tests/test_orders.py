@@ -189,3 +189,130 @@ async def test_place_order_rejects_unknown_symbol(
 
     assert not result["allowed"]
     assert "not found" in result["reason"]
+
+
+@patch("schurfer_execution.orders.fetch_positions", return_value=([], set()))
+@patch(
+    "schurfer_execution.orders.fetch_margin_balance",
+    return_value=[
+        {
+            "exchange": "bingx",
+            "free": 1000.0,
+            "used": 0.0,
+            "total": 1000.0,
+            "tradeable": True,
+            "asset": "USDT",
+        }
+    ],
+)
+async def test_place_order_rounds_up_to_exchange_minimum(
+    _mock_bal: MagicMock, _mock_pos: MagicMock
+) -> None:
+    # $1 / $5 price / 1.0 contract_size = 0.2 contracts, but min is 1.0
+    ex = MagicMock()
+    ex.markets = {
+        "BEAT/USDT:USDT": {
+            "contractSize": 1.0,
+            "limits": {"amount": {"min": 1.0}, "cost": {"min": 5.0}},
+        }
+    }
+    ex.set_leverage = AsyncMock()
+    ex.fetch_ticker = AsyncMock(return_value={"last": 5.0})
+    ex.amount_to_precision = MagicMock(return_value="1.0")
+    ex.create_market_order = AsyncMock(return_value={"id": "ord-rounded", "status": "closed"})
+
+    result = await place_order(**_kwargs(size_usd=1.0, exchanges={"bingx": ex}))
+
+    assert result["allowed"]
+    assert result["rounded_up"] is True
+    ex.amount_to_precision.assert_called_once_with("BEAT/USDT:USDT", 1.0)
+
+
+@patch("schurfer_execution.orders.fetch_positions", return_value=([], set()))
+@patch(
+    "schurfer_execution.orders.fetch_margin_balance",
+    return_value=[
+        {
+            "exchange": "bingx",
+            "free": 1000.0,
+            "used": 0.0,
+            "total": 1000.0,
+            "tradeable": True,
+            "asset": "USDT",
+        }
+    ],
+)
+async def test_place_order_round_up_exceeds_max_position_blocked(
+    _mock_bal: MagicMock, _mock_pos: MagicMock
+) -> None:
+    # Regression: $1 requested → rounds up to 1 contract at $200 → exceeds MAX_POSITION_USD=150.
+    # Risk checks run on original size_usd=$1 and pass; re-check after round-up must block this.
+    ex = MagicMock()
+    ex.markets = {
+        "BEAT/USDT:USDT": {
+            "contractSize": 1.0,
+            "limits": {"amount": {"min": 1.0}, "cost": {"min": 200.0}},
+        }
+    }
+    ex.set_leverage = AsyncMock()
+    ex.fetch_ticker = AsyncMock(return_value={"last": 200.0})
+    ex.amount_to_precision = MagicMock(return_value="1.0")
+
+    result = await place_order(
+        **_kwargs(size_usd=1.0, max_position_usd=150.0, exchanges={"bingx": ex})
+    )
+
+    assert not result["allowed"]
+    assert "exceeds limit" in result["reason"]
+    ex.create_market_order.assert_not_called()
+
+
+@patch("schurfer_execution.orders.fetch_positions", return_value=([], set()))
+@patch(
+    "schurfer_execution.orders.fetch_margin_balance",
+    return_value=[{"exchange": "bingx", "free": 1000.0, "used": 0.0, "total": 1000.0}],
+)
+async def test_place_order_no_round_up_when_above_minimum(
+    _mock_bal: MagicMock, _mock_pos: MagicMock
+) -> None:
+    ex = MagicMock()
+    ex.markets = {
+        "BEAT/USDT:USDT": {
+            "contractSize": 1.0,
+            "limits": {"amount": {"min": 1.0}, "cost": {"min": 1.0}},
+        }
+    }
+    ex.set_leverage = AsyncMock()
+    ex.fetch_ticker = AsyncMock(return_value={"last": 1.0})
+    ex.amount_to_precision = MagicMock(return_value="100.0")
+    ex.create_market_order = AsyncMock(return_value={"id": "ord-ok", "status": "closed"})
+
+    result = await place_order(**_kwargs(size_usd=100.0, exchanges={"bingx": ex}))
+
+    assert result["allowed"]
+    assert result["rounded_up"] is False
+
+
+@patch("schurfer_execution.orders.fetch_positions", return_value=([], set()))
+@patch(
+    "schurfer_execution.orders.fetch_margin_balance",
+    return_value=[{"exchange": "bingx", "free": 1000.0, "used": 0.0, "total": 1000.0}],
+)
+async def test_place_order_amount_zero_after_precision_returns_error(
+    _mock_bal: MagicMock, _mock_pos: MagicMock
+) -> None:
+    ex = MagicMock()
+    ex.markets = {
+        "BEAT/USDT:USDT": {
+            "contractSize": 1.0,
+            "limits": {"amount": {"min": 0.0}, "cost": {"min": 0.0}},
+        }
+    }
+    ex.set_leverage = AsyncMock()
+    ex.fetch_ticker = AsyncMock(return_value={"last": 1000.0})
+    ex.amount_to_precision = MagicMock(return_value="0")  # precision rounds tiny amount to 0
+
+    result = await place_order(**_kwargs(size_usd=0.001, exchanges={"bingx": ex}))
+
+    assert not result["allowed"]
+    assert "rounds to 0" in result["reason"]
