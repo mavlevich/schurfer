@@ -3,12 +3,20 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Request
+from pydantic import BaseModel
 
 from ..account import fetch_balance, fetch_positions
+from ..orders import close_position
 from ..risk import DAILY_PNL_KEY, TRADING_ENABLED_KEY
 
 if TYPE_CHECKING:
     from ..config import Config
+
+
+class CloseBody(BaseModel):
+    exchange: str
+    base: str
+
 
 router = APIRouter()
 
@@ -35,6 +43,17 @@ async def get_balance(request: Request) -> dict[str, Any]:
 async def get_positions(request: Request) -> dict[str, Any]:
     positions, _ = await fetch_positions(request.app.state.exchanges)
     return {"positions": positions, "count": len(positions)}
+
+
+@router.post("/positions/close")
+async def manual_close_position(body: CloseBody, request: Request) -> dict[str, Any]:
+    return await close_position(
+        exchanges=request.app.state.exchanges,
+        exchange=body.exchange,
+        base=body.base,
+        reason="manual",
+        rdb=request.app.state.rdb,
+    )
 
 
 @router.get("/risk")

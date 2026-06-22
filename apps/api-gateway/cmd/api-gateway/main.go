@@ -86,6 +86,7 @@ func run() error {
 		r.Get("/api/account/positions", accountHandler.ServeHTTP)
 		r.Get("/api/account/risk", accountHandler.ServeHTTP)
 		r.Post("/api/account/order", accountHandler.ServeHTTP)
+		r.Post("/api/account/positions/close", accountHandler.ServeHTTP)
 		r.Post("/api/account/stop", accountHandler.ServeHTTP)
 		r.Post("/api/account/resume", accountHandler.ServeHTTP)
 

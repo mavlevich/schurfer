@@ -1,10 +1,17 @@
+import time
 import uuid
 from typing import Any
 
 import structlog
 
 from .account import fetch_margin_balance, fetch_positions
-from .risk import DAILY_PNL_KEY, TRADING_ENABLED_KEY, run_all_checks
+from .risk import (
+    DAILY_PNL_KEY,
+    TRADING_ENABLED_KEY,
+    check_max_position_size,
+    check_sufficient_margin,
+    run_all_checks,
+)
 
 log = structlog.get_logger()
 
@@ -74,13 +81,50 @@ async def place_order(
             return {"allowed": False, "reason": f"symbol {symbol} not found on {exchange}"}
 
         contract_size = float(market.get("contractSize") or 1.0)
+        limits = market.get("limits") or {}
+        min_amount = float((limits.get("amount") or {}).get("min") or 0)
+        min_cost = float((limits.get("cost") or {}).get("min") or 0)
+
         await ex.set_leverage(leverage, symbol)
         ticker = await ex.fetch_ticker(symbol)
         price = float(ticker["last"])
-        raw_amount = size_usd / price / contract_size
+
+        requested_amount = size_usd / price / contract_size
+        raw_amount = requested_amount
+        if min_amount > 0 and raw_amount < min_amount:
+            log.info(
+                "execution.order.amount_rounded_up",
+                base=base,
+                requested=round(raw_amount, 6),
+                minimum=min_amount,
+            )
+            raw_amount = min_amount
+        rounded_up = raw_amount > requested_amount
+
         amount = float(ex.amount_to_precision(symbol, raw_amount))
+        if amount == 0:
+            hint = f" — min {min_amount} contracts (${min_cost:.2f})" if min_amount else ""
+            return {
+                "allowed": False,
+                "reason": f"amount rounds to 0 for {symbol}{hint}",
+            }
+
+        if rounded_up:
+            # Actual cost after rounding may exceed the limits checked against size_usd.
+            actual_usd = round(amount * price * contract_size, 2)
+            size_recheck = check_max_position_size(actual_usd, max_position_usd)
+            if not size_recheck.allowed:
+                return {"allowed": False, "reason": size_recheck.reason}
+            margin_recheck = check_sufficient_margin(actual_usd, balances, exchange)
+            if not margin_recheck.allowed:
+                return {"allowed": False, "reason": margin_recheck.reason}
 
         order = await ex.create_market_order(symbol, ccxt_side, amount)
+        await rdb.set(
+            f"position:opened_at:{exchange}:{base.upper()}",
+            str(int(time.time())),
+            ex=86400,
+        )
         log.info(
             "execution.order.placed",
             base=base,
@@ -88,6 +132,7 @@ async def place_order(
             side=side,
             size_usd=size_usd,
             order_id=order.get("id"),
+            rounded_up=rounded_up,
         )
         return {
             "allowed": True,
@@ -99,6 +144,7 @@ async def place_order(
             "leverage": leverage,
             "price": price,
             "status": order.get("status"),
+            "rounded_up": rounded_up,
         }
     finally:
         try:
@@ -106,3 +152,75 @@ async def place_order(
         except Exception as e:
             # Best-effort release. Lock expires via TTL. Do not override order result.
             log.error("execution.lock_release_failed", lock_key=lock_key, err=str(e))
+
+
+async def close_position(
+    *,
+    exchanges: dict[str, Any],
+    exchange: str,
+    base: str,
+    reason: str,
+    rdb: Any,
+) -> dict[str, Any]:
+    lock_key = f"lock:order:{exchange}:{base.upper()}"
+    lock_token = str(uuid.uuid4())
+    locked = await rdb.set(lock_key, lock_token, nx=True, px=30_000)
+    if not locked:
+        return {
+            "closed": False,
+            "reason": f"close already in progress for {base} on {exchange}",
+        }
+
+    try:
+        ex = exchanges.get(exchange)
+        if not ex:
+            return {"closed": False, "reason": f"exchange {exchange!r} not configured"}
+
+        symbol = f"{base.upper()}/USDT:USDT"
+        all_positions = await ex.fetch_positions()
+        position = next(
+            (
+                p
+                for p in all_positions
+                if p.get("symbol") == symbol and float(p.get("contracts") or 0) > 0
+            ),
+            None,
+        )
+        if position is None:
+            return {"closed": False, "reason": f"no open position for {symbol}"}
+
+        contracts = float(position["contracts"])
+        position_side = position.get("side", "")
+        if not position_side:
+            return {"closed": False, "reason": f"position side unknown for {symbol}"}
+        close_side = "buy" if position_side == "short" else "sell"
+
+        if not ex.markets:
+            await ex.load_markets()
+
+        amount = float(ex.amount_to_precision(symbol, contracts))
+        order = await ex.create_market_order(
+            symbol, close_side, amount, params={"reduceOnly": True}
+        )
+        await rdb.delete(f"position:opened_at:{exchange}:{base.upper()}")
+        log.info(
+            "execution.position.closed",
+            base=base,
+            exchange=exchange,
+            side=position_side,
+            reason=reason,
+            order_id=order.get("id"),
+        )
+        return {
+            "closed": True,
+            "order_id": order.get("id"),
+            "exchange": exchange,
+            "base": base,
+            "side": position_side,
+            "reason": reason,
+        }
+    finally:
+        try:
+            await rdb.eval(_RELEASE_LOCK, 1, lock_key, lock_token)
+        except Exception as e:
+            log.error("execution.close.lock_release_failed", lock_key=lock_key, err=str(e))

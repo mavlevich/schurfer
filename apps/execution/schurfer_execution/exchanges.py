@@ -1,6 +1,9 @@
 import ccxt.async_support as ccxt
+import structlog
 
 from .config import Config
+
+log = structlog.get_logger()
 
 
 def build_exchanges(cfg: Config) -> dict[str, ccxt.Exchange]:
@@ -72,6 +75,14 @@ def build_exchanges(cfg: Config) -> dict[str, ccxt.Exchange]:
                 "options": {"defaultType": "swap"},
             }
         )
+
+    if cfg.testnet:
+        for name, ex in exchanges.items():
+            try:
+                ex.set_sandbox_mode(True)
+                log.info("exchanges.testnet.enabled", exchange=name)
+            except Exception as e:
+                log.warning("exchanges.testnet.unsupported", exchange=name, err=str(e))
 
     return exchanges
 
