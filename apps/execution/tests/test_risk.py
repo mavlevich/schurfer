@@ -14,8 +14,18 @@ def _pos(base: str, exchange: str = "bingx") -> dict:  # type: ignore[type-arg]
     return {"base": base, "exchange": exchange, "side": "short", "size_usd": 200.0}
 
 
-def _bal(exchange: str = "bingx", free: float = 1000.0) -> dict:  # type: ignore[type-arg]
-    return {"exchange": exchange, "free": free, "used": 0.0, "total": free}
+def _bal(
+    exchange: str = "bingx", free: float = 1000.0, tradeable: bool = True, asset: str = "USDT"
+) -> dict:  # type: ignore[type-arg]
+    return {
+        "exchange": exchange,
+        "wallet": "swap",
+        "asset": asset,
+        "tradeable": tradeable,
+        "free": free,
+        "used": 0.0,
+        "total": free,
+    }
 
 
 class TestCheckTradingEnabled:
@@ -78,6 +88,14 @@ class TestCheckSufficientMargin:
 
     def test_missing_exchange(self) -> None:
         assert not check_sufficient_margin(200.0, [_bal(exchange="mexc")], "bingx").allowed
+
+    def test_spot_balance_not_used_for_margin(self) -> None:
+        spot = _bal(exchange="bingx", free=1000.0, tradeable=False)
+        assert not check_sufficient_margin(200.0, [spot], "bingx").allowed
+
+    def test_non_usdt_asset_not_used_for_margin(self) -> None:
+        btc = _bal(exchange="bingx", free=1000.0, tradeable=True, asset="BTC")
+        assert not check_sufficient_margin(200.0, [btc], "bingx").allowed
 
 
 class TestCheckMaxPositionSize:

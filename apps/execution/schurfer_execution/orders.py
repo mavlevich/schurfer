@@ -3,7 +3,7 @@ from typing import Any
 
 import structlog
 
-from .account import fetch_balance, fetch_positions
+from .account import fetch_margin_balance, fetch_positions
 from .risk import DAILY_PNL_KEY, TRADING_ENABLED_KEY, run_all_checks
 
 log = structlog.get_logger()
@@ -44,7 +44,7 @@ async def place_order(
         # Until that tracker is implemented this check reads 0 and won't trip.
         daily_pnl = float(await rdb.get(DAILY_PNL_KEY) or 0)
         positions, failed_exchanges = await fetch_positions(exchanges)
-        balances = await fetch_balance(exchanges)
+        balances = await fetch_margin_balance(exchanges, exchange)
 
         check = run_all_checks(
             base=base,
