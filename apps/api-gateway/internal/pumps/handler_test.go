@@ -10,9 +10,11 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/alicebob/miniredis/v2"
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/redis/go-redis/v9"
 )
 
 func ptr(v int64) *int64 { return &v }
@@ -1230,6 +1232,74 @@ func TestRankExchangeEntries(t *testing.T) {
 		want := []string{"binance", "gate", "bingx", "mexc"}
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("want %v, got %v", want, got)
+		}
+	})
+}
+
+// ---- TestCacheSignals ----
+
+func TestCacheSignals(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+
+	firstSeenAt := int64(1_700_000_000)
+
+	makeQuerier := func(episodeErr error) pgxPool {
+		var call int
+		return &stubQuerier{
+			onQueryRow: func(_ context.Context, _ string, _ ...any) pgxRow {
+				call++
+				switch call {
+				case 1: // episode
+					if episodeErr != nil {
+						return &stubRow{err: episodeErr}
+					}
+					return &stubRow{vals: []any{int64(42), firstSeenAt, 60.0, 58.0}}
+				case 2: // current OI
+					return &stubRow{vals: []any{float64(5_000_000), int64(3)}}
+				case 3: // baseline OI
+					return &stubRow{vals: []any{float64(4_000_000), int64(3)}}
+				case 4: // max funding
+					return &stubRow{vals: []any{float64(0.003), int64(2)}}
+				default:
+					return &stubRow{err: fmt.Errorf("unexpected call %d", call)}
+				}
+			},
+		}
+	}
+
+	t.Run("writes signals key to Redis", func(t *testing.T) {
+		h := &Handler{rdb: rdb, pool: makeQuerier(nil)}
+		if err := h.CacheSignals(context.Background(), "BEAT"); err != nil {
+			t.Fatalf("CacheSignals: %v", err)
+		}
+		raw, err := rdb.Get(context.Background(), "signals:BEAT").Bytes()
+		if err != nil {
+			t.Fatalf("signals:BEAT not found in Redis: %v", err)
+		}
+		var resp signalsResponse
+		if err := json.Unmarshal(raw, &resp); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if resp.Base != "BEAT" {
+			t.Errorf("base = %q, want BEAT", resp.Base)
+		}
+		if resp.Score < 0 || resp.Score > signalMaxScore {
+			t.Errorf("score %d out of range [0, %d]", resp.Score, signalMaxScore)
+		}
+	})
+
+	t.Run("deletes stale key when no open episode", func(t *testing.T) {
+		mr.FlushAll()
+		// Seed a stale entry to confirm it gets removed.
+		_ = rdb.Set(context.Background(), "signals:BEAT", []byte(`{"score":8}`), signalsCacheTTL)
+		h := &Handler{rdb: rdb, pool: makeQuerier(pgx.ErrNoRows)}
+		if err := h.CacheSignals(context.Background(), "BEAT"); err != nil {
+			t.Fatalf("CacheSignals: %v", err)
+		}
+		if mr.Exists("signals:BEAT") {
+			t.Error("stale signals:BEAT should have been deleted when no open episode")
 		}
 	})
 }

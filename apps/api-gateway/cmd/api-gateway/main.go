@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -57,6 +58,11 @@ func run() error {
 	pumpsHandler := pumps.NewHandler(rdb, checker.Pool())
 	accountHandler := execution.NewHandler(cfg.ExecutionURL)
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go runSignalsTicker(ctx, rdb, pumpsHandler)
+
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
@@ -109,6 +115,43 @@ func run() error {
 		return fmt.Errorf("server: %w", err)
 	}
 	return nil
+}
+
+// runSignalsTicker refreshes signals:{base} in Redis every minute for all active pumps.
+// Runs immediately on start so the first tick has data, then every 60 seconds.
+func runSignalsTicker(ctx context.Context, rdb *redis.Client, h *pumps.Handler) {
+	refresh := func() {
+		raw, err := rdb.Get(ctx, "pumps:latest").Bytes()
+		if err != nil {
+			return // no active pumps
+		}
+		var payload struct {
+			Pumps []struct {
+				Base string `json:"base"`
+			} `json:"pumps"`
+		}
+		if err := json.Unmarshal(raw, &payload); err != nil {
+			slog.Warn("signals.ticker.parse_error", "err", err)
+			return
+		}
+		for _, p := range payload.Pumps {
+			if err := h.CacheSignals(ctx, p.Base); err != nil {
+				slog.Warn("signals.ticker.cache_error", "base", p.Base, "err", err)
+			}
+		}
+	}
+
+	refresh()
+	ticker := time.NewTicker(60 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			refresh()
+		}
+	}
 }
 
 type config struct {
