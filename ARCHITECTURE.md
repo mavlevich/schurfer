@@ -11,82 +11,92 @@ One product, multiple services. Web UI behind login, no public exposure.
 
 ### Hot path (latency-sensitive)
 
-- **collectors** (Go) - one process per exchange.
+- **collector** (Go) — one process per exchange.
   Maintains WebSocket subscriptions for spot+perp markets. Normalizes
   events and publishes to NATS bus.
-- **execution** (Go) - receives signals from
-  analytics, runs them through risk manager, places orders on exchanges,
-  tracks positions.
-- **api-gateway** (Go) - REST + WS endpoints for web UI. Reads from
-  Redis (hot state) and Postgres (cold storage).
+- **api-gateway** (Go) — REST + WS endpoints for web UI. Reads from
+  Redis (hot state) and Postgres (cold storage). Runs background ticker
+  that writes signal scores (`signals:{base}`) to Redis every 60s.
+- **execution** (Python, FastAPI + ccxt) — reads pump scores from Redis,
+  runs risk checks, places/closes orders on exchanges, monitors open
+  positions for TP/SL/max-hold, exposes manual control endpoints.
 
 ### Warm path (analytical)
 
-- **analytics** (Python) - signal generation, backtests, news pipeline.
-  Subscribes to NATS, computes indicators, publishes signals back.
-- **telegram-bot** (Python) - sends alerts to user's Telegram, accepts
-  approve/skip actions on suggested trades.
+- **analytics** (Python) — pump scanner. Subscribes to NATS, computes
+  pump episodes, persists OI/funding snapshots, writes `pumps:latest`
+  to Redis.
+- **notifier** (Go) — reads `pumps:latest` from Redis, sends Telegram
+  alerts on new pump detection.
 
 ### UI
 
-- **web** (TypeScript + React + Vite) - dashboard, journal, analytics
-  views, configuration. Communicates with api-gateway via REST + WS.
+- **web** (TypeScript + React + Vite) — dashboard, pump scanner, token
+  detail, account view. Communicates with api-gateway via REST + WS.
 
 ## Data flow
 
 ```
 Exchanges (WS)
     |
-Collectors (Go) --> NATS --> Analytics (Python)
-                       |            |
-                       v            v
-                  Storage      Signals
-                  (Postgres,        |
-                   TimescaleDB,  Decision Engine
-                   Redis)            |
-                       ^         Risk Manager
-                       |            |
-                       +---- Execution (Go)
-                                          |
-                                      Exchanges (REST)
+Collector (Go) --> NATS --> Analytics (Python)
+                                    |
+                              pumps:latest (Redis)
+                                    |
+                            api-gateway ticker
+                                    |
+                           signals:{base} (Redis)   <-- score 0-10, computed_at
+                                    |
+                          Execution signal trader
+                          (when AUTO_TRADE=true)
+                                    |
+                              Risk checks
+                                    |
+                            Exchanges (REST/ccxt)
 ```
+
+## Redis key registry
+
+| Key                                    | Owner       | TTL     | Schema                          |
+| -------------------------------------- | ----------- | ------- | ------------------------------- |
+| `pumps:latest`                         | analytics   | 300s    | `{ts, count, pumps: [...]}`     |
+| `signals:{base}`                       | api-gateway | 120s    | `{score, verdict, computed_at}` |
+| `trader:seen:{base}`                   | execution   | 24h/30m | `"1"`                           |
+| `trading:enabled`                      | execution   | no TTL  | `"true"/"false"`                |
+| `lock:order:{exchange}:{base}`         | execution   | 30s     | `{owner}`                       |
+| `position:opened_at:{exchange}:{base}` | execution   | 24h     | Unix timestamp string           |
+| `daily_loss:{date}`                    | execution   | 48h     | float string (USD)              |
+| `pnl:{exchange}:{date}`                | execution   | 48h     | float string (USD)              |
 
 ## Storage
 
-| Database        | Purpose                                                |
-| --------------- | ------------------------------------------------------ |
-| **PostgreSQL**  | orders, positions, journal, configs, users             |
-| **TimescaleDB** | tick data, OHLCV, funding history, OI series           |
-| **Redis**       | hot state (current price, OI, funding), pub/sub for UI |
+| Database        | Purpose                                                        |
+| --------------- | -------------------------------------------------------------- |
+| **PostgreSQL**  | pump episodes, OI snapshots, funding snapshots, users          |
+| **TimescaleDB** | OHLCV series, tick data, funding history                       |
+| **Redis**       | hot state (pump list, signal scores, locks, position metadata) |
 
 ## Exchanges
 
-| Exchange        | Priority | Status     |
-| --------------- | -------- | ---------- |
-| **Bybit**       | First    | Sprint 2   |
-| **OKX**         | Second   | Sprint 4   |
-| **Hyperliquid** | Third    | Sprint 4-6 |
+Execution service supports: Binance, Bybit, OKX, Gate, KuCoin, BingX, MEXC.
+Only exchanges with both API key + secret configured are activated at startup.
 
-Binance perps excluded (blocked in Poland).
+Binance perps excluded from pump scanner (blocked in Poland).
 
 ## Deployment
 
-- **Production**: AWS EC2 t4g.medium (ARM/Graviton) in Frankfurt (eu-central-1)
-  - Docker Compose initially, migrate to ECS in Sprint 5
-  - ARM images for all services (Go and Python work natively)
-- **Dev**: local Docker Compose (same compose file, different config)
-- **CI**: GitHub Actions self-hosted runner on AWS spot instance
-- **Secrets**: sops + age, encrypted in repo
+- **Production**: AWS EC2 t4g.medium (ARM/Graviton) in Frankfurt (eu-central-1), Docker Compose
+- **Dev**: local Docker Compose
+- **CI**: GitHub Actions
 - **Access**: Tailscale VPN for SSH, Cloudflare Tunnel for web UI
 - **DNS**: Cloudflare
 
 ## Logging
 
-All services use structured JSON logging from day one:
+All services use structured JSON logging:
 
 - Python: `structlog`
 - Go: `slog` (stdlib)
-- Collected via CloudWatch (production) or stdout (dev)
 
 ## Tax / regulatory
 

@@ -4,24 +4,27 @@
 
 ## Status
 
-Sprint 3 complete. Multi-exchange pump scanner live with history, Telegram alerts, and per-token charts.
+Sprint 5 complete. Signal trader live (disabled by default). Multi-exchange pump scanner, short-readiness scoring, automated position management.
 
 ## What it does
 
-- Scans 12 CEX perpetual markets every 60 seconds for price pumps above a configurable threshold
+- Scans 12 CEX perpetual markets every 60s for price pumps above a configurable threshold
 - Persists pump episodes with peak %, retrace %, and timeline snapshots (+1h/+4h/+24h)
-- Tracks multi-episode lifecycle: cooling period (3 missed scans) before closing an episode
-- Token detail page: OHLCV chart (5m/15m/1h/4h), exchange breakdown, episode history
-- Telegram alerts on new pump detection, deduplication across a 24h window
+- Scores each active pump on 5 components: age, price extent, OI trend, funding rate, retrace from peak (0–10)
+- Token detail page: OHLCV chart (5m/15m/1h/4h), exchange breakdown, episode history, signal components
+- Telegram alerts on new pump detection
+- Automated short execution when `AUTO_TRADE=true`: opens positions on high-score pumps, monitors TP/SL/max-hold, closes automatically
+- Emergency kill-switch (`/stop`/`/resume`), daily loss limit, max position count, duplicate position guard
 
 ## Stack
 
 | Layer              | Technology                                                |
 | ------------------ | --------------------------------------------------------- |
 | Analytics scanner  | Python 3.13, ccxt, psycopg3, redis-py, structlog          |
-| API gateway        | Go 1.26, chi, pgx, go-redis                               |
-| Bybit WS collector | Go 1.26, NATS                                             |
-| Telegram notifier  | Go 1.26                                                   |
+| Execution service  | Python 3.13, FastAPI, ccxt, redis-py, structlog           |
+| API gateway        | Go 1.24, chi, pgx, go-redis                               |
+| Bybit WS collector | Go 1.24, NATS                                             |
+| Telegram notifier  | Go 1.24                                                   |
 | Frontend           | React 19, Vite, TypeScript, shadcn/ui, lightweight-charts |
 | Storage            | PostgreSQL 17 + TimescaleDB, Redis 7                      |
 | Message bus        | NATS 2 with JetStream                                     |
@@ -31,16 +34,15 @@ Sprint 3 complete. Multi-exchange pump scanner live with history, Telegram alert
 
 ```
 apps/
-├── analytics/       Python  - pump scanner, persistence, snapshots
-├── api-gateway/     Go      - REST API, OHLCV proxy, pump history
-├── collector/       Go      - Bybit WebSocket → NATS publisher
-├── notifier/        Go      - Telegram bot, reads Redis pumps:latest
-├── web/             TS      - React dashboard (/pumps, /pumps/:base)
-├── collectors/              - multi-exchange WS stubs (Sprint 5)
-└── execution/               - order execution stub (Sprint 6)
+├── analytics/       Python  — pump scanner, persistence, snapshots, OI/funding collection
+├── api-gateway/     Go      — REST API, OHLCV proxy, pump history, signal scoring, Redis ticker
+├── collector/       Go      — Bybit WebSocket → NATS publisher
+├── execution/       Python  — order execution, risk checks, position monitor, signal trader
+├── notifier/        Go      — Telegram alerts, reads Redis pumps:latest
+└── web/             TS      — React dashboard (/pumps, /pumps/:base)
 
 packages/
-└── journal/         Python  - SQLAlchemy models, Alembic migrations
+└── journal/         Python  — SQLAlchemy models, Alembic migrations
 
 infra/
 └── docker/
@@ -60,7 +62,7 @@ docs/
 - Docker + Docker Compose
 - Python 3.13 + [uv](https://docs.astral.sh/uv/)
 - Node 22 + [pnpm](https://pnpm.io/)
-- Go 1.26
+- Go 1.24
 
 ### 1. Install dependencies
 
@@ -77,6 +79,10 @@ make dev-init          # generates .env with hashed admin password
 Add optional variables to `.env`:
 
 ```env
+# Exchange API keys for execution service (only exchanges with both key+secret are activated)
+BYBIT_API_KEY=...
+BYBIT_API_SECRET=...
+
 # Telegram alerts (optional)
 TELEGRAM_BOT_TOKEN=<your bot token>
 TELEGRAM_CHAT_ID=<your chat or channel id>
@@ -85,12 +91,18 @@ TELEGRAM_CHAT_ID=<your chat or channel id>
 PUMP_MIN_PCT=30
 SCAN_INTERVAL=60
 PUMP_EXCHANGES=binance,bybit,okx,gate,bitget,mexc,bingx,coinex,phemex,cryptocom,htx,kucoin
+
+# Automated trading (disabled by default — enable only after paper testing)
+AUTO_TRADE=false
+SIGNAL_POSITION_USD=50
+SIGNAL_LEVERAGE=3
+SCORE_THRESHOLD=6
 ```
 
 ### 3. Start infrastructure
 
 ```bash
-make dev               # starts postgres, redis, nats, api-gateway, analytics, collector, notifier
+make dev               # starts postgres, redis, nats, api-gateway, analytics, collector, notifier, execution
 ```
 
 ### 4. Run database migrations
@@ -109,23 +121,31 @@ Open [http://localhost:5173](http://localhost:5173) — login with `admin` / the
 
 ## Services
 
-| Service        | URL / Port            | Notes                                    |
-| -------------- | --------------------- | ---------------------------------------- |
-| Frontend (dev) | http://localhost:5173 | Vite dev server, proxies /api to gateway |
-| API gateway    | http://localhost:8000 | REST API                                 |
-| PostgreSQL     | localhost:5432        | user: schurfer, db: schurfer             |
-| Redis          | localhost:6379        | pump scan results, OHLCV cache           |
-| NATS           | localhost:4222        | collector → analytics pub/sub            |
+| Service           | URL / Port            | Notes                                     |
+| ----------------- | --------------------- | ----------------------------------------- |
+| Frontend (dev)    | http://localhost:5173 | Vite dev server, proxies /api to gateway  |
+| API gateway       | http://localhost:8000 | REST API, signal scoring ticker           |
+| Execution service | http://localhost:8001 | Order execution, internal only            |
+| PostgreSQL        | localhost:5432        | user: schurfer, db: schurfer              |
+| Redis             | localhost:6379        | pump state, signal scores, position locks |
+| NATS              | localhost:4222        | collector → analytics pub/sub             |
 
 ### Key API endpoints
 
 ```
-GET /api/pumps                     current pump list (from Redis)
-GET /api/pumps/:base               single token current data
-GET /api/pumps/:base/ohlcv         OHLCV candles (interval=5|15|60|240, limit=N)
-GET /api/pumps/:base/history       all episodes for a token
-GET /api/pumps/history             filtered history (exchange, since, until)
-GET /healthz                       service health check
+GET  /api/pumps                      current pump list (from Redis)
+GET  /api/pumps/:base                single token current data
+GET  /api/pumps/:base/ohlcv          OHLCV candles (interval=5|15|60|240, limit=N)
+GET  /api/pumps/:base/history        all episodes for a token
+GET  /api/pumps/:base/signals        short-readiness score (0-10, 5 components)
+GET  /api/pumps/history              filtered history (exchange, since, until)
+GET  /api/account/balance            exchange balances
+GET  /api/account/positions          open positions
+POST /api/account/order              place order
+POST /api/account/positions/close    close position manually
+POST /api/account/stop               emergency kill-switch
+POST /api/account/resume             resume trading
+GET  /healthz                        service health check
 ```
 
 ## Development commands
