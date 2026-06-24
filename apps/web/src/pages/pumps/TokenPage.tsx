@@ -5,97 +5,9 @@ import { CandlestickSeries, ColorType, createChart } from 'lightweight-charts';
 import type { UTCTimestamp } from 'lightweight-charts';
 import { Nav } from '@/components/Nav';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-
-interface ExchangeEntry {
-  exchange: string;
-  symbol: string;
-  price: string;
-  change_pct: number;
-  high_24h: string;
-  volume_24h_usd: number;
-}
-
-interface PumpEntry {
-  base: string;
-  max_change_pct: number;
-  exchanges: ExchangeEntry[];
-}
-
-interface TokenEpisode {
-  base: string;
-  episode: number;
-  first_seen_at: number;
-  last_seen_at: number;
-  closed_at: number | null;
-  peak_pct: number;
-  last_pct: number;
-  retrace_pct: number | null;
-  is_live: boolean;
-}
-
-interface Candle {
-  time: number;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  volume: number;
-}
-
-interface OHLCVResponse {
-  base: string;
-  exchange: string;
-  interval: number;
-  candles: Candle[];
-}
-
-interface SignalComponent {
-  value: number;
-  points: number;
-  max: number;
-  note: string;
-}
-
-interface SignalsResponse {
-  base: string;
-  verdict: string;
-  score: number;
-  max_score: number;
-  episode: {
-    id: number;
-    first_seen_at: number;
-    age_hours: number;
-    peak_pct: number;
-    last_pct: number;
-    is_open: boolean;
-  };
-  components: {
-    pump_age: SignalComponent;
-    price_extent: SignalComponent;
-    oi_trend: SignalComponent;
-    funding_rate: SignalComponent;
-    retrace_from_peak: SignalComponent;
-  };
-  data_quality: {
-    oi: boolean;
-    funding: boolean;
-  };
-}
-
-interface TokenStats {
-  base: string;
-  episode_count: number;
-  retrace_count: number;
-  confidence: 'low' | 'medium' | 'high';
-  avg_peak_pct: number;
-  median_peak_pct: number;
-  avg_retrace_pct: number | null;
-  median_retrace_pct: number | null;
-  min_retrace_pct: number | null;
-  max_retrace_pct: number | null;
-  avg_duration_hours: number;
-  median_duration_hours: number;
-}
+import { useToken, useTokenEpisodes, useTokenSignals, useTokenStats } from '@/hooks/useTokenData';
+import { useOHLCV, INTERVALS, getInterval } from '@/hooks/useOHLCV';
+import type { OHLCVResponse, SignalsResponse, TokenStats, TokenEpisode } from './types';
 
 const CONFIDENCE_STYLES: Record<string, string> = {
   low: 'text-muted-foreground bg-muted border border-border',
@@ -183,114 +95,239 @@ function pctColor(pct: number) {
   return 'text-yellow-400';
 }
 
-const INTERVALS: { label: string; range: string; minutes: number; limit: number }[] = [
-  { label: '5m', range: 'last 24h', minutes: 5, limit: 288 },
-  { label: '15m', range: 'last 48h', minutes: 15, limit: 192 },
-  { label: '1h', range: 'last 8d', minutes: 60, limit: 200 },
-  { label: '4h', range: 'last 30d', minutes: 240, limit: 180 },
-];
-
 function fmtPrice(s: string): string {
   const n = parseFloat(s);
   if (!isFinite(n) || s === '') return s;
   if (n >= 1000) return n.toFixed(2);
   if (n >= 0.01) return n.toFixed(4);
-  // Tiny prices: 4 significant digits, no scientific notation
   const exp = Math.floor(Math.log10(n));
   return n.toFixed(Math.min(-exp + 3, 10));
 }
 
-export function TokenPage() {
-  const { base } = useParams<{ base: string }>();
-  const [pump, setPump] = useState<PumpEntry | null>(null);
-  const [ohlcv, setOHLCV] = useState<OHLCVResponse | null>(null);
-  const [episodes, setEpisodes] = useState<TokenEpisode[]>([]);
-  const [signals, setSignals] = useState<SignalsResponse | null>(null);
-  const [stats, setStats] = useState<TokenStats | null>(null);
-  const [detailsLoading, setDetailsLoading] = useState(true);
-  const [chartLoading, setChartLoading] = useState(true);
-  const [chartInterval, setChartInterval] = useState(15);
+function SignalsCard({ signals }: { signals: SignalsResponse }) {
+  const v = VERDICT_STYLES[signals.verdict] ?? VERDICT_STYLES['insufficient_data'];
+  const scorePct = (signals.score / signals.max_score) * 100;
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+            Short Readiness
+          </CardTitle>
+          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${v.badge}`}>
+            {v.label}
+          </span>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex items-baseline gap-1">
+          <span className="text-3xl font-bold font-mono">{signals.score}</span>
+          <span className="text-lg text-muted-foreground">/ {signals.max_score}</span>
+        </div>
+        <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+          <div
+            className={`h-full rounded-full transition-all duration-500 ${v.bar}`}
+            style={{ width: `${scorePct}%` }}
+          />
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[480px] text-sm">
+            <thead>
+              <tr className="border-b text-xs text-muted-foreground">
+                <th className="px-0 py-2 text-left font-normal">Signal</th>
+                <th className="px-4 py-2 text-right font-normal">Points</th>
+                <th className="px-4 py-2 text-left font-normal">Detail</th>
+              </tr>
+            </thead>
+            <tbody>
+              {COMPONENT_ROWS.map(({ key, label }) => {
+                const c = signals.components[key];
+                return (
+                  <tr key={key} className="border-b last:border-0">
+                    <td className="px-0 py-2.5 font-medium">{label}</td>
+                    <td className="px-4 py-2.5">
+                      <div className="flex justify-end">
+                        <PointsDots points={c.points} max={c.max} />
+                      </div>
+                    </td>
+                    <td className="px-4 py-2.5 text-muted-foreground text-xs">{c.note}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        {(!signals.data_quality.oi || !signals.data_quality.funding) && (
+          <p className="text-xs text-muted-foreground">
+            ⚠ Data unavailable:{' '}
+            {[!signals.data_quality.oi && 'OI', !signals.data_quality.funding && 'Funding']
+              .filter(Boolean)
+              .join(', ')}
+            {' — affected components defaulted to 0 pts'}
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function StatsCard({ stats }: { stats: TokenStats }) {
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+            Historical stats · {stats.episode_count} episodes
+          </CardTitle>
+          <span
+            className={`rounded px-2 py-0.5 text-xs font-medium ${CONFIDENCE_STYLES[stats.confidence]}`}
+          >
+            {stats.confidence} confidence
+          </span>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-2 gap-6 sm:grid-cols-4">
+          <div>
+            <p className="text-xs text-muted-foreground mb-1">Avg peak</p>
+            <p className={`text-lg font-mono font-bold ${pctColor(stats.avg_peak_pct)}`}>
+              {fmtPct(stats.avg_peak_pct)}
+            </p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              med {fmtPct(stats.median_peak_pct)}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground mb-1">
+              Avg retrace{' '}
+              {stats.retrace_count < stats.episode_count && (
+                <span className="text-yellow-500">
+                  ({stats.retrace_count}/{stats.episode_count})
+                </span>
+              )}
+            </p>
+            {stats.avg_retrace_pct != null ? (
+              <>
+                <p className={`text-lg font-mono font-bold ${pctColor(stats.avg_retrace_pct)}`}>
+                  {fmtPct(stats.avg_retrace_pct)}
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  med {stats.median_retrace_pct != null ? fmtPct(stats.median_retrace_pct) : '—'}
+                </p>
+              </>
+            ) : (
+              <p className="text-lg font-mono text-muted-foreground">—</p>
+            )}
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground mb-1">Retrace range</p>
+            {stats.min_retrace_pct != null && stats.max_retrace_pct != null ? (
+              <>
+                <p className="text-sm font-mono">
+                  <span className={pctColor(stats.max_retrace_pct)}>
+                    {fmtPct(stats.max_retrace_pct)}
+                  </span>
+                  {' → '}
+                  <span className={pctColor(stats.min_retrace_pct)}>
+                    {fmtPct(stats.min_retrace_pct)}
+                  </span>
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">best → worst</p>
+              </>
+            ) : (
+              <p className="text-lg font-mono text-muted-foreground">—</p>
+            )}
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground mb-1">Avg duration</p>
+            <p className="text-lg font-mono font-bold">{stats.avg_duration_hours.toFixed(1)}h</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              med {stats.median_duration_hours.toFixed(1)}h
+            </p>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function EpisodesCard({ episodes }: { episodes: TokenEpisode[] }) {
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+          Pump episodes · {episodes.length} recorded
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="p-0">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[560px] text-sm">
+            <thead>
+              <tr className="border-b text-xs text-muted-foreground">
+                <th className="px-4 py-2 text-left">#</th>
+                <th className="px-4 py-2 text-left">First seen</th>
+                <th className="px-4 py-2 text-left">Ended</th>
+                <th className="px-4 py-2 text-right">Peak</th>
+                <th className="px-4 py-2 text-right">Retrace</th>
+                <th className="px-4 py-2 text-center">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {episodes.map((ep) => (
+                <tr key={ep.episode} className="border-b last:border-0">
+                  <td className="px-4 py-3 font-mono text-muted-foreground">{ep.episode}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{fmtTs(ep.first_seen_at)}</td>
+                  <td className="px-4 py-3 text-muted-foreground">
+                    {ep.closed_at ? fmtTs(ep.closed_at) : '—'}
+                  </td>
+                  <td
+                    className={`px-4 py-3 text-right font-mono font-bold ${pctColor(ep.peak_pct)}`}
+                  >
+                    {fmtPct(ep.peak_pct)}
+                  </td>
+                  <td className="px-4 py-3 text-right font-mono text-muted-foreground">
+                    {ep.retrace_pct != null ? fmtPct(ep.retrace_pct) : '—'}
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    {ep.is_live ? (
+                      <span className="text-xs font-medium text-green-400">LIVE</span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">closed</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function PriceChart({
+  ohlcv,
+  isFetching,
+  chartInterval,
+  onIntervalChange,
+}: {
+  ohlcv: OHLCVResponse | undefined;
+  isFetching: boolean;
+  chartInterval: number;
+  onIntervalChange: (minutes: number) => void;
+}) {
+  type ChartApi = ReturnType<typeof createChart>;
+  type SeriesApi = ReturnType<ChartApi['addSeries']>;
+
   const chartContainerRef = useRef<HTMLDivElement>(null);
-  const selectedInterval = INTERVALS.find((i) => i.minutes === chartInterval) ?? INTERVALS[1];
+  const chartRef = useRef<ChartApi | null>(null);
+  const seriesRef = useRef<SeriesApi | null>(null);
+  const selectedInterval = getInterval(chartInterval);
 
-  useEffect(() => {
-    if (!base) return;
-
-    setPump(null);
-    setEpisodes([]);
-    setSignals(null);
-    setStats(null);
-    setDetailsLoading(true);
-
-    const controller = new AbortController();
-    const encoded = encodeURIComponent(base);
-
-    const loadDetails = async () => {
-      try {
-        const [pumpRes, historyRes, signalsRes] = await Promise.all([
-          window.fetch(`/api/pumps/${encoded}`, { signal: controller.signal }),
-          window.fetch(`/api/pumps/${encoded}/history`, { signal: controller.signal }),
-          window.fetch(`/api/pumps/${encoded}/signals`, { signal: controller.signal }),
-        ]);
-        if (pumpRes.ok) setPump((await pumpRes.json()) as PumpEntry);
-        if (historyRes.ok) setEpisodes((await historyRes.json()) as TokenEpisode[]);
-        // 404 = no open episode — card simply won't render
-        if (signalsRes.ok) setSignals((await signalsRes.json()) as SignalsResponse);
-      } catch (err) {
-        if (err instanceof Error && err.name === 'AbortError') return;
-      } finally {
-        setDetailsLoading(false);
-      }
-    };
-
-    // Stats are non-critical aggregates — fetched in parallel but don't gate the main render.
-    const loadStats = async () => {
-      try {
-        const res = await window.fetch(`/api/pumps/${encoded}/stats`, {
-          signal: controller.signal,
-        });
-        // 404 = no closed episodes yet — card simply won't render
-        if (res.ok) setStats((await res.json()) as TokenStats);
-      } catch (err) {
-        if (err instanceof Error && err.name === 'AbortError') return;
-      }
-    };
-
-    void loadDetails();
-    void loadStats();
-    return () => controller.abort();
-  }, [base]);
-
-  useEffect(() => {
-    if (!base) return;
-
-    setOHLCV(null);
-    setChartLoading(true);
-
-    const controller = new AbortController();
-    const encoded = encodeURIComponent(base);
-
-    const loadChart = async () => {
-      try {
-        const res = await window.fetch(
-          `/api/pumps/${encoded}/ohlcv?interval=${selectedInterval.minutes}&limit=${selectedInterval.limit}`,
-          { signal: controller.signal },
-        );
-        if (res.ok) setOHLCV((await res.json()) as OHLCVResponse);
-      } catch (err) {
-        if (err instanceof Error && err.name === 'AbortError') return;
-      } finally {
-        setChartLoading(false);
-      }
-    };
-
-    void loadChart();
-    return () => controller.abort();
-  }, [base, selectedInterval.limit, selectedInterval.minutes]);
-
+  // Create chart and series once on mount; destroy on unmount.
   useEffect(() => {
     const container = chartContainerRef.current;
-    if (!container || !ohlcv?.candles.length) return;
+    if (!container) return;
 
     const chart = createChart(container, {
       layout: {
@@ -315,7 +352,32 @@ export function TokenPage() {
       wickDownColor: '#ef4444',
     });
 
-    series.setData(
+    chartRef.current = chart;
+    seriesRef.current = series;
+
+    return () => {
+      chart.remove();
+      chartRef.current = null;
+      seriesRef.current = null;
+    };
+  }, []);
+
+  // Update data without recreating the chart — preserves user pan/zoom.
+  useEffect(() => {
+    if (!seriesRef.current || !ohlcv?.candles.length) return;
+
+    const minPrice = Math.min(...ohlcv.candles.map((c) => c.low));
+    const priceFormat =
+      minPrice >= 100
+        ? { precision: 2, minMove: 0.01 }
+        : minPrice >= 1
+          ? { precision: 4, minMove: 0.0001 }
+          : minPrice >= 0.01
+            ? { precision: 6, minMove: 0.000001 }
+            : { precision: 8, minMove: 0.00000001 };
+
+    seriesRef.current.applyOptions({ priceFormat });
+    seriesRef.current.setData(
       ohlcv.candles.map((c) => ({
         time: c.time as UTCTimestamp,
         open: c.open,
@@ -324,12 +386,69 @@ export function TokenPage() {
         close: c.close,
       })),
     );
-    chart.timeScale().fitContent();
-
-    return () => {
-      chart.remove();
-    };
+    chartRef.current?.timeScale().fitContent();
   }, [ohlcv]);
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+            Price chart
+            {ohlcv && ` · ${ohlcv.exchange}`}
+            {` · ${selectedInterval.label} · ${selectedInterval.range}`}
+            {isFetching && <span className="ml-1 opacity-40">↻</span>}
+          </CardTitle>
+          <div className="flex gap-1">
+            {INTERVALS.map((iv) => (
+              <button
+                key={iv.minutes}
+                type="button"
+                onClick={() => onIntervalChange(iv.minutes)}
+                className={`px-2 py-0.5 text-xs rounded font-mono transition-colors ${
+                  chartInterval === iv.minutes
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {iv.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="p-0 pb-2">
+        {/* Container is always mounted so lightweight-charts never unmounts mid-render */}
+        <div className="relative h-[380px] w-full">
+          <div ref={chartContainerRef} className="absolute inset-0" />
+          {isFetching && !ohlcv && (
+            <p className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground animate-pulse">
+              Loading chart...
+            </p>
+          )}
+          {!isFetching && !ohlcv?.candles.length && (
+            <p className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
+              Chart unavailable
+            </p>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+export function TokenPage() {
+  const { base } = useParams<{ base: string }>();
+  const [chartInterval, setChartInterval] = useState(15);
+
+  const { data: pump, isPending: pumpPending } = useToken(base);
+  const { data: episodes = [], isPending: episodesPending } = useTokenEpisodes(base);
+  const { data: signals } = useTokenSignals(base);
+  const { data: stats } = useTokenStats(base);
+  const { data: ohlcv, isFetching: chartFetching } = useOHLCV(base, chartInterval);
+
+  const detailsLoading = pumpPending || episodesPending;
+  const notFound = !detailsLoading && !pump && episodes.length === 0;
 
   return (
     <div className="min-h-screen bg-background">
@@ -344,10 +463,7 @@ export function TokenPage() {
         </Link>
 
         {detailsLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
-
-        {!detailsLoading && !chartLoading && !pump && !ohlcv && episodes.length === 0 && (
-          <p className="text-sm text-muted-foreground">Token not found.</p>
-        )}
+        {notFound && <p className="text-sm text-muted-foreground">Token not found.</p>}
 
         {(pump ?? ohlcv) && (
           <div>
@@ -363,126 +479,21 @@ export function TokenPage() {
               {pump
                 ? `Active on ${pump.exchanges.length} exchange${pump.exchanges.length !== 1 ? 's' : ''}`
                 : 'No longer in pump list'}
-              {ohlcv && ` · ${selectedInterval.label} chart via ${ohlcv.exchange}`}
+              {ohlcv && ` · ${getInterval(chartInterval).label} chart via ${ohlcv.exchange}`}
             </p>
           </div>
         )}
 
-        <Card>
-          <CardHeader className="pb-2">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-                Price chart
-                {ohlcv && ` · ${ohlcv.exchange}`}
-                {` · ${selectedInterval.label} · ${selectedInterval.range}`}
-              </CardTitle>
-              <div className="flex gap-1">
-                {INTERVALS.map((iv) => (
-                  <button
-                    key={iv.minutes}
-                    type="button"
-                    onClick={() => setChartInterval(iv.minutes)}
-                    className={`px-2 py-0.5 text-xs rounded font-mono transition-colors ${
-                      chartInterval === iv.minutes
-                        ? 'bg-primary text-primary-foreground'
-                        : 'text-muted-foreground hover:text-foreground'
-                    }`}
-                  >
-                    {iv.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="p-0 pb-2">
-            <div className="relative h-[380px] w-full">
-              {chartLoading ? (
-                <p className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground animate-pulse">
-                  Loading chart...
-                </p>
-              ) : ohlcv?.candles.length ? (
-                <div ref={chartContainerRef} className="absolute inset-0" />
-              ) : (
-                <p className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
-                  Chart unavailable
-                </p>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+        {!notFound && (
+          <PriceChart
+            ohlcv={ohlcv}
+            isFetching={chartFetching}
+            chartInterval={chartInterval}
+            onIntervalChange={setChartInterval}
+          />
+        )}
 
-        {signals &&
-          (() => {
-            const v = VERDICT_STYLES[signals.verdict] ?? VERDICT_STYLES['insufficient_data'];
-            const scorePct = (signals.score / signals.max_score) * 100;
-            return (
-              <Card>
-                <CardHeader className="pb-2">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-                      Short Readiness
-                    </CardTitle>
-                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${v.badge}`}>
-                      {v.label}
-                    </span>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex items-baseline gap-1">
-                    <span className="text-3xl font-bold font-mono">{signals.score}</span>
-                    <span className="text-lg text-muted-foreground">/ {signals.max_score}</span>
-                  </div>
-                  <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all duration-500 ${v.bar}`}
-                      style={{ width: `${scorePct}%` }}
-                    />
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full min-w-[480px] text-sm">
-                      <thead>
-                        <tr className="border-b text-xs text-muted-foreground">
-                          <th className="px-0 py-2 text-left font-normal">Signal</th>
-                          <th className="px-4 py-2 text-right font-normal">Points</th>
-                          <th className="px-4 py-2 text-left font-normal">Detail</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {COMPONENT_ROWS.map(({ key, label }) => {
-                          const c = signals.components[key];
-                          return (
-                            <tr key={key} className="border-b last:border-0">
-                              <td className="px-0 py-2.5 font-medium">{label}</td>
-                              <td className="px-4 py-2.5">
-                                <div className="flex justify-end">
-                                  <PointsDots points={c.points} max={c.max} />
-                                </div>
-                              </td>
-                              <td className="px-4 py-2.5 text-muted-foreground text-xs">
-                                {c.note}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                  {(!signals.data_quality.oi || !signals.data_quality.funding) && (
-                    <p className="text-xs text-muted-foreground">
-                      ⚠ Data unavailable:{' '}
-                      {[
-                        !signals.data_quality.oi && 'OI',
-                        !signals.data_quality.funding && 'Funding',
-                      ]
-                        .filter(Boolean)
-                        .join(', ')}
-                      {' — affected components defaulted to 0 pts'}
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
-            );
-          })()}
+        {signals && <SignalsCard signals={signals} />}
 
         {pump && pump.exchanges.length > 0 && (
           <Card>
@@ -530,145 +541,9 @@ export function TokenPage() {
           </Card>
         )}
 
-        {episodes.length > 0 && (
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-                Pump episodes · {episodes.length} recorded
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[560px] text-sm">
-                  <thead>
-                    <tr className="border-b text-xs text-muted-foreground">
-                      <th className="px-4 py-2 text-left">#</th>
-                      <th className="px-4 py-2 text-left">First seen</th>
-                      <th className="px-4 py-2 text-left">Ended</th>
-                      <th className="px-4 py-2 text-right">Peak</th>
-                      <th className="px-4 py-2 text-right">Retrace</th>
-                      <th className="px-4 py-2 text-center">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {episodes.map((ep) => (
-                      <tr key={ep.episode} className="border-b last:border-0">
-                        <td className="px-4 py-3 font-mono text-muted-foreground">{ep.episode}</td>
-                        <td className="px-4 py-3 text-muted-foreground">
-                          {fmtTs(ep.first_seen_at)}
-                        </td>
-                        <td className="px-4 py-3 text-muted-foreground">
-                          {ep.closed_at ? fmtTs(ep.closed_at) : '—'}
-                        </td>
-                        <td
-                          className={`px-4 py-3 text-right font-mono font-bold ${pctColor(ep.peak_pct)}`}
-                        >
-                          {fmtPct(ep.peak_pct)}
-                        </td>
-                        <td className="px-4 py-3 text-right font-mono text-muted-foreground">
-                          {ep.retrace_pct != null ? fmtPct(ep.retrace_pct) : '—'}
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          {ep.is_live ? (
-                            <span className="text-xs font-medium text-green-400">LIVE</span>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">closed</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-        )}
+        {episodes.length > 0 && <EpisodesCard episodes={episodes} />}
 
-        {stats && (
-          <Card>
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-                  Historical stats · {stats.episode_count} episodes
-                </CardTitle>
-                <span
-                  className={`rounded px-2 py-0.5 text-xs font-medium ${CONFIDENCE_STYLES[stats.confidence]}`}
-                >
-                  {stats.confidence} confidence
-                </span>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 gap-6 sm:grid-cols-4">
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Avg peak</p>
-                  <p className={`text-lg font-mono font-bold ${pctColor(stats.avg_peak_pct)}`}>
-                    {fmtPct(stats.avg_peak_pct)}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    med {fmtPct(stats.median_peak_pct)}
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">
-                    Avg retrace{' '}
-                    {stats.retrace_count < stats.episode_count && (
-                      <span className="text-yellow-500">
-                        ({stats.retrace_count}/{stats.episode_count})
-                      </span>
-                    )}
-                  </p>
-                  {stats.avg_retrace_pct != null ? (
-                    <>
-                      <p
-                        className={`text-lg font-mono font-bold ${pctColor(stats.avg_retrace_pct)}`}
-                      >
-                        {fmtPct(stats.avg_retrace_pct)}
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        med{' '}
-                        {stats.median_retrace_pct != null ? fmtPct(stats.median_retrace_pct) : '—'}
-                      </p>
-                    </>
-                  ) : (
-                    <p className="text-lg font-mono text-muted-foreground">—</p>
-                  )}
-                </div>
-
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Retrace range</p>
-                  {stats.min_retrace_pct != null && stats.max_retrace_pct != null ? (
-                    <>
-                      <p className="text-sm font-mono">
-                        <span className={pctColor(stats.max_retrace_pct)}>
-                          {fmtPct(stats.max_retrace_pct)}
-                        </span>
-                        {' → '}
-                        <span className={pctColor(stats.min_retrace_pct)}>
-                          {fmtPct(stats.min_retrace_pct)}
-                        </span>
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-0.5">best → worst</p>
-                    </>
-                  ) : (
-                    <p className="text-lg font-mono text-muted-foreground">—</p>
-                  )}
-                </div>
-
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Avg duration</p>
-                  <p className="text-lg font-mono font-bold">
-                    {stats.avg_duration_hours.toFixed(1)}h
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    med {stats.median_duration_hours.toFixed(1)}h
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
+        {stats && <StatsCard stats={stats} />}
 
         {!detailsLoading && pump && !stats && (
           <Card className="border-dashed">

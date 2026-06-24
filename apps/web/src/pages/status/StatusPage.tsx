@@ -65,6 +65,13 @@ export function StatusPage() {
     },
   });
 
+  // When WS drops, clear stale statuses so we don't show ghost "up" state.
+  useEffect(() => {
+    if (wsStatus === 'disconnected' || wsStatus === 'error') {
+      setServices(INITIAL_STATE);
+    }
+  }, [wsStatus]);
+
   // Poll via REST when WebSocket is not connected
   useEffect(() => {
     if (wsStatus === 'connected') return;
@@ -76,9 +83,11 @@ export function StatusPage() {
           const data = (await res.json()) as Partial<ServiceState>;
           setServices((prev) => ({ ...prev, ...data }));
           setLastUpdated(new Date());
+        } else {
+          setServices(INITIAL_STATE);
         }
       } catch {
-        // api-gateway not reachable
+        setServices(INITIAL_STATE);
       }
     };
 

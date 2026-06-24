@@ -1,11 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { RefreshCw, WifiOff } from 'lucide-react';
 import { Nav } from '@/components/Nav';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { pumpsCache } from '@/lib/pumpsCache';
-import type { ExchangeEntry, PumpsResponse, HistoryEntry } from './types';
+import { usePumps, usePumpsHistory } from '@/hooks/usePumpsData';
+import type { ExchangeEntry } from './types';
 
 function fmtPct(n: number) {
   return `+${n.toFixed(1)}%`;
@@ -30,6 +29,27 @@ function timeAgo(sec: number) {
   return `${Math.floor(diff / 3600)}h ago`;
 }
 
+function fmtPrice(n: number): string {
+  if (n === 0) return '—';
+  if (n >= 1000) return `$${n.toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
+  if (n >= 1) return `$${n.toFixed(4)}`;
+  if (n >= 0.0001) return `$${n.toFixed(6)}`;
+  return `$${n.toPrecision(4)}`;
+}
+
+function topPrice(exchanges: ExchangeEntry[]): number {
+  let best = 0;
+  let bestVol = -1;
+  for (const e of exchanges) {
+    const p = parseFloat(e.price);
+    if (p > 0 && e.volume_24h_usd > bestVol) {
+      best = p;
+      bestVol = e.volume_24h_usd;
+    }
+  }
+  return best;
+}
+
 function high24hPct(exchanges: ExchangeEntry[]): number {
   let max = 0;
   for (const e of exchanges) {
@@ -45,53 +65,17 @@ function high24hPct(exchanges: ExchangeEntry[]): number {
 }
 
 export function PumpsPage() {
-  const cached = pumpsCache.get();
-  const [data, setData] = useState<PumpsResponse | null>(cached ? cached.live : null);
-  const [history, setHistory] = useState<HistoryEntry[]>(cached ? cached.history : []);
-  const [offline, setOffline] = useState(false);
-  const initialized = useRef(cached !== null);
-  const [loading, setLoading] = useState(cached === null);
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(cached ? new Date() : null);
-
-  const load = async () => {
-    try {
-      const [liveRes, histRes] = await Promise.all([
-        window.fetch('/api/pumps'),
-        window.fetch('/api/pumps/history'),
-      ]);
-      const live = liveRes.ok ? ((await liveRes.json()) as PumpsResponse) : null;
-      const hist = histRes.ok ? ((await histRes.json()) as HistoryEntry[]) : null;
-      if (live) {
-        setData(live);
-        setHistory((prev) => {
-          const next = hist ?? prev;
-          pumpsCache.set({ live, history: next });
-          return next;
-        });
-      }
-      setLastUpdated(new Date());
-      setOffline(false);
-    } catch {
-      setOffline(true);
-    } finally {
-      initialized.current = true;
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    void load();
-    const id = setInterval(() => void load(), 60_000);
-    return () => clearInterval(id);
-  }, []);
+  const { data, isError, isFetching, dataUpdatedAt } = usePumps();
+  const { data: history = [] } = usePumpsHistory();
 
   const pumps = data?.pumps ?? [];
   const liveSet = new Set(pumps.map((p) => p.base));
   const historical = history.filter((h) => !liveSet.has(h.base));
   const hasAny = pumps.length > 0 || historical.length > 0;
+  const lastUpdated = dataUpdatedAt ? new Date(dataUpdatedAt) : null;
 
-  // "No pumps" only shows after first successful response with actually empty data
-  const showEmpty = !loading && initialized.current && data !== null && !hasAny;
+  // Show empty only after first successful response with empty data, never alongside error banner
+  const showEmpty = !isFetching && !isError && data !== undefined && !hasAny;
 
   return (
     <div className="min-h-screen bg-background">
@@ -105,26 +89,26 @@ export function PumpsPage() {
             </p>
           </div>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            {offline ? (
+            {isError ? (
               <>
                 <WifiOff className="h-3 w-3 text-red-400" />
                 <span className="text-red-400">API offline</span>
                 {lastUpdated && (
                   <span className="text-muted-foreground/60">
-                    · last seen {lastUpdated.toLocaleTimeString()}
+                    · last seen {lastUpdated.toLocaleTimeString('en-US')}
                   </span>
                 )}
               </>
             ) : (
               <>
-                <RefreshCw className="h-3 w-3" />
-                {lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString()}` : 'Loading...'}
+                <RefreshCw className={`h-3 w-3 ${isFetching ? 'animate-spin' : ''}`} />
+                {lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString('en-US')}` : 'Loading...'}
               </>
             )}
           </div>
         </div>
 
-        {loading && <p className="text-sm text-muted-foreground">Fetching pumps...</p>}
+        {!data && !isError && <p className="text-sm text-muted-foreground">Fetching pumps...</p>}
 
         {showEmpty && (
           <Card>
@@ -151,6 +135,7 @@ export function PumpsPage() {
                       <th className="px-4 py-2 text-left">Token</th>
                       <th className="px-4 py-2 text-right">Peak 24h</th>
                       <th className="px-4 py-2 text-right">Now</th>
+                      <th className="px-4 py-2 text-right">Price</th>
                       <th className="px-4 py-2 text-left">Exchanges</th>
                       <th className="px-4 py-2 text-right">Volume</th>
                     </tr>
@@ -186,6 +171,9 @@ export function PumpsPage() {
                             className={`px-4 py-3 text-right font-mono ${pctColor(p.max_change_pct)}`}
                           >
                             {fmtPct(p.max_change_pct)}
+                          </td>
+                          <td className="px-4 py-3 text-right font-mono text-sm">
+                            {fmtPrice(topPrice(p.exchanges))}
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex flex-wrap gap-1">
@@ -233,6 +221,9 @@ export function PumpsPage() {
                           </td>
                           <td className="px-4 py-3 text-right font-mono text-muted-foreground">
                             {fmtPct(h.last_pct)}
+                          </td>
+                          <td className="px-4 py-3 text-right font-mono text-sm text-muted-foreground">
+                            {fmtPrice(topPrice(h.exchanges))}
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex flex-wrap gap-1">
