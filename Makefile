@@ -150,10 +150,12 @@ verify:
 	@echo "=== [1/5] uv lock check ==="
 	uv lock --check
 	@echo "=== [2/5] Python: ruff + mypy + pytest ==="
-	uv run --extra dev ruff check apps/analytics packages
+	uv run --extra dev ruff check apps/analytics apps/execution packages
 	MYPYPATH=apps/analytics:packages/journal uv run --extra dev --with sqlalchemy --with psycopg mypy apps/analytics/schurfer_analytics apps/analytics/tests packages/journal/schurfer_journal
+	uv run --extra dev --all-packages mypy apps/execution/schurfer_execution
 	uv run --extra dev --with ccxt --with redis --with structlog --with "psycopg[binary]" pytest apps/analytics -q
 	uv run --extra dev --with sqlalchemy --with alembic --with "psycopg[binary]" pytest packages/journal -q
+	uv run --extra dev --all-packages pytest apps/execution/tests -q
 	@echo "=== [3/5] Go: test + vet ==="
 	go test ./apps/api-gateway/... ./apps/collector/... ./apps/notifier/...
 	go vet ./apps/api-gateway/... ./apps/collector/... ./apps/notifier/...
@@ -170,4 +172,8 @@ verify-docker: verify
 	docker build -f apps/analytics/Dockerfile -t schurfer-analytics:ci . -q
 	docker run --rm --entrypoint python schurfer-analytics:ci -c "import schurfer_analytics; print('ok')"
 	@docker rmi schurfer-analytics:ci --force > /dev/null
+	@echo "=== Docker: execution build + import check ==="
+	docker build -f apps/execution/Dockerfile -t schurfer-execution:ci . -q
+	docker run --rm --entrypoint python schurfer-execution:ci -c "import schurfer_execution; print('ok')"
+	@docker rmi schurfer-execution:ci --force > /dev/null
 	@echo "=== verify-docker passed ==="
