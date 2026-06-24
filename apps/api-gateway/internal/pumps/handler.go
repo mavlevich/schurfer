@@ -577,6 +577,7 @@ type signalsResponse struct {
 	Verdict     string            `json:"verdict"`
 	Score       int               `json:"score"`
 	MaxScore    int               `json:"max_score"`
+	ComputedAt  int64             `json:"computed_at"` // Unix seconds — used by trader for freshness check
 	Episode     signalEpisode     `json:"episode"`
 	Components  signalComponents  `json:"components"`
 	DataQuality signalDataQuality `json:"data_quality"`
@@ -791,24 +792,17 @@ func (h *Handler) Stats(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Signals returns a composite short-readiness score for a token's active pump
-// episode. 404 if no open episode exists — signals only apply to live pumps.
-// Score 0-10 from five components: pump age, price extent, OI trend, funding
-// rate, and retrace from peak. Verdict: pumping / cooling_off / short_setup /
-// prime_short / insufficient_data (when both OI and funding queries failed).
-func (h *Handler) Signals(w http.ResponseWriter, r *http.Request) {
-	base := strings.ToUpper(chi.URLParam(r, "base"))
-	if !validBase.MatchString(base) {
-		http.Error(w, "invalid token", http.StatusBadRequest)
-		return
-	}
+const signalsCacheKey = "signals:"
+const signalsCacheTTL = 2 * time.Minute
 
-	// Only score open episodes — age on a closed episode is meaningless for
-	// a forward-looking trade signal.
+// computeSignals queries the DB for an open pump episode and scores it.
+// Returns (result, false, nil) on success, (_, true, nil) when no open episode
+// exists, or (_, false, err) on a DB error.
+func (h *Handler) computeSignals(ctx context.Context, base string) (signalsResponse, bool, error) {
 	var eventID int64
 	var firstSeenAtUnix int64
 	var peakPct, lastPct float64
-	err := h.pool.QueryRow(r.Context(),
+	err := h.pool.QueryRow(ctx,
 		`SELECT id, extract(epoch from first_seen_at)::bigint, peak_pct, last_pct
 		 FROM app.pump_events
 		 WHERE base = $1 AND closed_at IS NULL
@@ -816,13 +810,10 @@ func (h *Handler) Signals(w http.ResponseWriter, r *http.Request) {
 		base,
 	).Scan(&eventID, &firstSeenAtUnix, &peakPct, &lastPct)
 	if errors.Is(err, pgx.ErrNoRows) {
-		http.Error(w, "no open pump episode", http.StatusNotFound)
-		return
+		return signalsResponse{}, true, nil
 	}
 	if err != nil {
-		slog.Error("pumps.signals.episode_query", "base", base, "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
+		return signalsResponse{}, false, err
 	}
 
 	ageHours := math.Round(time.Since(time.Unix(firstSeenAtUnix, 0)).Hours()*100) / 100
@@ -835,11 +826,9 @@ func (h *Handler) Signals(w http.ResponseWriter, r *http.Request) {
 		IsOpen:      true,
 	}
 
-	// Latest total OI (DISTINCT ON exchange, most recent row per exchange, summed).
-	// COUNT(*) distinguishes "no snapshot rows" (count=0) from a real zero-OI result.
 	var currentOI float64
 	var currentOICount int
-	oiCurrentOK := h.pool.QueryRow(r.Context(),
+	oiCurrentOK := h.pool.QueryRow(ctx,
 		`SELECT COALESCE(SUM(oi_usd), 0), COUNT(*) FROM (
 		   SELECT DISTINCT ON (exchange) oi_usd
 		   FROM app.oi_snapshots WHERE event_id = $1
@@ -848,10 +837,9 @@ func (h *Handler) Signals(w http.ResponseWriter, r *http.Request) {
 		eventID,
 	).Scan(&currentOI, &currentOICount) == nil && currentOICount > 0
 
-	// Earliest total OI per exchange — baseline at episode start.
 	var baselineOI float64
 	var baselineOICount int
-	oiBaselineOK := h.pool.QueryRow(r.Context(),
+	oiBaselineOK := h.pool.QueryRow(ctx,
 		`SELECT COALESCE(SUM(oi_usd), 0), COUNT(*) FROM (
 		   SELECT DISTINCT ON (exchange) oi_usd
 		   FROM app.oi_snapshots WHERE event_id = $1
@@ -866,11 +854,9 @@ func (h *Handler) Signals(w http.ResponseWriter, r *http.Request) {
 			"current_ok", oiCurrentOK, "baseline_ok", oiBaselineOK)
 	}
 
-	// Max funding rate across exchanges (latest rate per exchange).
-	// COUNT(*) ensures quality=false when no funding snapshots exist yet.
 	var maxFunding float64
 	var fundingCount int
-	fundingOK := h.pool.QueryRow(r.Context(),
+	fundingOK := h.pool.QueryRow(ctx,
 		`SELECT COALESCE(MAX(rate), 0), COUNT(*) FROM (
 		   SELECT DISTINCT ON (exchange) rate
 		   FROM app.funding_rate_snapshots WHERE event_id = $1
@@ -889,14 +875,59 @@ func (h *Handler) Signals(w http.ResponseWriter, r *http.Request) {
 		verdict = "insufficient_data"
 	}
 
-	out := signalsResponse{
+	return signalsResponse{
 		Base:        base,
 		Verdict:     verdict,
 		Score:       score,
 		MaxScore:    signalMaxScore,
+		ComputedAt:  time.Now().Unix(),
 		Episode:     ep,
 		Components:  components,
 		DataQuality: signalDataQuality{OI: oiOK, Funding: fundingOK},
+	}, false, nil
+}
+
+// CacheSignals computes the signal score for base and writes it to Redis.
+// When no open episode exists the stale key is deleted so trader cannot act on it.
+func (h *Handler) CacheSignals(ctx context.Context, base string) error {
+	base = strings.ToUpper(base)
+	if !validBase.MatchString(base) {
+		return nil
+	}
+	out, notFound, err := h.computeSignals(ctx, base)
+	if err != nil {
+		return err
+	}
+	if notFound {
+		return h.rdb.Del(ctx, signalsCacheKey+base).Err()
+	}
+	data, err := json.Marshal(out)
+	if err != nil {
+		return err
+	}
+	return h.rdb.Set(ctx, signalsCacheKey+base, data, signalsCacheTTL).Err()
+}
+
+// Signals returns a composite short-readiness score for a token's active pump
+// episode. 404 if no open episode exists — signals only apply to live pumps.
+// Score 0-10 from five components: pump age, price extent, OI trend, funding
+// rate, and retrace from peak. Verdict: pumping / cooling_off / short_setup /
+// prime_short / insufficient_data (when both OI and funding queries failed).
+func (h *Handler) Signals(w http.ResponseWriter, r *http.Request) {
+	base := strings.ToUpper(chi.URLParam(r, "base"))
+	if !validBase.MatchString(base) {
+		http.Error(w, "invalid token", http.StatusBadRequest)
+		return
+	}
+	out, notFound, err := h.computeSignals(r.Context(), base)
+	if notFound {
+		http.Error(w, "no open pump episode", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		slog.Error("pumps.signals.episode_query", "base", base, "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)

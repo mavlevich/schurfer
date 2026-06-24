@@ -72,3 +72,17 @@ class Config:
     take_profit_pct: float = field(default_factory=lambda: _float("TAKE_PROFIT_PCT", 15.0))
     stop_loss_pct: float = field(default_factory=lambda: _float("STOP_LOSS_PCT", 5.0))
     max_hold_minutes: int = field(default_factory=lambda: _int("MAX_HOLD_MINUTES", 60))
+
+    # Signal trader — set AUTO_TRADE=true and SIGNAL_POSITION_USD>0 to enable.
+    # Scores are read from Redis (signals:{base}) — written by the api-gateway ticker.
+    auto_trade: bool = field(default_factory=lambda: _bool("AUTO_TRADE", False))
+    signal_position_usd: float = field(default_factory=lambda: _float("SIGNAL_POSITION_USD", 50.0))
+    signal_leverage: int = field(default_factory=lambda: _int("SIGNAL_LEVERAGE", 3))
+
+    def __post_init__(self) -> None:
+        if not self.auto_trade:
+            return
+        if self.signal_position_usd <= 0:
+            raise ValueError(f"SIGNAL_POSITION_USD must be > 0, got {self.signal_position_usd}")
+        if not 1 <= self.signal_leverage <= 125:
+            raise ValueError(f"SIGNAL_LEVERAGE must be 1-125, got {self.signal_leverage}")

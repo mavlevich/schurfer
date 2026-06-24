@@ -14,6 +14,7 @@ from .exchanges import build_exchanges, close_exchanges
 from .monitor import run_position_monitor
 from .routers import account, control, orders
 from .tracker import run_pnl_tracker
+from .trader import run_signal_trader
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
@@ -41,15 +42,21 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     tracker = asyncio.create_task(run_pnl_tracker(exchanges, rdb))
     monitor = asyncio.create_task(run_position_monitor(exchanges, rdb, cfg))
-    log.info("execution.start", exchanges=list(exchanges.keys()))
+    trader = asyncio.create_task(run_signal_trader(exchanges, rdb, cfg)) if cfg.auto_trade else None
+    log.info("execution.start", exchanges=list(exchanges.keys()), auto_trade=cfg.auto_trade)
     yield
 
     tracker.cancel()
     monitor.cancel()
+    if trader:
+        trader.cancel()
     with contextlib.suppress(asyncio.CancelledError):
         await tracker
     with contextlib.suppress(asyncio.CancelledError):
         await monitor
+    if trader:
+        with contextlib.suppress(asyncio.CancelledError):
+            await trader
     await close_exchanges(exchanges)
     await rdb.aclose()
 
