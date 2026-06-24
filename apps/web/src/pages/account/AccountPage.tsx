@@ -1,59 +1,18 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Play, Square } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Nav } from '@/components/Nav';
-
-interface Balance {
-  exchange: string;
-  wallet: string;
-  asset: string;
-  tradeable: boolean;
-  free: number;
-  used: number;
-  total: number;
-  usd_value: number;
-}
+import { useBalance, usePositions, useRisk } from '@/hooks/useAccountData';
+import type { Balance } from '@/hooks/useAccountData';
 
 interface WalletRow {
   exchange: string;
   wallet: string;
   tradeable: boolean;
   usd_total: number;
-}
-
-interface BalanceData {
-  balances: Balance[];
-  total_usd: number;
-  total_usd_all: number;
-  failed_exchanges: string[];
-}
-
-interface Position {
-  exchange: string;
-  symbol: string;
-  base: string;
-  side: string;
-  size_usd: number;
-  entry_price: number;
-  unrealized_pnl: number;
-  leverage: number;
-  liquidation_price: number | null;
-}
-
-interface PositionsData {
-  positions: Position[];
-  count: number;
-}
-
-interface RiskData {
-  trading_enabled: boolean;
-  open_positions: number;
-  max_positions: number;
-  slots_free: number;
-  daily_pnl_usd: number;
-  daily_loss_limit_usd: number;
 }
 
 function usd(n: number, digits = 2): string {
@@ -63,45 +22,52 @@ function usd(n: number, digits = 2): string {
   });
 }
 
+function walletLabel(wallet: string) {
+  if (wallet === 'spot') return 'Spot';
+  if (wallet === 'fund') return 'Funding';
+  return 'Futures';
+}
+
+function aggregateWallets(balances: Balance[]): WalletRow[] {
+  const map = new Map<string, WalletRow>();
+  for (const b of balances) {
+    const key = `${b.exchange}-${b.wallet}`;
+    const existing = map.get(key);
+    if (existing) {
+      existing.usd_total += b.usd_value;
+    } else {
+      map.set(key, {
+        exchange: b.exchange,
+        wallet: b.wallet,
+        tradeable: b.tradeable,
+        usd_total: b.usd_value,
+      });
+    }
+  }
+  return Array.from(map.values());
+}
+
 export function AccountPage() {
-  const [balance, setBalance] = useState<BalanceData | null>(null);
-  const [positions, setPositions] = useState<PositionsData | null>(null);
-  const [risk, setRisk] = useState<RiskData | null>(null);
-  const [initialized, setInitialized] = useState(false);
-  const [unavailable, setUnavailable] = useState(false);
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const queryClient = useQueryClient();
   const [toggling, setToggling] = useState(false);
   const [toggleError, setToggleError] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
-    try {
-      const [balRes, posRes, riskRes] = await Promise.all([
-        fetch('/api/account/balance'),
-        fetch('/api/account/positions'),
-        fetch('/api/account/risk'),
-      ]);
-      if (!balRes.ok || !posRes.ok || !riskRes.ok) {
-        setUnavailable(true);
-        setInitialized(true);
-        return;
-      }
-      setBalance((await balRes.json()) as BalanceData);
-      setPositions((await posRes.json()) as PositionsData);
-      setRisk((await riskRes.json()) as RiskData);
-      setUnavailable(false);
-      setLastUpdated(new Date());
-    } catch {
-      setUnavailable(true);
-    } finally {
-      setInitialized(true);
-    }
-  }, []);
+  const { data: balance, isError: balanceError, dataUpdatedAt: balanceUpdatedAt } = useBalance();
+  const { data: positions, isError: positionsError } = usePositions();
+  const { data: risk, isError: riskError } = useRisk();
 
-  useEffect(() => {
-    void refresh();
-    const id = setInterval(() => void refresh(), 15_000);
-    return () => clearInterval(id);
-  }, [refresh]);
+  const unavailable = balanceError || positionsError || riskError;
+  const initialized = balance !== undefined || balanceError;
+  const lastUpdated = balanceUpdatedAt ? new Date(balanceUpdatedAt) : null;
+
+  const walletRows = useMemo<WalletRow[]>(
+    () => (balance ? aggregateWallets(balance.balances) : []),
+    [balance],
+  );
+
+  const lossRatio = risk
+    ? Math.min(1, Math.abs(Math.min(0, risk.daily_pnl_usd)) / risk.daily_loss_limit_usd)
+    : 0;
 
   async function toggleTrading() {
     if (!risk || toggling) return;
@@ -114,37 +80,13 @@ export function AccountPage() {
         setToggleError(`Request failed (${res.status})`);
         return;
       }
-      await refresh();
+      await queryClient.invalidateQueries({ queryKey: ['account'] });
     } catch {
       setToggleError('Request failed');
     } finally {
       setToggling(false);
     }
   }
-
-  const walletRows = useMemo<WalletRow[]>(() => {
-    if (!balance) return [];
-    const map = new Map<string, WalletRow>();
-    for (const b of balance.balances) {
-      const key = `${b.exchange}-${b.wallet}`;
-      const existing = map.get(key);
-      if (existing) {
-        existing.usd_total += b.usd_value;
-      } else {
-        map.set(key, {
-          exchange: b.exchange,
-          wallet: b.wallet,
-          tradeable: b.tradeable,
-          usd_total: b.usd_value,
-        });
-      }
-    }
-    return Array.from(map.values());
-  }, [balance]);
-
-  const lossRatio = risk
-    ? Math.min(1, Math.abs(Math.min(0, risk.daily_pnl_usd)) / risk.daily_loss_limit_usd)
-    : 0;
 
   return (
     <div className="min-h-screen bg-background">
@@ -160,7 +102,7 @@ export function AccountPage() {
             )}
             {lastUpdated && (
               <span className={`text-xs ${unavailable ? 'text-warning' : 'text-muted-foreground'}`}>
-                {lastUpdated.toLocaleTimeString()}
+                {lastUpdated.toLocaleTimeString('en-US')}
                 {unavailable && ' (stale)'}
               </span>
             )}
@@ -264,7 +206,7 @@ export function AccountPage() {
                   </thead>
                   <tbody className="divide-y divide-border">
                     {walletRows.map((w) => {
-                      const failed = balance.failed_exchanges.includes(w.exchange);
+                      const failed = (balance.failed_exchanges ?? []).includes(w.exchange);
                       return (
                         <tr
                           key={`${w.exchange}-${w.wallet}`}
@@ -278,11 +220,7 @@ export function AccountPage() {
                             <span
                               className={`text-xs ${w.tradeable ? 'text-foreground' : 'text-muted-foreground'}`}
                             >
-                              {w.wallet === 'spot'
-                                ? 'Spot'
-                                : w.wallet === 'fund'
-                                  ? 'Funding'
-                                  : 'Futures'}
+                              {walletLabel(w.wallet)}
                             </span>
                           </td>
                           <td
