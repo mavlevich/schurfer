@@ -21,6 +21,10 @@ def _cfg(*, score_threshold: int = 6) -> Config:
     cfg.max_positions = 5
     cfg.max_position_usd = 500.0
     cfg.daily_loss_limit_usd = 200.0
+    cfg.dry_run = False
+    cfg.db_url = None
+    cfg.telegram_bot_token = None
+    cfg.telegram_chat_id = None
     return cfg
 
 
@@ -134,6 +138,7 @@ async def test_fetch_score_returns_score_when_fresh() -> None:
 def test_config_validation_raises_when_auto_trade_and_bad_position_usd() -> None:
     cfg = object.__new__(Config)
     cfg.auto_trade = True
+    cfg.dry_run = False
     cfg.signal_position_usd = 0.0
     cfg.signal_leverage = 3
     with pytest.raises(ValueError, match="SIGNAL_POSITION_USD"):
@@ -143,6 +148,7 @@ def test_config_validation_raises_when_auto_trade_and_bad_position_usd() -> None
 def test_config_validation_raises_when_auto_trade_and_bad_leverage() -> None:
     cfg = object.__new__(Config)
     cfg.auto_trade = True
+    cfg.dry_run = False
     cfg.signal_position_usd = 50.0
     cfg.signal_leverage = 0
     with pytest.raises(ValueError, match="SIGNAL_LEVERAGE"):
@@ -152,9 +158,20 @@ def test_config_validation_raises_when_auto_trade_and_bad_leverage() -> None:
 def test_config_validation_skips_when_auto_trade_false() -> None:
     cfg = object.__new__(Config)
     cfg.auto_trade = False
+    cfg.dry_run = False
     cfg.signal_position_usd = 0.0  # would fail if auto_trade=True
     cfg.signal_leverage = 0  # would fail if auto_trade=True
     cfg.__post_init__()  # must not raise
+
+
+def test_config_validation_raises_when_auto_trade_and_dry_run_both_set() -> None:
+    cfg = object.__new__(Config)
+    cfg.auto_trade = True
+    cfg.dry_run = True
+    cfg.signal_position_usd = 50.0
+    cfg.signal_leverage = 3
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        cfg.__post_init__()
 
 
 # --- _tick ---

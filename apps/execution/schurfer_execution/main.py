@@ -12,6 +12,7 @@ from fastapi import FastAPI
 from .config import Config
 from .exchanges import build_exchanges, close_exchanges
 from .monitor import run_position_monitor
+from .paper import run_paper_monitor
 from .routers import account, control, orders
 from .tracker import run_pnl_tracker
 from .trader import run_signal_trader
@@ -42,14 +43,26 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     tracker = asyncio.create_task(run_pnl_tracker(exchanges, rdb))
     monitor = asyncio.create_task(run_position_monitor(exchanges, rdb, cfg))
-    trader = asyncio.create_task(run_signal_trader(exchanges, rdb, cfg)) if cfg.auto_trade else None
-    log.info("execution.start", exchanges=list(exchanges.keys()), auto_trade=cfg.auto_trade)
+    trader = (
+        asyncio.create_task(run_signal_trader(exchanges, rdb, cfg))
+        if cfg.auto_trade or cfg.dry_run
+        else None
+    )
+    paper = asyncio.create_task(run_paper_monitor(exchanges, rdb, cfg)) if cfg.dry_run else None
+    log.info(
+        "execution.start",
+        exchanges=list(exchanges.keys()),
+        auto_trade=cfg.auto_trade,
+        dry_run=cfg.dry_run,
+    )
     yield
 
     tracker.cancel()
     monitor.cancel()
     if trader:
         trader.cancel()
+    if paper:
+        paper.cancel()
     with contextlib.suppress(asyncio.CancelledError):
         await tracker
     with contextlib.suppress(asyncio.CancelledError):
@@ -57,6 +70,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     if trader:
         with contextlib.suppress(asyncio.CancelledError):
             await trader
+    if paper:
+        with contextlib.suppress(asyncio.CancelledError):
+            await paper
     await close_exchanges(exchanges)
     await rdb.aclose()
 

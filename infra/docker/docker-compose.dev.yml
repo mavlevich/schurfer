@@ -114,6 +114,7 @@ services:
     container_name: schurfer-execution
     environment:
       REDIS_ADDR: redis:6379
+      DATABASE_URL: postgresql://schurfer:schurfer_dev@postgres:5432/schurfer
       # Exchange API keys — add only the exchanges you have accounts on.
       BINANCE_API_KEY: ${BINANCE_API_KEY:-}
       BINANCE_API_SECRET: ${BINANCE_API_SECRET:-}
@@ -135,8 +136,22 @@ services:
       MAX_POSITIONS: ${MAX_POSITIONS:-5}
       MAX_POSITION_USD: ${MAX_POSITION_USD:-500}
       DAILY_LOSS_LIMIT_USD: ${DAILY_LOSS_LIMIT_USD:-200}
+      # Signal trader (both off by default — enable via .env)
+      AUTO_TRADE: ${AUTO_TRADE:-false}
+      DRY_RUN: ${DRY_RUN:-false}
+      SIGNAL_POSITION_USD: ${SIGNAL_POSITION_USD:-50}
+      SIGNAL_LEVERAGE: ${SIGNAL_LEVERAGE:-3}
+      SCORE_THRESHOLD: ${SCORE_THRESHOLD:-6}
+      TAKE_PROFIT_PCT: ${TAKE_PROFIT_PCT:-15}
+      STOP_LOSS_PCT: ${STOP_LOSS_PCT:-5}
+      MAX_HOLD_MINUTES: ${MAX_HOLD_MINUTES:-60}
+      # Telegram notifications (optional)
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
     depends_on:
       redis:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
     restart: unless-stopped
 
