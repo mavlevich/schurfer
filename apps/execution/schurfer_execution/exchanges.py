@@ -1,9 +1,26 @@
+from collections.abc import Callable
+
 import ccxt.async_support as ccxt
 import structlog
 
 from .config import Config
 
 log = structlog.get_logger()
+
+# Public (no-auth) clients used in DRY_RUN when no API keys are configured.
+# fetch_ticker is a public endpoint on all of these.
+_PUBLIC_FACTORIES: dict[str, Callable[[], ccxt.Exchange]] = {
+    "binance": lambda: ccxt.binance({"options": {"defaultType": "future"}}),
+    "bybit": lambda: ccxt.bybit(
+        {"options": {"defaultType": "linear"}, "adjustForTimeDifference": True}
+    ),
+    "okx": lambda: ccxt.okx({"options": {"defaultType": "swap"}}),
+    "gate": lambda: ccxt.gate({"options": {"defaultType": "swap"}}),
+    "bingx": lambda: ccxt.bingx(
+        {"options": {"defaultType": "swap"}, "adjustForTimeDifference": True}
+    ),
+    "mexc": lambda: ccxt.mexc({"options": {"defaultType": "swap"}}),
+}
 
 
 def build_exchanges(cfg: Config) -> dict[str, ccxt.Exchange]:
@@ -75,6 +92,12 @@ def build_exchanges(cfg: Config) -> dict[str, ccxt.Exchange]:
                 "options": {"defaultType": "swap"},
             }
         )
+
+    if cfg.dry_run:
+        for name, factory in _PUBLIC_FACTORIES.items():
+            if name not in exchanges:
+                exchanges[name] = factory()
+                log.info("exchanges.public.added", exchange=name)
 
     if cfg.testnet:
         for name, ex in exchanges.items():

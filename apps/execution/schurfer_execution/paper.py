@@ -1,0 +1,201 @@
+"""Paper trading: track simulated positions in Redis, monitor exit conditions."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import time
+from typing import TYPE_CHECKING, Any
+
+import structlog
+
+from . import journal, notify
+
+if TYPE_CHECKING:
+    from .config import Config
+
+log = structlog.get_logger()
+
+_KEY_PREFIX = "position:paper:"
+_TRADE_ID_KEY = "trade:id:paper:{exchange}:{base}"
+_INTERVAL_SECONDS = 30
+
+
+def paper_key(exchange: str, base: str) -> str:
+    return f"{_KEY_PREFIX}{exchange}:{base.upper()}"
+
+
+async def open_paper(
+    rdb: Any,
+    *,
+    base: str,
+    exchange: str,
+    price: float,
+    size_usd: float,
+    leverage: int,
+    score: int,
+    setup_context: dict[str, Any],
+    cfg: Config,
+) -> None:
+    entry = {
+        "base": base,
+        "exchange": exchange,
+        "side": "short",
+        "entry_price": price,
+        "size_usd": size_usd,
+        "leverage": leverage,
+        "opened_at": time.time(),
+        "score": score,
+    }
+    await rdb.set(paper_key(exchange, base), json.dumps(entry), ex=86400 * 7)
+
+    if cfg.db_url:
+        trade_id = await journal.open_trade(
+            cfg.db_url,
+            base=base,
+            exchange=exchange,
+            order_id=None,
+            size_usd=size_usd,
+            leverage=leverage,
+            entry_price=price,
+            setup_context={**setup_context, "paper": True},
+        )
+        if trade_id:
+            await rdb.set(
+                _TRADE_ID_KEY.format(exchange=exchange, base=base.upper()),
+                str(trade_id),
+                ex=86400 * 7,
+            )
+
+    creds = notify.credentials(cfg)
+    if creds:
+        await notify.notify_open(
+            *creds,
+            base=base,
+            exchange=exchange,
+            size_usd=size_usd,
+            leverage=leverage,
+            price=price,
+            score=score,
+            paper=True,
+        )
+
+    log.info("paper.opened", base=base, exchange=exchange, price=price, score=score)
+
+
+async def close_paper(
+    rdb: Any,
+    *,
+    pos: dict[str, Any],
+    current_price: float,
+    reason: str,
+    cfg: Config,
+) -> None:
+    base = pos["base"]
+    exchange = pos["exchange"]
+    entry_price = float(pos["entry_price"])
+    side = pos.get("side", "short")
+
+    pnl_pct = (
+        (entry_price - current_price) / entry_price * 100
+        if side == "short"
+        else (current_price - entry_price) / entry_price * 100
+    )
+
+    await rdb.delete(paper_key(exchange, base))
+
+    trade_id_raw = await rdb.get(_TRADE_ID_KEY.format(exchange=exchange, base=base.upper()))
+    if trade_id_raw and cfg.db_url:
+        await journal.close_trade(
+            cfg.db_url,
+            trade_id=int(trade_id_raw),
+            exit_order_id=None,
+            exit_price=current_price,
+            entry_price=entry_price,
+            side=side,
+            reason=reason,
+        )
+        await rdb.delete(_TRADE_ID_KEY.format(exchange=exchange, base=base.upper()))
+
+    creds = notify.credentials(cfg)
+    if creds:
+        await notify.notify_close(
+            *creds,
+            base=base,
+            exchange=exchange,
+            entry_price=entry_price,
+            exit_price=current_price,
+            pnl_pct=pnl_pct,
+            reason=reason,
+            paper=True,
+        )
+
+    log.info("paper.closed", base=base, exchange=exchange, pnl_pct=round(pnl_pct, 2), reason=reason)
+
+
+async def run_paper_monitor(
+    exchanges: dict[str, Any],
+    rdb: Any,
+    cfg: Config,
+) -> None:
+    while True:
+        await asyncio.sleep(_INTERVAL_SECONDS)
+        try:
+            await _tick(exchanges, rdb, cfg)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            log.error("paper_monitor.error", err=str(exc))
+
+
+async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
+    keys = [k async for k in rdb.scan_iter(f"{_KEY_PREFIX}*")]
+    if not keys:
+        return
+
+    for key in keys:
+        raw = await rdb.get(key)
+        if not raw:
+            continue
+        try:
+            pos = json.loads(raw)
+        except Exception as exc:
+            log.warning("paper.bad_payload", key=str(key), err=str(exc))
+            continue
+
+        base = pos["base"]
+        exchange = pos["exchange"]
+        entry_price = float(pos["entry_price"])
+        opened_at = float(pos.get("opened_at", 0))
+        side = pos.get("side", "short")
+
+        ex = exchanges.get(exchange)
+        if not ex:
+            continue
+
+        try:
+            ticker = await ex.fetch_ticker(f"{base.upper()}/USDT:USDT")
+            mark = float(ticker.get("last") or 0)
+        except Exception as exc:
+            log.warning("paper.ticker_failed", base=base, exchange=exchange, err=str(exc))
+            continue
+
+        if mark <= 0:
+            continue
+
+        pnl_pct = (
+            (entry_price - mark) / entry_price * 100
+            if side == "short"
+            else (mark - entry_price) / entry_price * 100
+        )
+
+        reason: str | None = None
+        if pnl_pct >= cfg.take_profit_pct:
+            reason = f"take_profit pnl={pnl_pct:.1f}%"
+        elif pnl_pct <= -cfg.stop_loss_pct:
+            reason = f"stop_loss pnl={pnl_pct:.1f}%"
+        elif opened_at and (time.time() - opened_at) / 60 >= cfg.max_hold_minutes:
+            reason = f"max_hold age={(time.time()-opened_at)/60:.0f}min"
+
+        if reason:
+            await close_paper(rdb, pos=pos, current_price=mark, reason=reason, cfg=cfg)

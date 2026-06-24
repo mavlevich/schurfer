@@ -76,11 +76,21 @@ class Config:
     # Signal trader — set AUTO_TRADE=true and SIGNAL_POSITION_USD>0 to enable.
     # Scores are read from Redis (signals:{base}) — written by the api-gateway ticker.
     auto_trade: bool = field(default_factory=lambda: _bool("AUTO_TRADE", False))
+    dry_run: bool = field(default_factory=lambda: _bool("DRY_RUN", False))
     signal_position_usd: float = field(default_factory=lambda: _float("SIGNAL_POSITION_USD", 50.0))
     signal_leverage: int = field(default_factory=lambda: _int("SIGNAL_LEVERAGE", 3))
 
+    # Notifications (optional — omit to disable)
+    telegram_bot_token: str | None = field(default_factory=lambda: _env("TELEGRAM_BOT_TOKEN"))
+    telegram_chat_id: str | None = field(default_factory=lambda: _env("TELEGRAM_CHAT_ID"))
+
+    # Trade journal (optional — omit to disable DB writes)
+    db_url: str | None = field(default_factory=lambda: _env("DATABASE_URL"))
+
     def __post_init__(self) -> None:
-        if not self.auto_trade:
+        if self.auto_trade and self.dry_run:
+            raise ValueError("AUTO_TRADE and DRY_RUN are mutually exclusive")
+        if not self.auto_trade and not self.dry_run:
             return
         if self.signal_position_usd <= 0:
             raise ValueError(f"SIGNAL_POSITION_USD must be > 0, got {self.signal_position_usd}")

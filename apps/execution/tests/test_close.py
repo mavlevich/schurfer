@@ -11,6 +11,9 @@ def _cfg(*, tp: float = 15.0, sl: float = 5.0, hold: int = 60) -> Config:
     cfg.take_profit_pct = tp
     cfg.stop_loss_pct = sl
     cfg.max_hold_minutes = hold
+    cfg.db_url = None
+    cfg.telegram_bot_token = None
+    cfg.telegram_chat_id = None
     return cfg
 
 
@@ -21,6 +24,9 @@ def _rdb(*, locked: bool = True, opened_at: bytes | None = None) -> MagicMock:
     rdb.delete = AsyncMock()
     rdb.get = AsyncMock(return_value=opened_at)
     return rdb
+
+
+_CLOSE_OK = {"closed": True, "order_id": "ord-1", "exit_price": None}
 
 
 def _exchange(*, contracts: float = 10.0, symbol: str = "BEAT/USDT:USDT") -> MagicMock:
@@ -205,6 +211,7 @@ async def test_check_exit_take_profit_short_triggers_close() -> None:
     pos = _pos(entry=100.0, mark=84.0, side="short")
     rdb = _rdb()
     with patch("schurfer_execution.monitor.close_position", new_callable=AsyncMock) as mock_close:
+        mock_close.return_value = _CLOSE_OK
         await _check_exit(pos, rdb, _cfg(tp=15.0), {})
         mock_close.assert_called_once()
         assert "take_profit" in mock_close.call_args.kwargs["reason"]
@@ -215,6 +222,7 @@ async def test_check_exit_take_profit_long_triggers_close() -> None:
     pos = _pos(entry=100.0, mark=116.0, side="long")
     rdb = _rdb()
     with patch("schurfer_execution.monitor.close_position", new_callable=AsyncMock) as mock_close:
+        mock_close.return_value = _CLOSE_OK
         await _check_exit(pos, rdb, _cfg(tp=15.0), {})
         mock_close.assert_called_once()
         assert "take_profit" in mock_close.call_args.kwargs["reason"]
@@ -225,6 +233,7 @@ async def test_check_exit_stop_loss_short_triggers_close() -> None:
     pos = _pos(entry=100.0, mark=106.0, side="short")
     rdb = _rdb()
     with patch("schurfer_execution.monitor.close_position", new_callable=AsyncMock) as mock_close:
+        mock_close.return_value = _CLOSE_OK
         await _check_exit(pos, rdb, _cfg(sl=5.0), {})
         mock_close.assert_called_once()
         assert "stop_loss" in mock_close.call_args.kwargs["reason"]
@@ -236,6 +245,7 @@ async def test_check_exit_max_hold_triggers_close() -> None:
     old_ts = str(time.time() - 3700).encode()
     rdb = _rdb(opened_at=old_ts)
     with patch("schurfer_execution.monitor.close_position", new_callable=AsyncMock) as mock_close:
+        mock_close.return_value = _CLOSE_OK
         await _check_exit(pos, rdb, _cfg(hold=60), {})
         mock_close.assert_called_once()
         assert "max_hold" in mock_close.call_args.kwargs["reason"]

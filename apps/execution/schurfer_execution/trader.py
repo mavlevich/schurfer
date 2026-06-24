@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 import structlog
 
+from . import journal, notify, paper
 from .orders import place_order
 
 if TYPE_CHECKING:
@@ -18,6 +19,7 @@ _INTERVAL_SECONDS = 60
 _PUMPS_KEY = "pumps:latest"
 _SIGNALS_KEY = "signals:{base}"
 _SEEN_KEY = "trader:seen:{base}"
+_TRADE_ID_KEY = "trade:id:{exchange}:{base}"
 _SEEN_TTL_TRADED = 86400  # 24h — don't re-enter the same token after a trade
 _SEEN_TTL_SKIP = 1800  # 30min — recheck sooner when skipped
 _SIGNALS_MAX_AGE = 90  # reject cached score older than 1.5x ticker interval
@@ -43,7 +45,8 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
     if not raw:
         return
 
-    pumps = json.loads(raw).get("pumps", [])
+    pumps_data = json.loads(raw)
+    pumps = pumps_data.get("pumps", [])
     if not pumps:
         return
 
@@ -70,6 +73,40 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
             await rdb.set(seen_key, "1", ex=_SEEN_TTL_SKIP)
             continue
 
+        setup_context = {
+            "score": score,
+            "pump_pct": pump.get("max_change_pct"),
+            "exchanges": pump.get("exchanges", []),
+            "signals_ts": pumps_data.get("ts"),
+        }
+
+        if cfg.dry_run:
+            ex = exchanges.get(exchange)
+            if not ex:
+                await rdb.set(seen_key, "1", ex=_SEEN_TTL_SKIP)
+                continue
+            try:
+                ticker = await ex.fetch_ticker(f"{base.upper()}/USDT:USDT")
+                price = float(ticker["last"])
+            except Exception as exc:
+                log.warning("trader.dry_run.price_failed", base=base, err=str(exc))
+                await rdb.set(seen_key, "1", ex=_SEEN_TTL_SKIP)
+                continue
+
+            await paper.open_paper(
+                rdb,
+                base=base,
+                exchange=exchange,
+                price=price,
+                size_usd=cfg.signal_position_usd,
+                leverage=cfg.signal_leverage,
+                score=score,
+                setup_context=setup_context,
+                cfg=cfg,
+            )
+            await rdb.set(seen_key, "1", ex=_SEEN_TTL_TRADED)
+            continue
+
         result = await place_order(
             base=base,
             exchange=exchange,
@@ -92,6 +129,37 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 order_id=result.get("order_id"),
             )
             await rdb.set(seen_key, "1", ex=_SEEN_TTL_TRADED)
+
+            if cfg.db_url:
+                trade_id = await journal.open_trade(
+                    cfg.db_url,
+                    base=base,
+                    exchange=exchange,
+                    order_id=result.get("order_id"),
+                    size_usd=cfg.signal_position_usd,
+                    leverage=cfg.signal_leverage,
+                    entry_price=result.get("price", 0),
+                    setup_context=setup_context,
+                )
+                if trade_id:
+                    await rdb.set(
+                        _TRADE_ID_KEY.format(exchange=exchange, base=base.upper()),
+                        str(trade_id),
+                        ex=_SEEN_TTL_TRADED,
+                    )
+
+            creds = notify.credentials(cfg)
+            if creds:
+                await notify.notify_open(
+                    *creds,
+                    base=base,
+                    exchange=exchange,
+                    size_usd=cfg.signal_position_usd,
+                    leverage=cfg.signal_leverage,
+                    price=result.get("price", 0),
+                    score=score,
+                    paper=False,
+                )
         else:
             log.info("trader.blocked", base=base, reason=result.get("reason"))
             await rdb.set(seen_key, "1", ex=_SEEN_TTL_SKIP)
