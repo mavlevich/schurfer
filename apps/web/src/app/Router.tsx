@@ -6,6 +6,7 @@ import { LoginPage } from '@/pages/login/LoginPage';
 import { PumpsPage } from '@/pages/pumps/PumpsPage';
 import { TokenPage } from '@/pages/pumps/TokenPage';
 import { AccountPage } from '@/pages/account/AccountPage';
+import { TradesPage } from '@/pages/trades/TradesPage';
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { isAuthenticated } = useAuth();
@@ -63,6 +64,14 @@ export function Router() {
             element={
               <RequireAuth>
                 <AccountPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/trades"
+            element={
+              <RequireAuth>
+                <TradesPage />
               </RequireAuth>
             }
           />

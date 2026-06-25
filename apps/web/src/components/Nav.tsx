@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router';
-import { Activity, TrendingUp, Wallet, LogOut } from 'lucide-react';
+import { Activity, TrendingUp, Wallet, BookOpen, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -11,7 +11,7 @@ export function Nav() {
       <div className="mx-auto flex h-12 max-w-6xl items-center justify-between">
         <div className="flex items-center gap-6">
           <span className="font-bold tracking-tight">Schurfer</span>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 overflow-x-auto">
             <NavLink
               to="/status"
               className={({ isActive }) =>
@@ -50,6 +50,19 @@ export function Nav() {
             >
               <Wallet className="h-3.5 w-3.5" />
               Account
+            </NavLink>
+            <NavLink
+              to="/trades"
+              className={({ isActive }) =>
+                `flex items-center gap-1.5 rounded px-3 py-1.5 text-sm transition-colors ${
+                  isActive
+                    ? 'bg-accent text-accent-foreground'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`
+              }
+            >
+              <BookOpen className="h-3.5 w-3.5" />
+              Trades
             </NavLink>
           </div>
         </div>
