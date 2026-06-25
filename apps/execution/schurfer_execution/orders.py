@@ -198,10 +198,13 @@ async def close_position(
         if not ex.markets:
             await ex.load_markets()
 
+        mark_price = float(position.get("markPrice") or position.get("mark_price") or 0)
         amount = float(ex.amount_to_precision(symbol, contracts))
         order = await ex.create_market_order(
             symbol, close_side, amount, params={"reduceOnly": True}
         )
+        fill_price = float(order.get("average") or order.get("price") or 0)
+        exit_price: float | None = fill_price or (mark_price if mark_price > 0 else None)
         await rdb.delete(f"position:opened_at:{exchange}:{base.upper()}")
         log.info(
             "execution.position.closed",
@@ -210,6 +213,7 @@ async def close_position(
             side=position_side,
             reason=reason,
             order_id=order.get("id"),
+            exit_price=exit_price,
         )
         return {
             "closed": True,
@@ -218,6 +222,7 @@ async def close_position(
             "base": base,
             "side": position_side,
             "reason": reason,
+            "exit_price": exit_price,
         }
     finally:
         try:

@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 import structlog
 
+from . import exit as exit_module
 from . import journal, notify, paper
 from .orders import place_order
 
@@ -130,6 +131,24 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
             )
             await rdb.set(seen_key, "1", ex=_SEEN_TTL_TRADED)
 
+            entry_price = result.get("price", 0)
+            params = exit_module.exit_params(setup_context.get("pump_pct"))
+            await rdb.set(
+                exit_module.params_key(exchange, base),
+                json.dumps(params),
+                ex=_SEEN_TTL_TRADED,
+            )
+            await rdb.set(
+                exit_module.entry_key(exchange, base),
+                str(entry_price),
+                ex=_SEEN_TTL_TRADED,
+            )
+            await rdb.set(
+                exit_module.side_key(exchange, base),
+                "short",
+                ex=_SEEN_TTL_TRADED,
+            )
+
             if cfg.db_url:
                 trade_id = await journal.open_trade(
                     cfg.db_url,
@@ -138,7 +157,7 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                     order_id=result.get("order_id"),
                     size_usd=cfg.signal_position_usd,
                     leverage=cfg.signal_leverage,
-                    entry_price=result.get("price", 0),
+                    entry_price=entry_price,
                     setup_context=setup_context,
                 )
                 if trade_id:

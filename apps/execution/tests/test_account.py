@@ -1,6 +1,8 @@
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from schurfer_execution.account import fetch_balance, fetch_margin_balance, fetch_positions
+from schurfer_execution.config import Config
+from schurfer_execution.routers.account import CloseBody, manual_close_position
 
 
 def _mock_exchange_positions(
@@ -218,3 +220,107 @@ async def test_fetch_positions_skips_zero_contracts() -> None:
     positions, failed = await fetch_positions({"bybit": ex})
     assert positions == []
     assert not failed
+
+
+# --- manual_close_position ---
+
+
+def _close_cfg(*, db_url: str | None = None) -> Config:
+    cfg = object.__new__(Config)
+    cfg.db_url = db_url
+    cfg.max_positions = 5
+    cfg.daily_loss_limit_usd = 200.0
+    cfg.telegram_bot_token = None
+    cfg.telegram_chat_id = None
+    return cfg
+
+
+def _close_rdb(**redis_data: bytes | None) -> MagicMock:
+    rdb = MagicMock()
+    rdb.delete = AsyncMock()
+
+    async def _get(key: str) -> bytes | None:
+        return redis_data.get(key)
+
+    rdb.get = AsyncMock(side_effect=_get)
+    return rdb
+
+
+def _close_request(cfg: Config, rdb: MagicMock) -> MagicMock:
+    req = MagicMock()
+    req.app.state.cfg = cfg
+    req.app.state.rdb = rdb
+    req.app.state.exchanges = {}
+    return req
+
+
+async def test_manual_close_journal_written_and_all_keys_deleted() -> None:
+    rdb = _close_rdb(
+        **{
+            "trade:id:bybit:BEAT": b"42",
+            "position:entry:bybit:BEAT": b"100.0",
+            "position:side:bybit:BEAT": b"short",
+        }
+    )
+    cfg = _close_cfg(db_url="postgresql://localhost/test")
+    body = CloseBody(exchange="bybit", base="BEAT")
+    request = _close_request(cfg, rdb)
+
+    close_result = {"closed": True, "order_id": "ord-1", "exit_price": 95.0, "side": "short"}
+    with (
+        patch(
+            "schurfer_execution.routers.account.close_position",
+            new_callable=AsyncMock,
+            return_value=close_result,
+        ),
+        patch(
+            "schurfer_execution.routers.account.journal.close_trade",
+            new_callable=AsyncMock,
+        ) as mock_journal,
+    ):
+        result = await manual_close_position(body, request)
+
+    assert result["closed"] is True
+    mock_journal.assert_called_once()
+    kw = mock_journal.call_args.kwargs
+    assert kw["trade_id"] == 42
+    assert kw["exit_price"] == 95.0
+    assert kw["entry_price"] == 100.0
+    assert kw["side"] == "short"
+    assert kw["reason"] == "manual"
+
+    deleted = {c.args[0] for c in rdb.delete.call_args_list}
+    assert "exit:best:bybit:BEAT" in deleted
+    assert "exit:params:bybit:BEAT" in deleted
+    assert "position:entry:bybit:BEAT" in deleted
+    assert "position:side:bybit:BEAT" in deleted
+    assert "trade:id:bybit:BEAT" in deleted
+
+
+async def test_manual_close_cleanup_happens_without_db_url() -> None:
+    rdb = _close_rdb()
+    cfg = _close_cfg(db_url=None)
+    body = CloseBody(exchange="bybit", base="BEAT")
+    request = _close_request(cfg, rdb)
+
+    close_result = {"closed": True, "order_id": "ord-2", "exit_price": None, "side": "short"}
+    with (
+        patch(
+            "schurfer_execution.routers.account.close_position",
+            new_callable=AsyncMock,
+            return_value=close_result,
+        ),
+        patch(
+            "schurfer_execution.routers.account.journal.close_trade",
+            new_callable=AsyncMock,
+        ) as mock_journal,
+    ):
+        await manual_close_position(body, request)
+
+    mock_journal.assert_not_called()
+
+    deleted = {c.args[0] for c in rdb.delete.call_args_list}
+    assert "exit:best:bybit:BEAT" in deleted
+    assert "exit:params:bybit:BEAT" in deleted
+    assert "position:entry:bybit:BEAT" in deleted
+    assert "position:side:bybit:BEAT" in deleted
