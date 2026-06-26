@@ -68,11 +68,6 @@ class Config:
     )
     score_threshold: int = field(default_factory=lambda: _int("SCORE_THRESHOLD", 6))
 
-    # Exit parameters
-    take_profit_pct: float = field(default_factory=lambda: _float("TAKE_PROFIT_PCT", 15.0))
-    stop_loss_pct: float = field(default_factory=lambda: _float("STOP_LOSS_PCT", 5.0))
-    max_hold_minutes: int = field(default_factory=lambda: _int("MAX_HOLD_MINUTES", 60))
-
     # Signal trader — set AUTO_TRADE=true and SIGNAL_POSITION_USD>0 to enable.
     # Scores are read from Redis (signals:{base}) — written by the api-gateway ticker.
     auto_trade: bool = field(default_factory=lambda: _bool("AUTO_TRADE", False))

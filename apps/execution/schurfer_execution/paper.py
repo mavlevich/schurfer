@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 import structlog
 
+from . import exit as exit_module
 from . import journal, notify
 
 if TYPE_CHECKING:
@@ -37,6 +38,7 @@ async def open_paper(
     setup_context: dict[str, Any],
     cfg: Config,
 ) -> None:
+    params = exit_module.exit_params(setup_context.get("pump_pct"))
     entry = {
         "base": base,
         "exchange": exchange,
@@ -46,6 +48,7 @@ async def open_paper(
         "leverage": leverage,
         "opened_at": time.time(),
         "score": score,
+        "exit_params": params,
     }
     await rdb.set(paper_key(exchange, base), json.dumps(entry), ex=86400 * 7)
 
@@ -183,19 +186,19 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
         if mark <= 0:
             continue
 
-        pnl_pct = (
-            (entry_price - mark) / entry_price * 100
-            if side == "short"
-            else (mark - entry_price) / entry_price * 100
+        params = pos.get("exit_params") or exit_module.exit_params(None)
+        bp_key = exit_module.best_price_key(exchange, base, paper=True)
+
+        reason = await exit_module.check_exit(
+            side=side,
+            entry_price=entry_price,
+            current_price=mark,
+            opened_at=opened_at,
+            params=params,
+            rdb=rdb,
+            bp_key=bp_key,
         )
 
-        reason: str | None = None
-        if pnl_pct >= cfg.take_profit_pct:
-            reason = f"take_profit pnl={pnl_pct:.1f}%"
-        elif pnl_pct <= -cfg.stop_loss_pct:
-            reason = f"stop_loss pnl={pnl_pct:.1f}%"
-        elif opened_at and (time.time() - opened_at) / 60 >= cfg.max_hold_minutes:
-            reason = f"max_hold age={(time.time()-opened_at)/60:.0f}min"
-
         if reason:
+            await rdb.delete(bp_key)
             await close_paper(rdb, pos=pos, current_price=mark, reason=reason, cfg=cfg)

@@ -235,8 +235,9 @@ async def test_tick_sets_long_ttl_after_successful_trade() -> None:
     ):
         await _tick({"bybit": MagicMock()}, rdb, _cfg())
 
-    assert rdb.set.call_args.args[0] == "trader:seen:BEAT"
-    assert rdb.set.call_args.kwargs["ex"] == _SEEN_TTL_TRADED
+    seen_calls = [c for c in rdb.set.call_args_list if c.args[0] == "trader:seen:BEAT"]
+    assert len(seen_calls) == 1
+    assert seen_calls[0].kwargs["ex"] == _SEEN_TTL_TRADED
 
 
 async def test_tick_sets_short_ttl_when_order_blocked() -> None:

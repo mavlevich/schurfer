@@ -6,14 +6,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from schurfer_execution.paper import close_paper, open_paper, paper_key
 
 
-def _cfg(*, tp: float = 15.0, sl: float = 5.0, hold: int = 60) -> MagicMock:
+def _cfg() -> MagicMock:
     cfg = MagicMock()
     cfg.db_url = None
     cfg.telegram_bot_token = None
     cfg.telegram_chat_id = None
-    cfg.take_profit_pct = tp
-    cfg.stop_loss_pct = sl
-    cfg.max_hold_minutes = hold
     return cfg
 
 
@@ -63,6 +60,8 @@ async def test_open_paper_stores_position_in_redis() -> None:
     assert value["leverage"] == 3
     assert value["score"] == 8
     assert "opened_at" in value
+    assert "exit_params" in value
+    assert value["exit_params"]["initial_sl_pct"] == 8.0  # pump_pct=45 → small bucket
 
 
 async def test_open_paper_writes_journal_when_db_url_set() -> None:
