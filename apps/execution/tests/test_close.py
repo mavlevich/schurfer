@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from schurfer_execution.config import Config
 from schurfer_execution.exit import exit_params
-from schurfer_execution.monitor import _check_exit
+from schurfer_execution.monitor import _check_exit, _tick
 from schurfer_execution.orders import close_position
 
 
@@ -288,3 +288,33 @@ async def test_check_exit_max_hold_not_reached_no_close() -> None:
     with patch("schurfer_execution.monitor.close_position", new_callable=AsyncMock) as mock_close:
         await _check_exit(pos, rdb, _cfg(), {})
         mock_close.assert_not_called()
+
+
+# --- monitor _tick isolation ---
+
+
+async def test_tick_continues_checking_remaining_positions_after_error() -> None:
+    # Regression: if _check_exit raises for position 1, position 2 must still be checked.
+    pos1 = _pos(entry=100.0, mark=95.0)
+    pos2 = {**_pos(entry=200.0, mark=190.0), "base": "SOL"}
+    rdb = _rdb()
+
+    check_calls: list[str] = []
+
+    async def _fake_check_exit(pos: dict, *args, **kwargs) -> None:
+        check_calls.append(pos["base"])
+        if pos["base"] == "BEAT":
+            raise RuntimeError("simulated exchange error")
+
+    with (
+        patch(
+            "schurfer_execution.monitor.fetch_positions",
+            new_callable=AsyncMock,
+            return_value=([pos1, pos2], set()),
+        ),
+        patch("schurfer_execution.monitor._check_exit", side_effect=_fake_check_exit),
+    ):
+        await _tick({}, rdb, _cfg())
+
+    assert "BEAT" in check_calls
+    assert "SOL" in check_calls  # must be reached despite BEAT raising
