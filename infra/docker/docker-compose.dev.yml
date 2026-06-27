@@ -139,6 +139,7 @@ services:
       LIQUIDATION_BUFFER_PCT: ${LIQUIDATION_BUFFER_PCT:-20}
       MIN_FUNDING_RATE_PCT: ${MIN_FUNDING_RATE_PCT:--0.1}
       REQUIRE_FUNDING_RATE: ${REQUIRE_FUNDING_RATE:-false}
+      RISK_PER_TRADE_PCT: ${RISK_PER_TRADE_PCT:-0}
       # Signal trader (both off by default — enable via .env)
       AUTO_TRADE: ${AUTO_TRADE:-false}
       DRY_RUN: ${DRY_RUN:-false}

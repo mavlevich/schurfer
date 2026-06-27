@@ -1,3 +1,4 @@
+import pytest
 from schurfer_execution.risk import (
     check_daily_loss,
     check_duplicate_position,
@@ -8,6 +9,7 @@ from schurfer_execution.risk import (
     check_positions_available,
     check_sufficient_margin,
     check_trading_enabled,
+    compute_position_size_usd,
     run_all_checks,
 )
 
@@ -247,3 +249,44 @@ class TestCheckFundingRate:
         # Strict threshold: block anything negative
         assert not check_funding_rate(-0.01, min_funding_rate_pct=0.0).allowed
         assert check_funding_rate(0.01, min_funding_rate_pct=0.0).allowed
+
+
+class TestComputePositionSizeUsd:
+    def test_basic_formula(self) -> None:
+        # equity=$1000, risk=0.5%, sl=10% → size = 1000 * 0.5 / 10 = $50
+        assert compute_position_size_usd(1000.0, 0.5, 10.0, 500.0) == 50.0
+
+    def test_tighter_sl_gives_larger_position(self) -> None:
+        # same risk, half the SL → double the position
+        assert compute_position_size_usd(1000.0, 0.5, 5.0, 500.0) == 100.0
+
+    def test_capped_at_max_usd(self) -> None:
+        # result would be $200, but max is $100 — hard ceiling always respected
+        result = compute_position_size_usd(1000.0, 2.0, 10.0, 100.0)
+        assert result == 100.0
+
+    def test_returns_none_below_min_notional(self) -> None:
+        # tiny equity: $10 * 0.5% / 10% = $0.5 < MIN_POSITION_USD → skip signal
+        result = compute_position_size_usd(10.0, 0.5, 10.0, 500.0)
+        assert result is None
+
+    def test_zero_equity_returns_none(self) -> None:
+        assert compute_position_size_usd(0.0, 0.5, 10.0, 500.0) is None
+
+    def test_zero_sl_returns_none(self) -> None:
+        # degenerate sl=0 → division guard, returns None
+        assert compute_position_size_usd(1000.0, 0.5, 0.0, 500.0) is None
+
+    def test_scales_with_equity(self) -> None:
+        s1 = compute_position_size_usd(500.0, 0.5, 10.0, 1000.0)
+        s2 = compute_position_size_usd(1000.0, 0.5, 10.0, 1000.0)
+        assert s1 is not None and s2 is not None
+        assert s2 == pytest.approx(s1 * 2)
+
+    def test_returns_none_when_max_usd_below_min_notional(self) -> None:
+        # computed=$50, capped to max_usd=$3, $3 < MIN_POSITION_USD=$5 → None
+        assert compute_position_size_usd(1000.0, 0.5, 10.0, 3.0) is None
+
+    def test_returns_value_when_max_usd_above_min_notional(self) -> None:
+        # computed=$50, capped to max_usd=$10, $10 >= MIN_POSITION_USD=$5 → $10
+        assert compute_position_size_usd(1000.0, 0.5, 10.0, 10.0) == pytest.approx(10.0)

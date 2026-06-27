@@ -87,6 +87,11 @@ class Config:
     dry_run: bool = field(default_factory=lambda: _bool("DRY_RUN", False))
     signal_position_usd: float = field(default_factory=lambda: _float("SIGNAL_POSITION_USD", 50.0))
     signal_leverage: int = field(default_factory=lambda: _int("SIGNAL_LEVERAGE", 3))
+    # Risk-based position sizing: risk this % of equity per trade.
+    # 0.0 = disabled (use fixed SIGNAL_POSITION_USD).
+    # When > 0, SIGNAL_POSITION_USD acts as a hard ceiling.
+    # Typical range: 0.25-1.0. Formula: size = equity * risk% / initial_sl%.
+    risk_per_trade_pct: float = field(default_factory=lambda: _float("RISK_PER_TRADE_PCT", 0.0))
 
     # Notifications (optional — omit to disable)
     telegram_bot_token: str | None = field(default_factory=lambda: _env("TELEGRAM_BOT_TOKEN"))
@@ -108,3 +113,5 @@ class Config:
             raise ValueError(
                 f"LIQUIDATION_BUFFER_PCT must be 0-99, got {self.liquidation_buffer_pct}"
             )
+        if not 0.0 <= self.risk_per_trade_pct <= 5.0:
+            raise ValueError(f"RISK_PER_TRADE_PCT must be 0-5, got {self.risk_per_trade_pct}")
