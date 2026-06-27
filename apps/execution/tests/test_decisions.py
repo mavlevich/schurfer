@@ -69,7 +69,7 @@ async def test_run_decision_writer_inserts_row() -> None:
     executed: asyncio.Event = asyncio.Event()
     captured_params: list[tuple[object, ...]] = []
 
-    async def fake_execute(sql: str, params: tuple[object, ...]) -> None:
+    async def fake_execute(_sql: str, params: tuple[object, ...]) -> None:
         captured_params.append(params)
         executed.set()
 
@@ -106,7 +106,7 @@ async def test_run_decision_writer_retries_row_after_execute_failure() -> None:
     execute_calls = 0
     succeeded = asyncio.Event()
 
-    async def flaky_execute(sql: str, params: tuple[object, ...]) -> None:
+    async def flaky_execute(_sql: str, params: tuple[object, ...]) -> None:
         nonlocal execute_calls
         execute_calls += 1
         if execute_calls == 1:
