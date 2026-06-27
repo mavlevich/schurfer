@@ -235,6 +235,39 @@ async def test_tick_skips_when_score_below_threshold() -> None:
     assert rdb.set.call_args.kwargs["ex"] == _SEEN_TTL_SKIP
 
 
+async def test_tick_writes_decision_on_score_skip() -> None:
+    rdb = _rdb(pumps_raw=_pumps("BEAT"), signal_score=3)
+    with (
+        patch("schurfer_execution.trader.place_order", new_callable=AsyncMock),
+        patch("schurfer_execution.trader.decisions.write_decision") as mock_write,
+    ):
+        await _tick({"bybit": MagicMock()}, rdb, _cfg(score_threshold=6))
+
+    mock_write.assert_called_once()
+    kw = mock_write.call_args.kwargs
+    assert kw["base"] == "BEAT"
+    assert kw["action"] == "skipped"
+    assert "score" in kw["reason"]
+
+
+async def test_tick_writes_decision_on_successful_open() -> None:
+    rdb = _rdb(pumps_raw=_pumps("BEAT"), signal_score=7)
+    with (
+        patch(
+            "schurfer_execution.trader.place_order",
+            new_callable=AsyncMock,
+            return_value={"allowed": True, "order_id": "ord-1"},
+        ),
+        patch("schurfer_execution.trader.decisions.write_decision") as mock_write,
+    ):
+        await _tick({"bybit": MagicMock()}, rdb, _cfg())
+
+    mock_write.assert_called_once()
+    kw = mock_write.call_args.kwargs
+    assert kw["action"] == "opened"
+    assert kw["base"] == "BEAT"
+
+
 async def test_tick_places_short_when_score_sufficient() -> None:
     rdb = _rdb(pumps_raw=_pumps("BEAT"), signal_score=7)
     with patch(
