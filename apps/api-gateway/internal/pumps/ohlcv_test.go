@@ -195,6 +195,27 @@ func TestParseRowShortRow(t *testing.T) {
 	}
 }
 
+func TestGateInterval(t *testing.T) {
+	cases := []struct {
+		minutes int
+		want    string
+	}{
+		{5, "5m"},
+		{15, "15m"},
+		{30, "30m"},
+		{60, "1h"},
+		{240, "4h"},
+		{480, "8h"},
+		{720, "12h"},
+		{1440, "1d"},
+	}
+	for _, tc := range cases {
+		if got := gateInterval(tc.minutes); got != tc.want {
+			t.Errorf("gateInterval(%d) = %q, want %q", tc.minutes, got, tc.want)
+		}
+	}
+}
+
 func TestParseGate(t *testing.T) {
 	cases := []struct {
 		name    string

@@ -28,6 +28,7 @@ export function useOHLCV(base: string | undefined, minutes: number) {
     enabled: !!base,
     staleTime: 5 * 60_000,
     placeholderData: keepPreviousData,
-    retry: false,
+    retry: (_count, err) => !String(err).includes('HTTP 4'),
+    retryDelay: 2000,
   });
 }

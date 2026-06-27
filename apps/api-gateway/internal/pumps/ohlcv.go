@@ -235,11 +235,25 @@ func parseOKX(raw []byte) ([]Candle, error) {
 	return candles, nil
 }
 
-func fetchGate(ctx context.Context, base string, interval, limit int) ([]Candle, error) {
-	ivStr := fmt.Sprintf("%dm", interval)
-	if interval == 60 {
-		ivStr = "1h"
+func gateInterval(minutes int) string {
+	switch minutes {
+	case 60:
+		return "1h"
+	case 240:
+		return "4h"
+	case 480:
+		return "8h"
+	case 720:
+		return "12h"
+	case 1440:
+		return "1d"
+	default:
+		return fmt.Sprintf("%dm", minutes)
 	}
+}
+
+func fetchGate(ctx context.Context, base string, interval, limit int) ([]Candle, error) {
+	ivStr := gateInterval(interval)
 	url := fmt.Sprintf(
 		"https://fx-api.gateio.ws/api/v4/futures/usdt/candlesticks?contract=%s_USDT&interval=%s&limit=%d",
 		base, ivStr, limit,
