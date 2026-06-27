@@ -40,7 +40,15 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
     for pos in positions:
         if pos["exchange"] in failed:
             continue
-        await _check_exit(pos, rdb, cfg, exchanges)
+        try:
+            await _check_exit(pos, rdb, cfg, exchanges)
+        except Exception as e:
+            log.error(
+                "position_monitor.check_exit_error",
+                base=pos.get("base"),
+                exchange=pos.get("exchange"),
+                err=str(e),
+            )
 
 
 async def _check_exit(
