@@ -137,6 +137,8 @@ services:
       MAX_POSITION_USD: ${MAX_POSITION_USD:-500}
       DAILY_LOSS_LIMIT_USD: ${DAILY_LOSS_LIMIT_USD:-200}
       LIQUIDATION_BUFFER_PCT: ${LIQUIDATION_BUFFER_PCT:-20}
+      MIN_FUNDING_RATE_PCT: ${MIN_FUNDING_RATE_PCT:--0.1}
+      REQUIRE_FUNDING_RATE: ${REQUIRE_FUNDING_RATE:-false}
       # Signal trader (both off by default — enable via .env)
       AUTO_TRADE: ${AUTO_TRADE:-false}
       DRY_RUN: ${DRY_RUN:-false}

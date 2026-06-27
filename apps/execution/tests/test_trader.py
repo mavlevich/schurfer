@@ -7,13 +7,20 @@ from schurfer_execution.config import Config
 from schurfer_execution.trader import (
     _SEEN_TTL_SKIP,
     _SEEN_TTL_TRADED,
+    _fetch_funding_rate_pct,
     _fetch_score,
     _pick_exchange,
     _tick,
 )
 
 
-def _cfg(*, score_threshold: int = 6, signal_leverage: int = 3) -> Config:
+def _cfg(
+    *,
+    score_threshold: int = 6,
+    signal_leverage: int = 3,
+    min_funding_rate_pct: float = -0.1,
+    require_funding_rate: bool = False,
+) -> Config:
     cfg = object.__new__(Config)
     cfg.score_threshold = score_threshold
     cfg.signal_position_usd = 50.0
@@ -22,6 +29,8 @@ def _cfg(*, score_threshold: int = 6, signal_leverage: int = 3) -> Config:
     cfg.max_position_usd = 500.0
     cfg.daily_loss_limit_usd = 200.0
     cfg.liquidation_buffer_pct = 20.0
+    cfg.min_funding_rate_pct = min_funding_rate_pct
+    cfg.require_funding_rate = require_funding_rate
     cfg.dry_run = False
     cfg.db_url = None
     cfg.telegram_bot_token = None
@@ -359,3 +368,197 @@ async def test_tick_skips_when_sl_too_close_to_liquidation() -> None:
         mock_order.assert_not_called()
 
     assert rdb.set.call_args.kwargs["ex"] == _SEEN_TTL_SKIP
+
+
+# --- _fetch_funding_rate_pct ---
+
+_8H_MS = 8 * 3600 * 1000
+
+
+async def test_fetch_funding_rate_pct_returns_percentage_no_interval() -> None:
+    # No fundingInterval → assume 8h, just convert fraction to %
+    ex = MagicMock()
+    ex.fetch_funding_rate = AsyncMock(return_value={"fundingRate": 0.0001})
+    result = await _fetch_funding_rate_pct(ex, "BEAT")
+    assert result == pytest.approx(0.01)
+
+
+async def test_fetch_funding_rate_pct_normalizes_4h_interval() -> None:
+    # 4h interval: rate per 4h * 2 = 8h-equivalent
+    ex = MagicMock()
+    ex.fetch_funding_rate = AsyncMock(
+        return_value={"fundingRate": 0.0001, "fundingInterval": _8H_MS // 2}
+    )
+    result = await _fetch_funding_rate_pct(ex, "BEAT")
+    assert result == pytest.approx(0.02)  # 0.01% * 2
+
+
+async def test_fetch_funding_rate_pct_normalizes_1h_interval() -> None:
+    # 1h interval: rate per 1h * 8 = 8h-equivalent
+    ex = MagicMock()
+    ex.fetch_funding_rate = AsyncMock(
+        return_value={"fundingRate": 0.0001, "fundingInterval": _8H_MS // 8}
+    )
+    result = await _fetch_funding_rate_pct(ex, "BEAT")
+    assert result == pytest.approx(0.08)
+
+
+async def test_fetch_funding_rate_pct_standard_8h_interval_unchanged() -> None:
+    # 8h interval: normalization factor = 1
+    ex = MagicMock()
+    ex.fetch_funding_rate = AsyncMock(
+        return_value={"fundingRate": 0.0001, "fundingInterval": _8H_MS}
+    )
+    result = await _fetch_funding_rate_pct(ex, "BEAT")
+    assert result == pytest.approx(0.01)
+
+
+async def test_fetch_funding_rate_pct_negative_rate() -> None:
+    ex = MagicMock()
+    ex.fetch_funding_rate = AsyncMock(return_value={"fundingRate": -0.0005})
+    result = await _fetch_funding_rate_pct(ex, "BEAT")
+    assert result == pytest.approx(-0.05)
+
+
+async def test_fetch_funding_rate_pct_returns_none_when_key_missing() -> None:
+    ex = MagicMock()
+    ex.fetch_funding_rate = AsyncMock(return_value={})
+    result = await _fetch_funding_rate_pct(ex, "BEAT")
+    assert result is None
+
+
+async def test_fetch_funding_rate_pct_returns_none_on_exception() -> None:
+    ex = MagicMock()
+    ex.fetch_funding_rate = AsyncMock(side_effect=RuntimeError("not supported"))
+    result = await _fetch_funding_rate_pct(ex, "BEAT")
+    assert result is None
+
+
+# --- funding rate filter in _tick ---
+
+
+def _exchange_mock(funding_rate: float | None = 0.0001) -> MagicMock:
+    """Exchange mock that returns a funding rate or raises on None."""
+    ex = MagicMock()
+    if funding_rate is None:
+        ex.fetch_funding_rate = AsyncMock(side_effect=RuntimeError("not supported"))
+    else:
+        ex.fetch_funding_rate = AsyncMock(return_value={"fundingRate": funding_rate})
+    return ex
+
+
+async def test_tick_skips_when_funding_rate_below_threshold() -> None:
+    # funding rate = -0.002 → -0.2%/8h, threshold = -0.1% → blocked
+    rdb = _rdb(pumps_raw=_pumps("BEAT"), signal_score=8)
+    with patch("schurfer_execution.trader.place_order", new_callable=AsyncMock) as mock_order:
+        await _tick({"bybit": _exchange_mock(-0.002)}, rdb, _cfg(min_funding_rate_pct=-0.1))
+        mock_order.assert_not_called()
+    assert rdb.set.call_args.kwargs["ex"] == _SEEN_TTL_SKIP
+
+
+async def test_tick_writes_decision_on_funding_rate_skip() -> None:
+    rdb = _rdb(pumps_raw=_pumps("BEAT"), signal_score=8)
+    with (
+        patch("schurfer_execution.trader.place_order", new_callable=AsyncMock),
+        patch("schurfer_execution.trader.decisions.write_decision") as mock_write,
+    ):
+        await _tick({"bybit": _exchange_mock(-0.002)}, rdb, _cfg(min_funding_rate_pct=-0.1))
+
+    mock_write.assert_called_once()
+    kw = mock_write.call_args.kwargs
+    assert kw["action"] == "skipped"
+    assert "funding_rate" in kw["reason"]
+    assert "shorts paying too much" in kw["reason"]
+
+
+async def test_tick_proceeds_when_funding_rate_above_threshold() -> None:
+    # funding rate = -0.0005 → -0.05%/8h, threshold = -0.1% → ok
+    rdb = _rdb(pumps_raw=_pumps("BEAT"), signal_score=8)
+    with patch(
+        "schurfer_execution.trader.place_order",
+        new_callable=AsyncMock,
+        return_value={"allowed": True, "order_id": "ord-1"},
+    ) as mock_order:
+        await _tick({"bybit": _exchange_mock(-0.0005)}, rdb, _cfg(min_funding_rate_pct=-0.1))
+
+    mock_order.assert_called_once()
+
+
+async def test_tick_proceeds_when_funding_rate_fetch_fails() -> None:
+    # Fail-open: if we can't fetch funding rate, don't block the trade
+    rdb = _rdb(pumps_raw=_pumps("BEAT"), signal_score=8)
+    with patch(
+        "schurfer_execution.trader.place_order",
+        new_callable=AsyncMock,
+        return_value={"allowed": True, "order_id": "ord-2"},
+    ) as mock_order:
+        await _tick({"bybit": _exchange_mock(None)}, rdb, _cfg(min_funding_rate_pct=-0.1))
+
+    mock_order.assert_called_once()
+
+
+async def test_tick_includes_funding_rate_in_setup_context() -> None:
+    # funding_rate_pct stored in setup_context → journal.open_trade receives it
+    rdb = _rdb(pumps_raw=_pumps("BEAT"), signal_score=8)
+    with (
+        patch(
+            "schurfer_execution.trader.place_order",
+            new_callable=AsyncMock,
+            return_value={"allowed": True, "order_id": "ord-3", "price": 1.0},
+        ),
+        patch(
+            "schurfer_execution.trader.journal.open_trade", new_callable=AsyncMock
+        ) as mock_journal,
+    ):
+        cfg = _cfg()
+        cfg.db_url = "postgres://fake"
+        await _tick({"bybit": _exchange_mock(0.0001)}, rdb, cfg)
+
+    ctx = mock_journal.call_args.kwargs["setup_context"]
+    assert ctx["funding_rate_pct"] == pytest.approx(0.01)
+
+
+async def test_tick_skips_when_require_funding_rate_and_fetch_fails() -> None:
+    rdb = _rdb(pumps_raw=_pumps("BEAT"), signal_score=8)
+    with patch("schurfer_execution.trader.place_order", new_callable=AsyncMock) as mock_order:
+        await _tick(
+            {"bybit": _exchange_mock(None)},
+            rdb,
+            _cfg(require_funding_rate=True),
+        )
+        mock_order.assert_not_called()
+    assert rdb.set.call_args.kwargs["ex"] == _SEEN_TTL_SKIP
+
+
+async def test_tick_writes_decision_on_funding_rate_unavailable_skip() -> None:
+    rdb = _rdb(pumps_raw=_pumps("BEAT"), signal_score=8)
+    with (
+        patch("schurfer_execution.trader.place_order", new_callable=AsyncMock),
+        patch("schurfer_execution.trader.decisions.write_decision") as mock_write,
+    ):
+        await _tick(
+            {"bybit": _exchange_mock(None)},
+            rdb,
+            _cfg(require_funding_rate=True),
+        )
+
+    mock_write.assert_called_once()
+    kw = mock_write.call_args.kwargs
+    assert kw["action"] == "skipped"
+    assert kw["reason"] == "funding_rate_unavailable"
+
+
+async def test_tick_proceeds_when_require_funding_rate_false_and_fetch_fails() -> None:
+    # Default fail-open: require_funding_rate=False → trade proceeds even if fetch fails
+    rdb = _rdb(pumps_raw=_pumps("BEAT"), signal_score=8)
+    with patch(
+        "schurfer_execution.trader.place_order",
+        new_callable=AsyncMock,
+        return_value={"allowed": True, "order_id": "ord-x"},
+    ) as mock_order:
+        await _tick(
+            {"bybit": _exchange_mock(None)},
+            rdb,
+            _cfg(require_funding_rate=False),
+        )
+    mock_order.assert_called_once()
