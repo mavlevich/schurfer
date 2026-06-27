@@ -132,6 +132,34 @@ def check_funding_rate(funding_rate_pct: float, min_funding_rate_pct: float) -> 
     return RiskCheck(allowed=True, reason="ok")
 
 
+MIN_POSITION_USD = 5.0  # minimum notional to avoid dust positions
+
+
+def compute_position_size_usd(
+    equity_usd: float,
+    risk_per_trade_pct: float,
+    initial_sl_pct: float,
+    max_usd: float,
+) -> float | None:
+    """Return the notional position size that risks exactly risk_per_trade_pct of equity.
+
+    Formula: size = equity * risk% / sl%
+    A 10% SL on a $1 000 account at 0.5% risk gives $50 notional —
+    if price moves 10% against us we lose $5 (0.5% of equity).
+
+    max_usd is always a hard ceiling — the result is capped to it first.
+    Returns None if the final size is below MIN_POSITION_USD (dust trade),
+    signalling the caller to skip rather than open a position that breaks the risk contract.
+    """
+    if initial_sl_pct <= 0 or equity_usd <= 0:
+        return None
+    size = equity_usd * risk_per_trade_pct / initial_sl_pct
+    capped = min(max_usd, size)
+    if capped < MIN_POSITION_USD:
+        return None
+    return capped
+
+
 def run_all_checks(
     *,
     base: str,

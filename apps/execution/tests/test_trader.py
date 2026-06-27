@@ -7,6 +7,7 @@ from schurfer_execution.config import Config
 from schurfer_execution.trader import (
     _SEEN_TTL_SKIP,
     _SEEN_TTL_TRADED,
+    _fetch_equity_usd,
     _fetch_funding_rate_pct,
     _fetch_score,
     _pick_exchange,
@@ -20,6 +21,7 @@ def _cfg(
     signal_leverage: int = 3,
     min_funding_rate_pct: float = -0.1,
     require_funding_rate: bool = False,
+    risk_per_trade_pct: float = 0.0,
 ) -> Config:
     cfg = object.__new__(Config)
     cfg.score_threshold = score_threshold
@@ -31,6 +33,7 @@ def _cfg(
     cfg.liquidation_buffer_pct = 20.0
     cfg.min_funding_rate_pct = min_funding_rate_pct
     cfg.require_funding_rate = require_funding_rate
+    cfg.risk_per_trade_pct = risk_per_trade_pct
     cfg.dry_run = False
     cfg.db_url = None
     cfg.telegram_bot_token = None
@@ -562,3 +565,92 @@ async def test_tick_proceeds_when_require_funding_rate_false_and_fetch_fails() -
             _cfg(require_funding_rate=False),
         )
     mock_order.assert_called_once()
+
+
+# --- _fetch_equity_usd ---
+
+
+async def test_fetch_equity_usd_returns_total_usdt() -> None:
+    ex = MagicMock()
+    ex.options = {"defaultType": "swap"}
+    ex.fetch_balance = AsyncMock(
+        return_value={
+            "USDT": {"free": 700.0, "used": 300.0, "total": 1000.0},
+            "free": {},
+            "used": {},
+            "total": {},
+            "info": {},
+        }
+    )
+    result = await _fetch_equity_usd({"bybit": ex}, "bybit")
+    assert result == pytest.approx(1000.0)
+
+
+async def test_fetch_equity_usd_returns_none_on_exception() -> None:
+    ex = MagicMock()
+    ex.options = {"defaultType": "swap"}
+    ex.fetch_balance = AsyncMock(side_effect=RuntimeError("timeout"))
+    result = await _fetch_equity_usd({"bybit": ex}, "bybit")
+    assert result is None
+
+
+async def test_fetch_equity_usd_returns_none_for_unknown_exchange() -> None:
+    result = await _fetch_equity_usd({}, "bybit")
+    assert result is None
+
+
+# --- risk-based position sizing in _tick ---
+
+
+async def test_tick_uses_fixed_size_when_risk_pct_disabled() -> None:
+    rdb = _rdb(pumps_raw=_pumps("BEAT"), signal_score=8)
+    with patch(
+        "schurfer_execution.trader.place_order",
+        new_callable=AsyncMock,
+        return_value={"allowed": True, "order_id": "ord-1"},
+    ) as mock_order:
+        await _tick({"bybit": _exchange_mock(0.0001)}, rdb, _cfg(risk_per_trade_pct=0.0))
+
+    assert mock_order.call_args.kwargs["size_usd"] == pytest.approx(50.0)
+
+
+async def test_tick_computes_size_from_equity_when_risk_pct_enabled() -> None:
+    # equity=$1000, risk=0.5%, initial_sl depends on pump_pct=50 → ~10%
+    # expected size = 1000 * 0.5 / 10 = $50 (capped at signal_position_usd=50)
+    rdb = _rdb(pumps_raw=_pumps("BEAT"), signal_score=8)
+    ex = _exchange_mock(0.0001)
+    ex.fetch_balance = AsyncMock(
+        return_value={
+            "USDT": {"free": 700.0, "used": 300.0, "total": 1000.0},
+            "free": {},
+            "used": {},
+            "total": {},
+            "info": {},
+        }
+    )
+    with patch(
+        "schurfer_execution.trader.place_order",
+        new_callable=AsyncMock,
+        return_value={"allowed": True, "order_id": "ord-2"},
+    ) as mock_order:
+        await _tick({"bybit": ex}, rdb, _cfg(risk_per_trade_pct=0.5))
+
+    size = mock_order.call_args.kwargs["size_usd"]
+    assert size > 0
+    assert size <= 50.0  # capped at signal_position_usd
+
+
+async def test_tick_skips_when_equity_fetch_fails_and_risk_pct_enabled() -> None:
+    # When risk sizing is on but equity is unavailable, skip the trade (fail-closed).
+    rdb = _rdb(pumps_raw=_pumps("BEAT"), signal_score=8)
+    ex = _exchange_mock(0.0001)
+    ex.fetch_balance = AsyncMock(side_effect=RuntimeError("timeout"))
+    with patch(
+        "schurfer_execution.trader.place_order",
+        new_callable=AsyncMock,
+    ) as mock_order:
+        await _tick({"bybit": ex}, rdb, _cfg(risk_per_trade_pct=0.5))
+
+    mock_order.assert_not_called()
+    rdb.set.assert_called_once()
+    assert rdb.set.call_args.kwargs["ex"] == _SEEN_TTL_SKIP

@@ -9,6 +9,7 @@ import structlog
 
 from . import decisions, journal, notify, paper, risk
 from . import exit as exit_module
+from .account import fetch_margin_balance
 from .orders import place_order
 
 _FUNDING_FETCH_TIMEOUT = 5  # seconds
@@ -128,15 +129,7 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 )
                 continue
 
-        setup_context = {
-            "score": score,
-            "pump_pct": pump_pct,
-            "funding_rate_pct": funding_rate_pct,
-            "exchanges": pump.get("exchanges", []),
-            "signals_ts": pumps_data.get("ts"),
-        }
-
-        exit_params = exit_module.exit_params(setup_context.get("pump_pct"))
+        exit_params = exit_module.exit_params(pump_pct)
         liq_check = risk.check_liquidation_distance(
             exit_params["initial_sl_pct"],
             cfg.signal_leverage,
@@ -156,6 +149,72 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
             )
             continue
 
+        equity_usd: float | None = None
+        sizing_mode = "fixed"
+        if cfg.risk_per_trade_pct > 0:
+            equity_usd = await _fetch_equity_usd(exchanges, exchange)
+            if equity_usd is None:
+                log.warning("trader.skip.equity_unavailable", base=base, exchange=exchange)
+                await rdb.set(seen_key, "1", ex=_SEEN_TTL_SKIP)
+                decisions.write_decision(
+                    cfg.db_url,
+                    base=base,
+                    exchange=exchange,
+                    action="skipped",
+                    reason="equity_unavailable_for_risk_sizing",
+                    score=score,
+                    pump_pct=pump_pct,
+                )
+                continue
+            computed = risk.compute_position_size_usd(
+                equity_usd,
+                cfg.risk_per_trade_pct,
+                exit_params["initial_sl_pct"],
+                cfg.signal_position_usd,
+            )
+            if computed is None:
+                skip_reason = (
+                    f"risk_sized_position_below_min_notional "
+                    f"(equity={equity_usd:.0f}, risk={cfg.risk_per_trade_pct}%, "
+                    f"sl={exit_params['initial_sl_pct']}%)"
+                )
+                log.info("trader.skip.size_below_min", base=base, reason=skip_reason)
+                await rdb.set(seen_key, "1", ex=_SEEN_TTL_SKIP)
+                decisions.write_decision(
+                    cfg.db_url,
+                    base=base,
+                    exchange=exchange,
+                    action="skipped",
+                    reason=skip_reason,
+                    score=score,
+                    pump_pct=pump_pct,
+                )
+                continue
+            size_usd = computed
+            sizing_mode = "risk_pct"
+            log.info(
+                "trader.risk_sizing",
+                base=base,
+                equity_usd=round(equity_usd, 2),
+                size_usd=round(size_usd, 2),
+                risk_pct=cfg.risk_per_trade_pct,
+            )
+        else:
+            size_usd = cfg.signal_position_usd
+
+        setup_context = {
+            "score": score,
+            "pump_pct": pump_pct,
+            "funding_rate_pct": funding_rate_pct,
+            "exchanges": pump.get("exchanges", []),
+            "signals_ts": pumps_data.get("ts"),
+            "sizing_mode": sizing_mode,
+            "equity_usd": equity_usd,
+            "risk_per_trade_pct": cfg.risk_per_trade_pct if cfg.risk_per_trade_pct > 0 else None,
+            "initial_sl_pct": exit_params["initial_sl_pct"],
+            "size_usd": size_usd,
+        }
+
         if cfg.dry_run:
             if not ex:
                 await rdb.set(seen_key, "1", ex=_SEEN_TTL_SKIP)
@@ -173,7 +232,7 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 base=base,
                 exchange=exchange,
                 price=price,
-                size_usd=cfg.signal_position_usd,
+                size_usd=size_usd,
                 leverage=cfg.signal_leverage,
                 score=score,
                 setup_context=setup_context,
@@ -195,7 +254,7 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
             base=base,
             exchange=exchange,
             side="short",
-            size_usd=cfg.signal_position_usd,
+            size_usd=size_usd,
             leverage=cfg.signal_leverage,
             exchanges=exchanges,
             rdb=rdb,
@@ -248,7 +307,7 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                     base=base,
                     exchange=exchange,
                     order_id=result.get("order_id"),
-                    size_usd=cfg.signal_position_usd,
+                    size_usd=size_usd,
                     leverage=cfg.signal_leverage,
                     entry_price=entry_price,
                     setup_context=setup_context,
@@ -266,7 +325,7 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                     *creds,
                     base=base,
                     exchange=exchange,
-                    size_usd=cfg.signal_position_usd,
+                    size_usd=size_usd,
                     leverage=cfg.signal_leverage,
                     price=result.get("price", 0),
                     score=score,
@@ -315,6 +374,18 @@ async def _fetch_funding_rate_pct(ex: Any, base: str) -> float | None:
     except Exception as exc:
         log.warning("trader.funding_rate.fetch_failed", base=base, err=str(exc))
         return None
+
+
+async def _fetch_equity_usd(exchanges: dict[str, Any], exchange: str) -> float | None:
+    """Return total USDT wallet balance as equity proxy. None if unavailable."""
+    try:
+        balances = await fetch_margin_balance(exchanges, exchange)
+        for b in balances:
+            if b.get("exchange") == exchange and b.get("asset") == "USDT":
+                return float(b.get("total", 0) or 0) or None
+    except Exception as exc:
+        log.warning("trader.equity.fetch_failed", exchange=exchange, err=str(exc))
+    return None
 
 
 async def _fetch_score(base: str, rdb: Any) -> int:
