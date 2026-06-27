@@ -85,6 +85,35 @@ def check_daily_loss(daily_pnl: float, limit: float) -> RiskCheck:
     return RiskCheck(allowed=True, reason="ok")
 
 
+_MAINTENANCE_MARGIN_PCT = 0.5  # conservative cross-exchange estimate
+
+
+def check_liquidation_distance(
+    initial_sl_pct: float,
+    leverage: int,
+    buffer_pct: float = 20.0,
+) -> RiskCheck:
+    """Ensure initial SL is not too close to the estimated liquidation price.
+
+    For a short at leverage L, liquidation occurs when price rises roughly
+    (100/L - maintenance_margin) % from entry. We require the SL to consume
+    at most (1 - buffer_pct/100) of that distance, leaving a safety gap.
+    """
+    if leverage <= 0:
+        return RiskCheck(allowed=False, reason=f"leverage must be > 0, got {leverage}")
+    liq_distance_pct = max(0.0, 100.0 / leverage - _MAINTENANCE_MARGIN_PCT)
+    max_sl_pct = liq_distance_pct * (1 - buffer_pct / 100)
+    if initial_sl_pct > max_sl_pct:
+        return RiskCheck(
+            allowed=False,
+            reason=(
+                f"initial_sl={initial_sl_pct:.1f}% too close to liquidation "
+                f"at {leverage}x leverage (max safe={max_sl_pct:.1f}%)"
+            ),
+        )
+    return RiskCheck(allowed=True, reason="ok")
+
+
 def run_all_checks(
     *,
     base: str,

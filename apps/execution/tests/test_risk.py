@@ -1,6 +1,7 @@
 from schurfer_execution.risk import (
     check_daily_loss,
     check_duplicate_position,
+    check_liquidation_distance,
     check_max_position_size,
     check_max_positions,
     check_positions_available,
@@ -181,3 +182,40 @@ class TestRunAllChecks:
         result = run_all_checks(**self._defaults(balances=[_bal(free=10.0)]))
         assert not result.allowed
         assert "insufficient" in result.reason
+
+
+class TestCheckLiquidationDistance:
+    # With maintenance_margin=0.5%, liq_distance = 100/L - 0.5
+
+    def test_safe_sl_allowed(self) -> None:
+        # 5x: liq_distance=19.5%, max_sl=19.5*0.8=15.6% → 10% is safe
+        assert check_liquidation_distance(10.0, leverage=5, buffer_pct=20.0).allowed
+
+    def test_unsafe_sl_blocked(self) -> None:
+        # 10x: liq_distance=9.5%, max_sl=9.5*0.8=7.6% → 10% is too close
+        result = check_liquidation_distance(10.0, leverage=10, buffer_pct=20.0)
+        assert not result.allowed
+        assert "too close to liquidation" in result.reason
+        assert "10x" in result.reason
+
+    def test_just_over_limit_is_blocked(self) -> None:
+        # 5x: max_sl=15.6 → 15.7 is blocked
+        assert not check_liquidation_distance(15.7, leverage=5, buffer_pct=20.0).allowed
+
+    def test_zero_buffer_allows_sl_up_to_liq_distance(self) -> None:
+        # 5x, buffer=0%: max_sl = 19.5%
+        assert check_liquidation_distance(19.4, leverage=5, buffer_pct=0.0).allowed
+        assert not check_liquidation_distance(19.6, leverage=5, buffer_pct=0.0).allowed
+
+    def test_high_leverage_tightens_allowed_sl(self) -> None:
+        # 20x: liq_distance=4.5%, max_sl=4.5*0.8=3.6%
+        assert check_liquidation_distance(3.5, leverage=20, buffer_pct=20.0).allowed
+        assert not check_liquidation_distance(3.7, leverage=20, buffer_pct=20.0).allowed
+
+    def test_leverage_zero_blocked(self) -> None:
+        result = check_liquidation_distance(10.0, leverage=0, buffer_pct=20.0)
+        assert not result.allowed
+        assert "leverage must be > 0" in result.reason
+
+    def test_leverage_negative_blocked(self) -> None:
+        assert not check_liquidation_distance(10.0, leverage=-1, buffer_pct=20.0).allowed

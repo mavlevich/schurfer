@@ -50,6 +50,7 @@ async def post_order(req: OrderRequest, request: Request) -> dict[str, Any]:
             max_positions=cfg.max_positions,
             max_position_usd=cfg.max_position_usd,
             daily_loss_limit_usd=cfg.daily_loss_limit_usd,
+            liquidation_buffer_pct=cfg.liquidation_buffer_pct,
         )
     except Exception as e:
         log.error("execution.order.failed", base=req.base, exchange=req.exchange, err=str(e))

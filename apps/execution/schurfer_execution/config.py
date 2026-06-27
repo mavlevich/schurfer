@@ -67,6 +67,11 @@ class Config:
         default_factory=lambda: _float("DAILY_LOSS_LIMIT_USD", 200.0)
     )
     score_threshold: int = field(default_factory=lambda: _int("SCORE_THRESHOLD", 6))
+    # Minimum gap between initial SL and liquidation price, as % of liquidation distance.
+    # E.g. 20.0 means SL must be at most 80% of the way to liquidation.
+    liquidation_buffer_pct: float = field(
+        default_factory=lambda: _float("LIQUIDATION_BUFFER_PCT", 20.0)
+    )
 
     # Signal trader — set AUTO_TRADE=true and SIGNAL_POSITION_USD>0 to enable.
     # Scores are read from Redis (signals:{base}) — written by the api-gateway ticker.
@@ -91,3 +96,7 @@ class Config:
             raise ValueError(f"SIGNAL_POSITION_USD must be > 0, got {self.signal_position_usd}")
         if not 1 <= self.signal_leverage <= 125:
             raise ValueError(f"SIGNAL_LEVERAGE must be 1-125, got {self.signal_leverage}")
+        if not 0 <= self.liquidation_buffer_pct < 100:
+            raise ValueError(
+                f"LIQUIDATION_BUFFER_PCT must be 0-99, got {self.liquidation_buffer_pct}"
+            )
