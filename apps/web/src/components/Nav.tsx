@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router';
-import { Activity, TrendingUp, Wallet, BookOpen, LogOut } from 'lucide-react';
+import { Activity, TrendingUp, Wallet, BookOpen, ClipboardList, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -9,9 +9,9 @@ export function Nav() {
   return (
     <nav className="border-b bg-background px-4 md:px-8">
       <div className="mx-auto flex h-12 max-w-6xl items-center justify-between">
-        <div className="flex items-center gap-6">
+        <div className="flex min-w-0 items-center gap-6">
           <span className="font-bold tracking-tight">Schurfer</span>
-          <div className="flex items-center gap-1 overflow-x-auto">
+          <div className="flex min-w-0 items-center gap-1 overflow-x-auto">
             <NavLink
               to="/status"
               className={({ isActive }) =>
@@ -63,6 +63,19 @@ export function Nav() {
             >
               <BookOpen className="h-3.5 w-3.5" />
               Trades
+            </NavLink>
+            <NavLink
+              to="/decisions"
+              className={({ isActive }) =>
+                `flex items-center gap-1.5 rounded px-3 py-1.5 text-sm transition-colors ${
+                  isActive
+                    ? 'bg-accent text-accent-foreground'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`
+              }
+            >
+              <ClipboardList className="h-3.5 w-3.5" />
+              Decisions
             </NavLink>
           </div>
         </div>

@@ -7,6 +7,7 @@ import { PumpsPage } from '@/pages/pumps/PumpsPage';
 import { TokenPage } from '@/pages/pumps/TokenPage';
 import { AccountPage } from '@/pages/account/AccountPage';
 import { TradesPage } from '@/pages/trades/TradesPage';
+import { DecisionsPage } from '@/pages/decisions/DecisionsPage';
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { isAuthenticated } = useAuth();
@@ -72,6 +73,14 @@ export function Router() {
             element={
               <RequireAuth>
                 <TradesPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/decisions"
+            element={
+              <RequireAuth>
+                <DecisionsPage />
               </RequireAuth>
             }
           />
