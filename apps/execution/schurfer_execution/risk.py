@@ -132,6 +132,67 @@ def check_funding_rate(funding_rate_pct: float, min_funding_rate_pct: float) -> 
     return RiskCheck(allowed=True, reason="ok")
 
 
+@dataclass
+class EntryCheck:
+    allowed: bool
+    reason: str
+    closed_red: bool = False
+    retrace_pct: float | None = None
+
+
+def check_entry_candles(
+    candles: list[list[float]],
+    *,
+    require_red_candle: bool,
+    min_retrace_pct: float,
+) -> EntryCheck:
+    """Check entry quality against recent 5m OHLCV candles.
+
+    candles: list of [timestamp, open, high, low, close, volume] from ccxt.
+    The last element may be a still-forming candle; [-2] is the last closed one.
+
+    require_red_candle: skip if the last *closed* candle ([-2]) is not red
+    (close < open). Only the closed candle is used — the forming candle can flip.
+
+    min_retrace_pct: skip if price has not yet retraced at least this % from the
+    pump high seen in the candle window. Prevents shorting before any reversal.
+    """
+    if len(candles) < 2:
+        if require_red_candle or min_retrace_pct > 0:
+            return EntryCheck(allowed=False, reason="entry_candles_insufficient")
+        return EntryCheck(allowed=True, reason="ok")
+
+    last_closed = candles[-2]
+    current = candles[-1]
+    closed_red = last_closed[4] < last_closed[1]
+
+    if require_red_candle and not closed_red:
+        return EntryCheck(
+            allowed=False,
+            reason="no_red_candle (pump may still be running)",
+            closed_red=False,
+        )
+
+    retrace_pct: float | None = None
+    if min_retrace_pct > 0:
+        pump_high = max(c[2] for c in candles)
+        current_price = current[4]
+        if pump_high > 0:
+            retrace_pct = (pump_high - current_price) / pump_high * 100
+            if retrace_pct < min_retrace_pct:
+                return EntryCheck(
+                    allowed=False,
+                    reason=(
+                        f"insufficient_retrace={retrace_pct:.2f}% "
+                        f"(min={min_retrace_pct}%, high={pump_high:.6f})"
+                    ),
+                    closed_red=closed_red,
+                    retrace_pct=retrace_pct,
+                )
+
+    return EntryCheck(allowed=True, reason="ok", closed_red=closed_red, retrace_pct=retrace_pct)
+
+
 MIN_POSITION_USD = 5.0  # minimum notional to avoid dust positions
 
 

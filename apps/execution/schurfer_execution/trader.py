@@ -26,7 +26,10 @@ _SEEN_KEY = "trader:seen:{base}"
 _TRADE_ID_KEY = "trade:id:{exchange}:{base}"
 _SEEN_TTL_TRADED = 86400  # 24h — don't re-enter the same token after a trade
 _SEEN_TTL_SKIP = 1800  # 30min — recheck sooner when skipped
+_SEEN_TTL_ENTRY_WAIT = 300  # 5min — recheck after one 5m candle when entry quality fails
 _SIGNALS_MAX_AGE = 90  # reject cached score older than 1.5x ticker interval
+_ENTRY_CANDLE_TIMEOUT = 5
+_ENTRY_CANDLE_COUNT = 6  # fetch 6 x 5m candles; last may be forming, [-2] is last closed
 
 
 async def run_signal_trader(
@@ -129,6 +132,41 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 )
                 continue
 
+        entry_check: risk.EntryCheck | None = None
+        if cfg.require_red_candle or cfg.min_retrace_pct > 0:
+            candles = await _fetch_entry_candles(ex, base) if ex else None
+            if candles is None:
+                log.warning("trader.skip.entry_candles_unavailable", base=base)
+                await rdb.set(seen_key, "1", ex=_SEEN_TTL_ENTRY_WAIT)
+                decisions.write_decision(
+                    cfg.db_url,
+                    base=base,
+                    exchange=exchange,
+                    action="skipped",
+                    reason="entry_candles_unavailable",
+                    score=score,
+                    pump_pct=pump_pct,
+                )
+                continue
+            entry_check = risk.check_entry_candles(
+                candles,
+                require_red_candle=cfg.require_red_candle,
+                min_retrace_pct=cfg.min_retrace_pct,
+            )
+            if not entry_check.allowed:
+                log.info("trader.skip.entry_quality", base=base, reason=entry_check.reason)
+                await rdb.set(seen_key, "1", ex=_SEEN_TTL_ENTRY_WAIT)
+                decisions.write_decision(
+                    cfg.db_url,
+                    base=base,
+                    exchange=exchange,
+                    action="skipped",
+                    reason=entry_check.reason,
+                    score=score,
+                    pump_pct=pump_pct,
+                )
+                continue
+
         exit_params = exit_module.exit_params(pump_pct)
         liq_check = risk.check_liquidation_distance(
             exit_params["initial_sl_pct"],
@@ -213,6 +251,10 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
             "risk_per_trade_pct": cfg.risk_per_trade_pct if cfg.risk_per_trade_pct > 0 else None,
             "initial_sl_pct": exit_params["initial_sl_pct"],
             "size_usd": size_usd,
+            "entry_require_red_candle": cfg.require_red_candle,
+            "entry_min_retrace_pct": cfg.min_retrace_pct if cfg.min_retrace_pct > 0 else None,
+            "entry_closed_red": entry_check.closed_red if entry_check else None,
+            "entry_retrace_pct": entry_check.retrace_pct if entry_check else None,
         }
 
         if cfg.dry_run:
@@ -386,6 +428,23 @@ async def _fetch_equity_usd(exchanges: dict[str, Any], exchange: str) -> float |
     except Exception as exc:
         log.warning("trader.equity.fetch_failed", exchange=exchange, err=str(exc))
     return None
+
+
+async def _fetch_entry_candles(ex: Any, base: str) -> list[list[float]] | None:
+    """Fetch recent 5m OHLCV candles. Returns None on any error or malformed data."""
+    try:
+        candles = await asyncio.wait_for(
+            ex.fetch_ohlcv(f"{base.upper()}/USDT:USDT", "5m", limit=_ENTRY_CANDLE_COUNT),
+            timeout=_ENTRY_CANDLE_TIMEOUT,
+        )
+        if not candles or not all(isinstance(c, list | tuple) and len(c) >= 6 for c in candles):
+            log.warning("trader.entry_candles.malformed", base=base)
+            return None
+        validated: list[list[float]] = [list(c[:6]) for c in candles]
+        return validated
+    except Exception as exc:
+        log.warning("trader.entry_candles.fetch_failed", base=base, err=str(exc))
+        return None
 
 
 async def _fetch_score(base: str, rdb: Any) -> int:

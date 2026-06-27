@@ -140,6 +140,8 @@ services:
       MIN_FUNDING_RATE_PCT: ${MIN_FUNDING_RATE_PCT:--0.1}
       REQUIRE_FUNDING_RATE: ${REQUIRE_FUNDING_RATE:-false}
       RISK_PER_TRADE_PCT: ${RISK_PER_TRADE_PCT:-0}
+      REQUIRE_RED_CANDLE: ${REQUIRE_RED_CANDLE:-false}
+      MIN_RETRACE_PCT: ${MIN_RETRACE_PCT:-0}
       # Signal trader (both off by default — enable via .env)
       AUTO_TRADE: ${AUTO_TRADE:-false}
       DRY_RUN: ${DRY_RUN:-false}
