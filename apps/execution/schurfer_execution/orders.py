@@ -8,6 +8,7 @@ from .account import fetch_margin_balance, fetch_positions
 from .risk import (
     DAILY_PNL_KEY,
     TRADING_ENABLED_KEY,
+    check_liquidation_distance,
     check_max_position_size,
     check_sufficient_margin,
     run_all_checks,
@@ -38,6 +39,8 @@ async def place_order(
     max_positions: int,
     max_position_usd: float,
     daily_loss_limit_usd: float,
+    initial_sl_pct: float = 10.0,
+    liquidation_buffer_pct: float = 20.0,
 ) -> dict[str, Any]:
     lock_key = f"lock:order:{exchange}:{base.upper()}"
     lock_token = str(uuid.uuid4())
@@ -68,6 +71,10 @@ async def place_order(
         )
         if not check.allowed:
             return {"allowed": False, "reason": check.reason}
+
+        liq_check = check_liquidation_distance(initial_sl_pct, leverage, liquidation_buffer_pct)
+        if not liq_check.allowed:
+            return {"allowed": False, "reason": liq_check.reason}
 
         ex = exchanges[exchange]
         symbol = f"{base.upper()}/USDT:USDT"

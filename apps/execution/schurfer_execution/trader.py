@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 import structlog
 
 from . import exit as exit_module
-from . import journal, notify, paper
+from . import journal, notify, paper, risk
 from .orders import place_order
 
 if TYPE_CHECKING:
@@ -81,6 +81,17 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
             "signals_ts": pumps_data.get("ts"),
         }
 
+        exit_params = exit_module.exit_params(setup_context.get("pump_pct"))
+        liq_check = risk.check_liquidation_distance(
+            exit_params["initial_sl_pct"],
+            cfg.signal_leverage,
+            cfg.liquidation_buffer_pct,
+        )
+        if not liq_check.allowed:
+            log.info("trader.skip.liquidation_guard", base=base, reason=liq_check.reason)
+            await rdb.set(seen_key, "1", ex=_SEEN_TTL_SKIP)
+            continue
+
         if cfg.dry_run:
             ex = exchanges.get(exchange)
             if not ex:
@@ -119,6 +130,8 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
             max_positions=cfg.max_positions,
             max_position_usd=cfg.max_position_usd,
             daily_loss_limit_usd=cfg.daily_loss_limit_usd,
+            initial_sl_pct=exit_params["initial_sl_pct"],
+            liquidation_buffer_pct=cfg.liquidation_buffer_pct,
         )
 
         if result.get("allowed"):
@@ -132,10 +145,9 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
             await rdb.set(seen_key, "1", ex=_SEEN_TTL_TRADED)
 
             entry_price = result.get("price", 0)
-            params = exit_module.exit_params(setup_context.get("pump_pct"))
             await rdb.set(
                 exit_module.params_key(exchange, base),
-                json.dumps(params),
+                json.dumps(exit_params),
                 ex=_SEEN_TTL_TRADED,
             )
             await rdb.set(

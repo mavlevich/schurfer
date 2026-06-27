@@ -13,14 +13,15 @@ from schurfer_execution.trader import (
 )
 
 
-def _cfg(*, score_threshold: int = 6) -> Config:
+def _cfg(*, score_threshold: int = 6, signal_leverage: int = 3) -> Config:
     cfg = object.__new__(Config)
     cfg.score_threshold = score_threshold
     cfg.signal_position_usd = 50.0
-    cfg.signal_leverage = 3
+    cfg.signal_leverage = signal_leverage
     cfg.max_positions = 5
     cfg.max_position_usd = 500.0
     cfg.daily_loss_limit_usd = 200.0
+    cfg.liquidation_buffer_pct = 20.0
     cfg.dry_run = False
     cfg.db_url = None
     cfg.telegram_bot_token = None
@@ -141,6 +142,7 @@ def test_config_validation_raises_when_auto_trade_and_bad_position_usd() -> None
     cfg.dry_run = False
     cfg.signal_position_usd = 0.0
     cfg.signal_leverage = 3
+    cfg.liquidation_buffer_pct = 20.0
     with pytest.raises(ValueError, match="SIGNAL_POSITION_USD"):
         cfg.__post_init__()
 
@@ -151,6 +153,7 @@ def test_config_validation_raises_when_auto_trade_and_bad_leverage() -> None:
     cfg.dry_run = False
     cfg.signal_position_usd = 50.0
     cfg.signal_leverage = 0
+    cfg.liquidation_buffer_pct = 20.0
     with pytest.raises(ValueError, match="SIGNAL_LEVERAGE"):
         cfg.__post_init__()
 
@@ -161,6 +164,7 @@ def test_config_validation_skips_when_auto_trade_false() -> None:
     cfg.dry_run = False
     cfg.signal_position_usd = 0.0  # would fail if auto_trade=True
     cfg.signal_leverage = 0  # would fail if auto_trade=True
+    cfg.liquidation_buffer_pct = -99.0  # would fail if auto_trade=True
     cfg.__post_init__()  # must not raise
 
 
@@ -170,7 +174,30 @@ def test_config_validation_raises_when_auto_trade_and_dry_run_both_set() -> None
     cfg.dry_run = True
     cfg.signal_position_usd = 50.0
     cfg.signal_leverage = 3
+    cfg.liquidation_buffer_pct = 20.0
     with pytest.raises(ValueError, match="mutually exclusive"):
+        cfg.__post_init__()
+
+
+def test_config_validation_raises_when_liquidation_buffer_negative() -> None:
+    cfg = object.__new__(Config)
+    cfg.auto_trade = True
+    cfg.dry_run = False
+    cfg.signal_position_usd = 50.0
+    cfg.signal_leverage = 3
+    cfg.liquidation_buffer_pct = -20.0
+    with pytest.raises(ValueError, match="LIQUIDATION_BUFFER_PCT"):
+        cfg.__post_init__()
+
+
+def test_config_validation_raises_when_liquidation_buffer_gte_100() -> None:
+    cfg = object.__new__(Config)
+    cfg.auto_trade = True
+    cfg.dry_run = False
+    cfg.signal_position_usd = 50.0
+    cfg.signal_leverage = 3
+    cfg.liquidation_buffer_pct = 100.0
+    with pytest.raises(ValueError, match="LIQUIDATION_BUFFER_PCT"):
         cfg.__post_init__()
 
 
@@ -277,3 +304,25 @@ async def test_tick_picks_highest_volume_exchange() -> None:
         await _tick({"bybit": MagicMock(), "bingx": MagicMock()}, rdb, _cfg())
 
     assert mock_order.call_args.kwargs["exchange"] == "bingx"
+
+
+async def test_tick_skips_when_sl_too_close_to_liquidation() -> None:
+    # pump_pct=50 → initial_sl=10%, leverage=20x → max_safe=4% → blocked
+    payload = json.dumps(
+        {
+            "pumps": [
+                {
+                    "base": "BEAT",
+                    "max_change_pct": 50.0,
+                    "exchanges": [{"exchange": "bybit", "volume_24h_usd": 1_000_000}],
+                }
+            ]
+        }
+    ).encode()
+    rdb = _rdb(pumps_raw=payload, signal_score=8)
+
+    with patch("schurfer_execution.trader.place_order", new_callable=AsyncMock) as mock_order:
+        await _tick({"bybit": MagicMock()}, rdb, _cfg(signal_leverage=20))
+        mock_order.assert_not_called()
+
+    assert rdb.set.call_args.kwargs["ex"] == _SEEN_TTL_SKIP
