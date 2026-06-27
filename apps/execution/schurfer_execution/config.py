@@ -72,6 +72,14 @@ class Config:
     liquidation_buffer_pct: float = field(
         default_factory=lambda: _float("LIQUIDATION_BUFFER_PCT", 20.0)
     )
+    # Minimum acceptable funding rate (% per 8h, normalized). Negative = shorts pay longs.
+    # -0.1 blocks only extreme cases while we gather data to calibrate.
+    min_funding_rate_pct: float = field(
+        default_factory=lambda: _float("MIN_FUNDING_RATE_PCT", -0.1)
+    )
+    # When True, skip entry if funding rate cannot be fetched (fail-closed).
+    # Default False (fail-open) is safe for dry-run; set True for live AUTO_TRADE.
+    require_funding_rate: bool = field(default_factory=lambda: _bool("REQUIRE_FUNDING_RATE", False))
 
     # Signal trader — set AUTO_TRADE=true and SIGNAL_POSITION_USD>0 to enable.
     # Scores are read from Redis (signals:{base}) — written by the api-gateway ticker.

@@ -114,6 +114,24 @@ def check_liquidation_distance(
     return RiskCheck(allowed=True, reason="ok")
 
 
+def check_funding_rate(funding_rate_pct: float, min_funding_rate_pct: float) -> RiskCheck:
+    """Block entry if the current funding rate is below the configured minimum.
+
+    funding_rate_pct is the rate expressed as a percentage per 8h period
+    (e.g. -0.05 means shorts pay 0.05%/8h to longs).
+    Positive rates are income for shorts; negative rates are a cost.
+    """
+    if funding_rate_pct < min_funding_rate_pct:
+        return RiskCheck(
+            allowed=False,
+            reason=(
+                f"funding_rate={funding_rate_pct:.4f}%/8h below min "
+                f"{min_funding_rate_pct:.4f}%/8h (shorts paying too much)"
+            ),
+        )
+    return RiskCheck(allowed=True, reason="ok")
+
+
 def run_all_checks(
     *,
     base: str,

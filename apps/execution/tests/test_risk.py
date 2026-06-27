@@ -1,6 +1,7 @@
 from schurfer_execution.risk import (
     check_daily_loss,
     check_duplicate_position,
+    check_funding_rate,
     check_liquidation_distance,
     check_max_position_size,
     check_max_positions,
@@ -219,3 +220,30 @@ class TestCheckLiquidationDistance:
 
     def test_leverage_negative_blocked(self) -> None:
         assert not check_liquidation_distance(10.0, leverage=-1, buffer_pct=20.0).allowed
+
+
+class TestCheckFundingRate:
+    def test_positive_rate_allowed(self) -> None:
+        # Shorts receive funding — always allow
+        assert check_funding_rate(0.01, min_funding_rate_pct=-0.1).allowed
+
+    def test_zero_rate_allowed(self) -> None:
+        assert check_funding_rate(0.0, min_funding_rate_pct=-0.1).allowed
+
+    def test_mildly_negative_rate_allowed(self) -> None:
+        # -0.05%/8h is above the -0.1% threshold
+        assert check_funding_rate(-0.05, min_funding_rate_pct=-0.1).allowed
+
+    def test_rate_at_threshold_allowed(self) -> None:
+        assert check_funding_rate(-0.1, min_funding_rate_pct=-0.1).allowed
+
+    def test_rate_below_threshold_blocked(self) -> None:
+        result = check_funding_rate(-0.15, min_funding_rate_pct=-0.1)
+        assert not result.allowed
+        assert "funding_rate" in result.reason
+        assert "shorts paying too much" in result.reason
+
+    def test_custom_threshold(self) -> None:
+        # Strict threshold: block anything negative
+        assert not check_funding_rate(-0.01, min_funding_rate_pct=0.0).allowed
+        assert check_funding_rate(0.01, min_funding_rate_pct=0.0).allowed

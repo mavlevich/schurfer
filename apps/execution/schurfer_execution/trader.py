@@ -11,6 +11,8 @@ from . import decisions, journal, notify, paper, risk
 from . import exit as exit_module
 from .orders import place_order
 
+_FUNDING_FETCH_TIMEOUT = 5  # seconds
+
 if TYPE_CHECKING:
     from .config import Config
 
@@ -92,9 +94,44 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
             )
             continue
 
+        ex = exchanges.get(exchange)
+        funding_rate_pct = await _fetch_funding_rate_pct(ex, base) if ex else None
+
+        if funding_rate_pct is None and cfg.require_funding_rate:
+            reason = "funding_rate_unavailable"
+            log.info("trader.skip.funding_rate_unavailable", base=base)
+            await rdb.set(seen_key, "1", ex=_SEEN_TTL_SKIP)
+            decisions.write_decision(
+                cfg.db_url,
+                base=base,
+                exchange=exchange,
+                action="skipped",
+                reason=reason,
+                score=score,
+                pump_pct=pump_pct,
+            )
+            continue
+
+        if funding_rate_pct is not None:
+            fr_check = risk.check_funding_rate(funding_rate_pct, cfg.min_funding_rate_pct)
+            if not fr_check.allowed:
+                log.info("trader.skip.funding_rate", base=base, reason=fr_check.reason)
+                await rdb.set(seen_key, "1", ex=_SEEN_TTL_SKIP)
+                decisions.write_decision(
+                    cfg.db_url,
+                    base=base,
+                    exchange=exchange,
+                    action="skipped",
+                    reason=fr_check.reason,
+                    score=score,
+                    pump_pct=pump_pct,
+                )
+                continue
+
         setup_context = {
             "score": score,
             "pump_pct": pump_pct,
+            "funding_rate_pct": funding_rate_pct,
             "exchanges": pump.get("exchanges", []),
             "signals_ts": pumps_data.get("ts"),
         }
@@ -120,7 +157,6 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
             continue
 
         if cfg.dry_run:
-            ex = exchanges.get(exchange)
             if not ex:
                 await rdb.set(seen_key, "1", ex=_SEEN_TTL_SKIP)
                 continue
@@ -249,6 +285,36 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 score=score,
                 pump_pct=pump_pct,
             )
+
+
+_EIGHT_HOURS_MS = 8 * 3600 * 1000  # reference period for normalization
+
+
+async def _fetch_funding_rate_pct(ex: Any, base: str) -> float | None:
+    """Fetch current funding rate normalized to % per 8h equivalent.
+
+    ccxt returns fundingRate as a fraction and fundingInterval in ms.
+    When fundingInterval is present we normalize so a 4h rate is doubled
+    and a 1h rate is multiplied by 8 before comparison with the threshold.
+    If fundingInterval is absent we assume the standard 8h period.
+    """
+    try:
+        data = await asyncio.wait_for(
+            ex.fetch_funding_rate(f"{base.upper()}/USDT:USDT"),
+            timeout=_FUNDING_FETCH_TIMEOUT,
+        )
+        rate = data.get("fundingRate")
+        if rate is None:
+            return None
+        interval_ms = data.get("fundingInterval")
+        if interval_ms and interval_ms > 0:
+            rate_8h = float(rate) * (_EIGHT_HOURS_MS / float(interval_ms))
+        else:
+            rate_8h = float(rate)  # assume 8h (Binance/Bybit/OKX standard)
+        return rate_8h * 100
+    except Exception as exc:
+        log.warning("trader.funding_rate.fetch_failed", base=base, err=str(exc))
+        return None
 
 
 async def _fetch_score(base: str, rdb: Any) -> int:
