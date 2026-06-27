@@ -93,6 +93,15 @@ class Config:
     # Typical range: 0.25-1.0. Formula: size = equity * risk% / initial_sl%.
     risk_per_trade_pct: float = field(default_factory=lambda: _float("RISK_PER_TRADE_PCT", 0.0))
 
+    # Entry quality filters — checked after score/funding/liquidation, before sizing.
+    # Fail-closed: if OHLCV fetch fails or data is insufficient, the trade is skipped.
+    # REQUIRE_RED_CANDLE: the last *closed* 5m candle ([-2]) must be red (close < open).
+    # The still-forming candle ([-1]) is excluded — it can flip before close.
+    require_red_candle: bool = field(default_factory=lambda: _bool("REQUIRE_RED_CANDLE", False))
+    # MIN_RETRACE_PCT: price must have pulled back at least this % from the candle-window high.
+    # 0.0 = disabled. Typical starting value: 1.0-3.0.
+    min_retrace_pct: float = field(default_factory=lambda: _float("MIN_RETRACE_PCT", 0.0))
+
     # Notifications (optional — omit to disable)
     telegram_bot_token: str | None = field(default_factory=lambda: _env("TELEGRAM_BOT_TOKEN"))
     telegram_chat_id: str | None = field(default_factory=lambda: _env("TELEGRAM_CHAT_ID"))
@@ -115,3 +124,5 @@ class Config:
             )
         if not 0.0 <= self.risk_per_trade_pct <= 5.0:
             raise ValueError(f"RISK_PER_TRADE_PCT must be 0-5, got {self.risk_per_trade_pct}")
+        if not 0.0 <= self.min_retrace_pct <= 20.0:
+            raise ValueError(f"MIN_RETRACE_PCT must be 0-20, got {self.min_retrace_pct}")

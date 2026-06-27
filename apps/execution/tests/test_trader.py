@@ -5,8 +5,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from schurfer_execution.config import Config
 from schurfer_execution.trader import (
+    _SEEN_TTL_ENTRY_WAIT,
     _SEEN_TTL_SKIP,
     _SEEN_TTL_TRADED,
+    _fetch_entry_candles,
     _fetch_equity_usd,
     _fetch_funding_rate_pct,
     _fetch_score,
@@ -22,6 +24,8 @@ def _cfg(
     min_funding_rate_pct: float = -0.1,
     require_funding_rate: bool = False,
     risk_per_trade_pct: float = 0.0,
+    require_red_candle: bool = False,
+    min_retrace_pct: float = 0.0,
 ) -> Config:
     cfg = object.__new__(Config)
     cfg.score_threshold = score_threshold
@@ -34,6 +38,8 @@ def _cfg(
     cfg.min_funding_rate_pct = min_funding_rate_pct
     cfg.require_funding_rate = require_funding_rate
     cfg.risk_per_trade_pct = risk_per_trade_pct
+    cfg.require_red_candle = require_red_candle
+    cfg.min_retrace_pct = min_retrace_pct
     cfg.dry_run = False
     cfg.db_url = None
     cfg.telegram_bot_token = None
@@ -654,3 +660,93 @@ async def test_tick_skips_when_equity_fetch_fails_and_risk_pct_enabled() -> None
     mock_order.assert_not_called()
     rdb.set.assert_called_once()
     assert rdb.set.call_args.kwargs["ex"] == _SEEN_TTL_SKIP
+
+
+# --- _fetch_entry_candles ---
+
+
+def _candles_green() -> list:
+    return [[0, 100.0, 110.0, 95.0, 108.0, 5000.0]] * 6  # all green
+
+
+def _candles_with_red() -> list:
+    green = [0, 100.0, 110.0, 95.0, 108.0, 5000.0]
+    red = [0, 108.0, 109.0, 103.0, 104.0, 3000.0]
+    return [green, green, green, green, red, green]  # [-2] is red
+
+
+async def test_fetch_entry_candles_returns_ohlcv() -> None:
+    ex = _exchange_mock(0.0001)
+    ex.fetch_ohlcv = AsyncMock(return_value=_candles_green())
+    result = await _fetch_entry_candles(ex, "BEAT")
+    assert result == _candles_green()
+
+
+async def test_fetch_entry_candles_returns_none_on_error() -> None:
+    ex = _exchange_mock(0.0001)
+    ex.fetch_ohlcv = AsyncMock(side_effect=RuntimeError("timeout"))
+    result = await _fetch_entry_candles(ex, "BEAT")
+    assert result is None
+
+
+# --- entry quality filter in _tick ---
+
+
+async def test_tick_skips_with_entry_wait_ttl_when_no_red_candle() -> None:
+    rdb = _rdb(pumps_raw=_pumps("BEAT"), signal_score=8)
+    ex = _exchange_mock(0.0001)
+    ex.fetch_ohlcv = AsyncMock(return_value=_candles_green())
+    with patch("schurfer_execution.trader.place_order", new_callable=AsyncMock) as mock_order:
+        await _tick({"bybit": ex}, rdb, _cfg(require_red_candle=True))
+    mock_order.assert_not_called()
+    rdb.set.assert_called_once()
+    assert rdb.set.call_args.kwargs["ex"] == _SEEN_TTL_ENTRY_WAIT
+
+
+async def test_tick_proceeds_when_red_candle_present() -> None:
+    rdb = _rdb(pumps_raw=_pumps("BEAT"), signal_score=8)
+    ex = _exchange_mock(0.0001)
+    ex.fetch_ohlcv = AsyncMock(return_value=_candles_with_red())
+    with patch(
+        "schurfer_execution.trader.place_order",
+        new_callable=AsyncMock,
+        return_value={"allowed": True, "order_id": "ord-1"},
+    ) as mock_order:
+        await _tick({"bybit": ex}, rdb, _cfg(require_red_candle=True))
+    mock_order.assert_called_once()
+
+
+async def test_tick_proceeds_when_entry_filters_disabled() -> None:
+    rdb = _rdb(pumps_raw=_pumps("BEAT"), signal_score=8)
+    ex = _exchange_mock(0.0001)
+    ex.fetch_ohlcv = AsyncMock(return_value=_candles_green())
+    with patch(
+        "schurfer_execution.trader.place_order",
+        new_callable=AsyncMock,
+        return_value={"allowed": True, "order_id": "ord-2"},
+    ) as mock_order:
+        await _tick({"bybit": ex}, rdb, _cfg(require_red_candle=False, min_retrace_pct=0.0))
+    mock_order.assert_called_once()
+    # fetch_ohlcv should NOT have been called (filters disabled)
+    ex.fetch_ohlcv.assert_not_called()
+
+
+async def test_tick_skips_when_entry_candles_unavailable_fail_closed() -> None:
+    # When filters are enabled and OHLCV fetch fails, skip (fail-closed)
+    rdb = _rdb(pumps_raw=_pumps("BEAT"), signal_score=8)
+    ex = _exchange_mock(0.0001)
+    ex.fetch_ohlcv = AsyncMock(side_effect=RuntimeError("timeout"))
+    with patch("schurfer_execution.trader.place_order", new_callable=AsyncMock) as mock_order:
+        await _tick({"bybit": ex}, rdb, _cfg(require_red_candle=True))
+    mock_order.assert_not_called()
+    assert rdb.set.call_args.kwargs["ex"] == _SEEN_TTL_ENTRY_WAIT
+
+
+async def test_tick_skips_when_entry_candles_malformed() -> None:
+    rdb = _rdb(pumps_raw=_pumps("BEAT"), signal_score=8)
+    ex = _exchange_mock(0.0001)
+    ex.fetch_ohlcv = AsyncMock(return_value=[[1, 2]])  # too short, malformed
+    with patch("schurfer_execution.trader.place_order", new_callable=AsyncMock) as mock_order:
+        await _tick({"bybit": ex}, rdb, _cfg(require_red_candle=True))
+    mock_order.assert_not_called()
+    assert rdb.set.call_args.kwargs["ex"] == _SEEN_TTL_ENTRY_WAIT

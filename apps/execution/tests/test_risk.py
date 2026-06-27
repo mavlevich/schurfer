@@ -1,7 +1,9 @@
 import pytest
 from schurfer_execution.risk import (
+    EntryCheck,
     check_daily_loss,
     check_duplicate_position,
+    check_entry_candles,
     check_funding_rate,
     check_liquidation_distance,
     check_max_position_size,
@@ -290,3 +292,96 @@ class TestComputePositionSizeUsd:
     def test_returns_value_when_max_usd_above_min_notional(self) -> None:
         # computed=$50, capped to max_usd=$10, $10 >= MIN_POSITION_USD=$5 → $10
         assert compute_position_size_usd(1000.0, 0.5, 10.0, 10.0) == pytest.approx(10.0)
+
+
+def _c(open_: float, close: float, high: float | None = None, low: float | None = None) -> list:
+    return [0, open_, high or max(open_, close), low or min(open_, close), close, 1000.0]
+
+
+def _red(price: float = 100.0) -> list:
+    return _c(price, price * 0.98)  # -2%
+
+
+def _green(price: float = 100.0) -> list:
+    return _c(price, price * 1.05)  # +5%
+
+
+class TestCheckEntryCandles:
+    def test_both_disabled_always_ok(self) -> None:
+        candles = [_green(), _green()]
+        assert check_entry_candles(candles, require_red_candle=False, min_retrace_pct=0.0).allowed
+
+    def test_too_few_candles_ok_when_filters_disabled(self) -> None:
+        result = check_entry_candles([_green()], require_red_candle=False, min_retrace_pct=0.0)
+        assert result.allowed
+
+    def test_too_few_candles_blocked_when_filter_enabled(self) -> None:
+        result = check_entry_candles([_green()], require_red_candle=True, min_retrace_pct=0.0)
+        assert not result.allowed
+        assert "insufficient" in result.reason
+
+    def test_too_few_candles_blocked_when_retrace_filter_enabled(self) -> None:
+        result = check_entry_candles([_green()], require_red_candle=False, min_retrace_pct=2.0)
+        assert not result.allowed
+        assert "insufficient" in result.reason
+
+    # --- require_red_candle ---
+
+    def test_red_candle_passes_when_last_closed_is_red(self) -> None:
+        # [-2] is red (last closed), [-1] is green (forming) → ok
+        candles = [_green(), _green(), _red(), _green()]
+        result = check_entry_candles(candles, require_red_candle=True, min_retrace_pct=0.0)
+        assert result.allowed
+        assert result.closed_red is True
+
+    def test_red_candle_blocked_when_last_closed_is_green_even_if_current_red(self) -> None:
+        # [-2] green, [-1] red (still forming — unreliable) → blocked
+        candles = [_green(), _green(), _green(), _red()]
+        result = check_entry_candles(candles, require_red_candle=True, min_retrace_pct=0.0)
+        assert not result.allowed
+        assert "no_red_candle" in result.reason
+
+    def test_red_candle_blocked_when_all_green(self) -> None:
+        candles = [_green(), _green(), _green(), _green()]
+        result = check_entry_candles(candles, require_red_candle=True, min_retrace_pct=0.0)
+        assert not result.allowed
+        assert "no_red_candle" in result.reason
+
+    def test_entry_check_exposes_closed_red_and_retrace(self) -> None:
+        # [-2]=red(pump→106), [-1]=green(106→107, forming) — last closed is red
+        candles = [_c(100, 110, high=110), _red(108), _c(106, 107)]
+        result = check_entry_candles(candles, require_red_candle=True, min_retrace_pct=1.0)
+        assert isinstance(result, EntryCheck)
+        assert result.closed_red is True
+        assert result.retrace_pct is not None and result.retrace_pct > 0
+
+    # --- min_retrace_pct ---
+
+    def test_retrace_passes_when_price_dropped_enough(self) -> None:
+        # pump high=110, current=106 → retrace = (110-106)/110*100 ≈ 3.6%
+        candles = [_c(100, 110, high=110), _c(108, 106)]
+        result = check_entry_candles(candles, require_red_candle=False, min_retrace_pct=3.0)
+        assert result.allowed
+
+    def test_retrace_blocked_when_price_still_near_high(self) -> None:
+        # pump high=110, current=109.5 → retrace ≈ 0.45%
+        candles = [_c(100, 110, high=110), _c(110, 109.5)]
+        result = check_entry_candles(candles, require_red_candle=False, min_retrace_pct=3.0)
+        assert not result.allowed
+        assert "insufficient_retrace" in result.reason
+
+    def test_retrace_uses_highest_high_across_all_candles(self) -> None:
+        # high is in the middle candle
+        candles = [_c(90, 95, high=95), _c(95, 120, high=120), _c(118, 114)]
+        # retrace = (120-114)/120*100 = 5%
+        result = check_entry_candles(candles, require_red_candle=False, min_retrace_pct=4.0)
+        assert result.allowed
+
+    # --- combined ---
+
+    def test_both_filters_must_pass(self) -> None:
+        # [-2]=red (last closed OK), [-1]=near high (retrace < 5% → blocked)
+        candles = [_c(100, 110, high=110), _red(109), _c(109, 109.5)]
+        result = check_entry_candles(candles, require_red_candle=True, min_retrace_pct=5.0)
+        assert not result.allowed
+        assert "insufficient_retrace" in result.reason
