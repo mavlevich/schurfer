@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/mavlevich/schurfer/api-gateway/internal/auth"
+	"github.com/mavlevich/schurfer/api-gateway/internal/decisions"
 	"github.com/mavlevich/schurfer/api-gateway/internal/execution"
 	"github.com/mavlevich/schurfer/api-gateway/internal/health"
 	"github.com/mavlevich/schurfer/api-gateway/internal/pumps"
@@ -59,6 +60,7 @@ func run() error {
 	pumpsHandler := pumps.NewHandler(rdb, checker.Pool())
 	accountHandler := execution.NewHandler(cfg.ExecutionURL)
 	tradesHandler := trades.NewHandler(checker.Pool())
+	decisionsHandler := decisions.NewHandler(checker.Pool())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -91,6 +93,7 @@ func run() error {
 		r.Get("/api/pumps/{base}/signals", pumpsHandler.Signals)
 
 		r.Get("/api/trades", tradesHandler.List)
+		r.Get("/api/decisions", decisionsHandler.List)
 
 		r.Get("/api/account/balance", accountHandler.ServeHTTP)
 		r.Get("/api/account/positions", accountHandler.ServeHTTP)

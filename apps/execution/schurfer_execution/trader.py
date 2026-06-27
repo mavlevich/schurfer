@@ -7,8 +7,8 @@ from typing import TYPE_CHECKING, Any
 
 import structlog
 
+from . import decisions, journal, notify, paper, risk
 from . import exit as exit_module
-from . import journal, notify, paper, risk
 from .orders import place_order
 
 if TYPE_CHECKING:
@@ -62,21 +62,39 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
         if await rdb.get(seen_key):
             continue
 
+        pump_pct: float | None = pump.get("max_change_pct")
         exchange = _pick_exchange(pump.get("exchanges", []), exchanges)
         if not exchange:
             log.info("trader.skip.no_exchange", base=base)
             await rdb.set(seen_key, "1", ex=_SEEN_TTL_SKIP)
+            decisions.write_decision(
+                cfg.db_url,
+                base=base,
+                exchange="",
+                action="skipped",
+                reason="no_configured_exchange",
+                pump_pct=pump_pct,
+            )
             continue
 
         score = await _fetch_score(base, rdb)
         if score < cfg.score_threshold:
             log.info("trader.skip.score", base=base, score=score, threshold=cfg.score_threshold)
             await rdb.set(seen_key, "1", ex=_SEEN_TTL_SKIP)
+            decisions.write_decision(
+                cfg.db_url,
+                base=base,
+                exchange=exchange,
+                action="skipped",
+                reason=f"score {score} < threshold {cfg.score_threshold}",
+                score=score,
+                pump_pct=pump_pct,
+            )
             continue
 
         setup_context = {
             "score": score,
-            "pump_pct": pump.get("max_change_pct"),
+            "pump_pct": pump_pct,
             "exchanges": pump.get("exchanges", []),
             "signals_ts": pumps_data.get("ts"),
         }
@@ -90,6 +108,15 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
         if not liq_check.allowed:
             log.info("trader.skip.liquidation_guard", base=base, reason=liq_check.reason)
             await rdb.set(seen_key, "1", ex=_SEEN_TTL_SKIP)
+            decisions.write_decision(
+                cfg.db_url,
+                base=base,
+                exchange=exchange,
+                action="skipped",
+                reason=liq_check.reason,
+                score=score,
+                pump_pct=pump_pct,
+            )
             continue
 
         if cfg.dry_run:
@@ -117,6 +144,15 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 cfg=cfg,
             )
             await rdb.set(seen_key, "1", ex=_SEEN_TTL_TRADED)
+            decisions.write_decision(
+                cfg.db_url,
+                base=base,
+                exchange=exchange,
+                action="opened_dry_run",
+                reason="paper trade",
+                score=score,
+                pump_pct=pump_pct,
+            )
             continue
 
         result = await place_order(
@@ -143,6 +179,15 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 order_id=result.get("order_id"),
             )
             await rdb.set(seen_key, "1", ex=_SEEN_TTL_TRADED)
+            decisions.write_decision(
+                cfg.db_url,
+                base=base,
+                exchange=exchange,
+                action="opened",
+                reason="ok",
+                score=score,
+                pump_pct=pump_pct,
+            )
 
             entry_price = result.get("price", 0)
             await rdb.set(
@@ -192,8 +237,18 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                     paper=False,
                 )
         else:
-            log.info("trader.blocked", base=base, reason=result.get("reason"))
+            blocked_reason = result.get("reason", "unknown")
+            log.info("trader.blocked", base=base, reason=blocked_reason)
             await rdb.set(seen_key, "1", ex=_SEEN_TTL_SKIP)
+            decisions.write_decision(
+                cfg.db_url,
+                base=base,
+                exchange=exchange,
+                action="skipped",
+                reason=blocked_reason,
+                score=score,
+                pump_pct=pump_pct,
+            )
 
 
 async def _fetch_score(base: str, rdb: Any) -> int:
