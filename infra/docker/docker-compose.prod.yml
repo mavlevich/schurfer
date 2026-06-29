@@ -1,0 +1,260 @@
+services:
+  postgres:
+    image: timescale/timescaledb:latest-pg17
+    container_name: schurfer-postgres
+    environment:
+      POSTGRES_USER: schurfer
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.prod}
+      POSTGRES_DB: schurfer
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    restart: always
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U schurfer']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+  redis:
+    image: redis:7-alpine
+    container_name: schurfer-redis
+    volumes:
+      - redis_data:/data
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru --save 60 1
+    restart: always
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+  nats:
+    image: nats:2-alpine
+    container_name: schurfer-nats
+    command: --jetstream --store_dir /data --http_port 8222
+    volumes:
+      - nats_data:/data
+    restart: always
+    healthcheck:
+      test: ['CMD', 'wget', '--spider', '-q', 'http://localhost:8222/healthz']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+  api-gateway:
+    build:
+      context: ../../
+      dockerfile: apps/api-gateway/Dockerfile
+    container_name: schurfer-api-gateway
+    environment:
+      DATABASE_URL: postgresql://schurfer:${POSTGRES_PASSWORD}@postgres:5432/schurfer
+      REDIS_ADDR: redis:6379
+      NATS_URL: nats://nats:4222
+      PORT: '8000'
+      ENV: production
+      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:?Set ADMIN_PASSWORD_HASH in .env.prod}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env.prod}
+      EXECUTION_URL: http://execution:8001
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    restart: always
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://localhost:8000/healthz']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+  web:
+    build:
+      context: ../../
+      dockerfile: apps/web/Dockerfile
+    container_name: schurfer-web
+    restart: always
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://localhost/']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: schurfer-caddy
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN in .env.prod}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:?Set ADMIN_EMAIL in .env.prod}
+    volumes:
+      - ../caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+    restart: always
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://localhost:2019/']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+  collector:
+    build:
+      context: ../../
+      dockerfile: apps/collector/Dockerfile
+    container_name: schurfer-collector
+    environment:
+      NATS_URL: nats://nats:4222
+      BYBIT_SYMBOLS: ${BYBIT_SYMBOLS:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    depends_on:
+      nats:
+        condition: service_healthy
+    restart: always
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+  analytics:
+    build:
+      context: ../../
+      dockerfile: apps/analytics/Dockerfile
+    container_name: schurfer-analytics
+    environment:
+      DATABASE_URL: postgresql://schurfer:${POSTGRES_PASSWORD}@postgres:5432/schurfer
+      REDIS_ADDR: redis:6379
+      PUMP_EXCHANGES: ${PUMP_EXCHANGES:-}
+      PUMP_MIN_PCT: ${PUMP_MIN_PCT:-30}
+      SCAN_INTERVAL: ${SCAN_INTERVAL:-60}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: always
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+  execution:
+    build:
+      context: ../../
+      dockerfile: apps/execution/Dockerfile
+    container_name: schurfer-execution
+    environment:
+      REDIS_ADDR: redis:6379
+      DATABASE_URL: postgresql://schurfer:${POSTGRES_PASSWORD}@postgres:5432/schurfer
+      BINANCE_API_KEY: ${BINANCE_API_KEY:-}
+      BINANCE_API_SECRET: ${BINANCE_API_SECRET:-}
+      BYBIT_API_KEY: ${BYBIT_API_KEY:-}
+      BYBIT_API_SECRET: ${BYBIT_API_SECRET:-}
+      OKX_API_KEY: ${OKX_API_KEY:-}
+      OKX_API_SECRET: ${OKX_API_SECRET:-}
+      OKX_PASSPHRASE: ${OKX_PASSPHRASE:-}
+      GATE_API_KEY: ${GATE_API_KEY:-}
+      GATE_API_SECRET: ${GATE_API_SECRET:-}
+      KUCOIN_API_KEY: ${KUCOIN_API_KEY:-}
+      KUCOIN_API_SECRET: ${KUCOIN_API_SECRET:-}
+      KUCOIN_PASSPHRASE: ${KUCOIN_PASSPHRASE:-}
+      BINGX_API_KEY: ${BINGX_API_KEY:-}
+      BINGX_API_SECRET: ${BINGX_API_SECRET:-}
+      MEXC_API_KEY: ${MEXC_API_KEY:-}
+      MEXC_API_SECRET: ${MEXC_API_SECRET:-}
+      MAX_POSITIONS: ${MAX_POSITIONS:-5}
+      MAX_POSITION_USD: ${MAX_POSITION_USD:-500}
+      DAILY_LOSS_LIMIT_USD: ${DAILY_LOSS_LIMIT_USD:-200}
+      LIQUIDATION_BUFFER_PCT: ${LIQUIDATION_BUFFER_PCT:-20}
+      MIN_FUNDING_RATE_PCT: ${MIN_FUNDING_RATE_PCT:--0.1}
+      REQUIRE_FUNDING_RATE: ${REQUIRE_FUNDING_RATE:-false}
+      RISK_PER_TRADE_PCT: ${RISK_PER_TRADE_PCT:-0}
+      REQUIRE_RED_CANDLE: ${REQUIRE_RED_CANDLE:-false}
+      MIN_RETRACE_PCT: ${MIN_RETRACE_PCT:-0}
+      AUTO_TRADE: ${AUTO_TRADE:-false}
+      DRY_RUN: ${DRY_RUN:-false}
+      SIGNAL_POSITION_USD: ${SIGNAL_POSITION_USD:-50}
+      SIGNAL_LEVERAGE: ${SIGNAL_LEVERAGE:-3}
+      SCORE_THRESHOLD: ${SCORE_THRESHOLD:-6}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: always
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+  notifier:
+    build:
+      context: ../../
+      dockerfile: apps/notifier/Dockerfile
+    container_name: schurfer-notifier
+    environment:
+      REDIS_ADDR: redis:6379
+      SCAN_INTERVAL: ${SCAN_INTERVAL:-60}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: always
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+volumes:
+  postgres_data:
+  redis_data:
+  nats_data:
+  caddy_data:
+  caddy_config:

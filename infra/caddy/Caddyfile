@@ -1,0 +1,22 @@
+{
+    email {$ADMIN_EMAIL}
+}
+
+{$DOMAIN} {
+    encode gzip
+
+    # WebSocket upgrade (must match before generic /api/* proxy)
+    @ws {
+        header Connection *Upgrade*
+        header Upgrade websocket
+    }
+    reverse_proxy @ws api-gateway:8000
+
+    # API, auth, and health — backend
+    reverse_proxy /api/* api-gateway:8000
+    reverse_proxy /auth/* api-gateway:8000
+    reverse_proxy /healthz api-gateway:8000
+
+    # Everything else — React SPA
+    reverse_proxy * web:80
+}

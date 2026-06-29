@@ -81,6 +81,7 @@ logs/
 
 # === Env / Secrets ===
 .env
+.env.prod
 .env.local
 .env.*.local
 .env.development
