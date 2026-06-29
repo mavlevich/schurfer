@@ -1,4 +1,5 @@
-.PHONY: help install dev dev-init dev-stop dev-reset dev-logs dev-test migrate test lint format clean security deadcode check verify verify-docker
+.PHONY: help install dev dev-init dev-stop dev-reset dev-logs dev-test migrate test lint format clean security deadcode check verify verify-docker \
+        prod-deploy prod-logs prod-backup prod-restore-local prod-health
 
 help:
 	@echo "Schurfer - common commands"
@@ -19,6 +20,13 @@ help:
 	@echo "  make check      Run lint + test + security (full CI locally)"
 	@echo "  make verify     Pre-PR gate: lock, lint, types, tests, build"
 	@echo "  make verify-docker  verify + analytics Docker import check"
+	@echo ""
+	@echo "Production (run on server with .env.prod present):"
+	@echo "  make prod-deploy          Pull + rebuild + restart all services"
+	@echo "  make prod-logs            Tail production service logs"
+	@echo "  make prod-backup          Run database backup now"
+	@echo "  make prod-restore-local   Download latest prod backup → local dev DB"
+	@echo "  make prod-health          Show container status"
 
 install:
 	@echo "-> Installing Python deps via uv..."
@@ -166,6 +174,50 @@ verify:
 	@echo "=== [5/5] Compose config ==="
 	docker compose --env-file .env.ci -f infra/docker/docker-compose.dev.yml config --quiet
 	@echo "=== verify passed ==="
+
+_PROD = docker compose --env-file .env.prod -f infra/docker/docker-compose.prod.yml
+
+prod-migrate:
+	@echo "-> Running Alembic migrations..."
+	@$(_PROD) exec -T postgres pg_isready -U schurfer -q
+	@POSTGRES_PASSWORD=$$(grep ^POSTGRES_PASSWORD .env.prod | cut -d= -f2-); \
+	docker run --rm \
+		--network "container:schurfer-postgres" \
+		-e "DATABASE_URL=postgresql://schurfer:$$POSTGRES_PASSWORD@127.0.0.1:5432/schurfer" \
+		-v "$(CURDIR):/app" \
+		-w /app \
+		ghcr.io/astral-sh/uv:python3.13-bookworm-slim \
+		uv run --package schurfer-journal \
+			alembic -c packages/journal/alembic.ini upgrade head
+
+prod-deploy:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
+	@echo "-> [1/5] Backup..."
+	@bash infra/scripts/backup.sh
+	@echo "-> [2/5] Pull..."
+	git pull origin main
+	@echo "-> [3/5] Start DB..."
+	$(_PROD) up -d postgres redis nats
+	@$(_PROD) exec -T postgres pg_isready -U schurfer -q --timeout=30
+	@echo "-> [4/5] Migrate + deploy..."
+	@$(MAKE) prod-migrate
+	$(_PROD) up -d --build
+	docker image prune -f
+	@echo "-> [5/5] Health..."
+	@$(_PROD) ps --format "table {{.Name}}\t{{.Status}}\t{{.Health}}"
+	@echo "-> Done. Logs: make prod-logs"
+
+prod-logs:
+	$(_PROD) logs -f --tail=100
+
+prod-backup:
+	@bash infra/scripts/backup.sh
+
+prod-restore-local:
+	@bash infra/scripts/restore-local.sh
+
+prod-health:
+	@$(_PROD) ps --format "table {{.Name}}\t{{.Status}}\t{{.Health}}"
 
 verify-docker: verify
 	@echo "=== Docker: analytics build + import check ==="
