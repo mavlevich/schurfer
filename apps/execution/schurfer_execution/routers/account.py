@@ -105,7 +105,8 @@ async def get_risk(request: Request) -> dict[str, Any]:
 
     positions, _ = await fetch_positions(request.app.state.exchanges)
     daily_pnl = float(await rdb.get(DAILY_PNL_KEY) or 0)
-    trading_enabled = (await rdb.get(TRADING_ENABLED_KEY) or b"1").decode()
+    # Mirrors the fail-closed default in orders.place_order.
+    trading_enabled = (await rdb.get(TRADING_ENABLED_KEY) or b"0").decode()
 
     return {
         "trading_enabled": trading_enabled not in ("0", "false"),

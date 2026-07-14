@@ -1,4 +1,4 @@
-FROM golang:1.26.4-alpine AS builder
+FROM golang:1.26.5-alpine AS builder
 WORKDIR /app
 COPY apps/api-gateway/go.mod apps/api-gateway/go.sum ./
 RUN go mod download

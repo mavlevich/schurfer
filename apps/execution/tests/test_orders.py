@@ -3,13 +3,22 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from pydantic import ValidationError
 from schurfer_execution.orders import place_order
+from schurfer_execution.risk import TRADING_ENABLED_KEY
 from schurfer_execution.routers.orders import OrderRequest
+
+
+async def _default_get(key: str) -> bytes | None:
+    # place_order defaults to fail-closed when this key is missing, so the
+    # happy-path fixture must explicitly report trading as enabled.
+    if key == TRADING_ENABLED_KEY:
+        return b"1"
+    return None  # daily pnl = 0, etc.
 
 
 def _kwargs(**overrides: object) -> dict:  # type: ignore[type-arg]
     rdb = MagicMock()
     rdb.set = AsyncMock(return_value=True)  # lock acquired by default
-    rdb.get = AsyncMock(return_value=None)  # trading enabled, pnl = 0
+    rdb.get = AsyncMock(side_effect=_default_get)  # trading enabled, pnl = 0
     rdb.eval = AsyncMock(return_value=1)  # lock released
 
     base: dict = {  # type: ignore[type-arg]
@@ -74,6 +83,24 @@ class TestLockBehavior:
         assert not result["allowed"]
         assert "in progress" in result["reason"]
         rdb.eval.assert_not_called()  # lock never held — must not be released
+
+    async def test_missing_trading_enabled_key_fails_closed(self) -> None:
+        """Regression: a missing/evicted trading:enabled key must block trading,
+        not default to enabled. Redis eviction or a fresh deploy must never
+        silently permit orders."""
+        rdb = MagicMock()
+        rdb.set = AsyncMock(return_value=True)
+        rdb.get = AsyncMock(return_value=None)  # key absent — simulates eviction/fresh deploy
+        rdb.eval = AsyncMock(return_value=1)
+
+        with (
+            patch("schurfer_execution.orders.fetch_positions", return_value=([], set())),
+            patch("schurfer_execution.orders.fetch_margin_balance", return_value=[]),
+        ):
+            result = await place_order(**_kwargs(rdb=rdb))
+
+        assert not result["allowed"]
+        assert "disabled" in result["reason"]
 
     async def test_lock_released_via_lua_not_delete(self) -> None:
         """Lock release must use compare-and-delete, not unconditional DEL."""
@@ -140,7 +167,7 @@ class TestLockBehavior:
 
         rdb = MagicMock()
         rdb.set = AsyncMock(return_value=True)
-        rdb.get = AsyncMock(return_value=None)
+        rdb.get = AsyncMock(side_effect=_default_get)
         rdb.eval = AsyncMock(side_effect=ConnectionError("redis down"))
 
         result = await place_order(**_kwargs(exchanges={"bingx": ex}, rdb=rdb))

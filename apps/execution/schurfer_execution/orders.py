@@ -49,7 +49,9 @@ async def place_order(
         return {"allowed": False, "reason": f"order in progress for {base} on {exchange}"}
 
     try:
-        trading_flag = (await rdb.get(TRADING_ENABLED_KEY) or b"1").decode()
+        # Fail-closed: a missing key (fresh deploy, Redis eviction/flush) means
+        # trading is NOT enabled. Must be explicitly turned on via POST /resume.
+        trading_flag = (await rdb.get(TRADING_ENABLED_KEY) or b"0").decode()
         # trading:daily_pnl is maintained by a separate daily P&L tracker process.
         # Until that tracker is implemented this check reads 0 and won't trip.
         daily_pnl = float(await rdb.get(DAILY_PNL_KEY) or 0)
