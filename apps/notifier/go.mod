@@ -1,6 +1,6 @@
 module github.com/mavlevich/schurfer/notifier
 
-go 1.26.4
+go 1.26.5
 
 require github.com/redis/go-redis/v9 v9.9.0
 
