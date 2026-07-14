@@ -6,6 +6,10 @@ services:
       POSTGRES_USER: schurfer
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.prod}
       POSTGRES_DB: schurfer
+    # Bound to the server's loopback only — reachable via SSH/Tailscale tunnel
+    # (ssh -L 15432:127.0.0.1:5432 user@server), never from the public internet.
+    ports:
+      - '127.0.0.1:5432:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init-db.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
@@ -26,7 +30,10 @@ services:
     container_name: schurfer-redis
     volumes:
       - redis_data:/data
-    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru --save 60 1
+    # noeviction: safety-critical keys (kill-switch, order locks, position state)
+    # must never be silently evicted under memory pressure. If memory fills,
+    # writes fail loudly instead of losing the kill-switch.
+    command: redis-server --maxmemory 256mb --maxmemory-policy noeviction --save 60 1
     restart: always
     healthcheck:
       test: ['CMD', 'redis-cli', 'ping']
