@@ -54,7 +54,7 @@ services:
       - nats_data:/data
     restart: always
     healthcheck:
-      test: ['CMD', 'wget', '--spider', '-q', 'http://localhost:8222/healthz']
+      test: ['CMD', 'wget', '--spider', '-q', 'http://127.0.0.1:8222/healthz']
       interval: 10s
       timeout: 5s
       retries: 5
@@ -87,7 +87,7 @@ services:
         condition: service_healthy
     restart: always
     healthcheck:
-      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://localhost:8000/healthz']
+      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:8000/healthz']
       interval: 10s
       timeout: 5s
       retries: 5
@@ -104,7 +104,7 @@ services:
     container_name: schurfer-web
     restart: always
     healthcheck:
-      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://localhost/']
+      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1/']
       interval: 30s
       timeout: 10s
       retries: 3
@@ -135,7 +135,7 @@ services:
         condition: service_healthy
     restart: always
     healthcheck:
-      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://localhost:2019/']
+      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:2019/']
       interval: 30s
       timeout: 10s
       retries: 5
