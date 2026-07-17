@@ -90,6 +90,7 @@ logs/
 *.pem
 *.key
 secrets/
+infra/caddy/certs/
 .secrets/
 
 # === Build outputs ===

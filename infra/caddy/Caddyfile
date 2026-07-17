@@ -1,8 +1,6 @@
-{
-    email {$ADMIN_EMAIL}
-}
+{$TAILSCALE_HOSTNAME} {
+    tls /etc/caddy/certs/tailscale.crt /etc/caddy/certs/tailscale.key
 
-{$DOMAIN} {
     encode gzip
 
     # WebSocket upgrade (must match before generic /api/* proxy)
