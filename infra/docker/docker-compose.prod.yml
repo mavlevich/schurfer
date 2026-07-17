@@ -122,10 +122,10 @@ services:
       - '443:443'
       - '443:443/udp'
     environment:
-      DOMAIN: ${DOMAIN:?Set DOMAIN in .env.prod}
-      ADMIN_EMAIL: ${ADMIN_EMAIL:?Set ADMIN_EMAIL in .env.prod}
+      TAILSCALE_HOSTNAME: ${TAILSCALE_HOSTNAME:?Set TAILSCALE_HOSTNAME in .env.prod}
     volumes:
       - ../caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../caddy/certs:/etc/caddy/certs:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
