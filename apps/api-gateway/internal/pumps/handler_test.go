@@ -1146,6 +1146,37 @@ func TestParseMEXC(t *testing.T) {
 		}
 	})
 
+	t.Run("parses columnar fields sent as JSON numbers, not strings", func(t *testing.T) {
+		// MEXC's futures kline API sends open/high/low/close/vol as bare JSON
+		// numbers for some symbols instead of quoted strings — observed live
+		// for BRIAN and WISHBONE, which broke OHLCV chart loading for both.
+		raw := `{
+			"success": true,
+			"code": 0,
+			"data": {
+				"time":  [1700000000, 1700000900],
+				"open":  [0.0151, 0.01491],
+				"high":  [0.01523, 0.01804],
+				"low":   [0.01491, 0.01434],
+				"close": [0.01491, 0.01679],
+				"vol":   [59.0, 6850.0]
+			}
+		}`
+		candles, err := parseMEXC([]byte(raw))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(candles) != 2 {
+			t.Fatalf("want 2 candles, got %d", len(candles))
+		}
+		if candles[0].Open != 0.0151 {
+			t.Errorf("want open=0.0151, got %f", candles[0].Open)
+		}
+		if candles[1].Close != 0.01679 {
+			t.Errorf("want close=0.01679, got %f", candles[1].Close)
+		}
+	})
+
 	t.Run("exchange error returns error", func(t *testing.T) {
 		raw := `{"success":false,"code":2001,"message":"symbol not found"}`
 		_, err := parseMEXC([]byte(raw))
