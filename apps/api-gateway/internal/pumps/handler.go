@@ -1058,23 +1058,6 @@ func (h *Handler) rankedExchanges(ctx context.Context, base string) []string {
 	return nil
 }
 
-func (h *Handler) liveExchanges(ctx context.Context, base string) map[string]bool {
-	payload, err := h.loadPumps(ctx)
-	if err != nil {
-		return nil
-	}
-	for _, p := range payload.Pumps {
-		if p.Base == base {
-			out := make(map[string]bool, len(p.Exchanges))
-			for _, ex := range p.Exchanges {
-				out[ex.Exchange] = true
-			}
-			return out
-		}
-	}
-	return nil
-}
-
 func (h *Handler) dbExchanges(ctx context.Context, base string) map[string]bool {
 	var raw []byte
 	err := h.pool.QueryRow(ctx,
