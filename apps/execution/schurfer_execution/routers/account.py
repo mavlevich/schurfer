@@ -65,31 +65,52 @@ async def manual_close_position(body: CloseBody, request: Request) -> dict[str, 
 
     if result.get("closed"):
         if cfg.db_url:
-            trade_id_raw = await rdb.get(f"trade:id:{body.exchange}:{body.base.upper()}")
+            trade_id_key = f"trade:id:{body.exchange}:{body.base.upper()}"
+            trade_id_raw = await rdb.get(trade_id_key)
             if trade_id_raw:
-                entry_raw = await rdb.get(exit_module.entry_key(body.exchange, body.base))
-                side_raw = await rdb.get(exit_module.side_key(body.exchange, body.base))
-                entry_price = float(entry_raw) if entry_raw else 0.0
-                side = side_raw.decode() if side_raw else result.get("side", "short")
+                trade_id = int(trade_id_raw)
                 exit_price: float | None = result.get("exit_price")
                 if not exit_price:
+                    # No usable price at all — can't safely commit or queue a
+                    # retry (0 would read as a false profit). Leave the
+                    # trade-id pointer in place for a human to investigate.
+                    # PnL impact is unknown, so any active readiness lease is
+                    # stale — revoke it now rather than waiting for the
+                    # tracker's next tick.
+                    await journal.revoke_pnl_readiness(rdb)
                     log.warning(
                         "manual_close.no_exit_price",
                         exchange=body.exchange,
                         base=body.base,
-                        trade_id=int(trade_id_raw),
+                        trade_id=trade_id,
                     )
                 else:
-                    await journal.close_trade(
+                    # entry_price/side are loaded from the trade's own DB row
+                    # by journal.close_trade — no dependency on the Redis
+                    # entry/side cache, which may have been evicted.
+                    committed = await journal.try_commit_close(
                         cfg.db_url,
-                        trade_id=int(trade_id_raw),
+                        rdb,
+                        exchange=body.exchange,
+                        base=body.base.upper(),
+                        trade_id=trade_id,
                         exit_order_id=result.get("order_id"),
                         exit_price=exit_price,
-                        entry_price=entry_price,
-                        side=side,
                         reason="manual",
                     )
-                await rdb.delete(f"trade:id:{body.exchange}:{body.base.upper()}")
+                    # Only drop the pointer once durably recorded, and only if
+                    # it still points at this trade — otherwise a DB outage
+                    # here permanently loses this trade's PnL, or a slow retry
+                    # could delete a newer trade's pointer for this symbol.
+                    if committed:
+                        await journal.delete_trade_id_if_matches(rdb, trade_id_key, trade_id)
+                    else:
+                        log.error(
+                            "manual_close.journal_close_failed_pending_retry",
+                            exchange=body.exchange,
+                            base=body.base,
+                            trade_id=trade_id,
+                        )
         await rdb.delete(exit_module.best_price_key(body.exchange, body.base))
         await rdb.delete(exit_module.params_key(body.exchange, body.base))
         await rdb.delete(exit_module.entry_key(body.exchange, body.base))

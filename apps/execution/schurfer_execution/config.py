@@ -106,12 +106,18 @@ class Config:
     telegram_bot_token: str | None = field(default_factory=lambda: _env("TELEGRAM_BOT_TOKEN"))
     telegram_chat_id: str | None = field(default_factory=lambda: _env("TELEGRAM_CHAT_ID"))
 
-    # Trade journal (optional — omit to disable DB writes)
+    # Trade journal — required when AUTO_TRADE is on (see below), optional otherwise.
     db_url: str | None = field(default_factory=lambda: _env("DATABASE_URL"))
 
     def __post_init__(self) -> None:
         if self.auto_trade and self.dry_run:
             raise ValueError("AUTO_TRADE and DRY_RUN are mutually exclusive")
+        if self.auto_trade and not self.db_url:
+            # Without a journal, the daily-loss circuit breaker degrades to
+            # unrealized-only and forgets every closed trade's PnL — realized
+            # losses simply vanish from the running total. Not acceptable
+            # once real orders are being placed.
+            raise ValueError("DATABASE_URL is required when AUTO_TRADE=true")
         if not self.auto_trade and not self.dry_run:
             return
         if self.signal_position_usd <= 0:

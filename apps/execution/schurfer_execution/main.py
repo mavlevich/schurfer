@@ -43,7 +43,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     app.state.rdb = rdb
     app.state.exchanges = exchanges
 
-    tracker = asyncio.create_task(run_pnl_tracker(exchanges, rdb))
+    tracker = asyncio.create_task(run_pnl_tracker(exchanges, rdb, cfg.db_url))
     monitor = asyncio.create_task(run_position_monitor(exchanges, rdb, cfg))
     trader = (
         asyncio.create_task(run_signal_trader(exchanges, rdb, cfg))
