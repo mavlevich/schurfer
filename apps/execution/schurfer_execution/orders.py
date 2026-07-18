@@ -8,6 +8,7 @@ from . import notify
 from .account import fetch_margin_balance, fetch_positions
 from .risk import (
     DAILY_PNL_KEY,
+    PNL_READY_KEY,
     TRADING_ENABLED_KEY,
     check_liquidation_distance,
     check_max_position_size,
@@ -56,9 +57,13 @@ async def place_order(
         # Fail-closed: a missing key (fresh deploy, Redis eviction/flush) means
         # trading is NOT enabled. Must be explicitly turned on via POST /resume.
         trading_flag = (await rdb.get(TRADING_ENABLED_KEY) or b"0").decode()
-        # trading:daily_pnl is maintained by a separate daily P&L tracker process.
-        # Until that tracker is implemented this check reads 0 and won't trip.
+        # trading:daily_pnl is maintained by the pnl tracker (tracker.py), which
+        # also refreshes PNL_READY_KEY below only after a fully successful tick.
         daily_pnl = float(await rdb.get(DAILY_PNL_KEY) or 0)
+        pnl_ready_raw = await rdb.get(PNL_READY_KEY)
+        pnl_ready_flag = (
+            pnl_ready_raw.decode() if isinstance(pnl_ready_raw, bytes) else pnl_ready_raw
+        )
         positions, failed_exchanges = await fetch_positions(exchanges)
         balances = await fetch_margin_balance(exchanges, exchange)
 
@@ -67,6 +72,7 @@ async def place_order(
             exchange=exchange,
             size_usd=size_usd,
             trading_flag=trading_flag,
+            pnl_ready_flag=pnl_ready_flag,
             open_positions=positions,
             balances=balances,
             daily_pnl=daily_pnl,
@@ -233,7 +239,7 @@ async def place_order(
             "side": side,
             "size_usd": size_usd,
             "leverage": leverage,
-            "price": price,
+            "price": fill_price,  # actual average fill, not the pre-order ticker price
             "status": order.get("status"),
             "rounded_up": rounded_up,
         }

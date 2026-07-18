@@ -129,16 +129,29 @@ async def test_close_paper_writes_journal_when_trade_id_exists() -> None:
     cfg.db_url = "postgresql://localhost/test"
     pos = {"base": "BEAT", "exchange": "bybit", "entry_price": 0.0030, "side": "short"}
 
-    with patch("schurfer_execution.paper.journal.close_trade", new_callable=AsyncMock) as mock_jrn:
+    with (
+        patch(
+            "schurfer_execution.paper.journal.close_trade",
+            new_callable=AsyncMock,
+            return_value=True,
+        ) as mock_jrn,
+        patch(
+            "schurfer_execution.paper.journal.delete_trade_id_if_matches",
+            new_callable=AsyncMock,
+        ) as mock_cas_delete,
+    ):
         await close_paper(rdb, pos=pos, current_price=0.0025, reason="take_profit", cfg=cfg)
 
     mock_jrn.assert_called_once()
     kw = mock_jrn.call_args.kwargs
     assert kw["trade_id"] == 42
     assert kw["exit_price"] == 0.0025
-    assert kw["entry_price"] == 0.0030
-    assert kw["side"] == "short"
     assert kw["reason"] == "take_profit"
+    # entry_price/side are no longer caller-supplied — close_trade loads them
+    # from the trade's own DB row.
+    assert "entry_price" not in kw
+    assert "side" not in kw
+    mock_cas_delete.assert_called_once_with(rdb, "trade:id:paper:bybit:BEAT", 42)
 
 
 async def test_close_paper_pnl_computed_correctly_for_short() -> None:
@@ -149,7 +162,12 @@ async def test_close_paper_pnl_computed_correctly_for_short() -> None:
     rdb.get = AsyncMock(return_value=b"7")
     pos = {"base": "SOL", "exchange": "bingx", "entry_price": 0.003, "side": "short"}
 
-    with patch("schurfer_execution.paper.journal.close_trade", new_callable=AsyncMock) as mock_jrn:
+    with (
+        patch("schurfer_execution.paper.journal.close_trade", new_callable=AsyncMock) as mock_jrn,
+        patch(
+            "schurfer_execution.paper.journal.delete_trade_id_if_matches", new_callable=AsyncMock
+        ),
+    ):
         await close_paper(rdb, pos=pos, current_price=0.0025, reason="take_profit", cfg=cfg)
 
     kw = mock_jrn.call_args.kwargs
@@ -166,3 +184,29 @@ async def test_close_paper_does_not_write_journal_without_db_url() -> None:
         await close_paper(rdb, pos=pos, current_price=0.0025, reason="stop_loss", cfg=_cfg())
 
     mock_jrn.assert_not_called()
+
+
+async def test_close_paper_journal_failure_keeps_trade_id() -> None:
+    """A failed paper-trade journal write must not delete the trade-id
+    pointer — best-effort retry stays possible, without polluting the
+    journal:pending_close namespace that real-trade risk gating depends on."""
+    rdb = _rdb()
+    rdb.get = AsyncMock(return_value=b"42")
+    cfg = _cfg()
+    cfg.db_url = "postgresql://localhost/test"
+    pos = {"base": "BEAT", "exchange": "bybit", "entry_price": 0.003, "side": "short"}
+
+    with (
+        patch(
+            "schurfer_execution.paper.journal.close_trade",
+            new_callable=AsyncMock,
+            return_value=False,
+        ),
+        patch(
+            "schurfer_execution.paper.journal.delete_trade_id_if_matches",
+            new_callable=AsyncMock,
+        ) as mock_cas_delete,
+    ):
+        await close_paper(rdb, pos=pos, current_price=0.0025, reason="stop_loss", cfg=cfg)
+
+    mock_cas_delete.assert_not_called()

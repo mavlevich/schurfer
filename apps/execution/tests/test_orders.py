@@ -3,14 +3,16 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from pydantic import ValidationError
 from schurfer_execution.orders import close_position, place_order
-from schurfer_execution.risk import TRADING_ENABLED_KEY
+from schurfer_execution.risk import PNL_READY_KEY, TRADING_ENABLED_KEY
 from schurfer_execution.routers.orders import OrderRequest
 
 
 async def _default_get(key: str) -> bytes | None:
-    # place_order defaults to fail-closed when this key is missing, so the
-    # happy-path fixture must explicitly report trading as enabled.
+    # place_order defaults to fail-closed when these keys are missing, so the
+    # happy-path fixture must explicitly report trading enabled and PnL fresh.
     if key == TRADING_ENABLED_KEY:
+        return b"1"
+    if key == PNL_READY_KEY:
         return b"1"
     return None  # daily pnl = 0, etc.
 

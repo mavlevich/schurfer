@@ -3,6 +3,10 @@ from typing import Any
 
 TRADING_ENABLED_KEY = "trading:enabled"
 DAILY_PNL_KEY = "trading:daily_pnl"
+# Positive lease, not a negative flag: presence AND value "1" means PnL is
+# known-fresh. Absence (fresh deploy, Redis flush, tracker never having run
+# or having crashed) fails closed — same polarity as TRADING_ENABLED_KEY.
+PNL_READY_KEY = "risk:pnl_ready"
 
 
 @dataclass
@@ -14,6 +18,25 @@ class RiskCheck:
 def check_trading_enabled(flag: str | None) -> RiskCheck:
     if flag in ("0", "false"):
         return RiskCheck(allowed=False, reason="trading disabled (emergency stop)")
+    return RiskCheck(allowed=True, reason="ok")
+
+
+def check_pnl_data_available(flag: str | None) -> RiskCheck:
+    """Blocks new entries unless the daily realized PnL is known-fresh.
+
+    A cached (possibly stale) daily_pnl value in Redis is not proof that
+    today's real loss is still under the limit — if the journal DB has been
+    unreachable, a large new loss could already be unrecorded. This is a
+    positive lease (PNL_READY_KEY), refreshed by the pnl tracker only after
+    a fully successful tick (exchanges reachable, realized PnL fetched, no
+    closes still pending commit). Anything other than an explicit "1" —
+    including a missing key — blocks trading.
+    """
+    if flag != "1":
+        return RiskCheck(
+            allowed=False,
+            reason="daily PnL not confirmed fresh — trading blocked",
+        )
     return RiskCheck(allowed=True, reason="ok")
 
 
@@ -227,6 +250,7 @@ def run_all_checks(
     exchange: str,
     size_usd: float,
     trading_flag: str | None,
+    pnl_ready_flag: str | None = None,
     open_positions: list[dict[str, Any]],
     balances: list[dict[str, Any]],
     daily_pnl: float,
@@ -237,6 +261,7 @@ def run_all_checks(
 ) -> RiskCheck:
     checks = [
         check_trading_enabled(trading_flag),
+        check_pnl_data_available(pnl_ready_flag),
         check_positions_available(exchange, failed_exchanges),
         check_daily_loss(daily_pnl, daily_loss_limit_usd),
         check_max_positions(len(open_positions), max_positions),

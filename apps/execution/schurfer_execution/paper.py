@@ -107,18 +107,32 @@ async def close_paper(
 
     await rdb.delete(paper_key(exchange, base))
 
-    trade_id_raw = await rdb.get(_TRADE_ID_KEY.format(exchange=exchange, base=base.upper()))
+    # Paper trades are deliberately NOT routed through journal.try_commit_close:
+    # that mechanism writes a journal:pending_close marker that tracker.py
+    # treats as "a real close is outstanding" and withholds the trading-ready
+    # lease for. A stuck paper-trade journal write must never block real
+    # order placement. Best-effort commit + log is enough here — paper stats
+    # are informational, not part of the daily-loss circuit breaker.
+    trade_id_key = _TRADE_ID_KEY.format(exchange=exchange, base=base.upper())
+    trade_id_raw = await rdb.get(trade_id_key)
     if trade_id_raw and cfg.db_url:
-        await journal.close_trade(
+        trade_id = int(trade_id_raw)
+        committed = await journal.close_trade(
             cfg.db_url,
-            trade_id=int(trade_id_raw),
+            trade_id=trade_id,
             exit_order_id=None,
             exit_price=current_price,
-            entry_price=entry_price,
-            side=side,
             reason=reason,
         )
-        await rdb.delete(_TRADE_ID_KEY.format(exchange=exchange, base=base.upper()))
+        if committed:
+            await journal.delete_trade_id_if_matches(rdb, trade_id_key, trade_id)
+        else:
+            log.error(
+                "paper.journal_close_failed",
+                base=base,
+                exchange=exchange,
+                trade_id=trade_id,
+            )
 
     creds = notify.credentials(cfg)
     if creds:

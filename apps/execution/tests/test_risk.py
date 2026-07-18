@@ -8,6 +8,7 @@ from schurfer_execution.risk import (
     check_liquidation_distance,
     check_max_position_size,
     check_max_positions,
+    check_pnl_data_available,
     check_positions_available,
     check_sufficient_margin,
     check_trading_enabled,
@@ -45,6 +46,24 @@ class TestCheckTradingEnabled:
 
     def test_disabled_on_false(self) -> None:
         assert not check_trading_enabled("false").allowed
+
+
+class TestCheckPnlDataAvailable:
+    """Positive lease, not a negative flag — must fail closed by default."""
+
+    def test_allowed_only_when_exactly_one(self) -> None:
+        assert check_pnl_data_available("1").allowed
+
+    def test_blocked_when_missing(self) -> None:
+        """Regression: a missing key (fresh deploy, Redis flush, tracker
+        crashed before its first successful tick) must block trading, not
+        default to allowed — opposite polarity from the old negative-flag
+        design, matching TRADING_ENABLED_KEY's fail-closed default."""
+        assert not check_pnl_data_available(None).allowed
+
+    def test_blocked_on_any_other_value(self) -> None:
+        assert not check_pnl_data_available("0").allowed
+        assert not check_pnl_data_available("stale").allowed
 
 
 class TestCheckPositionsAvailable:
@@ -138,6 +157,7 @@ class TestRunAllChecks:
             "exchange": "bingx",
             "size_usd": 200.0,
             "trading_flag": "1",
+            "pnl_ready_flag": "1",
             "open_positions": [],
             "balances": [_bal()],
             "daily_pnl": 0.0,

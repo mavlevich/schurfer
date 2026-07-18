@@ -161,6 +161,7 @@ def test_config_validation_raises_when_auto_trade_and_bad_position_usd() -> None
     cfg.signal_position_usd = 0.0
     cfg.signal_leverage = 3
     cfg.liquidation_buffer_pct = 20.0
+    cfg.db_url = "postgresql://test"
     with pytest.raises(ValueError, match="SIGNAL_POSITION_USD"):
         cfg.__post_init__()
 
@@ -172,6 +173,7 @@ def test_config_validation_raises_when_auto_trade_and_bad_leverage() -> None:
     cfg.signal_position_usd = 50.0
     cfg.signal_leverage = 0
     cfg.liquidation_buffer_pct = 20.0
+    cfg.db_url = "postgresql://test"
     with pytest.raises(ValueError, match="SIGNAL_LEVERAGE"):
         cfg.__post_init__()
 
@@ -197,6 +199,18 @@ def test_config_validation_raises_when_auto_trade_and_dry_run_both_set() -> None
         cfg.__post_init__()
 
 
+def test_config_validation_raises_when_auto_trade_and_no_db_url() -> None:
+    """Regression: without a journal DB, the daily-loss circuit breaker
+    degrades to unrealized-only and forgets every closed trade's PnL —
+    AUTO_TRADE must refuse to start without DATABASE_URL configured."""
+    cfg = object.__new__(Config)
+    cfg.auto_trade = True
+    cfg.dry_run = False
+    cfg.db_url = None
+    with pytest.raises(ValueError, match="DATABASE_URL"):
+        cfg.__post_init__()
+
+
 def test_config_validation_raises_when_liquidation_buffer_negative() -> None:
     cfg = object.__new__(Config)
     cfg.auto_trade = True
@@ -204,6 +218,7 @@ def test_config_validation_raises_when_liquidation_buffer_negative() -> None:
     cfg.signal_position_usd = 50.0
     cfg.signal_leverage = 3
     cfg.liquidation_buffer_pct = -20.0
+    cfg.db_url = "postgresql://test"
     with pytest.raises(ValueError, match="LIQUIDATION_BUFFER_PCT"):
         cfg.__post_init__()
 
@@ -215,6 +230,7 @@ def test_config_validation_raises_when_liquidation_buffer_gte_100() -> None:
     cfg.signal_position_usd = 50.0
     cfg.signal_leverage = 3
     cfg.liquidation_buffer_pct = 100.0
+    cfg.db_url = "postgresql://test"
     with pytest.raises(ValueError, match="LIQUIDATION_BUFFER_PCT"):
         cfg.__post_init__()
 

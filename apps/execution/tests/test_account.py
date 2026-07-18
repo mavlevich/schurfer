@@ -274,9 +274,15 @@ async def test_manual_close_journal_written_and_all_keys_deleted() -> None:
             return_value=close_result,
         ),
         patch(
-            "schurfer_execution.routers.account.journal.close_trade",
+            "schurfer_execution.routers.account.journal.try_commit_close",
             new_callable=AsyncMock,
+            return_value=True,
         ) as mock_journal,
+        patch(
+            "schurfer_execution.routers.account.journal.delete_trade_id_if_matches",
+            new_callable=AsyncMock,
+            return_value=True,
+        ) as mock_cas_delete,
     ):
         result = await manual_close_position(body, request)
 
@@ -285,16 +291,23 @@ async def test_manual_close_journal_written_and_all_keys_deleted() -> None:
     kw = mock_journal.call_args.kwargs
     assert kw["trade_id"] == 42
     assert kw["exit_price"] == 95.0
-    assert kw["entry_price"] == 100.0
-    assert kw["side"] == "short"
     assert kw["reason"] == "manual"
+    assert kw["exchange"] == "bybit"
+    assert kw["base"] == "BEAT"
+
+    # entry_price/side are no longer caller-supplied — journal.close_trade
+    # loads them from the trade's own DB row by trade_id.
+    assert "entry_price" not in kw
+    assert "side" not in kw
+
+    # Trade id pointer removed only via compare-and-delete, not unconditionally.
+    mock_cas_delete.assert_called_once_with(rdb, "trade:id:bybit:BEAT", 42)
 
     deleted = {c.args[0] for c in rdb.delete.call_args_list}
     assert "exit:best:bybit:BEAT" in deleted
     assert "exit:params:bybit:BEAT" in deleted
     assert "position:entry:bybit:BEAT" in deleted
     assert "position:side:bybit:BEAT" in deleted
-    assert "trade:id:bybit:BEAT" in deleted
 
 
 async def test_manual_close_cleanup_happens_without_db_url() -> None:
@@ -311,7 +324,7 @@ async def test_manual_close_cleanup_happens_without_db_url() -> None:
             return_value=close_result,
         ),
         patch(
-            "schurfer_execution.routers.account.journal.close_trade",
+            "schurfer_execution.routers.account.journal.try_commit_close",
             new_callable=AsyncMock,
         ) as mock_journal,
     ):
@@ -324,3 +337,88 @@ async def test_manual_close_cleanup_happens_without_db_url() -> None:
     assert "exit:params:bybit:BEAT" in deleted
     assert "position:entry:bybit:BEAT" in deleted
     assert "position:side:bybit:BEAT" in deleted
+
+
+async def test_manual_close_journal_failure_does_not_delete_trade_id() -> None:
+    """Regression: if the journal commit fails, the trade-id pointer must
+    survive (try_commit_close already wrote a durable pending-close marker
+    for retry) — the old code deleted it unconditionally."""
+    rdb = _close_rdb(**{"trade:id:bybit:BEAT": b"42"})
+    cfg = _close_cfg(db_url="postgresql://localhost/test")
+    body = CloseBody(exchange="bybit", base="BEAT")
+    request = _close_request(cfg, rdb)
+
+    close_result = {"closed": True, "order_id": "ord-1", "exit_price": 95.0, "side": "short"}
+    with (
+        patch(
+            "schurfer_execution.routers.account.close_position",
+            new_callable=AsyncMock,
+            return_value=close_result,
+        ),
+        patch(
+            "schurfer_execution.routers.account.journal.try_commit_close",
+            new_callable=AsyncMock,
+            return_value=False,
+        ),
+        patch(
+            "schurfer_execution.routers.account.journal.delete_trade_id_if_matches",
+            new_callable=AsyncMock,
+        ) as mock_cas_delete,
+    ):
+        await manual_close_position(body, request)
+
+    mock_cas_delete.assert_not_called()
+
+
+async def test_manual_close_no_exit_price_does_not_call_journal() -> None:
+    """A close with no usable price can't be safely committed or queued for
+    retry (0 would read as a false profit) — must leave the trade-id pointer
+    for a human to investigate, not attempt the commit at all."""
+    rdb = _close_rdb(**{"trade:id:bybit:BEAT": b"42"})
+    cfg = _close_cfg(db_url="postgresql://localhost/test")
+    body = CloseBody(exchange="bybit", base="BEAT")
+    request = _close_request(cfg, rdb)
+
+    close_result = {"closed": True, "order_id": "ord-1", "exit_price": None, "side": "short"}
+    with (
+        patch(
+            "schurfer_execution.routers.account.close_position",
+            new_callable=AsyncMock,
+            return_value=close_result,
+        ),
+        patch(
+            "schurfer_execution.routers.account.journal.try_commit_close",
+            new_callable=AsyncMock,
+        ) as mock_journal,
+    ):
+        await manual_close_position(body, request)
+
+    mock_journal.assert_not_called()
+    deleted = {c.args[0] for c in rdb.delete.call_args_list}
+    assert "trade:id:bybit:BEAT" not in deleted
+
+
+async def test_manual_close_no_exit_price_still_revokes_readiness() -> None:
+    """Regression (P0): PnL impact is unknown when no exit price is available
+    — the readiness lease must be revoked immediately even though we can't
+    commit or queue a retry yet, not left to expire on the tracker's own TTL."""
+    rdb = _close_rdb(**{"trade:id:bybit:BEAT": b"42"})
+    cfg = _close_cfg(db_url="postgresql://localhost/test")
+    body = CloseBody(exchange="bybit", base="BEAT")
+    request = _close_request(cfg, rdb)
+
+    close_result = {"closed": True, "order_id": "ord-1", "exit_price": None, "side": "short"}
+    with (
+        patch(
+            "schurfer_execution.routers.account.close_position",
+            new_callable=AsyncMock,
+            return_value=close_result,
+        ),
+        patch(
+            "schurfer_execution.routers.account.journal.revoke_pnl_readiness",
+            new_callable=AsyncMock,
+        ) as mock_revoke,
+    ):
+        await manual_close_position(body, request)
+
+    mock_revoke.assert_called_once_with(rdb)
