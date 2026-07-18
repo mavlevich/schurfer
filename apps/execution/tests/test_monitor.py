@@ -384,7 +384,7 @@ class TestRetryPendingCloses:
         async def _delete(key: str) -> None:
             store.pop(key, None)
 
-        async def _eval(script: str, numkeys: int, key: str, expected: str) -> int:
+        async def _eval(_script: str, _numkeys: int, key: str, expected: str) -> int:
             # Mirrors the real Lua CAS: delete only if current value matches.
             current = store.get(key)
             if current is not None and current.decode() == expected:

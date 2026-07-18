@@ -336,8 +336,8 @@ class TestAnyPendingCloses:
 
     async def test_false_when_none_exist(self) -> None:
         async def _scan(match: str) -> object:  # type: ignore[type-arg]
-            return
-            yield  # pragma: no cover - makes this an async generator
+            for key in ():  # empty async generator, no unreachable code
+                yield key
 
         rdb = MagicMock()
         rdb.scan_iter = _scan
