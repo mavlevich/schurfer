@@ -81,6 +81,10 @@ async def notify_close(
     await _send(token, chat_id, text)
 
 
+async def notify_alert(token: str, chat_id: str, *, text: str) -> None:
+    await _send(token, chat_id, f"*⚠️ ALERT*\n{_esc(text)}")
+
+
 def credentials(cfg: Any) -> tuple[str, str] | None:
     token = getattr(cfg, "telegram_bot_token", None)
     chat_id = getattr(cfg, "telegram_chat_id", None)
