@@ -465,7 +465,7 @@ export function TokenPage() {
         {detailsLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
         {notFound && <p className="text-sm text-muted-foreground">Token not found.</p>}
 
-        {(pump ?? ohlcv) && (
+        {!notFound && (
           <div>
             <h1 className="text-2xl font-bold font-mono tracking-tight">
               {base}
