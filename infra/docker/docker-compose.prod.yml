@@ -135,7 +135,7 @@ services:
         condition: service_healthy
     restart: always
     healthcheck:
-      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:2019/']
+      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:2019/config/']
       interval: 30s
       timeout: 10s
       retries: 5
