@@ -305,6 +305,7 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
             daily_loss_limit_usd=cfg.daily_loss_limit_usd,
             initial_sl_pct=exit_params["initial_sl_pct"],
             liquidation_buffer_pct=cfg.liquidation_buffer_pct,
+            cfg=cfg,
         )
 
         if result.get("allowed"):

@@ -2,7 +2,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from pydantic import ValidationError
-from schurfer_execution.orders import place_order
+from schurfer_execution.orders import close_position, place_order
 from schurfer_execution.risk import TRADING_ENABLED_KEY
 from schurfer_execution.routers.orders import OrderRequest
 
@@ -20,6 +20,7 @@ def _kwargs(**overrides: object) -> dict:  # type: ignore[type-arg]
     rdb.set = AsyncMock(return_value=True)  # lock acquired by default
     rdb.get = AsyncMock(side_effect=_default_get)  # trading enabled, pnl = 0
     rdb.eval = AsyncMock(return_value=1)  # lock released
+    rdb.delete = AsyncMock(return_value=1)
 
     base: dict = {  # type: ignore[type-arg]
         "base": "BEAT",
@@ -163,7 +164,9 @@ class TestLockBehavior:
         ex.set_leverage = AsyncMock()
         ex.fetch_ticker = AsyncMock(return_value={"last": 1.0})
         ex.amount_to_precision = MagicMock(return_value="100.0")
+        ex.price_to_precision = MagicMock(return_value="1.1")
         ex.create_market_order = AsyncMock(return_value={"id": "ord999", "status": "closed"})
+        ex.create_stop_market_order = AsyncMock(return_value={"id": "sl-999"})
 
         rdb = MagicMock()
         rdb.set = AsyncMock(return_value=True)
@@ -189,7 +192,9 @@ async def test_place_order_uses_contract_size_and_precision(
     ex.set_leverage = AsyncMock()
     ex.fetch_ticker = AsyncMock(return_value={"last": 1.0})
     ex.amount_to_precision = MagicMock(return_value="10.0")
+    ex.price_to_precision = MagicMock(return_value="1.1")
     ex.create_market_order = AsyncMock(return_value={"id": "ord123", "status": "closed"})
+    ex.create_stop_market_order = AsyncMock(return_value={"id": "sl-123"})
 
     result = await place_order(**_kwargs(exchanges={"bingx": ex}))
 
@@ -246,7 +251,9 @@ async def test_place_order_rounds_up_to_exchange_minimum(
     ex.set_leverage = AsyncMock()
     ex.fetch_ticker = AsyncMock(return_value={"last": 5.0})
     ex.amount_to_precision = MagicMock(return_value="1.0")
+    ex.price_to_precision = MagicMock(return_value="5.5")
     ex.create_market_order = AsyncMock(return_value={"id": "ord-rounded", "status": "closed"})
+    ex.create_stop_market_order = AsyncMock(return_value={"id": "sl-rounded"})
 
     result = await place_order(**_kwargs(size_usd=1.0, exchanges={"bingx": ex}))
 
@@ -312,7 +319,9 @@ async def test_place_order_no_round_up_when_above_minimum(
     ex.set_leverage = AsyncMock()
     ex.fetch_ticker = AsyncMock(return_value={"last": 1.0})
     ex.amount_to_precision = MagicMock(return_value="100.0")
+    ex.price_to_precision = MagicMock(return_value="1.1")
     ex.create_market_order = AsyncMock(return_value={"id": "ord-ok", "status": "closed"})
+    ex.create_stop_market_order = AsyncMock(return_value={"id": "sl-ok"})
 
     result = await place_order(**_kwargs(size_usd=100.0, exchanges={"bingx": ex}))
 
@@ -343,3 +352,157 @@ async def test_place_order_amount_zero_after_precision_returns_error(
 
     assert not result["allowed"]
     assert "rounds to 0" in result["reason"]
+
+
+class TestExchangeStopLoss:
+    """Exchange-native reduce-only stop-loss placed immediately after entry fill."""
+
+    def _entry_exchange(self) -> MagicMock:
+        ex = MagicMock()
+        ex.markets = {"BEAT/USDT:USDT": {"contractSize": 1.0}}
+        ex.set_leverage = AsyncMock()
+        ex.fetch_ticker = AsyncMock(return_value={"last": 1.0})
+        ex.amount_to_precision = MagicMock(return_value="100.0")
+        ex.price_to_precision = MagicMock(side_effect=lambda _sym, p: str(round(p, 6)))
+        ex.create_market_order = AsyncMock(return_value={"id": "entry-1", "status": "closed"})
+        return ex
+
+    @patch("schurfer_execution.orders.fetch_positions", return_value=([], set()))
+    @patch(
+        "schurfer_execution.orders.fetch_margin_balance",
+        return_value=[{"exchange": "bingx", "free": 1000.0, "used": 0.0, "total": 1000.0}],
+    )
+    async def test_stop_loss_placed_above_entry_for_short(
+        self, _mock_bal: MagicMock, _mock_pos: MagicMock
+    ) -> None:
+        ex = self._entry_exchange()
+        ex.create_stop_market_order = AsyncMock(return_value={"id": "sl-1"})
+        rdb = MagicMock()
+        rdb.set = AsyncMock(return_value=True)
+        rdb.get = AsyncMock(side_effect=_default_get)
+        rdb.eval = AsyncMock(return_value=1)
+
+        result = await place_order(
+            **_kwargs(side="short", initial_sl_pct=8.0, exchanges={"bingx": ex}, rdb=rdb)
+        )
+
+        assert result["allowed"]
+        ex.create_stop_market_order.assert_called_once()
+        call_args = ex.create_stop_market_order.call_args
+        assert call_args.args[0] == "BEAT/USDT:USDT"
+        assert call_args.args[1] == "buy"  # closing side for a short is buy
+        trigger_price = call_args.args[3]
+        assert trigger_price > 1.0  # short SL triggers above entry price
+        assert call_args.kwargs["params"] == {"reduceOnly": True}
+        # SL order id persisted for later cancellation on close.
+        rdb.set.assert_any_call("position:sl_order_id:bingx:BEAT", "sl-1", ex=86400)
+
+    @patch("schurfer_execution.orders.fetch_positions", return_value=([], set()))
+    @patch(
+        "schurfer_execution.orders.fetch_margin_balance",
+        return_value=[{"exchange": "bingx", "free": 1000.0, "used": 0.0, "total": 1000.0}],
+    )
+    async def test_stop_loss_failure_force_closes_position(
+        self, _mock_bal: MagicMock, _mock_pos: MagicMock
+    ) -> None:
+        ex = self._entry_exchange()
+        ex.create_stop_market_order = AsyncMock(side_effect=RuntimeError("exchange rejected"))
+        # Second create_market_order call is the emergency reduce-only close.
+        ex.create_market_order = AsyncMock(
+            side_effect=[
+                {"id": "entry-1", "status": "closed"},
+                {"id": "emergency-close-1", "status": "closed"},
+            ]
+        )
+
+        result = await place_order(**_kwargs(side="short", exchanges={"bingx": ex}))
+
+        assert not result["allowed"]
+        assert result["force_closed"] is True
+        assert "force-closed" in result["reason"]
+        assert ex.create_market_order.call_count == 2
+        emergency_call = ex.create_market_order.call_args_list[1]
+        assert emergency_call.args == ("BEAT/USDT:USDT", "buy", 100.0)
+        assert emergency_call.kwargs["params"] == {"reduceOnly": True}
+
+    @patch("schurfer_execution.orders.fetch_positions", return_value=([], set()))
+    @patch(
+        "schurfer_execution.orders.fetch_margin_balance",
+        return_value=[{"exchange": "bingx", "free": 1000.0, "used": 0.0, "total": 1000.0}],
+    )
+    async def test_stop_loss_and_emergency_close_both_fail_reports_unprotected(
+        self, _mock_bal: MagicMock, _mock_pos: MagicMock
+    ) -> None:
+        """Regression: if the emergency close ALSO fails, the result must say so —
+        not claim force-closed when the position is actually still open and naked."""
+        ex = self._entry_exchange()
+        ex.create_stop_market_order = AsyncMock(side_effect=RuntimeError("exchange rejected"))
+        ex.create_market_order = AsyncMock(
+            side_effect=[
+                {"id": "entry-1", "status": "closed"},
+                RuntimeError("close also rejected"),
+            ]
+        )
+
+        result = await place_order(**_kwargs(side="short", exchanges={"bingx": ex}))
+
+        assert not result["allowed"]
+        assert result["force_closed"] is False
+        assert "UNPROTECTED" in result["reason"]
+
+
+class TestClosePositionCancelsStopLoss:
+    async def test_close_position_cancels_resting_sl_order_first(self) -> None:
+        ex = MagicMock()
+        ex.markets = {"BEAT/USDT:USDT": {}}
+        ex.fetch_positions = AsyncMock(
+            return_value=[
+                {"symbol": "BEAT/USDT:USDT", "contracts": 100.0, "side": "short", "markPrice": 1.1}
+            ]
+        )
+        ex.amount_to_precision = MagicMock(return_value="100.0")
+        ex.cancel_order = AsyncMock(return_value={"id": "sl-1", "status": "canceled"})
+        ex.create_market_order = AsyncMock(
+            return_value={"id": "close-1", "status": "closed", "average": 1.1}
+        )
+
+        rdb = MagicMock()
+        rdb.set = AsyncMock(return_value=True)
+        rdb.get = AsyncMock(return_value=b"sl-1")
+        rdb.delete = AsyncMock()
+        rdb.eval = AsyncMock(return_value=1)
+
+        result = await close_position(
+            exchanges={"bingx": ex}, exchange="bingx", base="BEAT", reason="test", rdb=rdb
+        )
+
+        assert result["closed"]
+        ex.cancel_order.assert_called_once_with("sl-1", "BEAT/USDT:USDT")
+        rdb.delete.assert_any_call("position:sl_order_id:bingx:BEAT")
+
+    async def test_close_position_proceeds_even_if_sl_cancel_fails(self) -> None:
+        """SL order may have already filled/expired — cancel failure must not block close."""
+        ex = MagicMock()
+        ex.markets = {"BEAT/USDT:USDT": {}}
+        ex.fetch_positions = AsyncMock(
+            return_value=[
+                {"symbol": "BEAT/USDT:USDT", "contracts": 100.0, "side": "short", "markPrice": 1.1}
+            ]
+        )
+        ex.amount_to_precision = MagicMock(return_value="100.0")
+        ex.cancel_order = AsyncMock(side_effect=RuntimeError("order not found"))
+        ex.create_market_order = AsyncMock(
+            return_value={"id": "close-1", "status": "closed", "average": 1.1}
+        )
+
+        rdb = MagicMock()
+        rdb.set = AsyncMock(return_value=True)
+        rdb.get = AsyncMock(return_value=b"sl-1")
+        rdb.delete = AsyncMock()
+        rdb.eval = AsyncMock(return_value=1)
+
+        result = await close_position(
+            exchanges={"bingx": ex}, exchange="bingx", base="BEAT", reason="test", rdb=rdb
+        )
+
+        assert result["closed"]
