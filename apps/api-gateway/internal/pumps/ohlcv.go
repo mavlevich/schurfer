@@ -492,6 +492,31 @@ func fetchMEXC(ctx context.Context, base string, interval, limit int) ([]Candle,
 	return candles, nil
 }
 
+// mexcNumber accepts a kline field as either a JSON number or a JSON string —
+// MEXC's futures API is inconsistent about which one it sends per symbol.
+type mexcNumber float64
+
+func (n *mexcNumber) UnmarshalJSON(b []byte) error {
+	if len(b) > 0 && b[0] == '"' {
+		var s string
+		if err := json.Unmarshal(b, &s); err != nil {
+			return err
+		}
+		v, err := strconv.ParseFloat(s, 64)
+		if err != nil {
+			return err
+		}
+		*n = mexcNumber(v)
+		return nil
+	}
+	var v float64
+	if err := json.Unmarshal(b, &v); err != nil {
+		return err
+	}
+	*n = mexcNumber(v)
+	return nil
+}
+
 // parseMEXC handles MEXC futures klines — columnar format where each field is
 // a separate array (time[], open[], high[], low[], close[], vol[]).
 // Timestamps are in seconds.
@@ -501,12 +526,12 @@ func parseMEXC(raw []byte) ([]Candle, error) {
 		Code    int    `json:"code"`
 		Message string `json:"message"`
 		Data    *struct {
-			Time  []int64  `json:"time"`
-			Open  []string `json:"open"`
-			High  []string `json:"high"`
-			Low   []string `json:"low"`
-			Close []string `json:"close"`
-			Vol   []string `json:"vol"`
+			Time  []int64      `json:"time"`
+			Open  []mexcNumber `json:"open"`
+			High  []mexcNumber `json:"high"`
+			Low   []mexcNumber `json:"low"`
+			Close []mexcNumber `json:"close"`
+			Vol   []mexcNumber `json:"vol"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(raw, &resp); err != nil {
@@ -521,15 +546,11 @@ func parseMEXC(raw []byte) ([]Candle, error) {
 	n := len(resp.Data.Time)
 	candles := make([]Candle, 0, n)
 	for i := 0; i < n; i++ {
-		parseF := func(arr []string, name string) (float64, error) {
+		parseF := func(arr []mexcNumber, name string) (float64, error) {
 			if i >= len(arr) {
 				return 0, fmt.Errorf("row %d %s: out of range", i, name)
 			}
-			v, err := strconv.ParseFloat(arr[i], 64)
-			if err != nil {
-				return 0, fmt.Errorf("row %d %s=%q: %w", i, name, arr[i], err)
-			}
-			return v, nil
+			return float64(arr[i]), nil
 		}
 		o, err := parseF(resp.Data.Open, "open")
 		if err != nil {
