@@ -1077,8 +1077,11 @@ func (h *Handler) liveExchanges(ctx context.Context, base string) map[string]boo
 
 func (h *Handler) dbExchanges(ctx context.Context, base string) map[string]bool {
 	var raw []byte
+	// No time window: a token's episode history (and its chart) stays visible
+	// on TokenPage indefinitely, so the exchange list used to fetch that
+	// chart shouldn't expire after 24h either — pick the most recent episode.
 	err := h.pool.QueryRow(ctx,
-		`SELECT exchanges FROM app.pump_events WHERE base = $1 AND last_seen_at > NOW() - INTERVAL '24 hours'`,
+		`SELECT exchanges FROM app.pump_events WHERE base = $1 ORDER BY last_seen_at DESC LIMIT 1`,
 		base,
 	).Scan(&raw)
 	if err != nil || len(raw) == 0 {
