@@ -3,7 +3,7 @@
 Ideas under consideration. Not implemented yet.
 
 Each entry has a rough priority and notes on what infrastructure it requires.
-All strategies share the same journal, NATS bus, and web dashboard — they are
+All strategies share the same journal, NATS bus, and web dashboard - they are
 just additional collectors/analyzers/executors within the Schurfer monorepo.
 
 ---
@@ -19,13 +19,13 @@ just additional collectors/analyzers/executors within the Schurfer monorepo.
 
 ---
 
-## P1 — Next after pump_short_v1
+## P1 - Next after pump_short_v1
 
 ### `funding_rate_fade`
 
 Short when funding is extremely positive (crowded long), long when extremely
 negative. Same Bybit WebSocket data already collected for pump_short_v1.
-Minimal new work — just a different signal filter in analytics.
+Minimal new work - just a different signal filter in analytics.
 
 **Edge:** Extreme funding = crowded trade = mean reversion tendency.
 **Infra:** No new infra. Bybit funding data already in pipeline.
@@ -36,7 +36,7 @@ Minimal new work — just a different signal filter in analytics.
 ### `token_unlock_fade`
 
 Short tokens before large unlock events (>5% of supply). Unlocks are
-scheduled and public — rare predictability in crypto.
+scheduled and public - rare predictability in crypto.
 
 **Signal source:** TokenUnlocks API, CryptoRank
 **Edge:** Pre-unlock sell pressure is statistically consistent.
@@ -50,7 +50,7 @@ scheduled and public — rare predictability in crypto.
 Short tokens that pumped 1,000-10,000%+ with no fundamental catalyst.
 Screener checks top gainers on CoinGecko/CoinMarketCap daily.
 Different from pump_short_v1 (which catches 50-100% pumps via OI/funding
-in real-time) — this targets already-completed extreme moves.
+in real-time) - this targets already-completed extreme moves.
 
 **Signal source:** CoinGecko /coins/top_gainers or CMC gainers endpoint
 **Edge:** Extreme pumps without fundamental = high reversion probability.
@@ -59,7 +59,7 @@ in real-time) — this targets already-completed extreme moves.
 
 ---
 
-## P2 — Solid edge, new data source
+## P2 - Solid edge, new data source
 
 ### `dump_long_v1`
 
@@ -73,7 +73,7 @@ signs (volume spike, funding deeply negative, OI drop).
 ### `inter_exchange_funding_arb`
 
 When funding rate for the same pair differs significantly between exchanges
-(e.g. Bybit +0.05% vs OKX -0.01%) — long where you receive, short where
+(e.g. Bybit +0.05% vs OKX -0.01%) - long where you receive, short where
 you pay. Delta-neutral, captures rate differential.
 
 **Infra:** Multi-exchange collector (OKX, Bybit simultaneously).
@@ -93,7 +93,7 @@ Two variants:
 - Slow: fade the pump 1-3 days after listing
 
 **Infra:** Fast variant requires sub-second announcement parser (hard, crowded).
-Slow variant is straightforward — just another signal.
+Slow variant is straightforward - just another signal.
 
 ---
 
@@ -119,12 +119,12 @@ Statistical edge from timestamps already in the journal:
 - Weekend vs weekday behaviour
 - Asian session vs US session
 
-Not a standalone strategy — a filter/multiplier for other strategies.
+Not a standalone strategy - a filter/multiplier for other strategies.
 Research task: query the journal after 3-6 months of data.
 
 ---
 
-## P3 — Real edge, significant new infra
+## P3 - Real edge, significant new infra
 
 ### `on_chain_insider_detection`
 
@@ -135,7 +135,7 @@ Also: team/deployer wallet movements to exchanges (sell signal).
 **Data sources:** Etherscan API, Arkham, Transpose, or self-hosted node.
 **Infra:** On-chain indexer (new collector), wallet scoring system.
 **Edge:** Genuine informational edge. Pattern documented by researchers.
-**Note:** Goes in the same journal — just a different signal source.
+**Note:** Goes in the same journal - just a different signal source.
 
 ---
 
@@ -172,7 +172,7 @@ Crypto IV is chronically higher than realised volatility. Systematic
 strangle selling with risk management.
 
 **Infra:** Deribit API integration, options pricing model.
-**Risk:** Tail risk — one blow-up erases months of premium collected.
+**Risk:** Tail risk - one blow-up erases months of premium collected.
 Requires strict position sizing and defined max loss rules.
 
 ---
@@ -224,7 +224,7 @@ Sprint 6+ territory.
 
 ### Copy-trading on Bybit
 
-Bybit has a built-in copy-trading mechanism — master trader earns a share
+Bybit has a built-in copy-trading mechanism - master trader earns a share
 of follower profits. Only makes sense after 6+ months of verified track record.
 
 ---
@@ -233,15 +233,15 @@ of follower profits. Only makes sense after 6+ months of verified track record.
 
 Out of scope for Schurfer. Documented for personal reference.
 
-- **IKE/IKZE (Poland)** — removes 19% capital gains tax. First step before
+- **IKE/IKZE (Poland)** - removes 19% capital gains tax. First step before
   any investing strategy.
-- **EDGAR insider tracking** — SEC Form 4 filings are public. Cluster buys
+- **EDGAR insider tracking** - SEC Form 4 filings are public. Cluster buys
   (multiple insiders buying simultaneously) statistically predict returns.
   Engineering task: EDGAR scraper → cluster scoring → alerts.
-- **13F cloning** — copy concentrated long-only hedge funds with 45-day lag.
-- **Spin-offs** — institutions mechanically sell spun-off entities →
+- **13F cloning** - copy concentrated long-only hedge funds with 45-day lag.
+- **Spin-offs** - institutions mechanically sell spun-off entities →
   systematic undervaluation in first months (Greenblatt classic).
-- **Wheel strategy** — sell cash-secured puts on stocks you want to own,
+- **Wheel strategy** - sell cash-secured puts on stocks you want to own,
   then covered calls. Requires IBKR and capital for 100-share lots.
-- **Factor strategies** — momentum, quality, small-cap value. Backtestable
+- **Factor strategies** - momentum, quality, small-cap value. Backtestable
   on free data. Schurfer backtest framework transfers with minor changes.

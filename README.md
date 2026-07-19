@@ -4,13 +4,18 @@
 
 ## Status
 
-Sprint 5 complete. Signal trader live (disabled by default). Multi-exchange pump scanner, short-readiness scoring, automated position management.
+Live in production on Hetzner, private access over Tailscale, running in DRY_RUN
+(paper mode, no real orders). Multi-exchange pump scanner, short-readiness scoring,
+automated position management, and safety hardening (exchange-native stop-loss,
+durable daily PnL, position reconciliation) are all in place. Current focus is the
+measurement layer that will show whether the strategy has edge (see
+[ROADMAP.md](ROADMAP.md)).
 
 ## What it does
 
 - Scans 12 CEX perpetual markets every 60s for price pumps above a configurable threshold
 - Persists pump episodes with peak %, retrace %, and timeline snapshots (+1h/+4h/+24h)
-- Scores each active pump on 5 components: age, price extent, OI trend, funding rate, retrace from peak (0–10)
+- Scores each active pump on 5 components: age, price extent, OI trend, funding rate, retrace from peak (0 to 10)
 - Token detail page: OHLCV chart (5m/15m/1h/4h), exchange breakdown, episode history, signal components
 - Telegram alerts on new pump detection
 - Automated short execution when `AUTO_TRADE=true`: opens positions on high-score pumps, monitors TP/SL/max-hold, closes automatically
@@ -18,31 +23,31 @@ Sprint 5 complete. Signal trader live (disabled by default). Multi-exchange pump
 
 ## Stack
 
-| Layer              | Technology                                                |
-| ------------------ | --------------------------------------------------------- |
-| Analytics scanner  | Python 3.13, ccxt, psycopg3, redis-py, structlog          |
-| Execution service  | Python 3.13, FastAPI, ccxt, redis-py, structlog           |
-| API gateway        | Go 1.24, chi, pgx, go-redis                               |
-| Bybit WS collector | Go 1.24, NATS                                             |
-| Telegram notifier  | Go 1.24                                                   |
-| Frontend           | React 19, Vite, TypeScript, shadcn/ui, lightweight-charts |
-| Storage            | PostgreSQL 17 + TimescaleDB, Redis 7                      |
-| Message bus        | NATS 2 with JetStream                                     |
-| Infra              | Docker Compose (dev), AWS EC2 Frankfurt (prod, planned)   |
+| Layer              | Technology                                                     |
+| ------------------ | -------------------------------------------------------------- |
+| Analytics scanner  | Python 3.13, ccxt, psycopg3, redis-py, structlog               |
+| Execution service  | Python 3.13, FastAPI, ccxt, redis-py, structlog                |
+| API gateway        | Go 1.24, chi, pgx, go-redis                                    |
+| Bybit WS collector | Go 1.24, NATS                                                  |
+| Telegram notifier  | Go 1.24                                                        |
+| Frontend           | React 19, Vite, TypeScript, shadcn/ui, lightweight-charts      |
+| Storage            | PostgreSQL 17 + TimescaleDB, Redis 7                           |
+| Message bus        | NATS 2 with JetStream                                          |
+| Infra              | Docker Compose (dev), Hetzner Cloud + Caddy + Tailscale (prod) |
 
 ## Project structure
 
 ```
 apps/
-├── analytics/       Python  — pump scanner, persistence, snapshots, OI/funding collection
-├── api-gateway/     Go      — REST API, OHLCV proxy, pump history, signal scoring, Redis ticker
-├── collector/       Go      — Bybit WebSocket → NATS publisher
-├── execution/       Python  — order execution, risk checks, position monitor, signal trader
-├── notifier/        Go      — Telegram alerts, reads Redis pumps:latest
-└── web/             TS      — React dashboard (/pumps, /pumps/:base)
+├── analytics/       Python  - pump scanner, persistence, snapshots, OI/funding collection
+├── api-gateway/     Go      - REST API, OHLCV proxy, pump history, signal scoring, Redis ticker
+├── collector/       Go      - Bybit websocket to NATS publisher (prototype, no consumer yet)
+├── execution/       Python  - order execution, risk checks, position monitor, signal trader
+├── notifier/        Go      - Telegram alerts, reads Redis pumps:latest
+└── web/             TS      - React dashboard (/pumps, /pumps/:base)
 
 packages/
-└── journal/         Python  — SQLAlchemy models, Alembic migrations
+└── journal/         Python  - SQLAlchemy models, Alembic migrations
 
 infra/
 └── docker/
@@ -92,7 +97,7 @@ PUMP_MIN_PCT=30
 SCAN_INTERVAL=60
 PUMP_EXCHANGES=binance,bybit,okx,gate,bitget,mexc,bingx,coinex,phemex,cryptocom,htx,kucoin
 
-# Automated trading (disabled by default — enable only after paper testing)
+# Automated trading (disabled by default, enable only after paper testing)
 AUTO_TRADE=false
 SIGNAL_POSITION_USD=50
 SIGNAL_LEVERAGE=3
@@ -117,18 +122,18 @@ make migrate
 cd apps/web && pnpm dev
 ```
 
-Open [http://localhost:5173](http://localhost:5173) — login with `admin` / the password set during `dev-init`.
+Open [http://localhost:5173](http://localhost:5173) and log in with `admin` and the password set during `dev-init`.
 
 ## Services
 
-| Service           | URL / Port            | Notes                                     |
-| ----------------- | --------------------- | ----------------------------------------- |
-| Frontend (dev)    | http://localhost:5173 | Vite dev server, proxies /api to gateway  |
-| API gateway       | http://localhost:8000 | REST API, signal scoring ticker           |
-| Execution service | http://localhost:8001 | Order execution, internal only            |
-| PostgreSQL        | localhost:5432        | user: schurfer, db: schurfer              |
-| Redis             | localhost:6379        | pump state, signal scores, position locks |
-| NATS              | localhost:4222        | collector → analytics pub/sub             |
+| Service           | URL / Port            | Notes                                                 |
+| ----------------- | --------------------- | ----------------------------------------------------- |
+| Frontend (dev)    | http://localhost:5173 | Vite dev server, proxies /api to gateway              |
+| API gateway       | http://localhost:8000 | REST API, signal scoring ticker                       |
+| Execution service | http://localhost:8001 | Order execution, internal only                        |
+| PostgreSQL        | localhost:5432        | user: schurfer, db: schurfer                          |
+| Redis             | localhost:6379        | pump state, signal scores, position locks             |
+| NATS              | localhost:4222        | collector publishes here (prototype, no consumer yet) |
 
 ### Key API endpoints
 

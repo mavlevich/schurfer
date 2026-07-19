@@ -15,16 +15,16 @@ main
 ### Branch naming
 
 ```
-feat/short-description    — new functionality
-fix/what-is-broken        — bug fix
-chore/infra-or-tooling    — CI, config, refactoring
-docs/what-documented      — documentation only
-test/what-is-tested       — test-only changes
+feat/short-description    - new functionality
+fix/what-is-broken        - bug fix
+chore/infra-or-tooling    - CI, config, refactoring
+docs/what-documented      - documentation only
+test/what-is-tested       - test-only changes
 ```
 
 ### Rules
 
-- `main` is protected — no direct pushes
+- `main` is protected - no direct pushes
 - Every change → branch → PR → squash merge → delete branch
 - PR runs CI before merge
 - Self-review is fine (solo project), but PR history is kept for traceability
@@ -52,7 +52,7 @@ chore(ci): add arm64 docker build
 
 ## Pull requests
 
-- Keep PRs focused — one feature/fix per PR
+- Keep PRs focused - one feature/fix per PR
 - Use the PR template (`.github/pull_request_template.md`)
 - Squash merge to keep `main` history clean
 - Delete branch after merge
