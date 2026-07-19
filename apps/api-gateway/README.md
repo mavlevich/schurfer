@@ -9,8 +9,8 @@ Handles authentication (JWT in HttpOnly cookie) and infrastructure health checks
 | ------ | -------------- | ------ | -------------------------------------------------- |
 | POST   | `/auth/login`  | public | Login with password, sets JWT cookie               |
 | POST   | `/auth/logout` | JWT    | Clears JWT cookie                                  |
-| GET    | `/healthz`     | public | Liveness probe — always 200 while process is alive |
-| GET    | `/api/health`  | JWT    | Readiness probe — 200 all deps up, 503 otherwise   |
+| GET    | `/healthz`     | public | Liveness probe - always 200 while process is alive |
+| GET    | `/api/health`  | JWT    | Readiness probe - 200 all deps up, 503 otherwise   |
 | WS     | `/ws/status`   | JWT    | Live status stream, pushes every 5s                |
 
 ## Environment variables
@@ -22,8 +22,8 @@ Handles authentication (JWT in HttpOnly cookie) and infrastructure health checks
 | `NATS_URL`            | `nats://localhost:4222`                                      |          |
 | `PORT`                | `8000`                                                       |          |
 | `ENV`                 | `development`                                                |          |
-| `ADMIN_PASSWORD_HASH` | —                                                            | yes      |
-| `JWT_SECRET`          | —                                                            | yes      |
+| `ADMIN_PASSWORD_HASH` | -                                                            | yes      |
+| `JWT_SECRET`          | -                                                            | yes      |
 
 ## Setup
 
