@@ -192,20 +192,47 @@ prod-migrate:
 
 prod-deploy:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
+	@test "$$(git branch --show-current)" = "main" || (echo "ERROR: not on main (on '$$(git branch --show-current)'). Deploy only from main." && exit 1)
+	@test -z "$$(git status --porcelain)" || (echo "ERROR: working tree not clean. Commit or stash first." && exit 1)
 	@echo "-> [1/5] Backup..."
 	@bash infra/scripts/backup.sh
-	@echo "-> [2/5] Pull..."
-	git pull origin main
+	@echo "-> [2/5] Pull (fast-forward only)..."
+	git pull --ff-only origin main
 	@echo "-> [3/5] Start DB..."
 	$(_PROD) up -d postgres redis nats
 	@$(_PROD) exec -T postgres pg_isready -U schurfer -q --timeout=30
 	@echo "-> [4/5] Migrate + deploy..."
 	@$(MAKE) prod-migrate
-	$(_PROD) up -d --build
+	$(_PROD) up -d --build --wait --wait-timeout 180
 	docker image prune -f
 	@echo "-> [5/5] Health..."
 	@$(_PROD) ps --format "table {{.Name}}\t{{.Status}}\t{{.Health}}"
 	@echo "-> Done. Logs: make prod-logs"
+
+# Rebuild a single service from current main. Guarded like prod-deploy, but skips
+# backup and migration, so use it only for a code-only change with NO new migration.
+prod-deploy-svc:
+	@test -n "$(SERVICE)" || (echo "ERROR: set SERVICE=<name>, e.g. make prod-deploy-svc SERVICE=execution" && exit 1)
+	@test "$$(git branch --show-current)" = "main" || (echo "ERROR: not on main (on '$$(git branch --show-current)'). Deploy only from main." && exit 1)
+	@test -z "$$(git status --porcelain)" || (echo "ERROR: working tree not clean. Commit or stash first." && exit 1)
+	@echo "-> Single-service deploy of $(SERVICE) (NO backup, NO migration; use prod-deploy if the change has a migration)..."
+	git pull --ff-only origin main
+	$(_PROD) up -d --build --wait --wait-timeout 180 $(SERVICE)
+	@$(_PROD) ps --format "table {{.Name}}\t{{.Status}}\t{{.Health}}"
+
+# Redeploy a previous known-good commit. No pull, no migration: a rollback must
+# not fast-forward back to the broken main, and checking out old code does NOT
+# revert a schema change (restore from backup or downgrade explicitly for that).
+# Afterwards HEAD is detached; return to normal deploys with `git switch main`.
+prod-rollback:
+	@test -n "$(REV)" || (echo "ERROR: set REV=<sha>, e.g. make prod-rollback REV=abc123" && exit 1)
+	@test -z "$$(git status --porcelain)" || (echo "ERROR: working tree not clean. Commit or stash first." && exit 1)
+	@echo "-> Rolling back to $(REV) (no pull, no migration)..."
+	git checkout --detach $(REV)
+	$(_PROD) up -d --build --wait --wait-timeout 180
+	@$(_PROD) ps --format "table {{.Name}}\t{{.Status}}\t{{.Health}}"
+	@echo "-> Rolled back to $(REV). HEAD is now detached; run 'git switch main' before the next prod-deploy."
+	@echo "-> Schema NOT reverted; restore from backup if a migration must be undone."
 
 prod-logs:
 	$(_PROD) logs -f --tail=100

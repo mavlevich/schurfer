@@ -126,3 +126,8 @@ tmp/
 temp/
 .cache/
 coverage/
+
+# Production database backups (backup.sh writes here inside the repo root on prod).
+# Without this, the second deploy sees an untracked backups/ and the clean-tree
+# guard in `make prod-deploy` fails.
+/backups/

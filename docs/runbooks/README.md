@@ -40,11 +40,13 @@ cd /opt/schurfer
 make prod-deploy
 ```
 
-`make prod-deploy` runs, in order: **backup**, `git pull origin main`, start the
-datastores, **run migrations** (`alembic upgrade head`), rebuild and restart all
-services, prune old images, and print health. Running migrations before building the
-services is deliberate: a new service revision may expect columns a migration adds, so
-the schema must be current first.
+`make prod-deploy` runs, in order: assert the checkout is clean and on `main`,
+**backup**, `git pull --ff-only origin main`, start the datastores, **run migrations**
+(`alembic upgrade head`), rebuild and restart all services and wait for them to come
+up (`--wait`), prune old images, and print health. Running migrations before building
+the services is deliberate: a new revision may expect columns a migration adds, so the
+schema must be current first. The branch and clean-tree guards stop you from deploying
+a stray feature branch or uncommitted local edits.
 
 Before treating a deploy as done, confirm the commit is actually on `main`. A PR can
 be merged while a late commit is not, which silently drops it:
@@ -67,16 +69,17 @@ make prod-migrate
 ### Faster single-service redeploy (optional)
 
 For a code-only change to one service with NO new migration, rebuild just that service
-instead of everything:
+instead of everything. Use the guarded target (same branch and clean-tree checks and
+`--ff-only` pull as `prod-deploy`), not a raw `git pull` + `compose up`, which could
+run on a stray branch or merge instead of fast-forward:
 
 ```bash
-git pull origin main
-docker compose --env-file .env.prod -f infra/docker/docker-compose.prod.yml up -d --build execution
+make prod-deploy-svc SERVICE=execution
 ```
 
 Caveat: this path skips both the backup and the migration. If the change includes a
-new Alembic migration, run `make prod-migrate` first, or just use `make prod-deploy`.
-When in doubt, use `make prod-deploy`.
+new Alembic migration, use `make prod-deploy` instead. When in doubt, use
+`make prod-deploy`.
 
 ### Post-deploy verification
 
@@ -93,17 +96,27 @@ FROM app.trade_decisions ORDER BY ts DESC LIMIT 20;
 
 ### Rollback
 
-If a deploy misbehaves, redeploy the previous known-good commit:
+If a deploy misbehaves, redeploy a previous known-good commit. Do NOT use
+`make prod-deploy` for this: it pulls `main` and would fast-forward straight back to
+the broken version. Use the rollback target, which checks out the given commit with no
+pull and no migration:
 
 ```bash
-git checkout <previous-good-sha>
-make prod-deploy
+make prod-rollback REV=<previous-good-sha>
+```
+
+After `prod-rollback` the server is on a detached HEAD, so the next `make prod-deploy`
+will refuse to run (its branch guard). Once you have a forward fix merged to `main`,
+return to normal deploys with:
+
+```bash
+git switch main
+git pull --ff-only origin main
 ```
 
 Note: checking out old code does NOT undo a migration. A schema change is forward-only
 here; to reverse one, run an explicit `alembic downgrade` or restore from the
-pre-deploy backup (`make prod-deploy` takes one first). Prefer a forward fix over a
-downgrade.
+pre-deploy backup. Prefer a forward fix over a downgrade.
 
 ## Health, logs, backup
 
@@ -111,7 +124,7 @@ downgrade.
 make prod-health          # container status and health
 make prod-logs            # tail all services
 make prod-backup          # manual DB backup (also runs on a cron)
-make prod-restore-local   # restore the latest prod backup into local dev (from your machine)
+PROD_HOST=schurfer make prod-restore-local   # restore latest prod backup into local dev (run from your machine)
 ```
 
 Raw docker for a single service:
@@ -122,8 +135,10 @@ docker logs schurfer-execution --since 15m -f
 docker logs schurfer-api-gateway --since 1h 2>&1 | grep -i error
 ```
 
-Every long-running service has a healthcheck. `caddy` depends on `api-gateway` and
-`web` being healthy before it starts.
+The datastores (postgres, redis, nats) and api-gateway, web, and caddy have Compose
+healthchecks; the worker services (analytics, execution, collector, notifier) do not
+yet, so `--wait` only waits for them to be running, not healthy. `caddy` depends on
+`api-gateway` and `web` being healthy before it starts.
 
 Test the restore periodically. A backup that has never been restored is not a backup.
 
@@ -176,8 +191,10 @@ To take the system fully out of live trading, set `AUTO_TRADE=false` (or
 - Scanner produced no pumps: check analytics logs and that outbound network to the
   exchanges works from the host.
 - Decision writer stuck retrying: check execution logs for `decisions.write_failed`.
-  A malformed row cannot happen for jsonb (non-finite values are dropped before the
-  queue), so a sustained failure points at the DB connection, not the payload.
+  Usual cause is the DB connection, but the payload can also do it: a value that
+  violates a column constraint (for example a `STRATEGY_VERSION` longer than
+  `varchar(32)`) fails every insert and retries forever. Non-finite jsonb is already
+  dropped before the queue, so that specific case cannot poison it.
 
 ## Incidents
 
