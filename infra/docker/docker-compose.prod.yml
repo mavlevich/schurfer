@@ -247,6 +247,7 @@ services:
     environment:
       REDIS_ADDR: redis:6379
       SCAN_INTERVAL: ${SCAN_INTERVAL:-60}
+      STALE_AFTER_SECONDS: ${STALE_AFTER_SECONDS:-240}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
     depends_on:
