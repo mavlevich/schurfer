@@ -16,12 +16,24 @@ import (
 var _telegramAPI = "https://api.telegram.org/bot%s/sendMessage"
 
 func sendAlert(ctx context.Context, p pump, botToken, chatID string) error {
-	text := formatAlert(p)
-	body, _ := json.Marshal(map[string]string{
+	return postMessage(ctx, botToken, map[string]string{
 		"chat_id":    chatID,
-		"text":       text,
+		"text":       formatAlert(p),
 		"parse_mode": "MarkdownV2",
 	})
+}
+
+// sendMessage sends a plain-text message. Used for operational alerts (like a
+// stale scanner) where MarkdownV2 escaping would only get in the way.
+func sendMessage(ctx context.Context, text, botToken, chatID string) error {
+	return postMessage(ctx, botToken, map[string]string{
+		"chat_id": chatID,
+		"text":    text,
+	})
+}
+
+func postMessage(ctx context.Context, botToken string, fields map[string]string) error {
+	body, _ := json.Marshal(fields)
 
 	url := fmt.Sprintf(_telegramAPI, botToken)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))

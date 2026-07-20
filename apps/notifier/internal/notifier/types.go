@@ -15,6 +15,7 @@ type pump struct {
 }
 
 type payload struct {
+	Ts      int64    `json:"ts"` // scan time, Unix milliseconds
 	Scanned []string `json:"scanned"`
 	Pumps   []pump   `json:"pumps"`
 }

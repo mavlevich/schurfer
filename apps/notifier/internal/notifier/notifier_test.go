@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
@@ -18,10 +19,11 @@ func newTestNotifier(t *testing.T, mr *miniredis.Miniredis, botToken, chatID str
 	t.Cleanup(func() { _ = rdb.Close() })
 	return &Notifier{
 		cfg: Config{
-			RedisAddr: mr.Addr(),
-			BotToken:  botToken,
-			ChatID:    chatID,
-			Interval:  time.Minute,
+			RedisAddr:  mr.Addr(),
+			BotToken:   botToken,
+			ChatID:     chatID,
+			Interval:   time.Minute,
+			StaleAfter: 5 * time.Minute,
 		},
 		rdb: rdb,
 	}
@@ -29,6 +31,9 @@ func newTestNotifier(t *testing.T, mr *miniredis.Miniredis, botToken, chatID str
 
 func setPumpsPayload(t *testing.T, mr *miniredis.Miniredis, p payload) {
 	t.Helper()
+	if p.Ts == 0 {
+		p.Ts = time.Now().UnixMilli() // default to a fresh scan unless a test sets it
+	}
 	raw, err := json.Marshal(p)
 	if err != nil {
 		t.Fatal(err)
@@ -190,5 +195,219 @@ func TestTick_AlreadySeenSkipsAlert(t *testing.T) {
 
 	if requests > 0 {
 		t.Errorf("expected 0 alerts for already-seen token, got %d", requests)
+	}
+}
+
+// --- scanner staleness alerts ---
+
+func newTelegramCounter(t *testing.T) (*int, func()) {
+	t.Helper()
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	orig := _telegramAPI
+	_telegramAPI = srv.URL + "/%s/sendMessage"
+	return &calls, func() { _telegramAPI = orig; srv.Close() }
+}
+
+func staleUnixMinutesAgo(m int) string {
+	return strconv.FormatInt(time.Now().Add(-time.Duration(m)*time.Minute).Unix(), 10)
+}
+
+func TestTick_MissingKeyWithinGraceNoAlert(t *testing.T) {
+	calls, done := newTelegramCounter(t)
+	defer done()
+
+	mr := miniredis.RunT(t)
+	n := newTestNotifier(t, mr, "tok", "cid") // clean redis, key missing, no missing-since
+
+	_ = n.tick(context.Background())
+
+	if *calls != 0 {
+		t.Errorf("expected no alert within grace on first missing tick, got %d", *calls)
+	}
+	if !mr.Exists(redisKeyMissingSince) {
+		t.Error("missing-since timer should be recorded on the first missing tick")
+	}
+}
+
+func TestTick_AlertsWhenPumpsMissingPastGrace(t *testing.T) {
+	calls, done := newTelegramCounter(t)
+	defer done()
+
+	mr := miniredis.RunT(t)
+	n := newTestNotifier(t, mr, "tok", "cid")
+	if err := mr.Set(redisKeyMissingSince, staleUnixMinutesAgo(10)); err != nil { // missing past grace
+		t.Fatal(err)
+	}
+
+	_ = n.tick(context.Background())
+
+	if *calls != 1 {
+		t.Errorf("expected 1 stale alert, got %d", *calls)
+	}
+	if !mr.Exists(redisKeyStaleAlerted) {
+		t.Error("stale-alerted flag must be set")
+	}
+}
+
+func TestTick_AlertsWhenMalformedJSON(t *testing.T) {
+	calls, done := newTelegramCounter(t)
+	defer done()
+
+	mr := miniredis.RunT(t)
+	n := newTestNotifier(t, mr, "tok", "cid")
+	if err := mr.Set(redisKeyPumps, "{not valid json"); err != nil {
+		t.Fatal(err)
+	}
+
+	_ = n.tick(context.Background())
+
+	if *calls != 1 {
+		t.Errorf("expected 1 alert for malformed payload, got %d", *calls)
+	}
+	if !mr.Exists(redisKeyStaleAlerted) {
+		t.Error("stale-alerted flag must be set on malformed payload")
+	}
+}
+
+func TestTick_AlertsWhenTimestampInFuture(t *testing.T) {
+	calls, done := newTelegramCounter(t)
+	defer done()
+
+	mr := miniredis.RunT(t)
+	n := newTestNotifier(t, mr, "tok", "cid")
+	setPumpsPayload(t, mr, payload{
+		Ts:      time.Now().Add(time.Hour).UnixMilli(),
+		Scanned: []string{"binance"},
+	})
+
+	_ = n.tick(context.Background())
+
+	if *calls != 1 {
+		t.Errorf("expected 1 alert for a future timestamp, got %d", *calls)
+	}
+}
+
+func TestTick_AlertsWhenScanTooOld(t *testing.T) {
+	calls, done := newTelegramCounter(t)
+	defer done()
+
+	mr := miniredis.RunT(t)
+	n := newTestNotifier(t, mr, "tok", "cid")
+	setPumpsPayload(t, mr, payload{
+		Ts:      time.Now().Add(-10 * time.Minute).UnixMilli(), // older than StaleAfter (5m)
+		Scanned: []string{"binance"},
+	})
+
+	_ = n.tick(context.Background())
+
+	if *calls != 1 {
+		t.Errorf("expected 1 stale alert, got %d", *calls)
+	}
+	if !mr.Exists(redisKeyStaleAlerted) {
+		t.Error("stale-alerted flag must be set")
+	}
+}
+
+func TestTick_NoDoubleAlertWhenAlreadyStale(t *testing.T) {
+	calls, done := newTelegramCounter(t)
+	defer done()
+
+	mr := miniredis.RunT(t)
+	n := newTestNotifier(t, mr, "tok", "cid")
+	if err := mr.Set(redisKeyMissingSince, staleUnixMinutesAgo(10)); err != nil { // past grace
+		t.Fatal(err)
+	}
+	if err := mr.Set(redisKeyStaleAlerted, "1"); err != nil {
+		t.Fatal(err)
+	}
+
+	_ = n.tick(context.Background()) // missing past grace, but already alerted
+
+	if *calls != 0 {
+		t.Errorf("expected no repeat alert, got %d", *calls)
+	}
+}
+
+func TestTick_RecoveryAlertWhenFreshAgain(t *testing.T) {
+	calls, done := newTelegramCounter(t)
+	defer done()
+
+	mr := miniredis.RunT(t)
+	n := newTestNotifier(t, mr, "tok", "cid")
+	if err := mr.Set(redisKeyStaleAlerted, "1"); err != nil { // previously alerted
+		t.Fatal(err)
+	}
+	setPumpsPayload(t, mr, payload{Scanned: []string{"binance"}}) // fresh ts, no pumps
+
+	_ = n.tick(context.Background())
+
+	if *calls != 1 {
+		t.Errorf("expected 1 recovery alert, got %d", *calls)
+	}
+	if mr.Exists(redisKeyStaleAlerted) {
+		t.Error("stale-alerted flag must be cleared after recovery")
+	}
+}
+
+func TestTick_NoStaleAlertWhenFresh(t *testing.T) {
+	calls, done := newTelegramCounter(t)
+	defer done()
+
+	mr := miniredis.RunT(t)
+	n := newTestNotifier(t, mr, "tok", "cid")
+	setPumpsPayload(t, mr, payload{Scanned: []string{"binance"}}) // fresh, no pumps, no flag
+
+	_ = n.tick(context.Background())
+
+	if *calls != 0 {
+		t.Errorf("expected no alert when fresh, got %d", *calls)
+	}
+}
+
+func failingTelegram(t *testing.T) func() {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	orig := _telegramAPI
+	_telegramAPI = srv.URL + "/%s/sendMessage"
+	return func() { _telegramAPI = orig; srv.Close() }
+}
+
+func TestTick_StaleAlertFailureReleasesClaim(t *testing.T) {
+	defer failingTelegram(t)()
+
+	mr := miniredis.RunT(t)
+	n := newTestNotifier(t, mr, "tok", "cid")
+	if err := mr.Set(redisKeyMissingSince, staleUnixMinutesAgo(10)); err != nil {
+		t.Fatal(err)
+	}
+
+	_ = n.tick(context.Background()) // stale, but the Telegram send fails
+
+	if mr.Exists(redisKeyStaleAlerted) {
+		t.Error("claim must be released when the stale alert fails to send, so the next tick retries")
+	}
+}
+
+func TestTick_RecoveryFailureRestoresFlag(t *testing.T) {
+	defer failingTelegram(t)()
+
+	mr := miniredis.RunT(t)
+	n := newTestNotifier(t, mr, "tok", "cid")
+	if err := mr.Set(redisKeyStaleAlerted, "1"); err != nil { // previously alerted
+		t.Fatal(err)
+	}
+	setPumpsPayload(t, mr, payload{Scanned: []string{"binance"}}) // fresh again
+
+	_ = n.tick(context.Background()) // recovery attempted, but the Telegram send fails
+
+	if !mr.Exists(redisKeyStaleAlerted) {
+		t.Error("flag must be restored when the recovery notice fails to send, so recovery retries")
 	}
 }
