@@ -28,6 +28,12 @@ type Config struct {
 	// StaleAfter is how old the last scan may be before the scanner is reported
 	// stale. A silently dead scanner is the main way the dataset develops gaps.
 	StaleAfter time.Duration
+	// MinPct is the smallest max-change percent a pump must reach to trigger a
+	// Telegram alert. The scanner already filters to its own PUMP_MIN_PCT; this is
+	// a second, notifier-side gate that keeps the channel from being flooded by
+	// every small pump. A sub-threshold pump is not marked seen, so it still alerts
+	// if it later grows past the gate.
+	MinPct float64
 }
 
 type Notifier struct {
@@ -110,7 +116,7 @@ func (n *Notifier) reportStaleness(ctx context.Context, stale bool, reason strin
 		if !claimed {
 			return // already alerted
 		}
-		if err := sendMessage(ctx, "Schurfer scanner stale: "+reason, n.cfg.BotToken, n.cfg.ChatID); err != nil {
+		if err := sendMessage(ctx, "🔴 Schurfer scanner stale: "+reason, n.cfg.BotToken, n.cfg.ChatID); err != nil {
 			slog.Warn("notifier.stale.alert.failed", "err", err)
 			if derr := n.rdb.Del(ctx, redisKeyStaleAlerted).Err(); derr != nil {
 				slog.Warn("notifier.stale.claim.release.failed", "err", derr)
@@ -131,7 +137,7 @@ func (n *Notifier) reportStaleness(ctx context.Context, stale bool, reason strin
 	if removed == 0 {
 		return // was not in an alerted state
 	}
-	if err := sendMessage(ctx, "Schurfer scanner recovered", n.cfg.BotToken, n.cfg.ChatID); err != nil {
+	if err := sendMessage(ctx, "🟢 Schurfer scanner recovered", n.cfg.BotToken, n.cfg.ChatID); err != nil {
 		slog.Warn("notifier.stale.recovery.failed", "err", err)
 		if serr := n.rdb.Set(ctx, redisKeyStaleAlerted, time.Now().Unix(), 0).Err(); serr != nil {
 			slog.Warn("notifier.stale.flag.restore.failed", "err", serr)
@@ -191,6 +197,11 @@ func (n *Notifier) tick(ctx context.Context) error {
 
 	newPumps := make([]pump, 0)
 	for _, pump := range p.Pumps {
+		// Below the notifier gate: skip without marking seen, so the same token
+		// still alerts if a later scan shows it grown past the threshold.
+		if pump.MaxChangePct < n.cfg.MinPct {
+			continue
+		}
 		key := redisKeySeenPfx + pump.Base
 		exists, err := n.rdb.Exists(ctx, key).Result()
 		if err != nil {

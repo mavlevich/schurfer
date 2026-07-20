@@ -198,6 +198,58 @@ func TestTick_AlreadySeenSkipsAlert(t *testing.T) {
 	}
 }
 
+func TestTick_BelowThresholdNoAlertNotSeen(t *testing.T) {
+	calls, done := newTelegramCounter(t)
+	defer done()
+
+	mr := miniredis.RunT(t)
+	n := newTestNotifier(t, mr, "tok", "cid")
+	n.cfg.MinPct = 60
+
+	setPumpsPayload(t, mr, payload{
+		Scanned: []string{"binance"},
+		Pumps: []pump{{Base: "BTC", MaxChangePct: 40.0, Exchanges: []exchange{
+			{Exchange: "binance", ChangePct: 40.0, VolumeUSD: 1_000_000},
+		}}},
+	})
+
+	_ = n.tick(context.Background())
+
+	if *calls != 0 {
+		t.Errorf("expected no alert for a pump below the notifier gate, got %d", *calls)
+	}
+	// Not marked seen, so it can still alert if it later grows past the gate.
+	if mr.Exists(redisKeySeenPfx + "BTC") {
+		t.Error("a sub-threshold pump must not be marked seen")
+	}
+}
+
+func TestTick_AtThresholdAlerts(t *testing.T) {
+	calls, done := newTelegramCounter(t)
+	defer done()
+
+	mr := miniredis.RunT(t)
+	n := newTestNotifier(t, mr, "tok", "cid")
+	n.cfg.MinPct = 60
+
+	// Exactly at the threshold must alert: the gate is `< MinPct`, so equal passes.
+	setPumpsPayload(t, mr, payload{
+		Scanned: []string{"binance"},
+		Pumps: []pump{{Base: "BTC", MaxChangePct: 60.0, Exchanges: []exchange{
+			{Exchange: "binance", ChangePct: 60.0, VolumeUSD: 1_000_000},
+		}}},
+	})
+
+	_ = n.tick(context.Background())
+
+	if *calls != 1 {
+		t.Errorf("expected 1 alert for a pump exactly at the gate, got %d", *calls)
+	}
+	if !mr.Exists(redisKeySeenPfx + "BTC") {
+		t.Error("a pump past the gate should be marked seen after alerting")
+	}
+}
+
 // --- scanner staleness alerts ---
 
 func newTelegramCounter(t *testing.T) (*int, func()) {
