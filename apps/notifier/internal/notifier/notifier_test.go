@@ -232,17 +232,18 @@ func TestTick_AtThresholdAlerts(t *testing.T) {
 	n := newTestNotifier(t, mr, "tok", "cid")
 	n.cfg.MinPct = 60
 
+	// Exactly at the threshold must alert: the gate is `< MinPct`, so equal passes.
 	setPumpsPayload(t, mr, payload{
 		Scanned: []string{"binance"},
-		Pumps: []pump{{Base: "BTC", MaxChangePct: 70.0, Exchanges: []exchange{
-			{Exchange: "binance", ChangePct: 70.0, VolumeUSD: 1_000_000},
+		Pumps: []pump{{Base: "BTC", MaxChangePct: 60.0, Exchanges: []exchange{
+			{Exchange: "binance", ChangePct: 60.0, VolumeUSD: 1_000_000},
 		}}},
 	})
 
 	_ = n.tick(context.Background())
 
 	if *calls != 1 {
-		t.Errorf("expected 1 alert for a pump past the gate, got %d", *calls)
+		t.Errorf("expected 1 alert for a pump exactly at the gate, got %d", *calls)
 	}
 	if !mr.Exists(redisKeySeenPfx + "BTC") {
 		t.Error("a pump past the gate should be marked seen after alerting")
