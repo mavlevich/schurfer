@@ -49,12 +49,24 @@ func loadConfig() notifier.Config {
 			slog.Warn("notifier.stale_after.invalid", "value", s, "using_default_seconds", 240)
 		}
 	}
+	// Notifier-side pump gate on top of the scanner's PUMP_MIN_PCT, so the Telegram
+	// channel is not flooded by every small pump. 0 alerts on everything the scanner
+	// reports; the default only pings on larger moves.
+	minPct := 60.0
+	if s := os.Getenv("NOTIFY_MIN_PCT"); s != "" {
+		if v, err := strconv.ParseFloat(s, 64); err == nil && v >= 0 {
+			minPct = v
+		} else {
+			slog.Warn("notifier.min_pct.invalid", "value", s, "using_default", 60)
+		}
+	}
 	return notifier.Config{
 		RedisAddr:  getEnv("REDIS_ADDR", "localhost:6379"),
 		BotToken:   os.Getenv("TELEGRAM_BOT_TOKEN"),
 		ChatID:     os.Getenv("TELEGRAM_CHAT_ID"),
 		Interval:   interval,
 		StaleAfter: staleAfter,
+		MinPct:     minPct,
 	}
 }
 

@@ -82,11 +82,25 @@ func formatAlert(p pump) string {
 		line2 += fmt.Sprintf(" · peak %s", escapeMD(fmt.Sprintf("+%.1f%%", peak)))
 	}
 
-	return fmt.Sprintf("*%s* %s\n%s\n%s",
+	return fmt.Sprintf("%s *%s* %s\n%s\n%s",
+		pumpEmoji(p.MaxChangePct),
 		escapeMD(p.Base), escapeMD(fmt.Sprintf("+%.1f%%", p.MaxChangePct)),
 		line2,
 		strings.Join(exParts, " · "),
 	)
+}
+
+// pumpEmoji gives a quick-read intensity marker so the size of a pump is legible
+// at a glance without parsing the number.
+func pumpEmoji(pct float64) string {
+	switch {
+	case pct >= 100:
+		return "🌋"
+	case pct >= 60:
+		return "🔥"
+	default:
+		return "🚀"
+	}
 }
 
 func peakPct(exchanges []exchange) float64 {
