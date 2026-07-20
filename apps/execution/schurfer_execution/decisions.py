@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import UTC, datetime
+from typing import Any
 
 import psycopg
 import structlog
@@ -13,11 +15,30 @@ _RECONNECT_DELAY = 5
 _QUEUE_MAXSIZE = 500  # ~10 min of skips at 50 pumps/tick — drop beyond this
 
 _INSERT = """
-INSERT INTO app.trade_decisions (ts, base, exchange, action, reason, score, pump_pct)
-VALUES (%s, %s, %s, %s, %s, %s, %s)
+INSERT INTO app.trade_decisions
+  (ts, base, exchange, action, reason, score, pump_pct,
+   decision_id, strategy_version, features, liquidity)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s::uuid, %s, %s::jsonb, %s::jsonb)
+ON CONFLICT (decision_id) DO NOTHING
 """
 
 _queue: asyncio.Queue[tuple[object, ...]] = asyncio.Queue(maxsize=_QUEUE_MAXSIZE)
+
+
+def _to_jsonb(value: dict[str, Any] | None, base: str, field: str) -> str | None:
+    """Serialize a dict for a jsonb column, rejecting NaN/inf.
+
+    allow_nan=False raises on a non-finite value (Postgres jsonb has no NaN, and a
+    NaN token would be a poison row the writer could never insert). We drop the
+    field to None instead so the decision itself is still recorded.
+    """
+    if value is None:
+        return None
+    try:
+        return json.dumps(value, allow_nan=False)
+    except ValueError:
+        log.warning("decisions.jsonb_not_finite.dropping_field", base=base, field=field)
+        return None
 
 
 def write_decision(
@@ -29,11 +50,32 @@ def write_decision(
     reason: str,
     score: int | None = None,
     pump_pct: float | None = None,
+    decision_id: str | None = None,
+    strategy_version: str | None = None,
+    features: dict[str, Any] | None = None,
+    liquidity: dict[str, Any] | None = None,
 ) -> None:
-    """Enqueue a decision for async write. Never blocks the caller."""
+    """Enqueue a decision for async write. Never blocks the caller.
+
+    decision_id makes the write idempotent: the writer re-enqueues a row after a
+    failed execute, and if Postgres had already committed it before the failure
+    the ON CONFLICT clause drops the retry instead of duplicating the decision.
+    """
     if not db_url:
         return
-    row = (datetime.now(tz=UTC), base, exchange, action, reason, score, pump_pct)
+    row = (
+        datetime.now(tz=UTC),
+        base,
+        exchange,
+        action,
+        reason,
+        score,
+        pump_pct,
+        decision_id,
+        strategy_version,
+        _to_jsonb(features, base, "features"),
+        _to_jsonb(liquidity, base, "liquidity"),
+    )
     try:
         _queue.put_nowait(row)
     except asyncio.QueueFull:

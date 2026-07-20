@@ -12,6 +12,7 @@ from schurfer_execution.trader import (
     _fetch_equity_usd,
     _fetch_funding_rate_pct,
     _fetch_score,
+    _fetch_signal,
     _pick_exchange,
     _tick,
 )
@@ -29,6 +30,7 @@ def _cfg(
 ) -> Config:
     cfg = object.__new__(Config)
     cfg.score_threshold = score_threshold
+    cfg.strategy_version = "pump_short_v1"
     cfg.signal_position_usd = 50.0
     cfg.signal_leverage = signal_leverage
     cfg.max_positions = 5
@@ -149,6 +151,50 @@ async def test_fetch_score_returns_zero_when_stale() -> None:
 async def test_fetch_score_returns_score_when_fresh() -> None:
     rdb = _rdb(signal_score=8, signal_age_seconds=30.0)
     assert await _fetch_score("BEAT", rdb) == 8
+
+
+# --- _fetch_signal: malformed-but-valid JSON must not raise ---
+
+
+async def test_fetch_signal_returns_zero_when_score_is_null() -> None:
+    rdb = MagicMock()
+    rdb.get = AsyncMock(return_value=b'{"score": null, "computed_at": 0}')
+    score, payload = await _fetch_signal("BEAT", rdb)
+    assert score == 0
+    assert payload == {"score": None, "computed_at": 0}
+
+
+async def test_fetch_signal_returns_zero_when_json_is_a_list() -> None:
+    rdb = MagicMock()
+    rdb.get = AsyncMock(return_value=b"[1, 2, 3]")
+    score, payload = await _fetch_signal("BEAT", rdb)
+    assert score == 0
+    assert payload is None
+
+
+async def test_fetch_signal_returns_zero_when_score_not_numeric() -> None:
+    rdb = MagicMock()
+    rdb.get = AsyncMock(return_value=b'{"score": "high"}')
+    score, _ = await _fetch_signal("BEAT", rdb)
+    assert score == 0
+
+
+async def test_fetch_signal_fails_closed_on_invalid_computed_at() -> None:
+    # A junk computed_at must not raise, and freshness cannot be verified, so it must
+    # fail closed (score 0 = skip) rather than trade on a signal of unknown age.
+    rdb = MagicMock()
+    rdb.get = AsyncMock(return_value=b'{"score": 9, "computed_at": "bad"}')
+    score, payload = await _fetch_signal("BEAT", rdb)
+    assert score == 0
+    assert payload == {"score": 9, "computed_at": "bad"}
+
+
+async def test_fetch_signal_fails_closed_on_future_timestamp() -> None:
+    rdb = MagicMock()
+    future = time.time() + 3600
+    rdb.get = AsyncMock(return_value=f'{{"score": 9, "computed_at": {future}}}'.encode())
+    score, _ = await _fetch_signal("BEAT", rdb)
+    assert score == 0
 
 
 # --- Config validation ---
@@ -300,6 +346,86 @@ async def test_tick_writes_decision_on_successful_open() -> None:
     kw = mock_write.call_args.kwargs
     assert kw["action"] == "opened"
     assert kw["base"] == "BEAT"
+
+
+async def test_tick_decision_captures_features_and_liquidity_status() -> None:
+    rdb = _rdb(pumps_raw=_pumps("BEAT"), signal_score=3)
+    with (
+        patch("schurfer_execution.trader.place_order", new_callable=AsyncMock),
+        patch("schurfer_execution.trader.decisions.write_decision") as mock_write,
+    ):
+        await _tick({"bybit": MagicMock()}, rdb, _cfg(score_threshold=6))
+
+    kw = mock_write.call_args.kwargs
+    assert kw["decision_id"]  # a uuid string is present
+    assert kw["strategy_version"] == "pump_short_v1"
+    assert kw["features"]["signal"]["score"] == 3
+    assert kw["features"]["config"]["score_threshold"] == 6
+    # liquidity is never null-ambiguous: it always carries a status
+    assert kw["liquidity"]["status"] in {"sampled", "fetch_failed", "no_exchange"}
+
+
+async def test_tick_decision_liquidity_status_sampled_on_good_book() -> None:
+    # A working order book must yield status "sampled" with real numbers, not just
+    # "some status". This catches a silently-always-broken liquidity path.
+    rdb = _rdb(pumps_raw=_pumps("BEAT"), signal_score=3)
+    ex = MagicMock()
+    ex.fetch_order_book = AsyncMock(
+        return_value={"bids": [[99.9, 1000.0]], "asks": [[100.1, 1000.0]]}
+    )
+    with (
+        patch("schurfer_execution.trader.place_order", new_callable=AsyncMock),
+        patch("schurfer_execution.trader.decisions.write_decision") as mock_write,
+    ):
+        await _tick({"bybit": ex}, rdb, _cfg(score_threshold=6))
+
+    liq = mock_write.call_args.kwargs["liquidity"]
+    assert liq["status"] == "sampled"
+    assert liq["spread_bps"] == 20.0
+
+
+async def test_tick_threads_decision_id_into_setup_context() -> None:
+    # decision_id and strategy_version must reach the trade (via setup_context ->
+    # app.trades) so decision -> trade -> outcome can be joined later.
+    rdb = _rdb(pumps_raw=_pumps("BEAT"), signal_score=7)
+    cfg = _cfg(score_threshold=6)
+    cfg.dry_run = True
+    ex = MagicMock()
+    ex.fetch_ticker = AsyncMock(return_value={"last": "1.5"})
+    with (
+        patch("schurfer_execution.trader.paper.open_paper", new_callable=AsyncMock) as mock_paper,
+        patch("schurfer_execution.trader.decisions.write_decision"),
+    ):
+        await _tick({"bybit": ex}, rdb, cfg)
+
+    mock_paper.assert_called_once()
+    ctx = mock_paper.call_args.kwargs["setup_context"]
+    assert ctx["decision_id"]
+    assert ctx["strategy_version"] == "pump_short_v1"
+
+
+async def test_tick_no_exchange_decision_still_has_features() -> None:
+    rdb = _rdb(pumps_raw=_pumps("BEAT"), signal_score=3)
+    with patch("schurfer_execution.trader.decisions.write_decision") as mock_write:
+        await _tick({}, rdb, _cfg())  # no configured exchanges
+
+    kw = mock_write.call_args.kwargs
+    assert kw["reason"] == "no_configured_exchange"
+    assert kw["features"]["signal"]["score"] == 3
+    assert kw["liquidity"] == {"status": "no_exchange"}
+
+
+async def test_tick_writes_decision_when_dry_run_price_unavailable() -> None:
+    rdb = _rdb(pumps_raw=_pumps("BEAT"), signal_score=7)
+    cfg = _cfg(score_threshold=6)
+    cfg.dry_run = True
+    with patch("schurfer_execution.trader.decisions.write_decision") as mock_write:
+        # MagicMock exchange: funding/entry/liquidity fetches degrade to None and
+        # fetch_ticker fails, so we land in the dry-run price-unavailable branch.
+        await _tick({"bybit": MagicMock()}, rdb, cfg)
+
+    reasons = [c.kwargs["reason"] for c in mock_write.call_args_list]
+    assert "dry_run_price_unavailable" in reasons
 
 
 async def test_tick_places_short_when_score_sufficient() -> None:

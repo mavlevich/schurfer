@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import time
 from typing import TYPE_CHECKING, Any
+from uuid import uuid4
 
 import structlog
 
-from . import decisions, journal, notify, paper, risk
+from . import decisions, journal, liquidity, notify, paper, risk
 from . import exit as exit_module
 from .account import fetch_margin_balance
 from .orders import place_order
@@ -68,8 +70,26 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
         if await rdb.get(seen_key):
             continue
 
+        # Per-decision measurement context, resolved up front so every decision
+        # (including no_configured_exchange) carries the full context.
+        decision_id = str(uuid4())
         pump_pct: float | None = pump.get("max_change_pct")
+        score, signal_payload = await _fetch_signal(base, rdb)
         exchange = _pick_exchange(pump.get("exchanges", []), exchanges)
+        ex = exchanges.get(exchange) if exchange else None
+        features = _decision_features(signal_payload, pump, cfg)
+
+        # Order-book liquidity at decision time, captured for every candidate that
+        # has a configured exchange (not only tradeable ones) so the threshold
+        # itself can be evaluated later. Non-recoverable, so sampled live. The
+        # status makes an absent snapshot unambiguous.
+        liq: dict[str, Any]
+        if ex is None:
+            liq = {"status": "no_exchange"}
+        else:
+            snap = await liquidity.snapshot(ex, base)
+            liq = {"status": "sampled", **snap} if snap else {"status": "fetch_failed"}
+
         if not exchange:
             log.info("trader.skip.no_exchange", base=base)
             await rdb.set(seen_key, "1", ex=_SEEN_TTL_SKIP)
@@ -80,10 +100,13 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 action="skipped",
                 reason="no_configured_exchange",
                 pump_pct=pump_pct,
+                decision_id=decision_id,
+                strategy_version=cfg.strategy_version,
+                features=features,
+                liquidity=liq,
             )
             continue
 
-        score = await _fetch_score(base, rdb)
         if score < cfg.score_threshold:
             log.info("trader.skip.score", base=base, score=score, threshold=cfg.score_threshold)
             await rdb.set(seen_key, "1", ex=_SEEN_TTL_SKIP)
@@ -95,10 +118,13 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 reason=f"score {score} < threshold {cfg.score_threshold}",
                 score=score,
                 pump_pct=pump_pct,
+                decision_id=decision_id,
+                strategy_version=cfg.strategy_version,
+                features=features,
+                liquidity=liq,
             )
             continue
 
-        ex = exchanges.get(exchange)
         funding_rate_pct = await _fetch_funding_rate_pct(ex, base) if ex else None
 
         if funding_rate_pct is None and cfg.require_funding_rate:
@@ -113,6 +139,10 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 reason=reason,
                 score=score,
                 pump_pct=pump_pct,
+                decision_id=decision_id,
+                strategy_version=cfg.strategy_version,
+                features=features,
+                liquidity=liq,
             )
             continue
 
@@ -129,6 +159,10 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                     reason=fr_check.reason,
                     score=score,
                     pump_pct=pump_pct,
+                    decision_id=decision_id,
+                    strategy_version=cfg.strategy_version,
+                    features=features,
+                    liquidity=liq,
                 )
                 continue
 
@@ -146,6 +180,10 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                     reason="entry_candles_unavailable",
                     score=score,
                     pump_pct=pump_pct,
+                    decision_id=decision_id,
+                    strategy_version=cfg.strategy_version,
+                    features=features,
+                    liquidity=liq,
                 )
                 continue
             entry_check = risk.check_entry_candles(
@@ -164,6 +202,10 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                     reason=entry_check.reason,
                     score=score,
                     pump_pct=pump_pct,
+                    decision_id=decision_id,
+                    strategy_version=cfg.strategy_version,
+                    features=features,
+                    liquidity=liq,
                 )
                 continue
 
@@ -184,6 +226,10 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 reason=liq_check.reason,
                 score=score,
                 pump_pct=pump_pct,
+                decision_id=decision_id,
+                strategy_version=cfg.strategy_version,
+                features=features,
+                liquidity=liq,
             )
             continue
 
@@ -202,6 +248,10 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                     reason="equity_unavailable_for_risk_sizing",
                     score=score,
                     pump_pct=pump_pct,
+                    decision_id=decision_id,
+                    strategy_version=cfg.strategy_version,
+                    features=features,
+                    liquidity=liq,
                 )
                 continue
             computed = risk.compute_position_size_usd(
@@ -226,6 +276,10 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                     reason=skip_reason,
                     score=score,
                     pump_pct=pump_pct,
+                    decision_id=decision_id,
+                    strategy_version=cfg.strategy_version,
+                    features=features,
+                    liquidity=liq,
                 )
                 continue
             size_usd = computed
@@ -241,6 +295,8 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
             size_usd = cfg.signal_position_usd
 
         setup_context = {
+            "decision_id": decision_id,
+            "strategy_version": cfg.strategy_version,
             "score": score,
             "pump_pct": pump_pct,
             "funding_rate_pct": funding_rate_pct,
@@ -267,6 +323,19 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
             except Exception as exc:
                 log.warning("trader.dry_run.price_failed", base=base, err=str(exc))
                 await rdb.set(seen_key, "1", ex=_SEEN_TTL_SKIP)
+                decisions.write_decision(
+                    cfg.db_url,
+                    base=base,
+                    exchange=exchange,
+                    action="skipped",
+                    reason="dry_run_price_unavailable",
+                    score=score,
+                    pump_pct=pump_pct,
+                    decision_id=decision_id,
+                    strategy_version=cfg.strategy_version,
+                    features=features,
+                    liquidity=liq,
+                )
                 continue
 
             await paper.open_paper(
@@ -289,6 +358,10 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 reason="paper trade",
                 score=score,
                 pump_pct=pump_pct,
+                decision_id=decision_id,
+                strategy_version=cfg.strategy_version,
+                features=features,
+                liquidity=liq,
             )
             continue
 
@@ -325,6 +398,10 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 reason="ok",
                 score=score,
                 pump_pct=pump_pct,
+                decision_id=decision_id,
+                strategy_version=cfg.strategy_version,
+                features=features,
+                liquidity=liq,
             )
 
             entry_price = result.get("price", 0)
@@ -386,6 +463,10 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 reason=blocked_reason,
                 score=score,
                 pump_pct=pump_pct,
+                decision_id=decision_id,
+                strategy_version=cfg.strategy_version,
+                features=features,
+                liquidity=liq,
             )
 
 
@@ -448,19 +529,79 @@ async def _fetch_entry_candles(ex: Any, base: str) -> list[list[float]] | None:
         return None
 
 
-async def _fetch_score(base: str, rdb: Any) -> int:
+async def _fetch_signal(base: str, rdb: Any) -> tuple[int, dict[str, Any] | None]:
+    """Return (score, payload) for base.
+
+    payload is the full `signals:{base}` snapshot (score, verdict, components,
+    computed_at) recorded as decision features. score is 0 when the signal is
+    missing, unparseable, or stale, which forces a skip while still keeping the
+    payload for the record when we have one.
+    """
     raw = await rdb.get(_SIGNALS_KEY.format(base=base))
     if not raw:
-        return 0
+        return 0, None
     try:
         data = json.loads(raw)
-        computed_at = data.get("computed_at", 0)
-        if computed_at and (time.time() - computed_at) > _SIGNALS_MAX_AGE:
-            log.warning("trader.score.stale", base=base, age=int(time.time() - computed_at))
-            return 0
-        return int(data.get("score", 0))
     except Exception:
-        return 0
+        return 0, None
+    # Guard against valid-but-unexpected JSON: a list, or {"score": null}, etc.
+    if not isinstance(data, dict):
+        log.warning("trader.signal.not_an_object", base=base)
+        return 0, None
+    try:
+        score = int(data.get("score") or 0)
+    except (TypeError, ValueError):
+        score = 0
+    # Freshness is a safety gate, so fail closed (return 0 = skip) whenever it cannot
+    # be verified: a missing, non-numeric, or non-finite computed_at, a stale signal,
+    # or a timestamp from the future (clock skew or junk).
+    computed_at = data.get("computed_at")
+    if (
+        not isinstance(computed_at, int | float)
+        or isinstance(computed_at, bool)
+        or not math.isfinite(computed_at)
+        or computed_at <= 0
+    ):
+        log.warning("trader.signal.invalid_computed_at", base=base)
+        return 0, data
+    age = time.time() - computed_at
+    if age > _SIGNALS_MAX_AGE or age < -5:
+        log.warning("trader.signal.unfresh", base=base, age=int(age))
+        return 0, data
+    return score, data
+
+
+async def _fetch_score(base: str, rdb: Any) -> int:
+    score, _ = await _fetch_signal(base, rdb)
+    return score
+
+
+def _decision_features(
+    signal_payload: dict[str, Any] | None,
+    pump: dict[str, Any],
+    cfg: Config,
+) -> dict[str, Any]:
+    """Full decision-input context stored on every decision.
+
+    Bundles the signal snapshot, the candidate exchanges, and a fingerprint of
+    the effective config. strategy_version is a coarse label; this fingerprint is
+    the actual settings in force, so decisions stay comparable across rule changes.
+    """
+    return {
+        "signal": signal_payload,
+        "candidate_exchanges": pump.get("exchanges", []),
+        "config": {
+            "score_threshold": cfg.score_threshold,
+            "signal_leverage": cfg.signal_leverage,
+            "signal_position_usd": cfg.signal_position_usd,
+            "risk_per_trade_pct": cfg.risk_per_trade_pct,
+            "require_funding_rate": cfg.require_funding_rate,
+            "min_funding_rate_pct": cfg.min_funding_rate_pct,
+            "require_red_candle": cfg.require_red_candle,
+            "min_retrace_pct": cfg.min_retrace_pct,
+            "liquidation_buffer_pct": cfg.liquidation_buffer_pct,
+        },
+    }
 
 
 def _pick_exchange(
