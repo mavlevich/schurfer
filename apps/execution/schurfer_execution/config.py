@@ -87,6 +87,11 @@ class Config:
     dry_run: bool = field(default_factory=lambda: _bool("DRY_RUN", False))
     signal_position_usd: float = field(default_factory=lambda: _float("SIGNAL_POSITION_USD", 50.0))
     signal_leverage: int = field(default_factory=lambda: _int("SIGNAL_LEVERAGE", 3))
+    # Strategy version stamped on every decision so accumulated statistics are not
+    # mixed across rule changes. Bump when the scoring or entry rules change.
+    strategy_version: str = field(
+        default_factory=lambda: os.getenv("STRATEGY_VERSION", "pump_short_v1")
+    )
     # Risk-based position sizing: risk this % of equity per trade.
     # 0.0 = disabled (use fixed SIGNAL_POSITION_USD).
     # When > 0, SIGNAL_POSITION_USD acts as a hard ceiling.

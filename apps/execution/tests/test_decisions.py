@@ -1,6 +1,6 @@
 import asyncio
 import contextlib
-from datetime import UTC, datetime
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from schurfer_execution.decisions import _queue, run_decision_writer, write_decision
@@ -45,6 +45,60 @@ def test_write_decision_enqueues_row_without_optional_fields() -> None:
     row = _queue.get_nowait()
     assert row[5] is None
     assert row[6] is None
+    # measurement fields default to None
+    assert row[7] is None  # decision_id
+    assert row[8] is None  # strategy_version
+    assert row[9] is None  # features
+    assert row[10] is None  # liquidity
+
+
+def test_write_decision_serializes_measurement_fields() -> None:
+    _drain()
+    write_decision(
+        "postgresql://test",
+        base="BEAT",
+        exchange="bybit",
+        action="opened",
+        reason="ok",
+        score=7,
+        decision_id="11111111-1111-1111-1111-111111111111",
+        strategy_version="pump_short_v1",
+        features={"signal": {"score": 7}, "candidate_exchanges": ["bybit"]},
+        liquidity={"status": "sampled", "spread_bps": 12.0},
+    )
+    row = _queue.get_nowait()
+    assert row[7] == "11111111-1111-1111-1111-111111111111"
+    assert row[8] == "pump_short_v1"
+    # features and liquidity are JSON-serialized for the jsonb columns
+    assert json.loads(row[9]) == {"signal": {"score": 7}, "candidate_exchanges": ["bybit"]}
+    assert json.loads(row[10]) == {"status": "sampled", "spread_bps": 12.0}
+
+
+def test_insert_has_on_conflict_do_nothing() -> None:
+    # Idempotency guard: the writer re-enqueues a row after an ambiguous commit, so
+    # the INSERT must drop a duplicate decision_id instead of writing it twice. Full
+    # behaviour is covered by the real-Postgres migration smoke test; this locks the
+    # clause in place against accidental removal.
+    from schurfer_execution.decisions import _INSERT
+
+    assert "on conflict (decision_id) do nothing" in _INSERT.lower()
+
+
+def test_write_decision_drops_non_finite_jsonb_field() -> None:
+    _drain()
+    # A NaN would serialize to an invalid jsonb token and poison the writer. It must
+    # be dropped to None, and the decision still enqueued.
+    write_decision(
+        "postgresql://test",
+        base="BEAT",
+        exchange="bybit",
+        action="opened",
+        reason="ok",
+        liquidity={"status": "sampled", "spread_bps": float("nan")},
+    )
+    row = _queue.get_nowait()
+    assert row[10] is None  # liquidity dropped, not a NaN token
+    assert row[1] == "BEAT"  # decision still recorded
 
 
 def test_write_decision_drops_when_queue_full() -> None:
@@ -83,7 +137,17 @@ async def test_run_decision_writer_inserts_row() -> None:
     mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
     mock_conn.__aexit__ = AsyncMock(return_value=False)
 
-    _queue.put_nowait((datetime.now(tz=UTC), "BEAT", "bybit", "skipped", "test reason", 3, 45.5))
+    # Enqueue via write_decision so the row matches the real 11-field INSERT shape
+    # (a hand-built short tuple would silently pass the mock but fail real SQL).
+    write_decision(
+        "postgresql://test",
+        base="BEAT",
+        exchange="bybit",
+        action="skipped",
+        reason="test reason",
+        score=3,
+        pump_pct=45.5,
+    )
 
     with patch(
         "schurfer_execution.decisions.psycopg.AsyncConnection.connect",
@@ -97,6 +161,7 @@ async def test_run_decision_writer_inserts_row() -> None:
             await task
 
     assert len(captured_params) == 1
+    assert len(captured_params[0]) == 11  # matches the INSERT placeholder count
     assert captured_params[0][1] == "BEAT"
     assert captured_params[0][3] == "skipped"
 
@@ -124,7 +189,9 @@ async def test_run_decision_writer_retries_row_after_execute_failure() -> None:
         mock_conn.__aexit__ = AsyncMock(return_value=False)
         return mock_conn
 
-    _queue.put_nowait((datetime.now(tz=UTC), "BEAT", "bybit", "skipped", "test", None, None))
+    write_decision(
+        "postgresql://test", base="BEAT", exchange="bybit", action="skipped", reason="test"
+    )
 
     with patch(
         "schurfer_execution.decisions.psycopg.AsyncConnection.connect",

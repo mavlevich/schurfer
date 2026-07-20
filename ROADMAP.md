@@ -69,13 +69,15 @@ comes first.
 
 - [ ] Extend `app.trade_decisions`. It currently stores only `score` and `pump_pct`
       as scalars, and already logs every decision including skip reasons. Add:
-  - `features jsonb`: the full signal payload execution already fetches (the 5
-    components, retrace, oi_delta, funding, age).
-  - `signal_id uuid` and `strategy_version`: to stitch signal, decision, trade, and
-    post together.
-  - Liquidity snapshot: `spread_bps` and depth at $100, $500, $1000 via
-    `fetch_order_book` at decision time. This is the only non-recoverable piece, so
-    it is the most urgent.
+  - `features jsonb`: the signal snapshot plus the decision context (candidate
+    exchanges and a fingerprint of the effective config, so decisions stay
+    comparable across rule changes).
+  - `decision_id uuid` (unique) and `strategy_version`: to stitch decision, trade,
+    and post together. `decision_id` also flows into `app.trades.setup_context`.
+  - Liquidity snapshot: `spread_bps` and VWAP depth impact at $100, $500, $1000 via
+    `fetch_order_book` at decision time, sampled for every candidate with a
+    configured exchange and stamped with an explicit status. This is the only
+    non-recoverable piece, so it is the most urgent.
   - Which exchange the tradeable instrument lives on (coverage data, see Phase 2).
 - [ ] One Alembic migration plus a few lines on the execution decision-write path.
       This is independent of where the score is computed, so it does not commit us to
@@ -87,6 +89,15 @@ comes first.
       health, and basic host resources (RAM, disk) so a memory leak or a disk filled
       with data does not kill collection silently. Keep it lightweight. This is about
       "is the dataset being collected without gaps", not a performance product.
+- [ ] Dataset completeness metrics: decisions/hour, % features present, % liquidity
+      present, % liquidity fetch_failed, and lag between signal computed_at and the
+      decision. These tell us early if the dataset is degrading.
+- [ ] Durable decision queue (follow-up). The writer queue is in-memory and drops on
+      restart or overflow, and liquidity is the data we most want to keep. Move to a
+      Redis Stream outbox (execution XADD, DB writer XACK after insert) so decisions
+      survive a restart. Small, self-contained next PR. Note: prod Redis uses an RDB
+      snapshot (`--save 60 1`), so a Stream is only as durable as that window. Enable
+      AOF (or document the acceptable loss window) as part of that PR.
 - Outcome capture (MAE, MFE, forward price) is backfillable from OHLCV, so we do not
   plumb it live now. The analysis that uses it is the core deliverable, see Phase 1
   "Decision-quality analysis".
@@ -160,8 +171,15 @@ comes first.
 Shadow, then a Telegram button for human-in-the-loop, then auto with a report, then
 auto.
 
+- Count eligible signals, not any decision. "50 signals" is meaningless when the
+  split is 288 skipped / 1 opened. An eligible signal is one that passed the score
+  gate and was a real trade candidate (taken, or a shadow entry). Thresholds:
+  - 50 eligible shadow entries: first interim analysis only.
+  - 100 to 200 labeled eligible cases plus a confidence interval: the basis for
+    discussing a minimal live start.
+  - A separate minimum per key score bucket, so no bucket is decided on a handful.
 - Gate 1 to 2: backtest and forward results converge on the pre-registered criteria
-  (50 or more signals).
+  (measured on eligible signals, per the counts above).
 - Gate 2 to 3: 20 to 30 button-approved trades with zero "I do not want to confirm
   this".
 - Gate 3 to 4: a month at stage 3 with no interventions.
