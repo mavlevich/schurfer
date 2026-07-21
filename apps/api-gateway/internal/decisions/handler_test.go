@@ -113,8 +113,9 @@ var epoch = time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 func decisionRowVals(id int64, base, action string) []any {
 	score := 7
 	pump := 45.5
+	price := 1.2345
 	return []any{
-		id, epoch, base, "bybit", action, "test reason", &score, &pump, epoch,
+		id, epoch, base, "bybit", action, "test reason", &score, &pump, &price, epoch,
 	}
 }
 
@@ -262,6 +263,25 @@ func TestListBothFiltersPassedToSQL(t *testing.T) {
 	}
 	if capturedArgs[1] != "opened" {
 		t.Errorf("want args[1]=opened, got %v", capturedArgs[1])
+	}
+}
+
+func TestListPriceReturned(t *testing.T) {
+	q := &stubQuerier{
+		onQueryRow: func(_ context.Context, _ string, _ ...any) pgxRow {
+			return &stubRow{vals: []any{int64(1)}}
+		},
+		onQuery: func(_ context.Context, _ string, _ ...any) (pgx.Rows, error) {
+			return &stubRows{cols: [][]any{decisionRowVals(1, "BEAT", "skipped")}}, nil
+		},
+	}
+	w := serveDecisions(q, "/api/decisions")
+	var resp listResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.Decisions[0].Price == nil || *resp.Decisions[0].Price != 1.2345 {
+		t.Errorf("want price=1.2345, got %v", resp.Decisions[0].Price)
 	}
 }
 

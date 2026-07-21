@@ -17,8 +17,8 @@ _QUEUE_MAXSIZE = 500  # ~10 min of skips at 50 pumps/tick — drop beyond this
 _INSERT = """
 INSERT INTO app.trade_decisions
   (ts, base, exchange, action, reason, score, pump_pct,
-   decision_id, strategy_version, features, liquidity)
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s::uuid, %s, %s::jsonb, %s::jsonb)
+   decision_id, strategy_version, features, liquidity, price)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s::uuid, %s, %s::jsonb, %s::jsonb, %s)
 ON CONFLICT (decision_id) DO NOTHING
 """
 
@@ -54,6 +54,7 @@ def write_decision(
     strategy_version: str | None = None,
     features: dict[str, Any] | None = None,
     liquidity: dict[str, Any] | None = None,
+    price: float | None = None,
 ) -> None:
     """Enqueue a decision for async write. Never blocks the caller.
 
@@ -75,6 +76,7 @@ def write_decision(
         strategy_version,
         _to_jsonb(features, base, "features"),
         _to_jsonb(liquidity, base, "liquidity"),
+        price,
     )
     try:
         _queue.put_nowait(row)

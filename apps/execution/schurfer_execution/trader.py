@@ -78,6 +78,7 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
         exchange = _pick_exchange(pump.get("exchanges", []), exchanges)
         ex = exchanges.get(exchange) if exchange else None
         features = _decision_features(signal_payload, pump, cfg)
+        decision_price = _decision_price(pump, exchange)
 
         # Order-book liquidity at decision time, captured for every candidate that
         # has a configured exchange (not only tradeable ones) so the threshold
@@ -104,6 +105,7 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 strategy_version=cfg.strategy_version,
                 features=features,
                 liquidity=liq,
+                price=decision_price,
             )
             continue
 
@@ -122,6 +124,7 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 strategy_version=cfg.strategy_version,
                 features=features,
                 liquidity=liq,
+                price=decision_price,
             )
             continue
 
@@ -143,6 +146,7 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 strategy_version=cfg.strategy_version,
                 features=features,
                 liquidity=liq,
+                price=decision_price,
             )
             continue
 
@@ -163,6 +167,7 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                     strategy_version=cfg.strategy_version,
                     features=features,
                     liquidity=liq,
+                    price=decision_price,
                 )
                 continue
 
@@ -184,6 +189,7 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                     strategy_version=cfg.strategy_version,
                     features=features,
                     liquidity=liq,
+                    price=decision_price,
                 )
                 continue
             entry_check = risk.check_entry_candles(
@@ -206,6 +212,7 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                     strategy_version=cfg.strategy_version,
                     features=features,
                     liquidity=liq,
+                    price=decision_price,
                 )
                 continue
 
@@ -230,6 +237,7 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 strategy_version=cfg.strategy_version,
                 features=features,
                 liquidity=liq,
+                price=decision_price,
             )
             continue
 
@@ -252,6 +260,7 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                     strategy_version=cfg.strategy_version,
                     features=features,
                     liquidity=liq,
+                    price=decision_price,
                 )
                 continue
             computed = risk.compute_position_size_usd(
@@ -280,6 +289,7 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                     strategy_version=cfg.strategy_version,
                     features=features,
                     liquidity=liq,
+                    price=decision_price,
                 )
                 continue
             size_usd = computed
@@ -319,7 +329,7 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 continue
             try:
                 ticker = await ex.fetch_ticker(f"{base.upper()}/USDT:USDT")
-                price = float(ticker["last"])
+                entry_price = float(ticker["last"])
             except Exception as exc:
                 log.warning("trader.dry_run.price_failed", base=base, err=str(exc))
                 await rdb.set(seen_key, "1", ex=_SEEN_TTL_SKIP)
@@ -335,6 +345,7 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                     strategy_version=cfg.strategy_version,
                     features=features,
                     liquidity=liq,
+                    price=decision_price,
                 )
                 continue
 
@@ -342,7 +353,7 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 rdb,
                 base=base,
                 exchange=exchange,
-                price=price,
+                price=entry_price,
                 size_usd=size_usd,
                 leverage=cfg.signal_leverage,
                 score=score,
@@ -362,6 +373,7 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 strategy_version=cfg.strategy_version,
                 features=features,
                 liquidity=liq,
+                price=decision_price,
             )
             continue
 
@@ -402,6 +414,7 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 strategy_version=cfg.strategy_version,
                 features=features,
                 liquidity=liq,
+                price=decision_price,
             )
 
             entry_price = result.get("price", 0)
@@ -467,6 +480,7 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 strategy_version=cfg.strategy_version,
                 features=features,
                 liquidity=liq,
+                price=decision_price,
             )
 
 
@@ -604,6 +618,43 @@ def _decision_features(
     }
 
 
+def _safe_float(v: Any) -> float:
+    """Parse to a float usable as a max() sort key, sending anything unusable to the
+    bottom. A corrupted or non-numeric field cannot raise and abort the whole trader
+    tick, and NaN/Infinity (which float() accepts) cannot win the sort: both map to
+    -inf so a valid entry always outranks a garbage one."""
+    try:
+        value = float(v)
+    except (TypeError, ValueError):
+        return -math.inf
+    return value if math.isfinite(value) else -math.inf
+
+
+def _decision_price(pump: dict[str, Any], exchange: str | None) -> float | None:
+    """Reference price of the token at decision time.
+
+    Uses the chosen exchange's last price, or the top-moving exchange's when no
+    exchange was picked (no_configured_exchange), so a skip still records the price
+    we saw. Returns None if there is no usable, finite, positive price.
+    """
+    exchanges = pump.get("exchanges", [])
+    chosen: dict[str, Any] | None = None
+    if exchange:
+        chosen = next((e for e in exchanges if e.get("exchange") == exchange), None)
+    if chosen is None and exchanges:
+        chosen = max(exchanges, key=lambda e: _safe_float(e.get("change_pct")))
+    if chosen is None:
+        return None
+    raw = chosen.get("price")
+    if raw is None:
+        return None
+    try:
+        price = float(raw)
+    except (TypeError, ValueError):
+        return None
+    return price if math.isfinite(price) and price > 0 else None
+
+
 def _pick_exchange(
     pump_exchanges: list[dict[str, Any]],
     configured: dict[str, Any],
@@ -612,5 +663,5 @@ def _pick_exchange(
     candidates = [e for e in pump_exchanges if e.get("exchange") in configured]
     if not candidates:
         return None
-    best = max(candidates, key=lambda e: float(e.get("volume_24h_usd") or 0))
+    best = max(candidates, key=lambda e: _safe_float(e.get("volume_24h_usd")))
     return str(best["exchange"])

@@ -9,6 +9,7 @@ export interface Decision {
   reason: string;
   score: number | null;
   pump_pct: number | null;
+  price: number | null;
 }
 
 interface DecisionsResponse {
