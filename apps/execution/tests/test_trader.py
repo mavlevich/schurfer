@@ -94,6 +94,21 @@ def _rdb(
 
     rdb.get = _get
     rdb.set = AsyncMock()
+    rdb.xadd = AsyncMock()
+
+    # write_decision runs its XADD + SET seen as one Lua script (rdb.eval). Simulate the
+    # script's effect on the same AsyncMocks so tests can still assert on rdb.set/xadd.
+    # Close the returned coroutine to avoid "never awaited" noise.
+    def _record(mock: AsyncMock, *a: object, **k: object) -> None:
+        mock(*a, **k).close()
+
+    async def _eval(_script: str, _numkeys: int, *args: object) -> int:
+        stream, seen_key, payload, ttl = args[0], args[1], args[2], args[3]
+        _record(rdb.xadd, stream, {"data": payload})
+        _record(rdb.set, seen_key, "1", ex=int(ttl))  # type: ignore[arg-type]
+        return 1
+
+    rdb.eval = _eval
     return rdb
 
 
@@ -387,7 +402,9 @@ async def test_tick_writes_decision_on_score_skip() -> None:
     rdb = _rdb(pumps_raw=_pumps("BEAT"), signal_score=3)
     with (
         patch("schurfer_execution.trader.place_order", new_callable=AsyncMock),
-        patch("schurfer_execution.trader.decisions.write_decision") as mock_write,
+        patch(
+            "schurfer_execution.trader.decisions.write_decision", new_callable=AsyncMock
+        ) as mock_write,
     ):
         await _tick({"bybit": MagicMock()}, rdb, _cfg(score_threshold=6))
 
@@ -406,7 +423,9 @@ async def test_tick_writes_decision_on_successful_open() -> None:
             new_callable=AsyncMock,
             return_value={"allowed": True, "order_id": "ord-1"},
         ),
-        patch("schurfer_execution.trader.decisions.write_decision") as mock_write,
+        patch(
+            "schurfer_execution.trader.decisions.write_decision", new_callable=AsyncMock
+        ) as mock_write,
     ):
         await _tick({"bybit": MagicMock()}, rdb, _cfg())
 
@@ -420,7 +439,9 @@ async def test_tick_decision_captures_features_and_liquidity_status() -> None:
     rdb = _rdb(pumps_raw=_pumps("BEAT"), signal_score=3)
     with (
         patch("schurfer_execution.trader.place_order", new_callable=AsyncMock),
-        patch("schurfer_execution.trader.decisions.write_decision") as mock_write,
+        patch(
+            "schurfer_execution.trader.decisions.write_decision", new_callable=AsyncMock
+        ) as mock_write,
     ):
         await _tick({"bybit": MagicMock()}, rdb, _cfg(score_threshold=6))
 
@@ -443,7 +464,9 @@ async def test_tick_decision_liquidity_status_sampled_on_good_book() -> None:
     )
     with (
         patch("schurfer_execution.trader.place_order", new_callable=AsyncMock),
-        patch("schurfer_execution.trader.decisions.write_decision") as mock_write,
+        patch(
+            "schurfer_execution.trader.decisions.write_decision", new_callable=AsyncMock
+        ) as mock_write,
     ):
         await _tick({"bybit": ex}, rdb, _cfg(score_threshold=6))
 
@@ -462,7 +485,7 @@ async def test_tick_threads_decision_id_into_setup_context() -> None:
     ex.fetch_ticker = AsyncMock(return_value={"last": "1.5"})
     with (
         patch("schurfer_execution.trader.paper.open_paper", new_callable=AsyncMock) as mock_paper,
-        patch("schurfer_execution.trader.decisions.write_decision"),
+        patch("schurfer_execution.trader.decisions.write_decision", new_callable=AsyncMock),
     ):
         await _tick({"bybit": ex}, rdb, cfg)
 
@@ -474,7 +497,9 @@ async def test_tick_threads_decision_id_into_setup_context() -> None:
 
 async def test_tick_no_exchange_decision_still_has_features() -> None:
     rdb = _rdb(pumps_raw=_pumps("BEAT"), signal_score=3)
-    with patch("schurfer_execution.trader.decisions.write_decision") as mock_write:
+    with patch(
+        "schurfer_execution.trader.decisions.write_decision", new_callable=AsyncMock
+    ) as mock_write:
         await _tick({}, rdb, _cfg())  # no configured exchanges
 
     kw = mock_write.call_args.kwargs
@@ -487,7 +512,9 @@ async def test_tick_writes_decision_when_dry_run_price_unavailable() -> None:
     rdb = _rdb(pumps_raw=_pumps("BEAT"), signal_score=7)
     cfg = _cfg(score_threshold=6)
     cfg.dry_run = True
-    with patch("schurfer_execution.trader.decisions.write_decision") as mock_write:
+    with patch(
+        "schurfer_execution.trader.decisions.write_decision", new_callable=AsyncMock
+    ) as mock_write:
         # MagicMock exchange: funding/entry/liquidity fetches degrade to None and
         # fetch_ticker fails, so we land in the dry-run price-unavailable branch.
         await _tick({"bybit": MagicMock()}, rdb, cfg)
@@ -525,7 +552,9 @@ async def test_tick_dry_run_decision_price_is_scanner_not_ticker() -> None:
     ex.fetch_ticker = AsyncMock(return_value={"last": "1.7"})
     with (
         patch("schurfer_execution.trader.paper.open_paper", new_callable=AsyncMock) as mock_paper,
-        patch("schurfer_execution.trader.decisions.write_decision") as mock_write,
+        patch(
+            "schurfer_execution.trader.decisions.write_decision", new_callable=AsyncMock
+        ) as mock_write,
     ):
         await _tick({"bybit": ex}, rdb, cfg)
 
@@ -717,7 +746,9 @@ async def test_tick_writes_decision_on_funding_rate_skip() -> None:
     rdb = _rdb(pumps_raw=_pumps("BEAT"), signal_score=8)
     with (
         patch("schurfer_execution.trader.place_order", new_callable=AsyncMock),
-        patch("schurfer_execution.trader.decisions.write_decision") as mock_write,
+        patch(
+            "schurfer_execution.trader.decisions.write_decision", new_callable=AsyncMock
+        ) as mock_write,
     ):
         await _tick({"bybit": _exchange_mock(-0.002)}, rdb, _cfg(min_funding_rate_pct=-0.1))
 
@@ -791,7 +822,9 @@ async def test_tick_writes_decision_on_funding_rate_unavailable_skip() -> None:
     rdb = _rdb(pumps_raw=_pumps("BEAT"), signal_score=8)
     with (
         patch("schurfer_execution.trader.place_order", new_callable=AsyncMock),
-        patch("schurfer_execution.trader.decisions.write_decision") as mock_write,
+        patch(
+            "schurfer_execution.trader.decisions.write_decision", new_callable=AsyncMock
+        ) as mock_write,
     ):
         await _tick(
             {"bybit": _exchange_mock(None)},

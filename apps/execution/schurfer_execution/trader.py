@@ -93,9 +93,8 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
 
         if not exchange:
             log.info("trader.skip.no_exchange", base=base)
-            await rdb.set(seen_key, "1", ex=_SEEN_TTL_SKIP)
-            decisions.write_decision(
-                cfg.db_url,
+            await decisions.write_decision(
+                rdb,
                 base=base,
                 exchange="",
                 action="skipped",
@@ -106,14 +105,15 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 features=features,
                 liquidity=liq,
                 price=decision_price,
+                seen_key=seen_key,
+                seen_ttl=_SEEN_TTL_SKIP,
             )
             continue
 
         if score < cfg.score_threshold:
             log.info("trader.skip.score", base=base, score=score, threshold=cfg.score_threshold)
-            await rdb.set(seen_key, "1", ex=_SEEN_TTL_SKIP)
-            decisions.write_decision(
-                cfg.db_url,
+            await decisions.write_decision(
+                rdb,
                 base=base,
                 exchange=exchange,
                 action="skipped",
@@ -125,6 +125,8 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 features=features,
                 liquidity=liq,
                 price=decision_price,
+                seen_key=seen_key,
+                seen_ttl=_SEEN_TTL_SKIP,
             )
             continue
 
@@ -133,9 +135,8 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
         if funding_rate_pct is None and cfg.require_funding_rate:
             reason = "funding_rate_unavailable"
             log.info("trader.skip.funding_rate_unavailable", base=base)
-            await rdb.set(seen_key, "1", ex=_SEEN_TTL_SKIP)
-            decisions.write_decision(
-                cfg.db_url,
+            await decisions.write_decision(
+                rdb,
                 base=base,
                 exchange=exchange,
                 action="skipped",
@@ -147,6 +148,8 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 features=features,
                 liquidity=liq,
                 price=decision_price,
+                seen_key=seen_key,
+                seen_ttl=_SEEN_TTL_SKIP,
             )
             continue
 
@@ -154,9 +157,8 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
             fr_check = risk.check_funding_rate(funding_rate_pct, cfg.min_funding_rate_pct)
             if not fr_check.allowed:
                 log.info("trader.skip.funding_rate", base=base, reason=fr_check.reason)
-                await rdb.set(seen_key, "1", ex=_SEEN_TTL_SKIP)
-                decisions.write_decision(
-                    cfg.db_url,
+                await decisions.write_decision(
+                    rdb,
                     base=base,
                     exchange=exchange,
                     action="skipped",
@@ -168,6 +170,8 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                     features=features,
                     liquidity=liq,
                     price=decision_price,
+                    seen_key=seen_key,
+                    seen_ttl=_SEEN_TTL_SKIP,
                 )
                 continue
 
@@ -176,9 +180,8 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
             candles = await _fetch_entry_candles(ex, base) if ex else None
             if candles is None:
                 log.warning("trader.skip.entry_candles_unavailable", base=base)
-                await rdb.set(seen_key, "1", ex=_SEEN_TTL_ENTRY_WAIT)
-                decisions.write_decision(
-                    cfg.db_url,
+                await decisions.write_decision(
+                    rdb,
                     base=base,
                     exchange=exchange,
                     action="skipped",
@@ -190,6 +193,8 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                     features=features,
                     liquidity=liq,
                     price=decision_price,
+                    seen_key=seen_key,
+                    seen_ttl=_SEEN_TTL_ENTRY_WAIT,
                 )
                 continue
             entry_check = risk.check_entry_candles(
@@ -199,9 +204,8 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
             )
             if not entry_check.allowed:
                 log.info("trader.skip.entry_quality", base=base, reason=entry_check.reason)
-                await rdb.set(seen_key, "1", ex=_SEEN_TTL_ENTRY_WAIT)
-                decisions.write_decision(
-                    cfg.db_url,
+                await decisions.write_decision(
+                    rdb,
                     base=base,
                     exchange=exchange,
                     action="skipped",
@@ -213,6 +217,8 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                     features=features,
                     liquidity=liq,
                     price=decision_price,
+                    seen_key=seen_key,
+                    seen_ttl=_SEEN_TTL_ENTRY_WAIT,
                 )
                 continue
 
@@ -224,9 +230,8 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
         )
         if not liq_check.allowed:
             log.info("trader.skip.liquidation_guard", base=base, reason=liq_check.reason)
-            await rdb.set(seen_key, "1", ex=_SEEN_TTL_SKIP)
-            decisions.write_decision(
-                cfg.db_url,
+            await decisions.write_decision(
+                rdb,
                 base=base,
                 exchange=exchange,
                 action="skipped",
@@ -238,6 +243,8 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 features=features,
                 liquidity=liq,
                 price=decision_price,
+                seen_key=seen_key,
+                seen_ttl=_SEEN_TTL_SKIP,
             )
             continue
 
@@ -247,9 +254,8 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
             equity_usd = await _fetch_equity_usd(exchanges, exchange)
             if equity_usd is None:
                 log.warning("trader.skip.equity_unavailable", base=base, exchange=exchange)
-                await rdb.set(seen_key, "1", ex=_SEEN_TTL_SKIP)
-                decisions.write_decision(
-                    cfg.db_url,
+                await decisions.write_decision(
+                    rdb,
                     base=base,
                     exchange=exchange,
                     action="skipped",
@@ -261,6 +267,8 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                     features=features,
                     liquidity=liq,
                     price=decision_price,
+                    seen_key=seen_key,
+                    seen_ttl=_SEEN_TTL_SKIP,
                 )
                 continue
             computed = risk.compute_position_size_usd(
@@ -276,9 +284,8 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                     f"sl={exit_params['initial_sl_pct']}%)"
                 )
                 log.info("trader.skip.size_below_min", base=base, reason=skip_reason)
-                await rdb.set(seen_key, "1", ex=_SEEN_TTL_SKIP)
-                decisions.write_decision(
-                    cfg.db_url,
+                await decisions.write_decision(
+                    rdb,
                     base=base,
                     exchange=exchange,
                     action="skipped",
@@ -290,6 +297,8 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                     features=features,
                     liquidity=liq,
                     price=decision_price,
+                    seen_key=seen_key,
+                    seen_ttl=_SEEN_TTL_SKIP,
                 )
                 continue
             size_usd = computed
@@ -332,9 +341,8 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 entry_price = float(ticker["last"])
             except Exception as exc:
                 log.warning("trader.dry_run.price_failed", base=base, err=str(exc))
-                await rdb.set(seen_key, "1", ex=_SEEN_TTL_SKIP)
-                decisions.write_decision(
-                    cfg.db_url,
+                await decisions.write_decision(
+                    rdb,
                     base=base,
                     exchange=exchange,
                     action="skipped",
@@ -346,6 +354,8 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                     features=features,
                     liquidity=liq,
                     price=decision_price,
+                    seen_key=seen_key,
+                    seen_ttl=_SEEN_TTL_SKIP,
                 )
                 continue
 
@@ -360,9 +370,8 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 setup_context=setup_context,
                 cfg=cfg,
             )
-            await rdb.set(seen_key, "1", ex=_SEEN_TTL_TRADED)
-            decisions.write_decision(
-                cfg.db_url,
+            await decisions.write_decision(
+                rdb,
                 base=base,
                 exchange=exchange,
                 action="opened_dry_run",
@@ -374,6 +383,8 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 features=features,
                 liquidity=liq,
                 price=decision_price,
+                seen_key=seen_key,
+                seen_ttl=_SEEN_TTL_TRADED,
             )
             continue
 
@@ -401,9 +412,8 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 score=score,
                 order_id=result.get("order_id"),
             )
-            await rdb.set(seen_key, "1", ex=_SEEN_TTL_TRADED)
-            decisions.write_decision(
-                cfg.db_url,
+            await decisions.write_decision(
+                rdb,
                 base=base,
                 exchange=exchange,
                 action="opened",
@@ -415,6 +425,8 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 features=features,
                 liquidity=liq,
                 price=decision_price,
+                seen_key=seen_key,
+                seen_ttl=_SEEN_TTL_TRADED,
             )
 
             entry_price = result.get("price", 0)
@@ -467,9 +479,8 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
         else:
             blocked_reason = result.get("reason", "unknown")
             log.info("trader.blocked", base=base, reason=blocked_reason)
-            await rdb.set(seen_key, "1", ex=_SEEN_TTL_SKIP)
-            decisions.write_decision(
-                cfg.db_url,
+            await decisions.write_decision(
+                rdb,
                 base=base,
                 exchange=exchange,
                 action="skipped",
@@ -481,6 +492,8 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 features=features,
                 liquidity=liq,
                 price=decision_price,
+                seen_key=seen_key,
+                seen_ttl=_SEEN_TTL_SKIP,
             )
 
 

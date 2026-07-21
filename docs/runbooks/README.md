@@ -190,11 +190,33 @@ To take the system fully out of live trading, set `AUTO_TRADE=false` (or
   occasionally change field formats.
 - Scanner produced no pumps: check analytics logs and that outbound network to the
   exchanges works from the host.
-- Decision writer stuck retrying: check execution logs for `decisions.write_failed`.
-  Usual cause is the DB connection, but the payload can also do it: a value that
-  violates a column constraint (for example a `STRATEGY_VERSION` longer than
-  `varchar(32)`) fails every insert and retries forever. Non-finite jsonb is already
-  dropped before the queue, so that specific case cannot poison it.
+- Decision outbox (durable Redis Stream): execution XADDs each decision to
+  `execution:decisions`; a writer task drains it into Postgres and XACKs + XDELs only
+  after the commit, so decisions survive an execution restart and a Postgres outage.
+  A message that fails to insert `_MAX_ATTEMPTS` (5) times — for example a value that
+  violates a column constraint (a `STRATEGY_VERSION` longer than `varchar(32)`) — is
+  moved to `execution:decisions:dlq` instead of blocking the stream forever. Inspect:
+
+  ```
+  redis-cli XLEN execution:decisions                          # backlog depth
+  redis-cli XPENDING execution:decisions decision-db-writers  # unacked / stuck
+  redis-cli XRANGE execution:decisions:dlq - + COUNT 20       # poison messages
+  redis-cli CONFIG GET appendonly                             # AOF on
+  redis-cli CONFIG GET appendfsync                            # everysec
+  redis-cli INFO persistence
+  ```
+
+  A growing `XLEN` while the writer is connected means Postgres is unreachable (the
+  stream buffers safely until it returns). A growing DLQ means recurring poison rows —
+  read them from the DLQ stream and fix the cause.
+
+  Durability guarantee: after a successful XADD a decision survives an execution
+  restart and a Postgres outage; redelivery does not duplicate (idempotent on
+  `decision_id`). Not yet covered: `opened`/`opened_dry_run` have a window between the
+  order/paper side effect and the XADD (the trade itself is still in the trade
+  journal), and a Redis-host crash can lose up to ~1s with `appendfsync everysec`.
+  Two-phase `intent -> resolution` closes the opened-window and is planned for a
+  follow-up PR (required before `AUTO_TRADE=true`).
 
 ## Incidents
 
