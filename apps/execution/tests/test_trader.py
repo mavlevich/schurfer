@@ -8,6 +8,7 @@ from schurfer_execution.trader import (
     _SEEN_TTL_ENTRY_WAIT,
     _SEEN_TTL_SKIP,
     _SEEN_TTL_TRADED,
+    _decision_price,
     _fetch_entry_candles,
     _fetch_equity_usd,
     _fetch_funding_rate_pct,
@@ -122,6 +123,73 @@ def test_pick_exchange_returns_none_when_no_match() -> None:
 
 def test_pick_exchange_returns_none_on_empty_list() -> None:
     assert _pick_exchange([], {"bybit": ...}) is None
+
+
+def test_pick_exchange_survives_corrupt_volume() -> None:
+    # A non-numeric volume must not raise (which would abort the whole tick); the
+    # entry just sorts to the bottom and the valid one wins.
+    exchanges = [
+        {"exchange": "bybit", "volume_24h_usd": "unknown"},
+        {"exchange": "bingx", "volume_24h_usd": 2_000_000},
+    ]
+    assert _pick_exchange(exchanges, {"bybit": ..., "bingx": ...}) == "bingx"
+
+
+# --- _decision_price ---
+
+
+def test_decision_price_uses_chosen_exchange() -> None:
+    pump = {
+        "exchanges": [
+            {"exchange": "bybit", "change_pct": 40.0, "price": "1.5"},
+            {"exchange": "mexc", "change_pct": 80.0, "price": "1.7"},
+        ]
+    }
+    assert _decision_price(pump, "bybit") == 1.5
+
+
+def test_decision_price_falls_back_to_top_mover_when_no_exchange() -> None:
+    pump = {
+        "exchanges": [
+            {"exchange": "bybit", "change_pct": 40.0, "price": "1.5"},
+            {"exchange": "mexc", "change_pct": 80.0, "price": "1.7"},
+        ]
+    }
+    # No chosen exchange (no_configured_exchange): use the top-moving one's price.
+    assert _decision_price(pump, None) == 1.7
+
+
+def test_decision_price_none_when_no_exchanges() -> None:
+    assert _decision_price({"exchanges": []}, "bybit") is None
+
+
+def test_decision_price_none_on_unparseable_or_nonpositive() -> None:
+    assert _decision_price({"exchanges": [{"exchange": "bybit", "price": "abc"}]}, "bybit") is None
+    assert _decision_price({"exchanges": [{"exchange": "bybit", "price": "0"}]}, "bybit") is None
+
+
+def test_decision_price_survives_corrupt_change_pct() -> None:
+    # A non-numeric change_pct in the fallback path must not raise (which would abort
+    # the whole trader tick); the entry just sorts to the bottom.
+    pump = {
+        "exchanges": [
+            {"exchange": "bybit", "change_pct": "unknown", "price": "1.5"},
+            {"exchange": "mexc", "change_pct": 80.0, "price": "1.7"},
+        ]
+    }
+    assert _decision_price(pump, None) == 1.7
+
+
+def test_decision_price_non_finite_change_pct_does_not_win() -> None:
+    # float() accepts "inf"/"nan", so a non-finite change_pct must not win the max()
+    # and steal the fallback pick from a genuinely top-moving exchange.
+    pump = {
+        "exchanges": [
+            {"exchange": "bybit", "change_pct": "inf", "price": "9.9"},
+            {"exchange": "mexc", "change_pct": 80.0, "price": "1.7"},
+        ]
+    }
+    assert _decision_price(pump, None) == 1.7
 
 
 # --- _fetch_score ---
@@ -426,6 +494,44 @@ async def test_tick_writes_decision_when_dry_run_price_unavailable() -> None:
 
     reasons = [c.kwargs["reason"] for c in mock_write.call_args_list]
     assert "dry_run_price_unavailable" in reasons
+
+
+async def test_tick_dry_run_decision_price_is_scanner_not_ticker() -> None:
+    # The decision must record the scanner price at decision time (1.5) while the
+    # paper trade records the live entry price from the ticker (1.7). One shared
+    # variable would make skipped / live / dry-run decision prices non-comparable.
+    pumps_raw = json.dumps(
+        {
+            "pumps": [
+                {
+                    "base": "BEAT",
+                    "max_change_pct": 50.0,
+                    "exchanges": [
+                        {
+                            "exchange": "bybit",
+                            "change_pct": 50.0,
+                            "price": "1.5",
+                            "volume_24h_usd": 1_000_000,
+                        }
+                    ],
+                }
+            ]
+        }
+    ).encode()
+    rdb = _rdb(pumps_raw=pumps_raw, signal_score=7)
+    cfg = _cfg(score_threshold=6)
+    cfg.dry_run = True
+    ex = MagicMock()
+    ex.fetch_ticker = AsyncMock(return_value={"last": "1.7"})
+    with (
+        patch("schurfer_execution.trader.paper.open_paper", new_callable=AsyncMock) as mock_paper,
+        patch("schurfer_execution.trader.decisions.write_decision") as mock_write,
+    ):
+        await _tick({"bybit": ex}, rdb, cfg)
+
+    dry_run = next(c for c in mock_write.call_args_list if c.kwargs["action"] == "opened_dry_run")
+    assert dry_run.kwargs["price"] == 1.5  # scanner decision price, not the ticker
+    assert mock_paper.call_args.kwargs["price"] == 1.7  # live entry price
 
 
 async def test_tick_places_short_when_score_sufficient() -> None:

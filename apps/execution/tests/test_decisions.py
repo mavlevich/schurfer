@@ -39,6 +39,20 @@ def test_write_decision_enqueues_row() -> None:
     assert row[6] == 45.5
 
 
+def test_write_decision_enqueues_price() -> None:
+    _drain()
+    write_decision(
+        "postgresql://test",
+        base="BEAT",
+        exchange="bybit",
+        action="skipped",
+        reason="ok",
+        price=0.00012345,
+    )
+    row = _queue.get_nowait()
+    assert row[11] == 0.00012345  # price is the last INSERT field
+
+
 def test_write_decision_enqueues_row_without_optional_fields() -> None:
     _drain()
     write_decision("postgresql://test", base="ACT", exchange="bybit", action="opened", reason="ok")
@@ -50,6 +64,7 @@ def test_write_decision_enqueues_row_without_optional_fields() -> None:
     assert row[8] is None  # strategy_version
     assert row[9] is None  # features
     assert row[10] is None  # liquidity
+    assert row[11] is None  # price
 
 
 def test_write_decision_serializes_measurement_fields() -> None:
@@ -137,7 +152,7 @@ async def test_run_decision_writer_inserts_row() -> None:
     mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
     mock_conn.__aexit__ = AsyncMock(return_value=False)
 
-    # Enqueue via write_decision so the row matches the real 11-field INSERT shape
+    # Enqueue via write_decision so the row matches the real 12-field INSERT shape
     # (a hand-built short tuple would silently pass the mock but fail real SQL).
     write_decision(
         "postgresql://test",
@@ -161,7 +176,7 @@ async def test_run_decision_writer_inserts_row() -> None:
             await task
 
     assert len(captured_params) == 1
-    assert len(captured_params[0]) == 11  # matches the INSERT placeholder count
+    assert len(captured_params[0]) == 12  # matches the INSERT placeholder count
     assert captured_params[0][1] == "BEAT"
     assert captured_params[0][3] == "skipped"
 

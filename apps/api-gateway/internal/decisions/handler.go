@@ -53,6 +53,7 @@ type decisionRow struct {
 	Reason    string    `json:"reason"`
 	Score     *int      `json:"score"`
 	PumpPct   *float64  `json:"pump_pct"`
+	Price     *float64  `json:"price"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -112,7 +113,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	n := len(dataArgs)
 	rows, err := h.pool.Query(r.Context(), `
 		SELECT d.id, d.ts, d.base, d.exchange, d.action, d.reason,
-		       d.score, d.pump_pct::float8, d.created_at
+		       d.score, d.pump_pct::float8, d.price::float8, d.created_at
 		FROM app.trade_decisions d `+where+`
 		ORDER BY d.ts DESC
 		LIMIT $`+strconv.Itoa(n-1)+` OFFSET $`+strconv.Itoa(n),
@@ -130,7 +131,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		var d decisionRow
 		if err := rows.Scan(
 			&d.ID, &d.Ts, &d.Base, &d.Exchange, &d.Action, &d.Reason,
-			&d.Score, &d.PumpPct, &d.CreatedAt,
+			&d.Score, &d.PumpPct, &d.Price, &d.CreatedAt,
 		); err != nil {
 			slog.Error("decisions.scan", "err", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)

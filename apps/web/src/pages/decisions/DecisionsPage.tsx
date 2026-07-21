@@ -64,6 +64,17 @@ function PumpCell({ d }: { d: Decision }) {
   );
 }
 
+// Alt prices span a huge range (sub-cent memecoins to four-figure majors), so
+// format by significant digits instead of a fixed scale, and avoid exponential.
+function fmtPrice(p: number): string {
+  return new Intl.NumberFormat('en-US', { maximumSignificantDigits: 6 }).format(p);
+}
+
+function PriceCell({ d }: { d: Decision }) {
+  if (d.price === null) return <span className="text-muted-foreground">—</span>;
+  return <span className="font-mono">${fmtPrice(d.price)}</span>;
+}
+
 export function DecisionsPage() {
   const [baseFilter, setBaseFilter] = useState('');
   const [actionFilter, setActionFilter] = useState('');
@@ -165,6 +176,7 @@ export function DecisionsPage() {
                     <TableHead>Reason</TableHead>
                     <TableHead className="text-right">Score</TableHead>
                     <TableHead className="text-right">Pump</TableHead>
+                    <TableHead className="text-right">Price</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -191,6 +203,9 @@ export function DecisionsPage() {
                       </TableCell>
                       <TableCell className="text-right">
                         <PumpCell d={d} />
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <PriceCell d={d} />
                       </TableCell>
                     </TableRow>
                   ))}
