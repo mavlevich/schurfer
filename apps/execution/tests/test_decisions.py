@@ -292,6 +292,13 @@ async def test_read_batch_returns_new_entries() -> None:
     await rdb.aclose()
 
 
+def test_redis_socket_timeout_exceeds_block_window() -> None:
+    # The blocking XREADGROUP relies on the socket read timeout being longer than the
+    # BLOCK window; if they are equal (redis-py 8 defaults socket_timeout to 5s) the read
+    # times out and the client reconnects on every idle window.
+    assert decisions._REDIS_SOCKET_TIMEOUT_SECONDS * 1000 > decisions._BLOCK_MS
+
+
 async def test_read_batch_reclaims_pending_from_dead_consumer(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

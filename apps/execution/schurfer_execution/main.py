@@ -10,7 +10,7 @@ import uvicorn
 from fastapi import FastAPI
 
 from .config import Config
-from .decisions import run_decision_writer
+from .decisions import _REDIS_SOCKET_TIMEOUT_SECONDS, run_decision_writer
 from .exchanges import build_exchanges, close_exchanges
 from .monitor import run_position_monitor
 from .paper import run_paper_monitor
@@ -22,6 +22,10 @@ if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
 
 log = structlog.get_logger()
+
+# Fail-fast socket timeout for the shared trading hot-path client (kill-switch, order
+# locks, position state). The decision writer uses its own client with a longer timeout.
+_HOT_PATH_SOCKET_TIMEOUT_SECONDS = 5.0
 
 
 @contextlib.asynccontextmanager
@@ -35,7 +39,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     )
     cfg = Config()
     host, port = [*cfg.redis_addr.split(":"), "6379"][:2]
-    rdb = aioredis.from_url(f"redis://{host}:{port}")
+    # Shared client for the trading hot path, on an explicit fail-fast socket timeout.
+    rdb = aioredis.from_url(
+        f"redis://{host}:{port}",
+        socket_timeout=_HOT_PATH_SOCKET_TIMEOUT_SECONDS,
+        socket_connect_timeout=5.0,
+    )
     exchanges: dict[str, Any] = build_exchanges(cfg)
 
     app.state.cfg = cfg
@@ -50,7 +59,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         else None
     )
     paper = asyncio.create_task(run_paper_monitor(exchanges, rdb, cfg)) if cfg.dry_run else None
-    dec_writer = asyncio.create_task(run_decision_writer(rdb, cfg.db_url)) if cfg.db_url else None
+    # The decision writer does long blocking XREADGROUP reads, so it gets its own client
+    # with a socket timeout above the BLOCK window. Keeping it separate leaves the trading
+    # hot path fail-fast instead of inheriting the writer's longer timeout.
+    writer_rdb = None
+    dec_writer = None
+    if cfg.db_url:
+        writer_rdb = aioredis.from_url(
+            f"redis://{host}:{port}",
+            socket_timeout=_REDIS_SOCKET_TIMEOUT_SECONDS,
+            socket_connect_timeout=5.0,
+        )
+        dec_writer = asyncio.create_task(run_decision_writer(writer_rdb, cfg.db_url))
     log.info(
         "execution.start",
         exchanges=list(exchanges.keys()),
@@ -84,6 +104,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
             await dec_writer
     await close_exchanges(exchanges)
     await rdb.aclose()
+    if writer_rdb is not None:
+        await writer_rdb.aclose()
 
 
 app = FastAPI(title="schurfer-execution", lifespan=lifespan)
