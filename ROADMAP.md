@@ -247,6 +247,10 @@ real accounts exist, not at DRY_RUN.
   the chart, auto-refresh the active OHLCV candle, pump-episode markers on the chart
   (`setMarkers`), and a position-origin badge (paper, bot, manual) on the account
   page plus an entry-price line on the chart.
+- Pump scanner: make each per-exchange tag a deep link to that exchange's trade page
+  for the pair (open in a new tab), so a token can be inspected on the venue in one
+  click. Needs a small per-exchange URL-template map (symbol formats differ, spot vs
+  perp). Pure UX convenience, not urgent.
 - OHLCV storage in TimescaleDB (enables chart history beyond exchange lookback, plus
   ATR).
 - Telegram: persist `seen_bases` in Redis to avoid a startup alert storm, plus

@@ -10,7 +10,6 @@ import uvicorn
 from fastapi import FastAPI
 
 from .config import Config
-from .decisions import _queue as _decisions_queue
 from .decisions import run_decision_writer
 from .exchanges import build_exchanges, close_exchanges
 from .monitor import run_position_monitor
@@ -51,7 +50,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         else None
     )
     paper = asyncio.create_task(run_paper_monitor(exchanges, rdb, cfg)) if cfg.dry_run else None
-    dec_writer = asyncio.create_task(run_decision_writer(cfg.db_url)) if cfg.db_url else None
+    dec_writer = asyncio.create_task(run_decision_writer(rdb, cfg.db_url)) if cfg.db_url else None
     log.info(
         "execution.start",
         exchanges=list(exchanges.keys()),
@@ -67,8 +66,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     if paper:
         paper.cancel()
     if dec_writer:
-        with contextlib.suppress(asyncio.TimeoutError):
-            await asyncio.wait_for(_decisions_queue.join(), timeout=5.0)
+        # Unacked entries stay in the Redis Stream and are reprocessed on restart,
+        # so there is no in-process queue to drain here.
         dec_writer.cancel()
     with contextlib.suppress(asyncio.CancelledError):
         await tracker

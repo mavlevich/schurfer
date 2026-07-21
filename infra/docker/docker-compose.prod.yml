@@ -33,7 +33,9 @@ services:
     # noeviction: safety-critical keys (kill-switch, order locks, position state)
     # must never be silently evicted under memory pressure. If memory fills,
     # writes fail loudly instead of losing the kill-switch.
-    command: redis-server --maxmemory 256mb --maxmemory-policy noeviction --save 60 1
+    # appendonly (AOF, fsync every second) makes the decision outbox stream durable
+    # to ~1s of loss on a host crash; the RDB snapshot is kept as a second copy.
+    command: redis-server --maxmemory 256mb --maxmemory-policy noeviction --save 60 1 --appendonly yes --appendfsync everysec
     restart: always
     healthcheck:
       test: ['CMD', 'redis-cli', 'ping']

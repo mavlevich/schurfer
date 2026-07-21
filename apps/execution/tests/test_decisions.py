@@ -1,236 +1,365 @@
 import asyncio
 import contextlib
 import json
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from schurfer_execution.decisions import _queue, run_decision_writer, write_decision
+import psycopg
+import pytest
+from fakeredis.aioredis import FakeRedis
+from schurfer_execution import decisions
+from schurfer_execution.decisions import (
+    _CONSUMER,
+    _DLQ,
+    _GROUP,
+    _SCHEMA_VERSION,
+    _STREAM,
+    _ensure_group,
+    _handle,
+    _read_batch,
+    _row_from_payload,
+    run_decision_writer,
+    write_decision,
+)
 
 
-def _drain() -> None:
-    while not _queue.empty():
-        _queue.get_nowait()
-        _queue.task_done()
+def _valid_payload(**over: object) -> dict[str, object]:
+    p: dict[str, object] = {
+        "schema_version": _SCHEMA_VERSION,
+        "ts": datetime.now(tz=UTC).isoformat(),
+        "base": "BEAT",
+        "exchange": "bybit",
+        "action": "skipped",
+        "reason": "x",
+        "score": 3,
+        "pump_pct": 45.5,
+        "decision_id": "11111111-1111-1111-1111-111111111111",
+        "strategy_version": "v1",
+        "features": None,
+        "liquidity": None,
+        "price": 1.5,
+    }
+    p.update(over)
+    return p
 
 
-def test_write_decision_no_op_when_no_db_url() -> None:
-    _drain()
-    write_decision(None, base="BEAT", exchange="bybit", action="skipped", reason="test")
-    assert _queue.qsize() == 0
+def _cursor(fail: Exception | None = None) -> MagicMock:
+    calls: list[tuple[object, ...]] = []
+
+    async def execute(_sql: str, params: tuple[object, ...]) -> None:
+        calls.append(params)
+        if fail is not None:
+            raise fail
+
+    cur = MagicMock()
+    cur.execute = execute
+    cur.calls = calls
+    return cur
 
 
-def test_write_decision_enqueues_row() -> None:
-    _drain()
-    write_decision(
-        "postgresql://test",
+async def _enqueue_and_read(rdb: FakeRedis, payload: dict[str, object]) -> tuple[object, dict]:
+    await _ensure_group(rdb)
+    await rdb.xadd(_STREAM, {"data": json.dumps(payload)})
+    resp = await rdb.xreadgroup(_GROUP, _CONSUMER, {_STREAM: ">"}, count=10)
+    return resp[0][1][0]
+
+
+# ---- producer ----
+
+
+async def test_write_decision_requires_decision_id() -> None:
+    rdb = FakeRedis()
+    with pytest.raises(ValueError, match="decision_id"):
+        await write_decision(
+            rdb, base="BEAT", exchange="bybit", action="skipped", reason="x", decision_id=""
+        )
+    await rdb.aclose()
+
+
+async def test_write_decision_xadd_and_seen_atomic() -> None:
+    rdb = FakeRedis()
+    await write_decision(
+        rdb,
         base="BEAT",
         exchange="bybit",
         action="skipped",
-        reason="score 3 < threshold 6",
-        score=3,
-        pump_pct=45.5,
+        reason="x",
+        decision_id="d1",
+        seen_key="trader:seen:BEAT",
+        seen_ttl=1800,
     )
-    assert _queue.qsize() == 1
-    row = _queue.get_nowait()
-    assert row[1] == "BEAT"
-    assert row[2] == "bybit"
-    assert row[3] == "skipped"
-    assert row[4] == "score 3 < threshold 6"
-    assert row[5] == 3
-    assert row[6] == 45.5
+    assert await rdb.xlen(_STREAM) == 1
+    entry = (await rdb.xrange(_STREAM))[0][1]
+    body = json.loads(entry[b"data"])
+    assert body["schema_version"] == _SCHEMA_VERSION
+    assert body["base"] == "BEAT"
+    # seen flag set atomically with the XADD (one MULTI/EXEC)
+    assert await rdb.get("trader:seen:BEAT") == b"1"
+    assert 0 < await rdb.ttl("trader:seen:BEAT") <= 1800
+    await rdb.aclose()
 
 
-def test_write_decision_enqueues_price() -> None:
-    _drain()
-    write_decision(
-        "postgresql://test",
+async def test_write_decision_without_seen_key_only_xadds() -> None:
+    rdb = FakeRedis()
+    await write_decision(
+        rdb,
         base="BEAT",
         exchange="bybit",
-        action="skipped",
-        reason="ok",
-        price=0.00012345,
+        action="opened_dry_run",
+        reason="paper",
+        decision_id="d1",
     )
-    row = _queue.get_nowait()
-    assert row[11] == 0.00012345  # price is the last INSERT field
+    assert await rdb.xlen(_STREAM) == 1
+    assert await rdb.get("trader:seen:BEAT") is None
+    await rdb.aclose()
 
 
-def test_write_decision_enqueues_row_without_optional_fields() -> None:
-    _drain()
-    write_decision("postgresql://test", base="ACT", exchange="bybit", action="opened", reason="ok")
-    row = _queue.get_nowait()
-    assert row[5] is None
-    assert row[6] is None
-    # measurement fields default to None
-    assert row[7] is None  # decision_id
-    assert row[8] is None  # strategy_version
-    assert row[9] is None  # features
-    assert row[10] is None  # liquidity
-    assert row[11] is None  # price
+async def test_write_decision_eval_failure_propagates() -> None:
+    # The XADD + SET seen run as one Lua script; a failure propagates so the caller does
+    # not proceed as if the decision were recorded.
+    rdb = MagicMock()
+    rdb.eval = AsyncMock(side_effect=RuntimeError("redis down"))
+    with pytest.raises(RuntimeError):
+        await write_decision(
+            rdb,
+            base="BEAT",
+            exchange="bybit",
+            action="skipped",
+            reason="x",
+            decision_id="d1",
+            seen_key="k",
+            seen_ttl=60,
+        )
 
 
-def test_write_decision_serializes_measurement_fields() -> None:
-    _drain()
-    write_decision(
-        "postgresql://test",
-        base="BEAT",
-        exchange="bybit",
-        action="opened",
-        reason="ok",
-        score=7,
-        decision_id="11111111-1111-1111-1111-111111111111",
-        strategy_version="pump_short_v1",
-        features={"signal": {"score": 7}, "candidate_exchanges": ["bybit"]},
-        liquidity={"status": "sampled", "spread_bps": 12.0},
-    )
-    row = _queue.get_nowait()
-    assert row[7] == "11111111-1111-1111-1111-111111111111"
-    assert row[8] == "pump_short_v1"
-    # features and liquidity are JSON-serialized for the jsonb columns
-    assert json.loads(row[9]) == {"signal": {"score": 7}, "candidate_exchanges": ["bybit"]}
-    assert json.loads(row[10]) == {"status": "sampled", "spread_bps": 12.0}
+async def test_write_decision_wrongtype_xadd_does_not_set_seen() -> None:
+    # The core reason for Lua over MULTI/EXEC: if XADD errors (here a wrong-typed stream
+    # key), the script aborts BEFORE SET seen, so a token is never marked seen with its
+    # decision lost. MULTI/EXEC would have run the SET anyway.
+    rdb = FakeRedis()
+    await rdb.set(_STREAM, "not-a-stream")  # force WRONGTYPE on XADD
+    with contextlib.suppress(Exception):
+        await write_decision(
+            rdb,
+            base="BEAT",
+            exchange="bybit",
+            action="skipped",
+            reason="x",
+            decision_id="d1",
+            seen_key="trader:seen:BEAT",
+            seen_ttl=1800,
+        )
+    assert await rdb.get("trader:seen:BEAT") is None  # seen NOT set
+    await rdb.aclose()
+
+
+# ---- payload decoding ----
+
+
+def test_row_from_payload_maps_all_fields() -> None:
+    row = _row_from_payload(json.dumps(_valid_payload(base="ACT", price=2.5)))
+    assert row[1] == "ACT"
+    assert row[11] == 2.5
+
+
+def test_row_from_payload_rejects_unknown_schema() -> None:
+    with pytest.raises(ValueError, match="schema_version"):
+        _row_from_payload(json.dumps(_valid_payload(schema_version=999)))
+
+
+def test_row_from_payload_rejects_bad_json() -> None:
+    with pytest.raises(ValueError):
+        _row_from_payload("{not json")
+
+
+def test_row_from_payload_rejects_missing_decision_id() -> None:
+    p = _valid_payload()
+    del p["decision_id"]
+    with pytest.raises(KeyError):
+        _row_from_payload(json.dumps(p))
+
+
+def test_row_from_payload_rejects_empty_decision_id() -> None:
+    with pytest.raises(ValueError, match="decision_id"):
+        _row_from_payload(json.dumps(_valid_payload(decision_id="")))
 
 
 def test_insert_has_on_conflict_do_nothing() -> None:
-    # Idempotency guard: the writer re-enqueues a row after an ambiguous commit, so
-    # the INSERT must drop a duplicate decision_id instead of writing it twice. Full
-    # behaviour is covered by the real-Postgres migration smoke test; this locks the
-    # clause in place against accidental removal.
-    from schurfer_execution.decisions import _INSERT
-
-    assert "on conflict (decision_id) do nothing" in _INSERT.lower()
+    # Idempotency on redelivery depends on this clause; lock it in place.
+    assert "on conflict (decision_id) do nothing" in decisions._INSERT.lower()
 
 
-def test_write_decision_drops_non_finite_jsonb_field() -> None:
-    _drain()
-    # A NaN would serialize to an invalid jsonb token and poison the writer. It must
-    # be dropped to None, and the decision still enqueued.
-    write_decision(
-        "postgresql://test",
-        base="BEAT",
-        exchange="bybit",
-        action="opened",
-        reason="ok",
-        liquidity={"status": "sampled", "spread_bps": float("nan")},
+# ---- consumer: _handle ----
+
+
+async def test_handle_insert_acks_and_deletes() -> None:
+    rdb = FakeRedis()
+    msg_id, fields = await _enqueue_and_read(rdb, _valid_payload(base="BEAT"))
+    cur = _cursor()
+
+    await _handle(cur, rdb, msg_id, fields, {})
+
+    assert cur.calls and cur.calls[0][1] == "BEAT"  # inserted
+    assert await rdb.xlen(_STREAM) == 0  # acked + deleted
+    await rdb.aclose()
+
+
+async def test_handle_db_down_leaves_message_pending() -> None:
+    rdb = FakeRedis()
+    msg_id, fields = await _enqueue_and_read(rdb, _valid_payload())
+    cur = _cursor(fail=psycopg.OperationalError("connection lost"))
+
+    with pytest.raises(psycopg.OperationalError):
+        await _handle(cur, rdb, msg_id, fields, {})
+
+    # Not acked/deleted: still in the stream for redelivery after reconnect.
+    assert await rdb.xlen(_STREAM) == 1
+    await rdb.aclose()
+
+
+async def test_handle_parse_error_goes_to_dlq() -> None:
+    rdb = FakeRedis()
+    await _ensure_group(rdb)
+    await rdb.xadd(_STREAM, {"data": "{not json"})
+    resp = await rdb.xreadgroup(_GROUP, _CONSUMER, {_STREAM: ">"}, count=10)
+    msg_id, fields = resp[0][1][0]
+
+    await _handle(_cursor(), rdb, msg_id, fields, {})
+
+    assert await rdb.xlen(_STREAM) == 0  # removed from main
+    assert await rdb.xlen(_DLQ) == 1  # parked in DLQ
+    await rdb.aclose()
+
+
+async def test_handle_missing_decision_id_goes_to_dlq() -> None:
+    rdb = FakeRedis()
+    await _ensure_group(rdb)
+    payload = _valid_payload()
+    del payload["decision_id"]  # a schema-v1 message with no id cannot be deduped
+    await rdb.xadd(_STREAM, {"data": json.dumps(payload)})
+    resp = await rdb.xreadgroup(_GROUP, _CONSUMER, {_STREAM: ">"}, count=10)
+    msg_id, fields = resp[0][1][0]
+
+    await _handle(_cursor(), rdb, msg_id, fields, {})
+
+    assert await rdb.xlen(_STREAM) == 0  # removed from main
+    assert await rdb.xlen(_DLQ) == 1  # parked in DLQ, not inserted with NULL id
+    await rdb.aclose()
+
+
+async def test_dlq_xadd_failure_leaves_message_in_stream() -> None:
+    # If the DLQ XADD fails, the Lua aborts before XACK+XDEL, so a poison message stays
+    # in the stream (retried) instead of being dropped with no DLQ copy.
+    rdb = FakeRedis()
+    await rdb.set(_DLQ, "not-a-stream")  # force WRONGTYPE on the DLQ XADD
+    await _ensure_group(rdb)
+    await rdb.xadd(_STREAM, {"data": "{not json"})  # a poison (unparseable) message
+    resp = await rdb.xreadgroup(_GROUP, _CONSUMER, {_STREAM: ">"}, count=10)
+    msg_id, fields = resp[0][1][0]
+
+    with contextlib.suppress(Exception):
+        await _handle(_cursor(), rdb, msg_id, fields, {})
+
+    assert await rdb.xlen(_STREAM) == 1  # not dropped; still there for retry
+    await rdb.aclose()
+
+
+async def test_handle_repeated_insert_failure_goes_to_dlq() -> None:
+    rdb = FakeRedis()
+    msg_id, fields = await _enqueue_and_read(rdb, _valid_payload())
+    cur = _cursor(fail=ValueError("bad row"))  # non-transient -> counts toward poison
+    attempts: dict[str, int] = {}
+
+    for _ in range(decisions._MAX_ATTEMPTS):
+        await _handle(cur, rdb, msg_id, fields, attempts)
+
+    assert await rdb.xlen(_STREAM) == 0
+    assert await rdb.xlen(_DLQ) == 1
+    await rdb.aclose()
+
+
+# ---- consumer: _read_batch ----
+
+
+async def test_read_batch_returns_new_entries() -> None:
+    rdb = FakeRedis()
+    await _ensure_group(rdb)
+    await rdb.xadd(_STREAM, {"data": json.dumps(_valid_payload())})
+
+    batch = await _read_batch(rdb)
+
+    assert len(batch) == 1
+    await rdb.aclose()
+
+
+async def test_read_batch_reclaims_pending_from_dead_consumer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rdb = FakeRedis()
+    await _ensure_group(rdb)
+    await rdb.xadd(_STREAM, {"data": json.dumps(_valid_payload())})
+    # A crashed consumer read but never acked -> the entry is pending under its name.
+    await rdb.xreadgroup(_GROUP, "dead-writer", {_STREAM: ">"}, count=10)
+    monkeypatch.setattr(decisions, "_CLAIM_MIN_IDLE_MS", 0)
+
+    batch = await _read_batch(rdb)
+
+    assert len(batch) == 1  # XAUTOCLAIM reclaimed it
+    await rdb.aclose()
+
+
+# ---- consumer: run_decision_writer integration (fakeredis + mocked psycopg) ----
+
+
+async def test_read_then_handle_drains_and_removes_entry() -> None:
+    # End-to-end over a real (fake) stream: a written decision is read back, inserted,
+    # then acked+deleted. Exercises the read->handle path the writer loop runs, without
+    # its blocking XREADGROUP (fakeredis does not honor blocking reads).
+    rdb = FakeRedis()
+    await write_decision(
+        rdb, base="BEAT", exchange="bybit", action="skipped", reason="x", decision_id="d1"
     )
-    row = _queue.get_nowait()
-    assert row[10] is None  # liquidity dropped, not a NaN token
-    assert row[1] == "BEAT"  # decision still recorded
+    await _ensure_group(rdb)
+    cur = _cursor()
+
+    for msg_id, fields in await _read_batch(rdb):
+        await _handle(cur, rdb, msg_id, fields, {})
+
+    assert cur.calls and cur.calls[0][1] == "BEAT"  # committed
+    assert await rdb.xlen(_STREAM) == 0  # acked + deleted
+    await rdb.aclose()
 
 
-def test_write_decision_drops_when_queue_full() -> None:
-    _drain()
-    from schurfer_execution.decisions import _QUEUE_MAXSIZE
+async def test_writer_connects_with_autocommit_and_timeout() -> None:
+    # ACK-after-commit is only safe because the connection is autocommit=True (each
+    # INSERT commits before we ack). Lock the connect contract so a later change that
+    # drops autocommit cannot silently ack rows that were never committed.
+    rdb = FakeRedis()
+    captured: dict[str, object] = {}
 
-    for _ in range(_QUEUE_MAXSIZE):
-        write_decision(
-            "postgresql://test", base="X", exchange="bybit", action="skipped", reason="x"
-        )
+    async def spy_connect(_url: str, **kwargs: object) -> object:
+        captured.update(kwargs)
+        raise asyncio.CancelledError
 
-    # queue is now full — this call must not raise
-    write_decision(
-        "postgresql://test", base="EXTRA", exchange="bybit", action="skipped", reason="x"
-    )
-    assert _queue.qsize() == _QUEUE_MAXSIZE  # extra row was dropped
-    _drain()
-
-
-async def test_run_decision_writer_inserts_row() -> None:
-    _drain()
-    executed: asyncio.Event = asyncio.Event()
-    captured_params: list[tuple[object, ...]] = []
-
-    async def fake_execute(_sql: str, params: tuple[object, ...]) -> None:
-        captured_params.append(params)
-        executed.set()
-
-    mock_cur = MagicMock()
-    mock_cur.execute = fake_execute
-    mock_cur.__aenter__ = AsyncMock(return_value=mock_cur)
-    mock_cur.__aexit__ = AsyncMock(return_value=False)
-
-    mock_conn = MagicMock()
-    mock_conn.cursor = MagicMock(return_value=mock_cur)
-    mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
-    mock_conn.__aexit__ = AsyncMock(return_value=False)
-
-    # Enqueue via write_decision so the row matches the real 12-field INSERT shape
-    # (a hand-built short tuple would silently pass the mock but fail real SQL).
-    write_decision(
-        "postgresql://test",
-        base="BEAT",
-        exchange="bybit",
-        action="skipped",
-        reason="test reason",
-        score=3,
-        pump_pct=45.5,
-    )
-
-    with patch(
-        "schurfer_execution.decisions.psycopg.AsyncConnection.connect",
-        new_callable=AsyncMock,
-        return_value=mock_conn,
-    ):
-        task = asyncio.create_task(run_decision_writer("postgresql://test"))
-        await asyncio.wait_for(executed.wait(), timeout=2.0)
-        task.cancel()
+    with patch("schurfer_execution.decisions.psycopg.AsyncConnection.connect", spy_connect):
+        task = asyncio.create_task(run_decision_writer(rdb, "postgresql://test"))
         with contextlib.suppress(asyncio.CancelledError):
             await task
 
-    assert len(captured_params) == 1
-    assert len(captured_params[0]) == 12  # matches the INSERT placeholder count
-    assert captured_params[0][1] == "BEAT"
-    assert captured_params[0][3] == "skipped"
+    assert captured.get("autocommit") is True
+    assert captured.get("connect_timeout") == decisions._CONNECT_TIMEOUT
+    await rdb.aclose()
 
 
-async def test_run_decision_writer_retries_row_after_execute_failure() -> None:
-    _drain()
-    execute_calls = 0
-    succeeded = asyncio.Event()
-
-    async def flaky_execute(_sql: str, params: tuple[object, ...]) -> None:
-        nonlocal execute_calls
-        execute_calls += 1
-        if execute_calls == 1:
-            raise OSError("transient write error")
-        succeeded.set()
-
-    def make_mock_conn() -> MagicMock:
-        mock_cur = MagicMock()
-        mock_cur.execute = flaky_execute
-        mock_cur.__aenter__ = AsyncMock(return_value=mock_cur)
-        mock_cur.__aexit__ = AsyncMock(return_value=False)
-        mock_conn = MagicMock()
-        mock_conn.cursor = MagicMock(return_value=mock_cur)
-        mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
-        mock_conn.__aexit__ = AsyncMock(return_value=False)
-        return mock_conn
-
-    write_decision(
-        "postgresql://test", base="BEAT", exchange="bybit", action="skipped", reason="test"
-    )
-
-    with patch(
-        "schurfer_execution.decisions.psycopg.AsyncConnection.connect",
-        new_callable=AsyncMock,
-        side_effect=lambda *a, **k: make_mock_conn(),
-    ):
-        task = asyncio.create_task(run_decision_writer("postgresql://test"))
-        await asyncio.wait_for(succeeded.wait(), timeout=2.0)
-        task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
-
-    assert execute_calls == 2  # first failed, second succeeded after reconnect
-    _drain()
-
-
-async def test_run_decision_writer_reconnects_on_connect_failure() -> None:
-    connect_attempts = 0
+async def test_writer_reconnects_on_connect_failure() -> None:
+    rdb = FakeRedis()
+    attempts = 0
     cancelled = asyncio.Event()
 
-    async def failing_connect(*_args: object, **_kwargs: object) -> object:
-        nonlocal connect_attempts
-        connect_attempts += 1
-        if connect_attempts < 3:
+    async def failing_connect(*_a: object, **_k: object) -> object:
+        nonlocal attempts
+        attempts += 1
+        if attempts < 3:
             raise OSError("connection refused")
         cancelled.set()
         raise asyncio.CancelledError
@@ -239,27 +368,10 @@ async def test_run_decision_writer_reconnects_on_connect_failure() -> None:
         patch("schurfer_execution.decisions.psycopg.AsyncConnection.connect", failing_connect),
         patch("schurfer_execution.decisions.asyncio.sleep", new_callable=AsyncMock),
     ):
-        task = asyncio.create_task(run_decision_writer("postgresql://test"))
+        task = asyncio.create_task(run_decision_writer(rdb, "postgresql://test"))
         await asyncio.wait_for(cancelled.wait(), timeout=2.0)
         with contextlib.suppress(asyncio.CancelledError):
             await task
 
-    assert connect_attempts == 3
-
-
-async def test_run_decision_writer_uses_connect_timeout_and_autocommit() -> None:
-    from schurfer_execution.decisions import _CONNECT_TIMEOUT
-
-    captured: dict[str, object] = {}
-
-    async def spy_connect(url: str, **kwargs: object) -> object:
-        captured.update(kwargs)
-        raise asyncio.CancelledError
-
-    with patch("schurfer_execution.decisions.psycopg.AsyncConnection.connect", spy_connect):
-        task = asyncio.create_task(run_decision_writer("postgresql://test"))
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
-
-    assert captured.get("connect_timeout") == _CONNECT_TIMEOUT
-    assert captured.get("autocommit") is True
+    assert attempts == 3
+    await rdb.aclose()

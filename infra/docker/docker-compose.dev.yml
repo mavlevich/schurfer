@@ -24,7 +24,9 @@ services:
       - '6379:6379'
     volumes:
       - redis_data:/data
-    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+    # noeviction + AOF for parity with prod: the decision outbox stream must not be
+    # evicted under memory pressure, and survives a restart.
+    command: redis-server --maxmemory 128mb --maxmemory-policy noeviction --appendonly yes --appendfsync everysec
     healthcheck:
       test: ['CMD', 'redis-cli', 'ping']
       interval: 10s
