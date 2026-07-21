@@ -26,6 +26,10 @@ _CONNECT_TIMEOUT = 5
 _RECONNECT_DELAY = 5
 _READ_COUNT = 100
 _BLOCK_MS = 5000
+# The decision writer's own Redis client (main.py) must use a socket_timeout longer than
+# _BLOCK_MS, otherwise the blocking XREADGROUP and the socket read time out together and
+# the client closes the connection on every idle window (redis-py 8 defaults it to 5s).
+_REDIS_SOCKET_TIMEOUT_SECONDS = 10.0
 _CLAIM_MIN_IDLE_MS = 60_000  # reclaim entries a crashed writer left pending this long
 _MAX_ATTEMPTS = 5  # after this many failed inserts a message is poison -> DLQ
 
@@ -182,6 +186,10 @@ async def _read_batch(rdb: Any) -> list[tuple[Any, dict[Any, Any]]]:
     )
     if claimed:
         return list(claimed)
+    # Relies on the client socket_timeout being > _BLOCK_MS (see main.py): the server
+    # returns nil when the BLOCK window elapses, before the socket read times out, so an
+    # idle window is a clean empty result and the connection stays open. A real read
+    # timeout (network hang) still surfaces and drives reconnect in run_decision_writer.
     resp = await rdb.xreadgroup(
         _GROUP, _CONSUMER, {_STREAM: ">"}, count=_READ_COUNT, block=_BLOCK_MS
     )
