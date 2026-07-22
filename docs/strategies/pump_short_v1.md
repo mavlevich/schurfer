@@ -1,72 +1,79 @@
 # Strategy: pump_short_v1
 
-Status: draft (formalization in progress)
-Author: mavlevich
-Created: 2026-05-08
+Status: current deployed baseline (DRY_RUN). This document describes the automated
+strategy exactly as it runs, so it can serve as the fixed `v1` baseline that virtual
+challengers are compared against. Open questions and proposed changes live in
+`docs/research/pump-short-hypotheses.md`, not here.
 
 ## Hypothesis
 
-Low-liquidity tokens pumped 50-100%+ in a short period (hours to days)
-with exhaustion signs (near peak, rising OI, extreme funding) tend to
-retrace to pre-pump levels within days to weeks.
+Low-liquidity tokens that pump hard in a short window tend to mean-revert. Shorting the
+exhaustion of the pump on perps captures the retrace.
 
-## Trigger conditions
+## Trigger (scanner)
 
-- `price_change_24h > 50%` AND `< 130%` (typical range)
-- Price is holding near the top - recent peak in the last ~6 hours
-- Symbol is available on perps on at least one supported exchange
+- `PUMP_MIN_PCT=30`: a token is a candidate once its **24h ticker change on an
+  exchange** reaches +30% (this is the live ticker change, not the episode's historical
+  peak; the scanner filters to this floor — below it is excluded from the current
+  candidate universe, not proven to be noise, see HYP-003).
+- The token must trade on a perp on at least one configured exchange.
+- The trader evaluates each candidate once (a per-token `seen` key with a TTL debounces
+  re-evaluation: 30 min after a skip, 5 min after an entry-quality wait, 24 h after a
+  trade).
 
-## Entry rules
+## Signal score and gates
 
-- Open SHORT on perps
-- Position size: manually chosen "psychologically acceptable amount"
-  for now -> TODO: replace with % of capital using risk-based sizing
-- Leverage: up to 10x historically used with wide stop
+Every candidate is scored and every decision (enter or skip) is recorded with its full
+context to `app.trade_decisions`.
 
-## Stop loss
+- `SCORE_THRESHOLD=6`: score below this is skipped. The composite score is built from
+  pump age, price extent, OI trend, funding rate, and retrace-from-peak.
+- Funding: `REQUIRE_FUNDING_RATE=false` (a missing funding rate does not block);
+  `MIN_FUNDING_RATE_PCT=-0.1` (a funding-rate risk check).
+- Entry confirmation, both **off** by default: `REQUIRE_RED_CANDLE=false`,
+  `MIN_RETRACE_PCT=0`. So an entry can fire near the peak without a confirmed reversal —
+  see HYP-002.
+- Liquidation guard: an entry is skipped if the initial SL sits too close to the
+  liquidation price given leverage and `LIQUIDATION_BUFFER_PCT=20`.
 
-- Current approach: "wide stop, enough margin"
-- Implicit stop ~+200% from entry (on high leverage)
-- TODO: formalize to a technical level
-  (e.g. above recent ATH +15-20%)
+## Sizing
 
-## Exit rules (take profit)
+- Fixed notional `SIGNAL_POSITION_USD=50` per trade; `RISK_PER_TRADE_PCT=0` (risk-based
+  sizing is wired but off, so sizing is currently flat).
+- Leverage `SIGNAL_LEVERAGE=3`.
+- Portfolio caps: `MAX_POSITIONS=5`, `MAX_POSITION_USD=500`, daily loss limit
+  `DAILY_LOSS_LIMIT_USD=200`.
 
-- Price retraces to pre-pump level (approx. price 24-48h before pump start)
-- Decision based on feel/intuition
-- TODO: formalize via `target_price = price_t-48h * 1.05`
+## Exit (3-phase dynamic, scales with pump size)
 
-## Position management
+There is **no fixed take-profit**. Phases: initial stop -> trailing activation ->
+trailing (tightens after a while) -> max-hold timeout. Parameters by pump magnitude:
 
-- Current: single entry, manual exit
-- TODO: consider scaled entry in 2-3 tranches
+| Pump size | Initial SL | Trail activation | Trail | Tighten to | Tighten after | Max hold |
+| --------- | ---------- | ---------------- | ----- | ---------- | ------------- | -------- |
+| < 50%     | 8%         | 8%               | 12%   | 8%         | 90 min        | 180 min  |
+| 50-100%   | 10%        | 12%              | 15%   | 10%        | 120 min       | 240 min  |
+| >= 100%   | 12%        | 15%              | 20%   | 12%        | 180 min       | 360 min  |
 
-## Risk management gaps (for next iteration)
+- Phase 1: exit at `initial_sl` if the trade moves that far against the short.
+- Phase 2: once in profit by `activation`, a trailing stop follows the best price at
+  `trail` distance.
+- Phase 3: after `tighten after`, the trail narrows to `tighten to`.
+- Backstop: `max_hold` closes the position on a timer regardless of price.
 
-1. **Risk per trade as % of capital** - not defined yet
-2. **Funding rate filter** - not checked before entry
-   (important: pumped tokens often have extreme funding,
-   can eat profit over days of holding)
-3. **OI as trigger condition** - not used yet,
-   but provides high-confidence signals
-4. **Stop loss formalization** - replace "wide stop"
-   with a technical level
-5. **Exit formalization** - pre-pump price as a concrete number
+## Known weaknesses (baseline, not yet fixed)
 
-## Historical performance (paper-tracked)
+Documented so `v1` is honest, and tracked as hypotheses to test before changing prod:
 
-- Pre-Schurfer: successful trades based on intuition, no clear
-  statistics were kept
-- TODO: reconstruct ~10 recent trades from memory/CSV for
-  baseline winrate
+- Losers tend to hit the full `initial_sl`; winners tend to close on the `max_hold`
+  timer or give most of the move back on a wide trail (OBS-001).
+- Entry confirmation is off while the score rewards near-peak price, so we can short a
+  still-running pump (OBS-002).
+- The 30% threshold and 3x leverage are heuristic, not measured (HYP-003, HYP-004).
 
-## Refinement TODO
+## Execution notes
 
-- [ ] Backtest on historical pumps Q1 2026 (M, MEGA, RAVE,
-      SIREN, KAT, SPK style setups)
-- [ ] Determine optimal price_change_24h thresholds
-- [ ] Funding rate as trigger / filter
-- [ ] OI growth as confidence multiplier
-- [ ] Position sizing formula (risk-based)
-- [ ] Stop loss rule based on technical levels
-- [ ] Exit price target formula
+- Runs in DRY_RUN (paper) today; positions and outcomes recorded in `app.trades`, exit
+  reason in `notes`, decision context in `app.trade_decisions`.
+- Trade quality is visible in the Trade Journal (dollar P&L, ROE, exit reason,
+  duration) with server-side aggregate stats.

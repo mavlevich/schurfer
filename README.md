@@ -7,8 +7,11 @@
 Live in production on Hetzner, private access over Tailscale, running in DRY_RUN
 (paper mode, no real orders). Multi-exchange pump scanner, short-readiness scoring,
 automated position management, and safety hardening (exchange-native stop-loss,
-durable daily PnL, position reconciliation) are all in place. Current focus is the
-measurement layer that will show whether the strategy has edge (see
+durable daily PnL, position reconciliation) are all in place. The measurement layer
+that will show whether the strategy has edge is now largely built: every decision
+(taken or skipped) is recorded durably via a Redis Stream outbox with its liquidity
+snapshot and decision-time price. Current focus is turning that dataset into
+decision-quality analysis — outcome resolution and comparing strategy variants (see
 [ROADMAP.md](ROADMAP.md)).
 
 ## What it does
