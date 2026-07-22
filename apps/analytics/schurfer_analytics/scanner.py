@@ -4,31 +4,15 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-import ccxt.async_support as ccxt
 import redis.asyncio as aioredis
 import structlog
+
+from .exchange_registry import EXCHANGE_FACTORIES
 
 log = structlog.get_logger()
 
 REDIS_KEY = "pumps:latest"
 REDIS_TTL = 300  # 5 min — expire if scanner crashes
-
-_SWAP: dict[str, Any] = {"enableRateLimit": True, "options": {"defaultType": "swap"}}
-
-EXCHANGE_FACTORIES: dict[str, Any] = {
-    "binance": lambda: ccxt.binance(_SWAP),
-    "bybit": lambda: ccxt.bybit(_SWAP),
-    "okx": lambda: ccxt.okx(_SWAP),
-    "gate": lambda: ccxt.gate(_SWAP),
-    "bitget": lambda: ccxt.bitget(_SWAP),
-    "mexc": lambda: ccxt.mexc(_SWAP),
-    "kucoin": lambda: ccxt.kucoinfutures(_SWAP),
-    "bingx": lambda: ccxt.bingx(_SWAP),
-    "coinex": lambda: ccxt.coinex(_SWAP),
-    "phemex": lambda: ccxt.phemex(_SWAP),
-    "cryptocom": lambda: ccxt.cryptocom(_SWAP),
-    "htx": lambda: ccxt.htx(_SWAP),
-}
 
 
 @dataclass(frozen=True)

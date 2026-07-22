@@ -5,7 +5,7 @@ from typing import Any
 
 import structlog
 
-from .scanner import EXCHANGE_FACTORIES
+from .exchange_registry import EXCHANGE_FACTORIES
 
 log = structlog.get_logger()
 

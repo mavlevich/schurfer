@@ -1,15 +1,21 @@
 import json
 from unittest.mock import AsyncMock
 
+import pytest
+from schurfer_analytics.config import Config
+from schurfer_analytics.exchange_registry import DEFAULT_EXCHANGES, EXCHANGE_FACTORIES
 from schurfer_analytics.scanner import (
     REDIS_KEY,
     REDIS_TTL,
     ScanBatch,
     _aggregate_below_updates,
     _dedup,
+    _fetch,
     _tracked_pumps,
     publish,
 )
+
+NEW_EXCHANGES = ("lbank", "bitmart", "xt", "toobit", "blofin")
 
 
 def _entry(base: str, exchange: str, pct: float) -> dict[str, object]:
@@ -22,6 +28,76 @@ def _entry(base: str, exchange: str, pct: float) -> dict[str, object]:
         "high_24h": "110.0",
         "volume_24h_usd": 1_000_000.0,
     }
+
+
+def _ticker(percentage: float | None) -> dict[str, object]:
+    return {
+        "percentage": percentage,
+        "last": 1.25,
+        "high": 1.5,
+        "quoteVolume": 10_000.0,
+        "info": {},
+    }
+
+
+def test_default_exchanges_match_registered_factories(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("PUMP_EXCHANGES", raising=False)
+
+    assert Config().exchanges == list(DEFAULT_EXCHANGES)
+    assert tuple(EXCHANGE_FACTORIES) == DEFAULT_EXCHANGES
+
+
+@pytest.mark.parametrize("name", NEW_EXCHANGES)
+def test_new_exchange_factory_builds_linear_swap_client(name: str) -> None:
+    exchange = EXCHANGE_FACTORIES[name]()
+
+    assert exchange.id == name
+    assert exchange.options["defaultType"] == "swap"
+
+
+async def test_fetch_applies_same_linear_usdt_rules_to_every_exchange() -> None:
+    exchange = AsyncMock()
+    exchange.has = {"fetchTickers": True}
+    exchange.fetch_tickers.return_value = {
+        "PUMP/USDT:USDT": _ticker(31.25),
+        "WATCH/USDT:USDT": _ticker(20.0),
+        "SPOT/USDT": _ticker(80.0),
+        "USDC/USDC:USDC": _ticker(90.0),
+        "MISSING/USDT:USDT": _ticker(None),
+        "BOGUS/USDT:USDT": _ticker(5_001.0),
+    }
+
+    above, below, error = await _fetch(
+        "test",
+        exchange,
+        min_pct=30.0,
+        extra_bases=frozenset({"WATCH"}),
+    )
+
+    assert error is None
+    assert [row["base"] for row in above] == ["PUMP"]
+    assert above[0]["change_pct"] == 31.25
+    assert [row["base"] for row in below] == ["WATCH"]
+
+
+async def test_fetch_skips_exchange_without_bulk_tickers() -> None:
+    exchange = AsyncMock()
+    exchange.has = {"fetchTickers": False}
+
+    assert await _fetch("test", exchange, min_pct=30.0) == ([], [], None)
+    exchange.fetch_tickers.assert_not_awaited()
+
+
+async def test_fetch_isolates_exchange_api_failure() -> None:
+    exchange = AsyncMock()
+    exchange.has = {"fetchTickers": True}
+    exchange.fetch_tickers.side_effect = RuntimeError("upstream unavailable")
+
+    above, below, error = await _fetch("test", exchange, min_pct=30.0)
+
+    assert above == []
+    assert below == []
+    assert error == "upstream unavailable"
 
 
 def test_dedup_single_exchange() -> None:

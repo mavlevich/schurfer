@@ -1,6 +1,8 @@
 import os
 from dataclasses import dataclass, field
 
+from .exchange_registry import DEFAULT_EXCHANGES
+
 
 def _list(env: str, default: str) -> list[str]:
     val = os.getenv(env) or default
@@ -14,7 +16,7 @@ class Config:
     exchanges: list[str] = field(
         default_factory=lambda: _list(
             "PUMP_EXCHANGES",
-            "binance,bybit,okx,gate,bitget,mexc,kucoin,bingx,coinex,phemex,cryptocom,htx",
+            ",".join(DEFAULT_EXCHANGES),
         )
     )
     min_pct: float = field(default_factory=lambda: float(os.getenv("PUMP_MIN_PCT", "30")))
