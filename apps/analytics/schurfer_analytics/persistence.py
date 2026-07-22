@@ -1,4 +1,5 @@
 import json
+import math
 from typing import Any
 
 import psycopg
@@ -32,6 +33,28 @@ VALUES (
     NOW(), NOW(), %s, %s, %s::jsonb
 )
 RETURNING id
+"""
+
+_UPSERT_EVENT_SOURCE = """
+INSERT INTO app.pump_event_sources (
+    event_id, exchange, symbol,
+    first_change_pct, last_change_pct, peak_change_pct,
+    first_price, last_price,
+    first_volume_24h_usd, last_volume_24h_usd,
+    first_seen_at, last_seen_at, observation_count
+)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW(), 1)
+ON CONFLICT (event_id, exchange) DO UPDATE
+SET symbol              = EXCLUDED.symbol,
+    last_seen_at         = EXCLUDED.last_seen_at,
+    last_change_pct      = EXCLUDED.last_change_pct,
+    peak_change_pct      = GREATEST(
+        app.pump_event_sources.peak_change_pct,
+        EXCLUDED.peak_change_pct
+    ),
+    last_price           = EXCLUDED.last_price,
+    last_volume_24h_usd  = EXCLUDED.last_volume_24h_usd,
+    observation_count    = app.pump_event_sources.observation_count + 1
 """
 
 _SELECT_OPEN_ALL = """
@@ -78,6 +101,34 @@ def _true_peak_pct(pump: dict[str, Any]) -> float:
     for ex in pump.get("exchanges", []):
         candidates.append(_high_24h_pct(ex))
     return max(candidates)
+
+
+def _finite_float(value: Any) -> float | None:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if math.isfinite(parsed) else None
+
+
+def _source_args(event_id: int, exchange: dict[str, Any]) -> tuple[Any, ...]:
+    change_pct = _finite_float(exchange.get("change_pct"))
+    if change_pct is None:
+        raise ValueError("pump event source requires a finite change_pct")
+    price = _finite_float(exchange.get("price"))
+    volume = _finite_float(exchange.get("volume_24h_usd"))
+    return (
+        event_id,
+        str(exchange["exchange"]),
+        str(exchange["symbol"]),
+        change_pct,
+        change_pct,
+        change_pct,
+        price,
+        price,
+        volume,
+        volume,
+    )
 
 
 _UPDATE_LAST_PCT = (
@@ -214,6 +265,8 @@ async def upsert_pumps(db_url: str, pumps: list[dict[str, Any]]) -> dict[str, in
                     if inserted is None:
                         raise RuntimeError(f"pump event insert returned no id for {base}")
                     event_id = inserted[0]
+                for exchange in pump["exchanges"]:
+                    await cur.execute(_UPSERT_EVENT_SOURCE, _source_args(int(event_id), exchange))
                 episode_ids[base] = int(event_id)
         log.info("persistence.upserted", count=len(pumps))
         return episode_ids

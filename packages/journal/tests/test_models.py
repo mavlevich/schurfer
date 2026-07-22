@@ -7,6 +7,7 @@ from schurfer_journal.models import (
     MarketType,
     OutcomeLabel,
     OutcomeQuality,
+    PumpEventSource,
     Side,
     Strategy,
     Trade,
@@ -184,3 +185,22 @@ class TestTradeDecisionModels:
     def test_outcome_foreign_key(self) -> None:
         fks = {fk.target_fullname for fk in TradeDecisionOutcome.__table__.foreign_keys}
         assert "app.trade_decisions.decision_id" in fks
+
+
+class TestPumpEventSourceModel:
+    def test_table_shape(self) -> None:
+        assert PumpEventSource.__tablename__ == "pump_event_sources"
+        assert PumpEventSource.__table__.schema == "app"
+        columns = PumpEventSource.__table__.columns
+        assert columns["event_id"].nullable is False
+        assert columns["exchange"].nullable is False
+        assert columns["first_seen_at"].nullable is False
+        assert columns["first_change_pct"].nullable is False
+        assert columns["observation_count"].nullable is False
+
+    def test_event_foreign_key_and_unique_venue(self) -> None:
+        fks = {fk.target_fullname for fk in PumpEventSource.__table__.foreign_keys}
+        constraints = {constraint.name for constraint in PumpEventSource.__table__.constraints}
+
+        assert fks == {"app.pump_events.id"}
+        assert "uq_pump_event_source_venue" in constraints
