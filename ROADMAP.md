@@ -98,9 +98,12 @@ the two remaining items are dataset-health visibility, not data capture.
       health, and basic host resources (RAM, disk) so a memory leak or a disk filled
       with data does not kill collection silently. Keep it lightweight. This is about
       "is the dataset being collected without gaps", not a performance product.
-- [ ] Dataset completeness metrics: decisions/hour, % features present, % liquidity
+- [x] Dataset completeness metrics: decisions/hour, % features present, % liquidity
       present, % liquidity fetch_failed, and lag between signal computed_at and the
-      decision. These tell us early if the dataset is degrading.
+      decision. The read-only `measurement-report` CLI also reports quality reasons,
+      due/unresolved outcome coverage, raw return/MAE/MFE by version and horizon, and a
+      configurable exchange slice. It always shows decision and distinct-episode N so
+      repeated observations are not presented as independent evidence.
 - [x] Durable decision queue. Moved from the in-memory writer queue to a Redis Stream
       outbox (execution XADD atomic with SET seen, DB writer XREADGROUP -> INSERT ->
       XACK+XDEL after commit, XAUTOCLAIM recovery, poison DLQ). Prod + dev Redis run
@@ -123,6 +126,9 @@ the two remaining items are dataset-health visibility, not data capture.
         resolver version. It never uses the candle in progress at decision time and
         labels cross-venue fallback rather than silently mixing it with anchor-venue
         data.
+  - [x] Descriptive measurement report: versioned cohort health, quality reasons,
+        outcome completeness, raw forward return/MAE/MFE, and exchange segmentation in
+        Markdown/JSON. This is operational visibility, not the virtual-strategy verdict.
   - [ ] Versioned virtual-strategy layer: replay decisions by token episode under the
         actual v1 rules and pre-registered challengers, including fees, funding,
         liquidity-aware slippage, TP/SL/trailing/max-hold, and taken-vs-skipped labels:
