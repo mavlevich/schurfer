@@ -37,6 +37,11 @@ class TradeDecision(Base):
     features: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     liquidity: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     price: Mapped[Decimal | None] = mapped_column(Numeric(), nullable=True)
+    pump_event_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("app.pump_events.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     outcomes: Mapped[list["TradeDecisionOutcome"]] = relationship(
@@ -46,6 +51,7 @@ class TradeDecision(Base):
     __table_args__ = (
         Index("ix_trade_decisions_ts", "ts"),
         Index("ix_trade_decisions_base_ts", "base", "ts"),
+        Index("ix_trade_decisions_pump_event_id", "pump_event_id"),
         Index("uq_trade_decisions_decision_id", "decision_id", unique=True),
         {"schema": "app"},
     )

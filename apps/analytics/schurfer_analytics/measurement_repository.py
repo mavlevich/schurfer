@@ -6,7 +6,20 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from schurfer_journal.models import TradeDecision, TradeDecisionOutcome
-from sqlalchemy import Float, Integer, and_, case, cast, column, func, literal, select, true, values
+from sqlalchemy import (
+    Float,
+    Integer,
+    String,
+    and_,
+    case,
+    cast,
+    column,
+    func,
+    literal,
+    select,
+    true,
+    values,
+)
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from .measurement_report import (
@@ -36,11 +49,17 @@ def _strategy() -> ColumnElement[str]:
 
 
 def _episode_id() -> ColumnElement[str | None]:
-    return func.jsonb_extract_path_text(
-        TradeDecision.__table__.c.features,
-        "signal",
-        "episode",
-        "id",
+    decisions = TradeDecision.__table__
+    return func.coalesce(
+        # SQLAlchemy infers nullable BigInteger -> str|None here, while String is
+        # typed as str; PostgreSQL CAST preserves NULL exactly as required.
+        cast(decisions.c.pump_event_id, String()),  # type: ignore[arg-type]
+        func.jsonb_extract_path_text(
+            decisions.c.features,
+            "signal",
+            "episode",
+            "id",
+        ),
     )
 
 
@@ -85,6 +104,9 @@ def dataset_health_statement(filters: ReportFilters) -> Select[Any]:
         func.min(decisions.c.ts).label("first_decision_at"),
         func.max(decisions.c.ts).label("last_decision_at"),
         func.count(func.distinct(_episode_id())).label("unique_episodes"),
+        func.count()
+        .filter(decisions.c.pump_event_id.is_not(None))
+        .label("direct_episode_ids_present"),
         func.count().filter(decisions.c.decision_id.is_not(None)).label("decision_ids_present"),
         func.count().filter(decisions.c.price > 0).label("prices_present"),
         func.count().filter(decisions.c.features.is_not(None)).label("features_present"),
@@ -267,6 +289,7 @@ def _health(row: Any) -> DatasetHealth:
         observation_hours=observation_hours,
         decisions_per_hour=total / observation_hours if observation_hours > 0 else None,
         unique_episodes=int(row["unique_episodes"]),
+        direct_episode_ids_present_pct=_pct(int(row["direct_episode_ids_present"]), total),
         decision_ids_present_pct=_pct(int(row["decision_ids_present"]), total),
         prices_present_pct=_pct(int(row["prices_present"]), total),
         features_present_pct=_pct(int(row["features_present"]), total),

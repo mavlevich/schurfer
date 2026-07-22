@@ -30,6 +30,7 @@ def _report() -> MeasurementReport:
             observation_hours=2.0,
             decisions_per_hour=5.0,
             unique_episodes=3,
+            direct_episode_ids_present_pct=90.0,
             decision_ids_present_pct=100.0,
             prices_present_pct=90.0,
             features_present_pct=100.0,

@@ -55,8 +55,8 @@ return 1
 _INSERT = """
 INSERT INTO app.trade_decisions
   (ts, base, exchange, action, reason, score, pump_pct,
-   decision_id, strategy_version, features, liquidity, price)
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s::uuid, %s, %s::jsonb, %s::jsonb, %s)
+   decision_id, strategy_version, features, liquidity, price, pump_event_id)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s::uuid, %s, %s::jsonb, %s::jsonb, %s, %s)
 ON CONFLICT (decision_id) DO NOTHING
 """
 
@@ -91,6 +91,7 @@ async def write_decision(
     features: dict[str, Any] | None = None,
     liquidity: dict[str, Any] | None = None,
     price: float | None = None,
+    pump_event_id: int | None = None,
     seen_key: str | None = None,
     seen_ttl: int | None = None,
 ) -> None:
@@ -110,6 +111,10 @@ async def write_decision(
     """
     if not decision_id:
         raise ValueError("write_decision requires a non-empty decision_id for idempotency")
+    if pump_event_id is not None and (
+        isinstance(pump_event_id, bool) or not isinstance(pump_event_id, int) or pump_event_id <= 0
+    ):
+        raise ValueError("pump_event_id must be a positive integer or None")
     payload = json.dumps(
         {
             "schema_version": _SCHEMA_VERSION,
@@ -125,6 +130,7 @@ async def write_decision(
             "features": _to_jsonb(features, base, "features"),
             "liquidity": _to_jsonb(liquidity, base, "liquidity"),
             "price": price,
+            "pump_event_id": pump_event_id,
         }
     )
     if seen_key is not None:
@@ -145,6 +151,11 @@ def _row_from_payload(data: str | bytes) -> tuple[object, ...]:
     decision_id = d["decision_id"]
     if not decision_id:
         raise ValueError("missing decision_id")
+    pump_event_id = d.get("pump_event_id")
+    if pump_event_id is not None and (
+        isinstance(pump_event_id, bool) or not isinstance(pump_event_id, int) or pump_event_id <= 0
+    ):
+        raise ValueError("invalid pump_event_id")
     return (
         datetime.fromisoformat(d["ts"]),
         d["base"],
@@ -158,6 +169,7 @@ def _row_from_payload(data: str | bytes) -> tuple[object, ...]:
         d.get("features"),
         d.get("liquidity"),
         d.get("price"),
+        pump_event_id,
     )
 
 

@@ -162,6 +162,12 @@ class TestTradeDecisionModels:
         assert "features" in TradeDecision.__table__.columns
         assert "liquidity" in TradeDecision.__table__.columns
         assert "price" in TradeDecision.__table__.columns
+        assert "pump_event_id" in TradeDecision.__table__.columns
+
+    def test_decision_pump_event_foreign_key(self) -> None:
+        pump_event_id = TradeDecision.__table__.columns["pump_event_id"]
+        assert pump_event_id.nullable is True
+        assert {fk.target_fullname for fk in pump_event_id.foreign_keys} == {"app.pump_events.id"}
 
     def test_outcome_table_and_key(self) -> None:
         assert TradeDecisionOutcome.__tablename__ == "trade_decision_outcomes"

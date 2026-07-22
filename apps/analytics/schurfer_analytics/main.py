@@ -16,7 +16,7 @@ from .persistence import (
     update_last_pct,
     upsert_pumps,
 )
-from .scanner import run_once
+from .scanner import publish, run_once
 from .snapshots import take_due_snapshots
 
 log = structlog.get_logger()
@@ -47,13 +47,40 @@ async def _run(once: bool) -> None:
             if cfg.db_url:
                 extra_bases = await get_tracked_bases(cfg.db_url)
 
-            pumps, scan_errors, below_updates, tracked_pumps = await run_once(
-                cfg.exchanges, cfg.min_pct, rdb, extra_bases
-            )
+            batch = await run_once(cfg.exchanges, cfg.min_pct, extra_bases)
+            if batch is None:
+                if once:
+                    break
+                await asyncio.sleep(cfg.interval)
+                continue
+
+            pumps = batch.pumps
+            scan_errors = batch.errors
+            below_updates = batch.below_updates
+            tracked_pumps = batch.tracked_pumps
+            publish_ready = True
+
+            if cfg.db_url and pumps:
+                episode_ids = await upsert_pumps(cfg.db_url, pumps)
+                expected_bases = {pump["base"] for pump in pumps}
+                publish_ready = episode_ids.keys() == expected_bases
+                if publish_ready:
+                    for pump in pumps:
+                        pump["pump_event_id"] = episode_ids[pump["base"]]
+                else:
+                    log.error(
+                        "scanner.publish_skipped",
+                        reason="pump event persistence incomplete",
+                        pumps=len(pumps),
+                        attributed=len(episode_ids),
+                    )
+
+            # Publish only after all live pumps have durable episode ids. This closes
+            # the race where api-gateway and execution saw a pump before its DB event.
+            if publish_ready:
+                await publish(batch, cfg.min_pct, rdb)
 
             if cfg.db_url:
-                if pumps:
-                    await upsert_pumps(cfg.db_url, pumps)
                 if below_updates:
                     await update_last_pct(cfg.db_url, below_updates)
 

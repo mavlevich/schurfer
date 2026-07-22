@@ -4,7 +4,7 @@ import asyncio
 import json
 import math
 import time
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
@@ -30,9 +30,18 @@ _TRADE_ID_KEY = "trade:id:{exchange}:{base}"
 _SEEN_TTL_TRADED = 86400  # 24h — don't re-enter the same token after a trade
 _SEEN_TTL_SKIP = 1800  # 30min — recheck sooner when skipped
 _SEEN_TTL_ENTRY_WAIT = 300  # 5min — recheck after one 5m candle when entry quality fails
+_SEEN_TTL_SIGNAL_RETRY = 60  # transient signal cache/persistence race: retry next tick
+_SEEN_TTL_SCORE_RECHECK = 300  # a valid score can change on the next 5m candle
 _SIGNALS_MAX_AGE = 90  # reject cached score older than 1.5x ticker interval
 _ENTRY_CANDLE_TIMEOUT = 5
 _ENTRY_CANDLE_COUNT = 6  # fetch 6 x 5m candles; last may be forming, [-2] is last closed
+
+
+@dataclass(frozen=True)
+class SignalResult:
+    score: int | None
+    payload: dict[str, Any] | None
+    status: str
 
 
 async def run_signal_trader(
@@ -75,10 +84,12 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
         # (including no_configured_exchange) carries the full context.
         decision_id = str(uuid4())
         pump_pct: float | None = pump.get("max_change_pct")
-        score, signal_payload = await _fetch_signal(base, rdb)
+        pump_event_id = _pump_event_id(pump)
+        signal = await _fetch_signal(base, rdb, expected_pump_event_id=pump_event_id)
+        score = signal.score
         exchange = _pick_exchange(pump.get("exchanges", []), exchanges)
         ex = exchanges.get(exchange) if exchange else None
-        features = _decision_features(signal_payload, pump, cfg)
+        features = _decision_features(signal, pump, cfg)
         decision_price = _decision_price(pump, exchange)
 
         # Order-book liquidity at decision time, captured for every candidate that
@@ -118,10 +129,34 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 features=features,
                 liquidity=liq,
                 price=decision_price,
+                pump_event_id=pump_event_id,
                 seen_key=seen_key,
                 seen_ttl=_SEEN_TTL_SKIP,
             )
             continue
+
+        if signal.status != "ok":
+            log.info("trader.skip.signal_unavailable", base=base, reason=signal.status)
+            await decisions.write_decision(
+                rdb,
+                base=base,
+                exchange=exchange,
+                action="skipped",
+                reason=signal.status,
+                pump_pct=pump_pct,
+                decision_id=decision_id,
+                strategy_version=cfg.strategy_version,
+                features=features,
+                liquidity=liq,
+                price=decision_price,
+                pump_event_id=pump_event_id,
+                seen_key=seen_key,
+                seen_ttl=_SEEN_TTL_SIGNAL_RETRY,
+            )
+            continue
+
+        # status=ok is only constructed with a parsed integer score.
+        assert score is not None
 
         if score < cfg.score_threshold:
             log.info("trader.skip.score", base=base, score=score, threshold=cfg.score_threshold)
@@ -138,8 +173,9 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 features=features,
                 liquidity=liq,
                 price=decision_price,
+                pump_event_id=pump_event_id,
                 seen_key=seen_key,
-                seen_ttl=_SEEN_TTL_SKIP,
+                seen_ttl=_SEEN_TTL_SCORE_RECHECK,
             )
             continue
 
@@ -169,6 +205,7 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 features=features,
                 liquidity=liq,
                 price=decision_price,
+                pump_event_id=pump_event_id,
                 seen_key=seen_key,
                 seen_ttl=_SEEN_TTL_ENTRY_WAIT,
             )
@@ -192,6 +229,7 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 features=features,
                 liquidity=liq,
                 price=decision_price,
+                pump_event_id=pump_event_id,
                 seen_key=seen_key,
                 seen_ttl=_SEEN_TTL_SKIP,
             )
@@ -214,6 +252,7 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                     features=features,
                     liquidity=liq,
                     price=decision_price,
+                    pump_event_id=pump_event_id,
                     seen_key=seen_key,
                     seen_ttl=_SEEN_TTL_SKIP,
                 )
@@ -237,6 +276,7 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                     features=features,
                     liquidity=liq,
                     price=decision_price,
+                    pump_event_id=pump_event_id,
                     seen_key=seen_key,
                     seen_ttl=_SEEN_TTL_ENTRY_WAIT,
                 )
@@ -261,6 +301,7 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                     features=features,
                     liquidity=liq,
                     price=decision_price,
+                    pump_event_id=pump_event_id,
                     seen_key=seen_key,
                     seen_ttl=_SEEN_TTL_ENTRY_WAIT,
                 )
@@ -287,6 +328,7 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 features=features,
                 liquidity=liq,
                 price=decision_price,
+                pump_event_id=pump_event_id,
                 seen_key=seen_key,
                 seen_ttl=_SEEN_TTL_SKIP,
             )
@@ -311,6 +353,7 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                     features=features,
                     liquidity=liq,
                     price=decision_price,
+                    pump_event_id=pump_event_id,
                     seen_key=seen_key,
                     seen_ttl=_SEEN_TTL_SKIP,
                 )
@@ -341,6 +384,7 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                     features=features,
                     liquidity=liq,
                     price=decision_price,
+                    pump_event_id=pump_event_id,
                     seen_key=seen_key,
                     seen_ttl=_SEEN_TTL_SKIP,
                 )
@@ -359,6 +403,7 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
 
         setup_context = {
             "decision_id": decision_id,
+            "pump_event_id": pump_event_id,
             "strategy_version": cfg.strategy_version,
             "score": score,
             "pump_pct": pump_pct,
@@ -399,6 +444,7 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                     features=features,
                     liquidity=liq,
                     price=decision_price,
+                    pump_event_id=pump_event_id,
                     seen_key=seen_key,
                     seen_ttl=_SEEN_TTL_SKIP,
                 )
@@ -428,6 +474,7 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 features=features,
                 liquidity=liq,
                 price=decision_price,
+                pump_event_id=pump_event_id,
                 seen_key=seen_key,
                 seen_ttl=_SEEN_TTL_TRADED,
             )
@@ -471,6 +518,7 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 features=features,
                 liquidity=liq,
                 price=decision_price,
+                pump_event_id=pump_event_id,
                 seen_key=seen_key,
                 seen_ttl=_SEEN_TTL_TRADED,
             )
@@ -538,6 +586,7 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 features=features,
                 liquidity=liq,
                 price=decision_price,
+                pump_event_id=pump_event_id,
                 seen_key=seen_key,
                 seen_ttl=_SEEN_TTL_SKIP,
             )
@@ -602,29 +651,50 @@ async def _fetch_entry_candles(ex: Any, base: str) -> list[list[float]] | None:
         return None
 
 
-async def _fetch_signal(base: str, rdb: Any) -> tuple[int, dict[str, Any] | None]:
-    """Return (score, payload) for base.
+async def _fetch_signal(
+    base: str,
+    rdb: Any,
+    expected_pump_event_id: int | None = None,
+) -> SignalResult:
+    """Return a valid fresh signal or an explicit unavailable status.
 
-    payload is the full `signals:{base}` snapshot (score, verdict, components,
-    computed_at) recorded as decision features. score is 0 when the signal is
-    missing, unparseable, or stale, which forces a skip while still keeping the
-    payload for the record when we have one.
+    A real computed score of zero is valid and distinct from missing, malformed, or
+    stale data. Callers can therefore choose a short retry for infrastructure timing
+    without contaminating the low-score cohort with synthetic zeros.
     """
     raw = await rdb.get(_SIGNALS_KEY.format(base=base))
     if not raw:
-        return 0, None
+        return SignalResult(None, None, "signal_missing")
     try:
         data = json.loads(raw)
     except Exception:
-        return 0, None
+        return SignalResult(None, None, "signal_invalid_json")
     # Guard against valid-but-unexpected JSON: a list, or {"score": null}, etc.
     if not isinstance(data, dict):
         log.warning("trader.signal.not_an_object", base=base)
-        return 0, None
+        return SignalResult(None, None, "signal_invalid_payload")
     try:
-        score = int(data.get("score") or 0)
+        raw_score = data["score"]
+        if isinstance(raw_score, bool) or not isinstance(raw_score, int):
+            raise TypeError
+        score = raw_score
     except (TypeError, ValueError):
-        score = 0
+        return SignalResult(None, data, "signal_invalid_score")
+    except KeyError:
+        return SignalResult(None, data, "signal_missing_score")
+    if expected_pump_event_id is not None:
+        episode = data.get("episode")
+        signal_pump_event_id = (
+            _positive_int(episode.get("id")) if isinstance(episode, dict) else None
+        )
+        if signal_pump_event_id != expected_pump_event_id:
+            log.warning(
+                "trader.signal.episode_mismatch",
+                base=base,
+                expected=expected_pump_event_id,
+                actual=signal_pump_event_id,
+            )
+            return SignalResult(None, data, "signal_episode_mismatch")
     # Freshness is a safety gate, so fail closed (return 0 = skip) whenever it cannot
     # be verified: a missing, non-numeric, or non-finite computed_at, a stale signal,
     # or a timestamp from the future (clock skew or junk).
@@ -636,21 +706,24 @@ async def _fetch_signal(base: str, rdb: Any) -> tuple[int, dict[str, Any] | None
         or computed_at <= 0
     ):
         log.warning("trader.signal.invalid_computed_at", base=base)
-        return 0, data
+        return SignalResult(None, data, "signal_invalid_timestamp")
     age = time.time() - computed_at
-    if age > _SIGNALS_MAX_AGE or age < -5:
+    if age > _SIGNALS_MAX_AGE:
         log.warning("trader.signal.unfresh", base=base, age=int(age))
-        return 0, data
-    return score, data
+        return SignalResult(None, data, "signal_stale")
+    if age < -5:
+        log.warning("trader.signal.unfresh", base=base, age=int(age))
+        return SignalResult(None, data, "signal_future_timestamp")
+    return SignalResult(score, data, "ok")
 
 
 async def _fetch_score(base: str, rdb: Any) -> int:
-    score, _ = await _fetch_signal(base, rdb)
-    return score
+    result = await _fetch_signal(base, rdb)
+    return result.score if result.score is not None else 0
 
 
 def _decision_features(
-    signal_payload: dict[str, Any] | None,
+    signal: SignalResult,
     pump: dict[str, Any],
     cfg: Config,
 ) -> dict[str, Any]:
@@ -661,7 +734,8 @@ def _decision_features(
     the actual settings in force, so decisions stay comparable across rule changes.
     """
     return {
-        "signal": signal_payload,
+        "signal": signal.payload,
+        "signal_status": signal.status,
         "candidate_exchanges": pump.get("exchanges", []),
         "config": {
             "score_threshold": cfg.score_threshold,
@@ -679,6 +753,18 @@ def _decision_features(
             "liquidation_buffer_pct": cfg.liquidation_buffer_pct,
         },
     }
+
+
+def _pump_event_id(pump: dict[str, Any]) -> int | None:
+    """Return a trusted positive episode id from the scanner payload."""
+    return _positive_int(pump.get("pump_event_id"))
+
+
+def _positive_int(value: object) -> int | None:
+    """Accept JSON integers used as database ids, excluding bool and coercion."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value if value > 0 else None
 
 
 def _safe_float(v: Any) -> float:

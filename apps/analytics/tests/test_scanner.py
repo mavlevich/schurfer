@@ -1,4 +1,15 @@
-from schurfer_analytics.scanner import _aggregate_below_updates, _dedup, _tracked_pumps
+import json
+from unittest.mock import AsyncMock
+
+from schurfer_analytics.scanner import (
+    REDIS_KEY,
+    REDIS_TTL,
+    ScanBatch,
+    _aggregate_below_updates,
+    _dedup,
+    _tracked_pumps,
+    publish,
+)
 
 
 def _entry(base: str, exchange: str, pct: float) -> dict[str, object]:
@@ -119,3 +130,25 @@ def test_tracked_pumps_empty_when_all_live() -> None:
     flat_below = [_entry("BTC", "bybit", 20.0)]
     result = _tracked_pumps(flat_below, live_bases={"BTC"})
     assert result == []
+
+
+async def test_publish_stores_fully_attributed_batch() -> None:
+    rdb = AsyncMock()
+    batch = ScanBatch(
+        pumps=[{"base": "BTC", "pump_event_id": 42, "max_change_pct": 50.0, "exchanges": []}],
+        errors={"okx": "timeout"},
+        below_updates={},
+        tracked_pumps=[],
+        scanned=("binance",),
+    )
+
+    await publish(batch, 30.0, rdb)
+
+    rdb.set.assert_awaited_once()
+    key, raw = rdb.set.await_args.args
+    assert key == REDIS_KEY
+    assert rdb.set.await_args.kwargs == {"ex": REDIS_TTL}
+    payload = json.loads(raw)
+    assert payload["pumps"][0]["pump_event_id"] == 42
+    assert payload["scanned"] == ["binance"]
+    assert payload["errors"] == {"okx": "timeout"}
