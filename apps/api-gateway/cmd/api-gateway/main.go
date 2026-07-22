@@ -93,6 +93,7 @@ func run() error {
 		r.Get("/api/pumps/{base}/signals", pumpsHandler.Signals)
 
 		r.Get("/api/trades", tradesHandler.List)
+		r.Get("/api/trades/stats", tradesHandler.Stats)
 		r.Get("/api/decisions", decisionsHandler.List)
 
 		r.Get("/api/account/balance", accountHandler.ServeHTTP)

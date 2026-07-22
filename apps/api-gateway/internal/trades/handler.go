@@ -175,3 +175,88 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		slog.Error("trades.encode", "err", err)
 	}
 }
+
+// tradeAgg holds the raw SQL aggregates over closed trades; the derived ratios are
+// computed in Go (computeStats) so they can be unit-tested without a database.
+type tradeAgg struct {
+	N            int
+	Wins         int
+	Losses       int
+	SumPct       float64
+	SumWinPct    float64
+	SumLossPct   float64
+	NetUSD       float64
+	GrossWinUSD  float64
+	GrossLossUSD float64 // negative
+}
+
+type statsResponse struct {
+	Count      int     `json:"count"`
+	WinRate    float64 `json:"win_rate"`
+	Expectancy float64 `json:"expectancy"`
+	AvgWin     float64 `json:"avg_win"`
+	AvgLoss    float64 `json:"avg_loss"`
+	// ProfitFactor is gross profit / gross loss in dollars (not summed percents, which
+	// would be wrong once position sizes differ). Nil when there are no losses yet.
+	ProfitFactor *float64 `json:"profit_factor"`
+	NetUSD       float64  `json:"net_usd"`
+}
+
+func computeStats(a tradeAgg) statsResponse {
+	s := statsResponse{Count: a.N, NetUSD: a.NetUSD}
+	if a.N > 0 {
+		s.WinRate = float64(a.Wins) / float64(a.N) * 100
+		s.Expectancy = a.SumPct / float64(a.N)
+	}
+	if a.Wins > 0 {
+		s.AvgWin = a.SumWinPct / float64(a.Wins)
+	}
+	if a.Losses > 0 {
+		s.AvgLoss = a.SumLossPct / float64(a.Losses)
+	}
+	if a.GrossLossUSD < 0 {
+		pf := a.GrossWinUSD / -a.GrossLossUSD
+		s.ProfitFactor = &pf
+	}
+	return s
+}
+
+// Stats handles GET /api/trades/stats: aggregate performance over the whole set of
+// closed trades (optionally filtered by exchange), not just one page of the list.
+func (h *Handler) Stats(w http.ResponseWriter, r *http.Request) {
+	exchange := r.URL.Query().Get("exchange")
+
+	args := []any{}
+	where := "WHERE t.status = 'closed' AND t.pnl_pct IS NOT NULL"
+	if exchange != "" {
+		args = append(args, exchange)
+		where += " AND t.exchange = $" + strconv.Itoa(len(args))
+	}
+
+	var a tradeAgg
+	if err := h.pool.QueryRow(r.Context(), `
+		SELECT count(*),
+		       count(*) FILTER (WHERE t.pnl_pct > 0),
+		       count(*) FILTER (WHERE t.pnl_pct < 0),
+		       COALESCE(sum(t.pnl_pct), 0)::float8,
+		       COALESCE(sum(t.pnl_pct) FILTER (WHERE t.pnl_pct > 0), 0)::float8,
+		       COALESCE(sum(t.pnl_pct) FILTER (WHERE t.pnl_pct < 0), 0)::float8,
+		       COALESCE(sum(t.pnl_usd), 0)::float8,
+		       COALESCE(sum(t.pnl_usd) FILTER (WHERE t.pnl_usd > 0), 0)::float8,
+		       COALESCE(sum(t.pnl_usd) FILTER (WHERE t.pnl_usd < 0), 0)::float8
+		FROM app.trades t `+where, args...,
+	).Scan(
+		&a.N, &a.Wins, &a.Losses,
+		&a.SumPct, &a.SumWinPct, &a.SumLossPct,
+		&a.NetUSD, &a.GrossWinUSD, &a.GrossLossUSD,
+	); err != nil {
+		slog.Error("trades.stats", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(computeStats(a)); err != nil {
+		slog.Error("trades.stats.encode", "err", err)
+	}
+}

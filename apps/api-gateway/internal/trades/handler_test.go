@@ -108,6 +108,112 @@ func serveTrades(q pgxPool, target string) *httptest.ResponseRecorder {
 	return w
 }
 
+func serveStats(q pgxPool, target string) *httptest.ResponseRecorder {
+	h := &Handler{pool: q}
+	req := httptest.NewRequest(http.MethodGet, target, nil)
+	w := httptest.NewRecorder()
+	h.Stats(w, req)
+	return w
+}
+
+func TestComputeStatsBasic(t *testing.T) {
+	s := computeStats(tradeAgg{
+		N: 4, Wins: 2, Losses: 2,
+		SumPct: 10, SumWinPct: 30, SumLossPct: -20,
+		NetUSD: 50, GrossWinUSD: 150, GrossLossUSD: -100,
+	})
+	if s.WinRate != 50 {
+		t.Errorf("win_rate: want 50, got %v", s.WinRate)
+	}
+	if s.Expectancy != 2.5 {
+		t.Errorf("expectancy: want 2.5, got %v", s.Expectancy)
+	}
+	if s.AvgWin != 15 || s.AvgLoss != -10 {
+		t.Errorf("avg win/loss: want 15/-10, got %v/%v", s.AvgWin, s.AvgLoss)
+	}
+	if s.ProfitFactor == nil || *s.ProfitFactor != 1.5 {
+		t.Errorf("profit_factor: want 1.5, got %v", s.ProfitFactor)
+	}
+	if s.NetUSD != 50 {
+		t.Errorf("net_usd: want 50, got %v", s.NetUSD)
+	}
+}
+
+func TestComputeStatsProfitFactorUsesDollarsNotPercent(t *testing.T) {
+	// PF must be gross-$ won / gross-$ lost, independent of the percent sums (which
+	// are wrong once position sizes differ). Here the percents would give a different
+	// ratio than the dollars; PF must follow the dollars.
+	s := computeStats(tradeAgg{
+		N: 3, Wins: 1, Losses: 2,
+		SumWinPct: 5, SumLossPct: -40,
+		GrossWinUSD: 100, GrossLossUSD: -40,
+	})
+	if s.ProfitFactor == nil || *s.ProfitFactor != 2.5 {
+		t.Errorf("profit_factor: want 2.5 (100/40), got %v", s.ProfitFactor)
+	}
+}
+
+func TestComputeStatsNoLossesHasNilProfitFactor(t *testing.T) {
+	s := computeStats(tradeAgg{N: 2, Wins: 2, GrossWinUSD: 20})
+	if s.ProfitFactor != nil {
+		t.Errorf("profit_factor: want nil with no losses, got %v", *s.ProfitFactor)
+	}
+}
+
+func TestComputeStatsEmpty(t *testing.T) {
+	s := computeStats(tradeAgg{})
+	if s.Count != 0 || s.WinRate != 0 || s.Expectancy != 0 || s.ProfitFactor != nil {
+		t.Errorf("empty stats not zeroed: %+v", s)
+	}
+}
+
+func TestStatsAppliesExchangeFilter(t *testing.T) {
+	var capturedArgs []any
+	q := &stubQuerier{
+		onQueryRow: func(_ context.Context, _ string, args ...any) pgxRow {
+			capturedArgs = args
+			return &stubRow{vals: []any{
+				int64(0), int64(0), int64(0),
+				float64(0), float64(0), float64(0),
+				float64(0), float64(0), float64(0),
+			}}
+		},
+	}
+	serveStats(q, "/api/trades/stats?exchange=bybit")
+	if len(capturedArgs) != 1 || capturedArgs[0] != "bybit" {
+		t.Errorf("want exchange arg [bybit] passed to SQL, got %v", capturedArgs)
+	}
+}
+
+func TestStatsHandlerReturnsAggregate(t *testing.T) {
+	q := &stubQuerier{
+		onQueryRow: func(_ context.Context, _ string, _ ...any) pgxRow {
+			return &stubRow{vals: []any{
+				int64(4), int64(2), int64(2),
+				float64(10), float64(30), float64(-20),
+				float64(50), float64(150), float64(-100),
+			}}
+		},
+	}
+	w := serveStats(q, "/api/trades/stats")
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", w.Code)
+	}
+	var resp statsResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.Count != 4 || resp.WinRate != 50 {
+		t.Errorf("want count=4 win_rate=50, got %d/%v", resp.Count, resp.WinRate)
+	}
+	if resp.ProfitFactor == nil || *resp.ProfitFactor != 1.5 {
+		t.Errorf("want profit_factor 1.5, got %v", resp.ProfitFactor)
+	}
+	if resp.NetUSD != 50 {
+		t.Errorf("want net_usd 50, got %v", resp.NetUSD)
+	}
+}
+
 var epoch = time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 
 // tradeRowVals returns a slice matching the Scan order in handler.go.
