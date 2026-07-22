@@ -8,11 +8,12 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -20,10 +21,30 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-var (
-	empty     = []byte(`{"ts":0,"count":0,"min_change_pct":null,"pumps":[]}`)
-	validBase = regexp.MustCompile(`^[A-Z0-9]{1,20}$`)
-)
+var empty = []byte(`{"ts":0,"count":0,"min_change_pct":null,"pumps":[]}`)
+
+const maxBaseRunes = 20
+
+// isValidBase accepts exchange symbols made only from Unicode letters and decimal
+// digits. Unicode support is required for legitimate contracts such as 草根文化_USDT,
+// while the allow-list still rejects path/query delimiters, whitespace, control
+// characters, and traversal strings before a base reaches Redis, SQL, or exchange URLs.
+func isValidBase(base string) bool {
+	if base == "" || !utf8.ValidString(base) {
+		return false
+	}
+	count := 0
+	for _, r := range base {
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) {
+			return false
+		}
+		count++
+		if count > maxBaseRunes {
+			return false
+		}
+	}
+	return true
+}
 
 type exchangeEntry struct {
 	Exchange     string  `json:"exchange"`
@@ -161,7 +182,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) Token(w http.ResponseWriter, r *http.Request) {
 	base := strings.ToUpper(chi.URLParam(r, "base"))
-	if !validBase.MatchString(base) {
+	if !isValidBase(base) {
 		http.Error(w, "invalid token", http.StatusBadRequest)
 		return
 	}
@@ -189,7 +210,7 @@ func (h *Handler) Token(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) OHLCV(w http.ResponseWriter, r *http.Request) {
 	base := strings.ToUpper(chi.URLParam(r, "base"))
-	if !validBase.MatchString(base) {
+	if !isValidBase(base) {
 		http.Error(w, "invalid token", http.StatusBadRequest)
 		return
 	}
@@ -333,7 +354,7 @@ func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
 // TokenHistory returns all pump episodes for a single token, newest first.
 func (h *Handler) TokenHistory(w http.ResponseWriter, r *http.Request) {
 	base := strings.ToUpper(chi.URLParam(r, "base"))
-	if !validBase.MatchString(base) {
+	if !isValidBase(base) {
 		http.Error(w, "invalid token", http.StatusBadRequest)
 		return
 	}
@@ -398,7 +419,7 @@ func (h *Handler) TokenHistory(w http.ResponseWriter, r *http.Request) {
 // so repeat pumps on the same token never mix OI data across episodes.
 func (h *Handler) OI(w http.ResponseWriter, r *http.Request) {
 	base := strings.ToUpper(chi.URLParam(r, "base"))
-	if !validBase.MatchString(base) {
+	if !isValidBase(base) {
 		http.Error(w, "invalid token", http.StatusBadRequest)
 		return
 	}
@@ -470,7 +491,7 @@ func (h *Handler) OI(w http.ResponseWriter, r *http.Request) {
 // rate_pct (×100), annualized APR, and an is_elevated flag (rate > 0.1% / 8h).
 func (h *Handler) Funding(w http.ResponseWriter, r *http.Request) {
 	base := strings.ToUpper(chi.URLParam(r, "base"))
-	if !validBase.MatchString(base) {
+	if !isValidBase(base) {
 		http.Error(w, "invalid token", http.StatusBadRequest)
 		return
 	}
@@ -722,7 +743,7 @@ func roundPtr1(v *float64) *float64 {
 // no episode has retrace data (retrace_pct = last_pct - peak_pct, always ≤ 0).
 func (h *Handler) Stats(w http.ResponseWriter, r *http.Request) {
 	base := strings.ToUpper(chi.URLParam(r, "base"))
-	if !validBase.MatchString(base) {
+	if !isValidBase(base) {
 		http.Error(w, "invalid token", http.StatusBadRequest)
 		return
 	}
@@ -891,7 +912,7 @@ func (h *Handler) computeSignals(ctx context.Context, base string) (signalsRespo
 // When no open episode exists the stale key is deleted so trader cannot act on it.
 func (h *Handler) CacheSignals(ctx context.Context, base string) error {
 	base = strings.ToUpper(base)
-	if !validBase.MatchString(base) {
+	if !isValidBase(base) {
 		return nil
 	}
 	out, notFound, err := h.computeSignals(ctx, base)
@@ -915,7 +936,7 @@ func (h *Handler) CacheSignals(ctx context.Context, base string) error {
 // prime_short / insufficient_data (when both OI and funding queries failed).
 func (h *Handler) Signals(w http.ResponseWriter, r *http.Request) {
 	base := strings.ToUpper(chi.URLParam(r, "base"))
-	if !validBase.MatchString(base) {
+	if !isValidBase(base) {
 		http.Error(w, "invalid token", http.StatusBadRequest)
 		return
 	}

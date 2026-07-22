@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 )
@@ -253,12 +254,7 @@ func gateInterval(minutes int) string {
 }
 
 func fetchGate(ctx context.Context, base string, interval, limit int) ([]Candle, error) {
-	ivStr := gateInterval(interval)
-	url := fmt.Sprintf(
-		"https://fx-api.gateio.ws/api/v4/futures/usdt/candlesticks?contract=%s_USDT&interval=%s&limit=%d",
-		base, ivStr, limit,
-	)
-	raw, err := httpGet(ctx, url)
+	raw, err := httpGet(ctx, gateOHLCVURL(base, interval, limit))
 	if err != nil {
 		return nil, err
 	}
@@ -267,6 +263,14 @@ func fetchGate(ctx context.Context, base string, interval, limit int) ([]Candle,
 		return nil, fmt.Errorf("gate/%s: %w", base, err)
 	}
 	return candles, nil
+}
+
+func gateOHLCVURL(base string, interval, limit int) string {
+	query := url.Values{}
+	query.Set("contract", base+"_USDT")
+	query.Set("interval", gateInterval(interval))
+	query.Set("limit", strconv.Itoa(limit))
+	return "https://fx-api.gateio.ws/api/v4/futures/usdt/candlesticks?" + query.Encode()
 }
 
 func parseGate(raw []byte) ([]Candle, error) {
