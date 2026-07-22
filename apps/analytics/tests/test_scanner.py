@@ -5,6 +5,7 @@ import pytest
 from schurfer_analytics.config import Config
 from schurfer_analytics.exchange_registry import DEFAULT_EXCHANGES, EXCHANGE_FACTORIES
 from schurfer_analytics.scanner import (
+    MAX_TICKER_AGE_MS,
     REDIS_KEY,
     REDIS_TTL,
     ScanBatch,
@@ -30,9 +31,10 @@ def _entry(base: str, exchange: str, pct: float) -> dict[str, object]:
     }
 
 
-def _ticker(percentage: float | None) -> dict[str, object]:
+def _ticker(percentage: float | None, *, timestamp: int | str | None = None) -> dict[str, object]:
     return {
         "percentage": percentage,
+        "timestamp": timestamp,
         "last": 1.25,
         "high": 1.5,
         "quoteVolume": 10_000.0,
@@ -78,6 +80,40 @@ async def test_fetch_applies_same_linear_usdt_rules_to_every_exchange() -> None:
     assert [row["base"] for row in above] == ["PUMP"]
     assert above[0]["change_pct"] == 31.25
     assert [row["base"] for row in below] == ["WATCH"]
+
+
+async def test_fetch_rejects_stale_and_invalid_tickers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now_ms = 1_800_000_000_000
+    monkeypatch.setattr("schurfer_analytics.scanner.time.time", lambda: now_ms / 1000)
+    exchange = AsyncMock()
+    exchange.has = {"fetchTickers": True}
+    exchange.markets = {
+        "FRESH/USDT:USDT": {"active": True},
+        "STALE/USDT:USDT": {"active": True},
+        "INVALID/USDT:USDT": {"active": True},
+        "UNKNOWN/USDT:USDT": {"active": None},
+        "INACTIVE/USDT:USDT": {"active": False},
+        "TRADING_DISABLED/USDT:USDT": {
+            "active": True,
+            "info": {"tradeSwitch": False},
+        },
+    }
+    exchange.fetch_tickers.return_value = {
+        "FRESH/USDT:USDT": _ticker(31.0, timestamp=now_ms - MAX_TICKER_AGE_MS),
+        "STALE/USDT:USDT": _ticker(90.0, timestamp=now_ms - MAX_TICKER_AGE_MS - 1),
+        "INVALID/USDT:USDT": _ticker(80.0, timestamp="not-a-timestamp"),
+        "UNKNOWN/USDT:USDT": _ticker(32.0),
+        "INACTIVE/USDT:USDT": _ticker(100.0, timestamp=now_ms),
+        "TRADING_DISABLED/USDT:USDT": _ticker(100.0, timestamp=now_ms),
+    }
+
+    above, below, error = await _fetch("xt", exchange, min_pct=30.0)
+
+    assert error is None
+    assert below == []
+    assert [row["base"] for row in above] == ["FRESH", "UNKNOWN"]
 
 
 async def test_fetch_skips_exchange_without_bulk_tickers() -> None:
