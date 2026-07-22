@@ -43,6 +43,7 @@ async def place_order(
     max_positions: int,
     max_position_usd: float,
     daily_loss_limit_usd: float,
+    liquidity_checked_usd: float | None = None,
     initial_sl_pct: float = 10.0,
     liquidation_buffer_pct: float = 20.0,
     cfg: Any = None,
@@ -128,9 +129,18 @@ async def place_order(
                 "reason": f"amount rounds to 0 for {symbol}{hint}",
             }
 
+        actual_usd = round(amount * price * contract_size, 2)
+        if liquidity_checked_usd is not None and actual_usd > liquidity_checked_usd:
+            return {
+                "allowed": False,
+                "reason": (
+                    f"actual position ${actual_usd:.2f} exceeds liquidity-checked "
+                    f"notional ${liquidity_checked_usd:.2f}"
+                ),
+            }
+
         if rounded_up:
             # Actual cost after rounding may exceed the limits checked against size_usd.
-            actual_usd = round(amount * price * contract_size, 2)
             size_recheck = check_max_position_size(actual_usd, max_position_usd)
             if not size_recheck.allowed:
                 return {"allowed": False, "reason": size_recheck.reason}

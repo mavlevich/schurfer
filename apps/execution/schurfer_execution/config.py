@@ -80,6 +80,18 @@ class Config:
     # When True, skip entry if funding rate cannot be fetched (fail-closed).
     # Default False (fail-open) is safe for dry-run; set True for live AUTO_TRADE.
     require_funding_rate: bool = field(default_factory=lambda: _bool("REQUIRE_FUNDING_RATE", False))
+    # Two-sided execution-quality gate. It remains measurable when disabled in
+    # dry-run, but AUTO_TRADE is forbidden unless the gate is enabled.
+    require_market_quality: bool = field(
+        default_factory=lambda: _bool("REQUIRE_MARKET_QUALITY", True)
+    )
+    max_spread_bps: float = field(default_factory=lambda: _float("MAX_SPREAD_BPS", 50.0))
+    max_liquidity_impact_bps: float = field(
+        default_factory=lambda: _float("MAX_LIQUIDITY_IMPACT_BPS", 50.0)
+    )
+    liquidity_depth_multiplier: float = field(
+        default_factory=lambda: _float("LIQUIDITY_DEPTH_MULTIPLIER", 2.0)
+    )
 
     # Signal trader — set AUTO_TRADE=true and SIGNAL_POSITION_USD>0 to enable.
     # Scores are read from Redis (signals:{base}) — written by the api-gateway ticker.
@@ -90,7 +102,7 @@ class Config:
     # Strategy version stamped on every decision so accumulated statistics are not
     # mixed across rule changes. Bump when the scoring or entry rules change.
     strategy_version: str = field(
-        default_factory=lambda: os.getenv("STRATEGY_VERSION", "pump_short_v1")
+        default_factory=lambda: os.getenv("STRATEGY_VERSION", "pump_short_v1_market_quality")
     )
     # Risk-based position sizing: risk this % of equity per trade.
     # 0.0 = disabled (use fixed SIGNAL_POSITION_USD).
@@ -123,6 +135,8 @@ class Config:
             # losses simply vanish from the running total. Not acceptable
             # once real orders are being placed.
             raise ValueError("DATABASE_URL is required when AUTO_TRADE=true")
+        if self.auto_trade and not self.require_market_quality:
+            raise ValueError("REQUIRE_MARKET_QUALITY must be true when AUTO_TRADE=true")
         if not self.auto_trade and not self.dry_run:
             return
         if self.signal_position_usd <= 0:
@@ -137,3 +151,14 @@ class Config:
             raise ValueError(f"RISK_PER_TRADE_PCT must be 0-5, got {self.risk_per_trade_pct}")
         if not 0.0 <= self.min_retrace_pct <= 20.0:
             raise ValueError(f"MIN_RETRACE_PCT must be 0-20, got {self.min_retrace_pct}")
+        if not 0.0 < self.max_spread_bps <= 10_000.0:
+            raise ValueError(f"MAX_SPREAD_BPS must be > 0 and <= 10000, got {self.max_spread_bps}")
+        if not 0.0 < self.max_liquidity_impact_bps <= 10_000.0:
+            raise ValueError(
+                "MAX_LIQUIDITY_IMPACT_BPS must be > 0 and <= 10000, "
+                f"got {self.max_liquidity_impact_bps}"
+            )
+        if not 1.0 <= self.liquidity_depth_multiplier <= 10.0:
+            raise ValueError(
+                f"LIQUIDITY_DEPTH_MULTIPLIER must be 1-10, got {self.liquidity_depth_multiplier}"
+            )

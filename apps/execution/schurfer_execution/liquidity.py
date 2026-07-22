@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import math
 import time
+from dataclasses import dataclass
 from typing import Any
 
 import structlog
@@ -26,7 +27,120 @@ _BOOK_LIMIT = 50
 _FETCH_TIMEOUT = 5  # seconds
 
 
-def _vwap_impact_bps(levels: list[Any], mid: float, target_usd: float, side: str) -> float | None:
+@dataclass(frozen=True)
+class MarketQualityCheck:
+    """Execution-quality verdict for the measured two-sided order book."""
+
+    allowed: bool
+    reason: str
+    depth_target_usd: float
+    spread_bps: float | None
+    bid_impact_bps: float | None
+    ask_impact_bps: float | None
+
+
+def depth_target_usd(position_usd: float, multiplier: float) -> float:
+    """Return the rounded book depth required for a configured position cap."""
+    return round(position_usd * multiplier, 2)
+
+
+def _target_key(target_usd: float) -> str:
+    return f"{target_usd:.2f}".rstrip("0").rstrip(".")
+
+
+def _finite_non_negative(value: Any) -> float | None:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if math.isfinite(parsed) and parsed >= 0 else None
+
+
+def check_market_quality(
+    snapshot: dict[str, Any] | None,
+    *,
+    target_usd: float,
+    max_spread_bps: float,
+    max_impact_bps: float,
+) -> MarketQualityCheck:
+    """Fail closed when a short entry or its buy-to-close path is not executable."""
+
+    def result(
+        allowed: bool,
+        reason: str,
+        *,
+        spread: float | None = None,
+        bid_impact: float | None = None,
+        ask_impact: float | None = None,
+    ) -> MarketQualityCheck:
+        return MarketQualityCheck(
+            allowed=allowed,
+            reason=reason,
+            depth_target_usd=target_usd,
+            spread_bps=spread,
+            bid_impact_bps=bid_impact,
+            ask_impact_bps=ask_impact,
+        )
+
+    if snapshot is None:
+        return result(False, "market_quality_snapshot_unavailable")
+
+    spread = _finite_non_negative(snapshot.get("spread_bps"))
+    if spread is None:
+        return result(False, "market_quality_invalid_spread")
+    if spread > max_spread_bps:
+        return result(False, "market_quality_spread_too_wide", spread=spread)
+
+    key = _target_key(target_usd)
+    bid_impacts = snapshot.get("bid_impact_bps")
+    ask_impacts = snapshot.get("ask_impact_bps")
+    if not isinstance(bid_impacts, dict) or not isinstance(ask_impacts, dict):
+        return result(False, "market_quality_invalid_depth", spread=spread)
+
+    bid_impact = _finite_non_negative(bid_impacts.get(key))
+    if bid_impact is None:
+        return result(False, "market_quality_insufficient_bid_depth", spread=spread)
+    ask_impact = _finite_non_negative(ask_impacts.get(key))
+    if ask_impact is None:
+        return result(
+            False,
+            "market_quality_insufficient_ask_depth",
+            spread=spread,
+            bid_impact=bid_impact,
+        )
+    if bid_impact > max_impact_bps:
+        return result(
+            False,
+            "market_quality_entry_impact_too_high",
+            spread=spread,
+            bid_impact=bid_impact,
+            ask_impact=ask_impact,
+        )
+    if ask_impact > max_impact_bps:
+        return result(
+            False,
+            "market_quality_exit_impact_too_high",
+            spread=spread,
+            bid_impact=bid_impact,
+            ask_impact=ask_impact,
+        )
+    return result(
+        True,
+        "ok",
+        spread=spread,
+        bid_impact=bid_impact,
+        ask_impact=ask_impact,
+    )
+
+
+def _vwap_impact_bps(
+    levels: list[Any],
+    mid: float,
+    target_usd: float,
+    side: str,
+    *,
+    contract_size: float = 1.0,
+) -> float | None:
     """Return the volume-weighted slippage in bps to fill target_usd across levels.
 
     None means the visible book cannot fill target_usd. side is "ask" (buying,
@@ -45,7 +159,7 @@ def _vwap_impact_bps(levels: list[Any], mid: float, target_usd: float, side: str
         remaining = target_usd - total_quote
         if remaining <= 0:
             break
-        take_usd = min(price * amount, remaining)
+        take_usd = min(price * amount * contract_size, remaining)
         total_quote += take_usd
         total_base += take_usd / price
 
@@ -57,7 +171,12 @@ def _vwap_impact_bps(levels: list[Any], mid: float, target_usd: float, side: str
     return result if math.isfinite(result) else None
 
 
-async def snapshot(ex: Any, base: str) -> dict[str, Any] | None:
+async def snapshot(
+    ex: Any,
+    base: str,
+    *,
+    required_depth_usd: float | None = None,
+) -> dict[str, Any] | None:
     """Fetch the order book for base on ex and summarize spread and depth impact.
 
     Returns None on any failure or an unusable book. Never raises: the fetch is
@@ -84,18 +203,34 @@ async def snapshot(ex: Any, base: str) -> dict[str, Any] | None:
             return None
 
         mid = (best_bid + best_ask) / 2
+        contract_size = 1.0
+        markets = getattr(ex, "markets", None)
+        market = markets.get(symbol) if isinstance(markets, dict) else None
+        if isinstance(market, dict) and market.get("contract"):
+            parsed_contract_size = _finite_non_negative(market.get("contractSize"))
+            if parsed_contract_size is None or parsed_contract_size == 0:
+                return None
+            contract_size = parsed_contract_size
+        targets = set(_DEPTH_TARGETS_USD)
+        if required_depth_usd is not None:
+            targets.add(required_depth_usd)
+        ordered_targets = sorted(targets)
         return {
             "ts": int(time.time()),
             "best_bid": best_bid,
             "best_ask": best_ask,
             "mid": mid,
+            "contract_size": contract_size,
             "spread_bps": round((best_ask - best_bid) / mid * 10000, 2),
+            "depth_targets_usd": ordered_targets,
             # bid side = selling (short entry), ask side = buying (exit).
             "bid_impact_bps": {
-                str(int(t)): _vwap_impact_bps(bids, mid, t, "bid") for t in _DEPTH_TARGETS_USD
+                _target_key(t): _vwap_impact_bps(bids, mid, t, "bid", contract_size=contract_size)
+                for t in ordered_targets
             },
             "ask_impact_bps": {
-                str(int(t)): _vwap_impact_bps(asks, mid, t, "ask") for t in _DEPTH_TARGETS_USD
+                _target_key(t): _vwap_impact_bps(asks, mid, t, "ask", contract_size=contract_size)
+                for t in ordered_targets
             },
         }
     except Exception as exc:

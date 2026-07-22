@@ -1,5 +1,6 @@
 import json
 import time
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -28,6 +29,7 @@ def _cfg(
     risk_per_trade_pct: float = 0.0,
     require_red_candle: bool = False,
     min_retrace_pct: float = 0.0,
+    require_market_quality: bool = False,
 ) -> Config:
     cfg = object.__new__(Config)
     cfg.score_threshold = score_threshold
@@ -40,6 +42,10 @@ def _cfg(
     cfg.liquidation_buffer_pct = 20.0
     cfg.min_funding_rate_pct = min_funding_rate_pct
     cfg.require_funding_rate = require_funding_rate
+    cfg.require_market_quality = require_market_quality
+    cfg.max_spread_bps = 50.0
+    cfg.max_liquidity_impact_bps = 50.0
+    cfg.liquidity_depth_multiplier = 2.0
     cfg.risk_per_trade_pct = risk_per_trade_pct
     cfg.require_red_candle = require_red_candle
     cfg.min_retrace_pct = min_retrace_pct
@@ -48,6 +54,19 @@ def _cfg(
     cfg.telegram_bot_token = None
     cfg.telegram_chat_id = None
     return cfg
+
+
+def _healthy_liquidity_snapshot() -> dict[str, Any]:
+    return {
+        "ts": int(time.time()),
+        "best_bid": 99.9,
+        "best_ask": 100.1,
+        "mid": 100.0,
+        "spread_bps": 20.0,
+        "depth_targets_usd": [100.0, 500.0, 1000.0],
+        "bid_impact_bps": {"100": 10.0, "500": 10.0, "1000": 10.0},
+        "ask_impact_bps": {"100": 10.0, "500": 10.0, "1000": 10.0},
+    }
 
 
 def _pumps(
@@ -291,6 +310,7 @@ def test_config_validation_raises_when_auto_trade_and_bad_position_usd() -> None
     cfg.signal_leverage = 3
     cfg.liquidation_buffer_pct = 20.0
     cfg.db_url = "postgresql://test"
+    cfg.require_market_quality = True
     with pytest.raises(ValueError, match="SIGNAL_POSITION_USD"):
         cfg.__post_init__()
 
@@ -303,6 +323,7 @@ def test_config_validation_raises_when_auto_trade_and_bad_leverage() -> None:
     cfg.signal_leverage = 0
     cfg.liquidation_buffer_pct = 20.0
     cfg.db_url = "postgresql://test"
+    cfg.require_market_quality = True
     with pytest.raises(ValueError, match="SIGNAL_LEVERAGE"):
         cfg.__post_init__()
 
@@ -348,6 +369,7 @@ def test_config_validation_raises_when_liquidation_buffer_negative() -> None:
     cfg.signal_leverage = 3
     cfg.liquidation_buffer_pct = -20.0
     cfg.db_url = "postgresql://test"
+    cfg.require_market_quality = True
     with pytest.raises(ValueError, match="LIQUIDATION_BUFFER_PCT"):
         cfg.__post_init__()
 
@@ -360,7 +382,54 @@ def test_config_validation_raises_when_liquidation_buffer_gte_100() -> None:
     cfg.signal_leverage = 3
     cfg.liquidation_buffer_pct = 100.0
     cfg.db_url = "postgresql://test"
+    cfg.require_market_quality = True
     with pytest.raises(ValueError, match="LIQUIDATION_BUFFER_PCT"):
+        cfg.__post_init__()
+
+
+def _valid_live_config() -> Config:
+    cfg = object.__new__(Config)
+    cfg.auto_trade = True
+    cfg.dry_run = False
+    cfg.db_url = "postgresql://test"
+    cfg.require_market_quality = True
+    cfg.signal_position_usd = 50.0
+    cfg.signal_leverage = 3
+    cfg.liquidation_buffer_pct = 20.0
+    cfg.risk_per_trade_pct = 0.0
+    cfg.min_retrace_pct = 0.0
+    cfg.max_spread_bps = 50.0
+    cfg.max_liquidity_impact_bps = 50.0
+    cfg.liquidity_depth_multiplier = 2.0
+    return cfg
+
+
+def test_config_validation_requires_market_quality_for_live_trading() -> None:
+    cfg = _valid_live_config()
+    cfg.require_market_quality = False
+
+    with pytest.raises(ValueError, match="REQUIRE_MARKET_QUALITY"):
+        cfg.__post_init__()
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "expected"),
+    [
+        ("max_spread_bps", 0.0, "MAX_SPREAD_BPS"),
+        ("max_liquidity_impact_bps", float("nan"), "MAX_LIQUIDITY_IMPACT_BPS"),
+        ("liquidity_depth_multiplier", 0.99, "LIQUIDITY_DEPTH_MULTIPLIER"),
+        ("liquidity_depth_multiplier", 10.01, "LIQUIDITY_DEPTH_MULTIPLIER"),
+    ],
+)
+def test_config_validation_rejects_invalid_market_quality_policy(
+    field: str,
+    value: float,
+    expected: str,
+) -> None:
+    cfg = _valid_live_config()
+    setattr(cfg, field, value)
+
+    with pytest.raises(ValueError, match=expected):
         cfg.__post_init__()
 
 
@@ -450,6 +519,9 @@ async def test_tick_decision_captures_features_and_liquidity_status() -> None:
     assert kw["strategy_version"] == "pump_short_v1"
     assert kw["features"]["signal"]["score"] == 3
     assert kw["features"]["config"]["score_threshold"] == 6
+    assert kw["features"]["config"]["max_spread_bps"] == 50.0
+    assert kw["features"]["config"]["max_liquidity_impact_bps"] == 50.0
+    assert kw["features"]["config"]["liquidity_depth_multiplier"] == 2.0
     # liquidity is never null-ambiguous: it always carries a status
     assert kw["liquidity"]["status"] in {"sampled", "fetch_failed", "no_exchange"}
 
@@ -473,6 +545,82 @@ async def test_tick_decision_liquidity_status_sampled_on_good_book() -> None:
     liq = mock_write.call_args.kwargs["liquidity"]
     assert liq["status"] == "sampled"
     assert liq["spread_bps"] == 20.0
+    assert liq["quality"]["allowed"] is True
+    assert liq["quality"]["depth_target_usd"] == 100.0
+
+
+async def test_tick_market_quality_gate_allows_tradeable_book() -> None:
+    rdb = _rdb(pumps_raw=_pumps("BEAT"), signal_score=7)
+    cfg = _cfg(require_market_quality=True)
+    ex = MagicMock()
+
+    with (
+        patch(
+            "schurfer_execution.trader.liquidity.snapshot",
+            AsyncMock(return_value=_healthy_liquidity_snapshot()),
+        ) as snapshot_mock,
+        patch(
+            "schurfer_execution.trader.place_order",
+            new_callable=AsyncMock,
+            return_value={"allowed": True, "order_id": "ord-123"},
+        ) as mock_order,
+    ):
+        await _tick({"bybit": ex}, rdb, cfg)
+
+    snapshot_mock.assert_awaited_once_with(ex, "BEAT", required_depth_usd=100.0)
+    mock_order.assert_awaited_once()
+    assert mock_order.call_args.kwargs["liquidity_checked_usd"] == 100.0
+
+
+@pytest.mark.parametrize(
+    ("snapshot_data", "expected_reason"),
+    [
+        (None, "market_quality_snapshot_unavailable"),
+        (
+            {**_healthy_liquidity_snapshot(), "spread_bps": 50.01},
+            "market_quality_spread_too_wide",
+        ),
+        (
+            {
+                **_healthy_liquidity_snapshot(),
+                "bid_impact_bps": {"100": None},
+            },
+            "market_quality_insufficient_bid_depth",
+        ),
+    ],
+)
+async def test_tick_market_quality_gate_skips_untradeable_book(
+    snapshot_data: dict[str, Any] | None,
+    expected_reason: str,
+) -> None:
+    rdb = _rdb(pumps_raw=_pumps("BEAT"), signal_score=7)
+    cfg = _cfg(require_market_quality=True)
+
+    with (
+        patch(
+            "schurfer_execution.trader.liquidity.snapshot",
+            AsyncMock(return_value=snapshot_data),
+        ),
+        patch(
+            "schurfer_execution.trader._fetch_funding_rate_pct",
+            new_callable=AsyncMock,
+        ) as funding,
+        patch("schurfer_execution.trader.place_order", new_callable=AsyncMock) as order,
+        patch(
+            "schurfer_execution.trader.decisions.write_decision",
+            new_callable=AsyncMock,
+        ) as write,
+    ):
+        await _tick({"bybit": MagicMock()}, rdb, cfg)
+
+    funding.assert_not_awaited()
+    order.assert_not_awaited()
+    write.assert_awaited_once()
+    decision = write.call_args.kwargs
+    assert decision["action"] == "skipped"
+    assert decision["reason"] == expected_reason
+    assert decision["seen_ttl"] == _SEEN_TTL_ENTRY_WAIT
+    assert decision["liquidity"]["quality"]["allowed"] is False
 
 
 async def test_tick_threads_decision_id_into_setup_context() -> None:
