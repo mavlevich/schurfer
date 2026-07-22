@@ -298,6 +298,22 @@ the new cohort separately.
   not simulate exits or costs — those belong to the versioned virtual-strategy
   analysis.
 
+- Decision measurement report: after rebuilding the analytics image, run a read-only
+  Markdown report against production:
+
+  ```bash
+  make prod-measurement-report
+  make prod-measurement-report ARGS="--since 2026-07-22 --exchange-horizon 240"
+  make prod-measurement-report ARGS="--format json --strategy-version pump_short_v1_market_quality"
+  ```
+
+  It reports decisions/hour, field completeness, signal lag, market-quality reasons,
+  due/unresolved outcomes, and raw short return/MAE/MFE by strategy, horizon, segment,
+  and exchange. Treat these as descriptive diagnostics: the report shows distinct pump
+  episodes beside decision N, but only the versioned virtual replay will enforce one
+  chronological decision path per episode, model costs/exits, and produce confidence
+  intervals suitable for champion selection.
+
 ## Incidents
 
 Record notable incidents and their fixes here as they happen, so the next person (or

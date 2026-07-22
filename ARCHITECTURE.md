@@ -23,11 +23,16 @@ The web UI is behind a login with no public exposure.
   ccxt polling, not this feed. It is intended as the seed of a future websocket data
   layer (see ROADMAP Phase 2). Kept, not deleted.
 
-### Warm path (analytical)
+### Warm path (analytical and research)
 
-- **analytics** (Python). The pump scanner. Polls exchange tickers via ccxt (not via
-  NATS), computes pump episodes, persists OI and funding snapshots, and writes
-  `pumps:latest` to Redis.
+- **analytics** (Python). One image with three focused entry points:
+  - the long-running pump scanner polls exchange tickers via ccxt (not via NATS),
+    computes pump episodes, persists OI and funding snapshots, and writes
+    `pumps:latest` to Redis;
+  - the long-running outcome resolver idempotently backfills forward prices, MAE, and
+    MFE for recorded decisions from exchange OHLCV;
+  - the on-demand, read-only measurement report aggregates dataset health, outcome
+    coverage, and descriptive cohort results from Postgres.
 - **notifier** (Go). Reads `pumps:latest` from Redis and sends Telegram alerts on new
   pump detection.
 
@@ -54,6 +59,10 @@ Execution signal trader (freshness checked, when AUTO_TRADE=true)
 Risk checks
     |
 Exchanges (REST, ccxt)
+
+Trade decisions (Postgres) <---- Outcome resolver (Python, exchange OHLCV)
+    |
+On-demand measurement report (Python, read-only)
 
 # collector (Go) --> NATS market.bybit.ticker.*  : prototype, no consumer yet
 ```
@@ -84,11 +93,11 @@ Exchanges (REST, ccxt)
 
 ## Storage
 
-| Database        | Purpose                                                        |
-| --------------- | -------------------------------------------------------------- |
-| **PostgreSQL**  | pump episodes, OI snapshots, funding snapshots, users, trades  |
-| **TimescaleDB** | OHLCV series, tick data, funding history                       |
-| **Redis**       | hot state (pump list, signal scores, locks, position metadata) |
+| Database        | Purpose                                                             |
+| --------------- | ------------------------------------------------------------------- |
+| **PostgreSQL**  | pump episodes, market snapshots, decisions, outcomes, users, trades |
+| **TimescaleDB** | OHLCV series, tick data, funding history                            |
+| **Redis**       | hot state (pump list, signal scores, locks, position metadata)      |
 
 ## Exchanges
 

@@ -15,6 +15,7 @@ dependencies = [
 [project.scripts]
 pump-scanner = "schurfer_analytics.main:main"
 outcome-resolver = "schurfer_analytics.outcome_worker:main"
+measurement-report = "schurfer_analytics.measurement_report:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
