@@ -99,7 +99,7 @@ TELEGRAM_CHAT_ID=<your chat or channel id>
 # Scanner tuning (optional, defaults shown)
 PUMP_MIN_PCT=30
 SCAN_INTERVAL=60
-PUMP_EXCHANGES=binance,bybit,okx,gate,bitget,mexc,bingx,coinex,phemex,cryptocom,htx,kucoin
+PUMP_EXCHANGES=binance,bybit,okx,gate,bitget,mexc,kucoin,bingx,coinex,phemex,cryptocom,htx,lbank,bitmart,xt,toobit,blofin
 
 # Automated trading (disabled by default, enable only after paper testing)
 AUTO_TRADE=false

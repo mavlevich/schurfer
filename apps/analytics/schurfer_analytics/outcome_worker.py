@@ -8,10 +8,10 @@ from typing import Any
 
 import structlog
 
+from .exchange_registry import EXCHANGE_FACTORIES
 from .ohlcv import TIMEFRAME
 from .outcome_repository import OutcomeRepository, OutcomeStore
 from .outcomes import HORIZONS_MINUTES, OutcomeConfig, resolve_once
-from .scanner import EXCHANGE_FACTORIES
 
 log = structlog.get_logger()
 
