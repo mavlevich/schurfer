@@ -7,7 +7,9 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/alicebob/miniredis/v2"
@@ -18,6 +20,79 @@ import (
 )
 
 func ptr(v int64) *int64 { return &v }
+
+func TestIsValidBase(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		base string
+		want bool
+	}{
+		{name: "ASCII symbol", base: "BROCCOLIF3B", want: true},
+		{name: "Unicode symbol", base: "草根文化", want: true},
+		{name: "Unicode decimal digits", base: "ＴＯＫＥＮ１２", want: true},
+		{name: "empty", base: "", want: false},
+		{name: "hyphen", base: "BTC-USDT", want: false},
+		{name: "slash", base: "BTC/USDT", want: false},
+		{name: "encoded slash text", base: "BTC%2FUSDT", want: false},
+		{name: "path traversal", base: "../BTC", want: false},
+		{name: "whitespace", base: "BTC USDT", want: false},
+		{name: "underscore", base: "草根_文化", want: false},
+		{name: "zero width separator", base: "BTC\u200bUSDT", want: false},
+		{name: "too long", base: strings.Repeat("A", maxBaseRunes+1), want: false},
+		{name: "too many Unicode runes", base: strings.Repeat("草", maxBaseRunes+1), want: false},
+		{name: "invalid UTF-8", base: string([]byte{0xff}), want: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := isValidBase(tc.base); got != tc.want {
+				t.Errorf("isValidBase(%q) = %v, want %v", tc.base, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestTokenHandlerSupportsUnicodeBase(t *testing.T) {
+	t.Parallel()
+	const base = "草根文化"
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+	payload, err := json.Marshal(pumpsPayload{
+		Count: 1,
+		Pumps: []pumpEntry{{
+			Base:         base,
+			MaxChangePct: 43.1,
+			Exchanges:    []exchangeEntry{{Exchange: "gate", Symbol: base + "_USDT"}},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := rdb.Set(context.Background(), "pumps:latest", payload, 0).Err(); err != nil {
+		t.Fatal(err)
+	}
+
+	h := &Handler{rdb: rdb}
+	router := chi.NewRouter()
+	router.Get("/api/pumps/{base}", h.Token)
+	req := httptest.NewRequest(http.MethodGet, "/api/pumps/"+url.PathEscape(base), nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	var response pumpEntry
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Base != base {
+		t.Errorf("base = %q, want %q", response.Base, base)
+	}
+}
 
 // ---- stub DB infrastructure ----
 
@@ -1318,6 +1393,26 @@ func TestCacheSignals(t *testing.T) {
 		}
 		if resp.Score < 0 || resp.Score > signalMaxScore {
 			t.Errorf("score %d out of range [0, %d]", resp.Score, signalMaxScore)
+		}
+	})
+
+	t.Run("writes signals key for Unicode base", func(t *testing.T) {
+		mr.FlushAll()
+		const base = "草根文化"
+		h := &Handler{rdb: rdb, pool: makeQuerier(nil)}
+		if err := h.CacheSignals(context.Background(), base); err != nil {
+			t.Fatalf("CacheSignals: %v", err)
+		}
+		raw, err := rdb.Get(context.Background(), "signals:"+base).Bytes()
+		if err != nil {
+			t.Fatalf("Unicode signals key not found: %v", err)
+		}
+		var resp signalsResponse
+		if err := json.Unmarshal(raw, &resp); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if resp.Base != base {
+			t.Errorf("base = %q, want %q", resp.Base, base)
 		}
 	})
 

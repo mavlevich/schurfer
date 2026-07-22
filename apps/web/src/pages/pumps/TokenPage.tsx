@@ -441,14 +441,21 @@ export function TokenPage() {
   const { base } = useParams<{ base: string }>();
   const [chartInterval, setChartInterval] = useState(15);
 
-  const { data: pump, isPending: pumpPending } = useToken(base);
-  const { data: episodes = [], isPending: episodesPending } = useTokenEpisodes(base);
+  const { data: pump, isPending: pumpPending, isError: pumpError } = useToken(base);
+  const {
+    data: episodes = [],
+    isPending: episodesPending,
+    isError: episodesError,
+  } = useTokenEpisodes(base);
   const { data: signals } = useTokenSignals(base);
   const { data: stats } = useTokenStats(base);
   const { data: ohlcv, isFetching: chartFetching } = useOHLCV(base, chartInterval);
 
   const detailsLoading = pumpPending || episodesPending;
-  const notFound = !detailsLoading && !pump && episodes.length === 0;
+  const detailsError = pumpError || episodesError;
+  const hasDetails = pump != null || episodes.length > 0;
+  const notFound = !detailsLoading && !detailsError && !hasDetails;
+  const detailsUnavailable = !detailsLoading && detailsError && !hasDetails;
 
   return (
     <div className="min-h-screen bg-background">
@@ -464,8 +471,14 @@ export function TokenPage() {
 
         {detailsLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
         {notFound && <p className="text-sm text-muted-foreground">Token not found.</p>}
+        {detailsUnavailable && (
+          <p className="text-sm text-red-400">Unable to load token details. Please retry.</p>
+        )}
+        {detailsError && hasDetails && (
+          <p className="text-sm text-yellow-400">Some token details are temporarily unavailable.</p>
+        )}
 
-        {!notFound && (
+        {!notFound && !detailsUnavailable && (
           <div>
             <h1 className="text-2xl font-bold font-mono tracking-tight">
               {base}
@@ -484,7 +497,7 @@ export function TokenPage() {
           </div>
         )}
 
-        {!notFound && (
+        {!notFound && !detailsUnavailable && (
           <PriceChart
             ohlcv={ohlcv}
             isFetching={chartFetching}

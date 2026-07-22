@@ -1,8 +1,32 @@
 package pumps
 
 import (
+	"net/url"
+	"strings"
 	"testing"
 )
+
+func TestGateOHLCVURLPercentEncodesUnicodeContract(t *testing.T) {
+	t.Parallel()
+	rawURL := gateOHLCVURL("草根文化", 15, 192)
+	if strings.Contains(rawURL, "草根文化") {
+		t.Fatalf("URL contains unescaped Unicode: %s", rawURL)
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	query := parsed.Query()
+	if got := query.Get("contract"); got != "草根文化_USDT" {
+		t.Errorf("contract = %q, want 草根文化_USDT", got)
+	}
+	if got := query.Get("interval"); got != "15m" {
+		t.Errorf("interval = %q, want 15m", got)
+	}
+	if got := query.Get("limit"); got != "192" {
+		t.Errorf("limit = %q, want 192", got)
+	}
+}
 
 func TestParseBybit(t *testing.T) {
 	cases := []struct {
