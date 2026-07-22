@@ -81,6 +81,11 @@ the two remaining items are dataset-health visibility, not data capture.
     `fetch_order_book` at decision time, sampled for every candidate with a
     configured exchange and stamped with an explicit status. This is the only
     non-recoverable piece, so it is the most urgent.
+  - Market-quality eligibility: fail closed before an entry when the two-sided book
+    cannot fill 2x the configured position cap, spread exceeds 50 bps, or bid/ask
+    VWAP impact exceeds 50 bps. The verdict and effective thresholds are stored with
+    every decision; `AUTO_TRADE=true` cannot start with this gate disabled, and an
+    exchange-minimum round-up cannot exceed the notional already liquidity-checked.
   - Which exchange the tradeable instrument lives on (coverage data, see Phase 2).
   - Also added: `price` (decision-time reference price, migration 0010).
 - [x] Schema and decision-write path (migrations 0008-0010 plus the execution write
@@ -148,6 +153,11 @@ the two remaining items are dataset-health visibility, not data capture.
       `make security` (pip-audit, govulncheck, pnpm audit) into CI as a gate.
 - [ ] git-history secret audit (gitleaks or trufflehog over the full history). Cheap
       now (about 150 commits, no forks). Rotate anything it finds.
+- [ ] Pre-live host/database hardening gate: patch and reboot the host, verify firewall
+      and loopback-only PostgreSQL exposure, split migration/app/read-only DB roles,
+      enforce private backup permissions plus encrypted offsite copies, test restore,
+      and use withdrawal-disabled/IP-restricted exchange keys. Required before
+      `AUTO_TRADE=true`, not a blocker for the current non-sensitive measurement phase.
 - [ ] `make export` to parquet slices of episodes and snapshots (the interface to
       research work).
 

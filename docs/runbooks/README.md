@@ -162,6 +162,31 @@ docker exec -it schurfer-postgres psql -U schurfer -d schurfer
 docker exec schurfer-postgres psql -U schurfer -d schurfer -c "SELECT count(*) FROM app.pump_events;"
 ```
 
+Production PostgreSQL is bound to server loopback only. Verify after infrastructure
+changes:
+
+```bash
+docker port schurfer-postgres 5432
+sudo ss -lntp | grep 5432
+# Expected: 127.0.0.1:5432, never 0.0.0.0:5432 or [::]:5432.
+stat -c '%a %U:%G %n' .env.prod  # expected mode: 600
+```
+
+For local pgAdmin, keep port 5432 private and use an SSH/Tailscale tunnel:
+
+```bash
+ssh -N -L 15432:127.0.0.1:5432 schurfer
+# pgAdmin: host 127.0.0.1, port 15432, database/user schurfer.
+```
+
+Before `AUTO_TRADE=true`, complete the database/host security gate: replace the shared
+PostgreSQL superuser with separate migration-owner, application, and read-only roles;
+set backup directory/file permissions to 700/600 and encrypt offsite copies; test a
+restore; verify firewall rules; apply OS updates and reboot; keep exchange keys
+withdrawal-disabled and IP-restricted. Store credentials in a password manager, never
+in the repository. Measurement-only operation may continue before this gate because
+the database is private and currently contains no exchange credentials or customer PII.
+
 ## Trading kill-switch
 
 Trading is gated by the `trading:enabled` Redis flag and by the `AUTO_TRADE` and
@@ -177,6 +202,31 @@ docker exec schurfer-redis redis-cli set trading:enabled true
 
 To take the system fully out of live trading, set `AUTO_TRADE=false` (or
 `DRY_RUN=true`) in `.env.prod` and recreate the execution service.
+
+### Market-quality gate
+
+Execution records an order-book snapshot for every candidate and, for score-eligible
+entries, fails closed unless both the short-entry bid side and buy-to-close ask side
+are executable. Defaults are `REQUIRE_MARKET_QUALITY=true`, `MAX_SPREAD_BPS=50`,
+`MAX_LIQUIDITY_IMPACT_BPS=50`, and `LIQUIDITY_DEPTH_MULTIPLIER=2`. With the current
+`SIGNAL_POSITION_USD=50`, the book must fill at least $100 on each side. A transient
+market-quality skip uses a five-minute seen TTL and is re-evaluated later. If an
+exchange minimum would round the actual order above that checked $100 notional, order
+placement rejects it instead of relying on an unmeasured part of the book.
+
+The full verdict lives at `trade_decisions.liquidity.quality`; inspect calibration and
+skip reasons rather than silently relaxing thresholds:
+
+```sql
+SELECT liquidity #>> '{quality,reason}' AS reason, count(*)
+FROM app.trade_decisions
+WHERE strategy_version = 'pump_short_v1_market_quality'
+GROUP BY 1 ORDER BY 2 DESC;
+```
+
+`AUTO_TRADE=true` refuses to start when `REQUIRE_MARKET_QUALITY=false`. Changing any
+threshold changes strategy eligibility, so also change `STRATEGY_VERSION` and evaluate
+the new cohort separately.
 
 ## Common issues
 

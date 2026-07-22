@@ -306,6 +306,50 @@ async def test_place_order_round_up_exceeds_max_position_blocked(
 @patch("schurfer_execution.orders.fetch_positions", return_value=([], set()))
 @patch(
     "schurfer_execution.orders.fetch_margin_balance",
+    return_value=[
+        {
+            "exchange": "bingx",
+            "free": 1000.0,
+            "used": 0.0,
+            "total": 1000.0,
+            "tradeable": True,
+            "asset": "USDT",
+        }
+    ],
+)
+async def test_place_order_round_up_exceeds_liquidity_checked_notional_blocked(
+    _mock_bal: MagicMock, _mock_pos: MagicMock
+) -> None:
+    ex = MagicMock()
+    ex.markets = {
+        "BEAT/USDT:USDT": {
+            "contractSize": 1.0,
+            "limits": {"amount": {"min": 1.0}, "cost": {"min": 150.0}},
+        }
+    }
+    ex.set_leverage = AsyncMock()
+    ex.fetch_ticker = AsyncMock(return_value={"last": 150.0})
+    ex.amount_to_precision = MagicMock(return_value="1.0")
+
+    result = await place_order(
+        **_kwargs(
+            size_usd=50.0,
+            max_position_usd=500.0,
+            liquidity_checked_usd=100.0,
+            exchanges={"bingx": ex},
+        )
+    )
+
+    assert not result["allowed"]
+    assert result["reason"] == (
+        "actual position $150.00 exceeds liquidity-checked notional $100.00"
+    )
+    ex.create_market_order.assert_not_called()
+
+
+@patch("schurfer_execution.orders.fetch_positions", return_value=([], set()))
+@patch(
+    "schurfer_execution.orders.fetch_margin_balance",
     return_value=[{"exchange": "bingx", "free": 1000.0, "used": 0.0, "total": 1000.0}],
 )
 async def test_place_order_no_round_up_when_above_minimum(

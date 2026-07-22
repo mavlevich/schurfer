@@ -4,6 +4,7 @@ import asyncio
 import json
 import math
 import time
+from dataclasses import asdict
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
@@ -84,12 +85,24 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
         # has a configured exchange (not only tradeable ones) so the threshold
         # itself can be evaluated later. Non-recoverable, so sampled live. The
         # status makes an absent snapshot unambiguous.
+        depth_target = liquidity.depth_target_usd(
+            cfg.signal_position_usd,
+            cfg.liquidity_depth_multiplier,
+        )
+        quality: liquidity.MarketQualityCheck | None = None
         liq: dict[str, Any]
         if ex is None:
             liq = {"status": "no_exchange"}
         else:
-            snap = await liquidity.snapshot(ex, base)
+            snap = await liquidity.snapshot(ex, base, required_depth_usd=depth_target)
+            quality = liquidity.check_market_quality(
+                snap,
+                target_usd=depth_target,
+                max_spread_bps=cfg.max_spread_bps,
+                max_impact_bps=cfg.max_liquidity_impact_bps,
+            )
             liq = {"status": "sampled", **snap} if snap else {"status": "fetch_failed"}
+            liq["quality"] = asdict(quality)
 
         if not exchange:
             log.info("trader.skip.no_exchange", base=base)
@@ -127,6 +140,37 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 price=decision_price,
                 seen_key=seen_key,
                 seen_ttl=_SEEN_TTL_SKIP,
+            )
+            continue
+
+        if cfg.require_market_quality and (quality is None or not quality.allowed):
+            reason = (
+                quality.reason if quality is not None else "market_quality_snapshot_unavailable"
+            )
+            log.info(
+                "trader.skip.market_quality",
+                base=base,
+                reason=reason,
+                depth_target_usd=depth_target,
+                spread_bps=quality.spread_bps if quality else None,
+                bid_impact_bps=quality.bid_impact_bps if quality else None,
+                ask_impact_bps=quality.ask_impact_bps if quality else None,
+            )
+            await decisions.write_decision(
+                rdb,
+                base=base,
+                exchange=exchange,
+                action="skipped",
+                reason=reason,
+                score=score,
+                pump_pct=pump_pct,
+                decision_id=decision_id,
+                strategy_version=cfg.strategy_version,
+                features=features,
+                liquidity=liq,
+                price=decision_price,
+                seen_key=seen_key,
+                seen_ttl=_SEEN_TTL_ENTRY_WAIT,
             )
             continue
 
@@ -330,6 +374,7 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
             "entry_min_retrace_pct": cfg.min_retrace_pct if cfg.min_retrace_pct > 0 else None,
             "entry_closed_red": entry_check.closed_red if entry_check else None,
             "entry_retrace_pct": entry_check.retrace_pct if entry_check else None,
+            "market_quality": asdict(quality) if quality else None,
         }
 
         if cfg.dry_run:
@@ -399,6 +444,7 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
             max_positions=cfg.max_positions,
             max_position_usd=cfg.max_position_usd,
             daily_loss_limit_usd=cfg.daily_loss_limit_usd,
+            liquidity_checked_usd=depth_target,
             initial_sl_pct=exit_params["initial_sl_pct"],
             liquidation_buffer_pct=cfg.liquidation_buffer_pct,
             cfg=cfg,
@@ -624,6 +670,10 @@ def _decision_features(
             "risk_per_trade_pct": cfg.risk_per_trade_pct,
             "require_funding_rate": cfg.require_funding_rate,
             "min_funding_rate_pct": cfg.min_funding_rate_pct,
+            "require_market_quality": cfg.require_market_quality,
+            "max_spread_bps": cfg.max_spread_bps,
+            "max_liquidity_impact_bps": cfg.max_liquidity_impact_bps,
+            "liquidity_depth_multiplier": cfg.liquidity_depth_multiplier,
             "require_red_candle": cfg.require_red_candle,
             "min_retrace_pct": cfg.min_retrace_pct,
             "liquidation_buffer_pct": cfg.liquidation_buffer_pct,
