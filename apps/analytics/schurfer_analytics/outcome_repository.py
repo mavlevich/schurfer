@@ -98,7 +98,15 @@ def due_decisions_statement(
                 ),
             ),
         )
-        .order_by(decisions.c.ts, horizon_values.c.horizon_minutes)
+        # Useful measurements must not sit behind the historical pre-price
+        # backlog. PostgreSQL sorts false before true, so decisions with a
+        # usable price are resolved first while legacy/corrupt rows still drain
+        # once useful work is done.
+        .order_by(
+            or_(decisions.c.price.is_(None), decisions.c.price <= 0),
+            decisions.c.ts,
+            horizon_values.c.horizon_minutes,
+        )
         .limit(batch_size)
     )
 
