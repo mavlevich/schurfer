@@ -28,6 +28,16 @@ export interface TradesResponse {
   trades: Trade[];
 }
 
+export interface TradeStats {
+  count: number;
+  win_rate: number;
+  expectancy: number;
+  avg_win: number;
+  avg_loss: number;
+  profit_factor: number | null;
+  net_usd: number;
+}
+
 async function fetchJSON<T>(url: string): Promise<T> {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -47,6 +57,22 @@ export function useTrades(
   return useQuery({
     queryKey: ['trades', params],
     queryFn: () => fetchJSON<TradesResponse>(url),
+    refetchInterval: 30_000,
+    staleTime: 15_000,
+    placeholderData: (prev) => prev,
+  });
+}
+
+// Aggregate stats over the whole closed-trade set (optionally by exchange), computed
+// server-side so they cover every trade, not just the current page of the list.
+export function useTradeStats(params: { exchange?: string } = {}) {
+  const q = new URLSearchParams();
+  if (params.exchange) q.set('exchange', params.exchange);
+  const url = `/api/trades/stats${q.size ? '?' + q.toString() : ''}`;
+
+  return useQuery({
+    queryKey: ['trades-stats', params],
+    queryFn: () => fetchJSON<TradeStats>(url),
     refetchInterval: 30_000,
     staleTime: 15_000,
     placeholderData: (prev) => prev,

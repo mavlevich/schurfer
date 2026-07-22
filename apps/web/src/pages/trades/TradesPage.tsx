@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { WifiOff, RefreshCw } from 'lucide-react';
 import { Nav } from '@/components/Nav';
 import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import {
   Table,
   TableHeader,
@@ -11,8 +10,8 @@ import {
   TableHead,
   TableCell,
 } from '@/components/ui/table';
-import { useTrades } from '@/hooks/useTradesData';
-import type { Trade } from '@/hooks/useTradesData';
+import { useTrades, useTradeStats } from '@/hooks/useTradesData';
+import type { Trade, TradeStats } from '@/hooks/useTradesData';
 
 const PAGE_SIZE = 50;
 
@@ -24,8 +23,11 @@ function fmtPrice(n: number): string {
 }
 
 function fmtPct(n: number): string {
-  const sign = n >= 0 ? '+' : '';
-  return `${sign}${n.toFixed(2)}%`;
+  return `${n >= 0 ? '+' : ''}${n.toFixed(2)}%`;
+}
+
+function fmtUsd(n: number): string {
+  return `${n >= 0 ? '+' : '-'}$${Math.abs(n).toFixed(2)}`;
 }
 
 function fmtDate(iso: string): string {
@@ -38,32 +40,126 @@ function fmtDate(iso: string): string {
   });
 }
 
-function isPaper(trade: Trade): boolean {
-  return trade.setup_context?.paper === true;
+function fmtDuration(mins: number): string {
+  const total = Math.round(mins); // round first so 119.6m is 2h, not "1h 60m"
+  if (total < 60) return `${total}m`;
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  return m ? `${h}h ${m}m` : `${h}h`;
+}
+
+function holdMinutes(t: Trade): number | null {
+  if (!t.exit_at) return null;
+  return (new Date(t.exit_at).getTime() - new Date(t.entry_at).getTime()) / 60000;
+}
+
+function isPaper(t: Trade): boolean {
+  return t.setup_context?.paper === true;
+}
+
+function strategyVersion(t: Trade): string {
+  const v = t.setup_context?.strategy_version;
+  return typeof v === 'string' ? v : '—';
+}
+
+// notes read like "initial_sl move=-9.1%" / "trailing_stop trail=20% profit=5.8%" /
+// "max_hold age=180min"; the first token is the exit reason, the rest are the details.
+const EXIT_STYLES: Record<string, string> = {
+  initial_sl: 'text-red-400 bg-red-400/10 border-red-400/20',
+  trailing_stop: 'text-sky-400 bg-sky-400/10 border-sky-400/20',
+  max_hold: 'text-amber-400 bg-amber-400/10 border-amber-400/20',
+};
+
+function ExitReason({ notes }: { notes: string | null }) {
+  if (!notes) return <span className="text-muted-foreground">—</span>;
+  const reason = notes.split(' ')[0];
+  const cls = EXIT_STYLES[reason] ?? 'text-muted-foreground bg-muted border-border';
+  return (
+    <span
+      title={notes}
+      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${cls}`}
+    >
+      {reason}
+    </span>
+  );
 }
 
 function PnlCell({ trade }: { trade: Trade }) {
   if (trade.status === 'open' || trade.pnl_pct === null) {
     return <span className="text-muted-foreground">—</span>;
   }
+  const color = trade.pnl_pct >= 0 ? 'text-green-500' : 'text-red-500';
+  const roe = trade.pnl_pct * trade.leverage;
   return (
-    <span className={trade.pnl_pct >= 0 ? 'text-green-500' : 'text-red-500'}>
-      {fmtPct(trade.pnl_pct)}
+    <div className={`font-mono leading-tight ${color}`}>
+      <div>{trade.pnl_usd !== null ? fmtUsd(trade.pnl_usd) : fmtPct(trade.pnl_pct)}</div>
+      <div className="text-xs text-muted-foreground">
+        {fmtPct(trade.pnl_pct)} · ROE {fmtPct(roe)}
+      </div>
+    </div>
+  );
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const cls =
+    status === 'open'
+      ? 'text-sky-400 bg-sky-400/10 border-sky-400/20'
+      : 'text-muted-foreground bg-muted border-border';
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${cls}`}
+    >
+      {status}
     </span>
   );
 }
 
-function OutcomeBadge({ label }: { label: string | null }) {
-  if (!label) return <span className="text-muted-foreground">—</span>;
-  const variant = label === 'win' ? 'default' : label === 'loss' ? 'destructive' : 'secondary';
-  return <Badge variant={variant}>{label}</Badge>;
-}
+// Stats come from /api/trades/stats — computed server-side over the whole closed-trade
+// set (not just the loaded page), and profit factor / net P&L are dollar-based.
+function StatRow({ stats }: { stats?: TradeStats }) {
+  if (!stats || stats.count === 0) return null;
+  const { count, win_rate, expectancy, avg_win, avg_loss, profit_factor, net_usd } = stats;
 
-function StatusBadge({ status }: { status: string }) {
-  if (status === 'open') return <Badge variant="outline">open</Badge>;
-  if (status === 'closed') return <Badge variant="secondary">closed</Badge>;
-  if (status === 'cancelled') return <Badge variant="secondary">cancelled</Badge>;
-  return <Badge variant="secondary">{status}</Badge>;
+  const items: { label: string; value: string; cls?: string }[] = [
+    { label: 'Closed', value: String(count) },
+    { label: 'Win rate', value: `${win_rate.toFixed(0)}%` },
+    {
+      label: 'Expectancy',
+      value: fmtPct(expectancy),
+      cls: expectancy >= 0 ? 'text-green-500' : 'text-red-500',
+    },
+    { label: 'Avg win', value: fmtPct(avg_win), cls: 'text-green-500' },
+    { label: 'Avg loss', value: fmtPct(avg_loss), cls: 'text-red-500' },
+    {
+      label: 'Profit factor',
+      value: profit_factor === null ? '—' : profit_factor.toFixed(2),
+      cls: profit_factor !== null && profit_factor >= 1 ? 'text-green-500' : 'text-red-500',
+    },
+    {
+      label: 'Net P&L',
+      value: fmtUsd(net_usd),
+      cls: net_usd >= 0 ? 'text-green-500' : 'text-red-500',
+    },
+  ];
+
+  const n = count;
+  return (
+    <Card>
+      <CardContent className="flex flex-wrap items-center gap-x-6 gap-y-2 py-3">
+        {items.map((s) => (
+          <div key={s.label} className="flex flex-col">
+            <span className="text-xs text-muted-foreground">{s.label}</span>
+            <span className={`font-mono text-sm ${s.cls ?? ''}`}>{s.value}</span>
+          </div>
+        ))}
+        {n < 30 && (
+          <span className="ml-auto text-xs text-amber-400/80">
+            small sample (N={n}) — not statistically meaningful
+          </span>
+        )}
+      </CardContent>
+    </Card>
+  );
 }
 
 export function TradesPage() {
@@ -77,6 +173,7 @@ export function TradesPage() {
     limit: PAGE_SIZE,
     offset,
   });
+  const { data: stats } = useTradeStats({ exchange: exchangeFilter || undefined });
 
   const trades = data?.trades ?? [];
   const total = data?.total ?? 0;
@@ -95,7 +192,7 @@ export function TradesPage() {
   return (
     <div className="min-h-screen bg-background">
       <Nav />
-      <div className="mx-auto max-w-6xl p-4 md:p-8 space-y-4">
+      <div className="mx-auto max-w-6xl space-y-4 p-4 md:p-8">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-xl font-bold tracking-tight">Trade Journal</h1>
@@ -152,6 +249,8 @@ export function TradesPage() {
           </div>
         </div>
 
+        {statusFilter !== 'open' && <StatRow stats={stats} />}
+
         {showEmpty && (
           <Card>
             <CardContent className="py-8 text-center text-sm text-muted-foreground">
@@ -163,67 +262,80 @@ export function TradesPage() {
         {!showEmpty && (
           <Card>
             <CardContent className="p-0">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Symbol</TableHead>
-                    <TableHead>Exchange</TableHead>
-                    <TableHead>Side</TableHead>
-                    <TableHead className="text-right">Size</TableHead>
-                    <TableHead className="text-right">Lev</TableHead>
-                    <TableHead className="text-right">Entry</TableHead>
-                    <TableHead className="text-right">Exit</TableHead>
-                    <TableHead className="text-right">P&L</TableHead>
-                    <TableHead>Outcome</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Opened</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {trades.map((t) => (
-                    <TableRow key={t.id}>
-                      <TableCell className="font-mono font-semibold">
-                        {t.symbol.split('/')[0]}
-                        {isPaper(t) && (
-                          <span className="ml-1.5 text-xs font-normal text-muted-foreground">
-                            paper
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell className="capitalize">{t.exchange}</TableCell>
-                      <TableCell>
-                        <span className={t.side === 'short' ? 'text-red-400' : 'text-green-400'}>
-                          {t.side}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-right">${t.size_usd.toFixed(0)}</TableCell>
-                      <TableCell className="text-right">{t.leverage}x</TableCell>
-                      <TableCell className="text-right font-mono">
-                        {fmtPrice(t.entry_price)}
-                      </TableCell>
-                      <TableCell className="text-right font-mono">
-                        {t.exit_price !== null ? (
-                          fmtPrice(t.exit_price)
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right font-mono">
-                        <PnlCell trade={t} />
-                      </TableCell>
-                      <TableCell>
-                        <OutcomeBadge label={t.outcome_label} />
-                      </TableCell>
-                      <TableCell>
-                        <StatusBadge status={t.status} />
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap text-muted-foreground">
-                        {fmtDate(t.entry_at)}
-                      </TableCell>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Token</TableHead>
+                      <TableHead>Exchange</TableHead>
+                      <TableHead>Side</TableHead>
+                      <TableHead className="text-right">Size · Lev</TableHead>
+                      <TableHead className="text-right">Entry → Exit</TableHead>
+                      <TableHead className="text-right">P&L</TableHead>
+                      <TableHead>Exit</TableHead>
+                      <TableHead className="text-right">Held</TableHead>
+                      <TableHead>Strategy</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Opened</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {trades.map((t) => {
+                      const held = holdMinutes(t);
+                      return (
+                        <TableRow key={t.id}>
+                          <TableCell className="font-mono font-semibold">
+                            {t.symbol.split('/')[0]}
+                            {isPaper(t) && (
+                              <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                                paper
+                              </span>
+                            )}
+                          </TableCell>
+                          <TableCell className="capitalize text-muted-foreground">
+                            {t.exchange}
+                          </TableCell>
+                          <TableCell>
+                            <span
+                              className={t.side === 'short' ? 'text-red-400' : 'text-green-400'}
+                            >
+                              {t.side}
+                            </span>
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap text-right font-mono text-muted-foreground">
+                            ${t.size_usd.toFixed(0)} · {t.leverage}x
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap text-right font-mono">
+                            {fmtPrice(t.entry_price)}
+                            <span className="text-muted-foreground">
+                              {' → '}
+                              {t.exit_price !== null ? fmtPrice(t.exit_price) : '—'}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <PnlCell trade={t} />
+                          </TableCell>
+                          <TableCell>
+                            <ExitReason notes={t.notes} />
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap text-right font-mono text-muted-foreground">
+                            {held !== null ? fmtDuration(held) : '—'}
+                          </TableCell>
+                          <TableCell className="font-mono text-xs text-muted-foreground">
+                            {strategyVersion(t)}
+                          </TableCell>
+                          <TableCell>
+                            <StatusBadge status={t.status} />
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap text-muted-foreground">
+                            {fmtDate(t.entry_at)}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
             </CardContent>
           </Card>
         )}
@@ -237,14 +349,14 @@ export function TradesPage() {
               <button
                 onClick={() => setOffset((p) => Math.max(0, p - PAGE_SIZE))}
                 disabled={offset === 0}
-                className="rounded border px-3 py-1 disabled:opacity-40 hover:bg-muted/50"
+                className="rounded border px-3 py-1 hover:bg-muted/50 disabled:opacity-40"
               >
                 Prev
               </button>
               <button
                 onClick={() => setOffset((p) => p + PAGE_SIZE)}
                 disabled={offset + PAGE_SIZE >= total}
-                className="rounded border px-3 py-1 disabled:opacity-40 hover:bg-muted/50"
+                className="rounded border px-3 py-1 hover:bg-muted/50 disabled:opacity-40"
               >
                 Next
               </button>
