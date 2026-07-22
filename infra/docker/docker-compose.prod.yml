@@ -189,6 +189,29 @@ services:
         max-size: '10m'
         max-file: '3'
 
+  outcome-resolver:
+    build:
+      context: ../../
+      dockerfile: apps/analytics/Dockerfile
+    container_name: schurfer-outcome-resolver
+    entrypoint: ['outcome-resolver']
+    environment:
+      DATABASE_URL: postgresql://schurfer:${POSTGRES_PASSWORD}@postgres:5432/schurfer
+      PUMP_EXCHANGES: ${PUMP_EXCHANGES:-}
+      OUTCOME_POLL_INTERVAL: ${OUTCOME_POLL_INTERVAL:-300}
+      OUTCOME_RETRY_AFTER: ${OUTCOME_RETRY_AFTER:-900}
+      OUTCOME_BATCH_SIZE: ${OUTCOME_BATCH_SIZE:-50}
+      OUTCOME_MAX_ATTEMPTS: ${OUTCOME_MAX_ATTEMPTS:-8}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: always
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
   execution:
     build:
       context: ../../

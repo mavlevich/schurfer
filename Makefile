@@ -161,7 +161,7 @@ verify:
 	uv run --extra dev ruff check apps/analytics apps/execution packages
 	MYPYPATH=apps/analytics:packages/journal uv run --extra dev --with sqlalchemy --with psycopg mypy apps/analytics/schurfer_analytics apps/analytics/tests packages/journal/schurfer_journal
 	uv run --extra dev --all-packages mypy apps/execution/schurfer_execution
-	uv run --extra dev --with ccxt --with redis --with structlog --with "psycopg[binary]" pytest apps/analytics -q
+	uv run --extra dev --with ccxt --with greenlet --with redis --with sqlalchemy --with structlog --with "psycopg[binary]" pytest apps/analytics -q
 	uv run --extra dev --with sqlalchemy --with alembic --with "psycopg[binary]" pytest packages/journal -q
 	uv run --extra dev --all-packages pytest apps/execution/tests -q
 	@echo "=== [3/5] Go: test + vet ==="
@@ -250,6 +250,7 @@ verify-docker: verify
 	@echo "=== Docker: analytics build + import check ==="
 	docker build -f apps/analytics/Dockerfile -t schurfer-analytics:ci . -q
 	docker run --rm --entrypoint python schurfer-analytics:ci -c "import schurfer_analytics; print('ok')"
+	docker run --rm --entrypoint outcome-resolver schurfer-analytics:ci --help
 	@docker rmi schurfer-analytics:ci --force > /dev/null
 	@echo "=== Docker: execution build + import check ==="
 	docker build -f apps/execution/Dockerfile -t schurfer-execution:ci . -q

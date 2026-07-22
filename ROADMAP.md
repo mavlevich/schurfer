@@ -111,13 +111,22 @@ the two remaining items are dataset-health visibility, not data capture.
 
 - [ ] Decision-quality analysis (automatic). This is the core deliverable: it answers
       "was our decision right, and what would have made it right?" for every token that
-      hit the radar, whether we traded it or skipped it. On a schedule (for example at
-      +24h, +7d, +30d per decision), backfill the forward outcome for each
-      `trade_decisions` row from OHLCV after the decision time: max adverse and
-      favorable excursion, plus a virtual short PnL under the strategy's exit rules
-      (TP, SL, max-hold). Label each decision:
-  - taken and won, or taken and lost
-  - skipped and would-have-won (missed edge), or skipped and correctly avoided
+      hit the radar, whether we traded it or skipped it.
+  - [x] Strategy-agnostic outcome layer: a separate idempotent worker backfills 5-minute
+        OHLCV at +15m, +30m, +1h, +4h, +8h, +24h, +72h, and +7d, then stores forward
+        price, MAE/MFE, raw short return, venue provenance, coverage, retry status, and
+        resolver version. It never uses the candle in progress at decision time and
+        labels cross-venue fallback rather than silently mixing it with anchor-venue
+        data.
+  - [ ] Versioned virtual-strategy layer: replay decisions by token episode under the
+        actual v1 rules and pre-registered challengers, including fees, funding,
+        liquidity-aware slippage, TP/SL/trailing/max-hold, and taken-vs-skipped labels:
+    - taken and won, or taken and lost
+    - skipped and would-have-won (missed edge), or skipped and correctly avoided
+
+  - [ ] Derive recoverable pre-decision candle features (including blow-off concentration
+        and reversal strength) from fully closed OHLCV and test whether they separate
+        outcomes before promoting either to a live gate or score component.
 
     Then aggregate. Expectancy of taken versus skipped by score bucket answers "is
     the threshold in the right place?" (if score-5 skips beat score-6 trades, it is

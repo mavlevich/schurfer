@@ -10,8 +10,9 @@ automated position management, and safety hardening (exchange-native stop-loss,
 durable daily PnL, position reconciliation) are all in place. The measurement layer
 that will show whether the strategy has edge is now largely built: every decision
 (taken or skipped) is recorded durably via a Redis Stream outbox with its liquidity
-snapshot and decision-time price. Current focus is turning that dataset into
-decision-quality analysis — outcome resolution and comparing strategy variants (see
+snapshot and decision-time price, and a separate worker resolves strategy-agnostic
+forward outcomes from 15 minutes through 7 days. Current focus is the versioned virtual
+replay that compares strategy variants on those same episodes (see
 [ROADMAP.md](ROADMAP.md)).
 
 ## What it does

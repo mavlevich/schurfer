@@ -4,9 +4,11 @@ WORKDIR /app
 
 RUN pip install uv
 
-# Copy workspace root (pyproject.toml, uv.lock) and the analytics package
+# Copy workspace root and both runtime workspace packages. Analytics imports the
+# journal's SQLAlchemy tables so the runtime query layer and Alembic share one schema.
 COPY pyproject.toml uv.lock ./
 COPY apps/analytics/ ./apps/analytics/
+COPY packages/journal/ ./packages/journal/
 
 # Install only the analytics package and its dependencies (no dev extras).
 # --no-editable builds a real wheel so the module exists inside .venv

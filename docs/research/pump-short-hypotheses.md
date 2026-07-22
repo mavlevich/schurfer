@@ -1,9 +1,10 @@
-# Pump-short hypotheses (pre-registered)
+# Pump-short hypotheses register
 
-Observations and hypotheses about the pump-short strategy, written down **before**
-running the analysis that tests them. Pre-registration is the point: it stops us from
-fitting an explanation to whatever the numbers happen to show, and from tuning
-production on a handful of trades.
+Observations and hypotheses about the pump-short strategy. The first eight paper trades
+(through 2026-07-21) are the discovery sample that generated these hypotheses; they do
+not count toward confirmatory evidence. Before evaluating a challenger, lock its exact
+experiment manifest and confirmation-cohort start in this file. This prevents fitting
+an explanation to whatever the numbers happen to show.
 
 Rules:
 
@@ -14,16 +15,19 @@ Rules:
 - Decisions about a new champion are made on **eligible** situations (candidates that
   passed the gates), not on all decisions, and only after enough of them: a first look
   at ~50, a champion switch at ~100-200. Current sample (8 paper trades) is anecdote.
-- **Cohort cutoff:** fix the analysis cohort to decisions on or after a stated start
-  date (earliest: when the durable outbox shipped, so the dataset is complete), and
-  write the cutoff down before looking at results. Do not extend the window after seeing
-  them.
-- **Unit of analysis:** one row per token-episode, not per decision — a token that
-  re-triggers later is a separate episode, and the per-token `seen` debounce means one
-  episode should not be counted many times. Aggregate at the episode level.
-- **Status:** this is a hypotheses register. The exact outcome windows and the
-  taken-vs-skipped join are locked when the outcome resolver is built; until then, treat
-  the experiment specs below as the intent, not a frozen protocol.
+- **Cohort cutoff:** the first eight paper trades and all decisions through 2026-07-21
+  are discovery-only. Each experiment manifest sets a later UTC start before its
+  outcomes are queried, plus a terminal rule (fixed episode count or end date). Do not
+  extend the window after seeing results.
+- **Unit of inference:** a token-episode (`features.signal.episode.id`), not an individual
+  decision or trade. Replay all decisions inside an episode chronologically so each
+  variant still observes the real score/gate/seen-TTL sequence, then aggregate outcomes
+  and confidence intervals by episode. Repeated decisions are not independent N.
+- **Status:** this is a hypotheses register. The generic outcome windows are locked by
+  `forward_v1` (15m, 30m, 1h, 4h, 8h, 24h, 72h, 7d). The taken-vs-skipped join, costs,
+  exit simulation, and exact challenger manifests are locked in the next virtual-replay
+  layer; until then, treat those experiment details below as intent, not a frozen
+  protocol.
 
 Current baseline (as deployed, `pump_short_v1`): `PUMP_MIN_PCT=30`, `SCORE_THRESHOLD=6`,
 `REQUIRE_RED_CANDLE=false`, `MIN_RETRACE_PCT=0`, leverage 3x, fixed $50 notional; exits
@@ -36,9 +40,10 @@ scale with pump size (initial SL 8-12%, trail activation 8-15%, trail 12-20%, ma
 
 Fact, from `app.trades.notes` over 8 paper trades (Jul 18-21): losses were 100%
 `initial_sl` (-9.05 / -11.28 / -11.10%); wins were `max_hold` timeouts (~+4%) or
-`trailing_stop` exits that gave back most of the move (PONS pumped ~130%, exited +5.8%
-on a 20% trail, so MFE was ~+25%). Expectancy ~-1.4%/trade, profit factor ~0.64,
-breakeven win rate ~72% vs actual 62.5%.
+`trailing_stop` exits that gave back part of the move. Gross price-return expectancy was
+~-1.4%/trade and gross profit factor ~0.64 before fees, funding, and slippage; breakeven
+win rate was ~72% vs actual 62.5%. The existing notes do not preserve best price, so MFE
+cannot be reconstructed from these eight trades and must come from the outcome resolver.
 
 ### HYP-001a — a no-progress timeout beats a fixed clock
 
@@ -100,12 +105,39 @@ sweep on recorded decisions shows a clear direction.
 
 ## HYP-004 — conviction-based sizing (fractional Kelly) once the score is calibrated
 
-Sizing position and/or leverage up when the expected edge is higher is optimal in
-principle (Kelly: bet in proportion to edge). It is premature now: it requires a
+Sizing notional up when the expected edge is higher is optimal in principle (Kelly: bet
+in proportion to edge). It is premature now: it requires a
 **calibrated** mapping from score to win probability, which we do not have. Sizing on an
 uncalibrated score amplifies losses on false confidence, and full Kelly is too
 aggressive for fat-tailed pump moves. Gated on (a) proven edge, (b) score calibration
 from the decision-quality analysis by score bucket; then use fractional (e.g. 1/2 or
-1/4) Kelly. Note: leverage scales return and risk together, so it does not change
-whether an edge exists — it is a sizing decision to optimize last, not first. Belongs to
-Phase 4 (risk engine / sizing + regime).
+1/4) Kelly. With the current fixed notional, leverage does not scale dollar P&L; it
+changes required margin, margin ROE, and liquidation distance. Choose leverage only
+after notional sizing, as a risk/implementation constraint. Belongs to Phase 4.
+
+---
+
+## HYP-005 — a concentrated blow-off mean-reverts differently than a grind
+
+Example (ERA): the pump ran on two sharp 15-minute candles, then a single candle
+retraced almost the whole move at once. This example contains two potentially distinct
+signals: concentrated pump formation (blow-off versus grind) and the strength of the
+closed reversal candle. They must be measured separately so one is not credited for the
+other.
+
+Features to derive retrospectively for every decision from OHLCV candles fully closed
+by the decision timestamp (ATR-normalized so tokens stay comparable): candle body/range
+vs prior ATR, volume z-score against a prior window, upper-wick-to-range ratio, pump
+concentration (share of the positive move in the largest 1-2 candles), bearish reversal
+body/ATR, and the share of the pump returned by the last closed candle.
+
+Hypothesis: blow-off concentration and reversal strength each separate short outcomes,
+and their interaction may be stronger than either alone. If confirmatory analysis shows
+stable separation, one or both can become an entry gate or score component.
+
+Experiment: derive the input features only from the pre-decision window, then split
+post-decision outcomes across a 2x2 view (blow-off/grind x strong/weak reversal).
+Primary metric: net expectancy and captured_move by pre-registered buckets.
+
+Do not build a candle-anomaly detector as a live signal before this split shows the
+separation.

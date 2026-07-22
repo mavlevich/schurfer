@@ -218,6 +218,36 @@ To take the system fully out of live trading, set `AUTO_TRADE=false` (or
   Two-phase `intent -> resolution` closes the opened-window and is planned for a
   follow-up PR (required before `AUTO_TRADE=true`).
 
+- Forward outcome resolver: the separate `outcome-resolver` service reads due rows
+  from `app.trade_decisions`, fetches 5-minute OHLCV, and idempotently writes
+  strategy-agnostic forward metrics to `app.trade_decision_outcomes`. It resolves
+  15m, 30m, 1h, 4h, 8h, 24h, 72h, and 7d horizons. The candle already in progress at
+  decision time is excluded so pre-decision prices cannot leak into MAE/MFE; a
+  `complete` result requires every expected closed bar. Inspect:
+
+  ```sql
+  SELECT horizon_minutes, status, count(*)
+  FROM app.trade_decision_outcomes
+  GROUP BY horizon_minutes, status
+  ORDER BY horizon_minutes, status;
+
+  SELECT d.ts, d.base, o.horizon_minutes, o.status, o.coverage_ratio,
+         o.mfe_pct, o.mae_pct, o.short_return_pct, o.attempt_count, o.error
+  FROM app.trade_decision_outcomes o
+  JOIN app.trade_decisions d ON d.decision_id = o.decision_id
+  ORDER BY o.updated_at DESC
+  LIMIT 50;
+  ```
+
+  `partial`, `missing_ohlcv`, `fetch_failed`, `unsupported_exchange`, and
+  `complete_fallback` rows retry after `OUTCOME_RETRY_AFTER`, up to
+  `OUTCOME_MAX_ATTEMPTS`; this lets late OHLCV or a newly enabled venue repair a
+  lower-quality row. `missing_price` is terminal. A `complete_fallback` row used another
+  measured candidate venue because the decision's anchor venue was unavailable or had
+  poorer coverage; do not silently mix it with exact-venue results. This worker does
+  not simulate exits or costs — those belong to the versioned virtual-strategy
+  analysis.
+
 ## Incidents
 
 Record notable incidents and their fixes here as they happen, so the next person (or

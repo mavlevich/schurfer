@@ -4,13 +4,17 @@ version = "0.1.0"
 requires-python = ">=3.13"
 dependencies = [
     "ccxt>=4.4.0",
+    "greenlet>=3.2",
     "psycopg[binary]>=3.2",
     "redis>=5.2",
+    "schurfer-journal",
+    "sqlalchemy[asyncio]>=2.0",
     "structlog>=24.4",
 ]
 
 [project.scripts]
 pump-scanner = "schurfer_analytics.main:main"
+outcome-resolver = "schurfer_analytics.outcome_worker:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -18,3 +22,6 @@ include = ["schurfer_analytics*"]
 
 [tool.uv]
 package = true
+
+[tool.uv.sources]
+schurfer-journal = { workspace = true }
