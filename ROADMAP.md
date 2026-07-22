@@ -67,7 +67,10 @@ proven. Post-MVP strategy and exit improvements live in the exit-strategy notes.
 Start collecting the evidence that answers "is there edge?". Non-recoverable data
 comes first.
 
-- [ ] Extend `app.trade_decisions`. It currently stores only `score` and `pump_pct`
+Status (2026-07-22): the decision + liquidity + price dataset is live and durable;
+the two remaining items are dataset-health visibility, not data capture.
+
+- [x] Extend `app.trade_decisions`. It currently stores only `score` and `pump_pct`
       as scalars, and already logs every decision including skip reasons. Add:
   - `features jsonb`: the signal snapshot plus the decision context (candidate
     exchanges and a fingerprint of the effective config, so decisions stay
@@ -79,10 +82,11 @@ comes first.
     configured exchange and stamped with an explicit status. This is the only
     non-recoverable piece, so it is the most urgent.
   - Which exchange the tradeable instrument lives on (coverage data, see Phase 2).
-- [ ] One Alembic migration plus a few lines on the execution decision-write path.
-      This is independent of where the score is computed, so it does not commit us to
-      any later scoring decision.
-- [ ] Run 24/7 (already deployed) plus a stale-data Telegram alert (no fresh scans or
+  - Also added: `price` (decision-time reference price, migration 0010).
+- [x] Schema and decision-write path (migrations 0008-0010 plus the execution write
+      path). This is independent of where the score is computed, so it does not commit
+      us to any later scoring decision.
+- [x] Run 24/7 (already deployed) plus a stale-data Telegram alert (no fresh scans or
       signals for N minutes). A silently dead scanner rots the dataset.
 - [ ] Operational health on the existing Status page: pipeline liveness (scanner
       alive, last-scan age, signal freshness), per-service error rate, container
@@ -92,12 +96,13 @@ comes first.
 - [ ] Dataset completeness metrics: decisions/hour, % features present, % liquidity
       present, % liquidity fetch_failed, and lag between signal computed_at and the
       decision. These tell us early if the dataset is degrading.
-- [ ] Durable decision queue (follow-up). The writer queue is in-memory and drops on
-      restart or overflow, and liquidity is the data we most want to keep. Move to a
-      Redis Stream outbox (execution XADD, DB writer XACK after insert) so decisions
-      survive a restart. Small, self-contained next PR. Note: prod Redis uses an RDB
-      snapshot (`--save 60 1`), so a Stream is only as durable as that window. Enable
-      AOF (or document the acceptable loss window) as part of that PR.
+- [x] Durable decision queue. Moved from the in-memory writer queue to a Redis Stream
+      outbox (execution XADD atomic with SET seen, DB writer XREADGROUP -> INSERT ->
+      XACK+XDEL after commit, XAUTOCLAIM recovery, poison DLQ). Prod + dev Redis run
+      AOF (`--appendonly yes --appendfsync everysec`) with RDB kept and noeviction.
+      Guarantee and remaining opened-decision window documented in the runbook; the
+      two-phase intent/resolution + reconciliation is a follow-up, required before
+      `AUTO_TRADE=true`.
 - Outcome capture (MAE, MFE, forward price) is backfillable from OHLCV, so we do not
   plumb it live now. The analysis that uses it is the core deliverable, see Phase 1
   "Decision-quality analysis".
