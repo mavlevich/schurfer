@@ -34,6 +34,11 @@ Current baseline (as deployed, `pump_short_v1`): `PUMP_MIN_PCT=30`, `SCORE_THRES
 scale with pump size (initial SL 8-12%, trail activation 8-15%, trail 12-20%, max hold
 180-360 min). See `docs/strategies/pump_short_v1.md` for the full description.
 
+The execution-safety successor `pump_short_v1_market_quality` does not claim a new
+alpha model: it keeps the v1 signal/entry rules but removes mechanically untradeable
+books using the recorded spread, two-sided depth, and VWAP impact. Analyze its eligible
+cohort separately from the original v1 cohort.
+
 ---
 
 ## OBS-001 — exit asymmetry: full SL on losers, undershoot on winners
@@ -124,6 +129,15 @@ retraced almost the whole move at once. This example contains two potentially di
 signals: concentrated pump formation (blow-off versus grind) and the strength of the
 closed reversal candle. They must be measured separately so one is not credited for the
 other.
+
+Second observation (`草根文化`, Gate, 2026-07-22): a single-venue market produced
+successive 15-minute expansion candles, a 24h move peaking near +235%, spread snapshots
+of 983.61 and 108.72 bps, and insufficient visible 50-level depth to fill $100 on
+either side. A short decision at 0.0003 had raw forward returns of -6.2% / -63.3% /
+-120.0% at 15m / 30m / 60m and 151.3% MAE; a later decision at 0.0005046 still had
+49.4% MAE. This is a manipulation-like/illiquidity observation, not proof of intent.
+It demonstrates that reversal probability and mechanical tradability must be modeled
+as separate dimensions: a token may eventually mean-revert and still be ineligible.
 
 Features to derive retrospectively for every decision from OHLCV candles fully closed
 by the decision timestamp (ATR-normalized so tokens stay comparable): candle body/range
