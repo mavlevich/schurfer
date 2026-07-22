@@ -87,6 +87,28 @@ def test_due_statement_is_parameterized_and_contains_retry_guards() -> None:
     assert "forward_v1" in compiled.params.values()
 
 
+def test_due_statement_prioritizes_decisions_with_a_usable_price() -> None:
+    statement = due_decisions_statement(
+        horizons=(15, 60),
+        resolver_version="forward_v1",
+        retryable_statuses=("partial",),
+        max_attempts=8,
+        retry_after_seconds=900,
+        batch_size=50,
+    )
+
+    sql = str(
+        statement.compile(
+            dialect=postgresql.dialect()  # type: ignore[no-untyped-call]
+        )
+    )
+    order_by = sql.split("ORDER BY", maxsplit=1)[1]
+
+    assert order_by.lstrip().startswith(
+        "app.trade_decisions.price IS NULL OR app.trade_decisions.price <="
+    )
+
+
 def test_upsert_statement_uses_idempotency_constraint_and_increments_attempts() -> None:
     statement = upsert_outcomes_statement(
         [_outcome()],

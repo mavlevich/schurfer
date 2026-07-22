@@ -50,15 +50,23 @@ async def run_outcome_resolver(
         )
         while True:
             try:
-                await resolve_once(cfg, exchanges, active_store)
+                resolved_count = await resolve_once(cfg, exchanges, active_store)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
                 log.error("outcomes.tick_failed", error=str(exc))
                 if once:
                     raise
-            if once:
-                return
+            else:
+                if once:
+                    return
+                if resolved_count >= cfg.batch_size:
+                    log.info(
+                        "outcomes.backlog_draining",
+                        resolved_count=resolved_count,
+                        batch_size=cfg.batch_size,
+                    )
+                    continue
             await asyncio.sleep(cfg.poll_interval_seconds)
     finally:
         await asyncio.gather(

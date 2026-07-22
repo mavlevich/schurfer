@@ -1,3 +1,4 @@
+import asyncio
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
@@ -384,12 +385,73 @@ async def test_run_once_success_closes_exchange() -> None:
         ),
         patch(
             "schurfer_analytics.outcome_worker.resolve_once",
-            AsyncMock(return_value=0),
+            AsyncMock(return_value=cfg.batch_size),
         ) as resolve,
     ):
         await run_outcome_resolver(cfg, once=True, store=store)
 
     resolve.assert_awaited_once()
+    exchange.close.assert_awaited_once()
+
+
+async def test_runner_drains_full_batches_before_sleeping() -> None:
+    cfg = OutcomeConfig(
+        "postgresql://test",
+        ("test",),
+        poll_interval_seconds=300,
+        batch_size=50,
+    )
+    exchange = AsyncMock()
+    store = _store([])
+
+    with (
+        patch.dict(
+            "schurfer_analytics.outcome_worker.EXCHANGE_FACTORIES",
+            {"test": lambda: exchange},
+            clear=True,
+        ),
+        patch(
+            "schurfer_analytics.outcome_worker.resolve_once",
+            AsyncMock(side_effect=[50, 50, 7]),
+        ) as resolve,
+        patch(
+            "schurfer_analytics.outcome_worker.asyncio.sleep",
+            AsyncMock(side_effect=asyncio.CancelledError),
+        ) as sleep,
+        pytest.raises(asyncio.CancelledError),
+    ):
+        await run_outcome_resolver(cfg, store=store)
+
+    assert resolve.await_count == 3
+    sleep.assert_awaited_once_with(300)
+    exchange.close.assert_awaited_once()
+
+
+async def test_runner_sleeps_after_failed_batch_instead_of_spinning() -> None:
+    cfg = OutcomeConfig("postgresql://test", ("test",), poll_interval_seconds=300)
+    exchange = AsyncMock()
+    store = _store([])
+
+    with (
+        patch.dict(
+            "schurfer_analytics.outcome_worker.EXCHANGE_FACTORIES",
+            {"test": lambda: exchange},
+            clear=True,
+        ),
+        patch(
+            "schurfer_analytics.outcome_worker.resolve_once",
+            AsyncMock(side_effect=RuntimeError("database unavailable")),
+        ) as resolve,
+        patch(
+            "schurfer_analytics.outcome_worker.asyncio.sleep",
+            AsyncMock(side_effect=asyncio.CancelledError),
+        ) as sleep,
+        pytest.raises(asyncio.CancelledError),
+    ):
+        await run_outcome_resolver(cfg, store=store)
+
+    resolve.assert_awaited_once()
+    sleep.assert_awaited_once_with(300)
     exchange.close.assert_awaited_once()
 
 
