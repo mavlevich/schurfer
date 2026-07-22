@@ -38,6 +38,7 @@ def _valid_payload(**over: object) -> dict[str, object]:
         "features": None,
         "liquidity": None,
         "price": 1.5,
+        "pump_event_id": 42,
     }
     p.update(over)
     return p
@@ -85,6 +86,7 @@ async def test_write_decision_xadd_and_seen_atomic() -> None:
         action="skipped",
         reason="x",
         decision_id="d1",
+        pump_event_id=42,
         seen_key="trader:seen:BEAT",
         seen_ttl=1800,
     )
@@ -93,9 +95,26 @@ async def test_write_decision_xadd_and_seen_atomic() -> None:
     body = json.loads(entry[b"data"])
     assert body["schema_version"] == _SCHEMA_VERSION
     assert body["base"] == "BEAT"
+    assert body["pump_event_id"] == 42
     # seen flag set atomically with the XADD (one MULTI/EXEC)
     assert await rdb.get("trader:seen:BEAT") == b"1"
     assert 0 < await rdb.ttl("trader:seen:BEAT") <= 1800
+    await rdb.aclose()
+
+
+async def test_write_decision_rejects_invalid_pump_event_id_before_xadd() -> None:
+    rdb = FakeRedis()
+    with pytest.raises(ValueError, match="pump_event_id"):
+        await write_decision(
+            rdb,
+            base="BEAT",
+            exchange="bybit",
+            action="skipped",
+            reason="x",
+            decision_id="d1",
+            pump_event_id=0,
+        )
+    assert await rdb.xlen(_STREAM) == 0
     await rdb.aclose()
 
 
@@ -160,6 +179,22 @@ def test_row_from_payload_maps_all_fields() -> None:
     row = _row_from_payload(json.dumps(_valid_payload(base="ACT", price=2.5)))
     assert row[1] == "ACT"
     assert row[11] == 2.5
+    assert row[12] == 42
+
+
+def test_row_from_payload_accepts_old_message_without_pump_event_id() -> None:
+    payload = _valid_payload()
+    del payload["pump_event_id"]
+
+    row = _row_from_payload(json.dumps(payload))
+
+    assert row[12] is None
+
+
+@pytest.mark.parametrize("pump_event_id", [0, -1, True, 1.5, "42"])
+def test_row_from_payload_rejects_invalid_pump_event_id(pump_event_id: object) -> None:
+    with pytest.raises(ValueError, match="pump_event_id"):
+        _row_from_payload(json.dumps(_valid_payload(pump_event_id=pump_event_id)))
 
 
 def test_row_from_payload_rejects_unknown_schema() -> None:

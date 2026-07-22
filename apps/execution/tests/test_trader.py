@@ -7,6 +7,8 @@ import pytest
 from schurfer_execution.config import Config
 from schurfer_execution.trader import (
     _SEEN_TTL_ENTRY_WAIT,
+    _SEEN_TTL_SCORE_RECHECK,
+    _SEEN_TTL_SIGNAL_RETRY,
     _SEEN_TTL_SKIP,
     _SEEN_TTL_TRADED,
     _decision_price,
@@ -16,6 +18,7 @@ from schurfer_execution.trader import (
     _fetch_score,
     _fetch_signal,
     _pick_exchange,
+    _pump_event_id,
     _tick,
 )
 
@@ -73,12 +76,14 @@ def _pumps(
     *bases: str,
     exchange: str = "bybit",
     volume: float = 1_000_000.0,
+    pump_event_id: int | None = 42,
 ) -> bytes:
     return json.dumps(
         {
             "pumps": [
                 {
                     "base": base,
+                    "pump_event_id": pump_event_id,
                     "max_change_pct": 50.0,
                     "exchanges": [{"exchange": exchange, "volume_24h_usd": volume}],
                 }
@@ -106,6 +111,7 @@ def _rdb(
                     "score": signal_score,
                     "verdict": "short_setup",
                     "computed_at": time.time() - signal_age_seconds,
+                    "episode": {"id": 42},
                 }
             )
             return payload.encode()
@@ -255,30 +261,49 @@ async def test_fetch_score_returns_score_when_fresh() -> None:
     assert await _fetch_score("BEAT", rdb) == 8
 
 
+async def test_fetch_signal_preserves_real_computed_zero() -> None:
+    result = await _fetch_signal("BEAT", _rdb(signal_score=0), expected_pump_event_id=42)
+
+    assert result.score == 0
+    assert result.status == "ok"
+
+
+async def test_fetch_signal_rejects_signal_from_previous_pump_episode() -> None:
+    result = await _fetch_signal("BEAT", _rdb(signal_score=8), expected_pump_event_id=99)
+
+    assert result.score is None
+    assert result.status == "signal_episode_mismatch"
+    assert result.payload is not None
+    assert result.payload["episode"]["id"] == 42
+
+
 # --- _fetch_signal: malformed-but-valid JSON must not raise ---
 
 
-async def test_fetch_signal_returns_zero_when_score_is_null() -> None:
+async def test_fetch_signal_marks_null_score_invalid() -> None:
     rdb = MagicMock()
     rdb.get = AsyncMock(return_value=b'{"score": null, "computed_at": 0}')
-    score, payload = await _fetch_signal("BEAT", rdb)
-    assert score == 0
-    assert payload == {"score": None, "computed_at": 0}
+    result = await _fetch_signal("BEAT", rdb)
+    assert result.score is None
+    assert result.status == "signal_invalid_score"
+    assert result.payload == {"score": None, "computed_at": 0}
 
 
-async def test_fetch_signal_returns_zero_when_json_is_a_list() -> None:
+async def test_fetch_signal_marks_non_object_payload_invalid() -> None:
     rdb = MagicMock()
     rdb.get = AsyncMock(return_value=b"[1, 2, 3]")
-    score, payload = await _fetch_signal("BEAT", rdb)
-    assert score == 0
-    assert payload is None
+    result = await _fetch_signal("BEAT", rdb)
+    assert result.score is None
+    assert result.status == "signal_invalid_payload"
+    assert result.payload is None
 
 
-async def test_fetch_signal_returns_zero_when_score_not_numeric() -> None:
+async def test_fetch_signal_marks_non_integer_score_invalid() -> None:
     rdb = MagicMock()
     rdb.get = AsyncMock(return_value=b'{"score": "high"}')
-    score, _ = await _fetch_signal("BEAT", rdb)
-    assert score == 0
+    result = await _fetch_signal("BEAT", rdb)
+    assert result.score is None
+    assert result.status == "signal_invalid_score"
 
 
 async def test_fetch_signal_fails_closed_on_invalid_computed_at() -> None:
@@ -286,17 +311,29 @@ async def test_fetch_signal_fails_closed_on_invalid_computed_at() -> None:
     # fail closed (score 0 = skip) rather than trade on a signal of unknown age.
     rdb = MagicMock()
     rdb.get = AsyncMock(return_value=b'{"score": 9, "computed_at": "bad"}')
-    score, payload = await _fetch_signal("BEAT", rdb)
-    assert score == 0
-    assert payload == {"score": 9, "computed_at": "bad"}
+    result = await _fetch_signal("BEAT", rdb)
+    assert result.score is None
+    assert result.status == "signal_invalid_timestamp"
+    assert result.payload == {"score": 9, "computed_at": "bad"}
 
 
 async def test_fetch_signal_fails_closed_on_future_timestamp() -> None:
     rdb = MagicMock()
     future = time.time() + 3600
     rdb.get = AsyncMock(return_value=f'{{"score": 9, "computed_at": {future}}}'.encode())
-    score, _ = await _fetch_signal("BEAT", rdb)
-    assert score == 0
+    result = await _fetch_signal("BEAT", rdb)
+    assert result.score is None
+    assert result.status == "signal_future_timestamp"
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [(42, 42), (None, None), (0, None), (-1, None), (True, None), ("42", None), (1.5, None)],
+)
+def test_pump_event_id_accepts_only_positive_json_integers(
+    value: object, expected: int | None
+) -> None:
+    assert _pump_event_id({"pump_event_id": value}) == expected
 
 
 # --- Config validation ---
@@ -464,7 +501,22 @@ async def test_tick_skips_when_score_below_threshold() -> None:
     with patch("schurfer_execution.trader.place_order", new_callable=AsyncMock) as mock_order:
         await _tick({"bybit": MagicMock()}, rdb, _cfg(score_threshold=6))
         mock_order.assert_not_called()
-    assert rdb.set.call_args.kwargs["ex"] == _SEEN_TTL_SKIP
+    assert rdb.set.call_args.kwargs["ex"] == _SEEN_TTL_SCORE_RECHECK
+
+
+async def test_tick_retries_missing_signal_on_next_minute_without_synthetic_score() -> None:
+    rdb = _rdb(pumps_raw=_pumps("BEAT"))
+    with patch(
+        "schurfer_execution.trader.decisions.write_decision", new_callable=AsyncMock
+    ) as mock_write:
+        await _tick({"bybit": MagicMock()}, rdb, _cfg(score_threshold=6))
+
+    decision = mock_write.call_args.kwargs
+    assert decision["reason"] == "signal_missing"
+    assert decision.get("score") is None
+    assert decision["seen_ttl"] == _SEEN_TTL_SIGNAL_RETRY
+    assert decision["pump_event_id"] == 42
+    assert decision["features"]["signal_status"] == "signal_missing"
 
 
 async def test_tick_writes_decision_on_score_skip() -> None:
@@ -517,6 +569,8 @@ async def test_tick_decision_captures_features_and_liquidity_status() -> None:
     kw = mock_write.call_args.kwargs
     assert kw["decision_id"]  # a uuid string is present
     assert kw["strategy_version"] == "pump_short_v1"
+    assert kw["pump_event_id"] == 42
+    assert kw["features"]["signal_status"] == "ok"
     assert kw["features"]["signal"]["score"] == 3
     assert kw["features"]["config"]["score_threshold"] == 6
     assert kw["features"]["config"]["max_spread_bps"] == 50.0

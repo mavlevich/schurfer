@@ -39,6 +39,7 @@ class DatasetHealth:
     observation_hours: float
     decisions_per_hour: float | None
     unique_episodes: int
+    direct_episode_ids_present_pct: float
     decision_ids_present_pct: float
     prices_present_pct: float
     features_present_pct: float
@@ -194,6 +195,7 @@ def render_markdown(report: MeasurementReport) -> str:
                 ),
                 ("Observation hours", _number(health.observation_hours)),
                 ("Decisions/hour", _number(health.decisions_per_hour)),
+                ("Direct episode IDs present", _pct(health.direct_episode_ids_present_pct)),
                 ("Decision IDs present", _pct(health.decision_ids_present_pct)),
                 ("Decision prices present", _pct(health.prices_present_pct)),
                 ("Feature envelopes present", _pct(health.features_present_pct)),

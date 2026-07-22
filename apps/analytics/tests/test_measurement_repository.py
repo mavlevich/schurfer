@@ -66,6 +66,8 @@ def test_health_statement_measures_signal_lag_and_dataset_presence() -> None:
 
     assert "signal_lag_p50_seconds" in sql
     assert "signal_lag_p95_seconds" in sql
+    assert "direct_episode_ids_present" in sql
+    assert "trade_decisions.pump_event_id IS NOT NULL" in sql
     assert "quality_present" in sql
     assert "sampled_contract_size_present" in sql
     assert "jsonb_typeof" in sql
@@ -83,7 +85,8 @@ def test_coverage_statement_includes_due_but_unresolved_decisions() -> None:
 def test_performance_statement_groups_correlated_rows_by_episode_and_segment() -> None:
     sql, params = _sql(performance_statement(ReportFilters(), by_exchange=True))
 
-    assert "count(distinct(jsonb_extract_path_text" in sql
+    assert "count(distinct(coalesce" in sql
+    assert "trade_decisions.pump_event_id" in sql
     assert "short_return_pct" in sql
     assert "mfe_pct" in sql
     assert "mae_pct" in sql
@@ -97,6 +100,7 @@ def test_health_mapping_handles_empty_dataset_without_division_by_zero() -> None
             "first_decision_at": None,
             "last_decision_at": None,
             "unique_episodes": 0,
+            "direct_episode_ids_present": 0,
             "decision_ids_present": 0,
             "prices_present": 0,
             "features_present": 0,
@@ -153,6 +157,7 @@ async def test_repository_generates_report_from_one_consistent_snapshot() -> Non
         "first_decision_at": now,
         "last_decision_at": now,
         "unique_episodes": 1,
+        "direct_episode_ids_present": 2,
         "decision_ids_present": 2,
         "prices_present": 2,
         "features_present": 2,
@@ -208,5 +213,6 @@ async def test_repository_generates_report_from_one_consistent_snapshot() -> Non
     )
     assert connection.execute.await_count == 6
     assert report.health.total_decisions == 2
+    assert report.health.direct_episode_ids_present_pct == 100
     assert report.health.sampled_contract_size_present_pct == 100
     assert report.cohorts[0].episodes == 1

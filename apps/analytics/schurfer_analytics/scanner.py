@@ -1,6 +1,7 @@
 import asyncio
 import json
 import time
+from dataclasses import dataclass
 from typing import Any
 
 import ccxt.async_support as ccxt
@@ -28,6 +29,17 @@ EXCHANGE_FACTORIES: dict[str, Any] = {
     "cryptocom": lambda: ccxt.cryptocom(_SWAP),
     "htx": lambda: ccxt.htx(_SWAP),
 }
+
+
+@dataclass(frozen=True)
+class ScanBatch:
+    """One complete exchange scan, not yet published to Redis."""
+
+    pumps: list[dict[str, Any]]
+    errors: dict[str, str]
+    below_updates: dict[str, float]
+    tracked_pumps: list[dict[str, Any]]
+    scanned: tuple[str, ...]
 
 
 async def _fetch(
@@ -129,19 +141,13 @@ def _dedup(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
 async def run_once(
     exchange_names: list[str],
     min_pct: float,
-    rdb: aioredis.Redis,
     extra_bases: frozenset[str] = frozenset(),
-) -> tuple[list[dict[str, Any]], dict[str, str], dict[str, float], list[dict[str, Any]]]:
-    """Scan all exchanges, deduplicate, store result in Redis.
+) -> ScanBatch | None:
+    """Scan all exchanges and return an unpublished batch.
 
-    Returns (pumps, errors, below_updates, tracked_pumps):
-      - pumps: tokens above min_pct
-      - errors: exchange name → error string for failed exchanges
-      - below_updates: base → current % for tracked tokens that dropped below threshold
-      - tracked_pumps: pumps-shaped entries (with per-exchange breakdown) for tracked
-        tokens that fell below threshold — needed so OI keeps being recorded through
-        the retrace phase, not just while the pump is still live
-    On total failure returns ([], errors, {}, []) without writing to Redis.
+    Persistence and publication are deliberately separate: the caller first creates
+    or updates every pump_event, attaches its id, and only then publishes pumps:latest.
+    On total exchange failure returns None so the last known-good Redis snapshot stays.
     """
     unknown = [n for n in exchange_names if n not in EXCHANGE_FACTORIES]
     if unknown:
@@ -150,7 +156,7 @@ async def run_once(
     exchanges = {n: EXCHANGE_FACTORIES[n]() for n in exchange_names if n in EXCHANGE_FACTORIES}
     if not exchanges:
         log.error("scanner.no_valid_exchanges")
-        return [], {}, {}, []
+        return None
 
     try:
         results: list[
@@ -171,28 +177,43 @@ async def run_once(
         # All sources failed — preserve the last known-good snapshot in Redis
         if errors and len(errors) == len(exchanges):
             log.error("scanner.all_failed", errors=errors)
-            return [], errors, {}, []
+            return None
 
         pumps = _dedup(flat)
         live_bases = {p["base"] for p in pumps}
         below_updates = _aggregate_below_updates(flat_below, live_bases)
         tracked_pumps = _tracked_pumps(flat_below, live_bases)
 
-        payload = json.dumps(
-            {
-                "ts": int(time.time() * 1000),
-                "count": len(pumps),
-                "min_change_pct": min_pct,
-                "pumps": pumps,
-                "errors": errors,
-                "scanned": [n for n in exchanges if n not in errors],
-            }
+        return ScanBatch(
+            pumps=pumps,
+            errors=errors,
+            below_updates=below_updates,
+            tracked_pumps=tracked_pumps,
+            scanned=tuple(n for n in exchanges if n not in errors),
         )
-        await rdb.set(REDIS_KEY, payload, ex=REDIS_TTL)
-        log.info("scanner.stored", count=len(pumps), min_pct=min_pct, failed=len(errors))
-        return pumps, errors, below_updates, tracked_pumps
     finally:
         await asyncio.gather(
             *[ex.close() for ex in exchanges.values()],
             return_exceptions=True,
         )
+
+
+async def publish(batch: ScanBatch, min_pct: float, rdb: aioredis.Redis) -> None:
+    """Atomically replace pumps:latest with a fully attributed scan batch."""
+    payload = json.dumps(
+        {
+            "ts": int(time.time() * 1000),
+            "count": len(batch.pumps),
+            "min_change_pct": min_pct,
+            "pumps": batch.pumps,
+            "errors": batch.errors,
+            "scanned": list(batch.scanned),
+        }
+    )
+    await rdb.set(REDIS_KEY, payload, ex=REDIS_TTL)
+    log.info(
+        "scanner.stored",
+        count=len(batch.pumps),
+        min_pct=min_pct,
+        failed=len(batch.errors),
+    )

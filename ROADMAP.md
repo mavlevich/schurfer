@@ -88,7 +88,11 @@ the two remaining items are dataset-health visibility, not data capture.
     exchange-minimum round-up cannot exceed the notional already liquidity-checked.
   - Which exchange the tradeable instrument lives on (coverage data, see Phase 2).
   - Also added: `price` (decision-time reference price, migration 0010).
-- [x] Schema and decision-write path (migrations 0008-0010 plus the execution write
+- Direct episode attribution: scanner persists each `pump_event` before publishing the
+  Redis snapshot, and every decision stores its nullable FK `pump_event_id`. Missing or
+  stale signals are no longer recorded as a synthetic score of zero: they retry after
+  one minute, while a valid low score is reconsidered after one 5-minute candle.
+- [x] Schema and decision-write path (migrations 0008-0012 plus the execution write
       path). This is independent of where the score is computed, so it does not commit
       us to any later scoring decision.
 - [x] Run 24/7 (already deployed) plus a stale-data Telegram alert (no fresh scans or
@@ -103,7 +107,8 @@ the two remaining items are dataset-health visibility, not data capture.
       decision. The read-only `measurement-report` CLI also reports quality reasons,
       due/unresolved outcome coverage, raw return/MAE/MFE by version and horizon, and a
       configurable exchange slice. It always shows decision and distinct-episode N so
-      repeated observations are not presented as independent evidence.
+      repeated observations are not presented as independent evidence, and reports
+      direct episode-FK coverage explicitly.
 - [x] Durable decision queue. Moved from the in-memory writer queue to a Redis Stream
       outbox (execution XADD atomic with SET seen, DB writer XREADGROUP -> INSERT ->
       XACK+XDEL after commit, XAUTOCLAIM recovery, poison DLQ). Prod + dev Redis run

@@ -314,6 +314,18 @@ the new cohort separately.
   chronological decision path per episode, model costs/exits, and produce confidence
   intervals suitable for champion selection.
 
+- Pump/signal readiness after deploying migration 0012: verify newly published pumps
+  carry an episode id and recent decisions are attributed. `signal_missing` or
+  `signal_episode_mismatch` may occur for one execution tick while the minute-based
+  signal cache catches up, but either must retry after 60 seconds rather than being
+  suppressed for 30 minutes:
+
+  ```bash
+  docker exec schurfer-redis redis-cli --raw GET pumps:latest
+  docker exec schurfer-postgres psql -U schurfer -d schurfer -c \
+    "SELECT ts, base, reason, score, pump_event_id FROM app.trade_decisions ORDER BY ts DESC LIMIT 20"
+  ```
+
 ## Incidents
 
 Record notable incidents and their fixes here as they happen, so the next person (or

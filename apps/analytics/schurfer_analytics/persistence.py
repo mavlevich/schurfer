@@ -31,6 +31,7 @@ VALUES (
     COALESCE((SELECT MAX(episode) FROM app.pump_events WHERE base = %s), 0) + 1,
     NOW(), NOW(), %s, %s, %s::jsonb
 )
+RETURNING id
 """
 
 _SELECT_OPEN_ALL = """
@@ -183,10 +184,16 @@ async def insert_funding_rate_snapshots(db_url: str, snapshots: list[dict[str, A
         log.warning("persistence.insert_fr_snapshots_failed", err=str(exc))
 
 
-async def upsert_pumps(db_url: str, pumps: list[dict[str, Any]]) -> None:
-    """Update open episode for each token, or open a new episode if none is active."""
+async def upsert_pumps(db_url: str, pumps: list[dict[str, Any]]) -> dict[str, int]:
+    """Persist every live pump and return its open episode id.
+
+    The mapping is returned only after the transaction commits. An empty mapping for a
+    non-empty input means persistence failed, so the caller must not publish a new Redis
+    snapshot whose pumps cannot yet be scored or attributed.
+    """
     if not pumps:
-        return
+        return {}
+    episode_ids: dict[str, int] = {}
     try:
         async with await psycopg.AsyncConnection.connect(db_url) as conn, conn.cursor() as cur:
             for pump in pumps:
@@ -203,9 +210,16 @@ async def upsert_pumps(db_url: str, pumps: list[dict[str, Any]]) -> None:
                     await cur.execute(_UPDATE_EPISODE, (last_pct, exchanges_json, peak, event_id))
                 else:
                     await cur.execute(_INSERT_EPISODE, (base, base, peak, last_pct, exchanges_json))
+                    inserted = await cur.fetchone()
+                    if inserted is None:
+                        raise RuntimeError(f"pump event insert returned no id for {base}")
+                    event_id = inserted[0]
+                episode_ids[base] = int(event_id)
         log.info("persistence.upserted", count=len(pumps))
+        return episode_ids
     except Exception as exc:
         log.warning("persistence.upsert_failed", err=str(exc))
+        return {}
 
 
 async def close_retrace(db_url: str, live_bases: set[str], close_after_misses: int = 3) -> None:
