@@ -10,6 +10,8 @@ from schurfer_journal.models import (
     Side,
     Strategy,
     Trade,
+    TradeDecision,
+    TradeDecisionOutcome,
     TradeStatus,
 )
 
@@ -150,3 +152,29 @@ class TestTradeModel:
         assert columns["size_usd"].type.scale == 4
         assert columns["entry_price"].type.precision == 18
         assert columns["entry_price"].type.scale == 8
+
+
+class TestTradeDecisionModels:
+    def test_decision_table(self) -> None:
+        assert TradeDecision.__tablename__ == "trade_decisions"
+        assert TradeDecision.__table__.schema == "app"
+        assert "decision_id" in TradeDecision.__table__.columns
+        assert "features" in TradeDecision.__table__.columns
+        assert "liquidity" in TradeDecision.__table__.columns
+        assert "price" in TradeDecision.__table__.columns
+
+    def test_outcome_table_and_key(self) -> None:
+        assert TradeDecisionOutcome.__tablename__ == "trade_decision_outcomes"
+        assert TradeDecisionOutcome.__table__.schema == "app"
+        columns = TradeDecisionOutcome.__table__.columns
+        assert columns["decision_id"].nullable is False
+        assert columns["horizon_minutes"].nullable is False
+        assert columns["resolver_version"].nullable is False
+        assert columns["entry_price"].nullable is True
+
+        constraints = {c.name: c for c in TradeDecisionOutcome.__table__.constraints}
+        assert "uq_trade_decision_outcomes_decision_horizon_version" in constraints
+
+    def test_outcome_foreign_key(self) -> None:
+        fks = {fk.target_fullname for fk in TradeDecisionOutcome.__table__.foreign_keys}
+        assert "app.trade_decisions.decision_id" in fks
