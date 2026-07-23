@@ -4,7 +4,9 @@ export interface ExchangeEntry {
   price: string;
   change_pct: number;
   high_24h: string;
-  volume_24h_usd: number;
+  volume_24h_usd: number | null;
+  volume_24h_source?: 'quote_volume' | 'unavailable';
+  ticker_timestamp_ms?: number | null;
 }
 
 export interface PumpEntry {

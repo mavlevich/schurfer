@@ -1,11 +1,12 @@
 package notifier
 
 type exchange struct {
-	Exchange  string  `json:"exchange"`
-	ChangePct float64 `json:"change_pct"`
-	Price     string  `json:"price"`
-	High24h   string  `json:"high_24h"`
-	VolumeUSD float64 `json:"volume_24h_usd"`
+	Exchange     string   `json:"exchange"`
+	ChangePct    float64  `json:"change_pct"`
+	Price        string   `json:"price"`
+	High24h      string   `json:"high_24h"`
+	VolumeUSD    *float64 `json:"volume_24h_usd"`
+	VolumeSource string   `json:"volume_24h_source"`
 }
 
 type pump struct {

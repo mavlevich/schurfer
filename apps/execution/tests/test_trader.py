@@ -165,11 +165,12 @@ def test_pick_exchange_returns_none_on_empty_list() -> None:
     assert _pick_exchange([], {"bybit": ...}) is None
 
 
-def test_pick_exchange_survives_corrupt_volume() -> None:
-    # A non-numeric volume must not raise (which would abort the whole tick); the
-    # entry just sorts to the bottom and the valid one wins.
+@pytest.mark.parametrize("unavailable_volume", [None, "unknown", 0, float("nan")])
+def test_pick_exchange_survives_unavailable_volume(unavailable_volume: object) -> None:
+    # An unavailable volume must not raise (which would abort the whole tick); the
+    # entry sorts to the bottom and the valid one wins.
     exchanges = [
-        {"exchange": "bybit", "volume_24h_usd": "unknown"},
+        {"exchange": "bybit", "volume_24h_usd": unavailable_volume},
         {"exchange": "bingx", "volume_24h_usd": 2_000_000},
     ]
     assert _pick_exchange(exchanges, {"bybit": ..., "bingx": ...}) == "bingx"

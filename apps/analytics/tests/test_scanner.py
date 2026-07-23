@@ -6,13 +6,16 @@ from schurfer_analytics.config import Config
 from schurfer_analytics.exchange_registry import DEFAULT_EXCHANGES, EXCHANGE_FACTORIES
 from schurfer_analytics.scanner import (
     MAX_TICKER_AGE_MS,
+    MAX_TICKER_FUTURE_SKEW_MS,
     REDIS_KEY,
     REDIS_TTL,
     ScanBatch,
     _aggregate_below_updates,
     _dedup,
     _fetch,
+    _ticker_timestamp_ms,
     _tracked_pumps,
+    _volume_24h_usd,
     publish,
 )
 
@@ -28,17 +31,27 @@ def _entry(base: str, exchange: str, pct: float) -> dict[str, object]:
         "change_pct": pct,
         "high_24h": "110.0",
         "volume_24h_usd": 1_000_000.0,
+        "volume_24h_source": "quote_volume",
+        "ticker_timestamp_ms": None,
     }
 
 
-def _ticker(percentage: float | None, *, timestamp: int | str | None = None) -> dict[str, object]:
+def _ticker(
+    percentage: float | None,
+    *,
+    timestamp: int | str | None = None,
+    quote_volume: object = 10_000.0,
+    base_volume: object = None,
+    info: dict[str, object] | None = None,
+) -> dict[str, object]:
     return {
         "percentage": percentage,
         "timestamp": timestamp,
         "last": 1.25,
         "high": 1.5,
-        "quoteVolume": 10_000.0,
-        "info": {},
+        "quoteVolume": quote_volume,
+        "baseVolume": base_volume,
+        "info": info or {},
     }
 
 
@@ -93,6 +106,7 @@ async def test_fetch_rejects_stale_and_invalid_tickers(
         "FRESH/USDT:USDT": {"active": True},
         "STALE/USDT:USDT": {"active": True},
         "INVALID/USDT:USDT": {"active": True},
+        "FUTURE/USDT:USDT": {"active": True},
         "UNKNOWN/USDT:USDT": {"active": None},
         "INACTIVE/USDT:USDT": {"active": False},
         "TRADING_DISABLED/USDT:USDT": {
@@ -104,6 +118,10 @@ async def test_fetch_rejects_stale_and_invalid_tickers(
         "FRESH/USDT:USDT": _ticker(31.0, timestamp=now_ms - MAX_TICKER_AGE_MS),
         "STALE/USDT:USDT": _ticker(90.0, timestamp=now_ms - MAX_TICKER_AGE_MS - 1),
         "INVALID/USDT:USDT": _ticker(80.0, timestamp="not-a-timestamp"),
+        "FUTURE/USDT:USDT": _ticker(
+            70.0,
+            timestamp=now_ms + MAX_TICKER_FUTURE_SKEW_MS + 1,
+        ),
         "UNKNOWN/USDT:USDT": _ticker(32.0),
         "INACTIVE/USDT:USDT": _ticker(100.0, timestamp=now_ms),
         "TRADING_DISABLED/USDT:USDT": _ticker(100.0, timestamp=now_ms),
@@ -114,6 +132,79 @@ async def test_fetch_rejects_stale_and_invalid_tickers(
     assert error is None
     assert below == []
     assert [row["base"] for row in above] == ["FRESH", "UNKNOWN"]
+
+
+def test_volume_24h_prefers_reported_quote_volume() -> None:
+    ticker = _ticker(30.0, quote_volume="2500.5", base_volume=10_000)
+
+    assert _volume_24h_usd(ticker) == (2500.5, "quote_volume")
+
+
+def test_volume_24h_does_not_guess_quote_notional_from_contract_volume() -> None:
+    ticker = _ticker(30.0, quote_volume=0, base_volume="2000")
+
+    assert _volume_24h_usd(ticker) == (None, "unavailable")
+
+
+@pytest.mark.parametrize(
+    ("quote_volume", "base_volume"),
+    [
+        (None, None),
+        (0, 0),
+        ("invalid", float("inf")),
+        (-1, -1),
+    ],
+)
+def test_volume_24h_preserves_unavailable_as_null(
+    quote_volume: object,
+    base_volume: object,
+) -> None:
+    ticker = _ticker(
+        30.0,
+        quote_volume=quote_volume,
+        base_volume=base_volume,
+    )
+
+    assert _volume_24h_usd(ticker) == (None, "unavailable")
+
+
+def test_lbank_raw_last_time_is_normalized_from_seconds() -> None:
+    ticker = _ticker(30.0, info={"lastTime": "1800000000"})
+
+    assert _ticker_timestamp_ms("lbank", ticker) == 1_800_000_000_000
+
+
+def test_non_lbank_raw_last_time_is_not_guessed() -> None:
+    ticker = _ticker(30.0, info={"lastTime": "1800000000"})
+
+    assert _ticker_timestamp_ms("binance", ticker) is None
+
+
+async def test_fetch_uses_lbank_raw_last_time_for_freshness(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now_ms = 1_800_000_000_000
+    monkeypatch.setattr("schurfer_analytics.scanner.time.time", lambda: now_ms / 1000)
+    exchange = AsyncMock()
+    exchange.has = {"fetchTickers": True}
+    exchange.markets = {}
+    exchange.fetch_tickers.return_value = {
+        "FRESH/USDT:USDT": _ticker(
+            31.0,
+            info={"lastTime": str(now_ms // 1000)},
+        ),
+        "STALE/USDT:USDT": _ticker(
+            90.0,
+            info={"lastTime": str((now_ms - MAX_TICKER_AGE_MS - 1000) // 1000)},
+        ),
+    }
+
+    above, below, error = await _fetch("lbank", exchange, min_pct=30.0)
+
+    assert error is None
+    assert below == []
+    assert [row["base"] for row in above] == ["FRESH"]
+    assert above[0]["ticker_timestamp_ms"] == now_ms
 
 
 async def test_fetch_skips_exchange_without_bulk_tickers() -> None:
