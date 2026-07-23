@@ -1014,6 +1014,7 @@ var supportedOHLCV = map[string]bool{
 	"bingx":   true,
 	"mexc":    true,
 	"xt":      true,
+	"lbank":   true,
 }
 
 // ohlcvPriority is a tie-breaker when volumes are equal (e.g. DB fallback
@@ -1026,6 +1027,7 @@ var ohlcvPriority = map[string]int{
 	"bingx":   4,
 	"mexc":    5,
 	"xt":      6,
+	"lbank":   7,
 }
 
 // rankExchangeEntries filters entries to supportedOHLCV, sorts by volume
