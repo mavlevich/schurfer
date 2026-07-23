@@ -1349,6 +1349,15 @@ func TestRankExchangeEntries(t *testing.T) {
 			t.Errorf("want %v, got %v", want, got)
 		}
 	})
+
+	t.Run("LBank is available for charts", func(t *testing.T) {
+		entries := []exchangeEntry{{Exchange: "lbank", Volume24hUSD: 1_000_000}}
+		got := rankExchangeEntries(entries)
+		want := []string{"lbank"}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("want %v, got %v", want, got)
+		}
+	})
 }
 
 // ---- TestCacheSignals ----

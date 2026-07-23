@@ -3,8 +3,10 @@ package pumps
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"sort"
@@ -39,6 +41,8 @@ func fetchOHLCV(ctx context.Context, exchange, base string, interval, limit int)
 		return fetchMEXC(ctx, base, interval, limit)
 	case "xt":
 		return fetchXT(ctx, base, interval, limit)
+	case "lbank":
+		return fetchLBank(ctx, base, interval, limit)
 	default:
 		return nil, fmt.Errorf("unsupported OHLCV exchange %q", exchange)
 	}
@@ -661,26 +665,139 @@ func parseXT(raw []byte) ([]Candle, error) {
 	}
 	candles := make([]Candle, 0, len(resp.Result))
 	for i, row := range resp.Result {
-		if row.Time <= 0 {
-			return nil, fmt.Errorf("row %d: timestamp must be positive", i)
-		}
-		if row.Open <= 0 || row.High <= 0 || row.Low <= 0 || row.Close <= 0 {
-			return nil, fmt.Errorf("row %d: OHLC prices must be positive", i)
-		}
-		if row.Volume < 0 {
-			return nil, fmt.Errorf("row %d: volume must not be negative", i)
-		}
-		candles = append(candles, Candle{
+		candle := Candle{
 			Time:   row.Time / 1000,
 			Open:   float64(row.Open),
 			High:   float64(row.High),
 			Low:    float64(row.Low),
 			Close:  float64(row.Close),
 			Volume: float64(row.Volume),
-		})
+		}
+		if err := validateCandle(candle); err != nil {
+			return nil, fmt.Errorf("row %d: %w", i, err)
+		}
+		candles = append(candles, candle)
 	}
 	sort.Slice(candles, func(i, j int) bool { return candles[i].Time < candles[j].Time })
 	return candles, nil
+}
+
+func lbankInterval(minutes int) (string, bool) {
+	switch minutes {
+	case 1, 5, 15, 30:
+		return fmt.Sprintf("minute%d", minutes), true
+	case 60:
+		return "hour1", true
+	case 240:
+		return "hour4", true
+	case 480:
+		return "hour8", true
+	case 720:
+		return "hour12", true
+	case 1440:
+		return "day1", true
+	case 10080:
+		return "week1", true
+	default:
+		return "", false
+	}
+}
+
+func lbankOHLCVURL(base string, interval, limit int, now time.Time) (string, error) {
+	iv, ok := lbankInterval(interval)
+	if !ok {
+		return "", fmt.Errorf("unsupported LBank interval %d minutes", interval)
+	}
+	if limit < 1 || limit > 2000 {
+		return "", fmt.Errorf("unsupported LBank candle limit %d", limit)
+	}
+	query := url.Values{}
+	query.Set("symbol", strings.ToLower(base)+"_usdt")
+	query.Set("size", strconv.Itoa(limit))
+	query.Set("type", iv)
+	query.Set("time", strconv.FormatInt(now.Unix()-int64(interval*limit*60), 10))
+	return "https://api.lbank.info/v2/kline.do?" + query.Encode(), nil
+}
+
+func fetchLBank(ctx context.Context, base string, interval, limit int) ([]Candle, error) {
+	endpoint, err := lbankOHLCVURL(base, interval, limit, time.Now())
+	if err != nil {
+		return nil, err
+	}
+	raw, err := httpGet(ctx, endpoint)
+	if err != nil {
+		return nil, err
+	}
+	candles, err := parseLBank(raw)
+	if err != nil {
+		return nil, fmt.Errorf("lbank/%s: %w", base, err)
+	}
+	return candles, nil
+}
+
+func parseLBank(raw []byte) ([]Candle, error) {
+	var resp struct {
+		Result    json.RawMessage    `json:"result"`
+		ErrorCode int                `json:"error_code"`
+		Data      [][]flexibleNumber `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return nil, fmt.Errorf("json: %w", err)
+	}
+	if resp.ErrorCode != 0 {
+		return nil, fmt.Errorf("exchange error %d", resp.ErrorCode)
+	}
+	if !lbankResultOK(resp.Result) {
+		return nil, errors.New("exchange returned unsuccessful result")
+	}
+	candles := make([]Candle, 0, len(resp.Data))
+	for i, row := range resp.Data {
+		if len(row) < 6 {
+			return nil, fmt.Errorf("row %d: short (%d fields)", i, len(row))
+		}
+		candle := Candle{
+			Time:   int64(row[0]),
+			Open:   float64(row[1]),
+			High:   float64(row[2]),
+			Low:    float64(row[3]),
+			Close:  float64(row[4]),
+			Volume: float64(row[5]),
+		}
+		if err := validateCandle(candle); err != nil {
+			return nil, fmt.Errorf("row %d: %w", i, err)
+		}
+		candles = append(candles, candle)
+	}
+	sort.Slice(candles, func(i, j int) bool { return candles[i].Time < candles[j].Time })
+	return candles, nil
+}
+
+func lbankResultOK(raw json.RawMessage) bool {
+	var boolean bool
+	if json.Unmarshal(raw, &boolean) == nil {
+		return boolean
+	}
+	var text string
+	return json.Unmarshal(raw, &text) == nil && strings.EqualFold(text, "true")
+}
+
+func validateCandle(c Candle) error {
+	values := [...]float64{c.Open, c.High, c.Low, c.Close, c.Volume}
+	for _, value := range values {
+		if math.IsNaN(value) || math.IsInf(value, 0) {
+			return errors.New("numeric fields must be finite")
+		}
+	}
+	if c.Time <= 0 {
+		return errors.New("timestamp must be positive")
+	}
+	if c.Open <= 0 || c.High <= 0 || c.Low <= 0 || c.Close <= 0 {
+		return errors.New("OHLC prices must be positive")
+	}
+	if c.Volume < 0 {
+		return errors.New("volume must not be negative")
+	}
+	return nil
 }
 
 func reverseCandles(c []Candle) {
