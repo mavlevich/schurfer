@@ -50,9 +50,10 @@ proven. Post-MVP strategy and exit improvements live in the exit-strategy notes.
   durable daily PnL (`journal:pending_close` retry marker, `risk:pnl_ready` positive
   lease, idempotent `close_trade`, Postgres as the source of truth), position
   reconciliation (detect a vanished position and close it from the filled SL order).
-- OHLCV robustness: BingX and MEXC futures fetchers, volume-ranked fallback,
-  unbounded exchange fallback for old episodes, MEXC numeric and string field
-  tolerance.
+- OHLCV robustness: BingX, MEXC, and XT futures fetchers, LBank spot fetcher,
+  volume-ranked fallback, unbounded exchange fallback for old episodes, and tolerant
+  parsing for inconsistent numeric/string fields. The LBank spot path was verified
+  in production with BRIAN; perpetual-only OROCHI remains the known unsupported case.
 - Production deploy: Hetzner, Docker Compose prod stack, Caddy, Tailscale, Postgres
   backup and a tested restore, GitHub Actions CI (lint, tests for Go, Python, TS,
   security).
@@ -221,6 +222,30 @@ lightweight dataset-health visibility remains operational follow-up.
 - [ ] Heavy observability (Grafana, Prometheus, node_exporter, per-service p95
       latency). Only here, when there is more than one box or real load. The
       lightweight Status-page health from Phase 0 is enough until then.
+
+### Open-source upstream workstream (non-blocking)
+
+Upstream compatibility fixes reduce Schurfer-specific code, but they do not outrank
+measurement, replay, or production reliability. The executable task set lives in
+[docs/tasks/ccxt/](docs/tasks/ccxt/README.md).
+
+- [ ] Research, implement, test, and upstream XT `fetchOpenInterest` as one atomic
+      CCXT task. CCXT already declares XT's public linear/inverse open-interest
+      endpoint but advertises the unified capability as unsupported; Schurfer's
+      production fallback proves the linear endpoint and USD-value mapping work.
+      Verify amount units, timestamp encoding, error shapes, and inverse behavior,
+      then submit a TypeScript-only XT PR with static request/response fixtures
+      ([CCXT-001](docs/tasks/ccxt/001-xt-fetch-open-interest.md)).
+- [ ] After a released CCXT version contains the method, upgrade Schurfer, compare
+      units against the current production fallback, preserve application-level
+      freshness checks, and only then delete the raw XT adapter
+      ([CCXT-002](docs/tasks/ccxt/002-adopt-upstream-xt.md)).
+- [ ] Research LBank perpetual historical OHLCV as a separate exchange task. Submit
+      an upstream proposal only if an official, public, unsigned endpoint exists;
+      BRIAN confirms the documented spot endpoint works, while perpetual-only OROCHI
+      confirms spot fallback is insufficient. If no supported contract-history
+      endpoint exists, use durable scanner-derived candles inside Schurfer
+      ([CCXT-003](docs/tasks/ccxt/003-lbank-perpetual-ohlcv-research.md)).
 
 ### Phase 3: Live ladder (gated on proven edge)
 
