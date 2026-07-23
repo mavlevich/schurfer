@@ -1,7 +1,15 @@
 import asyncio
 from unittest.mock import AsyncMock, patch
 
-from schurfer_analytics.oi import fetch_oi_for_pumps
+import pytest
+from schurfer_analytics.oi import (
+    OPEN_INTEREST_MAX_AGE_MS,
+    OPEN_INTEREST_MAX_FUTURE_SKEW_MS,
+    _parse_xt_open_interest,
+    fetch_oi_for_pumps,
+)
+
+NOW_MS = 1_800_000_000_000
 
 
 def _pump(base: str, exchanges: list[dict[str, object]]) -> dict[str, object]:
@@ -14,6 +22,7 @@ def _ex_entry(exchange: str, price: str = "100.0") -> dict[str, object]:
 
 def _mock_exchange(open_interest: dict[str, object]) -> AsyncMock:
     exchange = AsyncMock()
+    exchange.has = {"fetchOpenInterest": True}
     exchange.load_markets = AsyncMock()
     exchange.markets = {}
     exchange.fetch_open_interest = AsyncMock(return_value=open_interest)
@@ -69,6 +78,129 @@ def test_fetch_oi_skips_unknown_exchange() -> None:
     assert result == []
 
 
+def test_fetch_oi_skips_exchange_without_supported_adapter() -> None:
+    exchange = _mock_exchange({})
+    exchange.has = {"fetchOpenInterest": False}
+    pumps = [_pump("BTC", [_ex_entry("lbank")])]
+
+    with patch.dict(
+        "schurfer_analytics.oi.EXCHANGE_FACTORIES",
+        {"lbank": lambda: exchange},
+        clear=True,
+    ):
+        result = asyncio.run(fetch_oi_for_pumps(pumps))
+
+    assert result == []
+    exchange.load_markets.assert_not_awaited()
+    exchange.fetch_open_interest.assert_not_awaited()
+    exchange.close.assert_awaited_once()
+
+
+def test_fetch_oi_uses_xt_adapter() -> None:
+    exchange = _mock_exchange({})
+    exchange.has = {"fetchOpenInterest": False}
+    exchange.markets = {
+        "ON/USDT:USDT": {"id": "on_usdt", "contractSize": 1},
+    }
+    exchange.market = lambda symbol: exchange.markets[symbol]
+    exchange.public_linear_get_future_market_v1_public_contract_open_interest = AsyncMock(
+        return_value={
+            "returnCode": "0",
+            "msgInfo": "success",
+            "error": None,
+            "result": {
+                "symbol": "on_usdt",
+                "openInterest": "102204200",
+                "openInterestUsd": "16938265.9457",
+                "time": str(NOW_MS),
+            },
+        }
+    )
+    pumps = [_pump("ON", [_ex_entry("xt", price="0.1657")])]
+
+    with (
+        patch("schurfer_analytics.oi.time.time", return_value=NOW_MS / 1000),
+        patch.dict(
+            "schurfer_analytics.oi.EXCHANGE_FACTORIES",
+            {"xt": lambda: exchange},
+            clear=True,
+        ),
+    ):
+        result = asyncio.run(fetch_oi_for_pumps(pumps))
+
+    assert result == [{"base": "ON", "exchange": "xt", "oi_usd": 16938265.9457}]
+    exchange.public_linear_get_future_market_v1_public_contract_open_interest.assert_awaited_once_with(
+        {"symbol": "on_usdt"}
+    )
+    exchange.fetch_open_interest.assert_not_awaited()
+    exchange.close.assert_awaited_once()
+
+
+def test_fetch_oi_prefers_native_xt_support_when_available() -> None:
+    exchange = _mock_exchange({"openInterestValue": 42.0})
+    exchange.has = {"fetchOpenInterest": "emulated"}
+    exchange.public_linear_get_future_market_v1_public_contract_open_interest = AsyncMock()
+    pumps = [_pump("ON", [_ex_entry("xt")])]
+
+    with patch.dict(
+        "schurfer_analytics.oi.EXCHANGE_FACTORIES", {"xt": lambda: exchange}, clear=True
+    ):
+        result = asyncio.run(fetch_oi_for_pumps(pumps))
+
+    assert result == [{"base": "ON", "exchange": "xt", "oi_usd": 42.0}]
+    exchange.fetch_open_interest.assert_awaited_once_with("ON/USDT:USDT")
+    exchange.public_linear_get_future_market_v1_public_contract_open_interest.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "response, message",
+    [
+        ([], "must be an object"),
+        ({"returnCode": "invalid"}, "return code is invalid"),
+        ({"returnCode": 1001, "msgInfo": "bad symbol"}, "bad symbol"),
+        ({"returnCode": 0, "result": None}, "missing result"),
+        (
+            {"returnCode": 0, "result": {"time": 1}},
+            "no amount or USD value",
+        ),
+        (
+            {"returnCode": 0, "result": {"openInterestUsd": "1"}},
+            "no timestamp",
+        ),
+        (
+            {
+                "returnCode": 0,
+                "result": {"openInterestUsd": "1", "time": "invalid"},
+            },
+            "timestamp is invalid",
+        ),
+        (
+            {
+                "returnCode": 0,
+                "result": {
+                    "openInterestUsd": "1",
+                    "time": NOW_MS - OPEN_INTEREST_MAX_AGE_MS - 1,
+                },
+            },
+            "response is stale",
+        ),
+        (
+            {
+                "returnCode": 0,
+                "result": {
+                    "openInterestUsd": "1",
+                    "time": NOW_MS + OPEN_INTEREST_MAX_FUTURE_SKEW_MS + 1,
+                },
+            },
+            "in the future",
+        ),
+    ],
+)
+def test_parse_xt_open_interest_rejects_malformed_response(response: object, message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        _parse_xt_open_interest(response, now_ms=NOW_MS)
+
+
 def test_fetch_oi_skips_entry_on_fetch_error() -> None:
     failing = AsyncMock()
     failing.load_markets = AsyncMock()
@@ -90,6 +222,7 @@ def test_fetch_oi_continues_when_load_markets_fails() -> None:
     # ccxt leaves exchange.markets as None (not {}) until load_markets() has
     # succeeded at least once — matches real ccxt behavior, not an idealized mock.
     exchange = AsyncMock()
+    exchange.has = {"fetchOpenInterest": True}
     exchange.load_markets = AsyncMock(side_effect=RuntimeError("boom"))
     exchange.markets = None
     exchange.fetch_open_interest = AsyncMock(return_value={"openInterestValue": 5.0})
@@ -110,6 +243,7 @@ def test_fetch_oi_falls_back_to_contract_size_1_when_markets_unavailable() -> No
     # Must degrade to contractSize=1 instead of raising AttributeError out of
     # gather() and crashing the whole scan loop.
     exchange = AsyncMock()
+    exchange.has = {"fetchOpenInterest": True}
     exchange.load_markets = AsyncMock(side_effect=RuntimeError("boom"))
     exchange.markets = None
     exchange.fetch_open_interest = AsyncMock(
@@ -161,6 +295,7 @@ def test_fetch_oi_times_out_gracefully() -> None:
         return {"openInterestValue": 1.0}
 
     exchange = AsyncMock()
+    exchange.has = {"fetchOpenInterest": True}
     exchange.load_markets = AsyncMock()
     exchange.markets = {}
     exchange.fetch_open_interest = _slow_fetch
@@ -185,6 +320,7 @@ def test_fetch_oi_empty_pumps_returns_empty() -> None:
 
 def test_fetch_oi_groups_multiple_bases_on_same_exchange() -> None:
     exchange = AsyncMock()
+    exchange.has = {"fetchOpenInterest": True}
     exchange.load_markets = AsyncMock()
     exchange.markets = {}
     exchange.fetch_open_interest = AsyncMock(
