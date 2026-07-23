@@ -5,8 +5,10 @@ import (
 	"errors"
 	"net/url"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestFetchOHLCVRejectsUnsupportedExchange(t *testing.T) {
@@ -66,6 +68,86 @@ func TestXTOHLCVURLRejectsUnsupportedInterval(t *testing.T) {
 	t.Parallel()
 	if _, err := xtOHLCVURL("ZEUS", 120, 200); err == nil {
 		t.Fatal("expected unsupported interval error")
+	}
+}
+
+func TestLBankOHLCVURL(t *testing.T) {
+	t.Parallel()
+	now := time.Unix(1_700_086_400, 0)
+	rawURL, err := lbankOHLCVURL("BRIAN", 15, 96, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	query := parsed.Query()
+	if got := query.Get("symbol"); got != "brian_usdt" {
+		t.Errorf("symbol = %q, want brian_usdt", got)
+	}
+	if got := query.Get("type"); got != "minute15" {
+		t.Errorf("type = %q, want minute15", got)
+	}
+	if got := query.Get("size"); got != "96" {
+		t.Errorf("size = %q, want 96", got)
+	}
+	wantStart := now.Unix() - 15*96*60
+	if got := query.Get("time"); got != strconv.FormatInt(wantStart, 10) {
+		t.Errorf("time = %q, want %d", got, wantStart)
+	}
+}
+
+func TestLBankOHLCVURLRejectsInvalidParameters(t *testing.T) {
+	t.Parallel()
+	now := time.Unix(1_700_000_000, 0)
+	if _, err := lbankOHLCVURL("BRIAN", 120, 100, now); err == nil {
+		t.Fatal("expected unsupported interval error")
+	}
+	if _, err := lbankOHLCVURL("BRIAN", 60, 2001, now); err == nil {
+		t.Fatal("expected unsupported limit error")
+	}
+}
+
+func TestParseLBank(t *testing.T) {
+	t.Parallel()
+	raw := `{"result":"true","error_code":0,"data":[["1700000060","2","3","1","2.5","12"],[1700000000,1,2,0.5,1.5,10]]}`
+	candles, err := parseLBank([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Candle{
+		{Time: 1700000000, Open: 1, High: 2, Low: 0.5, Close: 1.5, Volume: 10},
+		{Time: 1700000060, Open: 2, High: 3, Low: 1, Close: 2.5, Volume: 12},
+	}
+	if !reflect.DeepEqual(candles, want) {
+		t.Fatalf("candles = %#v, want %#v", candles, want)
+	}
+}
+
+func TestParseLBankErrors(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		raw  string
+	}{
+		{name: "exchange error", raw: `{"result":"false","error_code":10008,"data":[]}`},
+		{name: "malformed json", raw: `{not-json`},
+		{name: "unsuccessful result", raw: `{"result":false,"error_code":0,"data":[]}`},
+		{name: "short row", raw: `{"result":true,"error_code":0,"data":[[1700000000,1,2]]}`},
+		{name: "bad numeric field", raw: `{"result":true,"error_code":0,"data":[[1700000000,"bad",2,0.5,1.5,10]]}`},
+		{name: "missing timestamp", raw: `{"result":true,"error_code":0,"data":[[0,1,2,0.5,1.5,10]]}`},
+		{name: "non-positive price", raw: `{"result":true,"error_code":0,"data":[[1700000000,1,2,0,1.5,10]]}`},
+		{name: "negative volume", raw: `{"result":true,"error_code":0,"data":[[1700000000,1,2,0.5,1.5,-10]]}`},
+		{name: "non-finite field", raw: `{"result":true,"error_code":0,"data":[[1700000000,"NaN",2,0.5,1.5,10]]}`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if _, err := parseLBank([]byte(tc.raw)); err == nil {
+				t.Fatal("expected error")
+			}
+		})
 	}
 }
 
