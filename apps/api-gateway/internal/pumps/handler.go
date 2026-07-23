@@ -47,12 +47,14 @@ func isValidBase(base string) bool {
 }
 
 type exchangeEntry struct {
-	Exchange     string  `json:"exchange"`
-	Symbol       string  `json:"symbol"`
-	Price        string  `json:"price"`
-	ChangePct    float64 `json:"change_pct"`
-	High24h      string  `json:"high_24h"`
-	Volume24hUSD float64 `json:"volume_24h_usd"`
+	Exchange          string   `json:"exchange"`
+	Symbol            string   `json:"symbol"`
+	Price             string   `json:"price"`
+	ChangePct         float64  `json:"change_pct"`
+	High24h           string   `json:"high_24h"`
+	Volume24hUSD      *float64 `json:"volume_24h_usd"`
+	Volume24hSource   string   `json:"volume_24h_source"`
+	TickerTimestampMS *int64   `json:"ticker_timestamp_ms"`
 }
 
 type pumpEntry struct {
@@ -1041,7 +1043,11 @@ func rankExchangeEntries(entries []exchangeEntry) []string {
 	var ranked []exVol
 	for _, ex := range entries {
 		if supportedOHLCV[ex.Exchange] {
-			ranked = append(ranked, exVol{ex.Exchange, ex.Volume24hUSD})
+			volume := 0.0
+			if ex.Volume24hUSD != nil && *ex.Volume24hUSD > 0 {
+				volume = *ex.Volume24hUSD
+			}
+			ranked = append(ranked, exVol{ex.Exchange, volume})
 		}
 	}
 	sort.Slice(ranked, func(i, j int) bool {

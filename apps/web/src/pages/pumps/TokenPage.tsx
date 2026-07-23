@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToken, useTokenEpisodes, useTokenSignals, useTokenStats } from '@/hooks/useTokenData';
 import { useOHLCV, INTERVALS, getInterval } from '@/hooks/useOHLCV';
 import type { OHLCVResponse, SignalsResponse, TokenStats, TokenEpisode } from './types';
+import { formatVolume } from './volume';
 
 const CONFIDENCE_STYLES: Record<string, string> = {
   low: 'text-muted-foreground bg-muted border border-border',
@@ -83,12 +84,6 @@ function fmtTs(unix: number) {
   });
 }
 
-function fmtVol(n: number) {
-  if (n >= 1e9) return `$${(n / 1e9).toFixed(1)}B`;
-  if (n >= 1e6) return `$${(n / 1e6).toFixed(0)}M`;
-  return `$${n.toFixed(0)}`;
-}
-
 function pctColor(pct: number) {
   if (pct >= 100) return 'text-red-400';
   if (pct >= 50) return 'text-orange-400';
@@ -97,11 +92,11 @@ function pctColor(pct: number) {
 
 function fmtPrice(s: string): string {
   const n = parseFloat(s);
-  if (!isFinite(n) || s === '') return s;
-  if (n >= 1000) return n.toFixed(2);
-  if (n >= 0.01) return n.toFixed(4);
+  if (!isFinite(n) || n <= 0 || s === '') return 'n/a';
+  if (n >= 1000) return `$${n.toFixed(2)}`;
+  if (n >= 0.01) return `$${n.toFixed(4)}`;
   const exp = Math.floor(Math.log10(n));
-  return n.toFixed(Math.min(-exp + 3, 10));
+  return `$${n.toFixed(Math.min(-exp + 3, 10))}`;
 }
 
 function SignalsCard({ signals }: { signals: SignalsResponse }) {
@@ -537,13 +532,16 @@ export function TokenPage() {
                           {fmtPct(e.change_pct)}
                         </td>
                         <td className="px-4 py-3 text-right font-mono text-muted-foreground">
-                          ${fmtPrice(e.price)}
+                          {fmtPrice(e.price)}
                         </td>
                         <td className="px-4 py-3 text-right font-mono text-muted-foreground">
-                          ${fmtPrice(e.high_24h)}
+                          {fmtPrice(e.high_24h)}
                         </td>
                         <td className="px-4 py-3 text-right font-mono text-muted-foreground">
-                          {fmtVol(e.volume_24h_usd)}
+                          {formatVolume({
+                            value: e.volume_24h_usd,
+                            partial: false,
+                          })}
                         </td>
                       </tr>
                     ))}

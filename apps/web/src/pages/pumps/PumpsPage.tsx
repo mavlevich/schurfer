@@ -5,15 +5,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { usePumps, usePumpsHistory } from '@/hooks/usePumpsData';
 import type { ExchangeEntry } from './types';
+import { formatVolume, summarizeVolume, volumeRank } from './volume';
 
 function fmtPct(n: number) {
   return `+${n.toFixed(1)}%`;
-}
-
-function fmtVol(n: number) {
-  if (n >= 1e9) return `$${(n / 1e9).toFixed(1)}B`;
-  if (n >= 1e6) return `$${(n / 1e6).toFixed(0)}M`;
-  return `$${n.toFixed(0)}`;
 }
 
 function pctColor(pct: number) {
@@ -42,9 +37,10 @@ function topPrice(exchanges: ExchangeEntry[]): number {
   let bestVol = -1;
   for (const e of exchanges) {
     const p = parseFloat(e.price);
-    if (p > 0 && e.volume_24h_usd > bestVol) {
+    const volume = volumeRank(e.volume_24h_usd);
+    if (p > 0 && volume > bestVol) {
       best = p;
-      bestVol = e.volume_24h_usd;
+      bestVol = volume;
     }
   }
   return best;
@@ -148,7 +144,7 @@ export function PumpsPage() {
                         p.max_change_pct,
                         high24hPct(p.exchanges),
                       );
-                      const totalVol = p.exchanges.reduce((s, e) => s + e.volume_24h_usd, 0);
+                      const volume = summarizeVolume(p.exchanges);
                       return (
                         <tr
                           key={p.base}
@@ -189,14 +185,14 @@ export function PumpsPage() {
                             </div>
                           </td>
                           <td className="px-4 py-3 text-right font-mono text-muted-foreground">
-                            {fmtVol(totalVol)}
+                            {formatVolume(volume)}
                           </td>
                         </tr>
                       );
                     })}
 
                     {historical.map((h) => {
-                      const totalVol = h.exchanges.reduce((s, e) => s + e.volume_24h_usd, 0);
+                      const volume = summarizeVolume(h.exchanges);
                       return (
                         <tr
                           key={h.base}
@@ -239,7 +235,7 @@ export function PumpsPage() {
                             </div>
                           </td>
                           <td className="px-4 py-3 text-right font-mono text-muted-foreground">
-                            {fmtVol(totalVol)}
+                            {formatVolume(volume)}
                           </td>
                         </tr>
                       );

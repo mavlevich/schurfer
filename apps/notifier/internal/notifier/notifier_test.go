@@ -125,7 +125,7 @@ func TestTick_SuccessfulAlertMarksSeen(t *testing.T) {
 	setPumpsPayload(t, mr, payload{
 		Scanned: []string{"binance"},
 		Pumps: []pump{{Base: "BTC", MaxChangePct: 40.0, Exchanges: []exchange{
-			{Exchange: "binance", ChangePct: 40.0, VolumeUSD: 1_000_000},
+			{Exchange: "binance", ChangePct: 40.0, VolumeUSD: volumeUSD(1_000_000)},
 		}}},
 	})
 
@@ -152,7 +152,7 @@ func TestTick_FailedAlertDoesNotMarkSeen(t *testing.T) {
 	setPumpsPayload(t, mr, payload{
 		Scanned: []string{"binance"},
 		Pumps: []pump{{Base: "BTC", MaxChangePct: 40.0, Exchanges: []exchange{
-			{Exchange: "binance", ChangePct: 40.0, VolumeUSD: 1_000_000},
+			{Exchange: "binance", ChangePct: 40.0, VolumeUSD: volumeUSD(1_000_000)},
 		}}},
 	})
 
@@ -187,7 +187,7 @@ func TestTick_AlreadySeenSkipsAlert(t *testing.T) {
 	setPumpsPayload(t, mr, payload{
 		Scanned: []string{"binance"},
 		Pumps: []pump{{Base: "BTC", MaxChangePct: 40.0, Exchanges: []exchange{
-			{Exchange: "binance", ChangePct: 40.0, VolumeUSD: 1_000_000},
+			{Exchange: "binance", ChangePct: 40.0, VolumeUSD: volumeUSD(1_000_000)},
 		}}},
 	})
 
@@ -209,7 +209,7 @@ func TestTick_BelowThresholdNoAlertNotSeen(t *testing.T) {
 	setPumpsPayload(t, mr, payload{
 		Scanned: []string{"binance"},
 		Pumps: []pump{{Base: "BTC", MaxChangePct: 40.0, Exchanges: []exchange{
-			{Exchange: "binance", ChangePct: 40.0, VolumeUSD: 1_000_000},
+			{Exchange: "binance", ChangePct: 40.0, VolumeUSD: volumeUSD(1_000_000)},
 		}}},
 	})
 
@@ -236,7 +236,7 @@ func TestTick_AtThresholdAlerts(t *testing.T) {
 	setPumpsPayload(t, mr, payload{
 		Scanned: []string{"binance"},
 		Pumps: []pump{{Base: "BTC", MaxChangePct: 60.0, Exchanges: []exchange{
-			{Exchange: "binance", ChangePct: 60.0, VolumeUSD: 1_000_000},
+			{Exchange: "binance", ChangePct: 60.0, VolumeUSD: volumeUSD(1_000_000)},
 		}}},
 	})
 

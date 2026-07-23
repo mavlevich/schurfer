@@ -1284,10 +1284,10 @@ func TestParseMEXC(t *testing.T) {
 func TestRankExchangeEntries(t *testing.T) {
 	t.Run("sorts by volume descending and filters unsupported", func(t *testing.T) {
 		entries := []exchangeEntry{
-			{Exchange: "mexc", Volume24hUSD: 1_000_000},
-			{Exchange: "gate", Volume24hUSD: 900_000},
-			{Exchange: "huobi", Volume24hUSD: 2_000_000}, // not in supportedOHLCV
-			{Exchange: "bingx", Volume24hUSD: 500_000},
+			{Exchange: "mexc", Volume24hUSD: fptr(1_000_000)},
+			{Exchange: "gate", Volume24hUSD: fptr(900_000)},
+			{Exchange: "huobi", Volume24hUSD: fptr(2_000_000)}, // not in supportedOHLCV
+			{Exchange: "bingx", Volume24hUSD: fptr(500_000)},
 		}
 		got := rankExchangeEntries(entries)
 		want := []string{"mexc", "gate", "bingx"}
@@ -1305,8 +1305,8 @@ func TestRankExchangeEntries(t *testing.T) {
 
 	t.Run("all unsupported returns empty", func(t *testing.T) {
 		entries := []exchangeEntry{
-			{Exchange: "huobi", Volume24hUSD: 1_000_000},
-			{Exchange: "kucoin", Volume24hUSD: 500_000},
+			{Exchange: "huobi", Volume24hUSD: fptr(1_000_000)},
+			{Exchange: "kucoin", Volume24hUSD: fptr(500_000)},
 		}
 		got := rankExchangeEntries(entries)
 		if len(got) != 0 {
@@ -1316,8 +1316,8 @@ func TestRankExchangeEntries(t *testing.T) {
 
 	t.Run("single supported exchange", func(t *testing.T) {
 		entries := []exchangeEntry{
-			{Exchange: "bingx", Volume24hUSD: 800_000},
-			{Exchange: "huobi", Volume24hUSD: 5_000_000},
+			{Exchange: "bingx", Volume24hUSD: fptr(800_000)},
+			{Exchange: "huobi", Volume24hUSD: fptr(5_000_000)},
 		}
 		got := rankExchangeEntries(entries)
 		want := []string{"bingx"}
@@ -1327,12 +1327,12 @@ func TestRankExchangeEntries(t *testing.T) {
 	})
 
 	t.Run("equal volumes use deterministic priority tie-breaker", func(t *testing.T) {
-		// All volume=0 simulates DB fallback where no volume info is available.
+		// Nil volume simulates DB fallback where no volume info is available.
 		entries := []exchangeEntry{
-			{Exchange: "mexc", Volume24hUSD: 0},
-			{Exchange: "binance", Volume24hUSD: 0},
-			{Exchange: "bingx", Volume24hUSD: 0},
-			{Exchange: "gate", Volume24hUSD: 0},
+			{Exchange: "mexc"},
+			{Exchange: "binance"},
+			{Exchange: "bingx"},
+			{Exchange: "gate"},
 		}
 		got := rankExchangeEntries(entries)
 		want := []string{"binance", "gate", "bingx", "mexc"}
@@ -1342,7 +1342,7 @@ func TestRankExchangeEntries(t *testing.T) {
 	})
 
 	t.Run("XT is available for charts", func(t *testing.T) {
-		entries := []exchangeEntry{{Exchange: "xt", Volume24hUSD: 1_000_000}}
+		entries := []exchangeEntry{{Exchange: "xt", Volume24hUSD: fptr(1_000_000)}}
 		got := rankExchangeEntries(entries)
 		want := []string{"xt"}
 		if !reflect.DeepEqual(got, want) {
@@ -1351,13 +1351,37 @@ func TestRankExchangeEntries(t *testing.T) {
 	})
 
 	t.Run("LBank is available for charts", func(t *testing.T) {
-		entries := []exchangeEntry{{Exchange: "lbank", Volume24hUSD: 1_000_000}}
+		entries := []exchangeEntry{{Exchange: "lbank", Volume24hUSD: fptr(1_000_000)}}
 		got := rankExchangeEntries(entries)
 		want := []string{"lbank"}
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("want %v, got %v", want, got)
 		}
 	})
+}
+
+func TestExchangeEntryPreservesUnavailableVolumeMetadata(t *testing.T) {
+	raw := []byte(`{
+		"exchange": "lbank",
+		"volume_24h_usd": null,
+		"volume_24h_source": "unavailable",
+		"ticker_timestamp_ms": 1800000000000
+	}`)
+	var entry exchangeEntry
+
+	if err := json.Unmarshal(raw, &entry); err != nil {
+		t.Fatal(err)
+	}
+
+	if entry.Volume24hUSD != nil {
+		t.Errorf("volume = %v, want nil", *entry.Volume24hUSD)
+	}
+	if entry.Volume24hSource != "unavailable" {
+		t.Errorf("source = %q, want unavailable", entry.Volume24hSource)
+	}
+	if entry.TickerTimestampMS == nil || *entry.TickerTimestampMS != 1_800_000_000_000 {
+		t.Errorf("timestamp = %v, want 1800000000000", entry.TickerTimestampMS)
+	}
 }
 
 // ---- TestCacheSignals ----

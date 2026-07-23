@@ -1,5 +1,6 @@
 import asyncio
 import json
+import math
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -14,6 +15,7 @@ log = structlog.get_logger()
 REDIS_KEY = "pumps:latest"
 REDIS_TTL = 300  # 5 min — expire if scanner crashes
 MAX_TICKER_AGE_MS = 15 * 60 * 1000
+MAX_TICKER_FUTURE_SKEW_MS = 5 * 60 * 1000
 
 
 @dataclass(frozen=True)
@@ -25,6 +27,44 @@ class ScanBatch:
     below_updates: dict[str, float]
     tracked_pumps: list[dict[str, Any]]
     scanned: tuple[str, ...]
+
+
+def _positive_float(value: Any) -> float | None:
+    """Return a finite positive float, otherwise None."""
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if math.isfinite(parsed) and parsed > 0 else None
+
+
+def _volume_24h_usd(ticker: dict[str, Any]) -> tuple[float | None, str]:
+    """Normalize 24h quote volume without turning unavailable data into zero."""
+    quote_volume = _positive_float(ticker.get("quoteVolume"))
+    if quote_volume is not None:
+        return quote_volume, "quote_volume"
+    return None, "unavailable"
+
+
+def _ticker_timestamp_ms(name: str, ticker: dict[str, Any]) -> int | None:
+    """Return unified ticker time, with a narrow LBank raw-field fallback."""
+    value = ticker.get("timestamp")
+    if value is None and name == "lbank":
+        info = ticker.get("info")
+        if isinstance(info, dict):
+            value = info.get("lastTime")
+            if value is not None:
+                parsed = float(value)
+                if not math.isfinite(parsed):
+                    raise ValueError("non-finite LBank lastTime")
+                # LBank contract tickers currently expose Unix seconds.
+                value = parsed * 1000 if parsed < 1_000_000_000_000 else parsed
+    if value is None:
+        return None
+    parsed = float(value)
+    if not math.isfinite(parsed) or parsed < 0:
+        raise ValueError("invalid ticker timestamp")
+    return int(parsed)
 
 
 async def _fetch(
@@ -60,14 +100,14 @@ async def _fetch(
                 if market.get("active") is False or trading_disabled:
                     inactive += 1
                     continue
-            timestamp = t.get("timestamp")
+            try:
+                timestamp = _ticker_timestamp_ms(name, t)
+            except (TypeError, ValueError):
+                stale += 1
+                continue
             if timestamp is not None:
-                try:
-                    ticker_age_ms = now_ms - int(timestamp)
-                except (TypeError, ValueError):
-                    stale += 1
-                    continue
-                if ticker_age_ms > MAX_TICKER_AGE_MS:
+                ticker_age_ms = now_ms - timestamp
+                if ticker_age_ms > MAX_TICKER_AGE_MS or ticker_age_ms < -MAX_TICKER_FUTURE_SKEW_MS:
                     stale += 1
                     continue
             pct = t.get("percentage")
@@ -79,6 +119,7 @@ async def _fetch(
             if abs(pct_f) > 5000:
                 continue
             base = sym.split("/")[0]
+            volume_24h_usd, volume_24h_source = _volume_24h_usd(t)
             entry = {
                 "base": base,
                 "exchange": name,
@@ -86,7 +127,9 @@ async def _fetch(
                 "price": str(t.get("last") or ""),
                 "change_pct": pct_f,
                 "high_24h": str(t.get("high") or ""),
-                "volume_24h_usd": float(t.get("quoteVolume") or 0),
+                "volume_24h_usd": volume_24h_usd,
+                "volume_24h_source": volume_24h_source,
+                "ticker_timestamp_ms": timestamp,
             }
             if pct_f >= min_pct:
                 above.append(entry)

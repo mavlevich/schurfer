@@ -62,11 +62,6 @@ func escapeMD(s string) string {
 }
 
 func formatAlert(p pump) string {
-	totalVol := 0.0
-	for _, e := range p.Exchanges {
-		totalVol += e.VolumeUSD
-	}
-
 	peak := peakPct(p.Exchanges)
 
 	exParts := make([]string, 0, len(p.Exchanges))
@@ -77,7 +72,7 @@ func formatAlert(p pump) string {
 		exParts = append(exParts, fmt.Sprintf("%s %s", escapeMD(e.Exchange), escapeMD(fmt.Sprintf("+%.1f%%", e.ChangePct))))
 	}
 
-	line2 := fmt.Sprintf("vol %s", escapeMD(fmtVol(totalVol)))
+	line2 := fmt.Sprintf("vol %s", escapeMD(formatTotalVolume(p.Exchanges)))
 	if peak > p.MaxChangePct {
 		line2 += fmt.Sprintf(" · peak %s", escapeMD(fmt.Sprintf("+%.1f%%", peak)))
 	}
@@ -88,6 +83,28 @@ func formatAlert(p pump) string {
 		line2,
 		strings.Join(exParts, " · "),
 	)
+}
+
+func formatTotalVolume(exchanges []exchange) string {
+	total := 0.0
+	known := 0
+	incomplete := false
+	for _, e := range exchanges {
+		if e.VolumeUSD == nil || math.IsNaN(*e.VolumeUSD) || math.IsInf(*e.VolumeUSD, 0) || *e.VolumeUSD <= 0 {
+			incomplete = true
+			continue
+		}
+		total += *e.VolumeUSD
+		known++
+	}
+	if known == 0 {
+		return "n/a"
+	}
+	formatted := fmtVol(total)
+	if incomplete {
+		return formatted + "+"
+	}
+	return formatted
 }
 
 // pumpEmoji gives a quick-read intensity marker so the size of a pump is legible

@@ -67,6 +67,12 @@ proven. Post-MVP strategy and exit improvements live in the exit-strategy notes.
 Start collecting the evidence that answers "is there edge?". Non-recoverable data
 comes first.
 
+- [x] Preserve scanner ticker data quality end to end: unavailable 24h volume must
+      remain nullable rather than becoming a false `$0`; retain its availability and
+      source; never infer derivative quote volume without verified contract units;
+      use LBank's raw `lastTime` only as a narrow freshness fallback; expose partial
+      totals as lower bounds in alerts and UI.
+
 Status (2026-07-23): the decision + liquidity + price dataset is live and durable.
 Per-exchange first-discovery attribution is the remaining non-recoverable capture;
 lightweight dataset-health visibility remains operational follow-up.
@@ -246,6 +252,12 @@ measurement, replay, or production reliability. The executable task set lives in
       confirms spot fallback is insufficient. If no supported contract-history
       endpoint exists, use durable scanner-derived candles inside Schurfer
       ([CCXT-003](docs/tasks/ccxt/003-lbank-perpetual-ohlcv-research.md)).
+- [ ] Upstream LBank swap ticker timestamp normalization as a small independent
+      parser PR. The public contract response exposes second-based `lastTime`, while
+      CCXT 4.5.58 leaves unified `timestamp` empty. Keep exchange-reported zero
+      volume unchanged upstream; Schurfer owns the nullable/unavailable presentation
+      policy
+      ([CCXT-004](docs/tasks/ccxt/004-lbank-swap-ticker-timestamp.md)).
 
 ### Phase 3: Live ladder (gated on proven edge)
 
