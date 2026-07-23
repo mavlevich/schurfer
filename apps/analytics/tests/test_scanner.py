@@ -95,6 +95,37 @@ async def test_fetch_applies_same_linear_usdt_rules_to_every_exchange() -> None:
     assert [row["base"] for row in below] == ["WATCH"]
 
 
+async def test_fetch_attaches_exchange_instrument_identity() -> None:
+    exchange = AsyncMock()
+    exchange.has = {"fetchTickers": True}
+    exchange.markets = {
+        "GMEROBINHOOD/USDT:USDT": {
+            "id": "GMEROBINHOOD-USDT",
+            "symbol": "GMEROBINHOOD/USDT:USDT",
+            "base": "GMEROBINHOOD",
+            "quote": "USDT",
+            "settle": "USDT",
+            "swap": True,
+            "contractSize": 1,
+            "active": True,
+            "info": {
+                "displayName": "GME-USDT",
+                "launchTime": "1784805000000",
+            },
+        }
+    }
+    exchange.fetch_tickers.return_value = {
+        "GMEROBINHOOD/USDT:USDT": _ticker(1375.0),
+    }
+
+    above, _, error = await _fetch("bingx", exchange, min_pct=30.0)
+
+    assert error is None
+    assert above[0]["market_id"] == "GMEROBINHOOD-USDT"
+    assert above[0]["display_name"] == "GME-USDT"
+    assert above[0]["identity_key"] == "bingx:swap:GMEROBINHOOD-USDT:1784805000000"
+
+
 async def test_fetch_rejects_stale_and_invalid_tickers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

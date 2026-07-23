@@ -211,8 +211,66 @@ def test_source_args_normalizes_optional_numeric_fields() -> None:
 
     args = _source_args(7, exchange)
 
-    assert args[0:6] == (7, "bybit", "BTCUSDT", 40.0, 40.0, 40.0)
-    assert args[6:] == (None, None, None, None)
+    assert args[0:3] == (7, "bybit", "BTCUSDT")
+    assert args[3:15] == (None,) * 12
+    assert args[15:18] == (40.0, 40.0, 40.0)
+    assert args[18:] == (None, None, None, None)
+
+
+def test_source_args_preserves_instrument_identity_and_timestamps() -> None:
+    exchange = _ex("100", 40.0, "110")
+    exchange.update(
+        {
+            "identity_key": "bingx:swap:GMEROBINHOOD-USDT:1784805000000",
+            "market_id": "GMEROBINHOOD-USDT",
+            "unified_symbol": "GMEROBINHOOD/USDT:USDT",
+            "display_name": "GME-USDT",
+            "market_type": "swap",
+            "base_asset": "GMEROBINHOOD",
+            "quote_asset": "USDT",
+            "settle_asset": "USDT",
+            "contract_size": 1,
+            "onboarded_at_ms": 1_784_805_000_000,
+            "ticker_timestamp_ms": 1_784_806_000_000,
+        }
+    )
+
+    args = _source_args(7, exchange)
+
+    assert args[3:12] == (
+        "bingx:swap:GMEROBINHOOD-USDT:1784805000000",
+        "GMEROBINHOOD-USDT",
+        "GMEROBINHOOD/USDT:USDT",
+        "GME-USDT",
+        "swap",
+        "GMEROBINHOOD",
+        "USDT",
+        "USDT",
+        1.0,
+    )
+    assert args[12].isoformat() == "2026-07-23T11:10:00+00:00"
+    assert args[13].isoformat() == "2026-07-23T11:26:40+00:00"
+    assert args[14] == args[13]
+    assert _UPSERT_EVENT_SOURCE.count("%s") == len(args)
+    assert "identity_conflict" in _UPSERT_EVENT_SOURCE
+    assert "market_id <> EXCLUDED.market_id" in _UPSERT_EVENT_SOURCE
+    assert "market_type <> EXCLUDED.market_type" in _UPSERT_EVENT_SOURCE
+    assert "onboarded_at <> EXCLUDED.onboarded_at" in _UPSERT_EVENT_SOURCE
+
+
+def test_source_upsert_enriches_unknown_listing_time_without_conflict() -> None:
+    assert "app.pump_event_sources.onboarded_at IS NULL" in _UPSERT_EVENT_SOURCE
+    assert "EXCLUDED.onboarded_at IS NOT NULL" in _UPSERT_EVENT_SOURCE
+    assert "THEN EXCLUDED.identity_key" in _UPSERT_EVENT_SOURCE
+
+
+def test_source_upsert_does_not_erase_last_ticker_time() -> None:
+    assert (
+        "COALESCE(\n"
+        "        EXCLUDED.last_ticker_at,\n"
+        "        app.pump_event_sources.last_ticker_at\n"
+        "    )"
+    ) in _UPSERT_EVENT_SOURCE
 
 
 def test_upsert_pumps_rejects_non_finite_source_change_atomically() -> None:
