@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     DateTime,
     Double,
     ForeignKey,
@@ -32,6 +33,21 @@ class PumpEventSource(Base):
     )
     exchange: Mapped[str] = mapped_column(String(32), nullable=False)
     symbol: Mapped[str] = mapped_column(String(128), nullable=False)
+    identity_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    market_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    unified_symbol: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    display_name: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    market_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    base_asset: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    quote_asset: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    settle_asset: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    contract_size: Mapped[float | None] = mapped_column(Double(), nullable=True)
+    onboarded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    first_ticker_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_ticker_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    identity_conflict: Mapped[bool] = mapped_column(
+        Boolean(), nullable=False, default=False, server_default="false"
+    )
     first_seen_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

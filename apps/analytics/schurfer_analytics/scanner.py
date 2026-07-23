@@ -9,6 +9,7 @@ import redis.asyncio as aioredis
 import structlog
 
 from .exchange_registry import EXCHANGE_FACTORIES
+from .instruments import instrument_metadata
 
 log = structlog.get_logger()
 
@@ -120,16 +121,19 @@ async def _fetch(
                 continue
             base = sym.split("/")[0]
             volume_24h_usd, volume_24h_source = _volume_24h_usd(t)
+            ticker_info = t.get("info")
+            ticker_info = ticker_info if isinstance(ticker_info, dict) else {}
             entry = {
                 "base": base,
                 "exchange": name,
-                "symbol": t.get("info", {}).get("symbol", sym),
+                "symbol": ticker_info.get("symbol") or sym,
                 "price": str(t.get("last") or ""),
                 "change_pct": pct_f,
                 "high_24h": str(t.get("high") or ""),
                 "volume_24h_usd": volume_24h_usd,
                 "volume_24h_source": volume_24h_source,
                 "ticker_timestamp_ms": timestamp,
+                **instrument_metadata(name, sym, market),
             }
             if pct_f >= min_pct:
                 above.append(entry)
