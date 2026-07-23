@@ -7,7 +7,9 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -25,6 +27,8 @@ func fetchOHLCV(ctx context.Context, exchange, base string, interval, limit int)
 	switch exchange {
 	case "binance":
 		return fetchBinance(ctx, base, interval, limit)
+	case "bybit":
+		return fetchBybit(ctx, base, interval, limit)
 	case "okx":
 		return fetchOKX(ctx, base, interval, limit)
 	case "gate":
@@ -33,8 +37,10 @@ func fetchOHLCV(ctx context.Context, exchange, base string, interval, limit int)
 		return fetchBingX(ctx, base, interval, limit)
 	case "mexc":
 		return fetchMEXC(ctx, base, interval, limit)
+	case "xt":
+		return fetchXT(ctx, base, interval, limit)
 	default:
-		return fetchBybit(ctx, base, interval, limit)
+		return nil, fmt.Errorf("unsupported OHLCV exchange %q", exchange)
 	}
 }
 
@@ -496,11 +502,11 @@ func fetchMEXC(ctx context.Context, base string, interval, limit int) ([]Candle,
 	return candles, nil
 }
 
-// mexcNumber accepts a kline field as either a JSON number or a JSON string —
-// MEXC's futures API is inconsistent about which one it sends per symbol.
-type mexcNumber float64
+// flexibleNumber accepts an API field as either a JSON number or a JSON string.
+// Several exchange APIs are inconsistent about which representation they return.
+type flexibleNumber float64
 
-func (n *mexcNumber) UnmarshalJSON(b []byte) error {
+func (n *flexibleNumber) UnmarshalJSON(b []byte) error {
 	if len(b) > 0 && b[0] == '"' {
 		var s string
 		if err := json.Unmarshal(b, &s); err != nil {
@@ -510,14 +516,14 @@ func (n *mexcNumber) UnmarshalJSON(b []byte) error {
 		if err != nil {
 			return err
 		}
-		*n = mexcNumber(v)
+		*n = flexibleNumber(v)
 		return nil
 	}
 	var v float64
 	if err := json.Unmarshal(b, &v); err != nil {
 		return err
 	}
-	*n = mexcNumber(v)
+	*n = flexibleNumber(v)
 	return nil
 }
 
@@ -530,12 +536,12 @@ func parseMEXC(raw []byte) ([]Candle, error) {
 		Code    int    `json:"code"`
 		Message string `json:"message"`
 		Data    *struct {
-			Time  []int64      `json:"time"`
-			Open  []mexcNumber `json:"open"`
-			High  []mexcNumber `json:"high"`
-			Low   []mexcNumber `json:"low"`
-			Close []mexcNumber `json:"close"`
-			Vol   []mexcNumber `json:"vol"`
+			Time  []int64          `json:"time"`
+			Open  []flexibleNumber `json:"open"`
+			High  []flexibleNumber `json:"high"`
+			Low   []flexibleNumber `json:"low"`
+			Close []flexibleNumber `json:"close"`
+			Vol   []flexibleNumber `json:"vol"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(raw, &resp); err != nil {
@@ -550,7 +556,7 @@ func parseMEXC(raw []byte) ([]Candle, error) {
 	n := len(resp.Data.Time)
 	candles := make([]Candle, 0, n)
 	for i := 0; i < n; i++ {
-		parseF := func(arr []mexcNumber, name string) (float64, error) {
+		parseF := func(arr []flexibleNumber, name string) (float64, error) {
 			if i >= len(arr) {
 				return 0, fmt.Errorf("row %d %s: out of range", i, name)
 			}
@@ -578,6 +584,102 @@ func parseMEXC(raw []byte) ([]Candle, error) {
 		}
 		candles = append(candles, Candle{Time: resp.Data.Time[i], Open: o, High: h, Low: l, Close: c, Volume: v})
 	}
+	return candles, nil
+}
+
+func xtInterval(minutes int) (string, bool) {
+	switch minutes {
+	case 1, 5, 15, 30:
+		return fmt.Sprintf("%dm", minutes), true
+	case 60:
+		return "1h", true
+	case 240:
+		return "4h", true
+	case 1440:
+		return "1d", true
+	case 10080:
+		return "1w", true
+	default:
+		return "", false
+	}
+}
+
+func xtOHLCVURL(base string, interval, limit int) (string, error) {
+	iv, ok := xtInterval(interval)
+	if !ok {
+		return "", fmt.Errorf("unsupported XT interval %d minutes", interval)
+	}
+	query := url.Values{}
+	query.Set("symbol", strings.ToLower(base)+"_usdt")
+	query.Set("interval", iv)
+	query.Set("limit", strconv.Itoa(limit))
+	return "https://fapi.xt.com/future/market/v1/public/q/kline?" + query.Encode(), nil
+}
+
+func fetchXT(ctx context.Context, base string, interval, limit int) ([]Candle, error) {
+	endpoint, err := xtOHLCVURL(base, interval, limit)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := httpGet(ctx, endpoint)
+	if err != nil {
+		return nil, err
+	}
+	candles, err := parseXT(raw)
+	if err != nil {
+		return nil, fmt.Errorf("xt/%s: %w", base, err)
+	}
+	return candles, nil
+}
+
+func parseXT(raw []byte) ([]Candle, error) {
+	var resp struct {
+		ReturnCode int    `json:"returnCode"`
+		MsgInfo    string `json:"msgInfo"`
+		Error      *struct {
+			Code string `json:"code"`
+			Msg  string `json:"msg"`
+		} `json:"error"`
+		Result []struct {
+			Time   int64          `json:"t"`
+			Open   flexibleNumber `json:"o"`
+			High   flexibleNumber `json:"h"`
+			Low    flexibleNumber `json:"l"`
+			Close  flexibleNumber `json:"c"`
+			Volume flexibleNumber `json:"a"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return nil, fmt.Errorf("json: %w", err)
+	}
+	if resp.ReturnCode != 0 {
+		message := resp.MsgInfo
+		if resp.Error != nil && resp.Error.Msg != "" {
+			message = resp.Error.Msg
+		}
+		return nil, fmt.Errorf("exchange error %d: %s", resp.ReturnCode, message)
+	}
+	candles := make([]Candle, 0, len(resp.Result))
+	for i, row := range resp.Result {
+		if row.Time <= 0 {
+			return nil, fmt.Errorf("row %d: timestamp must be positive", i)
+		}
+		if row.Open <= 0 || row.High <= 0 || row.Low <= 0 || row.Close <= 0 {
+			return nil, fmt.Errorf("row %d: OHLC prices must be positive", i)
+		}
+		if row.Volume < 0 {
+			return nil, fmt.Errorf("row %d: volume must not be negative", i)
+		}
+		candles = append(candles, Candle{
+			Time:   row.Time / 1000,
+			Open:   float64(row.Open),
+			High:   float64(row.High),
+			Low:    float64(row.Low),
+			Close:  float64(row.Close),
+			Volume: float64(row.Volume),
+		})
+	}
+	sort.Slice(candles, func(i, j int) bool { return candles[i].Time < candles[j].Time })
 	return candles, nil
 }
 

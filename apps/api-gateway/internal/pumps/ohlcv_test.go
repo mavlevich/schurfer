@@ -1,10 +1,113 @@
 package pumps
 
 import (
+	"context"
+	"errors"
 	"net/url"
+	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestFetchOHLCVRejectsUnsupportedExchange(t *testing.T) {
+	t.Parallel()
+	_, err := fetchOHLCV(context.Background(), "unknown", "BTC", 60, 10)
+	if err == nil || !strings.Contains(err.Error(), "unsupported OHLCV exchange") {
+		t.Fatalf("expected unsupported exchange error, got %v", err)
+	}
+}
+
+func TestEverySupportedOHLCVExchangeHasDispatcherRoute(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	for exchange := range supportedOHLCV {
+		exchange := exchange
+		t.Run(exchange, func(t *testing.T) {
+			t.Parallel()
+			_, err := fetchOHLCV(ctx, exchange, "BTC", 60, 10)
+			if err == nil {
+				t.Fatal("expected canceled request error")
+			}
+			if strings.Contains(err.Error(), "unsupported OHLCV exchange") {
+				t.Fatalf("supported exchange is missing from dispatcher: %v", err)
+			}
+			if !errors.Is(err, context.Canceled) {
+				t.Fatalf("expected context cancellation after dispatch, got %v", err)
+			}
+		})
+	}
+}
+
+func TestXTOHLCVURL(t *testing.T) {
+	t.Parallel()
+	rawURL, err := xtOHLCVURL("ALPACA", 60, 200)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	query := parsed.Query()
+	if got := query.Get("symbol"); got != "alpaca_usdt" {
+		t.Errorf("symbol = %q, want alpaca_usdt", got)
+	}
+	if got := query.Get("interval"); got != "1h" {
+		t.Errorf("interval = %q, want 1h", got)
+	}
+	if got := query.Get("limit"); got != "200" {
+		t.Errorf("limit = %q, want 200", got)
+	}
+}
+
+func TestXTOHLCVURLRejectsUnsupportedInterval(t *testing.T) {
+	t.Parallel()
+	if _, err := xtOHLCVURL("ZEUS", 120, 200); err == nil {
+		t.Fatal("expected unsupported interval error")
+	}
+}
+
+func TestParseXT(t *testing.T) {
+	t.Parallel()
+	raw := `{"returnCode":0,"msgInfo":"success","error":null,"result":[{"s":"alpaca_usdt","t":1700000060000,"o":"2","h":"3","l":"1","c":"2.5","a":"12","v":"30"},{"s":"alpaca_usdt","t":1700000000000,"o":1,"h":2,"l":0.5,"c":1.5,"a":10,"v":15}]}`
+
+	candles, err := parseXT([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Candle{
+		{Time: 1700000000, Open: 1, High: 2, Low: 0.5, Close: 1.5, Volume: 10},
+		{Time: 1700000060, Open: 2, High: 3, Low: 1, Close: 2.5, Volume: 12},
+	}
+	if !reflect.DeepEqual(candles, want) {
+		t.Fatalf("candles = %#v, want %#v", candles, want)
+	}
+}
+
+func TestParseXTErrors(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		raw  string
+	}{
+		{name: "exchange error", raw: `{"returnCode":1001,"msgInfo":"bad symbol","error":{"code":"1001","msg":"symbol not found"},"result":[]}`},
+		{name: "malformed json", raw: `{not-json`},
+		{name: "bad numeric field", raw: `{"returnCode":0,"result":[{"t":1700000000000,"o":"bad","h":"2","l":"1","c":"1.5","a":"10"}]}`},
+		{name: "missing timestamp", raw: `{"returnCode":0,"result":[{"o":"1","h":"2","l":"0.5","c":"1.5","a":"10"}]}`},
+		{name: "missing price", raw: `{"returnCode":0,"result":[{"t":1700000000000,"o":"1","h":"2","l":"0.5","a":"10"}]}`},
+		{name: "negative volume", raw: `{"returnCode":0,"result":[{"t":1700000000000,"o":"1","h":"2","l":"0.5","c":"1.5","a":"-10"}]}`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if _, err := parseXT([]byte(tc.raw)); err == nil {
+				t.Fatal("expected error")
+			}
+		})
+	}
+}
 
 func TestGateOHLCVURLPercentEncodesUnicodeContract(t *testing.T) {
 	t.Parallel()

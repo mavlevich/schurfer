@@ -1,5 +1,5 @@
-.PHONY: help install dev dev-init dev-stop dev-reset dev-logs dev-test migrate measurement-report test lint format clean security deadcode check verify verify-docker \
-        prod-deploy prod-measurement-report prod-logs prod-backup prod-restore-local prod-health
+.PHONY: help install dev dev-init dev-stop dev-reset dev-logs dev-test migrate measurement-report exchange-coverage-report test lint format clean security deadcode check verify verify-docker \
+        prod-deploy prod-measurement-report prod-exchange-coverage-report prod-logs prod-backup prod-restore-local prod-health
 
 help:
 	@echo "Schurfer - common commands"
@@ -21,6 +21,7 @@ help:
 	@echo "  make verify     Pre-PR gate: lock, lint, types, tests, build"
 	@echo "  make verify-docker  verify + analytics Docker import check"
 	@echo "  make measurement-report  Read-only local report (ARGS='...')"
+	@echo "  make exchange-coverage-report  Read-only exchange source report (ARGS='...')"
 	@echo ""
 	@echo "Production (run on server with .env.prod present):"
 	@echo "  make prod-deploy          Pull + rebuild + restart all services"
@@ -29,6 +30,7 @@ help:
 	@echo "  make prod-restore-local   Download latest prod backup → local dev DB"
 	@echo "  make prod-health          Show container status"
 	@echo "  make prod-measurement-report  Read-only production report (ARGS='...')"
+	@echo "  make prod-exchange-coverage-report  Production exchange source report"
 
 install:
 	@echo "-> Installing Python deps via uv..."
@@ -83,6 +85,10 @@ migrate:
 measurement-report:
 	@DATABASE_URL="$${DATABASE_URL:-postgresql://schurfer:schurfer_dev@localhost:5432/schurfer}" \
 		uv run --package schurfer-analytics measurement-report $(ARGS)
+
+exchange-coverage-report:
+	@DATABASE_URL="$${DATABASE_URL:-postgresql://schurfer:schurfer_dev@localhost:5432/schurfer}" \
+		uv run --package schurfer-analytics exchange-coverage-report $(ARGS)
 
 test:
 	@echo "-> Running Python tests..."
@@ -230,6 +236,10 @@ prod-measurement-report:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
 	$(_PROD) run --rm --no-deps --entrypoint measurement-report analytics $(ARGS)
 
+prod-exchange-coverage-report:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
+	$(_PROD) run --rm --no-deps --entrypoint exchange-coverage-report analytics $(ARGS)
+
 # Redeploy a previous known-good commit. No pull, no migration: a rollback must
 # not fast-forward back to the broken main, and checking out old code does NOT
 # revert a schema change (restore from backup or downgrade explicitly for that).
@@ -262,6 +272,7 @@ verify-docker: verify
 	docker run --rm --entrypoint python schurfer-analytics:ci -c "import schurfer_analytics; print('ok')"
 	docker run --rm --entrypoint outcome-resolver schurfer-analytics:ci --help
 	docker run --rm --entrypoint measurement-report schurfer-analytics:ci --help
+	docker run --rm --entrypoint exchange-coverage-report schurfer-analytics:ci --help
 	@docker rmi schurfer-analytics:ci --force > /dev/null
 	@echo "=== Docker: execution build + import check ==="
 	docker build -f apps/execution/Dockerfile -t schurfer-execution:ci . -q

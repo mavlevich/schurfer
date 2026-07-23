@@ -1,6 +1,6 @@
 # Roadmap
 
-> Living document. Updated as we progress. Last refreshed 2026-07-19.
+> Living document. Updated as we progress. Last refreshed 2026-07-23.
 
 ## Guiding principle
 
@@ -18,24 +18,23 @@ tomorrow.
 The parked idea catalog lives in [IDEAS.md](IDEAS.md). It is frozen until edge is
 proven. Post-MVP strategy and exit improvements live in the exit-strategy notes.
 
-## Current state (2026-07-19)
+## Current state (2026-07-23)
 
 - Live in production on Hetzner. Private access over Tailscale only. Caddy serves
   the Tailscale hostname with a static cert. Public ports 80 and 443 are closed
   with ufw.
 - Trading mode is `AUTO_TRADE=false`, `DRY_RUN=true`. No real orders. Paper
   simulation only, accumulating data. `SCORE_THRESHOLD=6`.
-- Reality check: about 288 skipped versus 1 opened_dry_run over 3 days. Score below
-  6 on almost everything, usually because OI is still growing, which means the pump
-  is not exhausted. The scanner is deliberately broad and the entry filter is
-  strict. This works as intended. Sample size is 1, so nothing to conclude yet.
+- The durable decision/outcome dataset and market-quality gate are live. The scanner
+  now has 17 configured linear-USDT perp venues. The immediate task is measuring
+  which venues add unique discoveries or useful lead time before adding more feeds.
 
 ## Shipped
 
 - Foundation: monorepo, Docker Compose (Postgres and TimescaleDB, Redis, NATS),
   structured logging, trade-journal schema, web scaffold (Vite, React, shadcn,
   auth), Bybit websocket collector (Go to NATS), `make verify` quality gate.
-- Pump scanner: 12 CEX perp markets via ccxt, Redis `pumps:latest`, graceful
+- Pump scanner: 17 CEX perp markets via ccxt, Redis `pumps:latest`, graceful
   degradation, the `/pumps` UI, `GET /api/pumps`.
 - Pump history and token detail: `pump_events` with multi-episode tracking,
   snapshots at +1h, +4h, and +24h, history APIs, token detail page (OHLCV chart,
@@ -67,8 +66,24 @@ proven. Post-MVP strategy and exit improvements live in the exit-strategy notes.
 Start collecting the evidence that answers "is there edge?". Non-recoverable data
 comes first.
 
-Status (2026-07-22): the decision + liquidity + price dataset is live and durable;
-the two remaining items are dataset-health visibility, not data capture.
+Status (2026-07-23): the decision + liquidity + price dataset is live and durable.
+Per-exchange first-discovery attribution is the remaining non-recoverable capture;
+lightweight dataset-health visibility remains operational follow-up.
+
+- [x] Durable exchange-source attribution. Store one compact row per pump episode and
+      venue with immutable first-seen price/change/volume plus last-seen, peak change,
+      and observation count. Report unique discoveries, overlap, and lead time by
+      venue. Do not retain every raw ticker: the source crossing timestamp is the
+      non-recoverable fact required to decide whether broader coverage is valuable.
+- [ ] Canonical instrument identity. A ticker is a display label, not an asset key:
+      exchanges can retain disabled markets or reuse symbols for unrelated tokens.
+      Persist the exchange market id/type, ticker timestamp, and listing/onboard date;
+      use `chain + contract_address` for spot/DEX assets and a versioned
+      `exchange + market_id + onboard_date` identity for derivatives. Do not merge
+      obscure cross-venue assets solely by `base`; link them through an explicit
+      nullable canonical asset id and surface unverified/conflicting identities.
+      The scanner already rejects stale/inactive markets and exchange-native disabled
+      trading flags; this follow-up prevents fresh same-symbol collisions.
 
 - [x] Extend `app.trade_decisions`. It currently stores only `score` and `pump_pct`
       as scalars, and already logs every decision including skip reasons. Add:
@@ -174,10 +189,16 @@ the two remaining items are dataset-health visibility, not data capture.
 
 ### Phase 2: Scaling and architecture (by touch, not big-bang)
 
-- [ ] Broaden the scanner to about 15 to 20 solid perp venues (from 12). Quality
-      over count. Each new exchange is a parse surface that can silently poison the
-      dataset (see the BingX >5000% garbage filter and the MEXC field-type bug).
-      Validate each one. Not the long tail to 40.
+- [x] Broaden the scanner from 12 to 17 configured perp venues. Quality remains more
+      important than count: each adapter is a parse surface that can silently poison
+      the dataset. The exchange-source report now decides which venues earn retention;
+      do not continue blindly toward a long tail of 40.
+- [ ] Korean spot observer, only after exchange-source measurement and the core
+      episode replay. Collect public Upbit/Bithumb ticker, trade, and order-book data;
+      normalize KRW with timestamped FX; retain both market-wide and token-specific
+      kimchi-premium features. Test them first as virtual global-perp entry/exit
+      challengers. Direct cross-border arbitrage remains gated on measured net edge,
+      lawful Korean account access, transfer constraints, fees, and tax review.
 - [ ] Collector to websocket data layer. The Bybit collector is the seed of the
       intended Go hot-path layer, but its consumer was never built (it publishes to
       NATS and nobody reads). Develop it here, when exchange count and latency

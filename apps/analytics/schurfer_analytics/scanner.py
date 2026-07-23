@@ -13,6 +13,7 @@ log = structlog.get_logger()
 
 REDIS_KEY = "pumps:latest"
 REDIS_TTL = 300  # 5 min — expire if scanner crashes
+MAX_TICKER_AGE_MS = 15 * 60 * 1000
 
 
 @dataclass(frozen=True)
@@ -43,9 +44,32 @@ async def _fetch(
         tickers: dict[str, Any] = await exchange.fetch_tickers()
         above: list[dict[str, Any]] = []
         below: list[dict[str, Any]] = []
+        stale = 0
+        inactive = 0
+        now_ms = int(time.time() * 1000)
+        markets = exchange.markets if isinstance(exchange.markets, dict) else {}
         for sym, t in tickers.items():
             if not sym.endswith("/USDT:USDT"):
                 continue
+            market = markets.get(sym)
+            if market is not None:
+                market_info = market.get("info")
+                trading_disabled = (
+                    isinstance(market_info, dict) and market_info.get("tradeSwitch") is False
+                )
+                if market.get("active") is False or trading_disabled:
+                    inactive += 1
+                    continue
+            timestamp = t.get("timestamp")
+            if timestamp is not None:
+                try:
+                    ticker_age_ms = now_ms - int(timestamp)
+                except (TypeError, ValueError):
+                    stale += 1
+                    continue
+                if ticker_age_ms > MAX_TICKER_AGE_MS:
+                    stale += 1
+                    continue
             pct = t.get("percentage")
             if pct is None:
                 continue
@@ -68,7 +92,14 @@ async def _fetch(
                 above.append(entry)
             elif base in extra_bases:
                 below.append(entry)
-        log.info("exchange.scanned", exchange=name, pumps=len(above), tracked=len(below))
+        log.info(
+            "exchange.scanned",
+            exchange=name,
+            pumps=len(above),
+            tracked=len(below),
+            stale=stale,
+            inactive=inactive,
+        )
         return above, below, None
     except Exception as exc:
         log.warning("exchange.failed", exchange=name, err=str(exc))

@@ -14,6 +14,7 @@ from .funding_rate_snapshot import FundingRateSnapshot
 from .oi_snapshot import OiSnapshot
 from .pump_event import PumpEvent
 from .pump_event_snapshot import PumpEventSnapshot
+from .pump_event_source import PumpEventSource
 from .trade import Alert, Strategy, Trade
 
 __all__ = [
@@ -28,6 +29,7 @@ __all__ = [
     "OutcomeQuality",
     "PumpEvent",
     "PumpEventSnapshot",
+    "PumpEventSource",
     "Side",
     "SignalSource",
     "Strategy",

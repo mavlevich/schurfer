@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from .funding_rate_snapshot import FundingRateSnapshot
     from .oi_snapshot import OiSnapshot
     from .pump_event_snapshot import PumpEventSnapshot
+    from .pump_event_source import PumpEventSource
 
 
 class PumpEvent(Base):
@@ -35,6 +36,9 @@ class PumpEvent(Base):
 
     snapshots: Mapped[list["PumpEventSnapshot"]] = relationship(
         "PumpEventSnapshot", back_populates="event", cascade="all, delete-orphan"
+    )
+    sources: Mapped[list["PumpEventSource"]] = relationship(
+        "PumpEventSource", back_populates="event", cascade="all, delete-orphan"
     )
     oi_snapshots: Mapped[list["OiSnapshot"]] = relationship(
         "OiSnapshot", back_populates="event", cascade="all, delete-orphan"
