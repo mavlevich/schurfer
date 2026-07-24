@@ -1,9 +1,10 @@
 # CCXT-005: Restore the development image on Apple Silicon
 
-> Status: issue confirmed; focused pull request ready
+> Status: completed; merged upstream as
+> [ccxt/ccxt#29305](https://github.com/ccxt/ccxt/pull/29305)
 > Depends on: none
 > Tracks: [ccxt/ccxt#29304](https://github.com/ccxt/ccxt/issues/29304)
-> Produces: one root `Dockerfile` pull request
+> Merge commit: `40b65169a9d5c1968bc105360f698f5c8bf8ce8f`
 
 ## Goal
 
@@ -31,6 +32,12 @@ also requires the setuptools version pinned by the root project.
 
 Both causes were reproduced against CCXT 4.5.68 and independently confirmed in the
 upstream issue.
+
+During review, a pre-existing `idna==2.9` Docker pin was found to conflict with the
+root project's `idna==3.18`. CCXT resolved it independently in
+[ccxt/ccxt#29307](https://github.com/ccxt/ccxt/pull/29307), then a maintainer merged
+the updated `master` into the feature branch before merging #29305. The final
+Dockerfile therefore preserves `idna==3.18`; no follow-up correction is required.
 
 ## Focused implementation
 
@@ -61,6 +68,12 @@ upstream issue.
 - The editable Python install uses current project metadata.
 - The full CCXT build completes inside the image.
 - No generated artifacts or unrelated Docker cleanup are committed.
+
+## Follow-up boundary
+
+Image-size, layer-cache, SDK-version pinning, and installer-integrity work are not
+regressions in this fix. They are tracked independently in CCXT-006 and CCXT-007 so
+the accepted cross-architecture repair remains auditable as one change.
 
 ## References
 

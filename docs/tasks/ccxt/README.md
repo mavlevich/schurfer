@@ -25,14 +25,16 @@ because they have different dependencies and outcomes.
 
 ## Execution order
 
-| Task                                                  | Outcome                                                                 | Dependency                         |
-| ----------------------------------------------------- | ----------------------------------------------------------------------- | ---------------------------------- |
-| [CCXT-001](001-xt-fetch-open-interest.md)             | Research, implement, test, and submit XT `fetchOpenInterest`            | None                               |
-| [CCXT-002](002-adopt-upstream-xt.md)                  | Upgrade Schurfer and remove the local fallback safely                   | Released CCXT version              |
-| [CCXT-003](003-lbank-perpetual-ohlcv-research.md)     | Decide whether a supported LBank perpetual OHLCV contribution is viable | Independent; separate PR if viable |
-| [CCXT-004](004-lbank-swap-ticker-timestamp.md)        | Normalize LBank swap `lastTime` into the unified ticker timestamp       | Completed and merged upstream      |
-| [CCXT-005](005-apple-silicon-development-image.md)    | Restore the development Docker image on Apple Silicon                   | Issue confirmed; focused PR ready  |
-| [CCXT-006](006-docker-image-optimization-research.md) | Measure Docker image size and build time before proposing improvements  | After CCXT-005; research first     |
+| Task                                                   | Outcome                                                                 | Dependency                         |
+| ------------------------------------------------------ | ----------------------------------------------------------------------- | ---------------------------------- |
+| [CCXT-001](001-xt-fetch-open-interest.md)              | Research, implement, test, and submit XT `fetchOpenInterest`            | None                               |
+| [CCXT-002](002-adopt-upstream-xt.md)                   | Upgrade Schurfer and remove the local fallback safely                   | Released CCXT version              |
+| [CCXT-003](003-lbank-perpetual-ohlcv-research.md)      | Decide whether a supported LBank perpetual OHLCV contribution is viable | Independent; separate PR if viable |
+| [CCXT-004](004-lbank-swap-ticker-timestamp.md)         | Normalize LBank swap `lastTime` into the unified ticker timestamp       | Completed and merged upstream      |
+| [CCXT-005](005-apple-silicon-development-image.md)     | Restore the development Docker image on Apple Silicon                   | Completed and merged upstream      |
+| [CCXT-006](006-docker-image-optimization-research.md)  | Measure Docker image size and build time before proposing improvements  | Ready for baseline measurements    |
+| [CCXT-007](007-dotnet-installer-hardening-research.md) | Decide whether the .NET installer should be pinned or integrity-checked | Low priority; research first       |
+| [CCXT-008](008-lbank-swap-trades-research.md)          | Research LBank swap `fetchTrades` invalid-pair failures                 | Independent; separate PR if viable |
 
 ## Rules for all tasks
 
@@ -53,6 +55,19 @@ because they have different dependencies and outcomes.
   `master`.
 - Keep correctness fixes separate from performance or image-size work. Optimization
   claims require before-and-after measurements.
+
+## Recorded no-go boundaries
+
+- An exchange-reported ticker volume of zero remains zero in CCXT. Do not infer
+  volume from order-book depth, trades, open interest, or a different endpoint.
+- Schurfer owns presentation policy for unavailable or partial volume. It must not be
+  embedded in a general-purpose CCXT parser.
+- Same-symbol asset identity cannot be repaired with name matching. Propose an
+  upstream identity change only when an official exchange field or endpoint provides
+  stable evidence; otherwise Schurfer retains its explicit conflict handling.
+- A floating .NET 9 patch release and an HTTPS-downloaded official installer are not
+  automatically bugs. CCXT-007 requires an upstream policy and threat-model decision
+  before code.
 
 ## Primary references
 

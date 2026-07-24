@@ -1,6 +1,6 @@
 # CCXT-006: Measure development image optimization opportunities
 
-> Status: backlog; research only
+> Status: ready for baseline measurements; research only
 > Depends on: CCXT-005 merged or closed
 > Produces: measurements and either one focused proposal or a documented no-go
 
@@ -16,20 +16,26 @@ repeatable improvement.
 
 ## Current observations to verify
 
-The root Dockerfile appears to contain several possible sources of unnecessary work:
+The root Dockerfile at merge commit
+`40b65169a9d5c1968bc105360f698f5c8bf8ce8f` contains several concrete optimization
+candidates:
 
-- repeated `apt-get update` and package installation layers;
-- package-index files that may remain in image layers;
-- separate Python dependency installation layers;
-- dependency installation after broad source copies, which may reduce warm-build
-  cache reuse;
-- npm, pip, apt, Composer, and SDK caches that may survive in the final development
-  image;
+- `ADD ./ /ccxt` precedes every toolchain installation, so any source-content change
+  invalidates the PHP, Node.js, Python, and .NET layers;
+- `curl`, `gnupg`, and `ca-certificates` are requested in more than one apt layer;
+- repeated `apt-get update` results are created in separate layers, while the final
+  cleanup cannot remove bytes retained by earlier layers;
+- `idna`, `aiohttp`, `cryptography`, and `requests` are installed separately before
+  the root editable install resolves the exact project dependencies again;
+- `tox` is installed without using the exact version declared in the `qa` optional
+  dependency set;
+- npm, pip, apt, Composer, and SDK caches may survive in the final development image;
 - a universal image containing every language toolchain even when a contributor
   works on only one binding.
 
-These are hypotheses, not confirmed defects. A development image intentionally
-contains compilers and SDKs, so a large size alone is not evidence of waste.
+The Dockerfile structure is confirmed; its cost is not. A development image
+intentionally contains compilers and SDKs, so a large size or repeated-looking
+command alone is not evidence of a worthwhile optimization.
 
 ## Baseline
 
@@ -49,15 +55,18 @@ commands with the results.
 
 ## Candidates to test independently
 
-1. Consolidate compatible apt operations and remove package lists in the same layer.
-2. Consolidate stable Python tooling installation where it improves layer reuse.
-3. Reorder copies and dependency installation only if repository structure permits a
-   narrower cache key.
-4. Evaluate BuildKit cache mounts for apt, npm, and pip without making non-BuildKit
+1. Move the broad source copy after OS and language-toolchain installation, then
+   prove bind-mounted development and the full build still work.
+2. Copy dependency manifests separately where npm, Composer, and Python semantics
+   permit stable cache keys.
+3. Consolidate compatible apt operations and remove package lists in the same layer.
+4. Replace redundant Python installs with one pinned project/extra install only if
+   the resulting environment matches the official build and QA workflows.
+5. Evaluate BuildKit cache mounts for apt, npm, and pip without making non-BuildKit
    builds incorrect.
-5. Remove installer archives and disposable package-manager caches from their
+6. Remove installer archives and disposable package-manager caches from their
    creating layers.
-6. Evaluate specialized images only as a separate design proposal. Preserve the
+7. Evaluate specialized images only as a separate design proposal. Preserve the
    existing universal development image unless maintainers explicitly prefer a
    split.
 
