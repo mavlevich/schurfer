@@ -194,6 +194,11 @@ class TestPumpEventSourceModel:
         columns = PumpEventSource.__table__.columns
         assert columns["event_id"].nullable is False
         assert columns["exchange"].nullable is False
+        assert columns["identity_key"].nullable is True
+        assert columns["market_id"].nullable is True
+        assert columns["onboarded_at"].nullable is True
+        assert columns["first_ticker_at"].nullable is True
+        assert columns["identity_conflict"].nullable is False
         assert columns["first_seen_at"].nullable is False
         assert columns["first_change_pct"].nullable is False
         assert columns["observation_count"].nullable is False

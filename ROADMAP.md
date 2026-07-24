@@ -91,6 +91,19 @@ lightweight dataset-health visibility remains operational follow-up.
       nullable canonical asset id and surface unverified/conflicting identities.
       The scanner already rejects stale/inactive markets and exchange-native disabled
       trading flags; this follow-up prevents fresh same-symbol collisions.
+  - [x] Foundation: retain a versioned derivative identity key, exchange market id,
+        unified/display symbols, market type, base/quote/settle, contract size,
+        ticker time, and supported listing/onboard time on every pump source. Surface
+        identity changes inside one venue/episode as conflicts instead of silently
+        treating them as the same instrument
+        ([recorded cases](docs/research/instrument-identity-cases.md)).
+  - [ ] Add reviewed canonical assets and explicit instrument links. Prefer
+        chain + contract address for spot; do not infer links such as CHECK ↔
+        CHECKMATE or GME ↔ GMEROBINHOOD from names alone.
+  - [ ] Collect listing, delisting, relisting, suspension, and resumption events from
+        official venue archives and live market-state changes. Normalize KRW event
+        prices with a timestamped FX rate and run event-time studies at 1h through
+        90d before using Korean listings as trading or portfolio signals.
 
 - [x] Extend `app.trade_decisions`. It currently stores only `score` and `pump_pct`
       as scalars, and already logs every decision including skip reasons. Add:
@@ -165,6 +178,19 @@ lightweight dataset-health visibility remains operational follow-up.
   - [ ] Derive recoverable pre-decision candle features (including blow-off concentration
         and reversal strength) from fully closed OHLCV and test whether they separate
         outcomes before promoting either to a live gate or score component.
+  - [ ] Enrich each pump episode with recoverable derivatives context from CCXT
+        history where the venue supports it: funding-rate history, open-interest
+        history, mark/index/premium-index candles, long/short ratios, and public
+        liquidations. Backfill bounded windows around an episode instead of crawling
+        every market forever; retain venue, method, fetch time, source timestamp,
+        coverage, and parser version. Never replace the live decision snapshot with
+        a historical approximation: exact order-book liquidity, signal lag, and
+        finer-grained live OI remain non-recoverable, while historical endpoints have
+        venue-specific retention and may exclude delisted instruments.
+  - [ ] Add episode-clustered statistical inference to the report. Bootstrap whole
+        pump episodes rather than correlated decisions, report confidence intervals,
+        and use market-adjusted/cluster-robust models before promoting an apparent
+        funding, OI, listing, or exchange effect.
 
     Then aggregate. Expectancy of taken versus skipped by score bucket answers "is
     the threshold in the right place?" (if score-5 skips beat score-6 trades, it is
@@ -206,6 +232,13 @@ lightweight dataset-health visibility remains operational follow-up.
       kimchi-premium features. Test them first as virtual global-perp entry/exit
       challengers. Direct cross-border arbitrage remains gated on measured net edge,
       lawful Korean account access, transfer constraints, fees, and tax review.
+- [ ] Selective real-time microstructure capture before a full websocket migration.
+      Use the already-installed CCXT Pro feeds only for active pump/watch episodes,
+      not every symbol on every venue. Persist bounded 5-to-10-second aggregates for
+      spread, depth, imbalance, taker buy/sell flow, basis, and liquidation bursts;
+      keep raw L2 data only for a short explicitly budgeted window. This gives the
+      replay non-recoverable entry-confirmation features without exhausting the
+      current 4 GB host.
 - [ ] Collector to websocket data layer. The Bybit collector is the seed of the
       intended Go hot-path layer, but its consumer was never built (it publishes to
       NATS and nobody reads). Develop it here, when exchange count and latency
@@ -294,6 +327,18 @@ auto.
 
 ### Phase 4: Portfolio and audience (parallel, months 2 to 5)
 
+- [ ] Incubate a separate public exchange-market-events project after the internal
+      event schema and collector survive production use. Its scope is public,
+      strategy-neutral data: listing/delisting/relisting/suspension events, versioned
+      exchange instruments, source provenance, coverage diagnostics, and reproducible
+      event-study tooling. Schurfer remains private and consumes versioned public
+      artifacts through an explicit boundary
+      ([ADR-0009](docs/adr/0009-separate-public-market-events-project.md)).
+- [ ] Publish a useful read-only site from that separate project: searchable event
+      timeline, cross-venue availability, data-quality status, and delayed aggregate
+      outcomes at 1h through 90d. Do not publish private decisions, live thresholds,
+      account data, exchange keys, production topology, or a direct connection to the
+      Schurfer database.
 - [ ] A public shadow track record. Start it now while in shadow. A track record
       begun at "edge proven" looks like it started after a lucky streak. One begun in
       shadow is honest by construction. Append only, marked SHADOW or LIVE, never

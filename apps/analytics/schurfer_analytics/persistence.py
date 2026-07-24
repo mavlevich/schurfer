@@ -1,5 +1,6 @@
 import json
 import math
+from datetime import UTC, datetime
 from typing import Any
 
 import psycopg
@@ -38,23 +39,90 @@ RETURNING id
 _UPSERT_EVENT_SOURCE = """
 INSERT INTO app.pump_event_sources (
     event_id, exchange, symbol,
+    identity_key, market_id, unified_symbol, display_name,
+    market_type, base_asset, quote_asset, settle_asset,
+    contract_size, onboarded_at, first_ticker_at, last_ticker_at,
     first_change_pct, last_change_pct, peak_change_pct,
     first_price, last_price,
     first_volume_24h_usd, last_volume_24h_usd,
     first_seen_at, last_seen_at, observation_count
 )
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW(), 1)
+VALUES (
+    %s, %s, %s,
+    %s, %s, %s, %s,
+    %s, %s, %s, %s,
+    %s, %s, %s, %s,
+    %s, %s, %s,
+    %s, %s,
+    %s, %s,
+    NOW(), NOW(), 1
+)
 ON CONFLICT (event_id, exchange) DO UPDATE
-SET symbol              = EXCLUDED.symbol,
-    last_seen_at         = EXCLUDED.last_seen_at,
-    last_change_pct      = EXCLUDED.last_change_pct,
-    peak_change_pct      = GREATEST(
+SET identity_conflict = app.pump_event_sources.identity_conflict OR (
+        (
+            app.pump_event_sources.market_id IS NOT NULL
+            AND EXCLUDED.market_id IS NOT NULL
+            AND app.pump_event_sources.market_id <> EXCLUDED.market_id
+        )
+        OR (
+            app.pump_event_sources.market_type IS NOT NULL
+            AND EXCLUDED.market_type IS NOT NULL
+            AND app.pump_event_sources.market_type <> EXCLUDED.market_type
+        )
+        OR (
+            app.pump_event_sources.onboarded_at IS NOT NULL
+            AND EXCLUDED.onboarded_at IS NOT NULL
+            AND app.pump_event_sources.onboarded_at <> EXCLUDED.onboarded_at
+        )
+    ),
+    identity_key       = CASE
+        WHEN app.pump_event_sources.identity_key IS NULL
+            THEN EXCLUDED.identity_key
+        WHEN app.pump_event_sources.market_id = EXCLUDED.market_id
+            AND app.pump_event_sources.market_type = EXCLUDED.market_type
+            AND app.pump_event_sources.onboarded_at IS NULL
+            AND EXCLUDED.onboarded_at IS NOT NULL
+            THEN EXCLUDED.identity_key
+        ELSE app.pump_event_sources.identity_key
+    END,
+    market_id          = COALESCE(app.pump_event_sources.market_id, EXCLUDED.market_id),
+    unified_symbol     = COALESCE(
+        app.pump_event_sources.unified_symbol,
+        EXCLUDED.unified_symbol
+    ),
+    display_name       = COALESCE(
+        app.pump_event_sources.display_name,
+        EXCLUDED.display_name
+    ),
+    market_type        = COALESCE(app.pump_event_sources.market_type, EXCLUDED.market_type),
+    base_asset         = COALESCE(app.pump_event_sources.base_asset, EXCLUDED.base_asset),
+    quote_asset        = COALESCE(app.pump_event_sources.quote_asset, EXCLUDED.quote_asset),
+    settle_asset       = COALESCE(app.pump_event_sources.settle_asset, EXCLUDED.settle_asset),
+    contract_size      = COALESCE(
+        app.pump_event_sources.contract_size,
+        EXCLUDED.contract_size
+    ),
+    onboarded_at       = COALESCE(
+        app.pump_event_sources.onboarded_at,
+        EXCLUDED.onboarded_at
+    ),
+    first_ticker_at    = COALESCE(
+        app.pump_event_sources.first_ticker_at,
+        EXCLUDED.first_ticker_at
+    ),
+    last_ticker_at     = COALESCE(
+        EXCLUDED.last_ticker_at,
+        app.pump_event_sources.last_ticker_at
+    ),
+    last_seen_at       = EXCLUDED.last_seen_at,
+    last_change_pct    = EXCLUDED.last_change_pct,
+    peak_change_pct    = GREATEST(
         app.pump_event_sources.peak_change_pct,
         EXCLUDED.peak_change_pct
     ),
-    last_price           = EXCLUDED.last_price,
-    last_volume_24h_usd  = EXCLUDED.last_volume_24h_usd,
-    observation_count    = app.pump_event_sources.observation_count + 1
+    last_price         = EXCLUDED.last_price,
+    last_volume_24h_usd = EXCLUDED.last_volume_24h_usd,
+    observation_count = app.pump_event_sources.observation_count + 1
 """
 
 _SELECT_OPEN_ALL = """
@@ -111,6 +179,16 @@ def _finite_float(value: Any) -> float | None:
     return parsed if math.isfinite(parsed) else None
 
 
+def _datetime_ms(value: Any) -> datetime | None:
+    parsed = _finite_float(value)
+    if parsed is None or parsed < 0:
+        return None
+    try:
+        return datetime.fromtimestamp(parsed / 1000, tz=UTC)
+    except (OverflowError, OSError, ValueError):
+        return None
+
+
 def _source_args(event_id: int, exchange: dict[str, Any]) -> tuple[Any, ...]:
     change_pct = _finite_float(exchange.get("change_pct"))
     if change_pct is None:
@@ -121,6 +199,18 @@ def _source_args(event_id: int, exchange: dict[str, Any]) -> tuple[Any, ...]:
         event_id,
         str(exchange["exchange"]),
         str(exchange["symbol"]),
+        exchange.get("identity_key"),
+        exchange.get("market_id"),
+        exchange.get("unified_symbol"),
+        exchange.get("display_name"),
+        exchange.get("market_type"),
+        exchange.get("base_asset"),
+        exchange.get("quote_asset"),
+        exchange.get("settle_asset"),
+        _finite_float(exchange.get("contract_size")),
+        _datetime_ms(exchange.get("onboarded_at_ms")),
+        _datetime_ms(exchange.get("ticker_timestamp_ms")),
+        _datetime_ms(exchange.get("ticker_timestamp_ms")),
         change_pct,
         change_pct,
         change_pct,
