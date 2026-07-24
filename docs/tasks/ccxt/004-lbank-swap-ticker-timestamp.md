@@ -1,6 +1,7 @@
 # CCXT-004: Normalize LBank swap ticker timestamps
 
-> Status: research and upstream fix planned
+> Status: completed; merged upstream as
+> [ccxt/ccxt#29303](https://github.com/ccxt/ccxt/pull/29303)
 > Depends on: none
 > Produces: one focused CCXT LBank pull request, or a documented no-go result
 

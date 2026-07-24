@@ -25,12 +25,14 @@ because they have different dependencies and outcomes.
 
 ## Execution order
 
-| Task                                              | Outcome                                                                 | Dependency                         |
-| ------------------------------------------------- | ----------------------------------------------------------------------- | ---------------------------------- |
-| [CCXT-001](001-xt-fetch-open-interest.md)         | Research, implement, test, and submit XT `fetchOpenInterest`            | None                               |
-| [CCXT-002](002-adopt-upstream-xt.md)              | Upgrade Schurfer and remove the local fallback safely                   | Released CCXT version              |
-| [CCXT-003](003-lbank-perpetual-ohlcv-research.md) | Decide whether a supported LBank perpetual OHLCV contribution is viable | Independent; separate PR if viable |
-| [CCXT-004](004-lbank-swap-ticker-timestamp.md)    | Normalize LBank swap `lastTime` into the unified ticker timestamp       | Independent; focused parser PR     |
+| Task                                                  | Outcome                                                                 | Dependency                         |
+| ----------------------------------------------------- | ----------------------------------------------------------------------- | ---------------------------------- |
+| [CCXT-001](001-xt-fetch-open-interest.md)             | Research, implement, test, and submit XT `fetchOpenInterest`            | None                               |
+| [CCXT-002](002-adopt-upstream-xt.md)                  | Upgrade Schurfer and remove the local fallback safely                   | Released CCXT version              |
+| [CCXT-003](003-lbank-perpetual-ohlcv-research.md)     | Decide whether a supported LBank perpetual OHLCV contribution is viable | Independent; separate PR if viable |
+| [CCXT-004](004-lbank-swap-ticker-timestamp.md)        | Normalize LBank swap `lastTime` into the unified ticker timestamp       | Completed and merged upstream      |
+| [CCXT-005](005-apple-silicon-development-image.md)    | Restore the development Docker image on Apple Silicon                   | Issue confirmed; focused PR ready  |
+| [CCXT-006](006-docker-image-optimization-research.md) | Measure Docker image size and build time before proposing improvements  | After CCXT-005; research first     |
 
 ## Rules for all tasks
 
@@ -46,6 +48,11 @@ because they have different dependencies and outcomes.
   data in upstream reports.
 - Re-read the current upstream guide before starting because repository commands and
   generated targets can change.
+- Record promising upstream improvements here when Schurfer exposes them, but create
+  an issue or pull request only after reproducing the problem against current
+  `master`.
+- Keep correctness fixes separate from performance or image-size work. Optimization
+  claims require before-and-after measurements.
 
 ## Primary references
 
