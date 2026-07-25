@@ -17,6 +17,7 @@ pump-scanner = "schurfer_analytics.main:main"
 outcome-resolver = "schurfer_analytics.outcome_worker:main"
 measurement-report = "schurfer_analytics.measurement_report:main"
 exchange-coverage-report = "schurfer_analytics.exchange_coverage_report:main"
+episode-replay = "schurfer_analytics.episode_replay:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

@@ -175,6 +175,13 @@ lightweight dataset-health visibility remains operational follow-up.
     - taken and won, or taken and lost
     - skipped and would-have-won (missed edge), or skipped and correctly avoided
 
+    The experiment boundary is locked in
+    [episode replay protocol v1](docs/research/episode-replay-protocol-v1.md): direct
+    episode attribution, complete chronological paths, a 50-episode descriptive look,
+    a 100-episode/30-cluster first formal cohort, cluster-bootstrap confidence
+    intervals, Holm correction for challenger families, strict point-in-time features,
+    and a code/data provenance manifest.
+
   - [ ] Derive recoverable pre-decision candle features (including blow-off concentration
         and reversal strength) from fully closed OHLCV and test whether they separate
         outcomes before promoting either to a live gate or score component.
