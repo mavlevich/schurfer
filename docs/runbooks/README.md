@@ -314,6 +314,23 @@ the new cohort separately.
   chronological decision path per episode, model costs/exits, and produce confidence
   intervals suitable for champion selection.
 
+- Episode replay input readiness: after rebuilding the analytics image, validate the
+  pre-registered confirmatory cohort without running a strategy simulation:
+
+  ```bash
+  make prod-episode-replay
+  make prod-episode-replay ARGS="--format json"
+  make prod-episode-replay ARGS="--since 2026-07-22 --horizon 240 --horizon 480"
+  ```
+
+  The default run starts at the locked confirmation cutoff, requires exact anchor-venue
+  8-hour outcomes, groups decisions by direct `pump_event_id`, and excludes an entire
+  episode if any decision path input is incomplete. The manifest records the deployed
+  Git revision, working-tree dirty state, exclusive data cutoff, query/resolver
+  versions, accepted outcome statuses, and a deterministic input fingerprint.
+  `--allow-fallback` is a sensitivity run and must not be presented as exact-venue
+  confirmatory evidence.
+
 - Pump/signal readiness after deploying migration 0012: verify newly published pumps
   carry an episode id and recent decisions are attributed. `signal_missing` or
   `signal_episode_mismatch` may occur for one execution tick while the minute-based
