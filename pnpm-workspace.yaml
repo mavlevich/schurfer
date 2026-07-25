@@ -2,5 +2,12 @@ packages:
   - 'apps/web'
   - 'packages/*'
 
+auditConfig:
+  # brace-expansion 1.x/2.x have no patched compatible releases. The remaining
+  # paths are dev-only ESLint and Workbox tooling fed by repository-owned globs.
+  # Remove this exception when their parent packages migrate to brace-expansion 5.
+  ignoreCves:
+    - CVE-2026-14257
+
 onlyBuiltDependencies:
   - esbuild
