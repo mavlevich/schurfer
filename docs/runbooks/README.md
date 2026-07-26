@@ -331,6 +331,25 @@ the new cohort separately.
   `--allow-fallback` is a sensitivity run and must not be presented as exact-venue
   confirmatory evidence.
 
+- Entry-confirmation challenger replay: after deploying the analytics image, compare
+  the registered HYP-002 family without changing production trading configuration:
+
+  ```bash
+  make prod-virtual-entry-challenger-report
+  make prod-virtual-entry-challenger-report \
+    ARGS="--until 2026-08-03T00:00:00Z --format markdown"
+  ```
+
+  The default cohort begins at `2026-07-29T00:00:00Z`. The report compares red-candle,
+  1.5% retrace, and combined confirmation against the same baseline episodes. It uses
+  only fully closed exact-venue 5-minute candles, waits at most 60 minutes, and treats
+  no confirmation as a zero-return cash episode. Missing candles or costs remain
+  unresolved. The paired deltas are descriptive until the cluster-bootstrap and Holm
+  correction layer is available; do not promote a production entry rule from this
+  command alone. Baseline eligibility is held constant during the wait, so future
+  score and market-quality gates still require live shadow validation. The detailed
+  data sources, archive command, and inspection checklist live in `ROADMAP.md`.
+
 - Pump/signal readiness after deploying migration 0012: verify newly published pumps
   carry an episode id and recent decisions are attributed. `signal_missing` or
   `signal_episode_mismatch` may occur for one execution tick while the minute-based

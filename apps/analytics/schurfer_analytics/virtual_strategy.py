@@ -235,8 +235,14 @@ def _unresolved(
 def _complete_path(
     decision: ReplayDecision,
     candles: tuple[Candle, ...],
+    *,
+    entry_at_ms: int | None = None,
 ) -> tuple[Candle, ...] | None:
-    start_ms, end_ms = expected_path_bounds(decision)
+    if entry_at_ms is None:
+        start_ms, end_ms = expected_path_bounds(decision)
+    else:
+        start_ms = entry_at_ms
+        end_ms = start_ms + exit_parameters(decision.pump_pct).max_hold_min * 60 * 1000
     expected_count = (end_ms - start_ms) // TIMEFRAME_MS
     by_timestamp = {candle.ts_ms: candle for candle in candles}
     expected_timestamps = range(start_ms, end_ms, TIMEFRAME_MS)
@@ -264,19 +270,14 @@ def _classify(taken: bool, net_return_pct: float) -> str:
     return "skipped_would_have_won" if won else "skipped_correctly_avoided"
 
 
-def simulate_episode(
+def _simulate_selected_entry(
     episode: ReplayEpisode,
     market_path: MarketPath,
+    selection: EpisodeSelection,
+    entry_at_ms: int,
     *,
     costs: CostParameters = DEFAULT_COSTS,
 ) -> VirtualTrade:
-    """Replay one short using conservative within-bar ordering.
-
-    Entry is the next complete 5-minute bar open. This avoids using the decision's
-    still-forming candle. When activation and a stop can both occur in one bar, the
-    adverse exit is assumed first and recorded explicitly.
-    """
-    selection = select_episode_decision(episode)
     decision = selection.decision
     if market_path.status != "complete":
         return _unresolved(
@@ -296,7 +297,15 @@ def simulate_episode(
             status="market_path_mismatch",
             error="market path does not match selected episode decision",
         )
-    path = _complete_path(decision, market_path.candles)
+    baseline_entry_ms = ceil_to_timeframe(int(decision.ts.timestamp() * 1000))
+    if entry_at_ms < baseline_entry_ms or entry_at_ms % TIMEFRAME_MS != 0:
+        return _unresolved(
+            episode,
+            selection,
+            status="invalid_virtual_entry",
+            error="entry must be an aligned bar at or after the baseline entry",
+        )
+    path = _complete_path(decision, market_path.candles, entry_at_ms=entry_at_ms)
     if not path:
         return _unresolved(
             episode,
@@ -316,7 +325,6 @@ def simulate_episode(
         )
 
     params = exit_parameters(decision.pump_pct)
-    entry_at_ms = path[0].ts_ms
     entry_price = path[0].open
     stop_price = entry_price * (1 + params.initial_sl_pct / 100)
     activation_price = entry_price * (1 - params.activation_pct / 100)
@@ -430,4 +438,54 @@ def simulate_episode(
         mfe_pct=mfe_pct,
         mae_pct=mae_pct,
         captured_move_pct=captured_move_pct,
+    )
+
+
+def simulate_episode(
+    episode: ReplayEpisode,
+    market_path: MarketPath,
+    *,
+    costs: CostParameters = DEFAULT_COSTS,
+) -> VirtualTrade:
+    """Replay one baseline short using conservative within-bar ordering.
+
+    Entry is the next complete 5-minute bar open. This avoids using the decision's
+    still-forming candle. When activation and a stop can both occur in one bar, the
+    adverse exit is assumed first and recorded explicitly.
+    """
+    selection = select_episode_decision(episode)
+    entry_at_ms = ceil_to_timeframe(int(selection.decision.ts.timestamp() * 1000))
+    return _simulate_selected_entry(
+        episode,
+        market_path,
+        selection,
+        entry_at_ms,
+        costs=costs,
+    )
+
+
+def simulate_episode_at_entry(
+    episode: ReplayEpisode,
+    market_path: MarketPath,
+    *,
+    entry_at_ms: int,
+    selection_reason: str,
+    costs: CostParameters = DEFAULT_COSTS,
+) -> VirtualTrade:
+    """Replay the baseline-selected decision at an explicit point-in-time entry bar."""
+    normalized_reason = selection_reason.strip()
+    if not normalized_reason:
+        raise ValueError("selection reason must not be empty")
+    baseline = select_episode_decision(episode)
+    selection = EpisodeSelection(
+        decision=baseline.decision,
+        taken=baseline.taken,
+        selection_reason=normalized_reason,
+    )
+    return _simulate_selected_entry(
+        episode,
+        market_path,
+        selection,
+        entry_at_ms,
+        costs=costs,
     )

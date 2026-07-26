@@ -7,20 +7,22 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from .ohlcv import fetch_candles
+from .virtual_entry_challengers import challenger_path_bounds
 from .virtual_strategy import MarketPath, expected_path_bounds, select_episode_decision
 
 if TYPE_CHECKING:
-    from .replay import ReplayEpisode
+    from .replay import ReplayDecision, ReplayEpisode
 
 ExchangeFactory = Callable[[], Any]
+PathBounds = Callable[["ReplayDecision"], tuple[int, int]]
 _MAX_CONCURRENT_FETCHES = 6
 
 
-async def fetch_market_paths(
+async def _fetch_market_paths(
     episodes: tuple[ReplayEpisode, ...],
     factories: dict[str, ExchangeFactory],
+    bounds: PathBounds,
 ) -> tuple[MarketPath, ...]:
-    """Fetch one complete exact-venue path per episode and close owned clients."""
     selections = [(episode, select_episode_decision(episode)) for episode in episodes]
     required_exchanges = {
         selection.decision.exchange
@@ -46,7 +48,7 @@ async def fetch_market_paths(
                 error=f"unsupported exact anchor exchange: {exchange_name or '<empty>'}",
             )
         selection = select_episode_decision(episode)
-        start_ms, end_ms = expected_path_bounds(selection.decision)
+        start_ms, end_ms = bounds(selection.decision)
         try:
             async with semaphore:
                 candles = await fetch_candles(exchange, base, start_ms, end_ms)
@@ -84,3 +86,19 @@ async def fetch_market_paths(
             return_exceptions=True,
         )
     return tuple(paths)
+
+
+async def fetch_market_paths(
+    episodes: tuple[ReplayEpisode, ...],
+    factories: dict[str, ExchangeFactory],
+) -> tuple[MarketPath, ...]:
+    """Fetch one complete baseline exact-venue path per episode."""
+    return await _fetch_market_paths(episodes, factories, expected_path_bounds)
+
+
+async def fetch_entry_challenger_paths(
+    episodes: tuple[ReplayEpisode, ...],
+    factories: dict[str, ExchangeFactory],
+) -> tuple[MarketPath, ...]:
+    """Fetch pre-decision context and delayed-entry exits for all entry variants."""
+    return await _fetch_market_paths(episodes, factories, challenger_path_bounds)

@@ -14,6 +14,7 @@ from schurfer_analytics.virtual_strategy import (
     market_path_fingerprint,
     select_episode_decision,
     simulate_episode,
+    simulate_episode_at_entry,
 )
 
 
@@ -244,6 +245,53 @@ def test_market_path_must_match_selected_anchor() -> None:
 
     assert trade.status == "market_path_mismatch"
     assert trade.classification == "unresolved"
+
+
+def test_explicit_delayed_entry_uses_requested_bar_and_full_exit_window() -> None:
+    decision = _decision()
+    candles = list(_candles(decision))
+    delayed_entry_ms = candles[1].ts_ms
+    candles[1] = replace(candles[1], open=110, high=110, low=90, close=90)
+    candles.append(
+        Candle(
+            candles[-1].ts_ms + TIMEFRAME_MS,
+            90,
+            90,
+            90,
+            90,
+            1,
+        )
+    )
+
+    trade = simulate_episode_at_entry(
+        _episode(decision),
+        _path(decision, tuple(candles)),
+        entry_at_ms=delayed_entry_ms,
+        selection_reason="challenger:test_v1",
+    )
+
+    assert trade.status == "complete"
+    assert trade.entry_at == datetime.fromtimestamp(delayed_entry_ms / 1000, tz=UTC)
+    assert trade.entry_price == 110
+    assert trade.entry_delay_seconds == pytest.approx(
+        delayed_entry_ms / 1000 - decision.ts.timestamp()
+    )
+    assert trade.selection_reason == "challenger:test_v1"
+
+
+def test_explicit_entry_rejects_unaligned_or_early_bar() -> None:
+    decision = _decision()
+    baseline_entry_ms = _candles(decision)[0].ts_ms
+
+    trade = simulate_episode_at_entry(
+        _episode(decision),
+        _path(decision),
+        entry_at_ms=baseline_entry_ms - 1,
+        selection_reason="challenger:test_v1",
+    )
+
+    assert trade.status == "invalid_virtual_entry"
+    assert trade.net_return_pct is None
 
 
 @pytest.mark.parametrize(

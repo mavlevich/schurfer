@@ -5,7 +5,11 @@ from unittest.mock import AsyncMock, Mock, patch
 
 from schurfer_analytics.ohlcv import Candle
 from schurfer_analytics.replay import ReplayDecision, ReplayEpisode
-from schurfer_analytics.virtual_market import fetch_market_paths
+from schurfer_analytics.virtual_entry_challengers import challenger_path_bounds
+from schurfer_analytics.virtual_market import (
+    fetch_entry_challenger_paths,
+    fetch_market_paths,
+)
 
 
 def _episode(
@@ -97,4 +101,24 @@ async def test_fetch_market_paths_contains_exchange_failure_per_episode() -> Non
 
     assert paths[0].status == "fetch_failed"
     assert paths[0].error == "slow venue"
+    exchange.close.assert_awaited_once()
+
+
+async def test_fetch_entry_challenger_paths_uses_registered_broad_bounds() -> None:
+    exchange = AsyncMock()
+    episode = _episode()
+    candle = Candle(1785067500000, 100, 101, 99, 100, 1)
+
+    with patch(
+        "schurfer_analytics.virtual_market.fetch_candles",
+        AsyncMock(return_value=[candle]),
+    ) as fetch:
+        paths = await fetch_entry_challenger_paths(
+            (episode,),
+            {"binance": lambda: exchange},
+        )
+
+    start_ms, end_ms = challenger_path_bounds(episode.decisions[0])
+    fetch.assert_awaited_once_with(exchange, "ERA", start_ms, end_ms)
+    assert paths[0].candles == (candle,)
     exchange.close.assert_awaited_once()
