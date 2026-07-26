@@ -19,7 +19,9 @@ Entrypoints:
 - `virtual-entry-challenger-report` — compares the baseline with the pre-registered
   red-candle, 1.5% retrace, and combined entry-confirmation variants on identical
   eligible episodes. It waits at most 60 minutes, uses only fully closed candles, and
-  treats an untriggered entry as a zero-return cash episode.
+  treats an untriggered entry as a zero-return cash episode. Once its locked formal
+  sample is ready, it also emits deterministic asset-cluster bootstrap inference,
+  Holm-corrected paired tests, familywise bounds, and concentration sensitivity.
 
 Run against the local development database:
 
@@ -34,10 +36,11 @@ make virtual-entry-challenger-report
 make virtual-entry-challenger-report ARGS="--until 2026-07-28 --format json"
 ```
 
-The report shows both decision count and distinct pump-episode count. Its return and
-win-rate tables are descriptive: repeated decisions inside an episode are correlated.
-The virtual report is descriptive. It does not run cluster-bootstrap confidence
-intervals, multiple-comparison correction, challenger selection, or a go/no-go verdict.
+The measurement report shows both decision count and distinct pump-episode count. Its
+return and win-rate tables are descriptive: repeated decisions inside an episode are
+correlated. The baseline virtual-strategy report is also descriptive. Formal inference
+is confined to the pre-registered entry-challenger report and never changes production
+configuration.
 
 The replay command defaults to the pre-registered confirmation cohort and requires
 exact anchor-venue 8-hour outcomes. `--allow-fallback` exists only for an explicitly
@@ -55,10 +58,14 @@ conservative model inputs and can be overridden for a sensitivity run.
 The entry-challenger report defaults to the pre-registered cohort beginning
 `2026-07-29T00:00:00Z`. At each possible entry it examines six 5-minute candles whose
 close was already available before the entry bar, then enters at the following bar
-open. Its paired deltas are descriptive until the separate cluster-bootstrap and Holm
-correction layer is implemented. Decision-time liquidity impact is held constant
-across variants because the later historical order book cannot be reconstructed; live
-shadow measurement is required before promotion. The replay also holds the baseline
-episode's eligibility constant during the wait instead of reconstructing future
-score and market-quality gates, so it isolates entry timing rather than claiming to
-mirror a deployable strategy end to end.
+open. Formal inference is withheld until the exact first 100 chronological eligible
+episodes are completely resolved and contain at least 30 asset clusters. It then uses
+10,000 deterministic whole-cluster bootstrap iterations, ordinary 95% expectancy
+intervals, null-centered paired tests with Holm correction across the three variants,
+conservative 98.333...% Bonferroni paired intervals, and top-five-cluster leave-one-out
+sensitivity. Decision-time liquidity impact is held constant across variants because
+the later historical order book cannot be reconstructed; live shadow measurement is
+required before promotion. The replay also holds the baseline episode's eligibility
+constant during the wait instead of reconstructing future score and market-quality
+gates, so it isolates entry timing rather than claiming to mirror a deployable
+strategy end to end.

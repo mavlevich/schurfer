@@ -137,7 +137,7 @@ def test_report_registers_exact_family_and_serializes_confirmation() -> None:
         variant.key for variant in ENTRY_VARIANTS
     )
     assert payload["manifest"]["working_tree_dirty"] is False
-    assert payload["manifest"]["report_scope"] == "descriptive_paired_no_statistical_verdict"
+    assert payload["manifest"]["report_scope"] == "formal_inference_when_ready_shadow_only"
     assert (
         payload["manifest"]["liquidity_slippage_policy"]
         == "baseline_decision_snapshot_held_constant"
@@ -145,11 +145,16 @@ def test_report_registers_exact_family_and_serializes_confirmation() -> None:
     assert payload["manifest"]["eligibility_policy"] == "baseline_episode_eligibility_held_constant"
     assert all(variant["execution_gap_bars"] == 1 for variant in payload["manifest"]["variants"])
     assert payload["challenger_results"][0]["confirmation"]["status"] == "confirmed"
+    assert payload["inference"]["readiness"]["status"] == "collecting"
+    assert payload["inference"]["formal_sample_event_ids"] == [42]
+    assert payload["inference"]["baseline"] is None
     assert all(row.completed_trades == 1 for row in report.variant_metrics)
-    assert "Descriptive paired replay only" in markdown
+    assert "Formal inference status: `collecting`" in markdown
     assert "red_candle_retrace_1_5" in markdown
     assert "baseline_decision_snapshot_held_constant" in markdown
-    assert "Holm correction" in markdown
+    assert "Holm family alpha" in markdown
+    assert "Multiple comparisons" in markdown
+    assert "Seed derivation" in markdown
 
 
 def test_report_keeps_missing_market_path_visible() -> None:

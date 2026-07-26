@@ -344,11 +344,15 @@ the new cohort separately.
   1.5% retrace, and combined confirmation against the same baseline episodes. It uses
   only fully closed exact-venue 5-minute candles, waits at most 60 minutes, and treats
   no confirmation as a zero-return cash episode. Missing candles or costs remain
-  unresolved. The paired deltas are descriptive until the cluster-bootstrap and Holm
-  correction layer is available; do not promote a production entry rule from this
-  command alone. Baseline eligibility is held constant during the wait, so future
-  score and market-quality gates still require live shadow validation. The detailed
-  data sources, archive command, and inspection checklist live in `ROADMAP.md`.
+  unresolved and are never replaced by later episodes inside the locked first-100
+  sample. Before 100 fully resolved episodes and 30 clusters, formal intervals and
+  verdicts are withheld. Once ready, inspect the 95% expectancy intervals,
+  Holm-adjusted paired tests, conservative familywise paired bounds, and top-five
+  cluster sensitivity. A passing result is only a live-shadow candidate; do not change
+  production entry rules from this command alone. Baseline eligibility is held
+  constant during the wait, so future score and market-quality gates still require
+  live shadow validation. The exact inference parameters, data sources, archive
+  command, and inspection checklist live in `ROADMAP.md` and the research protocol.
 
 - Pump/signal readiness after deploying migration 0012: verify newly published pumps
   carry an episode id and recent decisions are attributed. `signal_missing` or

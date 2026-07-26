@@ -19,7 +19,9 @@ variant may open at most one virtual trade in an episode.
 The correlation cluster is the reviewed canonical asset when one exists. Until
 canonical links are available, the normalized base ticker is used as a conservative
 fallback. Reports must show the number of unique clusters and the share contributed by
-the most frequent clusters.
+the most frequent clusters. Expectancy remains episode-weighted because one pump
+episode is the pre-registered unit of observation; whole-cluster resampling preserves
+dependence without redefining the estimand as an equal-weighted average token.
 
 ## Cohorts
 
@@ -72,9 +74,10 @@ The baseline has evidence of edge only when:
 A challenger can replace the baseline as shadow champion only when:
 
 - its own lower 95% confidence bound for net expectancy is above zero;
-- the lower 95% confidence bound for its paired per-episode expectancy difference
-  versus the baseline is above zero after Holm correction across the registered
-  challenger family;
+- its null-centered paired cluster-bootstrap test versus the baseline is rejected by
+  Holm step-down correction across the registered challenger family;
+- the lower bound of the conservative Bonferroni simultaneous confidence interval for
+  its paired per-episode expectancy difference versus the baseline is above zero;
 - its point estimate remains positive when each of the five most frequent asset
   clusters is excluded in turn.
 
@@ -93,6 +96,33 @@ belong to the confirmatory family. Apply Holm correction to their primary paired
 comparisons. Parameter sweeps, unregistered variants, subgroup searches, and the
 "best" result found after looking at the data are exploratory and require a new
 forward cohort.
+
+For `entry_confirmation_family_v1`, formal inference is frozen as follows:
+
+- use exactly the first 100 eligible episodes in chronological order; an unresolved
+  member of this locked sample is not replaced by a later episode;
+- require at least 30 distinct asset clusters and complete baseline/challenger returns
+  for all 100 episodes;
+- resample whole asset clusters with replacement for 10,000 iterations while retaining
+  every episode in a sampled cluster and computing episode-weighted mean expectancy;
+- use deterministic seed `20260729`; derive independent per-statistic seeds from the
+  first unsigned 64 bits of `SHA-256("<seed>:<label>")`;
+- report ordinary two-sided 95% percentile cluster-bootstrap intervals for baseline
+  and challenger net expectancy;
+- for each paired challenger-minus-baseline comparison, subtract its observed episode
+  mean before cluster resampling to impose the zero-mean null, then calculate a
+  two-sided bootstrap p-value with a plus-one correction;
+- apply Holm step-down at family alpha `0.05` to exactly the three registered paired
+  comparisons;
+- also report a conservative two-sided Bonferroni simultaneous paired interval at
+  `1 - 0.05 / 3 = 98.333...%`; a shadow candidate must pass both the Holm test and the
+  positive simultaneous lower-bound check;
+- exclude each of the five most frequent clusters in turn and require the challenger's
+  episode-weighted point estimate to remain above zero in every run.
+
+At 50 through 99 eligible episodes, the report may show descriptive replay metrics but
+must withhold formal intervals, corrected p-values, and promotion verdicts. The same
+fail-closed rule applies to insufficient cluster diversity or incomplete resolution.
 
 ## Time and look-ahead rules
 
@@ -147,6 +177,13 @@ manifest, and input fingerprint are retained together.
   unresolved. Baseline episode eligibility remains fixed during the wait because
   future score and order-book gates are not reconstructable. These variants form one
   Holm-corrected family.
+- `2026-07-26`: the exact HYP-002 inference implementation was frozen before the
+  cohort start and before its first query: first 100 chronological eligible episodes,
+  at least 30 clusters, 10,000 deterministic whole-cluster bootstrap iterations,
+  ordinary 95% expectancy intervals, null-centered paired tests with Holm correction,
+  conservative 98.333...% Bonferroni paired intervals, and leave-one-out sensitivity
+  for the five most frequent clusters. Formal output is withheld until the entire
+  locked sample is resolved.
 
 ## Promotion boundary
 
