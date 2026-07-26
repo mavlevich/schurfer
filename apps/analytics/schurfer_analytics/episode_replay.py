@@ -23,7 +23,13 @@ from .replay import (
     ReplayFilters,
     build_replay_dataset,
 )
-from .reporting import horizon_label, json_ready, markdown_table, parse_utc_datetime
+from .reporting import (
+    horizon_label,
+    json_ready,
+    markdown_table,
+    normalize_code_revision,
+    parse_utc_datetime,
+)
 
 CONFIRMATION_COHORT_START = datetime(2026, 7, 26, tzinfo=UTC)
 PROTOCOL_VERSION = "episode_replay_protocol_v1"
@@ -104,9 +110,7 @@ def build_report(
     code_revision: str,
     working_tree_dirty: bool = False,
 ) -> ReplayReadinessReport:
-    revision = code_revision.strip()
-    if not revision:
-        raise ValueError("code revision must not be empty")
+    revision = normalize_code_revision(code_revision)
     eligible = dataset.eligible_episodes
     formal_sample = eligible[:FORMAL_EPISODES]
     eligible_cluster_counts = Counter(episode.cluster_key for episode in eligible)

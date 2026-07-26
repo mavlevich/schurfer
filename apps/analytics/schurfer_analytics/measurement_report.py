@@ -11,6 +11,8 @@ from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING
 
 from .outcomes import HORIZONS_MINUTES, RESOLVER_VERSION
+from .reporting import format_number as _number
+from .reporting import format_percentage as _pct
 from .reporting import horizon_label as _horizon
 from .reporting import json_ready as _json_ready
 from .reporting import markdown_table as _table
@@ -121,14 +123,6 @@ class MeasurementReport:
 
 def render_json(report: MeasurementReport) -> str:
     return json.dumps(_json_ready(asdict(report)), indent=2, sort_keys=True)
-
-
-def _pct(value: float | None) -> str:
-    return "—" if value is None else f"{value:.2f}%"
-
-
-def _number(value: float | None, decimals: int = 2) -> str:
-    return "—" if value is None else f"{value:.{decimals}f}"
 
 
 def render_markdown(report: MeasurementReport) -> str:
