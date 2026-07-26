@@ -27,8 +27,8 @@ func TestFormatAlert_SingleExchange(t *testing.T) {
 	}
 }
 
-func TestFormatAlert_PeakShownWhenHigher(t *testing.T) {
-	// price=100, change=+25% → open=80, high=160 → peak=+100%
+func TestFormatAlert_24hHighShownWhenHigher(t *testing.T) {
+	// price=100, change=+25% → open=80, rolling high=160 → +100%
 	p := pump{
 		Base:         "ETH",
 		MaxChangePct: 25.0,
@@ -37,13 +37,13 @@ func TestFormatAlert_PeakShownWhenHigher(t *testing.T) {
 		},
 	}
 	text := formatAlert(p)
-	if !contains(text, "peak") {
-		t.Errorf("expected peak line when peak > current, got:\n%s", text)
+	if !contains(text, "24h high") {
+		t.Errorf("expected 24h high line when rolling high > current, got:\n%s", text)
 	}
 }
 
-func TestFormatAlert_PeakHiddenWhenEqual(t *testing.T) {
-	// price=100, change=+25%, high=100 → peak < current
+func TestFormatAlert_24hHighHiddenWhenEqual(t *testing.T) {
+	// price=100, change=+25%, high=100 → rolling high < current
 	p := pump{
 		Base:         "SOL",
 		MaxChangePct: 35.0,
@@ -52,8 +52,8 @@ func TestFormatAlert_PeakHiddenWhenEqual(t *testing.T) {
 		},
 	}
 	text := formatAlert(p)
-	if contains(text, "peak") {
-		t.Errorf("unexpected peak line when peak <= current, got:\n%s", text)
+	if contains(text, "24h high") {
+		t.Errorf("unexpected 24h high line when rolling high <= current, got:\n%s", text)
 	}
 }
 

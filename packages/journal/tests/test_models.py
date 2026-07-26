@@ -7,6 +7,7 @@ from schurfer_journal.models import (
     MarketType,
     OutcomeLabel,
     OutcomeQuality,
+    PumpAlertDelivery,
     PumpEventSource,
     Side,
     Strategy,
@@ -209,3 +210,21 @@ class TestPumpEventSourceModel:
 
         assert fks == {"app.pump_events.id"}
         assert "uq_pump_event_source_venue" in constraints
+
+
+class TestPumpAlertDeliveryModel:
+    def test_table_shape(self) -> None:
+        assert PumpAlertDelivery.__tablename__ == "pump_alert_deliveries"
+        assert PumpAlertDelivery.__table__.schema == "app"
+        columns = PumpAlertDelivery.__table__.columns
+        assert columns["event_id"].nullable is False
+        assert columns["threshold_pct"].nullable is False
+        assert columns["scanner_observed_at"].nullable is False
+        assert columns["notification_sent_at"].nullable is False
+
+    def test_event_foreign_key_and_delivery_identity(self) -> None:
+        fks = {fk.target_fullname for fk in PumpAlertDelivery.__table__.foreign_keys}
+        constraints = {constraint.name for constraint in PumpAlertDelivery.__table__.constraints}
+
+        assert fks == {"app.pump_events.id"}
+        assert "uq_pump_alert_delivery_event_channel_kind_threshold" in constraints

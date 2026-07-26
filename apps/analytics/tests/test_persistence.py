@@ -1,14 +1,16 @@
 import asyncio
 import json
+from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from schurfer_analytics.persistence import (
     _UPDATE_LAST_PCT,
     _UPSERT_EVENT_SOURCE,
+    _episode_24h_high_pct,
     _high_24h_pct,
+    _pump_observation_window,
     _source_args,
-    _true_peak_pct,
     close_retrace,
     get_open_episode_ids,
     get_tracked_bases,
@@ -26,6 +28,7 @@ def _ex(price: str, change_pct: float, high_24h: str) -> dict[str, Any]:
         "change_pct": change_pct,
         "high_24h": high_24h,
         "volume_24h_usd": 1_000_000.0,
+        "observed_at_ms": 1_800_000_000_000,
     }
 
 
@@ -77,35 +80,35 @@ def test_high_24h_pct_change_pct_below_minus_100() -> None:
     assert _high_24h_pct(_ex("100.0", -150.0, "120.0")) == 0.0
 
 
-# --- _true_peak_pct ---
+# --- _episode_24h_high_pct ---
 
 
-def test_true_peak_pct_prefers_high_24h() -> None:
+def test_episode_24h_high_pct_prefers_exchange_high() -> None:
     # max_change_pct=30 but high_24h implies 50% peak
     pump = {
         "base": "BTC",
         "max_change_pct": 30.0,
         "exchanges": [_ex("100.0", 25.0, "120.0")],  # high_24h_pct=50%
     }
-    assert _true_peak_pct(pump) == 50.0
+    assert _episode_24h_high_pct(pump) == 50.0
 
 
-def test_true_peak_pct_prefers_current_when_higher() -> None:
+def test_episode_24h_high_pct_prefers_current_when_higher() -> None:
     # max_change_pct=80 is higher than high_24h-derived 50%
     pump = {
         "base": "BTC",
         "max_change_pct": 80.0,
         "exchanges": [_ex("100.0", 25.0, "120.0")],  # high_24h_pct=50%
     }
-    assert _true_peak_pct(pump) == 80.0
+    assert _episode_24h_high_pct(pump) == 80.0
 
 
-def test_true_peak_pct_no_exchanges() -> None:
+def test_episode_24h_high_pct_no_exchanges() -> None:
     pump = {"base": "BTC", "max_change_pct": 45.0, "exchanges": []}
-    assert _true_peak_pct(pump) == 45.0
+    assert _episode_24h_high_pct(pump) == 45.0
 
 
-def test_true_peak_pct_multi_exchange_takes_max() -> None:
+def test_episode_24h_high_pct_multi_exchange_takes_max() -> None:
     pump = {
         "base": "BTC",
         "max_change_pct": 30.0,
@@ -114,7 +117,7 @@ def test_true_peak_pct_multi_exchange_takes_max() -> None:
             _ex("100.0", 10.0, "115.0"),  # (115/~90.9-1)*100 ≈ 26.5%
         ],
     }
-    assert _true_peak_pct(pump) == 50.0
+    assert _episode_24h_high_pct(pump) == 50.0
 
 
 # --- upsert_pumps ---
@@ -136,8 +139,9 @@ def test_upsert_pumps_updates_existing_episode() -> None:
 
     calls = mock_cur.execute.call_args_list
     assert len(calls) == 3
-    # UPDATE args: (last_pct, exchanges_json, peak, event_id) — event_id=42 is last
+    # UPDATE args include the point-in-time scanner observation.
     update_args = calls[1][0][1]
+    assert update_args[0] == datetime.fromtimestamp(1_800_000_000, tz=UTC)
     assert update_args[-1] == 42
     assert calls[2][0][0] == _UPSERT_EVENT_SOURCE
     assert calls[2][0][1][0:3] == (42, "bybit", "BTCUSDT")
@@ -153,10 +157,11 @@ def test_upsert_pumps_inserts_new_episode() -> None:
 
     calls = mock_cur.execute.call_args_list
     assert len(calls) == 3
-    # INSERT args: (base, base, peak, last_pct, exchanges_json)
+    # INSERT args: base, episode base, observation window, values, JSON.
     insert_args = calls[1][0][1]
     assert insert_args[0] == "ETH"
     assert insert_args[1] == "ETH"
+    assert insert_args[2] == insert_args[3] == datetime.fromtimestamp(1_800_000_000, tz=UTC)
     assert calls[2][0][0] == _UPSERT_EVENT_SOURCE
     assert result == {"ETH": 43}
 
@@ -171,7 +176,7 @@ def test_upsert_pumps_exchanges_serialized_as_json() -> None:
 
     calls = mock_cur.execute.call_args_list
     insert_args = calls[1][0][1]
-    exchanges_json = insert_args[4]
+    exchanges_json = insert_args[6]
     parsed = json.loads(exchanges_json)
     assert isinstance(parsed, list)
     assert parsed[0]["exchange"] == "bybit"
@@ -214,7 +219,8 @@ def test_source_args_normalizes_optional_numeric_fields() -> None:
     assert args[0:3] == (7, "bybit", "BTCUSDT")
     assert args[3:15] == (None,) * 12
     assert args[15:18] == (40.0, 40.0, 40.0)
-    assert args[18:] == (None, None, None, None)
+    assert args[18:22] == (None, None, None, None)
+    assert args[22] == args[23] == datetime.fromtimestamp(1_800_000_000, tz=UTC)
 
 
 def test_source_args_preserves_instrument_identity_and_timestamps() -> None:
@@ -251,11 +257,25 @@ def test_source_args_preserves_instrument_identity_and_timestamps() -> None:
     assert args[12].isoformat() == "2026-07-23T11:10:00+00:00"
     assert args[13].isoformat() == "2026-07-23T11:26:40+00:00"
     assert args[14] == args[13]
+    assert args[22] == args[23] == datetime.fromtimestamp(1_800_000_000, tz=UTC)
     assert _UPSERT_EVENT_SOURCE.count("%s") == len(args)
     assert "identity_conflict" in _UPSERT_EVENT_SOURCE
     assert "market_id <> EXCLUDED.market_id" in _UPSERT_EVENT_SOURCE
     assert "market_type <> EXCLUDED.market_type" in _UPSERT_EVENT_SOURCE
     assert "onboarded_at <> EXCLUDED.onboarded_at" in _UPSERT_EVENT_SOURCE
+
+
+def test_pump_observation_window_uses_earliest_and_latest_venue_times() -> None:
+    pump = _pump("BTC", 55.0)
+    second = _ex("101", 50.0, "111")
+    pump["exchanges"][0]["observed_at_ms"] = 1_800_000_002_000
+    second["observed_at_ms"] = 1_800_000_001_000
+    pump["exchanges"].append(second)
+
+    first, last = _pump_observation_window(pump)
+
+    assert first == datetime.fromtimestamp(1_800_000_001, tz=UTC)
+    assert last == datetime.fromtimestamp(1_800_000_002, tz=UTC)
 
 
 def test_source_upsert_enriches_unknown_listing_time_without_conflict() -> None:

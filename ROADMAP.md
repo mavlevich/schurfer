@@ -89,12 +89,19 @@ lightweight dataset-health visibility remains operational follow-up.
       Preserve exchange-ticker time, scanner observation time, threshold-crossing
       time, notification time, first observed change, and highest change actually
       observed by Schurfer. Label the exchange-derived rolling value as `24h high`,
-      not `peak`. Decouple a fast Redis-only notifier loop from the broad exchange
-      scan interval, then promote active candidates into a bounded 1-to-5-second hot
-      set using targeted polling or websockets. Use explicit WATCH, HOT, NEW_HIGH,
-      and RETRACE transitions instead of one 24-hour seen flag. Do not increase
-      whole-market REST frequency until rate-limit and host-load measurements support
-      it.
+      not `peak`.
+  - [x] Measurement contract: persist per-venue scanner observation time, retain the
+        Redis publication time, scope notification de-duplication to the durable pump
+        event, and record successful Telegram delivery with its threshold, observed
+        change, venue, ticker time, scanner time, publish time, and send time. Expose
+        observed peak separately from the exchange-derived rolling 24h high. Retry
+        transient Postgres failures through an AOF-backed Redis outbox with an
+        idempotent insert and poison-message DLQ.
+  - [ ] Decouple a fast Redis-only notifier loop from the broad exchange scan interval,
+        then promote active candidates into a bounded 1-to-5-second hot set using
+        targeted polling or websockets. Use explicit WATCH, HOT, NEW_HIGH, and RETRACE
+        transitions. Do not increase whole-market REST frequency until rate-limit and
+        host-load measurements support it.
 - [ ] Canonical instrument identity. A ticker is a display label, not an asset key:
       exchanges can retain disabled markets or reuse symbols for unrelated tokens.
       Persist the exchange market id/type, ticker timestamp, and listing/onboard date;

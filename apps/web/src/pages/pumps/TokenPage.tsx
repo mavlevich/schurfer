@@ -49,7 +49,7 @@ const COMPONENT_ROWS: { key: keyof SignalsResponse['components']; label: string 
   { key: 'price_extent', label: 'Price Extent' },
   { key: 'oi_trend', label: 'OI Trend' },
   { key: 'funding_rate', label: 'Funding Rate' },
-  { key: 'retrace_from_peak', label: 'Retrace from Peak' },
+  { key: 'retrace_from_peak', label: 'Retrace from 24h High' },
 ];
 
 function PointsDots({ points, max }: { points: number; max: number }) {
@@ -184,7 +184,7 @@ function StatsCard({ stats }: { stats: TokenStats }) {
       <CardContent>
         <div className="grid grid-cols-2 gap-6 sm:grid-cols-4">
           <div>
-            <p className="text-xs text-muted-foreground mb-1">Avg peak</p>
+            <p className="text-xs text-muted-foreground mb-1">Avg 24h high</p>
             <p className={`text-lg font-mono font-bold ${pctColor(stats.avg_peak_pct)}`}>
               {fmtPct(stats.avg_peak_pct)}
             </p>
@@ -194,7 +194,7 @@ function StatsCard({ stats }: { stats: TokenStats }) {
           </div>
           <div>
             <p className="text-xs text-muted-foreground mb-1">
-              Avg retrace{' '}
+              Avg retrace from 24h high{' '}
               {stats.retrace_count < stats.episode_count && (
                 <span className="text-yellow-500">
                   ({stats.retrace_count}/{stats.episode_count})
@@ -215,7 +215,7 @@ function StatsCard({ stats }: { stats: TokenStats }) {
             )}
           </div>
           <div>
-            <p className="text-xs text-muted-foreground mb-1">Retrace range</p>
+            <p className="text-xs text-muted-foreground mb-1">24h retrace range</p>
             {stats.min_retrace_pct != null && stats.max_retrace_pct != null ? (
               <>
                 <p className="text-sm font-mono">
@@ -256,14 +256,15 @@ function EpisodesCard({ episodes }: { episodes: TokenEpisode[] }) {
       </CardHeader>
       <CardContent className="p-0">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[560px] text-sm">
+          <table className="w-full min-w-[640px] text-sm">
             <thead>
               <tr className="border-b text-xs text-muted-foreground">
                 <th className="px-4 py-2 text-left">#</th>
                 <th className="px-4 py-2 text-left">First seen</th>
                 <th className="px-4 py-2 text-left">Ended</th>
-                <th className="px-4 py-2 text-right">Peak</th>
-                <th className="px-4 py-2 text-right">Retrace</th>
+                <th className="px-4 py-2 text-right">Observed peak</th>
+                <th className="px-4 py-2 text-right">24h high</th>
+                <th className="px-4 py-2 text-right">24h retrace</th>
                 <th className="px-4 py-2 text-center">Status</th>
               </tr>
             </thead>
@@ -276,9 +277,14 @@ function EpisodesCard({ episodes }: { episodes: TokenEpisode[] }) {
                     {ep.closed_at ? fmtTs(ep.closed_at) : '—'}
                   </td>
                   <td
-                    className={`px-4 py-3 text-right font-mono font-bold ${pctColor(ep.peak_pct)}`}
+                    className={`px-4 py-3 text-right font-mono font-bold ${pctColor(ep.observed_peak_pct)}`}
                   >
-                    {fmtPct(ep.peak_pct)}
+                    {fmtPct(ep.observed_peak_pct)}
+                  </td>
+                  <td
+                    className={`px-4 py-3 text-right font-mono ${pctColor(ep.exchange_24h_high_pct)}`}
+                  >
+                    {fmtPct(ep.exchange_24h_high_pct)}
                   </td>
                   <td className="px-4 py-3 text-right font-mono text-muted-foreground">
                     {ep.retrace_pct != null ? fmtPct(ep.retrace_pct) : '—'}

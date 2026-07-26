@@ -16,7 +16,7 @@ WHERE base = %s AND closed_at IS NULL
 
 _UPDATE_EPISODE = """
 UPDATE app.pump_events
-SET last_seen_at = NOW(),
+SET last_seen_at = %s,
     last_pct     = %s,
     exchanges    = %s::jsonb,
     peak_pct     = GREATEST(peak_pct, %s),
@@ -31,7 +31,7 @@ INSERT INTO app.pump_events
 VALUES (
     %s,
     COALESCE((SELECT MAX(episode) FROM app.pump_events WHERE base = %s), 0) + 1,
-    NOW(), NOW(), %s, %s, %s::jsonb
+    %s, %s, %s, %s, %s::jsonb
 )
 RETURNING id
 """
@@ -55,7 +55,7 @@ VALUES (
     %s, %s, %s,
     %s, %s,
     %s, %s,
-    NOW(), NOW(), 1
+    %s, %s, 1
 )
 ON CONFLICT (event_id, exchange) DO UPDATE
 SET identity_conflict = app.pump_event_sources.identity_conflict OR (
@@ -150,7 +150,7 @@ RETURNING base, miss_count
 
 
 def _high_24h_pct(ex: dict[str, Any]) -> float:
-    """24h peak % via open reconstruction: open = price/(1+change_pct/100)."""
+    """Rolling 24h high % via open reconstruction."""
     try:
         price = float(ex["price"])
         change_pct = float(ex["change_pct"])
@@ -163,8 +163,8 @@ def _high_24h_pct(ex: dict[str, Any]) -> float:
         return 0.0
 
 
-def _true_peak_pct(pump: dict[str, Any]) -> float:
-    """Best estimate of true 24h peak: max of current % and high_24h-derived %."""
+def _episode_24h_high_pct(pump: dict[str, Any]) -> float:
+    """Highest exchange-derived rolling 24h high observed for this batch."""
     candidates: list[float] = [float(pump["max_change_pct"])]
     for ex in pump.get("exchanges", []):
         candidates.append(_high_24h_pct(ex))
@@ -195,6 +195,7 @@ def _source_args(event_id: int, exchange: dict[str, Any]) -> tuple[Any, ...]:
         raise ValueError("pump event source requires a finite change_pct")
     price = _finite_float(exchange.get("price"))
     volume = _finite_float(exchange.get("volume_24h_usd"))
+    observed_at = _datetime_ms(exchange.get("observed_at_ms")) or datetime.now(UTC)
     return (
         event_id,
         str(exchange["exchange"]),
@@ -218,7 +219,22 @@ def _source_args(event_id: int, exchange: dict[str, Any]) -> tuple[Any, ...]:
         price,
         volume,
         volume,
+        observed_at,
+        observed_at,
     )
+
+
+def _pump_observation_window(pump: dict[str, Any]) -> tuple[datetime, datetime]:
+    """Return the earliest/latest venue observation in one scanner batch."""
+    observations = [
+        observed_at
+        for exchange in pump.get("exchanges", [])
+        if (observed_at := _datetime_ms(exchange.get("observed_at_ms"))) is not None
+    ]
+    if not observations:
+        now = datetime.now(UTC)
+        return now, now
+    return min(observations), max(observations)
 
 
 _UPDATE_LAST_PCT = (
@@ -339,18 +355,39 @@ async def upsert_pumps(db_url: str, pumps: list[dict[str, Any]]) -> dict[str, in
         async with await psycopg.AsyncConnection.connect(db_url) as conn, conn.cursor() as cur:
             for pump in pumps:
                 base = pump["base"]
-                peak = _true_peak_pct(pump)
+                rolling_high_pct = _episode_24h_high_pct(pump)
                 last_pct = float(pump["max_change_pct"])
                 exchanges_json = json.dumps(pump["exchanges"])
+                first_observed_at, last_observed_at = _pump_observation_window(pump)
 
                 await cur.execute(_SELECT_OPEN, (base,))
                 row = await cur.fetchone()
 
                 if row:
                     event_id, _ = row
-                    await cur.execute(_UPDATE_EPISODE, (last_pct, exchanges_json, peak, event_id))
+                    await cur.execute(
+                        _UPDATE_EPISODE,
+                        (
+                            last_observed_at,
+                            last_pct,
+                            exchanges_json,
+                            rolling_high_pct,
+                            event_id,
+                        ),
+                    )
                 else:
-                    await cur.execute(_INSERT_EPISODE, (base, base, peak, last_pct, exchanges_json))
+                    await cur.execute(
+                        _INSERT_EPISODE,
+                        (
+                            base,
+                            base,
+                            first_observed_at,
+                            last_observed_at,
+                            rolling_high_pct,
+                            last_pct,
+                            exchanges_json,
+                        ),
+                    )
                     inserted = await cur.fetchone()
                     if inserted is None:
                         raise RuntimeError(f"pump event insert returned no id for {base}")

@@ -125,11 +125,12 @@ export function PumpsPage() {
             </CardHeader>
             <CardContent className="p-0">
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[640px] text-sm">
+                <table className="w-full min-w-[760px] text-sm">
                   <thead>
                     <tr className="border-b text-xs text-muted-foreground">
                       <th className="px-4 py-2 text-left">Token</th>
-                      <th className="px-4 py-2 text-right">Peak 24h</th>
+                      <th className="px-4 py-2 text-right">Observed peak</th>
+                      <th className="px-4 py-2 text-right">24h high</th>
                       <th className="px-4 py-2 text-right">Now</th>
                       <th className="px-4 py-2 text-right">Price</th>
                       <th className="px-4 py-2 text-left">Exchanges</th>
@@ -138,10 +139,13 @@ export function PumpsPage() {
                   </thead>
                   <tbody>
                     {pumps.map((p) => {
-                      const hist = history.find((h) => h.base === p.base);
-                      const peakPct = Math.max(
-                        hist?.peak_pct ?? 0,
+                      const hist = history.find((h) => h.base === p.base && h.is_live);
+                      const observedPeakPct = Math.max(
+                        hist?.observed_peak_pct ?? 0,
                         p.max_change_pct,
+                      );
+                      const rollingHighPct = Math.max(
+                        hist?.exchange_24h_high_pct ?? 0,
                         high24hPct(p.exchanges),
                       );
                       const volume = summarizeVolume(p.exchanges);
@@ -159,9 +163,14 @@ export function PumpsPage() {
                             </Link>
                           </td>
                           <td
-                            className={`px-4 py-3 text-right font-mono font-bold ${pctColor(peakPct)}`}
+                            className={`px-4 py-3 text-right font-mono font-bold ${pctColor(observedPeakPct)}`}
                           >
-                            {fmtPct(peakPct)}
+                            {fmtPct(observedPeakPct)}
+                          </td>
+                          <td
+                            className={`px-4 py-3 text-right font-mono ${pctColor(rollingHighPct)}`}
+                          >
+                            {fmtPct(rollingHighPct)}
                           </td>
                           <td
                             className={`px-4 py-3 text-right font-mono ${pctColor(p.max_change_pct)}`}
@@ -211,9 +220,14 @@ export function PumpsPage() {
                             </div>
                           </td>
                           <td
-                            className={`px-4 py-3 text-right font-mono font-bold ${pctColor(h.peak_pct)}`}
+                            className={`px-4 py-3 text-right font-mono font-bold ${pctColor(h.observed_peak_pct)}`}
                           >
-                            {fmtPct(h.peak_pct)}
+                            {fmtPct(h.observed_peak_pct)}
+                          </td>
+                          <td
+                            className={`px-4 py-3 text-right font-mono ${pctColor(h.exchange_24h_high_pct)}`}
+                          >
+                            {fmtPct(h.exchange_24h_high_pct)}
                           </td>
                           <td className="px-4 py-3 text-right font-mono text-muted-foreground">
                             {fmtPct(h.last_pct)}

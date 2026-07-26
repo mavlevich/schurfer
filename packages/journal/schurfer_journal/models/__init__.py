@@ -12,6 +12,7 @@ from .enums import (
 )
 from .funding_rate_snapshot import FundingRateSnapshot
 from .oi_snapshot import OiSnapshot
+from .pump_alert_delivery import PumpAlertDelivery
 from .pump_event import PumpEvent
 from .pump_event_snapshot import PumpEventSnapshot
 from .pump_event_source import PumpEventSource
@@ -27,6 +28,7 @@ __all__ = [
     "OiSnapshot",
     "OutcomeLabel",
     "OutcomeQuality",
+    "PumpAlertDelivery",
     "PumpEvent",
     "PumpEventSnapshot",
     "PumpEventSource",
