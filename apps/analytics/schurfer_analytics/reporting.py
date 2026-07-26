@@ -7,6 +7,32 @@ from datetime import UTC, datetime
 from typing import Any
 
 
+def normalize_code_revision(value: str) -> str:
+    revision = value.strip()
+    if not revision:
+        raise ValueError("code revision must not be empty")
+    return revision
+
+
+def format_number(
+    value: float | None,
+    decimals: int = 2,
+    *,
+    suffix: str = "",
+    missing: str = "—",
+) -> str:
+    return missing if value is None else f"{value:.{decimals}f}{suffix}"
+
+
+def format_percentage(
+    value: float | None,
+    decimals: int = 2,
+    *,
+    missing: str = "—",
+) -> str:
+    return format_number(value, decimals, suffix="%", missing=missing)
+
+
 def json_ready(value: Any) -> Any:
     if isinstance(value, datetime):
         return value.isoformat()
