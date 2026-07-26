@@ -14,7 +14,14 @@ from statistics import fmean
 
 from .episode_replay import CONFIRMATION_COHORT_START, PROTOCOL_VERSION
 from .outcomes import RESOLVER_VERSION
-from .replay import DEFAULT_REPLAY_HORIZONS, ReplayDataset, ReplayFilters, build_replay_dataset
+from .replay import (
+    DEFAULT_REPLAY_HORIZONS,
+    FOUNDATION_VERSION,
+    QUERY_VERSION,
+    ReplayDataset,
+    ReplayFilters,
+    build_replay_dataset,
+)
 from .reporting import (
     format_number,
     format_percentage,
@@ -38,12 +45,14 @@ from .virtual_strategy import (
     simulate_episode,
 )
 
-REPORT_VERSION = "virtual_strategy_report_v1"
+REPORT_VERSION = "virtual_strategy_report_v2"
 
 
 @dataclass(frozen=True)
 class VirtualReplayManifest:
     protocol_version: str
+    replay_engine_version: str
+    replay_query_version: str
     report_version: str
     strategy_model_version: str
     selection_model_version: str
@@ -108,6 +117,7 @@ class VirtualReplayReport:
     manifest: VirtualReplayManifest
     health: VirtualReplayHealth
     metrics: VirtualReplayMetrics
+    input_exclusion_reasons: tuple[CountRow, ...]
     classifications: tuple[CountRow, ...]
     exit_reasons: tuple[CountRow, ...]
     unresolved_reasons: tuple[CountRow, ...]
@@ -170,6 +180,9 @@ def build_virtual_report(
     wins = sum(1 for trade in complete if (trade.net_return_pct or 0) > 0)
     classifications = Counter(trade.classification for trade in trades)
     exits = Counter(trade.exit_reason for trade in complete if trade.exit_reason)
+    input_exclusions = Counter(
+        reason for episode in dataset.excluded_episodes for reason in episode.exclusion_reasons
+    )
     unresolved = Counter(
         f"{trade.status}: {trade.error or 'unknown'}"
         for trade in trades
@@ -178,6 +191,8 @@ def build_virtual_report(
     return VirtualReplayReport(
         manifest=VirtualReplayManifest(
             protocol_version=PROTOCOL_VERSION,
+            replay_engine_version=FOUNDATION_VERSION,
+            replay_query_version=QUERY_VERSION,
             report_version=REPORT_VERSION,
             strategy_model_version=VIRTUAL_STRATEGY_VERSION,
             selection_model_version=SELECTION_MODEL_VERSION,
@@ -221,6 +236,7 @@ def build_virtual_report(
             mean_mae_pct=_mean(complete, "mae_pct"),
             mean_duration_minutes=_mean(complete, "duration_minutes"),
         ),
+        input_exclusion_reasons=_count_rows(input_exclusions),
         classifications=_count_rows(classifications),
         exit_reasons=_count_rows(exits),
         unresolved_reasons=_count_rows(unresolved),
@@ -262,6 +278,8 @@ def render_markdown(report: VirtualReplayReport) -> str:
             ("Component", "Version / value"),
             [
                 ("Strategy", manifest.strategy_model_version),
+                ("Replay engine", manifest.replay_engine_version),
+                ("Replay query", manifest.replay_query_version),
                 ("Selection", manifest.selection_model_version),
                 ("Entry", manifest.entry_model_version),
                 ("Exit", manifest.exit_model_version),
@@ -285,6 +303,13 @@ def render_markdown(report: VirtualReplayReport) -> str:
                 ("Recorded taken", health.taken),
                 ("Counterfactual skipped", health.skipped),
             ],
+        )
+    )
+    lines.extend(["", "## Input exclusions", ""])
+    lines.extend(
+        markdown_table(
+            ("Reason", "Episodes"),
+            [(row.name, row.count) for row in report.input_exclusion_reasons],
         )
     )
     lines.extend(["", "## Descriptive metrics", ""])

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -107,6 +108,8 @@ def test_report_exposes_versioned_models_costs_and_episode_result() -> None:
     assert "Descriptive baseline replay only" in markdown
     assert "conservative_stop_first" in markdown
     assert payload["manifest"]["entry_model_version"] == "next_complete_5m_open_v1"
+    assert payload["manifest"]["replay_engine_version"] == "episode_replay_foundation_v2"
+    assert payload["manifest"]["report_version"] == "virtual_strategy_report_v2"
     assert payload["manifest"]["working_tree_dirty"] is False
     assert payload["trades"][0]["classification"] == "skipped_would_have_won"
     assert len(payload["market_paths"][0]["candles"]) == 36
@@ -129,6 +132,44 @@ def test_report_keeps_unresolved_paths_visible_and_out_of_metrics() -> None:
     assert report.metrics.mean_net_return_pct is None
     assert report.unresolved_reasons[0].count == 1
     assert report.trades[0].classification == "unresolved"
+
+
+def test_report_surfaces_input_exclusion_reasons() -> None:
+    dataset, filters, path = _inputs()
+    source = dataset.decisions[0]
+    missing_exchange = replace(
+        source,
+        row_id=2,
+        decision_id="00000000-0000-0000-0000-000000000002",
+        pump_event_id=43,
+        event_base="BANK",
+        base="BANK",
+        exchange="",
+    )
+    dataset_with_exclusion = build_replay_dataset(
+        [source, missing_exchange],
+        filters,
+    )
+
+    report = build_virtual_report(
+        dataset_with_exclusion,
+        filters,
+        (path,),
+        generated_at=datetime(2026, 7, 27, tzinfo=UTC),
+        code_revision="abc123",
+        working_tree_dirty=False,
+    )
+    markdown = render_markdown(report)
+    payload = json.loads(render_json(report))
+
+    assert report.health.eligible_episodes == 1
+    assert report.health.excluded_episodes == 1
+    assert report.input_exclusion_reasons[0].name == "missing_exchange"
+    assert "| missing_exchange | 1 |" in markdown
+    assert payload["input_exclusion_reasons"][0] == {
+        "count": 1,
+        "name": "missing_exchange",
+    }
 
 
 def test_parser_requires_explicit_working_tree_state() -> None:

@@ -209,6 +209,12 @@ def test_signal_after_decision_is_rejected_as_lookahead() -> None:
     assert "signal_after_decision" in decision_exclusion_reasons(invalid, _filters())
 
 
+def test_missing_exchange_excludes_exact_anchor_replay() -> None:
+    decision = replace(_decision(1), exchange="")
+
+    assert "missing_exchange" in decision_exclusion_reasons(decision, _filters())
+
+
 def test_fallback_outcome_requires_explicit_sensitivity_policy() -> None:
     decision = _decision(1, outcomes=(_outcome(status="complete_fallback"),))
 

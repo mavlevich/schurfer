@@ -135,8 +135,9 @@ lightweight dataset-health visibility remains operational follow-up.
   - Also added: `price` (decision-time reference price, migration 0010).
 - Direct episode attribution: scanner persists each `pump_event` before publishing the
   Redis snapshot, and every decision stores its nullable FK `pump_event_id`. Missing or
-  stale signals are no longer recorded as a synthetic score of zero: they retry after
-  one minute, while a valid low score is reconsidered after one 5-minute candle.
+  stale signals are operational deferrals rather than trading decisions: they do not
+  enter the durable decision stream and retry after one minute, while a valid low score
+  is reconsidered after one 5-minute candle.
 - [x] Schema and decision-write path (migrations 0008-0012 plus the execution write
       path). This is independent of where the score is computed, so it does not commit
       us to any later scoring decision.
@@ -147,6 +148,9 @@ lightweight dataset-health visibility remains operational follow-up.
       health, and basic host resources (RAM, disk) so a memory leak or a disk filled
       with data does not kill collection silently. Keep it lightweight. This is about
       "is the dataset being collected without gaps", not a performance product.
+      The execution service already publishes a short-lived Redis snapshot for every
+      trader tick, and the Status page shows ready/deferred signal evaluations plus
+      their reason counts. Broader service and host telemetry remains open.
 - [x] Dataset completeness metrics: decisions/hour, % features present, % liquidity
       present, % liquidity fetch_failed, and lag between signal computed_at and the
       decision. The read-only `measurement-report` CLI also reports quality reasons,

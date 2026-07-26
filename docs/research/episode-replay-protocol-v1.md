@@ -46,6 +46,7 @@ eligible episode must have:
 
 - a unique `decision_id`;
 - a non-empty `strategy_version`;
+- a non-empty exact-anchor exchange;
 - a positive decision price;
 - the stored decision feature/config envelope;
 - the required outcome horizons for the selected replay;
@@ -130,6 +131,14 @@ Every run records:
 Reports generated from a dirty working tree are development artifacts, not
 confirmatory evidence. A historical report is reproducible only when its code revision,
 manifest, and input fingerprint are retained together.
+
+## Clarifications
+
+- `2026-07-26`: the exact-anchor requirement was made explicit after the first
+  production smoke report admitted an empty-exchange episode as eligible and then
+  could not load its market path. The replay engine version was incremented. This
+  clarification only removes an unresolved row from coverage; it does not change any
+  completed trade return or observed outcome.
 
 ## Promotion boundary
 

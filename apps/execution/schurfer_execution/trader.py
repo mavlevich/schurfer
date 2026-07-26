@@ -4,6 +4,7 @@ import asyncio
 import json
 import math
 import time
+from collections import Counter
 from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
@@ -25,6 +26,8 @@ log = structlog.get_logger()
 _INTERVAL_SECONDS = 60
 _PUMPS_KEY = "pumps:latest"
 _SIGNALS_KEY = "signals:{base}"
+_SIGNAL_READINESS_KEY = "execution:signal_readiness"
+_SIGNAL_READINESS_TTL = 180  # 3 trader ticks; absence means telemetry is stale
 _SEEN_KEY = "trader:seen:{base}"
 _TRADE_ID_KEY = "trade:id:{exchange}:{base}"
 _SEEN_TTL_TRADED = 86400  # 24h — don't re-enter the same token after a trade
@@ -62,14 +65,19 @@ async def run_signal_trader(
 async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
     raw = await rdb.get(_PUMPS_KEY)
     if not raw:
+        await _publish_signal_readiness(rdb, pump_count=0, evaluated=0, ready=0)
         return
 
     pumps_data = json.loads(raw)
     pumps = pumps_data.get("pumps", [])
     if not pumps:
+        await _publish_signal_readiness(rdb, pump_count=0, evaluated=0, ready=0)
         return
 
     log.debug("trader.tick", pump_count=len(pumps))
+    evaluated = 0
+    ready = 0
+    deferral_reasons: Counter[str] = Counter()
 
     for pump in pumps:
         base = pump.get("base", "")
@@ -80,13 +88,32 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
         if await rdb.get(seen_key):
             continue
 
-        # Per-decision measurement context, resolved up front so every decision
-        # (including no_configured_exchange) carries the full context.
-        decision_id = str(uuid4())
-        pump_pct: float | None = pump.get("max_change_pct")
         pump_event_id = _pump_event_id(pump)
+        evaluated += 1
         signal = await _fetch_signal(base, rdb, expected_pump_event_id=pump_event_id)
         score = signal.score
+        if signal.status != "ok" or score is None or signal.payload is None:
+            # A missing, stale, malformed, or previous-episode signal means the
+            # strategy does not yet have the inputs required to make a decision.
+            # Keep this as an operational deferral instead of polluting the durable
+            # decision dataset with a synthetic skip that invalidates the episode.
+            reason = signal.status if signal.status != "ok" else "signal_invalid_ready_state"
+            deferral_reasons[reason] += 1
+            log.info(
+                "trader.defer.signal_unavailable",
+                base=base,
+                pump_event_id=pump_event_id,
+                reason=reason,
+            )
+            await rdb.set(seen_key, "1", ex=_SEEN_TTL_SIGNAL_RETRY)
+            continue
+
+        ready += 1
+
+        # Per-decision measurement context is created only after all strategy inputs
+        # are ready, so every durable row represents an actual evaluation.
+        decision_id = str(uuid4())
+        pump_pct: float | None = pump.get("max_change_pct")
         exchange = _pick_exchange(pump.get("exchanges", []), exchanges)
         ex = exchanges.get(exchange) if exchange else None
         features = _decision_features(signal, pump, cfg)
@@ -134,29 +161,6 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 seen_ttl=_SEEN_TTL_SKIP,
             )
             continue
-
-        if signal.status != "ok":
-            log.info("trader.skip.signal_unavailable", base=base, reason=signal.status)
-            await decisions.write_decision(
-                rdb,
-                base=base,
-                exchange=exchange,
-                action="skipped",
-                reason=signal.status,
-                pump_pct=pump_pct,
-                decision_id=decision_id,
-                strategy_version=cfg.strategy_version,
-                features=features,
-                liquidity=liq,
-                price=decision_price,
-                pump_event_id=pump_event_id,
-                seen_key=seen_key,
-                seen_ttl=_SEEN_TTL_SIGNAL_RETRY,
-            )
-            continue
-
-        # status=ok is only constructed with a parsed integer score.
-        assert score is not None
 
         if score < cfg.score_threshold:
             log.info("trader.skip.score", base=base, score=score, threshold=cfg.score_threshold)
@@ -590,6 +594,38 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 seen_key=seen_key,
                 seen_ttl=_SEEN_TTL_SKIP,
             )
+
+    await _publish_signal_readiness(
+        rdb,
+        pump_count=len(pumps),
+        evaluated=evaluated,
+        ready=ready,
+        deferral_reasons=deferral_reasons,
+    )
+
+
+async def _publish_signal_readiness(
+    rdb: Any,
+    *,
+    pump_count: int,
+    evaluated: int,
+    ready: int,
+    deferral_reasons: Counter[str] | None = None,
+) -> None:
+    """Publish ephemeral operational telemetry without adding decision rows."""
+    reasons = deferral_reasons or Counter()
+    await rdb.hset(
+        _SIGNAL_READINESS_KEY,
+        mapping={
+            "updated_at_ms": time.time_ns() // 1_000_000,
+            "pump_count": pump_count,
+            "evaluated": evaluated,
+            "ready": ready,
+            "deferred": sum(reasons.values()),
+            "reasons": json.dumps(dict(sorted(reasons.items())), separators=(",", ":")),
+        },
+    )
+    await rdb.expire(_SIGNAL_READINESS_KEY, _SIGNAL_READINESS_TTL)
 
 
 _EIGHT_HOURS_MS = 8 * 3600 * 1000  # reference period for normalization

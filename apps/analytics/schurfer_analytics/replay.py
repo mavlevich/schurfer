@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from datetime import datetime
 
 DEFAULT_REPLAY_HORIZONS = (480,)
-FOUNDATION_VERSION = "episode_replay_foundation_v1"
+FOUNDATION_VERSION = "episode_replay_foundation_v2"
 QUERY_VERSION = "replay_inputs_v1"
 FORMAL_EPISODES = 100
 MIN_FORMAL_CLUSTERS = 30
@@ -192,6 +192,8 @@ def decision_exclusion_reasons(
         reasons.add("missing_strategy_version")
     elif decision.strategy_version not in filters.strategy_versions:
         reasons.add("mixed_strategy_episode")
+    if not decision.exchange.strip():
+        reasons.add("missing_exchange")
     if not _usable_price(decision.price):
         reasons.add("missing_price")
     if not isinstance(decision.features, dict):
