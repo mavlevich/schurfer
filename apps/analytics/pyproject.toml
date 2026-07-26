@@ -19,6 +19,7 @@ measurement-report = "schurfer_analytics.measurement_report:main"
 exchange-coverage-report = "schurfer_analytics.exchange_coverage_report:main"
 episode-replay = "schurfer_analytics.episode_replay:main"
 virtual-strategy-report = "schurfer_analytics.virtual_strategy_report:main"
+virtual-entry-challenger-report = "schurfer_analytics.virtual_entry_challenger_report:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

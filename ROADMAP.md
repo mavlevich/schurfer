@@ -97,11 +97,54 @@ lightweight dataset-health visibility remains operational follow-up.
         observed peak separately from the exchange-derived rolling 24h high. Retry
         transient Postgres failures through an AOF-backed Redis outbox with an
         idempotent insert and poison-message DLQ.
+  - [ ] Capture the pre-optimization latency baseline for at least 72 hours and 20
+        delivered pump events, whichever takes longer. The durable source is
+        `app.pump_alert_deliveries`; `app.pump_event_sources` contains the later
+        highest change actually observed for the same event/venue. Check component
+        p50/p95 rather than only the total:
+
+        ```bash
+        docker exec schurfer-postgres psql -U schurfer -d schurfer -c "
+        SELECT
+          count(*) AS alerts,
+          percentile_cont(0.5) WITHIN GROUP (
+            ORDER BY EXTRACT(EPOCH FROM (scan_published_at-scanner_observed_at))*1000
+          ) AS scan_publish_p50_ms,
+          percentile_cont(0.95) WITHIN GROUP (
+            ORDER BY EXTRACT(EPOCH FROM (scan_published_at-scanner_observed_at))*1000
+          ) AS scan_publish_p95_ms,
+          percentile_cont(0.5) WITHIN GROUP (
+            ORDER BY EXTRACT(EPOCH FROM (notification_started_at-scan_published_at))*1000
+          ) AS notifier_pickup_p50_ms,
+          percentile_cont(0.95) WITHIN GROUP (
+            ORDER BY EXTRACT(EPOCH FROM (notification_started_at-scan_published_at))*1000
+          ) AS notifier_pickup_p95_ms,
+          percentile_cont(0.95) WITHIN GROUP (
+            ORDER BY EXTRACT(EPOCH FROM (notification_sent_at-notification_started_at))*1000
+          ) AS telegram_send_p95_ms,
+          percentile_cont(0.95) WITHIN GROUP (
+            ORDER BY EXTRACT(EPOCH FROM (scanner_observed_at-ticker_at))*1000
+          ) FILTER (WHERE ticker_at IS NOT NULL) AS ticker_age_p95_ms,
+          percentile_cont(0.95) WITHIN GROUP (
+            ORDER BY EXTRACT(EPOCH FROM (notification_sent_at-scanner_observed_at))*1000
+          ) AS end_to_end_p95_ms
+        FROM app.pump_alert_deliveries;"
+
+        docker exec schurfer-redis redis-cli LLEN notifier:alert_delivery_outbox
+        docker exec schurfer-redis redis-cli LLEN notifier:alert_delivery_dlq
+        ```
+
+        Keep both Redis lengths at zero in steady state. If notifier pickup dominates,
+        shorten only its Redis loop first; if scanner observation/publication dominates,
+        build the bounded HOT polling set; if ticker age dominates, investigate the
+        venue adapter. Record the baseline cutoff before deploying any speed change.
+
   - [ ] Decouple a fast Redis-only notifier loop from the broad exchange scan interval,
         then promote active candidates into a bounded 1-to-5-second hot set using
         targeted polling or websockets. Use explicit WATCH, HOT, NEW_HIGH, and RETRACE
         transitions. Do not increase whole-market REST frequency until rate-limit and
         host-load measurements support it.
+
 - [ ] Canonical instrument identity. A ticker is a display label, not an asset key:
       exchanges can retain disabled markets or reuse symbols for unrelated tokens.
       Persist the exchange market id/type, ticker timestamp, and listing/onboard date;
@@ -211,6 +254,52 @@ lightweight dataset-health visibility remains operational follow-up.
           classifications, and a versioned Markdown/JSON manifest. Entry is modeled at
           the next complete 5-minute bar open; statistical inference and challengers
           remain separate follow-ups.
+    - [x] Pre-registered entry-confirmation family: compare the baseline with red
+          candle, 1.5% retrace, and combined challengers on the same eligible episodes.
+          Use six fully closed 5-minute candles, a one-bar execution gap, and at most a
+          60-minute wait; preserve the baseline exit and cost models. Treat no
+          confirmation as a zero-return cash episode and missing path data as
+          unresolved. The dedicated cohort begins at `2026-07-29T00:00:00Z`; paired
+          deltas remain descriptive until cluster bootstrap and Holm correction ship.
+          Delayed variants hold the decision-time liquidity impact constant because
+          their historical entry books are unrecoverable; a future live shadow cohort
+          must validate actual delayed-entry execution quality. Baseline episode
+          eligibility is also held constant during the wait because future score and
+          market-quality gates cannot be reconstructed from the current dataset; this
+          report isolates entry timing rather than claiming an end-to-end strategy
+          replay.
+    - [ ] Entry-challenger verification after merge:
+      - Data sources: `app.trade_decisions` and `app.pump_events` define chronological
+        episodes; `app.trade_decision_outcomes` supplies the required exact-anchor 8h
+        coverage; decision `features` and `liquidity` preserve point-in-time inputs and
+        costs; CCXT supplies exact-venue 5m pre-entry and exit paths at report time.
+      - Deploy only analytics, then wait at least eight hours after candidate episodes
+        close so `forward_v1` can resolve the required horizon:
+
+        ```bash
+        make prod-deploy-svc SERVICE=analytics
+        make prod-virtual-entry-challenger-report
+        ```
+
+      - Before a formal read, choose and record an exclusive UTC cutoff without looking
+        at the challenger output. Archive the JSON manifest outside Git:
+
+        ```bash
+        mkdir -p backups/reports
+        make prod-virtual-entry-challenger-report \
+          ARGS="--until 2026-08-03T00:00:00Z --format json" \
+          > backups/reports/entry-challengers-2026-08-03.json
+        ```
+
+      - Check `eligible_episodes`, input exclusions, `paired_resolved`, unresolved
+        paths, trade rate, mean episode net return, paired mean delta, initial-SL rate,
+        mean wait, avoided losing entries, and missed baseline winners. Investigate
+        missing exact-anchor paths or cost inputs instead of dropping them. Do not
+        change production entry settings from this descriptive report: first
+        directional reading is 50 episodes; formal evaluation is 100 episodes, at least
+        30 clusters, cluster-bootstrap confidence intervals, Holm correction, and
+        top-cluster sensitivity. Even a passing result advances only to live shadow so
+        delayed-entry spread/depth/impact can be measured at the actual confirmation.
 
   - [ ] Derive recoverable pre-decision candle features (including blow-off concentration
         and reversal strength) from fully closed OHLCV and test whether they separate

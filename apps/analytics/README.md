@@ -16,6 +16,10 @@ Entrypoints:
   eligible episode over exact-anchor 5-minute OHLCV. It applies the production exit
   bands, conservative within-bar ordering, fixed fees/funding reserve, and the
   decision-time bid/ask impact snapshot, then emits Markdown or JSON.
+- `virtual-entry-challenger-report` — compares the baseline with the pre-registered
+  red-candle, 1.5% retrace, and combined entry-confirmation variants on identical
+  eligible episodes. It waits at most 60 minutes, uses only fully closed candles, and
+  treats an untriggered entry as a zero-return cash episode.
 
 Run against the local development database:
 
@@ -26,6 +30,8 @@ make episode-replay
 make episode-replay ARGS="--since 2026-07-22 --horizon 240 --horizon 480"
 make virtual-strategy-report
 make virtual-strategy-report ARGS="--since 2026-07-26 --format json"
+make virtual-entry-challenger-report
+make virtual-entry-challenger-report ARGS="--until 2026-07-28 --format json"
 ```
 
 The report shows both decision count and distinct pump-episode count. Its return and
@@ -45,3 +51,14 @@ liquidity-cost inputs, and assumes the adverse stop fires first when a 5-minute 
 cannot establish event order.
 The default 10 bps taker fee per side and 5 bps per 8-hour funding cost are explicit
 conservative model inputs and can be overridden for a sensitivity run.
+
+The entry-challenger report defaults to the pre-registered cohort beginning
+`2026-07-29T00:00:00Z`. At each possible entry it examines six 5-minute candles whose
+close was already available before the entry bar, then enters at the following bar
+open. Its paired deltas are descriptive until the separate cluster-bootstrap and Holm
+correction layer is implemented. Decision-time liquidity impact is held constant
+across variants because the later historical order book cannot be reconstructed; live
+shadow measurement is required before promotion. The replay also holds the baseline
+episode's eligibility constant during the wait instead of reconstructing future
+score and market-quality gates, so it isolates entry timing rather than claiming to
+mirror a deployable strategy end to end.

@@ -30,11 +30,11 @@ Rules:
   sequence, then aggregate outcomes and confidence intervals by episode. Repeated
   decisions are not independent N; repeated episodes of the same asset are clustered
   as specified by the protocol.
-- **Status:** this is a hypotheses register. The generic outcome windows are locked by
-  `forward_v1` (15m, 30m, 1h, 4h, 8h, 24h, 72h, 7d). The taken-vs-skipped join, costs,
-  exit simulation, and exact challenger manifests are locked in the next virtual-replay
-  layer; until then, treat those experiment details below as intent, not a frozen
-  protocol.
+- **Status:** the generic outcome windows are locked by `forward_v1` (15m, 30m, 1h,
+  4h, 8h, 24h, 72h, 7d). The baseline selection, costs, and exit simulation are locked
+  by `virtual_strategy_report_v2`. The HYP-002 entry family below is locked by
+  `entry_confirmation_family_v1`. Other experiment details remain intent until their
+  own manifests are committed.
 
 Current baseline (as deployed, `pump_short_v1`): `PUMP_MIN_PCT=30`, `SCORE_THRESHOLD=6`,
 `REQUIRE_RED_CANDLE=false`, `MIN_RETRACE_PCT=0`, leverage 3x, fixed $50 notional; exits
@@ -93,9 +93,37 @@ Requiring a closed red candle and a minimum retrace before entry lowers the rate
 shorting a still-continuing pump, and therefore the `initial_sl` rate, improving net
 expectancy after costs.
 
-Experiment: champion `pump_short_v1` vs challenger `pump_short_v2_entry_confirm`
-(`REQUIRE_RED_CANDLE=true`, `MIN_RETRACE_PCT≈1.5`), replayed on identical decisions,
-including skipped ones.
+Registered experiment family (`entry_confirmation_family_v1`), committed before its
+first query:
+
+- confirmation cohort starts at `2026-07-29T00:00:00Z`;
+- baseline is `pump_short_v1_replay_v1`;
+- `entry_red_candle_v1` requires a red last closed candle;
+- `entry_retrace_1_5_v1` requires at least a 1.5% close retrace from the six-bar high;
+- `entry_red_candle_retrace_1_5_v1` requires both conditions on the same candle;
+- each variant may wait from zero through 60 minutes in 5-minute steps;
+- every check uses six complete 5-minute candles and a one-full-bar execution gap, so
+  a candle closing at the entry timestamp is never used to obtain that timestamp's
+  open;
+- the entry price is the selected future bar open, while exit bands, costs, exact
+  venue, within-bar policy, and baseline episode selection remain unchanged;
+- decision-time bid/ask impact is held constant across the paired variants because a
+  historical order book at the delayed entry cannot be reconstructed; this controls
+  the comparison but does not prove delayed-entry executability;
+- the selected baseline episode remains eligible throughout the wait; score,
+  market-quality, and balance gates are not reconstructed at the delayed timestamp,
+  so this experiment isolates confirmation timing and is not an end-to-end production
+  strategy replay;
+- no confirmation within 60 minutes is a valid zero-return cash episode, not a missing
+  result, and records a censored effective wait of 60 minutes;
+- a missing candle, venue path, or cost input is unresolved and excluded from the
+  paired comparison rather than silently treated as no entry.
+
+The three challengers are one multiple-comparison family. Their descriptive paired
+deltas may be inspected during development, but promotion requires the separate
+cluster-bootstrap and Holm-correction layer plus the protocol's sample and diversity
+thresholds.
+
 Primary metric: net expectancy after costs.
 Secondary: initial-SL rate, average loss, MFE, missed winners, eligible-entry count.
 

@@ -139,6 +139,14 @@ manifest, and input fingerprint are retained together.
   could not load its market path. The replay engine version was incremented. This
   clarification only removes an unresolved row from coverage; it does not change any
   completed trade return or observed outcome.
+- `2026-07-26`: the HYP-002 entry-confirmation family was frozen before its first
+  challenger query. Its separate confirmation cohort starts at
+  `2026-07-29T00:00:00Z`. All three variants use six fully closed 5-minute candles, a
+  one-bar execution gap, a fixed 60-minute wait, and the unchanged baseline exit/cost
+  models. A no-entry result contributes zero return; missing path data remains
+  unresolved. Baseline episode eligibility remains fixed during the wait because
+  future score and order-book gates are not reconstructable. These variants form one
+  Holm-corrected family.
 
 ## Promotion boundary
 
