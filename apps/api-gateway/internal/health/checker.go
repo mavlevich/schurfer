@@ -2,7 +2,9 @@ package health
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -19,12 +21,22 @@ const (
 )
 
 type Report struct {
-	Postgres    Status `json:"postgres"`
-	Redis       Status `json:"redis"`
-	NATS        Status `json:"nats"`
-	Collector   Status `json:"collector"`
-	Execution   Status `json:"execution"`
-	TelegramBot Status `json:"telegram_bot"`
+	Postgres        Status           `json:"postgres"`
+	Redis           Status           `json:"redis"`
+	NATS            Status           `json:"nats"`
+	Collector       Status           `json:"collector"`
+	Execution       Status           `json:"execution"`
+	TelegramBot     Status           `json:"telegram_bot"`
+	SignalReadiness *SignalReadiness `json:"signal_readiness"`
+}
+
+type SignalReadiness struct {
+	UpdatedAtMS int64            `json:"updated_at_ms"`
+	PumpCount   int64            `json:"pump_count"`
+	Evaluated   int64            `json:"evaluated"`
+	Ready       int64            `json:"ready"`
+	Deferred    int64            `json:"deferred"`
+	Reasons     map[string]int64 `json:"reasons"`
 }
 
 type Config struct {
@@ -78,13 +90,68 @@ func (c *Checker) Close() {
 
 func (c *Checker) Check(ctx context.Context) Report {
 	return Report{
-		Postgres:    c.checkPostgres(ctx),
-		Redis:       c.checkRedis(ctx),
-		NATS:        c.checkNATS(),
-		Collector:   StatusUnknown, // populated via NATS heartbeats later
-		Execution:   StatusUnknown,
-		TelegramBot: c.checkTelegramBot(ctx),
+		Postgres:        c.checkPostgres(ctx),
+		Redis:           c.checkRedis(ctx),
+		NATS:            c.checkNATS(),
+		Collector:       StatusUnknown, // populated via NATS heartbeats later
+		Execution:       StatusUnknown,
+		TelegramBot:     c.checkTelegramBot(ctx),
+		SignalReadiness: c.checkSignalReadiness(ctx),
 	}
+}
+
+func (c *Checker) checkSignalReadiness(ctx context.Context) *SignalReadiness {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	values, err := c.rdb.HGetAll(ctx, "execution:signal_readiness").Result()
+	if err != nil || len(values) == 0 {
+		return nil
+	}
+
+	updatedAt, ok := parseInt64(values, "updated_at_ms")
+	if !ok {
+		return nil
+	}
+	pumpCount, ok := parseInt64(values, "pump_count")
+	if !ok {
+		return nil
+	}
+	evaluated, ok := parseInt64(values, "evaluated")
+	if !ok {
+		return nil
+	}
+	ready, ok := parseInt64(values, "ready")
+	if !ok {
+		return nil
+	}
+	deferred, ok := parseInt64(values, "deferred")
+	if !ok {
+		return nil
+	}
+
+	reasons := make(map[string]int64)
+	if err := json.Unmarshal([]byte(values["reasons"]), &reasons); err != nil {
+		return nil
+	}
+
+	return &SignalReadiness{
+		UpdatedAtMS: updatedAt,
+		PumpCount:   pumpCount,
+		Evaluated:   evaluated,
+		Ready:       ready,
+		Deferred:    deferred,
+		Reasons:     reasons,
+	}
+}
+
+func parseInt64(values map[string]string, key string) (int64, bool) {
+	value, ok := values[key]
+	if !ok {
+		return 0, false
+	}
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	return parsed, err == nil
 }
 
 func (c *Checker) checkTelegramBot(ctx context.Context) Status {

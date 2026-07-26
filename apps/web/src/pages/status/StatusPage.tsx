@@ -15,6 +15,15 @@ interface ScannerState {
   errors?: Record<string, string>;
 }
 
+interface SignalReadinessState {
+  updated_at_ms: number;
+  pump_count: number;
+  evaluated: number;
+  ready: number;
+  deferred: number;
+  reasons: Record<string, number>;
+}
+
 interface ServiceState {
   postgres: ServiceStatus;
   redis: ServiceStatus;
@@ -22,6 +31,7 @@ interface ServiceState {
   collector: ServiceStatus;
   execution: ServiceStatus;
   telegram_bot: ServiceStatus;
+  signal_readiness: SignalReadinessState | null;
 }
 
 interface WsStatusMessage {
@@ -36,6 +46,7 @@ const INITIAL_STATE: ServiceState = {
   collector: 'unknown',
   execution: 'unknown',
   telegram_bot: 'unknown',
+  signal_readiness: null,
 };
 
 const WS_URL =
@@ -123,8 +134,16 @@ export function StatusPage() {
     { key: 'telegram_bot' as const, label: 'Telegram Bot' },
   ];
 
-  const allUp = Object.values(services).every((s) => s === 'up');
-  const anyDown = Object.values(services).some((s) => s === 'down');
+  const serviceStatuses = [...infra, ...apps].map(({ key }) => services[key]);
+  const allUp = serviceStatuses.every((status) => status === 'up');
+  const anyDown = serviceStatuses.some((status) => status === 'down');
+  const signalReadiness = services.signal_readiness;
+  const readinessVariant =
+    signalReadiness && signalReadiness.evaluated > 0 && signalReadiness.deferred === 0
+      ? 'success'
+      : signalReadiness && signalReadiness.ready === 0 && signalReadiness.deferred > 0
+        ? 'destructive'
+        : 'secondary';
 
   return (
     <div className="min-h-screen bg-background">
@@ -247,6 +266,53 @@ export function StatusPage() {
                   : '—'}
               </span>
             </div>
+          </CardContent>
+        </Card>
+
+        {/* Execution input readiness */}
+        <Card>
+          <CardHeader className="flex-row items-center justify-between space-y-0">
+            <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+              Signal Readiness
+            </CardTitle>
+            <Badge variant={readinessVariant}>
+              {!signalReadiness
+                ? 'No telemetry'
+                : signalReadiness.evaluated === 0
+                  ? 'Idle'
+                  : signalReadiness.deferred === 0
+                    ? 'Ready'
+                    : `${signalReadiness.deferred} deferred`}
+            </Badge>
+          </CardHeader>
+          <CardContent className="space-y-3 pt-0">
+            <div className="flex items-center justify-between">
+              <span className="text-sm">Latest trader tick</span>
+              <span className="text-xs text-muted-foreground">
+                {signalReadiness ? timeAgo(signalReadiness.updated_at_ms) : '—'}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm">Pumps / evaluated</span>
+              <span className="text-xs font-mono text-muted-foreground">
+                {signalReadiness
+                  ? `${signalReadiness.pump_count} / ${signalReadiness.evaluated}`
+                  : '—'}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm">Ready / deferred</span>
+              <span className="text-xs font-mono text-muted-foreground">
+                {signalReadiness ? `${signalReadiness.ready} / ${signalReadiness.deferred}` : '—'}
+              </span>
+            </div>
+            {signalReadiness &&
+              Object.entries(signalReadiness.reasons).map(([reason, count]) => (
+                <div key={reason} className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">{reason}</span>
+                  <span className="text-xs font-mono text-muted-foreground">{count}</span>
+                </div>
+              ))}
           </CardContent>
         </Card>
       </div>

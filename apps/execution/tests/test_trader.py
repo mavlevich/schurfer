@@ -11,6 +11,9 @@ from schurfer_execution.trader import (
     _SEEN_TTL_SIGNAL_RETRY,
     _SEEN_TTL_SKIP,
     _SEEN_TTL_TRADED,
+    _SIGNAL_READINESS_KEY,
+    _SIGNAL_READINESS_TTL,
+    SignalResult,
     _decision_price,
     _fetch_entry_candles,
     _fetch_equity_usd,
@@ -119,6 +122,8 @@ def _rdb(
 
     rdb.get = _get
     rdb.set = AsyncMock()
+    rdb.hset = AsyncMock()
+    rdb.expire = AsyncMock()
     rdb.xadd = AsyncMock()
 
     # write_decision runs its XADD + SET seen as one Lua script (rdb.eval). Simulate the
@@ -489,7 +494,7 @@ async def test_tick_skips_already_seen_token() -> None:
 
 
 async def test_tick_skips_when_no_configured_exchange() -> None:
-    rdb = _rdb(pumps_raw=_pumps("BEAT"))
+    rdb = _rdb(pumps_raw=_pumps("BEAT"), signal_score=3)
     with patch("schurfer_execution.trader.place_order", new_callable=AsyncMock) as mock_order:
         await _tick({}, rdb, _cfg())
         mock_order.assert_not_called()
@@ -505,19 +510,88 @@ async def test_tick_skips_when_score_below_threshold() -> None:
     assert rdb.set.call_args.kwargs["ex"] == _SEEN_TTL_SCORE_RECHECK
 
 
-async def test_tick_retries_missing_signal_on_next_minute_without_synthetic_score() -> None:
+@pytest.mark.parametrize(
+    "status",
+    [
+        "signal_missing",
+        "signal_stale",
+        "signal_episode_mismatch",
+        "ok",
+    ],
+)
+async def test_tick_defers_unready_signal_without_durable_decision(status: str) -> None:
     rdb = _rdb(pumps_raw=_pumps("BEAT"))
-    with patch(
-        "schurfer_execution.trader.decisions.write_decision", new_callable=AsyncMock
-    ) as mock_write:
+    with (
+        patch(
+            "schurfer_execution.trader._fetch_signal",
+            new_callable=AsyncMock,
+            return_value=SignalResult(None, None, status),
+        ),
+        patch(
+            "schurfer_execution.trader.decisions.write_decision",
+            new_callable=AsyncMock,
+        ) as mock_write,
+        patch(
+            "schurfer_execution.trader.liquidity.snapshot",
+            new_callable=AsyncMock,
+        ) as mock_snapshot,
+    ):
         await _tick({"bybit": MagicMock()}, rdb, _cfg(score_threshold=6))
 
-    decision = mock_write.call_args.kwargs
-    assert decision["reason"] == "signal_missing"
-    assert decision.get("score") is None
-    assert decision["seen_ttl"] == _SEEN_TTL_SIGNAL_RETRY
-    assert decision["pump_event_id"] == 42
-    assert decision["features"]["signal_status"] == "signal_missing"
+    mock_write.assert_not_awaited()
+    mock_snapshot.assert_not_awaited()
+    rdb.set.assert_awaited_once_with(
+        "trader:seen:BEAT",
+        "1",
+        ex=_SEEN_TTL_SIGNAL_RETRY,
+    )
+    readiness = rdb.hset.await_args.kwargs["mapping"]
+    assert readiness["pump_count"] == 1
+    assert readiness["evaluated"] == 1
+    assert readiness["ready"] == 0
+    assert readiness["deferred"] == 1
+    expected_reason = status if status != "ok" else "signal_invalid_ready_state"
+    assert json.loads(readiness["reasons"]) == {expected_reason: 1}
+    rdb.expire.assert_awaited_once_with(_SIGNAL_READINESS_KEY, _SIGNAL_READINESS_TTL)
+
+
+async def test_tick_signal_readiness_distinguishes_ready_deferred_and_seen() -> None:
+    rdb = _rdb(pumps_raw=_pumps("READY", "DEFERRED", "SEEN"))
+
+    async def get(key: str) -> bytes | None:
+        if key == "pumps:latest":
+            return _pumps("READY", "DEFERRED", "SEEN")
+        if key == "trader:seen:SEEN":
+            return b"1"
+        return None
+
+    async def signal(
+        base: str,
+        _rdb: Any,
+        *,
+        expected_pump_event_id: int | None,
+    ) -> SignalResult:
+        assert expected_pump_event_id == 42
+        if base == "READY":
+            return SignalResult(3, {"score": 3}, "ok")
+        return SignalResult(None, None, "signal_missing")
+
+    rdb.get = get
+    with (
+        patch("schurfer_execution.trader._fetch_signal", side_effect=signal),
+        patch(
+            "schurfer_execution.trader.decisions.write_decision",
+            new_callable=AsyncMock,
+        ),
+    ):
+        await _tick({"bybit": MagicMock()}, rdb, _cfg())
+
+    readiness = rdb.hset.await_args.kwargs["mapping"]
+    assert readiness["pump_count"] == 3
+    assert readiness["evaluated"] == 2
+    assert readiness["ready"] == 1
+    assert readiness["deferred"] == 1
+    assert json.loads(readiness["reasons"]) == {"signal_missing": 1}
 
 
 async def test_tick_writes_decision_on_score_skip() -> None:
