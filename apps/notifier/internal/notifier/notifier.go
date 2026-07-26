@@ -17,14 +17,20 @@ const (
 	redisKeySeenPfx      = "notifier:seen:"
 	redisKeyStaleAlerted = "notifier:stale_alerted"
 	redisKeyMissingSince = "notifier:pumps_missing_since"
-	seenTTL              = 24 * time.Hour
+	redisKeyAlertOutbox  = "notifier:alert_delivery_outbox"
+	redisKeyAlertDLQ     = "notifier:alert_delivery_dlq"
+	// Event ids are immutable and episodes may stay above the scanner threshold
+	// longer than one day. Retain the compact de-dup key well beyond a normal
+	// episode without growing Redis indefinitely.
+	seenTTL = 30 * 24 * time.Hour
 )
 
 type Config struct {
-	RedisAddr string
-	BotToken  string
-	ChatID    string
-	Interval  time.Duration
+	RedisAddr   string
+	DatabaseURL string
+	BotToken    string
+	ChatID      string
+	Interval    time.Duration
 	// StaleAfter is how old the last scan may be before the scanner is reported
 	// stale. A silently dead scanner is the main way the dataset develops gaps.
 	StaleAfter time.Duration
@@ -37,17 +43,30 @@ type Config struct {
 }
 
 type Notifier struct {
-	cfg Config
-	rdb *redis.Client
+	cfg      Config
+	rdb      *redis.Client
+	recorder alertRecorder
 }
 
-func New(cfg Config) *Notifier {
+func New(ctx context.Context, cfg Config) (*Notifier, error) {
 	rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr})
-	return &Notifier{cfg: cfg, rdb: rdb}
+	var recorder alertRecorder
+	if cfg.DatabaseURL != "" {
+		var err error
+		recorder, err = newPostgresAlertRecorder(ctx, cfg.DatabaseURL)
+		if err != nil {
+			_ = rdb.Close()
+			return nil, fmt.Errorf("alert recorder: %w", err)
+		}
+	}
+	return &Notifier{cfg: cfg, rdb: rdb, recorder: recorder}, nil
 }
 
 func (n *Notifier) Close() {
 	_ = n.rdb.Close()
+	if n.recorder != nil {
+		n.recorder.Close()
+	}
 }
 
 func (n *Notifier) Run(ctx context.Context) error {
@@ -155,6 +174,7 @@ func (n *Notifier) tick(ctx context.Context) error {
 
 	// Redis is reachable — notifier is alive (bot configured, checked in Run)
 	_ = n.rdb.Set(ctx, redisKeyHeartbeat, time.Now().Unix(), 3*n.cfg.Interval).Err()
+	n.drainAlertOutbox(ctx)
 
 	// A silently dead, stuck, or garbage-producing scanner is the main way the
 	// dataset develops gaps, so alert on those before doing anything else.
@@ -194,6 +214,7 @@ func (n *Notifier) tick(ctx context.Context) error {
 	if len(p.Scanned) == 0 {
 		return nil
 	}
+	scanPublishedAt := payloadPublishedAt(p)
 
 	newPumps := make([]pump, 0)
 	for _, pump := range p.Pumps {
@@ -202,8 +223,7 @@ func (n *Notifier) tick(ctx context.Context) error {
 		if pump.MaxChangePct < n.cfg.MinPct {
 			continue
 		}
-		key := redisKeySeenPfx + pump.Base
-		exists, err := n.rdb.Exists(ctx, key).Result()
+		exists, err := n.rdb.Exists(ctx, seenKeys(pump)...).Result()
 		if err != nil {
 			slog.Warn("notifier.seen.check.failed", "base", pump.Base, "err", err)
 			continue
@@ -230,11 +250,26 @@ func (n *Notifier) tick(ctx context.Context) error {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
+			startedAt := time.Now().UTC()
 			if err := sendAlert(ctx, p, n.cfg.BotToken, n.cfg.ChatID); err != nil {
 				slog.Warn("notifier.alert.failed", "base", p.Base, "err", err)
 				return
 			}
-			slog.Info("notifier.alert.sent", "base", p.Base, "pct", p.MaxChangePct)
+			sentAt := time.Now().UTC()
+			delivery := deliveryFrom(p, n.cfg.MinPct, scanPublishedAt, startedAt, sentAt)
+			if n.recorder != nil && p.PumpEventID > 0 {
+				n.recordOrEnqueueAlert(ctx, delivery)
+			}
+			slog.Info(
+				"notifier.alert.sent",
+				"base", p.Base,
+				"pump_event_id", p.PumpEventID,
+				"pct", p.MaxChangePct,
+				"observation_to_notification_ms",
+				sentAt.Sub(delivery.ScannerObservedAt).Milliseconds(),
+				"publish_to_notification_ms",
+				sentAt.Sub(delivery.ScanPublishedAt).Milliseconds(),
+			)
 			mu.Lock()
 			sent = append(sent, p)
 			mu.Unlock()
@@ -243,11 +278,89 @@ func (n *Notifier) tick(ctx context.Context) error {
 	wg.Wait()
 
 	for _, sp := range sent {
-		key := redisKeySeenPfx + sp.Base
+		key := seenKey(sp)
 		if err := n.rdb.Set(ctx, key, 1, seenTTL).Err(); err != nil {
 			slog.Warn("notifier.seen.set.failed", "base", sp.Base, "err", err)
 		}
 	}
 
 	return nil
+}
+
+func seenKey(p pump) string {
+	if p.PumpEventID > 0 {
+		return fmt.Sprintf("%s%d", redisKeySeenPfx, p.PumpEventID)
+	}
+	return redisKeySeenPfx + p.Base
+}
+
+func seenKeys(p pump) []string {
+	if p.PumpEventID > 0 {
+		// Read the old base-scoped key during the rollout so deploying this schema
+		// does not re-alert every currently active token. New writes are event-scoped.
+		return []string{seenKey(p), redisKeySeenPfx + p.Base}
+	}
+	return []string{seenKey(p)}
+}
+
+func payloadPublishedAt(p payload) time.Time {
+	publishedAtMS := p.PublishedAtMS
+	if publishedAtMS == 0 {
+		publishedAtMS = p.Ts
+	}
+	return time.UnixMilli(publishedAtMS).UTC()
+}
+
+func deliveryFrom(
+	p pump,
+	thresholdPct float64,
+	scanPublishedAt time.Time,
+	startedAt time.Time,
+	sentAt time.Time,
+) alertDelivery {
+	top := topExchange(p.Exchanges)
+	scannerObservedAt := scanPublishedAt
+	var tickerAt *time.Time
+	var exchangeName string
+	var high24h *float64
+	if top != nil {
+		exchangeName = top.Exchange
+		if top.ScannerObservedAt != nil {
+			scannerObservedAt = time.UnixMilli(*top.ScannerObservedAt).UTC()
+		}
+		if top.TickerTimestamp != nil {
+			value := time.UnixMilli(*top.TickerTimestamp).UTC()
+			tickerAt = &value
+		}
+		value := exchangeHigh24hPct(*top)
+		if value > 0 {
+			high24h = &value
+		}
+	}
+	return alertDelivery{
+		EventID:               p.PumpEventID,
+		Base:                  p.Base,
+		Exchange:              exchangeName,
+		ThresholdPct:          thresholdPct,
+		ObservedChangePct:     p.MaxChangePct,
+		Exchange24hHighPct:    high24h,
+		TickerAt:              tickerAt,
+		ScannerObservedAt:     scannerObservedAt,
+		ScanPublishedAt:       scanPublishedAt,
+		NotificationStartedAt: startedAt,
+		NotificationSentAt:    sentAt,
+	}
+}
+
+func topExchange(exchanges []exchange) *exchange {
+	if len(exchanges) == 0 {
+		return nil
+	}
+	top := &exchanges[0]
+	for i := 1; i < len(exchanges); i++ {
+		if exchanges[i].ChangePct > top.ChangePct {
+			top = &exchanges[i]
+		}
+	}
+	return top
 }

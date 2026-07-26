@@ -20,6 +20,7 @@ from schurfer_analytics.scanner import (
 )
 
 NEW_EXCHANGES = ("lbank", "bitmart", "xt", "toobit", "blofin")
+OBSERVED_AT_MS = 1_800_000_000_000
 
 
 def _entry(base: str, exchange: str, pct: float) -> dict[str, object]:
@@ -33,6 +34,7 @@ def _entry(base: str, exchange: str, pct: float) -> dict[str, object]:
         "volume_24h_usd": 1_000_000.0,
         "volume_24h_source": "quote_volume",
         "ticker_timestamp_ms": None,
+        "observed_at_ms": OBSERVED_AT_MS,
     }
 
 
@@ -70,7 +72,10 @@ def test_new_exchange_factory_builds_linear_swap_client(name: str) -> None:
     assert exchange.options["defaultType"] == "swap"
 
 
-async def test_fetch_applies_same_linear_usdt_rules_to_every_exchange() -> None:
+async def test_fetch_applies_same_linear_usdt_rules_to_every_exchange(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("schurfer_analytics.scanner.time.time", lambda: OBSERVED_AT_MS / 1000)
     exchange = AsyncMock()
     exchange.has = {"fetchTickers": True}
     exchange.fetch_tickers.return_value = {
@@ -92,6 +97,7 @@ async def test_fetch_applies_same_linear_usdt_rules_to_every_exchange() -> None:
     assert error is None
     assert [row["base"] for row in above] == ["PUMP"]
     assert above[0]["change_pct"] == 31.25
+    assert above[0]["observed_at_ms"] == OBSERVED_AT_MS
     assert [row["base"] for row in below] == ["WATCH"]
 
 
@@ -384,5 +390,6 @@ async def test_publish_stores_fully_attributed_batch() -> None:
     assert rdb.set.await_args.kwargs == {"ex": REDIS_TTL}
     payload = json.loads(raw)
     assert payload["pumps"][0]["pump_event_id"] == 42
+    assert payload["published_at_ms"] == payload["ts"]
     assert payload["scanned"] == ["binance"]
     assert payload["errors"] == {"okx": "timeout"}

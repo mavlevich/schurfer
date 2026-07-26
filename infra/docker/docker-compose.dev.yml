@@ -190,6 +190,7 @@ services:
     container_name: schurfer-notifier
     environment:
       REDIS_ADDR: redis:6379
+      DATABASE_URL: postgresql://schurfer:schurfer_dev@postgres:5432/schurfer
       SCAN_INTERVAL: ${SCAN_INTERVAL:-60}
       STALE_AFTER_SECONDS: ${STALE_AFTER_SECONDS:-240}
       NOTIFY_MIN_PCT: ${NOTIFY_MIN_PCT:-60}
@@ -197,6 +198,8 @@ services:
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
     depends_on:
       redis:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
     restart: unless-stopped
 

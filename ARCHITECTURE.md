@@ -36,8 +36,10 @@ The web UI is behind a login with no public exposure.
     MFE for recorded decisions from exchange OHLCV;
   - the on-demand, read-only measurement report aggregates dataset health, outcome
     coverage, and descriptive cohort results from Postgres.
-- **notifier** (Go). Reads `pumps:latest` from Redis and sends Telegram alerts on new
-  pump detection.
+- **notifier** (Go). Reads `pumps:latest` from Redis, sends Telegram alerts on new
+  pump episodes, and records successful point-in-time deliveries in Postgres. A
+  Postgres measurement failure is retried from an AOF-backed Redis outbox and never
+  causes a duplicate Telegram alert.
 
 ### UI
 
@@ -52,8 +54,9 @@ Exchanges (REST tickers)
 Analytics (Python, ccxt polling)
     |
 pumps:latest (Redis)
+    +----> Notifier (Telegram + app.pump_alert_deliveries)
     |
-api-gateway ticker (scoreSignals)
+    +----> api-gateway ticker (scoreSignals)
     |
 signals:{base} (Redis)   score 0-10, verdict, computed_at, components
     |
@@ -74,7 +77,10 @@ On-demand measurement report (Python, read-only)
 
 | Key                                                  | Owner       | TTL     | Schema / purpose                                                        |
 | ---------------------------------------------------- | ----------- | ------- | ----------------------------------------------------------------------- |
-| `pumps:latest`                                       | analytics   | 300s    | `{ts, count, pumps: [...]}`                                             |
+| `pumps:latest`                                       | analytics   | 300s    | `{ts, published_at_ms, count, pumps: [...]}`                            |
+| `notifier:seen:{pump_event_id}`                      | notifier    | 30d     | `"1"`, de-dupes one threshold alert per durable pump episode            |
+| `notifier:alert_delivery_outbox`                     | notifier    | none    | AOF-backed retry list for Postgres alert-delivery measurements          |
+| `notifier:alert_delivery_dlq`                        | notifier    | none    | malformed alert-delivery measurements requiring inspection              |
 | `signals:{base}`                                     | api-gateway | 120s    | `{score, verdict, computed_at, components}`                             |
 | `trader:seen:{base}`                                 | execution   | 24h/30m | `"1"`, de-dupes signal handling                                         |
 | `execution:signal_readiness`                         | execution   | 180s    | latest trader tick: pumps, evaluated, ready, deferred, reason counts    |

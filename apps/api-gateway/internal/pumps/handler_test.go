@@ -1365,7 +1365,8 @@ func TestExchangeEntryPreservesUnavailableVolumeMetadata(t *testing.T) {
 		"exchange": "lbank",
 		"volume_24h_usd": null,
 		"volume_24h_source": "unavailable",
-		"ticker_timestamp_ms": 1800000000000
+		"ticker_timestamp_ms": 1800000000000,
+		"observed_at_ms": 1800000001000
 	}`)
 	var entry exchangeEntry
 
@@ -1381,6 +1382,34 @@ func TestExchangeEntryPreservesUnavailableVolumeMetadata(t *testing.T) {
 	}
 	if entry.TickerTimestampMS == nil || *entry.TickerTimestampMS != 1_800_000_000_000 {
 		t.Errorf("timestamp = %v, want 1800000000000", entry.TickerTimestampMS)
+	}
+	if entry.ObservedAtMS == nil || *entry.ObservedAtMS != 1_800_000_001_000 {
+		t.Errorf("observed_at = %v, want 1800000001000", entry.ObservedAtMS)
+	}
+}
+
+func TestHistoryEntryExposesExplicitPeakSemantics(t *testing.T) {
+	raw, err := json.Marshal(historyEntry{
+		PeakPct:            90,
+		Exchange24hHighPct: 90,
+		ObservedPeakPct:    68,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["peak_pct"] != 90.0 {
+		t.Errorf("legacy peak_pct = %v, want 90", payload["peak_pct"])
+	}
+	if payload["exchange_24h_high_pct"] != 90.0 {
+		t.Errorf("exchange_24h_high_pct = %v, want 90", payload["exchange_24h_high_pct"])
+	}
+	if payload["observed_peak_pct"] != 68.0 {
+		t.Errorf("observed_peak_pct = %v, want 68", payload["observed_peak_pct"])
 	}
 }
 

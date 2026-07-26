@@ -7,16 +7,19 @@ export interface ExchangeEntry {
   volume_24h_usd: number | null;
   volume_24h_source?: 'quote_volume' | 'unavailable';
   ticker_timestamp_ms?: number | null;
+  observed_at_ms?: number | null;
 }
 
 export interface PumpEntry {
   base: string;
+  pump_event_id: number;
   max_change_pct: number;
   exchanges: ExchangeEntry[];
 }
 
 export interface PumpsResponse {
   ts: number;
+  published_at_ms?: number;
   count: number;
   min_change_pct: number | null;
   pumps: PumpEntry[];
@@ -29,6 +32,8 @@ export interface HistoryEntry {
   first_seen_at: number;
   last_seen_at: number;
   peak_pct: number;
+  exchange_24h_high_pct: number;
+  observed_peak_pct: number;
   last_pct: number;
   is_live: boolean;
   exchanges: ExchangeEntry[];
@@ -41,6 +46,8 @@ export interface TokenEpisode {
   last_seen_at: number;
   closed_at: number | null;
   peak_pct: number;
+  exchange_24h_high_pct: number;
+  observed_peak_pct: number;
   last_pct: number;
   retrace_pct: number | null;
   is_live: boolean;

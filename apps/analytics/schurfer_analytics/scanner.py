@@ -133,6 +133,9 @@ async def _fetch(
                 "volume_24h_usd": volume_24h_usd,
                 "volume_24h_source": volume_24h_source,
                 "ticker_timestamp_ms": timestamp,
+                # Point-in-time fact: when Schurfer finished observing this venue's
+                # ticker batch. Unlike a rolling 24h high, this cannot be rebuilt.
+                "observed_at_ms": now_ms,
                 **instrument_metadata(name, sym, market),
             }
             if pct_f >= min_pct:
@@ -262,9 +265,12 @@ async def run_once(
 
 async def publish(batch: ScanBatch, min_pct: float, rdb: aioredis.Redis) -> None:
     """Atomically replace pumps:latest with a fully attributed scan batch."""
+    published_at_ms = int(time.time() * 1000)
     payload = json.dumps(
         {
-            "ts": int(time.time() * 1000),
+            # Keep ts for old consumers; published_at_ms names the event precisely.
+            "ts": published_at_ms,
+            "published_at_ms": published_at_ms,
             "count": len(batch.pumps),
             "min_change_pct": min_pct,
             "pumps": batch.pumps,

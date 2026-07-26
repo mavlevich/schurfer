@@ -3,6 +3,7 @@ package notifier
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -12,6 +13,25 @@ import (
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
 )
+
+type stubAlertRecorder struct {
+	deliveries []alertDelivery
+	err        error
+	closed     bool
+}
+
+func (r *stubAlertRecorder) Record(_ context.Context, delivery alertDelivery) error {
+	r.deliveries = append(r.deliveries, delivery)
+	return r.err
+}
+
+func (r *stubAlertRecorder) Close() {
+	r.closed = true
+}
+
+func int64Ptr(value int64) *int64 {
+	return &value
+}
 
 func newTestNotifier(t *testing.T, mr *miniredis.Miniredis, botToken, chatID string) *Notifier {
 	t.Helper()
@@ -136,6 +156,143 @@ func TestTick_SuccessfulAlertMarksSeen(t *testing.T) {
 	}
 }
 
+func TestTick_SuccessfulAlertRecordsPointInTimeDelivery(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer srv.Close()
+
+	orig := _telegramAPI
+	_telegramAPI = srv.URL + "/%s/sendMessage"
+	defer func() { _telegramAPI = orig }()
+
+	mr := miniredis.RunT(t)
+	n := newTestNotifier(t, mr, "tok", "cid")
+	n.cfg.MinPct = 60
+	recorder := &stubAlertRecorder{}
+	n.recorder = recorder
+	publishedAtMS := time.Now().Add(-2 * time.Second).UnixMilli()
+	observedAtMS := publishedAtMS - 1_000
+	tickerAtMS := observedAtMS - 500
+
+	setPumpsPayload(t, mr, payload{
+		PublishedAtMS: publishedAtMS,
+		Scanned:       []string{"binance"},
+		Pumps: []pump{{
+			Base:         "BTC",
+			PumpEventID:  42,
+			MaxChangePct: 65.0,
+			Exchanges: []exchange{{
+				Exchange:          "binance",
+				ChangePct:         65.0,
+				Price:             "100",
+				High24h:           "110",
+				VolumeUSD:         volumeUSD(1_000_000),
+				TickerTimestamp:   int64Ptr(tickerAtMS),
+				ScannerObservedAt: int64Ptr(observedAtMS),
+			}},
+		}},
+	})
+
+	if err := n.tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(recorder.deliveries) != 1 {
+		t.Fatalf("deliveries = %d, want 1", len(recorder.deliveries))
+	}
+	got := recorder.deliveries[0]
+	if got.EventID != 42 || got.Base != "BTC" || got.Exchange != "binance" {
+		t.Errorf("unexpected identity: %+v", got)
+	}
+	if got.ThresholdPct != 60 || got.ObservedChangePct != 65 {
+		t.Errorf("unexpected threshold/change: %+v", got)
+	}
+	if got.ScannerObservedAt.UnixMilli() != observedAtMS {
+		t.Errorf("scanner observed = %d, want %d", got.ScannerObservedAt.UnixMilli(), observedAtMS)
+	}
+	if got.ScanPublishedAt.UnixMilli() != publishedAtMS {
+		t.Errorf("published = %d, want %d", got.ScanPublishedAt.UnixMilli(), publishedAtMS)
+	}
+	if got.TickerAt == nil || got.TickerAt.UnixMilli() != tickerAtMS {
+		t.Errorf("ticker = %v, want %d", got.TickerAt, tickerAtMS)
+	}
+	if !mr.Exists(redisKeySeenPfx + "42") {
+		t.Error("event-scoped seen key should be set")
+	}
+	if mr.Exists(redisKeySeenPfx + "BTC") {
+		t.Error("base-scoped seen key should not be used when event id is present")
+	}
+	if mr.Exists(redisKeyAlertOutbox) {
+		t.Error("successful database write must not enqueue an outbox item")
+	}
+}
+
+func TestTick_MeasurementFailureDoesNotDuplicateDeliveredAlert(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	orig := _telegramAPI
+	_telegramAPI = srv.URL + "/%s/sendMessage"
+	defer func() { _telegramAPI = orig }()
+
+	mr := miniredis.RunT(t)
+	n := newTestNotifier(t, mr, "tok", "cid")
+	recorder := &stubAlertRecorder{err: errors.New("database unavailable")}
+	n.recorder = recorder
+	setPumpsPayload(t, mr, payload{
+		Scanned: []string{"binance"},
+		Pumps: []pump{{
+			Base:         "BTC",
+			PumpEventID:  42,
+			MaxChangePct: 65.0,
+			Exchanges:    []exchange{{Exchange: "binance", ChangePct: 65.0}},
+		}},
+	})
+
+	if err := n.tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	if !mr.Exists(redisKeySeenPfx + "42") {
+		t.Error("successful Telegram delivery must remain seen when measurement persistence fails")
+	}
+	if got := n.rdb.LLen(context.Background(), redisKeyAlertOutbox).Val(); got != 1 {
+		t.Fatalf("outbox size = %d, want 1", got)
+	}
+
+	recorder.err = nil
+	n.drainAlertOutbox(context.Background())
+
+	if got := n.rdb.LLen(context.Background(), redisKeyAlertOutbox).Val(); got != 0 {
+		t.Fatalf("outbox size after recovery = %d, want 0", got)
+	}
+	if len(recorder.deliveries) != 2 {
+		t.Fatalf("record attempts = %d, want 2", len(recorder.deliveries))
+	}
+}
+
+func TestDrainAlertOutboxMovesMalformedPayloadToDLQ(t *testing.T) {
+	mr := miniredis.RunT(t)
+	n := newTestNotifier(t, mr, "tok", "cid")
+	n.recorder = &stubAlertRecorder{}
+	if _, err := mr.Push(redisKeyAlertOutbox, "{not-json"); err != nil {
+		t.Fatal(err)
+	}
+
+	n.drainAlertOutbox(context.Background())
+
+	if got := n.rdb.LLen(context.Background(), redisKeyAlertOutbox).Val(); got != 0 {
+		t.Fatalf("outbox size = %d, want 0", got)
+	}
+	if got := n.rdb.LLen(context.Background(), redisKeyAlertDLQ).Val(); got != 1 {
+		t.Fatalf("DLQ size = %d, want 1", got)
+	}
+}
+
 func TestTick_FailedAlertDoesNotMarkSeen(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
@@ -195,6 +352,34 @@ func TestTick_AlreadySeenSkipsAlert(t *testing.T) {
 
 	if requests > 0 {
 		t.Errorf("expected 0 alerts for already-seen token, got %d", requests)
+	}
+}
+
+func TestTick_LegacyBaseSeenKeySuppressesRolloutDuplicate(t *testing.T) {
+	calls, done := newTelegramCounter(t)
+	defer done()
+
+	mr := miniredis.RunT(t)
+	n := newTestNotifier(t, mr, "tok", "cid")
+	if err := mr.Set(redisKeySeenPfx+"BTC", "1"); err != nil {
+		t.Fatal(err)
+	}
+	setPumpsPayload(t, mr, payload{
+		Scanned: []string{"binance"},
+		Pumps: []pump{{
+			Base:         "BTC",
+			PumpEventID:  42,
+			MaxChangePct: 65,
+			Exchanges:    []exchange{{Exchange: "binance", ChangePct: 65}},
+		}},
+	})
+
+	if err := n.tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	if *calls != 0 {
+		t.Errorf("expected rollout compatibility key to suppress alert, got %d", *calls)
 	}
 }
 

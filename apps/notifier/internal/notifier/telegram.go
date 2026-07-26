@@ -62,7 +62,7 @@ func escapeMD(s string) string {
 }
 
 func formatAlert(p pump) string {
-	peak := peakPct(p.Exchanges)
+	high24h := high24hPct(p.Exchanges)
 
 	exParts := make([]string, 0, len(p.Exchanges))
 	for i, e := range p.Exchanges {
@@ -73,8 +73,8 @@ func formatAlert(p pump) string {
 	}
 
 	line2 := fmt.Sprintf("vol %s", escapeMD(formatTotalVolume(p.Exchanges)))
-	if peak > p.MaxChangePct {
-		line2 += fmt.Sprintf(" · peak %s", escapeMD(fmt.Sprintf("+%.1f%%", peak)))
+	if high24h > p.MaxChangePct {
+		line2 += fmt.Sprintf(" · 24h high %s", escapeMD(fmt.Sprintf("+%.1f%%", high24h)))
 	}
 
 	return fmt.Sprintf("%s *%s* %s\n%s\n%s",
@@ -120,21 +120,25 @@ func pumpEmoji(pct float64) string {
 	}
 }
 
-func peakPct(exchanges []exchange) float64 {
+func high24hPct(exchanges []exchange) float64 {
 	best := 0.0
 	for _, e := range exchanges {
-		price, err1 := strconv.ParseFloat(e.Price, 64)
-		high, err2 := strconv.ParseFloat(e.High24h, 64)
-		if err1 != nil || err2 != nil || price <= 0 || high <= 0 || e.ChangePct <= -100 {
-			continue
-		}
-		open := price / (1 + e.ChangePct/100)
-		pct := (high/open - 1) * 100
+		pct := exchangeHigh24hPct(e)
 		if pct > best {
 			best = pct
 		}
 	}
 	return math.Round(best*100) / 100
+}
+
+func exchangeHigh24hPct(e exchange) float64 {
+	price, err1 := strconv.ParseFloat(e.Price, 64)
+	high, err2 := strconv.ParseFloat(e.High24h, 64)
+	if err1 != nil || err2 != nil || price <= 0 || high <= 0 || e.ChangePct <= -100 {
+		return 0
+	}
+	open := price / (1 + e.ChangePct/100)
+	return math.Round(((high/open)-1)*10_000) / 100
 }
 
 func fmtVol(n float64) string {

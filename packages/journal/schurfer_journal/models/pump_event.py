@@ -10,6 +10,7 @@ from .base import Base
 if TYPE_CHECKING:
     from .funding_rate_snapshot import FundingRateSnapshot
     from .oi_snapshot import OiSnapshot
+    from .pump_alert_delivery import PumpAlertDelivery
     from .pump_event_snapshot import PumpEventSnapshot
     from .pump_event_source import PumpEventSource
 
@@ -39,6 +40,9 @@ class PumpEvent(Base):
     )
     sources: Mapped[list["PumpEventSource"]] = relationship(
         "PumpEventSource", back_populates="event", cascade="all, delete-orphan"
+    )
+    alert_deliveries: Mapped[list["PumpAlertDelivery"]] = relationship(
+        "PumpAlertDelivery", back_populates="event", cascade="all, delete-orphan"
     )
     oi_snapshots: Mapped[list["OiSnapshot"]] = relationship(
         "OiSnapshot", back_populates="event", cascade="all, delete-orphan"

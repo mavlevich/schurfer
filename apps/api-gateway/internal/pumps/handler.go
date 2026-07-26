@@ -55,32 +55,37 @@ type exchangeEntry struct {
 	Volume24hUSD      *float64 `json:"volume_24h_usd"`
 	Volume24hSource   string   `json:"volume_24h_source"`
 	TickerTimestampMS *int64   `json:"ticker_timestamp_ms"`
+	ObservedAtMS      *int64   `json:"observed_at_ms"`
 }
 
 type pumpEntry struct {
 	Base         string          `json:"base"`
+	PumpEventID  int64           `json:"pump_event_id"`
 	MaxChangePct float64         `json:"max_change_pct"`
 	Exchanges    []exchangeEntry `json:"exchanges"`
 }
 
 type pumpsPayload struct {
-	TS           int64       `json:"ts"`
-	Count        int         `json:"count"`
-	MinChangePct *float64    `json:"min_change_pct"`
-	Pumps        []pumpEntry `json:"pumps"`
+	TS            int64       `json:"ts"`
+	PublishedAtMS int64       `json:"published_at_ms"`
+	Count         int         `json:"count"`
+	MinChangePct  *float64    `json:"min_change_pct"`
+	Pumps         []pumpEntry `json:"pumps"`
 }
 
 type historyEntry struct {
-	Base        string          `json:"base"`
-	Episode     int             `json:"episode"`
-	FirstSeenAt int64           `json:"first_seen_at"`
-	LastSeenAt  int64           `json:"last_seen_at"`
-	ClosedAt    *int64          `json:"closed_at"`
-	PeakPct     float64         `json:"peak_pct"`
-	LastPct     float64         `json:"last_pct"`
-	RetracePct  *float64        `json:"retrace_pct"`
-	IsLive      bool            `json:"is_live"`
-	Exchanges   json.RawMessage `json:"exchanges"`
+	Base               string          `json:"base"`
+	Episode            int             `json:"episode"`
+	FirstSeenAt        int64           `json:"first_seen_at"`
+	LastSeenAt         int64           `json:"last_seen_at"`
+	ClosedAt           *int64          `json:"closed_at"`
+	PeakPct            float64         `json:"peak_pct"` // backward-compatible legacy name
+	Exchange24hHighPct float64         `json:"exchange_24h_high_pct"`
+	ObservedPeakPct    float64         `json:"observed_peak_pct"`
+	LastPct            float64         `json:"last_pct"`
+	RetracePct         *float64        `json:"retrace_pct"`
+	IsLive             bool            `json:"is_live"`
+	Exchanges          json.RawMessage `json:"exchanges"`
 }
 
 type oiSnapshotEntry struct {
@@ -292,17 +297,25 @@ func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
 	until := parseUnixParam(q.Get("until"))
 
 	query := `
-		SELECT base, episode,
-		       extract(epoch from first_seen_at)::bigint,
-		       extract(epoch from last_seen_at)::bigint,
-		       extract(epoch from closed_at)::bigint,
-		       peak_pct, last_pct, retrace_pct, exchanges
-		FROM app.pump_events
-		WHERE ($1::text IS NULL OR exchanges @> jsonb_build_array(jsonb_build_object('exchange', $1::text)))
-		  AND ($2::bigint IS NULL OR extract(epoch from last_seen_at) >= $2)
-		  AND ($3::bigint IS NULL OR extract(epoch from first_seen_at) <= $3)
-		  AND (($2 IS NOT NULL OR $3 IS NOT NULL) OR last_seen_at > NOW() - INTERVAL '24 hours')
-		ORDER BY peak_pct DESC
+		SELECT e.base, e.episode,
+		       extract(epoch from e.first_seen_at)::bigint,
+		       extract(epoch from e.last_seen_at)::bigint,
+		       extract(epoch from e.closed_at)::bigint,
+		       e.peak_pct,
+		       e.peak_pct AS exchange_24h_high_pct,
+		       COALESCE(
+		         (SELECT MAX(s.peak_change_pct)
+		          FROM app.pump_event_sources s
+		          WHERE s.event_id = e.id),
+		         e.last_pct
+		       ) AS observed_peak_pct,
+		       e.last_pct, e.retrace_pct, e.exchanges
+		FROM app.pump_events e
+		WHERE ($1::text IS NULL OR e.exchanges @> jsonb_build_array(jsonb_build_object('exchange', $1::text)))
+		  AND ($2::bigint IS NULL OR extract(epoch from e.last_seen_at) >= $2)
+		  AND ($3::bigint IS NULL OR extract(epoch from e.first_seen_at) <= $3)
+		  AND (($2 IS NOT NULL OR $3 IS NOT NULL) OR e.last_seen_at > NOW() - INTERVAL '24 hours')
+		ORDER BY observed_peak_pct DESC
 		LIMIT 500`
 
 	rows, err := h.pool.Query(r.Context(), query,
@@ -331,7 +344,8 @@ func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
 		if err := rows.Scan(
 			&e.Base, &e.Episode,
 			&e.FirstSeenAt, &e.LastSeenAt, &e.ClosedAt,
-			&e.PeakPct, &e.LastPct, &e.RetracePct,
+			&e.PeakPct, &e.Exchange24hHighPct, &e.ObservedPeakPct,
+			&e.LastPct, &e.RetracePct,
 			&exJSON,
 		); err != nil {
 			slog.Error("pumps.history.scan", "err", err)
@@ -362,14 +376,22 @@ func (h *Handler) TokenHistory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rows, err := h.pool.Query(r.Context(), `
-		SELECT episode,
-		       extract(epoch from first_seen_at)::bigint,
-		       extract(epoch from last_seen_at)::bigint,
-		       extract(epoch from closed_at)::bigint,
-		       peak_pct, last_pct, retrace_pct, exchanges
-		FROM app.pump_events
-		WHERE base = $1
-		ORDER BY first_seen_at DESC
+		SELECT e.episode,
+		       extract(epoch from e.first_seen_at)::bigint,
+		       extract(epoch from e.last_seen_at)::bigint,
+		       extract(epoch from e.closed_at)::bigint,
+		       e.peak_pct,
+		       e.peak_pct AS exchange_24h_high_pct,
+		       COALESCE(
+		         (SELECT MAX(s.peak_change_pct)
+		          FROM app.pump_event_sources s
+		          WHERE s.event_id = e.id),
+		         e.last_pct
+		       ) AS observed_peak_pct,
+		       e.last_pct, e.retrace_pct, e.exchanges
+		FROM app.pump_events e
+		WHERE e.base = $1
+		ORDER BY e.first_seen_at DESC
 		LIMIT 100`, base)
 	if err != nil {
 		slog.Error("pumps.token_history.query", "base", base, "err", err)
@@ -393,7 +415,8 @@ func (h *Handler) TokenHistory(w http.ResponseWriter, r *http.Request) {
 		if err := rows.Scan(
 			&e.Episode,
 			&e.FirstSeenAt, &e.LastSeenAt, &e.ClosedAt,
-			&e.PeakPct, &e.LastPct, &e.RetracePct,
+			&e.PeakPct, &e.Exchange24hHighPct, &e.ObservedPeakPct,
+			&e.LastPct, &e.RetracePct,
 			&exJSON,
 		); err != nil {
 			slog.Error("pumps.token_history.scan", "err", err)
@@ -624,7 +647,8 @@ func scoreSignals(ep signalEpisode, currentOI, baselineOI, maxFunding float64) (
 		c.PumpAge.Note = fmt.Sprintf("early pump (%.1fh), may continue", ep.AgeHours)
 	}
 
-	// 2. Price extent (0-2 pts) — uses peak_pct as the high-water mark.
+	// 2. Price extent (0-2 pts) — retains the versioned legacy peak_pct
+	// (the maximum exchange-derived rolling 24h high observed for the episode).
 	c.PriceExtent = signalComponent{Value: ep.PeakPct, Max: 2}
 	switch {
 	case ep.PeakPct > priceExtentHighPct:

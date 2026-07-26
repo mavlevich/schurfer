@@ -22,7 +22,10 @@ func main() {
 func run() error {
 	cfg := loadConfig()
 
-	n := notifier.New(cfg)
+	n, err := notifier.New(context.Background(), cfg)
+	if err != nil {
+		return err
+	}
 	defer n.Close()
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -61,12 +64,13 @@ func loadConfig() notifier.Config {
 		}
 	}
 	return notifier.Config{
-		RedisAddr:  getEnv("REDIS_ADDR", "localhost:6379"),
-		BotToken:   os.Getenv("TELEGRAM_BOT_TOKEN"),
-		ChatID:     os.Getenv("TELEGRAM_CHAT_ID"),
-		Interval:   interval,
-		StaleAfter: staleAfter,
-		MinPct:     minPct,
+		RedisAddr:   getEnv("REDIS_ADDR", "localhost:6379"),
+		DatabaseURL: os.Getenv("DATABASE_URL"),
+		BotToken:    os.Getenv("TELEGRAM_BOT_TOKEN"),
+		ChatID:      os.Getenv("TELEGRAM_CHAT_ID"),
+		Interval:    interval,
+		StaleAfter:  staleAfter,
+		MinPct:      minPct,
 	}
 }
 
