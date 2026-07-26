@@ -1,5 +1,7 @@
-.PHONY: help install dev dev-init dev-stop dev-reset dev-logs dev-test migrate measurement-report exchange-coverage-report episode-replay virtual-strategy-report virtual-entry-challenger-report test lint format clean security deadcode check verify verify-docker \
+.PHONY: help install install-golangci-lint dev dev-init dev-stop dev-reset dev-logs dev-test migrate measurement-report exchange-coverage-report episode-replay virtual-strategy-report virtual-entry-challenger-report test lint ci-lint format clean security deadcode check verify verify-docker \
         prod-deploy prod-measurement-report prod-exchange-coverage-report prod-episode-replay prod-virtual-strategy-report prod-virtual-entry-challenger-report prod-logs prod-backup prod-restore-local prod-health
+
+GOLANGCI_LINT_VERSION = v2.1.6
 
 help:
 	@echo "Schurfer - common commands"
@@ -13,6 +15,7 @@ help:
 	@echo "  make dev-test   Smoke test dev environment"
 	@echo "  make test       Run all tests with coverage"
 	@echo "  make lint       Run all linters"
+	@echo "  make ci-lint    Run the exact all-files CI lint gate"
 	@echo "  make format     Format all code"
 	@echo "  make security   Run security scans"
 	@echo "  make deadcode   Detect unused code"
@@ -52,6 +55,11 @@ install:
 	@echo "-> Installing pre-commit hooks..."
 	pre-commit install
 	pre-commit install --hook-type commit-msg
+	@$(MAKE) install-golangci-lint
+
+install-golangci-lint:
+	@echo "-> Installing golangci-lint $(GOLANGCI_LINT_VERSION)..."
+	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 
 dev-init:
 	@test ! -f .env || (echo ".env already exists, skipping" && exit 0)
@@ -144,6 +152,10 @@ lint:
 	@echo "-> Running pre-commit on all files..."
 	pre-commit run --all-files
 
+ci-lint:
+	@echo "-> Running the exact all-files CI lint gate..."
+	SKIP=no-commit-to-branch pre-commit run --all-files
+
 format:
 	@echo "-> Ruff format..."
 	uv run --extra dev ruff format .
@@ -197,23 +209,25 @@ check: lint test security
 	@echo "-> All checks passed"
 
 verify:
-	@echo "=== [1/5] uv lock check ==="
+	@echo "=== [1/6] CI-equivalent all-files lint ==="
+	$(MAKE) ci-lint
+	@echo "=== [2/6] uv lock check ==="
 	uv lock --check
-	@echo "=== [2/5] Python: ruff + mypy + pytest ==="
+	@echo "=== [3/6] Python: ruff + mypy + pytest ==="
 	uv run --extra dev ruff check apps/analytics apps/execution packages
 	MYPYPATH=apps/analytics:packages/journal uv run --extra dev --with sqlalchemy --with psycopg mypy apps/analytics/schurfer_analytics apps/analytics/tests packages/journal/schurfer_journal
 	uv run --extra dev --all-packages mypy apps/execution/schurfer_execution
 	uv run --extra dev --with ccxt --with greenlet --with redis --with sqlalchemy --with structlog --with "psycopg[binary]" pytest apps/analytics -q
 	uv run --extra dev --with sqlalchemy --with alembic --with "psycopg[binary]" pytest packages/journal -q
 	uv run --extra dev --all-packages pytest apps/execution/tests -q
-	@echo "=== [3/5] Go: test + vet ==="
+	@echo "=== [4/6] Go: test + vet ==="
 	go test ./apps/api-gateway/... ./apps/collector/... ./apps/notifier/...
 	go vet ./apps/api-gateway/... ./apps/collector/... ./apps/notifier/...
-	@echo "=== [4/5] Web: lint + typecheck + build ==="
+	@echo "=== [5/6] Web: lint + typecheck + build ==="
 	pnpm --filter @schurfer/web lint
 	pnpm --filter @schurfer/web typecheck
 	pnpm --filter @schurfer/web build
-	@echo "=== [5/5] Compose config ==="
+	@echo "=== [6/6] Compose config ==="
 	docker compose --env-file .env.ci -f infra/docker/docker-compose.dev.yml config --quiet
 	@echo "=== verify passed ==="
 
