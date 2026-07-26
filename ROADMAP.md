@@ -1,6 +1,6 @@
 # Roadmap
 
-> Living document. Updated as we progress. Last refreshed 2026-07-23.
+> Living document. Updated as we progress. Last refreshed 2026-07-26.
 
 ## Guiding principle
 
@@ -82,6 +82,16 @@ lightweight dataset-health visibility remains operational follow-up.
       and observation count. Report unique discoveries, overlap, and lead time by
       venue. Do not retain every raw ticker: the source crossing timestamp is the
       non-recoverable fact required to decide whether broader coverage is valuable.
+- [ ] Make CEX alert latency and peak semantics measurable before tuning scan speed.
+      Preserve exchange-ticker time, scanner observation time, threshold-crossing
+      time, notification time, first observed change, and highest change actually
+      observed by Schurfer. Label the exchange-derived rolling value as `24h high`,
+      not `peak`. Decouple a fast Redis-only notifier loop from the broad exchange
+      scan interval, then promote active candidates into a bounded 1-to-5-second hot
+      set using targeted polling or websockets. Use explicit WATCH, HOT, NEW_HIGH,
+      and RETRACE transitions instead of one 24-hour seen flag. Do not increase
+      whole-market REST frequency until rate-limit and host-load measurements support
+      it.
 - [ ] Canonical instrument identity. A ticker is a display label, not an asset key:
       exchanges can retain disabled markets or reuse symbols for unrelated tokens.
       Persist the exchange market id/type, ticker timestamp, and listing/onboard date;
@@ -175,6 +185,19 @@ lightweight dataset-health visibility remains operational follow-up.
     - taken and won, or taken and lost
     - skipped and would-have-won (missed edge), or skipped and correctly avoided
 
+    The experiment boundary is locked in
+    [episode replay protocol v1](docs/research/episode-replay-protocol-v1.md): direct
+    episode attribution, complete chronological paths, a 50-episode descriptive look,
+    a 100-episode/30-cluster first formal cohort, cluster-bootstrap confidence
+    intervals, Holm correction for challenger families, strict point-in-time features,
+    and a code/data provenance manifest.
+    - [x] Baseline vertical slice: deterministic one-trade-per-episode selection,
+          exact-anchor 5-minute paths, production dynamic exits, conservative
+          within-bar ordering, explicit fee/funding/slippage costs, taken-vs-skipped
+          classifications, and a versioned Markdown/JSON manifest. Entry is modeled at
+          the next complete 5-minute bar open; statistical inference and challengers
+          remain separate follow-ups.
+
   - [ ] Derive recoverable pre-decision candle features (including blow-off concentration
         and reversal strength) from fully closed OHLCV and test whether they separate
         outcomes before promoting either to a live gate or score component.
@@ -200,6 +223,38 @@ lightweight dataset-health visibility remains operational follow-up.
     for old decisions use a crude slippage assumption, while decisions made after the
     liquidity snapshot ships get realistic fills; treat vanished OHLCV (delisted
     tokens) as "outcome unknown", which is itself a delisting-short signal.
+
+- [ ] DEX narrative radar (shadow-only research track). Measure whether unofficial
+      tokens created around major company, IPO, listing, or news events contain a
+      tradeable signal. This is a separate strategy and dataset from the CEX
+      pump-short model; no wallet or automatic execution is part of the first
+      version.
+  - [ ] Start with Solana and Base. Discover new contracts from point-in-time feeds,
+        initially using the
+        [Birdeye new-listing API](https://docs.birdeye.so/reference/get-defi-v2-tokens-new_listing)
+        within its free allowance and the
+        [DEX Screener API](https://docs.dexscreener.com/api/reference) for pair
+        enrichment. Identify assets by `chain + contract + pair`; names and tickers
+        are narrative features, never identity keys.
+  - [ ] Persist every eligible listing from discovery, not only later top gainers.
+        Record source/event provenance, pair age, price, liquidity, FDV, transaction
+        and unique-trader flow, buy/sell volume, holder/deployer concentration,
+        contract authorities, security/sell-simulation verdicts, executable quote,
+        estimated price impact, and data-source timestamps. Retain explicit missing
+        and unsupported statuses.
+  - [ ] Resolve point-in-time outcomes at short launch horizons and through 24 hours:
+        executable return after fees/slippage, MFE/MAE, liquidity drawdown, rug or
+        sell-failure status, and time to peak. Treat removed liquidity and untradeable
+        exits as losses rather than silently dropping them.
+  - [ ] Pre-register a small family of hypotheses before reading results: narrative
+        match alone, minimum-liquidity/organic-flow filters, first pullback plus
+        renewed acceleration, and later CEX-perpetual shortability. Top-gainer tables
+        are discovery examples only because they contain survivorship and
+        non-executable-price bias.
+  - [ ] Run shadow collection first, then quote-based paper execution with no wallet.
+        Consider an isolated tiny-capital experiment only after an out-of-sample
+        cohort shows positive net expectancy, acceptable liquidity-loss tail risk,
+        and reproducible results under a versioned manifest.
 
 - [ ] Backtest v0 for pump-shorts and delisting-shorts, with explicit blind spots
       (survivorship, look-ahead, no historical spreads). The output is an estimate

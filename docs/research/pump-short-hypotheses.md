@@ -8,21 +8,28 @@ an explanation to whatever the numbers happen to show.
 
 Rules:
 
+- The locked go/no-go thresholds, cohort boundary, multiple-comparison rule, temporal
+  invariants, and reproducibility requirements live in
+  [episode replay protocol v1](episode-replay-protocol-v1.md). If this register and the
+  protocol differ, the protocol governs confirmatory claims.
 - An observation is a fact from data or code. A hypothesis is a claim we have not
   proven. Keep them separate.
 - Do not change production config on a hypothesis. Test it as a virtual challenger on
   the same recorded decisions first (see the outcome resolver / virtual-variants work).
 - Decisions about a new champion are made on **eligible** situations (candidates that
-  passed the gates), not on all decisions, and only after enough of them: a first look
-  at ~50, a champion switch at ~100-200. Current sample (8 paper trades) is anecdote.
-- **Cohort cutoff:** the first eight paper trades and all decisions through 2026-07-21
-  are discovery-only. Each experiment manifest sets a later UTC start before its
-  outcomes are queried, plus a terminal rule (fixed episode count or end date). Do not
-  extend the window after seeing results.
-- **Unit of inference:** a token-episode (`features.signal.episode.id`), not an individual
-  decision or trade. Replay all decisions inside an episode chronologically so each
-  variant still observes the real score/gate/seen-TTL sequence, then aggregate outcomes
-  and confidence intervals by episode. Repeated decisions are not independent N.
+  passed the gates), not on all decisions. A first directional look is allowed at 50
+  eligible episodes; the first formal analysis is locked to 100 eligible episodes and
+  the diversity/CI rules in the protocol. Current sample (8 paper trades) is anecdote.
+- **Cohort cutoff:** the first eight paper trades and all decisions through
+  `2026-07-25T23:59:59.999999Z` are discovery-only. The first confirmatory cohort
+  starts at `2026-07-26T00:00:00Z`. Each experiment manifest also locks its exclusive
+  data cutoff before outcomes are queried.
+- **Unit of inference:** a token-episode (the direct `pump_event_id` foreign key), not
+  an individual decision or trade. Replay all decisions inside an episode
+  chronologically so each variant still observes the real score/gate/seen-TTL
+  sequence, then aggregate outcomes and confidence intervals by episode. Repeated
+  decisions are not independent N; repeated episodes of the same asset are clustered
+  as specified by the protocol.
 - **Status:** this is a hypotheses register. The generic outcome windows are locked by
   `forward_v1` (15m, 30m, 1h, 4h, 8h, 24h, 72h, 7d). The taken-vs-skipped join, costs,
   exit simulation, and exact challenger manifests are locked in the next virtual-replay
