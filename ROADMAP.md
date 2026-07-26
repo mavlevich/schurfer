@@ -340,12 +340,34 @@ measurement, replay, or production reliability. The executable task set lives in
       confirms spot fallback is insufficient. If no supported contract-history
       endpoint exists, use durable scanner-derived candles inside Schurfer
       ([CCXT-003](docs/tasks/ccxt/003-lbank-perpetual-ohlcv-research.md)).
-- [ ] Upstream LBank swap ticker timestamp normalization as a small independent
+- [x] Upstream LBank swap ticker timestamp normalization as a small independent
       parser PR. The public contract response exposes second-based `lastTime`, while
       CCXT 4.5.58 leaves unified `timestamp` empty. Keep exchange-reported zero
       volume unchanged upstream; Schurfer owns the nullable/unavailable presentation
-      policy
+      policy. Merged as
+      [ccxt/ccxt#29303](https://github.com/ccxt/ccxt/pull/29303)
       ([CCXT-004](docs/tasks/ccxt/004-lbank-swap-ticker-timestamp.md)).
+- [x] Restore CCXT's development Docker image on Apple Silicon without mixing in
+      unrelated cleanup. The focused fix replaces the x64-only .NET package feed,
+      updates the stale editable Python install, and validates both ARM64 and AMD64.
+      Merged as
+      [ccxt/ccxt#29305](https://github.com/ccxt/ccxt/pull/29305)
+      ([CCXT-005](docs/tasks/ccxt/005-apple-silicon-development-image.md)).
+- [ ] After the Apple Silicon correctness fix is resolved, measure image size, cold
+      and warm build time, and layer composition before proposing any Docker
+      optimization. Submit only focused changes with repeatable before-and-after
+      evidence
+      ([CCXT-006](docs/tasks/ccxt/006-docker-image-optimization-research.md)).
+- [ ] Research .NET installer reproducibility and integrity separately from Docker
+      performance. Pin an SDK patch, verify the installer, or use an official image
+      stage only if the change improves the current threat model without silently
+      freezing security updates
+      ([CCXT-007](docs/tasks/ccxt/007-dotnet-installer-hardening-research.md)).
+- [ ] Reproduce LBank swap `fetchTrades` invalid-pair failures against current
+      `master`. Propose a focused routing/parser fix only if an official public
+      contract-trades endpoint provides stable unified fields; otherwise record the
+      exchange limitation
+      ([CCXT-008](docs/tasks/ccxt/008-lbank-swap-trades-research.md)).
 
 ### Phase 3: Live ladder (gated on proven edge)
 
