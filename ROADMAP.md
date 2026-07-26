@@ -46,6 +46,9 @@ proven. Post-MVP strategy and exit improvements live in the exit-strategy notes.
   order placement, risk chain (trading_enabled, pnl_ready, daily_loss,
   max_positions, duplicate, max_size, margin), Redis distributed lock, signal
   trader that reads `signals:{base}` with a freshness check, paper and DRY_RUN mode.
+  Dry-run market clients cover the same 17 venues as the scanner; authenticated
+  trading clients are isolated from public measurement clients so account and
+  position loops do not query credential-free clients.
 - Safety hardening: exchange-native stop-loss (reduce-only stop-market on entry),
   durable daily PnL (`journal:pending_close` retry marker, `risk:pnl_ready` positive
   lease, idempotent `close_trade`, Postgres as the source of truth), position

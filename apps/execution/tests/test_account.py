@@ -250,7 +250,7 @@ def _close_request(cfg: Config, rdb: MagicMock) -> MagicMock:
     req = MagicMock()
     req.app.state.cfg = cfg
     req.app.state.rdb = rdb
-    req.app.state.exchanges = {}
+    req.app.state.trading_exchanges = {}
     return req
 
 

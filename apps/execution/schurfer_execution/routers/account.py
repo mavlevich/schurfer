@@ -28,7 +28,7 @@ router = APIRouter()
 
 @router.get("/balance")
 async def get_balance(request: Request) -> dict[str, Any]:
-    balances = await fetch_balance(request.app.state.exchanges)
+    balances = await fetch_balance(request.app.state.trading_exchanges)
     total_usdt = sum(
         b["total"]
         for b in balances
@@ -46,7 +46,7 @@ async def get_balance(request: Request) -> dict[str, Any]:
 
 @router.get("/positions")
 async def get_positions(request: Request) -> dict[str, Any]:
-    positions, _ = await fetch_positions(request.app.state.exchanges)
+    positions, _ = await fetch_positions(request.app.state.trading_exchanges)
     return {"positions": positions, "count": len(positions)}
 
 
@@ -56,7 +56,7 @@ async def manual_close_position(body: CloseBody, request: Request) -> dict[str, 
     rdb = request.app.state.rdb
 
     result = await close_position(
-        exchanges=request.app.state.exchanges,
+        exchanges=request.app.state.trading_exchanges,
         exchange=body.exchange,
         base=body.base,
         reason="manual",
@@ -124,7 +124,7 @@ async def get_risk(request: Request) -> dict[str, Any]:
     cfg: Config = request.app.state.cfg
     rdb = request.app.state.rdb
 
-    positions, _ = await fetch_positions(request.app.state.exchanges)
+    positions, _ = await fetch_positions(request.app.state.trading_exchanges)
     daily_pnl = float(await rdb.get(DAILY_PNL_KEY) or 0)
     # Mirrors the fail-closed default in orders.place_order.
     trading_enabled = (await rdb.get(TRADING_ENABLED_KEY) or b"0").decode()
