@@ -11,7 +11,7 @@ from fastapi import FastAPI
 
 from .config import Config
 from .decisions import _REDIS_SOCKET_TIMEOUT_SECONDS, run_decision_writer
-from .exchanges import build_exchanges, close_exchanges
+from .exchanges import build_exchange_clients, close_exchange_clients
 from .monitor import run_position_monitor
 from .paper import run_paper_monitor
 from .routers import account, control, orders
@@ -45,20 +45,25 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         socket_timeout=_HOT_PATH_SOCKET_TIMEOUT_SECONDS,
         socket_connect_timeout=5.0,
     )
-    exchanges: dict[str, Any] = build_exchanges(cfg)
+    clients = build_exchange_clients(cfg)
+    market_exchanges: dict[str, Any] = clients.market
+    trading_exchanges: dict[str, Any] = clients.trading
+    strategy_exchanges = clients.strategy_clients(dry_run=cfg.dry_run)
 
     app.state.cfg = cfg
     app.state.rdb = rdb
-    app.state.exchanges = exchanges
+    app.state.trading_exchanges = trading_exchanges
 
-    tracker = asyncio.create_task(run_pnl_tracker(exchanges, rdb, cfg.db_url))
-    monitor = asyncio.create_task(run_position_monitor(exchanges, rdb, cfg))
+    tracker = asyncio.create_task(run_pnl_tracker(trading_exchanges, rdb, cfg.db_url))
+    monitor = asyncio.create_task(run_position_monitor(trading_exchanges, rdb, cfg))
     trader = (
-        asyncio.create_task(run_signal_trader(exchanges, rdb, cfg))
+        asyncio.create_task(run_signal_trader(strategy_exchanges, rdb, cfg))
         if cfg.auto_trade or cfg.dry_run
         else None
     )
-    paper = asyncio.create_task(run_paper_monitor(exchanges, rdb, cfg)) if cfg.dry_run else None
+    paper = (
+        asyncio.create_task(run_paper_monitor(market_exchanges, rdb, cfg)) if cfg.dry_run else None
+    )
     # The decision writer does long blocking XREADGROUP reads, so it gets its own client
     # with a socket timeout above the BLOCK window. Keeping it separate leaves the trading
     # hot path fail-fast instead of inheriting the writer's longer timeout.
@@ -73,7 +78,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         dec_writer = asyncio.create_task(run_decision_writer(writer_rdb, cfg.db_url))
     log.info(
         "execution.start",
-        exchanges=list(exchanges.keys()),
+        market_exchanges=list(market_exchanges),
+        trading_exchanges=list(trading_exchanges),
         auto_trade=cfg.auto_trade,
         dry_run=cfg.dry_run,
     )
@@ -102,7 +108,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     if dec_writer:
         with contextlib.suppress(asyncio.CancelledError):
             await dec_writer
-    await close_exchanges(exchanges)
+    await close_exchange_clients(clients)
     await rdb.aclose()
     if writer_rdb is not None:
         await writer_rdb.aclose()

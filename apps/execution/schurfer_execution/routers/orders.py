@@ -33,7 +33,7 @@ class OrderRequest(BaseModel):
 @router.post("/order")
 async def post_order(req: OrderRequest, request: Request) -> dict[str, Any]:
     cfg = request.app.state.cfg
-    exchanges = request.app.state.exchanges
+    exchanges = request.app.state.trading_exchanges
 
     if req.exchange not in exchanges:
         raise HTTPException(status_code=400, detail=f"exchange {req.exchange!r} not configured")

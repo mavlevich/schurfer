@@ -17,6 +17,9 @@ The web UI is behind a login with no public exposure.
 - **execution** (Python, FastAPI, ccxt). Reads pump scores from Redis with a
   freshness check, runs risk checks, places and closes orders on exchanges, monitors
   open positions for TP, SL, and max-hold, and exposes manual control endpoints.
+  Public dry-run market clients cover the scanner's 17 venues, while account,
+  position, and order paths receive only separately constructed authenticated
+  clients.
 - **collector** (Go). Streams Bybit websocket tickers (including bid and ask) and
   publishes them to NATS `market.bybit.ticker.*`. This is a prototype and is not
   wired in yet. Nothing subscribes and nothing persists the stream. The scanner uses
@@ -54,7 +57,7 @@ api-gateway ticker (scoreSignals)
     |
 signals:{base} (Redis)   score 0-10, verdict, computed_at, components
     |
-Execution signal trader (freshness checked, when AUTO_TRADE=true)
+Execution signal trader (freshness checked, DRY_RUN or AUTO_TRADE)
     |
 Risk checks
     |
@@ -74,6 +77,7 @@ On-demand measurement report (Python, read-only)
 | `pumps:latest`                                       | analytics   | 300s    | `{ts, count, pumps: [...]}`                                             |
 | `signals:{base}`                                     | api-gateway | 120s    | `{score, verdict, computed_at, components}`                             |
 | `trader:seen:{base}`                                 | execution   | 24h/30m | `"1"`, de-dupes signal handling                                         |
+| `execution:signal_readiness`                         | execution   | 180s    | latest trader tick: pumps, evaluated, ready, deferred, reason counts    |
 | `trading:enabled`                                    | execution   | no TTL  | `"true"/"false"`, kill switch                                           |
 | `trading:daily_pnl`                                  | execution   | none    | float string (USD), monitoring cache                                    |
 | `risk:pnl_ready`                                     | execution   | 120s    | `"1"`, positive lease. Absent or stale means trading is blocked         |

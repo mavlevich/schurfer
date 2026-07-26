@@ -1,7 +1,12 @@
 # execution
 
 Python/FastAPI service for exchange account management and order execution.
-Uses ccxt for authenticated exchange interactions.
+Uses isolated ccxt client scopes:
+
+- public market clients cover the scanner's 17 venues during `DRY_RUN`;
+- authenticated trading clients exist only for exchanges with complete API credentials.
+
+Account, position, and order paths never receive public-only clients.
 
 ## Endpoints
 
@@ -14,7 +19,8 @@ Uses ccxt for authenticated exchange interactions.
 
 ## Configuration
 
-All settings via environment variables. Only exchanges with API keys set are active.
+All settings use environment variables. API keys activate authenticated trading
+clients; they are not required for public dry-run measurement.
 
 ```
 REDIS_ADDR=localhost:6379
