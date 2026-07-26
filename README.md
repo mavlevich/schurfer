@@ -163,6 +163,7 @@ GET  /healthz                        service health check
 make verify       # full pre-PR gate: lint, types, tests, build, compose config
 make test         # run all tests (Python + Go + TS)
 make lint         # run all linters via pre-commit
+make ci-lint      # run the exact all-files lint gate used by GitHub Actions
 make format       # auto-format Python, Go, TypeScript
 make security     # pip-audit + govulncheck + pnpm audit
 make dev-logs     # tail all service logs

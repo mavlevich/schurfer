@@ -65,7 +65,7 @@ repos:
 
   # golangci-lint uses language: system (official recommendation, see
   # https://golangci-lint.run/welcome/install/#pre-commit).
-  # Required: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.1.6
+  # `make install` installs the version pinned in the root Makefile.
   # Runs from the module dir because golangci-lint v2 cannot resolve ./...
   # from a directory that is not listed in go.work.
   - repo: local
@@ -79,8 +79,11 @@ repos:
         require_serial: true
 
   # --- TypeScript / JavaScript ---
-  - repo: https://github.com/pre-commit/mirrors-prettier
-    rev: v4.0.0-alpha.8
+  # Use the workspace-locked stable Prettier instead of a second formatter version.
+  - repo: local
     hooks:
       - id: prettier
+        name: prettier
+        language: system
+        entry: pnpm exec prettier --write
         types_or: [javascript, jsx, ts, tsx, json, yaml, markdown, css]
