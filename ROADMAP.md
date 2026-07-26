@@ -101,49 +101,52 @@ lightweight dataset-health visibility remains operational follow-up.
         delivered pump events, whichever takes longer. The durable source is
         `app.pump_alert_deliveries`; `app.pump_event_sources` contains the later
         highest change actually observed for the same event/venue. Check component
-        p50/p95 rather than only the total:
-
-        ```bash
-        docker exec schurfer-postgres psql -U schurfer -d schurfer -c "
-        SELECT
-          count(*) AS alerts,
-          percentile_cont(0.5) WITHIN GROUP (
-            ORDER BY EXTRACT(EPOCH FROM (scan_published_at-scanner_observed_at))*1000
-          ) AS scan_publish_p50_ms,
-          percentile_cont(0.95) WITHIN GROUP (
-            ORDER BY EXTRACT(EPOCH FROM (scan_published_at-scanner_observed_at))*1000
-          ) AS scan_publish_p95_ms,
-          percentile_cont(0.5) WITHIN GROUP (
-            ORDER BY EXTRACT(EPOCH FROM (notification_started_at-scan_published_at))*1000
-          ) AS notifier_pickup_p50_ms,
-          percentile_cont(0.95) WITHIN GROUP (
-            ORDER BY EXTRACT(EPOCH FROM (notification_started_at-scan_published_at))*1000
-          ) AS notifier_pickup_p95_ms,
-          percentile_cont(0.95) WITHIN GROUP (
-            ORDER BY EXTRACT(EPOCH FROM (notification_sent_at-notification_started_at))*1000
-          ) AS telegram_send_p95_ms,
-          percentile_cont(0.95) WITHIN GROUP (
-            ORDER BY EXTRACT(EPOCH FROM (scanner_observed_at-ticker_at))*1000
-          ) FILTER (WHERE ticker_at IS NOT NULL) AS ticker_age_p95_ms,
-          percentile_cont(0.95) WITHIN GROUP (
-            ORDER BY EXTRACT(EPOCH FROM (notification_sent_at-scanner_observed_at))*1000
-          ) AS end_to_end_p95_ms
-        FROM app.pump_alert_deliveries;"
-
-        docker exec schurfer-redis redis-cli LLEN notifier:alert_delivery_outbox
-        docker exec schurfer-redis redis-cli LLEN notifier:alert_delivery_dlq
-        ```
-
-        Keep both Redis lengths at zero in steady state. If notifier pickup dominates,
-        shorten only its Redis loop first; if scanner observation/publication dominates,
-        build the bounded HOT polling set; if ticker age dominates, investigate the
-        venue adapter. Record the baseline cutoff before deploying any speed change.
+        p50/p95 rather than only the total. Use the verification commands directly
+        below this checklist.
 
   - [ ] Decouple a fast Redis-only notifier loop from the broad exchange scan interval,
         then promote active candidates into a bounded 1-to-5-second hot set using
         targeted polling or websockets. Use explicit WATCH, HOT, NEW_HIGH, and RETRACE
         transitions. Do not increase whole-market REST frequency until rate-limit and
         host-load measurements support it.
+
+Latency baseline verification commands:
+
+```bash
+docker exec schurfer-postgres psql -U schurfer -d schurfer -c "
+SELECT
+  count(*) AS alerts,
+  percentile_cont(0.5) WITHIN GROUP (
+    ORDER BY EXTRACT(EPOCH FROM (scan_published_at-scanner_observed_at))*1000
+  ) AS scan_publish_p50_ms,
+  percentile_cont(0.95) WITHIN GROUP (
+    ORDER BY EXTRACT(EPOCH FROM (scan_published_at-scanner_observed_at))*1000
+  ) AS scan_publish_p95_ms,
+  percentile_cont(0.5) WITHIN GROUP (
+    ORDER BY EXTRACT(EPOCH FROM (notification_started_at-scan_published_at))*1000
+  ) AS notifier_pickup_p50_ms,
+  percentile_cont(0.95) WITHIN GROUP (
+    ORDER BY EXTRACT(EPOCH FROM (notification_started_at-scan_published_at))*1000
+  ) AS notifier_pickup_p95_ms,
+  percentile_cont(0.95) WITHIN GROUP (
+    ORDER BY EXTRACT(EPOCH FROM (notification_sent_at-notification_started_at))*1000
+  ) AS telegram_send_p95_ms,
+  percentile_cont(0.95) WITHIN GROUP (
+    ORDER BY EXTRACT(EPOCH FROM (scanner_observed_at-ticker_at))*1000
+  ) FILTER (WHERE ticker_at IS NOT NULL) AS ticker_age_p95_ms,
+  percentile_cont(0.95) WITHIN GROUP (
+    ORDER BY EXTRACT(EPOCH FROM (notification_sent_at-scanner_observed_at))*1000
+  ) AS end_to_end_p95_ms
+FROM app.pump_alert_deliveries;"
+
+docker exec schurfer-redis redis-cli LLEN notifier:alert_delivery_outbox
+docker exec schurfer-redis redis-cli LLEN notifier:alert_delivery_dlq
+```
+
+Keep both Redis lengths at zero in steady state. If notifier pickup dominates,
+shorten only its Redis loop first; if scanner observation/publication dominates,
+build the bounded HOT polling set; if ticker age dominates, investigate the venue
+adapter. Record the baseline cutoff before deploying any speed change.
 
 - [ ] Canonical instrument identity. A ticker is a display label, not an asset key:
       exchanges can retain disabled markets or reuse symbols for unrelated tokens.
