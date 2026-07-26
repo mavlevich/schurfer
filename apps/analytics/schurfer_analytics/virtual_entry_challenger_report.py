@@ -12,6 +12,13 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from statistics import fmean
 
+from .entry_challenger_inference import (
+    DEFAULT_INFERENCE_SETTINGS,
+    ENTRY_INFERENCE_VERSION,
+    EntryChallengerInference,
+    InferenceEpisode,
+    build_entry_challenger_inference,
+)
 from .episode_replay import PROTOCOL_VERSION
 from .outcomes import RESOLVER_VERSION
 from .replay import (
@@ -54,7 +61,7 @@ from .virtual_strategy import (
     simulate_episode_at_entry,
 )
 
-ENTRY_CHALLENGER_REPORT_VERSION = "virtual_entry_challenger_report_v1"
+ENTRY_CHALLENGER_REPORT_VERSION = "virtual_entry_challenger_report_v2"
 ENTRY_CHALLENGER_MARKET_PATH_VERSION = "ccxt_5m_exact_anchor_entry_context_v1"
 ENTRY_CHALLENGER_COHORT_START = datetime(2026, 7, 29, tzinfo=UTC)
 
@@ -83,6 +90,11 @@ class EntryChallengerManifest:
     exit_model_version: str
     cost_model_version: str
     market_path_version: str
+    inference_version: str
+    bootstrap_iterations: int
+    bootstrap_seed: int
+    bootstrap_confidence_level: float
+    holm_family_alpha: float
     code_revision: str
     working_tree_dirty: bool
     generated_at: datetime
@@ -103,7 +115,8 @@ class EntryChallengerManifest:
     eligibility_policy: str = "baseline_episode_eligibility_held_constant"
     liquidity_slippage_policy: str = "baseline_decision_snapshot_held_constant"
     within_bar_policy: str = "conservative_stop_first"
-    report_scope: str = "descriptive_paired_no_statistical_verdict"
+    formal_sample_policy: str = "first_100_eligible_episodes_chronological"
+    report_scope: str = "formal_inference_when_ready_shadow_only"
 
 
 @dataclass(frozen=True)
@@ -169,6 +182,7 @@ class EntryChallengerReport:
     variant_metrics: tuple[EntryVariantMetrics, ...]
     paired_comparisons: tuple[PairedComparison, ...]
     challenger_results: tuple[ChallengerEpisodeResult, ...]
+    inference: EntryChallengerInference
     market_paths: tuple[MarketPath, ...]
 
 
@@ -455,6 +469,33 @@ def build_entry_challenger_report(
         for variant in ENTRY_VARIANTS
     )
     baseline_by_event = {trade.pump_event_id: trade for trade in baseline_trades}
+    result_by_event_variant = {
+        (result.pump_event_id, result.variant_key): result for result in results
+    }
+    inference = build_entry_challenger_inference(
+        tuple(
+            InferenceEpisode(
+                pump_event_id=episode.pump_event_id,
+                cluster_key=episode.cluster_key,
+                baseline_return_pct=(
+                    baseline.net_return_pct
+                    if (baseline := baseline_by_event[episode.pump_event_id]).status == "complete"
+                    else None
+                ),
+                challenger_returns_pct=tuple(
+                    (
+                        variant.key,
+                        result_by_event_variant[
+                            (episode.pump_event_id, variant.key)
+                        ].episode_net_return_pct,
+                    )
+                    for variant in ENTRY_VARIANTS
+                ),
+            )
+            for episode in dataset.eligible_episodes
+        ),
+        tuple(variant.key for variant in ENTRY_VARIANTS),
+    )
     metric_pairs = tuple(
         _metrics(variant, results, baseline_by_event) for variant in ENTRY_VARIANTS
     )
@@ -474,6 +515,11 @@ def build_entry_challenger_report(
             exit_model_version=EXIT_MODEL_VERSION,
             cost_model_version=COST_MODEL_VERSION,
             market_path_version=ENTRY_CHALLENGER_MARKET_PATH_VERSION,
+            inference_version=ENTRY_INFERENCE_VERSION,
+            bootstrap_iterations=DEFAULT_INFERENCE_SETTINGS.iterations,
+            bootstrap_seed=DEFAULT_INFERENCE_SETTINGS.seed,
+            bootstrap_confidence_level=DEFAULT_INFERENCE_SETTINGS.confidence_level,
+            holm_family_alpha=DEFAULT_INFERENCE_SETTINGS.family_alpha,
             code_revision=revision,
             working_tree_dirty=working_tree_dirty,
             generated_at=generated_at,
@@ -497,6 +543,7 @@ def build_entry_challenger_report(
         variant_metrics=tuple(pair[0] for pair in metric_pairs),
         paired_comparisons=tuple(pair[1] for pair in metric_pairs),
         challenger_results=results,
+        inference=inference,
         market_paths=paths,
     )
 
@@ -521,8 +568,11 @@ def render_markdown(report: EntryChallengerReport) -> str:
             f" <= decision < {manifest.dataset_until_exclusive.isoformat()}"
         ),
         "",
-        "> Descriptive paired replay only. It does not apply confidence intervals,",
-        "> Holm correction, select a champion, or change production configuration.",
+        (
+            "> Formal inference status: "
+            f"`{report.inference.readiness.status}`. "
+            "No result changes production configuration or authorizes real trading."
+        ),
         "",
         "## Registered family",
         "",
@@ -563,6 +613,17 @@ def render_markdown(report: EntryChallengerReport) -> str:
                 ("Exit", manifest.exit_model_version),
                 ("Costs", manifest.cost_model_version),
                 ("Market path", manifest.market_path_version),
+                ("Inference", manifest.inference_version),
+                ("Cluster bootstrap", report.inference.bootstrap_version),
+                ("Multiple comparisons", report.inference.holm_version),
+                ("Seed derivation", report.inference.seed_derivation),
+                ("Bootstrap iterations", manifest.bootstrap_iterations),
+                ("Bootstrap seed", manifest.bootstrap_seed),
+                (
+                    "Bootstrap confidence",
+                    format_percentage(manifest.bootstrap_confidence_level * 100),
+                ),
+                ("Holm family alpha", format_number(manifest.holm_family_alpha)),
                 ("Eligibility", manifest.eligibility_policy),
                 ("Liquidity slippage", manifest.liquidity_slippage_policy),
                 ("Within-bar ambiguity", manifest.within_bar_policy),
@@ -577,6 +638,19 @@ def render_markdown(report: EntryChallengerReport) -> str:
                 ("Dataset episodes", report.dataset_episodes),
                 ("Eligible episodes", report.eligible_episodes),
                 ("Excluded episodes", report.excluded_episodes),
+                (
+                    "Formal sample episodes",
+                    report.inference.readiness.formal_sample_episodes,
+                ),
+                (
+                    "Formal sample clusters",
+                    report.inference.readiness.formal_sample_clusters,
+                ),
+                (
+                    "Completely paired formal episodes",
+                    report.inference.readiness.completely_paired_episodes,
+                ),
+                ("Inference readiness", report.inference.readiness.status),
             ],
         )
     )
@@ -663,6 +737,96 @@ def render_markdown(report: EntryChallengerReport) -> str:
                     row.unchanged_episodes,
                 )
                 for row in report.paired_comparisons
+            ],
+        )
+    )
+    lines.extend(["", "## Formal cluster inference", ""])
+    if report.inference.baseline is None:
+        lines.extend(
+            [
+                (
+                    "_Formal intervals are withheld until the locked first 100 "
+                    "eligible episodes are complete, fully resolved, and contain "
+                    "at least 30 asset clusters._"
+                )
+            ]
+        )
+    else:
+        baseline = report.inference.baseline
+        lines.extend(
+            markdown_table(
+                (
+                    "Strategy",
+                    "N",
+                    "Clusters",
+                    "Mean net",
+                    "95% lower",
+                    "95% upper",
+                    "Min leave-one-out",
+                    "Verdict",
+                ),
+                [
+                    (
+                        baseline.strategy_key,
+                        baseline.estimate.episodes,
+                        baseline.estimate.clusters,
+                        format_percentage(baseline.estimate.point_estimate),
+                        format_percentage(baseline.estimate.lower_bound),
+                        format_percentage(baseline.estimate.upper_bound),
+                        format_percentage(baseline.minimum_leave_one_cluster_out_pct),
+                        baseline.verdict,
+                    )
+                ],
+            )
+        )
+        lines.extend(["", "### Registered challengers", ""])
+        lines.extend(
+            markdown_table(
+                (
+                    "Variant",
+                    "Own mean",
+                    "Own 95% lower",
+                    "Own 95% upper",
+                    "Paired delta",
+                    "Familywise lower",
+                    "Familywise upper",
+                    "Raw p",
+                    "Holm adjusted p",
+                    "Min leave-one-out",
+                    "Verdict",
+                ),
+                [
+                    (
+                        row.variant_key,
+                        format_percentage(row.strategy.estimate.point_estimate),
+                        format_percentage(row.strategy.estimate.lower_bound),
+                        format_percentage(row.strategy.estimate.upper_bound),
+                        format_percentage(row.paired.estimate.point_estimate),
+                        format_percentage(row.paired.familywise_lower_bound),
+                        format_percentage(row.paired.familywise_upper_bound),
+                        format_number(row.paired.raw_p_value, decimals=4),
+                        format_number(
+                            row.paired.holm_adjusted_p_value,
+                            decimals=4,
+                        ),
+                        format_percentage(row.strategy.minimum_leave_one_cluster_out_pct),
+                        row.verdict,
+                    )
+                    for row in report.inference.challengers
+                ],
+            )
+        )
+    lines.extend(["", "## Formal sample cluster concentration", ""])
+    lines.extend(
+        markdown_table(
+            ("Cluster", "Episodes", "Share"),
+            [
+                (
+                    row.cluster_key,
+                    row.episodes,
+                    format_percentage(row.share_pct),
+                )
+                for row in report.inference.cluster_concentration[:10]
             ],
         )
     )

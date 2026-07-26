@@ -119,10 +119,14 @@ first query:
 - a missing candle, venue path, or cost input is unresolved and excluded from the
   paired comparison rather than silently treated as no entry.
 
-The three challengers are one multiple-comparison family. Their descriptive paired
-deltas may be inspected during development, but promotion requires the separate
-cluster-bootstrap and Holm-correction layer plus the protocol's sample and diversity
-thresholds.
+The three challengers are one multiple-comparison family. Their formal inference uses
+the exact first 100 chronological eligible episodes, at least 30 asset clusters,
+10,000 deterministic whole-cluster bootstrap iterations, null-centered paired tests
+with Holm correction at family alpha 0.05, conservative 98.333...% Bonferroni paired
+intervals, and leave-one-out sensitivity for the five most frequent clusters. Formal
+intervals and verdicts are withheld until the locked sample is completely resolved.
+Passing these checks creates a live-shadow candidate only; it does not alter production
+entry settings.
 
 Primary metric: net expectancy after costs.
 Secondary: initial-SL rate, average loss, MFE, missed winners, eligible-entry count.

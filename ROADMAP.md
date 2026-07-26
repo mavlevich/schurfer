@@ -262,8 +262,7 @@ adapter. Record the baseline cutoff before deploying any speed change.
           Use six fully closed 5-minute candles, a one-bar execution gap, and at most a
           60-minute wait; preserve the baseline exit and cost models. Treat no
           confirmation as a zero-return cash episode and missing path data as
-          unresolved. The dedicated cohort begins at `2026-07-29T00:00:00Z`; paired
-          deltas remain descriptive until cluster bootstrap and Holm correction ship.
+          unresolved. The dedicated cohort begins at `2026-07-29T00:00:00Z`.
           Delayed variants hold the decision-time liquidity impact constant because
           their historical entry books are unrecoverable; a future live shadow cohort
           must validate actual delayed-entry execution quality. Baseline episode
@@ -271,6 +270,14 @@ adapter. Record the baseline cutoff before deploying any speed change.
           market-quality gates cannot be reconstructed from the current dataset; this
           report isolates entry timing rather than claiming an end-to-end strategy
           replay.
+    - [x] Formal entry-challenger inference: lock the first 100 chronological eligible
+          episodes, require 30 asset clusters and complete paired resolution, resample
+          whole clusters for 10,000 deterministic iterations, report 95% expectancy
+          intervals, apply null-centered paired tests with Holm correction to the
+          three registered challengers, require a positive conservative 98.333...%
+          Bonferroni paired interval, and run leave-one-out sensitivity over the five
+          most frequent clusters. Formal values are withheld before readiness; a pass
+          produces only a live-shadow candidate.
     - [ ] Entry-challenger verification after merge:
       - Data sources: `app.trade_decisions` and `app.pump_events` define chronological
         episodes; `app.trade_decision_outcomes` supplies the required exact-anchor 8h
@@ -294,14 +301,16 @@ adapter. Record the baseline cutoff before deploying any speed change.
           > backups/reports/entry-challengers-2026-08-03.json
         ```
 
-      - Check `eligible_episodes`, input exclusions, `paired_resolved`, unresolved
-        paths, trade rate, mean episode net return, paired mean delta, initial-SL rate,
-        mean wait, avoided losing entries, and missed baseline winners. Investigate
-        missing exact-anchor paths or cost inputs instead of dropping them. Do not
-        change production entry settings from this descriptive report: first
-        directional reading is 50 episodes; formal evaluation is 100 episodes, at least
-        30 clusters, cluster-bootstrap confidence intervals, Holm correction, and
-        top-cluster sensitivity. Even a passing result advances only to live shadow so
+      - Check `eligible_episodes`, locked formal sample IDs, input exclusions,
+        `completely_paired_episodes`, unresolved paths, cluster concentration, trade
+        rate, mean episode net return, paired mean delta, initial-SL rate, mean wait,
+        avoided losing entries, and missed baseline winners. Investigate missing
+        exact-anchor paths or cost inputs instead of dropping or replacing them.
+        At 50 episodes only the descriptive directional reading is available. Formal
+        evaluation requires the locked first 100 episodes, at least 30 clusters,
+        complete resolution, 95% cluster-bootstrap expectancy intervals, Holm-adjusted
+        paired tests, positive conservative familywise paired bounds, and top-five
+        cluster sensitivity. Even a passing result advances only to live shadow so
         delayed-entry spread/depth/impact can be measured at the actual confirmation.
 
   - [ ] Derive recoverable pre-decision candle features (including blow-off concentration
