@@ -7,10 +7,13 @@ from schurfer_analytics.exchange_registry import DEFAULT_EXCHANGES, EXCHANGE_FAC
 from schurfer_analytics.scanner import (
     MAX_TICKER_AGE_MS,
     MAX_TICKER_FUTURE_SKEW_MS,
+    MEASUREMENT_REDIS_KEY,
+    PUBLIC_REDIS_KEY,
     REDIS_KEY,
     REDIS_TTL,
     ScanBatch,
     _aggregate_below_updates,
+    _at_or_above,
     _dedup,
     _fetch,
     _ticker_timestamp_ms,
@@ -62,6 +65,37 @@ def test_default_exchanges_match_registered_factories(monkeypatch: pytest.Monkey
 
     assert Config().exchanges == list(DEFAULT_EXCHANGES)
     assert tuple(EXCHANGE_FACTORIES) == DEFAULT_EXCHANGES
+
+
+def test_scanner_thresholds_default_to_measurement_below_entry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for key in ("PUMP_MEASUREMENT_MIN_PCT", "PUMP_ENTRY_MIN_PCT", "PUMP_MIN_PCT"):
+        monkeypatch.delenv(key, raising=False)
+
+    cfg = Config()
+
+    assert cfg.measurement_min_pct == 20
+    assert cfg.entry_min_pct == 30
+
+
+def test_scanner_rejects_measurement_floor_above_entry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("PUMP_MEASUREMENT_MIN_PCT", "40")
+    monkeypatch.setenv("PUMP_ENTRY_MIN_PCT", "30")
+
+    with pytest.raises(ValueError, match="PUMP_MEASUREMENT_MIN_PCT"):
+        Config()
+
+
+def test_legacy_pump_min_pct_remains_an_entry_floor_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("PUMP_ENTRY_MIN_PCT", raising=False)
+    monkeypatch.setenv("PUMP_MIN_PCT", "35")
+
+    assert Config().entry_min_pct == 35
 
 
 @pytest.mark.parametrize("name", NEW_EXCHANGES)
@@ -374,22 +408,54 @@ def test_tracked_pumps_empty_when_all_live() -> None:
 
 async def test_publish_stores_fully_attributed_batch() -> None:
     rdb = AsyncMock()
+    pump = _dedup([_entry("BTC", "binance", 50.0)])[0]
+    pump["pump_event_id"] = 42
     batch = ScanBatch(
-        pumps=[{"base": "BTC", "pump_event_id": 42, "max_change_pct": 50.0, "exchanges": []}],
+        pumps=[pump],
         errors={"okx": "timeout"},
         below_updates={},
         tracked_pumps=[],
         scanned=("binance",),
     )
 
-    await publish(batch, 30.0, rdb)
+    await publish(batch, 20.0, 30.0, rdb)
 
-    rdb.set.assert_awaited_once()
-    key, raw = rdb.set.await_args.args
-    assert key == REDIS_KEY
-    assert rdb.set.await_args.kwargs == {"ex": REDIS_TTL}
-    payload = json.loads(raw)
-    assert payload["pumps"][0]["pump_event_id"] == 42
-    assert payload["published_at_ms"] == payload["ts"]
-    assert payload["scanned"] == ["binance"]
-    assert payload["errors"] == {"okx": "timeout"}
+    rdb.eval.assert_awaited_once()
+    script, key_count, measurement_key, public_key, measurement_raw, public_raw, ttl = (
+        rdb.eval.await_args.args
+    )
+    assert "redis.call('SET'" in script
+    assert key_count == 2
+    assert measurement_key == MEASUREMENT_REDIS_KEY
+    assert public_key == PUBLIC_REDIS_KEY == REDIS_KEY
+    assert ttl == REDIS_TTL
+
+    measurement = json.loads(measurement_raw)
+    public = json.loads(public_raw)
+    assert measurement["pumps"][0]["pump_event_id"] == 42
+    assert measurement["min_change_pct"] == 20
+    assert measurement["entry_min_change_pct"] == 30
+    assert measurement["published_at_ms"] == measurement["ts"]
+    assert measurement["scanned"] == ["binance"]
+    assert measurement["errors"] == {"okx": "timeout"}
+    assert public["pumps"][0]["pump_event_id"] == 42
+    assert public["min_change_pct"] == 30
+
+
+def test_public_feed_filter_preserves_measurement_feed_and_entry_semantics() -> None:
+    pumps = _dedup(
+        [
+            _entry("CROSS", "binance", 35.0),
+            _entry("CROSS", "bybit", 25.0),
+            _entry("MEASURE", "mexc", 22.0),
+        ]
+    )
+    pumps[0]["measurement_total_volume"] = 123_456
+
+    public = _at_or_above(pumps, 30.0)
+
+    assert [pump["base"] for pump in public] == ["CROSS"]
+    assert [row["exchange"] for row in public[0]["exchanges"]] == ["binance"]
+    assert "measurement_total_volume" not in public[0]
+    assert len(pumps) == 2
+    assert len(pumps[0]["exchanges"]) == 2

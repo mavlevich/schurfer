@@ -602,12 +602,14 @@ type signalComponents struct {
 }
 
 type signalEpisode struct {
-	ID          int64   `json:"id"`
-	FirstSeenAt int64   `json:"first_seen_at"`
-	AgeHours    float64 `json:"age_hours"`
-	PeakPct     float64 `json:"peak_pct"`
-	LastPct     float64 `json:"last_pct"`
-	IsOpen      bool    `json:"is_open"`
+	ID               int64   `json:"id"`
+	FirstSeenAt      int64   `json:"first_seen_at"`
+	EntryQualifiedAt *int64  `json:"entry_qualified_at"`
+	StrategyAnchorAt int64   `json:"strategy_anchor_at"`
+	AgeHours         float64 `json:"age_hours"`
+	PeakPct          float64 `json:"peak_pct"`
+	LastPct          float64 `json:"last_pct"`
+	IsOpen           bool    `json:"is_open"`
 }
 
 // signalDataQuality reports which data sources were successfully fetched.
@@ -842,20 +844,38 @@ func (h *Handler) Stats(w http.ResponseWriter, r *http.Request) {
 const signalsCacheKey = "signals:"
 const signalsCacheTTL = 2 * time.Minute
 
+func signalStrategyAnchorAt(firstSeenAt int64, entryQualifiedAt *int64) int64 {
+	if entryQualifiedAt != nil {
+		return *entryQualifiedAt
+	}
+	return firstSeenAt
+}
+
 // computeSignals queries the DB for an open pump episode and scores it.
 // Returns (result, false, nil) on success, (_, true, nil) when no open episode
 // exists, or (_, false, err) on a DB error.
 func (h *Handler) computeSignals(ctx context.Context, base string) (signalsResponse, bool, error) {
 	var eventID int64
 	var firstSeenAtUnix int64
+	var entryQualifiedAt *int64
 	var peakPct, lastPct float64
 	err := h.pool.QueryRow(ctx,
-		`SELECT id, extract(epoch from first_seen_at)::bigint, peak_pct, last_pct
+		`SELECT id,
+		        extract(epoch from first_seen_at)::bigint,
+		        extract(epoch from entry_qualified_at)::bigint,
+		        peak_pct,
+		        last_pct
 		 FROM app.pump_events
 		 WHERE base = $1 AND closed_at IS NULL
 		 LIMIT 1`,
 		base,
-	).Scan(&eventID, &firstSeenAtUnix, &peakPct, &lastPct)
+	).Scan(
+		&eventID,
+		&firstSeenAtUnix,
+		&entryQualifiedAt,
+		&peakPct,
+		&lastPct,
+	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return signalsResponse{}, true, nil
 	}
@@ -863,14 +883,19 @@ func (h *Handler) computeSignals(ctx context.Context, base string) (signalsRespo
 		return signalsResponse{}, false, err
 	}
 
-	ageHours := math.Round(time.Since(time.Unix(firstSeenAtUnix, 0)).Hours()*100) / 100
+	strategyAnchorAtUnix := signalStrategyAnchorAt(firstSeenAtUnix, entryQualifiedAt)
+	ageHours := math.Round(
+		time.Since(time.Unix(strategyAnchorAtUnix, 0)).Hours()*100,
+	) / 100
 	ep := signalEpisode{
-		ID:          eventID,
-		FirstSeenAt: firstSeenAtUnix,
-		AgeHours:    ageHours,
-		PeakPct:     peakPct,
-		LastPct:     lastPct,
-		IsOpen:      true,
+		ID:               eventID,
+		FirstSeenAt:      firstSeenAtUnix,
+		EntryQualifiedAt: entryQualifiedAt,
+		StrategyAnchorAt: strategyAnchorAtUnix,
+		AgeHours:         ageHours,
+		PeakPct:          peakPct,
+		LastPct:          lastPct,
+		IsOpen:           true,
 	}
 
 	var currentOI float64
@@ -889,10 +914,13 @@ func (h *Handler) computeSignals(ctx context.Context, base string) (signalsRespo
 	oiBaselineOK := h.pool.QueryRow(ctx,
 		`SELECT COALESCE(SUM(oi_usd), 0), COUNT(*) FROM (
 		   SELECT DISTINCT ON (exchange) oi_usd
-		   FROM app.oi_snapshots WHERE event_id = $1
+		   FROM app.oi_snapshots
+		   WHERE event_id = $1
+		     AND recorded_at >= to_timestamp($2)
 		   ORDER BY exchange, recorded_at ASC
 		 ) t`,
 		eventID,
+		strategyAnchorAtUnix,
 	).Scan(&baselineOI, &baselineOICount) == nil && baselineOICount > 0
 
 	oiOK := oiCurrentOK && oiBaselineOK

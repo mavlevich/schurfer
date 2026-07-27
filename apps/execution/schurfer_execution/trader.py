@@ -24,7 +24,8 @@ if TYPE_CHECKING:
 log = structlog.get_logger()
 
 _INTERVAL_SECONDS = 60
-_PUMPS_KEY = "pumps:latest"
+_MEASUREMENT_PUMPS_KEY = "pumps:measurement"
+_PUBLIC_PUMPS_KEY = "pumps:latest"
 _SIGNALS_KEY = "signals:{base}"
 _SIGNAL_READINESS_KEY = "execution:signal_readiness"
 _SIGNAL_READINESS_TTL = 180  # 3 trader ticks; absence means telemetry is stale
@@ -34,6 +35,7 @@ _SEEN_TTL_TRADED = 86400  # 24h — don't re-enter the same token after a trade
 _SEEN_TTL_SKIP = 1800  # 30min — recheck sooner when skipped
 _SEEN_TTL_ENTRY_WAIT = 300  # 5min — recheck after one 5m candle when entry quality fails
 _SEEN_TTL_SIGNAL_RETRY = 60  # transient signal cache/persistence race: retry next tick
+_SEEN_TTL_MEASUREMENT_RECHECK = 60  # detect crossing the entry floor on the next scan
 _SEEN_TTL_SCORE_RECHECK = 300  # a valid score can change on the next 5m candle
 _SIGNALS_MAX_AGE = 90  # reject cached score older than 1.5x ticker interval
 _ENTRY_CANDLE_TIMEOUT = 5
@@ -63,7 +65,10 @@ async def run_signal_trader(
 
 
 async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
-    raw = await rdb.get(_PUMPS_KEY)
+    raw = await rdb.get(_MEASUREMENT_PUMPS_KEY)
+    if not raw:
+        # Rolling-deploy compatibility until analytics publishes the private feed.
+        raw = await rdb.get(_PUBLIC_PUMPS_KEY)
     if not raw:
         await _publish_signal_readiness(rdb, pump_count=0, evaluated=0, ready=0)
         return
@@ -74,7 +79,16 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
         await _publish_signal_readiness(rdb, pump_count=0, evaluated=0, ready=0)
         return
 
-    log.debug("trader.tick", pump_count=len(pumps))
+    effective_entry_floor, entry_floor_valid = _effective_entry_floor(
+        pumps_data.get("entry_min_change_pct"),
+        cfg.entry_min_pct,
+    )
+    log.debug(
+        "trader.tick",
+        pump_count=len(pumps),
+        entry_min_pct=effective_entry_floor,
+        entry_floor_valid=entry_floor_valid,
+    )
     evaluated = 0
     ready = 0
     deferral_reasons: Counter[str] = Counter()
@@ -89,8 +103,21 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
             continue
 
         pump_event_id = _pump_event_id(pump)
+        pump_pct = _finite_float(pump.get("max_change_pct"))
+        measurement_reason: str | None = None
+        if not entry_floor_valid:
+            measurement_reason = "entry_floor_invalid"
+        elif pump_pct is None:
+            measurement_reason = "pump_change_unavailable"
+        elif pump_pct < effective_entry_floor:
+            measurement_reason = "pump_below_entry_floor"
         evaluated += 1
-        signal = await _fetch_signal(base, rdb, expected_pump_event_id=pump_event_id)
+        signal = await _fetch_signal(
+            base,
+            rdb,
+            expected_pump_event_id=pump_event_id,
+            require_entry_qualified=measurement_reason is None,
+        )
         score = signal.score
         if signal.status != "ok" or score is None or signal.payload is None:
             # A missing, stale, malformed, or previous-episode signal means the
@@ -113,10 +140,15 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
         # Per-decision measurement context is created only after all strategy inputs
         # are ready, so every durable row represents an actual evaluation.
         decision_id = str(uuid4())
-        pump_pct: float | None = pump.get("max_change_pct")
         exchange = _pick_exchange(pump.get("exchanges", []), exchanges)
         ex = exchanges.get(exchange) if exchange else None
-        features = _decision_features(signal, pump, cfg)
+        features = _decision_features(
+            signal,
+            pump,
+            cfg,
+            effective_entry_floor=effective_entry_floor,
+            measurement_only=measurement_reason is not None,
+        )
         decision_price = _decision_price(pump, exchange)
 
         # Order-book liquidity at decision time, captured for every candidate that
@@ -141,6 +173,33 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
             )
             liq = {"status": "sampled", **snap} if snap else {"status": "fetch_failed"}
             liq["quality"] = asdict(quality)
+
+        if measurement_reason is not None:
+            log.info(
+                "trader.measurement_only",
+                base=base,
+                reason=measurement_reason,
+                pump_pct=pump_pct,
+                entry_min_pct=effective_entry_floor,
+            )
+            await decisions.write_decision(
+                rdb,
+                base=base,
+                exchange=exchange or "",
+                action="skipped",
+                reason=measurement_reason,
+                score=score,
+                pump_pct=pump_pct,
+                decision_id=decision_id,
+                strategy_version=cfg.measurement_strategy_version,
+                features=features,
+                liquidity=liq,
+                price=decision_price,
+                pump_event_id=pump_event_id,
+                seen_key=seen_key,
+                seen_ttl=_SEEN_TTL_MEASUREMENT_RECHECK,
+            )
+            continue
 
         if not exchange:
             log.info("trader.skip.no_exchange", base=base)
@@ -691,6 +750,8 @@ async def _fetch_signal(
     base: str,
     rdb: Any,
     expected_pump_event_id: int | None = None,
+    *,
+    require_entry_qualified: bool = False,
 ) -> SignalResult:
     """Return a valid fresh signal or an explicit unavailable status.
 
@@ -718,8 +779,8 @@ async def _fetch_signal(
         return SignalResult(None, data, "signal_invalid_score")
     except KeyError:
         return SignalResult(None, data, "signal_missing_score")
+    episode = data.get("episode")
     if expected_pump_event_id is not None:
-        episode = data.get("episode")
         signal_pump_event_id = (
             _positive_int(episode.get("id")) if isinstance(episode, dict) else None
         )
@@ -731,6 +792,13 @@ async def _fetch_signal(
                 actual=signal_pump_event_id,
             )
             return SignalResult(None, data, "signal_episode_mismatch")
+    if require_entry_qualified:
+        entry_qualified_at = (
+            _positive_int(episode.get("entry_qualified_at")) if isinstance(episode, dict) else None
+        )
+        if entry_qualified_at is None:
+            log.info("trader.signal.entry_not_qualified", base=base)
+            return SignalResult(None, data, "signal_entry_not_qualified")
     # Freshness is a safety gate, so fail closed (return 0 = skip) whenever it cannot
     # be verified: a missing, non-numeric, or non-finite computed_at, a stale signal,
     # or a timestamp from the future (clock skew or junk).
@@ -762,6 +830,9 @@ def _decision_features(
     signal: SignalResult,
     pump: dict[str, Any],
     cfg: Config,
+    *,
+    effective_entry_floor: float,
+    measurement_only: bool,
 ) -> dict[str, Any]:
     """Full decision-input context stored on every decision.
 
@@ -772,8 +843,10 @@ def _decision_features(
     return {
         "signal": signal.payload,
         "signal_status": signal.status,
+        "measurement_only": measurement_only,
         "candidate_exchanges": pump.get("exchanges", []),
         "config": {
+            "entry_min_pct": effective_entry_floor,
             "score_threshold": cfg.score_threshold,
             "signal_leverage": cfg.signal_leverage,
             "signal_position_usd": cfg.signal_position_usd,
@@ -808,11 +881,31 @@ def _safe_float(v: Any) -> float:
     bottom. A corrupted or non-numeric field cannot raise and abort the whole trader
     tick, and NaN/Infinity (which float() accepts) cannot win the sort: both map to
     -inf so a valid entry always outranks a garbage one."""
+    value = _finite_float(v)
+    return value if value is not None else -math.inf
+
+
+def _finite_float(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
     try:
-        value = float(v)
+        parsed = float(value)
     except (TypeError, ValueError):
-        return -math.inf
-    return value if math.isfinite(value) else -math.inf
+        return None
+    return parsed if math.isfinite(parsed) else None
+
+
+def _effective_entry_floor(
+    published_floor: Any,
+    configured_floor: float,
+) -> tuple[float, bool]:
+    """Use the stricter floor and fail closed on an explicitly invalid feed value."""
+    if published_floor is None:
+        return configured_floor, True
+    parsed = _finite_float(published_floor)
+    if parsed is None or parsed <= 0 or parsed > 5_000:
+        return configured_floor, False
+    return max(configured_floor, parsed), True
 
 
 def _decision_price(pump: dict[str, Any], exchange: str | None) -> float | None:

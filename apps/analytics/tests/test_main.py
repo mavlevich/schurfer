@@ -8,7 +8,8 @@ from schurfer_analytics.scanner import ScanBatch
 def _config() -> SimpleNamespace:
     return SimpleNamespace(
         exchanges=["binance"],
-        min_pct=30.0,
+        measurement_min_pct=20.0,
+        entry_min_pct=30.0,
         interval=60,
         db_url="postgresql://test",
         redis_addr="redis:6379",
@@ -27,19 +28,34 @@ async def test_run_persists_and_attributes_before_publish() -> None:
         scanned=("binance",),
     )
 
-    async def persist(_db_url: str, _pumps: list[dict[str, object]]) -> dict[str, int]:
+    async def persist(
+        _db_url: str,
+        _pumps: list[dict[str, object]],
+        entry_min_pct: float,
+    ) -> dict[str, int]:
         events.append("persist")
+        assert entry_min_pct == 30
         return {"BTC": 42}
 
-    async def publish(published: ScanBatch, _min_pct: float, _rdb: object) -> None:
+    async def publish(
+        published: ScanBatch,
+        measurement_min_pct: float,
+        entry_min_pct: float,
+        _rdb: object,
+    ) -> None:
         events.append("publish")
         assert published.pumps[0]["pump_event_id"] == 42
+        assert measurement_min_pct == 20
+        assert entry_min_pct == 30
 
     with (
         patch("schurfer_analytics.main.Config", return_value=_config()),
         patch("schurfer_analytics.main.aioredis.from_url", return_value=rdb),
         patch("schurfer_analytics.main.get_tracked_bases", AsyncMock(return_value=frozenset())),
-        patch("schurfer_analytics.main.run_once", AsyncMock(return_value=batch)),
+        patch(
+            "schurfer_analytics.main.run_once",
+            AsyncMock(return_value=batch),
+        ) as run_once,
         patch("schurfer_analytics.main.upsert_pumps", side_effect=persist),
         patch("schurfer_analytics.main.publish", side_effect=publish),
         patch("schurfer_analytics.main.fetch_oi_for_pumps", AsyncMock(return_value=[])),
@@ -52,6 +68,7 @@ async def test_run_persists_and_attributes_before_publish() -> None:
         await _run(once=True)
 
     assert events == ["persist", "publish"]
+    run_once.assert_awaited_once_with(["binance"], 20.0, frozenset())
     rdb.aclose.assert_awaited_once()
 
 

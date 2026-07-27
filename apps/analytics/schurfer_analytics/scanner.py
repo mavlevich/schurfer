@@ -13,10 +13,19 @@ from .instruments import instrument_metadata
 
 log = structlog.get_logger()
 
-REDIS_KEY = "pumps:latest"
+PUBLIC_REDIS_KEY = "pumps:latest"
+MEASUREMENT_REDIS_KEY = "pumps:measurement"
+# Backward-compatible import for consumers/tests that only mean the public feed.
+REDIS_KEY = PUBLIC_REDIS_KEY
 REDIS_TTL = 300  # 5 min — expire if scanner crashes
 MAX_TICKER_AGE_MS = 15 * 60 * 1000
 MAX_TICKER_FUTURE_SKEW_MS = 5 * 60 * 1000
+
+_PUBLISH_SCRIPT = """
+redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[3])
+redis.call('SET', KEYS[2], ARGV[2], 'EX', ARGV[3])
+return 1
+"""
 
 
 @dataclass(frozen=True)
@@ -203,6 +212,31 @@ def _dedup(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return sorted(pumps, key=lambda p: p["max_change_pct"], reverse=True)
 
 
+def _at_or_above(
+    pumps: list[dict[str, Any]],
+    min_pct: float,
+) -> list[dict[str, Any]]:
+    """Filter a deduplicated pump feed without mutating its measurement rows."""
+    visible: list[dict[str, Any]] = []
+    for pump in pumps:
+        exchanges = [
+            exchange
+            for exchange in pump.get("exchanges", [])
+            if float(exchange["change_pct"]) >= min_pct
+        ]
+        if not exchanges:
+            continue
+        public_pump = {
+            "base": pump["base"],
+            "max_change_pct": max(float(row["change_pct"]) for row in exchanges),
+            "exchanges": exchanges,
+        }
+        if "pump_event_id" in pump:
+            public_pump["pump_event_id"] = pump["pump_event_id"]
+        visible.append(public_pump)
+    return visible
+
+
 async def run_once(
     exchange_names: list[str],
     min_pct: float,
@@ -263,25 +297,53 @@ async def run_once(
         )
 
 
-async def publish(batch: ScanBatch, min_pct: float, rdb: aioredis.Redis) -> None:
-    """Atomically replace pumps:latest with a fully attributed scan batch."""
+async def publish(
+    batch: ScanBatch,
+    measurement_min_pct: float,
+    entry_min_pct: float,
+    rdb: aioredis.Redis,
+) -> None:
+    """Atomically publish private measurement and public entry-floor feeds."""
     published_at_ms = int(time.time() * 1000)
-    payload = json.dumps(
+    common = {
+        # Keep ts for old consumers; published_at_ms names the event precisely.
+        "ts": published_at_ms,
+        "published_at_ms": published_at_ms,
+        "errors": batch.errors,
+        "scanned": list(batch.scanned),
+    }
+    measurement_payload = json.dumps(
         {
-            # Keep ts for old consumers; published_at_ms names the event precisely.
-            "ts": published_at_ms,
-            "published_at_ms": published_at_ms,
+            **common,
             "count": len(batch.pumps),
-            "min_change_pct": min_pct,
+            "min_change_pct": measurement_min_pct,
+            "entry_min_change_pct": entry_min_pct,
             "pumps": batch.pumps,
-            "errors": batch.errors,
-            "scanned": list(batch.scanned),
         }
     )
-    await rdb.set(REDIS_KEY, payload, ex=REDIS_TTL)
+    public_pumps = _at_or_above(batch.pumps, entry_min_pct)
+    public_payload = json.dumps(
+        {
+            **common,
+            "count": len(public_pumps),
+            "min_change_pct": entry_min_pct,
+            "pumps": public_pumps,
+        }
+    )
+    await rdb.eval(
+        _PUBLISH_SCRIPT,
+        2,
+        MEASUREMENT_REDIS_KEY,
+        PUBLIC_REDIS_KEY,
+        measurement_payload,
+        public_payload,
+        REDIS_TTL,
+    )
     log.info(
         "scanner.stored",
-        count=len(batch.pumps),
-        min_pct=min_pct,
+        measurement_count=len(batch.pumps),
+        public_count=len(public_pumps),
+        measurement_min_pct=measurement_min_pct,
+        entry_min_pct=entry_min_pct,
         failed=len(batch.errors),
     )

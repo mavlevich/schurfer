@@ -35,7 +35,8 @@ async def _run(once: bool) -> None:
     log.info(
         "scanner.starting",
         exchanges=cfg.exchanges,
-        min_pct=cfg.min_pct,
+        measurement_min_pct=cfg.measurement_min_pct,
+        entry_min_pct=cfg.entry_min_pct,
         interval=cfg.interval,
         db=bool(cfg.db_url),
     )
@@ -47,7 +48,11 @@ async def _run(once: bool) -> None:
             if cfg.db_url:
                 extra_bases = await get_tracked_bases(cfg.db_url)
 
-            batch = await run_once(cfg.exchanges, cfg.min_pct, extra_bases)
+            batch = await run_once(
+                cfg.exchanges,
+                cfg.measurement_min_pct,
+                extra_bases,
+            )
             if batch is None:
                 if once:
                     break
@@ -61,7 +66,11 @@ async def _run(once: bool) -> None:
             publish_ready = True
 
             if cfg.db_url and pumps:
-                episode_ids = await upsert_pumps(cfg.db_url, pumps)
+                episode_ids = await upsert_pumps(
+                    cfg.db_url,
+                    pumps,
+                    cfg.entry_min_pct,
+                )
                 expected_bases = {pump["base"] for pump in pumps}
                 publish_ready = episode_ids.keys() == expected_bases
                 if publish_ready:
@@ -78,7 +87,12 @@ async def _run(once: bool) -> None:
             # Publish only after all live pumps have durable episode ids. This closes
             # the race where api-gateway and execution saw a pump before its DB event.
             if publish_ready:
-                await publish(batch, cfg.min_pct, rdb)
+                await publish(
+                    batch,
+                    cfg.measurement_min_pct,
+                    cfg.entry_min_pct,
+                    rdb,
+                )
 
             if cfg.db_url:
                 if below_updates:

@@ -779,7 +779,7 @@ func TestScoreSignals(t *testing.T) {
 func TestSignalsHandler(t *testing.T) {
 	// episodeRow returns vals for the episode QueryRow (no is_open — always true for open episodes).
 	episodeRow := func(id, firstSeenAt int64, peakPct, lastPct float64) []any {
-		return []any{id, firstSeenAt, peakPct, lastPct}
+		return []any{id, firstSeenAt, ptr(firstSeenAt), peakPct, lastPct}
 	}
 
 	errRow := &stubRow{err: fmt.Errorf("db unavailable")}
@@ -1432,7 +1432,9 @@ func TestCacheSignals(t *testing.T) {
 					if episodeErr != nil {
 						return &stubRow{err: episodeErr}
 					}
-					return &stubRow{vals: []any{int64(42), firstSeenAt, 60.0, 58.0}}
+					return &stubRow{
+						vals: []any{int64(42), firstSeenAt, ptr(firstSeenAt), 60.0, 58.0},
+					}
 				case 2: // current OI
 					return &stubRow{vals: []any{float64(5_000_000), int64(3)}}
 				case 3: // baseline OI
@@ -1499,4 +1501,68 @@ func TestCacheSignals(t *testing.T) {
 			t.Error("stale signals:BEAT should have been deleted when no open episode")
 		}
 	})
+}
+
+func TestComputeSignalsUsesQualifiedAnchorForOIBaseline(t *testing.T) {
+	const firstSeenAt = int64(1_799_999_000)
+	const qualifiedAt = int64(1_800_000_000)
+	var call int
+	pool := &stubQuerier{
+		onQueryRow: func(_ context.Context, query string, args ...any) pgxRow {
+			call++
+			switch call {
+			case 1:
+				if strings.Contains(query, "COALESCE(entry_qualified_at, first_seen_at)") {
+					t.Fatalf("episode query aliases the strategy anchor as first_seen_at: %s", query)
+				}
+				return &stubRow{
+					vals: []any{int64(42), firstSeenAt, ptr(qualifiedAt), 60.0, 58.0},
+				}
+			case 2:
+				return &stubRow{vals: []any{float64(5_000_000), int64(1)}}
+			case 3:
+				if !strings.Contains(query, "recorded_at >= to_timestamp($2)") {
+					t.Fatalf("baseline query is not bounded by the strategy anchor: %s", query)
+				}
+				if len(args) != 2 || args[0] != int64(42) || args[1] != qualifiedAt {
+					t.Fatalf("unexpected baseline args: %v", args)
+				}
+				return &stubRow{vals: []any{float64(4_000_000), int64(1)}}
+			case 4:
+				return &stubRow{vals: []any{float64(0.003), int64(1)}}
+			default:
+				return &stubRow{err: fmt.Errorf("unexpected call %d", call)}
+			}
+		},
+	}
+
+	response, notFound, err := (&Handler{pool: pool}).computeSignals(
+		context.Background(),
+		"BEAT",
+	)
+	if err != nil || notFound {
+		t.Fatalf("computeSignals() notFound=%v err=%v", notFound, err)
+	}
+	if response.Episode.FirstSeenAt != firstSeenAt {
+		t.Fatalf("first_seen_at = %d, want %d", response.Episode.FirstSeenAt, firstSeenAt)
+	}
+	if response.Episode.StrategyAnchorAt != qualifiedAt {
+		t.Fatalf(
+			"strategy_anchor_at = %d, want %d",
+			response.Episode.StrategyAnchorAt,
+			qualifiedAt,
+		)
+	}
+}
+
+func TestSignalStrategyAnchorAt(t *testing.T) {
+	const firstSeenAt = int64(1_799_999_000)
+	const qualifiedAt = int64(1_800_000_000)
+
+	if got := signalStrategyAnchorAt(firstSeenAt, nil); got != firstSeenAt {
+		t.Fatalf("measurement anchor = %d, want %d", got, firstSeenAt)
+	}
+	if got := signalStrategyAnchorAt(firstSeenAt, ptr(qualifiedAt)); got != qualifiedAt {
+		t.Fatalf("qualified anchor = %d, want %d", got, qualifiedAt)
+	}
 }

@@ -97,7 +97,8 @@ TELEGRAM_BOT_TOKEN=<your bot token>
 TELEGRAM_CHAT_ID=<your chat or channel id>
 
 # Scanner tuning (optional, defaults shown)
-PUMP_MIN_PCT=30
+PUMP_MEASUREMENT_MIN_PCT=20
+PUMP_ENTRY_MIN_PCT=30
 SCAN_INTERVAL=60
 PUMP_EXCHANGES=binance,bybit,okx,gate,bitget,mexc,kucoin,bingx,coinex,phemex,cryptocom,htx,lbank,bitmart,xt,toobit,blofin
 
@@ -106,6 +107,7 @@ AUTO_TRADE=false
 SIGNAL_POSITION_USD=50
 SIGNAL_LEVERAGE=3
 SCORE_THRESHOLD=6
+MEASUREMENT_STRATEGY_VERSION=pump_short_measurement_v1
 ```
 
 ### 3. Start infrastructure

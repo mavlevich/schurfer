@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from schurfer_journal.models import PumpEvent, TradeDecision, TradeDecisionOutcome
-from sqlalchemy import and_, select
+from sqlalchemy import and_, case, func, select
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from .outcome_repository import async_database_url
@@ -37,7 +37,16 @@ def replay_inputs_statement(filters: ReplayFilters) -> Select[Any]:
             decisions.c.decision_id,
             decisions.c.pump_event_id,
             events.c.base.label("event_base"),
-            events.c.first_seen_at.label("event_first_seen_at"),
+            case(
+                (
+                    decisions.c.features["measurement_only"].as_boolean().is_(True),
+                    events.c.first_seen_at,
+                ),
+                else_=func.coalesce(
+                    events.c.entry_qualified_at,
+                    events.c.first_seen_at,
+                ),
+            ).label("event_first_seen_at"),
             events.c.closed_at.label("event_closed_at"),
             decisions.c.ts,
             decisions.c.base,

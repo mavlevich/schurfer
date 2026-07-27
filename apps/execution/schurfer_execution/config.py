@@ -67,6 +67,20 @@ class Config:
         default_factory=lambda: _float("DAILY_LOSS_LIMIT_USD", 200.0)
     )
     score_threshold: int = field(default_factory=lambda: _int("SCORE_THRESHOLD", 6))
+    # Independent hard entry floor. The scanner may publish a lower private
+    # measurement feed, but execution must never infer trade eligibility from it.
+    entry_min_pct: float = field(
+        default_factory=lambda: _float(
+            "PUMP_ENTRY_MIN_PCT",
+            _float("PUMP_MIN_PCT", 30.0),
+        )
+    )
+    measurement_strategy_version: str = field(
+        default_factory=lambda: os.getenv(
+            "MEASUREMENT_STRATEGY_VERSION",
+            "pump_short_measurement_v1",
+        )
+    )
     # Minimum gap between initial SL and liquidation price, as % of liquidation distance.
     # E.g. 20.0 means SL must be at most 80% of the way to liquidation.
     liquidation_buffer_pct: float = field(
@@ -137,6 +151,12 @@ class Config:
             raise ValueError("DATABASE_URL is required when AUTO_TRADE=true")
         if self.auto_trade and not self.require_market_quality:
             raise ValueError("REQUIRE_MARKET_QUALITY must be true when AUTO_TRADE=true")
+        if not 0.0 < self.entry_min_pct <= 5_000.0:
+            raise ValueError(
+                f"PUMP_ENTRY_MIN_PCT must be > 0 and <= 5000, got {self.entry_min_pct}"
+            )
+        if not self.measurement_strategy_version.strip():
+            raise ValueError("MEASUREMENT_STRATEGY_VERSION must not be empty")
         if not self.auto_trade and not self.dry_run:
             return
         if self.signal_position_usd <= 0:

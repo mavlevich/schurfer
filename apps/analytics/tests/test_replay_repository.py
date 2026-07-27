@@ -66,6 +66,9 @@ def test_statement_uses_shared_tables_parameterized_scope_and_stable_order() -> 
     assert "app.trade_decisions" in sql
     assert "LEFT OUTER JOIN app.pump_events" in sql
     assert "LEFT OUTER JOIN app.trade_decision_outcomes" in sql
+    assert "CASE WHEN" in sql
+    assert "measurement_only" in compiled.params.values()
+    assert "coalesce(app.pump_events.entry_qualified_at, app.pump_events.first_seen_at)" in sql
     assert "ORDER BY app.trade_decisions.ts, app.trade_decisions.id" in sql
     assert datetime(2026, 7, 26, tzinfo=UTC) in compiled.params.values()
     assert "pump_short_v1_market_quality" not in compiled.params.values()

@@ -239,6 +239,17 @@ adapter. Record the baseline cutoff before deploying any speed change.
   - [x] Descriptive measurement report: versioned cohort health, quality reasons,
         outcome completeness, raw forward return/MAE/MFE, and exchange segmentation in
         Markdown/JSON. This is operational visibility, not the virtual-strategy verdict.
+  - [x] Separate prospective measurement and entry floors: persist and privately
+        publish candidates from +20%, compute signals and capture decision-time
+        liquidity under `pump_short_measurement_v1`, but independently hard-gate the
+        v1 order path at +30%. Keep `pumps:latest` and Telegram at their existing
+        public thresholds so research collection does not change user-facing alerts or
+        entry eligibility. Preserve both the first measurement timestamp and immutable
+        first entry-qualified timestamp; after +30%, signal age, OI baseline, and
+        replay cohort boundaries use the entry-qualified anchor. A `pump_event` now
+        spans the +20% measurement episode. For HYP-002, repeated +30% crossings inside
+        that event remain one correlated inference unit rather than inflating N; this
+        rule is locked before its 2026-07-29 cohort begins.
   - [ ] Versioned virtual-strategy layer: replay decisions by token episode under the
         actual v1 rules and pre-registered challengers, including fees, funding,
         liquidity-aware slippage, TP/SL/trailing/max-hold, and taken-vs-skipped labels:
