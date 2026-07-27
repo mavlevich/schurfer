@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -27,7 +27,17 @@ log = structlog.get_logger()
 
 HORIZONS_MINUTES = (15, 30, 60, 240, 480, 1440, 4320, 10080)
 RESOLVER_VERSION = "forward_v1"
+EXACT_OUTCOME_STATUSES = ("complete",)
+FALLBACK_OUTCOME_STATUSES = (
+    "complete_fallback",
+    "complete_fallback_unsupported",
+)
+MEASURABLE_OUTCOME_STATUSES = EXACT_OUTCOME_STATUSES + FALLBACK_OUTCOME_STATUSES
 _COMPLETE_COVERAGE = 1.0
+# LBank exposes current perpetual market data but no supported historical perpetual
+# OHLCV path. Its CCXT fetchOHLCV implementation is spot-only, so calling it with the
+# scanner's swap symbols fails deterministically with "Invalid Trading Pair".
+_UNSUPPORTED_PERPETUAL_OHLCV_EXCHANGES = frozenset({"lbank"})
 _RETRYABLE_STATUSES = (
     "fetch_failed",
     "missing_ohlcv",
@@ -250,12 +260,24 @@ async def _resolve_decision(
             "no supported candidate exchange",
         )
 
+    fetch_candidates = [
+        name for name in candidates if name not in _UNSUPPORTED_PERPETUAL_OHLCV_EXCHANGES
+    ]
+    if not fetch_candidates:
+        unavailable = ", ".join(candidates)
+        return _failure_outcomes(
+            decision,
+            anchor,
+            "market_path_unavailable",
+            f"perpetual OHLCV unsupported for candidate exchanges: {unavailable}",
+        )
+
     start_ms, _, _ = window_bounds(decision.ts, min(decision.horizons))
     _, end_ms, expected = window_bounds(decision.ts, max(decision.horizons))
     expected = max(1, expected)
     candles_by_exchange: dict[str, list[Candle]] = {}
     errors: list[str] = []
-    for name in candidates:
+    for name in fetch_candidates:
         try:
             fetched = await fetch_candles(exchanges[name], decision.base, start_ms, end_ms)
         except Exception as exc:
@@ -277,16 +299,24 @@ async def _resolve_decision(
             "fetch_failed",
             "; ".join(errors) or "OHLCV fetch failed",
         )
-    return [
+    outcomes = [
         _best_outcome_for_horizon(
             decision,
             horizon,
-            candidates,
+            fetch_candidates,
             candles_by_exchange,
             anchor,
         )
         for horizon in decision.horizons
     ]
+    if anchor in _UNSUPPORTED_PERPETUAL_OHLCV_EXCHANGES:
+        return [
+            replace(outcome, status="complete_fallback_unsupported")
+            if outcome.status == "complete_fallback"
+            else outcome
+            for outcome in outcomes
+        ]
+    return outcomes
 
 
 async def resolve_once(

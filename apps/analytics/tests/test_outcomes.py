@@ -10,6 +10,8 @@ from schurfer_analytics.ohlcv import Candle
 from schurfer_analytics.outcome_models import Decision
 from schurfer_analytics.outcome_worker import run_outcome_resolver
 from schurfer_analytics.outcomes import (
+    EXACT_OUTCOME_STATUSES,
+    FALLBACK_OUTCOME_STATUSES,
     OutcomeConfig,
     compute_outcome,
     exchange_candidates,
@@ -48,6 +50,10 @@ def _store(decisions: list[Decision]) -> AsyncMock:
     store = AsyncMock()
     store.load_due_decisions.return_value = decisions
     return store
+
+
+def test_persisted_success_statuses_fit_database_contract() -> None:
+    assert all(len(status) <= 32 for status in EXACT_OUTCOME_STATUSES + FALLBACK_OUTCOME_STATUSES)
 
 
 def test_compute_outcome_for_short() -> None:
@@ -313,6 +319,72 @@ async def test_resolve_once_labels_unsupported_anchor_as_fallback() -> None:
     assert saved[0].anchor_exchange == "mexc"
     assert saved[0].source_exchange == "binance"
     assert saved[0].status == "complete_fallback"
+
+
+async def test_resolve_once_skips_lbank_and_marks_terminal_complete_fallback() -> None:
+    cfg = OutcomeConfig("postgresql://test", ("lbank", "binance"), batch_size=10)
+    decision = _decision(
+        exchange="lbank",
+        features={
+            "candidate_exchanges": [
+                {"exchange": "lbank", "change_pct": 60},
+                {"exchange": "binance", "change_pct": 55},
+            ]
+        },
+    )
+    candles = [
+        _candle(0, high=101, low=99, close=100),
+        _candle(5, high=101, low=98, close=99),
+        _candle(10, high=100, low=97, close=98),
+    ]
+    store = _store([decision])
+    lbank = AsyncMock()
+    binance = AsyncMock()
+
+    with patch(
+        "schurfer_analytics.outcomes.fetch_candles",
+        AsyncMock(return_value=candles),
+    ) as fetch:
+        count = await resolve_once(
+            cfg,
+            {"lbank": lbank, "binance": binance},
+            store,
+        )
+
+    assert count == 1
+    fetch.assert_awaited_once()
+    assert fetch.await_args is not None
+    assert fetch.await_args.args[0] is binance
+    saved = store.persist_outcomes.await_args.args[0]
+    assert saved[0].anchor_exchange == "lbank"
+    assert saved[0].source_exchange == "binance"
+    assert saved[0].status == "complete_fallback_unsupported"
+
+
+async def test_resolve_once_marks_lbank_only_path_terminal_without_fetch() -> None:
+    cfg = OutcomeConfig("postgresql://test", ("lbank",), batch_size=10)
+    decision = _decision(
+        exchange="lbank",
+        features={"candidate_exchanges": [{"exchange": "lbank", "change_pct": 60}]},
+    )
+    store = _store([decision])
+
+    with patch(
+        "schurfer_analytics.outcomes.fetch_candles",
+        AsyncMock(),
+    ) as fetch:
+        count = await resolve_once(cfg, {"lbank": AsyncMock()}, store)
+
+    assert count == 1
+    fetch.assert_not_awaited()
+    saved = store.persist_outcomes.await_args.args[0]
+    assert saved[0].anchor_exchange == "lbank"
+    assert saved[0].source_exchange is None
+    assert saved[0].status == "market_path_unavailable"
+    assert saved[0].error == "perpetual OHLCV unsupported for candidate exchanges: lbank"
+    retryable = store.load_due_decisions.await_args.kwargs["retryable_statuses"]
+    assert "market_path_unavailable" not in retryable
+    assert "complete_fallback_unsupported" not in retryable
 
 
 async def test_resolve_once_selects_exchange_independently_per_horizon() -> None:

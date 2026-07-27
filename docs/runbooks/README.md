@@ -298,6 +298,14 @@ the new cohort separately.
   not simulate exits or costs — those belong to the versioned virtual-strategy
   analysis.
 
+  LBank perpetual OHLCV is a known permanent source gap rather than a transient fetch
+  failure. The resolver does not call its spot-only historical path for swap symbols.
+  It tries other recorded candidate venues and stores a terminal
+  `complete_fallback_unsupported` result when one has complete coverage. A
+  LBank-only decision becomes terminal `market_path_unavailable`. Both preserve LBank
+  as the decision's anchor; only the explicitly fallback-enabled research views accept
+  the cross-venue result.
+
 - Durable derivatives context: migration `0017` adds
   `app.pump_derivatives_context_runs` and
   `app.pump_derivatives_context_samples`. The existing `outcome-resolver` process

@@ -1,6 +1,6 @@
 # Roadmap
 
-> Living document. Updated as we progress. Last refreshed 2026-07-26.
+> Living document. Updated as we progress. Last refreshed 2026-07-27.
 
 ## Guiding principle
 
@@ -18,7 +18,7 @@ tomorrow.
 The parked idea catalog lives in [IDEAS.md](IDEAS.md). It is frozen until edge is
 proven. Post-MVP strategy and exit improvements live in the exit-strategy notes.
 
-## Current state (2026-07-23)
+## Current state (2026-07-27)
 
 - Live in production on Hetzner. Private access over Tailscale only. Caddy serves
   the Tailscale hostname with a static cert. Public ports 80 and 443 are closed
@@ -28,6 +28,72 @@ proven. Post-MVP strategy and exit improvements live in the exit-strategy notes.
 - The durable decision/outcome dataset and market-quality gate are live. The scanner
   now has 17 configured linear-USDT perp venues. The immediate task is measuring
   which venues add unique discoveries or useful lead time before adding more feeds.
+
+## Near-term delivery sequence: next 10 pull requests
+
+The measurement foundation is sufficiently complete. The next cycle is strategy
+first: use the captured data to reject, retain, or replace rules instead of adding
+more infrastructure by default. "More aggressive" means evaluating more variants in
+parallel in virtual, shadow, and paper modes. It does not mean enabling real orders
+before measured edge and the live-safety gates.
+
+This sequence is ordered, but adjacent research PRs may be developed while a
+prospective cohort matures. A failed hypothesis is a useful result and should remove
+a rule or stop a workstream rather than trigger unbounded tuning.
+
+1. **Automatic decision-quality report.** Aggregate episode-level net replay results
+   by total score, individual score components, pump-size band, venue, liquidity
+   quality, and taken/skipped status. Include cluster-aware uncertainty, missingness,
+   concentration, and minimum-N warnings. Treat the existing cohort as
+   discovery-only: this is the primary diagnostic of whether the score has predictive
+   value, not a source of a confirmatory winner.
+2. **Pre-registered score-threshold family.** Keep score 6 as baseline and compare a
+   small locked family such as 4, 5, 7, and 8 on the same episodes. Treat no trigger
+   as cash, reuse the existing entry/exit/cost engine, correct for multiple
+   comparisons, and start a new untouched confirmation cohort after the manifest is
+   committed. Promote at most a shadow candidate. This tests whether current
+   selectivity is suppressing useful paper trades or avoiding bad ones without
+   declaring the discovery sample a result.
+3. **Pre-registered exit family for OBS-001.** Compare the production exit with
+   breakeven-after-activation, a no-progress timeout, and their combination. Keep
+   partial take-profit plus runner separate unless the first family shows that exit
+   capture, rather than entry quality, is the dominant problem.
+4. **Derivatives-context analysis.** Join the persisted funding, open-interest,
+   long/short, and liquidation context to eligible episode outcomes. Use only
+   point-in-time windows, explicit availability/coverage, clustered inference, and a
+   locked small hypothesis family. Do not turn every available field into a score.
+5. **Live multi-variant shadow evaluator.** Run registered score, confirmation, and
+   exit candidates beside the baseline without placing orders. Give every variant
+   isolated state and capture the actual quote, spread, depth, impact, lag, and
+   rejection reason at its own trigger time. This closes the historical-order-book
+   blind spot in delayed-entry replay.
+6. **Durable shadow track record and automatic report.** Persist versioned shadow
+   positions and resolutions, then report expectancy, profit factor, drawdown,
+   initial-stop rate, captured MFE, execution coverage, and disagreement with the
+   baseline. Schedule the report so strategy progress is visible without manual SQL.
+7. **Bounded CEX hot set.** Promote +20% WATCH candidates to a targeted 1-to-5-second
+   polling or websocket set, decouple notification pickup from the broad market scan,
+   and measure threshold-to-alert and peak/retrace timing. Do not accelerate all
+   symbols or venues indiscriminately.
+8. **Out-of-sample shadow champion.** Freeze the strongest candidate selected by
+   PRs 1-4, bump its strategy version, and collect a new untouched cohort through the
+   live shadow path. No parameters may be changed after the confirmation boundary.
+9. **Paper champion promotion.** If the out-of-sample shadow gate passes, run the
+   champion through the existing paper order/monitor/journal lifecycle while the
+   baseline remains a control. Add operational alerts for missing market data,
+   divergent fills, stale positions, and strategy-level drawdown.
+10. **Go/no-go checkpoint.** If at least 100 eligible episodes, 30 asset clusters,
+    complete paired resolution, positive net expectancy after costs, familywise
+    improvement, acceptable drawdown, and stable out-of-sample paper behavior all
+    pass, prepare the human-confirmed tiny-capital stage from Phase 3. If they do not,
+    do not lower the safety bar: reject or pause pump-short v1 and move the research
+    budget to the pre-registered delisting-short or DEX narrative tracks.
+
+The LBank perpetual-history limitation is parked in
+[CCXT-003](docs/tasks/ccxt/003-lbank-perpetual-ohlcv-research.md). It remains visible,
+but it must not block this sequence. Cross-venue fallback stays explicitly labelled;
+a future scanner-derived path is a separate provenance-aware fallback, not fake
+exchange OHLCV.
 
 ## Shipped
 

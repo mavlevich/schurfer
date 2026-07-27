@@ -13,7 +13,11 @@ from collections import Counter
 from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING, Any
 
-from .outcomes import RESOLVER_VERSION
+from .outcomes import (
+    EXACT_OUTCOME_STATUSES,
+    FALLBACK_OUTCOME_STATUSES,
+    RESOLVER_VERSION,
+)
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -61,8 +65,8 @@ class ReplayFilters:
     @property
     def accepted_outcome_statuses(self) -> tuple[str, ...]:
         if self.allow_fallback:
-            return ("complete", "complete_fallback")
-        return ("complete",)
+            return EXACT_OUTCOME_STATUSES + FALLBACK_OUTCOME_STATUSES
+        return EXACT_OUTCOME_STATUSES
 
 
 @dataclass(frozen=True)
