@@ -39,6 +39,7 @@ because they have different dependencies and outcomes.
 | [CCXT-010](010-htx-index-ohlcv-capability.md)            | Check HTX index-OHLCV support by derivatives market subtype             | Research before capability change  |
 | [CCXT-011](011-okx-long-short-history-window.md)         | Check whether OKX long/short history can honor historical windows       | Research exchange/API limitation   |
 | [CCXT-012](012-derivatives-empty-history-conformance.md) | Classify symbol-specific empty derivatives histories across venues      | More targets required              |
+| [CCXT-013](013-bybit-open-interest-window-contract.md)   | Verify Bybit OI `since`/`until` behavior and correct its unified docs   | Reproduce against current master   |
 
 ## Rules for all tasks
 

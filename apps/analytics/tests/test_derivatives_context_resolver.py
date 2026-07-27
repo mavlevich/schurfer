@@ -58,6 +58,7 @@ def test_persistence_allowlist_contains_only_proven_non_price_series() -> None:
         "open_interest_history",
         "liquidations",
     )
+    assert DERIVATIVES_CONTEXT_RESOLVER_VERSION == "derivatives_context_v2"
 
 
 def test_config_parses_forward_cohort_and_validates_bounds() -> None:

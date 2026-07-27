@@ -112,4 +112,7 @@ request policy, coverage, retry state, CCXT version, and resolver version;
 `app.pump_derivatives_context_samples` stores idempotent in-window public rows.
 The resolver revalidates the loaded exchange market against the recorded market id
 and identity key before fetching. Price-like mark/index/premium candles remain
-on-demand inputs rather than duplicated storage.
+on-demand inputs rather than duplicated storage. Resolver version
+`derivatives_context_v2` explicitly bounds both sides of Binance long/short-ratio and
+Bybit open-interest requests; this prevents their 200-row latest-page cap from
+silently dropping the beginning of an older episode window.

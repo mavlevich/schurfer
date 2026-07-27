@@ -94,6 +94,17 @@ LIMIT_OVERRIDES: dict[tuple[str, str], int] = {
     ("htx", "liquidations"): 100,
 }
 
+# These endpoints returned the latest page when only ``since`` was supplied during
+# the production v1 backfill. Their CCXT adapters explicitly translate the unified
+# ``until`` parameter to the venue's end-time field, so bound both sides of the
+# requested window instead of accepting a moving latest-page tail.
+EXPLICIT_UNTIL_PAIRS = frozenset(
+    {
+        ("binance", "long_short_ratio_history"),
+        ("bybit", "open_interest_history"),
+    }
+)
+
 
 @dataclass(frozen=True)
 class DerivativesHistoryFetch:
@@ -220,11 +231,22 @@ async def _call_method(
     symbol: str,
     timeframe: str | None,
     since_ms: int,
+    until_ms: int,
     limit: int,
 ) -> Any:
     fetcher = getattr(exchange, method.callable_name)
+    exchange_id = getattr(exchange, "id", None)
+    params = (
+        {"until": until_ms}
+        if isinstance(exchange_id, str) and (exchange_id, method.name) in EXPLICIT_UNTIL_PAIRS
+        else None
+    )
     if timeframe is None:
+        if params is not None:
+            return await fetcher(symbol, since_ms, limit, params)
         return await fetcher(symbol, since_ms, limit)
+    if params is not None:
+        return await fetcher(symbol, timeframe, since_ms, limit, params)
     return await fetcher(symbol, timeframe, since_ms, limit)
 
 
@@ -264,6 +286,7 @@ async def fetch_derivatives_history(
                     symbol,
                     timeframe,
                     cursor,
+                    until_ms,
                     limit,
                 ),
                 timeout=timeout_seconds,
