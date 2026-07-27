@@ -25,6 +25,9 @@ Entrypoints:
 - `candle-anomaly-report` — derives the pre-registered HYP-005 blow-off concentration
   and reversal-strength features from fully closed exact-venue 5-minute candles, joins
   them to the locked baseline virtual replay, and emits descriptive 2x2 bucket results.
+- `derivatives-context-report` — runs a bounded, read-only CCXT conformance and
+  recoverability probe for funding, open interest, mark/index/premium candles,
+  long/short ratios, and liquidations around recent pump episodes.
 
 Run against the local development database:
 
@@ -39,6 +42,8 @@ make virtual-entry-challenger-report
 make virtual-entry-challenger-report ARGS="--until 2026-07-28 --format json"
 make candle-anomaly-report
 make candle-anomaly-report ARGS="--until 2026-08-05 --format json"
+make derivatives-context-report
+make derivatives-context-report ARGS="--exchange binance --method funding_rate_history --format json"
 ```
 
 The measurement report shows both decision count and distinct pump-episode count. Its
@@ -82,3 +87,12 @@ and the baseline exit replay, and fingerprints that path. Its blow-off and rever
 thresholds are locked in the research protocol. Results are descriptive: even a strong
 bucket separation must be validated in a new out-of-sample live-shadow cohort before
 it can affect scoring or entry eligibility.
+
+The derivatives-context report selects at most one recent completed-window episode per
+configured exchange. It loads the recorded exact unified symbol, never substitutes a
+different venue or symbol, and reuses one rate-limited CCXT client per exchange. The
+default request covers four hours before through eight hours after the episode anchor.
+Declared CCXT support is not counted as evidence until the endpoint returns valid
+millisecond timestamps inside that window; native and emulated capabilities remain
+distinct in the output. Either side of the requested window is capped at seven days.
+The probe is read-only and does not yet persist enrichment or affect execution.
