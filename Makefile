@@ -1,5 +1,5 @@
-.PHONY: help install install-golangci-lint dev dev-init dev-stop dev-reset dev-logs dev-test migrate measurement-report exchange-coverage-report episode-replay virtual-strategy-report virtual-entry-challenger-report virtual-threshold-challenger-report candle-anomaly-report test lint ci-lint format clean security deadcode check verify verify-docker \
-        prod-deploy prod-measurement-report prod-exchange-coverage-report prod-episode-replay prod-virtual-strategy-report prod-virtual-entry-challenger-report prod-virtual-threshold-challenger-report prod-candle-anomaly-report prod-logs prod-backup prod-restore-local prod-health
+.PHONY: help install install-golangci-lint dev dev-init dev-stop dev-reset dev-logs dev-test migrate measurement-report exchange-coverage-report episode-replay virtual-strategy-report virtual-entry-challenger-report virtual-threshold-challenger-report candle-anomaly-report derivatives-context-report test lint ci-lint format clean security deadcode check verify verify-docker \
+        prod-deploy prod-measurement-report prod-exchange-coverage-report prod-episode-replay prod-virtual-strategy-report prod-virtual-entry-challenger-report prod-virtual-threshold-challenger-report prod-candle-anomaly-report prod-derivatives-context-report prod-logs prod-backup prod-restore-local prod-health
 
 GOLANGCI_LINT_VERSION = v2.1.6
 
@@ -30,6 +30,7 @@ help:
 	@echo "  make virtual-entry-challenger-report  Compare registered entry challengers"
 	@echo "  make virtual-threshold-challenger-report  Compare registered entry floors"
 	@echo "  make candle-anomaly-report  Describe registered candle anomaly buckets"
+	@echo "  make derivatives-context-report  Probe recoverable derivatives history"
 	@echo ""
 	@echo "Production (run on server with .env.prod present):"
 	@echo "  make prod-deploy          Pull + rebuild + restart all services"
@@ -44,6 +45,7 @@ help:
 	@echo "  make prod-virtual-entry-challenger-report  Production entry challenger replay"
 	@echo "  make prod-virtual-threshold-challenger-report  Production entry-floor replay"
 	@echo "  make prod-candle-anomaly-report  Production candle anomaly research report"
+	@echo "  make prod-derivatives-context-report  Production derivatives coverage probe"
 
 install:
 	@echo "-> Installing Python deps via uv..."
@@ -143,6 +145,14 @@ virtual-threshold-challenger-report:
 candle-anomaly-report:
 	@DATABASE_URL="$${DATABASE_URL:-postgresql://schurfer:schurfer_dev@localhost:5432/schurfer}" \
 		uv run --package schurfer-analytics candle-anomaly-report \
+		--code-revision="$$(git rev-parse HEAD)" \
+		$$(test -z "$$(git status --porcelain)" \
+			&& printf '%s' '--no-working-tree-dirty' \
+			|| printf '%s' '--working-tree-dirty') $(ARGS)
+
+derivatives-context-report:
+	@DATABASE_URL="$${DATABASE_URL:-postgresql://schurfer:schurfer_dev@localhost:5432/schurfer}" \
+		uv run --package schurfer-analytics derivatives-context-report \
 		--code-revision="$$(git rev-parse HEAD)" \
 		$$(test -z "$$(git status --porcelain)" \
 			&& printf '%s' '--no-working-tree-dirty' \
@@ -344,6 +354,14 @@ prod-candle-anomaly-report:
 			&& printf '%s' '--no-working-tree-dirty' \
 			|| printf '%s' '--working-tree-dirty') $(ARGS)
 
+prod-derivatives-context-report:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
+	@$(_PROD) run --rm --no-deps --entrypoint derivatives-context-report analytics \
+		--code-revision="$$(git rev-parse HEAD)" \
+		$$(test -z "$$(git status --porcelain)" \
+			&& printf '%s' '--no-working-tree-dirty' \
+			|| printf '%s' '--working-tree-dirty') $(ARGS)
+
 # Redeploy a previous known-good commit. No pull, no migration: a rollback must
 # not fast-forward back to the broken main, and checking out old code does NOT
 # revert a schema change (restore from backup or downgrade explicitly for that).
@@ -382,6 +400,7 @@ verify-docker: verify
 	docker run --rm --entrypoint virtual-entry-challenger-report schurfer-analytics:ci --help
 	docker run --rm --entrypoint virtual-threshold-challenger-report schurfer-analytics:ci --help
 	docker run --rm --entrypoint candle-anomaly-report schurfer-analytics:ci --help
+	docker run --rm --entrypoint derivatives-context-report schurfer-analytics:ci --help
 	@docker rmi schurfer-analytics:ci --force > /dev/null
 	@echo "=== Docker: execution build + import check ==="
 	docker build -f apps/execution/Dockerfile -t schurfer-execution:ci . -q

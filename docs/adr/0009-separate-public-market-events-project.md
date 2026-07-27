@@ -43,6 +43,27 @@ The public project may contain:
 - a CLI/library for validation, export, and reproducible event studies;
 - a delayed read-only website and, later, a rate-limited public API.
 
+The intended public core is a point-in-time market-events SDK, not another order
+execution engine. Its candidate surface includes:
+
+- `Instrument`, `VenueMarket`, and versioned symbol/contract identity records;
+- normalized `MarketObservation` and `MarketEvent` records;
+- bitemporal `source_time`, `effective_at`, `observed_at`, and `fetched_at`
+  timestamps;
+- raw-payload hashes, parser/schema versions, source references, coverage, freshness,
+  and conflict flags;
+- listing, delisting, relisting, suspension, contract migration, and market-quality
+  events;
+- adapter conformance checks for stale timestamps, missing candles, duplicate rows,
+  invalid volume, contract-size errors, capability mismatches, and cross-source
+  conflicts;
+- research-safe Parquet/DuckDB exports with deterministic manifests and synthetic
+  public fixtures.
+
+The SDK may use upstream connectors, but its value is identity, lifecycle, provenance,
+and point-in-time correctness. It must not duplicate unified order submission,
+portfolio accounting, or matching engines.
+
 The private/public boundary is one-way and explicit:
 
 1. Public collectors produce a versioned schema, release artifact, or public API.
@@ -57,6 +78,49 @@ The private/public boundary is one-way and explicit:
 
 ADR-0002 remains in force: the public project is not a public component of Schurfer
 and never trades or holds third-party funds.
+
+## Ecosystem boundary
+
+The following projects solve adjacent problems. Evaluate them behind explicit
+adapters or process boundaries rather than making the future public schema depend on
+one engine:
+
+| Project                                                             | Intended role                                                      | Current decision                                                                                                                                                                                                                                                   |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [CCXT](https://github.com/ccxt/ccxt)                                | Unified crypto venue REST and WebSocket adapters                   | Keep as Schurfer's primary CEX integration. Contribute narrow, reproduced exchange-parser fixes upstream.                                                                                                                                                          |
+| [OpenBB](https://github.com/OpenBB-finance/OpenBB)                  | Standard provider models for public and licensed financial data    | Evaluate first in the separate public research workflow, especially for equities, macro, and provider extensions. Its AGPLv3 boundary requires explicit review before it becomes a dependency of the private product.                                              |
+| [NautilusTrader](https://github.com/nautechsystems/nautilus_trader) | Multi-asset event-driven backtest and live-execution engine        | Do not replace Schurfer execution now. Re-evaluate when real multi-venue execution, order-state recovery, or research/live parity exceeds the value of the current engine. It is LGPLv3 and upstream contributions require the project's issue-first/CLA workflow. |
+| [LEAN](https://github.com/QuantConnect/Lean)                        | Apache-2.0 cross-asset research, backtesting, and brokerage engine | Use only as a standalone benchmark or future traditional-asset research runner. Do not embed its C# runtime into the current Python/Go services without a measured requirement.                                                                                    |
+
+Contribution policy is evidence-driven:
+
+1. Use a project on a real bounded workflow first.
+2. Reproduce a generic defect against the current upstream revision.
+3. Confirm the change belongs in the upstream abstraction rather than Schurfer
+   policy.
+4. Follow that repository's current contribution guide, tests, license, CLA, target
+   branch, and naming rules.
+5. Keep one defect or provider capability per pull request.
+6. Remove a local workaround only after an upstream release is adopted and verified.
+
+Open-source contribution is a useful outcome, not a reason to add a dependency. We do
+not migrate engines or add providers only to manufacture public activity.
+
+## Collaboration boundary
+
+The engineering and research work can share the public schema without sharing private
+strategy data:
+
+- engineering owns adapters, identity, ingestion, storage contracts, quality checks,
+  provenance, CI, and release compatibility;
+- data science owns pre-registered event studies, feature definitions, statistical
+  diagnostics, visualizations, and documented interpretation;
+- both review the event schema, data dictionary, synthetic fixtures, and reproducible
+  reports;
+- `financial-markets-research` may consume released SDK artifacts and permitted public
+  datasets, but never the Schurfer production database;
+- private thresholds, decisions, credentials, execution results, and alpha labels are
+  excluded by an allowlist test before any export.
 
 ## Delivery stages
 

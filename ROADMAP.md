@@ -403,15 +403,33 @@ adapter. Record the baseline cutoff before deploying any speed change.
       registered out-of-sample live-shadow cohort; do not tune the thresholds or
       production strategy from this descriptive report.
 
-  - [ ] Enrich each pump episode with recoverable derivatives context from CCXT
-        history where the venue supports it: funding-rate history, open-interest
-        history, mark/index/premium-index candles, long/short ratios, and public
-        liquidations. Backfill bounded windows around an episode instead of crawling
-        every market forever; retain venue, method, fetch time, source timestamp,
-        coverage, and parser version. Never replace the live decision snapshot with
-        a historical approximation: exact order-book liquidity, signal lag, and
-        finer-grained live OI remain non-recoverable, while historical endpoints have
-        venue-specific retention and may exclude delisted instruments.
+  - [x] Establish a bounded, read-only derivatives-context coverage probe for CCXT
+        funding-rate history, open-interest history, mark/index/premium-index candles,
+        long/short ratios, and public liquidations. It selects one recent completed
+        exact-symbol target per exchange, reuses one rate-limited client per venue,
+        records declared support separately from sampled timestamped coverage, fails
+        closed on identity/parser/response errors, and emits versioned Markdown/JSON
+        provenance without modifying the database or execution:
+
+        ```bash
+        make prod-deploy-svc SERVICE=analytics
+        make prod-derivatives-context-report
+        ```
+
+        The exact data sources, limits, statuses, archive command, and interpretation
+        checklist live in `docs/runbooks/README.md`.
+
+  - [ ] Persist recoverable derivatives context for each pump episode after the probe
+        establishes viable venue/method pairs. Backfill bounded windows instead of
+        crawling every market forever; retain venue, method, fetch time, source
+        timestamp, coverage, and parser version. Never replace the live decision
+        snapshot with a historical approximation: exact order-book liquidity, signal
+        lag, and finer-grained live OI remain non-recoverable, while historical
+        endpoints have venue-specific retention and may exclude delisted instruments.
+        Keep normalized identity, provenance, coverage, and quality contracts
+        extraction-ready for the separate public market-events project, but do not
+        introduce a runtime dependency between the repositories
+        ([ADR-0009](docs/adr/0009-separate-public-market-events-project.md)).
   - [ ] Add episode-clustered statistical inference to the report. Bootstrap whole
         pump episodes rather than correlated decisions, report confidence intervals,
         and use market-adjusted/cluster-robust models before promoting an apparent

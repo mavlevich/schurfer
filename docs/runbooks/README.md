@@ -385,12 +385,36 @@ the new cohort separately.
     > backups/reports/candle-anomalies-2026-08-05.json
   ```
 
+  The cohort starts at `2026-07-29T00:00:00Z`; running the command before that time
+  intentionally exits without querying an invalid or future interval.
+
   The command uses only fully closed exact-venue 5-minute candles available by each
   decision. Inspect feature and volume coverage, unresolved paths, cluster
   concentration, all four pre-registered blow-off/reversal buckets, net return,
   MFE/MAE, captured move, and initial-stop rate. This report is descriptive and cannot
   authorize a production gate. Any candidate feature needs a separately registered
   out-of-sample live-shadow cohort.
+
+- Derivatives-context coverage probe: after deploying the analytics image, test which
+  recoverable CCXT history is actually usable around recent pump episodes whose
+  post-anchor windows have completed:
+
+  ```bash
+  make prod-derivatives-context-report
+  make prod-derivatives-context-report \
+    ARGS="--exchange binance --exchange bybit --format json" \
+    > backups/reports/derivatives-context-$(date -u +%Y-%m-%d).json
+  ```
+
+  The default selection looks back 14 days and chooses at most one identity-safe,
+  exact-symbol target per exchange whose eight-hour post-anchor window has completed.
+  Each request is bounded to four hours before and eight hours after the anchor, with
+  a 200-row limit and 15-second timeout. Review `sampled`, `partial`, `no_data`,
+  `unsupported`, and failure rows method by method. A capability flag alone is not
+  evidence of historical coverage, and `emulated` remains distinct from native
+  support. Either side of the requested window is capped at seven days. The command is
+  read-only, does not persist rows, does not replace live liquidity snapshots, and
+  cannot change production trading.
 
 - Pump/signal readiness after deploying migration 0012: verify newly published pumps
   carry an episode id and recent decisions are attributed. `signal_missing` or

@@ -63,6 +63,10 @@ CANDLE_ANOMALY_BUCKETS = (
 )
 
 
+class ReportWindowNotStartedError(ValueError):
+    """Raised when a report cutoff precedes the registered cohort."""
+
+
 @dataclass(frozen=True)
 class CandleAnomalyManifest:
     report_version: str
@@ -497,20 +501,34 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def resolve_report_until(
+    requested_until: datetime | None,
+    generated_at: datetime,
+) -> datetime:
+    until = requested_until or generated_at
+    if until <= CANDLE_ANOMALY_COHORT_START:
+        raise ReportWindowNotStartedError(
+            "the registered HYP-005 cohort starts at "
+            f"{CANDLE_ANOMALY_COHORT_START.isoformat()}; retry after that time"
+        )
+    return until
+
+
 async def _run(args: argparse.Namespace) -> str:
     from .exchange_registry import EXCHANGE_FACTORIES
     from .replay_repository import ReplayRepository
     from .virtual_market import fetch_candle_anomaly_paths
 
+    generated_at = datetime.now(UTC)
+    until = resolve_report_until(args.until, generated_at)
     db_url = os.getenv("DATABASE_URL")
     if not db_url:
         raise ValueError("DATABASE_URL is required for candle-anomaly-report")
     if not args.code_revision:
         raise ValueError("--code-revision or SCHURFER_GIT_SHA is required")
-    generated_at = datetime.now(UTC)
     filters = ReplayFilters(
         since=args.since,
-        until=args.until or generated_at,
+        until=until,
         strategy_versions=CANDLE_ANOMALY_STRATEGY_VERSIONS,
         resolver_version=args.resolver_version,
         required_horizons=DEFAULT_REPLAY_HORIZONS,
@@ -543,5 +561,10 @@ async def _run(args: argparse.Namespace) -> str:
 
 
 def main() -> None:
-    args = build_parser().parse_args()
-    sys.stdout.write(asyncio.run(_run(args)))
+    parser = build_parser()
+    args = parser.parse_args()
+    try:
+        output = asyncio.run(_run(args))
+    except ReportWindowNotStartedError as exc:
+        parser.error(str(exc))
+    sys.stdout.write(output)

@@ -15,10 +15,12 @@ from schurfer_analytics.candle_anomaly_features import (
 from schurfer_analytics.candle_anomaly_report import (
     CANDLE_ANOMALY_BUCKETS,
     CANDLE_ANOMALY_STRATEGY_VERSIONS,
+    ReportWindowNotStartedError,
     build_candle_anomaly_report,
     build_parser,
     render_json,
     render_markdown,
+    resolve_report_until,
 )
 from schurfer_analytics.ohlcv import TIMEFRAME_MS, Candle
 from schurfer_analytics.replay import (
@@ -239,3 +241,15 @@ def test_parser_defaults_to_registered_cohort_and_requires_tree_state() -> None:
 
     assert args.since == CANDLE_ANOMALY_COHORT_START
     assert args.working_tree_dirty is False
+
+
+def test_report_window_rejects_cutoff_before_registered_cohort() -> None:
+    before_start = CANDLE_ANOMALY_COHORT_START - timedelta(seconds=1)
+
+    with pytest.raises(ReportWindowNotStartedError, match="cohort starts"):
+        resolve_report_until(None, before_start)
+    with pytest.raises(ReportWindowNotStartedError, match="cohort starts"):
+        resolve_report_until(CANDLE_ANOMALY_COHORT_START, before_start)
+
+    after_start = CANDLE_ANOMALY_COHORT_START + timedelta(seconds=1)
+    assert resolve_report_until(None, after_start) == after_start
