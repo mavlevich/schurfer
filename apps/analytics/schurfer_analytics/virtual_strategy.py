@@ -489,3 +489,37 @@ def simulate_episode_at_entry(
         entry_at_ms,
         costs=costs,
     )
+
+
+def simulate_decision(
+    episode: ReplayEpisode,
+    market_path: MarketPath,
+    decision: ReplayDecision,
+    *,
+    selection_reason: str,
+    costs: CostParameters = DEFAULT_COSTS,
+) -> VirtualTrade:
+    """Replay one explicitly selected point-in-time decision.
+
+    Threshold experiments can choose different decisions, and therefore different
+    exact venues, inside the same pump episode. Keeping that selection outside the
+    exit engine lets every experiment reuse the same entry, exit, and cost semantics.
+    """
+    normalized_reason = selection_reason.strip()
+    if not normalized_reason:
+        raise ValueError("selection reason must not be empty")
+    if decision not in episode.decisions:
+        raise ValueError("selected decision does not belong to the episode")
+    selection = EpisodeSelection(
+        decision=decision,
+        taken=False,
+        selection_reason=normalized_reason,
+    )
+    entry_at_ms = ceil_to_timeframe(int(decision.ts.timestamp() * 1000))
+    return _simulate_selected_entry(
+        episode,
+        market_path,
+        selection,
+        entry_at_ms,
+        costs=costs,
+    )
