@@ -22,6 +22,11 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+const (
+	measurementPumpsKey = "pumps:measurement"
+	publicPumpsKey      = "pumps:latest"
+)
+
 func main() {
 	if err := run(); err != nil {
 		slog.Error("fatal", "err", err)
@@ -124,26 +129,47 @@ func run() error {
 	return nil
 }
 
-// runSignalsTicker refreshes signals:{base} in Redis every minute for all active pumps.
+func loadSignalBases(ctx context.Context, rdb *redis.Client) ([]string, error) {
+	raw, err := rdb.Get(ctx, measurementPumpsKey).Bytes()
+	if errors.Is(err, redis.Nil) {
+		// Rolling-deploy compatibility until analytics publishes the private feed.
+		raw, err = rdb.Get(ctx, publicPumpsKey).Bytes()
+	}
+	if err != nil {
+		return nil, err
+	}
+	var payload struct {
+		Pumps []struct {
+			Base string `json:"base"`
+		} `json:"pumps"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return nil, err
+	}
+	bases := make([]string, 0, len(payload.Pumps))
+	for _, pump := range payload.Pumps {
+		if pump.Base != "" {
+			bases = append(bases, pump.Base)
+		}
+	}
+	return bases, nil
+}
+
+// runSignalsTicker refreshes signals:{base} in Redis every minute for all measured
+// pumps. The public feed remains filtered at the entry floor for UI and notifications.
 // Runs immediately on start so the first tick has data, then every 60 seconds.
 func runSignalsTicker(ctx context.Context, rdb *redis.Client, h *pumps.Handler) {
 	refresh := func() {
-		raw, err := rdb.Get(ctx, "pumps:latest").Bytes()
+		bases, err := loadSignalBases(ctx, rdb)
 		if err != nil {
-			return // no active pumps
-		}
-		var payload struct {
-			Pumps []struct {
-				Base string `json:"base"`
-			} `json:"pumps"`
-		}
-		if err := json.Unmarshal(raw, &payload); err != nil {
-			slog.Warn("signals.ticker.parse_error", "err", err)
+			if !errors.Is(err, redis.Nil) {
+				slog.Warn("signals.ticker.load_error", "err", err)
+			}
 			return
 		}
-		for _, p := range payload.Pumps {
-			if err := h.CacheSignals(ctx, p.Base); err != nil {
-				slog.Warn("signals.ticker.cache_error", "base", p.Base, "err", err)
+		for _, base := range bases {
+			if err := h.CacheSignals(ctx, base); err != nil {
+				slog.Warn("signals.ticker.cache_error", "base", base, "err", err)
 			}
 		}
 	}

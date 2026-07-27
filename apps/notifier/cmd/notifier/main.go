@@ -52,7 +52,7 @@ func loadConfig() notifier.Config {
 			slog.Warn("notifier.stale_after.invalid", "value", s, "using_default_seconds", 240)
 		}
 	}
-	// Notifier-side pump gate on top of the scanner's PUMP_MIN_PCT, so the Telegram
+	// Notifier-side pump gate on top of the public PUMP_ENTRY_MIN_PCT feed, so the Telegram
 	// channel is not flooded by every small pump. 0 alerts on everything the scanner
 	// reports; the default only pings on larger moves.
 	minPct := 60.0

@@ -36,10 +36,11 @@ Rules:
   `entry_confirmation_family_v1`. Other experiment details remain intent until their
   own manifests are committed.
 
-Current baseline (as deployed, `pump_short_v1`): `PUMP_MIN_PCT=30`, `SCORE_THRESHOLD=6`,
-`REQUIRE_RED_CANDLE=false`, `MIN_RETRACE_PCT=0`, leverage 3x, fixed $50 notional; exits
-scale with pump size (initial SL 8-12%, trail activation 8-15%, trail 12-20%, max hold
-180-360 min). See `docs/strategies/pump_short_v1.md` for the full description.
+Current baseline (as deployed, `pump_short_v1`): `PUMP_ENTRY_MIN_PCT=30`,
+`SCORE_THRESHOLD=6`, `REQUIRE_RED_CANDLE=false`, `MIN_RETRACE_PCT=0`, leverage 3x,
+fixed $50 notional; exits scale with pump size (initial SL 8-12%, trail activation
+8-15%, trail 12-20%, max hold 180-360 min). See
+`docs/strategies/pump_short_v1.md` for the full description.
 
 The execution-safety successor `pump_short_v1_market_quality` does not claim a new
 alpha model: it keeps the v1 signal/entry rules but removes mechanically untradeable
@@ -97,6 +98,11 @@ Registered experiment family (`entry_confirmation_family_v1`), committed before 
 first query:
 
 - confirmation cohort starts at `2026-07-29T00:00:00Z`;
+- a `pump_event` starts and remains live at the +20% measurement floor; all +30%
+  crossings inside that event are one correlated inference unit, while baseline
+  eligibility, signal age, and OI baseline begin at its immutable first
+  `entry_qualified_at`. This conservative clustering rule is locked before the cohort
+  begins and prevents a retrace/re-pump sequence from inflating N;
 - baseline is `pump_short_v1_replay_v1`;
 - `entry_red_candle_v1` requires a red last closed candle;
 - `entry_retrace_1_5_v1` requires at least a 1.5% close retrace from the six-bar high;
@@ -135,15 +141,22 @@ Secondary: initial-SL rate, average loss, MFE, missed winners, eligible-entry co
 
 ## HYP-003 — the 30% pump threshold is unmeasured
 
-`PUMP_MIN_PCT=30` is a heuristic. Important asymmetry: the scanner only records
-candidates at or above 30%, so recorded decisions can test **raising** the effective
-threshold (e.g. 35 / 40 / 50%) — does concentrating on stronger pumps improve
-expectancy? — but they **cannot** test lowering it below 30%, because there is no data
-there. Testing a lower floor should **not** be done by lowering `PUMP_MIN_PCT` — that
-changes the baseline itself. Instead, later separate a **measurement floor** (e.g. 20%)
-from the **strategy entry floor** (30%): record 20-30% candidates as skips so the data
-exists, without opening them on v1. Do not change the live entry floor until the upward
-sweep on recorded decisions shows a clear direction.
+`PUMP_ENTRY_MIN_PCT=30` is a heuristic. Decisions recorded before the measurement-floor
+split can test **raising** the effective threshold (e.g. 35 / 40 / 50%), but they cannot
+test lowering it because observations below 30% were not collected.
+
+Prospective HYP-003 collection uses `PUMP_MEASUREMENT_MIN_PCT=20` and keeps the strategy
+entry floor at 30%. The scanner persists and privately publishes 20-30% candidates;
+signal computation and execution record their point-in-time score, liquidity, and
+outcomes under `pump_short_measurement_v1`. Execution independently enforces the 30%
+hard floor before any order path. The public pump list and Telegram remain filtered at
+30% and 60% respectively. The event stores `first_seen_at` for measurement and sets
+`entry_qualified_at` once at the first observed +30% crossing. Once qualified, signal
+age, OI baseline, and v1 replay boundaries use that second timestamp, preserving the
+entry strategy clock. The parent `pump_event` remains open while the token stays at or
+above +20%; repeated +30% crossings are intentionally kept in one correlated episode.
+Do not combine the lower-floor measurement decisions with the HYP-002
+`pump_short_v1_market_quality` confirmatory sample.
 
 ---
 

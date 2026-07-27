@@ -7,6 +7,7 @@ import pytest
 from schurfer_execution.config import Config
 from schurfer_execution.trader import (
     _SEEN_TTL_ENTRY_WAIT,
+    _SEEN_TTL_MEASUREMENT_RECHECK,
     _SEEN_TTL_SCORE_RECHECK,
     _SEEN_TTL_SIGNAL_RETRY,
     _SEEN_TTL_SKIP,
@@ -15,6 +16,7 @@ from schurfer_execution.trader import (
     _SIGNAL_READINESS_TTL,
     SignalResult,
     _decision_price,
+    _effective_entry_floor,
     _fetch_entry_candles,
     _fetch_equity_usd,
     _fetch_funding_rate_pct,
@@ -36,10 +38,13 @@ def _cfg(
     require_red_candle: bool = False,
     min_retrace_pct: float = 0.0,
     require_market_quality: bool = False,
+    entry_min_pct: float = 30.0,
 ) -> Config:
     cfg = object.__new__(Config)
     cfg.score_threshold = score_threshold
     cfg.strategy_version = "pump_short_v1"
+    cfg.measurement_strategy_version = "pump_short_measurement_v1"
+    cfg.entry_min_pct = entry_min_pct
     cfg.signal_position_usd = 50.0
     cfg.signal_leverage = signal_leverage
     cfg.max_positions = 5
@@ -106,7 +111,7 @@ def _rdb(
     rdb = MagicMock()
 
     async def _get(key: str) -> bytes | None:
-        if key == "pumps:latest":
+        if key in {"pumps:measurement", "pumps:latest"}:
             return pumps_raw
         if key.startswith("signals:") and signal_score is not None:
             payload = json.dumps(
@@ -114,7 +119,10 @@ def _rdb(
                     "score": signal_score,
                     "verdict": "short_setup",
                     "computed_at": time.time() - signal_age_seconds,
-                    "episode": {"id": 42},
+                    "episode": {
+                        "id": 42,
+                        "entry_qualified_at": int(time.time()) - 60,
+                    },
                 }
             )
             return payload.encode()
@@ -140,6 +148,26 @@ def _rdb(
 
     rdb.eval = _eval
     return rdb
+
+
+@pytest.mark.parametrize(
+    ("published", "configured", "expected", "valid"),
+    [
+        (None, 30.0, 30.0, True),
+        (20.0, 30.0, 30.0, True),
+        (40.0, 30.0, 40.0, True),
+        ("invalid", 30.0, 30.0, False),
+        (float("nan"), 30.0, 30.0, False),
+        (True, 30.0, 30.0, False),
+    ],
+)
+def test_effective_entry_floor_is_independent_and_fail_closed(
+    published: object,
+    configured: float,
+    expected: float,
+    valid: bool,
+) -> None:
+    assert _effective_entry_floor(published, configured) == (expected, valid)
 
 
 # --- _pick_exchange ---
@@ -283,6 +311,29 @@ async def test_fetch_signal_rejects_signal_from_previous_pump_episode() -> None:
     assert result.payload["episode"]["id"] == 42
 
 
+async def test_fetch_signal_requires_recomputed_entry_qualified_anchor() -> None:
+    rdb = MagicMock()
+    rdb.get = AsyncMock(
+        return_value=json.dumps(
+            {
+                "score": 8,
+                "computed_at": time.time(),
+                "episode": {"id": 42, "entry_qualified_at": None},
+            }
+        ).encode()
+    )
+
+    result = await _fetch_signal(
+        "BEAT",
+        rdb,
+        expected_pump_event_id=42,
+        require_entry_qualified=True,
+    )
+
+    assert result.score is None
+    assert result.status == "signal_entry_not_qualified"
+
+
 # --- _fetch_signal: malformed-but-valid JSON must not raise ---
 
 
@@ -345,8 +396,15 @@ def test_pump_event_id_accepts_only_positive_json_integers(
 # --- Config validation ---
 
 
-def test_config_validation_raises_when_auto_trade_and_bad_position_usd() -> None:
+def _bare_validation_config() -> Config:
     cfg = object.__new__(Config)
+    cfg.entry_min_pct = 30.0
+    cfg.measurement_strategy_version = "pump_short_measurement_v1"
+    return cfg
+
+
+def test_config_validation_raises_when_auto_trade_and_bad_position_usd() -> None:
+    cfg = _bare_validation_config()
     cfg.auto_trade = True
     cfg.dry_run = False
     cfg.signal_position_usd = 0.0
@@ -359,7 +417,7 @@ def test_config_validation_raises_when_auto_trade_and_bad_position_usd() -> None
 
 
 def test_config_validation_raises_when_auto_trade_and_bad_leverage() -> None:
-    cfg = object.__new__(Config)
+    cfg = _bare_validation_config()
     cfg.auto_trade = True
     cfg.dry_run = False
     cfg.signal_position_usd = 50.0
@@ -372,7 +430,7 @@ def test_config_validation_raises_when_auto_trade_and_bad_leverage() -> None:
 
 
 def test_config_validation_skips_when_auto_trade_false() -> None:
-    cfg = object.__new__(Config)
+    cfg = _bare_validation_config()
     cfg.auto_trade = False
     cfg.dry_run = False
     cfg.signal_position_usd = 0.0  # would fail if auto_trade=True
@@ -382,7 +440,7 @@ def test_config_validation_skips_when_auto_trade_false() -> None:
 
 
 def test_config_validation_raises_when_auto_trade_and_dry_run_both_set() -> None:
-    cfg = object.__new__(Config)
+    cfg = _bare_validation_config()
     cfg.auto_trade = True
     cfg.dry_run = True
     cfg.signal_position_usd = 50.0
@@ -396,7 +454,7 @@ def test_config_validation_raises_when_auto_trade_and_no_db_url() -> None:
     """Regression: without a journal DB, the daily-loss circuit breaker
     degrades to unrealized-only and forgets every closed trade's PnL —
     AUTO_TRADE must refuse to start without DATABASE_URL configured."""
-    cfg = object.__new__(Config)
+    cfg = _bare_validation_config()
     cfg.auto_trade = True
     cfg.dry_run = False
     cfg.db_url = None
@@ -405,7 +463,7 @@ def test_config_validation_raises_when_auto_trade_and_no_db_url() -> None:
 
 
 def test_config_validation_raises_when_liquidation_buffer_negative() -> None:
-    cfg = object.__new__(Config)
+    cfg = _bare_validation_config()
     cfg.auto_trade = True
     cfg.dry_run = False
     cfg.signal_position_usd = 50.0
@@ -418,7 +476,7 @@ def test_config_validation_raises_when_liquidation_buffer_negative() -> None:
 
 
 def test_config_validation_raises_when_liquidation_buffer_gte_100() -> None:
-    cfg = object.__new__(Config)
+    cfg = _bare_validation_config()
     cfg.auto_trade = True
     cfg.dry_run = False
     cfg.signal_position_usd = 50.0
@@ -431,7 +489,7 @@ def test_config_validation_raises_when_liquidation_buffer_gte_100() -> None:
 
 
 def _valid_live_config() -> Config:
-    cfg = object.__new__(Config)
+    cfg = _bare_validation_config()
     cfg.auto_trade = True
     cfg.dry_run = False
     cfg.db_url = "postgresql://test"
@@ -570,8 +628,10 @@ async def test_tick_signal_readiness_distinguishes_ready_deferred_and_seen() -> 
         _rdb: Any,
         *,
         expected_pump_event_id: int | None,
+        require_entry_qualified: bool,
     ) -> SignalResult:
         assert expected_pump_event_id == 42
+        assert require_entry_qualified is True
         if base == "READY":
             return SignalResult(3, {"score": 3}, "ok")
         return SignalResult(None, None, "signal_missing")
@@ -609,6 +669,54 @@ async def test_tick_writes_decision_on_score_skip() -> None:
     assert kw["base"] == "BEAT"
     assert kw["action"] == "skipped"
     assert "score" in kw["reason"]
+
+
+async def test_tick_records_below_floor_without_reaching_order_path() -> None:
+    payload = json.dumps(
+        {
+            "entry_min_change_pct": 30.0,
+            "pumps": [
+                {
+                    "base": "MEASURE",
+                    "pump_event_id": 42,
+                    "max_change_pct": 25.0,
+                    "exchanges": [
+                        {
+                            "exchange": "bybit",
+                            "change_pct": 25.0,
+                            "price": "1.5",
+                            "volume_24h_usd": 1_000_000.0,
+                        }
+                    ],
+                }
+            ],
+        }
+    ).encode()
+    rdb = _rdb(pumps_raw=payload, signal_score=10)
+    with (
+        patch("schurfer_execution.trader.place_order", new_callable=AsyncMock) as mock_order,
+        patch(
+            "schurfer_execution.trader.decisions.write_decision",
+            new_callable=AsyncMock,
+        ) as mock_write,
+        patch(
+            "schurfer_execution.trader.liquidity.snapshot",
+            new_callable=AsyncMock,
+            return_value=_healthy_liquidity_snapshot(),
+        ),
+    ):
+        await _tick({"bybit": MagicMock()}, rdb, _cfg(entry_min_pct=30.0))
+
+    mock_order.assert_not_awaited()
+    mock_write.assert_awaited_once()
+    decision = mock_write.await_args.kwargs
+    assert decision["reason"] == "pump_below_entry_floor"
+    assert decision["score"] == 10
+    assert decision["strategy_version"] == "pump_short_measurement_v1"
+    assert decision["seen_ttl"] == _SEEN_TTL_MEASUREMENT_RECHECK
+    assert decision["features"]["measurement_only"] is True
+    assert decision["features"]["config"]["entry_min_pct"] == 30.0
+    assert decision["liquidity"]["status"] == "sampled"
 
 
 async def test_tick_writes_decision_on_successful_open() -> None:

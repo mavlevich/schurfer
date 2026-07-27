@@ -13,13 +13,15 @@ The web UI is behind a login with no public exposure.
 
 - **api-gateway** (Go). REST and websocket endpoints for the web UI. Reads from Redis
   (hot state) and Postgres (cold storage). Runs a background ticker that computes the
-  signal score (`scoreSignals`, 5 components) and writes `signals:{base}` to Redis.
+  signal score (`scoreSignals`, 5 components) for the private measurement feed and
+  writes `signals:{base}` to Redis.
 - **execution** (Python, FastAPI, ccxt). Reads pump scores from Redis with a
-  freshness check, runs risk checks, places and closes orders on exchanges, monitors
-  open positions for TP, SL, and max-hold, and exposes manual control endpoints.
-  Public dry-run market clients cover the scanner's 17 venues, while account,
-  position, and order paths receive only separately constructed authenticated
-  clients.
+  freshness check, records +20% measurement candidates, and independently enforces
+  the +30% hard entry floor before the order path. It runs risk checks, places and
+  closes orders on exchanges, monitors open positions for TP, SL, and max-hold, and
+  exposes manual control endpoints. Public dry-run market clients cover the scanner's
+  17 venues, while account, position, and order paths receive only separately
+  constructed authenticated clients.
 - **collector** (Go). Streams Bybit websocket tickers (including bid and ask) and
   publishes them to NATS `market.bybit.ticker.*`. This is a prototype and is not
   wired in yet. Nothing subscribes and nothing persists the stream. The scanner uses
@@ -30,8 +32,9 @@ The web UI is behind a login with no public exposure.
 
 - **analytics** (Python). One image with three focused entry points:
   - the long-running pump scanner polls exchange tickers via ccxt (not via NATS),
-    computes pump episodes, persists OI and funding snapshots, and writes
-    `pumps:latest` to Redis;
+    computes pump episodes, persists OI and funding snapshots, and atomically writes a
+    private `pumps:measurement` feed from +20% plus a public `pumps:latest` feed from
+    +30% to Redis;
   - the long-running outcome resolver idempotently backfills forward prices, MAE, and
     MFE for recorded decisions from exchange OHLCV;
   - the on-demand, read-only measurement report aggregates dataset health, outcome
@@ -53,18 +56,17 @@ Exchanges (REST tickers)
     |
 Analytics (Python, ccxt polling)
     |
-pumps:latest (Redis)
+pumps:measurement (Redis, private, +20%)
+    +----> api-gateway ticker (scoreSignals)
+    |          |
+    |      signals:{base} (Redis)
+    |          |
+    +----> Execution measurement + hard +30% entry gate
+    |
+pumps:latest (Redis, public, +30%)
     +----> Notifier (Telegram + app.pump_alert_deliveries)
     |
-    +----> api-gateway ticker (scoreSignals)
-    |
-signals:{base} (Redis)   score 0-10, verdict, computed_at, components
-    |
-Execution signal trader (freshness checked, DRY_RUN or AUTO_TRADE)
-    |
-Risk checks
-    |
-Exchanges (REST, ccxt)
+    +----> api-gateway REST/WebSocket -> Web UI
 
 Trade decisions (Postgres) <---- Outcome resolver (Python, exchange OHLCV)
     |
@@ -75,26 +77,27 @@ On-demand measurement report (Python, read-only)
 
 ## Redis key registry
 
-| Key                                                  | Owner       | TTL     | Schema / purpose                                                        |
-| ---------------------------------------------------- | ----------- | ------- | ----------------------------------------------------------------------- |
-| `pumps:latest`                                       | analytics   | 300s    | `{ts, published_at_ms, count, pumps: [...]}`                            |
-| `notifier:seen:{pump_event_id}`                      | notifier    | 30d     | `"1"`, de-dupes one threshold alert per durable pump episode            |
-| `notifier:alert_delivery_outbox`                     | notifier    | none    | AOF-backed retry list for Postgres alert-delivery measurements          |
-| `notifier:alert_delivery_dlq`                        | notifier    | none    | malformed alert-delivery measurements requiring inspection              |
-| `signals:{base}`                                     | api-gateway | 120s    | `{score, verdict, computed_at, components}`                             |
-| `trader:seen:{base}`                                 | execution   | 24h/30m | `"1"`, de-dupes signal handling                                         |
-| `execution:signal_readiness`                         | execution   | 180s    | latest trader tick: pumps, evaluated, ready, deferred, reason counts    |
-| `trading:enabled`                                    | execution   | no TTL  | `"true"/"false"`, kill switch                                           |
-| `trading:daily_pnl`                                  | execution   | none    | float string (USD), monitoring cache                                    |
-| `risk:pnl_ready`                                     | execution   | 120s    | `"1"`, positive lease. Absent or stale means trading is blocked         |
-| `journal:pending_close:{exchange}:{base}:{trade_id}` | execution   | none    | durable retry marker: close confirmed on-exchange, journal write failed |
-| `lock:order:{exchange}:{base}`                       | execution   | 30s     | `{owner}` UUID, distributed order lock                                  |
-| `position:opened_at:{exchange}:{base}`               | execution   | 24h     | Unix timestamp string                                                   |
-| `position:sl_order_id:{exchange}:{base}`             | execution   | none    | exchange SL order id, used by position reconciliation                   |
-| `position:entry:{exchange}:{base}`                   | execution   | none    | entry price plus context                                                |
-| `position:side:{exchange}:{base}`                    | execution   | none    | `"long"/"short"`                                                        |
-| `trade:id:{exchange}:{base}`                         | execution   | none    | open trade id pointer, CAS-guarded on close                             |
-| `position:paper:*`                                   | execution   | none    | paper and DRY_RUN position state                                        |
+| Key                                                  | Owner       | TTL    | Schema / purpose                                                        |
+| ---------------------------------------------------- | ----------- | ------ | ----------------------------------------------------------------------- |
+| `pumps:measurement`                                  | analytics   | 300s   | private +20% feed with `entry_min_change_pct` for scoring and research  |
+| `pumps:latest`                                       | analytics   | 300s   | public +30% subset for API, Web, and Telegram                           |
+| `notifier:seen:{pump_event_id}`                      | notifier    | 30d    | `"1"`, de-dupes one threshold alert per durable pump episode            |
+| `notifier:alert_delivery_outbox`                     | notifier    | none   | AOF-backed retry list for Postgres alert-delivery measurements          |
+| `notifier:alert_delivery_dlq`                        | notifier    | none   | malformed alert-delivery measurements requiring inspection              |
+| `signals:{base}`                                     | api-gateway | 120s   | score, verdict, episode id, qualification anchor, and components        |
+| `trader:seen:{base}`                                 | execution   | varies | `"1"`; 1m measurement, 5/30m skips, or 24h traded de-duplication        |
+| `execution:signal_readiness`                         | execution   | 180s   | latest trader tick: pumps, evaluated, ready, deferred, reason counts    |
+| `trading:enabled`                                    | execution   | no TTL | `"true"/"false"`, kill switch                                           |
+| `trading:daily_pnl`                                  | execution   | none   | float string (USD), monitoring cache                                    |
+| `risk:pnl_ready`                                     | execution   | 120s   | `"1"`, positive lease. Absent or stale means trading is blocked         |
+| `journal:pending_close:{exchange}:{base}:{trade_id}` | execution   | none   | durable retry marker: close confirmed on-exchange, journal write failed |
+| `lock:order:{exchange}:{base}`                       | execution   | 30s    | `{owner}` UUID, distributed order lock                                  |
+| `position:opened_at:{exchange}:{base}`               | execution   | 24h    | Unix timestamp string                                                   |
+| `position:sl_order_id:{exchange}:{base}`             | execution   | none   | exchange SL order id, used by position reconciliation                   |
+| `position:entry:{exchange}:{base}`                   | execution   | none   | entry price plus context                                                |
+| `position:side:{exchange}:{base}`                    | execution   | none   | `"long"/"short"`                                                        |
+| `trade:id:{exchange}:{base}`                         | execution   | none   | open trade id pointer, CAS-guarded on close                             |
+| `position:paper:*`                                   | execution   | none   | paper and DRY_RUN position state                                        |
 
 > The source of truth for accounting is Postgres (`app.trades`, `realized_pnl_today`),
 > not Redis. The durable-daily-PnL work replaced the old ephemeral `daily_loss:{date}`
@@ -113,9 +116,10 @@ On-demand measurement report (Python, read-only)
 
 Scanning is wider than trading. Data coverage does not equal tradeable venues.
 
-- Scanner (data): 12 CEX perp markets by default. binance, bybit, okx, gate, bitget,
-  mexc, kucoin, bingx, coinex, phemex, cryptocom, htx. This includes Binance. We scan
-  it for data even though we cannot trade its perps from Poland.
+- Scanner (data): 17 CEX perp markets by default. binance, bybit, okx, gate, bitget,
+  mexc, kucoin, bingx, coinex, phemex, cryptocom, htx, lbank, bitmart, xt, toobit, and
+  blofin. This includes Binance. We scan it for data even though we cannot trade its
+  perps from Poland.
 - Execution (trading): only exchanges with both an API key and secret configured are
   activated at startup. Binance perps are not traded (blocked for Poland residents).
 

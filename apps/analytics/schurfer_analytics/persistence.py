@@ -9,7 +9,7 @@ import structlog
 log = structlog.get_logger()
 
 _SELECT_OPEN = """
-SELECT id, peak_pct
+SELECT id, peak_pct, entry_qualified_at
 FROM app.pump_events
 WHERE base = %s AND closed_at IS NULL
 """
@@ -20,6 +20,7 @@ SET last_seen_at = %s,
     last_pct     = %s,
     exchanges    = %s::jsonb,
     peak_pct     = GREATEST(peak_pct, %s),
+    entry_qualified_at = COALESCE(entry_qualified_at, %s),
     miss_count   = 0
 WHERE id = %s
 """
@@ -27,11 +28,12 @@ WHERE id = %s
 # episode = max existing episode for this base + 1
 _INSERT_EPISODE = """
 INSERT INTO app.pump_events
-    (base, episode, first_seen_at, last_seen_at, peak_pct, last_pct, exchanges)
+    (base, episode, first_seen_at, entry_qualified_at,
+     last_seen_at, peak_pct, last_pct, exchanges)
 VALUES (
     %s,
     COALESCE((SELECT MAX(episode) FROM app.pump_events WHERE base = %s), 0) + 1,
-    %s, %s, %s, %s, %s::jsonb
+    %s, %s, %s, %s, %s, %s::jsonb
 )
 RETURNING id
 """
@@ -341,7 +343,11 @@ async def insert_funding_rate_snapshots(db_url: str, snapshots: list[dict[str, A
         log.warning("persistence.insert_fr_snapshots_failed", err=str(exc))
 
 
-async def upsert_pumps(db_url: str, pumps: list[dict[str, Any]]) -> dict[str, int]:
+async def upsert_pumps(
+    db_url: str,
+    pumps: list[dict[str, Any]],
+    entry_min_pct: float,
+) -> dict[str, int]:
     """Persist every live pump and return its open episode id.
 
     The mapping is returned only after the transaction commits. An empty mapping for a
@@ -359,12 +365,13 @@ async def upsert_pumps(db_url: str, pumps: list[dict[str, Any]]) -> dict[str, in
                 last_pct = float(pump["max_change_pct"])
                 exchanges_json = json.dumps(pump["exchanges"])
                 first_observed_at, last_observed_at = _pump_observation_window(pump)
+                entry_qualified_at = first_observed_at if last_pct >= entry_min_pct else None
 
                 await cur.execute(_SELECT_OPEN, (base,))
                 row = await cur.fetchone()
 
                 if row:
-                    event_id, _ = row
+                    event_id, _, _ = row
                     await cur.execute(
                         _UPDATE_EPISODE,
                         (
@@ -372,6 +379,7 @@ async def upsert_pumps(db_url: str, pumps: list[dict[str, Any]]) -> dict[str, in
                             last_pct,
                             exchanges_json,
                             rolling_high_pct,
+                            entry_qualified_at,
                             event_id,
                         ),
                     )
@@ -382,6 +390,7 @@ async def upsert_pumps(db_url: str, pumps: list[dict[str, Any]]) -> dict[str, in
                             base,
                             base,
                             first_observed_at,
+                            entry_qualified_at,
                             last_observed_at,
                             rolling_high_pct,
                             last_pct,

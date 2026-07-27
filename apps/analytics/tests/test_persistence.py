@@ -5,6 +5,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from schurfer_analytics.persistence import (
+    _UPDATE_EPISODE,
     _UPDATE_LAST_PCT,
     _UPSERT_EVENT_SOURCE,
     _episode_24h_high_pct,
@@ -125,24 +126,26 @@ def test_episode_24h_high_pct_multi_exchange_takes_max() -> None:
 
 def test_upsert_pumps_empty_list_skips_db() -> None:
     with patch("psycopg.AsyncConnection.connect") as mock_connect:
-        result = asyncio.run(upsert_pumps("postgresql://test", []))
+        result = asyncio.run(upsert_pumps("postgresql://test", [], 30.0))
     mock_connect.assert_not_called()
     assert result == {}
 
 
 def test_upsert_pumps_updates_existing_episode() -> None:
     mock_connect, _, mock_cur = _db_mocks()
-    mock_cur.fetchone = AsyncMock(return_value=(42, 50.0))
+    mock_cur.fetchone = AsyncMock(return_value=(42, 50.0, None))
 
     with patch("psycopg.AsyncConnection.connect", mock_connect):
-        result = asyncio.run(upsert_pumps("postgresql://test", [_pump("BTC", 55.0)]))
+        result = asyncio.run(upsert_pumps("postgresql://test", [_pump("BTC", 55.0)], 30.0))
 
     calls = mock_cur.execute.call_args_list
     assert len(calls) == 3
     # UPDATE args include the point-in-time scanner observation.
     update_args = calls[1][0][1]
     assert update_args[0] == datetime.fromtimestamp(1_800_000_000, tz=UTC)
+    assert update_args[-2] == datetime.fromtimestamp(1_800_000_000, tz=UTC)
     assert update_args[-1] == 42
+    assert "entry_qualified_at = COALESCE(entry_qualified_at, %s)" in _UPDATE_EPISODE
     assert calls[2][0][0] == _UPSERT_EVENT_SOURCE
     assert calls[2][0][1][0:3] == (42, "bybit", "BTCUSDT")
     assert result == {"BTC": 42}
@@ -153,7 +156,7 @@ def test_upsert_pumps_inserts_new_episode() -> None:
     mock_cur.fetchone = AsyncMock(side_effect=[None, (43,)])
 
     with patch("psycopg.AsyncConnection.connect", mock_connect):
-        result = asyncio.run(upsert_pumps("postgresql://test", [_pump("ETH", 40.0)]))
+        result = asyncio.run(upsert_pumps("postgresql://test", [_pump("ETH", 40.0)], 30.0))
 
     calls = mock_cur.execute.call_args_list
     assert len(calls) == 3
@@ -161,8 +164,29 @@ def test_upsert_pumps_inserts_new_episode() -> None:
     insert_args = calls[1][0][1]
     assert insert_args[0] == "ETH"
     assert insert_args[1] == "ETH"
-    assert insert_args[2] == insert_args[3] == datetime.fromtimestamp(1_800_000_000, tz=UTC)
+    assert (
+        insert_args[2]
+        == insert_args[3]
+        == insert_args[4]
+        == datetime.fromtimestamp(
+            1_800_000_000,
+            tz=UTC,
+        )
+    )
     assert calls[2][0][0] == _UPSERT_EVENT_SOURCE
+    assert result == {"ETH": 43}
+
+
+def test_upsert_pumps_keeps_entry_qualification_null_below_floor() -> None:
+    mock_connect, _, mock_cur = _db_mocks()
+    mock_cur.fetchone = AsyncMock(side_effect=[None, (43,)])
+
+    with patch("psycopg.AsyncConnection.connect", mock_connect):
+        result = asyncio.run(upsert_pumps("postgresql://test", [_pump("ETH", 25.0)], 30.0))
+
+    insert_args = mock_cur.execute.call_args_list[1][0][1]
+    assert insert_args[2] == datetime.fromtimestamp(1_800_000_000, tz=UTC)
+    assert insert_args[3] is None
     assert result == {"ETH": 43}
 
 
@@ -172,11 +196,11 @@ def test_upsert_pumps_exchanges_serialized_as_json() -> None:
     pump = _pump("SOL", 35.0)
 
     with patch("psycopg.AsyncConnection.connect", mock_connect):
-        asyncio.run(upsert_pumps("postgresql://test", [pump]))
+        asyncio.run(upsert_pumps("postgresql://test", [pump], 30.0))
 
     calls = mock_cur.execute.call_args_list
     insert_args = calls[1][0][1]
-    exchanges_json = insert_args[6]
+    exchanges_json = insert_args[7]
     parsed = json.loads(exchanges_json)
     assert isinstance(parsed, list)
     assert parsed[0]["exchange"] == "bybit"
@@ -186,7 +210,7 @@ def test_upsert_pumps_failure_returns_no_partial_mapping() -> None:
     mock_connect = AsyncMock(side_effect=RuntimeError("db down"))
 
     with patch("psycopg.AsyncConnection.connect", mock_connect):
-        result = asyncio.run(upsert_pumps("postgresql://test", [_pump("BTC", 55.0)]))
+        result = asyncio.run(upsert_pumps("postgresql://test", [_pump("BTC", 55.0)], 30.0))
 
     assert result == {}
 
@@ -201,7 +225,7 @@ def test_upsert_pumps_records_every_exchange_source() -> None:
     pump["exchanges"].append(second)
 
     with patch("psycopg.AsyncConnection.connect", mock_connect):
-        result = asyncio.run(upsert_pumps("postgresql://test", [pump]))
+        result = asyncio.run(upsert_pumps("postgresql://test", [pump], 30.0))
 
     source_calls = [
         call for call in mock_cur.execute.call_args_list if call[0][0] == _UPSERT_EVENT_SOURCE
@@ -300,7 +324,7 @@ def test_upsert_pumps_rejects_non_finite_source_change_atomically() -> None:
     pump["exchanges"][0]["change_pct"] = float("nan")
 
     with patch("psycopg.AsyncConnection.connect", mock_connect):
-        result = asyncio.run(upsert_pumps("postgresql://test", [pump]))
+        result = asyncio.run(upsert_pumps("postgresql://test", [pump], 30.0))
 
     assert result == {}
     assert all(call[0][0] != _UPSERT_EVENT_SOURCE for call in mock_cur.execute.call_args_list)

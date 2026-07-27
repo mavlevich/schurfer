@@ -175,7 +175,10 @@ services:
       DATABASE_URL: postgresql://schurfer:${POSTGRES_PASSWORD}@postgres:5432/schurfer
       REDIS_ADDR: redis:6379
       PUMP_EXCHANGES: ${PUMP_EXCHANGES:-}
-      PUMP_MIN_PCT: ${PUMP_MIN_PCT:-30}
+      PUMP_MEASUREMENT_MIN_PCT: ${PUMP_MEASUREMENT_MIN_PCT:-20}
+      # Blank preserves the legacy PUMP_MIN_PCT fallback inside the application.
+      PUMP_ENTRY_MIN_PCT: ${PUMP_ENTRY_MIN_PCT:-}
+      PUMP_MIN_PCT: ${PUMP_MIN_PCT:-}
       SCAN_INTERVAL: ${SCAN_INTERVAL:-60}
     depends_on:
       postgres:
@@ -254,6 +257,10 @@ services:
       SIGNAL_POSITION_USD: ${SIGNAL_POSITION_USD:-50}
       SIGNAL_LEVERAGE: ${SIGNAL_LEVERAGE:-3}
       STRATEGY_VERSION: ${STRATEGY_VERSION:-pump_short_v1_market_quality}
+      MEASUREMENT_STRATEGY_VERSION: ${MEASUREMENT_STRATEGY_VERSION:-pump_short_measurement_v1}
+      # Blank preserves the legacy PUMP_MIN_PCT fallback inside the application.
+      PUMP_ENTRY_MIN_PCT: ${PUMP_ENTRY_MIN_PCT:-}
+      PUMP_MIN_PCT: ${PUMP_MIN_PCT:-}
       SCORE_THRESHOLD: ${SCORE_THRESHOLD:-6}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}

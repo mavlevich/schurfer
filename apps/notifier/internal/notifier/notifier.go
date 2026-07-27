@@ -35,7 +35,8 @@ type Config struct {
 	// stale. A silently dead scanner is the main way the dataset develops gaps.
 	StaleAfter time.Duration
 	// MinPct is the smallest max-change percent a pump must reach to trigger a
-	// Telegram alert. The scanner already filters to its own PUMP_MIN_PCT; this is
+	// Telegram alert. The public scanner feed is already filtered at
+	// PUMP_ENTRY_MIN_PCT; this is
 	// a second, notifier-side gate that keeps the channel from being flooded by
 	// every small pump. A sub-threshold pump is not marked seen, so it still alerts
 	// if it later grows past the gate.

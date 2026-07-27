@@ -8,6 +8,7 @@ from schurfer_journal.models import (
     OutcomeLabel,
     OutcomeQuality,
     PumpAlertDelivery,
+    PumpEvent,
     PumpEventSource,
     Side,
     Strategy,
@@ -186,6 +187,14 @@ class TestTradeDecisionModels:
     def test_outcome_foreign_key(self) -> None:
         fks = {fk.target_fullname for fk in TradeDecisionOutcome.__table__.foreign_keys}
         assert "app.trade_decisions.decision_id" in fks
+
+
+class TestPumpEventModel:
+    def test_measurement_and_entry_times_are_distinct(self) -> None:
+        columns = PumpEvent.__table__.columns
+
+        assert columns["first_seen_at"].nullable is False
+        assert columns["entry_qualified_at"].nullable is True
 
 
 class TestPumpEventSourceModel:

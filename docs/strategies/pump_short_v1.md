@@ -12,14 +12,17 @@ exhaustion of the pump on perps captures the retrace.
 
 ## Trigger (scanner)
 
-- `PUMP_MIN_PCT=30`: a token is a candidate once its **24h ticker change on an
-  exchange** reaches +30% (this is the live ticker change, not the episode's historical
-  peak; the scanner filters to this floor — below it is excluded from the current
-  candidate universe, not proven to be noise, see HYP-003).
+- `PUMP_ENTRY_MIN_PCT=30`: a token becomes eligible for this strategy once its **24h
+  ticker change on an exchange** reaches +30% (this is the live ticker change, not the
+  episode's historical peak).
+- `PUMP_MEASUREMENT_MIN_PCT=20` feeds a separate private research path. Observations
+  from +20% through +30% are recorded under `pump_short_measurement_v1`, rechecked
+  every minute, and can never reach the v1 order path. They are absent from the public
+  pumps feed and Telegram.
 - The token must trade on a perp on at least one configured exchange.
 - The trader evaluates each candidate once (a per-token `seen` key with a TTL debounces
-  re-evaluation: 30 min after a skip, 5 min after an entry-quality wait, 24 h after a
-  trade).
+  re-evaluation: 1 min below the entry floor, 30 min after a stable skip, 5 min after
+  an entry-quality wait, 24 h after a trade).
 
 ## Signal score and gates
 

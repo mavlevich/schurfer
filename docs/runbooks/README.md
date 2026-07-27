@@ -366,6 +366,48 @@ the new cohort separately.
     "SELECT ts, base, reason, score, pump_event_id FROM app.trade_decisions ORDER BY ts DESC LIMIT 20"
   ```
 
+- Measurement/entry floor split: migration 0016 adds the immutable
+  `entry_qualified_at` strategy anchor, so use a full deploy rather than individual
+  service deployment. The private feed must contain the public feed as a thresholded
+  subset, while below-entry decisions use the measurement strategy version and never
+  reach the order path:
+
+  ```bash
+  make prod-deploy
+  docker exec schurfer-postgres psql -U schurfer -d schurfer -c \
+    "SELECT version_num FROM app.alembic_version"
+  docker exec schurfer-redis redis-cli --raw GET pumps:measurement
+  docker exec schurfer-redis redis-cli --raw GET pumps:latest
+  docker exec schurfer-analytics env \
+    | grep -E 'PUMP_MEASUREMENT_MIN_PCT|PUMP_ENTRY_MIN_PCT'
+  docker exec schurfer-execution env \
+    | grep -E 'PUMP_ENTRY_MIN_PCT|MEASUREMENT_STRATEGY_VERSION|AUTO_TRADE|DRY_RUN'
+  docker exec schurfer-postgres psql -U schurfer -d schurfer -c \
+    "SELECT ts, base, pump_pct, action, reason, strategy_version
+     FROM app.trade_decisions
+     WHERE strategy_version = 'pump_short_measurement_v1'
+     ORDER BY ts DESC LIMIT 20"
+  docker exec schurfer-postgres psql -U schurfer -d schurfer -c \
+    "SELECT date_trunc('hour', ts) AS hour, reason, count(*)
+     FROM app.trade_decisions
+     WHERE strategy_version = 'pump_short_measurement_v1'
+       AND ts >= NOW() - INTERVAL '24 hours'
+     GROUP BY 1, 2 ORDER BY 1 DESC, 3 DESC"
+  ```
+
+  The migration revision must be `0016`. Expected defaults are a private +20%
+  measurement floor, a +30% hard entry/public floor, and
+  `pump_short_measurement_v1` for lower-floor decisions. `first_seen_at` preserves the
+  measurement start; `entry_qualified_at` is set once when +30% is first observed.
+  Signal age and OI baseline use the latter after qualification, preserving the v1
+  entry clock. The parent event remains live while it stays at or above +20%, so
+  repeated +30% crossings remain one correlated research episode. Keep
+  `AUTO_TRADE=false` and `DRY_RUN=true` during measurement. A measurement-only row
+  must have `action=skipped` and `reason=pump_below_entry_floor`. Monitor hourly row
+  growth and exchange rate-limit warnings after rollout. `entry_floor_invalid` must
+  remain zero; any occurrence means the private feed contract is malformed and
+  execution has correctly failed closed.
+
 ## Incidents
 
 Record notable incidents and their fixes here as they happen, so the next person (or
