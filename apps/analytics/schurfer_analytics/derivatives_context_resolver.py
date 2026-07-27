@@ -38,7 +38,7 @@ if TYPE_CHECKING:
 
 log = structlog.get_logger()
 
-DERIVATIVES_CONTEXT_RESOLVER_VERSION = "derivatives_context_v1"
+DERIVATIVES_CONTEXT_RESOLVER_VERSION = "derivatives_context_v2"
 DEFAULT_COHORT_START = datetime(2026, 7, 27, tzinfo=UTC)
 RETRYABLE_STATUSES = (
     "fetch_failed",

@@ -623,6 +623,12 @@ measurement, replay, or production reliability. The executable task set lives in
       ([CCXT-010](docs/tasks/ccxt/010-htx-index-ohlcv-capability.md),
       [CCXT-011](docs/tasks/ccxt/011-okx-long-short-history-window.md),
       [CCXT-012](docs/tasks/ccxt/012-derivatives-empty-history-conformance.md)).
+- [ ] Verify the Bybit unified open-interest window contract against current CCXT
+      `master`. Production evidence shows that a request with only `since` returned a
+      moving 200-row latest tail, while the adapter also supports an explicit unified
+      `until` bound. Determine whether the upstream change is documentation, a
+      conformance test, or adapter behavior before opening an issue
+      ([CCXT-013](docs/tasks/ccxt/013-bybit-open-interest-window-contract.md)).
 
 ### Phase 3: Live ladder (gated on proven edge)
 

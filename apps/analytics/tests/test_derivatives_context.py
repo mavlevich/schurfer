@@ -40,8 +40,10 @@ def _exchange(
     capability: str,
     response: object,
     symbol_available: bool = True,
+    exchange_id: str = "binance",
 ) -> MagicMock:
     exchange = MagicMock()
+    exchange.id = exchange_id
     exchange.has = {capability: True}
     exchange.markets = {"ERA/USDT:USDT": {"id": "ERAUSDT"}} if symbol_available else {}
     exchange.load_markets = AsyncMock()
@@ -104,12 +106,18 @@ async def test_every_method_uses_the_locked_ccxt_signature(
     )[0]
 
     fetcher = getattr(exchange, selected.callable_name)
-    expected_call = (
-        ("ERA/USDT:USDT", SINCE_MS, 200)
-        if selected.timeframe is None
-        else ("ERA/USDT:USDT", "5m", SINCE_MS, 200)
-    )
-    fetcher.assert_awaited_once_with(*expected_call)
+    if selected.name == "long_short_ratio_history":
+        fetcher.assert_awaited_once_with(
+            "ERA/USDT:USDT",
+            "5m",
+            SINCE_MS,
+            200,
+            {"until": UNTIL_MS},
+        )
+    elif selected.timeframe is None:
+        fetcher.assert_awaited_once_with("ERA/USDT:USDT", SINCE_MS, 200)
+    else:
+        fetcher.assert_awaited_once_with("ERA/USDT:USDT", "5m", SINCE_MS, 200)
     assert result.status == "sampled"
     assert result.in_window_rows == (144 if selected.series_kind == "regular" else 1)
 
@@ -140,6 +148,47 @@ async def test_probe_reuses_one_loaded_client_for_all_methods() -> None:
     exchange.close.assert_awaited_once_with()
     assert len(results) == len(METHODS)
     assert {result.status for result in results} == {"sampled"}
+
+
+@pytest.mark.parametrize(
+    ("exchange_id", "method_name"),
+    [
+        ("binance", "long_short_ratio_history"),
+        ("bybit", "open_interest_history"),
+    ],
+)
+async def test_latest_tail_pairs_receive_the_requested_window_end(
+    exchange_id: str,
+    method_name: str,
+) -> None:
+    method = next(method for method in METHODS if method.name == method_name)
+    exchange = _exchange(
+        capability=method.capability,
+        response=_complete_response(method),
+        exchange_id=exchange_id,
+    )
+
+    observations = await collect_derivatives_context_target(
+        exchange_id,
+        exchange,
+        _target(exchange_id),
+        (method,),
+        before_minutes=240,
+        after_minutes=480,
+        limit=200,
+        max_pages=10,
+        timeout_seconds=1,
+    )
+
+    getattr(exchange, method.callable_name).assert_awaited_once_with(
+        "ERA/USDT:USDT",
+        "5m",
+        SINCE_MS,
+        200,
+        {"until": UNTIL_MS},
+    )
+    assert observations[0].result.status == "sampled"
+    assert observations[0].result.in_window_rows == 144
 
 
 async def test_no_target_or_unsupported_capability_never_fetches() -> None:

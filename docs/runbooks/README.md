@@ -319,7 +319,10 @@ the new cohort separately.
   long/short ratios and HTX liquidations. Mark/index/premium candles remain
   reconstructable report inputs and are not duplicated into Postgres. HTX funding and
   liquidation requests are capped at 100 rows per page even when the generic fetch
-  limit is 200.
+  limit is 200. Resolver version `derivatives_context_v2` also sends an explicit end
+  bound for Binance long/short-ratio and Bybit open-interest history. Version `v1`
+  exposed that both endpoints otherwise returned a moving 200-row latest tail and
+  omitted the beginning of older requested windows.
 
   Inspect work coverage and stored rows:
 
