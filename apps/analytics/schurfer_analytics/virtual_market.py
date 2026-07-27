@@ -9,6 +9,7 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING, Any
 
+from .candle_anomaly_features import candle_anomaly_path_bounds
 from .ohlcv import fetch_candles
 from .virtual_entry_challengers import challenger_path_bounds
 from .virtual_strategy import MarketPath, expected_path_bounds, select_episode_decision
@@ -140,6 +141,14 @@ async def fetch_entry_challenger_paths(
 ) -> tuple[MarketPath, ...]:
     """Fetch pre-decision context and delayed-entry exits for all entry variants."""
     return await _fetch_market_paths(episodes, factories, challenger_path_bounds)
+
+
+async def fetch_candle_anomaly_paths(
+    episodes: tuple[ReplayEpisode, ...],
+    factories: dict[str, ExchangeFactory],
+) -> tuple[MarketPath, ...]:
+    """Fetch pre-decision feature context and baseline exits in one exact path."""
+    return await _fetch_market_paths(episodes, factories, candle_anomaly_path_bounds)
 
 
 async def fetch_decision_market_paths(

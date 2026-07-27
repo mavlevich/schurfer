@@ -362,9 +362,47 @@ adapter. Record the baseline cutoff before deploying any speed change.
         familywise paired lower bound, Holm rejection, and positive top-cluster
         sensitivity, and produces only a live-shadow candidate.
 
-  - [ ] Derive recoverable pre-decision candle features (including blow-off concentration
-        and reversal strength) from fully closed OHLCV and test whether they separate
-        outcomes before promoting either to a live gate or score component.
+  - [x] Derive recoverable pre-decision candle features (HYP-005) from fully closed
+        exact-venue 5-minute OHLCV. The registered `candle_anomaly_features_v1`
+        contract uses a 24-hour formation window with four hours of warm-up,
+        prior-only ATR and volume baselines, top-two positive-move concentration,
+        bullish body/range/wick expansion, final bearish body, and returned-pump
+        share. One shared path supplies both pre-decision features and the locked
+        baseline virtual exit replay. The Markdown/JSON report groups episodes into
+        the four pre-registered blow-off/reversal buckets and reports coverage,
+        cluster concentration, net return, MFE/MAE, captured move, and initial-stop
+        rate. It is descriptive only and cannot alter production scoring or entry.
+  - [ ] Candle anomaly verification after merge:
+    - Data sources: `app.trade_decisions` and `app.pump_events` define the selected
+      baseline episode decision; `app.trade_decision_outcomes` provides exact-anchor
+      8-hour eligibility; CCXT supplies the combined exact-venue 5-minute feature and
+      exit path at report time. The prospective cohort begins at
+      `2026-07-29T00:00:00Z`.
+    - Deploy analytics only, wait at least eight hours after candidate episodes close,
+      then inspect the descriptive report:
+
+      ```bash
+      make prod-deploy-svc SERVICE=analytics
+      make prod-candle-anomaly-report
+      ```
+
+    - Before comparing buckets, choose an exclusive UTC cutoff without looking at the
+      output and archive the JSON manifest outside Git:
+
+      ```bash
+      mkdir -p backups/reports
+      make prod-candle-anomaly-report \
+        ARGS="--until 2026-08-05T00:00:00Z --format json" \
+        > backups/reports/candle-anomalies-2026-08-05.json
+      ```
+
+    - Check input exclusions, exact-path and feature coverage, partial/missing volume,
+      all four registered buckets, largest-cluster share, net return, MFE/MAE,
+      captured move, and initial-stop rate. Investigate missing paths rather than
+      replacing venues. A useful split only becomes a hypothesis for a separately
+      registered out-of-sample live-shadow cohort; do not tune the thresholds or
+      production strategy from this descriptive report.
+
   - [ ] Enrich each pump episode with recoverable derivatives context from CCXT
         history where the venue supports it: funding-rate history, open-interest
         history, mark/index/premium-index candles, long/short ratios, and public

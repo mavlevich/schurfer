@@ -374,6 +374,24 @@ the new cohort separately.
   cutoff selected before looking at threshold output; the full checklist is in
   `ROADMAP.md`.
 
+- Candle anomaly research: after the registered cohort has accumulated closed episodes
+  with exact-anchor 8-hour outcomes, derive HYP-005 features and join them to the
+  baseline virtual replay:
+
+  ```bash
+  make prod-candle-anomaly-report
+  make prod-candle-anomaly-report \
+    ARGS="--until 2026-08-05T00:00:00Z --format json" \
+    > backups/reports/candle-anomalies-2026-08-05.json
+  ```
+
+  The command uses only fully closed exact-venue 5-minute candles available by each
+  decision. Inspect feature and volume coverage, unresolved paths, cluster
+  concentration, all four pre-registered blow-off/reversal buckets, net return,
+  MFE/MAE, captured move, and initial-stop rate. This report is descriptive and cannot
+  authorize a production gate. Any candidate feature needs a separately registered
+  out-of-sample live-shadow cohort.
+
 - Pump/signal readiness after deploying migration 0012: verify newly published pumps
   carry an episode id and recent decisions are attributed. `signal_missing` or
   `signal_episode_mismatch` may occur for one execution tick while the minute-based
