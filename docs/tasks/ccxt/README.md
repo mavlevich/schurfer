@@ -29,7 +29,7 @@ because they have different dependencies and outcomes.
 | -------------------------------------------------------- | ----------------------------------------------------------------------- | ---------------------------------- |
 | [CCXT-001](001-xt-fetch-open-interest.md)                | Research, implement, test, and submit XT `fetchOpenInterest`            | None                               |
 | [CCXT-002](002-adopt-upstream-xt.md)                     | Upgrade Schurfer and remove the local fallback safely                   | Released CCXT version              |
-| [CCXT-003](003-lbank-perpetual-ohlcv-research.md)        | Decide whether a supported LBank perpetual OHLCV contribution is viable | Independent; separate PR if viable |
+| [CCXT-003](003-lbank-perpetual-ohlcv-research.md)        | Decide whether a supported LBank perpetual OHLCV contribution is viable | Parked; production gap confirmed   |
 | [CCXT-004](004-lbank-swap-ticker-timestamp.md)           | Normalize LBank swap `lastTime` into the unified ticker timestamp       | Completed and merged upstream      |
 | [CCXT-005](005-apple-silicon-development-image.md)       | Restore the development Docker image on Apple Silicon                   | Completed and merged upstream      |
 | [CCXT-006](006-docker-image-optimization-research.md)    | Measure Docker image size and build time before proposing improvements  | Ready for baseline measurements    |

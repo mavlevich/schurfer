@@ -90,6 +90,7 @@ def test_performance_statement_groups_correlated_rows_by_episode_and_segment() -
     assert "short_return_pct" in sql
     assert "mfe_pct" in sql
     assert "mae_pct" in sql
+    assert "complete_fallback_unsupported" in repr(params)
     assert 60 in params.values()
 
 

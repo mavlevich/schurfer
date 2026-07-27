@@ -87,7 +87,11 @@ def test_filters_normalize_horizons_strategies_and_status_policy() -> None:
 
     assert filters.strategy_versions == ("pump_short_v1",)
     assert filters.required_horizons == (60, 480)
-    assert filters.accepted_outcome_statuses == ("complete", "complete_fallback")
+    assert filters.accepted_outcome_statuses == (
+        "complete",
+        "complete_fallback",
+        "complete_fallback_unsupported",
+    )
 
 
 @pytest.mark.parametrize(
@@ -215,8 +219,12 @@ def test_missing_exchange_excludes_exact_anchor_replay() -> None:
     assert "missing_exchange" in decision_exclusion_reasons(decision, _filters())
 
 
-def test_fallback_outcome_requires_explicit_sensitivity_policy() -> None:
-    decision = _decision(1, outcomes=(_outcome(status="complete_fallback"),))
+@pytest.mark.parametrize(
+    "status",
+    ("complete_fallback", "complete_fallback_unsupported"),
+)
+def test_fallback_outcome_requires_explicit_sensitivity_policy(status: str) -> None:
+    decision = _decision(1, outcomes=(_outcome(status=status),))
 
     exact_dataset = build_replay_dataset([decision], _filters())
     fallback_dataset = build_replay_dataset(
@@ -224,9 +232,7 @@ def test_fallback_outcome_requires_explicit_sensitivity_policy() -> None:
         _filters(allow_fallback=True),
     )
 
-    assert exact_dataset.excluded_episodes[0].exclusion_reasons == (
-        "outcome_status:480:complete_fallback",
-    )
+    assert exact_dataset.excluded_episodes[0].exclusion_reasons == (f"outcome_status:480:{status}",)
     assert len(fallback_dataset.eligible_episodes) == 1
 
 

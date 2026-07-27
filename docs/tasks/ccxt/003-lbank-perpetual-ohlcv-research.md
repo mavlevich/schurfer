@@ -1,6 +1,7 @@
 # CCXT-003: Research LBank perpetual OHLCV support
 
-> Status: research required; no implementation commitment
+> Status: parked after production confirmation; revisit outside the core Schurfer
+> strategy sprint
 > Depends on: none
 > Produces: a go/no-go decision for a separate LBank upstream contribution
 
@@ -51,6 +52,41 @@ As of 2026-07-23:
 These frontend mechanisms are evidence that data exists, not evidence of a supported
 public API. They are not acceptable foundations for a CCXT contribution without
 official documentation and stable public access.
+
+## Production confirmation and deferred Schurfer fallback
+
+On 2026-07-27, the production outcome resolver confirmed that this is not an isolated
+chart-page problem:
+
+- `3,709` LBank-anchored outcome rows were in `fetch_failed`;
+- those failures affected `756` distinct decisions;
+- the repeated error was `lbank: Invalid Trading Pair`;
+- `973` outcome rows were recovered through an explicitly labelled cross-venue
+  fallback, while LBank-only paths remained unavailable.
+
+The current official contract documentation still exposes current contract market
+data and order-book access but does not document historical perpetual Klines or a
+public trade-history stream suitable for reconstructing them. CCXT cannot safely
+provide unified perpetual OHLCV unless LBank exposes a supported source.
+
+This task is deliberately parked so it does not delay score, entry, exit, and shadow
+strategy work. When resumed, treat it as two independent outcomes:
+
+1. **Upstream research:** ask LBank developer support for a documented public
+   perpetual Kline or trade-history endpoint. Submit a CCXT change only if that
+   endpoint exists and satisfies the GO criteria below.
+2. **Schurfer fallback:** persist timestamped perpetual scanner observations and
+   aggregate future 5-minute scanner-derived price paths. Store source, sampling
+   resolution, gaps, and coverage; keep unavailable volume null. Never present these
+   sampled paths as exchange-native OHLCV.
+
+The fallback can protect future decisions but cannot reconstruct the already missing
+historical LBank paths.
+
+The immediate Schurfer hotfix is intentionally narrower: skip the unsupported LBank
+swap OHLCV call, retain explicitly labelled cross-venue results when available, and
+make LBank-only paths terminal instead of retrying them eight times. It does not
+pretend to solve historical LBank market data.
 
 ## Questions to answer
 

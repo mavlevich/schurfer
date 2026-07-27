@@ -32,7 +32,7 @@ from .measurement_report import (
     ReportFilters,
 )
 from .outcome_repository import async_database_url
-from .outcomes import HORIZONS_MINUTES
+from .outcomes import FALLBACK_OUTCOME_STATUSES, HORIZONS_MINUTES, MEASURABLE_OUTCOME_STATUSES
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -41,7 +41,6 @@ if TYPE_CHECKING:
 
 
 _TAKEN_ACTIONS = ("opened", "opened_dry_run")
-_MEASURABLE_STATUSES = ("complete", "complete_fallback")
 
 
 def _strategy() -> ColumnElement[str]:
@@ -241,7 +240,9 @@ def performance_statement(
             func.count().label("decisions"),
             func.count(func.distinct(_episode_id())).label("episodes"),
             func.count().filter(outcomes.c.status == "complete").label("exact_venue"),
-            func.count().filter(outcomes.c.status == "complete_fallback").label("fallback_venue"),
+            func.count()
+            .filter(outcomes.c.status.in_(FALLBACK_OUTCOME_STATUSES))
+            .label("fallback_venue"),
             func.avg(outcomes.c.short_return_pct).label("avg_short_return_pct"),
             func.percentile_cont(0.5)
             .within_group(outcomes.c.short_return_pct)
@@ -257,7 +258,7 @@ def performance_statement(
         .where(
             *_filters(filters),
             outcomes.c.resolver_version == filters.resolver_version,
-            outcomes.c.status.in_(_MEASURABLE_STATUSES),
+            outcomes.c.status.in_(MEASURABLE_OUTCOME_STATUSES),
         )
     )
     if by_exchange:
