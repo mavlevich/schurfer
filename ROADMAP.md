@@ -419,6 +419,17 @@ adapter. Record the baseline cutoff before deploying any speed change.
         The exact data sources, limits, statuses, archive command, and interpretation
         checklist live in `docs/runbooks/README.md`.
 
+  - [x] Harden the probe after the first production run on 2026-07-27. The v1 report
+        tested 119 exchange/method pairs, selected 11 venue targets, and observed 30
+        sampled results, but also showed that one successful page did not prove a
+        complete regular series: OKX mark/index stopped at the venue's 100-row page
+        cap, OKX long/short covered only part of the window, and HTX OI rejected the
+        generic 5-minute timeframe. Probe v2 pins CCXT 4.5.68, paginates with bounded
+        forward progress, distinguishes incomplete/window-mismatched data, reports
+        row/gap/boundary coverage, and registers the HTX OI `1h` override explicitly.
+        Funding and liquidation histories remain event series without a fabricated
+        expected cadence. Re-run and archive v2 before selecting persistence adapters.
+
   - [ ] Persist recoverable derivatives context for each pump episode after the probe
         establishes viable venue/method pairs. Backfill bounded windows instead of
         crawling every market forever; retain venue, method, fetch time, source
@@ -562,9 +573,11 @@ measurement, replay, or production reliability. The executable task set lives in
       ([CCXT-003](docs/tasks/ccxt/003-lbank-perpetual-ohlcv-research.md)).
 - [x] Upstream LBank swap ticker timestamp normalization as a small independent
       parser PR. The public contract response exposes second-based `lastTime`, while
-      CCXT 4.5.58 leaves unified `timestamp` empty. Keep exchange-reported zero
-      volume unchanged upstream; Schurfer owns the nullable/unavailable presentation
-      policy. Merged as
+      CCXT 4.5.58 leaves unified `timestamp` empty. The current PyPI 4.5.68 artifact
+      was built before the merged parser change despite carrying the same upstream
+      version number, so verify and adopt the first later release that contains it.
+      Keep exchange-reported zero volume unchanged upstream; Schurfer owns the
+      nullable/unavailable presentation policy. Merged as
       [ccxt/ccxt#29303](https://github.com/ccxt/ccxt/pull/29303)
       ([CCXT-004](docs/tasks/ccxt/004-lbank-swap-ticker-timestamp.md)).
 - [x] Restore CCXT's development Docker image on Apple Silicon without mixing in

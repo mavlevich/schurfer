@@ -94,5 +94,11 @@ different venue or symbol, and reuses one rate-limited CCXT client per exchange.
 default request covers four hours before through eight hours after the episode anchor.
 Declared CCXT support is not counted as evidence until the endpoint returns valid
 millisecond timestamps inside that window; native and emulated capabilities remain
-distinct in the output. Either side of the requested window is capped at seven days.
-The probe is read-only and does not yet persist enrichment or affect execution.
+distinct in the output. Regular 5-minute series are paginated until the requested
+window is complete or a bounded failure is visible; their coverage ratio, boundary
+coverage, missing rows, duplicates, and maximum gap are reported. Event series such as
+funding and liquidations remain sparse by definition and are not judged against a
+fixed row count. Venue-specific timeframe overrides are explicit in the output
+(`htx` open interest uses `1h`). Either side of the requested window is capped at
+seven days. The probe is read-only and does not yet persist enrichment or affect
+execution.

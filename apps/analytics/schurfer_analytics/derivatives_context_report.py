@@ -16,11 +16,9 @@ import ccxt
 from .derivatives_context import (
     DEFAULT_AFTER_MINUTES,
     DEFAULT_BEFORE_MINUTES,
-    DEFAULT_FETCH_LIMIT,
     DEFAULT_FETCH_TIMEOUT_SECONDS,
     DERIVATIVES_CONTEXT_PROBE_VERSION,
     MAX_WINDOW_MINUTES,
-    METHOD_BY_NAME,
     DeclaredSupport,
     DerivativesContextProbeResult,
     DerivativesContextTarget,
@@ -28,6 +26,7 @@ from .derivatives_context import (
     result_fingerprint,
     target_fingerprint,
 )
+from .derivatives_history import DEFAULT_FETCH_LIMIT, DEFAULT_MAX_PAGES, METHOD_BY_NAME
 from .exchange_registry import DEFAULT_EXCHANGES, EXCHANGE_FACTORIES
 from .reporting import (
     json_ready,
@@ -36,7 +35,7 @@ from .reporting import (
     parse_utc_datetime,
 )
 
-DERIVATIVES_CONTEXT_REPORT_VERSION = "derivatives_context_report_v1"
+DERIVATIVES_CONTEXT_REPORT_VERSION = "derivatives_context_report_v2"
 DEFAULT_DATASET_LOOKBACK_DAYS = 14
 
 
@@ -53,6 +52,7 @@ class DerivativesContextFilters:
     before_minutes: int
     after_minutes: int
     fetch_limit: int
+    max_pages: int
     timeout_seconds: float
 
     def __post_init__(self) -> None:
@@ -80,6 +80,8 @@ class DerivativesContextFilters:
             )
         if not 1 <= self.fetch_limit <= 1000:
             raise ProbeConfigurationError("--limit must be between 1 and 1000")
+        if not 1 <= self.max_pages <= 50:
+            raise ProbeConfigurationError("--max-pages must be between 1 and 50")
         if not 0 < self.timeout_seconds <= 120:
             raise ProbeConfigurationError("--timeout-seconds must be in (0, 120]")
 
@@ -112,6 +114,8 @@ class MethodCoverage:
     declared_supported: int
     sampled: int
     partial: int
+    incomplete: int
+    window_mismatch: int
     no_data: int
     unsupported: int
     failures: int
@@ -145,6 +149,8 @@ def _method_coverage(
         declared_supported=sum(result.declared_support is not False for result in selected),
         sampled=sum(result.status == "sampled" for result in selected),
         partial=sum(result.status == "partial" for result in selected),
+        incomplete=sum(result.status == "incomplete" for result in selected),
+        window_mismatch=sum(result.status == "window_mismatch" for result in selected),
         no_data=sum(result.status == "no_data" for result in selected),
         unsupported=sum(result.status == "unsupported" for result in selected),
         failures=sum(
@@ -155,6 +161,7 @@ def _method_coverage(
                 "load_markets_failed",
                 "fetch_failed",
                 "invalid_response",
+                "window_mismatch",
             }
             for result in selected
         ),
@@ -243,7 +250,8 @@ def render_markdown(report: DerivativesContextReport) -> str:
                 ("Configured exchanges", len(filters.exchanges)),
                 ("Selected targets", report.target_count),
                 ("Methods", len(filters.methods)),
-                ("Fetch limit per method", filters.fetch_limit),
+                ("Page limit per method", filters.fetch_limit),
+                ("Maximum pages per method", filters.max_pages),
                 ("Timeout per request", f"{filters.timeout_seconds:g}s"),
             ],
         )
@@ -265,6 +273,8 @@ def render_markdown(report: DerivativesContextReport) -> str:
                 "Declared",
                 "Sampled",
                 "Partial",
+                "Incomplete",
+                "Window mismatch",
                 "No data",
                 "Unsupported",
                 "Failures",
@@ -277,6 +287,8 @@ def render_markdown(report: DerivativesContextReport) -> str:
                     row.declared_supported,
                     row.sampled,
                     row.partial,
+                    row.incomplete,
+                    row.window_mismatch,
                     row.no_data,
                     row.unsupported,
                     row.failures,
@@ -294,8 +306,14 @@ def render_markdown(report: DerivativesContextReport) -> str:
                 "Target",
                 "Status",
                 "Declared",
+                "TF",
+                "Requests",
                 "Rows",
                 "In window",
+                "Coverage",
+                "Bounds",
+                "Missing / dupes",
+                "Max gap",
                 "First",
                 "Last",
                 "Error",
@@ -307,8 +325,25 @@ def render_markdown(report: DerivativesContextReport) -> str:
                     (f"{row.base} (event {row.event_id})" if row.event_id is not None else "none"),
                     row.status,
                     _support_label(row.declared_support),
+                    row.effective_timeframe or "event",
+                    row.request_count,
                     row.returned_rows,
                     row.in_window_rows,
+                    (
+                        f"{row.in_window_rows}/{row.expected_rows} ({row.coverage_ratio:.1%})"
+                        if row.expected_rows is not None and row.coverage_ratio is not None
+                        else "event"
+                    ),
+                    (
+                        f"{'yes' if row.covers_start else 'no'}/{'yes' if row.covers_end else 'no'}"
+                        if row.covers_start is not None and row.covers_end is not None
+                        else "n/a"
+                    ),
+                    (
+                        f"{row.missing_rows if row.missing_rows is not None else 'n/a'}"
+                        f" / {row.duplicate_rows}"
+                    ),
+                    (f"{row.max_gap_minutes:g}m" if row.max_gap_minutes is not None else "n/a"),
                     row.first_source_at.isoformat() if row.first_source_at else "",
                     row.last_source_at.isoformat() if row.last_source_at else "",
                     row.error or "",
@@ -339,6 +374,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--before-minutes", type=int, default=DEFAULT_BEFORE_MINUTES)
     parser.add_argument("--after-minutes", type=int, default=DEFAULT_AFTER_MINUTES)
     parser.add_argument("--limit", type=int, default=DEFAULT_FETCH_LIMIT)
+    parser.add_argument("--max-pages", type=int, default=DEFAULT_MAX_PAGES)
     parser.add_argument(
         "--timeout-seconds",
         type=float,
@@ -376,6 +412,7 @@ async def _run(args: argparse.Namespace) -> str:
         before_minutes=args.before_minutes,
         after_minutes=args.after_minutes,
         fetch_limit=args.limit,
+        max_pages=args.max_pages,
         timeout_seconds=args.timeout_seconds,
     )
     repository = DerivativesContextRepository.from_url(db_url)
@@ -397,6 +434,7 @@ async def _run(args: argparse.Namespace) -> str:
         before_minutes=filters.before_minutes,
         after_minutes=filters.after_minutes,
         limit=filters.fetch_limit,
+        max_pages=filters.max_pages,
         timeout_seconds=filters.timeout_seconds,
     )
     report = build_report(
