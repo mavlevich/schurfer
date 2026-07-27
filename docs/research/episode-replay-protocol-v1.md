@@ -190,6 +190,12 @@ manifest, and input fingerprint are retained together.
   is a zero-return cash episode. The five paired comparisons use the same first-100,
   30-cluster, 10,000-iteration, Holm, Bonferroni, and cluster-sensitivity rules as the
   HYP-002 family.
+- `2026-07-27`: the HYP-005 `candle_anomaly_features_v1` feature contract was frozen
+  before its first report query. Its research cohort begins at
+  `2026-07-29T00:00:00Z`; it uses a 24-hour fully closed 5-minute formation window,
+  four-hour warm-up, prior-only ATR(14), prior-only volume z-score(48), and the locked
+  60%/3-ATR blow-off plus 1-ATR/35% reversal buckets. This report is descriptive;
+  production use requires a separately registered out-of-sample challenger.
 
 ## Promotion boundary
 

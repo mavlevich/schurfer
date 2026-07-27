@@ -22,6 +22,9 @@ Entrypoints:
   treats an untriggered entry as a zero-return cash episode. Once its locked formal
   sample is ready, it also emits deterministic asset-cluster bootstrap inference,
   Holm-corrected paired tests, familywise bounds, and concentration sensitivity.
+- `candle-anomaly-report` — derives the pre-registered HYP-005 blow-off concentration
+  and reversal-strength features from fully closed exact-venue 5-minute candles, joins
+  them to the locked baseline virtual replay, and emits descriptive 2x2 bucket results.
 
 Run against the local development database:
 
@@ -34,6 +37,8 @@ make virtual-strategy-report
 make virtual-strategy-report ARGS="--since 2026-07-26 --format json"
 make virtual-entry-challenger-report
 make virtual-entry-challenger-report ARGS="--until 2026-07-28 --format json"
+make candle-anomaly-report
+make candle-anomaly-report ARGS="--until 2026-08-05 --format json"
 ```
 
 The measurement report shows both decision count and distinct pump-episode count. Its
@@ -69,3 +74,11 @@ required before promotion. The replay also holds the baseline episode's eligibil
 constant during the wait instead of reconstructing future score and market-quality
 gates, so it isolates entry timing rather than claiming to mirror a deployable
 strategy end to end.
+
+The candle-anomaly report defaults to the prospective cohort beginning
+`2026-07-29T00:00:00Z`. It derives only from candles that had fully closed by each
+selected decision, uses one exact-venue fetch for both the 24-hour formation window
+and the baseline exit replay, and fingerprints that path. Its blow-off and reversal
+thresholds are locked in the research protocol. Results are descriptive: even a strong
+bucket separation must be validated in a new out-of-sample live-shadow cohort before
+it can affect scoring or entry eligibility.

@@ -235,5 +235,44 @@ Experiment: derive the input features only from the pre-decision window, then sp
 post-decision outcomes across a 2x2 view (blow-off/grind x strong/weak reversal).
 Primary metric: net expectancy and captured_move by pre-registered buckets.
 
+Registered feature contract (`candle_anomaly_features_v1`), frozen before the first
+HYP-005 report query:
+
+- the research cohort starts at `2026-07-29T00:00:00Z`; earlier episodes remain
+  implementation and discovery data;
+- use the selected baseline decision's exact recorded venue and 5-minute OHLCV;
+- the feature cutoff is the latest candle close at or before the decision timestamp.
+  Use the preceding 288 fully closed bars as the 24-hour formation window plus 48
+  earlier bars as a four-hour warm-up. A missing, duplicate, misaligned, or invalid
+  required candle makes the episode unresolved;
+- positive move concentration is calculated from positive close-to-close log returns
+  inside the formation window. `top_1_positive_move_share` and
+  `top_2_positive_move_share` divide the largest one or two positive moves by the sum
+  of all positive moves. No positive move makes concentration unavailable;
+- true range uses the prior close. Each candle body and range is normalized by the
+  simple mean of the 14 true ranges immediately preceding that candle, never an ATR
+  containing the candle itself;
+- volume z-score uses the 48 volumes immediately preceding each formation candle with
+  population standard deviation. Zero variance produces z-score zero. Missing volume
+  makes only volume-derived fields unavailable and is reported explicitly; it does
+  not erase valid price-derived features;
+- upper wick share is `(high - max(open, close)) / (high - low)` for the formation
+  candle with the largest bullish body/ATR. A zero-range candle has zero wick share;
+- returned-pump share divides the distance from the last close back to the formation
+  peak high by the distance from the formation start close to that peak. The equivalent
+  formula is `(peak_high - last_close) / (peak_high - start_close)`, where both aliases
+  refer to the formation window. It is unavailable when the denominator is not
+  positive and is not clipped, so overshoots remain visible;
+- classify `blow_off` when top-two positive-move share is at least 60% and the largest
+  bullish body is at least 3 prior ATR; otherwise classify `grind`;
+- classify `strong_reversal` when the last closed candle has a bearish body of at
+  least 1 prior ATR and has returned at least 35% of the formation run-up; otherwise
+  classify `weak_reversal`;
+- report the four pre-registered cells, feature coverage, net virtual expectancy,
+  captured move, MFE, MAE, initial-stop rate, and asset-cluster concentration.
+  The first report is descriptive and cannot promote a feature into production.
+  Any proposed gate or score weight must be frozen as a concrete challenger and
+  validated on a new out-of-sample cohort.
+
 Do not build a candle-anomaly detector as a live signal before this split shows the
 separation.
