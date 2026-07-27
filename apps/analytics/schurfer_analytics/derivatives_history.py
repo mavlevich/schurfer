@@ -89,6 +89,11 @@ TIMEFRAME_OVERRIDES: dict[tuple[str, str], str] = {
     ("htx", "open_interest_history"): "1h",
 }
 
+LIMIT_OVERRIDES: dict[tuple[str, str], int] = {
+    ("htx", "funding_rate_history"): 100,
+    ("htx", "liquidations"): 100,
+}
+
 
 @dataclass(frozen=True)
 class DerivativesHistoryFetch:
@@ -138,6 +143,16 @@ def effective_timeframe(
     method: DerivativesHistoryMethod,
 ) -> str | None:
     return TIMEFRAME_OVERRIDES.get((exchange, method.name), method.timeframe)
+
+
+def effective_limit(
+    exchange: str,
+    method: DerivativesHistoryMethod,
+    requested_limit: int,
+) -> int:
+    """Apply a documented venue cap without increasing the caller's bound."""
+    override = LIMIT_OVERRIDES.get((exchange, method.name))
+    return min(requested_limit, override) if override is not None else requested_limit
 
 
 def timeframe_ms(timeframe: str | None) -> int | None:

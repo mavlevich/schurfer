@@ -298,6 +298,63 @@ the new cohort separately.
   not simulate exits or costs — those belong to the versioned virtual-strategy
   analysis.
 
+- Durable derivatives context: migration `0017` adds
+  `app.pump_derivatives_context_runs` and
+  `app.pump_derivatives_context_samples`. The existing `outcome-resolver` process
+  starts recovery only after the eight-hour post-anchor window is complete, so this
+  change needs a full deploy rather than an analytics-only restart:
+
+  ```bash
+  make prod-deploy
+
+  docker exec schurfer-postgres psql -U schurfer -d schurfer -c \
+    "SELECT version_num FROM app.alembic_version"
+
+  docker logs schurfer-outcome-resolver --since 15m 2>&1 \
+    | grep -E 'derivatives_context.starting|derivatives_context.resolved|outcomes.tick_failed'
+  ```
+
+  The forward cohort starts at `2026-07-27T00:00:00Z`. The initial allowlist persists
+  funding and OI only where the v2 probe returned valid timestamped rows, plus Binance
+  long/short ratios and HTX liquidations. Mark/index/premium candles remain
+  reconstructable report inputs and are not duplicated into Postgres. HTX funding and
+  liquidation requests are capped at 100 rows per page even when the generic fetch
+  limit is 200.
+
+  Inspect work coverage and stored rows:
+
+  ```sql
+  SELECT exchange, method, status, count(*) AS runs,
+         sum(in_window_rows) AS rows, max(attempt_count) AS max_attempts
+  FROM app.pump_derivatives_context_runs
+  GROUP BY exchange, method, status
+  ORDER BY exchange, method, status;
+
+  SELECT r.event_id, r.exchange, r.method, r.status, r.coverage_ratio,
+         r.request_limit, r.request_count, r.in_window_rows,
+         r.attempt_count, r.error, r.updated_at
+  FROM app.pump_derivatives_context_runs r
+  ORDER BY r.updated_at DESC
+  LIMIT 50;
+
+  SELECT r.exchange, r.method, count(*) AS samples,
+         min(s.source_at) AS first_source_at, max(s.source_at) AS last_source_at
+  FROM app.pump_derivatives_context_samples s
+  JOIN app.pump_derivatives_context_runs r ON r.id = s.run_id
+  GROUP BY r.exchange, r.method
+  ORDER BY r.exchange, r.method;
+  ```
+
+  `sampled` is terminal. Transient failures, no data, partial/incomplete coverage,
+  window mismatch, and missing current symbols retry after
+  `DERIVATIVES_CONTEXT_RETRY_AFTER`, up to
+  `DERIVATIVES_CONTEXT_MAX_ATTEMPTS`. Every attempt updates the run row and increments
+  `attempt_count`; samples use a deterministic key, so retries do not create duplicate
+  points. `identity_mismatch` is terminal and intentionally fetches no history: inspect
+  the recorded and current exchange market metadata before changing that policy.
+  These public historical measurements never replace the live liquidity snapshot
+  attached to a trade decision.
+
 - Decision measurement report: after rebuilding the analytics image, run a read-only
   Markdown report against production:
 

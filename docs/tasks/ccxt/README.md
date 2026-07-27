@@ -25,16 +25,20 @@ because they have different dependencies and outcomes.
 
 ## Execution order
 
-| Task                                                   | Outcome                                                                 | Dependency                         |
-| ------------------------------------------------------ | ----------------------------------------------------------------------- | ---------------------------------- |
-| [CCXT-001](001-xt-fetch-open-interest.md)              | Research, implement, test, and submit XT `fetchOpenInterest`            | None                               |
-| [CCXT-002](002-adopt-upstream-xt.md)                   | Upgrade Schurfer and remove the local fallback safely                   | Released CCXT version              |
-| [CCXT-003](003-lbank-perpetual-ohlcv-research.md)      | Decide whether a supported LBank perpetual OHLCV contribution is viable | Independent; separate PR if viable |
-| [CCXT-004](004-lbank-swap-ticker-timestamp.md)         | Normalize LBank swap `lastTime` into the unified ticker timestamp       | Completed and merged upstream      |
-| [CCXT-005](005-apple-silicon-development-image.md)     | Restore the development Docker image on Apple Silicon                   | Completed and merged upstream      |
-| [CCXT-006](006-docker-image-optimization-research.md)  | Measure Docker image size and build time before proposing improvements  | Ready for baseline measurements    |
-| [CCXT-007](007-dotnet-installer-hardening-research.md) | Decide whether the .NET installer should be pinned or integrity-checked | Low priority; research first       |
-| [CCXT-008](008-lbank-swap-trades-research.md)          | Research LBank swap `fetchTrades` invalid-pair failures                 | Independent; separate PR if viable |
+| Task                                                     | Outcome                                                                 | Dependency                         |
+| -------------------------------------------------------- | ----------------------------------------------------------------------- | ---------------------------------- |
+| [CCXT-001](001-xt-fetch-open-interest.md)                | Research, implement, test, and submit XT `fetchOpenInterest`            | None                               |
+| [CCXT-002](002-adopt-upstream-xt.md)                     | Upgrade Schurfer and remove the local fallback safely                   | Released CCXT version              |
+| [CCXT-003](003-lbank-perpetual-ohlcv-research.md)        | Decide whether a supported LBank perpetual OHLCV contribution is viable | Independent; separate PR if viable |
+| [CCXT-004](004-lbank-swap-ticker-timestamp.md)           | Normalize LBank swap `lastTime` into the unified ticker timestamp       | Completed and merged upstream      |
+| [CCXT-005](005-apple-silicon-development-image.md)       | Restore the development Docker image on Apple Silicon                   | Completed and merged upstream      |
+| [CCXT-006](006-docker-image-optimization-research.md)    | Measure Docker image size and build time before proposing improvements  | Ready for baseline measurements    |
+| [CCXT-007](007-dotnet-installer-hardening-research.md)   | Decide whether the .NET installer should be pinned or integrity-checked | Low priority; research first       |
+| [CCXT-008](008-lbank-swap-trades-research.md)            | Research LBank swap `fetchTrades` invalid-pair failures                 | Independent; separate PR if viable |
+| [CCXT-009](009-htx-derivatives-history-limits.md)        | Clamp or validate HTX derivatives-history page limits                   | Strong candidate; reproduce master |
+| [CCXT-010](010-htx-index-ohlcv-capability.md)            | Check HTX index-OHLCV support by derivatives market subtype             | Research before capability change  |
+| [CCXT-011](011-okx-long-short-history-window.md)         | Check whether OKX long/short history can honor historical windows       | Research exchange/API limitation   |
+| [CCXT-012](012-derivatives-empty-history-conformance.md) | Classify symbol-specific empty derivatives histories across venues      | More targets required              |
 
 ## Rules for all tasks
 
@@ -68,6 +72,9 @@ because they have different dependencies and outcomes.
 - A floating .NET 9 patch release and an HTTPS-downloaded official installer are not
   automatically bugs. CCXT-007 requires an upstream policy and threat-model decision
   before code.
+- A method returning no rows for one low-liquidity symbol is not automatically an
+  adapter bug. Reproduce on several active markets and compare the raw official
+  endpoint before changing a capability flag or parser.
 
 ## Primary references
 

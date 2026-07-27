@@ -430,10 +430,19 @@ adapter. Record the baseline cutoff before deploying any speed change.
         Funding and liquidation histories remain event series without a fabricated
         expected cadence. Re-run and archive v2 before selecting persistence adapters.
 
-  - [ ] Persist recoverable derivatives context for each pump episode after the probe
-        establishes viable venue/method pairs. Backfill bounded windows instead of
-        crawling every market forever; retain venue, method, fetch time, source
-        timestamp, coverage, and parser version. Never replace the live decision
+  - [x] Persist recoverable high-value derivatives context for each pump episode.
+        The existing outcome-resolver process now drains a bounded, retryable work
+        queue after the eight-hour forward window matures and writes versioned run
+        diagnostics plus idempotent public CCXT samples. The initial evidence-based
+        allowlist covers funding, OI, Binance long/short ratios, and HTX liquidations;
+        mark/index/premium OHLCV remains recoverable on demand instead of being
+        duplicated into Postgres. HTX funding and liquidations use the documented
+        100-row request cap while the generic caller bound remains 200. Selection
+        fails closed on missing market id/identity key, recorded conflicts, or a
+        mismatch between recorded and currently loaded market identity. It starts
+        from the locked `2026-07-27T00:00:00Z` cohort and records exact venue, market,
+        method, CCXT/resolver version, request policy, status, coverage, attempts,
+        errors, source timestamps, and payloads. Never replace the live decision
         snapshot with a historical approximation: exact order-book liquidity, signal
         lag, and finer-grained live OI remain non-recoverable, while historical
         endpoints have venue-specific retention and may exclude delisted instruments.
@@ -601,6 +610,19 @@ measurement, replay, or production reliability. The executable task set lives in
       contract-trades endpoint provides stable unified fields; otherwise record the
       exchange limitation
       ([CCXT-008](docs/tasks/ccxt/008-lbank-swap-trades-research.md)).
+- [ ] Reproduce and upstream HTX derivatives-history limit handling. Production
+      evidence shows that funding and liquidation history fail with `limit=200` and
+      both succeed with `limit=100`; verify the official contracts and current
+      `master`, then propose a focused clamp or local validation without blocking
+      Schurfer's own request policy
+      ([CCXT-009](docs/tasks/ccxt/009-htx-derivatives-history-limits.md)).
+- [ ] Research three lower-confidence conformance findings before calling them CCXT
+      bugs: HTX index-OHLCV support by market subtype, OKX long/short history ignoring
+      an older requested window, and symbol-specific empty histories on Bybit, Gate,
+      and Bitget
+      ([CCXT-010](docs/tasks/ccxt/010-htx-index-ohlcv-capability.md),
+      [CCXT-011](docs/tasks/ccxt/011-okx-long-short-history-window.md),
+      [CCXT-012](docs/tasks/ccxt/012-derivatives-empty-history-conformance.md)).
 
 ### Phase 3: Live ladder (gated on proven edge)
 

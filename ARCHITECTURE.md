@@ -36,7 +36,9 @@ The web UI is behind a login with no public exposure.
     private `pumps:measurement` feed from +20% plus a public `pumps:latest` feed from
     +30% to Redis;
   - the long-running outcome resolver idempotently backfills forward prices, MAE, and
-    MFE for recorded decisions from exchange OHLCV;
+    MFE for recorded decisions from exchange OHLCV, then drains bounded recovery work
+    for validated funding, OI, long/short, and liquidation histories around pump
+    episodes;
   - the on-demand, read-only measurement report aggregates dataset health, outcome
     coverage, and descriptive cohort results from Postgres.
 - **notifier** (Go). Reads `pumps:latest` from Redis, sends Telegram alerts on new
@@ -72,6 +74,10 @@ Trade decisions (Postgres) <---- Outcome resolver (Python, exchange OHLCV)
     |
 On-demand measurement report (Python, read-only)
 
+Pump episodes (Postgres) <---- Outcome resolver (Python, CCXT derivatives history)
+    |
+Versioned context runs + idempotent public samples (Postgres)
+
 # collector (Go) --> NATS market.bybit.ticker.*  : prototype, no consumer yet
 ```
 
@@ -106,11 +112,11 @@ On-demand measurement report (Python, read-only)
 
 ## Storage
 
-| Database        | Purpose                                                             |
-| --------------- | ------------------------------------------------------------------- |
-| **PostgreSQL**  | pump episodes, market snapshots, decisions, outcomes, users, trades |
-| **TimescaleDB** | OHLCV series, tick data, funding history                            |
-| **Redis**       | hot state (pump list, signal scores, locks, position metadata)      |
+| Database        | Purpose                                                            |
+| --------------- | ------------------------------------------------------------------ |
+| **PostgreSQL**  | pumps, snapshots, derivatives context, decisions, outcomes, trades |
+| **TimescaleDB** | OHLCV series, tick data, funding history                           |
+| **Redis**       | hot state (pump list, signal scores, locks, position metadata)     |
 
 ## Exchanges
 

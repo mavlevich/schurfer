@@ -35,7 +35,7 @@ from .reporting import (
     parse_utc_datetime,
 )
 
-DERIVATIVES_CONTEXT_REPORT_VERSION = "derivatives_context_report_v2"
+DERIVATIVES_CONTEXT_REPORT_VERSION = "derivatives_context_report_v3"
 DEFAULT_DATASET_LOOKBACK_DAYS = 14
 
 
@@ -159,6 +159,7 @@ def _method_coverage(
                 "symbol_unavailable",
                 "client_init_failed",
                 "load_markets_failed",
+                "identity_mismatch",
                 "fetch_failed",
                 "invalid_response",
                 "window_mismatch",
@@ -307,6 +308,7 @@ def render_markdown(report: DerivativesContextReport) -> str:
                 "Status",
                 "Declared",
                 "TF",
+                "Limit",
                 "Requests",
                 "Rows",
                 "In window",
@@ -326,6 +328,7 @@ def render_markdown(report: DerivativesContextReport) -> str:
                     row.status,
                     _support_label(row.declared_support),
                     row.effective_timeframe or "event",
+                    row.effective_limit,
                     row.request_count,
                     row.returned_rows,
                     row.in_window_rows,

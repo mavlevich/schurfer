@@ -6,6 +6,7 @@ import pytest
 from schurfer_analytics.derivatives_context import (
     DerivativesContextProbeResult,
     DerivativesContextTarget,
+    collect_derivatives_context_target,
     probe_derivatives_context,
     result_fingerprint,
     target_fingerprint,
@@ -13,6 +14,7 @@ from schurfer_analytics.derivatives_context import (
 from schurfer_analytics.derivatives_history import (
     METHODS,
     DerivativesHistoryMethod,
+    effective_limit,
     effective_timeframe,
 )
 
@@ -28,7 +30,7 @@ def _target(exchange: str = "binance") -> DerivativesContextTarget:
         base="ERA",
         unified_symbol="ERA/USDT:USDT",
         market_id="ERAUSDT",
-        identity_key="era",
+        identity_key=f"{exchange}:unknown:ERAUSDT:unknown",
         anchor_at=ANCHOR,
     )
 
@@ -41,7 +43,7 @@ def _exchange(
 ) -> MagicMock:
     exchange = MagicMock()
     exchange.has = {capability: True}
-    exchange.markets = {"ERA/USDT:USDT": {}} if symbol_available else {}
+    exchange.markets = {"ERA/USDT:USDT": {"id": "ERAUSDT"}} if symbol_available else {}
     exchange.load_markets = AsyncMock()
     exchange.close = AsyncMock()
     for method in METHODS:
@@ -434,6 +436,107 @@ async def test_htx_open_interest_uses_registered_hourly_override() -> None:
     assert result.effective_timeframe == "1h"
     assert result.expected_rows == 12
     assert result.status == "sampled"
+
+
+@pytest.mark.parametrize("method_index", [0, 6])
+async def test_htx_event_history_uses_documented_100_row_limit(
+    method_index: int,
+) -> None:
+    method = METHODS[method_index]
+    exchange = _exchange(
+        capability=method.capability,
+        response=[
+            _row(method, SINCE_MS + 60_000),
+            _row(method, UNTIL_MS),
+        ],
+    )
+
+    result = (
+        await probe_derivatives_context(
+            (_target("htx"),),
+            {"htx": lambda: exchange},
+            (method,),
+            before_minutes=240,
+            after_minutes=480,
+            limit=200,
+            timeout_seconds=1,
+        )
+    )[0]
+
+    getattr(exchange, method.callable_name).assert_awaited_once_with(
+        "ERA/USDT:USDT",
+        SINCE_MS,
+        100,
+    )
+    assert effective_limit("htx", method, 200) == 100
+    assert result.effective_limit == 100
+
+
+async def test_collector_returns_idempotent_in_window_samples() -> None:
+    method = METHODS[0]
+    duplicate = {"timestamp": SINCE_MS + 60_000, "id": "same"}
+    distinct = {"timestamp": SINCE_MS + 60_000, "id": "other", "rate": float("nan")}
+    exchange = _exchange(
+        capability=method.capability,
+        response=[
+            {"timestamp": SINCE_MS - 1, "id": "before"},
+            duplicate,
+            duplicate,
+            distinct,
+            {"timestamp": UNTIL_MS, "id": "after"},
+        ],
+    )
+
+    observation = (
+        await collect_derivatives_context_target(
+            "binance",
+            exchange,
+            _target(),
+            (method,),
+            before_minutes=240,
+            after_minutes=480,
+            limit=200,
+            max_pages=10,
+            timeout_seconds=1,
+        )
+    )[0]
+
+    assert observation.result.in_window_rows == 3
+    assert len(observation.samples) == 2
+    assert observation.samples[0].source_at == observation.samples[1].source_at
+    assert all(len(sample.sample_key) == 64 for sample in observation.samples)
+    payloads = [
+        sample.payload for sample in observation.samples if isinstance(sample.payload, dict)
+    ]
+    assert len(payloads) == 2
+    assert {payload["id"] for payload in payloads} == {"same", "other"}
+    assert next(payload for payload in payloads if payload["id"] == "other")["rate"] is None
+
+
+async def test_collector_fails_closed_when_current_market_identity_changed() -> None:
+    method = METHODS[0]
+    exchange = _exchange(capability=method.capability, response=[])
+    exchange.markets["ERA/USDT:USDT"]["id"] = "NEWERAUSDT"
+
+    observation = (
+        await collect_derivatives_context_target(
+            "binance",
+            exchange,
+            _target(),
+            (method,),
+            before_minutes=240,
+            after_minutes=480,
+            limit=200,
+            max_pages=10,
+            timeout_seconds=1,
+        )
+    )[0]
+
+    assert observation.result.status == "identity_mismatch"
+    assert observation.result.declared_support is True
+    assert "NEWERAUSDT" in (observation.result.error or "")
+    assert observation.samples == ()
+    exchange.fetch_funding_rate_history.assert_not_awaited()
 
 
 async def test_probe_rejects_ambiguous_inputs() -> None:
