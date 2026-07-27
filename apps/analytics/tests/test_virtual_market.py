@@ -1,15 +1,21 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, Mock, patch
 
+import pytest
 from schurfer_analytics.ohlcv import Candle
 from schurfer_analytics.replay import ReplayDecision, ReplayEpisode
 from schurfer_analytics.virtual_entry_challengers import challenger_path_bounds
 from schurfer_analytics.virtual_market import (
+    DecisionMarketPath,
+    decision_market_path_fingerprint,
+    fetch_decision_market_paths,
     fetch_entry_challenger_paths,
     fetch_market_paths,
 )
+from schurfer_analytics.virtual_strategy import MarketPath
 
 
 def _episode(
@@ -122,3 +128,57 @@ async def test_fetch_entry_challenger_paths_uses_registered_broad_bounds() -> No
     fetch.assert_awaited_once_with(exchange, "ERA", start_ms, end_ms)
     assert paths[0].candles == (candle,)
     exchange.close.assert_awaited_once()
+
+
+async def test_fetch_decision_paths_reuses_client_and_keys_paths_by_decision() -> None:
+    exchange = AsyncMock()
+    factory = Mock(return_value=exchange)
+    first = _episode(event_id=42, base="ERA").decisions[0]
+    second = _episode(event_id=43, base="BANK").decisions[0]
+    second = replace(
+        second,
+        row_id=2,
+        decision_id="00000000-0000-0000-0000-000000000002",
+    )
+    candle = Candle(1785067500000, 100, 101, 99, 100, 1)
+
+    with patch(
+        "schurfer_analytics.virtual_market.fetch_candles",
+        AsyncMock(return_value=[candle]),
+    ) as fetch:
+        paths = await fetch_decision_market_paths(
+            (first, second),
+            {"binance": factory},
+        )
+
+    assert [item.decision_id for item in paths] == [first.decision_id, second.decision_id]
+    assert all(item.path.status == "complete" for item in paths)
+    assert factory.call_count == 1
+    assert fetch.await_count == 2
+    exchange.close.assert_awaited_once()
+
+
+async def test_fetch_decision_paths_rejects_duplicate_decision_ids() -> None:
+    decision = _episode().decisions[0]
+
+    with pytest.raises(ValueError, match="unique decision ids"):
+        await fetch_decision_market_paths((decision, decision), {})
+
+
+def test_decision_path_fingerprint_is_order_independent_and_includes_decision_id() -> None:
+    candle = Candle(1785067500000, 100, 101, 99, 100, 1)
+    path = MarketPath(42, "binance", "ERA", "complete", (candle,))
+    first = DecisionMarketPath("decision-a", path)
+    second = DecisionMarketPath("decision-b", path)
+
+    assert decision_market_path_fingerprint((first, second)) == decision_market_path_fingerprint(
+        (second, first)
+    )
+    assert decision_market_path_fingerprint((first,)) != decision_market_path_fingerprint((second,))
+
+
+def test_decision_path_requires_nonempty_key() -> None:
+    path = MarketPath(42, "binance", "ERA", "complete", ())
+
+    with pytest.raises(ValueError, match="requires a decision id"):
+        DecisionMarketPath("", path)

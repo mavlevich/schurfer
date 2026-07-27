@@ -158,6 +158,36 @@ above +20%; repeated +30% crossings are intentionally kept in one correlated epi
 Do not combine the lower-floor measurement decisions with the HYP-002
 `pump_short_v1_market_quality` confirmatory sample.
 
+Registered experiment family (`entry_threshold_family_v1`), committed before its
+first outcome query:
+
+- the prospective cohort starts at `2026-07-27T07:00:00Z`; the first deployment
+  smoke sample before that boundary is excluded;
+- the baseline entry floor is 30%; registered challengers are 20%, 25%, 35%, 40%,
+  and 50%;
+- the observation universe is every complete +20% measurement `pump_event` beginning
+  at or after the cohort boundary, including events that never reach +30%;
+- for each floor, select the first chronological recorded decision whose point-in-time
+  `pump_pct` reaches that floor and whose recorded score and market-quality snapshot
+  pass the same production gates; never use a later outcome to select an entry;
+- no qualifying decision is a valid zero-return cash episode, not missing data;
+- a selected decision enters at the next complete 5-minute bar open on its recorded
+  exact venue and reuses the locked production exit, fee, funding, and decision-time
+  liquidity-slippage models;
+- missing exact-venue candles, decision-time costs, or required forward outcomes stay
+  unresolved and are never replaced inside the locked formal sample;
+- all six floors use the same parent `pump_event_id` observation unit. Repeated
+  decisions and repeated +30% crossings inside one event do not inflate N;
+- the five challengers form one multiple-comparison family. Formal inference uses the
+  first 100 chronological eligible episodes, at least 30 asset clusters, 10,000
+  deterministic whole-cluster bootstrap iterations, 95% expectancy intervals,
+  null-centered paired tests with Holm correction at family alpha 0.05, conservative
+  99% Bonferroni paired intervals, and top-five cluster sensitivity;
+- a challenger must have positive own expectancy, a positive familywise paired lower
+  bound versus 30%, a Holm-rejected paired null, and positive top-cluster sensitivity
+  to become a live-shadow candidate. It does not change production configuration or
+  authorize real trading.
+
 ---
 
 ## HYP-004 — conviction-based sizing (fractional Kelly) once the score is calibrated

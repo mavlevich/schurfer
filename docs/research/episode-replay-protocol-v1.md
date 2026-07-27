@@ -184,6 +184,12 @@ manifest, and input fingerprint are retained together.
   conservative 98.333...% Bonferroni paired intervals, and leave-one-out sensitivity
   for the five most frequent clusters. Formal output is withheld until the entire
   locked sample is resolved.
+- `2026-07-27`: the HYP-003 `entry_threshold_family_v1` was frozen before its first
+  outcome query. Its prospective cohort starts at `2026-07-27T07:00:00Z`, baseline
+  floor is 30%, and challengers are 20%, 25%, 35%, 40%, and 50%. A non-triggered floor
+  is a zero-return cash episode. The five paired comparisons use the same first-100,
+  30-cluster, 10,000-iteration, Holm, Bonferroni, and cluster-sensitivity rules as the
+  HYP-002 family.
 
 ## Promotion boundary
 

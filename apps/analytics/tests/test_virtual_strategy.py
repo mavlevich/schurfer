@@ -13,6 +13,7 @@ from schurfer_analytics.virtual_strategy import (
     exit_parameters,
     market_path_fingerprint,
     select_episode_decision,
+    simulate_decision,
     simulate_episode,
     simulate_episode_at_entry,
 )
@@ -245,6 +246,46 @@ def test_market_path_must_match_selected_anchor() -> None:
 
     assert trade.status == "market_path_mismatch"
     assert trade.classification == "unresolved"
+
+
+def test_explicit_decision_reuses_exit_engine_for_its_own_venue_and_time() -> None:
+    first = _decision(minutes=1)
+    selected = replace(
+        _decision(minutes=6),
+        row_id=2,
+        decision_id="00000000-0000-0000-0000-000000000002",
+        exchange="bybit",
+    )
+    path = replace(
+        _path(selected),
+        exchange="bybit",
+        candles=_candles(selected),
+    )
+
+    trade = simulate_decision(
+        _episode(first, selected),
+        path,
+        selected,
+        selection_reason="threshold:35",
+    )
+
+    assert trade.status == "complete"
+    assert trade.decision_id == selected.decision_id
+    assert trade.exchange == "bybit"
+    assert trade.decision_at == selected.ts
+    assert trade.selection_reason == "threshold:35"
+
+
+def test_explicit_decision_rejects_foreign_episode_decision() -> None:
+    decision = replace(_decision(), row_id=99)
+
+    with pytest.raises(ValueError, match="does not belong"):
+        simulate_decision(
+            _episode(),
+            _path(decision),
+            decision,
+            selection_reason="threshold:30",
+        )
 
 
 def test_explicit_delayed_entry_uses_requested_bar_and_full_exit_window() -> None:

@@ -354,6 +354,26 @@ the new cohort separately.
   live shadow validation. The exact inference parameters, data sources, archive
   command, and inspection checklist live in `ROADMAP.md` and the research protocol.
 
+- Entry-floor challenger replay: after the +20% measurement cohort has accumulated
+  closed episodes with exact-anchor 8-hour outcomes, compare the registered HYP-003
+  family without changing the production +30% hard gate:
+
+  ```bash
+  make prod-virtual-threshold-challenger-report
+  make prod-virtual-threshold-challenger-report \
+    ARGS="--until 2026-08-10T00:00:00Z --format markdown"
+  ```
+
+  The default cohort begins at `2026-07-27T07:00:00Z` and combines
+  `pump_short_measurement_v1` with `pump_short_v1_market_quality` inside the same
+  parent episodes. Baseline +30% is paired with +20%, +25%, +35%, +40%, and +50%.
+  Each floor selects the first recorded crossing that passes the stored score and
+  market-quality gates; a floor never reached contributes zero-return cash. Missing
+  exact-venue paths or cost inputs remain unresolved. Formal inference is withheld
+  before 100 fully paired episodes and 30 asset clusters. Archive a JSON run with a
+  cutoff selected before looking at threshold output; the full checklist is in
+  `ROADMAP.md`.
+
 - Pump/signal readiness after deploying migration 0012: verify newly published pumps
   carry an episode id and recent decisions are attributed. `signal_missing` or
   `signal_episode_mismatch` may occur for one execution tick while the minute-based

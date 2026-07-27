@@ -324,6 +324,44 @@ adapter. Record the baseline cutoff before deploying any speed change.
         cluster sensitivity. Even a passing result advances only to live shadow so
         delayed-entry spread/depth/impact can be measured at the actual confirmation.
 
+    - [x] Pre-registered entry-floor family (HYP-003): keep +30% as the baseline and
+          compare +20%, +25%, +35%, +40%, and +50% on the same prospective +20%
+          measurement episodes beginning `2026-07-27T07:00:00Z`. Select the first
+          recorded crossing that passes its point-in-time score and market-quality
+          gates, enter at the next complete exact-venue 5-minute open, and reuse the
+          baseline exit and cost engine. A floor never reached is a zero-return cash
+          episode; missing decision-time data or exact paths remain unresolved.
+          Different floors may select different decisions and venues inside one parent
+          `pump_event_id`, but never create additional inference observations.
+    - [ ] Entry-floor challenger verification after merge:
+      - Deploy analytics only. Wait until the prospective events have closed and every
+        recorded decision has its exact-anchor 8-hour outcome. The default command is
+        locked to the registered cohort and both measurement/entry strategy versions:
+
+        ```bash
+        make prod-deploy-svc SERVICE=analytics
+        make prod-virtual-threshold-challenger-report
+        ```
+
+      - Before the formal read, choose an exclusive UTC cutoff without inspecting the
+        threshold results. Archive the reproducible JSON manifest outside Git:
+
+        ```bash
+        mkdir -p backups/reports
+        make prod-virtual-threshold-challenger-report \
+          ARGS="--until 2026-08-10T00:00:00Z --format json" \
+          > backups/reports/entry-thresholds-2026-08-10.json
+        ```
+
+      - Check excluded episodes, unresolved decisions/paths, selected decision and
+        venue per floor, no-trigger cash episodes, cluster concentration, conditional
+        trade rate, net expectancy, initial-SL rate, and paired delta versus +30%.
+        The five challengers are one Holm-corrected family. Formal output stays hidden
+        before the locked first 100 episodes are fully paired with at least 30 asset
+        clusters. A pass requires positive own expectancy, positive conservative
+        familywise paired lower bound, Holm rejection, and positive top-cluster
+        sensitivity, and produces only a live-shadow candidate.
+
   - [ ] Derive recoverable pre-decision candle features (including blow-off concentration
         and reversal strength) from fully closed OHLCV and test whether they separate
         outcomes before promoting either to a live gate or score component.
