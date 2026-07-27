@@ -4,7 +4,6 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from schurfer_analytics.derivatives_context import (
-    METHODS,
     DerivativesContextProbeResult,
     DerivativesContextTarget,
 )
@@ -17,6 +16,7 @@ from schurfer_analytics.derivatives_context_report import (
     render_json,
     render_markdown,
 )
+from schurfer_analytics.derivatives_history import METHODS
 
 GENERATED_AT = datetime(2026, 7, 27, 12, tzinfo=UTC)
 SINCE = GENERATED_AT - timedelta(days=7)
@@ -44,6 +44,7 @@ def _filters(
         before_minutes=240,
         after_minutes=480,
         fetch_limit=200,
+        max_pages=10,
         timeout_seconds=15,
     )
 
@@ -95,6 +96,7 @@ def _result(
         ({"before_minutes": 10_081}, "cannot exceed"),
         ({"after_minutes": 10_081}, "cannot exceed"),
         ({"fetch_limit": 0}, "between 1 and 1000"),
+        ({"max_pages": 0}, "between 1 and 50"),
         ({"timeout_seconds": 121}, "in \\(0, 120\\]"),
     ],
 )
@@ -107,6 +109,7 @@ def test_filters_fail_closed(change: dict[str, object], message: str) -> None:
         "before_minutes": 240,
         "after_minutes": 480,
         "fetch_limit": 200,
+        "max_pages": 10,
         "timeout_seconds": 15,
     }
     values.update(change)
@@ -146,6 +149,7 @@ def test_build_report_pins_provenance_and_coverage() -> None:
     assert report.methods[0].sampled == 1
     assert report.methods[0].unsupported == 1
     assert report.methods[1].partial == 1
+    assert report.methods[1].incomplete == 0
 
 
 def test_build_report_rejects_blank_revision_and_result_gaps_or_duplicates() -> None:
@@ -193,8 +197,11 @@ def test_renderers_expose_contract_status_and_errors() -> None:
 
     assert "# Derivatives Context Coverage Probe" in markdown
     assert "declared CCXT capability is not evidence" in markdown
-    assert "| funding_rate_history | 1 | 1 | 1 | 1 | 0 | 0 | 0 | 0 |" in markdown
-    assert "| binance | funding_rate_history | ERA (event 42) | sampled | emulated |" in markdown
+    assert "| funding_rate_history | 1 | 1 | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 |" in markdown
+    assert (
+        "| binance | funding_rate_history | ERA (event 42) | sampled | emulated | event | 0 |"
+    ) in markdown
+    assert "| event | n/a | n/a / 0 | n/a |" in markdown
     assert payload["manifest"]["code_revision"] == "abc123"
     assert payload["results"][0]["status"] == "sampled"
 
@@ -212,6 +219,8 @@ def test_parser_supports_bounded_repeated_exchange_and_method_filters() -> None:
             "60",
             "--after-minutes",
             "120",
+            "--max-pages",
+            "5",
             "--code-revision",
             "abc123",
             "--no-working-tree-dirty",
@@ -224,5 +233,6 @@ def test_parser_supports_bounded_repeated_exchange_and_method_filters() -> None:
     assert args.methods == ["funding_rate_history"]
     assert args.before_minutes == 60
     assert args.after_minutes == 120
+    assert args.max_pages == 5
     assert args.working_tree_dirty is False
     assert args.format == "json"

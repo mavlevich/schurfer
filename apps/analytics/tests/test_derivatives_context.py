@@ -4,17 +4,21 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from schurfer_analytics.derivatives_context import (
-    METHODS,
-    DerivativesContextMethod,
     DerivativesContextProbeResult,
     DerivativesContextTarget,
     probe_derivatives_context,
     result_fingerprint,
     target_fingerprint,
 )
+from schurfer_analytics.derivatives_history import (
+    METHODS,
+    DerivativesHistoryMethod,
+    effective_timeframe,
+)
 
 ANCHOR = datetime(2026, 7, 27, 12, tzinfo=UTC)
 SINCE_MS = int((ANCHOR - timedelta(minutes=240)).timestamp() * 1000)
+UNTIL_MS = int((ANCHOR + timedelta(minutes=480)).timestamp() * 1000)
 
 
 def _target(exchange: str = "binance") -> DerivativesContextTarget:
@@ -45,6 +49,18 @@ def _exchange(
     return exchange
 
 
+def _row(method: DerivativesHistoryMethod, timestamp: int) -> object:
+    if method.row_kind == "ohlcv":
+        return [timestamp, 1, 2, 0.5, 1.5, 10]
+    return {"timestamp": timestamp}
+
+
+def _complete_response(method: DerivativesHistoryMethod) -> list[object]:
+    if method.series_kind == "event":
+        return [_row(method, SINCE_MS + 60_000), _row(method, UNTIL_MS)]
+    return [_row(method, timestamp) for timestamp in range(SINCE_MS, UNTIL_MS + 1, 5 * 60_000)]
+
+
 async def _probe(
     exchange: MagicMock,
     *,
@@ -65,15 +81,13 @@ async def _probe(
 
 @pytest.mark.parametrize("method", METHODS, ids=lambda method: method.name)
 async def test_every_method_uses_the_locked_ccxt_signature(
-    method: DerivativesContextMethod,
+    method: DerivativesHistoryMethod,
 ) -> None:
     selected = method
-    row = (
-        [SINCE_MS + 60_000, 1, 2, 0.5, 1.5, 10]
-        if selected.row_kind == "ohlcv"
-        else {"timestamp": SINCE_MS + 60_000}
+    exchange = _exchange(
+        capability=selected.capability,
+        response=_complete_response(selected),
     )
-    exchange = _exchange(capability=selected.capability, response=[row])
 
     result = (
         await probe_derivatives_context(
@@ -88,14 +102,14 @@ async def test_every_method_uses_the_locked_ccxt_signature(
     )[0]
 
     fetcher = getattr(exchange, selected.callable_name)
-    expected = (
+    expected_call = (
         ("ERA/USDT:USDT", SINCE_MS, 200)
         if selected.timeframe is None
         else ("ERA/USDT:USDT", "5m", SINCE_MS, 200)
     )
-    fetcher.assert_awaited_once_with(*expected)
+    fetcher.assert_awaited_once_with(*expected_call)
     assert result.status == "sampled"
-    assert result.in_window_rows == 1
+    assert result.in_window_rows == (144 if selected.series_kind == "regular" else 1)
 
 
 async def test_probe_reuses_one_loaded_client_for_all_methods() -> None:
@@ -106,10 +120,7 @@ async def test_probe_reuses_one_loaded_client_for_all_methods() -> None:
     )
     exchange.has = {method.capability: True for method in METHODS}
     for method in METHODS:
-        response = (
-            [[SINCE_MS + 60_000, 1, 2, 0.5, 1.5, 10]] if method.row_kind == "ohlcv" else [timestamp]
-        )
-        getattr(exchange, method.callable_name).return_value = response
+        getattr(exchange, method.callable_name).return_value = _complete_response(method)
     factory = MagicMock(return_value=exchange)
 
     results = await probe_derivatives_context(
@@ -152,7 +163,10 @@ async def test_no_target_or_unsupported_capability_never_fetches() -> None:
 async def test_emulated_capability_is_reported_separately_and_probed() -> None:
     exchange = _exchange(
         capability=METHODS[0].capability,
-        response=[{"timestamp": SINCE_MS + 60_000}],
+        response=[
+            {"timestamp": SINCE_MS + 60_000},
+            {"timestamp": UNTIL_MS},
+        ],
     )
     exchange.has = {METHODS[0].capability: "emulated"}
 
@@ -217,6 +231,7 @@ async def test_invalid_and_seconds_timestamps_are_reported_without_repair() -> N
         capability=METHODS[0].capability,
         response=[
             {"timestamp": SINCE_MS + 60_000},
+            {"timestamp": UNTIL_MS},
             {"timestamp": (SINCE_MS + 120_000) // 1000},
             {"timestamp": "not-a-number"},
         ],
@@ -225,10 +240,28 @@ async def test_invalid_and_seconds_timestamps_are_reported_without_repair() -> N
     result = await _probe(exchange)
 
     assert result.status == "partial"
-    assert result.returned_rows == 3
-    assert result.valid_timestamp_rows == 1
+    assert result.returned_rows == 4
+    assert result.valid_timestamp_rows == 2
     assert result.in_window_rows == 1
     assert result.invalid_rows == 2
+
+
+async def test_event_rows_with_the_same_timestamp_remain_distinct() -> None:
+    event_timestamp = SINCE_MS + 60_000
+    exchange = _exchange(
+        capability=METHODS[0].capability,
+        response=[
+            {"timestamp": event_timestamp, "id": "first"},
+            {"timestamp": event_timestamp, "id": "second"},
+            {"timestamp": UNTIL_MS},
+        ],
+    )
+
+    result = await _probe(exchange)
+
+    assert result.status == "sampled"
+    assert result.in_window_rows == 2
+    assert result.duplicate_rows == 0
 
 
 async def test_seconds_only_response_is_invalid_not_empty_history() -> None:
@@ -243,7 +276,7 @@ async def test_seconds_only_response_is_invalid_not_empty_history() -> None:
     assert result.error == "response contained no valid unified millisecond timestamps"
 
 
-async def test_empty_or_out_of_window_response_is_no_data() -> None:
+async def test_out_of_window_response_is_not_reported_as_empty_history() -> None:
     exchange = _exchange(
         capability=METHODS[0].capability,
         response=[{"timestamp": SINCE_MS - 1}],
@@ -251,9 +284,156 @@ async def test_empty_or_out_of_window_response_is_no_data() -> None:
 
     result = await _probe(exchange)
 
-    assert result.status == "no_data"
+    assert result.status == "window_mismatch"
     assert result.valid_timestamp_rows == 1
     assert result.in_window_rows == 0
+
+
+async def test_regular_series_paginates_until_the_window_is_complete() -> None:
+    method = METHODS[2]
+    first_page = [
+        _row(method, timestamp)
+        for timestamp in range(SINCE_MS, SINCE_MS + 100 * 5 * 60_000, 5 * 60_000)
+    ]
+    second_page = [
+        _row(method, timestamp)
+        for timestamp in range(
+            SINCE_MS + 100 * 5 * 60_000,
+            UNTIL_MS + 1,
+            5 * 60_000,
+        )
+    ]
+    exchange = _exchange(capability=method.capability, response=[])
+    exchange.fetch_mark_ohlcv.side_effect = [first_page, second_page]
+
+    result = await _probe(exchange, method_index=2)
+
+    assert result.status == "sampled"
+    assert result.request_count == 2
+    assert result.in_window_rows == 144
+    assert result.expected_rows == 144
+    assert result.coverage_ratio == 1
+    assert result.covers_start is True
+    assert result.covers_end is True
+    assert result.missing_rows == 0
+    assert result.max_gap_minutes == 5
+    assert exchange.fetch_mark_ohlcv.await_args_list[1].args[2] == (SINCE_MS + 100 * 5 * 60_000)
+
+
+async def test_regular_series_with_gap_is_incomplete() -> None:
+    method = METHODS[2]
+    response = [
+        _row(method, timestamp)
+        for timestamp in range(SINCE_MS, UNTIL_MS + 1, 5 * 60_000)
+        if timestamp != SINCE_MS + 60 * 60_000
+    ]
+    exchange = _exchange(capability=method.capability, response=response)
+
+    result = await _probe(exchange, method_index=2)
+
+    assert result.status == "incomplete"
+    assert result.coverage_ratio == pytest.approx(143 / 144)
+    assert result.missing_rows == 1
+    assert result.max_gap_minutes == 10
+
+
+async def test_regular_series_uses_the_observed_grid_for_an_unaligned_window() -> None:
+    method = METHODS[2]
+    target = replace(_target(), anchor_at=ANCHOR + timedelta(minutes=2))
+    first_timestamp = int((target.anchor_at - timedelta(minutes=2)).timestamp() * 1000)
+    exchange = _exchange(
+        capability=method.capability,
+        response=[
+            _row(method, first_timestamp),
+            _row(method, first_timestamp + 5 * 60_000),
+        ],
+    )
+
+    result = (
+        await probe_derivatives_context(
+            (target,),
+            {"binance": lambda: exchange},
+            (method,),
+            before_minutes=6,
+            after_minutes=8,
+            limit=200,
+            timeout_seconds=1,
+        )
+    )[0]
+
+    assert result.status == "sampled"
+    assert result.expected_rows == 2
+    assert result.in_window_rows == 2
+    assert result.coverage_ratio == 1
+    assert result.covers_start is True
+    assert result.covers_end is True
+
+
+async def test_regular_pagination_stall_is_visible_and_deduplicated() -> None:
+    method = METHODS[2]
+    page = [
+        _row(method, timestamp)
+        for timestamp in range(SINCE_MS, SINCE_MS + 100 * 5 * 60_000, 5 * 60_000)
+    ]
+    exchange = _exchange(capability=method.capability, response=[])
+    exchange.fetch_mark_ohlcv.side_effect = [page, page]
+
+    result = await _probe(exchange, method_index=2)
+
+    assert result.status == "incomplete"
+    assert result.pagination_exhausted is True
+    assert result.request_count == 2
+    assert result.returned_rows == 200
+    assert result.in_window_rows == 100
+    assert result.duplicate_rows == 100
+    assert result.error == "pagination made no forward progress"
+
+
+async def test_later_page_failure_preserves_coverage_diagnostics() -> None:
+    method = METHODS[2]
+    page = [
+        _row(method, timestamp)
+        for timestamp in range(SINCE_MS, SINCE_MS + 100 * 5 * 60_000, 5 * 60_000)
+    ]
+    exchange = _exchange(capability=method.capability, response=[])
+    exchange.fetch_mark_ohlcv.side_effect = [page, RuntimeError("second page failed")]
+
+    result = await _probe(exchange, method_index=2)
+
+    assert result.status == "fetch_failed"
+    assert result.request_count == 2
+    assert result.in_window_rows == 100
+    assert result.coverage_ratio == pytest.approx(100 / 144)
+    assert result.error == "second page failed"
+
+
+async def test_htx_open_interest_uses_registered_hourly_override() -> None:
+    method = METHODS[1]
+    rows = [_row(method, timestamp) for timestamp in range(SINCE_MS, UNTIL_MS + 1, 60 * 60_000)]
+    exchange = _exchange(capability=method.capability, response=rows)
+
+    result = (
+        await probe_derivatives_context(
+            (_target("htx"),),
+            {"htx": lambda: exchange},
+            (method,),
+            before_minutes=240,
+            after_minutes=480,
+            limit=200,
+            timeout_seconds=1,
+        )
+    )[0]
+
+    exchange.fetch_open_interest_history.assert_awaited_once_with(
+        "ERA/USDT:USDT",
+        "1h",
+        SINCE_MS,
+        200,
+    )
+    assert effective_timeframe("htx", method) == "1h"
+    assert result.effective_timeframe == "1h"
+    assert result.expected_rows == 12
+    assert result.status == "sampled"
 
 
 async def test_probe_rejects_ambiguous_inputs() -> None:
@@ -283,6 +463,14 @@ async def test_probe_rejects_ambiguous_inputs() -> None:
             {"binance": MagicMock()},
             (METHODS[0],),
             **arguments,
+        )
+    with pytest.raises(ValueError, match="max pages"):
+        await probe_derivatives_context(
+            (_target(),),
+            {"binance": MagicMock()},
+            (METHODS[0],),
+            **arguments,
+            max_pages=0,
         )
 
 

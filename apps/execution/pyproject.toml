@@ -3,7 +3,7 @@ name = "schurfer-execution"
 version = "0.1.0"
 requires-python = ">=3.13"
 dependencies = [
-    "ccxt>=4.4.0",
+    "ccxt==4.5.68",
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
     "redis>=5.2",

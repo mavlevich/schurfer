@@ -409,12 +409,17 @@ the new cohort separately.
   The default selection looks back 14 days and chooses at most one identity-safe,
   exact-symbol target per exchange whose eight-hour post-anchor window has completed.
   Each request is bounded to four hours before and eight hours after the anchor, with
-  a 200-row limit and 15-second timeout. Review `sampled`, `partial`, `no_data`,
-  `unsupported`, and failure rows method by method. A capability flag alone is not
-  evidence of historical coverage, and `emulated` remains distinct from native
-  support. Either side of the requested window is capped at seven days. The command is
-  read-only, does not persist rows, does not replace live liquidity snapshots, and
-  cannot change production trading.
+  a 200-row page limit, at most 10 pages, and a 15-second timeout per request. Review
+  `sampled`, `incomplete`, `window_mismatch`, `partial`, `no_data`, `unsupported`, and
+  failure rows method by method. For regular series, `sampled` means the requested
+  boundaries, expected row count, and cadence were all covered; inspect coverage,
+  bounds, duplicates, and maximum gap. For sparse event series, `sampled` only means
+  that at least one valid event was recoverable inside the window. A capability flag
+  alone is not evidence of historical coverage, and `emulated` remains distinct from
+  native support. Effective timeframes and explicit venue overrides are printed in
+  every result. Either side of the requested window is capped at seven days. The
+  command is read-only, does not persist rows, does not replace live liquidity
+  snapshots, and cannot change production trading.
 
 - Pump/signal readiness after deploying migration 0012: verify newly published pumps
   carry an episode id and recent decisions are attributed. `signal_missing` or
