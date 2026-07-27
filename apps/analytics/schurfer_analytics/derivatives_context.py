@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import math
 from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import asdict, dataclass
@@ -14,14 +15,16 @@ from typing import Any, Literal
 from .derivatives_history import (
     DEFAULT_MAX_PAGES,
     DerivativesHistoryMethod,
+    effective_limit,
     effective_timeframe,
     fetch_derivatives_history,
     measure_regular_window,
     source_timestamp_ms,
     timeframe_ms,
 )
+from .instruments import instrument_metadata
 
-DERIVATIVES_CONTEXT_PROBE_VERSION = "derivatives_context_probe_v2"
+DERIVATIVES_CONTEXT_PROBE_VERSION = "derivatives_context_probe_v3"
 DEFAULT_BEFORE_MINUTES = 240
 DEFAULT_AFTER_MINUTES = 480
 DEFAULT_FETCH_TIMEOUT_SECONDS = 15.0
@@ -36,6 +39,7 @@ ProbeStatus = Literal[
     "unsupported",
     "no_target",
     "symbol_unavailable",
+    "identity_mismatch",
     "client_init_failed",
     "load_markets_failed",
     "fetch_failed",
@@ -78,6 +82,7 @@ class DerivativesContextProbeResult:
     first_source_at: datetime | None
     last_source_at: datetime | None
     effective_timeframe: str | None = None
+    effective_limit: int = 0
     request_count: int = 0
     expected_rows: int | None = None
     coverage_ratio: float | None = None
@@ -88,6 +93,25 @@ class DerivativesContextProbeResult:
     max_gap_minutes: float | None = None
     pagination_exhausted: bool = False
     error: str | None = None
+
+
+@dataclass(frozen=True)
+class DerivativesContextSample:
+    source_at: datetime
+    sample_key: str
+    payload: dict[str, Any] | list[Any]
+
+
+@dataclass(frozen=True)
+class DerivativesContextObservation:
+    result: DerivativesContextProbeResult
+    samples: tuple[DerivativesContextSample, ...]
+
+
+@dataclass(frozen=True)
+class DerivativesContextWork:
+    target: DerivativesContextTarget
+    method: str
 
 
 ExchangeFactory = Callable[[], Any]
@@ -130,6 +154,56 @@ def _fingerprint(payload: Any) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _json_value(value: Any) -> Any:
+    if value is None or isinstance(value, str | bool | int):
+        return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {str(key): _json_value(item) for key, item in value.items()}
+    if isinstance(value, list | tuple):
+        return [_json_value(item) for item in value]
+    return str(value)
+
+
+def _samples_from_rows(
+    rows: tuple[Any, ...],
+    method: DerivativesHistoryMethod,
+    *,
+    since_ms: int,
+    until_ms: int,
+) -> tuple[DerivativesContextSample, ...]:
+    samples: dict[str, DerivativesContextSample] = {}
+    for row in rows:
+        timestamp = source_timestamp_ms(row, method.row_kind)
+        if timestamp is None or not since_ms <= timestamp < until_ms:
+            continue
+        payload = _json_value(row)
+        if not isinstance(payload, dict | list):
+            continue
+        if method.series_kind == "regular":
+            key_material = str(timestamp)
+        else:
+            key_material = json.dumps(
+                payload,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+        sample_key = hashlib.sha256(key_material.encode()).hexdigest()
+        samples[sample_key] = DerivativesContextSample(
+            source_at=datetime.fromtimestamp(timestamp / 1000, tz=UTC),
+            sample_key=sample_key,
+            payload=payload,
+        )
+    return tuple(
+        sorted(
+            samples.values(),
+            key=lambda sample: (sample.source_at, sample.sample_key),
+        )
+    )
+
+
 def _empty_result(
     exchange: str,
     method: DerivativesHistoryMethod,
@@ -141,6 +215,7 @@ def _empty_result(
     requested_since: datetime | None = None,
     requested_until: datetime | None = None,
     effective_timeframe: str | None = None,
+    effective_limit: int = 0,
     error: str | None = None,
 ) -> DerivativesContextProbeResult:
     return DerivativesContextProbeResult(
@@ -165,8 +240,15 @@ def _empty_result(
         first_source_at=None,
         last_source_at=None,
         effective_timeframe=effective_timeframe,
+        effective_limit=effective_limit,
         error=error,
     )
+
+
+def _declared_support(exchange: Any, method: DerivativesHistoryMethod) -> DeclaredSupport:
+    capabilities = getattr(exchange, "has", None)
+    raw_support = capabilities.get(method.capability) if isinstance(capabilities, dict) else None
+    return "emulated" if raw_support == "emulated" else raw_support is True
 
 
 async def _probe_method(
@@ -180,23 +262,24 @@ async def _probe_method(
     limit: int,
     max_pages: int,
     timeout_seconds: float,
-) -> DerivativesContextProbeResult:
+) -> DerivativesContextObservation:
     timeframe = effective_timeframe(exchange_name, method)
-    capabilities = getattr(exchange, "has", None)
-    raw_support = capabilities.get(method.capability) if isinstance(capabilities, dict) else None
-    declared_support: DeclaredSupport = (
-        "emulated" if raw_support == "emulated" else raw_support is True
-    )
+    request_limit = effective_limit(exchange_name, method, limit)
+    declared_support = _declared_support(exchange, method)
     if not declared_support:
-        return _empty_result(
-            exchange_name,
-            method,
-            "unsupported",
-            fetched_at=datetime.now(UTC),
-            target=target,
-            requested_since=requested_since,
-            requested_until=requested_until,
-            effective_timeframe=timeframe,
+        return DerivativesContextObservation(
+            result=_empty_result(
+                exchange_name,
+                method,
+                "unsupported",
+                fetched_at=datetime.now(UTC),
+                target=target,
+                requested_since=requested_since,
+                requested_until=requested_until,
+                effective_timeframe=timeframe,
+                effective_limit=request_limit,
+            ),
+            samples=(),
         )
 
     since_ms = int(requested_since.timestamp() * 1000)
@@ -208,7 +291,7 @@ async def _probe_method(
         timeframe=timeframe,
         since_ms=since_ms,
         until_ms=until_ms,
-        limit=limit,
+        limit=request_limit,
         max_pages=max_pages,
         timeout_seconds=timeout_seconds,
     )
@@ -281,43 +364,143 @@ async def _probe_method(
         error = "regular series did not cover the complete requested window"
     else:
         status = "sampled"
-    return DerivativesContextProbeResult(
-        exchange=exchange_name,
-        method=method.name,
-        capability=method.capability,
-        declared_support=declared_support,
-        status=status,
-        event_id=target.event_id,
-        base=target.base,
-        unified_symbol=target.unified_symbol,
-        market_id=target.market_id,
-        identity_key=target.identity_key,
-        anchor_at=target.anchor_at,
-        requested_since=requested_since,
-        requested_until=requested_until,
-        fetched_at=datetime.now(UTC),
-        returned_rows=len(response),
-        valid_timestamp_rows=len(valid_timestamps),
-        in_window_rows=len(in_window),
-        invalid_rows=invalid_rows,
-        first_source_at=(
-            datetime.fromtimestamp(min(in_window) / 1000, tz=UTC) if in_window else None
+    return DerivativesContextObservation(
+        result=DerivativesContextProbeResult(
+            exchange=exchange_name,
+            method=method.name,
+            capability=method.capability,
+            declared_support=declared_support,
+            status=status,
+            event_id=target.event_id,
+            base=target.base,
+            unified_symbol=target.unified_symbol,
+            market_id=target.market_id,
+            identity_key=target.identity_key,
+            anchor_at=target.anchor_at,
+            requested_since=requested_since,
+            requested_until=requested_until,
+            fetched_at=datetime.now(UTC),
+            returned_rows=len(response),
+            valid_timestamp_rows=len(valid_timestamps),
+            in_window_rows=len(in_window),
+            invalid_rows=invalid_rows,
+            first_source_at=(
+                datetime.fromtimestamp(min(in_window) / 1000, tz=UTC) if in_window else None
+            ),
+            last_source_at=(
+                datetime.fromtimestamp(max(in_window) / 1000, tz=UTC) if in_window else None
+            ),
+            effective_timeframe=timeframe,
+            effective_limit=request_limit,
+            request_count=page_fetch.request_count,
+            expected_rows=expected_rows,
+            coverage_ratio=coverage_ratio,
+            covers_start=covers_start,
+            covers_end=covers_end,
+            missing_rows=missing_rows,
+            duplicate_rows=duplicate_rows,
+            max_gap_minutes=max_gap_minutes,
+            pagination_exhausted=page_fetch.pagination_exhausted,
+            error=error,
         ),
-        last_source_at=(
-            datetime.fromtimestamp(max(in_window) / 1000, tz=UTC) if in_window else None
+        samples=_samples_from_rows(
+            page_fetch.rows,
+            method,
+            since_ms=since_ms,
+            until_ms=until_ms,
         ),
-        effective_timeframe=timeframe,
-        request_count=page_fetch.request_count,
-        expected_rows=expected_rows,
-        coverage_ratio=coverage_ratio,
-        covers_start=covers_start,
-        covers_end=covers_end,
-        missing_rows=missing_rows,
-        duplicate_rows=duplicate_rows,
-        max_gap_minutes=max_gap_minutes,
-        pagination_exhausted=page_fetch.pagination_exhausted,
-        error=error,
     )
+
+
+async def collect_derivatives_context_target(
+    exchange_name: str,
+    exchange: Any,
+    target: DerivativesContextTarget,
+    methods: tuple[DerivativesHistoryMethod, ...],
+    *,
+    before_minutes: int,
+    after_minutes: int,
+    limit: int,
+    max_pages: int,
+    timeout_seconds: float,
+) -> tuple[DerivativesContextObservation, ...]:
+    """Collect bounded rows for one already-loaded, identity-safe market."""
+    requested_since = target.anchor_at - timedelta(minutes=before_minutes)
+    requested_until = target.anchor_at + timedelta(minutes=after_minutes)
+    markets = getattr(exchange, "markets", None)
+    if not isinstance(markets, dict) or target.unified_symbol not in markets:
+        fetched_at = datetime.now(UTC)
+        return tuple(
+            DerivativesContextObservation(
+                result=_empty_result(
+                    exchange_name,
+                    method,
+                    "symbol_unavailable",
+                    fetched_at=fetched_at,
+                    target=target,
+                    requested_since=requested_since,
+                    requested_until=requested_until,
+                    effective_timeframe=effective_timeframe(exchange_name, method),
+                    effective_limit=effective_limit(exchange_name, method, limit),
+                    declared_support=_declared_support(exchange, method),
+                    error="recorded unified symbol is absent from current markets",
+                ),
+                samples=(),
+            )
+            for method in methods
+        )
+    current_identity = instrument_metadata(
+        exchange_name,
+        target.unified_symbol,
+        markets[target.unified_symbol],
+    )
+    identity_mismatch = (
+        target.market_id is not None and current_identity["market_id"] != target.market_id
+    ) or (
+        target.identity_key is not None and current_identity["identity_key"] != target.identity_key
+    )
+    if identity_mismatch:
+        fetched_at = datetime.now(UTC)
+        error = (
+            "current market identity does not match the recorded pump source: "
+            f"market_id={current_identity['market_id']}, "
+            f"identity_key={current_identity['identity_key']}"
+        )
+        return tuple(
+            DerivativesContextObservation(
+                result=_empty_result(
+                    exchange_name,
+                    method,
+                    "identity_mismatch",
+                    fetched_at=fetched_at,
+                    target=target,
+                    requested_since=requested_since,
+                    requested_until=requested_until,
+                    effective_timeframe=effective_timeframe(exchange_name, method),
+                    effective_limit=effective_limit(exchange_name, method, limit),
+                    declared_support=_declared_support(exchange, method),
+                    error=error,
+                ),
+                samples=(),
+            )
+            for method in methods
+        )
+    observations: list[DerivativesContextObservation] = []
+    for method in methods:
+        observations.append(
+            await _probe_method(
+                exchange_name,
+                exchange,
+                target,
+                method,
+                requested_since=requested_since,
+                requested_until=requested_until,
+                limit=limit,
+                max_pages=max_pages,
+                timeout_seconds=timeout_seconds,
+            )
+        )
+    return tuple(observations)
 
 
 async def probe_derivatives_context(
@@ -365,6 +548,7 @@ async def probe_derivatives_context(
                     "no_target",
                     fetched_at=fetched_at,
                     effective_timeframe=effective_timeframe(exchange_name, method),
+                    effective_limit=effective_limit(exchange_name, method, limit),
                 )
                 for method in methods
             )
@@ -384,6 +568,7 @@ async def probe_derivatives_context(
                     requested_since=requested_since,
                     requested_until=requested_until,
                     effective_timeframe=effective_timeframe(exchange_name, method),
+                    effective_limit=effective_limit(exchange_name, method, limit),
                     error=f"client initialization failed: {str(exc)[:900]}",
                 )
                 for method in methods
@@ -406,43 +591,23 @@ async def probe_derivatives_context(
                         requested_since=requested_since,
                         requested_until=requested_until,
                         effective_timeframe=effective_timeframe(exchange_name, method),
+                        effective_limit=effective_limit(exchange_name, method, limit),
                         error=str(exc)[:1000],
                     )
                     for method in methods
                 )
-            markets = getattr(exchange, "markets", None)
-            if not isinstance(markets, dict) or target.unified_symbol not in markets:
-                fetched_at = datetime.now(UTC)
-                return tuple(
-                    _empty_result(
-                        exchange_name,
-                        method,
-                        "symbol_unavailable",
-                        fetched_at=fetched_at,
-                        target=target,
-                        requested_since=requested_since,
-                        requested_until=requested_until,
-                        effective_timeframe=effective_timeframe(exchange_name, method),
-                        error="recorded unified symbol is absent from current markets",
-                    )
-                    for method in methods
-                )
-            rows: list[DerivativesContextProbeResult] = []
-            for method in methods:
-                rows.append(
-                    await _probe_method(
-                        exchange_name,
-                        exchange,
-                        target,
-                        method,
-                        requested_since=requested_since,
-                        requested_until=requested_until,
-                        limit=limit,
-                        max_pages=max_pages,
-                        timeout_seconds=timeout_seconds,
-                    )
-                )
-            return tuple(rows)
+            observations = await collect_derivatives_context_target(
+                exchange_name,
+                exchange,
+                target,
+                methods,
+                before_minutes=before_minutes,
+                after_minutes=after_minutes,
+                limit=limit,
+                max_pages=max_pages,
+                timeout_seconds=timeout_seconds,
+            )
+            return tuple(observation.result for observation in observations)
         finally:
             with suppress(Exception):
                 await exchange.close()

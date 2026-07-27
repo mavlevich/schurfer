@@ -3,6 +3,9 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from schurfer_analytics.derivatives_context_resolver import (
+    DerivativesContextResolverConfig,
+)
 from schurfer_analytics.ohlcv import Candle
 from schurfer_analytics.outcome_models import Decision
 from schurfer_analytics.outcome_worker import run_outcome_resolver
@@ -478,6 +481,44 @@ async def test_runner_closes_owned_repository() -> None:
         await run_outcome_resolver(cfg, once=True)
 
     repository.close.assert_awaited_once()
+    exchange.close.assert_awaited_once()
+
+
+async def test_runner_resolves_derivatives_context_in_the_existing_worker() -> None:
+    cfg = OutcomeConfig("postgresql://test", ("binance",))
+    context_cfg = DerivativesContextResolverConfig()
+    exchange = AsyncMock()
+    outcome_store = _store([])
+    context_store = AsyncMock()
+
+    with (
+        patch.dict(
+            "schurfer_analytics.outcome_worker.EXCHANGE_FACTORIES",
+            {"binance": lambda: exchange},
+            clear=True,
+        ),
+        patch(
+            "schurfer_analytics.outcome_worker.resolve_once",
+            AsyncMock(return_value=0),
+        ),
+        patch(
+            "schurfer_analytics.outcome_worker.resolve_derivatives_context_once",
+            AsyncMock(return_value=1),
+        ) as resolve_context,
+    ):
+        await run_outcome_resolver(
+            cfg,
+            once=True,
+            store=outcome_store,
+            context_config=context_cfg,
+            context_store=context_store,
+        )
+
+    resolve_context.assert_awaited_once_with(
+        context_cfg,
+        {"binance": exchange},
+        context_store,
+    )
     exchange.close.assert_awaited_once()
 
 

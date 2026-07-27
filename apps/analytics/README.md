@@ -6,7 +6,8 @@ strategy-agnostic forward outcomes.
 Entrypoints:
 
 - `pump-scanner` — scans supported exchanges and maintains pump episodes/snapshots.
-- `outcome-resolver` — idempotently resolves forward price, MAE, and MFE windows.
+- `outcome-resolver` — idempotently resolves forward price, MAE, and MFE windows and
+  drains bounded derivatives-context recovery work without adding another service.
 - `measurement-report` — read-only dataset-health and raw-outcome report. It aggregates
   in PostgreSQL and prints Markdown by default or JSON with `--format json`.
 - `episode-replay` — read-only replay-input validator. It groups complete chronological
@@ -98,7 +99,17 @@ distinct in the output. Regular 5-minute series are paginated until the requeste
 window is complete or a bounded failure is visible; their coverage ratio, boundary
 coverage, missing rows, duplicates, and maximum gap are reported. Event series such as
 funding and liquidations remain sparse by definition and are not judged against a
-fixed row count. Venue-specific timeframe overrides are explicit in the output
-(`htx` open interest uses `1h`). Either side of the requested window is capped at
-seven days. The probe is read-only and does not yet persist enrichment or affect
-execution.
+fixed row count. Venue-specific request policies are explicit in the output (`htx`
+open interest uses `1h`; HTX funding and liquidations cap pages at 100 rows). Either
+side of the requested window is capped at seven days. The probe remains read-only and
+does not affect execution.
+
+The long-running outcome resolver uses the same fetch and coverage primitives to
+persist only validated high-value methods: funding and OI on proven venues, Binance
+long/short ratios, and HTX liquidations. Work begins after the complete eight-hour
+window is available. `app.pump_derivatives_context_runs` records target identity,
+request policy, coverage, retry state, CCXT version, and resolver version;
+`app.pump_derivatives_context_samples` stores idempotent in-window public rows.
+The resolver revalidates the loaded exchange market against the recorded market id
+and identity key before fetching. Price-like mark/index/premium candles remain
+on-demand inputs rather than duplicated storage.

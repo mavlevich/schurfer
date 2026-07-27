@@ -78,6 +78,7 @@ def _result(
         invalid_rows=0,
         first_source_at=TARGET.anchor_at if status == "sampled" else None,
         last_source_at=TARGET.anchor_at if status == "sampled" else None,
+        effective_limit=200,
     )
 
 
@@ -199,7 +200,7 @@ def test_renderers_expose_contract_status_and_errors() -> None:
     assert "declared CCXT capability is not evidence" in markdown
     assert "| funding_rate_history | 1 | 1 | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 |" in markdown
     assert (
-        "| binance | funding_rate_history | ERA (event 42) | sampled | emulated | event | 0 |"
+        "| binance | funding_rate_history | ERA (event 42) | sampled | emulated | event | 200 | 0 |"
     ) in markdown
     assert "| event | n/a | n/a / 0 | n/a |" in markdown
     assert payload["manifest"]["code_revision"] == "abc123"

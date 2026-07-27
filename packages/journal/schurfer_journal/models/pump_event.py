@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from .funding_rate_snapshot import FundingRateSnapshot
     from .oi_snapshot import OiSnapshot
     from .pump_alert_delivery import PumpAlertDelivery
+    from .pump_derivatives_context import PumpDerivativesContextRun
     from .pump_event_snapshot import PumpEventSnapshot
     from .pump_event_source import PumpEventSource
 
@@ -53,4 +54,9 @@ class PumpEvent(Base):
     )
     funding_rate_snapshots: Mapped[list["FundingRateSnapshot"]] = relationship(
         "FundingRateSnapshot", back_populates="event", cascade="all, delete-orphan"
+    )
+    derivatives_context_runs: Mapped[list["PumpDerivativesContextRun"]] = relationship(
+        "PumpDerivativesContextRun",
+        back_populates="event",
+        cascade="all, delete-orphan",
     )

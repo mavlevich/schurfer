@@ -8,6 +8,8 @@ from schurfer_journal.models import (
     OutcomeLabel,
     OutcomeQuality,
     PumpAlertDelivery,
+    PumpDerivativesContextRun,
+    PumpDerivativesContextSample,
     PumpEvent,
     PumpEventSource,
     Side,
@@ -195,6 +197,35 @@ class TestPumpEventModel:
 
         assert columns["first_seen_at"].nullable is False
         assert columns["entry_qualified_at"].nullable is True
+
+
+class TestPumpDerivativesContextModels:
+    def test_run_identity_and_provenance(self) -> None:
+        table = PumpDerivativesContextRun.__table__
+
+        assert table.schema == "app"
+        assert table.columns["event_id"].nullable is False
+        assert table.columns["capability"].nullable is False
+        assert table.columns["declared_support"].nullable is False
+        assert table.columns["resolver_version"].nullable is False
+        assert table.columns["ccxt_version"].nullable is False
+        assert {constraint.name for constraint in table.constraints} >= {
+            "uq_pump_derivatives_context_run"
+        }
+        assert {fk.target_fullname for fk in table.foreign_keys} == {"app.pump_events.id"}
+
+    def test_sample_is_idempotent_inside_a_run(self) -> None:
+        table = PumpDerivativesContextSample.__table__
+
+        assert table.schema == "app"
+        assert table.columns["source_at"].nullable is False
+        assert table.columns["payload"].nullable is False
+        assert {constraint.name for constraint in table.constraints} >= {
+            "uq_pump_derivatives_context_sample"
+        }
+        assert {fk.target_fullname for fk in table.foreign_keys} == {
+            "app.pump_derivatives_context_runs.id"
+        }
 
 
 class TestPumpEventSourceModel:
