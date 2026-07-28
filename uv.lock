@@ -13,6 +13,7 @@ members = [
     "schurfer-analytics",
     "schurfer-execution",
     "schurfer-journal",
+    "schurfer-performance",
     "schurfer-telegram-bot",
 ]
 constraints = [{ name = "msgpack", specifier = ">=1.2.1" }]
@@ -1755,6 +1756,7 @@ dependencies = [
     { name = "psycopg", extra = ["binary"] },
     { name = "redis" },
     { name = "schurfer-journal" },
+    { name = "schurfer-performance" },
     { name = "sqlalchemy", extra = ["asyncio"] },
     { name = "structlog" },
 ]
@@ -1766,6 +1768,7 @@ requires-dist = [
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
     { name = "redis", specifier = ">=5.2" },
     { name = "schurfer-journal", editable = "packages/journal" },
+    { name = "schurfer-performance", editable = "packages/performance" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0" },
     { name = "structlog", specifier = ">=24.4" },
 ]
@@ -1780,6 +1783,7 @@ dependencies = [
     { name = "httpx" },
     { name = "psycopg", extra = ["binary"] },
     { name = "redis" },
+    { name = "schurfer-performance" },
     { name = "structlog" },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -1791,6 +1795,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
     { name = "redis", specifier = ">=5.2" },
+    { name = "schurfer-performance", editable = "packages/performance" },
     { name = "structlog", specifier = ">=24.4" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32.0" },
 ]
@@ -1813,6 +1818,11 @@ requires-dist = [
     { name = "sqlalchemy", specifier = ">=2.0" },
     { name = "structlog", specifier = ">=24.4" },
 ]
+
+[[package]]
+name = "schurfer-performance"
+version = "0.1.0"
+source = { editable = "packages/performance" }
 
 [[package]]
 name = "schurfer-telegram-bot"

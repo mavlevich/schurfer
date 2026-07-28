@@ -117,10 +117,18 @@ func serveStats(q pgxPool, target string) *httptest.ResponseRecorder {
 }
 
 func TestComputeStatsBasic(t *testing.T) {
-	s := computeStats(tradeAgg{
-		N: 4, Wins: 2, Losses: 2,
-		SumPct: 10, SumWinPct: 30, SumLossPct: -20,
-		NetUSD: 50, GrossWinUSD: 150, GrossLossUSD: -100,
+	s := computeStats(statsAgg{
+		Gross: tradeAgg{
+			N: 4, Wins: 2, Losses: 2,
+			SumPct: 10, SumWinPct: 30, SumLossPct: -20,
+			TotalUSD: 50, WinningUSD: 150, LosingUSD: -100,
+		},
+		Net: tradeAgg{
+			N: 2, Wins: 1, Losses: 1,
+			SumPct: 2, SumWinPct: 5, SumLossPct: -3,
+			TotalUSD: 10, WinningUSD: 25, LosingUSD: -15,
+		},
+		LegacyCount: 2,
 	})
 	if s.WinRate != 50 {
 		t.Errorf("win_rate: want 50, got %v", s.WinRate)
@@ -134,8 +142,11 @@ func TestComputeStatsBasic(t *testing.T) {
 	if s.ProfitFactor == nil || *s.ProfitFactor != 1.5 {
 		t.Errorf("profit_factor: want 1.5, got %v", s.ProfitFactor)
 	}
-	if s.NetUSD != 50 {
-		t.Errorf("net_usd: want 50, got %v", s.NetUSD)
+	if s.GrossUSD != 50 {
+		t.Errorf("gross_usd: want 50, got %v", s.GrossUSD)
+	}
+	if s.NetCount != 2 || s.NetUSD == nil || *s.NetUSD != 10 {
+		t.Errorf("net stats: want count=2 usd=10, got %d/%v", s.NetCount, s.NetUSD)
 	}
 }
 
@@ -143,27 +154,38 @@ func TestComputeStatsProfitFactorUsesDollarsNotPercent(t *testing.T) {
 	// PF must be gross-$ won / gross-$ lost, independent of the percent sums (which
 	// are wrong once position sizes differ). Here the percents would give a different
 	// ratio than the dollars; PF must follow the dollars.
-	s := computeStats(tradeAgg{
+	s := computeStats(statsAgg{Gross: tradeAgg{
 		N: 3, Wins: 1, Losses: 2,
 		SumWinPct: 5, SumLossPct: -40,
-		GrossWinUSD: 100, GrossLossUSD: -40,
-	})
+		WinningUSD: 100, LosingUSD: -40,
+	}})
 	if s.ProfitFactor == nil || *s.ProfitFactor != 2.5 {
 		t.Errorf("profit_factor: want 2.5 (100/40), got %v", s.ProfitFactor)
 	}
 }
 
 func TestComputeStatsNoLossesHasNilProfitFactor(t *testing.T) {
-	s := computeStats(tradeAgg{N: 2, Wins: 2, GrossWinUSD: 20})
+	s := computeStats(statsAgg{Gross: tradeAgg{N: 2, Wins: 2, WinningUSD: 20}})
 	if s.ProfitFactor != nil {
 		t.Errorf("profit_factor: want nil with no losses, got %v", *s.ProfitFactor)
 	}
 }
 
 func TestComputeStatsEmpty(t *testing.T) {
-	s := computeStats(tradeAgg{})
-	if s.Count != 0 || s.WinRate != 0 || s.Expectancy != 0 || s.ProfitFactor != nil {
+	s := computeStats(statsAgg{})
+	if s.Count != 0 || s.WinRate != 0 || s.Expectancy != 0 ||
+		s.ProfitFactor != nil || s.NetUSD != nil {
 		t.Errorf("empty stats not zeroed: %+v", s)
+	}
+}
+
+func TestComputeStatsWithholdsNetWhenOnlyLegacyRowsExist(t *testing.T) {
+	s := computeStats(statsAgg{
+		Gross:       tradeAgg{N: 30, TotalUSD: 8.71},
+		LegacyCount: 30,
+	})
+	if s.NetCount != 0 || s.NetUSD != nil || s.NetExpectancy != nil {
+		t.Errorf("legacy rows must not fabricate net stats: %+v", s)
 	}
 }
 
@@ -176,6 +198,10 @@ func TestStatsAppliesExchangeFilter(t *testing.T) {
 				int64(0), int64(0), int64(0),
 				float64(0), float64(0), float64(0),
 				float64(0), float64(0), float64(0),
+				int64(0), int64(0), int64(0),
+				float64(0), float64(0), float64(0),
+				float64(0), float64(0), float64(0),
+				int64(0), int64(0),
 			}}
 		},
 	}
@@ -192,6 +218,10 @@ func TestStatsHandlerReturnsAggregate(t *testing.T) {
 				int64(4), int64(2), int64(2),
 				float64(10), float64(30), float64(-20),
 				float64(50), float64(150), float64(-100),
+				int64(2), int64(1), int64(1),
+				float64(2), float64(5), float64(-3),
+				float64(10), float64(25), float64(-15),
+				int64(2), int64(0),
 			}}
 		},
 	}
@@ -209,8 +239,11 @@ func TestStatsHandlerReturnsAggregate(t *testing.T) {
 	if resp.ProfitFactor == nil || *resp.ProfitFactor != 1.5 {
 		t.Errorf("want profit_factor 1.5, got %v", resp.ProfitFactor)
 	}
-	if resp.NetUSD != 50 {
-		t.Errorf("want net_usd 50, got %v", resp.NetUSD)
+	if resp.GrossUSD != 50 {
+		t.Errorf("want gross_usd 50, got %v", resp.GrossUSD)
+	}
+	if resp.NetUSD == nil || *resp.NetUSD != 10 {
+		t.Errorf("want net_usd 10, got %v", resp.NetUSD)
 	}
 }
 
@@ -224,6 +257,11 @@ func tradeRowVals(id int64, status, exchange string) []any {
 		float64(0.0030), epoch,
 		(*float64)(nil), (*time.Time)(nil),
 		(*float64)(nil), (*float64)(nil),
+		float64(0), float64(0), (*float64)(nil),
+		(*float64)(nil), (*float64)(nil),
+		(*float64)(nil), (*float64)(nil),
+		(*float64)(nil), (*float64)(nil),
+		"legacy_price_only_v1", "legacy", (*string)(nil),
 		status, (*string)(nil),
 		json.RawMessage(`{"score":8}`), (*string)(nil), epoch,
 	}

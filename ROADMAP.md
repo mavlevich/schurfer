@@ -41,6 +41,18 @@ This sequence is ordered, but adjacent research PRs may be developed while a
 prospective cohort matures. A failed hypothesis is a useful result and should remove
 a rule or stop a workstream rather than trigger unbounded tuning.
 
+**Correctness prerequisite before live shadow.** The trade journal currently labels
+price-only paper P&L as net even though fees, funding, and slippage are not deducted.
+Ship the performance-accounting foundation before item 6. It must preserve historical
+rows as `legacy_price_only_v1`, add explicit gross and net fields, and withhold net
+when a required cost input is missing. New paper closes use the same
+`conservative_costs_v1` contract as replay: 10 bps taker fee per side, 5 bps funding
+cost per eight hours, and the decision-time bid/ask impacts held constant as a
+conservative slippage estimate. The contract is shared code used by replay,
+execution, and the future shadow evaluator. It is an estimate, not an exchange fill
+reconciliation. Real-money accounting remains legacy until actual order fees,
+funding transfers, and fills are imported from the venue.
+
 1. **[Done] Automatic decision-quality report.** The read-only
    `decision-quality-report` compares market-quality-only, score 4 through 9, and
    leave-one-component-out score-6 policies on one chronological decision per pump
@@ -1020,6 +1032,12 @@ work. Do not build a bespoke tax-declaration engine. When real money flows, expo
 to an existing crypto-tax tool (Koinly or similar) or hand it to an accountant
 (PIT-38). A cross-exchange activity and PnL dashboard is reasonable once multiple
 real accounts exist, not at DRY_RUN.
+
+Paper performance uses an explicit versioned estimate. Gross price movement stays
+separate from modeled fees, funding, slippage, and net P&L. Historical rows are never
+silently backfilled with invented costs. A future real-money path must reconcile
+actual exchange fills, commissions, and funding ledger entries before it can claim
+net performance suitable for tax or risk accounting.
 
 ## Security
 

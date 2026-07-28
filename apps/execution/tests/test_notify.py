@@ -132,3 +132,29 @@ async def test_notify_close_sends_message_with_pnl() -> None:
     text = mock_client.post.call_args.kwargs["json"]["text"]
     assert "BEAT" in text
     assert "bybit" in text
+    assert "Gross PnL" in text
+
+
+async def test_notify_close_labels_modeled_net_pnl() -> None:
+    with patch("schurfer_execution.notify.httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(return_value=MagicMock(status_code=200))
+        mock_client_cls.return_value = mock_client
+
+        await notify_close(
+            "tok",
+            "123",
+            base="BEAT",
+            exchange="bybit",
+            entry_price=0.0030,
+            exit_price=0.0025,
+            pnl_pct=16.4,
+            pnl_kind="modeled_net",
+            reason="take_profit",
+            paper=True,
+        )
+
+    text = mock_client.post.call_args.kwargs["json"]["text"]
+    assert "Modeled net PnL" in text

@@ -22,6 +22,11 @@ The web UI is behind a login with no public exposure.
   exposes manual control endpoints. Public dry-run market clients cover the scanner's
   17 venues, while account, position, and order paths receive only separately
   constructed authenticated clients.
+- **performance accounting** (shared pure Python package). Defines the versioned
+  gross/net calculation used by analytics replay and paper execution. Paper costs
+  are a conservative model with explicit completeness status. Missing slippage
+  preserves observable gross P&L but withholds net P&L. Real exchange accounting is
+  not treated as modeled paper accounting.
 - **collector** (Go). Streams all active Bybit linear ticker topics, including best
   bid and ask, and publishes normalized versioned events to NATS
   `market.bybit.ticker.*`.
@@ -121,7 +126,10 @@ market-hotset (Go)
 > The source of truth for accounting is Postgres (`app.trades`, `realized_pnl_today`),
 > not Redis. The durable-daily-PnL work replaced the old ephemeral `daily_loss:{date}`
 > and `pnl:{exchange}:{date}` keys. Redis holds hot state plus the `risk:pnl_ready`
-> lease only.
+> lease only. `app.trades` separates gross and net P&L and stamps every row with an
+> accounting version and status. Rows created before the cost model remain
+> `legacy_price_only_v1`; their net result is unknown rather than assumed equal to
+> gross.
 
 ## Storage
 

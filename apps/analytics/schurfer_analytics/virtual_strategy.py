@@ -9,6 +9,19 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal
 
+from schurfer_performance import (
+    COST_MODEL_VERSION as SHARED_COST_MODEL_VERSION,
+)
+from schurfer_performance import (
+    DEFAULT_COSTS as SHARED_DEFAULT_COSTS,
+)
+from schurfer_performance import (
+    CostParameters as SharedCostParameters,
+)
+from schurfer_performance import (
+    calculate_performance,
+)
+
 from .ohlcv import TIMEFRAME_MS, Candle, ceil_to_timeframe
 
 if TYPE_CHECKING:
@@ -20,7 +33,11 @@ VIRTUAL_STRATEGY_VERSION = "pump_short_v1_replay_v1"
 ENTRY_MODEL_VERSION = "next_complete_5m_open_v1"
 EXIT_MODEL_VERSION = "dynamic_short_bar_v1"
 EXIT_POLICY_FAMILY_VERSION = "exit_policy_family_v1"
-COST_MODEL_VERSION = "conservative_costs_v1"
+COST_MODEL_VERSION = SHARED_COST_MODEL_VERSION
+# Explicit re-exports preserve the existing analytics import surface while the
+# implementation lives in the shared package.
+CostParameters = SharedCostParameters
+DEFAULT_COSTS = SHARED_DEFAULT_COSTS
 SELECTION_MODEL_VERSION = "recorded_open_else_first_decision_v1"
 MARKET_PATH_VERSION = "ccxt_5m_exact_anchor_v1"
 
@@ -122,23 +139,6 @@ EXIT_POLICIES = (
     COMBINED_EXIT_POLICY,
     RECENT_PROGRESS_EXTENSION_EXIT_POLICY,
 )
-
-
-@dataclass(frozen=True)
-class CostParameters:
-    """Pre-registered conservative costs expressed against position notional."""
-
-    taker_fee_bps_per_side: float = 10.0
-    funding_cost_bps_per_8h: float = 5.0
-
-    def __post_init__(self) -> None:
-        if not math.isfinite(self.taker_fee_bps_per_side) or self.taker_fee_bps_per_side < 0:
-            raise ValueError("taker fee must be finite and non-negative")
-        if not math.isfinite(self.funding_cost_bps_per_8h) or self.funding_cost_bps_per_8h < 0:
-            raise ValueError("funding cost must be finite and non-negative")
-
-
-DEFAULT_COSTS = CostParameters()
 
 
 @dataclass(frozen=True)
@@ -649,15 +649,21 @@ def _simulate_selected_entry(
         raise RuntimeError("virtual exit invariant violated")
 
     duration_minutes = (exit_at_ms - entry_at_ms) / 60_000
-    gross_return_pct = (entry_price - exit_price) / entry_price * 100
-    fee_cost_bps = costs.taker_fee_bps_per_side * 2
-    funding_cost_bps = costs.funding_cost_bps_per_8h * duration_minutes / 480
-    slippage_cost_bps = bid_impact + ask_impact
-    total_cost_pct = (fee_cost_bps + funding_cost_bps + slippage_cost_bps) / 100
-    net_return_pct = gross_return_pct - total_cost_pct
+    accounting = calculate_performance(
+        position_usd=position_usd,
+        entry_price=entry_price,
+        exit_price=exit_price,
+        side="short",
+        duration_minutes=duration_minutes,
+        entry_slippage_bps=bid_impact,
+        exit_slippage_bps=ask_impact,
+        costs=costs,
+    )
+    if accounting.net_return_pct is None or accounting.net_pnl_usd is None:
+        raise RuntimeError("complete replay accounting unexpectedly incomplete")
     mfe_pct = max(0.0, (entry_price - observed_low) / entry_price * 100)
     mae_pct = max(0.0, (observed_high - entry_price) / entry_price * 100)
-    captured_move_pct = gross_return_pct / mfe_pct * 100 if mfe_pct > 0 else None
+    captured_move_pct = accounting.gross_return_pct / mfe_pct * 100 if mfe_pct > 0 else None
 
     return VirtualTrade(
         pump_event_id=episode.pump_event_id,
@@ -669,7 +675,7 @@ def _simulate_selected_entry(
         taken=selection.taken,
         selection_reason=selection.selection_reason,
         status="complete",
-        classification=_classify(selection.taken, net_return_pct),
+        classification=_classify(selection.taken, accounting.net_return_pct),
         exit_reason=exit_reason,
         ambiguity_resolution=ambiguity,
         entry_at=datetime.fromtimestamp(entry_at_ms / 1000, tz=UTC),
@@ -679,13 +685,13 @@ def _simulate_selected_entry(
         entry_delay_seconds=entry_at_ms / 1000 - decision.ts.timestamp(),
         duration_minutes=duration_minutes,
         position_usd=position_usd,
-        gross_return_pct=gross_return_pct,
-        net_return_pct=net_return_pct,
-        gross_pnl_usd=position_usd * gross_return_pct / 100,
-        net_pnl_usd=position_usd * net_return_pct / 100,
-        fee_cost_bps=fee_cost_bps,
-        funding_cost_bps=funding_cost_bps,
-        slippage_cost_bps=slippage_cost_bps,
+        gross_return_pct=accounting.gross_return_pct,
+        net_return_pct=accounting.net_return_pct,
+        gross_pnl_usd=accounting.gross_pnl_usd,
+        net_pnl_usd=accounting.net_pnl_usd,
+        fee_cost_bps=accounting.fee_cost_bps,
+        funding_cost_bps=accounting.funding_cost_bps,
+        slippage_cost_bps=accounting.slippage_cost_bps,
         mfe_pct=mfe_pct,
         mae_pct=mae_pct,
         captured_move_pct=captured_move_pct,

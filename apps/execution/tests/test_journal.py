@@ -1,8 +1,13 @@
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from schurfer_execution import journal
+from schurfer_performance import (
+    LEGACY_ACCOUNTING_VERSION,
+    PAPER_ACCOUNTING_VERSION,
+)
 
 
 def _mock_conn(fetchone_results: list[tuple | None]) -> MagicMock:
@@ -23,13 +28,65 @@ def _mock_conn(fetchone_results: list[tuple | None]) -> MagicMock:
     return conn, cur
 
 
+def _trade_row(
+    *,
+    status: str = "open",
+    accounting_version: str = LEGACY_ACCOUNTING_VERSION,
+    entry_slippage_bps: float | None = None,
+    exit_slippage_bps: float | None = None,
+    entry_at: datetime | None = None,
+) -> tuple:
+    return (
+        100.0,
+        100.0,
+        "short",
+        status,
+        entry_at or datetime.now(tz=UTC),
+        entry_slippage_bps,
+        exit_slippage_bps,
+        accounting_version,
+    )
+
+
+def test_paper_accounting_contract_uses_measured_two_sided_impact() -> None:
+    version, status, entry_bps, exit_bps = journal.accounting_contract(
+        {
+            "paper": True,
+            "market_quality": {
+                "bid_impact_bps": 3.5,
+                "ask_impact_bps": 4.5,
+            },
+        }
+    )
+
+    assert version == PAPER_ACCOUNTING_VERSION
+    assert status == "pending"
+    assert entry_bps == 3.5
+    assert exit_bps == 4.5
+
+
+def test_real_trade_keeps_legacy_accounting_until_fill_reconciliation_exists() -> None:
+    version, status, _entry_bps, _exit_bps = journal.accounting_contract(
+        {
+            "paper": False,
+            "market_quality": {
+                "bid_impact_bps": 3.5,
+                "ask_impact_bps": 4.5,
+            },
+        }
+    )
+
+    assert version == LEGACY_ACCOUNTING_VERSION
+    assert status == "legacy"
+
+
 async def test_close_trade_loads_entry_price_and_side_from_db() -> None:
     """Regression: entry_price/side used to be caller-supplied (sourced from a
     Redis cache that can be evicted). They're now loaded from the trade's own
     row by trade_id, so a close can always be recorded even if that cache is
     gone — Redis is a hint for the monitor loop, not the accounting source."""
     # SELECT size_usd, entry_price, side -> then UPDATE ... RETURNING id
-    conn, cur = _mock_conn([(100.0, 100.0, "short", "open"), (1,)])
+    conn, cur = _mock_conn([_trade_row(), (1,)])
 
     with patch("psycopg.AsyncConnection.connect", AsyncMock(return_value=conn)):
         committed = await journal.close_trade(
@@ -44,8 +101,81 @@ async def test_close_trade_loads_entry_price_and_side_from_db() -> None:
     update_call = cur.execute.call_args_list[1]
     params = update_call.args[1]
     # short, entry 100 -> exit 90 = +10% move, on $100 size = $10 pnl_usd
-    pnl_usd = params[3]
+    pnl_usd = params[10]
     assert pnl_usd == 10.0
+    assert params[3] == 10.0  # explicit gross_pnl_usd
+    assert params[5] is None  # legacy net is unknown
+    assert params[13] == "legacy"
+
+
+async def test_close_paper_trade_persists_versioned_net_accounting() -> None:
+    entry_at = datetime(2026, 7, 28, 12, tzinfo=UTC)
+    closed_at = entry_at + timedelta(hours=3)
+    conn, cur = _mock_conn(
+        [
+            _trade_row(
+                accounting_version=PAPER_ACCOUNTING_VERSION,
+                entry_slippage_bps=3,
+                exit_slippage_bps=4,
+                entry_at=entry_at,
+            ),
+            (1,),
+        ]
+    )
+
+    with (
+        patch("psycopg.AsyncConnection.connect", AsyncMock(return_value=conn)),
+        patch("schurfer_execution.journal.datetime") as datetime_mock,
+    ):
+        datetime_mock.now.return_value = closed_at
+        committed = await journal.close_trade(
+            "postgresql://x",
+            trade_id=1,
+            exit_order_id=None,
+            exit_price=90.0,
+            reason="test",
+        )
+
+    assert committed is True
+    params = cur.execute.call_args_list[1].args[1]
+    assert params[3] == 10.0
+    assert params[5] == pytest.approx(9.7112)
+    assert params[7] == pytest.approx(0.2)
+    assert params[8] == pytest.approx(0.0187)
+    assert params[9] == pytest.approx(0.07)
+    assert params[10] == params[5]
+    assert params[13] == "complete"
+    assert params[14] is None
+
+
+async def test_close_paper_trade_withholds_net_when_slippage_is_missing() -> None:
+    conn, cur = _mock_conn(
+        [
+            _trade_row(
+                accounting_version=PAPER_ACCOUNTING_VERSION,
+                entry_slippage_bps=None,
+                exit_slippage_bps=4,
+            ),
+            (1,),
+        ]
+    )
+
+    with patch("psycopg.AsyncConnection.connect", AsyncMock(return_value=conn)):
+        committed = await journal.close_trade(
+            "postgresql://x",
+            trade_id=1,
+            exit_order_id=None,
+            exit_price=90.0,
+            reason="test",
+        )
+
+    assert committed is True
+    params = cur.execute.call_args_list[1].args[1]
+    assert params[3] == 10.0
+    assert params[5] is None
+    assert params[10] is None
+    assert params[13] == "incomplete"
+    assert params[14] == "missing entry_slippage_bps"
 
 
 async def test_close_trade_returns_false_on_db_error() -> None:
@@ -88,7 +218,7 @@ async def test_close_trade_missing_row_returns_false() -> None:
 async def test_close_trade_zero_rows_updated_returns_false() -> None:
     """Regression: RETURNING id with no row (e.g. deleted between SELECT and
     UPDATE) must be treated as a failed commit, not a silent success."""
-    conn, _cur = _mock_conn([(100.0, 100.0, "short", "open"), None])  # UPDATE matches nothing
+    conn, _cur = _mock_conn([_trade_row(), None])  # UPDATE matches nothing
 
     with patch("psycopg.AsyncConnection.connect", AsyncMock(return_value=conn)):
         committed = await journal.close_trade(
@@ -108,7 +238,7 @@ async def test_close_trade_already_closed_is_idempotent_success() -> None:
     re-run the UPDATE — that would overwrite exit_at with the retry's own
     timestamp, which can shift the trade into a different UTC day for
     realized_pnl_today() if the retry lands after midnight."""
-    conn, cur = _mock_conn([(100.0, 100.0, "short", "closed")])  # already closed
+    conn, cur = _mock_conn([_trade_row(status="closed")])  # already closed
 
     with patch("psycopg.AsyncConnection.connect", AsyncMock(return_value=conn)):
         committed = await journal.close_trade(
@@ -154,7 +284,7 @@ async def test_realized_pnl_today_returns_none_on_db_error() -> None:
 
 class TestTryCommitClose:
     async def test_success_clears_any_pending_marker(self) -> None:
-        conn, _cur = _mock_conn([(100.0, 100.0, "short", "open"), (1,)])
+        conn, _cur = _mock_conn([_trade_row(), (1,)])
         rdb = MagicMock()
         rdb.set = AsyncMock()
         rdb.delete = AsyncMock()
@@ -213,7 +343,7 @@ class TestTryCommitClose:
         not only after a failure is detected — since an existing lease is
         stale the instant a real close is confirmed, regardless of whether
         the journal write itself succeeds."""
-        conn, _cur = _mock_conn([(100.0, 100.0, "short", "open"), (1,)])
+        conn, _cur = _mock_conn([_trade_row(), (1,)])
         rdb = MagicMock()
         rdb.set = AsyncMock()
         calls: list[str] = []

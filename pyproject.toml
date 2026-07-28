@@ -23,7 +23,13 @@ dev = [
 constraint-dependencies = ["msgpack>=1.2.1"]
 
 [tool.uv.workspace]
-members = ["apps/analytics", "apps/execution", "apps/telegram-bot", "packages/journal"]
+members = [
+    "apps/analytics",
+    "apps/execution",
+    "apps/telegram-bot",
+    "packages/journal",
+    "packages/performance",
+]
 
 [tool.ruff]
 line-length = 100

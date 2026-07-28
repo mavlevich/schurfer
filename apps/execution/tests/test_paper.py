@@ -4,6 +4,7 @@ import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from schurfer_execution.paper import close_paper, open_paper, paper_key
+from schurfer_performance import PAPER_ACCOUNTING_VERSION
 
 
 def _cfg() -> MagicMock:
@@ -61,6 +62,9 @@ async def test_open_paper_stores_position_in_redis() -> None:
     assert value["score"] == 8
     assert "opened_at" in value
     assert "exit_params" in value
+    assert value["accounting_version"] == PAPER_ACCOUNTING_VERSION
+    assert value["entry_slippage_bps"] is None
+    assert value["exit_slippage_bps"] is None
     assert value["exit_params"]["initial_sl_pct"] == 8.0  # pump_pct=45 → small bucket
 
 
@@ -184,6 +188,34 @@ async def test_close_paper_does_not_write_journal_without_db_url() -> None:
         await close_paper(rdb, pos=pos, current_price=0.0025, reason="stop_loss", cfg=_cfg())
 
     mock_jrn.assert_not_called()
+
+
+async def test_close_paper_notification_uses_modeled_net_when_cost_inputs_are_complete() -> None:
+    rdb = _rdb()
+    cfg = _cfg()
+    pos = {
+        "base": "BEAT",
+        "exchange": "bybit",
+        "entry_price": 100,
+        "size_usd": 100,
+        "side": "short",
+        "opened_at": 1_000,
+        "accounting_version": PAPER_ACCOUNTING_VERSION,
+        "entry_slippage_bps": 3,
+        "exit_slippage_bps": 4,
+    }
+
+    with (
+        patch("schurfer_execution.paper.time.time", return_value=1_000),
+        patch("schurfer_execution.paper.notify.credentials", return_value=("test", "chat")),
+        patch(
+            "schurfer_execution.paper.notify.notify_close", new_callable=AsyncMock
+        ) as close_notice,
+    ):
+        await close_paper(rdb, pos=pos, current_price=90, reason="take_profit", cfg=cfg)
+
+    assert close_notice.call_args.kwargs["pnl_pct"] == 9.73
+    assert close_notice.call_args.kwargs["pnl_kind"] == "modeled_net"
 
 
 async def test_close_paper_journal_failure_keeps_trade_id() -> None:

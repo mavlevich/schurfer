@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 import json
+import math
 from datetime import UTC, datetime
 from typing import Any
 
 import psycopg
 import structlog
+from schurfer_performance import (
+    LEGACY_ACCOUNTING_VERSION,
+    PAPER_ACCOUNTING_VERSION,
+    calculate_performance,
+)
 
 from .risk import PNL_READY_KEY
 
@@ -25,8 +31,11 @@ _INSERT_TRADE = """
 INSERT INTO app.trades (
     strategy_id, symbol, exchange, market_type, side,
     entry_order_id, size_usd, leverage,
-    entry_price, entry_at, status, setup_context
-) VALUES (%s, %s, %s, 'perp', 'short', %s, %s, %s, %s, %s, 'open', %s)
+    entry_price, entry_at, entry_slippage_bps, exit_slippage_bps,
+    accounting_version, accounting_status, status, setup_context
+) VALUES (
+    %s, %s, %s, 'perp', 'short', %s, %s, %s, %s, %s, %s, %s, %s, %s, 'open', %s
+)
 RETURNING id
 """
 
@@ -35,9 +44,18 @@ UPDATE app.trades
 SET exit_order_id = %s,
     exit_price    = %s,
     exit_at       = %s,
+    gross_pnl_usd = %s,
+    gross_pnl_pct = %s,
+    net_pnl_usd   = %s,
+    net_pnl_pct   = %s,
+    fees_usd      = %s,
+    funding_usd   = %s,
+    slippage_usd  = %s,
     pnl_usd       = %s,
     pnl_pct       = %s,
     outcome_label = %s,
+    accounting_status = %s,
+    accounting_error = %s,
     status        = 'closed',
     notes         = %s,
     updated_at    = now()
@@ -55,7 +73,19 @@ RETURNING id
 # "already closed" and skip re-running the UPDATE — otherwise a retry would
 # overwrite exit_at with its own later timestamp, which can shift which UTC
 # day the PnL counts toward if the retry lands after midnight.
-_SELECT_TRADE_FOR_CLOSE = "SELECT size_usd, entry_price, side, status FROM app.trades WHERE id = %s"
+_SELECT_TRADE_FOR_CLOSE = """
+SELECT
+    size_usd,
+    entry_price,
+    side,
+    status,
+    entry_at,
+    entry_slippage_bps,
+    exit_slippage_bps,
+    accounting_version
+FROM app.trades
+WHERE id = %s
+"""
 
 # Excludes paper (dry-run) trades: setup_context->paper is only set to true
 # for paper trades, absent for real ones. Real daily PnL must not be polluted
@@ -67,6 +97,36 @@ WHERE status = 'closed'
   AND exit_at >= %s
   AND COALESCE(setup_context->>'paper', 'false') != 'true'
 """
+
+
+def _optional_non_negative(value: Any) -> float | None:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if math.isfinite(parsed) and parsed >= 0 else None
+
+
+def accounting_contract(
+    setup_context: dict[str, Any],
+) -> tuple[str, str, float | None, float | None]:
+    quality = setup_context.get("market_quality")
+    quality_data = quality if isinstance(quality, dict) else {}
+    entry_slippage_bps = _optional_non_negative(quality_data.get("bid_impact_bps"))
+    exit_slippage_bps = _optional_non_negative(quality_data.get("ask_impact_bps"))
+    if setup_context.get("paper") is True:
+        return (
+            PAPER_ACCOUNTING_VERSION,
+            "pending",
+            entry_slippage_bps,
+            exit_slippage_bps,
+        )
+    return (
+        LEGACY_ACCOUNTING_VERSION,
+        "legacy",
+        entry_slippage_bps,
+        exit_slippage_bps,
+    )
 
 
 async def open_trade(
@@ -81,6 +141,16 @@ async def open_trade(
     setup_context: dict[str, Any],
 ) -> int | None:
     try:
+        (
+            accounting_version,
+            accounting_status,
+            entry_slippage_bps,
+            exit_slippage_bps,
+        ) = accounting_contract(setup_context)
+        stored_context = {
+            **setup_context,
+            "accounting_version": accounting_version,
+        }
         aconn = await psycopg.AsyncConnection.connect(db_url)
         async with aconn, aconn.cursor() as cur:
             await cur.execute(
@@ -103,7 +173,11 @@ async def open_trade(
                     leverage,
                     entry_price,
                     datetime.now(tz=UTC),
-                    json.dumps(setup_context),
+                    entry_slippage_bps,
+                    exit_slippage_bps,
+                    accounting_version,
+                    accounting_status,
+                    json.dumps(stored_context),
                 ),
             )
             row = await cur.fetchone()
@@ -140,7 +214,18 @@ async def close_trade(
             if row is None:
                 log.error("journal.close_trade.trade_not_found", trade_id=trade_id)
                 return False
-            size_usd, entry_price, side, status = float(row[0]), float(row[1]), row[2], row[3]
+            (
+                size_usd_raw,
+                entry_price_raw,
+                side,
+                status,
+                entry_at,
+                entry_slippage_raw,
+                exit_slippage_raw,
+                accounting_version,
+            ) = row
+            size_usd = float(size_usd_raw)
+            entry_price = float(entry_price_raw)
             if status == "closed":
                 # Idempotent retry: an earlier attempt's transaction actually
                 # committed server-side even though we (or a prior caller)
@@ -151,23 +236,82 @@ async def close_trade(
                 log.info("journal.close_trade.already_closed", trade_id=trade_id)
                 return True
 
-            pnl_pct = (
-                (entry_price - exit_price) / entry_price * 100
-                if side == "short"
-                else (exit_price - entry_price) / entry_price * 100
-            )
-            outcome = "win" if pnl_pct > 0 else ("loss" if pnl_pct < 0 else "breakeven")
-            pnl_usd = round(size_usd * pnl_pct / 100, 4)
+            closed_at = datetime.now(tz=UTC)
+            if accounting_version == PAPER_ACCOUNTING_VERSION:
+                duration_minutes = max(0.0, (closed_at - entry_at).total_seconds() / 60)
+                accounting = calculate_performance(
+                    position_usd=size_usd,
+                    entry_price=entry_price,
+                    exit_price=exit_price,
+                    side=side,
+                    duration_minutes=duration_minutes,
+                    entry_slippage_bps=(
+                        float(entry_slippage_raw) if entry_slippage_raw is not None else None
+                    ),
+                    exit_slippage_bps=(
+                        float(exit_slippage_raw) if exit_slippage_raw is not None else None
+                    ),
+                )
+                gross_pnl_usd = round(accounting.gross_pnl_usd, 4)
+                gross_pnl_pct = round(accounting.gross_return_pct, 4)
+                net_pnl_usd = (
+                    round(accounting.net_pnl_usd, 4) if accounting.net_pnl_usd is not None else None
+                )
+                net_pnl_pct = (
+                    round(accounting.net_return_pct, 4)
+                    if accounting.net_return_pct is not None
+                    else None
+                )
+                fees_usd = round(accounting.fees_usd, 4)
+                funding_usd = round(accounting.funding_usd, 4)
+                slippage_usd = (
+                    round(accounting.slippage_usd, 4)
+                    if accounting.slippage_usd is not None
+                    else None
+                )
+                pnl_usd = net_pnl_usd
+                pnl_pct = net_pnl_pct
+                accounting_status = accounting.status
+                accounting_error = accounting.error
+            else:
+                gross_pnl_pct = (
+                    (entry_price - exit_price) / entry_price * 100
+                    if side == "short"
+                    else (exit_price - entry_price) / entry_price * 100
+                )
+                gross_pnl_usd = round(size_usd * gross_pnl_pct / 100, 4)
+                gross_pnl_pct = round(gross_pnl_pct, 4)
+                net_pnl_usd = None
+                net_pnl_pct = None
+                fees_usd = 0.0
+                funding_usd = 0.0
+                slippage_usd = None
+                pnl_usd = gross_pnl_usd
+                pnl_pct = gross_pnl_pct
+                accounting_status = "legacy"
+                accounting_error = None
+
+            outcome_value = net_pnl_pct if net_pnl_pct is not None else gross_pnl_pct
+            outcome = "win" if outcome_value > 0 else ("loss" if outcome_value < 0 else "breakeven")
 
             await cur.execute(
                 _CLOSE_TRADE,
                 (
                     exit_order_id,
                     exit_price,
-                    datetime.now(tz=UTC),
+                    closed_at,
+                    gross_pnl_usd,
+                    gross_pnl_pct,
+                    net_pnl_usd,
+                    net_pnl_pct,
+                    fees_usd,
+                    funding_usd,
+                    slippage_usd,
                     pnl_usd,
-                    round(pnl_pct, 4),
+                    pnl_pct,
                     outcome,
+                    accounting_status,
+                    accounting_error,
                     reason,
                     trade_id,
                 ),

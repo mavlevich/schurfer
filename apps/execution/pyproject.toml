@@ -10,6 +10,7 @@ dependencies = [
     "structlog>=24.4",
     "psycopg[binary]>=3.2",
     "httpx>=0.28",
+    "schurfer-performance",
 ]
 
 [project.scripts]
@@ -21,3 +22,6 @@ include = ["schurfer_execution*"]
 
 [tool.uv]
 package = true
+
+[tool.uv.sources]
+schurfer-performance = { workspace = true }
