@@ -536,6 +536,25 @@ the new cohort separately.
   cutoff selected before looking at threshold output; the full checklist is in
   `ROADMAP.md`.
 
+- Exit-policy challenger replay: after the registered OBS-001 cohort has accumulated
+  closed episodes with exact-anchor 8-hour outcomes, compare the bounded exit family
+  without changing the production exit:
+
+  ```bash
+  make prod-virtual-exit-policy-report
+  make prod-virtual-exit-policy-report \
+    ARGS="--until 2026-08-10T00:00:00Z --format markdown"
+  ```
+
+  The default cohort begins at `2026-07-29T00:00:00Z`. Every policy uses the same
+  point-in-time decision, next complete 5-minute entry, exact venue, and cost inputs.
+  The report requires every candle through the longest registered policy window, so
+  a truncated path leaves the whole paired family unresolved. It reports net
+  expectancy, recorded-size P&L, profit factor, sequential episode drawdown, exit
+  reasons, duration, MFE/MAE, captured move, and paired deltas. Formal inference is
+  withheld before the first 100 episodes are completely paired across at least 30
+  asset clusters. A passing policy advances only to live shadow.
+
 - Candle anomaly research: after the registered cohort has accumulated closed episodes
   with exact-anchor 8-hour outcomes, derive HYP-005 features and join them to the
   baseline virtual replay:

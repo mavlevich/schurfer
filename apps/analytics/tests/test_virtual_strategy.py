@@ -18,6 +18,8 @@ from schurfer_analytics.virtual_strategy import (
     ExitPolicy,
     MarketPath,
     exit_parameters,
+    exit_policy_family_path_bounds,
+    exit_policy_family_path_is_complete,
     expected_path_bounds,
     market_path_fingerprint,
     select_episode_decision,
@@ -148,6 +150,16 @@ def test_exit_policy_family_is_versioned_unique_and_bounded() -> None:
     assert len(keys) == len(set(keys))
     assert len(versions) == len(set(versions))
     assert max(policy.maximum_hold_minutes(exit_parameters(40)) for policy in EXIT_POLICIES) == 300
+
+
+def test_exit_policy_family_path_uses_longest_registered_window() -> None:
+    decision = _decision(pump_pct=40)
+    start_ms, end_ms = exit_policy_family_path_bounds(decision)
+    candles = _candles(decision, exit_policy=NO_PROGRESS_EXIT_POLICY)
+
+    assert end_ms - start_ms == 300 * 60 * 1000
+    assert exit_policy_family_path_is_complete(decision, candles) is True
+    assert exit_policy_family_path_is_complete(decision, candles[:-1]) is False
 
 
 @pytest.mark.parametrize(
