@@ -15,17 +15,18 @@ const restURL = "https://api.bybit.com/v5/market/instruments-info"
 
 // TickerEvent is the normalized event published to NATS.
 type TickerEvent struct {
-	Source      string  `json:"source"`
-	Symbol      string  `json:"symbol"`
-	TS          int64   `json:"ts"`
-	LastPrice   *string `json:"last_price"`
-	Price24hPct *string `json:"price_24h_pct"`
-	High24h     *string `json:"high_24h"`
-	Low24h      *string `json:"low_24h"`
-	Volume24h   *string `json:"volume_24h"`
-	Turnover24h *string `json:"turnover_24h"`
-	Bid         *string `json:"bid"`
-	Ask         *string `json:"ask"`
+	SchemaVersion int     `json:"schema_version"`
+	Source        string  `json:"source"`
+	Symbol        string  `json:"symbol"`
+	TS            int64   `json:"ts"`
+	LastPrice     *string `json:"last_price"`
+	Price24hPct   *string `json:"price_24h_pct"`
+	High24h       *string `json:"high_24h"`
+	Low24h        *string `json:"low_24h"`
+	Volume24h     *string `json:"volume_24h"`
+	Turnover24h   *string `json:"turnover_24h"`
+	Bid           *string `json:"bid"`
+	Ask           *string `json:"ask"`
 }
 
 // PublishFn publishes a TickerEvent to NATS.

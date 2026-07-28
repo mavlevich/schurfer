@@ -55,14 +55,16 @@ a rule or stop a workstream rather than trigger unbounded tuning.
    variable conviction sizing is introduced later, profit factor must also be
    computed from dollar P&L instead of assuming equal notional.
 2. **Bounded CEX hot set and squeeze/momentum measurement.** Turn the existing Bybit
-   ticker stream into a consumed measurement path, then add Binance. Keep lightweight
-   whole-venue tickers on a small connection pool, but subscribe to trades, best
-   bid/ask, and bounded depth only for a dynamic hot set. A token enters the hot set
-   after a measurement-floor crossing, an earlier pump episode, or a registered
-   volume/price acceleration trigger and remains there for a versioned 2-to-4-hour
-   TTL. Persist 1-second aggregates and exact threshold, alert, shadow-entry, and
-   shadow-exit times. Evaluate long squeeze/momentum and short blow-off strategies as
-   separate state machines. No real long orders are authorized by this PR.
+   ticker stream into a consumed measurement path, then add Binance. The first slice
+   consumes `market.bybit.ticker.*`, keeps a ten-minute broad prebuffer, activates no
+   more than 12 measurement-feed symbols for four hours, and retains bounded
+   five-second Redis bars plus lag/drop/coverage health. Keep lightweight whole-venue
+   tickers on a small connection pool, but subscribe to trades and bounded depth only
+   for the dynamic hot set. Add the pre-registered price/volume acceleration trigger
+   only after the first slice establishes the event-rate and host-memory baseline.
+   Persist exact threshold, alert, shadow-entry, and shadow-exit times in the next
+   durable research layer. Evaluate long squeeze/momentum and short blow-off
+   strategies as separate state machines. No real long orders are authorized.
 3. **Pre-registered score-threshold family.** Keep score 6 as baseline and compare a
    small locked family such as 4, 5, 7, and 8 on the same episodes. Treat no trigger
    as cash, reuse the existing entry/exit/cost engine, correct for multiple
@@ -71,9 +73,14 @@ a rule or stop a workstream rather than trigger unbounded tuning.
    selectivity is suppressing useful paper trades or avoiding bad ones without
    declaring the discovery sample a result.
 4. **Pre-registered exit family for OBS-001.** Compare the production exit with
-   breakeven-after-activation, a no-progress timeout, and their combination. Keep
-   partial take-profit plus runner separate unless the first family shows that exit
-   capture, rather than entry quality, is the dominant problem.
+   breakeven-after-activation, a no-progress timeout, and their combination. Add one
+   state-dependent hold candidate: at the baseline max-hold boundary, close only if
+   the trade has not made a new favorable excursion during a locked lookback;
+   otherwise tighten the stop, extend once by a fixed duration, and retain an
+   absolute maximum hold. This tests whether profitable retraces are being cut by the
+   clock without allowing an unlimited position. Keep partial take-profit plus runner
+   separate unless the first family shows that exit capture, rather than entry
+   quality, is the dominant problem.
 5. **Derivatives-context analysis.** Join the persisted funding, open-interest,
    long/short, and liquidation context to eligible episode outcomes. Use only
    point-in-time windows, explicit availability/coverage, clustered inference, and a
@@ -734,13 +741,14 @@ The intended stream topology is:
       replay non-recoverable entry-confirmation features without exhausting the
       current 4 GB host.
 - [ ] Collector to websocket data layer. The Bybit collector is the seed of the
-      intended Go hot-path layer. It already subscribes to all Bybit linear ticker
-      topics in chunks of up to 200, but its NATS stream has no consumer. On
-      2026-07-28 the collector and NATS had each moved hundreds of GB over ten days
-      without improving scanner latency. Build the consumer before adding more broad
-      streams. Reuse per-exchange connection pools, add dynamic hot subscriptions,
-      and migrate only proven detection paths from polling. Keep ARCHITECTURE.md
-      honest about this.
+      intended Go hot-path layer. It subscribes to all Bybit linear ticker topics in
+      chunks of up to 200. On 2026-07-28 the collector and NATS had each moved
+      hundreds of GB over ten days without improving scanner latency. The first
+      consumer slice now retains only bounded measurement-feed hot symbols and
+      records event-rate, lag, drops, and persistence errors. Validate its production
+      budget before adding Binance, acceleration promotion, trades, or order-book
+      depth. Reuse per-exchange connection pools and migrate only proven detection
+      paths from polling. Keep ARCHITECTURE.md honest about this.
 - [ ] Hot-path host budget and upgrade gate. The 4 GB production host baseline on
       2026-07-28 was load `0.52`, about `1.1 GB` available RAM, no swap, no OOM kills,
       and zero container restarts. The largest services were analytics at about

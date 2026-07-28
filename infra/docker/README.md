@@ -31,5 +31,6 @@ nats://localhost:4222
 
 - TimescaleDB is bundled in the `timescale/timescaledb` image (no separate container needed)
 - NATS runs with JetStream enabled for persistent messaging
-- Redis is configured with 128MB max memory and LRU eviction
+- Redis is configured with bounded memory and `noeviction`, so critical state is
+  never silently removed
 - Data is persisted in Docker volumes between restarts

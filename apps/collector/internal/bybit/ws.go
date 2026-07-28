@@ -221,17 +221,18 @@ func (st *tickerState) merge(f tickerFields) {
 
 func (st tickerState) toEvent(ts int64) TickerEvent {
 	return TickerEvent{
-		Source:      "bybit",
-		Symbol:      st.Symbol,
-		TS:          ts,
-		LastPrice:   nonEmpty(st.LastPrice),
-		Price24hPct: nonEmpty(st.Price24hPct),
-		High24h:     nonEmpty(st.High24h),
-		Low24h:      nonEmpty(st.Low24h),
-		Volume24h:   nonEmpty(st.Volume24h),
-		Turnover24h: nonEmpty(st.Turnover24h),
-		Bid:         nonEmpty(st.Bid),
-		Ask:         nonEmpty(st.Ask),
+		SchemaVersion: 1,
+		Source:        "bybit",
+		Symbol:        st.Symbol,
+		TS:            ts,
+		LastPrice:     nonEmpty(st.LastPrice),
+		Price24hPct:   nonEmpty(st.Price24hPct),
+		High24h:       nonEmpty(st.High24h),
+		Low24h:        nonEmpty(st.Low24h),
+		Volume24h:     nonEmpty(st.Volume24h),
+		Turnover24h:   nonEmpty(st.Turnover24h),
+		Bid:           nonEmpty(st.Bid),
+		Ask:           nonEmpty(st.Ask),
 	}
 }
 
