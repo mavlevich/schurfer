@@ -8,6 +8,7 @@ dependencies = [
     "psycopg[binary]>=3.2",
     "redis>=5.2",
     "schurfer-journal",
+    "schurfer-performance",
     "sqlalchemy[asyncio]>=2.0",
     "structlog>=24.4",
 ]
@@ -36,3 +37,4 @@ package = true
 
 [tool.uv.sources]
 schurfer-journal = { workspace = true }
+schurfer-performance = { workspace = true }

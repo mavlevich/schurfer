@@ -85,17 +85,25 @@ function ExitReason({ notes }: { notes: string | null }) {
 }
 
 function PnlCell({ trade }: { trade: Trade }) {
-  if (trade.status === 'open' || trade.pnl_pct === null) {
+  if (trade.status === 'open' || trade.gross_pnl_pct === null) {
     return <span className="text-muted-foreground">—</span>;
   }
-  const color = trade.pnl_pct >= 0 ? 'text-green-500' : 'text-red-500';
-  const roe = trade.pnl_pct * trade.leverage;
+  const displayPct = trade.net_pnl_pct ?? trade.gross_pnl_pct;
+  const displayUsd = trade.net_pnl_usd ?? trade.gross_pnl_usd;
+  const color = displayPct >= 0 ? 'text-green-500' : 'text-red-500';
+  const roe = displayPct * trade.leverage;
+  const modeled = trade.accounting_status === 'complete';
+  const costs =
+    trade.slippage_usd === null ? null : trade.fees_usd + trade.funding_usd + trade.slippage_usd;
   return (
     <div className={`font-mono leading-tight ${color}`}>
-      <div>{trade.pnl_usd !== null ? fmtUsd(trade.pnl_usd) : fmtPct(trade.pnl_pct)}</div>
+      <div>{displayUsd !== null ? fmtUsd(displayUsd) : fmtPct(displayPct)}</div>
       <div className="text-xs text-muted-foreground">
-        {fmtPct(trade.pnl_pct)} · ROE {fmtPct(roe)}
+        {modeled ? 'net' : 'gross only'} {fmtPct(displayPct)} · ROE {fmtPct(roe)}
       </div>
+      {modeled && costs !== null && (
+        <div className="text-xs text-muted-foreground">costs {fmtUsd(-costs)}</div>
+      )}
     </div>
   );
 }
@@ -115,34 +123,74 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 // Stats come from /api/trades/stats — computed server-side over the whole closed-trade
-// set (not just the loaded page), and profit factor / net P&L are dollar-based.
+// set (not just the loaded page). Gross covers legacy and modeled rows; net includes
+// only rows whose versioned cost accounting completed.
 function StatRow({ stats }: { stats?: TradeStats }) {
   if (!stats || stats.count === 0) return null;
-  const { count, win_rate, expectancy, avg_win, avg_loss, profit_factor, net_usd } = stats;
+  const {
+    count,
+    win_rate,
+    expectancy,
+    avg_win,
+    avg_loss,
+    profit_factor,
+    gross_usd,
+    net_count,
+    net_win_rate,
+    net_expectancy,
+    net_profit_factor,
+    net_usd,
+    legacy_count,
+    incomplete_count,
+  } = stats;
 
   const items: { label: string; value: string; cls?: string }[] = [
     { label: 'Closed', value: String(count) },
-    { label: 'Win rate', value: `${win_rate.toFixed(0)}%` },
+    { label: 'Gross win rate', value: `${win_rate.toFixed(0)}%` },
     {
-      label: 'Expectancy',
+      label: 'Gross expectancy',
       value: fmtPct(expectancy),
       cls: expectancy >= 0 ? 'text-green-500' : 'text-red-500',
     },
-    { label: 'Avg win', value: fmtPct(avg_win), cls: 'text-green-500' },
-    { label: 'Avg loss', value: fmtPct(avg_loss), cls: 'text-red-500' },
+    { label: 'Gross avg win', value: fmtPct(avg_win), cls: 'text-green-500' },
+    { label: 'Gross avg loss', value: fmtPct(avg_loss), cls: 'text-red-500' },
     {
-      label: 'Profit factor',
+      label: 'Gross PF ($)',
       value: profit_factor === null ? '—' : profit_factor.toFixed(2),
       cls: profit_factor !== null && profit_factor >= 1 ? 'text-green-500' : 'text-red-500',
     },
     {
-      label: 'Net P&L',
-      value: fmtUsd(net_usd),
-      cls: net_usd >= 0 ? 'text-green-500' : 'text-red-500',
+      label: 'Gross P&L',
+      value: fmtUsd(gross_usd),
+      cls: gross_usd >= 0 ? 'text-green-500' : 'text-red-500',
     },
   ];
 
-  const n = count;
+  if (net_count > 0 && net_expectancy !== null && net_usd !== null) {
+    items.push(
+      {
+        label: `Net expectancy (N=${net_count})`,
+        value: fmtPct(net_expectancy),
+        cls: net_expectancy >= 0 ? 'text-green-500' : 'text-red-500',
+      },
+      {
+        label: 'Net win rate',
+        value: net_win_rate === null ? '—' : `${net_win_rate.toFixed(0)}%`,
+      },
+      {
+        label: 'Net PF ($)',
+        value: net_profit_factor === null ? '—' : net_profit_factor.toFixed(2),
+        cls:
+          net_profit_factor !== null && net_profit_factor >= 1 ? 'text-green-500' : 'text-red-500',
+      },
+      {
+        label: 'Net P&L',
+        value: fmtUsd(net_usd),
+        cls: net_usd >= 0 ? 'text-green-500' : 'text-red-500',
+      },
+    );
+  }
+
   return (
     <Card>
       <CardContent className="flex flex-wrap items-center gap-x-6 gap-y-2 py-3">
@@ -152,9 +200,15 @@ function StatRow({ stats }: { stats?: TradeStats }) {
             <span className={`font-mono text-sm ${s.cls ?? ''}`}>{s.value}</span>
           </div>
         ))}
-        {n < 30 && (
+        {net_count === 0 && (
           <span className="ml-auto text-xs text-amber-400/80">
-            small sample (N={n}) — not statistically meaningful
+            modeled net collecting · {legacy_count} legacy gross-only
+            {incomplete_count > 0 ? ` · ${incomplete_count} incomplete` : ''}
+          </span>
+        )}
+        {net_count > 0 && net_count < 30 && (
+          <span className="ml-auto text-xs text-amber-400/80">
+            modeled net sample N={net_count} · not statistically meaningful
           </span>
         )}
       </CardContent>

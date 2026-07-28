@@ -8,6 +8,7 @@ import time
 from typing import TYPE_CHECKING, Any
 
 import structlog
+from schurfer_performance import PAPER_ACCOUNTING_VERSION, calculate_performance
 
 from . import exit as exit_module
 from . import journal, notify
@@ -39,6 +40,13 @@ async def open_paper(
     cfg: Config,
 ) -> None:
     params = exit_module.exit_params(setup_context.get("pump_pct"))
+    paper_context = {**setup_context, "paper": True}
+    (
+        accounting_version,
+        _accounting_status,
+        entry_slippage_bps,
+        exit_slippage_bps,
+    ) = journal.accounting_contract(paper_context)
     entry = {
         "base": base,
         "exchange": exchange,
@@ -49,6 +57,9 @@ async def open_paper(
         "opened_at": time.time(),
         "score": score,
         "exit_params": params,
+        "accounting_version": accounting_version,
+        "entry_slippage_bps": entry_slippage_bps,
+        "exit_slippage_bps": exit_slippage_bps,
     }
     await rdb.set(paper_key(exchange, base), json.dumps(entry), ex=86400 * 7)
 
@@ -61,7 +72,7 @@ async def open_paper(
             size_usd=size_usd,
             leverage=leverage,
             entry_price=price,
-            setup_context={**setup_context, "paper": True},
+            setup_context=paper_context,
         )
         if trade_id:
             await rdb.set(
@@ -104,6 +115,22 @@ async def close_paper(
         if side == "short"
         else (current_price - entry_price) / entry_price * 100
     )
+    accounting_status = "legacy"
+    displayed_pnl_pct = pnl_pct
+    accounting_version = pos.get("accounting_version")
+    if accounting_version == PAPER_ACCOUNTING_VERSION:
+        accounting = calculate_performance(
+            position_usd=float(pos["size_usd"]),
+            entry_price=entry_price,
+            exit_price=current_price,
+            side=side,
+            duration_minutes=max(0.0, (time.time() - float(pos["opened_at"])) / 60),
+            entry_slippage_bps=pos.get("entry_slippage_bps"),
+            exit_slippage_bps=pos.get("exit_slippage_bps"),
+        )
+        accounting_status = accounting.status
+        if accounting.net_return_pct is not None:
+            displayed_pnl_pct = accounting.net_return_pct
 
     await rdb.delete(paper_key(exchange, base))
 
@@ -142,12 +169,21 @@ async def close_paper(
             exchange=exchange,
             entry_price=entry_price,
             exit_price=current_price,
-            pnl_pct=pnl_pct,
+            pnl_pct=displayed_pnl_pct,
+            pnl_kind="modeled_net" if accounting_status == "complete" else "gross",
             reason=reason,
             paper=True,
         )
 
-    log.info("paper.closed", base=base, exchange=exchange, pnl_pct=round(pnl_pct, 2), reason=reason)
+    log.info(
+        "paper.closed",
+        base=base,
+        exchange=exchange,
+        gross_pnl_pct=round(pnl_pct, 2),
+        displayed_pnl_pct=round(displayed_pnl_pct, 2),
+        accounting_status=accounting_status,
+        reason=reason,
+    )
 
 
 async def run_paper_monitor(

@@ -6,6 +6,7 @@ RUN pip install uv
 
 COPY pyproject.toml uv.lock ./
 COPY apps/execution/ ./apps/execution/
+COPY packages/performance/ ./packages/performance/
 
 RUN uv sync --package schurfer-execution --no-dev --frozen --no-editable
 

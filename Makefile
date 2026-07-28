@@ -275,10 +275,10 @@ verify:
 	uv lock --check
 	@echo "=== [3/6] Python: ruff + mypy + pytest ==="
 	uv run --extra dev ruff check apps/analytics apps/execution packages
-	MYPYPATH=apps/analytics:packages/journal uv run --extra dev --with sqlalchemy --with psycopg mypy apps/analytics/schurfer_analytics apps/analytics/tests packages/journal/schurfer_journal
-	uv run --extra dev --all-packages mypy apps/execution/schurfer_execution
+	MYPYPATH=apps/analytics:packages/journal:packages/performance uv run --extra dev --with sqlalchemy --with psycopg mypy apps/analytics/schurfer_analytics apps/analytics/tests packages/journal/schurfer_journal packages/performance/schurfer_performance
+	MYPYPATH=packages/performance uv run --extra dev --all-packages mypy apps/execution/schurfer_execution
 	uv run --extra dev --with ccxt --with greenlet --with redis --with sqlalchemy --with structlog --with "psycopg[binary]" pytest apps/analytics -q
-	uv run --extra dev --with sqlalchemy --with alembic --with "psycopg[binary]" pytest packages/journal -q
+	uv run --extra dev --with sqlalchemy --with alembic --with "psycopg[binary]" pytest packages/journal packages/performance -q
 	uv run --extra dev --all-packages pytest apps/execution/tests -q
 	@echo "=== [4/6] Go: test + vet ==="
 	go test ./apps/api-gateway/... ./apps/collector/... ./apps/notifier/...

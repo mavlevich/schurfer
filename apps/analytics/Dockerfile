@@ -9,6 +9,7 @@ RUN pip install uv
 COPY pyproject.toml uv.lock ./
 COPY apps/analytics/ ./apps/analytics/
 COPY packages/journal/ ./packages/journal/
+COPY packages/performance/ ./packages/performance/
 
 # Install only the analytics package and its dependencies (no dev extras).
 # --no-editable builds a real wheel so the module exists inside .venv

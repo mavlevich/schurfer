@@ -12,8 +12,20 @@ export interface Trade {
   entry_at: string;
   exit_price: number | null;
   exit_at: string | null;
+  entry_slippage_bps: number | null;
+  exit_slippage_bps: number | null;
+  fees_usd: number;
+  funding_usd: number;
+  slippage_usd: number | null;
+  gross_pnl_usd: number | null;
+  gross_pnl_pct: number | null;
+  net_pnl_usd: number | null;
+  net_pnl_pct: number | null;
   pnl_usd: number | null;
   pnl_pct: number | null;
+  accounting_version: string;
+  accounting_status: string;
+  accounting_error: string | null;
   status: string;
   outcome_label: string | null;
   setup_context: Record<string, unknown>;
@@ -35,7 +47,16 @@ export interface TradeStats {
   avg_win: number;
   avg_loss: number;
   profit_factor: number | null;
-  net_usd: number;
+  gross_usd: number;
+  net_count: number;
+  net_win_rate: number | null;
+  net_expectancy: number | null;
+  net_avg_win: number | null;
+  net_avg_loss: number | null;
+  net_profit_factor: number | null;
+  net_usd: number | null;
+  legacy_count: number;
+  incomplete_count: number;
 }
 
 async function fetchJSON<T>(url: string): Promise<T> {

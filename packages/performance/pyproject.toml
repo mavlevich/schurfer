@@ -1,0 +1,13 @@
+[project]
+name = "schurfer-performance"
+version = "0.1.0"
+description = "Versioned trade performance accounting"
+requires-python = ">=3.13"
+dependencies = []
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["schurfer_performance*"]
+
+[tool.uv]
+package = true

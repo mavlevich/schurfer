@@ -122,10 +122,22 @@ class Trade(Base, TimestampMixin):
     # Costs
     fees_usd: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=0)
     funding_usd: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=0)
+    slippage_usd: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), nullable=True)
 
-    # PnL (filled on close)
+    # Compatibility PnL. Legacy rows contain price-only gross PnL; rows with a
+    # complete accounting contract contain net PnL. New consumers must use the
+    # explicit gross/net fields and accounting_status below.
     pnl_usd: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), nullable=True)
     pnl_pct: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    gross_pnl_usd: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), nullable=True)
+    gross_pnl_pct: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    net_pnl_usd: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), nullable=True)
+    net_pnl_pct: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    accounting_version: Mapped[str] = mapped_column(
+        String(40), nullable=False, default="legacy_price_only_v1"
+    )
+    accounting_status: Mapped[str] = mapped_column(String(16), nullable=False, default="legacy")
+    accounting_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Status and outcome
     status: Mapped[TradeStatus] = mapped_column(

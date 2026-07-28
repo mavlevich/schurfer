@@ -678,6 +678,46 @@ the new cohort separately.
   remain zero; any occurrence means the private feed contract is malformed and
   execution has correctly failed closed.
 
+- Versioned paper performance accounting: migration 0018 adds explicit gross/net
+  fields and accounting provenance to `app.trades`. This touches the migration,
+  execution, API, web, and analytics images, so deploy the full stack:
+
+  ```bash
+  make prod-deploy
+  make prod-health
+  docker exec schurfer-postgres psql -U schurfer -d schurfer -c \
+    "SELECT version_num FROM app.alembic_version"
+  docker exec schurfer-postgres psql -U schurfer -d schurfer -c \
+    "SELECT accounting_version, accounting_status, count(*)
+     FROM app.trades
+     GROUP BY 1, 2
+     ORDER BY 1, 2"
+  ```
+
+  The migration revision must be `0018`. Existing closed trades must be
+  `legacy_price_only_v1` with populated `gross_pnl_*` and null `net_pnl_*`. New
+  paper trades must open with `paper_conservative_costs_v1` and `pending`, then close
+  as `complete` only when both decision-time bid and ask impact are available. An
+  incomplete row keeps gross P&L but leaves net P&L null. The Trade Journal must label
+  legacy results as gross-only and calculate net statistics only from complete rows.
+  Verify the first newly closed paper trade:
+
+  ```bash
+  docker exec schurfer-postgres psql -U schurfer -d schurfer -c \
+    "SELECT id, symbol, accounting_version, accounting_status,
+            gross_pnl_usd, fees_usd, funding_usd, slippage_usd, net_pnl_usd,
+            accounting_error
+     FROM app.trades
+     WHERE status = 'closed'
+     ORDER BY exit_at DESC
+     LIMIT 10"
+  ```
+
+  `paper_conservative_costs_v1` uses the shared replay contract: 10 bps taker per
+  side, 5 bps funding per eight hours, and entry-time bid/ask impact held constant.
+  It is a conservative paper estimate. It is not a substitute for importing actual
+  venue fills, fees, and funding when real trading is enabled.
+
 ## Incidents
 
 Record notable incidents and their fixes here as they happen, so the next person (or

@@ -68,14 +68,16 @@ async def notify_close(
     pnl_pct: float,
     reason: str,
     paper: bool,
+    pnl_kind: str = "gross",
 ) -> None:
     tag = "📄 PAPER" if paper else "🏁 CLOSED"
     emoji = "✅" if pnl_pct >= 0 else "🔴"
+    pnl_label = "Modeled net PnL" if pnl_kind == "modeled_net" else "Gross PnL"
     text = (
         f"*{_esc(tag)}: {base} {emoji}*\n"
         f"Exchange: {_esc(exchange)}\n"
         f"Entry→Exit: `{_esc(str(entry_price))}` → `{_esc(str(exit_price))}`\n"
-        f"PnL: *{_esc(_fmt_pnl(pnl_pct))}*\n"
+        f"{_esc(pnl_label)}: *{_esc(_fmt_pnl(pnl_pct))}*\n"
         f"Reason: {_esc(reason)}"
     )
     await _send(token, chat_id, text)
