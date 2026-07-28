@@ -1,6 +1,6 @@
 # Roadmap
 
-> Living document. Updated as we progress. Last refreshed 2026-07-27.
+> Living document. Updated as we progress. Last refreshed 2026-07-28.
 
 ## Guiding principle
 
@@ -41,43 +41,56 @@ This sequence is ordered, but adjacent research PRs may be developed while a
 prospective cohort matures. A failed hypothesis is a useful result and should remove
 a rule or stop a workstream rather than trigger unbounded tuning.
 
-1. **Automatic decision-quality report.** Aggregate episode-level net replay results
-   by total score, individual score components, pump-size band, venue, liquidity
-   quality, and taken/skipped status. Include cluster-aware uncertainty, missingness,
-   concentration, and minimum-N warnings. Treat the existing cohort as
-   discovery-only: this is the primary diagnostic of whether the score has predictive
-   value, not a source of a confirmatory winner.
-2. **Pre-registered score-threshold family.** Keep score 6 as baseline and compare a
+1. **[Done] Automatic decision-quality report.** The read-only
+   `decision-quality-report` compares market-quality-only, score 4 through 9, and
+   leave-one-component-out score-6 policies on one chronological decision per pump
+   episode. It reuses the exact-venue entry/exit/cost engine and reports net
+   expectancy, recorded-size P&L, profit factor, sequential episode drawdown,
+   MFE/MAE, initial stops, cluster-bootstrap intervals, concentration, missingness,
+   and score/component/pump-size/venue/liquidity/action buckets. The existing cohort
+   remains discovery-only. Its total P&L and drawdown are independent-episode
+   diagnostics, not an account simulation with capital and concurrent-position
+   constraints. A stricter policy that rejects an observed open is unresolved rather
+   than cash because the recorded decision path ends after the baseline opens. If
+   variable conviction sizing is introduced later, profit factor must also be
+   computed from dollar P&L instead of assuming equal notional.
+2. **Bounded CEX hot set and squeeze/momentum measurement.** Turn the existing Bybit
+   ticker stream into a consumed measurement path, then add Binance. Keep lightweight
+   whole-venue tickers on a small connection pool, but subscribe to trades, best
+   bid/ask, and bounded depth only for a dynamic hot set. A token enters the hot set
+   after a measurement-floor crossing, an earlier pump episode, or a registered
+   volume/price acceleration trigger and remains there for a versioned 2-to-4-hour
+   TTL. Persist 1-second aggregates and exact threshold, alert, shadow-entry, and
+   shadow-exit times. Evaluate long squeeze/momentum and short blow-off strategies as
+   separate state machines. No real long orders are authorized by this PR.
+3. **Pre-registered score-threshold family.** Keep score 6 as baseline and compare a
    small locked family such as 4, 5, 7, and 8 on the same episodes. Treat no trigger
    as cash, reuse the existing entry/exit/cost engine, correct for multiple
    comparisons, and start a new untouched confirmation cohort after the manifest is
    committed. Promote at most a shadow candidate. This tests whether current
    selectivity is suppressing useful paper trades or avoiding bad ones without
    declaring the discovery sample a result.
-3. **Pre-registered exit family for OBS-001.** Compare the production exit with
+4. **Pre-registered exit family for OBS-001.** Compare the production exit with
    breakeven-after-activation, a no-progress timeout, and their combination. Keep
    partial take-profit plus runner separate unless the first family shows that exit
    capture, rather than entry quality, is the dominant problem.
-4. **Derivatives-context analysis.** Join the persisted funding, open-interest,
+5. **Derivatives-context analysis.** Join the persisted funding, open-interest,
    long/short, and liquidation context to eligible episode outcomes. Use only
    point-in-time windows, explicit availability/coverage, clustered inference, and a
    locked small hypothesis family. Do not turn every available field into a score.
-5. **Live multi-variant shadow evaluator.** Run registered score, confirmation, and
+6. **Live multi-variant shadow evaluator.** Run registered score, confirmation, and
    exit candidates beside the baseline without placing orders. Give every variant
    isolated state and capture the actual quote, spread, depth, impact, lag, and
    rejection reason at its own trigger time. This closes the historical-order-book
    blind spot in delayed-entry replay.
-6. **Durable shadow track record and automatic report.** Persist versioned shadow
+7. **Durable shadow track record and automatic report.** Persist versioned shadow
    positions and resolutions, then report expectancy, profit factor, drawdown,
    initial-stop rate, captured MFE, execution coverage, and disagreement with the
    baseline. Schedule the report so strategy progress is visible without manual SQL.
-7. **Bounded CEX hot set.** Promote +20% WATCH candidates to a targeted 1-to-5-second
-   polling or websocket set, decouple notification pickup from the broad market scan,
-   and measure threshold-to-alert and peak/retrace timing. Do not accelerate all
-   symbols or venues indiscriminately.
 8. **Out-of-sample shadow champion.** Freeze the strongest candidate selected by
-   PRs 1-4, bump its strategy version, and collect a new untouched cohort through the
-   live shadow path. No parameters may be changed after the confirmation boundary.
+   the preceding registered research reports, bump its strategy version, and collect
+   a new untouched cohort through the live shadow path. No parameters may be changed
+   after the confirmation boundary.
 9. **Paper champion promotion.** If the out-of-sample shadow gate passes, run the
    champion through the existing paper order/monitor/journal lifecycle while the
    baseline remains a control. Add operational alerts for missing market data,
@@ -94,6 +107,72 @@ The LBank perpetual-history limitation is parked in
 but it must not block this sequence. Cross-venue fallback stays explicitly labelled;
 a future scanner-derived path is a separate provenance-aware fallback, not fake
 exchange OHLCV.
+
+### Parallel evidence lane: historical data
+
+Historical backfill may run while a prospective cohort matures, but it does not
+reorder PRs 2-10 or authorize a production change. Its purpose is to reject weak
+rules faster, estimate how often a setup occurred, and generate a small
+pre-registered family for forward confirmation. The optimization target is net
+risk-adjusted expectancy after fees, funding, slippage, and drawdown, not trade count
+or win rate in isolation.
+
+Use these sources in provenance order:
+
+1. **Schurfer forward data is the execution authority.** Decisions, immutable
+   point-in-time features, liquidity snapshots, signal lag, paper fills, outcomes,
+   and derivatives context are the only source for claims that depend on what the
+   system could really see and trade at time `t`.
+2. **Official CEX APIs through CCXT are the first historical source.** Backfill
+   candles, public trades, mark/index/premium candles, funding, OI, long/short
+   ratios, liquidations, instrument launch times, and delisting times where each
+   venue genuinely supports them. Preserve exchange, market id, market type,
+   contract size, timestamp bounds, pagination, gaps, and the CCXT version.
+3. **Exchange-native archives and APIs fill CCXT coverage gaps.** Start with
+   [Binance Public Data](https://data.binance.vision/) and
+   [Bybit V5 Kline](https://bybit-exchange.github.io/docs/v5/market/kline).
+   Use only documented public sources and keep raw responses or immutable file
+   checksums. Never silently combine spot, mark, index, and perpetual last-price
+   series.
+4. **Contract-address DEX history is a separate reference dataset.** Use the
+   [GeckoTerminal keyless API](https://docs.coingecko.com/docs/keyless-public-api)
+   for low-volume pool discovery and OHLCV experiments. Evaluate the paid
+   [CoinGecko token OHLCV endpoint](https://docs.coingecko.com/reference/token-ohlcv-token-address)
+   only after a free-source coverage report shows a material gap. Key by chain and
+   contract address, not ticker. Store pool, quote token, liquidity, data tier, and
+   inactive-pool status.
+5. **Paid vendors are a measured buy decision.** Consider Tardis, Kaiko, CoinAPI,
+   or CoinGlass only after documenting which hypothesis cannot be tested with
+   Schurfer, exchange-native, or keyless data and what the missing coverage costs in
+   delayed learning.
+
+Every imported dataset must record `source_kind`, `source_exchange`, `market_id`,
+`market_type`, `contract_address` when available, observation interval, first/last
+timestamp, gaps, fallback status, identity confidence, and a content fingerprint.
+Historical discovery must explicitly report survivorship bias, delisted-market
+coverage, point-in-time feature availability, and whether spread/depth/impact were
+unrecoverable. A promising historical result becomes a new hypothesis and must still
+pass the registered live shadow and untouched forward cohort.
+
+### Reference chart fallback contract
+
+The token page should prefer the exact venue and instrument that produced the pump or
+paper position. If that history is unavailable, it may show a reference chart in this
+order:
+
+1. a verified same-asset perpetual on another CEX;
+2. a verified same-asset spot market;
+3. a scanner-derived sampled path collected after this feature ships;
+4. a contract-address-matched DEX pool as a visual reference only.
+
+Ticker equality alone is never sufficient. Cross-venue CEX matching requires trusted
+instrument identity; DEX matching requires chain plus contract address. The API must
+return the requested venue/instrument, actual source venue/instrument, `source_kind`,
+identity confidence, and limitations. The UI must show a visible notice such as
+`Reference chart: Binance perpetual. LBank OROCHI perpetual history is unavailable.`
+Reference candles may support visual inspection and exploratory analysis, but they
+must not be passed off as exact-venue execution data or used to reconstruct spread,
+depth, impact, or fills.
 
 ## Shipped
 
@@ -213,6 +292,60 @@ Keep both Redis lengths at zero in steady state. If notifier pickup dominates,
 shorten only its Redis loop first; if scanner observation/publication dominates,
 build the bounded HOT polling set; if ticker age dominates, investigate the venue
 adapter. Record the baseline cutoff before deploying any speed change.
+
+#### AKE 2026-07-27 hot-path case study
+
+AKE is the first concrete pre-registered motivation for the bounded hot path:
+
+- Schurfer observed an HTX episode around `2026-07-27T04:39:00Z`, about 98 minutes
+  before the main impulse. It correctly rejected a trade because score was 4 and
+  spread was about 108 bps, but the token should have remained a watch-only
+  candidate.
+- From `06:10Z` through `06:16Z`, Binance one-minute quote volume rose from about
+  1.9x to 10.6x its preceding 15-minute average while price was still only about
+  1% to 3.4% above the `06:10Z` open.
+- During `06:17Z`, Binance moved from `0.0037087` to a high of `0.0069`. Public
+  aggregate trades show roughly +8% by second 30, +19% by second 40, +36% by second
+  45, and +51% by second 50. The next one-minute candle closed about 30% below the
+  impulse close.
+- The broad scanner created the main episode around second 48. That was sufficient
+  to observe the event but too late to assume a safe momentum entry.
+- OI amount was roughly flat to slightly lower before the impulse, then fell about
+  34% on Binance and 21% on Bybit by `06:20Z`. Together with negative funding, this
+  is a squeeze hypothesis, not proof of a repeatable long edge.
+- The first post-spike short decision had score 5 and was skipped. A later secondary
+  peak would have moved about 36% against that decision price, so the case must also
+  remain in the score-5 versus score-6 analysis.
+
+The measurement implementation must separate three questions:
+
+1. **Detection:** could an executable signal have fired before +5%, +10%, or +20%?
+2. **Long squeeze/momentum:** after spread, depth, slippage, fees, and exact next-ask
+   entry, did a hard-stop plus 30-to-120-second exit have positive net expectancy?
+3. **Short blow-off/reversal:** after the impulse, which observable reversal trigger
+   avoided the first rebound and captured the later retrace?
+
+Record a small strategy family before reading aggregate results. Candidate triggers
+may combine recent-pump TTL, 1-to-10-second price acceleration, volume multiple,
+cross-venue confirmation, funding sign, OI direction, and market quality. Do not
+optimize all thresholds at once. Treat no trigger as cash, record rejected fills,
+and compare against a no-trade baseline. Long and short variants need isolated state,
+capital, risk limits, and performance reports; a profitable short rule does not
+validate the long rule or vice versa.
+
+The intended stream topology is:
+
+1. **Broad tier:** one or a few multiplexed websocket connections per supported
+   exchange for lightweight tickers. This is whole-venue observation, not one process
+   or connection per token.
+2. **Hot tier:** dynamic subscriptions for recent or accelerating tokens. Capture
+   aggregate trades and best bid/ask continuously, plus bounded order-book depth at a
+   measured cadence.
+3. **Durable aggregation:** normalize in the Go collector, publish versioned events,
+   consume them, and persist 1-second or 5-second aggregates. Raw L2 retention must be
+   short and explicitly budgeted.
+4. **Shadow evaluation:** calculate exact signal, executable quote, latency, simulated
+   fill, stop, trailing state, and exit without placing an order.
 
 - [ ] Canonical instrument identity. A ticker is a display label, not an asset key:
       exchanges can retain disabled markets or reuse symbols for unrelated tokens.
@@ -601,11 +734,25 @@ adapter. Record the baseline cutoff before deploying any speed change.
       replay non-recoverable entry-confirmation features without exhausting the
       current 4 GB host.
 - [ ] Collector to websocket data layer. The Bybit collector is the seed of the
-      intended Go hot-path layer, but its consumer was never built (it publishes to
-      NATS and nobody reads). Develop it here, when exchange count and latency
-      actually matter: add a consumer that persists the stream, add exchanges, and
-      migrate the scanner from polling to websockets (detection lag 5 min to 60s to
-      about 3s). Keep ARCHITECTURE.md honest about this.
+      intended Go hot-path layer. It already subscribes to all Bybit linear ticker
+      topics in chunks of up to 200, but its NATS stream has no consumer. On
+      2026-07-28 the collector and NATS had each moved hundreds of GB over ten days
+      without improving scanner latency. Build the consumer before adding more broad
+      streams. Reuse per-exchange connection pools, add dynamic hot subscriptions,
+      and migrate only proven detection paths from polling. Keep ARCHITECTURE.md
+      honest about this.
+- [ ] Hot-path host budget and upgrade gate. The 4 GB production host baseline on
+      2026-07-28 was load `0.52`, about `1.1 GB` available RAM, no swap, no OOM kills,
+      and zero container restarts. The largest services were analytics at about
+      `710 MB`, outcome-resolver at `471 MB`, and execution at `464 MB`. This is enough
+      for one bounded Go consumer and aggregated hot data, but not for raw trades and
+      L2 books across every symbol and 17 venues. Before rollout, add per-stage event
+      rates, consumer lag, dropped-message count, DB batch latency, retained bytes per
+      hour, and explicit container memory budgets. Upgrade to 8 GB or split the data
+      worker when available RAM stays below `750 MB`, host memory exceeds 80% for 15
+      minutes, any OOM/restart occurs, or consumer/DB lag breaches the registered
+      threshold. Use 16 GB only if broad raw history or research workloads are kept
+      on the production host; prefer separating those workloads instead.
 - [ ] Multi-venue execution, driven by coverage data and not by diversification. A
       signal fires on a token whose perp may only exist on certain venues, some
       blocked for Poland residents. After Phase 0 data we will know which accounts we
