@@ -382,6 +382,51 @@ the new cohort separately.
   chronological decision path per episode, model costs/exits, and produce confidence
   intervals suitable for champion selection.
 
+- Decision-quality report: use the completed exact-anchor episode cohort to test
+  whether the recorded score and its five point components separate better and worse
+  virtual trades after fees, funding, and decision-time liquidity impact:
+
+  ```bash
+  make prod-deploy-svc SERVICE=analytics
+  make prod-decision-quality-report
+  make prod-decision-quality-report \
+    ARGS="--until 2026-08-03T00:00:00Z --format json" \
+    > backups/reports/decision-quality-2026-08-03.json
+  ```
+
+  The default scope starts at `2026-07-26T00:00:00Z` and uses
+  `pump_short_v1_market_quality`. `score_any` is the market-quality-only control;
+  score 6 is the current baseline; score 4, 5, 7, 8, and 9 are descriptive threshold
+  views. The `score_6_without_*` rows subtract the persisted point contribution of one
+  component while keeping the cutoff fixed. They diagnose whether a component admits
+  useful or harmful episodes, but are not causal estimates.
+
+  OI and funding component tables keep `missing` separate from an observed zero-point
+  value. A missing source currently defaults to zero points in the live score, but it
+  is not evidence of the market condition represented by a genuine zero-point
+  observation.
+
+  Review input exclusions, unresolved policy evaluations, exact path coverage,
+  completed trades, cash episodes, cluster count and largest-cluster share, net
+  expectancy and its 95% cluster-bootstrap interval, recorded-size P&L, profit factor,
+  sequential episode drawdown, initial-stop rate, MFE/MAE, and the score/component
+  calibration tables. Also inspect pump-size, venue, action, and liquidity-quality
+  segments for obvious concentration or data-quality artifacts. Fewer than 50
+  resolved episodes is `collecting`; 50 or more is only a directional read; 100
+  episodes and 30 clusters is `formal_size`, not a confirmatory verdict.
+
+  A stricter policy that rejects a recorded `opened` or `opened_dry_run` decision is
+  marked `right_censored_after_recorded_open`, not cash. The real execution path stops
+  producing later decisions after opening, so the report cannot know whether that
+  stricter policy would have triggered later in the episode.
+
+  The report is discovery-only and never changes production. Total P&L and drawdown
+  order independent episode results chronologically; they do not model shared capital,
+  overlapping positions, `MAX_POSITIONS`, margin, or the daily loss breaker. Any
+  promising score rule must be pre-registered in the next score-threshold PR and
+  confirmed on a new untouched cohort. Use `--allow-fallback` only as a separately
+  labelled sensitivity run.
+
 - Episode replay input readiness: after rebuilding the analytics image, validate the
   pre-registered confirmatory cohort without running a strategy simulation:
 

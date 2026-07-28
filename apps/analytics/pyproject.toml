@@ -23,6 +23,7 @@ virtual-entry-challenger-report = "schurfer_analytics.virtual_entry_challenger_r
 virtual-threshold-challenger-report = "schurfer_analytics.virtual_threshold_challenger_report:main"
 candle-anomaly-report = "schurfer_analytics.candle_anomaly_report:main"
 derivatives-context-report = "schurfer_analytics.derivatives_context_report:main"
+decision-quality-report = "schurfer_analytics.decision_quality_report:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

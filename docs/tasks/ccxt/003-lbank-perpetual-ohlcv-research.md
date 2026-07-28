@@ -83,6 +83,13 @@ strategy work. When resumed, treat it as two independent outcomes:
 The fallback can protect future decisions but cannot reconstruct the already missing
 historical LBank paths.
 
+The token-detail page may independently show a reference chart when exact LBank
+perpetual history is missing. Follow the source order and identity requirements in
+[ROADMAP.md](../../../ROADMAP.md#reference-chart-fallback-contract). A verified
+cross-venue perpetual or spot chart must be labelled as a reference and must not
+change the exact-venue outcome, replay, or fill provenance. If no trusted identity
+mapping exists, keep `Chart unavailable`.
+
 The immediate Schurfer hotfix is intentionally narrower: skip the unsupported LBank
 swap OHLCV call, retain explicitly labelled cross-venue results when available, and
 make LBank-only paths terminal instead of retrying them eight times. It does not
