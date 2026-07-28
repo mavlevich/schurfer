@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 from schurfer_analytics.entry_challenger_inference import (
+    ENTRY_INFERENCE_VERSION,
     InferenceEpisode,
     InferenceSettings,
     build_entry_challenger_inference,
@@ -48,6 +49,7 @@ def test_formal_sample_is_locked_to_first_100_episodes() -> None:
     )
 
     assert report.readiness.status == "formal_sample_ready"
+    assert report.inference_version == ENTRY_INFERENCE_VERSION
     assert report.formal_sample_event_ids == tuple(range(1, 101))
     assert report.baseline is not None
     assert report.baseline.estimate.point_estimate == 1

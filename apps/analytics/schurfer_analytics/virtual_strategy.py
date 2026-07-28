@@ -221,6 +221,17 @@ def expected_path_bounds(
     return start_ms, start_ms + exit_policy.maximum_hold_minutes(params) * 60 * 1000
 
 
+def exit_policy_family_path_bounds(decision: ReplayDecision) -> tuple[int, int]:
+    """Return the full candle window required by every registered exit policy."""
+    starts_and_ends = tuple(
+        expected_path_bounds(decision, exit_policy=policy) for policy in EXIT_POLICIES
+    )
+    starts = {start for start, _ in starts_and_ends}
+    if len(starts) != 1:
+        raise RuntimeError("registered exit policies disagree on entry anchor")
+    return starts_and_ends[0][0], max(end for _, end in starts_and_ends)
+
+
 def market_path_fingerprint(paths: tuple[MarketPath, ...]) -> str:
     payload = []
     for path in sorted(paths, key=lambda item: item.pump_event_id):
@@ -355,6 +366,19 @@ def _complete_path(
     ):
         return None
     return complete
+
+
+def exit_policy_family_path_is_complete(
+    decision: ReplayDecision,
+    candles: tuple[Candle, ...],
+) -> bool:
+    """Fail the paired family closed unless its longest registered path is complete."""
+    params = exit_parameters(decision.pump_pct)
+    longest_policy = max(
+        EXIT_POLICIES,
+        key=lambda policy: policy.maximum_hold_minutes(params),
+    )
+    return _complete_path(decision, candles, exit_policy=longest_policy) is not None
 
 
 def _classify(taken: bool, net_return_pct: float) -> str:

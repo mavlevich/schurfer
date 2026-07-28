@@ -86,6 +86,10 @@ a rule or stop a workstream rather than trigger unbounded tuning.
    are being cut by the clock without allowing an unlimited position. Keep partial
    take-profit plus runner separate unless the first family shows that exit capture,
    rather than entry quality, is the dominant problem.
+   The bounded policy engine and paired Markdown/JSON report are implemented. The
+   report requires the longest registered exact-venue candle window for the whole
+   family, preserves the first 100 eligible episodes, and withholds formal output
+   before complete pairing and cluster diversity.
 5. **Derivatives-context analysis.** Join the persisted funding, open-interest,
    long/short, and liquidation context to eligible episode outcomes. Use only
    point-in-time windows, explicit availability/coverage, clustered inference, and a
@@ -572,6 +576,46 @@ The intended stream topology is:
         clusters. A pass requires positive own expectancy, positive conservative
         familywise paired lower bound, Holm rejection, and positive top-cluster
         sensitivity, and produces only a live-shadow candidate.
+
+    - [x] Pre-registered exit-policy family (OBS-001): compare the production clock
+          with breakeven-after-activation, no-progress timeout, their combination,
+          and one recent-progress bounded extension on the same point-in-time decision
+          and next complete 5-minute entry. Reuse the locked fee, funding, liquidity,
+          and within-bar models. Require the complete longest registered candle window
+          for every member of the paired family. The dedicated cohort begins at
+          `2026-07-29T00:00:00Z`.
+    - [x] Formal exit-policy report: emit versioned Markdown/JSON manifests, descriptive
+          expectancy, recorded-size P&L, profit factor, sequential episode drawdown,
+          exit reasons, duration, MFE/MAE, captured move, initial/protected stops, and
+          paired deltas. Reuse the generic first-100 episode, 30-cluster, 10,000-iteration
+          inference engine with Holm correction, conservative Bonferroni bounds, and
+          top-cluster sensitivity. A passing policy is only a live-shadow candidate.
+    - [ ] Exit-policy verification after merge:
+      - Deploy analytics only after the registered cohort begins. Wait until candidate
+        episodes have closed and their exact-anchor 8-hour outcomes are resolved:
+
+        ```bash
+        make prod-deploy-svc SERVICE=analytics
+        make prod-virtual-exit-policy-report
+        ```
+
+      - Before a formal read, choose an exclusive UTC cutoff without looking at the
+        policy output. Archive the reproducible JSON manifest outside Git:
+
+        ```bash
+        mkdir -p backups/reports
+        make prod-virtual-exit-policy-report \
+          ARGS="--until 2026-08-10T00:00:00Z --format json" \
+          > backups/reports/exit-policies-2026-08-10.json
+        ```
+
+      - Check input exclusions, unresolved family paths, complete pairing, cluster
+        concentration, net expectancy, profit factor, drawdown, initial-stop rate,
+        protected-stop rate, exit-reason changes, duration delta, captured MFE, and
+        paired improvement versus baseline. Investigate missing paths instead of
+        shortening a challenger window. Formal output requires the locked first 100
+        eligible episodes and 30 clusters. Do not change production exits from a
+        discovery or directional result.
 
   - [x] Derive recoverable pre-decision candle features (HYP-005) from fully closed
         exact-venue 5-minute OHLCV. The registered `candle_anomaly_features_v1`
