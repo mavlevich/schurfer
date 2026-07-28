@@ -79,6 +79,47 @@ Experiment (all of OBS-001): replay v1 vs challengers on identical decisions.
 Primary metric: net expectancy after fees/funding/slippage.
 Secondary: captured_move (realized / MFE), average loss, max drawdown, win rate.
 
+Registered experiment family (`exit_policy_family_v1`), committed before its first
+outcome query:
+
+- the prospective cohort starts at `2026-07-29T00:00:00Z`;
+- baseline is the locked production exit with its pump-size-specific initial stop,
+  activation, trailing, tightening, and 180/240/360-minute maximum hold;
+- `breakeven_after_activation_v1` keeps the baseline clock but, after activation,
+  caps the trailing stop at the entry price adjusted for both taker fees,
+  decision-time bid/ask impact, and accrued conservative funding;
+- `no_progress_60m_step_0_5_extension_120m_v1` removes the baseline clock as an
+  immediate exit, closes at a complete five-minute bar close after 60 minutes
+  without a new favorable low at least 0.5% below the previous registered low, and
+  has an absolute limit of baseline max-hold plus 120 minutes;
+- `breakeven_no_progress_60m_step_0_5_extension_120m_v1` combines the previous two
+  policies without changing their parameters;
+- `recent_progress_30m_step_0_5_extension_60m_trail_5_v1` extends once for 60
+  minutes only when the baseline trail has activated and a new favorable low at
+  least 0.5% below the previous registered low was recorded within the last 30
+  minutes at the baseline max-hold boundary. During the extension the trail tightens
+  to 5%, and the position closes at the absolute extended boundary;
+- a favorable low becomes observable only at that five-minute bar close. It cannot
+  reset a timeout or authorize an extension earlier inside the bar;
+- stop and activation ambiguity inside one bar remains
+  `conservative_stop_first`. If activation and the cost-adjusted protective stop are
+  both reachable in one bar, the replay exits at the protective stop rather than
+  assuming unobserved continuation;
+- all policies reuse the same point-in-time selected decision, next-complete-bar
+  entry, exact venue, liquidity snapshot, fees, funding model, and candle path;
+- every non-baseline policy has an explicit absolute hold limit. No challenger may
+  keep a position open indefinitely;
+- missing any candle through the longest required policy window leaves the episode
+  unresolved for the paired family rather than shortening the path or substituting
+  another venue.
+
+The four challengers are one multiple-comparison family. Formal inference uses the
+locked first 100 chronological eligible episodes, at least 30 asset clusters, 10,000
+deterministic whole-cluster bootstrap iterations, Holm correction at family alpha
+0.05, simultaneous Bonferroni paired intervals, and leave-one-cluster-out
+sensitivity. A passing challenger becomes a forward shadow candidate only. It does
+not change the production exit.
+
 ---
 
 ## OBS-002 — entry confirmation is disabled while score rewards near-peak price

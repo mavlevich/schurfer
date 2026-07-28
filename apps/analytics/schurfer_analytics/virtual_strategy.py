@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 VIRTUAL_STRATEGY_VERSION = "pump_short_v1_replay_v1"
 ENTRY_MODEL_VERSION = "next_complete_5m_open_v1"
 EXIT_MODEL_VERSION = "dynamic_short_bar_v1"
+EXIT_POLICY_FAMILY_VERSION = "exit_policy_family_v1"
 COST_MODEL_VERSION = "conservative_costs_v1"
 SELECTION_MODEL_VERSION = "recorded_open_else_first_decision_v1"
 MARKET_PATH_VERSION = "ccxt_5m_exact_anchor_v1"
@@ -32,6 +33,93 @@ class ExitParameters:
     trail_tighten_pct: float
     tighten_after_min: int
     max_hold_min: int
+
+
+@dataclass(frozen=True)
+class ExitPolicy:
+    key: str
+    version: str
+    protect_breakeven_after_activation: bool = False
+    no_progress_minutes: int | None = None
+    max_extension_minutes: int = 0
+    minimum_progress_pct: float = 0.0
+    recent_progress_lookback_minutes: int | None = None
+    extension_trail_pct: float | None = None
+
+    def __post_init__(self) -> None:
+        if not self.key.strip() or not self.version.strip():
+            raise ValueError("exit policy key and version must not be empty")
+        optional_minutes = (
+            self.no_progress_minutes,
+            self.recent_progress_lookback_minutes,
+        )
+        if (
+            any(value is not None and (value <= 0 or value % 5 != 0) for value in optional_minutes)
+            or self.max_extension_minutes < 0
+            or self.max_extension_minutes % 5 != 0
+        ):
+            raise ValueError("exit policy durations must be non-negative five-minute multiples")
+        if self.no_progress_minutes is not None and self.max_extension_minutes == 0:
+            raise ValueError("no-progress policy requires a bounded extension")
+        if not math.isfinite(self.minimum_progress_pct) or self.minimum_progress_pct < 0:
+            raise ValueError("minimum progress must be finite and non-negative")
+        if (
+            self.no_progress_minutes is not None
+            or self.recent_progress_lookback_minutes is not None
+        ) and self.minimum_progress_pct <= 0:
+            raise ValueError("progress-aware policy requires a positive minimum progress")
+        if (self.recent_progress_lookback_minutes is None) != (self.extension_trail_pct is None):
+            raise ValueError("recent-progress extension requires both lookback and trail")
+        if self.recent_progress_lookback_minutes is not None and self.max_extension_minutes == 0:
+            raise ValueError("recent-progress policy requires a bounded extension")
+        if self.extension_trail_pct is not None and (
+            not math.isfinite(self.extension_trail_pct) or self.extension_trail_pct <= 0
+        ):
+            raise ValueError("extension trail must be finite and positive")
+
+    def maximum_hold_minutes(self, params: ExitParameters) -> int:
+        return params.max_hold_min + self.max_extension_minutes
+
+
+BASELINE_EXIT_POLICY = ExitPolicy(
+    key="baseline",
+    version="production_max_hold_v1",
+)
+BREAKEVEN_EXIT_POLICY = ExitPolicy(
+    key="breakeven_after_activation",
+    version="breakeven_after_activation_v1",
+    protect_breakeven_after_activation=True,
+)
+NO_PROGRESS_EXIT_POLICY = ExitPolicy(
+    key="no_progress_60m",
+    version="no_progress_60m_step_0_5_extension_120m_v1",
+    no_progress_minutes=60,
+    max_extension_minutes=120,
+    minimum_progress_pct=0.5,
+)
+COMBINED_EXIT_POLICY = ExitPolicy(
+    key="breakeven_no_progress_60m",
+    version="breakeven_no_progress_60m_step_0_5_extension_120m_v1",
+    protect_breakeven_after_activation=True,
+    no_progress_minutes=60,
+    max_extension_minutes=120,
+    minimum_progress_pct=0.5,
+)
+RECENT_PROGRESS_EXTENSION_EXIT_POLICY = ExitPolicy(
+    key="recent_progress_extension",
+    version="recent_progress_30m_step_0_5_extension_60m_trail_5_v1",
+    max_extension_minutes=60,
+    minimum_progress_pct=0.5,
+    recent_progress_lookback_minutes=30,
+    extension_trail_pct=5.0,
+)
+EXIT_POLICIES = (
+    BASELINE_EXIT_POLICY,
+    BREAKEVEN_EXIT_POLICY,
+    NO_PROGRESS_EXIT_POLICY,
+    COMBINED_EXIT_POLICY,
+    RECENT_PROGRESS_EXTENSION_EXIT_POLICY,
+)
 
 
 @dataclass(frozen=True)
@@ -123,10 +211,14 @@ def select_episode_decision(episode: ReplayEpisode) -> EpisodeSelection:
     return EpisodeSelection(episode.decisions[0], False, "first_decision_counterfactual")
 
 
-def expected_path_bounds(decision: ReplayDecision) -> tuple[int, int]:
+def expected_path_bounds(
+    decision: ReplayDecision,
+    *,
+    exit_policy: ExitPolicy = BASELINE_EXIT_POLICY,
+) -> tuple[int, int]:
     params = exit_parameters(decision.pump_pct)
     start_ms = ceil_to_timeframe(int(decision.ts.timestamp() * 1000))
-    return start_ms, start_ms + params.max_hold_min * 60 * 1000
+    return start_ms, start_ms + exit_policy.maximum_hold_minutes(params) * 60 * 1000
 
 
 def market_path_fingerprint(paths: tuple[MarketPath, ...]) -> str:
@@ -237,12 +329,14 @@ def _complete_path(
     candles: tuple[Candle, ...],
     *,
     entry_at_ms: int | None = None,
+    exit_policy: ExitPolicy = BASELINE_EXIT_POLICY,
 ) -> tuple[Candle, ...] | None:
     if entry_at_ms is None:
-        start_ms, end_ms = expected_path_bounds(decision)
+        start_ms, end_ms = expected_path_bounds(decision, exit_policy=exit_policy)
     else:
         start_ms = entry_at_ms
-        end_ms = start_ms + exit_parameters(decision.pump_pct).max_hold_min * 60 * 1000
+        params = exit_parameters(decision.pump_pct)
+        end_ms = start_ms + exit_policy.maximum_hold_minutes(params) * 60 * 1000
     expected_count = (end_ms - start_ms) // TIMEFRAME_MS
     by_timestamp = {candle.ts_ms: candle for candle in candles}
     expected_timestamps = range(start_ms, end_ms, TIMEFRAME_MS)
@@ -270,6 +364,20 @@ def _classify(taken: bool, net_return_pct: float) -> str:
     return "skipped_would_have_won" if won else "skipped_correctly_avoided"
 
 
+def _breakeven_stop_price(
+    entry_price: float,
+    costs: CostParameters,
+    duration_minutes: float,
+    bid_impact_bps: float,
+    ask_impact_bps: float,
+) -> float:
+    funding_bps = costs.funding_cost_bps_per_8h * duration_minutes / 480
+    total_cost_bps = (
+        costs.taker_fee_bps_per_side * 2 + funding_bps + bid_impact_bps + ask_impact_bps
+    )
+    return entry_price * (1 - total_cost_bps / 10_000)
+
+
 def _simulate_selected_entry(
     episode: ReplayEpisode,
     market_path: MarketPath,
@@ -277,6 +385,7 @@ def _simulate_selected_entry(
     entry_at_ms: int,
     *,
     costs: CostParameters = DEFAULT_COSTS,
+    exit_policy: ExitPolicy = BASELINE_EXIT_POLICY,
 ) -> VirtualTrade:
     decision = selection.decision
     if market_path.status != "complete":
@@ -305,7 +414,12 @@ def _simulate_selected_entry(
             status="invalid_virtual_entry",
             error="entry must be an aligned bar at or after the baseline entry",
         )
-    path = _complete_path(decision, market_path.candles, entry_at_ms=entry_at_ms)
+    path = _complete_path(
+        decision,
+        market_path.candles,
+        entry_at_ms=entry_at_ms,
+        exit_policy=exit_policy,
+    )
     if not path:
         return _unresolved(
             episode,
@@ -335,14 +449,21 @@ def _simulate_selected_entry(
     ambiguity: str | None = None
     observed_low = entry_price
     observed_high = entry_price
+    favorable_price = entry_price
+    last_progress_at_ms = entry_at_ms
+    extension_active = False
 
     for candle in path:
         elapsed_minutes = (candle.ts_ms - entry_at_ms) / 60_000
+        candle_end_ms = candle.ts_ms + TIMEFRAME_MS
+        elapsed_end_minutes = (candle_end_ms - entry_at_ms) / 60_000
         trail_pct = (
             params.trail_tighten_pct
             if elapsed_minutes >= params.tighten_after_min
             else params.trail_pct
         )
+        if extension_active and exit_policy.extension_trail_pct is not None:
+            trail_pct = min(trail_pct, exit_policy.extension_trail_pct)
         if best_price is None:
             stop_hit = candle.high >= stop_price
             activation_hit = candle.low <= activation_price
@@ -358,42 +479,124 @@ def _simulate_selected_entry(
                 best_price = candle.low
                 observed_low = min(observed_low, candle.low)
                 trailing_price = best_price * (1 + trail_pct / 100)
+                if exit_policy.protect_breakeven_after_activation:
+                    trailing_price = min(
+                        trailing_price,
+                        _breakeven_stop_price(
+                            entry_price,
+                            costs,
+                            elapsed_end_minutes,
+                            bid_impact,
+                            ask_impact,
+                        ),
+                    )
                 if candle.high >= trailing_price:
                     observed_high = max(observed_high, trailing_price)
                     exit_price = trailing_price
                     exit_at_ms = candle.ts_ms + TIMEFRAME_MS
-                    exit_reason = "trailing_stop"
+                    exit_reason = (
+                        "protected_stop"
+                        if exit_policy.protect_breakeven_after_activation
+                        else "trailing_stop"
+                    )
                     ambiguity = "conservative_stop_first"
                     break
-            observed_low = min(observed_low, candle.low)
-            observed_high = max(observed_high, candle.high)
-            continue
-
-        previous_trailing_price = best_price * (1 + trail_pct / 100)
-        if candle.high >= previous_trailing_price:
-            observed_high = max(observed_high, previous_trailing_price)
-            exit_price = previous_trailing_price
-            exit_at_ms = candle.ts_ms + TIMEFRAME_MS
-            exit_reason = "trailing_stop"
-            break
-        if candle.low < best_price:
-            best_price = candle.low
-            observed_low = min(observed_low, candle.low)
-            tightened_price = best_price * (1 + trail_pct / 100)
-            if candle.high >= tightened_price:
-                observed_high = max(observed_high, tightened_price)
-                exit_price = tightened_price
-                exit_at_ms = candle.ts_ms + TIMEFRAME_MS
-                exit_reason = "trailing_stop"
-                ambiguity = "conservative_stop_first"
+        else:
+            previous_trailing_price = best_price * (1 + trail_pct / 100)
+            if exit_policy.protect_breakeven_after_activation:
+                previous_trailing_price = min(
+                    previous_trailing_price,
+                    _breakeven_stop_price(
+                        entry_price,
+                        costs,
+                        elapsed_end_minutes,
+                        bid_impact,
+                        ask_impact,
+                    ),
+                )
+            if candle.high >= previous_trailing_price:
+                observed_high = max(observed_high, previous_trailing_price)
+                exit_price = previous_trailing_price
+                exit_at_ms = candle_end_ms
+                exit_reason = (
+                    "protected_stop"
+                    if exit_policy.protect_breakeven_after_activation
+                    else "trailing_stop"
+                )
                 break
+            if candle.low < best_price:
+                best_price = candle.low
+                observed_low = min(observed_low, candle.low)
+                tightened_price = best_price * (1 + trail_pct / 100)
+                if exit_policy.protect_breakeven_after_activation:
+                    tightened_price = min(
+                        tightened_price,
+                        _breakeven_stop_price(
+                            entry_price,
+                            costs,
+                            elapsed_end_minutes,
+                            bid_impact,
+                            ask_impact,
+                        ),
+                    )
+                if candle.high >= tightened_price:
+                    observed_high = max(observed_high, tightened_price)
+                    exit_price = tightened_price
+                    exit_at_ms = candle_end_ms
+                    exit_reason = (
+                        "protected_stop"
+                        if exit_policy.protect_breakeven_after_activation
+                        else "trailing_stop"
+                    )
+                    ambiguity = "conservative_stop_first"
+                    break
         observed_low = min(observed_low, candle.low)
         observed_high = max(observed_high, candle.high)
+        progress_threshold = favorable_price * (1 - exit_policy.minimum_progress_pct / 100)
+        if candle.low < favorable_price and candle.low <= progress_threshold:
+            favorable_price = candle.low
+            last_progress_at_ms = candle_end_ms
+
+        if (
+            exit_policy.no_progress_minutes is not None
+            and candle_end_ms - last_progress_at_ms >= exit_policy.no_progress_minutes * 60_000
+        ):
+            exit_price = candle.close
+            exit_at_ms = candle_end_ms
+            exit_reason = "no_progress"
+            break
+
+        if elapsed_end_minutes >= params.max_hold_min and not extension_active:
+            lookback = exit_policy.recent_progress_lookback_minutes
+            if lookback is not None:
+                recently_improved = (
+                    best_price is not None
+                    and favorable_price < entry_price
+                    and candle_end_ms - last_progress_at_ms <= lookback * 60_000
+                )
+                if recently_improved:
+                    extension_active = True
+                else:
+                    exit_price = candle.close
+                    exit_at_ms = candle_end_ms
+                    exit_reason = "max_hold_no_recent_progress"
+                    break
+            elif exit_policy.max_extension_minutes == 0:
+                exit_price = candle.close
+                exit_at_ms = candle_end_ms
+                exit_reason = "max_hold"
+                break
+
+        if elapsed_end_minutes >= exit_policy.maximum_hold_minutes(params):
+            exit_price = candle.close
+            exit_at_ms = candle_end_ms
+            exit_reason = "absolute_max_hold"
+            break
 
     if exit_price is None:
         exit_price = path[-1].close
         exit_at_ms = path[-1].ts_ms + TIMEFRAME_MS
-        exit_reason = "max_hold"
+        exit_reason = "absolute_max_hold"
     if exit_at_ms is None or exit_reason is None:
         raise RuntimeError("virtual exit invariant violated")
 
@@ -446,6 +649,7 @@ def simulate_episode(
     market_path: MarketPath,
     *,
     costs: CostParameters = DEFAULT_COSTS,
+    exit_policy: ExitPolicy = BASELINE_EXIT_POLICY,
 ) -> VirtualTrade:
     """Replay one baseline short using conservative within-bar ordering.
 
@@ -461,6 +665,7 @@ def simulate_episode(
         selection,
         entry_at_ms,
         costs=costs,
+        exit_policy=exit_policy,
     )
 
 

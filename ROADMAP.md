@@ -75,12 +75,17 @@ a rule or stop a workstream rather than trigger unbounded tuning.
 4. **Pre-registered exit family for OBS-001.** Compare the production exit with
    breakeven-after-activation, a no-progress timeout, and their combination. Add one
    state-dependent hold candidate: at the baseline max-hold boundary, close only if
-   the trade has not made a new favorable excursion during a locked lookback;
-   otherwise tighten the stop, extend once by a fixed duration, and retain an
-   absolute maximum hold. This tests whether profitable retraces are being cut by the
-   clock without allowing an unlimited position. Keep partial take-profit plus runner
-   separate unless the first family shows that exit capture, rather than entry
-   quality, is the dominant problem.
+   the trail has activated and the trade has not made a new favorable excursion
+   during the locked 30-minute lookback; otherwise tighten the stop to 5%, extend
+   once for 60 minutes, and retain an absolute maximum hold. A new favorable extreme
+   must improve the previous registered low by at least 0.5%, so market noise cannot
+   indefinitely reset the clock. The no-progress candidates use a 60-minute stale
+   clock and a 120-minute absolute extension. The exact `exit_policy_family_v1`
+   contract and `2026-07-29T00:00:00Z` cohort are registered in
+   `docs/research/pump-short-hypotheses.md`. This tests whether profitable retraces
+   are being cut by the clock without allowing an unlimited position. Keep partial
+   take-profit plus runner separate unless the first family shows that exit capture,
+   rather than entry quality, is the dominant problem.
 5. **Derivatives-context analysis.** Join the persisted funding, open-interest,
    long/short, and liquidation context to eligible episode outcomes. Use only
    point-in-time windows, explicit availability/coverage, clustered inference, and a
