@@ -136,9 +136,58 @@ docker logs schurfer-api-gateway --since 1h 2>&1 | grep -i error
 ```
 
 The datastores (postgres, redis, nats) and api-gateway, web, and caddy have Compose
-healthchecks; the worker services (analytics, execution, collector, notifier) do not
-yet, so `--wait` only waits for them to be running, not healthy. `caddy` depends on
-`api-gateway` and `web` being healthy before it starts.
+healthchecks; the worker services (analytics, execution, collector, market-hotset,
+notifier) do not yet, so `--wait` only waits for them to be running, not healthy.
+`caddy` depends on `api-gateway` and `web` being healthy before it starts.
+
+### Bybit real-time hot set
+
+The `collector` publishes broad Bybit ticker events to NATS. `market-hotset` consumes
+them, keeps a bounded in-memory prebuffer, and retains five-second bars only for
+symbols found in `pumps:measurement`. It is a research data path and cannot trade.
+
+After the first deployment, verify both event flow and the bounded storage contract:
+
+```bash
+docker logs schurfer-market-hotset --since 10m
+
+docker exec schurfer-redis redis-cli --raw \
+  HGETALL market:hotset:health
+
+docker exec schurfer-redis redis-cli --scan \
+  --pattern 'market:hot:bars:bybit:*'
+
+docker exec schurfer-redis redis-cli XLEN \
+  market:hot:bars:bybit:AKEUSDT
+
+docker exec schurfer-redis redis-cli XRANGE \
+  market:hot:bars:bybit:AKEUSDT - + COUNT 2
+
+docker stats --no-stream \
+  schurfer-collector schurfer-market-hotset schurfer-nats schurfer-redis
+```
+
+Healthy steady state means `pump_feed_status=ok`, event rate is non-zero,
+`invalid_total`, `out_of_order_total`, `nats_dropped_total`,
+`pending_dropped_total`, and `persist_errors_total` do not grow, and `last_lag_ms`
+and `window_max_lag_ms` stay low. Empty bar streams are normal when no current
+measurement pump maps to a Bybit contract. Streams are capped at 3,600 entries and
+expire 24 hours after their last retained bar. Do not raise the limits before
+checking Redis memory and host available RAM.
+
+`unmapped_candidates` counts measurement pumps without an explicit Bybit market id.
+The consumer deliberately does not guess `base + USDT`: symbols can be reused for
+different assets across venues. Downstream ingestion must de-duplicate the
+at-least-once stream by `(exchange, symbol, bucket_start_ms, pump_event_id)`.
+The four-hour watch registry is stored in the `market:hotset:bybit` sorted set with
+metadata in `market:hotset:bybit:metadata`, so a consumer restart does not shorten an
+already registered observation window.
+
+This first slice uses Core NATS and keeps the current five-second bucket in memory.
+It is low-latency measurement, not a lossless event log: a process or host failure
+can lose in-flight ticker events, the open bucket, and the in-memory prebuffer.
+The drop, lag, and persistence counters make those gaps visible. Any signal promoted
+to formal replay input must first move through the planned durable research layer.
 
 Test the restore periodically. A backup that has never been restored is not a backup.
 

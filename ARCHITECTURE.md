@@ -22,11 +22,16 @@ The web UI is behind a login with no public exposure.
   exposes manual control endpoints. Public dry-run market clients cover the scanner's
   17 venues, while account, position, and order paths receive only separately
   constructed authenticated clients.
-- **collector** (Go). Streams Bybit websocket tickers (including bid and ask) and
-  publishes them to NATS `market.bybit.ticker.*`. This is a prototype and is not
-  wired in yet. Nothing subscribes and nothing persists the stream. The scanner uses
-  ccxt polling, not this feed. It is intended as the seed of a future websocket data
-  layer (see ROADMAP Phase 2). Kept, not deleted.
+- **collector** (Go). Streams all active Bybit linear ticker topics, including best
+  bid and ask, and publishes normalized versioned events to NATS
+  `market.bybit.ticker.*`.
+- **market-hotset** (Go). Consumes the Bybit NATS ticker feed. It keeps a bounded
+  ten-minute in-memory prebuffer for the broad venue and activates at most 12 symbols
+  from the private `pumps:measurement` feed for four hours. Only active symbols are
+  retained as five-second Redis Streams, capped at 3,600 bars and expired after one
+  day. It also publishes event-rate, lag, invalid-event, dropped-event, persistence,
+  and hot-set health counters. This path is measurement-only and has no order access.
+  The Python scanner remains the pump source until the stream detector is validated.
 
 ### Warm path (analytical and research)
 
@@ -78,7 +83,11 @@ Pump episodes (Postgres) <---- Outcome resolver (Python, CCXT derivatives histor
     |
 Versioned context runs + idempotent public samples (Postgres)
 
-# collector (Go) --> NATS market.bybit.ticker.*  : prototype, no consumer yet
+collector (Go) --> NATS market.bybit.ticker.*
+    |
+market-hotset (Go)
+    +----> market:hot:bars:bybit:{symbol} (bounded Redis Streams)
+    +----> market:hotset:health (Redis)
 ```
 
 ## Redis key registry
@@ -93,6 +102,10 @@ Versioned context runs + idempotent public samples (Postgres)
 | `signals:{base}`                                     | api-gateway | 120s   | score, verdict, episode id, qualification anchor, and components        |
 | `trader:seen:{base}`                                 | execution   | varies | `"1"`; 1m measurement, 5/30m skips, or 24h traded de-duplication        |
 | `execution:signal_readiness`                         | execution   | 180s   | latest trader tick: pumps, evaluated, ready, deferred, reason counts    |
+| `market:hot:bars:bybit:{symbol}`                     | hotset      | 24h    | bounded five-second bars for active Bybit measurement symbols           |
+| `market:hotset:health`                               | hotset      | 30s    | event rate, lag, drops, errors, persisted bars, and active symbol count |
+| `market:hotset:bybit`                                | hotset      | varies | restart-safe symbol registry with absolute hot-window expiries          |
+| `market:hotset:bybit:metadata`                       | hotset      | none   | base, pump event id, and activation reason for registered Bybit symbols |
 | `trading:enabled`                                    | execution   | no TTL | `"true"/"false"`, kill switch                                           |
 | `trading:daily_pnl`                                  | execution   | none   | float string (USD), monitoring cache                                    |
 | `risk:pnl_ready`                                     | execution   | 120s   | `"1"`, positive lease. Absent or stale means trading is blocked         |

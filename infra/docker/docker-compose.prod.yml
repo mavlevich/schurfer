@@ -166,6 +166,34 @@ services:
         max-size: '10m'
         max-file: '3'
 
+  market-hotset:
+    build:
+      context: ../../
+      dockerfile: apps/collector/Dockerfile
+    container_name: schurfer-market-hotset
+    entrypoint: ['/hotset']
+    environment:
+      NATS_URL: nats://nats:4222
+      REDIS_ADDR: redis:6379
+      HOTSET_BUCKET_SECONDS: ${HOTSET_BUCKET_SECONDS:-5}
+      HOTSET_PREBUFFER_SECONDS: ${HOTSET_PREBUFFER_SECONDS:-600}
+      HOTSET_TTL_SECONDS: ${HOTSET_TTL_SECONDS:-14400}
+      HOTSET_MAX_SYMBOLS: ${HOTSET_MAX_SYMBOLS:-12}
+      HOTSET_STREAM_MAXLEN: ${HOTSET_STREAM_MAXLEN:-3600}
+      HOTSET_STREAM_TTL_SECONDS: ${HOTSET_STREAM_TTL_SECONDS:-86400}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    depends_on:
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    restart: always
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
   analytics:
     build:
       context: ../../
