@@ -15,7 +15,6 @@ from schurfer_analytics.candle_anomaly_features import (
 from schurfer_analytics.candle_anomaly_report import (
     CANDLE_ANOMALY_BUCKETS,
     CANDLE_ANOMALY_STRATEGY_VERSIONS,
-    ReportWindowNotStartedError,
     build_candle_anomaly_report,
     build_parser,
     render_json,
@@ -30,6 +29,7 @@ from schurfer_analytics.replay import (
     ReplayOutcome,
     build_replay_dataset,
 )
+from schurfer_analytics.reporting import ReportWindowNotStartedError
 from schurfer_analytics.virtual_strategy import MarketPath, expected_path_bounds
 
 

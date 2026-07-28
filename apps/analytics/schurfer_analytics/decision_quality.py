@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from .replay import ReplayDecision, ReplayEpisode
 
 DECISION_QUALITY_POLICY_VERSION = "decision_quality_policy_v1"
+SCORE_THRESHOLD_FAMILY_VERSION = "score_threshold_downward_family_v1"
 SCORE_COMPONENT_SCHEMA_VERSION = "pump_short_score_components_v1"
 BASELINE_POLICY_KEY = "score_6"
 RECORDED_OPEN_ACTIONS = frozenset({"opened", "opened_dry_run"})
@@ -42,6 +43,15 @@ SCORE_POLICIES = (
     ScorePolicy("score_any", 0),
     *(ScorePolicy(f"score_{score}", score) for score in range(4, 10)),
     *(ScorePolicy(f"score_6_without_{component}", 6, component) for component in SCORE_COMPONENTS),
+)
+SCORE_THRESHOLD_BASELINE_POLICY = ScorePolicy(BASELINE_POLICY_KEY, 6)
+SCORE_THRESHOLD_CHALLENGER_POLICIES = (
+    ScorePolicy("score_4", 4),
+    ScorePolicy("score_5", 5),
+)
+SCORE_THRESHOLD_POLICIES = (
+    SCORE_THRESHOLD_BASELINE_POLICY,
+    *SCORE_THRESHOLD_CHALLENGER_POLICIES,
 )
 
 SelectionStatus = Literal["selected", "not_triggered", "unresolved"]

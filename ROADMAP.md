@@ -65,13 +65,15 @@ a rule or stop a workstream rather than trigger unbounded tuning.
    Persist exact threshold, alert, shadow-entry, and shadow-exit times in the next
    durable research layer. Evaluate long squeeze/momentum and short blow-off
    strategies as separate state machines. No real long orders are authorized.
-3. **Pre-registered score-threshold family.** Keep score 6 as baseline and compare a
-   small locked family such as 4, 5, 7, and 8 on the same episodes. Treat no trigger
-   as cash, reuse the existing entry/exit/cost engine, correct for multiple
-   comparisons, and start a new untouched confirmation cohort after the manifest is
-   committed. Promote at most a shadow candidate. This tests whether current
-   selectivity is suppressing useful paper trades or avoiding bad ones without
-   declaring the discovery sample a result.
+3. **Pre-registered score-threshold family.** Keep score 6 as baseline and compare
+   score 4 and 5 on the same episodes beginning
+   `2026-07-31T00:00:00Z`. Treat no trigger as cash. Reuse the existing point-in-time
+   selection, entry/exit/cost engine, first-100 formal sample, cluster bootstrap, Holm
+   correction, 97.5% Bonferroni paired intervals, and top-cluster sensitivity.
+   Promote at most a shadow candidate. This tests whether current selectivity is
+   suppressing useful paper trades without declaring the discovery sample a result.
+   Evaluate score 7 and 8 only through the live multi-variant shadow path because a
+   baseline open right-censors later recorded decisions.
 4. **Pre-registered exit family for OBS-001.** Compare the production exit with
    breakeven-after-activation, a no-progress timeout, and their combination. Add one
    state-dependent hold candidate: at the baseline max-hold boundary, close only if
@@ -102,7 +104,16 @@ a rule or stop a workstream rather than trigger unbounded tuning.
 7. **Durable shadow track record and automatic report.** Persist versioned shadow
    positions and resolutions, then report expectancy, profit factor, drawdown,
    initial-stop rate, captured MFE, execution coverage, and disagreement with the
-   baseline. Schedule the report so strategy progress is visible without manual SQL.
+   baseline. Add a report registry keyed by report version, code revision, cutoff, and
+   input fingerprints. Run a lightweight database-only readiness and data-health
+   summary daily; run expensive exact-venue CCXT replays only when a cohort becomes
+   due, readiness changes, or a human requests them. Archive immutable timestamped
+   JSON and Markdown artifacts, then send a short Telegram summary for `collecting`,
+   `no_go`, `inconclusive`, `shadow_candidate`, and report failures. Keep all advice
+   rules-based and traceable to a registered threshold. Never let a scheduled report
+   change production configuration or promote a strategy automatically. If repeated
+   historical requests become expensive, add a provenance-aware market-path cache
+   before increasing the report cadence.
 8. **Out-of-sample shadow champion.** Freeze the strongest candidate selected by
    the preceding registered research reports, bump its strategy version, and collect
    a new untouched cohort through the live shadow path. No parameters may be changed
@@ -110,7 +121,13 @@ a rule or stop a workstream rather than trigger unbounded tuning.
 9. **Paper champion promotion.** If the out-of-sample shadow gate passes, run the
    champion through the existing paper order/monitor/journal lifecycle while the
    baseline remains a control. Add operational alerts for missing market data,
-   divergent fills, stale positions, and strategy-level drawdown.
+   divergent fills, stale positions, and strategy-level drawdown. Only after the
+   fixed-notional champion demonstrates stable net edge, pre-register a separate risk
+   allocation family: conservative edge-based notional, bounded tranche entries,
+   liquidity checks per tranche, portfolio heat, and drawdown caps. Keep leverage a
+   margin and liquidation-distance decision, not an alpha multiplier. OI, funding,
+   liquidations, acceleration, and cross-venue agreement must earn their role as
+   point-in-time features before they can affect eligibility or size.
 10. **Go/no-go checkpoint.** If at least 100 eligible episodes, 30 asset clusters,
     complete paired resolution, positive net expectancy after costs, familywise
     improvement, acceptable drawdown, and stable out-of-sample paper behavior all
@@ -576,6 +593,41 @@ The intended stream topology is:
         clusters. A pass requires positive own expectancy, positive conservative
         familywise paired lower bound, Holm rejection, and positive top-cluster
         sensitivity, and produces only a live-shadow candidate.
+
+    - [x] Pre-register and implement the HYP-006 score-threshold family. Keep score 6
+          as baseline and compare score 4 and 5 on the untouched
+          `2026-07-31T00:00:00Z` cohort. Select each policy's first recorded
+          point-in-time score crossing that passes its recorded market-quality gate.
+          A never-triggered policy is cash. Every policy reuses the exact selected
+          venue, next complete 5-minute entry, baseline exit, and locked cost model.
+          Score 7 and 8 remain reserved for isolated live-shadow state so censoring
+          cannot make this formal family impossible to complete.
+    - [ ] Score-threshold verification after merge:
+      - Deploy analytics only after the registered cohort begins. Wait until candidate
+        episodes close and their exact-anchor 8-hour outcomes resolve:
+
+        ```bash
+        make prod-deploy-svc SERVICE=analytics
+        make prod-virtual-score-challenger-report
+        ```
+
+      - Before a formal read, choose an exclusive UTC cutoff without inspecting the
+        score comparison and archive its JSON manifest:
+
+        ```bash
+        mkdir -p backups/reports
+        make prod-virtual-score-challenger-report \
+          ARGS="--until 2026-08-10T00:00:00Z --format json" \
+          > backups/reports/score-thresholds-2026-08-10.json
+        ```
+
+      - Check exclusions, exact selected-decision paths, no-trigger cash, cluster
+        concentration, trade rate, episode and
+        conditional-trade net expectancy, profit factor, drawdown, initial stops,
+        captured MFE, and paired deltas versus score 6. Formal output remains hidden
+        before the first 100 episodes are fully paired across at least 30 clusters.
+        A passing policy becomes only a live-shadow candidate and cannot change
+        production `SCORE_THRESHOLD`.
 
     - [x] Pre-registered exit-policy family (OBS-001): compare the production clock
           with breakeven-after-activation, no-progress timeout, their combination,

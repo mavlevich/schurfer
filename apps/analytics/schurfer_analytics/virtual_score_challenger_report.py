@@ -1,4 +1,4 @@
-"""Read-only paired report for the pre-registered exit-policy family."""
+"""Read-only paired report for the pre-registered score-threshold family."""
 
 from __future__ import annotations
 
@@ -17,6 +17,16 @@ from .challenger_inference import (
     ChallengerEpisode,
     ChallengerInference,
     build_challenger_inference,
+)
+from .decision_quality import (
+    SCORE_THRESHOLD_BASELINE_POLICY,
+    SCORE_THRESHOLD_CHALLENGER_POLICIES,
+    SCORE_THRESHOLD_FAMILY_VERSION,
+    SCORE_THRESHOLD_POLICIES,
+    ScorePolicy,
+    ScoreSelection,
+    select_score_policy,
+    selected_policy_decisions,
 )
 from .episode_replay import PROTOCOL_VERSION
 from .outcomes import RESOLVER_VERSION
@@ -40,50 +50,38 @@ from .reporting import (
     profit_factor,
     resolve_report_until,
 )
+from .virtual_market import (
+    DECISION_MARKET_PATH_VERSION,
+    DecisionMarketPath,
+    decision_market_path_fingerprint,
+)
 from .virtual_strategy import (
-    BASELINE_EXIT_POLICY,
     COST_MODEL_VERSION,
     DEFAULT_COSTS,
     ENTRY_MODEL_VERSION,
     EXIT_MODEL_VERSION,
-    EXIT_POLICIES,
-    EXIT_POLICY_FAMILY_VERSION,
-    SELECTION_MODEL_VERSION,
     VIRTUAL_STRATEGY_VERSION,
     CostParameters,
-    ExitPolicy,
     MarketPath,
     VirtualTrade,
-    exit_parameters,
-    exit_policy_family_path_is_complete,
-    market_path_fingerprint,
     max_sequential_drawdown_usd,
-    select_episode_decision,
-    simulate_episode,
+    simulate_decision,
 )
 
-EXIT_POLICY_REPORT_VERSION = "virtual_exit_policy_report_v1"
-EXIT_POLICY_MARKET_PATH_VERSION = "ccxt_5m_exact_exit_policy_family_v1"
-EXIT_POLICY_INFERENCE_VERSION = "exit_policy_formal_inference_v1"
-EXIT_POLICY_COHORT_START = datetime(2026, 7, 29, tzinfo=UTC)
-EXIT_POLICY_STRATEGY_VERSIONS = ("pump_short_v1_market_quality",)
+SCORE_THRESHOLD_REPORT_VERSION = "virtual_score_challenger_report_v1"
+SCORE_THRESHOLD_INFERENCE_VERSION = "score_threshold_downward_formal_inference_v1"
+SCORE_THRESHOLD_COHORT_START = datetime(2026, 7, 31, tzinfo=UTC)
+SCORE_THRESHOLD_STRATEGY_VERSIONS = ("pump_short_v1_market_quality",)
 
 
 @dataclass(frozen=True)
-class ExitPolicySpec:
+class ScorePolicySpec:
     key: str
-    version: str
-    protect_breakeven_after_activation: bool
-    no_progress_minutes: int | None
-    max_extension_minutes: int
-    minimum_progress_pct: float
-    recent_progress_lookback_minutes: int | None
-    extension_trail_pct: float | None
-    maximum_hold_by_pump_band_minutes: tuple[int, int, int]
+    min_score: int
 
 
 @dataclass(frozen=True)
-class ExitPolicyManifest:
+class ScoreThresholdManifest:
     protocol_version: str
     replay_engine_version: str
     replay_query_version: str
@@ -92,9 +90,9 @@ class ExitPolicyManifest:
     selection_model_version: str
     entry_model_version: str
     exit_model_version: str
-    exit_policy_family_version: str
     cost_model_version: str
     market_path_version: str
+    challenger_family_version: str
     inference_version: str
     code_revision: str
     working_tree_dirty: bool
@@ -107,8 +105,8 @@ class ExitPolicyManifest:
     resolver_version: str
     required_horizons: tuple[int, ...]
     fallback_allowed: bool
-    baseline: ExitPolicySpec
-    challengers: tuple[ExitPolicySpec, ...]
+    baseline: ScorePolicySpec
+    challengers: tuple[ScorePolicySpec, ...]
     taker_fee_bps_per_side: float
     funding_cost_bps_per_8h: float
     bootstrap_iterations: int
@@ -116,34 +114,46 @@ class ExitPolicyManifest:
     bootstrap_confidence_level: float
     holm_family_alpha: float
     observation_unit: str = "pump_event_id"
-    selection_policy: str = "same_point_in_time_decision_for_every_exit"
-    entry_policy: str = "same_next_complete_5m_open_for_every_exit"
-    path_policy: str = "longest_registered_window_required_for_paired_family"
+    selection_policy: str = "first_recorded_gate_eligible_score_crossing_v1"
+    no_trigger_policy: str = "zero_return_cash_when_never_triggered"
     within_bar_policy: str = "conservative_stop_first"
     formal_sample_policy: str = "first_100_eligible_episodes_chronological"
     report_scope: str = "formal_inference_when_ready_shadow_only"
 
 
 @dataclass(frozen=True)
-class PolicyTrade:
+class ScoreThresholdResult:
+    pump_event_id: int
+    cluster_key: str
+    base: str
     policy_key: str
-    trade: VirtualTrade
+    min_score: int
+    status: str
+    selected_decision_id: str | None
+    selected_at: datetime | None
+    selected_score: int | None
+    exchange: str | None
+    episode_net_return_pct: float | None
+    trade: VirtualTrade | None
+    error: str | None = None
 
 
 @dataclass(frozen=True)
-class ExitPolicyMetrics:
+class ScoreThresholdMetrics:
     policy_key: str
+    min_score: int
     eligible_episodes: int
     resolved_episodes: int
-    unresolved_episodes: int
-    completed_trades: int
-    mean_net_return_pct: float | None
+    triggered: int
+    cash: int
+    unresolved: int
+    trade_rate_pct: float | None
+    mean_episode_net_return_pct: float | None
+    conditional_trade_net_return_pct: float | None
     total_net_pnl_usd: float | None
     profit_factor: float | None
     win_rate_pct: float | None
     initial_stop_rate_pct: float | None
-    protected_stop_rate_pct: float | None
-    mean_duration_minutes: float | None
     mean_mfe_pct: float | None
     mean_mae_pct: float | None
     mean_captured_move_pct: float | None
@@ -151,7 +161,7 @@ class ExitPolicyMetrics:
 
 
 @dataclass(frozen=True)
-class PairedExitComparison:
+class PairedScoreComparison:
     variant_key: str
     episodes: int
     mean_baseline_net_return_pct: float | None
@@ -160,8 +170,7 @@ class PairedExitComparison:
     improved_episodes: int
     worsened_episodes: int
     unchanged_episodes: int
-    different_exit_reason_episodes: int
-    mean_duration_delta_minutes: float | None
+    different_decision_episodes: int
 
 
 @dataclass(frozen=True)
@@ -171,25 +180,18 @@ class CountRow:
 
 
 @dataclass(frozen=True)
-class PolicyExitReason:
-    policy_key: str
-    exit_reason: str
-    count: int
-
-
-@dataclass(frozen=True)
-class ExitPolicyReport:
-    manifest: ExitPolicyManifest
+class ScoreThresholdReport:
+    manifest: ScoreThresholdManifest
     dataset_episodes: int
     eligible_episodes: int
     excluded_episodes: int
     input_exclusion_reasons: tuple[CountRow, ...]
-    policy_metrics: tuple[ExitPolicyMetrics, ...]
-    paired_comparisons: tuple[PairedExitComparison, ...]
-    exit_reasons: tuple[PolicyExitReason, ...]
-    policy_trades: tuple[PolicyTrade, ...]
+    path_statuses: tuple[CountRow, ...]
+    policy_metrics: tuple[ScoreThresholdMetrics, ...]
+    paired_comparisons: tuple[PairedScoreComparison, ...]
+    episode_results: tuple[ScoreThresholdResult, ...]
     inference: ChallengerInference
-    market_paths: tuple[MarketPath, ...]
+    market_paths: tuple[DecisionMarketPath, ...]
 
 
 def _mean(values: list[float]) -> float | None:
@@ -203,200 +205,209 @@ def _count_rows(counter: Counter[str]) -> tuple[CountRow, ...]:
     )
 
 
-def _policy_spec(policy: ExitPolicy) -> ExitPolicySpec:
-    maximum_holds = tuple(
-        policy.maximum_hold_minutes(exit_parameters(pump_pct)) for pump_pct in (40.0, 75.0, 125.0)
-    )
-    return ExitPolicySpec(
-        key=policy.key,
-        version=policy.version,
-        protect_breakeven_after_activation=policy.protect_breakeven_after_activation,
-        no_progress_minutes=policy.no_progress_minutes,
-        max_extension_minutes=policy.max_extension_minutes,
-        minimum_progress_pct=policy.minimum_progress_pct,
-        recent_progress_lookback_minutes=policy.recent_progress_lookback_minutes,
-        extension_trail_pct=policy.extension_trail_pct,
-        maximum_hold_by_pump_band_minutes=(
-            maximum_holds[0],
-            maximum_holds[1],
-            maximum_holds[2],
-        ),
-    )
-
-
-def _missing_path(episode: ReplayEpisode) -> MarketPath:
-    selection = select_episode_decision(episode)
+def _missing_path(episode: ReplayEpisode, selection: ScoreSelection) -> MarketPath:
+    decision = selection.decision
     return MarketPath(
         pump_event_id=episode.pump_event_id,
-        exchange=selection.decision.exchange,
-        base=selection.decision.base,
+        exchange=decision.exchange if decision else "",
+        base=decision.base if decision else episode.base,
         status="missing_path",
         candles=(),
         error="market path was not loaded",
     )
 
 
-def _family_path(episode: ReplayEpisode, path: MarketPath) -> MarketPath:
-    if path.status != "complete":
-        return path
-    decision = select_episode_decision(episode).decision
-    if exit_policy_family_path_is_complete(decision, path.candles):
-        return path
-    return MarketPath(
-        pump_event_id=path.pump_event_id,
-        exchange=path.exchange,
-        base=path.base,
-        status="incomplete_family_path",
-        candles=path.candles,
-        error="missing one or more bars in the longest registered exit-policy window",
+def _evaluate_policy(
+    episode: ReplayEpisode,
+    policy: ScorePolicy,
+    path_by_decision: dict[str, MarketPath],
+    costs: CostParameters,
+) -> ScoreThresholdResult:
+    selection = select_score_policy(episode, policy)
+    decision = selection.decision
+    if selection.status == "not_triggered":
+        return ScoreThresholdResult(
+            episode.pump_event_id,
+            episode.cluster_key,
+            episode.base,
+            policy.key,
+            policy.min_score,
+            "not_triggered",
+            None,
+            None,
+            None,
+            None,
+            0.0,
+            None,
+        )
+    if selection.status == "unresolved" or decision is None:
+        return ScoreThresholdResult(
+            episode.pump_event_id,
+            episode.cluster_key,
+            episode.base,
+            policy.key,
+            policy.min_score,
+            "selection_unresolved",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            selection.error or "score-policy selection failed",
+        )
+    path = path_by_decision.get(decision.decision_id or "")
+    if path is None:
+        path = _missing_path(episode, selection)
+    trade = simulate_decision(
+        episode,
+        path,
+        decision,
+        selection_reason=f"score_threshold:{policy.min_score}",
+        costs=costs,
+    )
+    return ScoreThresholdResult(
+        episode.pump_event_id,
+        episode.cluster_key,
+        episode.base,
+        policy.key,
+        policy.min_score,
+        trade.status,
+        decision.decision_id,
+        decision.ts,
+        decision.score,
+        decision.exchange,
+        trade.net_return_pct,
+        trade,
+        trade.error,
     )
 
 
-def _resolved_return(trade: VirtualTrade) -> float | None:
-    return trade.net_return_pct if trade.status == "complete" else None
-
-
 def _metrics(
-    policy: ExitPolicy,
-    rows: tuple[PolicyTrade, ...],
-) -> ExitPolicyMetrics:
-    selected = tuple(row.trade for row in rows if row.policy_key == policy.key)
-    complete = tuple(trade for trade in selected if trade.status == "complete")
-    returns = [trade.net_return_pct for trade in complete if trade.net_return_pct is not None]
-    pnl = [trade.net_pnl_usd for trade in complete if trade.net_pnl_usd is not None]
-    durations = [trade.duration_minutes for trade in complete if trade.duration_minutes is not None]
-    mfe = [trade.mfe_pct for trade in complete if trade.mfe_pct is not None]
-    mae = [trade.mae_pct for trade in complete if trade.mae_pct is not None]
-    captured = [
-        trade.captured_move_pct for trade in complete if trade.captured_move_pct is not None
+    policy: ScorePolicy,
+    results: tuple[ScoreThresholdResult, ...],
+) -> ScoreThresholdMetrics:
+    selected = tuple(result for result in results if result.policy_key == policy.key)
+    resolved = [
+        result.episode_net_return_pct
+        for result in selected
+        if result.episode_net_return_pct is not None
     ]
-    return ExitPolicyMetrics(
+    trades = tuple(
+        result.trade
+        for result in selected
+        if result.trade is not None and result.trade.status == "complete"
+    )
+    trade_returns = [trade.net_return_pct for trade in trades if trade.net_return_pct is not None]
+    pnl = [trade.net_pnl_usd for trade in trades if trade.net_pnl_usd is not None]
+    return ScoreThresholdMetrics(
         policy_key=policy.key,
+        min_score=policy.min_score,
         eligible_episodes=len(selected),
-        resolved_episodes=len(complete),
-        unresolved_episodes=len(selected) - len(complete),
-        completed_trades=len(complete),
-        mean_net_return_pct=_mean(returns),
+        resolved_episodes=len(resolved),
+        triggered=sum(result.selected_decision_id is not None for result in selected),
+        cash=sum(result.status == "not_triggered" for result in selected),
+        unresolved=len(selected) - len(resolved),
+        trade_rate_pct=len(trades) / len(resolved) * 100 if resolved else None,
+        mean_episode_net_return_pct=_mean(resolved),
+        conditional_trade_net_return_pct=_mean(trade_returns),
         total_net_pnl_usd=sum(pnl) if pnl else None,
-        profit_factor=profit_factor(returns),
+        profit_factor=profit_factor(trade_returns),
         win_rate_pct=(
-            sum(value > 0 for value in returns) / len(returns) * 100 if returns else None
+            sum(value > 0 for value in trade_returns) / len(trade_returns) * 100
+            if trade_returns
+            else None
         ),
         initial_stop_rate_pct=(
-            sum(trade.exit_reason == "initial_sl" for trade in complete) / len(complete) * 100
-            if complete
+            sum(trade.exit_reason == "initial_sl" for trade in trades) / len(trades) * 100
+            if trades
             else None
         ),
-        protected_stop_rate_pct=(
-            sum(trade.exit_reason == "protected_stop" for trade in complete) / len(complete) * 100
-            if complete
-            else None
+        mean_mfe_pct=_mean([trade.mfe_pct for trade in trades if trade.mfe_pct is not None]),
+        mean_mae_pct=_mean([trade.mae_pct for trade in trades if trade.mae_pct is not None]),
+        mean_captured_move_pct=_mean(
+            [trade.captured_move_pct for trade in trades if trade.captured_move_pct is not None]
         ),
-        mean_duration_minutes=_mean(durations),
-        mean_mfe_pct=_mean(mfe),
-        mean_mae_pct=_mean(mae),
-        mean_captured_move_pct=_mean(captured),
-        max_sequential_drawdown_usd=max_sequential_drawdown_usd(complete),
+        max_sequential_drawdown_usd=max_sequential_drawdown_usd(trades),
     )
 
 
 def _paired_comparison(
-    variant: ExitPolicy,
-    baseline_by_event: dict[int, VirtualTrade],
-    variant_by_event: dict[int, VirtualTrade],
-) -> PairedExitComparison:
-    pairs: list[tuple[VirtualTrade, VirtualTrade, float, float]] = []
+    policy: ScorePolicy,
+    baseline_by_event: dict[int, ScoreThresholdResult],
+    variant_by_event: dict[int, ScoreThresholdResult],
+) -> PairedScoreComparison:
+    pairs: list[tuple[ScoreThresholdResult, ScoreThresholdResult, float, float]] = []
     for event_id, baseline in baseline_by_event.items():
         challenger = variant_by_event.get(event_id)
         if (
             challenger is None
-            or baseline.status != "complete"
-            or challenger.status != "complete"
-            or baseline.net_return_pct is None
-            or challenger.net_return_pct is None
+            or baseline.episode_net_return_pct is None
+            or challenger.episode_net_return_pct is None
         ):
             continue
         pairs.append(
             (
                 baseline,
                 challenger,
-                baseline.net_return_pct,
-                challenger.net_return_pct,
+                baseline.episode_net_return_pct,
+                challenger.episode_net_return_pct,
             )
         )
-    baseline_returns = [baseline_return for _, _, baseline_return, _ in pairs]
-    challenger_returns = [challenger_return for _, _, _, challenger_return in pairs]
     deltas = [
         challenger_return - baseline_return for _, _, baseline_return, challenger_return in pairs
     ]
-    duration_deltas = [
-        challenger.duration_minutes - baseline.duration_minutes
-        for baseline, challenger, _, _ in pairs
-        if baseline.duration_minutes is not None and challenger.duration_minutes is not None
-    ]
-    return PairedExitComparison(
-        variant_key=variant.key,
+    return PairedScoreComparison(
+        variant_key=policy.key,
         episodes=len(pairs),
-        mean_baseline_net_return_pct=_mean(baseline_returns),
-        mean_challenger_net_return_pct=_mean(challenger_returns),
+        mean_baseline_net_return_pct=_mean([baseline_return for _, _, baseline_return, _ in pairs]),
+        mean_challenger_net_return_pct=_mean(
+            [challenger_return for _, _, _, challenger_return in pairs]
+        ),
         mean_delta_pct=_mean(deltas),
         improved_episodes=sum(delta > 1e-12 for delta in deltas),
         worsened_episodes=sum(delta < -1e-12 for delta in deltas),
         unchanged_episodes=sum(abs(delta) <= 1e-12 for delta in deltas),
-        different_exit_reason_episodes=sum(
-            baseline.exit_reason != challenger.exit_reason for baseline, challenger, _, _ in pairs
+        different_decision_episodes=sum(
+            baseline.selected_decision_id != challenger.selected_decision_id
+            for baseline, challenger, _, _ in pairs
         ),
-        mean_duration_delta_minutes=_mean(duration_deltas),
     )
 
 
-def build_exit_policy_report(
+def _resolved_return(result: ScoreThresholdResult) -> float | None:
+    return result.episode_net_return_pct
+
+
+def build_score_threshold_report(
     dataset: ReplayDataset,
     filters: ReplayFilters,
-    paths: tuple[MarketPath, ...],
+    paths: tuple[DecisionMarketPath, ...],
     *,
     generated_at: datetime,
     code_revision: str,
     working_tree_dirty: bool,
     costs: CostParameters = DEFAULT_COSTS,
-) -> ExitPolicyReport:
+) -> ScoreThresholdReport:
     revision = normalize_code_revision(code_revision)
-    if filters.since != EXIT_POLICY_COHORT_START:
-        raise ValueError("formal exit-policy report requires the registered cohort start")
-    if filters.strategy_versions != EXIT_POLICY_STRATEGY_VERSIONS:
-        raise ValueError("formal exit-policy report requires the registered strategy cohort")
-    event_counts = Counter(path.pump_event_id for path in paths)
-    duplicates = sorted(event_id for event_id, count in event_counts.items() if count > 1)
+    if filters.since != SCORE_THRESHOLD_COHORT_START:
+        raise ValueError("formal score-threshold report requires the registered cohort start")
+    if filters.strategy_versions != SCORE_THRESHOLD_STRATEGY_VERSIONS:
+        raise ValueError("formal score-threshold report requires the registered strategy cohort")
+    path_counts = Counter(path.decision_id for path in paths)
+    duplicates = sorted(decision_id for decision_id, count in path_counts.items() if count > 1)
     if duplicates:
-        raise ValueError(f"duplicate market paths for episodes: {duplicates}")
-    path_by_event = {path.pump_event_id: path for path in paths}
-    family_paths = {
-        episode.pump_event_id: _family_path(
-            episode,
-            path_by_event.get(episode.pump_event_id, _missing_path(episode)),
-        )
+        raise ValueError(f"duplicate market paths for decisions: {duplicates}")
+    path_by_decision = {item.decision_id: item.path for item in paths}
+    results = tuple(
+        _evaluate_policy(episode, policy, path_by_decision, costs)
         for episode in dataset.eligible_episodes
-    }
-    policy_trades = tuple(
-        PolicyTrade(
-            policy.key,
-            simulate_episode(
-                episode,
-                family_paths[episode.pump_event_id],
-                costs=costs,
-                exit_policy=policy,
-            ),
-        )
-        for episode in dataset.eligible_episodes
-        for policy in EXIT_POLICIES
+        for policy in SCORE_THRESHOLD_POLICIES
     )
-    trades_by_policy_event = {
-        (row.policy_key, row.trade.pump_event_id): row.trade for row in policy_trades
-    }
-    challengers = tuple(policy for policy in EXIT_POLICIES if policy is not BASELINE_EXIT_POLICY)
+    by_policy_event = {(result.policy_key, result.pump_event_id): result for result in results}
     baseline_by_event = {
-        episode.pump_event_id: trades_by_policy_event[
-            (BASELINE_EXIT_POLICY.key, episode.pump_event_id)
+        episode.pump_event_id: by_policy_event[
+            (SCORE_THRESHOLD_BASELINE_POLICY.key, episode.pump_event_id)
         ]
         for episode in dataset.eligible_episodes
     }
@@ -409,51 +420,52 @@ def build_exit_policy_report(
                 challenger_returns_pct=tuple(
                     (
                         policy.key,
-                        _resolved_return(
-                            trades_by_policy_event[(policy.key, episode.pump_event_id)]
-                        ),
+                        _resolved_return(by_policy_event[(policy.key, episode.pump_event_id)]),
                     )
-                    for policy in challengers
+                    for policy in SCORE_THRESHOLD_CHALLENGER_POLICIES
                 ),
             )
             for episode in dataset.eligible_episodes
         ),
-        tuple(policy.key for policy in challengers),
-        inference_version=EXIT_POLICY_INFERENCE_VERSION,
+        tuple(policy.key for policy in SCORE_THRESHOLD_CHALLENGER_POLICIES),
+        inference_version=SCORE_THRESHOLD_INFERENCE_VERSION,
     )
     exclusions = Counter(
         reason for episode in dataset.excluded_episodes for reason in episode.exclusion_reasons
     )
-    exit_reason_counts = Counter(
-        (row.policy_key, row.trade.exit_reason or row.trade.status) for row in policy_trades
-    )
-    return ExitPolicyReport(
-        manifest=ExitPolicyManifest(
+    return ScoreThresholdReport(
+        manifest=ScoreThresholdManifest(
             protocol_version=PROTOCOL_VERSION,
             replay_engine_version=FOUNDATION_VERSION,
             replay_query_version=QUERY_VERSION,
-            report_version=EXIT_POLICY_REPORT_VERSION,
+            report_version=SCORE_THRESHOLD_REPORT_VERSION,
             virtual_strategy_version=VIRTUAL_STRATEGY_VERSION,
-            selection_model_version=SELECTION_MODEL_VERSION,
+            selection_model_version=SCORE_THRESHOLD_FAMILY_VERSION,
             entry_model_version=ENTRY_MODEL_VERSION,
             exit_model_version=EXIT_MODEL_VERSION,
-            exit_policy_family_version=EXIT_POLICY_FAMILY_VERSION,
             cost_model_version=COST_MODEL_VERSION,
-            market_path_version=EXIT_POLICY_MARKET_PATH_VERSION,
-            inference_version=EXIT_POLICY_INFERENCE_VERSION,
+            market_path_version=DECISION_MARKET_PATH_VERSION,
+            challenger_family_version=SCORE_THRESHOLD_FAMILY_VERSION,
+            inference_version=SCORE_THRESHOLD_INFERENCE_VERSION,
             code_revision=revision,
             working_tree_dirty=working_tree_dirty,
             generated_at=generated_at,
             dataset_since=filters.since,
             dataset_until_exclusive=filters.until,
             decision_input_fingerprint=dataset.input_fingerprint,
-            market_path_fingerprint=market_path_fingerprint(paths),
+            market_path_fingerprint=decision_market_path_fingerprint(paths),
             strategy_versions=filters.strategy_versions,
             resolver_version=filters.resolver_version,
             required_horizons=filters.required_horizons,
             fallback_allowed=filters.allow_fallback,
-            baseline=_policy_spec(BASELINE_EXIT_POLICY),
-            challengers=tuple(_policy_spec(policy) for policy in challengers),
+            baseline=ScorePolicySpec(
+                SCORE_THRESHOLD_BASELINE_POLICY.key,
+                SCORE_THRESHOLD_BASELINE_POLICY.min_score,
+            ),
+            challengers=tuple(
+                ScorePolicySpec(policy.key, policy.min_score)
+                for policy in SCORE_THRESHOLD_CHALLENGER_POLICIES
+            ),
             taker_fee_bps_per_side=costs.taker_fee_bps_per_side,
             funding_cost_bps_per_8h=costs.funding_cost_bps_per_8h,
             bootstrap_iterations=DEFAULT_INFERENCE_SETTINGS.iterations,
@@ -465,39 +477,34 @@ def build_exit_policy_report(
         eligible_episodes=len(dataset.eligible_episodes),
         excluded_episodes=len(dataset.excluded_episodes),
         input_exclusion_reasons=_count_rows(exclusions),
-        policy_metrics=tuple(_metrics(policy, policy_trades) for policy in EXIT_POLICIES),
+        path_statuses=_count_rows(Counter(item.path.status for item in paths)),
+        policy_metrics=tuple(_metrics(policy, results) for policy in SCORE_THRESHOLD_POLICIES),
         paired_comparisons=tuple(
             _paired_comparison(
                 policy,
                 baseline_by_event,
                 {
-                    episode.pump_event_id: trades_by_policy_event[
-                        (policy.key, episode.pump_event_id)
-                    ]
+                    episode.pump_event_id: by_policy_event[(policy.key, episode.pump_event_id)]
                     for episode in dataset.eligible_episodes
                 },
             )
-            for policy in challengers
+            for policy in SCORE_THRESHOLD_CHALLENGER_POLICIES
         ),
-        exit_reasons=tuple(
-            PolicyExitReason(policy_key, exit_reason, count)
-            for (policy_key, exit_reason), count in sorted(exit_reason_counts.items())
-        ),
-        policy_trades=policy_trades,
+        episode_results=results,
         inference=inference,
         market_paths=paths,
     )
 
 
-def render_json(report: ExitPolicyReport) -> str:
-    return json.dumps(json_ready(asdict(report)), indent=2, sort_keys=True)
+def render_json(report: ScoreThresholdReport) -> str:
+    return json.dumps(json_ready(asdict(report)), indent=2, sort_keys=True, allow_nan=False)
 
 
-def render_markdown(report: ExitPolicyReport) -> str:
+def render_markdown(report: ScoreThresholdReport) -> str:
     manifest = report.manifest
     policies = (manifest.baseline, *manifest.challengers)
     lines = [
-        "# Pump Short Exit Policy Challenger Replay",
+        "# Pump Short Score Threshold Challenger Replay",
         "",
         f"Generated: {manifest.generated_at.isoformat()}",
         f"Code revision: `{manifest.code_revision}`",
@@ -511,7 +518,7 @@ def render_markdown(report: ExitPolicyReport) -> str:
         "",
         (
             f"> Formal inference status: `{report.inference.readiness.status}`. "
-            "This report never changes production exits or authorizes real trading."
+            "This report never changes production score settings or authorizes real trading."
         ),
         "",
         "## Registered family",
@@ -519,40 +526,12 @@ def render_markdown(report: ExitPolicyReport) -> str:
     ]
     lines.extend(
         markdown_table(
-            (
-                "Role",
-                "Policy",
-                "Version",
-                "Breakeven",
-                "No progress",
-                "Extension",
-                "Recent progress",
-                "Extension trail",
-                "Max hold by pump band",
-            ),
+            ("Role", "Policy", "Minimum score"),
             [
                 (
                     "baseline" if policy.key == manifest.baseline.key else "challenger",
                     policy.key,
-                    policy.version,
-                    "yes" if policy.protect_breakeven_after_activation else "no",
-                    (
-                        f"{policy.no_progress_minutes}m"
-                        if policy.no_progress_minutes is not None
-                        else "off"
-                    ),
-                    f"{policy.max_extension_minutes}m",
-                    (
-                        f"{policy.recent_progress_lookback_minutes}m"
-                        if policy.recent_progress_lookback_minutes is not None
-                        else "off"
-                    ),
-                    (
-                        format_percentage(policy.extension_trail_pct, missing="off")
-                        if policy.extension_trail_pct is not None
-                        else "off"
-                    ),
-                    "/".join(f"{value}m" for value in policy.maximum_hold_by_pump_band_minutes),
+                    policy.min_score,
                 )
                 for policy in policies
             ],
@@ -566,8 +545,7 @@ def render_markdown(report: ExitPolicyReport) -> str:
                 ("Replay", manifest.virtual_strategy_version),
                 ("Selection", manifest.selection_model_version),
                 ("Entry", manifest.entry_model_version),
-                ("Exit engine", manifest.exit_model_version),
-                ("Exit family", manifest.exit_policy_family_version),
+                ("Exit", manifest.exit_model_version),
                 ("Costs", manifest.cost_model_version),
                 ("Market path", manifest.market_path_version),
                 ("Inference", manifest.inference_version),
@@ -581,7 +559,7 @@ def render_markdown(report: ExitPolicyReport) -> str:
                     format_percentage(manifest.bootstrap_confidence_level * 100),
                 ),
                 ("Holm family alpha", format_number(manifest.holm_family_alpha, decimals=4)),
-                ("Path completeness", manifest.path_policy),
+                ("No trigger", manifest.no_trigger_policy),
             ],
         )
     )
@@ -610,20 +588,30 @@ def render_markdown(report: ExitPolicyReport) -> str:
             [(row.name, row.count) for row in report.input_exclusion_reasons],
         )
     )
-    lines.extend(["", "## Policy metrics", ""])
+    lines.extend(["", "## Market paths", ""])
+    lines.extend(
+        markdown_table(
+            ("Status", "Paths"),
+            [(row.name, row.count) for row in report.path_statuses],
+        )
+    )
+    lines.extend(["", "## Score policy metrics", ""])
     lines.extend(
         markdown_table(
             (
                 "Policy",
+                "Score",
                 "Resolved",
+                "Triggered",
+                "Cash",
                 "Unresolved",
-                "Mean net",
+                "Trade rate",
+                "Episode net",
+                "Traded net",
                 "Total P&L",
                 "Profit factor",
                 "Win rate",
                 "Initial SL",
-                "Protected stop",
-                "Duration",
                 "MFE",
                 "MAE",
                 "Captured MFE",
@@ -632,15 +620,21 @@ def render_markdown(report: ExitPolicyReport) -> str:
             [
                 (
                     row.policy_key,
+                    row.min_score,
                     row.resolved_episodes,
-                    row.unresolved_episodes,
-                    format_percentage(row.mean_net_return_pct, missing="n/a"),
+                    row.triggered,
+                    row.cash,
+                    row.unresolved,
+                    format_percentage(row.trade_rate_pct, missing="n/a"),
+                    format_percentage(row.mean_episode_net_return_pct, missing="n/a"),
+                    format_percentage(
+                        row.conditional_trade_net_return_pct,
+                        missing="n/a",
+                    ),
                     format_number(row.total_net_pnl_usd, suffix=" USD", missing="n/a"),
                     format_number(row.profit_factor, missing="n/a"),
                     format_percentage(row.win_rate_pct, missing="n/a"),
                     format_percentage(row.initial_stop_rate_pct, missing="n/a"),
-                    format_percentage(row.protected_stop_rate_pct, missing="n/a"),
-                    format_number(row.mean_duration_minutes, suffix="m", missing="n/a"),
                     format_percentage(row.mean_mfe_pct, missing="n/a"),
                     format_percentage(row.mean_mae_pct, missing="n/a"),
                     format_percentage(row.mean_captured_move_pct, missing="n/a"),
@@ -677,8 +671,7 @@ def render_markdown(report: ExitPolicyReport) -> str:
                 "Improved",
                 "Worsened",
                 "Same",
-                "Different exit",
-                "Duration delta",
+                "Different decision",
             ),
             [
                 (
@@ -690,22 +683,10 @@ def render_markdown(report: ExitPolicyReport) -> str:
                     row.improved_episodes,
                     row.worsened_episodes,
                     row.unchanged_episodes,
-                    row.different_exit_reason_episodes,
-                    format_number(
-                        row.mean_duration_delta_minutes,
-                        suffix="m",
-                        missing="n/a",
-                    ),
+                    row.different_decision_episodes,
                 )
                 for row in report.paired_comparisons
             ],
-        )
-    )
-    lines.extend(["", "## Exit reasons", ""])
-    lines.extend(
-        markdown_table(
-            ("Policy", "Exit reason", "Episodes"),
-            [(row.policy_key, row.exit_reason, row.count) for row in report.exit_reasons],
         )
     )
     lines.extend(["", "## Formal cluster inference", ""])
@@ -794,31 +775,25 @@ def render_markdown(report: ExitPolicyReport) -> str:
                 "Base",
                 "Policy",
                 "Status",
+                "Selected score",
+                "Exchange",
                 "Exit",
-                "Net",
-                "MFE",
-                "Captured",
-                "Duration",
+                "Episode net",
                 "Error",
             ),
             [
                 (
-                    row.trade.pump_event_id,
-                    row.trade.base,
+                    row.pump_event_id,
+                    row.base,
                     row.policy_key,
-                    row.trade.status,
-                    row.trade.exit_reason or "n/a",
-                    format_percentage(row.trade.net_return_pct, missing="n/a"),
-                    format_percentage(row.trade.mfe_pct, missing="n/a"),
-                    format_percentage(row.trade.captured_move_pct, missing="n/a"),
-                    format_number(
-                        row.trade.duration_minutes,
-                        suffix="m",
-                        missing="n/a",
-                    ),
-                    row.trade.error or "",
+                    row.status,
+                    row.selected_score if row.selected_score is not None else "n/a",
+                    row.exchange or "cash",
+                    row.trade.exit_reason if row.trade and row.trade.exit_reason else "no entry",
+                    format_percentage(row.episode_net_return_pct, missing="n/a"),
+                    row.error or "",
                 )
-                for row in report.policy_trades
+                for row in report.episode_results
             ],
         )
     )
@@ -827,13 +802,13 @@ def render_markdown(report: ExitPolicyReport) -> str:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Replay the pre-registered pump-short exit-policy family"
+        description="Replay the pre-registered pump-short score-threshold family"
     )
     parser.add_argument(
         "--since",
         type=parse_utc_datetime,
-        default=EXIT_POLICY_COHORT_START,
-        help="inclusive UTC cutoff; fixed to the registered exit-policy cohort",
+        default=SCORE_THRESHOLD_COHORT_START,
+        help="inclusive UTC cutoff; fixed to the registered score-threshold cohort",
     )
     parser.add_argument(
         "--until",
@@ -874,24 +849,24 @@ def build_parser() -> argparse.ArgumentParser:
 async def _run(args: argparse.Namespace) -> str:
     from .exchange_registry import EXCHANGE_FACTORIES
     from .replay_repository import ReplayRepository
-    from .virtual_market import fetch_exit_policy_paths
+    from .virtual_market import fetch_decision_market_paths
 
     generated_at = datetime.now(UTC)
     until = resolve_report_until(
         args.until,
         generated_at,
-        cohort_start=EXIT_POLICY_COHORT_START,
-        report_label="exit-policy",
+        cohort_start=SCORE_THRESHOLD_COHORT_START,
+        report_label="score-threshold",
     )
     db_url = os.getenv("DATABASE_URL")
     if not db_url:
-        raise ValueError("DATABASE_URL is required for virtual-exit-policy-report")
+        raise ValueError("DATABASE_URL is required for virtual-score-challenger-report")
     if not args.code_revision:
         raise ValueError("--code-revision or SCHURFER_GIT_SHA is required")
     filters = ReplayFilters(
         since=args.since,
         until=until,
-        strategy_versions=tuple(args.strategy_version or EXIT_POLICY_STRATEGY_VERSIONS),
+        strategy_versions=tuple(args.strategy_version or SCORE_THRESHOLD_STRATEGY_VERSIONS),
         resolver_version=args.resolver_version,
         required_horizons=DEFAULT_REPLAY_HORIZONS,
         allow_fallback=args.allow_fallback,
@@ -906,8 +881,12 @@ async def _run(args: argparse.Namespace) -> str:
     finally:
         await repository.close()
     dataset = build_replay_dataset(decisions, filters)
-    paths = await fetch_exit_policy_paths(dataset.eligible_episodes, EXCHANGE_FACTORIES)
-    report = build_exit_policy_report(
+    selected = selected_policy_decisions(
+        dataset.eligible_episodes,
+        SCORE_THRESHOLD_POLICIES,
+    )
+    paths = await fetch_decision_market_paths(selected, EXCHANGE_FACTORIES)
+    report = build_score_threshold_report(
         dataset,
         filters,
         paths,

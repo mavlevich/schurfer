@@ -555,6 +555,28 @@ the new cohort separately.
   withheld before the first 100 episodes are completely paired across at least 30
   asset clusters. A passing policy advances only to live shadow.
 
+- Score-threshold challenger replay: after the HYP-006 cohort has accumulated closed
+  episodes with exact-anchor 8-hour outcomes, compare score 6 against the registered
+  score 4 and 5 family:
+
+  ```bash
+  make prod-virtual-score-challenger-report
+  make prod-virtual-score-challenger-report \
+    ARGS="--until 2026-08-10T00:00:00Z --format json" \
+    > backups/reports/score-thresholds-2026-08-10.json
+  ```
+
+  The default cohort begins at `2026-07-31T00:00:00Z`. Running the command before
+  that time exits with a concise usage error and does not query the database. Each
+  policy selects its first recorded score crossing that passes the recorded
+  market-quality gate. A threshold never reached is zero-return cash. Inspect exact
+  selected-decision path coverage, unresolved policies, cluster concentration, trade
+  rate, net expectancy, profit factor, drawdown, initial stops, captured MFE, and
+  paired deltas. Formal inference is withheld before 100 fully paired episodes and 30
+  asset clusters. A passing result is only a live-shadow candidate. Score 7 and 8
+  belong to the live multi-variant shadow evaluator because baseline opens
+  right-censor their later recorded decisions.
+
 - Candle anomaly research: after the registered cohort has accumulated closed episodes
   with exact-anchor 8-hour outcomes, derive HYP-005 features and join them to the
   baseline virtual replay:

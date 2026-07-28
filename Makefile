@@ -1,5 +1,5 @@
-.PHONY: help install install-golangci-lint dev dev-init dev-stop dev-reset dev-logs dev-test migrate measurement-report exchange-coverage-report episode-replay virtual-strategy-report virtual-entry-challenger-report virtual-threshold-challenger-report virtual-exit-policy-report candle-anomaly-report derivatives-context-report decision-quality-report test lint ci-lint format clean security deadcode check verify verify-docker \
-        prod-deploy prod-measurement-report prod-exchange-coverage-report prod-episode-replay prod-virtual-strategy-report prod-virtual-entry-challenger-report prod-virtual-threshold-challenger-report prod-virtual-exit-policy-report prod-candle-anomaly-report prod-derivatives-context-report prod-decision-quality-report prod-logs prod-backup prod-restore-local prod-health
+.PHONY: help install install-golangci-lint dev dev-init dev-stop dev-reset dev-logs dev-test migrate measurement-report exchange-coverage-report episode-replay virtual-strategy-report virtual-entry-challenger-report virtual-threshold-challenger-report virtual-exit-policy-report virtual-score-challenger-report candle-anomaly-report derivatives-context-report decision-quality-report test lint ci-lint format clean security deadcode check verify verify-docker \
+        prod-deploy prod-measurement-report prod-exchange-coverage-report prod-episode-replay prod-virtual-strategy-report prod-virtual-entry-challenger-report prod-virtual-threshold-challenger-report prod-virtual-exit-policy-report prod-virtual-score-challenger-report prod-candle-anomaly-report prod-derivatives-context-report prod-decision-quality-report prod-logs prod-backup prod-restore-local prod-health
 
 GOLANGCI_LINT_VERSION = v2.1.6
 
@@ -30,6 +30,7 @@ help:
 	@echo "  make virtual-entry-challenger-report  Compare registered entry challengers"
 	@echo "  make virtual-threshold-challenger-report  Compare registered entry floors"
 	@echo "  make virtual-exit-policy-report  Compare registered exit policies"
+	@echo "  make virtual-score-challenger-report  Compare registered score thresholds"
 	@echo "  make candle-anomaly-report  Describe registered candle anomaly buckets"
 	@echo "  make derivatives-context-report  Probe recoverable derivatives history"
 	@echo "  make decision-quality-report  Compare score and component quality"
@@ -47,6 +48,7 @@ help:
 	@echo "  make prod-virtual-entry-challenger-report  Production entry challenger replay"
 	@echo "  make prod-virtual-threshold-challenger-report  Production entry-floor replay"
 	@echo "  make prod-virtual-exit-policy-report  Production exit-policy replay"
+	@echo "  make prod-virtual-score-challenger-report  Production score-threshold replay"
 	@echo "  make prod-candle-anomaly-report  Production candle anomaly research report"
 	@echo "  make prod-derivatives-context-report  Production derivatives coverage probe"
 	@echo "  make prod-decision-quality-report  Production score diagnostics"
@@ -149,6 +151,14 @@ virtual-threshold-challenger-report:
 virtual-exit-policy-report:
 	@DATABASE_URL="$${DATABASE_URL:-postgresql://schurfer:schurfer_dev@localhost:5432/schurfer}" \
 		uv run --package schurfer-analytics virtual-exit-policy-report \
+		--code-revision="$$(git rev-parse HEAD)" \
+		$$(test -z "$$(git status --porcelain)" \
+			&& printf '%s' '--no-working-tree-dirty' \
+			|| printf '%s' '--working-tree-dirty') $(ARGS)
+
+virtual-score-challenger-report:
+	@DATABASE_URL="$${DATABASE_URL:-postgresql://schurfer:schurfer_dev@localhost:5432/schurfer}" \
+		uv run --package schurfer-analytics virtual-score-challenger-report \
 		--code-revision="$$(git rev-parse HEAD)" \
 		$$(test -z "$$(git status --porcelain)" \
 			&& printf '%s' '--no-working-tree-dirty' \
@@ -374,6 +384,14 @@ prod-virtual-exit-policy-report:
 			&& printf '%s' '--no-working-tree-dirty' \
 			|| printf '%s' '--working-tree-dirty') $(ARGS)
 
+prod-virtual-score-challenger-report:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
+	@$(_PROD) run --rm --no-deps --entrypoint virtual-score-challenger-report analytics \
+		--code-revision="$$(git rev-parse HEAD)" \
+		$$(test -z "$$(git status --porcelain)" \
+			&& printf '%s' '--no-working-tree-dirty' \
+			|| printf '%s' '--working-tree-dirty') $(ARGS)
+
 prod-candle-anomaly-report:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
 	@$(_PROD) run --rm --no-deps --entrypoint candle-anomaly-report analytics \
@@ -436,6 +454,7 @@ verify-docker: verify
 	docker run --rm --entrypoint virtual-entry-challenger-report schurfer-analytics:ci --help
 	docker run --rm --entrypoint virtual-threshold-challenger-report schurfer-analytics:ci --help
 	docker run --rm --entrypoint virtual-exit-policy-report schurfer-analytics:ci --help
+	docker run --rm --entrypoint virtual-score-challenger-report schurfer-analytics:ci --help
 	docker run --rm --entrypoint candle-anomaly-report schurfer-analytics:ci --help
 	docker run --rm --entrypoint derivatives-context-report schurfer-analytics:ci --help
 	docker run --rm --entrypoint decision-quality-report schurfer-analytics:ci --help

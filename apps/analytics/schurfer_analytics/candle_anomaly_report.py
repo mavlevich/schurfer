@@ -34,11 +34,15 @@ from .replay import (
     build_replay_dataset,
 )
 from .reporting import (
+    ReportWindowNotStartedError,
     format_number,
     format_percentage,
     json_ready,
     markdown_table,
     parse_utc_datetime,
+)
+from .reporting import (
+    resolve_report_until as resolve_registered_report_until,
 )
 from .virtual_strategy import (
     DEFAULT_COSTS,
@@ -61,10 +65,6 @@ CANDLE_ANOMALY_BUCKETS = (
     "grind__strong_reversal",
     "grind__weak_reversal",
 )
-
-
-class ReportWindowNotStartedError(ValueError):
-    """Raised when a report cutoff precedes the registered cohort."""
 
 
 @dataclass(frozen=True)
@@ -505,13 +505,12 @@ def resolve_report_until(
     requested_until: datetime | None,
     generated_at: datetime,
 ) -> datetime:
-    until = requested_until or generated_at
-    if until <= CANDLE_ANOMALY_COHORT_START:
-        raise ReportWindowNotStartedError(
-            "the registered HYP-005 cohort starts at "
-            f"{CANDLE_ANOMALY_COHORT_START.isoformat()}; retry after that time"
-        )
-    return until
+    return resolve_registered_report_until(
+        requested_until,
+        generated_at,
+        cohort_start=CANDLE_ANOMALY_COHORT_START,
+        report_label="HYP-005",
+    )
 
 
 async def _run(args: argparse.Namespace) -> str:
