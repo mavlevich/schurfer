@@ -158,7 +158,7 @@ function SignalsCard({ signals }: { signals: SignalsResponse }) {
             {[!signals.data_quality.oi && 'OI', !signals.data_quality.funding && 'Funding']
               .filter(Boolean)
               .join(', ')}
-            {' — affected components defaulted to 0 pts'}
+            {'. Affected components defaulted to 0 pts'}
           </p>
         )}
       </CardContent>
