@@ -7,10 +7,18 @@ import pytest
 from schurfer_analytics.ohlcv import TIMEFRAME_MS, Candle
 from schurfer_analytics.replay import ReplayDecision, ReplayEpisode
 from schurfer_analytics.virtual_strategy import (
+    BASELINE_EXIT_POLICY,
+    BREAKEVEN_EXIT_POLICY,
+    COMBINED_EXIT_POLICY,
+    EXIT_POLICIES,
+    NO_PROGRESS_EXIT_POLICY,
+    RECENT_PROGRESS_EXTENSION_EXIT_POLICY,
     CostParameters,
     ExitParameters,
+    ExitPolicy,
     MarketPath,
     exit_parameters,
+    expected_path_bounds,
     market_path_fingerprint,
     select_episode_decision,
     simulate_decision,
@@ -71,11 +79,10 @@ def _candles(
     *,
     first: tuple[float, float, float, float] = (100.0, 100.0, 100.0, 100.0),
     close: float = 90.0,
+    exit_policy: ExitPolicy = BASELINE_EXIT_POLICY,
 ) -> tuple[Candle, ...]:
-    params = exit_parameters(decision.pump_pct)
-    decision_ms = int(decision.ts.timestamp() * 1000)
-    start_ms = ((decision_ms + TIMEFRAME_MS - 1) // TIMEFRAME_MS) * TIMEFRAME_MS
-    count = params.max_hold_min // 5
+    start_ms, end_ms = expected_path_bounds(decision, exit_policy=exit_policy)
+    count = (end_ms - start_ms) // TIMEFRAME_MS
     rows = [Candle(start_ms, *first, 1.0)]
     rows.extend(
         Candle(
@@ -131,6 +138,45 @@ def test_exit_parameters_match_all_production_bands(
 def test_cost_parameters_reject_invalid_values(kwargs: dict[str, float]) -> None:
     with pytest.raises(ValueError):
         CostParameters(**kwargs)
+
+
+def test_exit_policy_family_is_versioned_unique_and_bounded() -> None:
+    keys = [policy.key for policy in EXIT_POLICIES]
+    versions = [policy.version for policy in EXIT_POLICIES]
+
+    assert keys[0] == "baseline"
+    assert len(keys) == len(set(keys))
+    assert len(versions) == len(set(versions))
+    assert max(policy.maximum_hold_minutes(exit_parameters(40)) for policy in EXIT_POLICIES) == 300
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"key": "", "version": "v1"},
+        {"key": "test", "version": ""},
+        {"key": "test", "version": "v1", "no_progress_minutes": 60},
+        {"key": "test", "version": "v1", "max_extension_minutes": -5},
+        {
+            "key": "test",
+            "version": "v1",
+            "no_progress_minutes": 60,
+            "max_extension_minutes": 60,
+        },
+        {
+            "key": "test",
+            "version": "v1",
+            "max_extension_minutes": 60,
+            "minimum_progress_pct": 0.5,
+            "recent_progress_lookback_minutes": 30,
+        },
+    ],
+)
+def test_exit_policy_rejects_incomplete_or_unbounded_configuration(
+    kwargs: dict[str, object],
+) -> None:
+    with pytest.raises(ValueError):
+        ExitPolicy(**kwargs)  # type: ignore[arg-type]
 
 
 def test_selection_prefers_first_recorded_open_and_never_future_outcome() -> None:
@@ -205,6 +251,193 @@ def test_max_hold_includes_fees_funding_and_liquidity_costs() -> None:
     assert trade.net_return_pct == pytest.approx(9.71125)
     assert trade.net_pnl_usd == pytest.approx(4.855625)
     assert trade.classification == "skipped_would_have_won"
+
+
+def test_baseline_policy_matches_locked_golden_trade() -> None:
+    decision = _decision()
+    episode = _episode(decision)
+    path = _path(decision)
+    costs = CostParameters(taker_fee_bps_per_side=10, funding_cost_bps_per_8h=5)
+
+    implicit = simulate_episode(episode, path, costs=costs)
+    explicit = simulate_episode(
+        episode,
+        path,
+        costs=costs,
+        exit_policy=BASELINE_EXIT_POLICY,
+    )
+
+    assert implicit == explicit
+    assert implicit.status == "complete"
+    assert implicit.selection_reason == "first_decision_counterfactual"
+    assert implicit.exit_reason == "max_hold"
+    assert implicit.entry_price == 100.0
+    assert implicit.exit_price == 90.0
+    assert implicit.entry_delay_seconds == 240.0
+    assert implicit.duration_minutes == 180.0
+    assert implicit.gross_return_pct == 10.0
+    assert implicit.net_return_pct == pytest.approx(9.71125)
+    assert implicit.mfe_pct == 10.0
+    assert implicit.mae_pct == 0.0
+    assert implicit.captured_move_pct == 100.0
+    assert implicit.classification == "skipped_would_have_won"
+
+
+def test_breakeven_policy_protects_cost_adjusted_zero_after_activation() -> None:
+    decision = _decision()
+    candles = list(
+        _candles(
+            decision,
+            first=(100.0, 100.0, 91.0, 92.0),
+            close=95.0,
+            exit_policy=BREAKEVEN_EXIT_POLICY,
+        )
+    )
+    candles[1] = replace(candles[1], open=99.0, high=100.0, low=95.0, close=99.0)
+
+    trade = simulate_episode(
+        _episode(decision),
+        _path(decision, tuple(candles)),
+        costs=CostParameters(taker_fee_bps_per_side=10, funding_cost_bps_per_8h=5),
+        exit_policy=BREAKEVEN_EXIT_POLICY,
+    )
+
+    assert trade.exit_reason == "protected_stop"
+    assert trade.duration_minutes == 5
+    assert trade.net_return_pct == pytest.approx(0.0, abs=1e-12)
+
+
+def test_no_progress_policy_exits_early_without_favorable_extreme() -> None:
+    decision = _decision()
+    candles = _candles(
+        decision,
+        close=100.0,
+        exit_policy=NO_PROGRESS_EXIT_POLICY,
+    )
+
+    trade = simulate_episode(
+        _episode(decision),
+        _path(decision, candles),
+        exit_policy=NO_PROGRESS_EXIT_POLICY,
+    )
+
+    assert trade.exit_reason == "no_progress"
+    assert trade.duration_minutes == 60
+
+
+def test_no_progress_policy_remains_bounded_while_price_keeps_improving() -> None:
+    decision = _decision()
+    candles = list(
+        _candles(
+            decision,
+            close=99.0,
+            exit_policy=NO_PROGRESS_EXIT_POLICY,
+        )
+    )
+    for index, candle in enumerate(candles):
+        price = 100.0 - index * 0.3
+        candles[index] = replace(
+            candle,
+            open=price,
+            high=price,
+            low=price,
+            close=price,
+        )
+
+    trade = simulate_episode(
+        _episode(decision),
+        _path(decision, tuple(candles)),
+        exit_policy=NO_PROGRESS_EXIT_POLICY,
+    )
+
+    assert trade.exit_reason == "absolute_max_hold"
+    assert trade.duration_minutes == 300
+
+
+def test_subthreshold_noise_does_not_reset_no_progress_clock() -> None:
+    decision = _decision()
+    candles = list(
+        _candles(
+            decision,
+            close=100.0,
+            exit_policy=NO_PROGRESS_EXIT_POLICY,
+        )
+    )
+    for index in range(12):
+        price = 100.0 - index * 0.03
+        candles[index] = replace(
+            candles[index],
+            open=price,
+            high=price,
+            low=price,
+            close=price,
+        )
+
+    trade = simulate_episode(
+        _episode(decision),
+        _path(decision, tuple(candles)),
+        exit_policy=NO_PROGRESS_EXIT_POLICY,
+    )
+
+    assert trade.exit_reason == "no_progress"
+    assert trade.duration_minutes == 60
+
+
+def test_recent_progress_policy_extends_once_and_tightens_trail() -> None:
+    decision = _decision()
+    candles = list(
+        _candles(
+            decision,
+            close=99.0,
+            exit_policy=RECENT_PROGRESS_EXTENSION_EXIT_POLICY,
+        )
+    )
+    for index, candle in enumerate(candles):
+        price = 100.0 - index * 0.3
+        candles[index] = replace(
+            candle,
+            open=price,
+            high=price,
+            low=price,
+            close=price,
+        )
+
+    trade = simulate_episode(
+        _episode(decision),
+        _path(decision, tuple(candles)),
+        exit_policy=RECENT_PROGRESS_EXTENSION_EXIT_POLICY,
+    )
+
+    assert trade.exit_reason == "absolute_max_hold"
+    assert trade.duration_minutes == 240
+
+
+def test_recent_progress_policy_closes_at_baseline_boundary_when_stale() -> None:
+    decision = _decision()
+    candles = list(
+        _candles(
+            decision,
+            close=95.0,
+            exit_policy=RECENT_PROGRESS_EXTENSION_EXIT_POLICY,
+        )
+    )
+    candles[0] = replace(candles[0], open=100, high=100, low=99, close=99)
+
+    trade = simulate_episode(
+        _episode(decision),
+        _path(decision, tuple(candles)),
+        exit_policy=RECENT_PROGRESS_EXTENSION_EXIT_POLICY,
+    )
+
+    assert trade.exit_reason == "max_hold_no_recent_progress"
+    assert trade.duration_minutes == 180
+
+
+def test_combined_policy_is_bounded_and_protects_breakeven() -> None:
+    assert COMBINED_EXIT_POLICY.protect_breakeven_after_activation is True
+    assert COMBINED_EXIT_POLICY.no_progress_minutes == 60
+    assert COMBINED_EXIT_POLICY.max_extension_minutes == 120
+    assert COMBINED_EXIT_POLICY.minimum_progress_pct == 0.5
 
 
 def test_missing_bar_fails_closed_instead_of_shortening_hold() -> None:
