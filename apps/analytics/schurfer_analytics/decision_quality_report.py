@@ -48,6 +48,7 @@ from .reporting import (
     markdown_table,
     normalize_code_revision,
     parse_utc_datetime,
+    profit_factor,
 )
 from .virtual_market import (
     DECISION_MARKET_PATH_VERSION,
@@ -63,6 +64,7 @@ from .virtual_strategy import (
     CostParameters,
     MarketPath,
     VirtualTrade,
+    max_sequential_drawdown_usd,
     simulate_decision,
 )
 
@@ -309,27 +311,6 @@ def _evaluate_policy(
     )
 
 
-def _max_drawdown_usd(trades: tuple[VirtualTrade, ...]) -> float | None:
-    ordered = sorted(
-        (
-            trade
-            for trade in trades
-            if trade.net_pnl_usd is not None and math.isfinite(trade.net_pnl_usd)
-        ),
-        key=lambda trade: (trade.decision_at, trade.pump_event_id),
-    )
-    if not ordered:
-        return None
-    equity = 0.0
-    peak = 0.0
-    drawdown = 0.0
-    for trade in ordered:
-        equity += trade.net_pnl_usd or 0.0
-        peak = max(peak, equity)
-        drawdown = max(drawdown, peak - equity)
-    return drawdown
-
-
 def _policy_metrics(
     policy: ScorePolicy,
     results: tuple[PolicyEpisodeResult, ...],
@@ -377,8 +358,6 @@ def _policy_metrics(
     returns = [trade.net_return_pct for trade in trades if trade.net_return_pct is not None]
     wins = [value for value in returns if value > 0]
     losses = [value for value in returns if value <= 0]
-    profits = sum(wins)
-    loss_magnitude = abs(sum(losses))
     pnl_values = [
         result.episode_net_pnl_usd for result in selected if result.episode_net_pnl_usd is not None
     ]
@@ -402,10 +381,10 @@ def _policy_metrics(
         mean_trade_net_return_pct=_mean(returns),
         median_trade_net_return_pct=median(returns) if returns else None,
         win_rate_pct=sum(value > 0 for value in returns) / len(returns) * 100 if returns else None,
-        profit_factor=profits / loss_magnitude if loss_magnitude > 0 else None,
+        profit_factor=profit_factor(returns),
         avg_win_pct=_mean(wins),
         avg_loss_pct=_mean(losses),
-        max_sequential_drawdown_usd=_max_drawdown_usd(trades),
+        max_sequential_drawdown_usd=max_sequential_drawdown_usd(trades),
         initial_stop_rate_pct=(
             sum(trade.exit_reason == "initial_sl" for trade in trades) / len(trades) * 100
             if trades

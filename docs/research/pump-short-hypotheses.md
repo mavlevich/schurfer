@@ -243,6 +243,20 @@ from the decision-quality analysis by score bucket; then use fractional (e.g. 1/
 changes required margin, margin ROE, and liquidation distance. Choose leverage only
 after notional sizing, as a risk/implementation constraint. Belongs to Phase 4.
 
+Position sizing, leverage, and adding to a position are separate experiments:
+
+- size notional from a conservative lower-bound edge estimate, available liquidity,
+  per-episode risk, portfolio heat, and strategy drawdown;
+- choose the lowest leverage that satisfies the margin budget and liquidation buffer.
+  Never treat higher leverage as evidence of a better strategy;
+- test any scale-in policy as a locked tranche state machine with one maximum
+  episode-loss budget. Every tranche needs a fresh spread/depth/impact check. Do not
+  average into an adverse move merely because price moved against the first entry;
+- evaluate funding, OI, long/short ratios, liquidations, acceleration, and
+  cross-venue confirmation first as point-in-time regime or entry features. They may
+  affect eligibility or calibrated edge only after out-of-sample evidence, not act as
+  arbitrary multipliers for size or leverage.
+
 ---
 
 ## HYP-005 — a concentrated blow-off mean-reverts differently than a grind
@@ -317,3 +331,46 @@ HYP-005 report query:
 
 Do not build a candle-anomaly detector as a live signal before this split shows the
 separation.
+
+---
+
+## HYP-006 - score 6 may be over-selective
+
+The discovery-only decision-quality report compares score policies on historical
+episodes and can suggest where the cutoff may be wrong. It cannot validate a new
+cutoff on the same data. This experiment therefore freezes a small prospective
+family before querying its outcomes.
+
+Registered contract (`score_threshold_downward_family_v1`):
+
+- the untouched confirmation cohort starts at `2026-07-31T00:00:00Z`;
+- use only `pump_short_v1_market_quality` decisions whose parent episode is eligible
+  under the replay protocol and has a complete exact-anchor 8-hour outcome;
+- keep score 6 as the baseline and compare score 4 and 5 as one registered family.
+  Do not add, remove, or tune thresholds after the cohort begins;
+- for each policy, select the first chronological recorded decision whose score
+  reaches the threshold and whose recorded market-quality requirement passes. Use
+  only the decision-time config and liquidity snapshot;
+- a threshold never reached contributes a zero-return cash episode;
+- enter at the next complete exact-venue 5-minute open and reuse the locked baseline
+  exit, taker-fee, funding, and decision-time liquidity-impact models. A missing
+  selected-decision path or cost input remains unresolved;
+- all policies share one `pump_event_id` observation. Repeated decisions do not
+  increase N, and repeated episodes of the same asset remain one bootstrap cluster;
+- formal inference uses the first 100 chronological eligible episodes, at least 30
+  asset clusters, 10,000 deterministic whole-cluster bootstrap iterations, ordinary
+  95% expectancy intervals, Holm correction at family alpha 0.05, conservative
+  97.5% Bonferroni paired intervals, and top-five cluster sensitivity;
+- a challenger can become a live-shadow candidate only when its own 95% expectancy
+  lower bound is positive, its paired 97.5% lower bound versus score 6 is positive,
+  the Holm-adjusted paired test rejects at family alpha 0.05, and its minimum
+  leave-one-top-cluster-out expectancy remains positive;
+- this report cannot change `SCORE_THRESHOLD`, place an order, or authorize real
+  trading. Any passing policy needs a new live-shadow and out-of-sample cohort.
+
+Score 7 and 8 are intentionally outside this family. The baseline execution stops
+recording later decisions after it opens at score 6 or 7, so stricter thresholds are
+right-censored on exactly the episodes needed for a fair comparison. Requiring all
+four original arms to resolve would make the locked first-100 sample potentially
+impossible to complete. Test score 7 and 8 in the live multi-variant shadow evaluator,
+where every policy keeps isolated state after the baseline opens.

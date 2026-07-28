@@ -12,6 +12,8 @@ from typing import TYPE_CHECKING, Any, Literal
 from .ohlcv import TIMEFRAME_MS, Candle, ceil_to_timeframe
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from .replay import ReplayDecision, ReplayEpisode
 
 VIRTUAL_STRATEGY_VERSION = "pump_short_v1_replay_v1"
@@ -188,6 +190,28 @@ class VirtualTrade:
     mae_pct: float | None
     captured_move_pct: float | None
     error: str | None = None
+
+
+def max_sequential_drawdown_usd(trades: Iterable[VirtualTrade]) -> float | None:
+    """Return the chronological independent-trade P&L drawdown proxy."""
+    ordered = sorted(
+        (
+            trade
+            for trade in trades
+            if trade.net_pnl_usd is not None and math.isfinite(trade.net_pnl_usd)
+        ),
+        key=lambda trade: (trade.decision_at, trade.pump_event_id),
+    )
+    if not ordered:
+        return None
+    equity = 0.0
+    peak = 0.0
+    drawdown = 0.0
+    for trade in ordered:
+        equity += trade.net_pnl_usd or 0.0
+        peak = max(peak, equity)
+        drawdown = max(drawdown, peak - equity)
+    return drawdown
 
 
 def exit_parameters(pump_pct: float | None) -> ExitParameters:

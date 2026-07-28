@@ -196,6 +196,14 @@ manifest, and input fingerprint are retained together.
   four-hour warm-up, prior-only ATR(14), prior-only volume z-score(48), and the locked
   60%/3-ATR blow-off plus 1-ATR/35% reversal buckets. This report is descriptive;
   production use requires a separately registered out-of-sample challenger.
+- `2026-07-28`: the HYP-006 `score_threshold_downward_family_v1` was frozen before its
+  first
+  outcome query. Its prospective cohort starts at `2026-07-31T00:00:00Z`, baseline
+  score is 6, and challengers are 4 and 5. A threshold never reached is a zero-return
+  cash episode. The two paired comparisons use the first-100, 30-cluster,
+  10,000-iteration, Holm, 97.5% Bonferroni, and cluster-sensitivity rules. Score 7
+  and 8 require independent live-shadow state because baseline opens censor later
+  decisions.
 
 ## Promotion boundary
 

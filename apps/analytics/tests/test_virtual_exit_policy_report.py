@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import sys
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
+import schurfer_analytics.virtual_exit_policy_report as exit_policy_report
 from schurfer_analytics.ohlcv import TIMEFRAME_MS, Candle
 from schurfer_analytics.replay import (
     ReplayDataset,
@@ -13,6 +15,7 @@ from schurfer_analytics.replay import (
     ReplayOutcome,
     build_replay_dataset,
 )
+from schurfer_analytics.reporting import ReportWindowNotStartedError
 from schurfer_analytics.virtual_exit_policy_report import (
     EXIT_POLICY_COHORT_START,
     EXIT_POLICY_INFERENCE_VERSION,
@@ -206,3 +209,31 @@ def test_parser_defaults_to_registered_cohort_and_requires_tree_state() -> None:
 
     assert args.since == EXIT_POLICY_COHORT_START
     assert args.working_tree_dirty is False
+
+
+def test_main_renders_precohort_failure_without_traceback(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    async def fail_before_cohort(_: object) -> str:
+        raise ReportWindowNotStartedError("cohort starts later")
+
+    monkeypatch.setattr(exit_policy_report, "_run", fail_before_cohort)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "virtual-exit-policy-report",
+            "--code-revision",
+            "abc123",
+            "--no-working-tree-dirty",
+        ],
+    )
+
+    with pytest.raises(SystemExit) as error:
+        exit_policy_report.main()
+
+    assert error.value.code == 2
+    stderr = capsys.readouterr().err
+    assert "error: cohort starts later" in stderr
+    assert "Traceback" not in stderr

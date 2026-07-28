@@ -4,7 +4,40 @@ from __future__ import annotations
 
 import argparse
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+
+class ReportWindowNotStartedError(ValueError):
+    """Raised when an exclusive report cutoff does not follow its cohort start."""
+
+
+def resolve_report_until(
+    requested_until: datetime | None,
+    generated_at: datetime,
+    *,
+    cohort_start: datetime,
+    report_label: str,
+) -> datetime:
+    """Resolve a report cutoff and fail with a concise cohort-aware error."""
+    until = requested_until or generated_at
+    if until <= cohort_start:
+        raise ReportWindowNotStartedError(
+            f"the registered {report_label} cohort starts at "
+            f"{cohort_start.isoformat()}; retry after that time"
+        )
+    return until
+
+
+def profit_factor(values: Iterable[float]) -> float | None:
+    """Return gross positive returns divided by absolute gross negative returns."""
+    normalized = tuple(values)
+    loss_magnitude = abs(sum(value for value in normalized if value <= 0))
+    if loss_magnitude == 0:
+        return None
+    return sum(value for value in normalized if value > 0) / loss_magnitude
 
 
 def normalize_code_revision(value: str) -> str:
