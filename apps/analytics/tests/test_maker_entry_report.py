@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -102,6 +103,7 @@ def test_report_exposes_upper_bound_limits_and_separate_fallback() -> None:
         generated_at=datetime(2026, 7, 29, tzinfo=UTC),
         code_revision="abc123",
         working_tree_dirty=False,
+        bootstrap_iterations=100,
     )
     payload = json.loads(render_json(report))
     markdown = render_markdown(report)
@@ -110,14 +112,27 @@ def test_report_exposes_upper_bound_limits_and_separate_fallback() -> None:
     assert report.metrics.primary_1m == 1
     assert report.metrics.fallback_5m == 0
     assert report.metrics.mean_fee_cost_bps == pytest.approx(10)
+    assert report.metrics.median_filled_trade_net_return_pct is not None
+    assert report.metrics.taker_1m_matched_episodes == 1
+    assert report.metrics.taker_1m_matched_mean_net_return_pct is not None
+    assert report.metrics.maker_vs_taker_1m_mean_delta_pct is not None
+    assert report.metrics.resolved_clusters == 1
+    assert report.metrics.largest_cluster == "base:ERA"
     assert report.timeframe_metrics[0].timeframe == "1m_primary"
     assert report.timeframe_metrics[0].episodes == 1
     assert report.timeframe_metrics[1].timeframe == "5m_fallback"
     assert report.timeframe_metrics[1].episodes == 0
     assert payload["manifest"]["unfilled_policy"] == "zero_return_cash"
     assert payload["manifest"]["comparison_interpretation"] == ("not_an_entry_only_causal_delta")
+    assert payload["manifest"]["fill_evidence_version"].endswith("_v2")
+    assert report.fill_evidence_metrics[2].evidence == "crossed_intrabar"
+    assert report.fill_evidence_metrics[2].fills == 1
+    assert report.sensitivity_metrics[0].potential_fills == 1
+    assert report.sensitivity_metrics[1].potential_fills == 1
     assert "does not prove post-only acceptance" in markdown
-    assert "not a pure causal estimate of entry execution alone" in markdown
+    assert "same-resolution" in markdown
+    assert "marketable_on_activation" in markdown
+    assert "Fixed fill sensitivities" in markdown
     assert "Discovery-only optimistic upper bound" in markdown
 
 
@@ -138,6 +153,7 @@ def test_report_rejects_scope_drift_and_duplicate_paths() -> None:
             generated_at=datetime(2026, 7, 29, tzinfo=UTC),
             code_revision="abc123",
             working_tree_dirty=False,
+            bootstrap_iterations=100,
         )
     with pytest.raises(ValueError, match="duplicate maker paths"):
         build_maker_entry_report(
@@ -147,7 +163,48 @@ def test_report_rejects_scope_drift_and_duplicate_paths() -> None:
             generated_at=datetime(2026, 7, 29, tzinfo=UTC),
             code_revision="abc123",
             working_tree_dirty=False,
+            bootstrap_iterations=100,
         )
+
+
+def test_activation_marketable_sensitivity_turns_fill_into_cash() -> None:
+    dataset, filters, paths = _inputs()
+    first = paths.one_minute.candles[0]
+    marketable_one = tuple(
+        (
+            Candle(
+                candle.ts_ms,
+                101 if index == 0 else candle.open,
+                candle.high,
+                candle.low,
+                candle.close,
+                candle.volume,
+            )
+            if index == 0
+            else candle
+        )
+        for index, candle in enumerate(paths.one_minute.candles)
+    )
+    assert first.ts_ms == marketable_one[0].ts_ms
+    marketable_paths = replace(
+        paths,
+        one_minute=replace(paths.one_minute, candles=marketable_one),
+    )
+    report = build_maker_entry_report(
+        dataset,
+        filters,
+        (marketable_paths,),
+        generated_at=datetime(2026, 7, 29, tzinfo=UTC),
+        code_revision="abc123",
+        working_tree_dirty=False,
+        bootstrap_iterations=100,
+    )
+
+    optimistic, strict, strict_touch = report.sensitivity_metrics
+    assert optimistic.potential_fills == 1
+    assert strict.potential_fills == 0
+    assert strict.mean_episode_net_return_pct == 0
+    assert strict_touch.potential_fills == 0
 
 
 def test_cli_requires_dirty_provenance() -> None:

@@ -526,8 +526,12 @@ Discovery contract (`recorded_best_ask_potential_fill_v1`):
   delta combines entry mechanics with finer exit resolution and is not a pure causal
   estimate of entry execution alone;
 - treat `high >= limit` only as a potential fill. Report an exact touch separately
-  from a cross above the limit. If the bar opens at or above the sell limit, report
-  post-only rejection risk separately. OHLCV cannot prove that the order rested;
+  from a cross above the limit. Split a bar that opens at or above the sell limit
+  into two point-in-time cases: `marketable_on_activation` when this is the first
+  active bar, and `crossed_between_bars` when at least one earlier active bar stayed
+  below the limit. Only the first case is direct post-only rejection risk. The
+  second case may represent an order that was already resting before a later gap,
+  but OHLCV still cannot prove a queue fill;
 - start exposure on the bar after the potential fill. The fill bar cannot trigger
   the stop or trailing exit because intrabar ordering is unknown;
 - treat an unfilled order as zero-return cash;
@@ -537,6 +541,27 @@ Discovery contract (`recorded_best_ask_potential_fill_v1`):
 - report potential-fill rate, net return including cash, conditional filled-trade
   net, matched taker baseline, missed baseline winners, initial stops, stops within
   30 minutes after fill, costs, path coverage, and one-minute versus fallback counts.
+
+Validation diagnostics are fixed after the first upper-bound read and do not change
+the registered entry price or timeout:
+
+- retain the original five-minute taker baseline for continuity, and add a
+  same-resolution one-minute taker control entered at the first complete
+  post-decision one-minute open with taker fees and recorded entry/exit impact;
+- report fill-bar index, fill delay, mean and median economics by fill-evidence
+  class;
+- publish two defensive sensitivities alongside the optimistic bound: treat
+  `marketable_on_activation` as rejected cash, then additionally treat exact touches
+  as cash;
+- publish asset-cluster count, largest-cluster share, a descriptive 95% whole-asset
+  cluster bootstrap interval, expectancy after removing the largest cluster, and
+  the weakest leave-one-cluster-out expectancy across every asset.
+
+These validation diagnostics use the already inspected discovery cohort and remain
+post-hoc sensitivity analysis. They cannot establish a confirmatory edge. A paper
+post-only simulator is justified only if the defensive economics remain positive
+against the one-minute taker control, survive the largest-cluster exclusion, retain
+a viable fill rate, and do not create unacceptable stop or drawdown behavior.
 
 Do not add ATR offsets or tune the limit after reading this report. A positive result
 does not validate maker execution. It can only justify a new paper simulator that

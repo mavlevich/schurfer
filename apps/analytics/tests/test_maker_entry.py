@@ -100,7 +100,7 @@ def test_potential_fill_never_uses_decision_candle_or_timeout_boundary() -> None
         Candle(timeout_end, 100, 200, 50, 100, 1),
     )
 
-    fill, evidence = potential_fill(
+    fill, evidence, fill_bar_index = potential_fill(
         candles,
         decision,
         limit_price=100.1,
@@ -109,25 +109,26 @@ def test_potential_fill_never_uses_decision_candle_or_timeout_boundary() -> None
 
     assert fill is None
     assert evidence is None
+    assert fill_bar_index is None
 
 
 def test_potential_fill_labels_touch_and_cross_without_claiming_execution() -> None:
     decision = _decision()
     start_ms, _ = maker_path_bounds(decision, ONE_MINUTE_MS)
 
-    touched, touch_evidence = potential_fill(
+    touched, touch_evidence, touch_index = potential_fill(
         (Candle(start_ms, 100, 100.1, 99, 100, 1),),
         decision,
         limit_price=100.1,
         timeframe_ms=ONE_MINUTE_MS,
     )
-    crossed, cross_evidence = potential_fill(
+    crossed, cross_evidence, cross_index = potential_fill(
         (Candle(start_ms, 100, 100.2, 99, 100, 1),),
         decision,
         limit_price=100.1,
         timeframe_ms=ONE_MINUTE_MS,
     )
-    marketable, marketable_evidence = potential_fill(
+    marketable, marketable_evidence, marketable_index = potential_fill(
         (Candle(start_ms, 100.2, 100.3, 99, 100, 1),),
         decision,
         limit_price=100.1,
@@ -136,10 +137,32 @@ def test_potential_fill_labels_touch_and_cross_without_claiming_execution() -> N
 
     assert touched is not None
     assert touch_evidence == "touched_only"
+    assert touch_index == 0
     assert crossed is not None
-    assert cross_evidence == "crossed_above"
+    assert cross_evidence == "crossed_intrabar"
+    assert cross_index == 0
     assert marketable is not None
-    assert marketable_evidence == "marketable_at_bar_open"
+    assert marketable_evidence == "marketable_on_activation"
+    assert marketable_index == 0
+
+
+def test_later_gap_is_not_labeled_as_activation_rejection_risk() -> None:
+    decision = _decision()
+    start_ms, _ = maker_path_bounds(decision, ONE_MINUTE_MS)
+
+    fill, evidence, fill_bar_index = potential_fill(
+        (
+            Candle(start_ms, 100, 100, 99, 100, 1),
+            Candle(start_ms + ONE_MINUTE_MS, 100.2, 100.3, 100.1, 100.2, 1),
+        ),
+        decision,
+        limit_price=100.1,
+        timeframe_ms=ONE_MINUTE_MS,
+    )
+
+    assert fill is not None
+    assert evidence == "crossed_between_bars"
+    assert fill_bar_index == 1
 
 
 def test_maker_fill_starts_exposure_after_ambiguous_fill_bar() -> None:
@@ -158,6 +181,13 @@ def test_maker_fill_starts_exposure_after_ambiguous_fill_bar() -> None:
     assert result.maker_trade.entry_price == pytest.approx(100.1)
     assert result.maker_trade.fee_cost_bps == pytest.approx(10)
     assert result.maker_trade.slippage_cost_bps == pytest.approx(4)
+    assert result.fill_bar_index == 0
+    assert result.fill_delay_minutes == 0
+    assert result.taker_1m_trade is not None
+    assert result.taker_1m_trade.status == "complete"
+    assert result.taker_1m_trade.entry_price == pytest.approx(100)
+    assert result.taker_1m_trade.fee_cost_bps == pytest.approx(20)
+    assert result.taker_1m_trade.slippage_cost_bps == pytest.approx(7)
 
 
 def test_unfilled_maker_order_is_cash_and_counts_missed_baseline_winner() -> None:

@@ -132,7 +132,7 @@ remains `DRY_RUN=true`, `AUTO_TRADE=false`.
    simple 3x price-distance buffer, which is not an exchange liquidation model. This
    historical result is discovery-only and cannot promote a policy or change
    production.
-6. **[Completed, awaiting first run] Maker OHLCV upper bound.**
+6. **[Validation diagnostics in progress] Maker OHLCV upper bound.**
    `maker-entry-report` fixes one primary passive level before reading the result:
    a hypothetical post-only sell at the recorded decision-time best ask. The order
    becomes active at the first bar strictly after the decision and expires after 15
@@ -146,14 +146,21 @@ remains `DRY_RUN=true`, `AUTO_TRADE=false`.
    marketable and therefore rejected by post-only, path coverage, costs, and net
    return including cash. This discovery result cannot prove post-only acceptance,
    queue position, partial fill, executable size, or authorize a shadow or live
-   change. The primary maker variant resolves exits on 1m while its taker baseline
-   remains 5m, so the paired delta is explicitly not presented as an entry-only
-   causal effect.
+   change. Preserve the original 5m taker baseline for continuity, but add a
+   same-resolution 1m taker control so candle granularity is no longer hidden inside
+   the maker delta. Split immediate activation-time marketability from later
+   between-bar gaps, publish fixed cash sensitivities for activation rejection and
+   exact touches, and report median return, cluster concentration, cluster-bootstrap
+   bounds, and the result without the largest asset cluster. Do not tune the limit
+   or timeout after reading these diagnostics.
 7. **Exit quote calibration.** After at least 30 exit observations, publish a
    directional comparison of decision-time modeled and close-time observed impact.
    Target 100 observations for a decision and segment by venue, exit reason, duration,
    spread, and depth. A paper quote still must not be presented as actual slippage.
-8. **Conditional maker paper simulator.** Build this only if item 6 is promising.
+8. **Conditional maker paper simulator.** Build this only if item 6 remains promising
+   under activation-marketable-as-cash sensitivity, beats the same-resolution 1m
+   taker control, survives removal of the largest asset cluster, and retains a
+   viable fill rate.
    Start with one or two supported venues and bounded hot symbols, retain post-only
    order state, partial fills, cancel/replace timing, and a taker protective stop.
    Ticker bars alone cannot validate queue position; active symbols need bounded
