@@ -450,19 +450,39 @@ the new cohort separately.
   component while keeping the cutoff fixed. They diagnose whether a component admits
   useful or harmful episodes, but are not causal estimates.
 
+  Report v2 adds a matched-economics section for `score_any`, `score_4`, and
+  `score_6`. All three rows use the same completely resolved episode set. A policy
+  that does not trigger contributes zero return and zero costs, so different trade
+  rates do not silently change the denominator. Gross return is separated from
+  decision-time entry impact, modeled exit impact, taker fees, conservative funding,
+  and net return. Bid and ask impact are VWAP distances from mid and already include
+  the crossed half-spread. The spread buckets are descriptive and must not be
+  subtracted again.
+
+  The same run also reports discovery-only exit-mechanics ablations on identical
+  decisions and exact candle paths: full v1, pump-band max-hold only, initial SL plus
+  max-hold, and a stop-free fixed 240-minute reference. Read each paired delta against
+  its named reference. The effects interact and cannot be added together. The
+  initial-stop follow-through table counts baseline initial-stop exits that would
+  later show positive modeled net return at 240 minutes and reports the MAE incurred
+  by holding. It does not claim that disabling or widening the stop is safe. Any such
+  candidate requires fixed-dollar-risk sizing, drawdown, and liquidation-distance
+  analysis on a separate registered cohort.
+
   OI and funding component tables keep `missing` separate from an observed zero-point
   value. A missing source currently defaults to zero points in the live score, but it
   is not evidence of the market condition represented by a genuine zero-point
   observation.
 
   Review input exclusions, unresolved policy evaluations, exact path coverage,
-  completed trades, cash episodes, cluster count and largest-cluster share, net
+  matched episode N, completed trades, cash episodes, cluster count and
+  largest-cluster share, gross-to-net decomposition, paired exit effects, net
   expectancy and its 95% cluster-bootstrap interval, recorded-size P&L, profit factor,
   sequential episode drawdown, initial-stop rate, MFE/MAE, and the score/component
-  calibration tables. Also inspect pump-size, venue, action, and liquidity-quality
-  segments for obvious concentration or data-quality artifacts. Fewer than 50
-  resolved episodes is `collecting`; 50 or more is only a directional read; 100
-  episodes and 30 clusters is `formal_size`, not a confirmatory verdict.
+  calibration tables. Also inspect pump-size, venue, action, spread, impact, and
+  liquidity-quality segments for obvious concentration or data-quality artifacts.
+  Fewer than 50 resolved episodes is `collecting`; 50 or more is only a directional
+  read; 100 episodes and 30 clusters is `formal_size`, not a confirmatory verdict.
 
   A stricter policy that rejects a recorded `opened` or `opened_dry_run` decision is
   marked `right_censored_after_recorded_open`, not cash. The real execution path stops

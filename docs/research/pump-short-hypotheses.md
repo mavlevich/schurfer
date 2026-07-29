@@ -374,3 +374,33 @@ right-censored on exactly the episodes needed for a fair comparison. Requiring a
 four original arms to resolve would make the locked first-100 sample potentially
 impossible to complete. Test score 7 and 8 in the live multi-variant shadow evaluator,
 where every policy keeps isolated state after the baseline opens.
+
+---
+
+## OBS-007 - execution and exit drag require a matched cohort
+
+The baseline virtual-strategy report selects a recorded open when present and otherwise
+the first decision in an episode. Its gross return and modeled slippage therefore
+describe a mixture that can contain books rejected by the market-quality gate. The
+survival screen instead selects the first market-quality-allowed decision. Comparing
+the headline numbers from those two reports attributes differences to costs or stops
+while also changing the decision cohort, entry time, and sometimes venue.
+
+`decision_quality_report_v2` removes that comparison error for discovery:
+
+- `score_any`, `score_4`, and `score_6` use one common set of completely resolved
+  episodes; a resolved non-trigger is cash with zero return and zero costs;
+- gross return, entry impact, modeled exit impact, fees, conservative funding, and net
+  return are shown separately;
+- spread and round-trip impact buckets describe completed trades. Spread is not an
+  extra cost because the bid/ask VWAP impacts are measured from mid;
+- full v1, max-hold only, initial SL plus max-hold, and stop-free fixed 240-minute
+  mechanics reuse each policy's identical selected decision and exact candle path;
+- initial-stop follow-through counts baseline stop exits whose stop-free 240-minute
+  result later becomes positive and reports the MAE of waiting.
+
+These ablations are not a new registered challenger family. Initial stop, trailing,
+and clock effects interact, so their paired deltas cannot be added together. A positive
+stop-free result also does not establish survivability: widening a stop requires
+fixed-dollar-risk sizing, drawdown and liquidation-distance checks, and a new
+out-of-sample shadow contract.
