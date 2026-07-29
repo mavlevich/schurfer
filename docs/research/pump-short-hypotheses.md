@@ -404,3 +404,37 @@ and clock effects interact, so their paired deltas cannot be added together. A p
 stop-free result also does not establish survivability: widening a stop requires
 fixed-dollar-risk sizing, drawdown and liquidation-distance checks, and a new
 out-of-sample shadow contract.
+
+## HYP-008 - a low-impact taker shelf may retain executable pump reversion
+
+OBS-007 found a positive discovery result in the decision-time round-trip impact
+bucket at or below 20 bps, while the broader matched cohort was approximately flat.
+That segmentation was read on existing outcomes, so it is hypothesis generation only.
+
+Registered prospective contract (`liquid_taker_candidate_v1`):
+
+- cohort starts at `2026-07-30T00:00:00Z`, before its aggregate outcomes are read;
+- use only `pump_short_v1_market_quality` decisions under the recorded production
+  score threshold and recorded market-quality gate;
+- select the existing v1 entry and full-v1 exit without changing timing, stop,
+  trailing, taker fees, conservative funding, or within-bar ordering;
+- require finite recorded decision-time bid and ask VWAP impact at the configured
+  notional and `bid_impact_bps + ask_impact_bps <= 20`;
+- use the exact selected exchange and instrument. Missing exact paths or incomplete
+  cost inputs remain unresolved and are not replaced by another venue;
+- treat Binance as a pre-declared sensitivity slice, not part of eligibility;
+- report eligible flow per calendar day, trade rate, capacity at the 20 bps limit,
+  net expectancy, profit factor, sequential drawdown, initial-stop rate, asset,
+  venue, and weekly concentration.
+
+The first formal read requires at least 100 eligible episodes, 30 asset clusters,
+complete resolution, and coverage across at least four distinct UTC calendar weeks.
+It uses a whole-asset cluster bootstrap for the 95% expectancy interval and must also
+remain positive after excluding the busiest calendar week and each of the five most
+frequent assets. A pass creates only an isolated shadow candidate. It does not change
+the production score, market-quality thresholds, position size, or trading mode.
+
+Before any future micro-live proposal, publish the candidate's executable
+opportunities per day, fill assumptions, concurrent-position load, measured notional
+capacity, and expected monthly P&L after all modeled costs. The `$50` paper notional
+is a research unit, not evidence that the engineering effort has economic scale.

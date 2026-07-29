@@ -29,6 +29,50 @@ proven. Post-MVP strategy and exit improvements live in the exit-strategy notes.
   now has 17 configured linear-USDT perp venues. The immediate task is measuring
   which venues add unique discoveries or useful lead time before adding more feeds.
 
+## Research portfolio and capital discipline
+
+Schurfer has two explicit goals. First, test whether a strategy has executable net
+edge. Second, build a reusable market-research platform only where shared
+infrastructure directly reduces the cost or latency of those tests. Platform work is
+not a substitute for strategy evidence.
+
+The portfolio is bounded as follows:
+
+- From `2026-07-29`, spend at most 10 new evidence-producing pull requests before a
+  portfolio review on `2026-11-30`. Maintenance and security fixes do not consume the
+  budget, but a new collector, signal, replay family, or execution model does.
+- Keep no more than two active strategy research lanes at once. Pump reversion is the
+  primary lane. One cheap market-intelligence probe may run in parallel. Other ideas
+  remain parked until a lane passes its gate or is stopped.
+- A sample is not promotion-ready from event count alone. It must cover at least four
+  distinct UTC calendar weeks, report concentration by week and asset, and show
+  sensitivity to removing the busiest week. A future regime classifier may refine
+  this rule, but cannot weaken it retrospectively.
+- Within-family Holm or Bonferroni correction does not control false discovery across
+  all research directions. Results from separate listing, order-flow, on-chain, and
+  pump-reversion families remain discovery evidence until they survive an untouched
+  forward cohort. A single nominal `p < 0.05` result across many directions is not a
+  production authorization.
+
+The current `$50` paper notional is a comparable research unit, not an earnings
+claim. Every candidate must publish capacity and capital economics before micro-live:
+
+1. estimate executable opportunities per day, fill rate, net basis points per trade,
+   concurrent positions, capital occupancy, and monthly P&L at the measured notional;
+2. estimate the notional ceiling at the candidate's impact limit by venue and show
+   whether expected profit still exceeds server, data, funding, and operational costs;
+3. size from fixed dollar risk, not leverage. Cap notional by risk budget divided by
+   stop distance, measured executable depth, and portfolio heat;
+4. if micro-live is later authorized, begin at the lower of `$50` notional, the
+   venue's practical minimum, `0.25% of allocated equity / stop_fraction`, and the
+   measured low-impact capacity. Do not increase more than `1.5x` at one checkpoint;
+5. require at least 50 new closed live observations with realized fills and costs,
+   stable drawdown, and no risk-control breach before considering another size step.
+
+No live capital is authorized by this roadmap. If conservative capacity implies
+economically immaterial profit even when the edge survives, stop strategy-specific
+engineering and keep only the reusable research output.
+
 ## Near-term delivery sequence: execution and exit decision
 
 The measurement foundation and shared paper/replay performance accounting are live.
@@ -38,7 +82,7 @@ unbounded tail risk? Existing entry, score, and exit cohorts continue collecting
 no new confirmatory family is added until this question is resolved. Production
 remains `DRY_RUN=true`, `AUTO_TRADE=false`.
 
-1. **[In progress] Matched cohort economics.** Keep the read-only
+1. **[Completed] Matched cohort economics.** Keep the read-only
    [survival SQL](docs/analysis/pump_short_survival.sql) as an auditable screen and
    extend `decision-quality-report` on one completely resolved
    episode set for `score_any`, `score_4`, and `score_6`. Separate gross return,
@@ -50,40 +94,50 @@ remains `DRY_RUN=true`, `AUTO_TRADE=false`.
    initial-stop exits would later be positive at 240 minutes and the MAE required to
    reach that result. These are discovery diagnostics; interacting deltas are not
    additive and cannot change production.
-2. **Exit-time liquidity observation.** At every paper close, fetch a bounded fresh
-   order book and persist the executable buy-to-close quote: timestamp, best bid/ask,
-   mid, spread, size-specific ask VWAP impact, latency, status, and error. Preserve the
-   existing decision-time modeled exit impact instead of overwriting it. This is an
-   observed exit quote, not an actual fill. Failure to fetch it must never block or
-   erase the paper close. Ship the schema and collector early so observations accrue.
-3. **Long-horizon and signed-funding research.** The resolver already stores 24-hour,
+2. **[In progress] Exit-time liquidity observation.** At every paper close, fetch a
+   bounded fresh order book and persist the executable buy-to-close quote: timestamp,
+   best bid/ask, mid, spread, size-specific ask VWAP impact, latency, status, and
+   error. Preserve the existing decision-time modeled exit impact instead of
+   overwriting it. This is an observed exit quote, not an actual fill. Failure to
+   fetch it must never block or erase the paper close. Ship the schema and collector
+   early so observations accrue.
+3. **Prospective liquid taker candidate.** Register
+   `liquid_taker_candidate_v1` from `2026-07-30T00:00:00Z`: keep the existing entry,
+   score, taker execution, and full-v1 exit rules, but require the recorded
+   market-quality gate and decision-time round-trip impact at the configured notional
+   to be at most 20 bps. Treat Binance as a pre-declared sensitivity slice, not an
+   eligibility rule. Report trade flow, capacity, net expectancy, drawdown, venue and
+   weekly concentration. Promotion needs at least 100 eligible episodes, 30 asset
+   clusters, four calendar weeks, complete pairing, and a positive conservative
+   cluster interval. This remains shadow-only and does not change production.
+4. **Long-horizon and signed-funding research.** The resolver already stores 24-hour,
    72-hour, and 7-day outcomes. Add them as separate research rows with mature N,
    exact-venue coverage, MFE, MAE, baseline-stop survival, funding settlement count,
    signed funding cash flow, and capital occupancy. Never turn missing funding into
    zero or call every funding rate a cost or credit. Show expected concurrent
    positions before proposing a longer hold.
-4. **Exit discovery on the matched tradeable cohort.** Use the result of item 1 to
+5. **Exit discovery on the matched tradeable cohort.** Use the result of item 1 to
    decide whether a wider or volatility-scaled stop is justified. Compare it with the
    already registered breakeven, no-progress, and bounded-extension policies in an
    explicitly discovery-only run. Any wider stop must reduce notional to keep the
    same dollar risk and must report drawdown and liquidation distance. It cannot be
    promoted from this historical cohort.
-5. **Maker OHLCV upper bound.** Pre-register at most two passive entry levels. Place a
+6. **Maker OHLCV upper bound.** Pre-register at most two passive entry levels. Place a
    hypothetical post-only sell only after the decision, use one-minute bars where
    available, bound the fill timeout, treat unfilled as cash, keep the protective stop
    taker, and report fill rate, missed winners, adverse selection, and ambiguous
    partial-fill coverage. `high >= limit` is only a potential fill, so this result is
    an optimistic feasibility bound rather than execution proof.
-6. **Exit quote calibration.** After at least 30 exit observations, publish a
+7. **Exit quote calibration.** After at least 30 exit observations, publish a
    directional comparison of decision-time modeled and close-time observed impact.
    Target 100 observations for a decision and segment by venue, exit reason, duration,
    spread, and depth. A paper quote still must not be presented as actual slippage.
-7. **Conditional maker paper simulator.** Build this only if item 5 is promising.
+8. **Conditional maker paper simulator.** Build this only if item 6 is promising.
    Start with one or two supported venues and bounded hot symbols, retain post-only
    order state, partial fills, cancel/replace timing, and a taker protective stop.
    Ticker bars alone cannot validate queue position; active symbols need bounded
    trades and L2 observations. No real order is authorized.
-8. **Decision checkpoint.** On `2026-08-31`, review the accumulated evidence. Formal
+9. **Decision checkpoint.** On `2026-08-31`, review the accumulated evidence. Formal
    promotion still requires at least 100 eligible episodes, 30 asset clusters,
    complete pairing, positive net expectancy after costs, cluster sensitivity, and
    acceptable drawdown. If the sample is smaller, explicitly choose one bounded
@@ -287,9 +341,12 @@ shorten only its Redis loop first; if scanner observation/publication dominates,
 build the bounded HOT polling set; if ticker age dominates, investigate the venue
 adapter. Record the baseline cutoff before deploying any speed change.
 
-#### AKE 2026-07-27 hot-path case study
+#### AKE 2026-07-27 hot-path observability case study
 
-AKE is the first concrete pre-registered motivation for the bounded hot path:
+AKE shows that a bounded hot path could have observed useful pre-impulse features.
+It is one positive retrospective case, not evidence of net long expectancy and not a
+reason to rank order-flow above the primary pump-reversion lane. Negative controls
+and prospective outcomes are required before its priority can rise:
 
 - Schurfer observed an HTX episode around `2026-07-27T04:39:00Z`, about 98 minutes
   before the main impulse. It correctly rejected a trade because score was 4 and

@@ -64,6 +64,32 @@ WHERE id = %s
 RETURNING id
 """
 
+_INSERT_EXIT_LIQUIDITY = """
+INSERT INTO app.trade_exit_liquidity_observations (
+    trade_id,
+    observed_at,
+    exchange,
+    symbol,
+    market_id,
+    status,
+    requested_notional_usd,
+    filled_notional_usd,
+    best_bid,
+    best_ask,
+    mid,
+    spread_bps,
+    ask_vwap,
+    ask_impact_bps,
+    contract_size,
+    latency_ms,
+    error
+) VALUES (
+    %s, %s, %s, %s, %s, %s, %s, %s, %s,
+    %s, %s, %s, %s, %s, %s, %s, %s
+)
+ON CONFLICT (trade_id) DO NOTHING
+"""
+
 # entry_price/side/size_usd are read back from the trade's own row rather
 # than passed in by the caller — Redis (position:entry/position:side) is
 # just a cache for the monitor loop, not the source of truth for accounting.
@@ -320,6 +346,53 @@ async def close_trade(
             return updated is not None
     except Exception as exc:
         log.error("journal.close_trade.failed", trade_id=trade_id, err=str(exc))
+        return False
+
+
+async def record_exit_liquidity(
+    db_url: str,
+    *,
+    trade_id: int,
+    observation: dict[str, Any],
+) -> bool:
+    """Persist the first close-time quote without changing the trade close.
+
+    The unique trade_id constraint makes retries append-once. A later retry must
+    not replace the point-in-time quote (or failure) seen at the actual close.
+    """
+    try:
+        aconn = await psycopg.AsyncConnection.connect(db_url)
+        async with aconn, aconn.cursor() as cur:
+            await cur.execute(
+                _INSERT_EXIT_LIQUIDITY,
+                (
+                    trade_id,
+                    observation["observed_at"],
+                    observation["exchange"],
+                    observation["symbol"],
+                    observation.get("market_id"),
+                    observation["status"],
+                    observation["requested_notional_usd"],
+                    observation.get("filled_notional_usd"),
+                    observation.get("best_bid"),
+                    observation.get("best_ask"),
+                    observation.get("mid"),
+                    observation.get("spread_bps"),
+                    observation.get("ask_vwap"),
+                    observation.get("ask_impact_bps"),
+                    observation.get("contract_size"),
+                    observation["latency_ms"],
+                    observation.get("error"),
+                ),
+            )
+        return True
+    except Exception as exc:
+        log.error(
+            "journal.exit_liquidity.failed",
+            trade_id=trade_id,
+            status=observation.get("status"),
+            err=str(exc),
+        )
         return False
 
 

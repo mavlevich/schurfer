@@ -253,6 +253,66 @@ async def test_close_trade_already_closed_is_idempotent_success() -> None:
     cur.execute.assert_called_once()  # only the SELECT — no UPDATE attempted
 
 
+async def test_record_exit_liquidity_is_append_once() -> None:
+    conn, cur = _mock_conn([])
+    observed_at = datetime(2026, 7, 29, 12, tzinfo=UTC)
+    observation = {
+        "observed_at": observed_at,
+        "exchange": "bybit",
+        "symbol": "BEAT/USDT:USDT",
+        "market_id": "BEATUSDT",
+        "status": "sampled",
+        "requested_notional_usd": 50,
+        "filled_notional_usd": 50,
+        "best_bid": 99.9,
+        "best_ask": 100.1,
+        "mid": 100,
+        "spread_bps": 20,
+        "ask_vwap": 100.1,
+        "ask_impact_bps": 10,
+        "contract_size": 1,
+        "latency_ms": 25,
+        "error": None,
+    }
+
+    with patch("psycopg.AsyncConnection.connect", AsyncMock(return_value=conn)):
+        recorded = await journal.record_exit_liquidity(
+            "postgresql://x",
+            trade_id=7,
+            observation=observation,
+        )
+
+    assert recorded is True
+    query, params = cur.execute.call_args.args
+    assert "ON CONFLICT (trade_id) DO NOTHING" in query
+    assert params[0] == 7
+    assert params[1] == observed_at
+    assert params[5] == "sampled"
+    assert params[13] == 10
+
+
+async def test_record_exit_liquidity_failure_is_non_throwing() -> None:
+    with patch(
+        "psycopg.AsyncConnection.connect",
+        AsyncMock(side_effect=Exception("connection refused")),
+    ):
+        recorded = await journal.record_exit_liquidity(
+            "postgresql://x",
+            trade_id=7,
+            observation={
+                "observed_at": datetime.now(tz=UTC),
+                "exchange": "bybit",
+                "symbol": "BEAT/USDT:USDT",
+                "status": "fetch_failed",
+                "requested_notional_usd": 50,
+                "latency_ms": 25,
+                "error": "venue unavailable",
+            },
+        )
+
+    assert recorded is False
+
+
 async def test_realized_pnl_today_returns_summed_value() -> None:
     conn, cur = _mock_conn([(42.5,)])
 

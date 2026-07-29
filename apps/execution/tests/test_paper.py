@@ -3,7 +3,7 @@
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from schurfer_execution.paper import close_paper, open_paper, paper_key
+from schurfer_execution.paper import _tick, close_paper, open_paper, paper_key
 from schurfer_performance import PAPER_ACCOUNTING_VERSION
 
 
@@ -242,3 +242,252 @@ async def test_close_paper_journal_failure_keeps_trade_id() -> None:
         await close_paper(rdb, pos=pos, current_price=0.0025, reason="stop_loss", cfg=cfg)
 
     mock_cas_delete.assert_not_called()
+
+
+async def test_close_paper_records_fresh_buy_to_close_quote() -> None:
+    rdb = _rdb()
+    rdb.get = AsyncMock(return_value=b"42")
+    cfg = _cfg()
+    cfg.db_url = "postgresql://localhost/test"
+    pos = {
+        "base": "BEAT",
+        "exchange": "bybit",
+        "entry_price": 100,
+        "size_usd": 50,
+        "side": "short",
+    }
+    ex = AsyncMock()
+    ex.markets = {
+        "BEAT/USDT:USDT": {
+            "id": "BEATUSDT",
+            "contract": True,
+            "contractSize": 1,
+        }
+    }
+    ex.fetch_order_book = AsyncMock(
+        return_value={
+            "bids": [[99.9, 10]],
+            "asks": [[100.1, 10]],
+        }
+    )
+
+    with (
+        patch(
+            "schurfer_execution.paper.journal.close_trade",
+            new_callable=AsyncMock,
+            return_value=True,
+        ),
+        patch(
+            "schurfer_execution.paper.journal.record_exit_liquidity",
+            new_callable=AsyncMock,
+            return_value=True,
+        ) as record,
+        patch(
+            "schurfer_execution.paper.journal.delete_trade_id_if_matches",
+            new_callable=AsyncMock,
+        ),
+    ):
+        await close_paper(
+            rdb,
+            pos=pos,
+            current_price=100,
+            reason="max_hold",
+            cfg=cfg,
+            exchange_client=ex,
+        )
+
+    observation = record.call_args.kwargs["observation"]
+    assert record.call_args.kwargs["trade_id"] == 42
+    assert observation["status"] == "sampled"
+    assert observation["exchange"] == "bybit"
+    assert observation["symbol"] == "BEAT/USDT:USDT"
+    assert observation["market_id"] == "BEATUSDT"
+    assert observation["requested_notional_usd"] == 50
+    assert observation["filled_notional_usd"] == 50
+    assert observation["best_bid"] == 99.9
+    assert observation["best_ask"] == 100.1
+    assert observation["ask_vwap"] == 100.1
+    assert observation["ask_impact_bps"] == 10
+
+
+async def test_close_paper_persists_quote_failure_without_blocking_close() -> None:
+    rdb = _rdb()
+    rdb.get = AsyncMock(return_value=b"42")
+    cfg = _cfg()
+    cfg.db_url = "postgresql://localhost/test"
+    pos = {
+        "base": "BEAT",
+        "exchange": "bybit",
+        "entry_price": 100,
+        "size_usd": 50,
+        "side": "short",
+    }
+    ex = AsyncMock()
+    ex.fetch_order_book = AsyncMock(side_effect=RuntimeError("venue unavailable"))
+
+    with (
+        patch(
+            "schurfer_execution.paper.journal.close_trade",
+            new_callable=AsyncMock,
+            return_value=True,
+        ) as close_trade,
+        patch(
+            "schurfer_execution.paper.journal.record_exit_liquidity",
+            new_callable=AsyncMock,
+            return_value=True,
+        ) as record,
+        patch(
+            "schurfer_execution.paper.journal.delete_trade_id_if_matches",
+            new_callable=AsyncMock,
+        ) as delete_trade_id,
+    ):
+        await close_paper(
+            rdb,
+            pos=pos,
+            current_price=100,
+            reason="stop_loss",
+            cfg=cfg,
+            exchange_client=ex,
+        )
+
+    close_trade.assert_awaited_once()
+    delete_trade_id.assert_awaited_once()
+    observation = record.call_args.kwargs["observation"]
+    assert observation["status"] == "fetch_failed"
+    assert observation["ask_impact_bps"] is None
+    assert observation["error"] == "RuntimeError: venue unavailable"
+
+
+async def test_exit_liquidity_persistence_failure_does_not_undo_close() -> None:
+    rdb = _rdb()
+    rdb.get = AsyncMock(return_value=b"42")
+    cfg = _cfg()
+    cfg.db_url = "postgresql://localhost/test"
+    pos = {
+        "base": "BEAT",
+        "exchange": "bybit",
+        "entry_price": 100,
+        "size_usd": 50,
+        "side": "short",
+    }
+    ex = AsyncMock()
+    ex.fetch_order_book = AsyncMock(
+        return_value={
+            "bids": [[99.9, 10]],
+            "asks": [[100.1, 10]],
+        }
+    )
+
+    with (
+        patch(
+            "schurfer_execution.paper.journal.close_trade",
+            new_callable=AsyncMock,
+            return_value=True,
+        ),
+        patch(
+            "schurfer_execution.paper.journal.record_exit_liquidity",
+            new_callable=AsyncMock,
+            return_value=False,
+        ),
+        patch(
+            "schurfer_execution.paper.journal.delete_trade_id_if_matches",
+            new_callable=AsyncMock,
+        ) as delete_trade_id,
+    ):
+        await close_paper(
+            rdb,
+            pos=pos,
+            current_price=100,
+            reason="max_hold",
+            cfg=cfg,
+            exchange_client=ex,
+        )
+
+    rdb.delete.assert_any_call("position:paper:bybit:BEAT")
+    delete_trade_id.assert_awaited_once()
+
+
+async def test_close_paper_labels_insufficient_buy_to_close_depth() -> None:
+    rdb = _rdb()
+    rdb.get = AsyncMock(return_value=b"42")
+    cfg = _cfg()
+    cfg.db_url = "postgresql://localhost/test"
+    pos = {
+        "base": "BEAT",
+        "exchange": "bybit",
+        "entry_price": 100,
+        "size_usd": 50,
+        "side": "short",
+    }
+    ex = AsyncMock()
+    ex.fetch_order_book = AsyncMock(
+        return_value={
+            "bids": [[99.9, 10]],
+            "asks": [[100.1, 0.1]],
+        }
+    )
+
+    with (
+        patch(
+            "schurfer_execution.paper.journal.close_trade",
+            new_callable=AsyncMock,
+            return_value=True,
+        ),
+        patch(
+            "schurfer_execution.paper.journal.record_exit_liquidity",
+            new_callable=AsyncMock,
+            return_value=True,
+        ) as record,
+        patch(
+            "schurfer_execution.paper.journal.delete_trade_id_if_matches",
+            new_callable=AsyncMock,
+        ),
+    ):
+        await close_paper(
+            rdb,
+            pos=pos,
+            current_price=100,
+            reason="max_hold",
+            cfg=cfg,
+            exchange_client=ex,
+        )
+
+    observation = record.call_args.kwargs["observation"]
+    assert observation["status"] == "insufficient_ask_depth"
+    assert observation["filled_notional_usd"] == 10.01
+    assert observation["ask_vwap"] is None
+    assert observation["ask_impact_bps"] is None
+
+
+async def test_paper_tick_passes_same_market_client_to_close_capture() -> None:
+    pos = {
+        "base": "BEAT",
+        "exchange": "bybit",
+        "entry_price": 100,
+        "size_usd": 50,
+        "side": "short",
+        "opened_at": 1_000,
+        "exit_params": {},
+    }
+    key = b"position:paper:bybit:BEAT"
+    rdb = _rdb()
+
+    async def _scan_iter(_pattern: str) -> object:  # type: ignore[type-arg]
+        yield key
+
+    rdb.scan_iter = _scan_iter
+    rdb.get = AsyncMock(return_value=json.dumps(pos).encode())
+    ex = AsyncMock()
+    ex.fetch_ticker = AsyncMock(return_value={"last": 90})
+
+    with (
+        patch(
+            "schurfer_execution.paper.exit_module.check_exit",
+            new_callable=AsyncMock,
+            return_value="take_profit",
+        ),
+        patch("schurfer_execution.paper.close_paper", new_callable=AsyncMock) as close,
+    ):
+        await _tick({"bybit": ex}, rdb, _cfg())
+
+    assert close.call_args.kwargs["exchange_client"] is ex

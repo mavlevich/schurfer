@@ -5,13 +5,14 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 import structlog
 from schurfer_performance import PAPER_ACCOUNTING_VERSION, calculate_performance
 
 from . import exit as exit_module
-from . import journal, notify
+from . import journal, liquidity, notify
 
 if TYPE_CHECKING:
     from .config import Config
@@ -104,6 +105,7 @@ async def close_paper(
     current_price: float,
     reason: str,
     cfg: Config,
+    exchange_client: Any | None = None,
 ) -> None:
     base = pos["base"]
     exchange = pos["exchange"]
@@ -132,8 +134,6 @@ async def close_paper(
         if accounting.net_return_pct is not None:
             displayed_pnl_pct = accounting.net_return_pct
 
-    await rdb.delete(paper_key(exchange, base))
-
     # Paper trades are deliberately NOT routed through journal.try_commit_close:
     # that mechanism writes a journal:pending_close marker that tracker.py
     # treats as "a real close is outstanding" and withholds the trading-ready
@@ -142,6 +142,27 @@ async def close_paper(
     # are informational, not part of the daily-loss circuit breaker.
     trade_id_key = _TRADE_ID_KEY.format(exchange=exchange, base=base.upper())
     trade_id_raw = await rdb.get(trade_id_key)
+    exit_observation: dict[str, Any] | None = None
+    if trade_id_raw and cfg.db_url and exchange_client is not None:
+        try:
+            exit_observation = await _capture_exit_liquidity(
+                exchange_client,
+                base=base,
+                exchange=exchange,
+                requested_notional_usd=float(pos["size_usd"]),
+            )
+        except Exception as exc:
+            # Capturing evidence is best effort. No malformed position payload,
+            # exchange response, or observation bug may keep the position open.
+            log.error(
+                "paper.exit_liquidity_capture_failed",
+                base=base,
+                exchange=exchange,
+                err=str(exc),
+            )
+
+    await rdb.delete(paper_key(exchange, base))
+
     if trade_id_raw and cfg.db_url:
         trade_id = int(trade_id_raw)
         committed = await journal.close_trade(
@@ -151,6 +172,12 @@ async def close_paper(
             exit_price=current_price,
             reason=reason,
         )
+        if exit_observation is not None:
+            await journal.record_exit_liquidity(
+                cfg.db_url,
+                trade_id=trade_id,
+                observation=exit_observation,
+            )
         if committed:
             await journal.delete_trade_id_if_matches(rdb, trade_id_key, trade_id)
         else:
@@ -182,8 +209,56 @@ async def close_paper(
         gross_pnl_pct=round(pnl_pct, 2),
         displayed_pnl_pct=round(displayed_pnl_pct, 2),
         accounting_status=accounting_status,
+        exit_liquidity_status=(
+            exit_observation.get("status") if exit_observation is not None else "not_observed"
+        ),
         reason=reason,
     )
+
+
+async def _capture_exit_liquidity(
+    exchange_client: Any,
+    *,
+    base: str,
+    exchange: str,
+    requested_notional_usd: float,
+) -> dict[str, Any]:
+    capture = await liquidity.capture_snapshot(
+        exchange_client,
+        base,
+        required_depth_usd=requested_notional_usd,
+    )
+    snapshot = capture.snapshot or {}
+    target_key = liquidity.depth_target_key(requested_notional_usd)
+    ask_impacts = snapshot.get("ask_impact_bps")
+    ask_vwaps = snapshot.get("ask_vwap")
+    ask_filled = snapshot.get("ask_filled_usd")
+    ask_impact = ask_impacts.get(target_key) if isinstance(ask_impacts, dict) else None
+    ask_vwap = ask_vwaps.get(target_key) if isinstance(ask_vwaps, dict) else None
+    filled_notional = ask_filled.get(target_key) if isinstance(ask_filled, dict) else None
+    status = capture.status
+    error = capture.error
+    if status == "sampled" and ask_impact is None:
+        status = "insufficient_ask_depth"
+        error = "visible ask depth cannot fill requested notional"
+    return {
+        "observed_at": datetime.fromtimestamp(capture.observed_at_ms / 1000, tz=UTC),
+        "exchange": exchange,
+        "symbol": f"{base.upper()}/USDT:USDT",
+        "market_id": snapshot.get("market_id"),
+        "status": status,
+        "requested_notional_usd": requested_notional_usd,
+        "filled_notional_usd": filled_notional,
+        "best_bid": snapshot.get("best_bid"),
+        "best_ask": snapshot.get("best_ask"),
+        "mid": snapshot.get("mid"),
+        "spread_bps": snapshot.get("spread_bps"),
+        "ask_vwap": ask_vwap,
+        "ask_impact_bps": ask_impact,
+        "contract_size": snapshot.get("contract_size"),
+        "latency_ms": capture.latency_ms,
+        "error": error,
+    }
 
 
 async def run_paper_monitor(
@@ -251,4 +326,11 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
 
         if reason:
             await rdb.delete(bp_key)
-            await close_paper(rdb, pos=pos, current_price=mark, reason=reason, cfg=cfg)
+            await close_paper(
+                rdb,
+                pos=pos,
+                current_price=mark,
+                reason=reason,
+                cfg=cfg,
+                exchange_client=ex,
+            )
