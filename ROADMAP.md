@@ -121,12 +121,17 @@ remains `DRY_RUN=true`, `AUTO_TRADE=false`.
    unified sign preservation on 2026-07-29. Before any live use, validate every
    enabled venue against its official contract and at least one authenticated account
    funding-ledger settlement.
-5. **Exit discovery on the matched tradeable cohort.** Use the result of item 1 to
-   decide whether a wider or volatility-scaled stop is justified. Compare it with the
-   already registered breakeven, no-progress, and bounded-extension policies in an
-   explicitly discovery-only run. Any wider stop must reduce notional to keep the
-   same dollar risk and must report drawdown and liquidation distance. It cannot be
-   promoted from this historical cohort.
+5. **[Completed, awaiting first run] Exit discovery on the matched tradeable
+   cohort.** `virtual-exit-discovery-report` compares the baseline, registered
+   breakeven, no-progress, combined, and bounded-extension exits with two fixed-risk
+   stop variants: 1.5x the baseline stop and 3x prior 14-bar ATR clamped to 1x-2x
+   baseline. Every arm uses the same first market-quality-allowed decision, next
+   complete 5-minute entry, exact venue, prior-only ATR window, and longest forward
+   path. Wider stops reduce notional by `baseline_stop / effective_stop`, and the
+   primary metric is risk-normalized net return. The report also shows drawdown and a
+   simple 3x price-distance buffer, which is not an exchange liquidation model. This
+   historical result is discovery-only and cannot promote a policy or change
+   production.
 6. **Maker OHLCV upper bound.** Pre-register at most two passive entry levels. Place a
    hypothetical post-only sell only after the decision, use one-minute bars where
    available, bound the fill timeout, treat unfilled as cash, keep the protective stop

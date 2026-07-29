@@ -648,6 +648,29 @@ the new cohort separately.
   withheld before the first 100 episodes are completely paired across at least 30
   asset clusters. A passing policy advances only to live shadow.
 
+- Exit discovery on the matched tradeable cohort: compare the registered exit
+  mechanics and two wider-stop variants without changing the formal OBS-001 family:
+
+  ```bash
+  make prod-virtual-exit-discovery-report
+  make prod-virtual-exit-discovery-report \
+    ARGS="--until 2026-07-30T00:00:00Z --format json" \
+    > backups/reports/exit-discovery-2026-07-30.json
+  ```
+
+  The historical discovery cohort starts at `2026-07-22T00:00:00Z`. Every variant
+  uses the same first recorded market-quality-allowed decision, exact venue, next
+  complete 5-minute entry, 15 strictly prior ATR bars, and longest forward path.
+  Wider stops reduce notional to keep initial-stop dollar risk constant. Read
+  unresolved path coverage first, then fully matched N, asset concentration,
+  risk-normalized net return, drawdown, initial-stop rate, rescued stops, and the
+  simple 3x buffer. The buffer is not an exchange liquidation calculation.
+
+  This is exploratory output. Do not add variants after reading it, do not select a
+  production winner from the historical cohort, and do not change production stops
+  or size. A promising variant must be frozen into a separate prospective shadow
+  cohort.
+
 - Score-threshold challenger replay: after the HYP-006 cohort has accumulated closed
   episodes with exact-anchor 8-hour outcomes, compare score 6 against the registered
   score 4 and 5 family:

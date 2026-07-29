@@ -241,6 +241,56 @@ def test_initial_stop_wins_ambiguous_activation_bar_conservatively() -> None:
     assert trade.classification == "taken_lost"
 
 
+def test_stop_override_and_position_scale_preserve_fixed_dollar_risk() -> None:
+    decision = _decision()
+    candles = _candles(decision, first=(100.0, 110.0, 100.0, 109.0))
+    episode = _episode(decision)
+    path = _path(decision, candles)
+
+    baseline = simulate_decision(
+        episode,
+        path,
+        decision,
+        selection_reason="discovery:baseline",
+    )
+    wider = simulate_decision(
+        episode,
+        path,
+        decision,
+        selection_reason="discovery:wider",
+        initial_sl_pct_override=12.0,
+        position_usd_scale=8.0 / 12.0,
+    )
+
+    assert baseline.exit_reason == "initial_sl"
+    assert wider.exit_reason != "initial_sl"
+    assert wider.position_usd == pytest.approx(50.0 * 8.0 / 12.0)
+    assert wider.net_return_pct is not None
+    assert wider.position_usd is not None
+    assert wider.net_pnl_usd == pytest.approx(wider.position_usd * wider.net_return_pct / 100)
+
+
+@pytest.mark.parametrize(
+    ("initial_sl_pct_override", "position_usd_scale"),
+    [(0.0, 1.0), (float("nan"), 1.0), (8.0, 0.0), (8.0, 1.01)],
+)
+def test_stop_discovery_overrides_reject_invalid_configuration(
+    initial_sl_pct_override: float,
+    position_usd_scale: float,
+) -> None:
+    decision = _decision()
+
+    with pytest.raises(ValueError):
+        simulate_decision(
+            _episode(decision),
+            _path(decision),
+            decision,
+            selection_reason="discovery:invalid",
+            initial_sl_pct_override=initial_sl_pct_override,
+            position_usd_scale=position_usd_scale,
+        )
+
+
 def test_same_bar_trailing_ambiguity_is_resolved_against_short() -> None:
     decision = _decision()
     candles = _candles(decision, first=(100.0, 101.0, 90.0, 95.0))

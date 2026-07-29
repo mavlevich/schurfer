@@ -523,7 +523,15 @@ def _simulate_selected_entry(
     costs: CostParameters = DEFAULT_COSTS,
     exit_policy: ExitPolicy = BASELINE_EXIT_POLICY,
     exit_mechanics: ExitMechanics = BASELINE_EXIT_MECHANICS,
+    initial_sl_pct_override: float | None = None,
+    position_usd_scale: float = 1.0,
 ) -> VirtualTrade:
+    if initial_sl_pct_override is not None and (
+        not math.isfinite(initial_sl_pct_override) or initial_sl_pct_override <= 0
+    ):
+        raise ValueError("initial stop override must be finite and positive")
+    if not math.isfinite(position_usd_scale) or not 0 < position_usd_scale <= 1:
+        raise ValueError("position USD scale must be finite and in (0, 1]")
     decision = selection.decision
     if market_path.status != "complete":
         return _unresolved(
@@ -565,20 +573,22 @@ def _simulate_selected_entry(
             status="incomplete_market_path",
             error="missing one or more complete 5-minute bars",
         )
-    position_usd = _position_usd(decision)
+    recorded_position_usd = _position_usd(decision)
     bid_impact = decision_impact_bps(decision, "bid")
     ask_impact = decision_impact_bps(decision, "ask")
-    if position_usd is None or bid_impact is None or ask_impact is None:
+    if recorded_position_usd is None or bid_impact is None or ask_impact is None:
         return _unresolved(
             episode,
             selection,
             status="cost_inputs_unavailable",
             error="position size or decision-time bid/ask impact is unavailable",
         )
+    position_usd = recorded_position_usd * position_usd_scale
 
     params = exit_parameters(decision.pump_pct)
     entry_price = path[0].open
-    stop_price = entry_price * (1 + params.initial_sl_pct / 100)
+    initial_sl_pct = initial_sl_pct_override or params.initial_sl_pct
+    stop_price = entry_price * (1 + initial_sl_pct / 100)
     activation_price = entry_price * (1 - params.activation_pct / 100)
     best_price: float | None = None
     exit_price: float | None = None
@@ -850,7 +860,10 @@ def simulate_decision(
     *,
     selection_reason: str,
     costs: CostParameters = DEFAULT_COSTS,
+    exit_policy: ExitPolicy = BASELINE_EXIT_POLICY,
     exit_mechanics: ExitMechanics = BASELINE_EXIT_MECHANICS,
+    initial_sl_pct_override: float | None = None,
+    position_usd_scale: float = 1.0,
 ) -> VirtualTrade:
     """Replay one explicitly selected point-in-time decision.
 
@@ -875,5 +888,8 @@ def simulate_decision(
         selection,
         entry_at_ms,
         costs=costs,
+        exit_policy=exit_policy,
         exit_mechanics=exit_mechanics,
+        initial_sl_pct_override=initial_sl_pct_override,
+        position_usd_scale=position_usd_scale,
     )

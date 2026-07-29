@@ -424,6 +424,44 @@ stop-free result also does not establish survivability: widening a stop requires
 fixed-dollar-risk sizing, drawdown and liquidation-distance checks, and a new
 out-of-sample shadow contract.
 
+### OBS-007a - fixed-risk exit discovery on the tradeable cohort
+
+The matched OBS-007 decomposition motivates a bounded historical discovery run. It
+does not modify the registered OBS-001 family and cannot promote an exit policy.
+
+Discovery contract (`matched_tradeable_exit_discovery_v1`):
+
+- use `pump_short_v1_market_quality` episodes from `2026-07-22T00:00:00Z`;
+- select the first chronological decision whose recorded market-quality gate allows
+  trading, without applying a score floor;
+- reuse the same selected decision, exact venue, next complete 5-minute entry, cost
+  model, and complete longest exit-policy path for every variant;
+- compare baseline, breakeven after activation, no-progress timeout, their
+  combination, recent-progress bounded extension, a 1.5x baseline initial stop, and a
+  prior-ATR initial stop;
+- calculate ATR as the mean of 14 true ranges from exactly 15 complete 5-minute bars
+  strictly before entry. Use `3 * ATR%`, clamped from 1x to 2x the baseline initial
+  stop;
+- preserve initial-stop dollar risk by multiplying recorded notional by
+  `baseline_stop / effective_stop`;
+- use risk-normalized net return as the primary comparison. Raw return remains
+  descriptive and cannot give wider stops free risk;
+- require complete pairing across all variants. Missing or invalid prior candles,
+  future candles, paths, or cost inputs make the whole episode unresolved;
+- report raw and risk-normalized net return, fixed-risk P&L, profit factor, initial
+  stops, rescued stops, duration, MFE, MAE, sequential drawdown, cluster
+  concentration, and a simple 3x price-distance buffer;
+- reuse recorded original-notional impact after down-sizing. This is conservative
+  when impact is monotonic, but it is still an approximation;
+- treat the 3x buffer as a diagnostic only. It does not model maintenance margin,
+  fees, funding, venue tiers, or exchange liquidation rules;
+- show deterministic 95% whole-asset cluster intervals as descriptive uncertainty.
+  Do not issue a multiple-comparison verdict or choose a production winner on this
+  historical data.
+
+Any promising policy needs one frozen prospective shadow contract and fresh
+out-of-sample evidence before it can affect execution.
+
 ## HYP-008 - a low-impact taker shelf may retain executable pump reversion
 
 OBS-007 found a positive discovery result in the decision-time round-trip impact
