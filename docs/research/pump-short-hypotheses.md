@@ -423,16 +423,20 @@ Registered prospective contract (`liquid_taker_candidate_v1`):
 - use the exact selected exchange and instrument. Missing exact paths or incomplete
   cost inputs remain unresolved and are not replaced by another venue;
 - treat Binance as a pre-declared sensitivity slice, not part of eligibility;
+- define measured capacity as the largest recorded order-book depth target whose
+  finite bid plus ask impact also remains at or below 20 bps. This is a lower bound
+  within the sampled targets, not an extrapolated maximum size;
 - report eligible flow per calendar day, trade rate, capacity at the 20 bps limit,
   net expectancy, profit factor, sequential drawdown, initial-stop rate, asset,
   venue, and weekly concentration.
 
-The first formal read requires at least 100 eligible episodes, 30 asset clusters,
-complete resolution, and coverage across at least four distinct UTC calendar weeks.
-It uses a whole-asset cluster bootstrap for the 95% expectancy interval and must also
-remain positive after excluding the busiest calendar week and each of the five most
-frequent assets. A pass creates only an isolated shadow candidate. It does not change
-the production score, market-quality thresholds, position size, or trading mode.
+The formal sample is the earliest chronological prefix that reaches at least 100
+eligible episodes, 30 asset clusters, complete resolution, and coverage across at
+least four distinct UTC calendar weeks. It uses a whole-asset cluster bootstrap for
+the 95% expectancy interval and must also remain positive after excluding the busiest
+calendar week and each of the five most frequent assets. A pass creates only an
+isolated shadow candidate. It does not change the production score, market-quality
+thresholds, position size, or trading mode.
 
 Before any future micro-live proposal, publish the candidate's executable
 opportunities per day, fill assumptions, concurrent-position load, measured notional
