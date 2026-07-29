@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from schurfer_journal.models import (
     PumpDerivativesContextRun,
@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from sqlalchemy.dialects.postgresql import Insert
     from sqlalchemy.sql import Select
     from sqlalchemy.sql.dml import ReturningInsert
+    from sqlalchemy.sql.elements import ColumnElement
 
 
 class DerivativesContextStore(Protocol):
@@ -41,6 +42,7 @@ class DerivativesContextStore(Protocol):
         max_attempts: int,
         retry_after_seconds: int,
         batch_size: int,
+        anchor_mode: Literal["entry", "closed"] = "entry",
     ) -> tuple[DerivativesContextWork, ...]: ...
 
     async def persist_observations(
@@ -127,6 +129,7 @@ def due_context_work_statement(
     max_attempts: int,
     retry_after_seconds: int,
     batch_size: int,
+    anchor_mode: Literal["entry", "closed"] = "entry",
 ) -> Select[Any]:
     """Build bounded point-in-time work selection for validated venue/method pairs."""
     sources = PumpEventSource.__table__
@@ -137,7 +140,13 @@ def due_context_work_statement(
         column("method", String(40)),
         name="supported_derivatives_pairs",
     ).data(supported_pairs)
-    anchor_at = func.coalesce(events.c.entry_qualified_at, events.c.first_seen_at)
+    anchor_at: ColumnElement[Any]
+    if anchor_mode == "entry":
+        anchor_at = func.coalesce(events.c.entry_qualified_at, events.c.first_seen_at)
+    elif anchor_mode == "closed":
+        anchor_at = events.c.closed_at
+    else:
+        raise ValueError(f"unsupported derivatives context anchor mode: {anchor_mode}")
     run_match = and_(
         runs.c.event_id == sources.c.event_id,
         runs.c.exchange == sources.c.exchange,
@@ -360,6 +369,7 @@ class DerivativesContextRepository:
         max_attempts: int,
         retry_after_seconds: int,
         batch_size: int,
+        anchor_mode: Literal["entry", "closed"] = "entry",
     ) -> tuple[DerivativesContextWork, ...]:
         if not supported_pairs:
             return ()
@@ -372,6 +382,7 @@ class DerivativesContextRepository:
             max_attempts=max_attempts,
             retry_after_seconds=retry_after_seconds,
             batch_size=batch_size,
+            anchor_mode=anchor_mode,
         )
         async with self._engine.connect() as connection:
             result = await connection.execute(statement)

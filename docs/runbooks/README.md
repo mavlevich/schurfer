@@ -415,6 +415,79 @@ the new cohort separately.
   These public historical measurements never replace the live liquidity snapshot
   attached to a trade decision.
 
+- Long-horizon funding research: the same worker also drains a separate funding-only
+  lane under resolver version `long_horizon_funding_v1`. It anchors at
+  `pump_events.closed_at`, waits until the full seven-day window is mature, and stores
+  only public funding-rate history from one day before close through seven days after
+  close. It does not duplicate OI, ratios, or liquidations. The wider pre-close bound
+  lets the report cover decisions made before an episode closes, while the report
+  still verifies the exact decision-to-horizon window and fails closed when it is not
+  covered.
+
+  After deployment, confirm the two independent lanes and inspect backfill progress:
+
+  ```bash
+  docker logs schurfer-outcome-resolver --since 15m 2>&1 \
+    | grep -E 'long_horizon_funding.starting|long_horizon_funding.tick_failed|derivatives_context.resolved'
+
+  docker exec schurfer-postgres psql -U schurfer -d schurfer -c "
+  SELECT exchange, status, count(*) AS runs,
+         sum(in_window_rows) AS samples, max(attempt_count) AS max_attempts
+  FROM app.pump_derivatives_context_runs
+  WHERE resolver_version = 'long_horizon_funding_v1'
+    AND method = 'funding_rate_history'
+  GROUP BY exchange, status
+  ORDER BY exchange, status;"
+  ```
+
+  Run the descriptive report after mature runs appear:
+
+  ```bash
+  make prod-long-horizon-report
+  make prod-long-horizon-report \
+    ARGS="--until 2026-08-05T00:00:00Z --format json" \
+    > backups/reports/long-horizon-2026-08-05.json
+  ```
+
+  The report uses exact-venue 24-hour, 72-hour, and seven-day outcomes. It sums the
+  observed signed funding rates after entry, where a positive rate credits a short
+  and a negative rate debits it, then applies the recorded position size only as a
+  modeled cash flow. Missing runs, missing settlements, duplicate timestamps,
+  incomplete request bounds, invalid rates, fallback outcomes, and missing
+  decision-time impact remain unresolved. They are never converted to zero. Read the
+  fixed-horizon return beside initial-stop survival, MFE/MAE, and the full-hold
+  concurrency upper bound. This is discovery output and cannot extend the production
+  maximum hold.
+
+  The report manifest pins the convention
+  `positive_rate_long_pays_short_v1`. This matches the official
+  [OKX funding mechanism](https://www.okx.com/en-gb/help/funding-fee-mechanism-eea)
+  and [Bybit funding rules](https://www.bybit.com/en/help-center/article/Introduction-to-Funding-Rate):
+  a positive rate is paid by longs to shorts, while a negative rate is paid by shorts
+  to longs. On 2026-07-29, production samples from Binance and OKX also showed that
+  CCXT's unified `fundingRate` preserved the sign in the raw exchange payload. Repeat
+  the read-only comparison after a CCXT upgrade or before enabling a new venue:
+
+  ```bash
+  docker exec schurfer-postgres psql -U schurfer -d schurfer -c "
+  SELECT r.exchange, s.source_at,
+         s.payload->>'fundingRate' AS unified_rate,
+         s.payload->'info'->>'fundingRate' AS raw_rate
+  FROM app.pump_derivatives_context_samples s
+  JOIN app.pump_derivatives_context_runs r ON r.id = s.run_id
+  WHERE r.method = 'funding_rate_history'
+    AND s.payload ? 'fundingRate'
+    AND s.payload->'info' ? 'fundingRate'
+  ORDER BY s.source_at DESC
+  LIMIT 30;"
+  ```
+
+  Matching public signs validate the report convention, but not an account cash
+  movement. Before funding affects a live decision, reconcile at least one positive
+  and one negative settlement per enabled venue against an authenticated account
+  ledger, including contract type, settlement timestamp, position side, position
+  size, rate unit, and cash amount. Until then, signed funding remains descriptive.
+
 - Decision measurement report: after rebuilding the analytics image, run a read-only
   Markdown report against production:
 

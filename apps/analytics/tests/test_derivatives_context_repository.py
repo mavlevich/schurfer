@@ -111,6 +111,26 @@ def test_due_work_query_is_bounded_retryable_and_identity_safe() -> None:
     assert "LIMIT 8" in sql
 
 
+def test_due_work_query_can_anchor_long_horizon_funding_at_episode_close() -> None:
+    sql = _sql(
+        due_context_work_statement(
+            supported_pairs=(("binance", "funding_rate_history"),),
+            resolver_version="long_horizon_funding_v1",
+            cohort_start=SINCE,
+            after_minutes=10_080,
+            retryable_statuses=("fetch_failed",),
+            max_attempts=8,
+            retry_after_seconds=900,
+            batch_size=8,
+            anchor_mode="closed",
+        )
+    )
+
+    assert "app.pump_events.closed_at AS anchor_at" in sql
+    assert "app.pump_events.closed_at + make_interval(secs=>604800.0) <= now()" in sql
+    assert "app.pump_events.closed_at >= '2026-07-20 00:00:00+00:00'" in sql
+
+
 def test_run_and_sample_upserts_use_stable_constraints() -> None:
     run_sql = _sql(
         upsert_context_run_statement(

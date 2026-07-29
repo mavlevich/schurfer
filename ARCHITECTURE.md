@@ -53,9 +53,13 @@ The web UI is behind a login with no public exposure.
   - the long-running outcome resolver idempotently backfills forward prices, MAE, and
     MFE for recorded decisions from exchange OHLCV, then drains bounded recovery work
     for validated funding, OI, long/short, and liquidation histories around pump
-    episodes;
+    episodes. A separate resolver version reuses the same durable tables for
+    funding-only history around mature closed episodes through seven days, without
+    duplicating the other derivatives series;
   - the on-demand, read-only measurement report aggregates dataset health, outcome
-    coverage, and descriptive cohort results from Postgres.
+    coverage, and descriptive cohort results from Postgres. Dedicated research CLIs
+    include exact-venue long-horizon returns with signed funding and stop-survival
+    diagnostics.
 - **notifier** (Go). Reads `pumps:latest` from Redis, sends Telegram alerts on new
   pump episodes, and records successful point-in-time deliveries in Postgres. A
   Postgres measurement failure is retried from an AOF-backed Redis outbox and never

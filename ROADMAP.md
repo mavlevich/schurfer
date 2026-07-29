@@ -110,12 +110,17 @@ remains `DRY_RUN=true`, `AUTO_TRADE=false`.
    weekly concentration. Promotion needs at least 100 eligible episodes, 30 asset
    clusters, four calendar weeks, complete pairing, and a positive conservative
    cluster interval. This remains shadow-only and does not change production.
-4. **Long-horizon and signed-funding research.** The resolver already stores 24-hour,
+4. **[Completed, collecting] Long-horizon and signed-funding research.** The resolver already stores 24-hour,
    72-hour, and 7-day outcomes. Add them as separate research rows with mature N,
    exact-venue coverage, MFE, MAE, baseline-stop survival, funding settlement count,
    signed funding cash flow, and capital occupancy. Never turn missing funding into
    zero or call every funding rate a cost or credit. Show expected concurrent
-   positions before proposing a longer hold.
+   positions before proposing a longer hold. The report pins
+   `positive_rate_long_pays_short_v1`: positive rates credit a modeled short and
+   negative rates debit it. Public Binance and OKX payloads were checked for raw to
+   unified sign preservation on 2026-07-29. Before any live use, validate every
+   enabled venue against its official contract and at least one authenticated account
+   funding-ledger settlement.
 5. **Exit discovery on the matched tradeable cohort.** Use the result of item 1 to
    decide whether a wider or volatility-scaled stop is justified. Compare it with the
    already registered breakeven, no-progress, and bounded-extension policies in an
@@ -820,6 +825,44 @@ The intended stream topology is:
         Consider an isolated tiny-capital experiment only after an out-of-sample
         cohort shows positive net expectancy, acceptable liquidity-loss tail risk,
         and reproducible results under a versioned manifest.
+
+- [ ] On-chain intelligence and temporal wallet graph (parked, shadow-only research
+      track). Build this as a source-neutral measurement system, not a wallet-copying
+      bot. The detailed scope, data contracts, graph model, public/private boundary,
+      resource limits, and promotion gates live in
+      [the on-chain intelligence research plan](docs/research/onchain-intelligence-roadmap.md).
+  - [ ] Start with a bounded Solana pilot over a curated watchlist and direct
+        RPC/WebSocket observations. External RPC providers are transport; transaction
+        decoding, provenance, point-in-time labels, scoring, outcomes, and signals
+        remain our code. Do not attempt a full-chain firehose on the current 4 GB
+        production host.
+  - [ ] Normalize transfers, swaps, liquidity changes, deployer activity, CEX and
+        bridge flows into a finality-aware event envelope with occurred, observed,
+        ingested, and finalized times. Handle duplicates, reconnect backfill, and
+        reorg or rollback tombstones before treating the stream as research data.
+  - [ ] Project normalized events into a temporal wallet, token, pool, protocol, and
+        entity graph. Keep evidence, confidence, and validity intervals for every
+        entity label. Start with PostgreSQL and offline graph analysis; add a graph
+        database only after a measured query or scale requirement.
+  - [ ] Score wallets strictly point in time using only prior realized outcomes,
+        sample size, hit rate, drawdown, concentration, holding time, entry timing,
+        wallet age, and label confidence. A later profitable trade must never improve
+        an earlier wallet score.
+  - [ ] Measure coordinated accumulation before price, early DEX flow, smart exits,
+        CEX deposits, liquidity removal, and recurring deployer or wallet clusters.
+        Every alert must include price already moved, executable liquidity, estimated
+        impact, source latency, and independent-wallet concentration.
+  - [ ] Resolve forward outcomes and edge decay at 1m, 5m, 15m, 1h, 4h, and 24h.
+        Run shadow alerts first. Wallet activity is a feature, not an order. No paper
+        execution until the signal survives costs, latency, adverse selection,
+        failed-exit penalties, cluster concentration, and an untouched forward
+        cohort.
+  - [ ] Keep generic event contracts, decoders, conformance fixtures, and graph
+        projections eligible for a separate public open-source package. Keep curated
+        wallet lists, private labels, scores, thresholds, raw licensed datasets, and
+        strategy output private. Reuse the extraction discipline from
+        [ADR-0009](docs/adr/0009-separate-public-market-events-project.md) without
+        creating a runtime dependency on Schurfer.
 
 - [ ] Backtest v0 for pump-shorts and delisting-shorts, with explicit blind spots
       (survivorship, look-ahead, no historical spreads). The output is an estimate

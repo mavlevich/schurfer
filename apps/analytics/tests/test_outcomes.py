@@ -594,6 +594,59 @@ async def test_runner_resolves_derivatives_context_in_the_existing_worker() -> N
     exchange.close.assert_awaited_once()
 
 
+async def test_runner_resolves_long_horizon_funding_as_an_independent_lane() -> None:
+    cfg = OutcomeConfig("postgresql://test", ("binance",))
+    context_cfg = DerivativesContextResolverConfig()
+    long_funding_cfg = DerivativesContextResolverConfig(
+        anchor_mode="closed",
+        method_names=("funding_rate_history",),
+    )
+    exchange = AsyncMock()
+    outcome_store = _store([])
+    context_store = AsyncMock()
+
+    with (
+        patch.dict(
+            "schurfer_analytics.outcome_worker.EXCHANGE_FACTORIES",
+            {"binance": lambda: exchange},
+            clear=True,
+        ),
+        patch(
+            "schurfer_analytics.outcome_worker.resolve_once",
+            AsyncMock(return_value=0),
+        ),
+        patch(
+            "schurfer_analytics.outcome_worker.resolve_derivatives_context_once",
+            AsyncMock(side_effect=(1, 2)),
+        ) as resolve_context,
+    ):
+        await run_outcome_resolver(
+            cfg,
+            once=True,
+            store=outcome_store,
+            context_config=context_cfg,
+            long_funding_config=long_funding_cfg,
+            context_store=context_store,
+        )
+
+    assert resolve_context.await_count == 2
+    assert resolve_context.await_args_list[0].args == (
+        context_cfg,
+        {"binance": exchange},
+        context_store,
+    )
+    assert resolve_context.await_args_list[0].kwargs == {}
+    assert resolve_context.await_args_list[1].args == (
+        long_funding_cfg,
+        {"binance": exchange},
+        context_store,
+    )
+    assert resolve_context.await_args_list[1].kwargs == {
+        "resolver_version": "long_horizon_funding_v1"
+    }
+    exchange.close.assert_awaited_once()
+
+
 async def test_runner_closes_exchanges_after_partial_factory_failure() -> None:
     cfg = OutcomeConfig("postgresql://test", ("first", "broken"))
     first = AsyncMock()
