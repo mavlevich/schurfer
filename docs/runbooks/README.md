@@ -735,6 +735,14 @@ the new cohort separately.
     > backups/reports/maker-entry-2026-07-30.json
   ```
 
+  To reconcile the activation-aware validation diagnostics against the first
+  inspected result without adding later episodes, rerun the frozen cutoff:
+
+  ```bash
+  make prod-maker-entry-report \
+    ARGS="--until 2026-07-29T18:42:07.816848Z --format markdown"
+  ```
+
   The discovery cohort starts at `2026-07-22T00:00:00Z` and selects the first
   recorded decision that passes the recorded market-quality gate without imposing a
   score floor. The only entry level is the recorded best ask. The hypothetical
@@ -744,16 +752,26 @@ the new cohort separately.
 
   Read path coverage first. Results based on complete exact-venue one-minute paths
   are primary; five-minute fallback results are labeled and must be inspected
-  separately. The maker variant resolves exits on its selected 1m or 5m path, while
-  the taker baseline remains 5m. The primary delta therefore is not an entry-only
-  causal estimate. `high >= limit` does not establish queue position, partial fill,
-  or executable size. If the bar opens at or above the old sell limit, post-only
-  acceptance is also unknown and the report flags rejection risk. `unfilled` is
-  zero-return cash. The report keeps the existing taker protective exit and modeled
-  exit impact, reports missed baseline winners and stops within 30 minutes, and uses
-  an explicit optimistic maker-entry fee. Even a positive result is only an upper
-  bound. It can justify a bounded paper post-only simulator, not a strategy promotion
-  or real trading.
+  separately. The legacy five-minute taker baseline remains visible for continuity.
+  The same-resolution one-minute taker control uses the first complete
+  post-decision one-minute open, taker fees, and recorded impact, and is the relevant
+  comparison for checking whether the original delta was a candle-granularity
+  artifact.
+
+  Read fill evidence next. `marketable_on_activation` means that the first active bar
+  already opened at or above the old sell limit and is the direct post-only
+  rejection risk. `crossed_between_bars` means an earlier active bar stayed below
+  the limit before a later bar opened through it, so the order may already have been
+  resting. `crossed_intrabar` and `touched_only` remain potential fills only.
+  No OHLCV class establishes queue position, partial fill, or executable size.
+
+  Treat the fixed sensitivities as the decision surface. The first converts
+  activation-marketable fills to cash. The second also converts exact touches to
+  cash. Check their net expectancy against the one-minute taker control, their
+  cluster-bootstrap interval, largest-cluster share, result without that cluster,
+  median filled return, fill rate, and stops. These are post-hoc diagnostics on the
+  discovery cohort, not formal inference. Even a positive result can only justify a
+  bounded paper post-only simulator, not strategy promotion or real trading.
 
 - Candle anomaly research: after the registered cohort has accumulated closed episodes
   with exact-anchor 8-hour outcomes, derive HYP-005 features and join them to the
