@@ -39,8 +39,9 @@ class ScorePolicy:
             raise ValueError("unknown omitted score component")
 
 
+MARKET_QUALITY_CONTROL_POLICY = ScorePolicy("score_any", 0)
 SCORE_POLICIES = (
-    ScorePolicy("score_any", 0),
+    MARKET_QUALITY_CONTROL_POLICY,
     *(ScorePolicy(f"score_{score}", score) for score in range(4, 10)),
     *(ScorePolicy(f"score_6_without_{component}", 6, component) for component in SCORE_COMPONENTS),
 )
