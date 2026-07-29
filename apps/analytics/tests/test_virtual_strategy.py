@@ -7,16 +7,22 @@ import pytest
 from schurfer_analytics.ohlcv import TIMEFRAME_MS, Candle
 from schurfer_analytics.replay import ReplayDecision, ReplayEpisode
 from schurfer_analytics.virtual_strategy import (
+    BASELINE_EXIT_MECHANICS,
     BASELINE_EXIT_POLICY,
     BREAKEVEN_EXIT_POLICY,
     COMBINED_EXIT_POLICY,
     EXIT_POLICIES,
+    FIXED_240_ONLY_EXIT_MECHANICS,
+    INITIAL_SL_MAX_HOLD_EXIT_MECHANICS,
+    MAX_HOLD_ONLY_EXIT_MECHANICS,
     NO_PROGRESS_EXIT_POLICY,
     RECENT_PROGRESS_EXTENSION_EXIT_POLICY,
     CostParameters,
+    ExitMechanics,
     ExitParameters,
     ExitPolicy,
     MarketPath,
+    economics_path_bounds,
     exit_parameters,
     exit_policy_family_path_bounds,
     exit_policy_family_path_is_complete,
@@ -82,8 +88,13 @@ def _candles(
     first: tuple[float, float, float, float] = (100.0, 100.0, 100.0, 100.0),
     close: float = 90.0,
     exit_policy: ExitPolicy = BASELINE_EXIT_POLICY,
+    exit_mechanics: ExitMechanics | None = None,
 ) -> tuple[Candle, ...]:
-    start_ms, end_ms = expected_path_bounds(decision, exit_policy=exit_policy)
+    start_ms, end_ms = expected_path_bounds(
+        decision,
+        exit_policy=exit_policy,
+        exit_mechanics=exit_mechanics or BASELINE_EXIT_MECHANICS,
+    )
     count = (end_ms - start_ms) // TIMEFRAME_MS
     rows = [Candle(start_ms, *first, 1.0)]
     rows.extend(
@@ -160,6 +171,17 @@ def test_exit_policy_family_path_uses_longest_registered_window() -> None:
     assert end_ms - start_ms == 300 * 60 * 1000
     assert exit_policy_family_path_is_complete(decision, candles) is True
     assert exit_policy_family_path_is_complete(decision, candles[:-1]) is False
+
+
+def test_economics_path_bounds_cover_fixed_240_and_dynamic_hold() -> None:
+    low = _decision(pump_pct=40)
+    high = _decision(pump_pct=120)
+
+    low_start, low_end = economics_path_bounds(low)
+    high_start, high_end = economics_path_bounds(high)
+
+    assert low_end - low_start == 240 * 60 * 1000
+    assert high_end - high_start == 360 * 60 * 1000
 
 
 @pytest.mark.parametrize(
@@ -263,6 +285,57 @@ def test_max_hold_includes_fees_funding_and_liquidity_costs() -> None:
     assert trade.net_return_pct == pytest.approx(9.71125)
     assert trade.net_pnl_usd == pytest.approx(4.855625)
     assert trade.classification == "skipped_would_have_won"
+
+
+def test_exit_mechanics_ablate_stop_trailing_and_clock_on_the_same_path() -> None:
+    decision = _decision(pump_pct=40)
+    start_ms, end_ms = economics_path_bounds(decision)
+    candles = [
+        Candle(start_ms, 100, 109, 100, 108, 1),
+        *(
+            Candle(timestamp, 90, 90, 90, 90, 1)
+            for timestamp in range(start_ms + TIMEFRAME_MS, end_ms, TIMEFRAME_MS)
+        ),
+    ]
+    episode = _episode(decision)
+    path = _path(decision, tuple(candles))
+
+    baseline = simulate_decision(
+        episode,
+        path,
+        decision,
+        selection_reason="economics:full_v1",
+    )
+    initial_stop_only = simulate_decision(
+        episode,
+        path,
+        decision,
+        selection_reason="economics:initial_sl_max_hold",
+        exit_mechanics=INITIAL_SL_MAX_HOLD_EXIT_MECHANICS,
+    )
+    clock_only = simulate_decision(
+        episode,
+        path,
+        decision,
+        selection_reason="economics:max_hold_only",
+        exit_mechanics=MAX_HOLD_ONLY_EXIT_MECHANICS,
+    )
+    fixed_240 = simulate_decision(
+        episode,
+        path,
+        decision,
+        selection_reason="economics:fixed_240_only",
+        exit_mechanics=FIXED_240_ONLY_EXIT_MECHANICS,
+    )
+
+    assert baseline.exit_reason == "initial_sl"
+    assert initial_stop_only.exit_reason == "initial_sl"
+    assert clock_only.exit_reason == "max_hold"
+    assert clock_only.duration_minutes == 180
+    assert fixed_240.exit_reason == "max_hold"
+    assert fixed_240.duration_minutes == 240
+    assert baseline.net_return_pct is not None and baseline.net_return_pct < 0
+    assert fixed_240.net_return_pct is not None and fixed_240.net_return_pct > 0
 
 
 def test_baseline_policy_matches_locked_golden_trade() -> None:

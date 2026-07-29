@@ -33,6 +33,7 @@ VIRTUAL_STRATEGY_VERSION = "pump_short_v1_replay_v1"
 ENTRY_MODEL_VERSION = "next_complete_5m_open_v1"
 EXIT_MODEL_VERSION = "dynamic_short_bar_v1"
 EXIT_POLICY_FAMILY_VERSION = "exit_policy_family_v1"
+EXIT_ABLATION_FAMILY_VERSION = "exit_mechanics_ablation_family_v1"
 COST_MODEL_VERSION = SHARED_COST_MODEL_VERSION
 # Explicit re-exports preserve the existing analytics import surface while the
 # implementation lives in the shared package.
@@ -100,6 +101,40 @@ class ExitPolicy:
         return params.max_hold_min + self.max_extension_minutes
 
 
+@dataclass(frozen=True)
+class ExitMechanics:
+    """Bounded diagnostic switches around the shared production exit engine.
+
+    These variants are discovery-only. The default keeps the production behavior
+    byte-for-byte equivalent while matched-cohort diagnostics can disable one
+    mechanism at a time without copying the candle simulator.
+    """
+
+    key: str
+    version: str
+    initial_stop_enabled: bool = True
+    trailing_enabled: bool = True
+    fixed_hold_minutes: int | None = None
+
+    def __post_init__(self) -> None:
+        if not self.key.strip() or not self.version.strip():
+            raise ValueError("exit mechanics key and version must not be empty")
+        if self.fixed_hold_minutes is not None and (
+            self.fixed_hold_minutes <= 0 or self.fixed_hold_minutes % 5 != 0
+        ):
+            raise ValueError("fixed hold must be a positive five-minute multiple")
+
+    def baseline_hold_minutes(self, params: ExitParameters) -> int:
+        return self.fixed_hold_minutes or params.max_hold_min
+
+    def maximum_hold_minutes(
+        self,
+        params: ExitParameters,
+        exit_policy: ExitPolicy,
+    ) -> int:
+        return self.baseline_hold_minutes(params) + exit_policy.max_extension_minutes
+
+
 BASELINE_EXIT_POLICY = ExitPolicy(
     key="baseline",
     version="production_max_hold_v1",
@@ -138,6 +173,35 @@ EXIT_POLICIES = (
     NO_PROGRESS_EXIT_POLICY,
     COMBINED_EXIT_POLICY,
     RECENT_PROGRESS_EXTENSION_EXIT_POLICY,
+)
+
+BASELINE_EXIT_MECHANICS = ExitMechanics(
+    key="full_v1",
+    version="full_v1_exit_mechanics_v1",
+)
+MAX_HOLD_ONLY_EXIT_MECHANICS = ExitMechanics(
+    key="max_hold_only",
+    version="max_hold_only_v1",
+    initial_stop_enabled=False,
+    trailing_enabled=False,
+)
+INITIAL_SL_MAX_HOLD_EXIT_MECHANICS = ExitMechanics(
+    key="initial_sl_max_hold",
+    version="initial_sl_max_hold_v1",
+    trailing_enabled=False,
+)
+FIXED_240_ONLY_EXIT_MECHANICS = ExitMechanics(
+    key="fixed_240_only",
+    version="fixed_240_only_v1",
+    initial_stop_enabled=False,
+    trailing_enabled=False,
+    fixed_hold_minutes=240,
+)
+ECONOMICS_EXIT_MECHANICS = (
+    BASELINE_EXIT_MECHANICS,
+    MAX_HOLD_ONLY_EXIT_MECHANICS,
+    INITIAL_SL_MAX_HOLD_EXIT_MECHANICS,
+    FIXED_240_ONLY_EXIT_MECHANICS,
 )
 
 
@@ -239,10 +303,24 @@ def expected_path_bounds(
     decision: ReplayDecision,
     *,
     exit_policy: ExitPolicy = BASELINE_EXIT_POLICY,
+    exit_mechanics: ExitMechanics = BASELINE_EXIT_MECHANICS,
 ) -> tuple[int, int]:
     params = exit_parameters(decision.pump_pct)
     start_ms = ceil_to_timeframe(int(decision.ts.timestamp() * 1000))
-    return start_ms, start_ms + exit_policy.maximum_hold_minutes(params) * 60 * 1000
+    maximum_hold = exit_mechanics.maximum_hold_minutes(params, exit_policy)
+    return start_ms, start_ms + maximum_hold * 60 * 1000
+
+
+def economics_path_bounds(decision: ReplayDecision) -> tuple[int, int]:
+    """Return the complete shared window required by every economics ablation."""
+    starts_and_ends = tuple(
+        expected_path_bounds(decision, exit_mechanics=mechanics)
+        for mechanics in ECONOMICS_EXIT_MECHANICS
+    )
+    starts = {start for start, _ in starts_and_ends}
+    if len(starts) != 1:
+        raise RuntimeError("economics exit mechanics disagree on entry anchor")
+    return starts_and_ends[0][0], max(end for _, end in starts_and_ends)
 
 
 def exit_policy_family_path_bounds(decision: ReplayDecision) -> tuple[int, int]:
@@ -295,7 +373,11 @@ def _position_usd(decision: ReplayDecision) -> float | None:
     return _finite_positive(config.get("signal_position_usd"))
 
 
-def _impact_bps(decision: ReplayDecision, side: Literal["bid", "ask"]) -> float | None:
+def decision_impact_bps(
+    decision: ReplayDecision,
+    side: Literal["bid", "ask"],
+) -> float | None:
+    """Extract the recorded decision-time VWAP impact for the configured depth."""
     liquidity = decision.liquidity
     if not isinstance(liquidity, dict) or liquidity.get("status") != "sampled":
         return None
@@ -365,13 +447,19 @@ def _complete_path(
     *,
     entry_at_ms: int | None = None,
     exit_policy: ExitPolicy = BASELINE_EXIT_POLICY,
+    exit_mechanics: ExitMechanics = BASELINE_EXIT_MECHANICS,
 ) -> tuple[Candle, ...] | None:
     if entry_at_ms is None:
-        start_ms, end_ms = expected_path_bounds(decision, exit_policy=exit_policy)
+        start_ms, end_ms = expected_path_bounds(
+            decision,
+            exit_policy=exit_policy,
+            exit_mechanics=exit_mechanics,
+        )
     else:
         start_ms = entry_at_ms
         params = exit_parameters(decision.pump_pct)
-        end_ms = start_ms + exit_policy.maximum_hold_minutes(params) * 60 * 1000
+        maximum_hold = exit_mechanics.maximum_hold_minutes(params, exit_policy)
+        end_ms = start_ms + maximum_hold * 60 * 1000
     expected_count = (end_ms - start_ms) // TIMEFRAME_MS
     by_timestamp = {candle.ts_ms: candle for candle in candles}
     expected_timestamps = range(start_ms, end_ms, TIMEFRAME_MS)
@@ -434,6 +522,7 @@ def _simulate_selected_entry(
     *,
     costs: CostParameters = DEFAULT_COSTS,
     exit_policy: ExitPolicy = BASELINE_EXIT_POLICY,
+    exit_mechanics: ExitMechanics = BASELINE_EXIT_MECHANICS,
 ) -> VirtualTrade:
     decision = selection.decision
     if market_path.status != "complete":
@@ -467,6 +556,7 @@ def _simulate_selected_entry(
         market_path.candles,
         entry_at_ms=entry_at_ms,
         exit_policy=exit_policy,
+        exit_mechanics=exit_mechanics,
     )
     if not path:
         return _unresolved(
@@ -476,8 +566,8 @@ def _simulate_selected_entry(
             error="missing one or more complete 5-minute bars",
         )
     position_usd = _position_usd(decision)
-    bid_impact = _impact_bps(decision, "bid")
-    ask_impact = _impact_bps(decision, "ask")
+    bid_impact = decision_impact_bps(decision, "bid")
+    ask_impact = decision_impact_bps(decision, "ask")
     if position_usd is None or bid_impact is None or ask_impact is None:
         return _unresolved(
             episode,
@@ -513,8 +603,8 @@ def _simulate_selected_entry(
         if extension_active and exit_policy.extension_trail_pct is not None:
             trail_pct = min(trail_pct, exit_policy.extension_trail_pct)
         if best_price is None:
-            stop_hit = candle.high >= stop_price
-            activation_hit = candle.low <= activation_price
+            stop_hit = exit_mechanics.initial_stop_enabled and candle.high >= stop_price
+            activation_hit = exit_mechanics.trailing_enabled and candle.low <= activation_price
             if stop_hit:
                 observed_high = max(observed_high, stop_price)
                 exit_price = stop_price
@@ -614,7 +704,8 @@ def _simulate_selected_entry(
             exit_reason = "no_progress"
             break
 
-        if elapsed_end_minutes >= params.max_hold_min and not extension_active:
+        baseline_hold_minutes = exit_mechanics.baseline_hold_minutes(params)
+        if elapsed_end_minutes >= baseline_hold_minutes and not extension_active:
             lookback = exit_policy.recent_progress_lookback_minutes
             if lookback is not None:
                 recently_improved = (
@@ -635,7 +726,7 @@ def _simulate_selected_entry(
                 exit_reason = "max_hold"
                 break
 
-        if elapsed_end_minutes >= exit_policy.maximum_hold_minutes(params):
+        if elapsed_end_minutes >= exit_mechanics.maximum_hold_minutes(params, exit_policy):
             exit_price = candle.close
             exit_at_ms = candle_end_ms
             exit_reason = "absolute_max_hold"
@@ -704,6 +795,7 @@ def simulate_episode(
     *,
     costs: CostParameters = DEFAULT_COSTS,
     exit_policy: ExitPolicy = BASELINE_EXIT_POLICY,
+    exit_mechanics: ExitMechanics = BASELINE_EXIT_MECHANICS,
 ) -> VirtualTrade:
     """Replay one baseline short using conservative within-bar ordering.
 
@@ -720,6 +812,7 @@ def simulate_episode(
         entry_at_ms,
         costs=costs,
         exit_policy=exit_policy,
+        exit_mechanics=exit_mechanics,
     )
 
 
@@ -757,6 +850,7 @@ def simulate_decision(
     *,
     selection_reason: str,
     costs: CostParameters = DEFAULT_COSTS,
+    exit_mechanics: ExitMechanics = BASELINE_EXIT_MECHANICS,
 ) -> VirtualTrade:
     """Replay one explicitly selected point-in-time decision.
 
@@ -781,4 +875,5 @@ def simulate_decision(
         selection,
         entry_at_ms,
         costs=costs,
+        exit_mechanics=exit_mechanics,
     )

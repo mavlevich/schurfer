@@ -167,6 +167,8 @@ async def fetch_exit_policy_paths(
 async def fetch_decision_market_paths(
     decisions: tuple[ReplayDecision, ...],
     factories: dict[str, ExchangeFactory],
+    *,
+    bounds: PathBounds = expected_path_bounds,
 ) -> tuple[DecisionMarketPath, ...]:
     """Fetch exact-venue exit paths for explicitly selected decisions.
 
@@ -205,7 +207,7 @@ async def fetch_decision_market_paths(
                 error=f"unsupported exact anchor exchange: {decision.exchange or '<empty>'}",
             )
             return DecisionMarketPath(decision_id, path)
-        start_ms, end_ms = expected_path_bounds(decision)
+        start_ms, end_ms = bounds(decision)
         try:
             async with semaphore:
                 candles = await fetch_candles(exchange, decision.base, start_ms, end_ms)

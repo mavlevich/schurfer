@@ -204,6 +204,18 @@ manifest, and input fingerprint are retained together.
   10,000-iteration, Holm, 97.5% Bonferroni, and cluster-sensitivity rules. Score 7
   and 8 require independent live-shadow state because baseline opens censor later
   decisions.
+- `2026-07-29`: `decision_quality_report_v2` added
+  `matched_policy_economics_v1` and the discovery-only
+  `exit_mechanics_ablation_family_v1`. The economics denominator contains only
+  episodes resolved for `score_any`, `score_4`, and `score_6`; a resolved
+  non-trigger contributes zero return and zero costs. Entry and modeled exit impact
+  are the recorded bid/ask VWAP distances from mid, so spread is a segment label and
+  is not deducted again. Exit diagnostics reuse the same selected decision,
+  next-complete-bar entry, exact path, and cost contract for full v1, clock-only,
+  initial-SL-plus-clock, and stop-free fixed-240-minute mechanics. Their interacting
+  paired deltas and initial-stop follow-through are exploratory. They do not join a
+  confirmatory family, change production, or justify a wider stop without a new
+  fixed-dollar-risk experiment.
 
 ## Promotion boundary
 

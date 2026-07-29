@@ -22,7 +22,7 @@ from schurfer_analytics.replay import (
     build_replay_dataset,
 )
 from schurfer_analytics.virtual_market import DecisionMarketPath
-from schurfer_analytics.virtual_strategy import MarketPath, expected_path_bounds
+from schurfer_analytics.virtual_strategy import MarketPath, economics_path_bounds
 
 
 def _components(points: tuple[int, ...]) -> dict[str, object]:
@@ -70,6 +70,7 @@ def _decision(
         },
         liquidity={
             "status": "sampled",
+            "spread_bps": 8,
             "bid_impact_bps": {"100": 2},
             "ask_impact_bps": {"100": 3},
             "quality": {"allowed": True, "depth_target_usd": 100},
@@ -92,7 +93,7 @@ def _decision(
 
 
 def _path(decision: ReplayDecision, *, winning: bool) -> DecisionMarketPath:
-    start_ms, end_ms = expected_path_bounds(decision)
+    start_ms, end_ms = economics_path_bounds(decision)
     candles: list[Candle] = []
     for timestamp in range(start_ms, end_ms, TIMEFRAME_MS):
         if winning:
@@ -150,6 +151,57 @@ def test_report_compares_score_policies_and_component_ablations() -> None:
     assert {row.group for row in report.component_buckets} == set(SCORE_COMPONENTS)
     oi_buckets = {row.bucket for row in report.component_buckets if row.group == "oi_trend"}
     assert oi_buckets == {"1", "missing"}
+    assert [row.policy_key for row in report.matched_policy_economics] == [
+        "score_any",
+        "score_4",
+        "score_6",
+    ]
+    for row in report.matched_policy_economics:
+        assert row.episodes == 2
+        assert row.mean_total_cost_bps == pytest.approx(
+            row.mean_entry_impact_bps
+            + row.mean_exit_impact_bps
+            + row.mean_fee_cost_bps
+            + row.mean_funding_cost_bps
+        )
+        assert row.mean_episode_net_return_pct == pytest.approx(
+            row.mean_episode_gross_return_pct - row.mean_total_cost_bps / 100
+        )
+    for result in report.episode_results:
+        trade = result.trade
+        if (
+            result.policy_key not in {"score_any", "score_4", "score_6"}
+            or trade is None
+            or trade.status != "complete"
+        ):
+            continue
+        assert trade.gross_return_pct is not None
+        assert trade.net_return_pct is not None
+        assert result.entry_impact_bps is not None
+        assert result.exit_impact_bps is not None
+        assert trade.fee_cost_bps is not None
+        assert trade.funding_cost_bps is not None
+        decomposed_cost_bps = (
+            result.entry_impact_bps
+            + result.exit_impact_bps
+            + trade.fee_cost_bps
+            + trade.funding_cost_bps
+        )
+        assert (trade.gross_return_pct - trade.net_return_pct) * 100 == pytest.approx(
+            decomposed_cost_bps
+        )
+    assert len(report.exit_ablation_metrics) == 12
+    assert len(report.exit_mechanics_effects) == 9
+    assert len(report.initial_stop_follow_through) == 3
+    assert {
+        (row.dimension, row.bucket)
+        for row in report.liquidity_segment_economics
+        if row.policy_key == "score_any"
+    } >= {
+        ("overall", "all"),
+        ("spread_bps", "0-10"),
+        ("round_trip_impact_bps", "0-20"),
+    }
 
 
 def test_report_serializes_provenance_and_human_guardrails() -> None:
@@ -167,12 +219,18 @@ def test_report_serializes_provenance_and_human_guardrails() -> None:
     payload = json.loads(render_json(report))
     markdown = render_markdown(report)
 
-    assert payload["manifest"]["report_version"] == "decision_quality_report_v1"
+    assert payload["manifest"]["report_version"] == "decision_quality_report_v2"
+    assert payload["manifest"]["matched_economics_version"] == "matched_policy_economics_v1"
     assert payload["manifest"]["baseline_policy"] == "score_6"
     assert payload["manifest"]["interpretation"] == "discovery_only"
     assert payload["manifest"]["working_tree_dirty"] is True
     assert "does not model account-level capital constraints" in markdown
     assert "score_6_without_pump_age" in markdown
+    assert "Matched policy economics" in markdown
+    assert "Matched exit mechanics ablations" in markdown
+    assert "spread is already inside bid/ask impact" in markdown
+    assert "trade counts may differ by policy" in markdown
+    assert "holding through the observed MAE" in markdown
     assert "Recorded score calibration" in markdown
 
 
@@ -210,6 +268,115 @@ def test_missing_path_and_invalid_components_remain_visible() -> None:
     assert any_result.status == "market_path_unavailable"
     assert ablation.status == "selection_unresolved"
     assert ablation.error == "missing_score_components"
+
+
+def test_report_counts_initial_stop_that_reverts_by_fixed_240_minutes() -> None:
+    decision = _decision(1, 42, "ERA", (2, 2, 1, 1, 1))
+    filters = ReplayFilters(
+        since=CONFIRMATION_COHORT_START,
+        until=CONFIRMATION_COHORT_START + timedelta(days=1),
+    )
+    dataset = build_replay_dataset([decision], filters)
+    start_ms, end_ms = economics_path_bounds(decision)
+    candles = [
+        Candle(start_ms, 100, 109, 100, 108, 1),
+        *(
+            Candle(timestamp, 90, 90, 90, 90, 1)
+            for timestamp in range(start_ms + TIMEFRAME_MS, end_ms, TIMEFRAME_MS)
+        ),
+    ]
+    paths = (
+        DecisionMarketPath(
+            decision.decision_id or "",
+            MarketPath(
+                decision.pump_event_id or 0,
+                decision.exchange,
+                decision.base,
+                "complete",
+                tuple(candles),
+            ),
+        ),
+    )
+
+    report = build_decision_quality_report(
+        dataset,
+        filters,
+        paths,
+        generated_at=datetime(2026, 7, 27, tzinfo=UTC),
+        code_revision="abc123",
+        working_tree_dirty=False,
+        bootstrap_iterations=100,
+    )
+
+    follow_through = {row.policy_key: row for row in report.initial_stop_follow_through}
+    assert follow_through["score_6"].initial_stop_exits == 1
+    assert follow_through["score_6"].fixed_240_positive == 1
+    assert follow_through["score_6"].fixed_240_positive_rate_pct == 100
+    initial_stop_effect = next(
+        row
+        for row in report.exit_mechanics_effects
+        if row.policy_key == "score_6" and row.effect_key == "initial_stop_effect"
+    )
+    assert initial_stop_effect.mean_delta_pct is not None
+    assert initial_stop_effect.mean_delta_pct < 0
+
+
+def test_matched_economics_keeps_non_triggered_policy_as_zero_cost_cash() -> None:
+    decision = _decision(1, 42, "ERA", (1, 1, 1, 1, 0))
+    filters = ReplayFilters(
+        since=CONFIRMATION_COHORT_START,
+        until=CONFIRMATION_COHORT_START + timedelta(days=1),
+    )
+    dataset = build_replay_dataset([decision], filters)
+    paths = (_path(decision, winning=True),)
+
+    report = build_decision_quality_report(
+        dataset,
+        filters,
+        paths,
+        generated_at=datetime(2026, 7, 27, tzinfo=UTC),
+        code_revision="abc123",
+        working_tree_dirty=False,
+        bootstrap_iterations=100,
+    )
+
+    economics = {row.policy_key: row for row in report.matched_policy_economics}
+    assert {row.episodes for row in economics.values()} == {1}
+    assert economics["score_6"].cash == 1
+    assert economics["score_6"].selected == 0
+    assert economics["score_6"].mean_episode_gross_return_pct == 0
+    assert economics["score_6"].mean_total_cost_bps == 0
+    assert economics["score_6"].mean_episode_net_return_pct == 0
+    assert economics["score_4"].mean_total_cost_bps is not None
+    assert economics["score_4"].mean_total_cost_bps > 0
+
+
+def test_exit_ablation_pairing_fails_closed_when_fixed_240_path_is_short() -> None:
+    decision = _decision(1, 42, "ERA", (2, 2, 1, 1, 1))
+    filters = ReplayFilters(
+        since=CONFIRMATION_COHORT_START,
+        until=CONFIRMATION_COHORT_START + timedelta(days=1),
+    )
+    dataset = build_replay_dataset([decision], filters)
+    complete = _path(decision, winning=True)
+    short = replace(
+        complete,
+        path=replace(complete.path, candles=complete.path.candles[:-1]),
+    )
+
+    report = build_decision_quality_report(
+        dataset,
+        filters,
+        (short,),
+        generated_at=datetime(2026, 7, 27, tzinfo=UTC),
+        code_revision="abc123",
+        working_tree_dirty=False,
+        bootstrap_iterations=100,
+    )
+
+    score_6 = [row for row in report.exit_ablation_metrics if row.policy_key == "score_6"]
+    assert {row.episodes for row in score_6} == {0}
+    assert all(row.mean_net_return_pct is None for row in score_6)
 
 
 def test_report_rejects_duplicate_paths_and_small_bootstrap() -> None:

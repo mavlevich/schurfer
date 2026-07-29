@@ -20,6 +20,21 @@ from .clustered_inference import (
     cluster_bootstrap_mean,
     derived_seed,
 )
+from .decision_economics import (
+    MATCHED_ECONOMICS_VERSION,
+    ExitAblationMetrics,
+    ExitAblationTrade,
+    ExitMechanicsEffect,
+    InitialStopFollowThrough,
+    LiquiditySegmentEconomics,
+    MatchedPolicyEconomics,
+    build_exit_ablation_trades,
+    exit_ablation_metrics,
+    exit_mechanics_effects,
+    initial_stop_follow_through,
+    liquidity_segment_economics,
+    matched_policy_economics,
+)
 from .decision_quality import (
     BASELINE_POLICY_KEY,
     DECISION_QUALITY_POLICY_VERSION,
@@ -59,16 +74,19 @@ from .virtual_strategy import (
     COST_MODEL_VERSION,
     DEFAULT_COSTS,
     ENTRY_MODEL_VERSION,
+    EXIT_ABLATION_FAMILY_VERSION,
     EXIT_MODEL_VERSION,
     VIRTUAL_STRATEGY_VERSION,
     CostParameters,
     MarketPath,
     VirtualTrade,
+    decision_impact_bps,
+    economics_path_bounds,
     max_sequential_drawdown_usd,
     simulate_decision,
 )
 
-DECISION_QUALITY_REPORT_VERSION = "decision_quality_report_v1"
+DECISION_QUALITY_REPORT_VERSION = "decision_quality_report_v2"
 DECISION_QUALITY_STRATEGY_VERSIONS = ("pump_short_v1_market_quality",)
 
 
@@ -86,6 +104,8 @@ class DecisionQualityManifest:
     replay_query_version: str
     report_version: str
     policy_version: str
+    matched_economics_version: str
+    exit_ablation_family_version: str
     score_component_schema_version: str
     virtual_strategy_version: str
     entry_model_version: str
@@ -133,6 +153,9 @@ class PolicyEpisodeResult:
     effective_score: int | None
     pump_pct: float | None
     liquidity_quality_reason: str | None
+    spread_bps: float | None
+    entry_impact_bps: float | None
+    exit_impact_bps: float | None
     component_points: tuple[tuple[str, int, bool | None], ...]
     episode_net_return_pct: float | None
     episode_net_pnl_usd: float | None
@@ -197,12 +220,28 @@ class DecisionQualityReport:
     score_buckets: tuple[BucketMetrics, ...]
     component_buckets: tuple[BucketMetrics, ...]
     diagnostic_buckets: tuple[BucketMetrics, ...]
+    matched_policy_economics: tuple[MatchedPolicyEconomics, ...]
+    liquidity_segment_economics: tuple[LiquiditySegmentEconomics, ...]
+    exit_ablation_metrics: tuple[ExitAblationMetrics, ...]
+    exit_mechanics_effects: tuple[ExitMechanicsEffect, ...]
+    initial_stop_follow_through: tuple[InitialStopFollowThrough, ...]
+    exit_ablation_trades: tuple[ExitAblationTrade, ...]
     episode_results: tuple[PolicyEpisodeResult, ...]
     market_paths: tuple[DecisionMarketPath, ...]
 
 
 def _mean(values: list[float]) -> float | None:
     return fmean(values) if values else None
+
+
+def _finite_non_negative(value: object) -> float | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        parsed = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return parsed if math.isfinite(parsed) and parsed >= 0 else None
 
 
 def _count_rows(counter: Counter[str]) -> tuple[CountRow, ...]:
@@ -234,44 +273,50 @@ def _evaluate_policy(
     decision = selection.decision
     if selection.status == "not_triggered":
         return PolicyEpisodeResult(
-            episode.pump_event_id,
-            episode.cluster_key,
-            episode.base,
-            policy.key,
-            "not_triggered",
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            (),
-            0.0,
-            0.0,
-            None,
+            pump_event_id=episode.pump_event_id,
+            cluster_key=episode.cluster_key,
+            base=episode.base,
+            policy_key=policy.key,
+            status="not_triggered",
+            selected_decision_id=None,
+            selected_at=None,
+            exchange=None,
+            action=None,
+            recorded_score=None,
+            effective_score=None,
+            pump_pct=None,
+            liquidity_quality_reason=None,
+            spread_bps=None,
+            entry_impact_bps=None,
+            exit_impact_bps=None,
+            component_points=(),
+            episode_net_return_pct=0.0,
+            episode_net_pnl_usd=0.0,
+            trade=None,
         )
     if selection.status == "unresolved" or decision is None:
         return PolicyEpisodeResult(
-            episode.pump_event_id,
-            episode.cluster_key,
-            episode.base,
-            policy.key,
-            "selection_unresolved",
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            (),
-            None,
-            None,
-            None,
-            selection.error or "score-policy selection failed",
+            pump_event_id=episode.pump_event_id,
+            cluster_key=episode.cluster_key,
+            base=episode.base,
+            policy_key=policy.key,
+            status="selection_unresolved",
+            selected_decision_id=None,
+            selected_at=None,
+            exchange=None,
+            action=None,
+            recorded_score=None,
+            effective_score=None,
+            pump_pct=None,
+            liquidity_quality_reason=None,
+            spread_bps=None,
+            entry_impact_bps=None,
+            exit_impact_bps=None,
+            component_points=(),
+            episode_net_return_pct=None,
+            episode_net_pnl_usd=None,
+            trade=None,
+            error=selection.error or "score-policy selection failed",
         )
 
     path = path_by_decision.get(decision.decision_id or "")
@@ -285,29 +330,36 @@ def _evaluate_policy(
         costs=costs,
     )
     quality_reason: str | None = None
+    spread_bps: float | None = None
     if isinstance(decision.liquidity, dict):
         quality = decision.liquidity.get("quality")
         if isinstance(quality, dict) and isinstance(quality.get("reason"), str):
             quality_reason = quality["reason"]
+        spread_bps = _finite_non_negative(decision.liquidity.get("spread_bps"))
     return PolicyEpisodeResult(
-        episode.pump_event_id,
-        episode.cluster_key,
-        episode.base,
-        policy.key,
-        trade.status,
-        decision.decision_id,
-        decision.ts,
-        decision.exchange,
-        decision.action,
-        decision.score,
-        selection.effective_score,
-        decision.pump_pct,
-        quality_reason,
-        tuple((item.name, item.points, item.data_available) for item in selection.components),
-        trade.net_return_pct,
-        trade.net_pnl_usd,
-        trade,
-        trade.error,
+        pump_event_id=episode.pump_event_id,
+        cluster_key=episode.cluster_key,
+        base=episode.base,
+        policy_key=policy.key,
+        status=trade.status,
+        selected_decision_id=decision.decision_id,
+        selected_at=decision.ts,
+        exchange=decision.exchange,
+        action=decision.action,
+        recorded_score=decision.score,
+        effective_score=selection.effective_score,
+        pump_pct=decision.pump_pct,
+        liquidity_quality_reason=quality_reason,
+        spread_bps=spread_bps,
+        entry_impact_bps=decision_impact_bps(decision, "bid"),
+        exit_impact_bps=decision_impact_bps(decision, "ask"),
+        component_points=tuple(
+            (item.name, item.points, item.data_available) for item in selection.components
+        ),
+        episode_net_return_pct=trade.net_return_pct,
+        episode_net_pnl_usd=trade.net_pnl_usd,
+        trade=trade,
+        error=trade.error,
     )
 
 
@@ -502,6 +554,7 @@ def build_decision_quality_report(
         for episode in dataset.eligible_episodes
         for policy in SCORE_POLICIES
     )
+    exit_ablation_trades = build_exit_ablation_trades(dataset, path_by_decision, costs)
     score_buckets, component_buckets, diagnostic_buckets = _calibration_buckets(results)
     exclusions = Counter(
         reason for episode in dataset.excluded_episodes for reason in episode.exclusion_reasons
@@ -513,6 +566,8 @@ def build_decision_quality_report(
             replay_query_version=QUERY_VERSION,
             report_version=DECISION_QUALITY_REPORT_VERSION,
             policy_version=DECISION_QUALITY_POLICY_VERSION,
+            matched_economics_version=MATCHED_ECONOMICS_VERSION,
+            exit_ablation_family_version=EXIT_ABLATION_FAMILY_VERSION,
             score_component_schema_version=SCORE_COMPONENT_SCHEMA_VERSION,
             virtual_strategy_version=VIRTUAL_STRATEGY_VERSION,
             entry_model_version=ENTRY_MODEL_VERSION,
@@ -564,6 +619,12 @@ def build_decision_quality_report(
         score_buckets=score_buckets,
         component_buckets=component_buckets,
         diagnostic_buckets=diagnostic_buckets,
+        matched_policy_economics=matched_policy_economics(results),
+        liquidity_segment_economics=liquidity_segment_economics(results),
+        exit_ablation_metrics=exit_ablation_metrics(exit_ablation_trades),
+        exit_mechanics_effects=exit_mechanics_effects(exit_ablation_trades),
+        initial_stop_follow_through=initial_stop_follow_through(exit_ablation_trades),
+        exit_ablation_trades=exit_ablation_trades,
         episode_results=results,
         market_paths=paths,
     )
@@ -731,6 +792,215 @@ def render_markdown(report: DecisionQualityReport) -> str:
     lines.extend(
         [
             "",
+            "## Matched policy economics",
+            "",
+            (
+                "_Every row uses the same completely resolved episode set. Cash episodes "
+                "contribute zero gross return and zero costs. Impact is measured relative "
+                "to mid, so spread is already inside bid/ask impact and is not charged "
+                "again._"
+            ),
+            "",
+        ]
+    )
+    lines.extend(
+        markdown_table(
+            (
+                "Policy",
+                "Episodes",
+                "Clusters",
+                "Selected",
+                "Cash",
+                "Gross / episode",
+                "Entry impact",
+                "Exit impact",
+                "Fees",
+                "Funding",
+                "Total cost",
+                "Net / episode",
+                "Net / trade",
+            ),
+            [
+                (
+                    row.policy_key,
+                    row.episodes,
+                    row.clusters,
+                    row.selected,
+                    row.cash,
+                    format_percentage(row.mean_episode_gross_return_pct, missing="n/a"),
+                    format_number(row.mean_entry_impact_bps, suffix=" bps", missing="n/a"),
+                    format_number(row.mean_exit_impact_bps, suffix=" bps", missing="n/a"),
+                    format_number(row.mean_fee_cost_bps, suffix=" bps", missing="n/a"),
+                    format_number(row.mean_funding_cost_bps, suffix=" bps", missing="n/a"),
+                    format_number(row.mean_total_cost_bps, suffix=" bps", missing="n/a"),
+                    format_percentage(row.mean_episode_net_return_pct, missing="n/a"),
+                    format_percentage(row.mean_trade_net_return_pct, missing="n/a"),
+                )
+                for row in report.matched_policy_economics
+            ],
+        )
+    )
+    lines.extend(
+        [
+            "",
+            "## Trade cost and liquidity segments",
+            "",
+            (
+                "_Completed trades only. These rows describe where costs and returns "
+                "occur; unlike the matched table above, trade counts may differ by policy. "
+                "Spread buckets are descriptive and are not an additional cost._"
+            ),
+            "",
+        ]
+    )
+    lines.extend(
+        markdown_table(
+            (
+                "Policy",
+                "Dimension",
+                "Bucket",
+                "Trades",
+                "Clusters",
+                "Gross",
+                "Entry impact",
+                "Exit impact",
+                "Fees",
+                "Funding",
+                "Total cost",
+                "Net",
+            ),
+            [
+                (
+                    row.policy_key,
+                    row.dimension,
+                    row.bucket,
+                    row.trades,
+                    row.clusters,
+                    format_percentage(row.mean_gross_return_pct),
+                    format_number(row.mean_entry_impact_bps, suffix=" bps"),
+                    format_number(row.mean_exit_impact_bps, suffix=" bps"),
+                    format_number(row.mean_fee_cost_bps, suffix=" bps"),
+                    format_number(row.mean_funding_cost_bps, suffix=" bps"),
+                    format_number(row.mean_total_cost_bps, suffix=" bps"),
+                    format_percentage(row.mean_net_return_pct),
+                )
+                for row in report.liquidity_segment_economics
+            ],
+        )
+    )
+    lines.extend(["", "## Matched exit mechanics ablations", ""])
+    lines.extend(
+        markdown_table(
+            (
+                "Policy",
+                "Mechanics",
+                "Episodes",
+                "Clusters",
+                "Mean net",
+                "Win rate",
+                "Initial SL",
+                "Duration",
+                "MFE",
+                "MAE",
+            ),
+            [
+                (
+                    row.policy_key,
+                    row.mechanics_key,
+                    row.episodes,
+                    row.clusters,
+                    format_percentage(row.mean_net_return_pct, missing="n/a"),
+                    format_percentage(row.win_rate_pct, missing="n/a"),
+                    format_percentage(row.initial_stop_rate_pct, missing="n/a"),
+                    format_number(row.mean_duration_minutes, suffix="m", missing="n/a"),
+                    format_percentage(row.mean_mfe_pct, missing="n/a"),
+                    format_percentage(row.mean_mae_pct, missing="n/a"),
+                )
+                for row in report.exit_ablation_metrics
+            ],
+        )
+    )
+    lines.extend(
+        [
+            "",
+            (
+                "_Ablation effects interact and must not be added together. Each delta "
+                "changes one mechanism relative to the named reference on identical "
+                "decisions and candle paths._"
+            ),
+            "",
+            "### Paired mechanics effects",
+            "",
+        ]
+    )
+    lines.extend(
+        markdown_table(
+            (
+                "Policy",
+                "Effect",
+                "Reference",
+                "Variant",
+                "N",
+                "Reference net",
+                "Variant net",
+                "Mean delta",
+                "Improved",
+                "Worsened",
+                "Same",
+            ),
+            [
+                (
+                    row.policy_key,
+                    row.effect_key,
+                    row.reference_key,
+                    row.variant_key,
+                    row.episodes,
+                    format_percentage(row.mean_reference_net_return_pct, missing="n/a"),
+                    format_percentage(row.mean_variant_net_return_pct, missing="n/a"),
+                    format_percentage(row.mean_delta_pct, missing="n/a"),
+                    row.improved_episodes,
+                    row.worsened_episodes,
+                    row.unchanged_episodes,
+                )
+                for row in report.exit_mechanics_effects
+            ],
+        )
+    )
+    lines.extend(["", "### Initial-stop follow-through at 240m", ""])
+    lines.extend(
+        markdown_table(
+            (
+                "Policy",
+                "Initial SL exits",
+                "240m resolved",
+                "Positive at 240m",
+                "Positive rate",
+                "Mean 240m net",
+                "Mean 240m MAE",
+            ),
+            [
+                (
+                    row.policy_key,
+                    row.initial_stop_exits,
+                    row.fixed_240_resolved,
+                    row.fixed_240_positive,
+                    format_percentage(row.fixed_240_positive_rate_pct, missing="n/a"),
+                    format_percentage(row.mean_fixed_240_net_return_pct, missing="n/a"),
+                    format_percentage(row.mean_fixed_240_mae_pct, missing="n/a"),
+                )
+                for row in report.initial_stop_follow_through
+            ],
+        )
+    )
+    lines.extend(
+        [
+            "",
+            (
+                "_The 240m counterfactual deliberately ignores stops and trailing. It "
+                "measures later price follow-through, not the risk or feasibility of "
+                "holding through the observed MAE._"
+            ),
+            "",
             "## Recorded score calibration",
             "",
         ]
@@ -830,6 +1100,11 @@ def render_markdown(report: DecisionQualityReport) -> str:
                 "- Any promising threshold or component rule must be registered and "
                 "confirmed on a new untouched cohort before live shadow or production."
             ),
+            (
+                "- Exit ablations are discovery diagnostics. A wider or disabled stop "
+                "cannot be promoted without fixed-dollar-risk sizing, drawdown, and "
+                "liquidation-distance validation."
+            ),
         ]
     )
     return "\n".join(lines) + "\n"
@@ -917,7 +1192,11 @@ async def _run(args: argparse.Namespace) -> str:
         await repository.close()
     dataset = build_replay_dataset(decisions, filters)
     selected = selected_policy_decisions(dataset.eligible_episodes)
-    paths = await fetch_decision_market_paths(selected, EXCHANGE_FACTORIES)
+    paths = await fetch_decision_market_paths(
+        selected,
+        EXCHANGE_FACTORIES,
+        bounds=economics_path_bounds,
+    )
     report = build_decision_quality_report(
         dataset,
         filters,

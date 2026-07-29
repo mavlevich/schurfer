@@ -1,6 +1,6 @@
 # Roadmap
 
-> Living document. Updated as we progress. Last refreshed 2026-07-28.
+> Living document. Updated as we progress. Last refreshed 2026-07-29.
 
 ## Guiding principle
 
@@ -18,7 +18,7 @@ tomorrow.
 The parked idea catalog lives in [IDEAS.md](IDEAS.md). It is frozen until edge is
 proven. Post-MVP strategy and exit improvements live in the exit-strategy notes.
 
-## Current state (2026-07-27)
+## Current state (2026-07-29)
 
 - Live in production on Hetzner. Private access over Tailscale only. Caddy serves
   the Tailscale hostname with a static cert. Public ports 80 and 443 are closed
@@ -29,123 +29,72 @@ proven. Post-MVP strategy and exit improvements live in the exit-strategy notes.
   now has 17 configured linear-USDT perp venues. The immediate task is measuring
   which venues add unique discoveries or useful lead time before adding more feeds.
 
-## Near-term delivery sequence: next 10 pull requests
+## Near-term delivery sequence: execution and exit decision
 
-The measurement foundation is sufficiently complete. The next cycle is strategy
-first: use the captured data to reject, retain, or replace rules instead of adding
-more infrastructure by default. "More aggressive" means evaluating more variants in
-parallel in virtual, shadow, and paper modes. It does not mean enabling real orders
-before measured edge and the live-safety gates.
+The measurement foundation and shared paper/replay performance accounting are live.
+The immediate question is narrower: does the tradeable pump-reversion signal survive
+the production exit mechanics, and can its execution be improved without taking
+unbounded tail risk? Existing entry, score, and exit cohorts continue collecting, but
+no new confirmatory family is added until this question is resolved. Production
+remains `DRY_RUN=true`, `AUTO_TRADE=false`.
 
-This sequence is ordered, but adjacent research PRs may be developed while a
-prospective cohort matures. A failed hypothesis is a useful result and should remove
-a rule or stop a workstream rather than trigger unbounded tuning.
+1. **[In progress] Matched cohort economics.** Keep the read-only
+   [survival SQL](docs/analysis/pump_short_survival.sql) as an auditable screen and
+   extend `decision-quality-report` on one completely resolved
+   episode set for `score_any`, `score_4`, and `score_6`. Separate gross return,
+   entry impact, modeled exit impact, fees, conservative funding, and net return.
+   Segment completed trades by venue, spread, and round-trip impact, but do not
+   subtract spread twice: bid/ask VWAP impact is already measured against mid. Reuse
+   one decision, entry, and exact candle path for paired full-v1, clock-only,
+   initial-SL-plus-clock, and fixed-240-minute exit ablations. Report how many
+   initial-stop exits would later be positive at 240 minutes and the MAE required to
+   reach that result. These are discovery diagnostics; interacting deltas are not
+   additive and cannot change production.
+2. **Exit-time liquidity observation.** At every paper close, fetch a bounded fresh
+   order book and persist the executable buy-to-close quote: timestamp, best bid/ask,
+   mid, spread, size-specific ask VWAP impact, latency, status, and error. Preserve the
+   existing decision-time modeled exit impact instead of overwriting it. This is an
+   observed exit quote, not an actual fill. Failure to fetch it must never block or
+   erase the paper close. Ship the schema and collector early so observations accrue.
+3. **Long-horizon and signed-funding research.** The resolver already stores 24-hour,
+   72-hour, and 7-day outcomes. Add them as separate research rows with mature N,
+   exact-venue coverage, MFE, MAE, baseline-stop survival, funding settlement count,
+   signed funding cash flow, and capital occupancy. Never turn missing funding into
+   zero or call every funding rate a cost or credit. Show expected concurrent
+   positions before proposing a longer hold.
+4. **Exit discovery on the matched tradeable cohort.** Use the result of item 1 to
+   decide whether a wider or volatility-scaled stop is justified. Compare it with the
+   already registered breakeven, no-progress, and bounded-extension policies in an
+   explicitly discovery-only run. Any wider stop must reduce notional to keep the
+   same dollar risk and must report drawdown and liquidation distance. It cannot be
+   promoted from this historical cohort.
+5. **Maker OHLCV upper bound.** Pre-register at most two passive entry levels. Place a
+   hypothetical post-only sell only after the decision, use one-minute bars where
+   available, bound the fill timeout, treat unfilled as cash, keep the protective stop
+   taker, and report fill rate, missed winners, adverse selection, and ambiguous
+   partial-fill coverage. `high >= limit` is only a potential fill, so this result is
+   an optimistic feasibility bound rather than execution proof.
+6. **Exit quote calibration.** After at least 30 exit observations, publish a
+   directional comparison of decision-time modeled and close-time observed impact.
+   Target 100 observations for a decision and segment by venue, exit reason, duration,
+   spread, and depth. A paper quote still must not be presented as actual slippage.
+7. **Conditional maker paper simulator.** Build this only if item 5 is promising.
+   Start with one or two supported venues and bounded hot symbols, retain post-only
+   order state, partial fills, cancel/replace timing, and a taker protective stop.
+   Ticker bars alone cannot validate queue position; active symbols need bounded
+   trades and L2 observations. No real order is authorized.
+8. **Decision checkpoint.** On `2026-08-31`, review the accumulated evidence. Formal
+   promotion still requires at least 100 eligible episodes, 30 asset clusters,
+   complete pairing, positive net expectancy after costs, cluster sensitivity, and
+   acceptable drawdown. If the sample is smaller, explicitly choose one bounded
+   extension or shelve the strategy because the practical opportunity flow is too
+   low. The allowed outcomes are a registered exit-v2 shadow, maker-v2 shadow, a
+   narrow liquid taker segment, or parking pump-short and moving the platform to the
+   next pre-registered signal.
 
-**Correctness prerequisite before live shadow.** The trade journal currently labels
-price-only paper P&L as net even though fees, funding, and slippage are not deducted.
-Ship the performance-accounting foundation before item 6. It must preserve historical
-rows as `legacy_price_only_v1`, add explicit gross and net fields, and withhold net
-when a required cost input is missing. New paper closes use the same
-`conservative_costs_v1` contract as replay: 10 bps taker fee per side, 5 bps funding
-cost per eight hours, and the decision-time bid/ask impacts held constant as a
-conservative slippage estimate. The contract is shared code used by replay,
-execution, and the future shadow evaluator. It is an estimate, not an exchange fill
-reconciliation. Real-money accounting remains legacy until actual order fees,
-funding transfers, and fills are imported from the venue.
-
-1. **[Done] Automatic decision-quality report.** The read-only
-   `decision-quality-report` compares market-quality-only, score 4 through 9, and
-   leave-one-component-out score-6 policies on one chronological decision per pump
-   episode. It reuses the exact-venue entry/exit/cost engine and reports net
-   expectancy, recorded-size P&L, profit factor, sequential episode drawdown,
-   MFE/MAE, initial stops, cluster-bootstrap intervals, concentration, missingness,
-   and score/component/pump-size/venue/liquidity/action buckets. The existing cohort
-   remains discovery-only. Its total P&L and drawdown are independent-episode
-   diagnostics, not an account simulation with capital and concurrent-position
-   constraints. A stricter policy that rejects an observed open is unresolved rather
-   than cash because the recorded decision path ends after the baseline opens. If
-   variable conviction sizing is introduced later, profit factor must also be
-   computed from dollar P&L instead of assuming equal notional.
-2. **Bounded CEX hot set and squeeze/momentum measurement.** Turn the existing Bybit
-   ticker stream into a consumed measurement path, then add Binance. The first slice
-   consumes `market.bybit.ticker.*`, keeps a ten-minute broad prebuffer, activates no
-   more than 12 measurement-feed symbols for four hours, and retains bounded
-   five-second Redis bars plus lag/drop/coverage health. Keep lightweight whole-venue
-   tickers on a small connection pool, but subscribe to trades and bounded depth only
-   for the dynamic hot set. Add the pre-registered price/volume acceleration trigger
-   only after the first slice establishes the event-rate and host-memory baseline.
-   Persist exact threshold, alert, shadow-entry, and shadow-exit times in the next
-   durable research layer. Evaluate long squeeze/momentum and short blow-off
-   strategies as separate state machines. No real long orders are authorized.
-3. **Pre-registered score-threshold family.** Keep score 6 as baseline and compare
-   score 4 and 5 on the same episodes beginning
-   `2026-07-31T00:00:00Z`. Treat no trigger as cash. Reuse the existing point-in-time
-   selection, entry/exit/cost engine, first-100 formal sample, cluster bootstrap, Holm
-   correction, 97.5% Bonferroni paired intervals, and top-cluster sensitivity.
-   Promote at most a shadow candidate. This tests whether current selectivity is
-   suppressing useful paper trades without declaring the discovery sample a result.
-   Evaluate score 7 and 8 only through the live multi-variant shadow path because a
-   baseline open right-censors later recorded decisions.
-4. **Pre-registered exit family for OBS-001.** Compare the production exit with
-   breakeven-after-activation, a no-progress timeout, and their combination. Add one
-   state-dependent hold candidate: at the baseline max-hold boundary, close only if
-   the trail has activated and the trade has not made a new favorable excursion
-   during the locked 30-minute lookback; otherwise tighten the stop to 5%, extend
-   once for 60 minutes, and retain an absolute maximum hold. A new favorable extreme
-   must improve the previous registered low by at least 0.5%, so market noise cannot
-   indefinitely reset the clock. The no-progress candidates use a 60-minute stale
-   clock and a 120-minute absolute extension. The exact `exit_policy_family_v1`
-   contract and `2026-07-29T00:00:00Z` cohort are registered in
-   `docs/research/pump-short-hypotheses.md`. This tests whether profitable retraces
-   are being cut by the clock without allowing an unlimited position. Keep partial
-   take-profit plus runner separate unless the first family shows that exit capture,
-   rather than entry quality, is the dominant problem.
-   The bounded policy engine and paired Markdown/JSON report are implemented. The
-   report requires the longest registered exact-venue candle window for the whole
-   family, preserves the first 100 eligible episodes, and withholds formal output
-   before complete pairing and cluster diversity.
-5. **Derivatives-context analysis.** Join the persisted funding, open-interest,
-   long/short, and liquidation context to eligible episode outcomes. Use only
-   point-in-time windows, explicit availability/coverage, clustered inference, and a
-   locked small hypothesis family. Do not turn every available field into a score.
-6. **Live multi-variant shadow evaluator.** Run registered score, confirmation, and
-   exit candidates beside the baseline without placing orders. Give every variant
-   isolated state and capture the actual quote, spread, depth, impact, lag, and
-   rejection reason at its own trigger time. This closes the historical-order-book
-   blind spot in delayed-entry replay.
-7. **Durable shadow track record and automatic report.** Persist versioned shadow
-   positions and resolutions, then report expectancy, profit factor, drawdown,
-   initial-stop rate, captured MFE, execution coverage, and disagreement with the
-   baseline. Add a report registry keyed by report version, code revision, cutoff, and
-   input fingerprints. Run a lightweight database-only readiness and data-health
-   summary daily; run expensive exact-venue CCXT replays only when a cohort becomes
-   due, readiness changes, or a human requests them. Archive immutable timestamped
-   JSON and Markdown artifacts, then send a short Telegram summary for `collecting`,
-   `no_go`, `inconclusive`, `shadow_candidate`, and report failures. Keep all advice
-   rules-based and traceable to a registered threshold. Never let a scheduled report
-   change production configuration or promote a strategy automatically. If repeated
-   historical requests become expensive, add a provenance-aware market-path cache
-   before increasing the report cadence.
-8. **Out-of-sample shadow champion.** Freeze the strongest candidate selected by
-   the preceding registered research reports, bump its strategy version, and collect
-   a new untouched cohort through the live shadow path. No parameters may be changed
-   after the confirmation boundary.
-9. **Paper champion promotion.** If the out-of-sample shadow gate passes, run the
-   champion through the existing paper order/monitor/journal lifecycle while the
-   baseline remains a control. Add operational alerts for missing market data,
-   divergent fills, stale positions, and strategy-level drawdown. Only after the
-   fixed-notional champion demonstrates stable net edge, pre-register a separate risk
-   allocation family: conservative edge-based notional, bounded tranche entries,
-   liquidity checks per tranche, portfolio heat, and drawdown caps. Keep leverage a
-   margin and liquidation-distance decision, not an alpha multiplier. OI, funding,
-   liquidations, acceleration, and cross-venue agreement must earn their role as
-   point-in-time features before they can affect eligibility or size.
-10. **Go/no-go checkpoint.** If at least 100 eligible episodes, 30 asset clusters,
-    complete paired resolution, positive net expectancy after costs, familywise
-    improvement, acceptable drawdown, and stable out-of-sample paper behavior all
-    pass, prepare the human-confirmed tiny-capital stage from Phase 3. If they do not,
-    do not lower the safety bar: reject or pause pump-short v1 and move the research
-    budget to the pre-registered delisting-short or DEX narrative tracks.
+Reporting duplication is reduced incrementally while implementing items 1, 3, 4, and
+5 through the shared `reporting`, replay, and challenger-inference modules. A separate
+large report-consolidation project is not allowed to delay the strategy decision.
 
 The LBank perpetual-history limitation is parked in
 [CCXT-003](docs/tasks/ccxt/003-lbank-perpetual-ohlcv-research.md). It remains visible,
