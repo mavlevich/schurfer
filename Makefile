@@ -1,5 +1,5 @@
-.PHONY: help install install-golangci-lint dev dev-init dev-stop dev-reset dev-logs dev-test migrate measurement-report exchange-coverage-report episode-replay virtual-strategy-report virtual-entry-challenger-report virtual-threshold-challenger-report virtual-exit-policy-report virtual-score-challenger-report candle-anomaly-report derivatives-context-report decision-quality-report liquid-taker-report test lint ci-lint format clean security deadcode check verify verify-docker \
-        prod-deploy prod-measurement-report prod-exchange-coverage-report prod-episode-replay prod-virtual-strategy-report prod-virtual-entry-challenger-report prod-virtual-threshold-challenger-report prod-virtual-exit-policy-report prod-virtual-score-challenger-report prod-candle-anomaly-report prod-derivatives-context-report prod-decision-quality-report prod-liquid-taker-report prod-logs prod-backup prod-restore-local prod-health
+.PHONY: help install install-golangci-lint dev dev-init dev-stop dev-reset dev-logs dev-test migrate measurement-report exchange-coverage-report episode-replay virtual-strategy-report virtual-entry-challenger-report virtual-threshold-challenger-report virtual-exit-policy-report virtual-score-challenger-report candle-anomaly-report derivatives-context-report decision-quality-report liquid-taker-report long-horizon-report test lint ci-lint format clean security deadcode check verify verify-docker \
+        prod-deploy prod-measurement-report prod-exchange-coverage-report prod-episode-replay prod-virtual-strategy-report prod-virtual-entry-challenger-report prod-virtual-threshold-challenger-report prod-virtual-exit-policy-report prod-virtual-score-challenger-report prod-candle-anomaly-report prod-derivatives-context-report prod-decision-quality-report prod-liquid-taker-report prod-long-horizon-report prod-logs prod-backup prod-restore-local prod-health
 
 GOLANGCI_LINT_VERSION = v2.1.6
 
@@ -35,6 +35,7 @@ help:
 	@echo "  make derivatives-context-report  Probe recoverable derivatives history"
 	@echo "  make decision-quality-report  Compare score and component quality"
 	@echo "  make liquid-taker-report  Replay prospective low-impact taker shelf"
+	@echo "  make long-horizon-report  Describe 24h/72h/7d returns and signed funding"
 	@echo ""
 	@echo "Production (run on server with .env.prod present):"
 	@echo "  make prod-deploy          Pull + rebuild + restart all services"
@@ -54,6 +55,7 @@ help:
 	@echo "  make prod-derivatives-context-report  Production derivatives coverage probe"
 	@echo "  make prod-decision-quality-report  Production score diagnostics"
 	@echo "  make prod-liquid-taker-report  Production low-impact taker replay"
+	@echo "  make prod-long-horizon-report  Production long-horizon funding research"
 
 install:
 	@echo "-> Installing Python deps via uv..."
@@ -193,6 +195,14 @@ decision-quality-report:
 liquid-taker-report:
 	@DATABASE_URL="$${DATABASE_URL:-postgresql://schurfer:schurfer_dev@localhost:5432/schurfer}" \
 		uv run --package schurfer-analytics liquid-taker-report \
+		--code-revision="$$(git rev-parse HEAD)" \
+		$$(test -z "$$(git status --porcelain)" \
+			&& printf '%s' '--no-working-tree-dirty' \
+			|| printf '%s' '--working-tree-dirty') $(ARGS)
+
+long-horizon-report:
+	@DATABASE_URL="$${DATABASE_URL:-postgresql://schurfer:schurfer_dev@localhost:5432/schurfer}" \
+		uv run --package schurfer-analytics long-horizon-report \
 		--code-revision="$$(git rev-parse HEAD)" \
 		$$(test -z "$$(git status --porcelain)" \
 			&& printf '%s' '--no-working-tree-dirty' \
@@ -434,6 +444,14 @@ prod-liquid-taker-report:
 			&& printf '%s' '--no-working-tree-dirty' \
 			|| printf '%s' '--working-tree-dirty') $(ARGS)
 
+prod-long-horizon-report:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
+	@$(_PROD) run --rm --no-deps --entrypoint long-horizon-report analytics \
+		--code-revision="$$(git rev-parse HEAD)" \
+		$$(test -z "$$(git status --porcelain)" \
+			&& printf '%s' '--no-working-tree-dirty' \
+			|| printf '%s' '--working-tree-dirty') $(ARGS)
+
 # Redeploy a previous known-good commit. No pull, no migration: a rollback must
 # not fast-forward back to the broken main, and checking out old code does NOT
 # revert a schema change (restore from backup or downgrade explicitly for that).
@@ -477,6 +495,7 @@ verify-docker: verify
 	docker run --rm --entrypoint derivatives-context-report schurfer-analytics:ci --help
 	docker run --rm --entrypoint decision-quality-report schurfer-analytics:ci --help
 	docker run --rm --entrypoint liquid-taker-report schurfer-analytics:ci --help
+	docker run --rm --entrypoint long-horizon-report schurfer-analytics:ci --help
 	@docker rmi schurfer-analytics:ci --force > /dev/null
 	@echo "=== Docker: execution build + import check ==="
 	docker build -f apps/execution/Dockerfile -t schurfer-execution:ci . -q

@@ -47,6 +47,25 @@ alpha model: it keeps the v1 signal/entry rules but removes mechanically untrade
 books using the recorded spread, two-sided depth, and VWAP impact. Analyze its eligible
 cohort separately from the original v1 cohort.
 
+Long-horizon analysis is a discovery diagnostic, not a registered challenger. It uses
+the same baseline episode selection and exact decision venue at 24 hours, 72 hours,
+and seven days. Funding comes from the versioned public-history lane
+`long_horizon_funding_v1`. The manifest pins
+`positive_rate_long_pays_short_v1`: the CCXT unified rate preserves the published
+venue sign, a positive rate is modeled as a short credit, and a negative rate as a
+short debit. This convention was checked on 2026-07-29 against stored raw and unified
+Binance and OKX payloads. Before live use, every enabled venue must also be checked
+against its official contract and an authenticated funding-ledger settlement. The
+report must show settlement count, funding coverage,
+initial-stop survival, MFE/MAE, and full-hold capital occupancy. A positive
+fixed-horizon return does not mean the production trade could survive its initial or
+trailing stop, and missing funding must never become a zero-rate assumption. Any
+longer-hold challenger needs a separate prospective registration, bounded tail risk,
+and dollar-risk-preserving position size. Point-in-time and censoring checks apply to
+the complete episode path, while long-horizon outcome completeness applies only to the
+baseline-selected decision. A later repeated decision cannot delay an already mature
+selected decision.
+
 ---
 
 ## OBS-001 — exit asymmetry: full SL on losers, undershoot on winners

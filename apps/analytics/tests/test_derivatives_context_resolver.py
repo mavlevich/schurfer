@@ -9,8 +9,11 @@ from schurfer_analytics.derivatives_context import (
 from schurfer_analytics.derivatives_context_resolver import (
     DEFAULT_COHORT_START,
     DERIVATIVES_CONTEXT_RESOLVER_VERSION,
+    LONG_HORIZON_FUNDING_COHORT_START,
+    LONG_HORIZON_FUNDING_RESOLVER_VERSION,
     PERSISTED_METHODS_BY_EXCHANGE,
     DerivativesContextResolverConfig,
+    long_horizon_funding_config_from_env,
     resolve_derivatives_context_once,
 )
 
@@ -81,6 +84,26 @@ def test_config_parses_forward_cohort_and_validates_bounds() -> None:
         DerivativesContextResolverConfig(fetch_limit=0)
     with pytest.raises(ValueError, match="cannot exceed"):
         DerivativesContextResolverConfig(after_minutes=10_081)
+    with pytest.raises(ValueError, match="anchor mode"):
+        DerivativesContextResolverConfig(anchor_mode="future")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="unknown derivatives context methods"):
+        DerivativesContextResolverConfig(method_names=("unknown",))
+
+
+def test_long_horizon_funding_config_is_closed_anchor_and_funding_only() -> None:
+    cfg = long_horizon_funding_config_from_env()
+
+    assert cfg.enabled is True
+    assert cfg.cohort_start == LONG_HORIZON_FUNDING_COHORT_START
+    assert cfg.before_minutes == 1_440
+    assert cfg.after_minutes == 10_080
+    assert cfg.anchor_mode == "closed"
+    assert cfg.method_names == ("funding_rate_history",)
+    assert cfg.supported_pairs(("binance", "htx")) == (
+        ("binance", "funding_rate_history"),
+        ("htx", "funding_rate_history"),
+    )
+    assert LONG_HORIZON_FUNDING_RESOLVER_VERSION == "long_horizon_funding_v1"
 
 
 async def test_resolver_reuses_loaded_client_and_persists_samples() -> None:
@@ -151,3 +174,26 @@ async def test_resolver_persists_load_market_failure_without_fetching() -> None:
     assert persisted[0].result.status == "load_markets_failed"
     assert persisted[0].result.error == "venue unavailable"
     assert persisted[0].samples == ()
+
+
+async def test_resolver_passes_anchor_mode_and_explicit_version_to_store() -> None:
+    store = _store(())
+    cfg = DerivativesContextResolverConfig(
+        anchor_mode="closed",
+        method_names=("funding_rate_history",),
+    )
+
+    count = await resolve_derivatives_context_once(
+        cfg,
+        {"binance": MagicMock()},
+        store,
+        resolver_version=LONG_HORIZON_FUNDING_RESOLVER_VERSION,
+    )
+
+    assert count == 0
+    assert store.load_due_work.await_args.kwargs["anchor_mode"] == "closed"
+    store.persist_observations.assert_awaited_once()
+    assert store.persist_observations.await_args.args == ((),)
+    assert store.persist_observations.await_args.kwargs["resolver_version"] == (
+        LONG_HORIZON_FUNDING_RESOLVER_VERSION
+    )

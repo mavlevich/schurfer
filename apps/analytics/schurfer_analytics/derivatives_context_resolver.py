@@ -7,7 +7,7 @@ import os
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import ccxt
 import structlog
@@ -40,6 +40,8 @@ log = structlog.get_logger()
 
 DERIVATIVES_CONTEXT_RESOLVER_VERSION = "derivatives_context_v2"
 DEFAULT_COHORT_START = datetime(2026, 7, 27, tzinfo=UTC)
+LONG_HORIZON_FUNDING_RESOLVER_VERSION = "long_horizon_funding_v1"
+LONG_HORIZON_FUNDING_COHORT_START = datetime(2026, 7, 22, tzinfo=UTC)
 RETRYABLE_STATUSES = (
     "fetch_failed",
     "invalid_response",
@@ -110,6 +112,8 @@ class DerivativesContextResolverConfig:
     retry_after_seconds: int = 900
     batch_size: int = 8
     max_attempts: int = 8
+    anchor_mode: Literal["entry", "closed"] = "entry"
+    method_names: tuple[str, ...] | None = None
 
     def __post_init__(self) -> None:
         if self.cohort_start.tzinfo is None:
@@ -132,6 +136,14 @@ class DerivativesContextResolverConfig:
             raise ValueError("DERIVATIVES_CONTEXT_BATCH_SIZE must be positive")
         if self.max_attempts <= 0:
             raise ValueError("DERIVATIVES_CONTEXT_MAX_ATTEMPTS must be positive")
+        if self.anchor_mode not in {"entry", "closed"}:
+            raise ValueError("derivatives context anchor mode is invalid")
+        if self.method_names is not None:
+            unknown = sorted(set(self.method_names) - set(METHOD_BY_NAME))
+            if unknown:
+                raise ValueError(f"unknown derivatives context methods: {unknown}")
+            if not self.method_names:
+                raise ValueError("derivatives context method filter must not be empty")
 
     @classmethod
     def from_env(cls) -> DerivativesContextResolverConfig:
@@ -158,11 +170,34 @@ class DerivativesContextResolverConfig:
         )
 
     def supported_pairs(self, exchanges: tuple[str, ...]) -> tuple[tuple[str, str], ...]:
+        selected_methods = set(self.method_names) if self.method_names is not None else None
         return tuple(
             (exchange, method)
             for exchange in exchanges
             for method in PERSISTED_METHODS_BY_EXCHANGE.get(exchange, ())
+            if selected_methods is None or method in selected_methods
         )
+
+
+def long_horizon_funding_config_from_env() -> DerivativesContextResolverConfig:
+    """Build the funding-only lane used by 24h, 72h, and 7d research."""
+    return DerivativesContextResolverConfig(
+        enabled=_parse_bool("LONG_HORIZON_FUNDING_ENABLED", True),
+        cohort_start=_parse_utc(
+            "LONG_HORIZON_FUNDING_SINCE",
+            LONG_HORIZON_FUNDING_COHORT_START,
+        ),
+        before_minutes=int(os.getenv("LONG_HORIZON_FUNDING_BEFORE_MINUTES", "1440")),
+        after_minutes=int(os.getenv("LONG_HORIZON_FUNDING_AFTER_MINUTES", "10080")),
+        fetch_limit=int(os.getenv("LONG_HORIZON_FUNDING_FETCH_LIMIT", "200")),
+        max_pages=int(os.getenv("LONG_HORIZON_FUNDING_MAX_PAGES", "10")),
+        timeout_seconds=float(os.getenv("LONG_HORIZON_FUNDING_TIMEOUT", "15")),
+        retry_after_seconds=int(os.getenv("LONG_HORIZON_FUNDING_RETRY_AFTER", "900")),
+        batch_size=int(os.getenv("LONG_HORIZON_FUNDING_BATCH_SIZE", "8")),
+        max_attempts=int(os.getenv("LONG_HORIZON_FUNDING_MAX_ATTEMPTS", "8")),
+        anchor_mode="closed",
+        method_names=("funding_rate_history",),
+    )
 
 
 def _failed_observations(
@@ -250,6 +285,8 @@ async def resolve_derivatives_context_once(
     cfg: DerivativesContextResolverConfig,
     exchanges: dict[str, Any],
     store: DerivativesContextStore,
+    *,
+    resolver_version: str = DERIVATIVES_CONTEXT_RESOLVER_VERSION,
 ) -> int:
     """Resolve and atomically persist one bounded work batch."""
     supported_pairs = cfg.supported_pairs(tuple(exchanges))
@@ -262,6 +299,7 @@ async def resolve_derivatives_context_once(
         max_attempts=cfg.max_attempts,
         retry_after_seconds=cfg.retry_after_seconds,
         batch_size=cfg.batch_size,
+        anchor_mode=cfg.anchor_mode,
     )
     observations: list[DerivativesContextObservation] = []
     loaded_exchanges: set[str] = set()
@@ -306,7 +344,7 @@ async def resolve_derivatives_context_once(
 
     await store.persist_observations(
         tuple(observations),
-        resolver_version=DERIVATIVES_CONTEXT_RESOLVER_VERSION,
+        resolver_version=resolver_version,
         ccxt_version=ccxt.__version__,
     )
     if observations:
