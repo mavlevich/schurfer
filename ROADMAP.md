@@ -94,14 +94,14 @@ remains `DRY_RUN=true`, `AUTO_TRADE=false`.
    initial-stop exits would later be positive at 240 minutes and the MAE required to
    reach that result. These are discovery diagnostics; interacting deltas are not
    additive and cannot change production.
-2. **[In progress] Exit-time liquidity observation.** At every paper close, fetch a
+2. **[Completed, collecting] Exit-time liquidity observation.** At every paper close, fetch a
    bounded fresh order book and persist the executable buy-to-close quote: timestamp,
    best bid/ask, mid, spread, size-specific ask VWAP impact, latency, status, and
    error. Preserve the existing decision-time modeled exit impact instead of
    overwriting it. This is an observed exit quote, not an actual fill. Failure to
    fetch it must never block or erase the paper close. Ship the schema and collector
    early so observations accrue.
-3. **Prospective liquid taker candidate.** Register
+3. **[In progress] Prospective liquid taker candidate.** Register
    `liquid_taker_candidate_v1` from `2026-07-30T00:00:00Z`: keep the existing entry,
    score, taker execution, and full-v1 exit rules, but require the recorded
    market-quality gate and decision-time round-trip impact at the configured notional

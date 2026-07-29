@@ -597,6 +597,38 @@ the new cohort separately.
   belong to the live multi-variant shadow evaluator because baseline opens
   right-censor their later recorded decisions.
 
+- Liquid-taker forward replay: use the prospective HYP-008 cohort to test whether
+  the decision-time round-trip impact shelf at or below 20 bps retains executable
+  net expectancy under the unchanged v1 entry, exit, and taker cost model:
+
+  ```bash
+  make prod-liquid-taker-report
+  make prod-liquid-taker-report \
+    ARGS="--until 2026-08-31T00:00:00Z --format json" \
+    > backups/reports/liquid-taker-2026-08-31.json
+  ```
+
+  The registered cohort starts at `2026-07-30T00:00:00Z`. Before that time the
+  command exits without querying the database. It selects the first chronological
+  decision that passes its recorded score threshold, recorded market-quality gate,
+  and finite configured-notional bid plus ask impact limit. A valid episode that
+  never passes remains zero-return cash. Missing gate inputs, impacts, or an exact
+  selected-venue candle path remain unresolved.
+
+  Read `Coverage` and `Market paths` first. Then inspect candidate opportunities per
+  calendar day, trade rate, net expectancy, profit factor, drawdown, initial-stop
+  rate, venue and weekly concentration. `Capacity and scale` reports the largest
+  recorded depth target that passed the same 20 bps limit. This is a measured floor,
+  not a promise of fills above that size. The monthly P&L row is only a descriptive
+  run-rate at recorded paper size.
+
+  Formal inference is withheld until the earliest chronological prefix contains at
+  least 100 eligible episodes, 30 asset clusters, four UTC calendar weeks, and no
+  unresolved results. A passing 95% whole-asset cluster interval must remain positive
+  after removing the busiest week and each of the five most frequent assets. A pass
+  creates only a shadow candidate. It does not change production or authorize live
+  trading.
+
 - Candle anomaly research: after the registered cohort has accumulated closed episodes
   with exact-anchor 8-hour outcomes, derive HYP-005 features and join them to the
   baseline virtual replay:
