@@ -725,6 +725,36 @@ the new cohort separately.
   creates only a shadow candidate. It does not change production or authorize live
   trading.
 
+- Maker-entry OHLCV upper bound: estimate whether a post-only entry is promising
+  enough to justify a real paper fill simulator:
+
+  ```bash
+  make prod-maker-entry-report
+  make prod-maker-entry-report \
+    ARGS="--until 2026-07-30T00:00:00Z --format json" \
+    > backups/reports/maker-entry-2026-07-30.json
+  ```
+
+  The discovery cohort starts at `2026-07-22T00:00:00Z` and selects the first
+  recorded decision that passes the recorded market-quality gate without imposing a
+  score floor. The only entry level is the recorded best ask. The hypothetical
+  post-only order becomes active on the first full bar strictly after the decision
+  and expires after 15 minutes. A potential fill begins simulated exposure on the
+  following bar. The fill bar itself is never reused for exit decisions.
+
+  Read path coverage first. Results based on complete exact-venue one-minute paths
+  are primary; five-minute fallback results are labeled and must be inspected
+  separately. The maker variant resolves exits on its selected 1m or 5m path, while
+  the taker baseline remains 5m. The primary delta therefore is not an entry-only
+  causal estimate. `high >= limit` does not establish queue position, partial fill,
+  or executable size. If the bar opens at or above the old sell limit, post-only
+  acceptance is also unknown and the report flags rejection risk. `unfilled` is
+  zero-return cash. The report keeps the existing taker protective exit and modeled
+  exit impact, reports missed baseline winners and stops within 30 minutes, and uses
+  an explicit optimistic maker-entry fee. Even a positive result is only an upper
+  bound. It can justify a bounded paper post-only simulator, not a strategy promotion
+  or real trading.
+
 - Candle anomaly research: after the registered cohort has accumulated closed episodes
   with exact-anchor 8-hour outcomes, derive HYP-005 features and join them to the
   baseline virtual replay:

@@ -14,6 +14,8 @@ if TYPE_CHECKING:
 TIMEFRAME = "5m"
 TIMEFRAME_MINUTES = 5
 TIMEFRAME_MS = TIMEFRAME_MINUTES * 60 * 1000
+ONE_MINUTE_TIMEFRAME = "1m"
+ONE_MINUTE_MS = 60 * 1000
 _FETCH_LIMIT = 1000
 _FETCH_TIMEOUT_SECONDS = 20
 
@@ -36,8 +38,17 @@ def finite_float(value: Any) -> float | None:
     return parsed if math.isfinite(parsed) else None
 
 
-def ceil_to_timeframe(ts_ms: int) -> int:
-    return ((ts_ms + TIMEFRAME_MS - 1) // TIMEFRAME_MS) * TIMEFRAME_MS
+def ceil_to_timeframe(ts_ms: int, timeframe_ms: int = TIMEFRAME_MS) -> int:
+    if timeframe_ms <= 0:
+        raise ValueError("timeframe_ms must be positive")
+    return ((ts_ms + timeframe_ms - 1) // timeframe_ms) * timeframe_ms
+
+
+def next_timeframe_after(ts_ms: int, timeframe_ms: int = TIMEFRAME_MS) -> int:
+    """Return the first bar boundary strictly after a point-in-time event."""
+    if timeframe_ms <= 0:
+        raise ValueError("timeframe_ms must be positive")
+    return (ts_ms // timeframe_ms + 1) * timeframe_ms
 
 
 def window_bounds(ts: datetime, horizon_minutes: int) -> tuple[int, int, int]:
@@ -49,7 +60,11 @@ def window_bounds(ts: datetime, horizon_minutes: int) -> tuple[int, int, int]:
     return start_ms, end_ms, expected_bars
 
 
-def normalize_candles(rows: Iterable[Any]) -> list[Candle]:
+def normalize_candles(
+    rows: Iterable[Any],
+    *,
+    timeframe_ms: int = TIMEFRAME_MS,
+) -> list[Candle]:
     """Validate, deduplicate, and sort ccxt OHLCV rows."""
     by_ts: dict[int, Candle] = {}
     for row in rows:
@@ -64,7 +79,7 @@ def normalize_candles(rows: Iterable[Any]) -> list[Candle]:
         if open_ is None or high is None or low is None or close is None:
             continue
         ts_ms = int(ts)
-        if ts != ts_ms or ts_ms % TIMEFRAME_MS != 0:
+        if ts != ts_ms or ts_ms % timeframe_ms != 0:
             continue
         if ts <= 0 or min(open_, high, low, close) <= 0 or (volume is not None and volume < 0):
             continue
@@ -75,12 +90,18 @@ def normalize_candles(rows: Iterable[Any]) -> list[Candle]:
     return [by_ts[ts] for ts in sorted(by_ts)]
 
 
-def closed_candles(candles: Iterable[Candle], start_ms: int, end_ms: int) -> list[Candle]:
+def closed_candles(
+    candles: Iterable[Candle],
+    start_ms: int,
+    end_ms: int,
+    *,
+    timeframe_ms: int = TIMEFRAME_MS,
+) -> list[Candle]:
     """Keep full bars inside [start_ms, end_ms], excluding both partial edges."""
     return [
         candle
         for candle in candles
-        if candle.ts_ms >= start_ms and candle.ts_ms + TIMEFRAME_MS <= end_ms
+        if candle.ts_ms >= start_ms and candle.ts_ms + timeframe_ms <= end_ms
     ]
 
 
@@ -89,33 +110,42 @@ async def fetch_candles(
     base: str,
     start_ms: int,
     end_ms: int,
+    *,
+    timeframe: str = TIMEFRAME,
+    timeframe_ms: int = TIMEFRAME_MS,
 ) -> list[Candle]:
     """Page through ccxt OHLCV and return only fully closed bars in the window."""
     symbol = f"{base.upper()}/USDT:USDT"
     cursor = start_ms
     collected: list[Candle] = []
-    max_pages = math.ceil(max(0, end_ms - start_ms) / TIMEFRAME_MS / _FETCH_LIMIT) + 2
+    if timeframe_ms <= 0:
+        raise ValueError("timeframe_ms must be positive")
+    max_pages = math.ceil(max(0, end_ms - start_ms) / timeframe_ms / _FETCH_LIMIT) + 2
 
     for _ in range(max_pages):
         if cursor >= end_ms:
             break
-        remaining = math.ceil((end_ms - cursor) / TIMEFRAME_MS)
+        remaining = math.ceil((end_ms - cursor) / timeframe_ms)
         limit = max(1, min(_FETCH_LIMIT, remaining + 1))
         raw = await asyncio.wait_for(
-            exchange.fetch_ohlcv(symbol, TIMEFRAME, since=cursor, limit=limit),
+            exchange.fetch_ohlcv(symbol, timeframe, since=cursor, limit=limit),
             timeout=_FETCH_TIMEOUT_SECONDS,
         )
-        page = normalize_candles(raw)
+        page = normalize_candles(raw, timeframe_ms=timeframe_ms)
         if not page:
             break
         collected.extend(page)
-        next_cursor = page[-1].ts_ms + TIMEFRAME_MS
+        next_cursor = page[-1].ts_ms + timeframe_ms
         if next_cursor <= cursor:
             break
         cursor = next_cursor
 
     return closed_candles(
-        normalize_candles([[c.ts_ms, c.open, c.high, c.low, c.close, c.volume] for c in collected]),
+        normalize_candles(
+            [[c.ts_ms, c.open, c.high, c.low, c.close, c.volume] for c in collected],
+            timeframe_ms=timeframe_ms,
+        ),
         start_ms,
         end_ms,
+        timeframe_ms=timeframe_ms,
     )

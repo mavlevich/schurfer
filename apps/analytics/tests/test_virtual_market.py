@@ -11,11 +11,15 @@ from schurfer_analytics.replay import ReplayDecision, ReplayEpisode
 from schurfer_analytics.virtual_entry_challengers import challenger_path_bounds
 from schurfer_analytics.virtual_market import (
     DecisionMarketPath,
+    MakerDecisionPaths,
     decision_market_path_fingerprint,
     fetch_candle_anomaly_paths,
     fetch_decision_market_paths,
     fetch_entry_challenger_paths,
+    fetch_maker_decision_paths,
     fetch_market_paths,
+    maker_market_path_fingerprint,
+    maker_path_bounds,
 )
 from schurfer_analytics.virtual_strategy import MarketPath
 
@@ -187,6 +191,42 @@ async def test_fetch_decision_paths_rejects_duplicate_decision_ids() -> None:
         await fetch_decision_market_paths((decision, decision), {})
 
 
+async def test_fetch_maker_paths_reuses_client_and_requests_both_timeframes() -> None:
+    exchange = AsyncMock()
+    factory = Mock(return_value=exchange)
+    decision = _episode().decisions[0]
+    candle = Candle(1785067500000, 100, 101, 99, 100, 1)
+
+    with patch(
+        "schurfer_analytics.virtual_market.fetch_candles",
+        AsyncMock(return_value=[candle]),
+    ) as fetch:
+        paths = await fetch_maker_decision_paths(
+            (decision,),
+            {"binance": factory},
+        )
+
+    assert factory.call_count == 1
+    assert fetch.await_count == 2
+    assert paths[0].decision_id == decision.decision_id
+    assert paths[0].one_minute.status == "complete"
+    assert paths[0].five_minute.status == "complete"
+    requested = {
+        (
+            call.kwargs["timeframe"],
+            call.kwargs["timeframe_ms"],
+            call.args[2],
+            call.args[3],
+        )
+        for call in fetch.await_args_list
+    }
+    assert requested == {
+        ("1m", 60_000, *maker_path_bounds(decision, 60_000)),
+        ("5m", 300_000, *maker_path_bounds(decision, 300_000)),
+    }
+    exchange.close.assert_awaited_once()
+
+
 def test_decision_path_fingerprint_is_order_independent_and_includes_decision_id() -> None:
     candle = Candle(1785067500000, 100, 101, 99, 100, 1)
     path = MarketPath(42, "binance", "ERA", "complete", (candle,))
@@ -197,6 +237,32 @@ def test_decision_path_fingerprint_is_order_independent_and_includes_decision_id
         (second, first)
     )
     assert decision_market_path_fingerprint((first,)) != decision_market_path_fingerprint((second,))
+
+
+def test_maker_path_fingerprint_is_order_independent_and_includes_both_timeframes() -> None:
+    one = MarketPath(
+        42,
+        "binance",
+        "ERA",
+        "complete",
+        (Candle(1785067500000, 100, 101, 99, 100, 1),),
+    )
+    five = MarketPath(
+        42,
+        "binance",
+        "ERA",
+        "complete",
+        (Candle(1785067500000, 100, 102, 98, 101, 1),),
+    )
+    first = MakerDecisionPaths("decision-a", one, five)
+    second = MakerDecisionPaths("decision-b", one, five)
+
+    assert maker_market_path_fingerprint((first, second)) == maker_market_path_fingerprint(
+        (second, first)
+    )
+    assert maker_market_path_fingerprint((first,)) != maker_market_path_fingerprint(
+        (replace(first, five_minute=one),)
+    )
 
 
 def test_decision_path_requires_nonempty_key() -> None:

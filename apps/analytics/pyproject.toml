@@ -30,6 +30,7 @@ derivatives-context-report = "schurfer_analytics.derivatives_context_report:main
 decision-quality-report = "schurfer_analytics.decision_quality_report:main"
 liquid-taker-report = "schurfer_analytics.liquid_taker_report:main"
 long-horizon-report = "schurfer_analytics.long_horizon_report:main"
+maker-entry-report = "schurfer_analytics.maker_entry_report:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
