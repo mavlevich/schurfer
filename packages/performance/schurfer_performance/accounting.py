@@ -56,12 +56,16 @@ def calculate_performance(
     entry_slippage_bps: float | None,
     exit_slippage_bps: float | None,
     costs: CostParameters = DEFAULT_COSTS,
+    entry_fee_bps: float | None = None,
+    exit_fee_bps: float | None = None,
 ) -> AccountingResult:
     """Calculate gross movement and conservative net performance.
 
     The notional stays fixed for fee, funding, and slippage estimates so the
-    contract exactly matches the replay engine. Missing slippage fails net
-    accounting closed while preserving the observable gross result.
+    contract exactly matches the replay engine. Optional leg-specific fees support
+    maker-entry/taker-exit diagnostics without changing the default two-sided taker
+    contract. Missing slippage fails net accounting closed while preserving the
+    observable gross result.
     """
 
     for name, value in (
@@ -81,7 +85,13 @@ def calculate_performance(
         else (exit_price - entry_price) / entry_price * 100
     )
     gross_pnl_usd = position_usd * gross_return_pct / 100
-    fee_cost_bps = costs.taker_fee_bps_per_side * 2
+    effective_entry_fee_bps = (
+        costs.taker_fee_bps_per_side if entry_fee_bps is None else entry_fee_bps
+    )
+    effective_exit_fee_bps = costs.taker_fee_bps_per_side if exit_fee_bps is None else exit_fee_bps
+    _finite_non_negative("entry fee", effective_entry_fee_bps)
+    _finite_non_negative("exit fee", effective_exit_fee_bps)
+    fee_cost_bps = effective_entry_fee_bps + effective_exit_fee_bps
     funding_cost_bps = costs.funding_cost_bps_per_8h * duration_minutes / 480
     fees_usd = position_usd * fee_cost_bps / 10_000
     funding_usd = position_usd * funding_cost_bps / 10_000

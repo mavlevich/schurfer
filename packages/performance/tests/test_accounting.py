@@ -43,6 +43,25 @@ def test_long_accounting_uses_long_price_direction() -> None:
     assert result.net_pnl_usd == pytest.approx(5)
 
 
+def test_accounting_supports_asymmetric_maker_entry_and_taker_exit_fees() -> None:
+    result = calculate_performance(
+        position_usd=100,
+        entry_price=100,
+        exit_price=90,
+        side="short",
+        duration_minutes=0,
+        entry_slippage_bps=0,
+        exit_slippage_bps=4,
+        costs=CostParameters(taker_fee_bps_per_side=10, funding_cost_bps_per_8h=0),
+        entry_fee_bps=0,
+        exit_fee_bps=10,
+    )
+
+    assert result.fee_cost_bps == pytest.approx(10)
+    assert result.slippage_cost_bps == pytest.approx(4)
+    assert result.net_return_pct == pytest.approx(9.86)
+
+
 def test_missing_slippage_preserves_gross_but_withholds_net() -> None:
     result = calculate_performance(
         position_usd=100,

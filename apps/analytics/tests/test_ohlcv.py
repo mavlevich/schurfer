@@ -2,9 +2,11 @@ from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 
 from schurfer_analytics.ohlcv import (
+    ONE_MINUTE_MS,
     TIMEFRAME_MS,
     closed_candles,
     fetch_candles,
+    next_timeframe_after,
     normalize_candles,
     window_bounds,
 )
@@ -83,3 +85,15 @@ async def test_fetch_candles_stops_when_exchange_does_not_advance_cursor() -> No
 
     assert [c.ts_ms for c in result] == [start]
     assert exchange.fetch_ohlcv.await_count == 2
+
+
+def test_one_minute_normalization_and_strict_next_bar_are_explicit() -> None:
+    aligned = 10 * ONE_MINUTE_MS
+    rows = normalize_candles(
+        [[aligned, 10, 11, 9, 10, 1]],
+        timeframe_ms=ONE_MINUTE_MS,
+    )
+
+    assert rows[0].ts_ms == aligned
+    assert next_timeframe_after(aligned, ONE_MINUTE_MS) == aligned + ONE_MINUTE_MS
+    assert next_timeframe_after(aligned + 1, ONE_MINUTE_MS) == aligned + ONE_MINUTE_MS

@@ -448,6 +448,7 @@ def _complete_path(
     entry_at_ms: int | None = None,
     exit_policy: ExitPolicy = BASELINE_EXIT_POLICY,
     exit_mechanics: ExitMechanics = BASELINE_EXIT_MECHANICS,
+    timeframe_ms: int = TIMEFRAME_MS,
 ) -> tuple[Candle, ...] | None:
     if entry_at_ms is None:
         start_ms, end_ms = expected_path_bounds(
@@ -460,9 +461,9 @@ def _complete_path(
         params = exit_parameters(decision.pump_pct)
         maximum_hold = exit_mechanics.maximum_hold_minutes(params, exit_policy)
         end_ms = start_ms + maximum_hold * 60 * 1000
-    expected_count = (end_ms - start_ms) // TIMEFRAME_MS
+    expected_count = (end_ms - start_ms) // timeframe_ms
     by_timestamp = {candle.ts_ms: candle for candle in candles}
-    expected_timestamps = range(start_ms, end_ms, TIMEFRAME_MS)
+    expected_timestamps = range(start_ms, end_ms, timeframe_ms)
     path = tuple(by_timestamp.get(timestamp) for timestamp in expected_timestamps)
     if len(path) != expected_count or any(candle is None for candle in path):
         return None
@@ -525,6 +526,11 @@ def _simulate_selected_entry(
     exit_mechanics: ExitMechanics = BASELINE_EXIT_MECHANICS,
     initial_sl_pct_override: float | None = None,
     position_usd_scale: float = 1.0,
+    timeframe_ms: int = TIMEFRAME_MS,
+    entry_price_override: float | None = None,
+    entry_slippage_bps_override: float | None = None,
+    entry_fee_bps: float | None = None,
+    exit_fee_bps: float | None = None,
 ) -> VirtualTrade:
     if initial_sl_pct_override is not None and (
         not math.isfinite(initial_sl_pct_override) or initial_sl_pct_override <= 0
@@ -551,8 +557,13 @@ def _simulate_selected_entry(
             status="market_path_mismatch",
             error="market path does not match selected episode decision",
         )
-    baseline_entry_ms = ceil_to_timeframe(int(decision.ts.timestamp() * 1000))
-    if entry_at_ms < baseline_entry_ms or entry_at_ms % TIMEFRAME_MS != 0:
+    if timeframe_ms <= 0:
+        raise ValueError("timeframe_ms must be positive")
+    baseline_entry_ms = ceil_to_timeframe(
+        int(decision.ts.timestamp() * 1000),
+        timeframe_ms,
+    )
+    if entry_at_ms < baseline_entry_ms or entry_at_ms % timeframe_ms != 0:
         return _unresolved(
             episode,
             selection,
@@ -565,13 +576,14 @@ def _simulate_selected_entry(
         entry_at_ms=entry_at_ms,
         exit_policy=exit_policy,
         exit_mechanics=exit_mechanics,
+        timeframe_ms=timeframe_ms,
     )
     if not path:
         return _unresolved(
             episode,
             selection,
             status="incomplete_market_path",
-            error="missing one or more complete 5-minute bars",
+            error=f"missing one or more complete {timeframe_ms // 60_000}-minute bars",
         )
     recorded_position_usd = _position_usd(decision)
     bid_impact = decision_impact_bps(decision, "bid")
@@ -586,7 +598,14 @@ def _simulate_selected_entry(
     position_usd = recorded_position_usd * position_usd_scale
 
     params = exit_parameters(decision.pump_pct)
-    entry_price = path[0].open
+    entry_price = entry_price_override if entry_price_override is not None else path[0].open
+    if not math.isfinite(entry_price) or entry_price <= 0:
+        return _unresolved(
+            episode,
+            selection,
+            status="invalid_virtual_entry",
+            error="entry price must be finite and positive",
+        )
     initial_sl_pct = initial_sl_pct_override or params.initial_sl_pct
     stop_price = entry_price * (1 + initial_sl_pct / 100)
     activation_price = entry_price * (1 - params.activation_pct / 100)
@@ -603,7 +622,7 @@ def _simulate_selected_entry(
 
     for candle in path:
         elapsed_minutes = (candle.ts_ms - entry_at_ms) / 60_000
-        candle_end_ms = candle.ts_ms + TIMEFRAME_MS
+        candle_end_ms = candle.ts_ms + timeframe_ms
         elapsed_end_minutes = (candle_end_ms - entry_at_ms) / 60_000
         trail_pct = (
             params.trail_tighten_pct
@@ -618,7 +637,7 @@ def _simulate_selected_entry(
             if stop_hit:
                 observed_high = max(observed_high, stop_price)
                 exit_price = stop_price
-                exit_at_ms = candle.ts_ms + TIMEFRAME_MS
+                exit_at_ms = candle.ts_ms + timeframe_ms
                 exit_reason = "initial_sl"
                 if activation_hit:
                     ambiguity = "conservative_stop_first"
@@ -641,7 +660,7 @@ def _simulate_selected_entry(
                 if candle.high >= trailing_price:
                     observed_high = max(observed_high, trailing_price)
                     exit_price = trailing_price
-                    exit_at_ms = candle.ts_ms + TIMEFRAME_MS
+                    exit_at_ms = candle.ts_ms + timeframe_ms
                     exit_reason = (
                         "protected_stop"
                         if exit_policy.protect_breakeven_after_activation
@@ -744,7 +763,7 @@ def _simulate_selected_entry(
 
     if exit_price is None:
         exit_price = path[-1].close
-        exit_at_ms = path[-1].ts_ms + TIMEFRAME_MS
+        exit_at_ms = path[-1].ts_ms + timeframe_ms
         exit_reason = "absolute_max_hold"
     if exit_at_ms is None or exit_reason is None:
         raise RuntimeError("virtual exit invariant violated")
@@ -756,9 +775,13 @@ def _simulate_selected_entry(
         exit_price=exit_price,
         side="short",
         duration_minutes=duration_minutes,
-        entry_slippage_bps=bid_impact,
+        entry_slippage_bps=(
+            bid_impact if entry_slippage_bps_override is None else entry_slippage_bps_override
+        ),
         exit_slippage_bps=ask_impact,
         costs=costs,
+        entry_fee_bps=entry_fee_bps,
+        exit_fee_bps=exit_fee_bps,
     )
     if accounting.net_return_pct is None or accounting.net_pnl_usd is None:
         raise RuntimeError("complete replay accounting unexpectedly incomplete")
@@ -892,4 +915,43 @@ def simulate_decision(
         exit_mechanics=exit_mechanics,
         initial_sl_pct_override=initial_sl_pct_override,
         position_usd_scale=position_usd_scale,
+    )
+
+
+def simulate_decision_at_entry_price(
+    episode: ReplayEpisode,
+    market_path: MarketPath,
+    decision: ReplayDecision,
+    *,
+    entry_at_ms: int,
+    entry_price: float,
+    timeframe_ms: int,
+    selection_reason: str,
+    entry_slippage_bps: float,
+    entry_fee_bps: float,
+    exit_fee_bps: float,
+    costs: CostParameters = DEFAULT_COSTS,
+) -> VirtualTrade:
+    """Replay an explicit maker-style fill without reusing its ambiguous fill bar."""
+    normalized_reason = selection_reason.strip()
+    if not normalized_reason:
+        raise ValueError("selection reason must not be empty")
+    if decision not in episode.decisions:
+        raise ValueError("selected decision does not belong to the episode")
+    selection = EpisodeSelection(
+        decision=decision,
+        taken=False,
+        selection_reason=normalized_reason,
+    )
+    return _simulate_selected_entry(
+        episode,
+        market_path,
+        selection,
+        entry_at_ms,
+        costs=costs,
+        timeframe_ms=timeframe_ms,
+        entry_price_override=entry_price,
+        entry_slippage_bps_override=entry_slippage_bps,
+        entry_fee_bps=entry_fee_bps,
+        exit_fee_bps=exit_fee_bps,
     )

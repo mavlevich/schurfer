@@ -132,12 +132,23 @@ remains `DRY_RUN=true`, `AUTO_TRADE=false`.
    simple 3x price-distance buffer, which is not an exchange liquidation model. This
    historical result is discovery-only and cannot promote a policy or change
    production.
-6. **Maker OHLCV upper bound.** Pre-register at most two passive entry levels. Place a
-   hypothetical post-only sell only after the decision, use one-minute bars where
-   available, bound the fill timeout, treat unfilled as cash, keep the protective stop
-   taker, and report fill rate, missed winners, adverse selection, and ambiguous
-   partial-fill coverage. `high >= limit` is only a potential fill, so this result is
-   an optimistic feasibility bound rather than execution proof.
+6. **[Completed, awaiting first run] Maker OHLCV upper bound.**
+   `maker-entry-report` fixes one primary passive level before reading the result:
+   a hypothetical post-only sell at the recorded decision-time best ask. The order
+   becomes active at the first bar strictly after the decision and expires after 15
+   minutes. Use complete exact-venue one-minute bars when possible and label a
+   complete five-minute fallback separately. A bar crossing the limit is only a
+   potential fill. Exposure starts on the following bar, so the unknown ordering
+   inside the fill bar cannot create look-ahead. Unfilled orders are cash, maker
+   entry slippage is zero, the optimistic maker fee is explicit, and every protective
+   exit remains taker with the recorded exit-impact model. Report fill rate, missed
+   baseline winners, stops within 30 minutes, bars that may have made the old limit
+   marketable and therefore rejected by post-only, path coverage, costs, and net
+   return including cash. This discovery result cannot prove post-only acceptance,
+   queue position, partial fill, executable size, or authorize a shadow or live
+   change. The primary maker variant resolves exits on 1m while its taker baseline
+   remains 5m, so the paired delta is explicitly not presented as an entry-only
+   causal effect.
 7. **Exit quote calibration.** After at least 30 exit observations, publish a
    directional comparison of decision-time modeled and close-time observed impact.
    Target 100 observations for a decision and segment by venue, exit reason, duration,

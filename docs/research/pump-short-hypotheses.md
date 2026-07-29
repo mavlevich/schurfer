@@ -499,3 +499,46 @@ Before any future micro-live proposal, publish the candidate's executable
 opportunities per day, fill assumptions, concurrent-position load, measured notional
 capacity, and expected monthly P&L after all modeled costs. The `$50` paper notional
 is a research unit, not evidence that the engineering effort has economic scale.
+
+---
+
+## OBS-009 - a passive entry requires fill feasibility before optimization
+
+The maker question is separate from HYP-008. HYP-008 keeps the existing taker entry
+inside a prospective low-impact shelf. OBS-009 is historical discovery that asks
+whether a passive entry can improve episode economics enough to justify collecting
+real paper fill observations.
+
+Discovery contract (`recorded_best_ask_potential_fill_v1`):
+
+- use `pump_short_v1_market_quality` episodes from `2026-07-22T00:00:00Z`;
+- select the first chronological decision whose recorded market-quality gate allows
+  trading, without applying a score floor;
+- place one hypothetical post-only sell at the recorded decision-time best ask;
+- activate the order only on the first complete bar strictly after the decision.
+  Never use the decision candle;
+- expire the order after 15 minutes. A candle at the exclusive timeout boundary does
+  not fill;
+- use a complete exact-venue one-minute path as primary and label a complete
+  five-minute path as fallback. Never mix their counts silently;
+- resolve the maker variant's exit on its selected path granularity while the matched
+  taker baseline keeps the existing five-minute engine. Therefore the primary 1m
+  delta combines entry mechanics with finer exit resolution and is not a pure causal
+  estimate of entry execution alone;
+- treat `high >= limit` only as a potential fill. Report an exact touch separately
+  from a cross above the limit. If the bar opens at or above the sell limit, report
+  post-only rejection risk separately. OHLCV cannot prove that the order rested;
+- start exposure on the bar after the potential fill. The fill bar cannot trigger
+  the stop or trailing exit because intrabar ordering is unknown;
+- treat an unfilled order as zero-return cash;
+- use zero entry slippage and an explicit zero-bps maker fee as an optimistic upper
+  bound. Keep the existing funding model, taker exit fee, recorded decision-time
+  exit impact, baseline stop, trailing, and maximum hold;
+- report potential-fill rate, net return including cash, conditional filled-trade
+  net, matched taker baseline, missed baseline winners, initial stops, stops within
+  30 minutes after fill, costs, path coverage, and one-minute versus fallback counts.
+
+Do not add ATR offsets or tune the limit after reading this report. A positive result
+does not validate maker execution. It can only justify a new paper simulator that
+records post-only order state, queue-sensitive fills, partial fills, cancel/replace
+timing, failed exits, and a taker protective stop on bounded venues and hot symbols.
