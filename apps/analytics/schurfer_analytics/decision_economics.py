@@ -25,17 +25,40 @@ ECONOMICS_POLICY_KEYS = ("score_any", "score_4", "score_6")
 
 
 class EconomicsEpisodeResult(Protocol):
-    pump_event_id: int
-    cluster_key: str
-    policy_key: str
-    status: str
-    selected_decision_id: str | None
-    exchange: str | None
-    spread_bps: float | None
-    entry_impact_bps: float | None
-    exit_impact_bps: float | None
-    episode_net_return_pct: float | None
-    trade: VirtualTrade | None
+    """Read-only structural contract implemented by frozen report rows."""
+
+    @property
+    def pump_event_id(self) -> int: ...
+
+    @property
+    def cluster_key(self) -> str: ...
+
+    @property
+    def policy_key(self) -> str: ...
+
+    @property
+    def status(self) -> str: ...
+
+    @property
+    def selected_decision_id(self) -> str | None: ...
+
+    @property
+    def exchange(self) -> str | None: ...
+
+    @property
+    def spread_bps(self) -> float | None: ...
+
+    @property
+    def entry_impact_bps(self) -> float | None: ...
+
+    @property
+    def exit_impact_bps(self) -> float | None: ...
+
+    @property
+    def episode_net_return_pct(self) -> float | None: ...
+
+    @property
+    def trade(self) -> VirtualTrade | None: ...
 
 
 @dataclass(frozen=True)

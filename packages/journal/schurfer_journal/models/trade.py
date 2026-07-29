@@ -7,6 +7,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     Numeric,
     String,
     Text,
@@ -155,6 +156,11 @@ class Trade(Base, TimestampMixin):
 
     strategy: Mapped["Strategy"] = relationship("Strategy", back_populates="trades")
     alert: Mapped["Alert | None"] = relationship("Alert", back_populates="trade")
+    exit_liquidity_observation: Mapped["TradeExitLiquidityObservation | None"] = relationship(
+        "TradeExitLiquidityObservation",
+        back_populates="trade",
+        uselist=False,
+    )
 
     __table_args__ = (
         Index("ix_trades_strategy_id", "strategy_id"),
@@ -162,5 +168,53 @@ class Trade(Base, TimestampMixin):
         Index("ix_trades_status", "status"),
         Index("ix_trades_entry_at", "entry_at"),
         Index("ix_trades_setup_context", "setup_context", postgresql_using="gin"),
+        {"schema": "app"},
+    )
+
+
+class TradeExitLiquidityObservation(Base, TimestampMixin):
+    """First bounded executable quote observed when a paper trade closes."""
+
+    __tablename__ = "trade_exit_liquidity_observations"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    trade_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("app.trades.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    exchange: Mapped[Exchange] = mapped_column(String(32), nullable=False)
+    symbol: Mapped[str] = mapped_column(String(64), nullable=False)
+    market_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    requested_notional_usd: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    filled_notional_usd: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), nullable=True)
+    best_bid: Mapped[Decimal | None] = mapped_column(Numeric(30, 14), nullable=True)
+    best_ask: Mapped[Decimal | None] = mapped_column(Numeric(30, 14), nullable=True)
+    mid: Mapped[Decimal | None] = mapped_column(Numeric(30, 14), nullable=True)
+    spread_bps: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
+    ask_vwap: Mapped[Decimal | None] = mapped_column(Numeric(30, 14), nullable=True)
+    ask_impact_bps: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
+    contract_size: Mapped[Decimal | None] = mapped_column(Numeric(24, 12), nullable=True)
+    latency_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    trade: Mapped["Trade"] = relationship("Trade", back_populates="exit_liquidity_observation")
+
+    __table_args__ = (
+        Index(
+            "ux_trade_exit_liquidity_observations_trade_id",
+            "trade_id",
+            unique=True,
+        ),
+        Index(
+            "ix_trade_exit_liquidity_observations_observed_at",
+            "observed_at",
+        ),
+        Index(
+            "ix_trade_exit_liquidity_observations_status",
+            "status",
+        ),
         {"schema": "app"},
     )

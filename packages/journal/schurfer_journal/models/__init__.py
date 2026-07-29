@@ -20,7 +20,7 @@ from .pump_derivatives_context import (
 from .pump_event import PumpEvent
 from .pump_event_snapshot import PumpEventSnapshot
 from .pump_event_source import PumpEventSource
-from .trade import Alert, Strategy, Trade
+from .trade import Alert, Strategy, Trade, TradeExitLiquidityObservation
 
 __all__ = [
     "Alert",
@@ -44,5 +44,6 @@ __all__ = [
     "Trade",
     "TradeDecision",
     "TradeDecisionOutcome",
+    "TradeExitLiquidityObservation",
     "TradeStatus",
 ]

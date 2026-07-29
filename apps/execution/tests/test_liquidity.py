@@ -6,7 +6,9 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from schurfer_execution.liquidity import (
     _vwap_impact_bps,
+    capture_snapshot,
     check_market_quality,
+    depth_target_key,
     depth_target_usd,
     snapshot,
 )
@@ -67,6 +69,11 @@ def test_vwap_impact_converts_contract_amount_to_base_amount() -> None:
 
 def test_depth_target_uses_position_cap_and_multiplier() -> None:
     assert depth_target_usd(33.333, 2.0) == 66.67
+
+
+def test_depth_target_key_is_canonical() -> None:
+    assert depth_target_key(50.0) == "50"
+    assert depth_target_key(66.67) == "66.67"
 
 
 def test_market_quality_accepts_threshold_boundaries() -> None:
@@ -139,6 +146,8 @@ async def test_snapshot_summarizes_book() -> None:
     assert snap["depth_targets_usd"] == [100.0, 500.0, 1000.0]
     assert snap["ask_impact_bps"]["100"] == 10.0
     assert snap["bid_impact_bps"]["100"] == 10.0
+    assert snap["ask_vwap"]["100"] == 100.1
+    assert snap["ask_filled_usd"]["100"] == 100.0
     ex.fetch_order_book.assert_awaited_once_with("BEAT/USDT:USDT", 50)
 
 
@@ -250,3 +259,41 @@ async def test_snapshot_returns_none_on_timeout() -> None:
     ex.fetch_order_book = _hang
     with patch("schurfer_execution.liquidity._FETCH_TIMEOUT", 0.01):
         assert await snapshot(ex, "BEAT") is None
+
+
+async def test_capture_snapshot_preserves_fetch_failure_status() -> None:
+    ex = AsyncMock()
+    ex.fetch_order_book = AsyncMock(side_effect=RuntimeError("venue unavailable"))
+
+    capture = await capture_snapshot(ex, "BEAT", required_depth_usd=50)
+
+    assert capture.status == "fetch_failed"
+    assert capture.snapshot is None
+    assert capture.error == "RuntimeError: venue unavailable"
+    assert capture.latency_ms >= 0
+
+
+async def test_capture_snapshot_distinguishes_invalid_book() -> None:
+    ex = AsyncMock()
+    ex.fetch_order_book = AsyncMock(return_value={"bids": [], "asks": []})
+
+    capture = await capture_snapshot(ex, "BEAT", required_depth_usd=50)
+
+    assert capture.status == "invalid_book"
+    assert capture.snapshot is None
+    assert capture.error == "ValueError: order book has an empty side"
+
+
+async def test_capture_snapshot_preserves_timeout_status() -> None:
+    async def _hang(*_args: object, **_kwargs: object) -> dict[str, object]:
+        await asyncio.sleep(10)
+        return {}
+
+    ex = AsyncMock()
+    ex.fetch_order_book = _hang
+    with patch("schurfer_execution.liquidity._FETCH_TIMEOUT", 0.01):
+        capture = await capture_snapshot(ex, "BEAT", required_depth_usd=50)
+
+    assert capture.status == "timeout"
+    assert capture.snapshot is None
+    assert capture.error is not None

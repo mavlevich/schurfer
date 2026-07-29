@@ -27,6 +27,11 @@ The web UI is behind a login with no public exposure.
   are a conservative model with explicit completeness status. Missing slippage
   preserves observable gross P&L but withholds net P&L. Real exchange accounting is
   not treated as modeled paper accounting.
+- **paper exit-liquidity observation** (execution + journal). On a paper close,
+  execution samples a bounded fresh order book and stores the first executable
+  buy-to-close quote in `app.trade_exit_liquidity_observations`. This is separate
+  from the decision-time modeled `trades.exit_slippage_bps`, append-once per trade,
+  and best effort so a venue or persistence failure cannot undo a paper close.
 - **collector** (Go). Streams all active Bybit linear ticker topics, including best
   bid and ask, and publishes normalized versioned events to NATS
   `market.bybit.ticker.*`.

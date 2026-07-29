@@ -158,15 +158,24 @@ def test_report_compares_score_policies_and_component_ablations() -> None:
     ]
     for row in report.matched_policy_economics:
         assert row.episodes == 2
+        mean_entry = row.mean_entry_impact_bps
+        mean_exit = row.mean_exit_impact_bps
+        mean_fees = row.mean_fee_cost_bps
+        mean_funding = row.mean_funding_cost_bps
+        mean_total = row.mean_total_cost_bps
+        mean_gross = row.mean_episode_gross_return_pct
+        mean_net = row.mean_episode_net_return_pct
+        assert mean_entry is not None
+        assert mean_exit is not None
+        assert mean_fees is not None
+        assert mean_funding is not None
+        assert mean_total is not None
+        assert mean_gross is not None
+        assert mean_net is not None
         assert row.mean_total_cost_bps == pytest.approx(
-            row.mean_entry_impact_bps
-            + row.mean_exit_impact_bps
-            + row.mean_fee_cost_bps
-            + row.mean_funding_cost_bps
+            mean_entry + mean_exit + mean_fees + mean_funding
         )
-        assert row.mean_episode_net_return_pct == pytest.approx(
-            row.mean_episode_gross_return_pct - row.mean_total_cost_bps / 100
-        )
+        assert mean_net == pytest.approx(mean_gross - mean_total / 100)
     for result in report.episode_results:
         trade = result.trade
         if (

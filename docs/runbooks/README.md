@@ -738,6 +738,64 @@ the new cohort separately.
   It is a conservative paper estimate. It is not a substitute for importing actual
   venue fills, fees, and funding when real trading is enabled.
 
+- Paper exit-liquidity observation: migration 0019 creates the append-once
+  `app.trade_exit_liquidity_observations` table. The execution service captures a
+  bounded fresh order book when a paper exit triggers and records the buy-to-close
+  quote independently from the trade close. Use a full deploy because the code and
+  schema ship together:
+
+  ```bash
+  make prod-deploy
+  make prod-health
+  docker exec schurfer-postgres psql -U schurfer -d schurfer -c \
+    "SELECT version_num FROM app.alembic_version"
+  docker logs schurfer-execution --since 15m 2>&1 \
+    | grep -E 'paper.closed|exit_liquidity|liquidity.snapshot_failed'
+  ```
+
+  The migration revision must be `0019`. After paper positions close, inspect both
+  sampled quotes and failures:
+
+  ```bash
+  docker exec schurfer-postgres psql -U schurfer -d schurfer -c "
+  SELECT
+      observation.status,
+      count(*) AS observations,
+      round(avg(observation.latency_ms), 1) AS mean_latency_ms,
+      round(avg(observation.spread_bps), 2) AS mean_spread_bps,
+      round(avg(observation.ask_impact_bps), 2) AS mean_ask_impact_bps
+  FROM app.trade_exit_liquidity_observations AS observation
+  GROUP BY observation.status
+  ORDER BY observations DESC;"
+
+  docker exec schurfer-postgres psql -U schurfer -d schurfer -c "
+  SELECT
+      trade.exit_at,
+      trade.symbol,
+      trade.exchange,
+      trade.exit_slippage_bps AS decision_time_modeled_exit_bps,
+      observation.status,
+      observation.requested_notional_usd,
+      observation.filled_notional_usd,
+      observation.spread_bps AS close_time_spread_bps,
+      observation.ask_impact_bps AS close_time_observed_exit_bps,
+      observation.latency_ms,
+      observation.error
+  FROM app.trades AS trade
+  LEFT JOIN app.trade_exit_liquidity_observations AS observation
+    ON observation.trade_id = trade.id
+  WHERE trade.setup_context->>'paper' = 'true'
+    AND trade.status = 'closed'
+  ORDER BY trade.exit_at DESC
+  LIMIT 30;"
+  ```
+
+  `sampled` means the requested paper notional was executable in the visible ask
+  book. `insufficient_ask_depth`, `timeout`, `invalid_book`, and `fetch_failed` are
+  evidence, not rows to discard. The observed quote is not an actual fill and does
+  not alter historical net accounting. A failed quote or failed observation insert
+  must still leave the paper trade closed.
+
 ## Incidents
 
 Record notable incidents and their fixes here as they happen, so the next person (or

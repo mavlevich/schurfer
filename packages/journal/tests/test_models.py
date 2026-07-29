@@ -17,6 +17,7 @@ from schurfer_journal.models import (
     Trade,
     TradeDecision,
     TradeDecisionOutcome,
+    TradeExitLiquidityObservation,
     TradeStatus,
 )
 
@@ -165,6 +166,45 @@ class TestTradeModel:
         assert columns["size_usd"].type.scale == 4
         assert columns["entry_price"].type.precision == 18
         assert columns["entry_price"].type.scale == 8
+
+
+class TestTradeExitLiquidityObservationModel:
+    def test_table_contract(self) -> None:
+        assert TradeExitLiquidityObservation.__tablename__ == ("trade_exit_liquidity_observations")
+        assert TradeExitLiquidityObservation.__table__.schema == "app"
+        columns = {
+            column.name: column for column in TradeExitLiquidityObservation.__table__.columns
+        }
+        assert {
+            "trade_id",
+            "observed_at",
+            "exchange",
+            "symbol",
+            "market_id",
+            "status",
+            "requested_notional_usd",
+            "filled_notional_usd",
+            "best_bid",
+            "best_ask",
+            "mid",
+            "spread_bps",
+            "ask_vwap",
+            "ask_impact_bps",
+            "contract_size",
+            "latency_ms",
+            "error",
+        }.issubset(columns)
+        assert columns["best_ask"].type.precision == 30
+        assert columns["best_ask"].type.scale == 14
+
+    def test_trade_id_is_unique_and_references_trade(self) -> None:
+        indexes = {index.name: index for index in TradeExitLiquidityObservation.__table__.indexes}
+        assert indexes["ux_trade_exit_liquidity_observations_trade_id"].unique
+        foreign_keys = {
+            foreign_key.target_fullname
+            for foreign_key in TradeExitLiquidityObservation.__table__.foreign_keys
+        }
+        assert foreign_keys == {"app.trades.id"}
 
 
 class TestTradeDecisionModels:
