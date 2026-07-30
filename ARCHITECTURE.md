@@ -14,7 +14,9 @@ The web UI is behind a login with no public exposure.
 - **api-gateway** (Go). REST and websocket endpoints for the web UI. Reads from Redis
   (hot state) and Postgres (cold storage). Runs a background ticker that computes the
   signal score (`scoreSignals`, 5 components) for the private measurement feed and
-  writes `signals:{base}` to Redis.
+  writes `signals:{base}` to Redis. Its authenticated health report also exposes
+  container-visible host load, memory, root-filesystem usage, and the existing
+  `market:hotset:health` counters. It does not mount the Docker socket or host secrets.
 - **execution** (Python, FastAPI, ccxt). Reads pump scores from Redis with a
   freshness check, records +20% measurement candidates, and independently enforces
   the +30% hard entry floor before the order path. It runs risk checks, places and
@@ -68,7 +70,7 @@ The web UI is behind a login with no public exposure.
 ### UI
 
 - **web** (TypeScript, React, Vite). Dashboard, pump scanner, token detail, account
-  view. Talks to api-gateway over REST and websockets.
+  view, and live status/load view. Talks to api-gateway over REST and websockets.
 
 ## Data flow
 
@@ -103,6 +105,29 @@ market-hotset (Go)
     +----> market:hot:bars:bybit:{symbol} (bounded Redis Streams)
     +----> market:hotset:health (Redis)
 ```
+
+### Planned order-flow pilot
+
+The next data lane is deliberately narrower than a general market-intelligence
+platform:
+
+```mermaid
+flowchart LR
+    WS["All Bybit linear public trades"] --> OF["Dedicated Go order-flow collector"]
+    OF --> AGG["In-memory sparse 1s aggregation"]
+    AGG --> ROLL["5s and 1m rollups"]
+    AGG --> HEALTH["Lag, gaps, drops, bytes/day"]
+    ROLL --> STORE["Bounded research storage"]
+    STORE --> REPORT["Matched pump and non-pump report"]
+    REPORT --> GATE{"Predictive and net-economic lift?"}
+    GATE -->|no| STOP["Stop the lane"]
+    GATE -->|yes| NEXT["Replicate on Binance, then consider L2"]
+```
+
+Every listed perpetual is observed from the start so pre-pump windows are not
+left-censored. This does not mean writing one dense row per symbol per second. Empty
+buckets are omitted, raw trades do not traverse NATS by default, and unmatched
+non-pump periods are retained only through bounded matched controls.
 
 ## Redis key registry
 
@@ -147,6 +172,20 @@ market-hotset (Go)
 | **PostgreSQL**  | pumps, snapshots, derivatives context, decisions, outcomes, trades |
 | **TimescaleDB** | OHLCV series, tick data, funding history                           |
 | **Redis**       | hot state (pump list, signal scores, locks, position metadata)     |
+
+### Capacity and retention guardrails
+
+- The API status page reports disk, memory, normalized one-minute load, ticker event
+  rate, stream lag, drops, and persistence failures.
+- Local raw-research storage is capped and stops before root filesystem use reaches
+  80%. At least 15 GiB remains reserved for the operating system and deployments.
+- The first 24-hour Bybit public-trades canary measures actual event volume,
+  compression, CPU, memory, and bytes/day. Retention values remain configurable until
+  that measurement exists.
+- Long-lived raw windows use Parquet+Zstd in object storage. Local deletion requires a
+  successful upload, checksum verification, and a persisted manifest.
+- PostgreSQL stores point-in-time features, decisions, outcomes, and artifact
+  metadata. It is not used as an unbounded raw-trade firehose.
 
 ## Exchanges
 

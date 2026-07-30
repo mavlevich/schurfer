@@ -5,25 +5,50 @@
 ## Status
 
 Live in production on Hetzner, private access over Tailscale, running in DRY_RUN
-(paper mode, no real orders). Multi-exchange pump scanner, short-readiness scoring,
-automated position management, and safety hardening (exchange-native stop-loss,
-durable daily PnL, position reconciliation) are all in place. The measurement layer
-that will show whether the strategy has edge is now largely built: every decision
-(taken or skipped) is recorded durably via a Redis Stream outbox with its liquidity
-snapshot and decision-time price, and a separate worker resolves strategy-agnostic
-forward outcomes from 15 minutes through 7 days. Current focus is the versioned virtual
-replay that compares strategy variants on those same episodes (see
-[ROADMAP.md](ROADMAP.md)).
+(paper mode, no real orders). The platform scans 17 perpetual venues, records
+point-in-time decisions and liquidity, resolves forward outcomes from 15 minutes
+through 7 days, and replays locked strategy variants on matched episodes. Current
+research keeps the low-impact taker and fixed-risk wider-stop contracts frozen while
+it measures whether pump magnitude changes the available edge. The next independent
+data lane is a capped Bybit public-trades pilot, not an unconditional multi-exchange
+firehose. See [ROADMAP.md](ROADMAP.md).
 
 ## What it does
 
-- Scans 12 CEX perpetual markets every 60s for price pumps above a configurable threshold
+- Scans 17 CEX perpetual markets every 60s for price pumps above a configurable threshold
 - Persists pump episodes with peak %, retrace %, and timeline snapshots (+1h/+4h/+24h)
 - Scores each active pump on 5 components: age, price extent, OI trend, funding rate, retrace from peak (0 to 10)
 - Token detail page: OHLCV chart (5m/15m/1h/4h), exchange breakdown, episode history, signal components
 - Telegram alerts on new pump detection
 - Automated short execution when `AUTO_TRADE=true`: opens positions on high-score pumps, monitors TP/SL/max-hold, closes automatically
 - Emergency kill-switch (`/stop`/`/resume`), daily loss limit, max position count, duplicate position guard
+- Live status page for dependencies, server CPU/load, memory, disk, market throughput,
+  lag, drops, and persisted hot-set bars
+
+## System at a glance
+
+```mermaid
+flowchart LR
+    CEX["17 CEX REST markets"] --> SCAN["Analytics scanner"]
+    BYBIT["Bybit ticker WebSocket"] --> COL["Collector"]
+    COL --> NATS["NATS"]
+    NATS --> HOT["Market hotset"]
+    HOT --> REDIS["Redis hot state"]
+    SCAN --> PG["PostgreSQL / TimescaleDB"]
+    SCAN --> REDIS
+    REDIS --> API["API gateway"]
+    PG --> API
+    REDIS --> EXEC["Execution, DRY_RUN"]
+    EXEC --> PG
+    PG --> RESOLVE["Outcome resolver"]
+    RESOLVE --> PG
+    REDIS --> NOTIFY["Telegram notifier"]
+    API --> WEB["React dashboard"]
+    API --> STATUS["Status and load telemetry"]
+
+    BYBIT -. "planned capped public trades pilot" .-> FLOW["Sparse 1s order-flow aggregates"]
+    FLOW -.-> PG
+```
 
 ## Stack
 
@@ -45,13 +70,14 @@ replay that compares strategy variants on those same episodes (see
 apps/
 ├── analytics/       Python  - pump scanner, persistence, snapshots, OI/funding collection
 ├── api-gateway/     Go      - REST API, OHLCV proxy, pump history, signal scoring, Redis ticker
-├── collector/       Go      - Bybit websocket to NATS publisher (prototype, no consumer yet)
+├── collector/       Go      - Bybit ticker websocket publisher and bounded hotset consumer
 ├── execution/       Python  - order execution, risk checks, position monitor, signal trader
 ├── notifier/        Go      - Telegram alerts, reads Redis pumps:latest
 └── web/             TS      - React dashboard (/pumps, /pumps/:base)
 
 packages/
-└── journal/         Python  - SQLAlchemy models, Alembic migrations
+├── journal/         Python  - SQLAlchemy models, Alembic migrations
+└── performance/     Python  - versioned gross/net accounting shared by replay and paper
 
 infra/
 └── docker/
@@ -132,14 +158,14 @@ Open [http://localhost:5173](http://localhost:5173) and log in with `admin` and 
 
 ## Services
 
-| Service           | URL / Port            | Notes                                                 |
-| ----------------- | --------------------- | ----------------------------------------------------- |
-| Frontend (dev)    | http://localhost:5173 | Vite dev server, proxies /api to gateway              |
-| API gateway       | http://localhost:8000 | REST API, signal scoring ticker                       |
-| Execution service | http://localhost:8001 | Order execution, internal only                        |
-| PostgreSQL        | localhost:5432        | user: schurfer, db: schurfer                          |
-| Redis             | localhost:6379        | pump state, signal scores, position locks             |
-| NATS              | localhost:4222        | collector publishes here (prototype, no consumer yet) |
+| Service           | URL / Port            | Notes                                                |
+| ----------------- | --------------------- | ---------------------------------------------------- |
+| Frontend (dev)    | http://localhost:5173 | Vite dev server, proxies /api to gateway             |
+| API gateway       | http://localhost:8000 | REST API, signal scoring ticker                      |
+| Execution service | http://localhost:8001 | Order execution, internal only                       |
+| PostgreSQL        | localhost:5432        | user: schurfer, db: schurfer                         |
+| Redis             | localhost:6379        | pump state, signal scores, position locks            |
+| NATS              | localhost:4222        | versioned market events between collector and hotset |
 
 ### Key API endpoints
 
@@ -150,6 +176,7 @@ GET  /api/pumps/:base/ohlcv          OHLCV candles (interval=5|15|60|240, limit=
 GET  /api/pumps/:base/history        all episodes for a token
 GET  /api/pumps/:base/signals        short-readiness score (0-10, 5 components)
 GET  /api/pumps/history              filtered history (exchange, since, until)
+GET  /api/health                     dependency, server-load, and market-pipeline telemetry
 GET  /api/account/balance            exchange balances
 GET  /api/account/positions          open positions
 POST /api/account/order              place order
@@ -158,6 +185,22 @@ POST /api/account/stop               emergency kill-switch
 POST /api/account/resume             resume trading
 GET  /healthz                        service health check
 ```
+
+## Data retention
+
+The production server is intentionally not a raw market-data warehouse. Redis keeps
+bounded hot state, PostgreSQL keeps durable decisions and research outputs, and raw
+market data is admitted only under an explicit byte budget. The planned order-flow
+pilot observes every Bybit perpetual but persists sparse one-second buckets rather
+than dense symbol-seconds or every raw trade.
+
+- stop raw writes at 80% disk usage;
+- reserve at least 15 GiB for the operating system and deployments;
+- measure real bytes/day for 24 hours before locking retention;
+- keep local raw windows for 24 to 72 hours;
+- retain 5s/1m aggregates and event manifests longer;
+- upload selected Parquet+Zstd windows only after checksum verification;
+- expand beyond Bybit only after a point-in-time predictive and economic gate passes.
 
 ## Development commands
 

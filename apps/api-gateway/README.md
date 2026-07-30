@@ -5,13 +5,18 @@ Handles authentication (JWT in HttpOnly cookie) and infrastructure health checks
 
 ## Endpoints
 
-| Method | Path           | Auth   | Description                                        |
-| ------ | -------------- | ------ | -------------------------------------------------- |
-| POST   | `/auth/login`  | public | Login with password, sets JWT cookie               |
-| POST   | `/auth/logout` | JWT    | Clears JWT cookie                                  |
-| GET    | `/healthz`     | public | Liveness probe - always 200 while process is alive |
-| GET    | `/api/health`  | JWT    | Readiness probe - 200 all deps up, 503 otherwise   |
-| WS     | `/ws/status`   | JWT    | Live status stream, pushes every 5s                |
+| Method | Path           | Auth   | Description                                            |
+| ------ | -------------- | ------ | ------------------------------------------------------ |
+| POST   | `/auth/login`  | public | Login with password, sets JWT cookie                   |
+| POST   | `/auth/logout` | JWT    | Clears JWT cookie                                      |
+| GET    | `/healthz`     | public | Liveness probe - always 200 while process is alive     |
+| GET    | `/api/health`  | JWT    | Dependencies, host load, and market-pipeline telemetry |
+| WS     | `/ws/status`   | JWT    | Live status stream, pushes every 5s                    |
+
+`/api/health` and `/ws/status` include container-visible one/five/fifteen-minute
+load, CPU count, memory, root-filesystem usage, uptime, and the latest bounded
+`market:hotset:health` counters. These diagnostics are informational and never
+turn missing optional telemetry into a failed readiness probe.
 
 ## Environment variables
 
