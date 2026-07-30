@@ -66,6 +66,11 @@ PUMP_MAGNITUDE_REQUIRED_HORIZONS = (240, 480)
 FIXED_HORIZON_MINUTES = 240
 
 
+def _progress(message: str) -> None:
+    sys.stderr.write(f"[pump-magnitude] {message}\n")
+    sys.stderr.flush()
+
+
 @dataclass(frozen=True)
 class PumpMagnitudeManifest:
     protocol_version: str
@@ -671,6 +676,7 @@ async def _run(args: argparse.Namespace) -> str:
         funding_cost_bps_per_8h=args.funding_cost_bps_per_8h,
     )
     repository = ReplayRepository.from_url(db_url)
+    _progress("loading replay inputs")
     try:
         decisions = await repository.load(filters)
     finally:
@@ -680,7 +686,21 @@ async def _run(args: argparse.Namespace) -> str:
         dataset.eligible_episodes,
         PUMP_MAGNITUDE_FLOORS_PCT,
     )
-    paths = await fetch_decision_market_paths(selected, EXCHANGE_FACTORIES)
+    _progress(
+        f"loaded {len(decisions)} decisions, "
+        f"{len(dataset.eligible_episodes)} eligible episodes, "
+        f"{len(selected)} selected paths"
+    )
+
+    def report_exchange(exchange: str, index: int, total: int) -> None:
+        _progress(f"fetching {exchange} ({index}/{total})")
+
+    paths = await fetch_decision_market_paths(
+        selected,
+        EXCHANGE_FACTORIES,
+        on_exchange=report_exchange,
+    )
+    _progress("building report")
     report = build_pump_magnitude_report(
         dataset,
         filters,

@@ -4,7 +4,7 @@ import hashlib
 import json
 from dataclasses import asdict, replace
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, Mock, call, patch
 
 import pytest
 from schurfer_analytics.candle_anomaly_features import candle_anomaly_path_bounds
@@ -243,6 +243,7 @@ async def test_fetch_decision_paths_reuses_client_and_keys_paths_by_decision() -
 
 async def test_fetch_decision_paths_bounds_live_exchange_clients() -> None:
     tracker = _ExchangeClientTracker()
+    progress = Mock()
     bybit = _episode("bybit", event_id=42, base="ERA").decisions[0]
     binance = replace(
         _episode("binance", event_id=43, base="BANK").decisions[0],
@@ -261,6 +262,7 @@ async def test_fetch_decision_paths_bounds_live_exchange_clients() -> None:
                 "binance": tracker.factory_for("binance"),
                 "bybit": tracker.factory_for("bybit"),
             },
+            on_exchange=progress,
         )
 
     assert [item.decision_id for item in paths] == [bybit.decision_id, binance.decision_id]
@@ -269,6 +271,10 @@ async def test_fetch_decision_paths_bounds_live_exchange_clients() -> None:
     assert tracker.clean_instance_data == [True, True]
     assert tracker.factories["binance"].call_count == 1
     assert tracker.factories["bybit"].call_count == 1
+    assert progress.call_args_list == [
+        call("binance", 1, 2),
+        call("bybit", 2, 2),
+    ]
 
 
 async def test_fetch_decision_paths_rejects_duplicate_decision_ids() -> None:

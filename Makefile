@@ -2,6 +2,7 @@
         prod-deploy prod-measurement-report prod-exchange-coverage-report prod-episode-replay prod-virtual-strategy-report prod-virtual-entry-challenger-report prod-virtual-threshold-challenger-report prod-virtual-exit-policy-report prod-virtual-exit-discovery-report prod-virtual-score-challenger-report prod-candle-anomaly-report prod-derivatives-context-report prod-decision-quality-report prod-liquid-taker-report prod-long-horizon-report prod-maker-entry-report prod-pump-magnitude-report prod-logs prod-backup prod-restore-local prod-health
 
 GOLANGCI_LINT_VERSION = v2.1.6
+PROD_REPORT_MIN_HEADROOM_MB ?= 1280
 
 help:
 	@echo "Schurfer - common commands"
@@ -518,6 +519,17 @@ prod-maker-entry-report:
 
 prod-pump-magnitude-report:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
+	@if test -r /proc/meminfo; then \
+		available_kb=$$(awk '/^MemAvailable:/ {print $$2}' /proc/meminfo); \
+		swap_kb=$$(awk '/^SwapFree:/ {print $$2}' /proc/meminfo); \
+		headroom_kb=$$((available_kb + swap_kb)); \
+		required_kb=$$(( $(PROD_REPORT_MIN_HEADROOM_MB) * 1024 )); \
+		if test "$$headroom_kb" -lt "$$required_kb"; then \
+			echo "ERROR: pump-magnitude report requires at least $(PROD_REPORT_MIN_HEADROOM_MB) MiB of available RAM + free swap."; \
+			echo "Current headroom: $$((headroom_kb / 1024)) MiB. Refusing to risk a host OOM."; \
+			exit 1; \
+		fi; \
+	fi
 	@$(_PROD) run --rm --no-deps --entrypoint pump-magnitude-report analytics \
 		--code-revision="$$(git rev-parse HEAD)" \
 		$$(test -z "$$(git status --porcelain)" \

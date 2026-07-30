@@ -1,16 +1,22 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from schurfer_analytics import replay_repository
 from schurfer_analytics.replay import ReplayFilters
 from schurfer_analytics.replay_repository import (
     ReplayRepository,
+    map_replay_row_stream,
     map_replay_rows,
     replay_inputs_statement,
 )
 from sqlalchemy.dialects import postgresql
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
 
 
 def _filters() -> ReplayFilters:
@@ -57,6 +63,11 @@ def _row(horizon: int) -> dict[str, object]:
     }
 
 
+async def _stream_rows(*rows: dict[str, object]) -> AsyncIterator[dict[str, object]]:
+    for row in rows:
+        yield row
+
+
 def test_statement_uses_shared_tables_parameterized_scope_and_stable_order() -> None:
     compiled = replay_inputs_statement(_filters()).compile(
         dialect=postgresql.dialect()  # type: ignore[no-untyped-call]
@@ -89,6 +100,31 @@ def test_row_mapper_groups_and_sorts_outcomes_for_one_decision() -> None:
     assert decisions[0].price == 100.0
 
 
+async def test_streaming_row_mapper_freezes_ordered_decisions_incrementally() -> None:
+    second = {
+        **_row(60),
+        "row_id": 2,
+        "decision_id": "00000000-0000-0000-0000-000000000002",
+        "pump_event_id": 43,
+    }
+
+    decisions = await map_replay_row_stream(_stream_rows(_row(480), _row(60), second))
+
+    assert [decision.row_id for decision in decisions] == [1, 2]
+    assert [outcome.horizon_minutes for outcome in decisions[0].outcomes] == [60, 480]
+
+
+async def test_streaming_row_mapper_rejects_non_contiguous_decisions() -> None:
+    second = {
+        **_row(60),
+        "row_id": 2,
+        "decision_id": "00000000-0000-0000-0000-000000000002",
+    }
+
+    with pytest.raises(ValueError, match="contiguous"):
+        await map_replay_row_stream(_stream_rows(_row(60), second, _row(480)))
+
+
 def test_repository_factory_uses_bounded_read_pool() -> None:
     engine = MagicMock()
 
@@ -109,9 +145,9 @@ def test_repository_factory_uses_bounded_read_pool() -> None:
 
 async def test_repository_reads_one_repeatable_read_snapshot() -> None:
     result = MagicMock()
-    result.mappings.return_value.all.return_value = [_row(60), _row(480)]
+    result.mappings.return_value = _stream_rows(_row(60), _row(480))
     connection = MagicMock()
-    connection.execute = AsyncMock(return_value=result)
+    connection.stream = AsyncMock(return_value=result)
     transaction = MagicMock()
     transaction.__aenter__ = AsyncMock(return_value=None)
     transaction.__aexit__ = AsyncMock(return_value=None)
@@ -130,7 +166,8 @@ async def test_repository_reads_one_repeatable_read_snapshot() -> None:
         isolation_level="REPEATABLE READ",
         postgresql_readonly=True,
     )
-    connection.execute.assert_awaited_once()
+    connection.stream.assert_awaited_once()
+    assert connection.stream.call_args.kwargs == {"execution_options": {"yield_per": 500}}
     assert len(decisions) == 1
 
 
