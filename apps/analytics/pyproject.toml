@@ -34,6 +34,7 @@ long-horizon-report = "schurfer_analytics.long_horizon_report:main"
 maker-entry-report = "schurfer_analytics.maker_entry_report:main"
 pump-magnitude-report = "schurfer_analytics.pump_magnitude_report:main"
 orderflow-pilot-report = "schurfer_analytics.orderflow_pilot_report:main"
+exit-liquidity-calibration-report = "schurfer_analytics.exit_liquidity_calibration_report:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

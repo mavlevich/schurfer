@@ -168,10 +168,14 @@ remains `DRY_RUN=true`, `AUTO_TRADE=false`.
    challenger's absolute 95% lower bound and its paired-delta lower bound must be
    positive, including busiest-week and top-five-asset exclusions. A pass creates
    only a shadow candidate and cannot change production.
-8. **Exit quote calibration.** After at least 30 exit observations, publish a
-   directional comparison of decision-time modeled and close-time observed impact.
-   Target 100 observations for a decision and segment by venue, exit reason, duration,
-   spread, and depth. A paper quote still must not be presented as actual slippage.
+8. **[Implemented, collecting] Exit quote calibration.** The read-only
+   `exit-liquidity-calibration-report` keeps every closed paper short in the coverage
+   denominator and compares decision-time modeled impact with a complete executable
+   close-time quote. At least 30 comparable observations permit only a directional
+   reading; 100 are required for a decision. The report segments by venue, exit
+   reason, duration, spread, requested depth, and modeled impact, fails closed on
+   identity, timestamp, notional, and visible-depth mismatches, and never presents a
+   paper quote as an actual fill or realized slippage.
 9. **[Parked] Conditional maker paper simulator.** OBS-009 did not survive its
    defensive sensitivity checks, so no simulator is authorized. Reconsider only
    after a fresh registered maker cohort or an independently proven executable edge.

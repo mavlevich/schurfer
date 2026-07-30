@@ -109,7 +109,9 @@ The regular `prod-deploy` updates the script and API but deliberately does not r
 page says `No telemetry` instead of inventing partial container values. The
 systemd unit runs as `deploy`, has a read-only host filesystem except for the
 runtime snapshot directory, and never exposes Docker control through an HTTP
-endpoint.
+endpoint. The collector uses an empty private `DOCKER_CONFIG` because its local
+`stats` and `inspect` calls require no registry credentials; this also prevents
+Docker CLI from probing the protected deploy home directory.
 
 ### Bounded Bybit order-flow trial
 
@@ -1076,6 +1078,19 @@ the new cohort separately.
   evidence, not rows to discard. The observed quote is not an actual fill and does
   not alter historical net accounting. A failed quote or failed observation insert
   must still leave the paper trade closed.
+
+  Generate the registered calibration report without removing failed or missing
+  captures from its denominator:
+
+  ```bash
+  make prod-exit-liquidity-calibration-report
+  ```
+
+  Fewer than 30 comparable observations means `collecting`; 30 to 99 is
+  directional evidence only; 100 or more permits a decision-grade quote calibration.
+  Positive delta means the decision-time model underestimated the close-time
+  executable quote. This remains a quote comparison, not measured fill slippage, and
+  cannot change the strategy by itself.
 
 ## Incidents
 

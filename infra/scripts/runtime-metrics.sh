@@ -3,8 +3,12 @@ set -euo pipefail
 
 output_path="${RUNTIME_METRICS_PATH:-/opt/schurfer/runtime/container-metrics.snapshot}"
 interval_seconds="${RUNTIME_METRICS_INTERVAL_SECONDS:-10}"
+docker_config="${DOCKER_CONFIG:-/tmp/schurfer-runtime-docker-config}"
 
 mkdir -p "$(dirname "$output_path")"
+mkdir -p "$docker_config"
+chmod 0700 "$docker_config"
+export DOCKER_CONFIG="$docker_config"
 
 while true; do
   tmp_path="$(mktemp "${output_path}.tmp.XXXXXX")"
