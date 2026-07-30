@@ -36,6 +36,7 @@ help:
 	@echo "  make derivatives-context-report  Probe recoverable derivatives history"
 	@echo "  make decision-quality-report  Compare score and component quality"
 	@echo "  make liquid-taker-report  Replay prospective low-impact taker shelf"
+	@echo "  make liquid-taker-wider-stop-report  Compare prospective fixed-risk wider stop"
 	@echo "  make long-horizon-report  Describe 24h/72h/7d returns and signed funding"
 	@echo "  make maker-entry-report  Estimate the maker-entry OHLCV upper bound"
 	@echo ""
@@ -58,6 +59,7 @@ help:
 	@echo "  make prod-derivatives-context-report  Production derivatives coverage probe"
 	@echo "  make prod-decision-quality-report  Production score diagnostics"
 	@echo "  make prod-liquid-taker-report  Production low-impact taker replay"
+	@echo "  make prod-liquid-taker-wider-stop-report  Production wider-stop shadow replay"
 	@echo "  make prod-long-horizon-report  Production long-horizon funding research"
 	@echo "  make prod-maker-entry-report  Production maker-entry upper-bound report"
 
@@ -207,6 +209,14 @@ decision-quality-report:
 liquid-taker-report:
 	@DATABASE_URL="$${DATABASE_URL:-postgresql://schurfer:schurfer_dev@localhost:5432/schurfer}" \
 		uv run --package schurfer-analytics liquid-taker-report \
+		--code-revision="$$(git rev-parse HEAD)" \
+		$$(test -z "$$(git status --porcelain)" \
+			&& printf '%s' '--no-working-tree-dirty' \
+			|| printf '%s' '--working-tree-dirty') $(ARGS)
+
+liquid-taker-wider-stop-report:
+	@DATABASE_URL="$${DATABASE_URL:-postgresql://schurfer:schurfer_dev@localhost:5432/schurfer}" \
+		uv run --package schurfer-analytics liquid-taker-wider-stop-report \
 		--code-revision="$$(git rev-parse HEAD)" \
 		$$(test -z "$$(git status --porcelain)" \
 			&& printf '%s' '--no-working-tree-dirty' \
@@ -467,6 +477,14 @@ prod-decision-quality-report:
 prod-liquid-taker-report:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
 	@$(_PROD) run --rm --no-deps --entrypoint liquid-taker-report analytics \
+		--code-revision="$$(git rev-parse HEAD)" \
+		$$(test -z "$$(git status --porcelain)" \
+			&& printf '%s' '--no-working-tree-dirty' \
+			|| printf '%s' '--working-tree-dirty') $(ARGS)
+
+prod-liquid-taker-wider-stop-report:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
+	@$(_PROD) run --rm --no-deps --entrypoint liquid-taker-wider-stop-report analytics \
 		--code-revision="$$(git rev-parse HEAD)" \
 		$$(test -z "$$(git status --porcelain)" \
 			&& printf '%s' '--no-working-tree-dirty' \

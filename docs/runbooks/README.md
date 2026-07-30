@@ -725,6 +725,37 @@ the new cohort separately.
   creates only a shadow candidate. It does not change production or authorize live
   trading.
 
+- Liquid-taker wider-stop shadow: evaluate the separately registered HYP-010
+  interaction without changing HYP-008 or production:
+
+  ```bash
+  make prod-liquid-taker-wider-stop-report
+  make prod-liquid-taker-wider-stop-report \
+    ARGS="--until 2026-08-31T00:00:00Z --format json" \
+    > backups/reports/liquid-taker-wider-stop-2026-08-31.json
+  ```
+
+  The prospective cohort starts at `2026-08-01T00:00:00Z`. Before that time the
+  command exits without querying the database. Selection is the full HYP-008
+  contract, not only an impact filter: recorded score threshold, recorded
+  market-quality gate, finite configured-notional bid and ask impact, and at most 20
+  bps round trip. Baseline and challenger share one selected decision and one exact
+  five-minute venue path.
+
+  Baseline must reconcile with `liquid_taker_candidate_v1`. The only challenger
+  changes are a 1.5x initial stop and a two-thirds position. Read
+  `risk_normalized_net_return_pct`, not the challenger's raw percentage return, when
+  comparing economics. The report keeps original-notional recorded impact after
+  down-sizing as an explicit conservative approximation. The simple 3x
+  price-distance buffer is only a diagnostic and is not an exchange liquidation
+  calculation.
+
+  Formal output is withheld until the earliest chronological prefix has at least 100
+  episodes, 30 asset clusters, four UTC weeks, and complete pairing. A shadow pass
+  requires positive lower 95% bounds for both challenger absolute expectancy and
+  paired delta, plus positive busiest-week and top-five-asset exclusions. A pass
+  cannot change production, leverage, or trading mode.
+
 - Maker-entry OHLCV upper bound: estimate whether a post-only entry is promising
   enough to justify a real paper fill simulator:
 
@@ -772,6 +803,13 @@ the new cohort separately.
   median filled return, fill rate, and stops. These are post-hoc diagnostics on the
   discovery cohort, not formal inference. Even a positive result can only justify a
   bounded paper post-only simulator, not strategy promotion or real trading.
+
+  The frozen `2026-07-29T18:42:07.816848Z` validation did not pass that gate:
+  optimistic mean episode net was `+0.46%`, activation-marketable-as-cash was
+  `-0.03%`, and the additional exact-touch-as-cash sensitivity was `-0.30%`. Every
+  whole-asset interval crossed zero and the defensive result was cluster-fragile.
+  Keep OBS-009 parked. Do not tune another limit or timeout on this cohort and do not
+  build the paper post-only simulator from this result.
 
 - Candle anomaly research: after the registered cohort has accumulated closed episodes
   with exact-anchor 8-hour outcomes, derive HYP-005 features and join them to the

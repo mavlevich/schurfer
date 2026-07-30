@@ -567,3 +567,65 @@ Do not add ATR offsets or tune the limit after reading this report. A positive r
 does not validate maker execution. It can only justify a new paper simulator that
 records post-only order state, queue-sensitive fills, partial fills, cancel/replace
 timing, failed exits, and a taker protective stop on bounded venues and hot symbols.
+
+Frozen result at the exclusive cutoff `2026-07-29T18:42:07.816848Z`:
+
+- the optimistic potential-fill model reported `+0.46%` mean episode net, but its
+  whole-asset 95% interval was `[-1.71%, +3.08%]`;
+- treating the 49 activation-marketable potential fills as rejected cash reduced
+  mean episode net to `-0.03%` with interval `[-1.41%, +1.73%]`;
+- additionally treating exact touches as cash reduced it to `-0.30%` with interval
+  `[-1.53%, +1.12%]`;
+- every sensitivity interval crossed zero, the sign was not stable, and excluding
+  one influential asset cluster made the defensive result negative.
+
+OBS-009 therefore does not pass its own robustness gate. Do not build a paper
+post-only simulator or tune another maker level or timeout on this cohort. Reopen the
+maker track only with a separately registered fresh out-of-sample cohort or after an
+independent strategy has established positive executable expectancy.
+
+---
+
+## HYP-010 - low-impact taker selection and a fixed-risk wider stop may interact
+
+OBS-007a found that a 1.5x initial stop with position size reduced to two thirds
+improved historical risk-normalized economics, but its 95% paired interval crossed
+zero. HYP-008 independently tests the low-impact taker shelf with the unchanged v1
+exit. Neither result may be retrofitted into the other registered cohort.
+
+Registered prospective contract (`liquid_taker_wider_stop_shadow_v1`):
+
+- cohort starts at `2026-08-01T00:00:00Z`, before any aggregate result for this
+  combined contract is read;
+- reproduce the full HYP-008 selector, including the recorded production score
+  threshold, recorded market-quality gate, finite configured-notional bid and ask
+  impacts, and `bid_impact_bps + ask_impact_bps <= 20`;
+- select one exact exchange and instrument point in time, then replay both variants
+  on the same complete exact-venue five-minute path;
+- baseline is exactly `liquid_taker_candidate_v1`: the existing next-complete-bar
+  taker entry, full-v1 exit, costs, within-bar ordering, and recorded position;
+- challenger changes only the initial stop to `1.5 * baseline_initial_sl_pct` and
+  changes position notional to `baseline_notional / 1.5`;
+- use risk-normalized episode net return as the primary metric. The smaller
+  challenger's raw percentage return is multiplied by its two-thirds position scale;
+- report the remaining simple 3x price-distance buffer as a diagnostic only. It is
+  not an exchange liquidation, maintenance-margin, fee, or funding calculation;
+- reuse recorded original-notional impact for the smaller position. This is a
+  conservative approximation when impact is monotonic and must remain explicit;
+- an episode that never passes the selector is zero-return cash for both variants.
+  Missing gate inputs, exact paths, costs, or either replay make the pair unresolved;
+- no ATR stop, maker entry, score change, leverage change, venue fallback, or
+  production configuration change belongs to this contract.
+
+The formal sample is the earliest chronological prefix that reaches at least 100
+episodes, 30 asset clusters, and four distinct UTC calendar weeks. Formal output is
+withheld until every episode in that prefix is completely paired. The whole-asset
+cluster bootstrap reports the baseline, challenger, and paired challenger-minus-
+baseline 95% intervals.
+
+A pass requires both the challenger's absolute lower interval bound and the paired
+delta lower interval bound to be above zero. Challenger expectancy and paired delta
+must also remain above zero after excluding the busiest week and after separately
+excluding each of the five most frequent asset clusters. A pass creates only a
+shadow candidate. It cannot change production, position size, leverage, or
+`DRY_RUN=true`.
