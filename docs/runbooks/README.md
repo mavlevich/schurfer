@@ -116,6 +116,20 @@ restart policy, so a memory-limit exit remains stopped instead of entering a res
 loop. The start command also refuses to run below 768 MiB available RAM or 15 GiB
 free root-disk space.
 
+After captures mature, generate the OBS-011 read-only report:
+
+```bash
+make prod-orderflow-pilot-report
+make prod-orderflow-pilot-report \
+  ARGS="--until 2026-08-06T00:00:00Z --format json" \
+  > backups/reports/bybit-orderflow-2026-08-06.json
+```
+
+The report streams the gzip members from the read-only `orderflow_data` mount. It
+does not load raw trades into PostgreSQL and does not alter the running canary.
+Before 100 complete matched captures, 30 bases, and 7 UTC market days, use it only
+for capture quality and exclusion diagnostics.
+
 ```sql
 -- docker exec schurfer-postgres psql -U schurfer -d schurfer
 SELECT ts, base, action, score, decision_id, strategy_version,

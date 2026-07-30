@@ -49,6 +49,7 @@ flowchart LR
 
     BYBIT -. "optional bounded public trades pilot" .-> FLOW["Sparse 1s order-flow aggregates"]
     FLOW -.-> FILES["Capped event and control windows"]
+    FILES -.-> OFREPORT["Read-only three-lane discovery report"]
 ```
 
 ## Stack
@@ -208,6 +209,7 @@ matched-control windows rather than dense symbol-seconds or every raw trade.
 
 ```bash
 make verify       # full pre-PR gate: lint, types, tests, build, compose config
+make orderflow-pilot-report ARGS="--root /path/to/orderflow"
 make test         # run all tests (Python + Go + TS)
 make lint         # run all linters via pre-commit
 make ci-lint      # run the exact all-files lint gate used by GitHub Actions

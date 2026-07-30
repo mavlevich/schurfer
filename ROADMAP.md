@@ -968,6 +968,11 @@ The intended stream topology is:
       controls by time, liquidity, volatility, listing age, and market regime.
       Pre-register separate readings for early-long timing, squeeze avoidance, and
       delayed short entry; do not combine those books into one headline.
+- [x] Freeze OBS-011 and add a streaming, read-only report over the bounded
+      event/control files. The report validates the capture contract and
+      activation boundary, fingerprints inputs, separates the three lanes,
+      and withholds interpretation until 100 complete captures, 30 bases, and
+      7 UTC market days.
 - [ ] Gate all broader order-flow work on the Bybit pilot. Require useful lead time
       before the current pump trigger, point-in-time predictive lift, economic value
       after costs, more than one asset cluster and market day, and an out-of-sample

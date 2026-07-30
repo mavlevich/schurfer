@@ -133,6 +133,11 @@ start it. Every persisted record identifies the
 local receive time, and pump `first_observed_at`. Its first production run is a
 resource canary, not a trading signal.
 
+The analytics image mounts the bounded volume read-only. The
+`bybit_orderflow_pilot_report_v1` reader streams one gzip subject file at a time,
+validates the activation boundary and capture identity, and keeps early-long,
+squeeze-avoidance, and delayed-short results separate.
+
 ## Redis key registry
 
 | Key                                                  | Owner       | TTL    | Schema / purpose                                                        |

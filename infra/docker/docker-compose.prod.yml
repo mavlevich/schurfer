@@ -245,6 +245,8 @@ services:
       PUMP_ENTRY_MIN_PCT: ${PUMP_ENTRY_MIN_PCT:-}
       PUMP_MIN_PCT: ${PUMP_MIN_PCT:-}
       SCAN_INTERVAL: ${SCAN_INTERVAL:-60}
+    volumes:
+      - orderflow_data:/data/orderflow:ro
     depends_on:
       postgres:
         condition: service_healthy
