@@ -629,3 +629,22 @@ must also remain above zero after excluding the busiest week and after separatel
 excluding each of the five most frequent asset clusters. A pass creates only a
 shadow candidate. It cannot change production, position size, leverage, or
 `DRY_RUN=true`.
+
+---
+
+## OBS-011 - public trade flow may lead or improve timing around the pump trigger
+
+The bounded Bybit public-trades pilot is a separate discovery lane. It does not
+modify HYP-008, HYP-010, the production score, or the existing short. Its contract
+was frozen before the first eligible post-warm-up capture at
+`2026-07-30T18:15:00Z`.
+
+The report keeps three readings separate: early-long timing, squeeze avoidance for
+the existing short, and delayed short entry after buying pressure fades. It compares
+the event symbol with controls selected strictly from pre-event notional and price
+return. The activation second is excluded, unresolved or stale price endpoints fail
+closed, and output remains discovery-only after the readiness gate.
+
+The complete contract, windows, feature definitions, readiness thresholds, and
+expansion gate are in
+[bybit-order-flow-pilot-v1.md](bybit-order-flow-pilot-v1.md).
