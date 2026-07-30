@@ -217,13 +217,14 @@ def _missing_path(episode: ReplayEpisode, selection: ThresholdSelection) -> Mark
     )
 
 
-def _evaluate_threshold(
+def evaluate_threshold(
     episode: ReplayEpisode,
     threshold_key: str,
     min_pump_pct: float,
     path_by_decision: dict[str, MarketPath],
     costs: CostParameters,
 ) -> ThresholdEpisodeResult:
+    """Evaluate one point-in-time floor on one episode with the shared replay engine."""
     selection = select_threshold_decision(episode, min_pump_pct)
     decision = selection.decision
     if selection.status == "not_triggered":
@@ -285,11 +286,12 @@ def _evaluate_threshold(
     )
 
 
-def _metrics(
+def threshold_metrics(
     threshold_key: str,
     min_pump_pct: float,
     results: tuple[ThresholdEpisodeResult, ...],
 ) -> ThresholdMetrics:
+    """Summarize one threshold across episode-level replay results."""
     selected = tuple(result for result in results if result.threshold_key == threshold_key)
     resolved = [
         result.episode_net_return_pct
@@ -385,7 +387,7 @@ def build_entry_threshold_report(
         ),
     )
     results = tuple(
-        _evaluate_threshold(episode, key, floor, path_by_decision, costs)
+        evaluate_threshold(episode, key, floor, path_by_decision, costs)
         for episode in dataset.eligible_episodes
         for key, _, floor in threshold_specs
     )
@@ -460,7 +462,9 @@ def build_entry_threshold_report(
         eligible_episodes=len(dataset.eligible_episodes),
         excluded_episodes=len(dataset.excluded_episodes),
         input_exclusion_reasons=_count_rows(exclusions),
-        threshold_metrics=tuple(_metrics(key, floor, results) for key, _, floor in threshold_specs),
+        threshold_metrics=tuple(
+            threshold_metrics(key, floor, results) for key, _, floor in threshold_specs
+        ),
         paired_comparisons=tuple(
             _paired_comparison(
                 variant,

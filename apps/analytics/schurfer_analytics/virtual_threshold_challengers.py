@@ -137,9 +137,22 @@ def selected_threshold_decisions(
     episodes: tuple[ReplayEpisode, ...],
 ) -> tuple[ReplayDecision, ...]:
     """Return the deterministic unique union needed by all registered floors."""
+    return selected_threshold_decisions_for(episodes, registered_thresholds())
+
+
+def selected_threshold_decisions_for(
+    episodes: tuple[ReplayEpisode, ...],
+    thresholds: tuple[float, ...],
+) -> tuple[ReplayDecision, ...]:
+    """Return the deterministic decision union needed by an explicit floor surface."""
+    if not thresholds or len(thresholds) != len(set(thresholds)):
+        raise ValueError("thresholds must be unique and non-empty")
+    for threshold in thresholds:
+        if not math.isfinite(threshold) or threshold <= 0:
+            raise ValueError("entry thresholds must be finite and positive")
     by_id: dict[str, ReplayDecision] = {}
     for episode in episodes:
-        for threshold in registered_thresholds():
+        for threshold in thresholds:
             selection = select_threshold_decision(episode, threshold)
             decision = selection.decision
             if decision is None:
