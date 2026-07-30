@@ -132,7 +132,7 @@ remains `DRY_RUN=true`, `AUTO_TRADE=false`.
    simple 3x price-distance buffer, which is not an exchange liquidation model. This
    historical result is discovery-only and cannot promote a policy or change
    production.
-6. **[Validation diagnostics in progress] Maker OHLCV upper bound.**
+6. **[Completed, insufficient evidence] Maker OHLCV upper bound.**
    `maker-entry-report` fixes one primary passive level before reading the result:
    a hypothetical post-only sell at the recorded decision-time best ask. The order
    becomes active at the first bar strictly after the decision and expires after 15
@@ -151,28 +151,38 @@ remains `DRY_RUN=true`, `AUTO_TRADE=false`.
    the maker delta. Split immediate activation-time marketability from later
    between-bar gaps, publish fixed cash sensitivities for activation rejection and
    exact touches, and report median return, cluster concentration, cluster-bootstrap
-   bounds, and the result without the largest asset cluster. Do not tune the limit
-   or timeout after reading these diagnostics.
-7. **Exit quote calibration.** After at least 30 exit observations, publish a
+   bounds, and the result without the largest asset cluster. At the frozen
+   `2026-07-29T18:42:07.816848Z` cutoff, optimistic mean net was `+0.46%`, but it fell
+   to `-0.03%` when activation-marketable fills became cash and to `-0.30%` when
+   exact touches also became cash. Every cluster interval crossed zero and the
+   defensive result was single-cluster fragile. OBS-009 is parked. Do not tune the
+   limit or timeout on this cohort and do not build the paper post-only simulator.
+7. **[Registered, starts 2026-08-01] Prospective liquid-taker wider-stop shadow.**
+   `liquid_taker_wider_stop_shadow_v1` reproduces the complete HYP-008 selector and
+   compares the unchanged liquid-taker baseline with exactly one challenger on the
+   same exact-venue path. The challenger widens only the initial stop to 1.5x and
+   reduces notional to two thirds, preserving modeled initial-stop dollar risk.
+   No-trigger episodes are cash for both variants and any missing input makes the
+   pair unresolved. Formal inference needs the earliest prefix with at least 100
+   episodes, 30 asset clusters, four UTC weeks, and complete pairing. Both the
+   challenger's absolute 95% lower bound and its paired-delta lower bound must be
+   positive, including busiest-week and top-five-asset exclusions. A pass creates
+   only a shadow candidate and cannot change production.
+8. **Exit quote calibration.** After at least 30 exit observations, publish a
    directional comparison of decision-time modeled and close-time observed impact.
    Target 100 observations for a decision and segment by venue, exit reason, duration,
    spread, and depth. A paper quote still must not be presented as actual slippage.
-8. **Conditional maker paper simulator.** Build this only if item 6 remains promising
-   under activation-marketable-as-cash sensitivity, beats the same-resolution 1m
-   taker control, survives removal of the largest asset cluster, and retains a
-   viable fill rate.
-   Start with one or two supported venues and bounded hot symbols, retain post-only
-   order state, partial fills, cancel/replace timing, and a taker protective stop.
-   Ticker bars alone cannot validate queue position; active symbols need bounded
-   trades and L2 observations. No real order is authorized.
-9. **Decision checkpoint.** On `2026-08-31`, review the accumulated evidence. Formal
-   promotion still requires at least 100 eligible episodes, 30 asset clusters,
-   complete pairing, positive net expectancy after costs, cluster sensitivity, and
-   acceptable drawdown. If the sample is smaller, explicitly choose one bounded
-   extension or shelve the strategy because the practical opportunity flow is too
-   low. The allowed outcomes are a registered exit-v2 shadow, maker-v2 shadow, a
-   narrow liquid taker segment, or parking pump-short and moving the platform to the
-   next pre-registered signal.
+9. **[Parked] Conditional maker paper simulator.** OBS-009 did not survive its
+   defensive sensitivity checks, so no simulator is authorized. Reconsider only
+   after a fresh registered maker cohort or an independently proven executable edge.
+10. **Decision checkpoint.** On `2026-08-31`, review the accumulated evidence. Formal
+    promotion still requires at least 100 eligible episodes, 30 asset clusters,
+    complete pairing, positive net expectancy after costs, cluster sensitivity, and
+    acceptable drawdown. If the sample is smaller, explicitly choose one bounded
+    extension or shelve the strategy because the practical opportunity flow is too
+    low. The allowed outcomes are a registered exit-v2 shadow, maker-v2 shadow, a
+    narrow liquid taker segment, or parking pump-short and moving the platform to the
+    next pre-registered signal.
 
 Reporting duplication is reduced incrementally while implementing items 1, 3, 4, and
 5 through the shared `reporting`, replay, and challenger-inference modules. A separate
