@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import replace
+import hashlib
+import json
+from dataclasses import asdict, replace
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -54,6 +56,32 @@ def _episode(
     return ReplayEpisode(event_id, base, f"base:{base}", (decision,), ())
 
 
+class _ExchangeClientTracker:
+    def __init__(self) -> None:
+        self.active_clients = 0
+        self.maximum_active_clients = 0
+        self.factories: dict[str, Mock] = {}
+
+    def factory_for(self, exchange_name: str) -> Mock:
+        def build() -> AsyncMock:
+            exchange = AsyncMock(name=exchange_name)
+            self.active_clients += 1
+            self.maximum_active_clients = max(
+                self.maximum_active_clients,
+                self.active_clients,
+            )
+
+            async def close() -> None:
+                self.active_clients -= 1
+
+            exchange.close.side_effect = close
+            return exchange
+
+        factory = Mock(side_effect=build)
+        self.factories[exchange_name] = factory
+        return factory
+
+
 async def test_fetch_market_paths_uses_exact_anchor_and_closes_owned_client() -> None:
     exchange = AsyncMock()
     candle = Candle(1785067500000, 100, 101, 99, 100, 1)
@@ -92,6 +120,32 @@ async def test_fetch_market_paths_reuses_one_client_for_same_exchange() -> None:
     assert factory.call_count == 1
     assert fetch.await_count == 2
     exchange.close.assert_awaited_once()
+
+
+async def test_fetch_market_paths_bounds_live_exchange_clients() -> None:
+    tracker = _ExchangeClientTracker()
+    candle = Candle(1785067500000, 100, 101, 99, 100, 1)
+
+    with patch(
+        "schurfer_analytics.virtual_market.fetch_candles",
+        AsyncMock(return_value=[candle]),
+    ):
+        paths = await fetch_market_paths(
+            (
+                _episode("bybit", event_id=42, base="ERA"),
+                _episode("binance", event_id=43, base="BANK"),
+            ),
+            {
+                "binance": tracker.factory_for("binance"),
+                "bybit": tracker.factory_for("bybit"),
+            },
+        )
+
+    assert [item.pump_event_id for item in paths] == [42, 43]
+    assert tracker.maximum_active_clients == 1
+    assert tracker.active_clients == 0
+    assert tracker.factories["binance"].call_count == 1
+    assert tracker.factories["bybit"].call_count == 1
 
 
 async def test_fetch_market_paths_reports_unsupported_exchange_without_fallback() -> None:
@@ -184,6 +238,35 @@ async def test_fetch_decision_paths_reuses_client_and_keys_paths_by_decision() -
     exchange.close.assert_awaited_once()
 
 
+async def test_fetch_decision_paths_bounds_live_exchange_clients() -> None:
+    tracker = _ExchangeClientTracker()
+    bybit = _episode("bybit", event_id=42, base="ERA").decisions[0]
+    binance = replace(
+        _episode("binance", event_id=43, base="BANK").decisions[0],
+        row_id=2,
+        decision_id="00000000-0000-0000-0000-000000000002",
+    )
+    candle = Candle(1785067500000, 100, 101, 99, 100, 1)
+
+    with patch(
+        "schurfer_analytics.virtual_market.fetch_candles",
+        AsyncMock(return_value=[candle]),
+    ):
+        paths = await fetch_decision_market_paths(
+            (bybit, binance),
+            {
+                "binance": tracker.factory_for("binance"),
+                "bybit": tracker.factory_for("bybit"),
+            },
+        )
+
+    assert [item.decision_id for item in paths] == [bybit.decision_id, binance.decision_id]
+    assert tracker.maximum_active_clients == 1
+    assert tracker.active_clients == 0
+    assert tracker.factories["binance"].call_count == 1
+    assert tracker.factories["bybit"].call_count == 1
+
+
 async def test_fetch_decision_paths_rejects_duplicate_decision_ids() -> None:
     decision = _episode().decisions[0]
 
@@ -227,6 +310,35 @@ async def test_fetch_maker_paths_reuses_client_and_requests_both_timeframes() ->
     exchange.close.assert_awaited_once()
 
 
+async def test_fetch_maker_paths_bounds_live_exchange_clients() -> None:
+    tracker = _ExchangeClientTracker()
+    bybit = _episode("bybit", event_id=42, base="ERA").decisions[0]
+    binance = replace(
+        _episode("binance", event_id=43, base="BANK").decisions[0],
+        row_id=2,
+        decision_id="00000000-0000-0000-0000-000000000002",
+    )
+    candle = Candle(1785067500000, 100, 101, 99, 100, 1)
+
+    with patch(
+        "schurfer_analytics.virtual_market.fetch_candles",
+        AsyncMock(return_value=[candle]),
+    ):
+        paths = await fetch_maker_decision_paths(
+            (bybit, binance),
+            {
+                "binance": tracker.factory_for("binance"),
+                "bybit": tracker.factory_for("bybit"),
+            },
+        )
+
+    assert [item.decision_id for item in paths] == [bybit.decision_id, binance.decision_id]
+    assert tracker.maximum_active_clients == 1
+    assert tracker.active_clients == 0
+    assert tracker.factories["binance"].call_count == 1
+    assert tracker.factories["bybit"].call_count == 1
+
+
 def test_decision_path_fingerprint_is_order_independent_and_includes_decision_id() -> None:
     candle = Candle(1785067500000, 100, 101, 99, 100, 1)
     path = MarketPath(42, "binance", "ERA", "complete", (candle,))
@@ -237,6 +349,37 @@ def test_decision_path_fingerprint_is_order_independent_and_includes_decision_id
         (second, first)
     )
     assert decision_market_path_fingerprint((first,)) != decision_market_path_fingerprint((second,))
+
+
+def test_decision_path_fingerprint_preserves_canonical_json_contract() -> None:
+    candle = Candle(1785067500000, 100, 101, 99, 100, 1)
+    item = DecisionMarketPath(
+        "decision-a",
+        MarketPath(42, "binance", "ERA", "complete", (candle,)),
+    )
+    payload = [
+        {
+            "decision_id": item.decision_id,
+            "path": {
+                "pump_event_id": item.path.pump_event_id,
+                "exchange": item.path.exchange,
+                "base": item.path.base,
+                "status": item.path.status,
+                "error": item.path.error,
+                "candles": [asdict(value) for value in item.path.candles],
+            },
+        }
+    ]
+    expected = hashlib.sha256(
+        json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode()
+    ).hexdigest()
+
+    assert decision_market_path_fingerprint((item,)) == expected
 
 
 def test_maker_path_fingerprint_is_order_independent_and_includes_both_timeframes() -> None:
