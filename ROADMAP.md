@@ -958,7 +958,7 @@ The intended stream topology is:
       and stores only event and matched-control windows. Raw trades do not traverse
       NATS. The optional Compose profile has hard `384 MiB` memory, `0.75 CPU`, bounded
       queue, pending-record, active-event, retention, and `5 GiB` disk limits.
-- [ ] Run the staged Bybit public-trades canary and decide whether the lane earns
+- [ ] Run the staged Bybit public-trades trial and decide whether the lane earns
       expansion. Observe every active linear perpetual from process start so pre-pump
       windows are not left-censored. The first 30-minute, 6-hour, and 24-hour runs
       measure actual events/s, CPU, RAM, bytes/day, compression, gaps, lag, and drops.
@@ -1002,28 +1002,31 @@ The intended stream topology is:
       on the production host; prefer separating those workloads instead. On
       2026-07-30 a full CCXT pump-magnitude replay reached about `1 GB` RSS and was
       killed by the host OOM policy while the live services were using most of the
-      remaining memory. Before the Bybit public-trades canary, add a `2 GB` low-
+      remaining memory. Before the Bybit public-trades trial, add a `2 GB` low-
       swappiness emergency swap file and finish streaming/bounded replay reads. Swap
       is crash protection, not report capacity. Heavy replay stays off the live host
       unless its memory preflight passes. The pilot starts on the existing two vCPU
       host with a hard container memory/CPU budget and staged 30-minute, 6-hour, and
       24-hour canaries. Buy or split compute only after measured lag or drops show
       that the bounded process cannot keep up.
-- [x] Lightweight authenticated Status observability. Report container-visible CPU
-      load, memory, root-filesystem use, uptime, ticker event rate, hot/observed
-      symbols, lag, drops, and persistence errors through the existing health
-      WebSocket. No Docker socket, host-secret mount, Prometheus, or Grafana is
-      required for this phase. Add heavy observability only after a second host or a
-      proven load need.
+- [x] Lightweight authenticated Status observability. Report real interval CPU
+      utilization separately from load pressure, memory, swap, root-filesystem use,
+      uptime, ticker event rate, hot/observed symbols, lag, drops, persistence
+      errors, bounded order-flow trial health, and sanitized per-container CPU,
+      memory, PIDs, health, and restarts through the existing health WebSocket. A
+      host-side systemd collector writes an atomic snapshot that the API mounts
+      read-only; the API and Web containers never receive the Docker socket. Keep a
+      client-side rolling 60-minute CPU/memory peak while the Status page is open.
+      Add heavy observability only after a second host or a proven load need.
 - [ ] Deferred incident alerts, kept outside the evidence-producing PR budget. Add
       an external outbound heartbeat with Telegram down/recovery notification so it
       still works when the private Tailscale-only host is unreachable. When the
       notifier or Status health is next touched for product work, add deduplicated
       warning/recovery alerts for sustained host memory, swap activity, disk use,
       OOM/restart evidence, market-pipeline lag, and dropped events. Also rename the
-      frontend CPU percentage to load pressure or expose real CPU utilization so
-      normalized load average is not presented as CPU time. Do not delay the Bybit
-      order-flow pilot or the HYP-008/HYP-010 decision for this observability work.
+      Status page already separates load pressure from real CPU utilization as of
+      2026-07-30. Do not delay the Bybit order-flow pilot or the HYP-008/HYP-010
+      decision for the remaining external alert work.
 - [ ] Multi-venue execution, driven by coverage data and not by diversification. A
       signal fires on a token whose perp may only exist on certain venues, some
       blocked for Poland residents. After Phase 0 data we will know which accounts we

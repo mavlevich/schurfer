@@ -200,7 +200,7 @@ matched-control windows rather than dense symbol-seconds or every raw trade.
 - reserve at least 15 GiB for the operating system and deployments;
 - measure real bytes/day for 24 hours before locking retention;
 - keep local aggregate windows under a configurable 5 GiB / 14-day hard cap during
-  the canary;
+  the bounded trial;
 - derive 5s/1m views during analysis until longer retention proves useful;
 - upload selected Parquet+Zstd windows only after checksum verification;
 - expand beyond Bybit only after a point-in-time predictive and economic gate passes.

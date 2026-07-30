@@ -131,7 +131,7 @@ behind the optional `orderflow` Compose profile, so a normal deployment does not
 start it. Every persisted record identifies the
 `bybit_orderflow_pilot_v1` capture contract and distinguishes exchange event time,
 local receive time, and pump `first_observed_at`. Its first production run is a
-resource canary, not a trading signal.
+bounded production trial, not a trading signal.
 
 The analytics image mounts the bounded volume read-only. The
 `bybit_orderflow_pilot_report_v1` reader streams one gzip subject file at a time,
@@ -154,7 +154,7 @@ squeeze-avoidance, and delayed-short results separate.
 | `market:hotset:health`                               | hotset      | 30s    | event rate, lag, drops, errors, persisted bars, and active symbol count |
 | `market:hotset:bybit`                                | hotset      | varies | restart-safe symbol registry with absolute hot-window expiries          |
 | `market:hotset:bybit:metadata`                       | hotset      | none   | base, pump event id, and activation reason for registered Bybit symbols |
-| `market:orderflow:health`                            | orderflow   | 30s    | pilot rate, lag, drops, buffers, captures, storage, and canary status   |
+| `market:orderflow:health`                            | orderflow   | 30s    | pilot rate, lag, drops, buffers, captures, storage, and trial status    |
 | `trading:enabled`                                    | execution   | no TTL | `"true"/"false"`, kill switch                                           |
 | `trading:daily_pnl`                                  | execution   | none   | float string (USD), monitoring cache                                    |
 | `risk:pnl_ready`                                     | execution   | 120s   | `"1"`, positive lease. Absent or stale means trading is blocked         |
@@ -182,15 +182,20 @@ squeeze-avoidance, and delayed-short results separate.
 | **PostgreSQL**   | pumps, snapshots, derivatives context, decisions, outcomes, trades |
 | **TimescaleDB**  | OHLCV series, tick data, funding history                           |
 | **Redis**        | hot state (pump list, signal scores, locks, position metadata)     |
-| **Local volume** | capped order-flow event/control aggregates during the canary       |
+| **Local volume** | capped order-flow event/control aggregates during the trial        |
 
 ### Capacity and retention guardrails
 
-- The API status page reports disk, memory, normalized one-minute load, ticker event
-  rate, stream lag, drops, and persistence failures.
+- The API status page reports real interval CPU utilization separately from
+  one-minute load pressure, plus host memory, swap, disk, ticker event rate, stream
+  lag, drops, and persistence failures.
+- A host-side systemd collector writes a sanitized atomic container snapshot. The
+  API reads the mounted snapshot but has no Docker socket and no Docker control
+  capability. Container metrics include CPU, memory, PIDs, health, and restart
+  count.
 - Local raw-research storage is capped and stops before root filesystem use reaches
   80%. At least 15 GiB remains reserved for the operating system and deployments.
-- The first 24-hour Bybit public-trades canary measures actual event volume,
+- The first 24-hour Bybit public-trades trial measures actual event volume,
   compression, CPU, memory, and bytes/day. Retention values remain configurable until
   that measurement exists.
 - Long-lived raw windows use Parquet+Zstd in object storage. Local deletion requires a

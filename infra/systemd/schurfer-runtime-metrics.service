@@ -1,0 +1,23 @@
+[Unit]
+Description=Schurfer sanitized Docker runtime metrics
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=deploy
+Group=deploy
+WorkingDirectory=/opt/schurfer
+Environment=RUNTIME_METRICS_PATH=/opt/schurfer/runtime/container-metrics.snapshot
+Environment=RUNTIME_METRICS_INTERVAL_SECONDS=10
+ExecStart=/opt/schurfer/infra/scripts/runtime-metrics.sh
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/opt/schurfer/runtime
+
+[Install]
+WantedBy=multi-user.target
