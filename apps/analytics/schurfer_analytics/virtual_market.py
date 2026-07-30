@@ -111,7 +111,10 @@ async def _process_by_exchange[InputT, OutputT](
                 *(process(exchange, semaphore, item) for _, item in indexed_items)
             )
         finally:
-            await asyncio.gather(exchange.close(), return_exceptions=True)
+            await asyncio.gather(
+                exchange.close(clean_instance_data=True),
+                return_exceptions=True,
+            )
         for (index, _), result in zip(indexed_items, exchange_results, strict=True):
             results[index] = result
 

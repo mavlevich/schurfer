@@ -61,6 +61,7 @@ class _ExchangeClientTracker:
         self.active_clients = 0
         self.maximum_active_clients = 0
         self.factories: dict[str, Mock] = {}
+        self.clean_instance_data: list[bool] = []
 
     def factory_for(self, exchange_name: str) -> Mock:
         def build() -> AsyncMock:
@@ -71,8 +72,9 @@ class _ExchangeClientTracker:
                 self.active_clients,
             )
 
-            async def close() -> None:
+            async def close(*, clean_instance_data: bool = False) -> None:
                 self.active_clients -= 1
+                self.clean_instance_data.append(clean_instance_data)
 
             exchange.close.side_effect = close
             return exchange
@@ -144,6 +146,7 @@ async def test_fetch_market_paths_bounds_live_exchange_clients() -> None:
     assert [item.pump_event_id for item in paths] == [42, 43]
     assert tracker.maximum_active_clients == 1
     assert tracker.active_clients == 0
+    assert tracker.clean_instance_data == [True, True]
     assert tracker.factories["binance"].call_count == 1
     assert tracker.factories["bybit"].call_count == 1
 
@@ -263,6 +266,7 @@ async def test_fetch_decision_paths_bounds_live_exchange_clients() -> None:
     assert [item.decision_id for item in paths] == [bybit.decision_id, binance.decision_id]
     assert tracker.maximum_active_clients == 1
     assert tracker.active_clients == 0
+    assert tracker.clean_instance_data == [True, True]
     assert tracker.factories["binance"].call_count == 1
     assert tracker.factories["bybit"].call_count == 1
 
@@ -335,6 +339,7 @@ async def test_fetch_maker_paths_bounds_live_exchange_clients() -> None:
     assert [item.decision_id for item in paths] == [bybit.decision_id, binance.decision_id]
     assert tracker.maximum_active_clients == 1
     assert tracker.active_clients == 0
+    assert tracker.clean_instance_data == [True, True]
     assert tracker.factories["binance"].call_count == 1
     assert tracker.factories["bybit"].call_count == 1
 
