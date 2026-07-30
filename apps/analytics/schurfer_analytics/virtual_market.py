@@ -5,9 +5,9 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import asdict, dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from .candle_anomaly_features import candle_anomaly_path_bounds
 from .ohlcv import (
@@ -21,6 +21,7 @@ from .ohlcv import (
 )
 from .virtual_entry_challengers import challenger_path_bounds
 from .virtual_strategy import (
+    EpisodeSelection,
     MarketPath,
     exit_parameters,
     exit_policy_family_path_bounds,
@@ -60,8 +61,67 @@ class MakerDecisionPaths:
             raise ValueError("maker decision paths require a decision id")
 
 
+def _fingerprint_payloads(payloads: Iterable[dict[str, Any]]) -> str:
+    """Hash a canonical JSON array without materializing the full payload twice."""
+    digest = hashlib.sha256()
+    digest.update(b"[")
+    for index, payload in enumerate(payloads):
+        if index:
+            digest.update(b",")
+        digest.update(
+            json.dumps(
+                payload,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            ).encode()
+        )
+    digest.update(b"]")
+    return digest.hexdigest()
+
+
+async def _process_by_exchange[InputT, OutputT](
+    items: tuple[InputT, ...],
+    factories: dict[str, ExchangeFactory],
+    *,
+    exchange_for: Callable[[InputT], str],
+    unsupported: Callable[[InputT], OutputT],
+    process: Callable[
+        [Any, asyncio.Semaphore, InputT],
+        Awaitable[OutputT],
+    ],
+) -> tuple[OutputT, ...]:
+    """Process one venue at a time while preserving the original item order."""
+    missing = object()
+    results: list[OutputT | object] = [missing] * len(items)
+    grouped: dict[str, list[tuple[int, InputT]]] = {}
+    for index, item in enumerate(items):
+        exchange_name = exchange_for(item)
+        if exchange_name not in factories:
+            results[index] = unsupported(item)
+            continue
+        grouped.setdefault(exchange_name, []).append((index, item))
+
+    for exchange_name in sorted(grouped):
+        exchange = factories[exchange_name]()
+        semaphore = asyncio.Semaphore(_MAX_CONCURRENT_FETCHES)
+        indexed_items = grouped[exchange_name]
+        try:
+            exchange_results = await asyncio.gather(
+                *(process(exchange, semaphore, item) for _, item in indexed_items)
+            )
+        finally:
+            await asyncio.gather(exchange.close(), return_exceptions=True)
+        for (index, _), result in zip(indexed_items, exchange_results, strict=True):
+            results[index] = result
+
+    if any(result is missing for result in results):
+        raise RuntimeError("exchange processing left an item unresolved")
+    return cast("tuple[OutputT, ...]", tuple(results))
+
+
 def decision_market_path_fingerprint(paths: tuple[DecisionMarketPath, ...]) -> str:
-    payload = [
+    payloads = (
         {
             "decision_id": item.decision_id,
             "path": {
@@ -74,18 +134,12 @@ def decision_market_path_fingerprint(paths: tuple[DecisionMarketPath, ...]) -> s
             },
         }
         for item in sorted(paths, key=lambda item: item.decision_id)
-    ]
-    encoded = json.dumps(
-        payload,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-    ).encode()
-    return hashlib.sha256(encoded).hexdigest()
+    )
+    return _fingerprint_payloads(payloads)
 
 
 def maker_market_path_fingerprint(paths: tuple[MakerDecisionPaths, ...]) -> str:
-    payload = [
+    payloads = (
         {
             "decision_id": item.decision_id,
             "one_minute": {
@@ -106,14 +160,8 @@ def maker_market_path_fingerprint(paths: tuple[MakerDecisionPaths, ...]) -> str:
             },
         }
         for item in sorted(paths, key=lambda item: item.decision_id)
-    ]
-    encoded = json.dumps(
-        payload,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-    ).encode()
-    return hashlib.sha256(encoded).hexdigest()
+    )
+    return _fingerprint_payloads(payloads)
 
 
 def maker_path_bounds(
@@ -146,12 +194,6 @@ async def fetch_maker_decision_paths(
     if len(decision_ids) != len(set(decision_ids)):
         raise ValueError("selected decisions must have unique decision ids")
 
-    required_exchanges = {
-        decision.exchange for decision in decisions if decision.exchange in factories
-    }
-    exchanges = {name: factories[name]() for name in sorted(required_exchanges)}
-    semaphore = asyncio.Semaphore(_MAX_CONCURRENT_FETCHES)
-
     def missing_path(decision: ReplayDecision, status: str, error: str) -> MarketPath:
         return MarketPath(
             pump_event_id=decision.pump_event_id or 0,
@@ -164,6 +206,7 @@ async def fetch_maker_decision_paths(
 
     async def fetch_timeframe(
         exchange: Any,
+        semaphore: asyncio.Semaphore,
         decision: ReplayDecision,
         *,
         timeframe: str,
@@ -193,23 +236,22 @@ async def fetch_maker_decision_paths(
         )
 
     async def fetch_one(
-        decision_id: str,
-        decision: ReplayDecision,
+        exchange: Any,
+        semaphore: asyncio.Semaphore,
+        item: tuple[str, ReplayDecision],
     ) -> MakerDecisionPaths:
-        exchange = exchanges.get(decision.exchange)
-        if exchange is None:
-            error = f"unsupported exact anchor exchange: {decision.exchange or '<empty>'}"
-            unavailable = missing_path(decision, "unsupported_exchange", error)
-            return MakerDecisionPaths(decision_id, unavailable, unavailable)
+        decision_id, decision = item
         one_minute, five_minute = await asyncio.gather(
             fetch_timeframe(
                 exchange,
+                semaphore,
                 decision,
                 timeframe=ONE_MINUTE_TIMEFRAME,
                 timeframe_ms=ONE_MINUTE_MS,
             ),
             fetch_timeframe(
                 exchange,
+                semaphore,
                 decision,
                 timeframe=TIMEFRAME,
                 timeframe_ms=TIMEFRAME_MS,
@@ -217,17 +259,19 @@ async def fetch_maker_decision_paths(
         )
         return MakerDecisionPaths(decision_id, one_minute, five_minute)
 
-    try:
-        return tuple(
-            await asyncio.gather(
-                *(fetch_one(decision_id, decision) for decision_id, decision in selected)
-            )
-        )
-    finally:
-        await asyncio.gather(
-            *(exchange.close() for exchange in exchanges.values()),
-            return_exceptions=True,
-        )
+    def unsupported(item: tuple[str, ReplayDecision]) -> MakerDecisionPaths:
+        decision_id, decision = item
+        error = f"unsupported exact anchor exchange: {decision.exchange or '<empty>'}"
+        unavailable = missing_path(decision, "unsupported_exchange", error)
+        return MakerDecisionPaths(decision_id, unavailable, unavailable)
+
+    return await _process_by_exchange(
+        tuple(selected),
+        factories,
+        exchange_for=lambda item: item[1].exchange,
+        unsupported=unsupported,
+        process=fetch_one,
+    )
 
 
 async def _fetch_market_paths(
@@ -236,68 +280,59 @@ async def _fetch_market_paths(
     bounds: PathBounds,
 ) -> tuple[MarketPath, ...]:
     selections = [(episode, select_episode_decision(episode)) for episode in episodes]
-    required_exchanges = {
-        selection.decision.exchange
-        for _, selection in selections
-        if selection.decision.exchange in factories
-    }
-    exchanges = {name: factories[name]() for name in sorted(required_exchanges)}
-    semaphore = asyncio.Semaphore(_MAX_CONCURRENT_FETCHES)
 
     async def fetch_one(
-        episode: ReplayEpisode,
-        exchange_name: str,
-        base: str,
+        exchange: Any,
+        semaphore: asyncio.Semaphore,
+        item: tuple[ReplayEpisode, EpisodeSelection],
     ) -> MarketPath:
-        exchange = exchanges.get(exchange_name)
-        if exchange is None:
-            return MarketPath(
-                pump_event_id=episode.pump_event_id,
-                exchange=exchange_name,
-                base=base,
-                status="unsupported_exchange",
-                candles=(),
-                error=f"unsupported exact anchor exchange: {exchange_name or '<empty>'}",
-            )
-        selection = select_episode_decision(episode)
+        episode, selection = item
+        decision = selection.decision
         start_ms, end_ms = bounds(selection.decision)
         try:
             async with semaphore:
-                candles = await fetch_candles(exchange, base, start_ms, end_ms)
+                candles = await fetch_candles(
+                    exchange,
+                    decision.base,
+                    start_ms,
+                    end_ms,
+                )
         except Exception as exc:
             return MarketPath(
                 pump_event_id=episode.pump_event_id,
-                exchange=exchange_name,
-                base=base,
+                exchange=decision.exchange,
+                base=decision.base,
                 status="fetch_failed",
                 candles=(),
                 error=str(exc)[:1000],
             )
         return MarketPath(
             pump_event_id=episode.pump_event_id,
-            exchange=exchange_name,
-            base=base,
+            exchange=decision.exchange,
+            base=decision.base,
             status="complete",
             candles=tuple(candles),
         )
 
-    try:
-        paths = await asyncio.gather(
-            *[
-                fetch_one(
-                    episode,
-                    selection.decision.exchange,
-                    selection.decision.base,
-                )
-                for episode, selection in selections
-            ]
+    def unsupported(item: tuple[ReplayEpisode, EpisodeSelection]) -> MarketPath:
+        episode, selection = item
+        decision = selection.decision
+        return MarketPath(
+            pump_event_id=episode.pump_event_id,
+            exchange=decision.exchange,
+            base=decision.base,
+            status="unsupported_exchange",
+            candles=(),
+            error=f"unsupported exact anchor exchange: {decision.exchange or '<empty>'}",
         )
-    finally:
-        await asyncio.gather(
-            *[exchange.close() for exchange in exchanges.values()],
-            return_exceptions=True,
-        )
-    return tuple(paths)
+
+    return await _process_by_exchange(
+        tuple(selections),
+        factories,
+        exchange_for=lambda item: item[1].decision.exchange,
+        unsupported=unsupported,
+        process=fetch_one,
+    )
 
 
 async def fetch_market_paths(
@@ -354,27 +389,12 @@ async def fetch_decision_market_paths(
     if len(decision_ids) != len(set(decision_ids)):
         raise ValueError("selected decisions must have unique decision ids")
 
-    required_exchanges = {
-        decision.exchange for decision in decisions if decision.exchange in factories
-    }
-    exchanges = {name: factories[name]() for name in sorted(required_exchanges)}
-    semaphore = asyncio.Semaphore(_MAX_CONCURRENT_FETCHES)
-
     async def fetch_one(
-        decision_id: str,
-        decision: ReplayDecision,
+        exchange: Any,
+        semaphore: asyncio.Semaphore,
+        item: tuple[str, ReplayDecision],
     ) -> DecisionMarketPath:
-        exchange = exchanges.get(decision.exchange)
-        if exchange is None:
-            path = MarketPath(
-                pump_event_id=decision.pump_event_id or 0,
-                exchange=decision.exchange,
-                base=decision.base,
-                status="unsupported_exchange",
-                candles=(),
-                error=f"unsupported exact anchor exchange: {decision.exchange or '<empty>'}",
-            )
-            return DecisionMarketPath(decision_id, path)
+        decision_id, decision = item
         start_ms, end_ms = bounds(decision)
         try:
             async with semaphore:
@@ -398,13 +418,22 @@ async def fetch_decision_market_paths(
             )
         return DecisionMarketPath(decision_id, path)
 
-    try:
-        paths = await asyncio.gather(
-            *(fetch_one(decision_id, decision) for decision_id, decision in selected)
+    def unsupported(item: tuple[str, ReplayDecision]) -> DecisionMarketPath:
+        decision_id, decision = item
+        path = MarketPath(
+            pump_event_id=decision.pump_event_id or 0,
+            exchange=decision.exchange,
+            base=decision.base,
+            status="unsupported_exchange",
+            candles=(),
+            error=f"unsupported exact anchor exchange: {decision.exchange or '<empty>'}",
         )
-    finally:
-        await asyncio.gather(
-            *(exchange.close() for exchange in exchanges.values()),
-            return_exceptions=True,
-        )
-    return tuple(paths)
+        return DecisionMarketPath(decision_id, path)
+
+    return await _process_by_exchange(
+        tuple(selected),
+        factories,
+        exchange_for=lambda item: item[1].exchange,
+        unsupported=unsupported,
+        process=fetch_one,
+    )
