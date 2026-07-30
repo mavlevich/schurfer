@@ -90,6 +90,7 @@ async def _process_by_exchange[InputT, OutputT](
         [Any, asyncio.Semaphore, InputT],
         Awaitable[OutputT],
     ],
+    on_exchange: Callable[[str, int, int], None] | None = None,
 ) -> tuple[OutputT, ...]:
     """Process one venue at a time while preserving the original item order."""
     missing = object()
@@ -102,21 +103,26 @@ async def _process_by_exchange[InputT, OutputT](
             continue
         grouped.setdefault(exchange_name, []).append((index, item))
 
-    for exchange_name in sorted(grouped):
+    exchange_names = sorted(grouped)
+    for exchange_index, exchange_name in enumerate(exchange_names, start=1):
+        if on_exchange is not None:
+            on_exchange(exchange_name, exchange_index, len(exchange_names))
         exchange = factories[exchange_name]()
         semaphore = asyncio.Semaphore(_MAX_CONCURRENT_FETCHES)
         indexed_items = grouped[exchange_name]
         try:
-            exchange_results = await asyncio.gather(
-                *(process(exchange, semaphore, item) for _, item in indexed_items)
-            )
+            for offset in range(0, len(indexed_items), _MAX_CONCURRENT_FETCHES):
+                batch = indexed_items[offset : offset + _MAX_CONCURRENT_FETCHES]
+                exchange_results = await asyncio.gather(
+                    *(process(exchange, semaphore, item) for _, item in batch)
+                )
+                for (index, _), result in zip(batch, exchange_results, strict=True):
+                    results[index] = result
         finally:
             await asyncio.gather(
                 exchange.close(clean_instance_data=True),
                 return_exceptions=True,
             )
-        for (index, _), result in zip(indexed_items, exchange_results, strict=True):
-            results[index] = result
 
     if any(result is missing for result in results):
         raise RuntimeError("exchange processing left an item unresolved")
@@ -375,6 +381,7 @@ async def fetch_decision_market_paths(
     factories: dict[str, ExchangeFactory],
     *,
     bounds: PathBounds = expected_path_bounds,
+    on_exchange: Callable[[str, int, int], None] | None = None,
 ) -> tuple[DecisionMarketPath, ...]:
     """Fetch exact-venue exit paths for explicitly selected decisions.
 
@@ -439,4 +446,5 @@ async def fetch_decision_market_paths(
         exchange_for=lambda item: item[1].exchange,
         unsupported=unsupported,
         process=fetch_one,
+        on_exchange=on_exchange,
     )

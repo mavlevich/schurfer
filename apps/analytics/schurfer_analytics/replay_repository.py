@@ -13,7 +13,7 @@ from .outcome_repository import async_database_url
 from .replay import ReplayDecision, ReplayFilters, ReplayOutcome
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import AsyncIterable, Sequence
     from datetime import datetime
 
     from sqlalchemy.sql import Select
@@ -190,6 +190,32 @@ def map_replay_rows(rows: Sequence[Any]) -> list[ReplayDecision]:
     return [builder.freeze() for builder in builders.values()]
 
 
+async def map_replay_row_stream(rows: AsyncIterable[Any]) -> list[ReplayDecision]:
+    """Map ordered replay rows without retaining the raw SQL result set."""
+    decisions: list[ReplayDecision] = []
+    completed_row_ids: set[int] = set()
+    builder: _DecisionBuilder | None = None
+    current_row_id: int | None = None
+
+    async for row in rows:
+        row_id = int(row["row_id"])
+        if current_row_id != row_id:
+            if builder is not None and current_row_id is not None:
+                decisions.append(builder.freeze())
+                completed_row_ids.add(current_row_id)
+            if row_id in completed_row_ids:
+                raise ValueError("replay rows must be contiguous per decision")
+            builder = _builder(row)
+            current_row_id = row_id
+        outcome = _outcome(row)
+        if outcome is not None and builder is not None:
+            builder.outcomes.append(outcome)
+
+    if builder is not None:
+        decisions.append(builder.freeze())
+    return decisions
+
+
 class ReplayRepository:
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
@@ -212,9 +238,11 @@ class ReplayRepository:
                 postgresql_readonly=True,
             )
             async with connection.begin():
-                result = await connection.execute(replay_inputs_statement(filters))
-                rows = result.mappings().all()
-        return map_replay_rows(rows)
+                result = await connection.stream(
+                    replay_inputs_statement(filters),
+                    execution_options={"yield_per": 500},
+                )
+                return await map_replay_row_stream(result.mappings())
 
     async def close(self) -> None:
         await self._engine.dispose()
