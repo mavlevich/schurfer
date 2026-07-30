@@ -32,6 +32,7 @@ liquid-taker-report = "schurfer_analytics.liquid_taker_report:main"
 liquid-taker-wider-stop-report = "schurfer_analytics.liquid_taker_wider_stop_report:main"
 long-horizon-report = "schurfer_analytics.long_horizon_report:main"
 maker-entry-report = "schurfer_analytics.maker_entry_report:main"
+pump-magnitude-report = "schurfer_analytics.pump_magnitude_report:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

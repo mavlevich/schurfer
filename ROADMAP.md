@@ -650,6 +650,30 @@ The intended stream topology is:
         familywise paired lower bound, Holm rejection, and positive top-cluster
         sensitivity, and produces only a live-shadow candidate.
 
+    - [x] Add a separate discovery-only pump-magnitude surface over +20%, +30%, +50%,
+          +70%, +100%, +150%, and +200%. It reuses the same point-in-time gate
+          reconstruction, exact selected venue, next complete 5-minute entry,
+          production exit engine, and recorded cost model, while also reporting a
+          fixed 240-minute gross return that removes stop/trailing differences. The
+          surface includes no-trigger cash, opportunities per calendar day, asset and
+          venue concentration, gross/net expectancy, P&L, profit factor, drawdown,
+          MFE/MAE, stop rate, duration, and cost decomposition. It is not a
+          retrospective extension of HYP-003 and cannot choose a production floor.
+          The default starts at `2026-07-27T07:00:00Z`, after the measurement split;
+          older episodes are excluded because their missing higher-floor decisions
+          are indistinguishable from genuine no-trigger cash.
+          Run and archive it with:
+
+          ```bash
+          make prod-pump-magnitude-report
+          make prod-pump-magnitude-report \
+            ARGS="--until 2026-08-05T00:00:00Z --format json" \
+            > backups/reports/pump-magnitude-2026-08-05.json
+          ```
+
+          A promising magnitude region must be converted into one separately frozen
+          prospective contract. Do not promote the best historical row directly.
+
     - [x] Pre-register and implement the HYP-006 score-threshold family. Keep score 6
           as baseline and compare score 4 and 5 on the untouched
           `2026-07-31T00:00:00Z` cohort. Select each policy's first recorded
@@ -928,13 +952,22 @@ The intended stream topology is:
       kimchi-premium features. Test them first as virtual global-perp entry/exit
       challengers. Direct cross-border arbitrage remains gated on measured net edge,
       lawful Korean account access, transfer constraints, fees, and tax review.
-- [ ] Selective real-time microstructure capture before a full websocket migration.
-      Use the already-installed CCXT Pro feeds only for active pump/watch episodes,
-      not every symbol on every venue. Persist bounded 5-to-10-second aggregates for
-      spread, depth, imbalance, taker buy/sell flow, basis, and liquidation bursts;
-      keep raw L2 data only for a short explicitly budgeted window. This gives the
-      replay non-recoverable entry-confirmation features without exhausting the
-      current 4 GB host.
+- [ ] Bybit public-trades pilot before any multi-venue microstructure platform.
+      Observe every active linear perpetual from process start so pre-pump windows are
+      not left-censored. Aggregate in a dedicated Go process and persist only sparse
+      non-empty 1-second buckets plus 5-second/1-minute rollups. Do not publish the
+      broad raw trade firehose through NATS or store dense symbol-seconds. The first
+      24-hour canary measures actual events/s, CPU, RAM, bytes/day, compression,
+      gaps, lag, and drops before retention is locked. Include matched non-pump
+      controls by time, liquidity, volatility, listing age, and market regime.
+      Pre-register separate readings for early-long timing, squeeze avoidance, and
+      delayed short entry; do not combine those books into one headline.
+- [ ] Gate all broader order-flow work on the Bybit pilot. Require useful lead time
+      before the current pump trigger, point-in-time predictive lift, economic value
+      after costs, more than one asset cluster and market day, and an out-of-sample
+      check. If it fails, stop the lane. If it passes, add Parquet+Zstd event windows
+      with checksum manifests, then replicate on Binance. Cross-venue identity,
+      dynamic L2 capture, and additional venues remain later conditional steps.
 - [ ] Collector to websocket data layer. The Bybit collector is the seed of the
       intended Go hot-path layer. It subscribes to all Bybit linear ticker topics in
       chunks of up to 200. On 2026-07-28 the collector and NATS had each moved
@@ -956,6 +989,12 @@ The intended stream topology is:
       minutes, any OOM/restart occurs, or consumer/DB lag breaches the registered
       threshold. Use 16 GB only if broad raw history or research workloads are kept
       on the production host; prefer separating those workloads instead.
+- [x] Lightweight authenticated Status observability. Report container-visible CPU
+      load, memory, root-filesystem use, uptime, ticker event rate, hot/observed
+      symbols, lag, drops, and persistence errors through the existing health
+      WebSocket. No Docker socket, host-secret mount, Prometheus, or Grafana is
+      required for this phase. Add heavy observability only after a second host or a
+      proven load need.
 - [ ] Multi-venue execution, driven by coverage data and not by diversification. A
       signal fires on a token whose perp may only exist on certain venues, some
       blocked for Poland residents. After Phase 0 data we will know which accounts we

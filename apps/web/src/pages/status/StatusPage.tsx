@@ -1,5 +1,15 @@
 import { useEffect, useState } from 'react';
-import { Activity, Database, Radio, ScanSearch, Zap } from 'lucide-react';
+import {
+  Activity,
+  Cpu,
+  Database,
+  Gauge,
+  HardDrive,
+  MemoryStick,
+  Radio,
+  ScanSearch,
+  Zap,
+} from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Nav } from '@/components/Nav';
@@ -24,6 +34,35 @@ interface SignalReadinessState {
   reasons: Record<string, number>;
 }
 
+interface SystemLoadState {
+  captured_at_ms: number;
+  cpu_count: number;
+  load_1m: number;
+  load_5m: number;
+  load_15m: number;
+  memory_used_bytes: number;
+  memory_total_bytes: number;
+  memory_used_pct: number;
+  disk_used_bytes: number;
+  disk_total_bytes: number;
+  disk_used_pct: number;
+  system_uptime_seconds: number;
+}
+
+interface MarketPipelineState {
+  updated_at_ms: number;
+  observed_symbols: number;
+  hot_symbols: number;
+  event_rate_per_sec: number;
+  last_lag_ms: number;
+  max_lag_ms: number;
+  nats_dropped_total: number;
+  pending_dropped_total: number;
+  persist_errors_total: number;
+  bars_persisted_total: number;
+  pump_feed_status: string;
+}
+
 interface ServiceState {
   postgres: ServiceStatus;
   redis: ServiceStatus;
@@ -32,6 +71,8 @@ interface ServiceState {
   execution: ServiceStatus;
   telegram_bot: ServiceStatus;
   signal_readiness: SignalReadinessState | null;
+  system_load: SystemLoadState | null;
+  market_pipeline: MarketPipelineState | null;
 }
 
 interface WsStatusMessage {
@@ -47,6 +88,8 @@ const INITIAL_STATE: ServiceState = {
   execution: 'unknown',
   telegram_bot: 'unknown',
   signal_readiness: null,
+  system_load: null,
+  market_pipeline: null,
 };
 
 const WS_URL =
@@ -55,10 +98,55 @@ const WS_URL =
     : 'ws://localhost:8000/ws/status';
 
 function timeAgo(tsMs: number): string {
-  const secs = Math.floor((Date.now() - tsMs) / 1000);
+  const secs = Math.max(0, Math.floor((Date.now() - tsMs) / 1000));
   if (secs < 60) return `${secs}s ago`;
   if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
   return `${Math.floor(secs / 3600)}h ago`;
+}
+
+function formatBytes(value: number): string {
+  if (!Number.isFinite(value) || value < 0) return 'n/a';
+  const gib = value / 1024 ** 3;
+  if (gib >= 1) return `${gib.toFixed(gib >= 10 ? 1 : 2)} GiB`;
+  return `${(value / 1024 ** 2).toFixed(0)} MiB`;
+}
+
+function formatUptime(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return 'n/a';
+  const days = Math.floor(seconds / 86_400);
+  const hours = Math.floor((seconds % 86_400) / 3_600);
+  return days > 0 ? `${days}d ${hours}h` : `${hours}h`;
+}
+
+function LoadBar({
+  label,
+  value,
+  detail,
+  icon: Icon,
+}: {
+  label: string;
+  value: number;
+  detail: string;
+  icon: typeof Cpu;
+}) {
+  const bounded = Math.max(0, Math.min(value, 100));
+  const color = value >= 80 ? 'bg-red-500' : value >= 65 ? 'bg-amber-500' : 'bg-emerald-500';
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <Icon className="h-4 w-4 text-muted-foreground" />
+          <span className="text-sm">{label}</span>
+        </div>
+        <span className="text-xs font-mono text-muted-foreground">
+          {value.toFixed(1)}% · {detail}
+        </span>
+      </div>
+      <div className="ml-7 h-1.5 overflow-hidden rounded-full bg-muted">
+        <div className={`h-full rounded-full ${color}`} style={{ width: `${bounded}%` }} />
+      </div>
+    </div>
+  );
 }
 
 export function StatusPage() {
@@ -138,6 +226,15 @@ export function StatusPage() {
   const allUp = serviceStatuses.every((status) => status === 'up');
   const anyDown = serviceStatuses.some((status) => status === 'down');
   const signalReadiness = services.signal_readiness;
+  const systemLoad = services.system_load;
+  const marketPipeline = services.market_pipeline;
+  const normalizedCPULoad =
+    systemLoad && systemLoad.cpu_count > 0 ? (systemLoad.load_1m / systemLoad.cpu_count) * 100 : 0;
+  const pipelineAgeMS = marketPipeline ? Date.now() - marketPipeline.updated_at_ms : null;
+  const pipelineFresh = pipelineAgeMS !== null && pipelineAgeMS >= 0 && pipelineAgeMS < 60_000;
+  const pipelineDrops = marketPipeline
+    ? marketPipeline.nats_dropped_total + marketPipeline.pending_dropped_total
+    : 0;
   const readinessVariant =
     signalReadiness && signalReadiness.evaluated > 0 && signalReadiness.deferred === 0
       ? 'success'
@@ -229,6 +326,114 @@ export function StatusPage() {
           </CardContent>
         </Card>
 
+        {/* Host resource load */}
+        <Card>
+          <CardHeader className="flex-row items-center justify-between space-y-0">
+            <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+              Server Load
+            </CardTitle>
+            <Badge
+              variant={
+                systemLoad && Math.max(systemLoad.disk_used_pct, systemLoad.memory_used_pct) >= 80
+                  ? 'destructive'
+                  : systemLoad
+                    ? 'success'
+                    : 'secondary'
+              }
+            >
+              {systemLoad ? formatUptime(systemLoad.system_uptime_seconds) : 'No telemetry'}
+            </Badge>
+          </CardHeader>
+          <CardContent className="space-y-4 pt-0">
+            {systemLoad ? (
+              <>
+                <LoadBar
+                  label="CPU load"
+                  value={normalizedCPULoad}
+                  detail={`${systemLoad.load_1m.toFixed(2)} / ${systemLoad.cpu_count} CPUs`}
+                  icon={Cpu}
+                />
+                <LoadBar
+                  label="Memory"
+                  value={systemLoad.memory_used_pct}
+                  detail={`${formatBytes(systemLoad.memory_used_bytes)} / ${formatBytes(systemLoad.memory_total_bytes)}`}
+                  icon={MemoryStick}
+                />
+                <LoadBar
+                  label="Disk"
+                  value={systemLoad.disk_used_pct}
+                  detail={`${formatBytes(systemLoad.disk_used_bytes)} / ${formatBytes(systemLoad.disk_total_bytes)}`}
+                  icon={HardDrive}
+                />
+              </>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Host metrics are unavailable in this runtime.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Market stream load */}
+        <Card>
+          <CardHeader className="flex-row items-center justify-between space-y-0">
+            <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+              Market Pipeline
+            </CardTitle>
+            <Badge
+              variant={!marketPipeline ? 'secondary' : pipelineFresh ? 'success' : 'destructive'}
+            >
+              {!marketPipeline ? 'No telemetry' : pipelineFresh ? 'Live' : 'Stale'}
+            </Badge>
+          </CardHeader>
+          <CardContent className="space-y-3 pt-0">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Gauge className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm">Ticker throughput</span>
+              </div>
+              <span className="text-xs font-mono text-muted-foreground">
+                {marketPipeline
+                  ? `${marketPipeline.event_rate_per_sec.toFixed(0)} events/s`
+                  : 'n/a'}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Radio className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm">Observed / hot symbols</span>
+              </div>
+              <span className="text-xs font-mono text-muted-foreground">
+                {marketPipeline
+                  ? `${marketPipeline.observed_symbols} / ${marketPipeline.hot_symbols}`
+                  : 'n/a'}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm">Latest / maximum lag</span>
+              <span className="text-xs font-mono text-muted-foreground">
+                {marketPipeline
+                  ? `${marketPipeline.last_lag_ms} / ${marketPipeline.max_lag_ms} ms`
+                  : 'n/a'}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm">Drops / persistence errors</span>
+              <span className="text-xs font-mono text-muted-foreground">
+                {marketPipeline
+                  ? `${pipelineDrops} / ${marketPipeline.persist_errors_total}`
+                  : 'n/a'}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm">Last telemetry</span>
+              <span className="text-xs text-muted-foreground">
+                {marketPipeline ? timeAgo(marketPipeline.updated_at_ms) : 'n/a'}
+              </span>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Pump scanner stats */}
         <Card>
           <CardHeader>
@@ -243,7 +448,7 @@ export function StatusPage() {
                 <span className="text-sm">Last scan</span>
               </div>
               <span className="text-xs text-muted-foreground">
-                {scanner?.ts ? timeAgo(scanner.ts) : '—'}
+                {scanner?.ts ? timeAgo(scanner.ts) : 'n/a'}
               </span>
             </div>
             <div className="flex items-center justify-between">
@@ -252,7 +457,7 @@ export function StatusPage() {
                 <span className="text-sm">Active pumps</span>
               </div>
               <span className="text-xs font-mono text-muted-foreground">
-                {scanner ? `${scanner.count} tokens` : '—'}
+                {scanner ? `${scanner.count} tokens` : 'n/a'}
               </span>
             </div>
             <div className="flex items-center justify-between">
@@ -263,7 +468,7 @@ export function StatusPage() {
               <span className="text-xs font-mono text-muted-foreground">
                 {scanner?.scanned
                   ? `${scanner.scanned.length} ok${Object.keys(scanner.errors ?? {}).length ? ` · ${Object.keys(scanner.errors ?? {}).length} failed` : ''}`
-                  : '—'}
+                  : 'n/a'}
               </span>
             </div>
           </CardContent>
@@ -289,7 +494,7 @@ export function StatusPage() {
             <div className="flex items-center justify-between">
               <span className="text-sm">Latest trader tick</span>
               <span className="text-xs text-muted-foreground">
-                {signalReadiness ? timeAgo(signalReadiness.updated_at_ms) : '—'}
+                {signalReadiness ? timeAgo(signalReadiness.updated_at_ms) : 'n/a'}
               </span>
             </div>
             <div className="flex items-center justify-between">
@@ -297,13 +502,13 @@ export function StatusPage() {
               <span className="text-xs font-mono text-muted-foreground">
                 {signalReadiness
                   ? `${signalReadiness.pump_count} / ${signalReadiness.evaluated}`
-                  : '—'}
+                  : 'n/a'}
               </span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm">Ready / deferred</span>
               <span className="text-xs font-mono text-muted-foreground">
-                {signalReadiness ? `${signalReadiness.ready} / ${signalReadiness.deferred}` : '—'}
+                {signalReadiness ? `${signalReadiness.ready} / ${signalReadiness.deferred}` : 'n/a'}
               </span>
             </div>
             {signalReadiness &&
