@@ -41,9 +41,10 @@ func run() error {
 	cfg := loadConfig()
 
 	checker, err := health.NewChecker(context.Background(), health.Config{
-		PostgresDSN: cfg.PostgresDSN,
-		RedisAddr:   cfg.RedisAddr,
-		NATSUrl:     cfg.NATSUrl,
+		PostgresDSN:        cfg.PostgresDSN,
+		RedisAddr:          cfg.RedisAddr,
+		NATSUrl:            cfg.NATSUrl,
+		RuntimeMetricsPath: cfg.RuntimeMetricsPath,
 	})
 	if err != nil {
 		return fmt.Errorf("health checker: %w", err)
@@ -188,14 +189,15 @@ func runSignalsTicker(ctx context.Context, rdb *redis.Client, h *pumps.Handler) 
 }
 
 type config struct {
-	PostgresDSN  string
-	RedisAddr    string
-	NATSUrl      string
-	PasswordHash string
-	JWTSecret    string
-	Port         string
-	Env          string
-	ExecutionURL string
+	PostgresDSN        string
+	RedisAddr          string
+	NATSUrl            string
+	PasswordHash       string
+	JWTSecret          string
+	Port               string
+	Env                string
+	ExecutionURL       string
+	RuntimeMetricsPath string
 }
 
 func loadConfig() config {
@@ -208,6 +210,10 @@ func loadConfig() config {
 		Port:         getEnv("PORT", "8000"),
 		Env:          getEnv("ENV", "development"),
 		ExecutionURL: getEnv("EXECUTION_URL", "http://localhost:8001"),
+		RuntimeMetricsPath: getEnv(
+			"RUNTIME_METRICS_PATH",
+			"/runtime/container-metrics.snapshot",
+		),
 	}
 }
 

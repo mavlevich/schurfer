@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"math"
 	"strconv"
 	"time"
 
@@ -21,15 +22,17 @@ const (
 )
 
 type Report struct {
-	Postgres        Status           `json:"postgres"`
-	Redis           Status           `json:"redis"`
-	NATS            Status           `json:"nats"`
-	Collector       Status           `json:"collector"`
-	Execution       Status           `json:"execution"`
-	TelegramBot     Status           `json:"telegram_bot"`
-	SignalReadiness *SignalReadiness `json:"signal_readiness"`
-	SystemLoad      *SystemLoad      `json:"system_load"`
-	MarketPipeline  *MarketPipeline  `json:"market_pipeline"`
+	Postgres         Status            `json:"postgres"`
+	Redis            Status            `json:"redis"`
+	NATS             Status            `json:"nats"`
+	Collector        Status            `json:"collector"`
+	Execution        Status            `json:"execution"`
+	TelegramBot      Status            `json:"telegram_bot"`
+	SignalReadiness  *SignalReadiness  `json:"signal_readiness"`
+	SystemLoad       *SystemLoad       `json:"system_load"`
+	ContainerRuntime *ContainerRuntime `json:"container_runtime"`
+	MarketPipeline   *MarketPipeline   `json:"market_pipeline"`
+	OrderflowPilot   *OrderflowPilot   `json:"orderflow_pilot"`
 }
 
 type SignalReadiness struct {
@@ -55,19 +58,42 @@ type MarketPipeline struct {
 	PumpFeedStatus      string  `json:"pump_feed_status"`
 }
 
+type OrderflowPilot struct {
+	UpdatedAtMS         int64   `json:"updated_at_ms"`
+	StartedAtMS         int64   `json:"started_at_ms"`
+	Status              string  `json:"status"`
+	ObservedSymbols     int64   `json:"observed_symbols"`
+	EventRatePerSecond  float64 `json:"event_rate_per_sec"`
+	ActiveCaptures      int64   `json:"active_captures"`
+	ActivationTotal     int64   `json:"activation_total"`
+	RecordsPersisted    int64   `json:"records_persisted_total"`
+	StorageBytes        int64   `json:"storage_bytes"`
+	StorageBytesPerDay  float64 `json:"storage_bytes_per_day"`
+	LastLagMS           int64   `json:"last_lag_ms"`
+	WindowMaxLagMS      int64   `json:"window_max_lag_ms"`
+	QueueDroppedTotal   int64   `json:"queue_dropped_total"`
+	PendingDroppedTotal int64   `json:"pending_dropped_total"`
+	PersistErrorsTotal  int64   `json:"persist_errors_total"`
+	StorageLimitedTotal int64   `json:"storage_limited_total"`
+	LeftCensoredTotal   int64   `json:"left_censored_total"`
+	CapacityRejected    int64   `json:"capacity_rejected_total"`
+}
+
 type Config struct {
-	PostgresDSN string
-	RedisAddr   string
-	NATSUrl     string
+	PostgresDSN        string
+	RedisAddr          string
+	NATSUrl            string
+	RuntimeMetricsPath string
 }
 
 // Checker holds shared clients and pings them on each check.
 // Call Close when the application shuts down.
 type Checker struct {
-	pool        *pgxpool.Pool
-	rdb         *redis.Client
-	nc          *nats.Conn
-	systemProbe func() *SystemLoad
+	pool         *pgxpool.Pool
+	rdb          *redis.Client
+	nc           *nats.Conn
+	systemProbe  func() *SystemLoad
+	runtimeProbe func() *ContainerRuntime
 }
 
 func NewChecker(ctx context.Context, cfg Config) (*Checker, error) {
@@ -92,11 +118,15 @@ func NewChecker(ctx context.Context, cfg Config) (*Checker, error) {
 		nc = nil
 	}
 
+	systemProbe := newSystemProbe("/proc", "/")
 	return &Checker{
 		pool:        pool,
 		rdb:         rdb,
 		nc:          nc,
-		systemProbe: readSystemLoad,
+		systemProbe: systemProbe,
+		runtimeProbe: func() *ContainerRuntime {
+			return readContainerRuntime(cfg.RuntimeMetricsPath)
+		},
 	}, nil
 }
 
@@ -115,16 +145,77 @@ func (c *Checker) Check(ctx context.Context) Report {
 	if c.systemProbe != nil {
 		systemLoad = c.systemProbe()
 	}
+	var containerRuntime *ContainerRuntime
+	if c.runtimeProbe != nil {
+		containerRuntime = c.runtimeProbe()
+	}
 	return Report{
-		Postgres:        c.checkPostgres(ctx),
-		Redis:           c.checkRedis(ctx),
-		NATS:            c.checkNATS(),
-		Collector:       StatusUnknown, // populated via NATS heartbeats later
-		Execution:       StatusUnknown,
-		TelegramBot:     c.checkTelegramBot(ctx),
-		SignalReadiness: c.checkSignalReadiness(ctx),
-		SystemLoad:      systemLoad,
-		MarketPipeline:  c.checkMarketPipeline(ctx),
+		Postgres:         c.checkPostgres(ctx),
+		Redis:            c.checkRedis(ctx),
+		NATS:             c.checkNATS(),
+		Collector:        StatusUnknown, // populated via NATS heartbeats later
+		Execution:        StatusUnknown,
+		TelegramBot:      c.checkTelegramBot(ctx),
+		SignalReadiness:  c.checkSignalReadiness(ctx),
+		SystemLoad:       systemLoad,
+		ContainerRuntime: containerRuntime,
+		MarketPipeline:   c.checkMarketPipeline(ctx),
+		OrderflowPilot:   c.checkOrderflowPilot(ctx),
+	}
+}
+
+func (c *Checker) checkOrderflowPilot(ctx context.Context) *OrderflowPilot {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	values, err := c.rdb.HGetAll(ctx, "market:orderflow:health").Result()
+	if err != nil || len(values) == 0 {
+		return nil
+	}
+	updatedAt, ok := parseInt64(values, "updated_at_ms")
+	if !ok {
+		return nil
+	}
+	startedAt, ok := parseInt64(values, "started_at_ms")
+	if !ok {
+		return nil
+	}
+	observedSymbols, ok := parseInt64(values, "observed_symbols")
+	if !ok {
+		return nil
+	}
+	eventRate, ok := parseFloat64(values, "event_rate_per_sec")
+	if !ok {
+		return nil
+	}
+	storageBytesPerDay, ok := parseFloat64(values, "storage_bytes_per_day")
+	if !ok {
+		return nil
+	}
+	status := values["status"]
+	if status == "" {
+		return nil
+	}
+
+	return &OrderflowPilot{
+		UpdatedAtMS:         updatedAt,
+		StartedAtMS:         startedAt,
+		Status:              status,
+		ObservedSymbols:     observedSymbols,
+		EventRatePerSecond:  eventRate,
+		ActiveCaptures:      optionalInt64(values, "active_captures"),
+		ActivationTotal:     optionalInt64(values, "activation_total"),
+		RecordsPersisted:    optionalInt64(values, "records_persisted_total"),
+		StorageBytes:        optionalInt64(values, "storage_bytes"),
+		StorageBytesPerDay:  storageBytesPerDay,
+		LastLagMS:           optionalInt64(values, "last_lag_ms"),
+		WindowMaxLagMS:      optionalInt64(values, "window_max_lag_ms"),
+		QueueDroppedTotal:   optionalInt64(values, "queue_dropped_total"),
+		PendingDroppedTotal: optionalInt64(values, "pending_dropped_total"),
+		PersistErrorsTotal:  optionalInt64(values, "persist_errors_total"),
+		StorageLimitedTotal: optionalInt64(values, "storage_limited_total"),
+		LeftCensoredTotal:   optionalInt64(values, "left_censored_total"),
+		CapacityRejected:    optionalInt64(values, "capacity_rejected_total"),
 	}
 }
 
@@ -229,7 +320,7 @@ func parseFloat64(values map[string]string, key string) (float64, bool) {
 		return 0, false
 	}
 	parsed, err := strconv.ParseFloat(value, 64)
-	return parsed, err == nil
+	return parsed, err == nil && !math.IsNaN(parsed) && !math.IsInf(parsed, 0)
 }
 
 func (c *Checker) checkTelegramBot(ctx context.Context) Status {

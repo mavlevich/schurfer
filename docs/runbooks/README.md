@@ -87,7 +87,31 @@ Do not trust "containers are up". After a change that writes new data, look at t
 first real rows to confirm the pipeline produces what you expect. Example for the
 decision-measurement change:
 
-### Bounded Bybit order-flow canary
+### Host and container runtime telemetry
+
+The authenticated Status page separates real interval CPU utilization from
+one-minute load pressure. It also shows host memory, swap, disk, and a sanitized
+per-container CPU, memory, PID, health, and restart snapshot.
+
+Container telemetry does not mount the Docker socket into the API or Web
+containers. A small host-side systemd service calls the Docker CLI, writes an
+atomic snapshot under `/opt/schurfer/runtime`, and the API mounts only that
+directory read-only. Install it once after this feature is deployed:
+
+```bash
+make prod-deploy
+make prod-runtime-metrics-install
+make prod-runtime-metrics-health
+```
+
+The regular `prod-deploy` updates the script and API but deliberately does not run
+`sudo systemctl` for you. A missing or malformed snapshot fails closed: the Status
+page says `No telemetry` instead of inventing partial container values. The
+systemd unit runs as `deploy`, has a read-only host filesystem except for the
+runtime snapshot directory, and never exposes Docker control through an HTTP
+endpoint.
+
+### Bounded Bybit order-flow trial
 
 The public-trades pilot is deliberately excluded from normal `prod-deploy`. Start it
 only after the code is merged and the regular stack is healthy:
@@ -109,9 +133,9 @@ make prod-orderflow-stop
 The pilot aggregates all Bybit linear-perpetual public trades in memory but writes
 only bounded pump-event and matched-control windows to the `orderflow_data` volume.
 Raw trades do not enter NATS, Redis, or PostgreSQL. `market:orderflow:health` expires
-after 30 seconds, so a stale or absent key means the canary is not healthy. The
+after 30 seconds, so a stale or absent key means the trial is not healthy. The
 default local disk budget is 5 GiB and retention is 14 days; crossing the budget
-fails closed and is reported as `storage_limited`. The canary has no automatic
+fails closed and is reported as `storage_limited`. The trial has no automatic
 restart policy, so a memory-limit exit remains stopped instead of entering a restart
 loop. The start command also refuses to run below 768 MiB available RAM or 15 GiB
 free root-disk space.
@@ -126,7 +150,7 @@ make prod-orderflow-pilot-report \
 ```
 
 The report streams the gzip members from the read-only `orderflow_data` mount. It
-does not load raw trades into PostgreSQL and does not alter the running canary.
+does not load raw trades into PostgreSQL and does not alter the running trial.
 Before 100 complete matched captures, 30 bases, and 7 UTC market days, use it only
 for capture quality and exclusion diagnostics.
 

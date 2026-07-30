@@ -1,5 +1,5 @@
 .PHONY: help install install-golangci-lint dev dev-init dev-stop dev-reset dev-logs dev-test migrate measurement-report exchange-coverage-report episode-replay virtual-strategy-report virtual-entry-challenger-report virtual-threshold-challenger-report virtual-exit-policy-report virtual-exit-discovery-report virtual-score-challenger-report candle-anomaly-report derivatives-context-report decision-quality-report liquid-taker-report long-horizon-report maker-entry-report pump-magnitude-report orderflow-pilot-report orderflow-start orderflow-stop orderflow-health test lint ci-lint format clean security deadcode check verify verify-docker \
-        prod-deploy prod-measurement-report prod-exchange-coverage-report prod-episode-replay prod-virtual-strategy-report prod-virtual-entry-challenger-report prod-virtual-threshold-challenger-report prod-virtual-exit-policy-report prod-virtual-exit-discovery-report prod-virtual-score-challenger-report prod-candle-anomaly-report prod-derivatives-context-report prod-decision-quality-report prod-liquid-taker-report prod-long-horizon-report prod-maker-entry-report prod-pump-magnitude-report prod-orderflow-pilot-report prod-orderflow-start prod-orderflow-stop prod-orderflow-health prod-logs prod-backup prod-restore-local prod-health
+        prod-deploy prod-runtime-metrics-install prod-runtime-metrics-health prod-measurement-report prod-exchange-coverage-report prod-episode-replay prod-virtual-strategy-report prod-virtual-entry-challenger-report prod-virtual-threshold-challenger-report prod-virtual-exit-policy-report prod-virtual-exit-discovery-report prod-virtual-score-challenger-report prod-candle-anomaly-report prod-derivatives-context-report prod-decision-quality-report prod-liquid-taker-report prod-long-horizon-report prod-maker-entry-report prod-pump-magnitude-report prod-orderflow-pilot-report prod-orderflow-start prod-orderflow-stop prod-orderflow-health prod-logs prod-backup prod-restore-local prod-health
 
 GOLANGCI_LINT_VERSION = v2.1.6
 PROD_REPORT_MIN_HEADROOM_MB ?= 1280
@@ -50,6 +50,8 @@ help:
 	@echo ""
 	@echo "Production (run on server with .env.prod present):"
 	@echo "  make prod-deploy          Pull + rebuild + restart all services"
+	@echo "  make prod-runtime-metrics-install  Install host container-metrics service"
+	@echo "  make prod-runtime-metrics-health   Inspect host container-metrics service"
 	@echo "  make prod-logs            Tail production service logs"
 	@echo "  make prod-backup          Run database backup now"
 	@echo "  make prod-restore-local   Download latest prod backup → local dev DB"
@@ -72,9 +74,9 @@ help:
 	@echo "  make prod-maker-entry-report  Production maker-entry upper-bound report"
 	@echo "  make prod-pump-magnitude-report  Production pump-magnitude discovery surface"
 	@echo "  make prod-orderflow-pilot-report  Production Bybit order-flow pilot report"
-	@echo "  make prod-orderflow-start  Explicitly start the bounded order-flow canary"
-	@echo "  make prod-orderflow-health  Show order-flow canary health and resource use"
-	@echo "  make prod-orderflow-stop  Stop the order-flow canary"
+	@echo "  make prod-orderflow-start  Explicitly start the bounded order-flow trial"
+	@echo "  make prod-orderflow-health  Show order-flow trial health and resource use"
+	@echo "  make prod-orderflow-stop  Stop the order-flow trial"
 
 install:
 	@echo "-> Installing Python deps via uv..."
@@ -418,6 +420,23 @@ prod-deploy:
 	@$(_PROD) ps --format "table {{.Name}}\t{{.Status}}\t{{.Health}}"
 	@echo "-> Done. Logs: make prod-logs"
 
+prod-runtime-metrics-install:
+	@test "$$(git branch --show-current)" = "main" || (echo "ERROR: not on main (on '$$(git branch --show-current)'). Install only from main." && exit 1)
+	@test -z "$$(git status --porcelain)" || (echo "ERROR: working tree not clean. Commit or stash first." && exit 1)
+	@mkdir -p runtime
+	@chmod 0755 infra/scripts/runtime-metrics.sh
+	sudo install -m 0644 infra/systemd/schurfer-runtime-metrics.service /etc/systemd/system/schurfer-runtime-metrics.service
+	sudo systemctl daemon-reload
+	sudo systemctl enable schurfer-runtime-metrics.service
+	sudo systemctl restart schurfer-runtime-metrics.service
+	@sleep 2
+	@$(MAKE) prod-runtime-metrics-health
+
+prod-runtime-metrics-health:
+	@systemctl --no-pager --full status schurfer-runtime-metrics.service
+	@test -s runtime/container-metrics.snapshot || (echo "ERROR: runtime metrics snapshot is missing." && exit 1)
+	@head -n 4 runtime/container-metrics.snapshot
+
 # Rebuild a single service from current main. Guarded like prod-deploy, but skips
 # backup and migration, so use it only for a code-only change with NO new migration.
 prod-deploy-svc:
@@ -609,13 +628,13 @@ prod-orderflow-start:
 	@if test -r /proc/meminfo; then \
 		available_mb=$$(awk '/^MemAvailable:/ {print int($$2 / 1024)}' /proc/meminfo); \
 		if test "$$available_mb" -lt "$(PROD_ORDERFLOW_MIN_AVAILABLE_MB)"; then \
-			echo "ERROR: order-flow canary requires $(PROD_ORDERFLOW_MIN_AVAILABLE_MB) MiB available RAM; found $$available_mb MiB."; \
+			echo "ERROR: order-flow trial requires $(PROD_ORDERFLOW_MIN_AVAILABLE_MB) MiB available RAM; found $$available_mb MiB."; \
 			exit 1; \
 		fi; \
 	fi
 	@available_disk_mb=$$(df -Pm / | awk 'NR == 2 {print $$4}'); \
 	if test "$$available_disk_mb" -lt "$(PROD_ORDERFLOW_MIN_DISK_MB)"; then \
-		echo "ERROR: order-flow canary requires $(PROD_ORDERFLOW_MIN_DISK_MB) MiB free disk; found $$available_disk_mb MiB."; \
+		echo "ERROR: order-flow trial requires $(PROD_ORDERFLOW_MIN_DISK_MB) MiB free disk; found $$available_disk_mb MiB."; \
 		exit 1; \
 	fi
 	$(_PROD) --profile orderflow up -d --build orderflow-pilot

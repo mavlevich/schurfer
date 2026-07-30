@@ -37,16 +37,41 @@ interface SignalReadinessState {
 interface SystemLoadState {
   captured_at_ms: number;
   cpu_count: number;
+  cpu_utilization_pct: number | null;
+  load_pressure_pct: number;
   load_1m: number;
   load_5m: number;
   load_15m: number;
   memory_used_bytes: number;
   memory_total_bytes: number;
   memory_used_pct: number;
+  swap_used_bytes: number;
+  swap_total_bytes: number;
+  swap_used_pct: number;
   disk_used_bytes: number;
   disk_total_bytes: number;
   disk_used_pct: number;
   system_uptime_seconds: number;
+}
+
+interface ContainerMetricState {
+  name: string;
+  cpu_percent: number;
+  memory_used_bytes: number;
+  memory_limit_bytes: number;
+  memory_used_pct: number;
+  pids: number;
+  status: string;
+  health: string;
+  restart_count: number;
+  started_at: string;
+}
+
+interface ContainerRuntimeState {
+  captured_at_ms: number;
+  total_cpu_percent: number;
+  total_memory_used_bytes: number;
+  containers: ContainerMetricState[];
 }
 
 interface MarketPipelineState {
@@ -63,6 +88,33 @@ interface MarketPipelineState {
   pump_feed_status: string;
 }
 
+interface OrderflowPilotState {
+  updated_at_ms: number;
+  started_at_ms: number;
+  status: string;
+  observed_symbols: number;
+  event_rate_per_sec: number;
+  active_captures: number;
+  activation_total: number;
+  records_persisted_total: number;
+  storage_bytes: number;
+  storage_bytes_per_day: number;
+  last_lag_ms: number;
+  window_max_lag_ms: number;
+  queue_dropped_total: number;
+  pending_dropped_total: number;
+  persist_errors_total: number;
+  storage_limited_total: number;
+  left_censored_total: number;
+  capacity_rejected_total: number;
+}
+
+interface ResourceSample {
+  captured_at_ms: number;
+  cpu_pct: number | null;
+  memory_pct: number;
+}
+
 interface ServiceState {
   postgres: ServiceStatus;
   redis: ServiceStatus;
@@ -72,7 +124,9 @@ interface ServiceState {
   telegram_bot: ServiceStatus;
   signal_readiness: SignalReadinessState | null;
   system_load: SystemLoadState | null;
+  container_runtime: ContainerRuntimeState | null;
   market_pipeline: MarketPipelineState | null;
+  orderflow_pilot: OrderflowPilotState | null;
 }
 
 interface WsStatusMessage {
@@ -89,7 +143,9 @@ const INITIAL_STATE: ServiceState = {
   telegram_bot: 'unknown',
   signal_readiness: null,
   system_load: null,
+  container_runtime: null,
   market_pipeline: null,
+  orderflow_pilot: null,
 };
 
 const WS_URL =
@@ -153,12 +209,32 @@ export function StatusPage() {
   const [services, setServices] = useState<ServiceState>(INITIAL_STATE);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [scanner, setScanner] = useState<ScannerState | null>(null);
+  const [resourceHistory, setResourceHistory] = useState<ResourceSample[]>([]);
+
+  const recordResourceSample = (load: SystemLoadState | null | undefined) => {
+    if (!load) return;
+    setResourceHistory((previous) => {
+      const cutoff = Date.now() - 60 * 60 * 1000;
+      const withoutDuplicate = previous.filter(
+        (sample) => sample.captured_at_ms !== load.captured_at_ms,
+      );
+      return [
+        ...withoutDuplicate,
+        {
+          captured_at_ms: load.captured_at_ms,
+          cpu_pct: load.cpu_utilization_pct,
+          memory_pct: load.memory_used_pct,
+        },
+      ].filter((sample) => sample.captured_at_ms >= cutoff);
+    });
+  };
 
   const { status: wsStatus } = useWebSocket(WS_URL, {
     onMessage: (data) => {
       const msg = data as WsStatusMessage;
       if (msg.type === 'status') {
         setServices((prev) => ({ ...prev, ...msg.data }));
+        recordResourceSample(msg.data.system_load);
         setLastUpdated(new Date());
       }
     },
@@ -181,6 +257,7 @@ export function StatusPage() {
         if (res.ok) {
           const data = (await res.json()) as Partial<ServiceState>;
           setServices((prev) => ({ ...prev, ...data }));
+          recordResourceSample(data.system_load);
           setLastUpdated(new Date());
         } else {
           setServices(INITIAL_STATE);
@@ -227,13 +304,31 @@ export function StatusPage() {
   const anyDown = serviceStatuses.some((status) => status === 'down');
   const signalReadiness = services.signal_readiness;
   const systemLoad = services.system_load;
+  const containerRuntime = services.container_runtime;
   const marketPipeline = services.market_pipeline;
-  const normalizedCPULoad =
-    systemLoad && systemLoad.cpu_count > 0 ? (systemLoad.load_1m / systemLoad.cpu_count) * 100 : 0;
+  const orderflowPilot = services.orderflow_pilot;
+  const cpuHistory = resourceHistory
+    .map((sample) => sample.cpu_pct)
+    .filter((value): value is number => value !== null);
+  const cpuPeak = cpuHistory.length > 0 ? Math.max(...cpuHistory) : null;
+  const memoryPeak =
+    resourceHistory.length > 0
+      ? Math.max(...resourceHistory.map((sample) => sample.memory_pct))
+      : null;
+  const containerAgeMS = containerRuntime ? Date.now() - containerRuntime.captured_at_ms : null;
+  const containerFresh = containerAgeMS !== null && containerAgeMS >= 0 && containerAgeMS < 30_000;
   const pipelineAgeMS = marketPipeline ? Date.now() - marketPipeline.updated_at_ms : null;
   const pipelineFresh = pipelineAgeMS !== null && pipelineAgeMS >= 0 && pipelineAgeMS < 60_000;
   const pipelineDrops = marketPipeline
     ? marketPipeline.nats_dropped_total + marketPipeline.pending_dropped_total
+    : 0;
+  const orderflowAgeMS = orderflowPilot ? Date.now() - orderflowPilot.updated_at_ms : null;
+  const orderflowFresh = orderflowAgeMS !== null && orderflowAgeMS >= 0 && orderflowAgeMS < 60_000;
+  const orderflowErrors = orderflowPilot
+    ? orderflowPilot.queue_dropped_total +
+      orderflowPilot.pending_dropped_total +
+      orderflowPilot.persist_errors_total +
+      orderflowPilot.storage_limited_total
     : 0;
   const readinessVariant =
     signalReadiness && signalReadiness.evaluated > 0 && signalReadiness.deferred === 0
@@ -245,7 +340,7 @@ export function StatusPage() {
   return (
     <div className="min-h-screen bg-background">
       <Nav />
-      <div className="mx-auto max-w-2xl space-y-6 p-4 md:p-8">
+      <div className="mx-auto max-w-4xl space-y-6 p-4 md:p-8">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
@@ -347,18 +442,41 @@ export function StatusPage() {
           <CardContent className="space-y-4 pt-0">
             {systemLoad ? (
               <>
+                {systemLoad.cpu_utilization_pct === null ? (
+                  <p className="text-xs text-muted-foreground">
+                    Measuring CPU utilization. The next sample will contain an interval value.
+                  </p>
+                ) : (
+                  <LoadBar
+                    label="CPU utilization"
+                    value={systemLoad.cpu_utilization_pct}
+                    detail={`${systemLoad.cpu_count} CPUs${cpuPeak === null ? '' : ` · 60m peak ${cpuPeak.toFixed(1)}%`}`}
+                    icon={Cpu}
+                  />
+                )}
                 <LoadBar
-                  label="CPU load"
-                  value={normalizedCPULoad}
-                  detail={`${systemLoad.load_1m.toFixed(2)} / ${systemLoad.cpu_count} CPUs`}
-                  icon={Cpu}
+                  label="CPU pressure"
+                  value={systemLoad.load_pressure_pct}
+                  detail={`${systemLoad.load_1m.toFixed(2)} load / ${systemLoad.cpu_count} CPUs`}
+                  icon={Gauge}
                 />
+                <p className="ml-7 text-xs text-muted-foreground">
+                  Pressure can exceed 100%. It measures runnable work, not CPU time.
+                </p>
                 <LoadBar
                   label="Memory"
                   value={systemLoad.memory_used_pct}
-                  detail={`${formatBytes(systemLoad.memory_used_bytes)} / ${formatBytes(systemLoad.memory_total_bytes)}`}
+                  detail={`${formatBytes(systemLoad.memory_used_bytes)} / ${formatBytes(systemLoad.memory_total_bytes)}${memoryPeak === null ? '' : ` · 60m peak ${memoryPeak.toFixed(1)}%`}`}
                   icon={MemoryStick}
                 />
+                {systemLoad.swap_total_bytes > 0 && (
+                  <LoadBar
+                    label="Swap"
+                    value={systemLoad.swap_used_pct}
+                    detail={`${formatBytes(systemLoad.swap_used_bytes)} / ${formatBytes(systemLoad.swap_total_bytes)}`}
+                    icon={MemoryStick}
+                  />
+                )}
                 <LoadBar
                   label="Disk"
                   value={systemLoad.disk_used_pct}
@@ -369,6 +487,84 @@ export function StatusPage() {
             ) : (
               <p className="text-xs text-muted-foreground">
                 Host metrics are unavailable in this runtime.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Container resource load */}
+        <Card>
+          <CardHeader className="flex-row items-center justify-between space-y-0">
+            <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+              Containers
+            </CardTitle>
+            <Badge
+              variant={!containerRuntime ? 'secondary' : containerFresh ? 'success' : 'destructive'}
+            >
+              {!containerRuntime ? 'No telemetry' : containerFresh ? 'Live' : 'Stale'}
+            </Badge>
+          </CardHeader>
+          <CardContent className="pt-0">
+            {containerRuntime ? (
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                  <span>
+                    Total {containerRuntime.total_cpu_percent.toFixed(1)}% Docker CPU ·{' '}
+                    {formatBytes(containerRuntime.total_memory_used_bytes)} RAM
+                  </span>
+                  <span>{timeAgo(containerRuntime.captured_at_ms)}</span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Docker CPU uses 100% per fully occupied core.
+                </p>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[620px] text-left text-xs">
+                    <thead className="text-muted-foreground">
+                      <tr className="border-b">
+                        <th className="py-2 font-medium">Container</th>
+                        <th className="py-2 text-right font-medium">CPU</th>
+                        <th className="py-2 text-right font-medium">Memory</th>
+                        <th className="py-2 text-right font-medium">PIDs</th>
+                        <th className="py-2 text-right font-medium">Restarts</th>
+                        <th className="py-2 text-right font-medium">State</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {containerRuntime.containers.map((container) => {
+                        const healthy =
+                          container.status === 'running' &&
+                          (container.health === 'healthy' || container.health === 'none');
+                        return (
+                          <tr key={container.name} className="border-b last:border-0">
+                            <td className="py-2 font-mono">
+                              {container.name.replace(/^schurfer-/, '')}
+                            </td>
+                            <td className="py-2 text-right font-mono">
+                              {container.cpu_percent.toFixed(1)}%
+                            </td>
+                            <td className="py-2 text-right font-mono">
+                              {formatBytes(container.memory_used_bytes)}
+                              {container.memory_limit_bytes > 0
+                                ? ` / ${formatBytes(container.memory_limit_bytes)}`
+                                : ''}
+                            </td>
+                            <td className="py-2 text-right font-mono">{container.pids}</td>
+                            <td className="py-2 text-right font-mono">{container.restart_count}</td>
+                            <td className="py-2 text-right">
+                              <span className={healthy ? 'text-emerald-500' : 'text-amber-500'}>
+                                {container.health === 'none' ? container.status : container.health}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Install the host runtime-metrics service to expose sanitized container telemetry.
               </p>
             )}
           </CardContent>
@@ -429,6 +625,80 @@ export function StatusPage() {
               <span className="text-sm">Last telemetry</span>
               <span className="text-xs text-muted-foreground">
                 {marketPipeline ? timeAgo(marketPipeline.updated_at_ms) : 'n/a'}
+              </span>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Bounded order-flow trial */}
+        <Card>
+          <CardHeader className="flex-row items-center justify-between space-y-0">
+            <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+              Order-Flow Trial
+            </CardTitle>
+            <Badge
+              variant={
+                !orderflowPilot
+                  ? 'secondary'
+                  : orderflowFresh && orderflowPilot.status === 'ok' && orderflowErrors === 0
+                    ? 'success'
+                    : 'destructive'
+              }
+            >
+              {!orderflowPilot ? 'Not running' : !orderflowFresh ? 'Stale' : orderflowPilot.status}
+            </Badge>
+          </CardHeader>
+          <CardContent className="space-y-3 pt-0">
+            <div className="flex items-center justify-between">
+              <span className="text-sm">Symbols / throughput</span>
+              <span className="text-xs font-mono text-muted-foreground">
+                {orderflowPilot
+                  ? `${orderflowPilot.observed_symbols} / ${orderflowPilot.event_rate_per_sec.toFixed(0)} trades/s`
+                  : 'n/a'}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm">Active / total captures</span>
+              <span className="text-xs font-mono text-muted-foreground">
+                {orderflowPilot
+                  ? `${orderflowPilot.active_captures} / ${orderflowPilot.activation_total}`
+                  : 'n/a'}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm">Latest / window lag</span>
+              <span className="text-xs font-mono text-muted-foreground">
+                {orderflowPilot
+                  ? `${orderflowPilot.last_lag_ms} / ${orderflowPilot.window_max_lag_ms} ms`
+                  : 'n/a'}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm">Records / storage</span>
+              <span className="text-xs font-mono text-muted-foreground">
+                {orderflowPilot
+                  ? `${orderflowPilot.records_persisted_total} / ${formatBytes(orderflowPilot.storage_bytes)}`
+                  : 'n/a'}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm">Projected storage</span>
+              <span className="text-xs font-mono text-muted-foreground">
+                {orderflowPilot
+                  ? `${formatBytes(orderflowPilot.storage_bytes_per_day)} / day`
+                  : 'n/a'}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm">Drops / errors</span>
+              <span className="text-xs font-mono text-muted-foreground">
+                {orderflowPilot ? orderflowErrors : 'n/a'}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm">Last telemetry</span>
+              <span className="text-xs text-muted-foreground">
+                {orderflowPilot ? timeAgo(orderflowPilot.updated_at_ms) : 'n/a'}
               </span>
             </div>
           </CardContent>
