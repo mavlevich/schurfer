@@ -952,13 +952,19 @@ The intended stream topology is:
       kimchi-premium features. Test them first as virtual global-perp entry/exit
       challengers. Direct cross-border arbitrage remains gated on measured net edge,
       lawful Korean account access, transfer constraints, fees, and tax review.
-- [ ] Bybit public-trades pilot before any multi-venue microstructure platform.
-      Observe every active linear perpetual from process start so pre-pump windows are
-      not left-censored. Aggregate in a dedicated Go process and persist only sparse
-      non-empty 1-second buckets plus 5-second/1-minute rollups. Do not publish the
-      broad raw trade firehose through NATS or store dense symbol-seconds. The first
-      24-hour canary measures actual events/s, CPU, RAM, bytes/day, compression,
-      gaps, lag, and drops before retention is locked. Include matched non-pump
+- [x] Build the bounded Bybit public-trades pilot before any multi-venue
+      microstructure platform. It observes every active linear perpetual from process
+      start, aggregates sparse non-empty one-second buckets in a dedicated Go process,
+      and stores only event and matched-control windows. Raw trades do not traverse
+      NATS. The optional Compose profile has hard `384 MiB` memory, `0.75 CPU`, bounded
+      queue, pending-record, active-event, retention, and `5 GiB` disk limits.
+- [ ] Run the staged Bybit public-trades canary and decide whether the lane earns
+      expansion. Observe every active linear perpetual from process start so pre-pump
+      windows are not left-censored. The first 30-minute, 6-hour, and 24-hour runs
+      measure actual events/s, CPU, RAM, bytes/day, compression, gaps, lag, and drops.
+      Persist only sparse non-empty 1-second buckets; derive coarser rollups in
+      analysis rather than duplicating them on disk until their value is proven.
+      Include matched non-pump
       controls by time, liquidity, volatility, listing age, and market regime.
       Pre-register separate readings for early-long timing, squeeze avoidance, and
       delayed short entry; do not combine those books into one headline.

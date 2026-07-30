@@ -1,8 +1,10 @@
-.PHONY: help install install-golangci-lint dev dev-init dev-stop dev-reset dev-logs dev-test migrate measurement-report exchange-coverage-report episode-replay virtual-strategy-report virtual-entry-challenger-report virtual-threshold-challenger-report virtual-exit-policy-report virtual-exit-discovery-report virtual-score-challenger-report candle-anomaly-report derivatives-context-report decision-quality-report liquid-taker-report long-horizon-report maker-entry-report pump-magnitude-report test lint ci-lint format clean security deadcode check verify verify-docker \
-        prod-deploy prod-measurement-report prod-exchange-coverage-report prod-episode-replay prod-virtual-strategy-report prod-virtual-entry-challenger-report prod-virtual-threshold-challenger-report prod-virtual-exit-policy-report prod-virtual-exit-discovery-report prod-virtual-score-challenger-report prod-candle-anomaly-report prod-derivatives-context-report prod-decision-quality-report prod-liquid-taker-report prod-long-horizon-report prod-maker-entry-report prod-pump-magnitude-report prod-logs prod-backup prod-restore-local prod-health
+.PHONY: help install install-golangci-lint dev dev-init dev-stop dev-reset dev-logs dev-test migrate measurement-report exchange-coverage-report episode-replay virtual-strategy-report virtual-entry-challenger-report virtual-threshold-challenger-report virtual-exit-policy-report virtual-exit-discovery-report virtual-score-challenger-report candle-anomaly-report derivatives-context-report decision-quality-report liquid-taker-report long-horizon-report maker-entry-report pump-magnitude-report orderflow-start orderflow-stop orderflow-health test lint ci-lint format clean security deadcode check verify verify-docker \
+        prod-deploy prod-measurement-report prod-exchange-coverage-report prod-episode-replay prod-virtual-strategy-report prod-virtual-entry-challenger-report prod-virtual-threshold-challenger-report prod-virtual-exit-policy-report prod-virtual-exit-discovery-report prod-virtual-score-challenger-report prod-candle-anomaly-report prod-derivatives-context-report prod-decision-quality-report prod-liquid-taker-report prod-long-horizon-report prod-maker-entry-report prod-pump-magnitude-report prod-orderflow-start prod-orderflow-stop prod-orderflow-health prod-logs prod-backup prod-restore-local prod-health
 
 GOLANGCI_LINT_VERSION = v2.1.6
 PROD_REPORT_MIN_HEADROOM_MB ?= 1280
+PROD_ORDERFLOW_MIN_AVAILABLE_MB ?= 768
+PROD_ORDERFLOW_MIN_DISK_MB ?= 15360
 
 help:
 	@echo "Schurfer - common commands"
@@ -41,6 +43,9 @@ help:
 	@echo "  make long-horizon-report  Describe 24h/72h/7d returns and signed funding"
 	@echo "  make maker-entry-report  Estimate the maker-entry OHLCV upper bound"
 	@echo "  make pump-magnitude-report  Explore 20% to 200% pump entry floors"
+	@echo "  make orderflow-start  Start the bounded local Bybit order-flow pilot"
+	@echo "  make orderflow-health  Show local order-flow pilot health"
+	@echo "  make orderflow-stop  Stop the local order-flow pilot"
 	@echo ""
 	@echo "Production (run on server with .env.prod present):"
 	@echo "  make prod-deploy          Pull + rebuild + restart all services"
@@ -65,6 +70,9 @@ help:
 	@echo "  make prod-long-horizon-report  Production long-horizon funding research"
 	@echo "  make prod-maker-entry-report  Production maker-entry upper-bound report"
 	@echo "  make prod-pump-magnitude-report  Production pump-magnitude discovery surface"
+	@echo "  make prod-orderflow-start  Explicitly start the bounded order-flow canary"
+	@echo "  make prod-orderflow-health  Show order-flow canary health and resource use"
+	@echo "  make prod-orderflow-stop  Stop the order-flow canary"
 
 install:
 	@echo "-> Installing Python deps via uv..."
@@ -114,6 +122,21 @@ dev-logs:
 
 dev-test:
 	@bash infra/docker/smoke-test.sh
+
+orderflow-start:
+	@test -f .env || (echo "ERROR: .env not found. Run make dev-init first." && exit 1)
+	docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		--profile orderflow up -d --build orderflow-pilot
+
+orderflow-stop:
+	docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		--profile orderflow stop orderflow-pilot
+
+orderflow-health:
+	@docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		--profile orderflow ps orderflow-pilot
+	@docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		exec -T redis redis-cli --raw HGETALL market:orderflow:health
 
 migrate:
 	@echo "-> Running Alembic migrations..."
@@ -561,6 +584,35 @@ prod-restore-local:
 
 prod-health:
 	@$(_PROD) ps --format "table {{.Name}}\t{{.Status}}\t{{.Health}}"
+
+prod-orderflow-start:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	@test "$$(git branch --show-current)" = "main" || (echo "ERROR: deploy only from main." && exit 1)
+	@test -z "$$(git status --porcelain)" || (echo "ERROR: working tree not clean." && exit 1)
+	@if test -r /proc/meminfo; then \
+		available_mb=$$(awk '/^MemAvailable:/ {print int($$2 / 1024)}' /proc/meminfo); \
+		if test "$$available_mb" -lt "$(PROD_ORDERFLOW_MIN_AVAILABLE_MB)"; then \
+			echo "ERROR: order-flow canary requires $(PROD_ORDERFLOW_MIN_AVAILABLE_MB) MiB available RAM; found $$available_mb MiB."; \
+			exit 1; \
+		fi; \
+	fi
+	@available_disk_mb=$$(df -Pm / | awk 'NR == 2 {print $$4}'); \
+	if test "$$available_disk_mb" -lt "$(PROD_ORDERFLOW_MIN_DISK_MB)"; then \
+		echo "ERROR: order-flow canary requires $(PROD_ORDERFLOW_MIN_DISK_MB) MiB free disk; found $$available_disk_mb MiB."; \
+		exit 1; \
+	fi
+	$(_PROD) --profile orderflow up -d --build orderflow-pilot
+	@$(_PROD) --profile orderflow ps orderflow-pilot
+
+prod-orderflow-stop:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	$(_PROD) --profile orderflow stop orderflow-pilot
+
+prod-orderflow-health:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	@$(_PROD) --profile orderflow ps orderflow-pilot
+	@$(_PROD) exec -T redis redis-cli --raw HGETALL market:orderflow:health
+	@docker stats --no-stream schurfer-orderflow-pilot schurfer-collector schurfer-market-hotset
 
 verify-docker: verify
 	@echo "=== Docker: analytics build + import check ==="

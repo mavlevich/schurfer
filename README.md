@@ -9,9 +9,10 @@ Live in production on Hetzner, private access over Tailscale, running in DRY_RUN
 point-in-time decisions and liquidity, resolves forward outcomes from 15 minutes
 through 7 days, and replays locked strategy variants on matched episodes. Current
 research keeps the low-impact taker and fixed-risk wider-stop contracts frozen while
-it measures whether pump magnitude changes the available edge. The next independent
-data lane is a capped Bybit public-trades pilot, not an unconditional multi-exchange
-firehose. See [ROADMAP.md](ROADMAP.md).
+they collect prospective evidence. A discovery replay found no support for requiring
+50% to 200% pumps, so the next independent data lane is an optional, capped Bybit
+public-trades pilot that tests timing rather than another entry-floor tweak. It is not
+an unconditional multi-exchange firehose. See [ROADMAP.md](ROADMAP.md).
 
 ## What it does
 
@@ -46,8 +47,8 @@ flowchart LR
     API --> WEB["React dashboard"]
     API --> STATUS["Status and load telemetry"]
 
-    BYBIT -. "planned capped public trades pilot" .-> FLOW["Sparse 1s order-flow aggregates"]
-    FLOW -.-> PG
+    BYBIT -. "optional bounded public trades pilot" .-> FLOW["Sparse 1s order-flow aggregates"]
+    FLOW -.-> FILES["Capped event and control windows"]
 ```
 
 ## Stack
@@ -190,15 +191,16 @@ GET  /healthz                        service health check
 
 The production server is intentionally not a raw market-data warehouse. Redis keeps
 bounded hot state, PostgreSQL keeps durable decisions and research outputs, and raw
-market data is admitted only under an explicit byte budget. The planned order-flow
-pilot observes every Bybit perpetual but persists sparse one-second buckets rather
-than dense symbol-seconds or every raw trade.
+market data is admitted only under an explicit byte budget. The optional order-flow
+pilot observes every Bybit perpetual but persists only sparse one-second event and
+matched-control windows rather than dense symbol-seconds or every raw trade.
 
 - stop raw writes at 80% disk usage;
 - reserve at least 15 GiB for the operating system and deployments;
 - measure real bytes/day for 24 hours before locking retention;
-- keep local raw windows for 24 to 72 hours;
-- retain 5s/1m aggregates and event manifests longer;
+- keep local aggregate windows under a configurable 5 GiB / 14-day hard cap during
+  the canary;
+- derive 5s/1m views during analysis until longer retention proves useful;
 - upload selected Parquet+Zstd windows only after checksum verification;
 - expand beyond Bybit only after a point-in-time predictive and economic gate passes.
 
