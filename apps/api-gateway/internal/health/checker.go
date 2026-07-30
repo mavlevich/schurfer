@@ -28,6 +28,8 @@ type Report struct {
 	Execution       Status           `json:"execution"`
 	TelegramBot     Status           `json:"telegram_bot"`
 	SignalReadiness *SignalReadiness `json:"signal_readiness"`
+	SystemLoad      *SystemLoad      `json:"system_load"`
+	MarketPipeline  *MarketPipeline  `json:"market_pipeline"`
 }
 
 type SignalReadiness struct {
@@ -39,6 +41,20 @@ type SignalReadiness struct {
 	Reasons     map[string]int64 `json:"reasons"`
 }
 
+type MarketPipeline struct {
+	UpdatedAtMS         int64   `json:"updated_at_ms"`
+	ObservedSymbols     int64   `json:"observed_symbols"`
+	HotSymbols          int64   `json:"hot_symbols"`
+	EventRatePerSecond  float64 `json:"event_rate_per_sec"`
+	LastLagMS           int64   `json:"last_lag_ms"`
+	MaxLagMS            int64   `json:"max_lag_ms"`
+	NATSDroppedTotal    int64   `json:"nats_dropped_total"`
+	PendingDroppedTotal int64   `json:"pending_dropped_total"`
+	PersistErrorsTotal  int64   `json:"persist_errors_total"`
+	BarsPersistedTotal  int64   `json:"bars_persisted_total"`
+	PumpFeedStatus      string  `json:"pump_feed_status"`
+}
+
 type Config struct {
 	PostgresDSN string
 	RedisAddr   string
@@ -48,9 +64,10 @@ type Config struct {
 // Checker holds shared clients and pings them on each check.
 // Call Close when the application shuts down.
 type Checker struct {
-	pool *pgxpool.Pool
-	rdb  *redis.Client
-	nc   *nats.Conn
+	pool        *pgxpool.Pool
+	rdb         *redis.Client
+	nc          *nats.Conn
+	systemProbe func() *SystemLoad
 }
 
 func NewChecker(ctx context.Context, cfg Config) (*Checker, error) {
@@ -75,7 +92,12 @@ func NewChecker(ctx context.Context, cfg Config) (*Checker, error) {
 		nc = nil
 	}
 
-	return &Checker{pool: pool, rdb: rdb, nc: nc}, nil
+	return &Checker{
+		pool:        pool,
+		rdb:         rdb,
+		nc:          nc,
+		systemProbe: readSystemLoad,
+	}, nil
 }
 
 func (c *Checker) Pool() *pgxpool.Pool { return c.pool }
@@ -89,6 +111,10 @@ func (c *Checker) Close() {
 }
 
 func (c *Checker) Check(ctx context.Context) Report {
+	var systemLoad *SystemLoad
+	if c.systemProbe != nil {
+		systemLoad = c.systemProbe()
+	}
 	return Report{
 		Postgres:        c.checkPostgres(ctx),
 		Redis:           c.checkRedis(ctx),
@@ -97,6 +123,44 @@ func (c *Checker) Check(ctx context.Context) Report {
 		Execution:       StatusUnknown,
 		TelegramBot:     c.checkTelegramBot(ctx),
 		SignalReadiness: c.checkSignalReadiness(ctx),
+		SystemLoad:      systemLoad,
+		MarketPipeline:  c.checkMarketPipeline(ctx),
+	}
+}
+
+func (c *Checker) checkMarketPipeline(ctx context.Context) *MarketPipeline {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	values, err := c.rdb.HGetAll(ctx, "market:hotset:health").Result()
+	if err != nil || len(values) == 0 {
+		return nil
+	}
+	updatedAt, ok := parseInt64(values, "updated_at_ms")
+	if !ok {
+		return nil
+	}
+	observedSymbols, ok := parseInt64(values, "observed_symbols")
+	if !ok {
+		return nil
+	}
+	eventRate, ok := parseFloat64(values, "event_rate_per_sec")
+	if !ok {
+		return nil
+	}
+
+	return &MarketPipeline{
+		UpdatedAtMS:         updatedAt,
+		ObservedSymbols:     observedSymbols,
+		HotSymbols:          optionalInt64(values, "hot_symbols"),
+		EventRatePerSecond:  eventRate,
+		LastLagMS:           optionalInt64(values, "last_lag_ms"),
+		MaxLagMS:            optionalInt64(values, "max_lag_ms"),
+		NATSDroppedTotal:    optionalInt64(values, "nats_dropped_total"),
+		PendingDroppedTotal: optionalInt64(values, "pending_dropped_total"),
+		PersistErrorsTotal:  optionalInt64(values, "persist_errors_total"),
+		BarsPersistedTotal:  optionalInt64(values, "bars_persisted_total"),
+		PumpFeedStatus:      values["pump_feed_status"],
 	}
 }
 
@@ -151,6 +215,20 @@ func parseInt64(values map[string]string, key string) (int64, bool) {
 		return 0, false
 	}
 	parsed, err := strconv.ParseInt(value, 10, 64)
+	return parsed, err == nil
+}
+
+func optionalInt64(values map[string]string, key string) int64 {
+	value, _ := parseInt64(values, key)
+	return value
+}
+
+func parseFloat64(values map[string]string, key string) (float64, bool) {
+	value, ok := values[key]
+	if !ok {
+		return 0, false
+	}
+	parsed, err := strconv.ParseFloat(value, 64)
 	return parsed, err == nil
 }
 
