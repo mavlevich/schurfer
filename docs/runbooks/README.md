@@ -109,7 +109,9 @@ The regular `prod-deploy` updates the script and API but deliberately does not r
 page says `No telemetry` instead of inventing partial container values. The
 systemd unit runs as `deploy`, has a read-only host filesystem except for the
 runtime snapshot directory, and never exposes Docker control through an HTTP
-endpoint.
+endpoint. The collector uses an empty private `DOCKER_CONFIG` because its local
+`stats` and `inspect` calls require no registry credentials; this also prevents
+Docker CLI from probing the protected deploy home directory.
 
 ### Bounded Bybit order-flow trial
 
