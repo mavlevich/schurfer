@@ -106,7 +106,7 @@ market-hotset (Go)
     +----> market:hotset:health (Redis)
 ```
 
-### Planned order-flow pilot
+### Bounded order-flow pilot
 
 The next data lane is deliberately narrower than a general market-intelligence
 platform:
@@ -115,9 +115,8 @@ platform:
 flowchart LR
     WS["All Bybit linear public trades"] --> OF["Dedicated Go order-flow collector"]
     OF --> AGG["In-memory sparse 1s aggregation"]
-    AGG --> ROLL["5s and 1m rollups"]
     AGG --> HEALTH["Lag, gaps, drops, bytes/day"]
-    ROLL --> STORE["Bounded research storage"]
+    AGG --> STORE["Bounded event and control windows"]
     STORE --> REPORT["Matched pump and non-pump report"]
     REPORT --> GATE{"Predictive and net-economic lift?"}
     GATE -->|no| STOP["Stop the lane"]
@@ -127,7 +126,12 @@ flowchart LR
 Every listed perpetual is observed from the start so pre-pump windows are not
 left-censored. This does not mean writing one dense row per symbol per second. Empty
 buckets are omitted, raw trades do not traverse NATS by default, and unmatched
-non-pump periods are retained only through bounded matched controls.
+non-pump periods are retained only through bounded matched controls. The service is
+behind the optional `orderflow` Compose profile, so a normal deployment does not
+start it. Every persisted record identifies the
+`bybit_orderflow_pilot_v1` capture contract and distinguishes exchange event time,
+local receive time, and pump `first_observed_at`. Its first production run is a
+resource canary, not a trading signal.
 
 ## Redis key registry
 
@@ -145,6 +149,7 @@ non-pump periods are retained only through bounded matched controls.
 | `market:hotset:health`                               | hotset      | 30s    | event rate, lag, drops, errors, persisted bars, and active symbol count |
 | `market:hotset:bybit`                                | hotset      | varies | restart-safe symbol registry with absolute hot-window expiries          |
 | `market:hotset:bybit:metadata`                       | hotset      | none   | base, pump event id, and activation reason for registered Bybit symbols |
+| `market:orderflow:health`                            | orderflow   | 30s    | pilot rate, lag, drops, buffers, captures, storage, and canary status   |
 | `trading:enabled`                                    | execution   | no TTL | `"true"/"false"`, kill switch                                           |
 | `trading:daily_pnl`                                  | execution   | none   | float string (USD), monitoring cache                                    |
 | `risk:pnl_ready`                                     | execution   | 120s   | `"1"`, positive lease. Absent or stale means trading is blocked         |
@@ -167,11 +172,12 @@ non-pump periods are retained only through bounded matched controls.
 
 ## Storage
 
-| Database        | Purpose                                                            |
-| --------------- | ------------------------------------------------------------------ |
-| **PostgreSQL**  | pumps, snapshots, derivatives context, decisions, outcomes, trades |
-| **TimescaleDB** | OHLCV series, tick data, funding history                           |
-| **Redis**       | hot state (pump list, signal scores, locks, position metadata)     |
+| Database         | Purpose                                                            |
+| ---------------- | ------------------------------------------------------------------ |
+| **PostgreSQL**   | pumps, snapshots, derivatives context, decisions, outcomes, trades |
+| **TimescaleDB**  | OHLCV series, tick data, funding history                           |
+| **Redis**        | hot state (pump list, signal scores, locks, position metadata)     |
+| **Local volume** | capped order-flow event/control aggregates during the canary       |
 
 ### Capacity and retention guardrails
 

@@ -87,6 +87,35 @@ Do not trust "containers are up". After a change that writes new data, look at t
 first real rows to confirm the pipeline produces what you expect. Example for the
 decision-measurement change:
 
+### Bounded Bybit order-flow canary
+
+The public-trades pilot is deliberately excluded from normal `prod-deploy`. Start it
+only after the code is merged and the regular stack is healthy:
+
+```bash
+make prod-orderflow-start
+make prod-orderflow-health
+docker logs schurfer-orderflow-pilot --since 30m
+```
+
+The first run is staged. Check after 30 minutes, then 6 hours, then 24 hours. Stop it
+immediately if `status` is not `ok`, any drop counter increases, lag grows, or the
+container repeatedly approaches its `384 MiB` memory limit:
+
+```bash
+make prod-orderflow-stop
+```
+
+The pilot aggregates all Bybit linear-perpetual public trades in memory but writes
+only bounded pump-event and matched-control windows to the `orderflow_data` volume.
+Raw trades do not enter NATS, Redis, or PostgreSQL. `market:orderflow:health` expires
+after 30 seconds, so a stale or absent key means the canary is not healthy. The
+default local disk budget is 5 GiB and retention is 14 days; crossing the budget
+fails closed and is reported as `storage_limited`. The canary has no automatic
+restart policy, so a memory-limit exit remains stopped instead of entering a restart
+loop. The start command also refuses to run below 768 MiB available RAM or 15 GiB
+free root-disk space.
+
 ```sql
 -- docker exec schurfer-postgres psql -U schurfer -d schurfer
 SELECT ts, base, action, score, decision_id, strategy_version,

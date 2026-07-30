@@ -194,6 +194,43 @@ services:
         max-size: '10m'
         max-file: '3'
 
+  orderflow-pilot:
+    profiles: ['orderflow']
+    build:
+      context: ../../
+      dockerfile: apps/collector/Dockerfile
+    container_name: schurfer-orderflow-pilot
+    entrypoint: ['/orderflow']
+    environment:
+      REDIS_ADDR: redis:6379
+      BYBIT_SYMBOLS: ${ORDERFLOW_BYBIT_SYMBOLS:-}
+      ORDERFLOW_BUCKET_SECONDS: ${ORDERFLOW_BUCKET_SECONDS:-1}
+      ORDERFLOW_PREBUFFER_SECONDS: ${ORDERFLOW_PREBUFFER_SECONDS:-1800}
+      ORDERFLOW_CAPTURE_AFTER_SECONDS: ${ORDERFLOW_CAPTURE_AFTER_SECONDS:-3600}
+      ORDERFLOW_CONTROLS: ${ORDERFLOW_CONTROLS:-3}
+      ORDERFLOW_MAX_SYMBOLS: ${ORDERFLOW_MAX_SYMBOLS:-1000}
+      ORDERFLOW_MAX_ACTIVE_EVENTS: ${ORDERFLOW_MAX_ACTIVE_EVENTS:-32}
+      ORDERFLOW_RECENT_TRADE_IDS: ${ORDERFLOW_RECENT_TRADE_IDS:-512}
+      ORDERFLOW_QUEUE_SIZE: ${ORDERFLOW_QUEUE_SIZE:-32768}
+      ORDERFLOW_MAX_PENDING_RECORDS: ${ORDERFLOW_MAX_PENDING_RECORDS:-8192}
+      ORDERFLOW_STORAGE_ROOT: /data/orderflow
+      ORDERFLOW_MAX_DISK_BYTES: ${ORDERFLOW_MAX_DISK_BYTES:-5368709120}
+      ORDERFLOW_RETENTION_SECONDS: ${ORDERFLOW_RETENTION_SECONDS:-1209600}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      - orderflow_data:/data/orderflow
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: 'no'
+    mem_limit: 384m
+    cpus: 0.75
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
   analytics:
     build:
       context: ../../
@@ -355,3 +392,4 @@ volumes:
   nats_data:
   caddy_data:
   caddy_config:
+  orderflow_data:
