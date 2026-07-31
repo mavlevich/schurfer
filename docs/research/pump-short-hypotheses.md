@@ -654,3 +654,41 @@ closed, and output remains discovery-only after the readiness gate.
 The complete contract, windows, feature definitions, readiness thresholds, and
 expansion gate are in
 [bybit-order-flow-pilot-v1.md](bybit-order-flow-pilot-v1.md).
+
+---
+
+## OBS-012 - discovery venue may identify economically different pump cohorts
+
+Durable `pump_event_sources` observations make it possible to ask whether the venue
+where Schurfer first observed a pump is associated with different execution-quality
+and reversion economics. This is historical discovery, not a modification of
+HYP-008 or HYP-010. The attribution-safe window starts at
+`2026-07-24T00:00:00Z`; earlier rows are left-censored by the deployment of durable
+source capture.
+
+The contract is intentionally narrow:
+
+- define first source from the earliest persisted Schurfer scanner-observation time;
+  exact timestamp ties remain a joined source label instead of being broken by sort
+  order;
+- keep source venue and selected execution venue as separate fields and publish the
+  full source-to-execution route matrix;
+- reproduce the complete HYP-008 selector, including recorded score threshold,
+  recorded market-quality approval, configured-notional bid and ask impact, and the
+  20 bps round-trip limit;
+- treat a valid episode that never passes the selector as zero-return cash, while
+  missing exact inputs or paths remain unresolved;
+- report both the unchanged full-v1 replay and exact selected-venue fixed 240- and
+  480-minute net screens using the same recorded impact, taker fee, and funding-cost
+  convention;
+- report asset-cluster bootstrap intervals, leave-one-cluster-out, busiest-week
+  exclusion, Holm-adjusted descriptive tests, capacity, and source timing;
+- use `sole source by cutoff` only as a venue-removal coverage counterfactual. It is
+  never a point-in-time trading feature because later confirmations can change it.
+
+Scanner polling order, API response time, venue market coverage, asset mix, and the
+execution venue can all confound first-source differences. Therefore a positive row
+does not establish that an exchange caused the move or provides a live timing edge.
+It can justify retaining a source, building a separately registered source-aware
+shadow hypothesis, or prioritizing a Korean-spot observer. It cannot change the
+production score, entry, exit, venue, size, leverage, or `DRY_RUN=true`.

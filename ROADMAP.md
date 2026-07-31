@@ -320,6 +320,14 @@ lightweight dataset-health visibility remains operational follow-up.
       and observation count. Report unique discoveries, overlap, and lead time by
       venue. Do not retain every raw ticker: the source crossing timestamp is the
       non-recoverable fact required to decide whether broader coverage is valuable.
+- [x] Discovery-only exchange-source economics (OBS-012). Join the attribution-safe
+      source cohort to the unchanged HYP-008 selector, exact selected-venue 4h/8h
+      outcomes, and full-v1 exit replay. Keep first source distinct from execution
+      venue; report source-to-execution routes, cash episodes, path failures, costs,
+      capacity, asset-cluster intervals, Holm correction, leave-one-cluster, busiest
+      week, and scanner timing. A sole-source label is only a removal counterfactual.
+      This inspected family cannot alter HYP-008/HYP-010 or production. Any useful
+      source-aware rule requires a separately frozen prospective shadow contract.
 - [ ] Make CEX alert latency and peak semantics measurable before tuning scan speed.
       Preserve exchange-ticker time, scanner observation time, threshold-crossing
       time, notification time, first observed change, and highest change actually

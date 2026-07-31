@@ -34,6 +34,12 @@ def total_episodes_statement(filters: CoverageFilters) -> Select[Any]:
 
 
 def source_observations_statement(filters: CoverageFilters) -> Select[Any]:
+    clauses = _filters(filters)
+    if filters.until is not None:
+        # A historical coverage cutoff must not learn that another venue confirmed
+        # the episode after the cutoff. Source first_seen_at is the point-in-time
+        # observation clock used by the report.
+        clauses.append(PumpEventSource.first_seen_at < filters.until)
     return (
         select(
             PumpEventSource.event_id,
@@ -41,7 +47,7 @@ def source_observations_statement(filters: CoverageFilters) -> Select[Any]:
             PumpEventSource.first_seen_at,
         )
         .join(PumpEvent, PumpEvent.id == PumpEventSource.event_id)
-        .where(*_filters(filters))
+        .where(*clauses)
         .order_by(PumpEventSource.event_id, PumpEventSource.exchange)
     )
 
@@ -61,7 +67,11 @@ class ExchangeCoverageRepository:
             )
         )
 
-    async def generate(self, filters: CoverageFilters) -> ExchangeCoverageReport:
+    async def load(
+        self,
+        filters: CoverageFilters,
+    ) -> tuple[int, list[SourceObservation]]:
+        """Load a repeatable-read point-in-time coverage snapshot."""
         async with self._engine.connect() as raw_connection:
             connection = await raw_connection.execution_options(
                 isolation_level="REPEATABLE READ",
@@ -79,7 +89,11 @@ class ExchangeCoverageRepository:
             )
             for row in source_result.mappings().all()
         ]
-        return build_report(filters, int(total_result.scalar_one()), observations)
+        return int(total_result.scalar_one()), observations
+
+    async def generate(self, filters: CoverageFilters) -> ExchangeCoverageReport:
+        total_episodes, observations = await self.load(filters)
+        return build_report(filters, total_episodes, observations)
 
     async def close(self) -> None:
         await self._engine.dispose()

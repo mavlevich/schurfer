@@ -377,7 +377,7 @@ def _missing_path(episode: ReplayEpisode, decision: ReplayDecision) -> MarketPat
     )
 
 
-def _evaluate(
+def evaluate_liquid_taker_episode(
     episode: ReplayEpisode,
     path_by_decision: dict[str, MarketPath],
     costs: CostParameters,
@@ -480,7 +480,7 @@ def _calendar_days(since: datetime, until: datetime) -> int:
     return max(1, math.ceil(elapsed_days))
 
 
-def _metrics(
+def liquid_taker_metrics(
     results: tuple[LiquidTakerResult, ...],
     filters: ReplayFilters,
 ) -> LiquidTakerMetrics:
@@ -746,7 +746,8 @@ def build_liquid_taker_report(
         raise ValueError(f"duplicate market paths for decisions: {duplicates}")
     path_by_decision = {item.decision_id: item.path for item in paths}
     results = tuple(
-        _evaluate(episode, path_by_decision, costs) for episode in dataset.eligible_episodes
+        evaluate_liquid_taker_episode(episode, path_by_decision, costs)
+        for episode in dataset.eligible_episodes
     )
     exclusions = Counter(
         reason for episode in dataset.excluded_episodes for reason in episode.exclusion_reasons
@@ -786,7 +787,7 @@ def build_liquid_taker_report(
         excluded_episodes=len(dataset.excluded_episodes),
         input_exclusion_reasons=_count_rows(exclusions),
         path_statuses=_count_rows(Counter(item.path.status for item in paths)),
-        metrics=_metrics(results, filters),
+        metrics=liquid_taker_metrics(results, filters),
         venue_slices=_slice_metrics(results, key="exchange"),
         weekly_slices=_slice_metrics(results, key="episode_week"),
         asset_slices=_slice_metrics(results, key="cluster_key"),

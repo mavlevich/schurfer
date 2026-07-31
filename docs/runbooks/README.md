@@ -573,6 +573,32 @@ the new cohort separately.
   chronological decision path per episode, model costs/exits, and produce confidence
   intervals suitable for champion selection.
 
+- Exchange-source economics discovery: evaluate whether the venue where Schurfer
+  first observed an episode is associated with different low-impact execution and
+  reversion economics:
+
+  ```bash
+  make prod-exchange-source-economics-report
+  make prod-exchange-source-economics-report \
+    ARGS="--until 2026-07-31T00:00:00Z --format json" \
+    > backups/reports/exchange-source-economics-2026-07-31.json
+  ```
+
+  The report starts at the attribution-safe `2026-07-24T00:00:00Z` cutoff and
+  rejects an earlier `--since` before querying the database or opening CCXT clients.
+  It reproduces the full liquid-taker selector, fetches exact selected-venue paths,
+  and therefore is CCXT-heavy. The production target refuses to start without at
+  least 1280 MiB of host `MemAvailable + SwapFree`; progress is written to stderr one
+  exchange at a time.
+
+  Read coverage, attribution and path failures before economics. First source uses
+  scanner-observation time, so polling order and API latency can affect the label.
+  Source venue and execution venue are separate, and `sole source by cutoff` is only
+  a venue-removal counterfactual. Full-v1 and fixed 4h/8h rows, cluster intervals,
+  Holm correction, leave-one-cluster, busiest-week exclusion, and timing are all
+  post-hoc diagnostics. A positive source row cannot change production; freeze a new
+  prospective shadow contract before using source identity in a decision.
+
 - Decision-quality report: use the completed exact-anchor episode cohort to test
   whether the recorded score and its five point components separate better and worse
   virtual trades after fees, funding, and decision-time liquidity impact:

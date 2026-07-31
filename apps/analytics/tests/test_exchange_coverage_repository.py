@@ -37,3 +37,12 @@ def test_source_observations_join_episode_scope() -> None:
     assert "JOIN app.pump_events" in sql
     assert "pump_event_sources.event_id" in sql
     assert "pump_event_sources.first_seen_at" in sql
+
+
+def test_source_observations_cut_off_later_confirmations() -> None:
+    filters = CoverageFilters(until=datetime(2026, 7, 24, tzinfo=UTC))
+
+    sql = _sql(source_observations_statement(filters))
+
+    assert "WHERE app.pump_events.first_seen_at <" in sql
+    assert "AND app.pump_event_sources.first_seen_at <" in sql
