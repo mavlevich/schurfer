@@ -1,6 +1,6 @@
 # Roadmap
 
-> Living document. Updated as we progress. Last refreshed 2026-07-29.
+> Living document. Updated as we progress. Last refreshed 2026-07-31.
 
 ## Guiding principle
 
@@ -1022,6 +1022,12 @@ The intended stream topology is:
       read-only; the API and Web containers never receive the Docker socket. Keep a
       client-side rolling 60-minute CPU/memory peak while the Status page is open.
       Add heavy observability only after a second host or a proven load need.
+- [x] Lightweight authenticated research-readiness dashboard. Expose exact
+      exit-quote calibration counts, mature database-input proxies for HYP-008 and
+      HYP-010, and bounded order-flow operational progress without running CCXT or
+      replay in an HTTP request. Label every proxy and estimate explicitly; formal
+      strategy output remains in the frozen reports. Use the shared page-width and
+      spacing shell across the authenticated frontend.
 - [ ] Deferred incident alerts, kept outside the evidence-producing PR budget. Add
       an external outbound heartbeat with Telegram down/recovery notification so it
       still works when the private Tailscale-only host is unreachable. When the

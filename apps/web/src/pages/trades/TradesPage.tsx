@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { WifiOff, RefreshCw } from 'lucide-react';
-import { Nav } from '@/components/Nav';
+import { PageShell } from '@/components/shared/PageShell';
 import { Card, CardContent } from '@/components/ui/card';
 import {
   Table,
@@ -244,180 +244,173 @@ export function TradesPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <Nav />
-      <div className="mx-auto max-w-6xl space-y-4 p-4 md:p-8">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="text-xl font-bold tracking-tight">Trade Journal</h1>
-            <p className="text-sm text-muted-foreground">
-              {data ? `${total} trade${total !== 1 ? 's' : ''}` : 'Signal-triggered positions'}
-            </p>
+    <PageShell width="wide" className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-bold tracking-tight">Trade Journal</h1>
+          <p className="text-sm text-muted-foreground">
+            {data ? `${total} trade${total !== 1 ? 's' : ''}` : 'Signal-triggered positions'}
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <select
+              value={statusFilter}
+              onChange={handleFilterChange(setStatusFilter)}
+              className="rounded border border-input bg-background px-2 py-1 text-sm text-foreground"
+            >
+              <option value="">All status</option>
+              <option value="open">Open</option>
+              <option value="closed">Closed</option>
+            </select>
+            <select
+              value={exchangeFilter}
+              onChange={handleFilterChange(setExchangeFilter)}
+              className="rounded border border-input bg-background px-2 py-1 text-sm text-foreground"
+            >
+              <option value="">All exchanges</option>
+              <option value="bybit">Bybit</option>
+              <option value="binance">Binance</option>
+              <option value="bingx">BingX</option>
+              <option value="gate">Gate</option>
+              <option value="mexc">MEXC</option>
+              <option value="okx">OKX</option>
+              <option value="kucoin">KuCoin</option>
+            </select>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2">
-              <select
-                value={statusFilter}
-                onChange={handleFilterChange(setStatusFilter)}
-                className="rounded border border-input bg-background px-2 py-1 text-sm text-foreground"
-              >
-                <option value="">All status</option>
-                <option value="open">Open</option>
-                <option value="closed">Closed</option>
-              </select>
-              <select
-                value={exchangeFilter}
-                onChange={handleFilterChange(setExchangeFilter)}
-                className="rounded border border-input bg-background px-2 py-1 text-sm text-foreground"
-              >
-                <option value="">All exchanges</option>
-                <option value="bybit">Bybit</option>
-                <option value="binance">Binance</option>
-                <option value="bingx">BingX</option>
-                <option value="gate">Gate</option>
-                <option value="mexc">MEXC</option>
-                <option value="okx">OKX</option>
-                <option value="kucoin">KuCoin</option>
-              </select>
-            </div>
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              {isError ? (
-                <>
-                  <WifiOff className="h-3 w-3 text-red-400" />
-                  <span className="text-red-400">API offline</span>
-                  {lastUpdated && (
-                    <span className="text-muted-foreground/60">
-                      · last seen {lastUpdated.toLocaleTimeString('en-US')}
-                    </span>
-                  )}
-                </>
-              ) : (
-                <>
-                  <RefreshCw className={`h-3 w-3 ${isFetching ? 'animate-spin' : ''}`} />
-                  {lastUpdated
-                    ? `Updated ${lastUpdated.toLocaleTimeString('en-US')}`
-                    : 'Loading...'}
-                </>
-              )}
-            </div>
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            {isError ? (
+              <>
+                <WifiOff className="h-3 w-3 text-red-400" />
+                <span className="text-red-400">API offline</span>
+                {lastUpdated && (
+                  <span className="text-muted-foreground/60">
+                    · last seen {lastUpdated.toLocaleTimeString('en-US')}
+                  </span>
+                )}
+              </>
+            ) : (
+              <>
+                <RefreshCw className={`h-3 w-3 ${isFetching ? 'animate-spin' : ''}`} />
+                {lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString('en-US')}` : 'Loading...'}
+              </>
+            )}
           </div>
         </div>
-
-        {statusFilter !== 'open' && <StatRow stats={stats} />}
-
-        {showEmpty && (
-          <Card>
-            <CardContent className="py-8 text-center text-sm text-muted-foreground">
-              No trades yet. Enable DRY_RUN or AUTO_TRADE to start recording.
-            </CardContent>
-          </Card>
-        )}
-
-        {!showEmpty && (
-          <Card>
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Token</TableHead>
-                      <TableHead>Exchange</TableHead>
-                      <TableHead>Side</TableHead>
-                      <TableHead className="text-right">Size · Lev</TableHead>
-                      <TableHead className="text-right">Entry → Exit</TableHead>
-                      <TableHead className="text-right">P&L</TableHead>
-                      <TableHead>Exit</TableHead>
-                      <TableHead className="text-right">Held</TableHead>
-                      <TableHead>Strategy</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Opened</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {trades.map((t) => {
-                      const held = holdMinutes(t);
-                      return (
-                        <TableRow key={t.id}>
-                          <TableCell className="font-mono font-semibold">
-                            {t.symbol.split('/')[0]}
-                            {isPaper(t) && (
-                              <span className="ml-1.5 text-xs font-normal text-muted-foreground">
-                                paper
-                              </span>
-                            )}
-                          </TableCell>
-                          <TableCell className="capitalize text-muted-foreground">
-                            {t.exchange}
-                          </TableCell>
-                          <TableCell>
-                            <span
-                              className={t.side === 'short' ? 'text-red-400' : 'text-green-400'}
-                            >
-                              {t.side}
-                            </span>
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap text-right font-mono text-muted-foreground">
-                            ${t.size_usd.toFixed(0)} · {t.leverage}x
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap text-right font-mono">
-                            {fmtPrice(t.entry_price)}
-                            <span className="text-muted-foreground">
-                              {' → '}
-                              {t.exit_price !== null ? fmtPrice(t.exit_price) : '—'}
-                            </span>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <PnlCell trade={t} />
-                          </TableCell>
-                          <TableCell>
-                            <ExitReason notes={t.notes} />
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap text-right font-mono text-muted-foreground">
-                            {held !== null ? fmtDuration(held) : '—'}
-                          </TableCell>
-                          <TableCell className="font-mono text-xs text-muted-foreground">
-                            {strategyVersion(t)}
-                          </TableCell>
-                          <TableCell>
-                            <StatusBadge status={t.status} />
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap text-muted-foreground">
-                            {fmtDate(t.entry_at)}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between text-sm text-muted-foreground">
-            <span>
-              Page {currentPage} of {totalPages}
-            </span>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setOffset((p) => Math.max(0, p - PAGE_SIZE))}
-                disabled={offset === 0}
-                className="rounded border px-3 py-1 hover:bg-muted/50 disabled:opacity-40"
-              >
-                Prev
-              </button>
-              <button
-                onClick={() => setOffset((p) => p + PAGE_SIZE)}
-                disabled={offset + PAGE_SIZE >= total}
-                className="rounded border px-3 py-1 hover:bg-muted/50 disabled:opacity-40"
-              >
-                Next
-              </button>
-            </div>
-          </div>
-        )}
       </div>
-    </div>
+
+      {statusFilter !== 'open' && <StatRow stats={stats} />}
+
+      {showEmpty && (
+        <Card>
+          <CardContent className="py-8 text-center text-sm text-muted-foreground">
+            No trades yet. Enable DRY_RUN or AUTO_TRADE to start recording.
+          </CardContent>
+        </Card>
+      )}
+
+      {!showEmpty && (
+        <Card>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Token</TableHead>
+                    <TableHead>Exchange</TableHead>
+                    <TableHead>Side</TableHead>
+                    <TableHead className="text-right">Size · Lev</TableHead>
+                    <TableHead className="text-right">Entry → Exit</TableHead>
+                    <TableHead className="text-right">P&L</TableHead>
+                    <TableHead>Exit</TableHead>
+                    <TableHead className="text-right">Held</TableHead>
+                    <TableHead>Strategy</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Opened</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {trades.map((t) => {
+                    const held = holdMinutes(t);
+                    return (
+                      <TableRow key={t.id}>
+                        <TableCell className="font-mono font-semibold">
+                          {t.symbol.split('/')[0]}
+                          {isPaper(t) && (
+                            <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                              paper
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell className="capitalize text-muted-foreground">
+                          {t.exchange}
+                        </TableCell>
+                        <TableCell>
+                          <span className={t.side === 'short' ? 'text-red-400' : 'text-green-400'}>
+                            {t.side}
+                          </span>
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-right font-mono text-muted-foreground">
+                          ${t.size_usd.toFixed(0)} · {t.leverage}x
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-right font-mono">
+                          {fmtPrice(t.entry_price)}
+                          <span className="text-muted-foreground">
+                            {' → '}
+                            {t.exit_price !== null ? fmtPrice(t.exit_price) : '—'}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <PnlCell trade={t} />
+                        </TableCell>
+                        <TableCell>
+                          <ExitReason notes={t.notes} />
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-right font-mono text-muted-foreground">
+                          {held !== null ? fmtDuration(held) : '—'}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs text-muted-foreground">
+                          {strategyVersion(t)}
+                        </TableCell>
+                        <TableCell>
+                          <StatusBadge status={t.status} />
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-muted-foreground">
+                          {fmtDate(t.entry_at)}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between text-sm text-muted-foreground">
+          <span>
+            Page {currentPage} of {totalPages}
+          </span>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setOffset((p) => Math.max(0, p - PAGE_SIZE))}
+              disabled={offset === 0}
+              className="rounded border px-3 py-1 hover:bg-muted/50 disabled:opacity-40"
+            >
+              Prev
+            </button>
+            <button
+              onClick={() => setOffset((p) => p + PAGE_SIZE)}
+              disabled={offset + PAGE_SIZE >= total}
+              className="rounded border px-3 py-1 hover:bg-muted/50 disabled:opacity-40"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
+    </PageShell>
   );
 }

@@ -1,5 +1,13 @@
 import { NavLink } from 'react-router';
-import { Activity, TrendingUp, Wallet, BookOpen, ClipboardList, LogOut } from 'lucide-react';
+import {
+  Activity,
+  TrendingUp,
+  Wallet,
+  BookOpen,
+  ClipboardList,
+  FlaskConical,
+  LogOut,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -76,6 +84,19 @@ export function Nav() {
             >
               <ClipboardList className="h-3.5 w-3.5" />
               Decisions
+            </NavLink>
+            <NavLink
+              to="/research"
+              className={({ isActive }) =>
+                `flex items-center gap-1.5 rounded px-3 py-1.5 text-sm transition-colors ${
+                  isActive
+                    ? 'bg-accent text-accent-foreground'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`
+              }
+            >
+              <FlaskConical className="h-3.5 w-3.5" />
+              Research
             </NavLink>
           </div>
         </div>
