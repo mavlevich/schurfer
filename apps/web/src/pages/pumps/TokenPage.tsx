@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router';
 import { ArrowLeft } from 'lucide-react';
 import { CandlestickSeries, ColorType, createChart } from 'lightweight-charts';
 import type { UTCTimestamp } from 'lightweight-charts';
-import { Nav } from '@/components/Nav';
+import { PageShell } from '@/components/shared/PageShell';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToken, useTokenEpisodes, useTokenSignals, useTokenStats } from '@/hooks/useTokenData';
 import { useOHLCV, INTERVALS, getInterval } from '@/hooks/useOHLCV';
@@ -459,119 +459,116 @@ export function TokenPage() {
   const detailsUnavailable = !detailsLoading && detailsError && !hasDetails;
 
   return (
-    <div className="min-h-screen bg-background">
-      <Nav />
-      <div className="mx-auto max-w-6xl p-4 md:p-8 space-y-4">
-        <Link
-          to="/pumps"
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <ArrowLeft className="h-3 w-3" />
-          Pump Scanner
-        </Link>
+    <PageShell width="wide" className="space-y-4">
+      <Link
+        to="/pumps"
+        className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+      >
+        <ArrowLeft className="h-3 w-3" />
+        Pump Scanner
+      </Link>
 
-        {detailsLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
-        {notFound && <p className="text-sm text-muted-foreground">Token not found.</p>}
-        {detailsUnavailable && (
-          <p className="text-sm text-red-400">Unable to load token details. Please retry.</p>
-        )}
-        {detailsError && hasDetails && (
-          <p className="text-sm text-yellow-400">Some token details are temporarily unavailable.</p>
-        )}
+      {detailsLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
+      {notFound && <p className="text-sm text-muted-foreground">Token not found.</p>}
+      {detailsUnavailable && (
+        <p className="text-sm text-red-400">Unable to load token details. Please retry.</p>
+      )}
+      {detailsError && hasDetails && (
+        <p className="text-sm text-yellow-400">Some token details are temporarily unavailable.</p>
+      )}
 
-        {!notFound && !detailsUnavailable && (
-          <div>
-            <h1 className="text-2xl font-bold font-mono tracking-tight">
-              {base}
-              {pump && (
-                <span className={`ml-3 text-xl ${pctColor(pump.max_change_pct)}`}>
-                  {fmtPct(pump.max_change_pct)}
-                </span>
-              )}
-            </h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              {pump
-                ? `Active on ${pump.exchanges.length} exchange${pump.exchanges.length !== 1 ? 's' : ''}`
-                : 'No longer in pump list'}
-              {ohlcv && ` · ${getInterval(chartInterval).label} chart via ${ohlcv.exchange}`}
-            </p>
-          </div>
-        )}
-
-        {!notFound && !detailsUnavailable && (
-          <PriceChart
-            ohlcv={ohlcv}
-            isFetching={chartFetching}
-            chartInterval={chartInterval}
-            onIntervalChange={setChartInterval}
-          />
-        )}
-
-        {signals && <SignalsCard signals={signals} />}
-
-        {pump && pump.exchanges.length > 0 && (
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-                Exchange breakdown
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[480px] text-sm">
-                  <thead>
-                    <tr className="border-b text-xs text-muted-foreground">
-                      <th className="px-4 py-2 text-left">Exchange</th>
-                      <th className="px-4 py-2 text-right">24h %</th>
-                      <th className="px-4 py-2 text-right">Price</th>
-                      <th className="px-4 py-2 text-right">24h High</th>
-                      <th className="px-4 py-2 text-right">Volume</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {pump.exchanges.map((e) => (
-                      <tr key={e.exchange} className="border-b last:border-0">
-                        <td className="px-4 py-3 font-medium capitalize">{e.exchange}</td>
-                        <td
-                          className={`px-4 py-3 text-right font-mono font-bold ${pctColor(e.change_pct)}`}
-                        >
-                          {fmtPct(e.change_pct)}
-                        </td>
-                        <td className="px-4 py-3 text-right font-mono text-muted-foreground">
-                          {fmtPrice(e.price)}
-                        </td>
-                        <td className="px-4 py-3 text-right font-mono text-muted-foreground">
-                          {fmtPrice(e.high_24h)}
-                        </td>
-                        <td className="px-4 py-3 text-right font-mono text-muted-foreground">
-                          {formatVolume({
-                            value: e.volume_24h_usd,
-                            partial: false,
-                          })}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {episodes.length > 0 && <EpisodesCard episodes={episodes} />}
-
-        {stats && <StatsCard stats={stats} />}
-
-        {!detailsLoading && pump && !stats && (
-          <Card className="border-dashed">
-            <CardContent className="flex items-center gap-3 py-4 text-sm text-muted-foreground">
-              <span>
-                No historical stats yet — data will appear once the first pump episode closes.
+      {!notFound && !detailsUnavailable && (
+        <div>
+          <h1 className="text-2xl font-bold font-mono tracking-tight">
+            {base}
+            {pump && (
+              <span className={`ml-3 text-xl ${pctColor(pump.max_change_pct)}`}>
+                {fmtPct(pump.max_change_pct)}
               </span>
-            </CardContent>
-          </Card>
-        )}
-      </div>
-    </div>
+            )}
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            {pump
+              ? `Active on ${pump.exchanges.length} exchange${pump.exchanges.length !== 1 ? 's' : ''}`
+              : 'No longer in pump list'}
+            {ohlcv && ` · ${getInterval(chartInterval).label} chart via ${ohlcv.exchange}`}
+          </p>
+        </div>
+      )}
+
+      {!notFound && !detailsUnavailable && (
+        <PriceChart
+          ohlcv={ohlcv}
+          isFetching={chartFetching}
+          chartInterval={chartInterval}
+          onIntervalChange={setChartInterval}
+        />
+      )}
+
+      {signals && <SignalsCard signals={signals} />}
+
+      {pump && pump.exchanges.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+              Exchange breakdown
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[480px] text-sm">
+                <thead>
+                  <tr className="border-b text-xs text-muted-foreground">
+                    <th className="px-4 py-2 text-left">Exchange</th>
+                    <th className="px-4 py-2 text-right">24h %</th>
+                    <th className="px-4 py-2 text-right">Price</th>
+                    <th className="px-4 py-2 text-right">24h High</th>
+                    <th className="px-4 py-2 text-right">Volume</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pump.exchanges.map((e) => (
+                    <tr key={e.exchange} className="border-b last:border-0">
+                      <td className="px-4 py-3 font-medium capitalize">{e.exchange}</td>
+                      <td
+                        className={`px-4 py-3 text-right font-mono font-bold ${pctColor(e.change_pct)}`}
+                      >
+                        {fmtPct(e.change_pct)}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-muted-foreground">
+                        {fmtPrice(e.price)}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-muted-foreground">
+                        {fmtPrice(e.high_24h)}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-muted-foreground">
+                        {formatVolume({
+                          value: e.volume_24h_usd,
+                          partial: false,
+                        })}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {episodes.length > 0 && <EpisodesCard episodes={episodes} />}
+
+      {stats && <StatsCard stats={stats} />}
+
+      {!detailsLoading && pump && !stats && (
+        <Card className="border-dashed">
+          <CardContent className="flex items-center gap-3 py-4 text-sm text-muted-foreground">
+            <span>
+              No historical stats yet — data will appear once the first pump episode closes.
+            </span>
+          </CardContent>
+        </Card>
+      )}
+    </PageShell>
   );
 }

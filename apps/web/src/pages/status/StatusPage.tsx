@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Nav } from '@/components/Nav';
+import { PageShell } from '@/components/shared/PageShell';
 import { StatusDot } from '@/components/shared/StatusDot';
 import { useWebSocket } from '@/hooks/useWebSocket';
 
@@ -338,459 +338,452 @@ export function StatusPage() {
         : 'secondary';
 
   return (
-    <div className="min-h-screen bg-background">
-      <Nav />
-      <div className="mx-auto max-w-4xl space-y-6 p-4 md:p-8">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-bold tracking-tight">System Status</h1>
-          </div>
-          <div className="flex items-center gap-2">
-            <StatusDot status={wsStatus === 'connected' ? 'up' : 'unknown'} />
-            <span className="text-xs text-muted-foreground">
-              {wsStatus === 'connected' ? 'Live' : 'Polling'}
-            </span>
-          </div>
+    <PageShell width="content">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold tracking-tight">System Status</h1>
         </div>
+        <div className="flex items-center gap-2">
+          <StatusDot status={wsStatus === 'connected' ? 'up' : 'unknown'} />
+          <span className="text-xs text-muted-foreground">
+            {wsStatus === 'connected' ? 'Live' : 'Polling'}
+          </span>
+        </div>
+      </div>
 
-        {/* Overall status */}
-        <Card>
-          <CardContent className="flex items-center gap-3 py-4">
-            <Activity className="h-5 w-5 text-muted-foreground" />
-            <div className="flex-1">
-              <p className="text-sm font-medium">
-                {anyDown
-                  ? 'Some services are down'
-                  : allUp
-                    ? 'All systems operational'
-                    : 'Checking services...'}
+      {/* Overall status */}
+      <Card>
+        <CardContent className="flex items-center gap-3 py-4">
+          <Activity className="h-5 w-5 text-muted-foreground" />
+          <div className="flex-1">
+            <p className="text-sm font-medium">
+              {anyDown
+                ? 'Some services are down'
+                : allUp
+                  ? 'All systems operational'
+                  : 'Checking services...'}
+            </p>
+            {lastUpdated && (
+              <p className="text-xs text-muted-foreground">
+                Updated {lastUpdated.toLocaleTimeString()}
               </p>
-              {lastUpdated && (
-                <p className="text-xs text-muted-foreground">
-                  Updated {lastUpdated.toLocaleTimeString()}
-                </p>
-              )}
-            </div>
-            <Badge variant={anyDown ? 'destructive' : allUp ? 'success' : 'secondary'}>
-              {anyDown ? 'Degraded' : allUp ? 'Operational' : 'Unknown'}
-            </Badge>
-          </CardContent>
-        </Card>
+            )}
+          </div>
+          <Badge variant={anyDown ? 'destructive' : allUp ? 'success' : 'secondary'}>
+            {anyDown ? 'Degraded' : allUp ? 'Operational' : 'Unknown'}
+          </Badge>
+        </CardContent>
+      </Card>
 
-        {/* Infrastructure */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-              Infrastructure
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 pt-0">
-            {infra.map(({ key, label, icon: Icon }) => (
-              <div key={key} className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Icon className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm">{label}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <StatusDot status={services[key]} />
-                  <span className="text-xs text-muted-foreground capitalize">{services[key]}</span>
-                </div>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-
-        {/* Services */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-              Services
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 pt-0">
-            {apps.map(({ key, label }) => (
-              <div key={key} className="flex items-center justify-between">
+      {/* Infrastructure */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+            Infrastructure
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 pt-0">
+          {infra.map(({ key, label, icon: Icon }) => (
+            <div key={key} className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Icon className="h-4 w-4 text-muted-foreground" />
                 <span className="text-sm">{label}</span>
-                <div className="flex items-center gap-2">
-                  <StatusDot status={services[key]} />
-                  <span className="text-xs text-muted-foreground capitalize">{services[key]}</span>
-                </div>
               </div>
-            ))}
-          </CardContent>
-        </Card>
+              <div className="flex items-center gap-2">
+                <StatusDot status={services[key]} />
+                <span className="text-xs text-muted-foreground capitalize">{services[key]}</span>
+              </div>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
 
-        {/* Host resource load */}
-        <Card>
-          <CardHeader className="flex-row items-center justify-between space-y-0">
-            <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-              Server Load
-            </CardTitle>
-            <Badge
-              variant={
-                systemLoad && Math.max(systemLoad.disk_used_pct, systemLoad.memory_used_pct) >= 80
-                  ? 'destructive'
-                  : systemLoad
-                    ? 'success'
-                    : 'secondary'
-              }
-            >
-              {systemLoad ? formatUptime(systemLoad.system_uptime_seconds) : 'No telemetry'}
-            </Badge>
-          </CardHeader>
-          <CardContent className="space-y-4 pt-0">
-            {systemLoad ? (
-              <>
-                {systemLoad.cpu_utilization_pct === null ? (
-                  <p className="text-xs text-muted-foreground">
-                    Measuring CPU utilization. The next sample will contain an interval value.
-                  </p>
-                ) : (
-                  <LoadBar
-                    label="CPU utilization"
-                    value={systemLoad.cpu_utilization_pct}
-                    detail={`${systemLoad.cpu_count} CPUs${cpuPeak === null ? '' : ` · 60m peak ${cpuPeak.toFixed(1)}%`}`}
-                    icon={Cpu}
-                  />
-                )}
-                <LoadBar
-                  label="CPU pressure"
-                  value={systemLoad.load_pressure_pct}
-                  detail={`${systemLoad.load_1m.toFixed(2)} load / ${systemLoad.cpu_count} CPUs`}
-                  icon={Gauge}
-                />
-                <p className="ml-7 text-xs text-muted-foreground">
-                  Pressure can exceed 100%. It measures runnable work, not CPU time.
+      {/* Services */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+            Services
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 pt-0">
+          {apps.map(({ key, label }) => (
+            <div key={key} className="flex items-center justify-between">
+              <span className="text-sm">{label}</span>
+              <div className="flex items-center gap-2">
+                <StatusDot status={services[key]} />
+                <span className="text-xs text-muted-foreground capitalize">{services[key]}</span>
+              </div>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+
+      {/* Host resource load */}
+      <Card>
+        <CardHeader className="flex-row items-center justify-between space-y-0">
+          <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+            Server Load
+          </CardTitle>
+          <Badge
+            variant={
+              systemLoad && Math.max(systemLoad.disk_used_pct, systemLoad.memory_used_pct) >= 80
+                ? 'destructive'
+                : systemLoad
+                  ? 'success'
+                  : 'secondary'
+            }
+          >
+            {systemLoad ? formatUptime(systemLoad.system_uptime_seconds) : 'No telemetry'}
+          </Badge>
+        </CardHeader>
+        <CardContent className="space-y-4 pt-0">
+          {systemLoad ? (
+            <>
+              {systemLoad.cpu_utilization_pct === null ? (
+                <p className="text-xs text-muted-foreground">
+                  Measuring CPU utilization. The next sample will contain an interval value.
                 </p>
+              ) : (
                 <LoadBar
-                  label="Memory"
-                  value={systemLoad.memory_used_pct}
-                  detail={`${formatBytes(systemLoad.memory_used_bytes)} / ${formatBytes(systemLoad.memory_total_bytes)}${memoryPeak === null ? '' : ` · 60m peak ${memoryPeak.toFixed(1)}%`}`}
+                  label="CPU utilization"
+                  value={systemLoad.cpu_utilization_pct}
+                  detail={`${systemLoad.cpu_count} CPUs${cpuPeak === null ? '' : ` · 60m peak ${cpuPeak.toFixed(1)}%`}`}
+                  icon={Cpu}
+                />
+              )}
+              <LoadBar
+                label="CPU pressure"
+                value={systemLoad.load_pressure_pct}
+                detail={`${systemLoad.load_1m.toFixed(2)} load / ${systemLoad.cpu_count} CPUs`}
+                icon={Gauge}
+              />
+              <p className="ml-7 text-xs text-muted-foreground">
+                Pressure can exceed 100%. It measures runnable work, not CPU time.
+              </p>
+              <LoadBar
+                label="Memory"
+                value={systemLoad.memory_used_pct}
+                detail={`${formatBytes(systemLoad.memory_used_bytes)} / ${formatBytes(systemLoad.memory_total_bytes)}${memoryPeak === null ? '' : ` · 60m peak ${memoryPeak.toFixed(1)}%`}`}
+                icon={MemoryStick}
+              />
+              {systemLoad.swap_total_bytes > 0 && (
+                <LoadBar
+                  label="Swap"
+                  value={systemLoad.swap_used_pct}
+                  detail={`${formatBytes(systemLoad.swap_used_bytes)} / ${formatBytes(systemLoad.swap_total_bytes)}`}
                   icon={MemoryStick}
                 />
-                {systemLoad.swap_total_bytes > 0 && (
-                  <LoadBar
-                    label="Swap"
-                    value={systemLoad.swap_used_pct}
-                    detail={`${formatBytes(systemLoad.swap_used_bytes)} / ${formatBytes(systemLoad.swap_total_bytes)}`}
-                    icon={MemoryStick}
-                  />
-                )}
-                <LoadBar
-                  label="Disk"
-                  value={systemLoad.disk_used_pct}
-                  detail={`${formatBytes(systemLoad.disk_used_bytes)} / ${formatBytes(systemLoad.disk_total_bytes)}`}
-                  icon={HardDrive}
-                />
-              </>
-            ) : (
+              )}
+              <LoadBar
+                label="Disk"
+                value={systemLoad.disk_used_pct}
+                detail={`${formatBytes(systemLoad.disk_used_bytes)} / ${formatBytes(systemLoad.disk_total_bytes)}`}
+                icon={HardDrive}
+              />
+            </>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Host metrics are unavailable in this runtime.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Container resource load */}
+      <Card>
+        <CardHeader className="flex-row items-center justify-between space-y-0">
+          <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+            Containers
+          </CardTitle>
+          <Badge
+            variant={!containerRuntime ? 'secondary' : containerFresh ? 'success' : 'destructive'}
+          >
+            {!containerRuntime ? 'No telemetry' : containerFresh ? 'Live' : 'Stale'}
+          </Badge>
+        </CardHeader>
+        <CardContent className="pt-0">
+          {containerRuntime ? (
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                <span>
+                  Total {containerRuntime.total_cpu_percent.toFixed(1)}% Docker CPU ·{' '}
+                  {formatBytes(containerRuntime.total_memory_used_bytes)} RAM
+                </span>
+                <span>{timeAgo(containerRuntime.captured_at_ms)}</span>
+              </div>
               <p className="text-xs text-muted-foreground">
-                Host metrics are unavailable in this runtime.
+                Docker CPU uses 100% per fully occupied core.
               </p>
-            )}
-          </CardContent>
-        </Card>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[620px] text-left text-xs">
+                  <thead className="text-muted-foreground">
+                    <tr className="border-b">
+                      <th className="py-2 font-medium">Container</th>
+                      <th className="py-2 text-right font-medium">CPU</th>
+                      <th className="py-2 text-right font-medium">Memory</th>
+                      <th className="py-2 text-right font-medium">PIDs</th>
+                      <th className="py-2 text-right font-medium">Restarts</th>
+                      <th className="py-2 text-right font-medium">State</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {containerRuntime.containers.map((container) => {
+                      const healthy =
+                        container.status === 'running' &&
+                        (container.health === 'healthy' || container.health === 'none');
+                      return (
+                        <tr key={container.name} className="border-b last:border-0">
+                          <td className="py-2 font-mono">
+                            {container.name.replace(/^schurfer-/, '')}
+                          </td>
+                          <td className="py-2 text-right font-mono">
+                            {container.cpu_percent.toFixed(1)}%
+                          </td>
+                          <td className="py-2 text-right font-mono">
+                            {formatBytes(container.memory_used_bytes)}
+                            {container.memory_limit_bytes > 0
+                              ? ` / ${formatBytes(container.memory_limit_bytes)}`
+                              : ''}
+                          </td>
+                          <td className="py-2 text-right font-mono">{container.pids}</td>
+                          <td className="py-2 text-right font-mono">{container.restart_count}</td>
+                          <td className="py-2 text-right">
+                            <span className={healthy ? 'text-emerald-500' : 'text-amber-500'}>
+                              {container.health === 'none' ? container.status : container.health}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Install the host runtime-metrics service to expose sanitized container telemetry.
+            </p>
+          )}
+        </CardContent>
+      </Card>
 
-        {/* Container resource load */}
-        <Card>
-          <CardHeader className="flex-row items-center justify-between space-y-0">
-            <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-              Containers
-            </CardTitle>
-            <Badge
-              variant={!containerRuntime ? 'secondary' : containerFresh ? 'success' : 'destructive'}
-            >
-              {!containerRuntime ? 'No telemetry' : containerFresh ? 'Live' : 'Stale'}
-            </Badge>
-          </CardHeader>
-          <CardContent className="pt-0">
-            {containerRuntime ? (
-              <div className="space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-                  <span>
-                    Total {containerRuntime.total_cpu_percent.toFixed(1)}% Docker CPU ·{' '}
-                    {formatBytes(containerRuntime.total_memory_used_bytes)} RAM
-                  </span>
-                  <span>{timeAgo(containerRuntime.captured_at_ms)}</span>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Docker CPU uses 100% per fully occupied core.
-                </p>
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[620px] text-left text-xs">
-                    <thead className="text-muted-foreground">
-                      <tr className="border-b">
-                        <th className="py-2 font-medium">Container</th>
-                        <th className="py-2 text-right font-medium">CPU</th>
-                        <th className="py-2 text-right font-medium">Memory</th>
-                        <th className="py-2 text-right font-medium">PIDs</th>
-                        <th className="py-2 text-right font-medium">Restarts</th>
-                        <th className="py-2 text-right font-medium">State</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {containerRuntime.containers.map((container) => {
-                        const healthy =
-                          container.status === 'running' &&
-                          (container.health === 'healthy' || container.health === 'none');
-                        return (
-                          <tr key={container.name} className="border-b last:border-0">
-                            <td className="py-2 font-mono">
-                              {container.name.replace(/^schurfer-/, '')}
-                            </td>
-                            <td className="py-2 text-right font-mono">
-                              {container.cpu_percent.toFixed(1)}%
-                            </td>
-                            <td className="py-2 text-right font-mono">
-                              {formatBytes(container.memory_used_bytes)}
-                              {container.memory_limit_bytes > 0
-                                ? ` / ${formatBytes(container.memory_limit_bytes)}`
-                                : ''}
-                            </td>
-                            <td className="py-2 text-right font-mono">{container.pids}</td>
-                            <td className="py-2 text-right font-mono">{container.restart_count}</td>
-                            <td className="py-2 text-right">
-                              <span className={healthy ? 'text-emerald-500' : 'text-amber-500'}>
-                                {container.health === 'none' ? container.status : container.health}
-                              </span>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            ) : (
-              <p className="text-xs text-muted-foreground">
-                Install the host runtime-metrics service to expose sanitized container telemetry.
-              </p>
-            )}
-          </CardContent>
-        </Card>
+      {/* Market stream load */}
+      <Card>
+        <CardHeader className="flex-row items-center justify-between space-y-0">
+          <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+            Market Pipeline
+          </CardTitle>
+          <Badge
+            variant={!marketPipeline ? 'secondary' : pipelineFresh ? 'success' : 'destructive'}
+          >
+            {!marketPipeline ? 'No telemetry' : pipelineFresh ? 'Live' : 'Stale'}
+          </Badge>
+        </CardHeader>
+        <CardContent className="space-y-3 pt-0">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Gauge className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm">Ticker throughput</span>
+            </div>
+            <span className="text-xs font-mono text-muted-foreground">
+              {marketPipeline ? `${marketPipeline.event_rate_per_sec.toFixed(0)} events/s` : 'n/a'}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Radio className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm">Observed / hot symbols</span>
+            </div>
+            <span className="text-xs font-mono text-muted-foreground">
+              {marketPipeline
+                ? `${marketPipeline.observed_symbols} / ${marketPipeline.hot_symbols}`
+                : 'n/a'}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm">Latest / maximum lag</span>
+            <span className="text-xs font-mono text-muted-foreground">
+              {marketPipeline
+                ? `${marketPipeline.last_lag_ms} / ${marketPipeline.max_lag_ms} ms`
+                : 'n/a'}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm">Drops / persistence errors</span>
+            <span className="text-xs font-mono text-muted-foreground">
+              {marketPipeline ? `${pipelineDrops} / ${marketPipeline.persist_errors_total}` : 'n/a'}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm">Last telemetry</span>
+            <span className="text-xs text-muted-foreground">
+              {marketPipeline ? timeAgo(marketPipeline.updated_at_ms) : 'n/a'}
+            </span>
+          </div>
+        </CardContent>
+      </Card>
 
-        {/* Market stream load */}
-        <Card>
-          <CardHeader className="flex-row items-center justify-between space-y-0">
-            <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-              Market Pipeline
-            </CardTitle>
-            <Badge
-              variant={!marketPipeline ? 'secondary' : pipelineFresh ? 'success' : 'destructive'}
-            >
-              {!marketPipeline ? 'No telemetry' : pipelineFresh ? 'Live' : 'Stale'}
-            </Badge>
-          </CardHeader>
-          <CardContent className="space-y-3 pt-0">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <Gauge className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm">Ticker throughput</span>
-              </div>
-              <span className="text-xs font-mono text-muted-foreground">
-                {marketPipeline
-                  ? `${marketPipeline.event_rate_per_sec.toFixed(0)} events/s`
-                  : 'n/a'}
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <Radio className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm">Observed / hot symbols</span>
-              </div>
-              <span className="text-xs font-mono text-muted-foreground">
-                {marketPipeline
-                  ? `${marketPipeline.observed_symbols} / ${marketPipeline.hot_symbols}`
-                  : 'n/a'}
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm">Latest / maximum lag</span>
-              <span className="text-xs font-mono text-muted-foreground">
-                {marketPipeline
-                  ? `${marketPipeline.last_lag_ms} / ${marketPipeline.max_lag_ms} ms`
-                  : 'n/a'}
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm">Drops / persistence errors</span>
-              <span className="text-xs font-mono text-muted-foreground">
-                {marketPipeline
-                  ? `${pipelineDrops} / ${marketPipeline.persist_errors_total}`
-                  : 'n/a'}
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm">Last telemetry</span>
-              <span className="text-xs text-muted-foreground">
-                {marketPipeline ? timeAgo(marketPipeline.updated_at_ms) : 'n/a'}
-              </span>
-            </div>
-          </CardContent>
-        </Card>
+      {/* Bounded order-flow trial */}
+      <Card>
+        <CardHeader className="flex-row items-center justify-between space-y-0">
+          <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+            Order-Flow Trial
+          </CardTitle>
+          <Badge
+            variant={
+              !orderflowPilot
+                ? 'secondary'
+                : orderflowFresh && orderflowPilot.status === 'ok' && orderflowErrors === 0
+                  ? 'success'
+                  : 'destructive'
+            }
+          >
+            {!orderflowPilot ? 'Not running' : !orderflowFresh ? 'Stale' : orderflowPilot.status}
+          </Badge>
+        </CardHeader>
+        <CardContent className="space-y-3 pt-0">
+          <div className="flex items-center justify-between">
+            <span className="text-sm">Symbols / throughput</span>
+            <span className="text-xs font-mono text-muted-foreground">
+              {orderflowPilot
+                ? `${orderflowPilot.observed_symbols} / ${orderflowPilot.event_rate_per_sec.toFixed(0)} trades/s`
+                : 'n/a'}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm">Active / total captures</span>
+            <span className="text-xs font-mono text-muted-foreground">
+              {orderflowPilot
+                ? `${orderflowPilot.active_captures} / ${orderflowPilot.activation_total}`
+                : 'n/a'}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm">Latest / window lag</span>
+            <span className="text-xs font-mono text-muted-foreground">
+              {orderflowPilot
+                ? `${orderflowPilot.last_lag_ms} / ${orderflowPilot.window_max_lag_ms} ms`
+                : 'n/a'}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm">Records / storage</span>
+            <span className="text-xs font-mono text-muted-foreground">
+              {orderflowPilot
+                ? `${orderflowPilot.records_persisted_total} / ${formatBytes(orderflowPilot.storage_bytes)}`
+                : 'n/a'}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm">Projected storage</span>
+            <span className="text-xs font-mono text-muted-foreground">
+              {orderflowPilot
+                ? `${formatBytes(orderflowPilot.storage_bytes_per_day)} / day`
+                : 'n/a'}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm">Drops / errors</span>
+            <span className="text-xs font-mono text-muted-foreground">
+              {orderflowPilot ? orderflowErrors : 'n/a'}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm">Last telemetry</span>
+            <span className="text-xs text-muted-foreground">
+              {orderflowPilot ? timeAgo(orderflowPilot.updated_at_ms) : 'n/a'}
+            </span>
+          </div>
+        </CardContent>
+      </Card>
 
-        {/* Bounded order-flow trial */}
-        <Card>
-          <CardHeader className="flex-row items-center justify-between space-y-0">
-            <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-              Order-Flow Trial
-            </CardTitle>
-            <Badge
-              variant={
-                !orderflowPilot
-                  ? 'secondary'
-                  : orderflowFresh && orderflowPilot.status === 'ok' && orderflowErrors === 0
-                    ? 'success'
-                    : 'destructive'
-              }
-            >
-              {!orderflowPilot ? 'Not running' : !orderflowFresh ? 'Stale' : orderflowPilot.status}
-            </Badge>
-          </CardHeader>
-          <CardContent className="space-y-3 pt-0">
-            <div className="flex items-center justify-between">
-              <span className="text-sm">Symbols / throughput</span>
-              <span className="text-xs font-mono text-muted-foreground">
-                {orderflowPilot
-                  ? `${orderflowPilot.observed_symbols} / ${orderflowPilot.event_rate_per_sec.toFixed(0)} trades/s`
-                  : 'n/a'}
-              </span>
+      {/* Pump scanner stats */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+            Pump Scanner
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 pt-0">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <ScanSearch className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm">Last scan</span>
             </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm">Active / total captures</span>
-              <span className="text-xs font-mono text-muted-foreground">
-                {orderflowPilot
-                  ? `${orderflowPilot.active_captures} / ${orderflowPilot.activation_total}`
-                  : 'n/a'}
-              </span>
+            <span className="text-xs text-muted-foreground">
+              {scanner?.ts ? timeAgo(scanner.ts) : 'n/a'}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Activity className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm">Active pumps</span>
             </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm">Latest / window lag</span>
-              <span className="text-xs font-mono text-muted-foreground">
-                {orderflowPilot
-                  ? `${orderflowPilot.last_lag_ms} / ${orderflowPilot.window_max_lag_ms} ms`
-                  : 'n/a'}
-              </span>
+            <span className="text-xs font-mono text-muted-foreground">
+              {scanner ? `${scanner.count} tokens` : 'n/a'}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Radio className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm">Exchanges</span>
             </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm">Records / storage</span>
-              <span className="text-xs font-mono text-muted-foreground">
-                {orderflowPilot
-                  ? `${orderflowPilot.records_persisted_total} / ${formatBytes(orderflowPilot.storage_bytes)}`
-                  : 'n/a'}
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm">Projected storage</span>
-              <span className="text-xs font-mono text-muted-foreground">
-                {orderflowPilot
-                  ? `${formatBytes(orderflowPilot.storage_bytes_per_day)} / day`
-                  : 'n/a'}
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm">Drops / errors</span>
-              <span className="text-xs font-mono text-muted-foreground">
-                {orderflowPilot ? orderflowErrors : 'n/a'}
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm">Last telemetry</span>
-              <span className="text-xs text-muted-foreground">
-                {orderflowPilot ? timeAgo(orderflowPilot.updated_at_ms) : 'n/a'}
-              </span>
-            </div>
-          </CardContent>
-        </Card>
+            <span className="text-xs font-mono text-muted-foreground">
+              {scanner?.scanned
+                ? `${scanner.scanned.length} ok${Object.keys(scanner.errors ?? {}).length ? ` · ${Object.keys(scanner.errors ?? {}).length} failed` : ''}`
+                : 'n/a'}
+            </span>
+          </div>
+        </CardContent>
+      </Card>
 
-        {/* Pump scanner stats */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-              Pump Scanner
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 pt-0">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <ScanSearch className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm">Last scan</span>
+      {/* Execution input readiness */}
+      <Card>
+        <CardHeader className="flex-row items-center justify-between space-y-0">
+          <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+            Signal Readiness
+          </CardTitle>
+          <Badge variant={readinessVariant}>
+            {!signalReadiness
+              ? 'No telemetry'
+              : signalReadiness.evaluated === 0
+                ? 'Idle'
+                : signalReadiness.deferred === 0
+                  ? 'Ready'
+                  : `${signalReadiness.deferred} deferred`}
+          </Badge>
+        </CardHeader>
+        <CardContent className="space-y-3 pt-0">
+          <div className="flex items-center justify-between">
+            <span className="text-sm">Latest trader tick</span>
+            <span className="text-xs text-muted-foreground">
+              {signalReadiness ? timeAgo(signalReadiness.updated_at_ms) : 'n/a'}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm">Pumps / evaluated</span>
+            <span className="text-xs font-mono text-muted-foreground">
+              {signalReadiness
+                ? `${signalReadiness.pump_count} / ${signalReadiness.evaluated}`
+                : 'n/a'}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm">Ready / deferred</span>
+            <span className="text-xs font-mono text-muted-foreground">
+              {signalReadiness ? `${signalReadiness.ready} / ${signalReadiness.deferred}` : 'n/a'}
+            </span>
+          </div>
+          {signalReadiness &&
+            Object.entries(signalReadiness.reasons).map(([reason, count]) => (
+              <div key={reason} className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">{reason}</span>
+                <span className="text-xs font-mono text-muted-foreground">{count}</span>
               </div>
-              <span className="text-xs text-muted-foreground">
-                {scanner?.ts ? timeAgo(scanner.ts) : 'n/a'}
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <Activity className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm">Active pumps</span>
-              </div>
-              <span className="text-xs font-mono text-muted-foreground">
-                {scanner ? `${scanner.count} tokens` : 'n/a'}
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <Radio className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm">Exchanges</span>
-              </div>
-              <span className="text-xs font-mono text-muted-foreground">
-                {scanner?.scanned
-                  ? `${scanner.scanned.length} ok${Object.keys(scanner.errors ?? {}).length ? ` · ${Object.keys(scanner.errors ?? {}).length} failed` : ''}`
-                  : 'n/a'}
-              </span>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Execution input readiness */}
-        <Card>
-          <CardHeader className="flex-row items-center justify-between space-y-0">
-            <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-              Signal Readiness
-            </CardTitle>
-            <Badge variant={readinessVariant}>
-              {!signalReadiness
-                ? 'No telemetry'
-                : signalReadiness.evaluated === 0
-                  ? 'Idle'
-                  : signalReadiness.deferred === 0
-                    ? 'Ready'
-                    : `${signalReadiness.deferred} deferred`}
-            </Badge>
-          </CardHeader>
-          <CardContent className="space-y-3 pt-0">
-            <div className="flex items-center justify-between">
-              <span className="text-sm">Latest trader tick</span>
-              <span className="text-xs text-muted-foreground">
-                {signalReadiness ? timeAgo(signalReadiness.updated_at_ms) : 'n/a'}
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm">Pumps / evaluated</span>
-              <span className="text-xs font-mono text-muted-foreground">
-                {signalReadiness
-                  ? `${signalReadiness.pump_count} / ${signalReadiness.evaluated}`
-                  : 'n/a'}
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm">Ready / deferred</span>
-              <span className="text-xs font-mono text-muted-foreground">
-                {signalReadiness ? `${signalReadiness.ready} / ${signalReadiness.deferred}` : 'n/a'}
-              </span>
-            </div>
-            {signalReadiness &&
-              Object.entries(signalReadiness.reasons).map(([reason, count]) => (
-                <div key={reason} className="flex items-center justify-between">
-                  <span className="text-xs text-muted-foreground">{reason}</span>
-                  <span className="text-xs font-mono text-muted-foreground">{count}</span>
-                </div>
-              ))}
-          </CardContent>
-        </Card>
-      </div>
-    </div>
+            ))}
+        </CardContent>
+      </Card>
+    </PageShell>
   );
 }
