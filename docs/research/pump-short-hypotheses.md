@@ -471,6 +471,10 @@ That segmentation was read on existing outcomes, so it is hypothesis generation 
 Registered prospective contract (`liquid_taker_candidate_v1`):
 
 - cohort starts at `2026-07-30T00:00:00Z`, before its aggregate outcomes are read;
+- ignore concurrent `pump_short_measurement_v1` observation rows only when their
+  persisted `features.measurement_only` marker is exactly `true`; they are not an
+  execution alternative. Any other mixed strategy row remains a fail-closed input
+  error under `episode_replay_foundation_v3`;
 - use only `pump_short_v1_market_quality` decisions under the recorded production
   score threshold and recorded market-quality gate;
 - select the existing v1 entry and full-v1 exit without changing timing, stop,
@@ -597,6 +601,8 @@ Registered prospective contract (`liquid_taker_wider_stop_shadow_v1`):
 
 - cohort starts at `2026-08-01T00:00:00Z`, before any aggregate result for this
   combined contract is read;
+- use the same narrow measurement-only scope exception as HYP-008 under
+  `episode_replay_foundation_v3`; unknown or unmarked mixed strategies remain invalid;
 - reproduce the full HYP-008 selector, including the recorded production score
   threshold, recorded market-quality gate, finite configured-notional bid and ask
   impacts, and `bid_impact_bps + ask_impact_bps <= 20`;

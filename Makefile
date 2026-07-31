@@ -550,6 +550,7 @@ prod-liquid-taker-report:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
 	@$(_PROD) run --rm --no-deps --entrypoint liquid-taker-report analytics \
 		--code-revision="$$(git rev-parse HEAD)" \
+		--record-run \
 		$$(test -z "$$(git status --porcelain)" \
 			&& printf '%s' '--no-working-tree-dirty' \
 			|| printf '%s' '--working-tree-dirty') $(ARGS)
@@ -558,6 +559,7 @@ prod-liquid-taker-wider-stop-report:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
 	@$(_PROD) run --rm --no-deps --entrypoint liquid-taker-wider-stop-report analytics \
 		--code-revision="$$(git rev-parse HEAD)" \
+		--record-run \
 		$$(test -z "$$(git status --porcelain)" \
 			&& printf '%s' '--no-working-tree-dirty' \
 			|| printf '%s' '--working-tree-dirty') $(ARGS)

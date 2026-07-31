@@ -113,7 +113,7 @@ def test_renderers_expose_manifest_health_and_concentration() -> None:
     assert "`4709bd6`" in markdown
     assert "Working tree dirty: no" in markdown
     assert "| base:TOKEN0 | 2 | 100.00% |" in markdown
-    assert payload["manifest"]["query_version"] == "replay_inputs_v1"
+    assert payload["manifest"]["query_version"] == "replay_inputs_v2"
     assert payload["manifest"]["working_tree_dirty"] is False
     assert payload["health"]["readiness"] == "collecting"
 

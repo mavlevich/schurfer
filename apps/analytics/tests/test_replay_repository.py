@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -83,6 +84,19 @@ def test_statement_uses_shared_tables_parameterized_scope_and_stable_order() -> 
     assert "ORDER BY app.trade_decisions.ts, app.trade_decisions.id" in sql
     assert datetime(2026, 7, 26, tzinfo=UTC) in compiled.params.values()
     assert "pump_short_v1_market_quality" not in compiled.params.values()
+    assert "pump_short_measurement_v1" in compiled.params.values()
+    assert "IS DISTINCT FROM" in sql
+    assert " @> " in sql
+    assert "IS NOT true" in sql
+
+
+def test_statement_keeps_measurement_rows_when_they_are_requested() -> None:
+    filters = replace(_filters(), strategy_versions=("pump_short_measurement_v1",))
+    compiled = replay_inputs_statement(filters).compile(
+        dialect=postgresql.dialect()  # type: ignore[no-untyped-call]
+    )
+
+    assert "IS DISTINCT FROM" not in str(compiled)
 
 
 def test_row_mapper_groups_and_sorts_outcomes_for_one_decision() -> None:

@@ -108,7 +108,7 @@ def test_report_exposes_versioned_models_costs_and_episode_result() -> None:
     assert "Descriptive baseline replay only" in markdown
     assert "conservative_stop_first" in markdown
     assert payload["manifest"]["entry_model_version"] == "next_complete_5m_open_v1"
-    assert payload["manifest"]["replay_engine_version"] == "episode_replay_foundation_v2"
+    assert payload["manifest"]["replay_engine_version"] == "episode_replay_foundation_v3"
     assert payload["manifest"]["report_version"] == "virtual_strategy_report_v2"
     assert payload["manifest"]["working_tree_dirty"] is False
     assert payload["trades"][0]["classification"] == "skipped_would_have_won"

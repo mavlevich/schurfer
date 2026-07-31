@@ -16,6 +16,28 @@ export interface ProspectiveCohort {
   mature_input_episodes: ResearchMilestone;
   asset_clusters: ResearchMilestone;
   calendar_weeks: ResearchMilestone;
+  input_diagnostics: {
+    closed_candidate_episodes: number;
+    ignored_measurement_decisions: number;
+    unexpected_strategy_episodes: number;
+    invalid_input_episodes: number;
+    missing_exact_outcome_episodes: number;
+  };
+  latest_report: {
+    contract: string;
+    report_version: string;
+    generated_at: string;
+    dataset_since: string;
+    dataset_until_exclusive: string;
+    code_revision: string;
+    working_tree_dirty: boolean;
+    decision_input_fingerprint: string;
+    status: string;
+    verdict: string;
+    eligible_episodes: number;
+    asset_clusters: number;
+    calendar_weeks: number;
+  } | null;
   interpretation: string;
 }
 

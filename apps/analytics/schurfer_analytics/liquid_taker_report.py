@@ -1134,6 +1134,12 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
     )
     parser.add_argument("--format", choices=("markdown", "json"), default="markdown")
+    parser.add_argument(
+        "--record-run",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="append sanitized run metadata to the research report registry",
+    )
     return parser
 
 
@@ -1185,6 +1191,42 @@ async def _run(args: argparse.Namespace) -> str:
         bootstrap_iterations=args.bootstrap_iterations,
         bootstrap_seed=args.bootstrap_seed,
     )
+    if args.record_run:
+        from sqlalchemy.exc import SQLAlchemyError
+
+        from .report_registry import ReportRunRecord, record_report_run
+
+        manifest = report.manifest
+        inference = report.formal_inference
+        metrics = report.metrics
+        record = ReportRunRecord(
+            contract=manifest.candidate_version,
+            report_version=manifest.report_version,
+            generated_at=manifest.generated_at,
+            dataset_since=manifest.dataset_since,
+            dataset_until_exclusive=manifest.dataset_until_exclusive,
+            code_revision=manifest.code_revision,
+            working_tree_dirty=manifest.working_tree_dirty,
+            decision_input_fingerprint=manifest.decision_input_fingerprint,
+            market_path_fingerprint=manifest.market_path_fingerprint,
+            status=inference.status,
+            verdict=inference.verdict,
+            eligible_episodes=metrics.eligible_episodes,
+            asset_clusters=metrics.clusters,
+            calendar_weeks=metrics.calendar_weeks,
+            summary={
+                "resolved_episodes": metrics.resolved_episodes,
+                "selected": metrics.selected,
+                "cash": metrics.cash,
+                "point_estimate_pct": inference.point_estimate_pct,
+                "lower_95_pct": inference.lower_95_pct,
+                "upper_95_pct": inference.upper_95_pct,
+            },
+        )
+        try:
+            await record_report_run(db_url, record)
+        except SQLAlchemyError as exc:
+            sys.stderr.write(f"WARNING: research report registry write failed: {exc}\n")
     return render_json(report) if args.format == "json" else render_markdown(report)
 
 

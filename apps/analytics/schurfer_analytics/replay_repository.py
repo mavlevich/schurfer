@@ -6,11 +6,16 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from schurfer_journal.models import PumpEvent, TradeDecision, TradeDecisionOutcome
-from sqlalchemy import and_, case, func, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from .outcome_repository import async_database_url
-from .replay import ReplayDecision, ReplayFilters, ReplayOutcome
+from .replay import (
+    MEASUREMENT_ONLY_STRATEGY_VERSION,
+    ReplayDecision,
+    ReplayFilters,
+    ReplayOutcome,
+)
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterable, Sequence
@@ -31,6 +36,16 @@ def replay_inputs_statement(filters: ReplayFilters) -> Select[Any]:
     clauses = [decisions.c.ts < filters.until]
     if filters.since is not None:
         clauses.append(decisions.c.ts >= filters.since)
+    if MEASUREMENT_ONLY_STRATEGY_VERSION not in filters.strategy_versions:
+        clauses.append(
+            or_(
+                decisions.c.strategy_version.is_distinct_from(MEASUREMENT_ONLY_STRATEGY_VERSION),
+                func.coalesce(
+                    decisions.c.features.contains({"measurement_only": True}),
+                    False,
+                ).is_not(True),
+            )
+        )
     return (
         select(
             decisions.c.id.label("row_id"),

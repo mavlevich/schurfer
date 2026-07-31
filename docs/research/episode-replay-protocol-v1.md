@@ -164,6 +164,18 @@ manifest, and input fingerprint are retained together.
 
 ## Clarifications
 
+- `2026-07-31`: concurrent `pump_short_measurement_v1` rows no longer contaminate a
+  target production-strategy episode when, and only when, their persisted
+  `features.measurement_only` marker is exactly `true`. The scanner intentionally
+  records those observation rows beside `pump_short_v1_market_quality` decisions for
+  the same pump event; treating them as a competing execution strategy made every
+  HYP-008 input fail as `mixed_strategy_episode`. Unknown strategy versions, a
+  missing/false marker, and every target-strategy input still fail closed under the
+  existing validation rules. This correction changes replay input scope, not entry,
+  exit, cost, score, or outcome rules, and increments the replay foundation and query
+  versions. The repository excludes those known observation rows before streaming to
+  keep report memory proportional to contract inputs; requested measurement-only
+  cohorts still retain them.
 - `2026-07-26`: the exact-anchor requirement was made explicit after the first
   production smoke report admitted an empty-exchange episode as eligible and then
   could not load its market path. The replay engine version was incremented. This

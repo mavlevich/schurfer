@@ -175,6 +175,62 @@ def test_mixed_strategy_episode_keeps_full_path_and_fails_closed() -> None:
     assert dataset.episodes[0].exclusion_reasons == ("mixed_strategy_episode",)
 
 
+def test_explicit_measurement_only_decision_does_not_contaminate_target_episode() -> None:
+    measurement = replace(
+        _decision(2, minutes=10),
+        strategy_version="pump_short_measurement_v1",
+        features={
+            "config": {},
+            "signal": {"computed_at": _at(10).timestamp()},
+            "measurement_only": True,
+        },
+    )
+    target = _decision(1)
+
+    dataset = build_replay_dataset([target, measurement], _filters())
+
+    assert dataset.decisions == (target,)
+    assert dataset.eligible_episodes[0].decisions == (target,)
+
+
+@pytest.mark.parametrize(
+    "measurement",
+    [
+        replace(
+            _decision(2, minutes=10),
+            strategy_version="pump_short_measurement_v1",
+            features={
+                "config": {},
+                "signal": {"computed_at": _at(10).timestamp()},
+                "measurement_only": False,
+            },
+        ),
+        replace(
+            _decision(2, minutes=10),
+            strategy_version="unexpected_measurement_v2",
+            features={
+                "config": {},
+                "signal": {"computed_at": _at(10).timestamp()},
+                "measurement_only": True,
+            },
+        ),
+        replace(
+            _decision(2, minutes=10),
+            strategy_version="pump_short_measurement_v1",
+            features={
+                "config": {},
+                "signal": {"computed_at": _at(10).timestamp()},
+                "measurement_only": "true",
+            },
+        ),
+    ],
+)
+def test_measurement_only_scope_exception_fails_closed(measurement: ReplayDecision) -> None:
+    dataset = build_replay_dataset([_decision(1), measurement], _filters())
+
+    assert dataset.episodes[0].exclusion_reasons == ("mixed_strategy_episode",)
+
+
 @pytest.mark.parametrize(
     ("boundary", "reason"),
     [
