@@ -18,6 +18,17 @@ function formatDate(value: string): string {
   });
 }
 
+function formatDateTime(value: string): string {
+  return new Date(value).toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: 'UTC',
+    timeZoneName: 'short',
+  });
+}
+
 function formatBytes(value: number): string {
   if (!Number.isFinite(value) || value < 0) return 'n/a';
   if (value >= 1024 ** 3) return `${(value / 1024 ** 3).toFixed(2)} GiB`;
@@ -63,6 +74,7 @@ function MilestoneRow({ label, milestone }: { label: string; milestone: Research
 }
 
 function CohortCard({ cohort }: { cohort: ProspectiveCohort }) {
+  const diagnostics = cohort.input_diagnostics;
   return (
     <Card>
       <CardHeader className="space-y-3">
@@ -82,9 +94,63 @@ function CohortCard({ cohort }: { cohort: ProspectiveCohort }) {
         <MilestoneRow label="Mature database inputs" milestone={cohort.mature_input_episodes} />
         <MilestoneRow label="Asset clusters" milestone={cohort.asset_clusters} />
         <MilestoneRow label="UTC weeks" milestone={cohort.calendar_weeks} />
+        <div className="grid grid-cols-2 gap-3 text-sm">
+          <div className="rounded-md border p-3">
+            <p className="text-xs text-muted-foreground">Closed candidates</p>
+            <p className="mt-1 font-mono">{diagnostics.closed_candidate_episodes}</p>
+          </div>
+          <div className="rounded-md border p-3">
+            <p className="text-xs text-muted-foreground">Measurement rows ignored</p>
+            <p className="mt-1 font-mono">{diagnostics.ignored_measurement_decisions}</p>
+          </div>
+        </div>
+        {(diagnostics.unexpected_strategy_episodes > 0 ||
+          diagnostics.invalid_input_episodes > 0 ||
+          diagnostics.missing_exact_outcome_episodes > 0) && (
+          <div className="space-y-1 rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs">
+            <p className="font-medium text-amber-300">Input flags</p>
+            <p className="text-muted-foreground">
+              unexpected strategy {diagnostics.unexpected_strategy_episodes} · invalid input{' '}
+              {diagnostics.invalid_input_episodes} · missing exact 8h outcome{' '}
+              {diagnostics.missing_exact_outcome_episodes}
+            </p>
+          </div>
+        )}
+        <div className="rounded-md border p-3 text-xs">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="font-medium">Latest registered report</p>
+            {cohort.latest_report && statusBadge(cohort.latest_report.status)}
+          </div>
+          {cohort.latest_report ? (
+            <div className="mt-2 space-y-1 text-muted-foreground">
+              <p>
+                {formatDateTime(cohort.latest_report.generated_at)} · cutoff{' '}
+                {formatDateTime(cohort.latest_report.dataset_until_exclusive)}
+              </p>
+              <p>
+                {cohort.latest_report.eligible_episodes} episodes ·{' '}
+                {cohort.latest_report.asset_clusters} clusters ·{' '}
+                {cohort.latest_report.calendar_weeks} weeks · verdict{' '}
+                <span className="font-mono text-foreground">{cohort.latest_report.verdict}</span>
+              </p>
+              <p className="font-mono">
+                {cohort.latest_report.code_revision.slice(0, 8)} · input{' '}
+                {cohort.latest_report.decision_input_fingerprint.slice(0, 10)}
+                {cohort.latest_report.working_tree_dirty && (
+                  <span className="ml-2 text-amber-300">dirty tree</span>
+                )}
+              </p>
+            </div>
+          ) : (
+            <p className="mt-2 text-muted-foreground">
+              No successful production report has been registered yet.
+            </p>
+          )}
+        </div>
         <p className="text-xs leading-relaxed text-muted-foreground">
-          These are lightweight input counters. The registered CCXT replay can still exclude invalid
-          inputs or unavailable exact-venue paths.
+          Measurement-only observations are ignored only when both their known strategy version and
+          persisted marker match. Unexpected strategy rows still fail closed. The registered CCXT
+          replay can additionally exclude unavailable exact-venue paths.
         </p>
       </CardContent>
     </Card>

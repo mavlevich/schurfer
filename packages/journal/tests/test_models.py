@@ -12,6 +12,7 @@ from schurfer_journal.models import (
     PumpDerivativesContextSample,
     PumpEvent,
     PumpEventSource,
+    ResearchReportRun,
     Side,
     Strategy,
     Trade,
@@ -237,6 +238,21 @@ class TestTradeDecisionModels:
     def test_outcome_foreign_key(self) -> None:
         fks = {fk.target_fullname for fk in TradeDecisionOutcome.__table__.foreign_keys}
         assert "app.trade_decisions.decision_id" in fks
+
+
+class TestResearchReportRunModel:
+    def test_registry_is_bounded_metadata(self) -> None:
+        table = ResearchReportRun.__table__
+
+        assert table.schema == "app"
+        assert "summary" in table.columns
+        assert "episode_results" not in table.columns
+        assert "market_paths" not in table.columns
+        assert table.columns["decision_input_fingerprint"].nullable is False
+        assert table.columns["market_path_fingerprint"].nullable is False
+        assert {index.name for index in table.indexes} == {
+            "ix_research_report_runs_contract_generated"
+        }
 
 
 class TestPumpEventModel:

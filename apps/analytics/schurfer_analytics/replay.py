@@ -23,11 +23,12 @@ if TYPE_CHECKING:
     from datetime import datetime
 
 DEFAULT_REPLAY_HORIZONS = (480,)
-FOUNDATION_VERSION = "episode_replay_foundation_v2"
-QUERY_VERSION = "replay_inputs_v1"
+FOUNDATION_VERSION = "episode_replay_foundation_v3"
+QUERY_VERSION = "replay_inputs_v2"
 FORMAL_EPISODES = 100
 MIN_FORMAL_CLUSTERS = 30
 DIRECTIONAL_EPISODES = 50
+MEASUREMENT_ONLY_STRATEGY_VERSION = "pump_short_measurement_v1"
 
 
 @dataclass(frozen=True)
@@ -228,6 +229,26 @@ def decision_exclusion_reasons(
     return tuple(sorted(reasons))
 
 
+def is_ignored_measurement_decision(
+    decision: ReplayDecision,
+    filters: ReplayFilters,
+) -> bool:
+    """Return whether a concurrent observation row is outside the replay contract.
+
+    The scanner deliberately writes measurement-only decisions beside the production
+    strategy for the same pump event. They are not a competing execution strategy and
+    must not turn every prospective production episode into ``mixed_strategy_episode``.
+    The exception stays narrow and fail-closed: the known version and its persisted
+    point-in-time marker must both match, and a requested strategy is never ignored.
+    """
+    return (
+        decision.strategy_version not in filters.strategy_versions
+        and decision.strategy_version == MEASUREMENT_ONLY_STRATEGY_VERSION
+        and isinstance(decision.features, dict)
+        and decision.features.get("measurement_only") is True
+    )
+
+
 def _fingerprint(decisions: tuple[ReplayDecision, ...]) -> str:
     payload = []
     for decision in decisions:
@@ -258,10 +279,13 @@ def build_replay_dataset(
     scoped = (
         row
         for row in decisions
-        if row.pump_event_id in candidate_event_ids
-        or (
-            (row.pump_event_id is None or row.pump_event_id <= 0)
-            and row.strategy_version in filters.strategy_versions
+        if not is_ignored_measurement_decision(row, filters)
+        and (
+            row.pump_event_id in candidate_event_ids
+            or (
+                (row.pump_event_id is None or row.pump_event_id <= 0)
+                and row.strategy_version in filters.strategy_versions
+            )
         )
     )
     ordered = tuple(sorted(scoped, key=lambda row: (row.ts, row.row_id)))

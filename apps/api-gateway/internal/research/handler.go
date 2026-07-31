@@ -3,12 +3,14 @@ package research
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"math"
 	"net/http"
 	"strconv"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 )
@@ -71,16 +73,42 @@ type Milestone struct {
 }
 
 type CohortProgress struct {
-	Key                 string    `json:"key"`
-	Title               string    `json:"title"`
-	Contract            string    `json:"contract"`
-	CohortStart         time.Time `json:"cohort_start"`
-	FourWeekCheckpoint  time.Time `json:"four_week_checkpoint"`
-	Status              string    `json:"status"`
-	MatureInputEpisodes Milestone `json:"mature_input_episodes"`
-	AssetClusters       Milestone `json:"asset_clusters"`
-	CalendarWeeks       Milestone `json:"calendar_weeks"`
-	Interpretation      string    `json:"interpretation"`
+	Key                 string                 `json:"key"`
+	Title               string                 `json:"title"`
+	Contract            string                 `json:"contract"`
+	CohortStart         time.Time              `json:"cohort_start"`
+	FourWeekCheckpoint  time.Time              `json:"four_week_checkpoint"`
+	Status              string                 `json:"status"`
+	MatureInputEpisodes Milestone              `json:"mature_input_episodes"`
+	AssetClusters       Milestone              `json:"asset_clusters"`
+	CalendarWeeks       Milestone              `json:"calendar_weeks"`
+	InputDiagnostics    CohortInputDiagnostics `json:"input_diagnostics"`
+	LatestReport        *RegisteredReportRun   `json:"latest_report"`
+	Interpretation      string                 `json:"interpretation"`
+}
+
+type CohortInputDiagnostics struct {
+	ClosedCandidateEpisodes     int `json:"closed_candidate_episodes"`
+	IgnoredMeasurementDecisions int `json:"ignored_measurement_decisions"`
+	UnexpectedStrategyEpisodes  int `json:"unexpected_strategy_episodes"`
+	InvalidInputEpisodes        int `json:"invalid_input_episodes"`
+	MissingExactOutcomeEpisodes int `json:"missing_exact_outcome_episodes"`
+}
+
+type RegisteredReportRun struct {
+	Contract                 string    `json:"contract"`
+	ReportVersion            string    `json:"report_version"`
+	GeneratedAt              time.Time `json:"generated_at"`
+	DatasetSince             time.Time `json:"dataset_since"`
+	DatasetUntilExclusive    time.Time `json:"dataset_until_exclusive"`
+	CodeRevision             string    `json:"code_revision"`
+	WorkingTreeDirty         bool      `json:"working_tree_dirty"`
+	DecisionInputFingerprint string    `json:"decision_input_fingerprint"`
+	Status                   string    `json:"status"`
+	Verdict                  string    `json:"verdict"`
+	EligibleEpisodes         int       `json:"eligible_episodes"`
+	AssetClusters            int       `json:"asset_clusters"`
+	CalendarWeeks            int       `json:"calendar_weeks"`
 }
 
 type ExitLiquidityProgress struct {
@@ -121,9 +149,14 @@ type Response struct {
 }
 
 type cohortCounts struct {
-	episodes int
-	clusters int
-	weeks    int
+	candidates                  int
+	episodes                    int
+	clusters                    int
+	weeks                       int
+	ignoredMeasurementDecisions int
+	unexpectedStrategyEpisodes  int
+	invalidInputEpisodes        int
+	missingExactOutcomeEpisodes int
 }
 
 const cohortProgressSQL = `
@@ -140,9 +173,20 @@ episode_inputs AS (
 		d.pump_event_id,
 		upper(e.base) AS base,
 		date_trunc('week', min(d.ts) AT TIME ZONE 'UTC') AS episode_week,
+		count(*) FILTER (
+			WHERE d.strategy_version = 'pump_short_measurement_v1'
+			  AND coalesce(d.features @> '{"measurement_only": true}'::jsonb, false)
+		) AS ignored_measurement_decisions,
+		bool_and(
+			d.strategy_version = 'pump_short_v1_market_quality'
+		) FILTER (
+			WHERE NOT (
+				d.strategy_version = 'pump_short_measurement_v1'
+				AND coalesce(d.features @> '{"measurement_only": true}'::jsonb, false)
+			)
+		) AS strategy_scope_valid,
 		bool_and(
 			d.decision_id IS NOT NULL
-			AND d.strategy_version = 'pump_short_v1_market_quality'
 			AND upper(d.base) = upper(e.base)
 			AND d.price IS NOT NULL
 			AND d.price > 0
@@ -150,8 +194,18 @@ episode_inputs AS (
 			AND d.features ? 'config'
 			AND d.features ? 'signal'
 			AND d.liquidity IS NOT NULL
-			AND o.id IS NOT NULL
-		) AS mature_input
+		) FILTER (
+			WHERE NOT (
+				d.strategy_version = 'pump_short_measurement_v1'
+				AND coalesce(d.features @> '{"measurement_only": true}'::jsonb, false)
+			)
+		) AS valid_input,
+		bool_and(o.id IS NOT NULL) FILTER (
+			WHERE NOT (
+				d.strategy_version = 'pump_short_measurement_v1'
+				AND coalesce(d.features @> '{"measurement_only": true}'::jsonb, false)
+			)
+		) AS exact_outcome_complete
 	FROM candidate_events AS candidates
 	JOIN app.trade_decisions AS d
 	  ON d.pump_event_id = candidates.pump_event_id
@@ -170,19 +224,81 @@ episode_inputs AS (
 	GROUP BY d.pump_event_id, e.base
 )
 SELECT
-	count(*) FILTER (WHERE mature_input),
-	count(DISTINCT base) FILTER (WHERE mature_input),
-	count(DISTINCT episode_week) FILTER (WHERE mature_input)
+	count(*),
+	count(*) FILTER (
+		WHERE strategy_scope_valid AND valid_input AND exact_outcome_complete
+	),
+	count(DISTINCT base) FILTER (
+		WHERE strategy_scope_valid AND valid_input AND exact_outcome_complete
+	),
+	count(DISTINCT episode_week) FILTER (
+		WHERE strategy_scope_valid AND valid_input AND exact_outcome_complete
+	),
+	coalesce(sum(ignored_measurement_decisions), 0),
+	count(*) FILTER (WHERE NOT strategy_scope_valid),
+	count(*) FILTER (WHERE NOT valid_input),
+	count(*) FILTER (WHERE NOT exact_outcome_complete)
 FROM episode_inputs`
 
 func (h *Handler) cohortProgress(ctx context.Context, since, until time.Time) (cohortCounts, error) {
 	var counts cohortCounts
 	err := h.db.QueryRow(ctx, cohortProgressSQL, since, until).Scan(
+		&counts.candidates,
 		&counts.episodes,
 		&counts.clusters,
 		&counts.weeks,
+		&counts.ignoredMeasurementDecisions,
+		&counts.unexpectedStrategyEpisodes,
+		&counts.invalidInputEpisodes,
+		&counts.missingExactOutcomeEpisodes,
 	)
 	return counts, err
+}
+
+const latestReportSQL = `
+SELECT
+	contract,
+	report_version,
+	generated_at,
+	dataset_since,
+	dataset_until_exclusive,
+	code_revision,
+	working_tree_dirty,
+	decision_input_fingerprint,
+	status,
+	verdict,
+	eligible_episodes,
+	asset_clusters,
+	calendar_weeks
+FROM app.research_report_runs
+WHERE contract = $1
+ORDER BY generated_at DESC, id DESC
+LIMIT 1`
+
+func (h *Handler) latestReport(ctx context.Context, contract string) (*RegisteredReportRun, error) {
+	var report RegisteredReportRun
+	err := h.db.QueryRow(ctx, latestReportSQL, contract).Scan(
+		&report.Contract,
+		&report.ReportVersion,
+		&report.GeneratedAt,
+		&report.DatasetSince,
+		&report.DatasetUntilExclusive,
+		&report.CodeRevision,
+		&report.WorkingTreeDirty,
+		&report.DecisionInputFingerprint,
+		&report.Status,
+		&report.Verdict,
+		&report.EligibleEpisodes,
+		&report.AssetClusters,
+		&report.CalendarWeeks,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &report, nil
 }
 
 const exitLiquidityProgressSQL = `
@@ -362,6 +478,7 @@ func cohort(
 	key, title, contract string,
 	start, now time.Time,
 	counts cohortCounts,
+	latestReport *RegisteredReportRun,
 ) CohortProgress {
 	return CohortProgress{
 		Key:                key,
@@ -385,6 +502,14 @@ func cohort(
 			Target:  formalWeeks,
 			Exact:   false,
 		},
+		InputDiagnostics: CohortInputDiagnostics{
+			ClosedCandidateEpisodes:     counts.candidates,
+			IgnoredMeasurementDecisions: counts.ignoredMeasurementDecisions,
+			UnexpectedStrategyEpisodes:  counts.unexpectedStrategyEpisodes,
+			InvalidInputEpisodes:        counts.invalidInputEpisodes,
+			MissingExactOutcomeEpisodes: counts.missingExactOutcomeEpisodes,
+		},
+		LatestReport:   latestReport,
 		Interpretation: "mature_database_inputs_only_formal_replay_may_exclude_paths_or_invalid_inputs",
 	}
 }
@@ -399,11 +524,24 @@ func (h *Handler) Readiness(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+	liquidReport, err := h.latestReport(r.Context(), liquidTakerContract)
+	if err != nil {
+		slog.Error("research.liquid_taker_latest_report", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
 	widerCounts := cohortCounts{}
+	var widerReport *RegisteredReportRun
 	if !now.Before(liquidTakerWiderStart) {
 		widerCounts, err = h.cohortProgress(r.Context(), liquidTakerWiderStart, now)
 		if err != nil {
 			slog.Error("research.liquid_taker_wider_progress", "err", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		widerReport, err = h.latestReport(r.Context(), liquidTakerWiderContract)
+		if err != nil {
+			slog.Error("research.liquid_taker_wider_latest_report", "err", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
@@ -426,6 +564,7 @@ func (h *Handler) Readiness(w http.ResponseWriter, r *http.Request) {
 				liquidTakerStart,
 				now,
 				liquidCounts,
+				liquidReport,
 			),
 			cohort(
 				"hyp_010",
@@ -434,6 +573,7 @@ func (h *Handler) Readiness(w http.ResponseWriter, r *http.Request) {
 				liquidTakerWiderStart,
 				now,
 				widerCounts,
+				widerReport,
 			),
 		},
 		ExitLiquidity: exitProgress,

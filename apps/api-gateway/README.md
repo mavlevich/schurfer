@@ -22,8 +22,13 @@ turn missing optional telemetry into a failed readiness probe.
 `/api/research/readiness` does not run CCXT or strategy replay. It reports exact
 exit-quote calibration counts, mature database-input proxies for the HYP-008 and
 HYP-010 cohorts, and operational order-flow capture estimates from Redis. The
-response labels estimates explicitly; only the frozen analytics reports can issue
-formal research output.
+response labels estimates explicitly and exposes closed-candidate/input diagnostics.
+Known, explicitly marked measurement-only observations do not contaminate a target
+strategy episode; every unexpected mixed strategy remains fail-closed. Only the
+frozen analytics reports can issue formal research output. Successful production
+HYP-008/HYP-010 runs append sanitized metadata to `app.research_report_runs`; the API
+returns the latest run per contract but never exposes full episode or market-path
+payloads.
 
 ## Environment variables
 

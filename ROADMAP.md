@@ -1027,7 +1027,15 @@ The intended stream topology is:
       HYP-010, and bounded order-flow operational progress without running CCXT or
       replay in an HTTP request. Label every proxy and estimate explicitly; formal
       strategy output remains in the frozen reports. Use the shared page-width and
-      spacing shell across the authenticated frontend.
+      spacing shell across the authenticated frontend. The 2026-07-31 eligibility
+      correction ignores only explicitly marked `pump_short_measurement_v1`
+      observation rows, while unexpected strategy versions still fail closed. Show
+      closed candidates, ignored observation rows, and remaining input flags so a
+      zero mature count cannot hide a scope failure again. Successful production
+      HYP-008/HYP-010 reports append only bounded metadata to
+      `app.research_report_runs`; the dashboard shows the latest cutoff, revision,
+      fingerprint, sample diversity, status, and verdict without storing full market
+      paths or episode payloads in Postgres.
 - [ ] Deferred incident alerts, kept outside the evidence-producing PR budget. Add
       an external outbound heartbeat with Telegram down/recovery notification so it
       still works when the private Tailscale-only host is unreachable. When the

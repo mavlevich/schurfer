@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
+	"github.com/jackc/pgx/v5"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -103,7 +104,22 @@ func TestReadinessSeparatesExactAndOperationalProgress(t *testing.T) {
 	now := time.Date(2026, time.July, 31, 12, 0, 0, 0, time.UTC)
 	meanDelta := 0.17
 	db := &stubDB{rows: []stubRow{
-		{values: []any{12, 8, 2}},
+		{values: []any{16, 12, 8, 2, 41, 0, 1, 3}},
+		{values: []any{
+			liquidTakerContract,
+			"liquid_taker_forward_report_v1",
+			now.Add(-time.Hour),
+			liquidTakerStart,
+			now.Add(-2 * time.Hour),
+			"abc123",
+			false,
+			strings.Repeat("a", 64),
+			"collecting",
+			"withheld",
+			12,
+			8,
+			2,
+		}},
 		{values: []any{6, 6, 6, 6, meanDelta}},
 	}}
 	rdb, closeRedis := testRedis(t, map[string]string{
@@ -142,6 +158,20 @@ func TestReadinessSeparatesExactAndOperationalProgress(t *testing.T) {
 	if payload.ProspectiveCohorts[0].MatureInputEpisodes.Exact {
 		t.Fatal("mature input count must not claim formal-report exactness")
 	}
+	diagnostics := payload.ProspectiveCohorts[0].InputDiagnostics
+	if diagnostics.ClosedCandidateEpisodes != 16 {
+		t.Fatalf("closed candidate episodes: got %d", diagnostics.ClosedCandidateEpisodes)
+	}
+	if diagnostics.IgnoredMeasurementDecisions != 41 {
+		t.Fatalf("ignored measurement decisions: got %d", diagnostics.IgnoredMeasurementDecisions)
+	}
+	if diagnostics.UnexpectedStrategyEpisodes != 0 {
+		t.Fatalf("unexpected strategy episodes: got %d", diagnostics.UnexpectedStrategyEpisodes)
+	}
+	latest := payload.ProspectiveCohorts[0].LatestReport
+	if latest == nil || latest.EligibleEpisodes != 12 || latest.Verdict != "withheld" {
+		t.Fatalf("latest registered report: got %#v", latest)
+	}
 	if got := payload.ProspectiveCohorts[1].Status; got != "scheduled" {
 		t.Fatalf("HYP-010 status: got %s", got)
 	}
@@ -160,7 +190,7 @@ func TestReadinessSeparatesExactAndOperationalProgress(t *testing.T) {
 	if payload.Orderflow.CompletedWindowsEstimate.Exact {
 		t.Fatal("completed windows estimate must not claim report exactness")
 	}
-	if len(db.calls) != 2 {
+	if len(db.calls) != 3 {
 		t.Fatalf("scheduled cohort should not query database, got %d calls", len(db.calls))
 	}
 }
@@ -168,8 +198,10 @@ func TestReadinessSeparatesExactAndOperationalProgress(t *testing.T) {
 func TestReadinessQueriesStartedWiderCohort(t *testing.T) {
 	now := time.Date(2026, time.August, 30, 12, 0, 0, 0, time.UTC)
 	db := &stubDB{rows: []stubRow{
-		{values: []any{101, 31, 5}},
-		{values: []any{100, 30, 4}},
+		{values: []any{105, 101, 31, 5, 120, 0, 1, 3}},
+		{err: pgx.ErrNoRows},
+		{values: []any{102, 100, 30, 4, 110, 0, 0, 2}},
+		{err: pgx.ErrNoRows},
 		{values: []any{30, 29, 28, 20, nil}},
 	}}
 	rdb, closeRedis := testRedis(t, nil)
@@ -193,7 +225,7 @@ func TestReadinessQueriesStartedWiderCohort(t *testing.T) {
 	if payload.Orderflow != nil {
 		t.Fatal("missing Redis health should produce null orderflow progress")
 	}
-	if len(db.calls) != 3 {
+	if len(db.calls) != 5 {
 		t.Fatalf("started wider cohort should query database, got %d calls", len(db.calls))
 	}
 }
@@ -222,6 +254,9 @@ func TestQueriesPreserveResearchBoundaries(t *testing.T) {
 		"app.trade_decision_outcomes",
 		"horizon_minutes = 480",
 		"o.status = 'complete'",
+		"d.strategy_version = 'pump_short_measurement_v1'",
+		"coalesce(d.features @> '{\"measurement_only\": true}'::jsonb, false)",
+		"WHERE NOT (",
 	}
 	for _, fragment := range requiredCohortFragments {
 		if !strings.Contains(cohortProgressSQL, fragment) {
@@ -233,6 +268,10 @@ func TestQueriesPreserveResearchBoundaries(t *testing.T) {
 	}
 	if !strings.Contains(exitLiquidityProgressSQL, "abs(extract(epoch") {
 		t.Fatal("exit progress must enforce the registered quote-time skew")
+	}
+	if !strings.Contains(latestReportSQL, "app.research_report_runs") ||
+		!strings.Contains(latestReportSQL, "ORDER BY generated_at DESC, id DESC") {
+		t.Fatal("latest report query must use the append-only registry deterministically")
 	}
 }
 

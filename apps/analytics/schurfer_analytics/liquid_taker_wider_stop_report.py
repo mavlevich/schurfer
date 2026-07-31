@@ -920,7 +920,7 @@ def render_markdown(report: Report) -> str:
                 ),
                 (
                     "Improved / worsened / same",
-                    (f"{comparison.improved} / {comparison.worsened} / " f"{comparison.unchanged}"),
+                    (f"{comparison.improved} / {comparison.worsened} / {comparison.unchanged}"),
                 ),
                 ("Rescued initial stops", comparison.rescued_initial_stops),
             ],
@@ -1087,6 +1087,12 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
     )
     parser.add_argument("--format", choices=("markdown", "json"), default="markdown")
+    parser.add_argument(
+        "--record-run",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="append sanitized run metadata to the research report registry",
+    )
     return parser
 
 
@@ -1138,6 +1144,42 @@ async def _run(args: argparse.Namespace) -> str:
         bootstrap_iterations=args.bootstrap_iterations,
         bootstrap_seed=args.bootstrap_seed,
     )
+    if args.record_run:
+        from sqlalchemy.exc import SQLAlchemyError
+
+        from .report_registry import ReportRunRecord, record_report_run
+
+        manifest = report.manifest
+        inference = report.formal_inference
+        paired = inference.paired_delta
+        record = ReportRunRecord(
+            contract=manifest.contract_version,
+            report_version=manifest.report_version,
+            generated_at=manifest.generated_at,
+            dataset_since=manifest.dataset_since,
+            dataset_until_exclusive=manifest.dataset_until_exclusive,
+            code_revision=manifest.code_revision,
+            working_tree_dirty=manifest.working_tree_dirty,
+            decision_input_fingerprint=manifest.decision_input_fingerprint,
+            market_path_fingerprint=manifest.market_path_fingerprint,
+            status=inference.status,
+            verdict=inference.verdict,
+            eligible_episodes=report.eligible_episodes,
+            asset_clusters=inference.clusters,
+            calendar_weeks=inference.weeks,
+            summary={
+                "selected_episodes": report.selected_episodes,
+                "cash_episodes": report.cash_episodes,
+                "unresolved_episodes": report.unresolved_episodes,
+                "paired_delta_pct": paired.point_estimate if paired else None,
+                "paired_delta_lower_95_pct": paired.lower_bound if paired else None,
+                "paired_delta_upper_95_pct": paired.upper_bound if paired else None,
+            },
+        )
+        try:
+            await record_report_run(db_url, record)
+        except SQLAlchemyError as exc:
+            sys.stderr.write(f"WARNING: research report registry write failed: {exc}\n")
     return render_json(report) if args.format == "json" else render_markdown(report)
 
 

@@ -3,12 +3,14 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from typing import Any, cast
 
 import pytest
 from schurfer_analytics.exit_liquidity_calibration_report import (
     DECISION_SAMPLE_SIZE,
     DIRECTIONAL_SAMPLE_SIZE,
     EXIT_LIQUIDITY_COHORT_START,
+    ExitLiquidityCalibrationReport,
     ExitLiquidityFilters,
     ExitLiquidityRow,
     build_exit_liquidity_calibration_report,
@@ -64,7 +66,7 @@ def _filters(hours: int = 200) -> ExitLiquidityFilters:
     )
 
 
-def _report(rows: tuple[ExitLiquidityRow, ...]):
+def _report(rows: tuple[ExitLiquidityRow, ...]) -> ExitLiquidityCalibrationReport:
     return build_exit_liquidity_calibration_report(
         rows,
         _filters(),
@@ -135,7 +137,7 @@ def test_paired_delta_and_segments_use_only_complete_quotes() -> None:
     ],
 )
 def test_invalid_pairs_fail_closed(changed: dict[str, object], reason: str) -> None:
-    report = _report((replace(_row(1), **changed),))
+    report = _report((replace(_row(1), **cast("Any", changed)),))
 
     assert report.readiness["comparable_observations"] == 0
     assert report.exclusion_reasons == {reason: 1}
@@ -183,7 +185,7 @@ def test_filter_contract_and_parser_fail_closed() -> None:
 def test_repository_statement_keeps_missing_observations_and_maps_row() -> None:
     statement = str(
         exit_liquidity_statement(_filters()).compile(
-            dialect=postgresql.dialect(),
+            dialect=postgresql.dialect(),  # type: ignore[no-untyped-call]
             compile_kwargs={"literal_binds": True},
         )
     )
