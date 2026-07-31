@@ -5,18 +5,25 @@ Handles authentication (JWT in HttpOnly cookie) and infrastructure health checks
 
 ## Endpoints
 
-| Method | Path           | Auth   | Description                                            |
-| ------ | -------------- | ------ | ------------------------------------------------------ |
-| POST   | `/auth/login`  | public | Login with password, sets JWT cookie                   |
-| POST   | `/auth/logout` | JWT    | Clears JWT cookie                                      |
-| GET    | `/healthz`     | public | Liveness probe - always 200 while process is alive     |
-| GET    | `/api/health`  | JWT    | Dependencies, host load, and market-pipeline telemetry |
-| WS     | `/ws/status`   | JWT    | Live status stream, pushes every 5s                    |
+| Method | Path                      | Auth   | Description                                             |
+| ------ | ------------------------- | ------ | ------------------------------------------------------- |
+| POST   | `/auth/login`             | public | Login with password, sets JWT cookie                    |
+| POST   | `/auth/logout`            | JWT    | Clears JWT cookie                                       |
+| GET    | `/healthz`                | public | Liveness probe - always 200 while process is alive      |
+| GET    | `/api/health`             | JWT    | Dependencies, host load, and market-pipeline telemetry  |
+| GET    | `/api/research/readiness` | JWT    | Lightweight collection progress for registered research |
+| WS     | `/ws/status`              | JWT    | Live status stream, pushes every 5s                     |
 
 `/api/health` and `/ws/status` include container-visible one/five/fifteen-minute
 load, CPU count, memory, root-filesystem usage, uptime, and the latest bounded
 `market:hotset:health` counters. These diagnostics are informational and never
 turn missing optional telemetry into a failed readiness probe.
+
+`/api/research/readiness` does not run CCXT or strategy replay. It reports exact
+exit-quote calibration counts, mature database-input proxies for the HYP-008 and
+HYP-010 cohorts, and operational order-flow capture estimates from Redis. The
+response labels estimates explicitly; only the frozen analytics reports can issue
+formal research output.
 
 ## Environment variables
 

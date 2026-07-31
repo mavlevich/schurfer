@@ -17,6 +17,7 @@ import (
 	"github.com/mavlevich/schurfer/api-gateway/internal/execution"
 	"github.com/mavlevich/schurfer/api-gateway/internal/health"
 	"github.com/mavlevich/schurfer/api-gateway/internal/pumps"
+	"github.com/mavlevich/schurfer/api-gateway/internal/research"
 	"github.com/mavlevich/schurfer/api-gateway/internal/trades"
 	"github.com/mavlevich/schurfer/api-gateway/internal/ws"
 	"github.com/redis/go-redis/v9"
@@ -67,6 +68,7 @@ func run() error {
 	accountHandler := execution.NewHandler(cfg.ExecutionURL)
 	tradesHandler := trades.NewHandler(checker.Pool())
 	decisionsHandler := decisions.NewHandler(checker.Pool())
+	researchHandler := research.NewHandler(checker.Pool(), rdb)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -100,6 +102,7 @@ func run() error {
 		r.Get("/api/trades", tradesHandler.List)
 		r.Get("/api/trades/stats", tradesHandler.Stats)
 		r.Get("/api/decisions", decisionsHandler.List)
+		r.Get("/api/research/readiness", researchHandler.Readiness)
 
 		r.Get("/api/account/balance", accountHandler.ServeHTTP)
 		r.Get("/api/account/positions", accountHandler.ServeHTTP)
