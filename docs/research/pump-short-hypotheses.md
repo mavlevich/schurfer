@@ -692,3 +692,24 @@ does not establish that an exchange caused the move or provides a live timing ed
 It can justify retaining a source, building a separately registered source-aware
 shadow hypothesis, or prioritizing a Korean-spot observer. It cannot change the
 production score, entry, exit, venue, size, leverage, or `DRY_RUN=true`.
+
+---
+
+## OBS-013 - a MEXC or Gate lead may precede a tradeable long move
+
+OBS-012 found broad MEXC/Gate lead coverage but no support for source-aware pump
+short selection. OBS-013 asks the different, non-additive question: whether a long
+on Binance or Bybit after the earlier source observation captures value before the
+target venue confirms the pump.
+
+This is a post-hoc paired screen, not a registered strategy. It compares source-time
+entry with confirmation-time entry for the same event, execution venue, and exit
+endpoint. Routes, delays, and horizons remain separate; a confirmation-time short is
+a separate descriptive book. Historical one-minute OHLCV cannot establish source-
+time executable liquidity, and venue-local instrument keys cannot prove canonical
+cross-venue token identity. Any positive result therefore justifies only canonical
+mapping plus prospective quote/fill capture.
+
+The full frozen scope, cost assumptions, censoring rules, inference family, and
+promotion boundary are documented in
+[source-lead-long-screen-v1.md](source-lead-long-screen-v1.md).

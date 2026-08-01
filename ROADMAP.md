@@ -328,6 +328,14 @@ lightweight dataset-health visibility remains operational follow-up.
       week, and scanner timing. A sole-source label is only a removal counterfactual.
       This inspected family cannot alter HYP-008/HYP-010 or production. Any useful
       source-aware rule requires a separately frozen prospective shadow contract.
+- [x] Add the OBS-013 source-lead paired screen. For uniquely first MEXC/Gate
+      observations, compare a hypothetical Binance/Bybit long after the source with
+      a control long after the later target confirmation, using the same event,
+      exact target symbol, and common exit endpoint. Keep all four routes and the
+      confirmation-time short lane separate. Treat later confirmation as post-hoc
+      sample construction, not a live feature; venue-local identity does not prove
+      canonical cross-venue token identity. A positive screen can only authorize
+      prospective identity, quote, and fill measurement.
 - [ ] Make CEX alert latency and peak semantics measurable before tuning scan speed.
       Preserve exchange-ticker time, scanner observation time, threshold-crossing
       time, notification time, first observed change, and highest change actually

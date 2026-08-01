@@ -1,11 +1,13 @@
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 
+import pytest
 from schurfer_analytics.ohlcv import (
     ONE_MINUTE_MS,
     TIMEFRAME_MS,
     closed_candles,
     fetch_candles,
+    fetch_symbol_candles,
     next_timeframe_after,
     normalize_candles,
     window_bounds,
@@ -85,6 +87,31 @@ async def test_fetch_candles_stops_when_exchange_does_not_advance_cursor() -> No
 
     assert [c.ts_ms for c in result] == [start]
     assert exchange.fetch_ohlcv.await_count == 2
+
+
+async def test_fetch_symbol_candles_preserves_identity_validated_symbol() -> None:
+    start = int(datetime(2026, 7, 22, 12, 0, tzinfo=UTC).timestamp() * 1000)
+    exchange = AsyncMock()
+    exchange.fetch_ohlcv = AsyncMock(return_value=[])
+
+    await fetch_symbol_candles(
+        exchange,
+        "1000EDGE/USDT:USDT",
+        start,
+        start + TIMEFRAME_MS,
+    )
+
+    exchange.fetch_ohlcv.assert_awaited_once_with(
+        "1000EDGE/USDT:USDT",
+        "5m",
+        since=start,
+        limit=2,
+    )
+
+
+async def test_fetch_symbol_candles_rejects_empty_symbol() -> None:
+    with pytest.raises(ValueError, match="symbol"):
+        await fetch_symbol_candles(AsyncMock(), " ", 0, TIMEFRAME_MS)
 
 
 def test_one_minute_normalization_and_strict_next_bar_are_explicit() -> None:

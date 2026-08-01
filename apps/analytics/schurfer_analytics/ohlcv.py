@@ -116,6 +116,28 @@ async def fetch_candles(
 ) -> list[Candle]:
     """Page through ccxt OHLCV and return only fully closed bars in the window."""
     symbol = f"{base.upper()}/USDT:USDT"
+    return await fetch_symbol_candles(
+        exchange,
+        symbol,
+        start_ms,
+        end_ms,
+        timeframe=timeframe,
+        timeframe_ms=timeframe_ms,
+    )
+
+
+async def fetch_symbol_candles(
+    exchange: Any,
+    symbol: str,
+    start_ms: int,
+    end_ms: int,
+    *,
+    timeframe: str = TIMEFRAME,
+    timeframe_ms: int = TIMEFRAME_MS,
+) -> list[Candle]:
+    """Fetch candles for an already identity-validated exact unified symbol."""
+    if not symbol.strip():
+        raise ValueError("symbol must not be empty")
     cursor = start_ms
     collected: list[Candle] = []
     if timeframe_ms <= 0:

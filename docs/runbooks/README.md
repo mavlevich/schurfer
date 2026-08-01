@@ -599,6 +599,30 @@ the new cohort separately.
   post-hoc diagnostics. A positive source row cannot change production; freeze a new
   prospective shadow contract before using source identity in a decision.
 
+- Source-lead long discovery: test whether a uniquely first MEXC/Gate observation
+  precedes a useful Binance/Bybit long move before the target confirmation:
+
+  ```bash
+  make prod-source-lead-report
+  make prod-source-lead-report \
+    ARGS="--until 2026-08-01T00:00:00Z --format json" \
+    > backups/reports/source-lead-2026-08-01.json
+  ```
+
+  The report starts at `2026-07-24T00:00:00Z`, requires a full one-minute path
+  through the 240-minute control horizon, and refuses to start without 1280 MiB of
+  host RAM-plus-free-swap headroom. Progress is written to stderr, so redirecting
+  stdout archives only the report.
+
+  Read route coverage, right-censoring, path failures, resolved/candidate N, cluster
+  concentration, and confirmation lag before economics. The 0-minute/+30-minute
+  primary comparison uses one common exit endpoint. The other delays and horizons
+  are discovery sensitivities. MEXC/Gate and Binance/Bybit instruments have only
+  venue-local identity validation; equal tickers do not prove canonical token
+  identity. Historical OHLCV also does not prove executable source-time liquidity.
+  No output can change production without canonical mapping and a new prospective
+  quote/fill contract.
+
 - Decision-quality report: use the completed exact-anchor episode cohort to test
   whether the recorded score and its five point components separate better and worse
   virtual trades after fees, funding, and decision-time liquidity impact:
