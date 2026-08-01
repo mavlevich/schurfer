@@ -203,6 +203,10 @@ func TestReadinessQueriesStartedWiderCohort(t *testing.T) {
 		{values: []any{102, 100, 30, 4, 110, 0, 0, 2}},
 		{err: pgx.ErrNoRows},
 		{values: []any{30, 29, 28, 20, nil}},
+		{values: []any{120, 115, 110, 5, 0, 0, 0, 0, 105, 100, 31, 4, 80, now.Add(-time.Hour)}},
+		{values: []any{105, 100, 3, 2, 900.0, 1_500.0, 4.0, 8.0, 2.0, 5.0}},
+		{values: []any{105, 99, 4, 2, 1_000.0, 1_700.0, 5.0, 9.0, 2.5, 5.5}},
+		{err: pgx.ErrNoRows},
 	}}
 	rdb, closeRedis := testRedis(t, nil)
 	defer closeRedis()
@@ -225,8 +229,48 @@ func TestReadinessQueriesStartedWiderCohort(t *testing.T) {
 	if payload.Orderflow != nil {
 		t.Fatal("missing Redis health should produce null orderflow progress")
 	}
-	if len(db.calls) != 5 {
+	if payload.SourceLead.Status != "report_required" {
+		t.Fatalf("source-lead status: got %s", payload.SourceLead.Status)
+	}
+	if !payload.SourceLead.MatureFourHourWindows.Exact {
+		t.Fatal("source-lead database progress must be exact")
+	}
+	if len(db.calls) != 9 {
 		t.Fatalf("started wider cohort should query database, got %d calls", len(db.calls))
+	}
+}
+
+func TestSourceLeadProgressExposesOperationalFailures(t *testing.T) {
+	now := time.Date(2026, time.August, 3, 12, 0, 0, 0, time.UTC)
+	db := &stubDB{rows: []stubRow{
+		{values: []any{12, 11, 9, 1, 2, 1, 1, 1, 8, 4, 6, 1, 3, now.Add(-time.Hour)}},
+		{values: []any{8, 7, 0, 1, 800.0, 1_400.0, 3.0, 7.0, 1.5, 4.0}},
+		{values: []any{8, 6, 1, 1, 900.0, 1_600.0, 4.0, 8.0, 2.0, 5.0}},
+		{err: pgx.ErrNoRows},
+	}}
+	handler := &Handler{db: db, now: func() time.Time { return now }}
+
+	progress, err := handler.sourceLeadProgress(context.Background(), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if progress.Status != "unhealthy" {
+		t.Fatalf("status: got %s", progress.Status)
+	}
+	if progress.TargetEligible.Current != 8 || !progress.TargetEligible.Exact {
+		t.Fatalf("target eligibility: got %#v", progress.TargetEligible)
+	}
+	if progress.MatureFourHourWindows.Current != 4 {
+		t.Fatalf("mature windows: got %d", progress.MatureFourHourWindows.Current)
+	}
+	if !reflect.DeepEqual(
+		progress.HealthFlags,
+		[]string{"collecting_older_than_10m", "abandoned_capture_last_24h"},
+	) {
+		t.Fatalf("health flags: got %#v", progress.HealthFlags)
+	}
+	if len(progress.Targets) != 2 || progress.Targets[0].SourceToQuoteP90MS == nil {
+		t.Fatalf("target metrics: got %#v", progress.Targets)
 	}
 }
 
@@ -272,6 +316,20 @@ func TestQueriesPreserveResearchBoundaries(t *testing.T) {
 	if !strings.Contains(latestReportSQL, "app.research_report_runs") ||
 		!strings.Contains(latestReportSQL, "ORDER BY generated_at DESC, id DESC") {
 		t.Fatal("latest report query must use the append-only registry deterministically")
+	}
+	requiredSourceLeadFragments := []string{
+		"app.source_lead_captures",
+		"source_first_observed_at >= $1",
+		"capture_version = 'source_lead_prospective_capture_v1'",
+		"interval '240 minutes'",
+		"confirmation.first_seen_at <= captures.source_first_observed_at + interval '60 minutes'",
+		"jsonb_typeof(t.liquidity->'ask_impact_bps') = 'number'",
+	}
+	sourceLeadQueries := sourceLeadProgressSQL + sourceLeadTargetProgressSQL
+	for _, fragment := range requiredSourceLeadFragments {
+		if !strings.Contains(sourceLeadQueries, fragment) {
+			t.Fatalf("source-lead query missing %q", fragment)
+		}
 	}
 }
 

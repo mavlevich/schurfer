@@ -70,12 +70,51 @@ export interface OrderflowProgress {
   interpretation: string;
 }
 
+export interface SourceLeadTargetProgress {
+  exchange: string;
+  observations: number;
+  sampled: number;
+  excluded: number;
+  fetch_failed: number;
+  source_to_quote_p50_ms: number | null;
+  source_to_quote_p90_ms: number | null;
+  spread_p50_bps: number | null;
+  spread_p90_bps: number | null;
+  entry_impact_p50_bps: number | null;
+  entry_impact_p90_bps: number | null;
+}
+
+export interface SourceLeadProgress {
+  contract: string;
+  cohort_start: string;
+  status: 'scheduled' | 'collecting' | 'degraded' | 'unhealthy' | 'report_required';
+  captures: number;
+  source_eligible: number;
+  complete: number;
+  excluded: number;
+  abandoned: number;
+  recent_abandoned: number;
+  collecting: number;
+  stale_collecting: number;
+  target_eligible: ResearchMilestone;
+  mature_four_hour_windows: ResearchMilestone;
+  asset_clusters: ResearchMilestone;
+  calendar_weeks: ResearchMilestone;
+  confirmed_within_hour: number;
+  last_observed_at: string | null;
+  targets: SourceLeadTargetProgress[];
+  health_flags: string[];
+  latest_report: ProspectiveCohort['latest_report'];
+  interpretation: string;
+}
+
 export interface ResearchReadinessResponse {
   generated_at: string;
   interpretation: string;
   prospective_cohorts: ProspectiveCohort[];
   exit_liquidity: ExitLiquidityProgress;
   orderflow: OrderflowProgress | null;
+  source_lead: SourceLeadProgress;
 }
 
 async function fetchResearchReadiness(): Promise<ResearchReadinessResponse> {

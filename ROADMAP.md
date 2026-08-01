@@ -1169,6 +1169,12 @@ auto.
       the cohort start for `gate_source_lead_4h_v1`. Before registration, add a
       versioned canonical identity approval and one deterministic point-in-time
       Binance/Bybit venue selector. Do not reuse the historical OBS-013 window.
+- [x] Expose the `2026-08-02T00:00:00Z` source-lead forward cutoff and exact capture
+      readiness on the authenticated Research page: full denominator, source and
+      target eligibility, mature four-hour windows, clusters/weeks, one-hour
+      confirmation count, Binance/Bybit quote latency, spread, $50 entry impact,
+      stale collection, abandonment, and report-registry state. This is operational
+      observability only and cannot issue a strategy verdict.
 
 - Count eligible signals, not any decision. "50 signals" is meaningless when the
   split is 288 skipped / 1 opened. An eligible signal is one that passed the score

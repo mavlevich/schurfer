@@ -20,6 +20,7 @@ const (
 	liquidTakerWiderContract = "liquid_taker_wider_stop_shadow_v1"
 	orderflowContract        = "bybit_orderflow_pilot_v1"
 	exitLiquidityContract    = "exit_liquidity_calibration_v1"
+	sourceLeadContract       = "source_lead_prospective_capture_v1"
 
 	formalEpisodes = 100
 	formalClusters = 30
@@ -32,6 +33,7 @@ var (
 	liquidTakerWiderStart = time.Date(2026, time.August, 1, 0, 0, 0, 0, time.UTC)
 	orderflowStart        = time.Date(2026, time.July, 30, 18, 15, 0, 0, time.UTC)
 	exitLiquidityStart    = time.Date(2026, time.July, 29, 15, 45, 34, 0, time.UTC)
+	sourceLeadStart       = time.Date(2026, time.August, 2, 0, 0, 0, 0, time.UTC)
 )
 
 type pgxRow interface {
@@ -140,12 +142,51 @@ type OrderflowProgress struct {
 	Interpretation           string    `json:"interpretation"`
 }
 
+type SourceLeadTargetProgress struct {
+	Exchange           string   `json:"exchange"`
+	Observations       int      `json:"observations"`
+	Sampled            int      `json:"sampled"`
+	Excluded           int      `json:"excluded"`
+	FetchFailed        int      `json:"fetch_failed"`
+	SourceToQuoteP50MS *float64 `json:"source_to_quote_p50_ms"`
+	SourceToQuoteP90MS *float64 `json:"source_to_quote_p90_ms"`
+	SpreadP50BPS       *float64 `json:"spread_p50_bps"`
+	SpreadP90BPS       *float64 `json:"spread_p90_bps"`
+	EntryImpactP50BPS  *float64 `json:"entry_impact_p50_bps"`
+	EntryImpactP90BPS  *float64 `json:"entry_impact_p90_bps"`
+}
+
+type SourceLeadProgress struct {
+	Contract              string                     `json:"contract"`
+	CohortStart           time.Time                  `json:"cohort_start"`
+	Status                string                     `json:"status"`
+	Captures              int                        `json:"captures"`
+	SourceEligible        int                        `json:"source_eligible"`
+	Complete              int                        `json:"complete"`
+	Excluded              int                        `json:"excluded"`
+	Abandoned             int                        `json:"abandoned"`
+	RecentAbandoned       int                        `json:"recent_abandoned"`
+	Collecting            int                        `json:"collecting"`
+	StaleCollecting       int                        `json:"stale_collecting"`
+	TargetEligible        Milestone                  `json:"target_eligible"`
+	MatureFourHourWindows Milestone                  `json:"mature_four_hour_windows"`
+	AssetClusters         Milestone                  `json:"asset_clusters"`
+	CalendarWeeks         Milestone                  `json:"calendar_weeks"`
+	ConfirmedWithinHour   int                        `json:"confirmed_within_hour"`
+	LastObservedAt        *time.Time                 `json:"last_observed_at"`
+	Targets               []SourceLeadTargetProgress `json:"targets"`
+	HealthFlags           []string                   `json:"health_flags"`
+	LatestReport          *RegisteredReportRun       `json:"latest_report"`
+	Interpretation        string                     `json:"interpretation"`
+}
+
 type Response struct {
 	GeneratedAt        time.Time             `json:"generated_at"`
 	Interpretation     string                `json:"interpretation"`
 	ProspectiveCohorts []CohortProgress      `json:"prospective_cohorts"`
 	ExitLiquidity      ExitLiquidityProgress `json:"exit_liquidity"`
 	Orderflow          *OrderflowProgress    `json:"orderflow"`
+	SourceLead         SourceLeadProgress    `json:"source_lead"`
 }
 
 type cohortCounts struct {
@@ -385,6 +426,218 @@ func (h *Handler) exitLiquidityProgress(
 	return progress, err
 }
 
+const sourceLeadProgressSQL = `
+WITH captures AS (
+	SELECT
+		c.id,
+		c.event_id,
+		upper(c.base) AS base,
+		c.source_first_observed_at,
+		c.capture_started_at,
+		c.capture_completed_at,
+		c.status,
+		c.eligibility_reason,
+		coalesce(bool_or(t.status = 'sampled'), false) AS target_eligible
+	FROM app.source_lead_captures AS c
+	LEFT JOIN app.source_lead_target_observations AS t
+	  ON t.capture_id = c.id
+	WHERE c.capture_version = 'source_lead_prospective_capture_v1'
+	  AND c.source_first_observed_at >= $1
+	  AND c.source_first_observed_at < $2
+	GROUP BY c.id
+), classified AS (
+	SELECT
+		captures.*,
+		captures.target_eligible
+			AND captures.status = 'complete'
+			AND captures.source_first_observed_at + interval '240 minutes' <= $2
+			AS mature_four_hour,
+		EXISTS (
+			SELECT 1
+			FROM app.pump_event_sources AS confirmation
+			WHERE confirmation.event_id = captures.event_id
+			  AND confirmation.exchange IN ('binance', 'bybit')
+			  AND confirmation.first_seen_at > captures.source_first_observed_at
+			  AND confirmation.first_seen_at <= captures.source_first_observed_at + interval '60 minutes'
+		) AS confirmed_within_hour
+	FROM captures
+)
+SELECT
+	count(*),
+	count(*) FILTER (WHERE eligibility_reason = 'eligible'),
+	count(*) FILTER (WHERE status = 'complete'),
+	count(*) FILTER (WHERE status = 'excluded'),
+	count(*) FILTER (WHERE status = 'abandoned'),
+	count(*) FILTER (
+		WHERE status = 'abandoned'
+		  AND capture_completed_at >= $2 - interval '24 hours'
+	),
+	count(*) FILTER (WHERE status = 'collecting'),
+	count(*) FILTER (
+		WHERE status = 'collecting'
+		  AND capture_started_at < $2 - interval '10 minutes'
+	),
+	count(*) FILTER (WHERE target_eligible AND status = 'complete'),
+	count(*) FILTER (WHERE mature_four_hour),
+	count(DISTINCT base) FILTER (WHERE mature_four_hour),
+	count(DISTINCT date_trunc('week', source_first_observed_at AT TIME ZONE 'UTC'))
+		FILTER (WHERE mature_four_hour),
+	count(*) FILTER (WHERE target_eligible AND status = 'complete' AND confirmed_within_hour),
+	max(source_first_observed_at)
+FROM classified`
+
+const sourceLeadTargetProgressSQL = `
+WITH observations AS (
+	SELECT
+		t.status,
+		t.observed_at,
+		c.source_first_observed_at,
+		CASE
+			WHEN jsonb_typeof(t.liquidity->'spread_bps') = 'number'
+			THEN (t.liquidity->>'spread_bps')::float8
+		END AS spread_bps,
+		CASE
+			WHEN jsonb_typeof(t.liquidity->'ask_impact_bps') = 'number'
+			THEN (t.liquidity->>'ask_impact_bps')::float8
+		END AS entry_impact_bps
+	FROM app.source_lead_target_observations AS t
+	JOIN app.source_lead_captures AS c
+	  ON c.id = t.capture_id
+	WHERE c.capture_version = 'source_lead_prospective_capture_v1'
+	  AND c.source_first_observed_at >= $1
+	  AND c.source_first_observed_at < $2
+	  AND t.target_exchange = $3
+)
+SELECT
+	count(*),
+	count(*) FILTER (WHERE status = 'sampled'),
+	count(*) FILTER (WHERE status = 'excluded'),
+	count(*) FILTER (WHERE status = 'fetch_failed'),
+	percentile_cont(0.5) WITHIN GROUP (
+		ORDER BY extract(epoch FROM (observed_at - source_first_observed_at)) * 1000
+	) FILTER (
+		WHERE status = 'sampled' AND observed_at >= source_first_observed_at
+	),
+	percentile_cont(0.9) WITHIN GROUP (
+		ORDER BY extract(epoch FROM (observed_at - source_first_observed_at)) * 1000
+	) FILTER (
+		WHERE status = 'sampled' AND observed_at >= source_first_observed_at
+	),
+	percentile_cont(0.5) WITHIN GROUP (ORDER BY spread_bps)
+		FILTER (WHERE status = 'sampled' AND spread_bps >= 0),
+	percentile_cont(0.9) WITHIN GROUP (ORDER BY spread_bps)
+		FILTER (WHERE status = 'sampled' AND spread_bps >= 0),
+	percentile_cont(0.5) WITHIN GROUP (ORDER BY entry_impact_bps)
+		FILTER (WHERE status = 'sampled' AND entry_impact_bps >= 0),
+	percentile_cont(0.9) WITHIN GROUP (ORDER BY entry_impact_bps)
+		FILTER (WHERE status = 'sampled' AND entry_impact_bps >= 0)
+FROM observations`
+
+func sourceLeadStatus(now time.Time, progress SourceLeadProgress) string {
+	switch {
+	case now.Before(progress.CohortStart):
+		return "scheduled"
+	case progress.StaleCollecting > 0:
+		return "unhealthy"
+	case progress.RecentAbandoned > 0:
+		return "degraded"
+	case progress.MatureFourHourWindows.Current >= formalEpisodes &&
+		progress.AssetClusters.Current >= formalClusters &&
+		progress.CalendarWeeks.Current >= formalWeeks:
+		return "report_required"
+	default:
+		return "collecting"
+	}
+}
+
+func (h *Handler) sourceLeadProgress(
+	ctx context.Context,
+	now time.Time,
+) (SourceLeadProgress, error) {
+	progress := SourceLeadProgress{
+		Contract:    sourceLeadContract,
+		CohortStart: sourceLeadStart,
+		Targets: []SourceLeadTargetProgress{
+			{Exchange: "binance"},
+			{Exchange: "bybit"},
+		},
+		HealthFlags: []string{},
+		Interpretation: "exact_operational_capture_progress_no_strategy_verdict_" +
+			"provisional_identity",
+	}
+	if now.Before(sourceLeadStart) {
+		progress.Status = sourceLeadStatus(now, progress)
+		progress.TargetEligible = Milestone{Target: formalEpisodes, Exact: true}
+		progress.MatureFourHourWindows = Milestone{Target: formalEpisodes, Exact: true}
+		progress.AssetClusters = Milestone{Target: formalClusters, Exact: true}
+		progress.CalendarWeeks = Milestone{Target: formalWeeks, Exact: true}
+		return progress, nil
+	}
+
+	var targetEligible, mature, clusters, weeks int
+	err := h.db.QueryRow(ctx, sourceLeadProgressSQL, sourceLeadStart, now).Scan(
+		&progress.Captures,
+		&progress.SourceEligible,
+		&progress.Complete,
+		&progress.Excluded,
+		&progress.Abandoned,
+		&progress.RecentAbandoned,
+		&progress.Collecting,
+		&progress.StaleCollecting,
+		&targetEligible,
+		&mature,
+		&clusters,
+		&weeks,
+		&progress.ConfirmedWithinHour,
+		&progress.LastObservedAt,
+	)
+	if err != nil {
+		return progress, err
+	}
+	progress.TargetEligible = Milestone{Current: targetEligible, Target: formalEpisodes, Exact: true}
+	progress.MatureFourHourWindows = Milestone{Current: mature, Target: formalEpisodes, Exact: true}
+	progress.AssetClusters = Milestone{Current: clusters, Target: formalClusters, Exact: true}
+	progress.CalendarWeeks = Milestone{Current: weeks, Target: formalWeeks, Exact: true}
+
+	for index, exchange := range []string{"binance", "bybit"} {
+		target := SourceLeadTargetProgress{Exchange: exchange}
+		err = h.db.QueryRow(
+			ctx,
+			sourceLeadTargetProgressSQL,
+			sourceLeadStart,
+			now,
+			exchange,
+		).Scan(
+			&target.Observations,
+			&target.Sampled,
+			&target.Excluded,
+			&target.FetchFailed,
+			&target.SourceToQuoteP50MS,
+			&target.SourceToQuoteP90MS,
+			&target.SpreadP50BPS,
+			&target.SpreadP90BPS,
+			&target.EntryImpactP50BPS,
+			&target.EntryImpactP90BPS,
+		)
+		if err != nil {
+			return progress, err
+		}
+		progress.Targets[index] = target
+	}
+	progress.LatestReport, err = h.latestReport(ctx, sourceLeadContract)
+	if err != nil {
+		return progress, err
+	}
+	if progress.StaleCollecting > 0 {
+		progress.HealthFlags = append(progress.HealthFlags, "collecting_older_than_10m")
+	}
+	if progress.RecentAbandoned > 0 {
+		progress.HealthFlags = append(progress.HealthFlags, "abandoned_capture_last_24h")
+	}
+	progress.Status = sourceLeadStatus(now, progress)
+	return progress, nil
+}
+
 func parseInt64(values map[string]string, key string) (int64, bool) {
 	value, ok := values[key]
 	if !ok {
@@ -552,6 +805,12 @@ func (h *Handler) Readiness(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+	sourceLeadProgress, err := h.sourceLeadProgress(r.Context(), now)
+	if err != nil {
+		slog.Error("research.source_lead_progress", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
 
 	response := Response{
 		GeneratedAt:    now,
@@ -578,6 +837,7 @@ func (h *Handler) Readiness(w http.ResponseWriter, r *http.Request) {
 		},
 		ExitLiquidity: exitProgress,
 		Orderflow:     h.orderflowProgress(r.Context(), now),
+		SourceLead:    sourceLeadProgress,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
