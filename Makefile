@@ -1,5 +1,5 @@
 .PHONY: help install install-golangci-lint dev dev-init dev-stop dev-reset dev-logs dev-test migrate measurement-report exchange-coverage-report exchange-source-economics-report source-lead-report episode-replay virtual-strategy-report virtual-entry-challenger-report virtual-threshold-challenger-report virtual-exit-policy-report virtual-exit-discovery-report virtual-score-challenger-report candle-anomaly-report derivatives-context-report decision-quality-report liquid-taker-report long-horizon-report maker-entry-report pump-magnitude-report orderflow-pilot-report exit-liquidity-calibration-report orderflow-start orderflow-stop orderflow-health test lint ci-lint format clean security deadcode check verify verify-docker \
-        prod-deploy prod-runtime-metrics-install prod-runtime-metrics-health prod-measurement-report prod-exchange-coverage-report prod-exchange-source-economics-report prod-source-lead-report prod-episode-replay prod-virtual-strategy-report prod-virtual-entry-challenger-report prod-virtual-threshold-challenger-report prod-virtual-exit-policy-report prod-virtual-exit-discovery-report prod-virtual-score-challenger-report prod-candle-anomaly-report prod-derivatives-context-report prod-decision-quality-report prod-liquid-taker-report prod-long-horizon-report prod-maker-entry-report prod-pump-magnitude-report prod-orderflow-pilot-report prod-exit-liquidity-calibration-report prod-orderflow-start prod-orderflow-stop prod-orderflow-health prod-logs prod-backup prod-restore-local prod-health
+		prod-deploy prod-runtime-metrics-install prod-runtime-metrics-health prod-measurement-report prod-exchange-coverage-report prod-exchange-source-economics-report prod-source-lead-report prod-source-lead-capture-health prod-episode-replay prod-virtual-strategy-report prod-virtual-entry-challenger-report prod-virtual-threshold-challenger-report prod-virtual-exit-policy-report prod-virtual-exit-discovery-report prod-virtual-score-challenger-report prod-candle-anomaly-report prod-derivatives-context-report prod-decision-quality-report prod-liquid-taker-report prod-long-horizon-report prod-maker-entry-report prod-pump-magnitude-report prod-orderflow-pilot-report prod-exit-liquidity-calibration-report prod-orderflow-start prod-orderflow-stop prod-orderflow-health prod-logs prod-backup prod-restore-local prod-health
 
 GOLANGCI_LINT_VERSION = v2.1.6
 PROD_REPORT_MIN_HEADROOM_MB ?= 1280
@@ -63,6 +63,7 @@ help:
 	@echo "  make prod-exchange-coverage-report  Production exchange source report"
 	@echo "  make prod-exchange-source-economics-report  Production source economics replay"
 	@echo "  make prod-source-lead-report  Production source-lead long screen"
+	@echo "  make prod-source-lead-capture-health  Prospective Gate lead capture health"
 	@echo "  make prod-episode-replay  Production replay-input readiness report"
 	@echo "  make prod-virtual-strategy-report  Production pump-short v1 replay"
 	@echo "  make prod-virtual-entry-challenger-report  Production entry challenger replay"
@@ -523,6 +524,30 @@ prod-source-lead-report:
 		$$(test -z "$$(git status --porcelain)" \
 			&& printf '%s' '--no-working-tree-dirty' \
 			|| printf '%s' '--working-tree-dirty') $(ARGS)
+
+prod-source-lead-capture-health:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	@$(_PROD) exec -T postgres psql -U schurfer -d schurfer -v ON_ERROR_STOP=1 -c "\
+	SELECT status, eligibility_reason, count(*) AS captures, \
+	       min(source_first_observed_at) AS first_observed, \
+	       max(source_first_observed_at) AS last_observed \
+	FROM app.source_lead_captures \
+	GROUP BY status, eligibility_reason \
+	ORDER BY captures DESC, status, eligibility_reason; \
+	SELECT target.target_exchange, target.status, target.eligibility_reason, \
+	       count(*) AS observations, round(avg(target.latency_ms), 1) AS mean_network_ms, \
+	       round((avg(extract(epoch FROM (target.observed_at - capture.source_first_observed_at)) * 1000))::numeric, 1) AS mean_source_to_quote_ms \
+	FROM app.source_lead_target_observations AS target \
+	JOIN app.source_lead_captures AS capture ON capture.id = target.capture_id \
+	GROUP BY target.target_exchange, target.status, target.eligibility_reason \
+	ORDER BY target_exchange, observations DESC; \
+	SELECT count(*) AS collecting_older_than_10m \
+	FROM app.source_lead_captures \
+	WHERE status = 'collecting' AND capture_started_at < now() - interval '10 minutes'; \
+	SELECT error, count(*) AS abandoned \
+	FROM app.source_lead_captures \
+	WHERE status = 'abandoned' \
+	GROUP BY error ORDER BY abandoned DESC;"
 
 prod-episode-replay:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)

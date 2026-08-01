@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+from datetime import UTC, datetime
 
 import redis.asyncio as aioredis
 import structlog
@@ -18,6 +19,7 @@ from .persistence import (
 )
 from .scanner import publish, run_once
 from .snapshots import take_due_snapshots
+from .source_lead_capture import SourceLeadCaptureWorker, prepare_source_lead_captures
 
 log = structlog.get_logger()
 
@@ -32,6 +34,19 @@ async def _run(once: bool) -> None:
     )
 
     cfg = Config()
+    collector_started_at = datetime.now(UTC)
+    source_lead_worker: SourceLeadCaptureWorker | None = None
+    if cfg.db_url and cfg.source_lead_capture_enabled:
+        source_lead_worker = SourceLeadCaptureWorker(
+            cfg.db_url,
+            target_exchanges=cfg.source_lead_targets,
+            target_usd=cfg.source_lead_notional_usd,
+            timeout_seconds=cfg.source_lead_timeout_seconds,
+            queue_size=cfg.source_lead_queue_size,
+            shutdown_timeout_seconds=cfg.source_lead_shutdown_timeout_seconds,
+            collector_started_at=collector_started_at,
+        )
+        source_lead_worker.start()
     log.info(
         "scanner.starting",
         exchanges=cfg.exchanges,
@@ -64,6 +79,7 @@ async def _run(once: bool) -> None:
             below_updates = batch.below_updates
             tracked_pumps = batch.tracked_pumps
             publish_ready = True
+            episode_ids: dict[str, int] = {}
 
             if cfg.db_url and pumps:
                 episode_ids = await upsert_pumps(
@@ -93,6 +109,23 @@ async def _run(once: bool) -> None:
                     cfg.entry_min_pct,
                     rdb,
                 )
+
+                # Measurement-only and isolated behind the already-published signal.
+                # The process start fence prevents a restart from backfilling an
+                # already-open event with a late, falsely point-in-time quote.
+                if cfg.db_url and source_lead_worker is not None and episode_ids:
+                    try:
+                        claimed = await prepare_source_lead_captures(
+                            cfg.db_url,
+                            set(episode_ids.values()),
+                            collector_started_at,
+                        )
+                        for offset in range(0, len(claimed), cfg.source_lead_batch_size):
+                            await source_lead_worker.submit(
+                                claimed[offset : offset + cfg.source_lead_batch_size]
+                            )
+                    except Exception as exc:
+                        log.warning("source_lead.capture_claim_failed", err=str(exc))
 
             if cfg.db_url:
                 if below_updates:
@@ -137,6 +170,8 @@ async def _run(once: bool) -> None:
                 break
             await asyncio.sleep(cfg.interval)
     finally:
+        if source_lead_worker is not None:
+            await source_lead_worker.close()
         await rdb.aclose()
 
 

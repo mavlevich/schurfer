@@ -1156,6 +1156,20 @@ measurement, replay, or production reliability. The executable task set lives in
 Shadow, then a Telegram button for human-in-the-loop, then auto with a report, then
 auto.
 
+- [x] Add a forward-only Gate source-lead capture before registering any early-long
+      or four-hour hold contract. Persist the complete Gate denominator, exact
+      first-source ties/exclusions, process-start left-censoring, sequential
+      Binance/Bybit target attempts, onboarding metadata, bounded $50 executable
+      quotes, four timestamp roles, and failure provenance. Network capture is
+      isolated in one bounded worker so scanner cadence is not coupled to CCXT
+      availability. Base-symbol matching is explicitly provisional and cannot
+      authorize trading
+      ([source-lead-prospective-capture-v1.md](docs/research/source-lead-prospective-capture-v1.md)).
+- [ ] After a healthy production deployment, freeze the next clean UTC boundary as
+      the cohort start for `gate_source_lead_4h_v1`. Before registration, add a
+      versioned canonical identity approval and one deterministic point-in-time
+      Binance/Bybit venue selector. Do not reuse the historical OBS-013 window.
+
 - Count eligible signals, not any decision. "50 signals" is meaningless when the
   split is 288 skipped / 1 opened. An eligible signal is one that passed the score
   gate and was a real trade candidate (taken, or a shadow entry). Thresholds:

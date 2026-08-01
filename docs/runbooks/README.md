@@ -623,6 +623,25 @@ the new cohort separately.
   No output can change production without canonical mapping and a new prospective
   quote/fill contract.
 
+- Prospective Gate source-lead capture: the analytics scanner records all new Gate
+  observations from the current process session, then attempts bounded $50 Binance
+  and Bybit quotes for unique Gate-first events. It does not backfill pre-start open
+  events and it does not use future confirmation:
+
+  ```bash
+  make prod-source-lead-capture-health
+  docker logs schurfer-analytics --since 30m 2>&1 \
+    | grep -E 'source_lead\\.|source-lead'
+  ```
+
+  A healthy smoke window has no old `collecting` rows or `abandoned` queue/worker
+  failures, source-to-quote latency remains bounded, target failures are visible,
+  and sampled routes retain `identity_verified=false` until a separate canonical
+  identity contract is approved. Network capture runs through one bounded background
+  worker and must not delay scanner publication or OI/retrace housekeeping. After
+  deployment health is established, record the next clean UTC boundary; earlier rows
+  remain smoke data and cannot enter `gate_source_lead_4h_v1`.
+
 - Decision-quality report: use the completed exact-anchor episode cohort to test
   whether the recorded score and its five point components separate better and worse
   virtual trades after fees, funding, and decision-time liquidity impact:
