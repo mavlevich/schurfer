@@ -713,3 +713,21 @@ mapping plus prospective quote/fill capture.
 The full frozen scope, cost assumptions, censoring rules, inference family, and
 promotion boundary are documented in
 [source-lead-long-screen-v1.md](source-lead-long-screen-v1.md).
+
+---
+
+## OBS-014 - prospective Gate lead capture removes confirmation survivorship
+
+The OBS-013 route screen and a subsequent all-source counterfactual found that
+later-confirmed leads are a strongly selected subset. Schurfer therefore records all
+new Gate observations forward, with exact tie/exclusion states and bounded
+Binance/Bybit target quotes, before registering a four-hour long hypothesis.
+
+The collector session start is a hard left-censor fence; current-catalog backfill is
+forbidden. Later confirmation is an outcome only. Exact-base matching remains
+provisional (`identity_verified=false`) until a versioned canonical asset mapping is
+approved. No historical OBS-013 row and no pre-registration smoke capture may enter
+the future `gate_source_lead_4h_v1` cohort.
+
+The complete collection and registration boundary is documented in
+[source-lead-prospective-capture-v1.md](source-lead-prospective-capture-v1.md).

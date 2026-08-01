@@ -14,6 +14,8 @@ from schurfer_journal.models import (
     PumpEventSource,
     ResearchReportRun,
     Side,
+    SourceLeadCapture,
+    SourceLeadTargetObservation,
     Strategy,
     Trade,
     TradeDecision,
@@ -206,6 +208,54 @@ class TestTradeExitLiquidityObservationModel:
             for foreign_key in TradeExitLiquidityObservation.__table__.foreign_keys
         }
         assert foreign_keys == {"app.trades.id"}
+
+
+class TestSourceLeadCaptureModels:
+    def test_capture_has_forward_timestamp_and_denominator_contract(self) -> None:
+        assert SourceLeadCapture.__tablename__ == "source_lead_captures"
+        columns = SourceLeadCapture.__table__.columns
+        assert {
+            "event_id",
+            "capture_version",
+            "source_occurred_at",
+            "source_published_at",
+            "source_first_observed_at",
+            "collector_started_at",
+            "capture_started_at",
+            "status",
+            "eligibility_reason",
+            "first_sources",
+            "error",
+        }.issubset({column.name for column in columns})
+        indexes = {index.name: index for index in SourceLeadCapture.__table__.indexes}
+        assert indexes["ux_source_lead_captures_event_version"].unique
+        constraints = {constraint.name for constraint in SourceLeadCapture.__table__.constraints}
+        assert "ck_source_lead_captures_completion" in constraints
+
+    def test_target_keeps_identity_and_quote_quality_explicit(self) -> None:
+        assert SourceLeadTargetObservation.__tablename__ == "source_lead_target_observations"
+        columns = SourceLeadTargetObservation.__table__.columns
+        assert {
+            "capture_id",
+            "target_exchange",
+            "status",
+            "eligibility_reason",
+            "identity_match_method",
+            "identity_verified",
+            "observed_at",
+            "occurred_at",
+            "published_at",
+            "requested_notional_usd",
+            "instrument",
+            "ticker",
+            "liquidity",
+        }.issubset({column.name for column in columns})
+        indexes = {index.name: index for index in SourceLeadTargetObservation.__table__.indexes}
+        assert indexes["ux_source_lead_target_capture_exchange"].unique
+        constraints = {
+            constraint.name for constraint in SourceLeadTargetObservation.__table__.constraints
+        }
+        assert "ck_source_lead_target_provisional_identity" in constraints
 
 
 class TestTradeDecisionModels:

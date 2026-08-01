@@ -14,6 +14,18 @@ def _float(env: str, default: float) -> float:
     return float(os.getenv(env) or default)
 
 
+def _bool(env: str, default: bool) -> bool:
+    value = os.getenv(env)
+    if value is None or value == "":
+        return default
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError(f"{env} must be a boolean value")
+
+
 @dataclass
 class Config:
     redis_addr: str = field(default_factory=lambda: os.getenv("REDIS_ADDR", "localhost:6379"))
@@ -37,6 +49,27 @@ class Config:
     close_after_misses: int = field(
         default_factory=lambda: int(os.getenv("PUMP_CLOSE_AFTER_MISSES", "3"))
     )
+    source_lead_capture_enabled: bool = field(
+        default_factory=lambda: _bool("SOURCE_LEAD_CAPTURE_ENABLED", True)
+    )
+    source_lead_targets: tuple[str, ...] = field(
+        default_factory=lambda: tuple(_list("SOURCE_LEAD_TARGET_EXCHANGES", "binance,bybit"))
+    )
+    source_lead_notional_usd: float = field(
+        default_factory=lambda: _float("SOURCE_LEAD_NOTIONAL_USD", 50.0)
+    )
+    source_lead_timeout_seconds: float = field(
+        default_factory=lambda: _float("SOURCE_LEAD_TIMEOUT_SECONDS", 5.0)
+    )
+    source_lead_batch_size: int = field(
+        default_factory=lambda: int(os.getenv("SOURCE_LEAD_BATCH_SIZE", "8"))
+    )
+    source_lead_queue_size: int = field(
+        default_factory=lambda: int(os.getenv("SOURCE_LEAD_QUEUE_SIZE", "16"))
+    )
+    source_lead_shutdown_timeout_seconds: float = field(
+        default_factory=lambda: _float("SOURCE_LEAD_SHUTDOWN_TIMEOUT_SECONDS", 10.0)
+    )
 
     def __post_init__(self) -> None:
         if (
@@ -50,3 +83,20 @@ class Config:
                 "pump thresholds must satisfy "
                 "0 < PUMP_MEASUREMENT_MIN_PCT <= PUMP_ENTRY_MIN_PCT <= 5000"
             )
+        if (
+            not self.source_lead_targets
+            or any(target not in {"binance", "bybit"} for target in self.source_lead_targets)
+            or len(set(self.source_lead_targets)) != len(self.source_lead_targets)
+        ):
+            raise ValueError("source-lead targets must be unique Binance/Bybit exchanges")
+        if (
+            not math.isfinite(self.source_lead_notional_usd)
+            or self.source_lead_notional_usd <= 0
+            or not math.isfinite(self.source_lead_timeout_seconds)
+            or self.source_lead_timeout_seconds <= 0
+            or self.source_lead_batch_size <= 0
+            or self.source_lead_queue_size <= 0
+            or not math.isfinite(self.source_lead_shutdown_timeout_seconds)
+            or self.source_lead_shutdown_timeout_seconds <= 0
+        ):
+            raise ValueError("source-lead capture bounds must be positive and finite")

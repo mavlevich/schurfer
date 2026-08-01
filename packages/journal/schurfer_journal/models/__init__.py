@@ -21,6 +21,7 @@ from .pump_event import PumpEvent
 from .pump_event_snapshot import PumpEventSnapshot
 from .pump_event_source import PumpEventSource
 from .research_report import ResearchReportRun
+from .source_lead_capture import SourceLeadCapture, SourceLeadTargetObservation
 from .trade import Alert, Strategy, Trade, TradeExitLiquidityObservation
 
 __all__ = [
@@ -42,6 +43,8 @@ __all__ = [
     "ResearchReportRun",
     "Side",
     "SignalSource",
+    "SourceLeadCapture",
+    "SourceLeadTargetObservation",
     "Strategy",
     "Trade",
     "TradeDecision",
