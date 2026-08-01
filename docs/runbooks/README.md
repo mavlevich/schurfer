@@ -642,6 +642,15 @@ the new cohort separately.
   deployment health is established, record the next clean UTC boundary; earlier rows
   remain smoke data and cannot enter `gate_source_lead_4h_v1`.
 
+The authenticated **Research** page is the primary continuous view after the
+`2026-08-02T00:00:00Z` forward cutoff. It refreshes every minute and shows exact
+database counts for the source denominator, target eligibility, mature four-hour
+windows, clusters, UTC weeks, one-hour confirmations, target quote latency, spread,
+$50 entry impact, stale `collecting`, and `abandoned` rows. Use
+`make prod-source-lead-capture-health` for the detailed SQL breakdown when the card
+shows `degraded` or `unhealthy`; the UI is not a strategy verdict and provisional
+base-symbol identity remains in force.
+
 - Decision-quality report: use the completed exact-anchor episode cohort to test
   whether the recorded score and its five point components separate better and worse
   virtual trades after fees, funding, and decision-time liquidity impact:

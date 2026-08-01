@@ -1,4 +1,12 @@
-import { Activity, ArrowRight, CalendarClock, FlaskConical, Radio, Scale } from 'lucide-react';
+import {
+  Activity,
+  ArrowRight,
+  CalendarClock,
+  FlaskConical,
+  GitBranch,
+  Radio,
+  Scale,
+} from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageShell } from '@/components/shared/PageShell';
@@ -7,6 +15,7 @@ import {
   useResearchReadiness,
   type ProspectiveCohort,
   type ResearchMilestone,
+  type SourceLeadProgress,
 } from '@/hooks/useResearchData';
 
 function formatDate(value: string): string {
@@ -45,6 +54,12 @@ function statusBadge(status: string) {
   }
   if (status === 'report_required') {
     return <Badge variant="warning">run formal report</Badge>;
+  }
+  if (status === 'unhealthy') {
+    return <Badge variant="destructive">unhealthy</Badge>;
+  }
+  if (status === 'degraded') {
+    return <Badge variant="warning">degraded</Badge>;
   }
   return <Badge variant="secondary">{label}</Badge>;
 }
@@ -157,6 +172,177 @@ function CohortCard({ cohort }: { cohort: ProspectiveCohort }) {
   );
 }
 
+function formatMetric(value: number | null, suffix: string, digits = 1): string {
+  if (value === null || !Number.isFinite(value)) return 'n/a';
+  return `${value.toFixed(digits)} ${suffix}`;
+}
+
+function formatLatency(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return 'n/a';
+  if (value >= 1_000) return `${(value / 1_000).toFixed(2)} s`;
+  return `${value.toFixed(0)} ms`;
+}
+
+function SourceLeadCard({ progress }: { progress: SourceLeadProgress }) {
+  return (
+    <Card>
+      <CardHeader className="space-y-3">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <GitBranch className="h-4 w-4 text-cyan-400" />
+              Gate source lead
+            </CardTitle>
+            <p className="mt-1 font-mono text-xs text-muted-foreground">{progress.contract}</p>
+          </div>
+          {statusBadge(progress.status)}
+        </div>
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+          <span>Forward cutoff {formatDateTime(progress.cohort_start)}</span>
+          <span>
+            Last capture{' '}
+            {progress.last_observed_at ? formatDateTime(progress.last_observed_at) : 'none'}
+          </span>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <MilestoneRow label="Target-eligible leads" milestone={progress.target_eligible} />
+          <MilestoneRow label="Mature 4h windows" milestone={progress.mature_four_hour_windows} />
+          <MilestoneRow label="Asset clusters" milestone={progress.asset_clusters} />
+          <MilestoneRow label="UTC weeks" milestone={progress.calendar_weeks} />
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+          <div className="rounded-md border p-3">
+            <p className="text-xs text-muted-foreground">Denominator</p>
+            <p className="mt-1 font-mono">{progress.captures}</p>
+          </div>
+          <div className="rounded-md border p-3">
+            <p className="text-xs text-muted-foreground">Source eligible</p>
+            <p className="mt-1 font-mono">{progress.source_eligible}</p>
+          </div>
+          <div className="rounded-md border p-3">
+            <p className="text-xs text-muted-foreground">Complete</p>
+            <p className="mt-1 font-mono">{progress.complete}</p>
+          </div>
+          <div className="rounded-md border p-3">
+            <p className="text-xs text-muted-foreground">Confirmed ≤1h</p>
+            <p className="mt-1 font-mono">{progress.confirmed_within_hour}</p>
+          </div>
+        </div>
+
+        {(progress.collecting > 0 || progress.excluded > 0 || progress.abandoned > 0) && (
+          <div className="rounded-md border p-3 text-xs text-muted-foreground">
+            collecting <span className="font-mono text-foreground">{progress.collecting}</span> ·
+            excluded <span className="font-mono text-foreground"> {progress.excluded}</span> ·
+            abandoned{' '}
+            <span className={cn('font-mono', progress.recent_abandoned > 0 && 'text-amber-300')}>
+              {progress.abandoned}
+            </span>
+            {progress.recent_abandoned > 0 && (
+              <span className="text-amber-300"> ({progress.recent_abandoned} last 24h)</span>
+            )}
+            {progress.stale_collecting > 0 && (
+              <>
+                {' '}
+                · stale <span className="font-mono text-red-400">{progress.stale_collecting}</span>
+              </>
+            )}
+          </div>
+        )}
+
+        {progress.health_flags.length > 0 && (
+          <div className="rounded-md border border-red-500/30 bg-red-500/5 p-3 text-xs">
+            <p className="font-medium text-red-300">Capture health requires attention</p>
+            <p className="mt-1 font-mono text-muted-foreground">
+              {progress.health_flags.join(' · ')}
+            </p>
+          </div>
+        )}
+
+        <div className="grid gap-3 lg:grid-cols-2">
+          {progress.targets.map((target) => (
+            <div key={target.exchange} className="rounded-md border p-3">
+              <div className="flex items-center justify-between gap-2">
+                <p className="font-medium capitalize">{target.exchange}</p>
+                <span className="font-mono text-xs text-muted-foreground">
+                  {target.sampled}/{target.observations} sampled
+                </span>
+              </div>
+              <div className="mt-3 grid grid-cols-3 gap-3 text-xs">
+                <div>
+                  <p className="text-muted-foreground">Source → quote</p>
+                  <p className="mt-1 font-mono">
+                    {formatLatency(target.source_to_quote_p50_ms)} p50
+                  </p>
+                  <p className="font-mono text-muted-foreground">
+                    {formatLatency(target.source_to_quote_p90_ms)} p90
+                  </p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Spread</p>
+                  <p className="mt-1 font-mono">{formatMetric(target.spread_p50_bps, 'bps')} p50</p>
+                  <p className="font-mono text-muted-foreground">
+                    {formatMetric(target.spread_p90_bps, 'bps')} p90
+                  </p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">$50 entry impact</p>
+                  <p className="mt-1 font-mono">
+                    {formatMetric(target.entry_impact_p50_bps, 'bps')} p50
+                  </p>
+                  <p className="font-mono text-muted-foreground">
+                    {formatMetric(target.entry_impact_p90_bps, 'bps')} p90
+                  </p>
+                </div>
+              </div>
+              {(target.fetch_failed > 0 || target.excluded > 0) && (
+                <p className="mt-3 text-xs text-muted-foreground">
+                  excluded {target.excluded} · fetch failed{' '}
+                  <span className={cn(target.fetch_failed > 0 && 'text-amber-300')}>
+                    {target.fetch_failed}
+                  </span>
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div className="rounded-md border p-3 text-xs">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="font-medium">Latest registered report</p>
+            {progress.latest_report && statusBadge(progress.latest_report.status)}
+          </div>
+          {progress.latest_report ? (
+            <div className="mt-2 space-y-1 text-muted-foreground">
+              <p>
+                {formatDateTime(progress.latest_report.generated_at)} · cutoff{' '}
+                {formatDateTime(progress.latest_report.dataset_until_exclusive)}
+              </p>
+              <p>
+                {progress.latest_report.eligible_episodes} episodes ·{' '}
+                {progress.latest_report.asset_clusters} clusters ·{' '}
+                {progress.latest_report.calendar_weeks} weeks · verdict{' '}
+                <span className="font-mono text-foreground">{progress.latest_report.verdict}</span>
+              </p>
+            </div>
+          ) : (
+            <p className="mt-2 text-muted-foreground">
+              No successful production report has been registered yet.
+            </p>
+          )}
+        </div>
+
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          Exact operational counts from the forward capture. Target symbols still use provisional
+          base matching, so this card measures collection quality and capacity—not strategy edge.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
 const orderflowLanes = [
   {
     name: 'Early long',
@@ -214,6 +400,8 @@ export function ResearchPage() {
 
       {data && (
         <>
+          <SourceLeadCard progress={data.source_lead} />
+
           <div className="grid gap-4 lg:grid-cols-2">
             {data.prospective_cohorts.map((cohort) => (
               <CohortCard key={cohort.key} cohort={cohort} />
