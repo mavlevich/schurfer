@@ -1,5 +1,5 @@
 .PHONY: help install install-golangci-lint dev dev-init dev-stop dev-reset dev-logs dev-test migrate measurement-report exchange-coverage-report exchange-source-economics-report source-lead-report episode-replay virtual-strategy-report virtual-entry-challenger-report virtual-threshold-challenger-report virtual-exit-policy-report virtual-exit-discovery-report virtual-score-challenger-report candle-anomaly-report derivatives-context-report decision-quality-report liquid-taker-report long-horizon-report open-ended-margin-report maker-entry-report pump-magnitude-report orderflow-pilot-report exit-liquidity-calibration-report orderflow-start orderflow-stop orderflow-health test lint ci-lint format clean security deadcode check verify verify-docker \
-		prod-deploy prod-runtime-metrics-install prod-runtime-metrics-health prod-measurement-report prod-exchange-coverage-report prod-exchange-source-economics-report prod-source-lead-report prod-source-lead-capture-health prod-episode-replay prod-virtual-strategy-report prod-virtual-entry-challenger-report prod-virtual-threshold-challenger-report prod-virtual-exit-policy-report prod-virtual-exit-discovery-report prod-virtual-score-challenger-report prod-candle-anomaly-report prod-derivatives-context-report prod-decision-quality-report prod-liquid-taker-report prod-long-horizon-report prod-open-ended-margin-report prod-open-ended-margin-health prod-maker-entry-report prod-pump-magnitude-report prod-orderflow-pilot-report prod-exit-liquidity-calibration-report prod-orderflow-start prod-orderflow-stop prod-orderflow-health prod-logs prod-backup prod-restore-local prod-health
+		prod-deploy prod-runtime-metrics-install prod-runtime-metrics-health prod-research-checkpoints-install prod-research-checkpoints-run prod-research-checkpoints-health prod-measurement-report prod-exchange-coverage-report prod-exchange-source-economics-report prod-source-lead-report prod-source-lead-capture-health prod-episode-replay prod-virtual-strategy-report prod-virtual-entry-challenger-report prod-virtual-threshold-challenger-report prod-virtual-exit-policy-report prod-virtual-exit-discovery-report prod-virtual-score-challenger-report prod-candle-anomaly-report prod-derivatives-context-report prod-decision-quality-report prod-liquid-taker-report prod-long-horizon-report prod-open-ended-margin-report prod-open-ended-margin-health prod-maker-entry-report prod-pump-magnitude-report prod-orderflow-pilot-report prod-exit-liquidity-calibration-report prod-orderflow-start prod-orderflow-stop prod-orderflow-health prod-logs prod-backup prod-restore-local prod-health
 
 GOLANGCI_LINT_VERSION = v2.1.6
 PROD_REPORT_MIN_HEADROOM_MB ?= 1280
@@ -56,6 +56,9 @@ help:
 	@echo "  make prod-deploy          Pull + rebuild + restart all services"
 	@echo "  make prod-runtime-metrics-install  Install host container-metrics service"
 	@echo "  make prod-runtime-metrics-health   Inspect host container-metrics service"
+	@echo "  make prod-research-checkpoints-install  Install bounded research timer"
+	@echo "  make prod-research-checkpoints-run      Run one due checkpoint now"
+	@echo "  make prod-research-checkpoints-health   Inspect timer and sanitized status"
 	@echo "  make prod-logs            Tail production service logs"
 	@echo "  make prod-backup          Run database backup now"
 	@echo "  make prod-restore-local   Download latest prod backup → local dev DB"
@@ -411,8 +414,8 @@ verify:
 	@echo "=== [2/6] uv lock check ==="
 	uv lock --check
 	@echo "=== [3/6] Python: ruff + mypy + pytest ==="
-	uv run --extra dev ruff check apps/analytics apps/execution packages
-	MYPYPATH=apps/analytics:packages/journal:packages/performance uv run --extra dev --with sqlalchemy --with psycopg mypy apps/analytics/schurfer_analytics apps/analytics/tests packages/journal/schurfer_journal packages/performance/schurfer_performance
+	uv run --extra dev ruff check apps/analytics apps/execution packages infra/scripts/research_checkpoints.py
+	MYPYPATH=apps/analytics:packages/journal:packages/performance uv run --extra dev --with sqlalchemy --with psycopg mypy apps/analytics/schurfer_analytics apps/analytics/tests packages/journal/schurfer_journal packages/performance/schurfer_performance infra/scripts/research_checkpoints.py
 	MYPYPATH=packages/performance uv run --extra dev --all-packages mypy apps/execution/schurfer_execution
 	uv run --extra dev --with ccxt --with greenlet --with redis --with sqlalchemy --with structlog --with "psycopg[binary]" pytest apps/analytics -q
 	uv run --extra dev --with sqlalchemy --with alembic --with "psycopg[binary]" pytest packages/journal packages/performance -q
@@ -478,6 +481,30 @@ prod-runtime-metrics-health:
 	@systemctl --no-pager --full status schurfer-runtime-metrics.service
 	@test -s runtime/container-metrics.snapshot || (echo "ERROR: runtime metrics snapshot is missing." && exit 1)
 	@head -n 4 runtime/container-metrics.snapshot
+
+prod-research-checkpoints-install:
+	@test "$$(git branch --show-current)" = "main" || (echo "ERROR: not on main (on '$$(git branch --show-current)'). Install only from main." && exit 1)
+	@test -z "$$(git status --porcelain)" || (echo "ERROR: working tree not clean. Commit or stash first." && exit 1)
+	@mkdir -p runtime backups/reports/automated
+	@chmod 0700 backups/reports/automated
+	sudo install -m 0644 infra/systemd/schurfer-research-checkpoints.service /etc/systemd/system/schurfer-research-checkpoints.service
+	sudo install -m 0644 infra/systemd/schurfer-research-checkpoints.timer /etc/systemd/system/schurfer-research-checkpoints.timer
+	sudo systemctl daemon-reload
+	sudo systemctl enable --now schurfer-research-checkpoints.timer
+	@echo "Starting the first due checkpoint. This command waits for the bounded report to finish."
+	sudo systemctl start schurfer-research-checkpoints.service
+	@$(MAKE) prod-research-checkpoints-health
+
+prod-research-checkpoints-run:
+	@echo "Starting one due checkpoint. Progress is also available in the systemd journal."
+	sudo systemctl start schurfer-research-checkpoints.service
+	@$(MAKE) prod-research-checkpoints-health
+
+prod-research-checkpoints-health:
+	@systemctl --no-pager --full status schurfer-research-checkpoints.timer
+	@systemctl --no-pager --full status schurfer-research-checkpoints.service || true
+	@test -s runtime/research-checkpoints.json || (echo "ERROR: research checkpoint snapshot is missing." && exit 1)
+	@python3 -m json.tool runtime/research-checkpoints.json
 
 # Rebuild a single service from current main. Guarded like prod-deploy, but skips
 # backup and migration, so use it only for a code-only change with NO new migration.

@@ -76,6 +76,15 @@ engineering and keep only the reusable research output.
 ## Near-term delivery sequence: execution and exit decision
 
 The measurement foundation and shared paper/replay performance accounting are live.
+
+- [x] Automate registered checkpoint closure on the host without mounting the Docker
+      socket into an HTTP service. An hourly systemd timer runs at most one due report,
+      enforces a host lock plus RAM/disk preflight, archives validated JSON and SHA-256,
+      preserves candidate registry writes, sends edge-triggered Telegram state changes,
+      and exposes sanitized next-run/report/verdict state on the authenticated Research
+      page. Terminal outcomes do not rerun automatically and the scheduler cannot alter
+      production strategy settings.
+
 The immediate question is narrower: does the tradeable pump-reversion signal survive
 the production exit mechanics, and can its execution be improved without taking
 unbounded tail risk? Existing entry, score, and exit cohorts continue collecting, but

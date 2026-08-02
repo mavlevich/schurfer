@@ -156,6 +156,43 @@ does not load raw trades into PostgreSQL and does not alter the running trial.
 Before 100 complete matched captures, 30 bases, and 7 UTC market days, use it only
 for capture quality and exclusion diagnostics.
 
+### Automated research checkpoints
+
+The host-side checkpoint timer closes registered research loops without giving the
+API container Docker control. It runs at most one due report per invocation, takes
+an exclusive host lock, checks available RAM plus free swap and disk before launch,
+archives validated JSON with a SHA-256 digest, and writes a sanitized atomic status
+under `/opt/schurfer/runtime`. Candidate reports retain their existing bounded
+PostgreSQL registry metadata; discovery reports are retained as files plus the
+sanitized checkpoint snapshot.
+
+Install the timer once after deployment:
+
+```bash
+make prod-research-checkpoints-install
+make prod-research-checkpoints-health
+```
+
+The timer wakes hourly, but every checkpoint has its own earliest UTC date and retry
+cadence. Terminal results are not rerun automatically. Resource pressure changes the
+checkpoint to `blocked_resources` and retries later; it never kills a running
+production service to make room. Telegram notifications are edge-triggered and use
+the existing `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` from `.env.prod`.
+
+Run one due checkpoint manually through the same lock and safety path:
+
+```bash
+make prod-research-checkpoints-run
+```
+
+The manual command waits for the bounded report to finish. Its live progress is also
+available through `journalctl -fu schurfer-research-checkpoints.service`; the hourly
+timer itself needs no open terminal.
+
+Archived reports live in `backups/reports/automated/`. The authenticated Research
+page reads only sanitized filenames, hashes, dates, statuses, verdicts, and errors.
+It cannot start a report or modify a strategy.
+
 ```sql
 -- docker exec schurfer-postgres psql -U schurfer -d schurfer
 SELECT ts, base, action, score, decision_id, strategy_version,
