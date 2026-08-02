@@ -17,6 +17,10 @@ from schurfer_analytics.source_lead_capture import (
     prepare_source_lead_captures,
     summarize_order_book,
 )
+from schurfer_analytics.source_lead_qualification import (
+    QualificationResult,
+    parse_identity_registry,
+)
 
 
 def _source(
@@ -233,9 +237,17 @@ async def test_capture_processes_target_clients_sequentially(monkeypatch: Any) -
             active -= 1
 
     persisted: dict[int, list[TargetObservation]] = {}
+    qualifications: dict[int, QualificationResult] = {}
 
-    async def persist(_db_url: str, results: dict[int, list[TargetObservation]]) -> None:
+    async def persist(
+        _db_url: str,
+        results: dict[int, list[TargetObservation]],
+        captured_qualifications: dict[int, QualificationResult],
+        _registry_version: str,
+        _registry_fingerprint: str,
+    ) -> None:
         persisted.update(results)
+        qualifications.update(captured_qualifications)
 
     monkeypatch.setattr(
         "schurfer_analytics.source_lead_capture.load_source_lead_candidates",
@@ -259,11 +271,19 @@ async def test_capture_processes_target_clients_sequentially(monkeypatch: Any) -
         timeout_seconds=1.0,
         batch_size=8,
         factories={"binance": TrackedExchange, "bybit": TrackedExchange},
+        identity_registry=parse_identity_registry(
+            {
+                "schema_version": 1,
+                "registry_version": "test_empty_registry_v1",
+                "links": [],
+            }
+        ),
     )
 
     assert maximum_active == 1
     assert active == 0
     assert [row.target_exchange for row in persisted[11]] == ["binance", "bybit"]
+    assert qualifications[11].reason == "source_identity_unapproved"
 
 
 def test_capture_contract_is_versioned_and_identity_method_is_explicit() -> None:

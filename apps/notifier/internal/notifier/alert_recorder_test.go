@@ -3,10 +3,12 @@ package notifier
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
@@ -15,6 +17,31 @@ type stubAlertDB struct {
 	args   []any
 	err    error
 	closed bool
+	row    stubAlertRow
+}
+
+type stubAlertRow struct {
+	values []any
+	err    error
+}
+
+func (row stubAlertRow) Scan(dest ...any) error {
+	if row.err != nil {
+		return row.err
+	}
+	for index, value := range row.values {
+		switch pointer := dest[index].(type) {
+		case *int:
+			*pointer = value.(int)
+		case *int64:
+			*pointer = value.(int64)
+		case *[]int64:
+			*pointer = value.([]int64)
+		default:
+			return errors.New("unexpected scan destination")
+		}
+	}
+	return nil
 }
 
 func (db *stubAlertDB) Exec(
@@ -25,6 +52,16 @@ func (db *stubAlertDB) Exec(
 	db.query = query
 	db.args = args
 	return pgconn.NewCommandTag("INSERT 0 1"), db.err
+}
+
+func (db *stubAlertDB) QueryRow(
+	_ context.Context,
+	query string,
+	args ...any,
+) pgx.Row {
+	db.query = query
+	db.args = args
+	return db.row
 }
 
 func (db *stubAlertDB) Close() {
@@ -80,5 +117,23 @@ func TestPostgresAlertRecorderPropagatesDatabaseError(t *testing.T) {
 
 	if !errors.Is(err, want) {
 		t.Fatalf("error = %v, want %v", err, want)
+	}
+}
+
+func TestPostgresAlertRecorderReadsSourceLeadHealth(t *testing.T) {
+	db := &stubAlertDB{row: stubAlertRow{values: []any{2, []int64{40, 41}}}}
+	recorder := &postgresAlertRecorder{pool: db}
+
+	health, err := recorder.ReadSourceLeadHealth(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if health.StaleCollecting != 2 ||
+		!reflect.DeepEqual(health.CriticalAbandonedIDs, []int64{40, 41}) {
+		t.Fatalf("health = %#v", health)
+	}
+	if !strings.Contains(db.query, "capture_worker_failed:%") ||
+		strings.Contains(db.query, "collector_process_restarted") {
+		t.Fatalf("health query does not isolate critical failures: %s", db.query)
 	}
 }

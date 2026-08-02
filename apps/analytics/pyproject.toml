@@ -42,6 +42,9 @@ exit-liquidity-calibration-report = "schurfer_analytics.exit_liquidity_calibrati
 where = ["."]
 include = ["schurfer_analytics*"]
 
+[tool.setuptools.package-data]
+schurfer_analytics = ["registry/*.json"]
+
 [tool.uv]
 package = true
 

@@ -20,6 +20,17 @@ type stubAlertRecorder struct {
 	closed     bool
 }
 
+type stubSourceLeadHealthReader struct {
+	health sourceLeadHealth
+	err    error
+}
+
+func (reader stubSourceLeadHealthReader) ReadSourceLeadHealth(
+	_ context.Context,
+) (sourceLeadHealth, error) {
+	return reader.health, reader.err
+}
+
 func (r *stubAlertRecorder) Record(_ context.Context, delivery alertDelivery) error {
 	r.deliveries = append(r.deliveries, delivery)
 	return r.err
@@ -603,6 +614,66 @@ func TestTick_NoStaleAlertWhenFresh(t *testing.T) {
 
 	if *calls != 0 {
 		t.Errorf("expected no alert when fresh, got %d", *calls)
+	}
+}
+
+func TestTick_SourceLeadHealthAlertIsEdgeTriggeredAndRecovers(t *testing.T) {
+	calls, done := newTelegramCounter(t)
+	defer done()
+
+	mr := miniredis.RunT(t)
+	n := newTestNotifier(t, mr, "tok", "cid")
+	n.sourceLeadHealth = stubSourceLeadHealthReader{
+		health: sourceLeadHealth{StaleCollecting: 1},
+	}
+	setPumpsPayload(t, mr, payload{Scanned: []string{"binance"}})
+
+	_ = n.tick(context.Background())
+	_ = n.tick(context.Background())
+	if *calls != 1 {
+		t.Fatalf("source-lead alerts = %d, want 1", *calls)
+	}
+	if !mr.Exists(redisKeySourceLeadHealthAlerted) {
+		t.Fatal("source-lead health alert flag missing")
+	}
+
+	n.sourceLeadHealth = stubSourceLeadHealthReader{}
+	_ = n.tick(context.Background())
+	if *calls != 2 {
+		t.Fatalf("alerts after recovery = %d, want 2", *calls)
+	}
+	if mr.Exists(redisKeySourceLeadHealthAlerted) {
+		t.Fatal("source-lead health alert flag must clear on recovery")
+	}
+}
+
+func TestTick_SourceLeadCriticalFailureAlertsOnceWithoutFalseRecovery(t *testing.T) {
+	calls, done := newTelegramCounter(t)
+	defer done()
+
+	mr := miniredis.RunT(t)
+	n := newTestNotifier(t, mr, "tok", "cid")
+	n.sourceLeadHealth = stubSourceLeadHealthReader{
+		health: sourceLeadHealth{CriticalAbandonedIDs: []int64{42, 43}},
+	}
+	setPumpsPayload(t, mr, payload{Scanned: []string{"binance"}})
+
+	_ = n.tick(context.Background())
+	_ = n.tick(context.Background())
+	if *calls != 2 {
+		t.Fatalf("critical source-lead alerts = %d, want 2", *calls)
+	}
+	if !mr.Exists(redisKeySourceLeadFailureSeen + "42") {
+		t.Fatal("critical source-lead failure de-dup key missing")
+	}
+	if !mr.Exists(redisKeySourceLeadFailureSeen + "43") {
+		t.Fatal("second critical source-lead failure de-dup key missing")
+	}
+
+	n.sourceLeadHealth = stubSourceLeadHealthReader{}
+	_ = n.tick(context.Background())
+	if *calls != 2 {
+		t.Fatalf("historical failure must not emit a recovery, got %d calls", *calls)
 	}
 }
 

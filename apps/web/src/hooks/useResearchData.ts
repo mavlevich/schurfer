@@ -94,6 +94,8 @@ export interface SourceLeadProgress {
   excluded: number;
   abandoned: number;
   recent_abandoned: number;
+  recent_critical_abandoned: number;
+  recent_routine_abandoned: number;
   collecting: number;
   stale_collecting: number;
   target_eligible: ResearchMilestone;
@@ -101,6 +103,15 @@ export interface SourceLeadProgress {
   asset_clusters: ResearchMilestone;
   calendar_weeks: ResearchMilestone;
   confirmed_within_hour: number;
+  qualified: number;
+  qualification_missing: number;
+  identity_unapproved: number;
+  no_approved_executable_target: number;
+  selected_binance: number;
+  selected_bybit: number;
+  identity_registry_version: string | null;
+  identity_registry_fingerprint: string | null;
+  identity_registry_mixed: boolean;
   last_observed_at: string | null;
   targets: SourceLeadTargetProgress[];
   health_flags: string[];

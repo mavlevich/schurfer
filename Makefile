@@ -527,11 +527,12 @@ prod-source-lead-report:
 
 prod-source-lead-capture-health:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
-	@$(_PROD) exec -T postgres psql -U schurfer -d schurfer -v ON_ERROR_STOP=1 -c "\
+	@printf '%s\n' "\
 	SELECT status, eligibility_reason, count(*) AS captures, \
 	       min(source_first_observed_at) AS first_observed, \
 	       max(source_first_observed_at) AS last_observed \
 	FROM app.source_lead_captures \
+	WHERE source_first_observed_at >= TIMESTAMPTZ '2026-08-02T00:00:00Z' \
 	GROUP BY status, eligibility_reason \
 	ORDER BY captures DESC, status, eligibility_reason; \
 	SELECT target.target_exchange, target.status, target.eligibility_reason, \
@@ -539,15 +540,32 @@ prod-source-lead-capture-health:
 	       round((avg(extract(epoch FROM (target.observed_at - capture.source_first_observed_at)) * 1000))::numeric, 1) AS mean_source_to_quote_ms \
 	FROM app.source_lead_target_observations AS target \
 	JOIN app.source_lead_captures AS capture ON capture.id = target.capture_id \
+	WHERE capture.source_first_observed_at >= TIMESTAMPTZ '2026-08-02T00:00:00Z' \
 	GROUP BY target.target_exchange, target.status, target.eligibility_reason \
 	ORDER BY target_exchange, observations DESC; \
 	SELECT count(*) AS collecting_older_than_10m \
 	FROM app.source_lead_captures \
-	WHERE status = 'collecting' AND capture_started_at < now() - interval '10 minutes'; \
+	WHERE source_first_observed_at >= TIMESTAMPTZ '2026-08-02T00:00:00Z' \
+	  AND status = 'collecting' AND capture_started_at < now() - interval '10 minutes'; \
 	SELECT error, count(*) AS abandoned \
 	FROM app.source_lead_captures \
-	WHERE status = 'abandoned' \
-	GROUP BY error ORDER BY abandoned DESC;"
+	WHERE source_first_observed_at >= TIMESTAMPTZ '2026-08-02T00:00:00Z' \
+	  AND status = 'abandoned' \
+	GROUP BY error ORDER BY abandoned DESC; \
+	SELECT qualification.status, qualification.reason, \
+	       qualification.identity_registry_version, \
+	       qualification.identity_registry_fingerprint, \
+	       qualification.selected_target_exchange, count(*) AS captures, \
+	       round(avg(qualification.selected_round_trip_impact_bps), 2) AS mean_round_trip_impact_bps \
+	FROM app.source_lead_qualifications AS qualification \
+	JOIN app.source_lead_captures AS capture ON capture.id = qualification.capture_id \
+	WHERE capture.source_first_observed_at >= TIMESTAMPTZ '2026-08-02T00:00:00Z' \
+	GROUP BY qualification.status, qualification.reason, \
+	         qualification.identity_registry_version, \
+	         qualification.identity_registry_fingerprint, \
+	         qualification.selected_target_exchange \
+	ORDER BY captures DESC, qualification.status, qualification.reason;" \
+	| $(_PROD) exec -T postgres psql -U schurfer -d schurfer -v ON_ERROR_STOP=1 -f -
 
 prod-episode-replay:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)

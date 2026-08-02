@@ -68,6 +68,11 @@ class SourceLeadCapture(Base, TimestampMixin):
         back_populates="capture",
         cascade="all, delete-orphan",
     )
+    qualifications: Mapped[list["SourceLeadQualification"]] = relationship(
+        "SourceLeadQualification",
+        back_populates="capture",
+        cascade="all, delete-orphan",
+    )
 
     __table_args__ = (
         Index(
@@ -146,6 +151,75 @@ class SourceLeadTargetObservation(Base, TimestampMixin):
         CheckConstraint(
             "NOT (identity_match_method = 'base_symbol_v1' AND identity_verified)",
             name="ck_source_lead_target_provisional_identity",
+        ),
+        {"schema": "app"},
+    )
+
+
+class SourceLeadQualification(Base, TimestampMixin):
+    """Append-only reviewed identity and deterministic venue-selection result."""
+
+    __tablename__ = "source_lead_qualifications"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    capture_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("app.source_lead_captures.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    qualification_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    identity_registry_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    identity_registry_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    venue_selector_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    reason: Mapped[str] = mapped_column(String(64), nullable=False)
+    canonical_asset_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    selected_target_exchange: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    selected_round_trip_impact_bps: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 4), nullable=True
+    )
+    requested_notional_usd: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    qualified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    details: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+    capture: Mapped["SourceLeadCapture"] = relationship(
+        "SourceLeadCapture", back_populates="qualifications"
+    )
+
+    __table_args__ = (
+        Index(
+            "ux_source_lead_qualification_capture_version",
+            "capture_id",
+            "qualification_version",
+            unique=True,
+        ),
+        Index("ix_source_lead_qualification_status", "status", "qualified_at"),
+        CheckConstraint(
+            "status IN ('qualified', 'excluded')",
+            name="ck_source_lead_qualification_status",
+        ),
+        CheckConstraint(
+            "requested_notional_usd > 0",
+            name="ck_source_lead_qualification_notional",
+        ),
+        CheckConstraint(
+            "identity_registry_fingerprint ~ '^[0-9a-f]{64}$'",
+            name="ck_source_lead_qualification_registry_fingerprint",
+        ),
+        CheckConstraint(
+            "qualification_version != 'source_lead_qualified_capture_v1' OR "
+            "(identity_registry_version = 'source_lead_identity_registry_v1' AND "
+            "identity_registry_fingerprint = "
+            "'31604214fa148d3f86562a212fdc935029c82a7a4959a7b5001b6bd5637ff7f8')",
+            name="ck_source_lead_qualification_v1_registry_contract",
+        ),
+        CheckConstraint(
+            "(status = 'qualified' AND canonical_asset_id IS NOT NULL "
+            "AND selected_target_exchange IS NOT NULL "
+            "AND selected_round_trip_impact_bps IS NOT NULL) OR "
+            "(status = 'excluded' AND selected_target_exchange IS NULL "
+            "AND selected_round_trip_impact_bps IS NULL)",
+            name="ck_source_lead_qualification_selection",
         ),
         {"schema": "app"},
     )

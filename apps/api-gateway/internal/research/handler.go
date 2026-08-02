@@ -157,27 +157,38 @@ type SourceLeadTargetProgress struct {
 }
 
 type SourceLeadProgress struct {
-	Contract              string                     `json:"contract"`
-	CohortStart           time.Time                  `json:"cohort_start"`
-	Status                string                     `json:"status"`
-	Captures              int                        `json:"captures"`
-	SourceEligible        int                        `json:"source_eligible"`
-	Complete              int                        `json:"complete"`
-	Excluded              int                        `json:"excluded"`
-	Abandoned             int                        `json:"abandoned"`
-	RecentAbandoned       int                        `json:"recent_abandoned"`
-	Collecting            int                        `json:"collecting"`
-	StaleCollecting       int                        `json:"stale_collecting"`
-	TargetEligible        Milestone                  `json:"target_eligible"`
-	MatureFourHourWindows Milestone                  `json:"mature_four_hour_windows"`
-	AssetClusters         Milestone                  `json:"asset_clusters"`
-	CalendarWeeks         Milestone                  `json:"calendar_weeks"`
-	ConfirmedWithinHour   int                        `json:"confirmed_within_hour"`
-	LastObservedAt        *time.Time                 `json:"last_observed_at"`
-	Targets               []SourceLeadTargetProgress `json:"targets"`
-	HealthFlags           []string                   `json:"health_flags"`
-	LatestReport          *RegisteredReportRun       `json:"latest_report"`
-	Interpretation        string                     `json:"interpretation"`
+	Contract                    string                     `json:"contract"`
+	CohortStart                 time.Time                  `json:"cohort_start"`
+	Status                      string                     `json:"status"`
+	Captures                    int                        `json:"captures"`
+	SourceEligible              int                        `json:"source_eligible"`
+	Complete                    int                        `json:"complete"`
+	Excluded                    int                        `json:"excluded"`
+	Abandoned                   int                        `json:"abandoned"`
+	RecentAbandoned             int                        `json:"recent_abandoned"`
+	RecentCriticalAbandoned     int                        `json:"recent_critical_abandoned"`
+	RecentRoutineAbandoned      int                        `json:"recent_routine_abandoned"`
+	Collecting                  int                        `json:"collecting"`
+	StaleCollecting             int                        `json:"stale_collecting"`
+	TargetEligible              Milestone                  `json:"target_eligible"`
+	MatureFourHourWindows       Milestone                  `json:"mature_four_hour_windows"`
+	AssetClusters               Milestone                  `json:"asset_clusters"`
+	CalendarWeeks               Milestone                  `json:"calendar_weeks"`
+	ConfirmedWithinHour         int                        `json:"confirmed_within_hour"`
+	Qualified                   int                        `json:"qualified"`
+	QualificationMissing        int                        `json:"qualification_missing"`
+	IdentityUnapproved          int                        `json:"identity_unapproved"`
+	NoExecutableTarget          int                        `json:"no_approved_executable_target"`
+	SelectedBinance             int                        `json:"selected_binance"`
+	SelectedBybit               int                        `json:"selected_bybit"`
+	IdentityRegistry            *string                    `json:"identity_registry_version"`
+	IdentityRegistryFingerprint *string                    `json:"identity_registry_fingerprint"`
+	IdentityRegistryMixed       bool                       `json:"identity_registry_mixed"`
+	LastObservedAt              *time.Time                 `json:"last_observed_at"`
+	Targets                     []SourceLeadTargetProgress `json:"targets"`
+	HealthFlags                 []string                   `json:"health_flags"`
+	LatestReport                *RegisteredReportRun       `json:"latest_report"`
+	Interpretation              string                     `json:"interpretation"`
 }
 
 type Response struct {
@@ -437,6 +448,7 @@ WITH captures AS (
 		c.capture_completed_at,
 		c.status,
 		c.eligibility_reason,
+		c.error,
 		coalesce(bool_or(t.status = 'sampled'), false) AS target_eligible
 	FROM app.source_lead_captures AS c
 	LEFT JOIN app.source_lead_target_observations AS t
@@ -448,6 +460,11 @@ WITH captures AS (
 ), classified AS (
 	SELECT
 		captures.*,
+		qualification.status AS qualification_status,
+		qualification.reason AS qualification_reason,
+		qualification.selected_target_exchange,
+		qualification.identity_registry_version,
+		qualification.identity_registry_fingerprint,
 		captures.target_eligible
 			AND captures.status = 'complete'
 			AND captures.source_first_observed_at + interval '240 minutes' <= $2
@@ -461,6 +478,9 @@ WITH captures AS (
 			  AND confirmation.first_seen_at <= captures.source_first_observed_at + interval '60 minutes'
 		) AS confirmed_within_hour
 	FROM captures
+	LEFT JOIN app.source_lead_qualifications AS qualification
+	  ON qualification.capture_id = captures.id
+	 AND qualification.qualification_version = 'source_lead_qualified_capture_v1'
 )
 SELECT
 	count(*),
@@ -471,6 +491,24 @@ SELECT
 	count(*) FILTER (
 		WHERE status = 'abandoned'
 		  AND capture_completed_at >= $2 - interval '24 hours'
+	),
+	count(*) FILTER (
+		WHERE status = 'abandoned'
+		  AND capture_completed_at >= $2 - interval '24 hours'
+		  AND (
+			error = 'capture_queue_full'
+			OR error = 'capture_worker_shutdown_timeout'
+			OR error LIKE 'capture_worker_failed:%'
+		  )
+	),
+	count(*) FILTER (
+		WHERE status = 'abandoned'
+		  AND capture_completed_at >= $2 - interval '24 hours'
+		  AND NOT coalesce((
+			error = 'capture_queue_full'
+			OR error = 'capture_worker_shutdown_timeout'
+			OR error LIKE 'capture_worker_failed:%'
+		  ), false)
 	),
 	count(*) FILTER (WHERE status = 'collecting'),
 	count(*) FILTER (
@@ -483,6 +521,30 @@ SELECT
 	count(DISTINCT date_trunc('week', source_first_observed_at AT TIME ZONE 'UTC'))
 		FILTER (WHERE mature_four_hour),
 	count(*) FILTER (WHERE target_eligible AND status = 'complete' AND confirmed_within_hour),
+	count(*) FILTER (WHERE qualification_status = 'qualified'),
+	count(*) FILTER (WHERE status = 'complete' AND qualification_status IS NULL),
+	count(*) FILTER (WHERE qualification_reason = 'source_identity_unapproved'),
+	count(*) FILTER (WHERE qualification_reason = 'no_approved_executable_target'),
+	count(*) FILTER (WHERE selected_target_exchange = 'binance'),
+	count(*) FILTER (WHERE selected_target_exchange = 'bybit'),
+	CASE
+		WHEN count(DISTINCT identity_registry_version)
+			FILTER (WHERE identity_registry_version IS NOT NULL) = 1
+		THEN min(identity_registry_version)
+	END,
+	CASE
+		WHEN count(DISTINCT identity_registry_fingerprint)
+			FILTER (WHERE identity_registry_fingerprint IS NOT NULL) = 1
+		THEN min(identity_registry_fingerprint)
+	END,
+	count(DISTINCT identity_registry_version)
+		FILTER (WHERE identity_registry_version IS NOT NULL) > 1
+	OR count(DISTINCT identity_registry_fingerprint)
+		FILTER (WHERE identity_registry_fingerprint IS NOT NULL) > 1
+	OR count(*) FILTER (
+		WHERE (identity_registry_version IS NULL)
+			IS DISTINCT FROM (identity_registry_fingerprint IS NULL)
+	) > 0,
 	max(source_first_observed_at)
 FROM classified`
 
@@ -539,7 +601,9 @@ func sourceLeadStatus(now time.Time, progress SourceLeadProgress) string {
 		return "scheduled"
 	case progress.StaleCollecting > 0:
 		return "unhealthy"
-	case progress.RecentAbandoned > 0:
+	case progress.IdentityRegistryMixed:
+		return "unhealthy"
+	case progress.RecentCriticalAbandoned > 0:
 		return "degraded"
 	case progress.MatureFourHourWindows.Current >= formalEpisodes &&
 		progress.AssetClusters.Current >= formalClusters &&
@@ -582,6 +646,8 @@ func (h *Handler) sourceLeadProgress(
 		&progress.Excluded,
 		&progress.Abandoned,
 		&progress.RecentAbandoned,
+		&progress.RecentCriticalAbandoned,
+		&progress.RecentRoutineAbandoned,
 		&progress.Collecting,
 		&progress.StaleCollecting,
 		&targetEligible,
@@ -589,6 +655,15 @@ func (h *Handler) sourceLeadProgress(
 		&clusters,
 		&weeks,
 		&progress.ConfirmedWithinHour,
+		&progress.Qualified,
+		&progress.QualificationMissing,
+		&progress.IdentityUnapproved,
+		&progress.NoExecutableTarget,
+		&progress.SelectedBinance,
+		&progress.SelectedBybit,
+		&progress.IdentityRegistry,
+		&progress.IdentityRegistryFingerprint,
+		&progress.IdentityRegistryMixed,
 		&progress.LastObservedAt,
 	)
 	if err != nil {
@@ -631,8 +706,11 @@ func (h *Handler) sourceLeadProgress(
 	if progress.StaleCollecting > 0 {
 		progress.HealthFlags = append(progress.HealthFlags, "collecting_older_than_10m")
 	}
-	if progress.RecentAbandoned > 0 {
-		progress.HealthFlags = append(progress.HealthFlags, "abandoned_capture_last_24h")
+	if progress.RecentCriticalAbandoned > 0 {
+		progress.HealthFlags = append(progress.HealthFlags, "critical_capture_failure_last_24h")
+	}
+	if progress.IdentityRegistryMixed {
+		progress.HealthFlags = append(progress.HealthFlags, "mixed_identity_registry_contract")
 	}
 	progress.Status = sourceLeadStatus(now, progress)
 	return progress, nil

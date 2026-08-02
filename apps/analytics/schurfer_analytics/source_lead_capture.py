@@ -20,6 +20,14 @@ import structlog
 
 from .exchange_registry import EXCHANGE_FACTORIES, ExchangeFactory
 from .instruments import instrument_metadata
+from .source_lead_qualification import (
+    QUALIFICATION_VERSION,
+    VENUE_SELECTOR_VERSION,
+    IdentityRegistry,
+    QualificationResult,
+    load_identity_registry,
+    qualify_source_lead,
+)
 
 log = structlog.get_logger()
 
@@ -107,6 +115,23 @@ SET status = 'complete',
     updated_at = NOW()
 WHERE id = %s
   AND status = 'collecting'
+"""
+
+_INSERT_QUALIFICATION = """
+INSERT INTO app.source_lead_qualifications (
+    capture_id, qualification_version, identity_registry_version,
+    identity_registry_fingerprint, venue_selector_version,
+    status, reason, canonical_asset_id,
+    selected_target_exchange, selected_round_trip_impact_bps,
+    requested_notional_usd, qualified_at, details, created_at, updated_at
+)
+VALUES (
+    %s, %s, %s, %s,
+    %s, %s, %s, %s,
+    %s, %s,
+    %s, %s, %s::jsonb, NOW(), NOW()
+)
+ON CONFLICT (capture_id, qualification_version) DO NOTHING
 """
 
 _ABANDON_CAPTURES = """
@@ -586,6 +611,9 @@ async def capture_target_observation(
 async def _persist_target_observations(
     db_url: str,
     results: dict[int, list[TargetObservation]],
+    qualifications: dict[int, QualificationResult],
+    registry_version: str,
+    registry_fingerprint: str,
 ) -> None:
     completed_at = datetime.now(UTC)
     connection_context = await psycopg.AsyncConnection.connect(db_url)
@@ -611,6 +639,25 @@ async def _persist_target_observations(
                         observation.error,
                     ),
                 )
+            qualification = qualifications[capture_id]
+            await cur.execute(
+                _INSERT_QUALIFICATION,
+                (
+                    capture_id,
+                    QUALIFICATION_VERSION,
+                    registry_version,
+                    registry_fingerprint,
+                    VENUE_SELECTOR_VERSION,
+                    qualification.status,
+                    qualification.reason,
+                    qualification.canonical_asset_id,
+                    qualification.selected_target_exchange,
+                    qualification.selected_round_trip_impact_bps,
+                    qualification.requested_notional_usd,
+                    completed_at,
+                    json.dumps(qualification.details),
+                ),
+            )
             await cur.execute(_COMPLETE_CAPTURE, (completed_at, capture_id))
 
 
@@ -622,12 +669,14 @@ async def capture_claimed_source_leads(
     target_usd: float,
     timeout_seconds: float,
     factories: dict[str, ExchangeFactory] | None = None,
+    identity_registry: IdentityRegistry | None = None,
 ) -> None:
     """Capture network observations for claims already durable in PostgreSQL."""
     if not claimed:
         return
 
     exchange_factories = factories or EXCHANGE_FACTORIES
+    registry = identity_registry or load_identity_registry()
     results: dict[int, list[TargetObservation]] = {item.capture_id: [] for item in claimed}
     for exchange_name in target_exchanges:
         factory = exchange_factories.get(exchange_name)
@@ -663,7 +712,22 @@ async def capture_claimed_source_leads(
             except TypeError:
                 await exchange.close()
 
-    await _persist_target_observations(db_url, results)
+    qualifications = {
+        item.capture_id: qualify_source_lead(
+            source_exchange=SOURCE_EXCHANGE,
+            source_identity_key=item.candidate.source.identity_key,
+            target_observations=tuple(results[item.capture_id]),
+            registry=registry,
+        )
+        for item in claimed
+    }
+    await _persist_target_observations(
+        db_url,
+        results,
+        qualifications,
+        registry.version,
+        registry.fingerprint,
+    )
     log.info(
         "source_lead.capture_complete",
         captures=len(claimed),
@@ -686,6 +750,7 @@ class SourceLeadCaptureWorker:
         shutdown_timeout_seconds: float,
         collector_started_at: datetime | None = None,
         factories: dict[str, ExchangeFactory] | None = None,
+        identity_registry: IdentityRegistry | None = None,
     ) -> None:
         if queue_size <= 0 or shutdown_timeout_seconds <= 0:
             raise ValueError("source-lead worker bounds must be positive")
@@ -696,6 +761,7 @@ class SourceLeadCaptureWorker:
         self._shutdown_timeout_seconds = shutdown_timeout_seconds
         self._collector_started_at = collector_started_at or datetime.now(UTC)
         self._factories = factories
+        self._identity_registry = identity_registry or load_identity_registry()
         self._queue: asyncio.Queue[tuple[ClaimedCapture, ...] | None] = asyncio.Queue(
             maxsize=queue_size
         )
@@ -766,6 +832,7 @@ class SourceLeadCaptureWorker:
                     target_usd=self._target_usd,
                     timeout_seconds=self._timeout_seconds,
                     factories=self._factories,
+                    identity_registry=self._identity_registry,
                 )
             except asyncio.CancelledError:
                 await asyncio.shield(
@@ -841,6 +908,7 @@ async def capture_new_source_leads(
     timeout_seconds: float,
     batch_size: int,
     factories: dict[str, ExchangeFactory] | None = None,
+    identity_registry: IdentityRegistry | None = None,
 ) -> None:
     """Synchronous compatibility helper used by focused tests and one-shot tools."""
     claimed = await prepare_source_lead_captures(
@@ -856,4 +924,5 @@ async def capture_new_source_leads(
             target_usd=target_usd,
             timeout_seconds=timeout_seconds,
             factories=factories,
+            identity_registry=identity_registry,
         )
