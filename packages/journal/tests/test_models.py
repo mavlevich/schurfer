@@ -15,6 +15,7 @@ from schurfer_journal.models import (
     ResearchReportRun,
     Side,
     SourceLeadCapture,
+    SourceLeadQualification,
     SourceLeadTargetObservation,
     Strategy,
     Trade,
@@ -256,6 +257,31 @@ class TestSourceLeadCaptureModels:
             constraint.name for constraint in SourceLeadTargetObservation.__table__.constraints
         }
         assert "ck_source_lead_target_provisional_identity" in constraints
+
+    def test_qualification_is_versioned_and_append_only_per_capture(self) -> None:
+        assert SourceLeadQualification.__tablename__ == "source_lead_qualifications"
+        columns = SourceLeadQualification.__table__.columns
+        assert {
+            "capture_id",
+            "qualification_version",
+            "identity_registry_version",
+            "identity_registry_fingerprint",
+            "venue_selector_version",
+            "status",
+            "reason",
+            "canonical_asset_id",
+            "selected_target_exchange",
+            "selected_round_trip_impact_bps",
+            "details",
+        }.issubset({column.name for column in columns})
+        indexes = {index.name: index for index in SourceLeadQualification.__table__.indexes}
+        assert indexes["ux_source_lead_qualification_capture_version"].unique
+        constraints = {
+            constraint.name for constraint in SourceLeadQualification.__table__.constraints
+        }
+        assert "ck_source_lead_qualification_selection" in constraints
+        assert "ck_source_lead_qualification_registry_fingerprint" in constraints
+        assert "ck_source_lead_qualification_v1_registry_contract" in constraints
 
 
 class TestTradeDecisionModels:

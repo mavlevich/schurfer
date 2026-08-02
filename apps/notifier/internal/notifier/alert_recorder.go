@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -31,6 +32,7 @@ type alertRecorder interface {
 
 type alertDB interface {
 	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+	QueryRow(context.Context, string, ...any) pgx.Row
 	Close()
 }
 
@@ -38,7 +40,7 @@ type postgresAlertRecorder struct {
 	pool alertDB
 }
 
-func newPostgresAlertRecorder(ctx context.Context, databaseURL string) (alertRecorder, error) {
+func newPostgresAlertRecorder(ctx context.Context, databaseURL string) (*postgresAlertRecorder, error) {
 	pool, err := pgxpool.New(ctx, databaseURL)
 	if err != nil {
 		return nil, err

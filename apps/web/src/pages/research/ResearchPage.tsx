@@ -232,16 +232,68 @@ function SourceLeadCard({ progress }: { progress: SourceLeadProgress }) {
           </div>
         </div>
 
+        <div className="rounded-md border p-3 text-xs">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="font-medium">Qualified capture</p>
+            <span className="font-mono text-muted-foreground">
+              {progress.identity_registry_version ?? 'registry not observed'}
+              {progress.identity_registry_fingerprint &&
+                ` · sha256:${progress.identity_registry_fingerprint.slice(0, 12)}`}
+              {progress.identity_registry_mixed && ' · mixed contract'}
+            </span>
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div>
+              <p className="text-muted-foreground">Qualified</p>
+              <p className="mt-1 font-mono text-foreground">{progress.qualified}</p>
+            </div>
+            <div>
+              <p className="text-muted-foreground">Identity unapproved</p>
+              <p className="mt-1 font-mono text-foreground">{progress.identity_unapproved}</p>
+            </div>
+            <div>
+              <p className="text-muted-foreground">No executable target</p>
+              <p className="mt-1 font-mono text-foreground">
+                {progress.no_approved_executable_target}
+              </p>
+            </div>
+            <div>
+              <p className="text-muted-foreground">Missing qualification</p>
+              <p
+                className={cn(
+                  'mt-1 font-mono text-foreground',
+                  progress.qualification_missing > 0 && 'text-amber-300',
+                )}
+              >
+                {progress.qualification_missing}
+              </p>
+            </div>
+          </div>
+          <p className="mt-3 text-muted-foreground">
+            selected Binance <span className="font-mono">{progress.selected_binance}</span> · Bybit{' '}
+            <span className="font-mono">{progress.selected_bybit}</span>
+          </p>
+        </div>
+
         {(progress.collecting > 0 || progress.excluded > 0 || progress.abandoned > 0) && (
           <div className="rounded-md border p-3 text-xs text-muted-foreground">
             collecting <span className="font-mono text-foreground">{progress.collecting}</span> ·
             excluded <span className="font-mono text-foreground"> {progress.excluded}</span> ·
             abandoned{' '}
-            <span className={cn('font-mono', progress.recent_abandoned > 0 && 'text-amber-300')}>
+            <span
+              className={cn(
+                'font-mono',
+                progress.recent_critical_abandoned > 0 && 'text-amber-300',
+              )}
+            >
               {progress.abandoned}
             </span>
             {progress.recent_abandoned > 0 && (
-              <span className="text-amber-300"> ({progress.recent_abandoned} last 24h)</span>
+              <span className="text-muted-foreground">
+                {' '}
+                ({progress.recent_critical_abandoned} critical · {progress.recent_routine_abandoned}{' '}
+                routine in 24h)
+              </span>
             )}
             {progress.stale_collecting > 0 && (
               <>
@@ -335,8 +387,9 @@ function SourceLeadCard({ progress }: { progress: SourceLeadProgress }) {
         </div>
 
         <p className="text-xs leading-relaxed text-muted-foreground">
-          Exact operational counts from the forward capture. Target symbols still use provisional
-          base matching, so this card measures collection quality and capacity—not strategy edge.
+          Raw target observations retain provisional base matching; only Qualified capture uses
+          reviewed exact identity links. This card measures collection quality and capacity—not
+          strategy edge.
         </p>
       </CardContent>
     </Card>

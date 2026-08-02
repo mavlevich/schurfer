@@ -44,23 +44,25 @@ type Config struct {
 }
 
 type Notifier struct {
-	cfg      Config
-	rdb      *redis.Client
-	recorder alertRecorder
+	cfg              Config
+	rdb              *redis.Client
+	recorder         alertRecorder
+	sourceLeadHealth sourceLeadHealthReader
 }
 
 func New(ctx context.Context, cfg Config) (*Notifier, error) {
 	rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr})
-	var recorder alertRecorder
+	notifier := &Notifier{cfg: cfg, rdb: rdb}
 	if cfg.DatabaseURL != "" {
-		var err error
-		recorder, err = newPostgresAlertRecorder(ctx, cfg.DatabaseURL)
+		postgresRecorder, err := newPostgresAlertRecorder(ctx, cfg.DatabaseURL)
 		if err != nil {
 			_ = rdb.Close()
 			return nil, fmt.Errorf("alert recorder: %w", err)
 		}
+		notifier.recorder = postgresRecorder
+		notifier.sourceLeadHealth = postgresRecorder
 	}
-	return &Notifier{cfg: cfg, rdb: rdb, recorder: recorder}, nil
+	return notifier, nil
 }
 
 func (n *Notifier) Close() {
@@ -176,6 +178,7 @@ func (n *Notifier) tick(ctx context.Context) error {
 	// Redis is reachable — notifier is alive (bot configured, checked in Run)
 	_ = n.rdb.Set(ctx, redisKeyHeartbeat, time.Now().Unix(), 3*n.cfg.Interval).Err()
 	n.drainAlertOutbox(ctx)
+	n.reportSourceLeadHealth(ctx)
 
 	// A silently dead, stuck, or garbage-producing scanner is the main way the
 	// dataset develops gaps, so alert on those before doing anything else.

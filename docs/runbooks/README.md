@@ -634,6 +634,11 @@ the new cohort separately.
     | grep -E 'source_lead\\.|source-lead'
   ```
 
+  The health command defaults to the registered operational cutoff
+  `2026-08-02T00:00:00Z`, so smoke rows no longer inflate its totals. Override only
+  for an explicit audit: `SOURCE_LEAD_COHORT_START=<UTC timestamp> make
+prod-source-lead-capture-health`.
+
   A healthy smoke window has no old `collecting` rows or `abandoned` queue/worker
   failures, source-to-quote latency remains bounded, target failures are visible,
   and sampled routes retain `identity_verified=false` until a separate canonical
@@ -650,6 +655,11 @@ $50 entry impact, stale `collecting`, and `abandoned` rows. Use
 `make prod-source-lead-capture-health` for the detailed SQL breakdown when the card
 shows `degraded` or `unhealthy`; the UI is not a strategy verdict and provisional
 base-symbol identity remains in force.
+
+Qualified-capture rows are append-only and displayed separately. An empty reviewed
+registry produces `source_identity_unapproved`; this is expected and must not be
+treated as a collection failure. `stale` or recently `abandoned` capture state sends
+one Telegram alert and one recovery message through the existing notifier.
 
 - Decision-quality report: use the completed exact-anchor episode cohort to test
   whether the recorded score and its five point components separate better and worse

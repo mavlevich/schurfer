@@ -1169,6 +1169,16 @@ auto.
       the cohort start for `gate_source_lead_4h_v1`. Before registration, add a
       versioned canonical identity approval and one deterministic point-in-time
       Binance/Bybit venue selector. Do not reuse the historical OBS-013 window.
+  - [x] Add the fail-closed qualification foundation without claiming that canonical
+        links already exist: packaged reviewed registry validation, append-only
+        qualification rows, exact-identity matching, complete $50 two-sided-depth
+        eligibility, and deterministic minimum round-trip-impact venue selection.
+        The initial registry is deliberately empty; populate and independently
+        review it before choosing a strategy cohort cutoff
+        ([source-lead-qualified-capture-v1.md](docs/research/source-lead-qualified-capture-v1.md)).
+  - [x] Alert once on source-lead captures stale for ten minutes or abandoned in the
+        last 24 hours, recover once, and filter the detailed production health query
+        at the explicit operational cohort cutoff by default.
 - [x] Expose the `2026-08-02T00:00:00Z` source-lead forward cutoff and exact capture
       readiness on the authenticated Research page: full denominator, source and
       target eligibility, mature four-hour windows, clusters/weeks, one-hour

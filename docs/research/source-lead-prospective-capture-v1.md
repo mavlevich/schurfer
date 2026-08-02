@@ -68,6 +68,11 @@ No later identity approval may rewrite the captured source, target metadata, quo
 or timestamp. Reports must expose provisional, approved, rejected, and unknown
 identity states separately.
 
+The append-only qualification foundation is specified in
+[`source-lead-qualified-capture-v1.md`](source-lead-qualified-capture-v1.md). It keeps
+the original `identity_verified=false` observation intact and records reviewed
+identity plus deterministic venue selection separately.
+
 ## Operational bounds and failure policy
 
 - Every new source candidate in the scan is classified and durably inserted after

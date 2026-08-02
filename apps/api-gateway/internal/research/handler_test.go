@@ -203,7 +203,11 @@ func TestReadinessQueriesStartedWiderCohort(t *testing.T) {
 		{values: []any{102, 100, 30, 4, 110, 0, 0, 2}},
 		{err: pgx.ErrNoRows},
 		{values: []any{30, 29, 28, 20, nil}},
-		{values: []any{120, 115, 110, 5, 0, 0, 0, 0, 105, 100, 31, 4, 80, now.Add(-time.Hour)}},
+		{values: []any{
+			120, 115, 110, 5, 0, 0, 0, 0, 0, 0, 105, 100, 31, 4, 80,
+			20, 0, 80, 20, 12, 8, "source_lead_identity_registry_v1",
+			strings.Repeat("a", 64), false, now.Add(-time.Hour),
+		}},
 		{values: []any{105, 100, 3, 2, 900.0, 1_500.0, 4.0, 8.0, 2.0, 5.0}},
 		{values: []any{105, 99, 4, 2, 1_000.0, 1_700.0, 5.0, 9.0, 2.5, 5.5}},
 		{err: pgx.ErrNoRows},
@@ -243,7 +247,11 @@ func TestReadinessQueriesStartedWiderCohort(t *testing.T) {
 func TestSourceLeadProgressExposesOperationalFailures(t *testing.T) {
 	now := time.Date(2026, time.August, 3, 12, 0, 0, 0, time.UTC)
 	db := &stubDB{rows: []stubRow{
-		{values: []any{12, 11, 9, 1, 2, 1, 1, 1, 8, 4, 6, 1, 3, now.Add(-time.Hour)}},
+		{values: []any{
+			12, 11, 9, 1, 2, 1, 1, 0, 1, 1, 8, 4, 6, 1, 3,
+			2, 1, 5, 1, 1, 1, "source_lead_identity_registry_v1",
+			strings.Repeat("a", 64), false, now.Add(-time.Hour),
+		}},
 		{values: []any{8, 7, 0, 1, 800.0, 1_400.0, 3.0, 7.0, 1.5, 4.0}},
 		{values: []any{8, 6, 1, 1, 900.0, 1_600.0, 4.0, 8.0, 2.0, 5.0}},
 		{err: pgx.ErrNoRows},
@@ -263,14 +271,29 @@ func TestSourceLeadProgressExposesOperationalFailures(t *testing.T) {
 	if progress.MatureFourHourWindows.Current != 4 {
 		t.Fatalf("mature windows: got %d", progress.MatureFourHourWindows.Current)
 	}
+	if progress.Qualified != 2 || progress.QualificationMissing != 1 {
+		t.Fatalf("qualification counts: got %#v", progress)
+	}
 	if !reflect.DeepEqual(
 		progress.HealthFlags,
-		[]string{"collecting_older_than_10m", "abandoned_capture_last_24h"},
+		[]string{"collecting_older_than_10m", "critical_capture_failure_last_24h"},
 	) {
 		t.Fatalf("health flags: got %#v", progress.HealthFlags)
 	}
 	if len(progress.Targets) != 2 || progress.Targets[0].SourceToQuoteP90MS == nil {
 		t.Fatalf("target metrics: got %#v", progress.Targets)
+	}
+}
+
+func TestSourceLeadStatusFailsClosedOnMixedRegistryContract(t *testing.T) {
+	now := time.Date(2026, time.August, 3, 12, 0, 0, 0, time.UTC)
+	progress := SourceLeadProgress{
+		CohortStart:           sourceLeadStart,
+		IdentityRegistryMixed: true,
+	}
+
+	if got := sourceLeadStatus(now, progress); got != "unhealthy" {
+		t.Fatalf("status: got %s, want unhealthy", got)
 	}
 }
 
@@ -319,11 +342,15 @@ func TestQueriesPreserveResearchBoundaries(t *testing.T) {
 	}
 	requiredSourceLeadFragments := []string{
 		"app.source_lead_captures",
+		"app.source_lead_qualifications",
 		"source_first_observed_at >= $1",
 		"capture_version = 'source_lead_prospective_capture_v1'",
 		"interval '240 minutes'",
 		"confirmation.first_seen_at <= captures.source_first_observed_at + interval '60 minutes'",
 		"jsonb_typeof(t.liquidity->'ask_impact_bps') = 'number'",
+		"identity_registry_fingerprint",
+		"count(DISTINCT identity_registry_version)",
+		"IS DISTINCT FROM (identity_registry_fingerprint IS NULL)",
 	}
 	sourceLeadQueries := sourceLeadProgressSQL + sourceLeadTargetProgressSQL
 	for _, fragment := range requiredSourceLeadFragments {
