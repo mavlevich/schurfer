@@ -1,7 +1,10 @@
-.PHONY: help install install-golangci-lint dev dev-init dev-stop dev-reset dev-logs dev-test migrate measurement-report exchange-coverage-report exchange-source-economics-report source-lead-report episode-replay virtual-strategy-report virtual-entry-challenger-report virtual-threshold-challenger-report virtual-exit-policy-report virtual-exit-discovery-report virtual-score-challenger-report candle-anomaly-report derivatives-context-report decision-quality-report liquid-taker-report long-horizon-report open-ended-margin-report maker-entry-report pump-magnitude-report orderflow-pilot-report exit-liquidity-calibration-report orderflow-start orderflow-stop orderflow-health test lint ci-lint format clean security deadcode check verify verify-docker \
+.PHONY: help install install-golangci-lint install-deadcode dev dev-init dev-stop dev-reset dev-logs dev-test migrate measurement-report exchange-coverage-report exchange-source-economics-report source-lead-report episode-replay virtual-strategy-report virtual-entry-challenger-report virtual-threshold-challenger-report virtual-exit-policy-report virtual-exit-discovery-report virtual-score-challenger-report candle-anomaly-report derivatives-context-report decision-quality-report liquid-taker-report long-horizon-report open-ended-margin-report maker-entry-report pump-magnitude-report orderflow-pilot-report exit-liquidity-calibration-report orderflow-start orderflow-stop orderflow-health test lint ci-lint format clean security deadcode check verify verify-docker \
 		prod-deploy prod-runtime-metrics-install prod-runtime-metrics-health prod-research-checkpoints-install prod-research-checkpoints-run prod-research-checkpoints-health prod-measurement-report prod-exchange-coverage-report prod-exchange-source-economics-report prod-source-lead-report prod-source-lead-capture-health prod-episode-replay prod-virtual-strategy-report prod-virtual-entry-challenger-report prod-virtual-threshold-challenger-report prod-virtual-exit-policy-report prod-virtual-exit-discovery-report prod-virtual-score-challenger-report prod-candle-anomaly-report prod-derivatives-context-report prod-decision-quality-report prod-liquid-taker-report prod-long-horizon-report prod-open-ended-margin-report prod-open-ended-margin-health prod-maker-entry-report prod-pump-magnitude-report prod-orderflow-pilot-report prod-exit-liquidity-calibration-report prod-orderflow-start prod-orderflow-stop prod-orderflow-health prod-logs prod-backup prod-restore-local prod-health
 
 GOLANGCI_LINT_VERSION = v2.1.6
+DEADCODE_VERSION = v0.48.0
+GO_INSTALL_BIN := $(or $(shell go env GOBIN),$(shell go env GOPATH)/bin)
+DEADCODE_BIN := $(GO_INSTALL_BIN)/deadcode
 PROD_REPORT_MIN_HEADROOM_MB ?= 1280
 PROD_ORDERFLOW_MIN_AVAILABLE_MB ?= 768
 PROD_ORDERFLOW_MIN_DISK_MB ?= 15360
@@ -110,6 +113,12 @@ install:
 install-golangci-lint:
 	@echo "-> Installing golangci-lint $(GOLANGCI_LINT_VERSION)..."
 	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+
+install-deadcode:
+	@test -x "$(DEADCODE_BIN)" || { \
+		echo "-> Installing deadcode $(DEADCODE_VERSION)..."; \
+		go install golang.org/x/tools/cmd/deadcode@$(DEADCODE_VERSION); \
+	}
 
 dev-init:
 	@test ! -f .env || (echo ".env already exists, skipping" && exit 0)
@@ -389,7 +398,11 @@ deadcode:
 	fi
 	@echo "-> Go dead code..."
 	@if find . -name 'go.mod' -not -path './vendor/*' 2>/dev/null | grep -q .; then \
-		deadcode ./...; \
+		$(MAKE) install-deadcode; \
+		grep '^use ' go.work | awk '{print $$2}' | while read -r dir; do \
+			echo "=== deadcode $$dir ==="; \
+			(cd "$$dir" && "$(DEADCODE_BIN)" ./...); \
+		done; \
 	else \
 		echo "  (no Go code yet)"; \
 	fi
@@ -423,6 +436,7 @@ verify:
 	@echo "=== [4/6] Go: test + vet ==="
 	go test ./apps/api-gateway/... ./apps/collector/... ./apps/notifier/...
 	go vet ./apps/api-gateway/... ./apps/collector/... ./apps/notifier/...
+	$(MAKE) deadcode
 	@echo "=== [5/6] Web: lint + typecheck + build ==="
 	pnpm --filter @schurfer/web lint
 	pnpm --filter @schurfer/web typecheck

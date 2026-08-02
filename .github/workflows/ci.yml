@@ -221,7 +221,7 @@ jobs:
       - name: Go dead code
         run: |
           if find . -name 'go.mod' -not -path './vendor/*' 2>/dev/null | grep -q .; then
-            go install golang.org/x/tools/cmd/deadcode@latest
+            go install golang.org/x/tools/cmd/deadcode@v0.48.0
             grep '^use ' go.work | awk '{print $2}' | while read -r dir; do
               echo "=== deadcode $dir ==="
               (cd "$dir" && deadcode ./...)
