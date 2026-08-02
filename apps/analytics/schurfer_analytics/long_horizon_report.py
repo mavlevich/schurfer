@@ -155,6 +155,42 @@ class MarginBufferMetrics:
 
 
 @dataclass(frozen=True)
+class CapitalEfficiencyGateSpec:
+    version: str
+    interim_horizon_minutes: int
+    final_horizon_minutes: int
+    collateral_cap_pct: float
+    minimum_survival_rate_pct: float
+    interim_min_exact_paths: int
+    interim_min_asset_clusters: int
+    interim_min_utc_weeks: int
+    final_min_exact_paths: int
+    final_min_asset_clusters: int
+    final_min_utc_weeks: int
+
+
+@dataclass(frozen=True)
+class CapitalEfficiencyCheckpoint:
+    horizon_minutes: int
+    exact_paths: int
+    asset_clusters: int
+    utc_weeks: int
+    survival_rate_pct: float | None
+    ready: bool
+
+
+@dataclass(frozen=True)
+class CapitalEfficiencyGate:
+    version: str
+    state: str
+    reason: str
+    collateral_cap_pct: float
+    minimum_survival_rate_pct: float
+    interim: CapitalEfficiencyCheckpoint
+    final: CapitalEfficiencyCheckpoint
+
+
+@dataclass(frozen=True)
 class LongHorizonReport:
     manifest: LongHorizonManifest
     dataset_episodes: int
@@ -166,6 +202,7 @@ class LongHorizonReport:
     unresolved_reasons: tuple[CountRow, ...]
     horizon_metrics: tuple[HorizonMetrics, ...]
     margin_buffer_metrics: tuple[MarginBufferMetrics, ...]
+    capital_efficiency_gate: CapitalEfficiencyGate | None
     results: tuple[LongHorizonResult, ...]
 
 
@@ -233,6 +270,38 @@ def build_long_horizon_dataset(
             )
         )
     return replace(dataset, episodes=tuple(episodes))
+
+
+def build_progressive_long_horizon_dataset(
+    decisions: list[ReplayDecision],
+    filters: ReplayFilters,
+) -> ReplayDataset:
+    """Keep valid episodes while their later checkpoints remain right-censored.
+
+    Each horizon is resolved independently by the report. This lets a registered
+    14-day interim gate read exact 14-day paths without pretending that the 21- and
+    28-day checkpoints are already mature.
+    """
+    dataset = build_replay_dataset(decisions, filters)
+    outcome_prefixes = (
+        "missing_outcome:",
+        "outcome_status:",
+        "duplicate_outcome:",
+    )
+    return replace(
+        dataset,
+        episodes=tuple(
+            replace(
+                episode,
+                exclusion_reasons=tuple(
+                    reason
+                    for reason in episode.exclusion_reasons
+                    if not reason.startswith(outcome_prefixes)
+                ),
+            )
+            for episode in dataset.episodes
+        ),
+    )
 
 
 def _outcome(decision: ReplayDecision, horizon: int) -> ReplayOutcome | None:
@@ -584,6 +653,117 @@ def _margin_buffer_metrics(
     )
 
 
+def _capital_efficiency_checkpoint(
+    results: tuple[LongHorizonResult, ...],
+    *,
+    horizon_minutes: int,
+    collateral_cap_pct: float,
+    min_exact_paths: int,
+    min_asset_clusters: int,
+    min_utc_weeks: int,
+) -> CapitalEfficiencyCheckpoint:
+    paths = tuple(
+        row
+        for row in results
+        if row.horizon_minutes == horizon_minutes
+        and row.exact_venue_path
+        and row.mae_pct is not None
+    )
+    clusters = {row.cluster_key for row in paths}
+    weeks = {
+        (row.decision_at.isocalendar().year, row.decision_at.isocalendar().week) for row in paths
+    }
+    survived = sum(row.mae_pct is not None and row.mae_pct < collateral_cap_pct for row in paths)
+    return CapitalEfficiencyCheckpoint(
+        horizon_minutes=horizon_minutes,
+        exact_paths=len(paths),
+        asset_clusters=len(clusters),
+        utc_weeks=len(weeks),
+        survival_rate_pct=_rate(survived, len(paths)),
+        ready=(
+            len(paths) >= min_exact_paths
+            and len(clusters) >= min_asset_clusters
+            and len(weeks) >= min_utc_weeks
+        ),
+    )
+
+
+def evaluate_capital_efficiency_gate(
+    results: tuple[LongHorizonResult, ...],
+    spec: CapitalEfficiencyGateSpec,
+) -> CapitalEfficiencyGate:
+    if spec.interim_horizon_minutes >= spec.final_horizon_minutes:
+        raise ValueError("capital-efficiency interim horizon must precede final horizon")
+    if not 0 < spec.minimum_survival_rate_pct <= 100:
+        raise ValueError("capital-efficiency survival threshold must be in (0, 100]")
+    if not math.isfinite(spec.collateral_cap_pct) or spec.collateral_cap_pct <= 0:
+        raise ValueError("capital-efficiency collateral cap must be finite and positive")
+    thresholds = (
+        spec.interim_min_exact_paths,
+        spec.interim_min_asset_clusters,
+        spec.interim_min_utc_weeks,
+        spec.final_min_exact_paths,
+        spec.final_min_asset_clusters,
+        spec.final_min_utc_weeks,
+    )
+    if any(value <= 0 for value in thresholds):
+        raise ValueError("capital-efficiency readiness thresholds must be positive")
+    interim = _capital_efficiency_checkpoint(
+        results,
+        horizon_minutes=spec.interim_horizon_minutes,
+        collateral_cap_pct=spec.collateral_cap_pct,
+        min_exact_paths=spec.interim_min_exact_paths,
+        min_asset_clusters=spec.interim_min_asset_clusters,
+        min_utc_weeks=spec.interim_min_utc_weeks,
+    )
+    final = _capital_efficiency_checkpoint(
+        results,
+        horizon_minutes=spec.final_horizon_minutes,
+        collateral_cap_pct=spec.collateral_cap_pct,
+        min_exact_paths=spec.final_min_exact_paths,
+        min_asset_clusters=spec.final_min_asset_clusters,
+        min_utc_weeks=spec.final_min_utc_weeks,
+    )
+    failed = next(
+        (
+            checkpoint
+            for checkpoint in (interim, final)
+            if checkpoint.ready
+            and checkpoint.survival_rate_pct is not None
+            and checkpoint.survival_rate_pct < spec.minimum_survival_rate_pct
+        ),
+        None,
+    )
+    if failed is not None:
+        state = "no_go_capital_efficiency"
+        reason = (
+            f"{failed.horizon_minutes}m path survival at "
+            f"{spec.collateral_cap_pct:g}% collateral/notional is below "
+            f"{spec.minimum_survival_rate_pct:g}%"
+        )
+    elif final.ready:
+        state = "boundary_only_ready"
+        reason = (
+            "capital survival floor passed; economics and point-in-time macro-regime "
+            "sensitivity remain descriptive and cannot promote an open-ended hold"
+        )
+    elif interim.ready:
+        state = "collecting"
+        reason = "interim capital survival floor passed; wait for the final checkpoint"
+    else:
+        state = "collecting"
+        reason = "capital-efficiency checkpoint sample and diversity gates are not ready"
+    return CapitalEfficiencyGate(
+        version=spec.version,
+        state=state,
+        reason=reason,
+        collateral_cap_pct=spec.collateral_cap_pct,
+        minimum_survival_rate_pct=spec.minimum_survival_rate_pct,
+        interim=interim,
+        final=final,
+    )
+
+
 def build_long_horizon_report(
     dataset: ReplayDataset,
     filters: ReplayFilters,
@@ -597,6 +777,7 @@ def build_long_horizon_report(
     report_version: str = LONG_HORIZON_REPORT_VERSION,
     eligibility_version: str = LONG_HORIZON_ELIGIBILITY_VERSION,
     funding_resolver_version: str = LONG_HORIZON_FUNDING_RESOLVER_VERSION,
+    capital_efficiency_gate_spec: CapitalEfficiencyGateSpec | None = None,
 ) -> LongHorizonReport:
     if filters.since is None:
         raise ValueError("long-horizon report requires an inclusive cohort start")
@@ -685,6 +866,11 @@ def build_long_horizon_report(
             )
             for horizon in required_horizons
             for buffer_pct in MARGIN_BUFFER_PCTS
+        ),
+        capital_efficiency_gate=(
+            evaluate_capital_efficiency_gate(results, capital_efficiency_gate_spec)
+            if capital_efficiency_gate_spec is not None
+            else None
         ),
         results=results,
     )
@@ -872,6 +1058,46 @@ def render_markdown(report: LongHorizonReport) -> str:
             ],
         )
     )
+    if report.capital_efficiency_gate is not None:
+        gate = report.capital_efficiency_gate
+        lines.extend(
+            [
+                "",
+                "## Capital-efficiency gate",
+                "",
+                f"State: `{gate.state}` — {gate.reason}.",
+                "",
+            ]
+        )
+        lines.extend(
+            markdown_table(
+                (
+                    "Checkpoint",
+                    "Horizon",
+                    "Exact paths",
+                    "Clusters",
+                    "UTC weeks",
+                    "Survival at cap",
+                    "Ready",
+                ),
+                [
+                    (
+                        name,
+                        horizon_label(checkpoint.horizon_minutes),
+                        checkpoint.exact_paths,
+                        checkpoint.asset_clusters,
+                        checkpoint.utc_weeks,
+                        format_percentage(checkpoint.survival_rate_pct, missing="n/a"),
+                        "yes" if checkpoint.ready else "no",
+                    )
+                    for name, checkpoint in (
+                        ("Interim", gate.interim),
+                        ("Final", gate.final),
+                    )
+                ],
+            )
+        )
+        lines.extend([""])
     lines.extend(["", "## Collateral buffer path screen", ""])
     lines.extend(
         markdown_table(

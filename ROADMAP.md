@@ -125,7 +125,13 @@ remains `DRY_RUN=true`, `AUTO_TRADE=false`.
    exact-venue 14-, 21-, and 28-day checkpoints plus a versioned 28-day funding lane.
    Its report compares observed MAE with collateral/notional buffers from 25% through
    200%. This is a no-`max_hold` research path, not an unlimited-loss production
-   strategy or an exact liquidation model. See
+   strategy or an exact liquidation model. It remains background measurement while
+   `liquid_taker_candidate_v1` keeps the primary Phase 3 slot. At 30 exact 14-day
+   paths/10 clusters/two weeks, fail early if 80% survival already needs more than
+   100% collateral; the same final no-go applies at 100 exact 28-day paths/30
+   clusters/four weeks. A positive boundary result may calibrate only a separately
+   registered bounded fixed-risk exit. Its final positive interpretation also needs
+   a point-in-time BTC-dominance and aggregate-funding regime sensitivity. See
    [the frozen contract](docs/research/open-ended-margin-v1.md).
 5. **[Completed, awaiting first run] Exit discovery on the matched tradeable
    cohort.** `virtual-exit-discovery-report` compares the baseline, registered

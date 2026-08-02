@@ -12,8 +12,9 @@ from .derivatives_context_resolver import OPEN_ENDED_MARGIN_FUNDING_RESOLVER_VER
 from .long_horizon_funding_repository import LongHorizonFundingRepository
 from .long_horizon_report import (
     LONG_HORIZON_STRATEGY_VERSIONS,
-    build_long_horizon_dataset,
+    CapitalEfficiencyGateSpec,
     build_long_horizon_report,
+    build_progressive_long_horizon_dataset,
     render_json,
     render_markdown,
     select_long_horizon_decision,
@@ -28,6 +29,19 @@ OPEN_ENDED_MARGIN_REPORT_VERSION = "open_ended_margin_report_v1"
 OPEN_ENDED_MARGIN_ELIGIBILITY_VERSION = "prospective_no_time_exit_margin_buffer_v1"
 OPEN_ENDED_MARGIN_COHORT_START = datetime(2026, 8, 3, tzinfo=UTC)
 OPEN_ENDED_MARGIN_HORIZONS = EXTENDED_HORIZONS_MINUTES
+OPEN_ENDED_MARGIN_GATE_SPEC = CapitalEfficiencyGateSpec(
+    version="open_ended_margin_capital_efficiency_gate_v1",
+    interim_horizon_minutes=20_160,
+    final_horizon_minutes=40_320,
+    collateral_cap_pct=100.0,
+    minimum_survival_rate_pct=80.0,
+    interim_min_exact_paths=30,
+    interim_min_asset_clusters=10,
+    interim_min_utc_weeks=2,
+    final_min_exact_paths=100,
+    final_min_asset_clusters=30,
+    final_min_utc_weeks=4,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -87,7 +101,7 @@ async def _run(args: argparse.Namespace) -> str:
     )
     try:
         decisions = await replay_repository.load(filters)
-        dataset = build_long_horizon_dataset(decisions, filters)
+        dataset = build_progressive_long_horizon_dataset(decisions, filters)
         keys = tuple(
             (
                 episode.pump_event_id,
@@ -113,6 +127,7 @@ async def _run(args: argparse.Namespace) -> str:
         report_version=OPEN_ENDED_MARGIN_REPORT_VERSION,
         eligibility_version=OPEN_ENDED_MARGIN_ELIGIBILITY_VERSION,
         funding_resolver_version=OPEN_ENDED_MARGIN_FUNDING_RESOLVER_VERSION,
+        capital_efficiency_gate_spec=OPEN_ENDED_MARGIN_GATE_SPEC,
     )
     return render_json(report) if args.format == "json" else render_markdown(report)
 
