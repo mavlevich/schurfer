@@ -28,6 +28,21 @@ def test_funding_series_query_is_exact_event_venue_and_version() -> None:
     assert "LEFT OUTER JOIN app.pump_derivatives_context_samples" in sql
 
 
+def test_funding_series_query_accepts_an_independent_versioned_lane() -> None:
+    statement = funding_series_statement(
+        ((42, "binance"),),
+        resolver_version="open_ended_margin_funding_v1",
+    )
+    sql = str(
+        statement.compile(
+            dialect=postgresql.dialect(),  # type: ignore[no-untyped-call]
+            compile_kwargs={"literal_binds": True},
+        )
+    )
+
+    assert "resolver_version = 'open_ended_margin_funding_v1'" in sql
+
+
 def test_map_funding_series_preserves_empty_runs_and_sorts_samples() -> None:
     rows = [
         {

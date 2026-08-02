@@ -8,6 +8,7 @@ from schurfer_analytics.long_horizon_funding_repository import (
 )
 from schurfer_analytics.long_horizon_report import (
     LONG_HORIZON_COHORT_START,
+    LONG_HORIZON_REPORT_VERSION,
     LONG_HORIZON_STRATEGY_VERSIONS,
     LONG_HORIZONS,
     SHORT_FUNDING_SIGN_CONVENTION,
@@ -210,6 +211,7 @@ def test_report_calculates_signed_net_stop_survival_and_capacity() -> None:
 
     day = next(row for row in report.results if row.horizon_minutes == 1_440)
     assert day.funding_settlements == 2
+    assert day.exact_venue_path is True
     assert day.signed_funding_return_pct == pytest.approx(0.05)
     assert day.modeled_signed_funding_cash_usd == pytest.approx(0.025)
     assert day.funding_direction == "credit"
@@ -224,9 +226,53 @@ def test_report_calculates_signed_net_stop_survival_and_capacity() -> None:
     assert metrics.expected_occupied_notional_usd_upper_bound == pytest.approx(6.25)
     assert report.manifest.funding_resolver_version == "long_horizon_funding_v1"
     assert report.manifest.funding_sign_convention == SHORT_FUNDING_SIGN_CONVENTION
+    buffer = next(
+        row
+        for row in report.margin_buffer_metrics
+        if row.horizon_minutes == 1_440 and row.collateral_to_notional_pct == 25
+    )
+    assert buffer.exact_paths == 1
+    assert buffer.crossed_price_distance == 0
+    assert buffer.price_distance_survival_rate_pct == 100
+    assert buffer.mean_collateral_usd == pytest.approx(12.5)
+    assert buffer.expected_occupied_collateral_usd_upper_bound == pytest.approx(1.5625)
+    assert buffer.survivor_mean_return_on_collateral_pct == pytest.approx(19.12)
+    assert report.manifest.report_version == "long_horizon_signed_funding_report_v2"
+    assert LONG_HORIZON_REPORT_VERSION == "long_horizon_signed_funding_report_v2"
     assert SHORT_FUNDING_SIGN_CONVENTION in render_markdown(report)
+    assert "Collateral buffer path screen" in render_markdown(report)
     assert "Descriptive discovery only" in render_markdown(report)
     assert '"signed_funding_return_pct": 0.05' in render_json(report)
+
+
+def test_margin_screen_excludes_cross_venue_fallback_paths() -> None:
+    decision, filters = _inputs()
+    filters = replace(filters, allow_fallback=True)
+    fallback_outcomes = tuple(
+        replace(outcome, status="complete_fallback", source_exchange="bybit")
+        for outcome in decision.outcomes
+    )
+    fallback_decision = replace(decision, outcomes=fallback_outcomes)
+    dataset = build_replay_dataset([fallback_decision], filters)
+
+    report = build_long_horizon_report(
+        dataset,
+        filters,
+        (_funding(fallback_decision),),
+        generated_at=filters.until,
+        code_revision="abc123",
+        working_tree_dirty=False,
+    )
+
+    day = next(row for row in report.results if row.horizon_minutes == 1_440)
+    buffer = next(
+        row
+        for row in report.margin_buffer_metrics
+        if row.horizon_minutes == 1_440 and row.collateral_to_notional_pct == 25
+    )
+    assert day.exact_venue_path is False
+    assert buffer.exact_paths == 0
+    assert buffer.price_distance_survival_rate_pct is None
 
 
 def test_report_models_negative_funding_as_short_debit() -> None:

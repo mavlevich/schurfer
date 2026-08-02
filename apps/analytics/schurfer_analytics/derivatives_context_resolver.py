@@ -42,6 +42,8 @@ DERIVATIVES_CONTEXT_RESOLVER_VERSION = "derivatives_context_v2"
 DEFAULT_COHORT_START = datetime(2026, 7, 27, tzinfo=UTC)
 LONG_HORIZON_FUNDING_RESOLVER_VERSION = "long_horizon_funding_v1"
 LONG_HORIZON_FUNDING_COHORT_START = datetime(2026, 7, 22, tzinfo=UTC)
+OPEN_ENDED_MARGIN_FUNDING_RESOLVER_VERSION = "open_ended_margin_funding_v1"
+OPEN_ENDED_MARGIN_FUNDING_COHORT_START = datetime(2026, 8, 3, tzinfo=UTC)
 RETRYABLE_STATUSES = (
     "fetch_failed",
     "invalid_response",
@@ -52,6 +54,7 @@ RETRYABLE_STATUSES = (
     "symbol_unavailable",
     "load_markets_failed",
 )
+OPEN_ENDED_MARGIN_MAX_WINDOW_MINUTES = 40_320
 
 # Production persistence starts only with venue/method pairs that returned valid,
 # timestamped data in the locked v2 probe. Price-like mark/index/premium candles stay
@@ -114,15 +117,21 @@ class DerivativesContextResolverConfig:
     max_attempts: int = 8
     anchor_mode: Literal["entry", "closed"] = "entry"
     method_names: tuple[str, ...] | None = None
+    maximum_window_minutes: int = MAX_WINDOW_MINUTES
 
     def __post_init__(self) -> None:
         if self.cohort_start.tzinfo is None:
             raise ValueError("DERIVATIVES_CONTEXT_SINCE must include a timezone")
         if self.before_minutes < 0 or self.after_minutes <= 0:
             raise ValueError("derivatives context window is invalid")
-        if self.before_minutes > MAX_WINDOW_MINUTES or self.after_minutes > MAX_WINDOW_MINUTES:
+        if self.maximum_window_minutes <= 0:
+            raise ValueError("derivatives context maximum window must be positive")
+        if (
+            self.before_minutes > self.maximum_window_minutes
+            or self.after_minutes > self.maximum_window_minutes
+        ):
             raise ValueError(
-                f"derivatives context windows cannot exceed {MAX_WINDOW_MINUTES} minutes"
+                f"derivatives context windows cannot exceed {self.maximum_window_minutes} minutes"
             )
         if not 1 <= self.fetch_limit <= 1000:
             raise ValueError("DERIVATIVES_CONTEXT_FETCH_LIMIT must be between 1 and 1000")
@@ -197,6 +206,28 @@ def long_horizon_funding_config_from_env() -> DerivativesContextResolverConfig:
         max_attempts=int(os.getenv("LONG_HORIZON_FUNDING_MAX_ATTEMPTS", "8")),
         anchor_mode="closed",
         method_names=("funding_rate_history",),
+    )
+
+
+def open_ended_margin_funding_config_from_env() -> DerivativesContextResolverConfig:
+    """Build the funding-only lane for 14d, 21d, and 28d margin research."""
+    return DerivativesContextResolverConfig(
+        enabled=_parse_bool("OPEN_ENDED_MARGIN_FUNDING_ENABLED", True),
+        cohort_start=_parse_utc(
+            "OPEN_ENDED_MARGIN_FUNDING_SINCE",
+            OPEN_ENDED_MARGIN_FUNDING_COHORT_START,
+        ),
+        before_minutes=int(os.getenv("OPEN_ENDED_MARGIN_FUNDING_BEFORE_MINUTES", "1440")),
+        after_minutes=int(os.getenv("OPEN_ENDED_MARGIN_FUNDING_AFTER_MINUTES", "40320")),
+        fetch_limit=int(os.getenv("OPEN_ENDED_MARGIN_FUNDING_FETCH_LIMIT", "200")),
+        max_pages=int(os.getenv("OPEN_ENDED_MARGIN_FUNDING_MAX_PAGES", "10")),
+        timeout_seconds=float(os.getenv("OPEN_ENDED_MARGIN_FUNDING_TIMEOUT", "15")),
+        retry_after_seconds=int(os.getenv("OPEN_ENDED_MARGIN_FUNDING_RETRY_AFTER", "900")),
+        batch_size=int(os.getenv("OPEN_ENDED_MARGIN_FUNDING_BATCH_SIZE", "4")),
+        max_attempts=int(os.getenv("OPEN_ENDED_MARGIN_FUNDING_MAX_ATTEMPTS", "8")),
+        anchor_mode="closed",
+        method_names=("funding_rate_history",),
+        maximum_window_minutes=OPEN_ENDED_MARGIN_MAX_WINDOW_MINUTES,
     )
 
 

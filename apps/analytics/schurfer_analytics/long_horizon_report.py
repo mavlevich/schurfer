@@ -43,7 +43,7 @@ from .reporting import (
 )
 from .virtual_strategy import DEFAULT_COSTS, decision_impact_bps, exit_parameters
 
-LONG_HORIZON_REPORT_VERSION = "long_horizon_signed_funding_report_v1"
+LONG_HORIZON_REPORT_VERSION = "long_horizon_signed_funding_report_v2"
 LONG_HORIZON_SELECTION_VERSION = "recorded_open_else_first_decision_v1"
 LONG_HORIZON_ELIGIBILITY_VERSION = "selected_decision_long_horizon_outcomes_v1"
 SHORT_FUNDING_SIGN_CONVENTION = "positive_rate_long_pays_short_v1"
@@ -51,6 +51,7 @@ LONG_HORIZON_COHORT_START = datetime(2026, 7, 22, tzinfo=UTC)
 LONG_HORIZONS = (1_440, 4_320, 10_080)
 LONG_HORIZON_STRATEGY_VERSIONS = ("pump_short_v1_market_quality",)
 TIMEFRAME_MINUTES = 5
+MARGIN_BUFFER_PCTS = (25.0, 50.0, 75.0, 100.0, 150.0, 200.0)
 
 
 @dataclass(frozen=True)
@@ -91,6 +92,7 @@ class LongHorizonResult:
     decision_id: str
     decision_at: datetime
     horizon_minutes: int
+    exact_venue_path: bool
     status: str
     gross_short_return_pct: float | None
     funding_settlements: int | None
@@ -131,6 +133,25 @@ class HorizonMetrics:
     opportunities_per_calendar_day: float | None
     expected_concurrent_positions_upper_bound: float | None
     expected_occupied_notional_usd_upper_bound: float | None
+    utc_weeks: int
+    largest_week_share_pct: float | None
+    largest_asset_share_pct: float | None
+    mean_net_without_busiest_week_pct: float | None
+    mean_net_without_largest_asset_pct: float | None
+
+
+@dataclass(frozen=True)
+class MarginBufferMetrics:
+    horizon_minutes: int
+    collateral_to_notional_pct: float
+    exact_paths: int
+    crossed_price_distance: int
+    survived_price_distance: int
+    price_distance_survival_rate_pct: float | None
+    mean_collateral_usd: float | None
+    expected_occupied_collateral_usd_upper_bound: float | None
+    survivor_mean_net_return_pct: float | None
+    survivor_mean_return_on_collateral_pct: float | None
 
 
 @dataclass(frozen=True)
@@ -144,6 +165,7 @@ class LongHorizonReport:
     result_statuses: tuple[CountRow, ...]
     unresolved_reasons: tuple[CountRow, ...]
     horizon_metrics: tuple[HorizonMetrics, ...]
+    margin_buffer_metrics: tuple[MarginBufferMetrics, ...]
     results: tuple[LongHorizonResult, ...]
 
 
@@ -168,7 +190,7 @@ def _position_usd(decision: ReplayDecision) -> float | None:
     return _finite_number(config.get("signal_position_usd"), positive=True)
 
 
-def _select_decision(episode: ReplayEpisode) -> ReplayDecision:
+def select_long_horizon_decision(episode: ReplayEpisode) -> ReplayDecision:
     opened = next(
         (
             decision
@@ -193,7 +215,7 @@ def build_long_horizon_dataset(
     )
     episodes: list[ReplayEpisode] = []
     for episode in dataset.episodes:
-        selected = _select_decision(episode)
+        selected = select_long_horizon_decision(episode)
         reasons = {
             reason
             for reason in episode.exclusion_reasons
@@ -282,6 +304,7 @@ def _result(
             decision_id=decision.decision_id or "",
             decision_at=decision.ts,
             horizon_minutes=horizon,
+            exact_venue_path=False,
             status="unresolved",
             gross_short_return_pct=None,
             funding_settlements=None,
@@ -311,6 +334,7 @@ def _result(
             decision_id=decision.decision_id or "",
             decision_at=decision.ts,
             horizon_minutes=horizon,
+            exact_venue_path=False,
             status="unresolved",
             gross_short_return_pct=None,
             funding_settlements=None,
@@ -357,6 +381,7 @@ def _result(
             decision_id=decision.decision_id or "",
             decision_at=decision.ts,
             horizon_minutes=horizon,
+            exact_venue_path=True,
             status="unresolved",
             gross_short_return_pct=outcome.short_return_pct,
             funding_settlements=settlement_count,
@@ -392,6 +417,7 @@ def _result(
         decision_id=decision.decision_id or "",
         decision_at=decision.ts,
         horizon_minutes=horizon,
+        exact_venue_path=True,
         status="resolved",
         gross_short_return_pct=outcome.short_return_pct,
         funding_settlements=settlement_count,
@@ -449,6 +475,27 @@ def _horizon_metrics(
     ]
     stop_observed = [row for row in resolved if row.survived_initial_stop is not None]
     positions = [row.position_usd for row in resolved if row.position_usd is not None]
+    weeks = Counter(
+        (row.decision_at.isocalendar().year, row.decision_at.isocalendar().week) for row in resolved
+    )
+    assets = Counter(row.base for row in resolved)
+    busiest_week = max(weeks, key=weeks.__getitem__) if weeks else None
+    largest_asset = max(assets, key=assets.__getitem__) if assets else None
+    net_without_busiest_week = [
+        row.net_fixed_horizon_return_pct
+        for row in resolved
+        if row.net_fixed_horizon_return_pct is not None
+        and (
+            row.decision_at.isocalendar().year,
+            row.decision_at.isocalendar().week,
+        )
+        != busiest_week
+    ]
+    net_without_largest_asset = [
+        row.net_fixed_horizon_return_pct
+        for row in resolved
+        if row.net_fixed_horizon_return_pct is not None and row.base != largest_asset
+    ]
     opportunities_per_day = len(rows) / calendar_days if calendar_days > 0 else None
     concurrency = (
         opportunities_per_day * horizon / 1_440.0 if opportunities_per_day is not None else None
@@ -484,6 +531,56 @@ def _horizon_metrics(
         expected_occupied_notional_usd_upper_bound=(
             concurrency * fmean(positions) if concurrency is not None and positions else None
         ),
+        utc_weeks=len(weeks),
+        largest_week_share_pct=(_rate(max(weeks.values()), len(resolved)) if weeks else None),
+        largest_asset_share_pct=(_rate(max(assets.values()), len(resolved)) if assets else None),
+        mean_net_without_busiest_week_pct=_mean(net_without_busiest_week),
+        mean_net_without_largest_asset_pct=_mean(net_without_largest_asset),
+    )
+
+
+def _margin_buffer_metrics(
+    horizon: int,
+    collateral_to_notional_pct: float,
+    results: tuple[LongHorizonResult, ...],
+    *,
+    calendar_days: float,
+) -> MarginBufferMetrics:
+    rows = tuple(row for row in results if row.horizon_minutes == horizon)
+    paths = tuple(row for row in rows if row.exact_venue_path and row.mae_pct is not None)
+    survived = tuple(
+        row for row in paths if row.mae_pct is not None and row.mae_pct < collateral_to_notional_pct
+    )
+    positions = tuple(row.position_usd for row in rows if row.position_usd is not None)
+    survivor_net = tuple(
+        row.net_fixed_horizon_return_pct
+        for row in survived
+        if row.net_fixed_horizon_return_pct is not None
+    )
+    collateral_ratio = collateral_to_notional_pct / 100.0
+    opportunities_per_day = len(rows) / calendar_days if calendar_days > 0 else None
+    concurrent_positions = (
+        opportunities_per_day * horizon / 1_440.0 if opportunities_per_day is not None else None
+    )
+    return MarginBufferMetrics(
+        horizon_minutes=horizon,
+        collateral_to_notional_pct=collateral_to_notional_pct,
+        exact_paths=len(paths),
+        crossed_price_distance=len(paths) - len(survived),
+        survived_price_distance=len(survived),
+        price_distance_survival_rate_pct=_rate(len(survived), len(paths)),
+        mean_collateral_usd=(fmean(positions) * collateral_ratio if positions else None),
+        expected_occupied_collateral_usd_upper_bound=(
+            concurrent_positions * fmean(positions) * collateral_ratio
+            if concurrent_positions is not None and positions
+            else None
+        ),
+        survivor_mean_net_return_pct=_mean(list(survivor_net)),
+        survivor_mean_return_on_collateral_pct=(
+            _mean([value / collateral_ratio for value in survivor_net])
+            if collateral_ratio > 0
+            else None
+        ),
     )
 
 
@@ -496,10 +593,14 @@ def build_long_horizon_report(
     code_revision: str,
     working_tree_dirty: bool,
     taker_fee_bps_per_side: float = DEFAULT_COSTS.taker_fee_bps_per_side,
+    required_horizons: tuple[int, ...] = LONG_HORIZONS,
+    report_version: str = LONG_HORIZON_REPORT_VERSION,
+    eligibility_version: str = LONG_HORIZON_ELIGIBILITY_VERSION,
+    funding_resolver_version: str = LONG_HORIZON_FUNDING_RESOLVER_VERSION,
 ) -> LongHorizonReport:
     if filters.since is None:
         raise ValueError("long-horizon report requires an inclusive cohort start")
-    if filters.required_horizons != LONG_HORIZONS:
+    if filters.required_horizons != required_horizons:
         raise ValueError("long-horizon report requires the registered horizons")
     if not math.isfinite(taker_fee_bps_per_side) or taker_fee_bps_per_side < 0:
         raise ValueError("taker fee must be finite and non-negative")
@@ -515,8 +616,8 @@ def build_long_horizon_report(
             taker_fee_bps_per_side=taker_fee_bps_per_side,
         )
         for episode in dataset.eligible_episodes
-        for decision in (_select_decision(episode),)
-        for horizon in LONG_HORIZONS
+        for decision in (select_long_horizon_decision(episode),)
+        for horizon in required_horizons
     )
     calendar_days = max(
         (filters.until - filters.since).total_seconds() / 86_400.0,
@@ -527,11 +628,11 @@ def build_long_horizon_report(
     )
     return LongHorizonReport(
         manifest=LongHorizonManifest(
-            report_version=LONG_HORIZON_REPORT_VERSION,
+            report_version=report_version,
             replay_engine_version=FOUNDATION_VERSION,
             replay_query_version=QUERY_VERSION,
             selection_version=LONG_HORIZON_SELECTION_VERSION,
-            eligibility_version=LONG_HORIZON_ELIGIBILITY_VERSION,
+            eligibility_version=eligibility_version,
             code_revision=normalize_code_revision(code_revision),
             working_tree_dirty=working_tree_dirty,
             generated_at=generated_at,
@@ -541,7 +642,7 @@ def build_long_horizon_report(
             funding_input_fingerprint=funding_series_fingerprint(funding_series),
             strategy_versions=filters.strategy_versions,
             outcome_resolver_version=filters.resolver_version,
-            funding_resolver_version=LONG_HORIZON_FUNDING_RESOLVER_VERSION,
+            funding_resolver_version=funding_resolver_version,
             funding_sign_convention=SHORT_FUNDING_SIGN_CONVENTION,
             required_horizons=filters.required_horizons,
             taker_fee_bps_per_side=taker_fee_bps_per_side,
@@ -573,7 +674,17 @@ def build_long_horizon_report(
         ),
         horizon_metrics=tuple(
             _horizon_metrics(horizon, results, calendar_days=calendar_days)
-            for horizon in LONG_HORIZONS
+            for horizon in required_horizons
+        ),
+        margin_buffer_metrics=tuple(
+            _margin_buffer_metrics(
+                horizon,
+                buffer_pct,
+                results,
+                calendar_days=calendar_days,
+            )
+            for horizon in required_horizons
+            for buffer_pct in MARGIN_BUFFER_PCTS
         ),
         results=results,
     )
@@ -731,6 +842,79 @@ def render_markdown(report: LongHorizonReport) -> str:
             ],
         )
     )
+    lines.extend(["", "## Time and asset concentration", ""])
+    lines.extend(
+        markdown_table(
+            (
+                "Horizon",
+                "UTC weeks",
+                "Largest week",
+                "Largest asset",
+                "Net without busiest week",
+                "Net without largest asset",
+            ),
+            [
+                (
+                    horizon_label(row.horizon_minutes),
+                    row.utc_weeks,
+                    format_percentage(row.largest_week_share_pct, missing="n/a"),
+                    format_percentage(row.largest_asset_share_pct, missing="n/a"),
+                    format_percentage(
+                        row.mean_net_without_busiest_week_pct,
+                        missing="n/a",
+                    ),
+                    format_percentage(
+                        row.mean_net_without_largest_asset_pct,
+                        missing="n/a",
+                    ),
+                )
+                for row in report.horizon_metrics
+            ],
+        )
+    )
+    lines.extend(["", "## Collateral buffer path screen", ""])
+    lines.extend(
+        markdown_table(
+            (
+                "Horizon",
+                "Collateral/notional",
+                "Exact paths",
+                "Crossed distance",
+                "Path survival",
+                "Mean collateral",
+                "Occupied collateral upper bound",
+                "Survivor net mean",
+                "Survivor return on collateral",
+            ),
+            [
+                (
+                    horizon_label(row.horizon_minutes),
+                    format_percentage(row.collateral_to_notional_pct),
+                    row.exact_paths,
+                    row.crossed_price_distance,
+                    format_percentage(
+                        row.price_distance_survival_rate_pct,
+                        missing="n/a",
+                    ),
+                    format_number(row.mean_collateral_usd, suffix=" USD", missing="n/a"),
+                    format_number(
+                        row.expected_occupied_collateral_usd_upper_bound,
+                        suffix=" USD",
+                        missing="n/a",
+                    ),
+                    format_percentage(
+                        row.survivor_mean_net_return_pct,
+                        missing="n/a",
+                    ),
+                    format_percentage(
+                        row.survivor_mean_return_on_collateral_pct,
+                        missing="n/a",
+                    ),
+                )
+                for row in report.margin_buffer_metrics
+            ],
+        )
+    )
     lines.extend(
         [
             "",
@@ -740,7 +924,11 @@ def render_markdown(report: LongHorizonReport) -> str:
                 "not forecasts. Signed funding assumes the short is open at each published "
                 "settlement and applies each rate to initial notional. It is a model, not "
                 "an exchange ledger. Positive rates credit the short and negative rates "
-                "debit it._"
+                "debit it. The collateral screen compares observed MAE with collateral as "
+                "a percentage of notional. It is a price-distance diagnostic, not an exact "
+                "exchange liquidation model; maintenance margin, fees, mark price, tiering, "
+                "cross-margin interactions, and liquidation penalties reduce the usable "
+                "buffer._"
             ),
             "",
             "## Result statuses",
@@ -864,7 +1052,7 @@ async def _run(args: argparse.Namespace) -> str:
         keys = tuple(
             (
                 episode.pump_event_id,
-                _select_decision(episode).exchange,
+                select_long_horizon_decision(episode).exchange,
             )
             for episode in dataset.eligible_episodes
         )

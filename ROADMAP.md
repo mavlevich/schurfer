@@ -121,6 +121,12 @@ remains `DRY_RUN=true`, `AUTO_TRADE=false`.
    unified sign preservation on 2026-07-29. Before any live use, validate every
    enabled venue against its official contract and at least one authenticated account
    funding-ledger settlement.
+   A separate prospective open-ended margin study starts on `2026-08-03`. It adds
+   exact-venue 14-, 21-, and 28-day checkpoints plus a versioned 28-day funding lane.
+   Its report compares observed MAE with collateral/notional buffers from 25% through
+   200%. This is a no-`max_hold` research path, not an unlimited-loss production
+   strategy or an exact liquidation model. See
+   [the frozen contract](docs/research/open-ended-margin-v1.md).
 5. **[Completed, awaiting first run] Exit discovery on the matched tradeable
    cohort.** `virtual-exit-discovery-report` compares the baseline, registered
    breakeven, no-progress, combined, and bounded-extension exits with two fixed-risk
