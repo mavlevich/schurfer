@@ -89,6 +89,7 @@ def test_terminal_checkpoint_is_not_rerun(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(checkpoints, "CHECKPOINTS", (checkpoints.CHECKPOINTS[0],))
     monkeypatch.setattr(
         checkpoints,
         "_run_report",
@@ -185,6 +186,7 @@ def test_terminal_checkpoint_retries_failed_notification_without_rerunning_repor
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     messages: list[str] = []
+    monkeypatch.setattr(checkpoints, "CHECKPOINTS", (checkpoints.CHECKPOINTS[0],))
 
     def fake_notify(message: str) -> None:
         messages.append(message)

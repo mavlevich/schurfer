@@ -216,11 +216,6 @@ func (e *Engine) ObservedSymbols() int {
 	return len(e.states)
 }
 
-func (e *Engine) IsHot(symbol string, now time.Time) bool {
-	_, ok := e.active(normalizeSymbol(symbol), now)
-	return ok
-}
-
 func (e *Engine) active(symbol string, now time.Time) (Activation, bool) {
 	activation, ok := e.hot[symbol]
 	if !ok {
