@@ -14,7 +14,7 @@ def test_contract_is_forward_locked_after_discovery() -> None:
     assert datetime(2026, 8, 3, tzinfo=UTC) == OPEN_ENDED_MARGIN_COHORT_START
     assert OPEN_ENDED_MARGIN_HORIZONS == (20_160, 30_240, 40_320)
     assert OPEN_ENDED_MARGIN_REPORT_VERSION == "open_ended_margin_report_v1"
-    assert OPEN_ENDED_MARGIN_ELIGIBILITY_VERSION == ("prospective_no_time_exit_margin_buffer_v1")
+    assert OPEN_ENDED_MARGIN_ELIGIBILITY_VERSION == "prospective_no_time_exit_margin_buffer_v1"
 
 
 def test_cli_requires_explicit_dirty_state() -> None:

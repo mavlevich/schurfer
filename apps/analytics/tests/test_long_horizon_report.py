@@ -20,6 +20,7 @@ from schurfer_analytics.long_horizon_report import (
     signed_funding_for_window,
 )
 from schurfer_analytics.ohlcv import ceil_to_timeframe
+from schurfer_analytics.outcomes import EXTENDED_HORIZON_STRATEGY_VERSIONS
 from schurfer_analytics.replay import (
     ReplayDecision,
     ReplayFilters,
@@ -239,6 +240,7 @@ def test_report_calculates_signed_net_stop_survival_and_capacity() -> None:
     assert buffer.survivor_mean_return_on_collateral_pct == pytest.approx(19.12)
     assert report.manifest.report_version == "long_horizon_signed_funding_report_v2"
     assert LONG_HORIZON_REPORT_VERSION == "long_horizon_signed_funding_report_v2"
+    assert LONG_HORIZON_STRATEGY_VERSIONS is EXTENDED_HORIZON_STRATEGY_VERSIONS
     assert SHORT_FUNDING_SIGN_CONVENTION in render_markdown(report)
     assert "Collateral buffer path screen" in render_markdown(report)
     assert "Descriptive discovery only" in render_markdown(report)

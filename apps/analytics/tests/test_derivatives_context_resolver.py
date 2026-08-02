@@ -121,7 +121,7 @@ def test_open_ended_margin_funding_is_a_separate_28_day_lane() -> None:
     assert cfg.anchor_mode == "closed"
     assert cfg.method_names == ("funding_rate_history",)
     assert cfg.maximum_window_minutes == 40_320
-    assert OPEN_ENDED_MARGIN_FUNDING_RESOLVER_VERSION == ("open_ended_margin_funding_v1")
+    assert OPEN_ENDED_MARGIN_FUNDING_RESOLVER_VERSION == "open_ended_margin_funding_v1"
 
 
 async def test_resolver_reuses_loaded_client_and_persists_samples() -> None:

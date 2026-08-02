@@ -20,7 +20,7 @@ from .long_horizon_funding_repository import (
     funding_series_fingerprint,
 )
 from .ohlcv import ceil_to_timeframe
-from .outcomes import RESOLVER_VERSION
+from .outcomes import EXTENDED_HORIZON_STRATEGY_VERSIONS, RESOLVER_VERSION
 from .replay import (
     FOUNDATION_VERSION,
     QUERY_VERSION,
@@ -49,7 +49,7 @@ LONG_HORIZON_ELIGIBILITY_VERSION = "selected_decision_long_horizon_outcomes_v1"
 SHORT_FUNDING_SIGN_CONVENTION = "positive_rate_long_pays_short_v1"
 LONG_HORIZON_COHORT_START = datetime(2026, 7, 22, tzinfo=UTC)
 LONG_HORIZONS = (1_440, 4_320, 10_080)
-LONG_HORIZON_STRATEGY_VERSIONS = ("pump_short_v1_market_quality",)
+LONG_HORIZON_STRATEGY_VERSIONS = EXTENDED_HORIZON_STRATEGY_VERSIONS
 TIMEFRAME_MINUTES = 5
 MARGIN_BUFFER_PCTS = (25.0, 50.0, 75.0, 100.0, 150.0, 200.0)
 
