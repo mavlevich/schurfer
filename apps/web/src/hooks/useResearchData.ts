@@ -119,6 +119,31 @@ export interface SourceLeadProgress {
   interpretation: string;
 }
 
+export interface ResearchCheckpoint {
+  key: string;
+  title: string;
+  contract: string;
+  due_at: string;
+  state: string;
+  next_attempt_at: string | null;
+  last_attempt_at: string | null;
+  last_success_at: string | null;
+  report_status: string | null;
+  verdict: string | null;
+  report_file: string | null;
+  report_sha256: string | null;
+  error: string | null;
+  alert_error: string | null;
+}
+
+export interface CheckpointRunner {
+  version: string;
+  generated_at: string;
+  runner_state: string;
+  stale: boolean;
+  checkpoints: ResearchCheckpoint[];
+}
+
 export interface ResearchReadinessResponse {
   generated_at: string;
   interpretation: string;
@@ -126,6 +151,7 @@ export interface ResearchReadinessResponse {
   exit_liquidity: ExitLiquidityProgress;
   orderflow: OrderflowProgress | null;
   source_lead: SourceLeadProgress;
+  checkpoint_runner: CheckpointRunner | null;
 }
 
 async function fetchResearchReadiness(): Promise<ResearchReadinessResponse> {

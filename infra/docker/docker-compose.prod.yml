@@ -81,6 +81,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env.prod}
       EXECUTION_URL: http://execution:8001
       RUNTIME_METRICS_PATH: /runtime/container-metrics.snapshot
+      RESEARCH_CHECKPOINTS_PATH: /runtime/research-checkpoints.json
     volumes:
       - ../../runtime:/runtime:ro
     depends_on:

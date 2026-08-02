@@ -1,0 +1,11 @@
+[Unit]
+Description=Check Schurfer research milestones hourly
+
+[Timer]
+OnCalendar=hourly
+RandomizedDelaySec=5min
+Persistent=true
+Unit=schurfer-research-checkpoints.service
+
+[Install]
+WantedBy=timers.target

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
@@ -55,16 +56,18 @@ type redisHashReader interface {
 }
 
 type Handler struct {
-	db    queryRower
-	redis redisHashReader
-	now   func() time.Time
+	db             queryRower
+	redis          redisHashReader
+	now            func() time.Time
+	checkpointPath string
 }
 
 func NewHandler(pool *pgxpool.Pool, rdb *redis.Client) *Handler {
 	return &Handler{
-		db:    &poolAdapter{inner: pool},
-		redis: rdb,
-		now:   time.Now,
+		db:             &poolAdapter{inner: pool},
+		redis:          rdb,
+		now:            time.Now,
+		checkpointPath: os.Getenv("RESEARCH_CHECKPOINTS_PATH"),
 	}
 }
 
@@ -192,12 +195,13 @@ type SourceLeadProgress struct {
 }
 
 type Response struct {
-	GeneratedAt        time.Time             `json:"generated_at"`
-	Interpretation     string                `json:"interpretation"`
-	ProspectiveCohorts []CohortProgress      `json:"prospective_cohorts"`
-	ExitLiquidity      ExitLiquidityProgress `json:"exit_liquidity"`
-	Orderflow          *OrderflowProgress    `json:"orderflow"`
-	SourceLead         SourceLeadProgress    `json:"source_lead"`
+	GeneratedAt        time.Time               `json:"generated_at"`
+	Interpretation     string                  `json:"interpretation"`
+	ProspectiveCohorts []CohortProgress        `json:"prospective_cohorts"`
+	ExitLiquidity      ExitLiquidityProgress   `json:"exit_liquidity"`
+	Orderflow          *OrderflowProgress      `json:"orderflow"`
+	SourceLead         SourceLeadProgress      `json:"source_lead"`
+	CheckpointRunner   *CheckpointOrchestrator `json:"checkpoint_runner"`
 }
 
 type cohortCounts struct {
@@ -849,6 +853,10 @@ func cohort(
 // fetch market paths, or issue a strategy verdict.
 func (h *Handler) Readiness(w http.ResponseWriter, r *http.Request) {
 	now := h.now().UTC()
+	checkpointRunner := readCheckpointOrchestrator(h.checkpointPath)
+	if checkpointRunner != nil {
+		checkpointRunner.Stale = checkpointSnapshotIsStale(now, checkpointRunner.GeneratedAt)
+	}
 	liquidCounts, err := h.cohortProgress(r.Context(), liquidTakerStart, now)
 	if err != nil {
 		slog.Error("research.liquid_taker_progress", "err", err)
@@ -913,9 +921,10 @@ func (h *Handler) Readiness(w http.ResponseWriter, r *http.Request) {
 				widerReport,
 			),
 		},
-		ExitLiquidity: exitProgress,
-		Orderflow:     h.orderflowProgress(r.Context(), now),
-		SourceLead:    sourceLeadProgress,
+		ExitLiquidity:    exitProgress,
+		Orderflow:        h.orderflowProgress(r.Context(), now),
+		SourceLead:       sourceLeadProgress,
+		CheckpointRunner: checkpointRunner,
 	}
 
 	w.Header().Set("Content-Type", "application/json")

@@ -14,6 +14,7 @@ import { cn } from '@/lib/utils';
 import {
   useResearchReadiness,
   type ProspectiveCohort,
+  type CheckpointRunner,
   type ResearchMilestone,
   type SourceLeadProgress,
 } from '@/hooks/useResearchData';
@@ -46,7 +47,13 @@ function formatBytes(value: number): string {
 
 function statusBadge(status: string) {
   const label = status.split('_').join(' ');
-  if (status === 'decision_ready' || status === 'ok') {
+  if (
+    status === 'decision_ready' ||
+    status === 'discovery_ready' ||
+    status === 'shadow_candidate' ||
+    status === 'boundary_only_ready' ||
+    status === 'ok'
+  ) {
     return <Badge variant="success">{label}</Badge>;
   }
   if (status === 'directional') {
@@ -55,13 +62,90 @@ function statusBadge(status: string) {
   if (status === 'report_required') {
     return <Badge variant="warning">run formal report</Badge>;
   }
-  if (status === 'unhealthy') {
-    return <Badge variant="destructive">unhealthy</Badge>;
+  if (status === 'unhealthy' || status === 'error' || status === 'no_go' || status === 'stale') {
+    return <Badge variant="destructive">{label}</Badge>;
   }
   if (status === 'degraded') {
     return <Badge variant="warning">degraded</Badge>;
   }
   return <Badge variant="secondary">{label}</Badge>;
+}
+
+function CheckpointRunnerCard({ runner }: { runner: CheckpointRunner | null }) {
+  return (
+    <Card>
+      <CardHeader className="space-y-2">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <CalendarClock className="h-4 w-4 text-sky-400" />
+              Automated checkpoints
+            </CardTitle>
+            <p className="mt-1 text-xs text-muted-foreground">
+              One bounded report at a time with host memory and disk preflight.
+            </p>
+          </div>
+          {statusBadge(runner ? (runner.stale ? 'stale' : runner.runner_state) : 'not installed')}
+        </div>
+        {runner && (
+          <p className="text-xs text-muted-foreground">
+            Last scheduler pass {formatDateTime(runner.generated_at)}
+            {runner.stale && ' · expected hourly; inspect the systemd timer'}
+          </p>
+        )}
+      </CardHeader>
+      <CardContent>
+        {runner ? (
+          <div className="divide-y rounded-md border">
+            {runner.checkpoints.map((checkpoint) => (
+              <div
+                key={checkpoint.key}
+                className="flex flex-col gap-2 p-3 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-sm font-medium">{checkpoint.title}</p>
+                    {statusBadge(checkpoint.state)}
+                  </div>
+                  <p className="mt-1 truncate font-mono text-xs text-muted-foreground">
+                    {checkpoint.contract}
+                  </p>
+                  {checkpoint.error && (
+                    <p className="mt-1 text-xs text-red-400">{checkpoint.error}</p>
+                  )}
+                  {checkpoint.alert_error && (
+                    <p className="mt-1 text-xs text-amber-400">{checkpoint.alert_error}</p>
+                  )}
+                </div>
+                <div className="shrink-0 text-left text-xs text-muted-foreground sm:text-right">
+                  <p>
+                    {checkpoint.last_success_at
+                      ? `Last report ${formatDateTime(checkpoint.last_success_at)}`
+                      : `Due ${formatDateTime(checkpoint.due_at)}`}
+                  </p>
+                  <p>
+                    {checkpoint.verdict && checkpoint.verdict !== 'withheld'
+                      ? `Verdict ${checkpoint.verdict.split('_').join(' ')}`
+                      : checkpoint.next_attempt_at
+                        ? `Next check ${formatDateTime(checkpoint.next_attempt_at)}`
+                        : 'No next run scheduled'}
+                  </p>
+                  {checkpoint.report_sha256 && (
+                    <p className="font-mono">sha256:{checkpoint.report_sha256.slice(0, 12)}</p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            Scheduler status is unavailable. Collection continues, but milestone reports still
+            require manual runs.
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
 }
 
 function MilestoneRow({ label, milestone }: { label: string; milestone: ResearchMilestone }) {
@@ -453,6 +537,8 @@ export function ResearchPage() {
 
       {data && (
         <>
+          <CheckpointRunnerCard runner={data.checkpoint_runner} />
+
           <SourceLeadCard progress={data.source_lead} />
 
           <div className="grid gap-4 lg:grid-cols-2">
