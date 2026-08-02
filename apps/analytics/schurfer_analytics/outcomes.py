@@ -25,7 +25,19 @@ if TYPE_CHECKING:
 
 log = structlog.get_logger()
 
-HORIZONS_MINUTES = (15, 30, 60, 240, 480, 1440, 4320, 10080)
+EXTENDED_HORIZONS_MINUTES = (20_160, 30_240, 40_320)
+EXTENDED_HORIZON_STRATEGY_VERSIONS = ("pump_short_v1_market_quality",)
+HORIZONS_MINUTES = (
+    15,
+    30,
+    60,
+    240,
+    480,
+    1_440,
+    4_320,
+    10_080,
+    *EXTENDED_HORIZONS_MINUTES,
+)
 RESOLVER_VERSION = "forward_v1"
 EXACT_OUTCOME_STATUSES = ("complete",)
 FALLBACK_OUTCOME_STATUSES = (
@@ -331,6 +343,8 @@ async def resolve_once(
         max_attempts=cfg.max_attempts,
         retry_after_seconds=cfg.retry_after_seconds,
         batch_size=cfg.batch_size,
+        extended_horizons=EXTENDED_HORIZONS_MINUTES,
+        extended_strategy_versions=EXTENDED_HORIZON_STRATEGY_VERSIONS,
     )
     resolved: list[Outcome] = []
     for decision in decisions:

@@ -1,5 +1,5 @@
-.PHONY: help install install-golangci-lint dev dev-init dev-stop dev-reset dev-logs dev-test migrate measurement-report exchange-coverage-report exchange-source-economics-report source-lead-report episode-replay virtual-strategy-report virtual-entry-challenger-report virtual-threshold-challenger-report virtual-exit-policy-report virtual-exit-discovery-report virtual-score-challenger-report candle-anomaly-report derivatives-context-report decision-quality-report liquid-taker-report long-horizon-report maker-entry-report pump-magnitude-report orderflow-pilot-report exit-liquidity-calibration-report orderflow-start orderflow-stop orderflow-health test lint ci-lint format clean security deadcode check verify verify-docker \
-		prod-deploy prod-runtime-metrics-install prod-runtime-metrics-health prod-measurement-report prod-exchange-coverage-report prod-exchange-source-economics-report prod-source-lead-report prod-source-lead-capture-health prod-episode-replay prod-virtual-strategy-report prod-virtual-entry-challenger-report prod-virtual-threshold-challenger-report prod-virtual-exit-policy-report prod-virtual-exit-discovery-report prod-virtual-score-challenger-report prod-candle-anomaly-report prod-derivatives-context-report prod-decision-quality-report prod-liquid-taker-report prod-long-horizon-report prod-maker-entry-report prod-pump-magnitude-report prod-orderflow-pilot-report prod-exit-liquidity-calibration-report prod-orderflow-start prod-orderflow-stop prod-orderflow-health prod-logs prod-backup prod-restore-local prod-health
+.PHONY: help install install-golangci-lint dev dev-init dev-stop dev-reset dev-logs dev-test migrate measurement-report exchange-coverage-report exchange-source-economics-report source-lead-report episode-replay virtual-strategy-report virtual-entry-challenger-report virtual-threshold-challenger-report virtual-exit-policy-report virtual-exit-discovery-report virtual-score-challenger-report candle-anomaly-report derivatives-context-report decision-quality-report liquid-taker-report long-horizon-report open-ended-margin-report maker-entry-report pump-magnitude-report orderflow-pilot-report exit-liquidity-calibration-report orderflow-start orderflow-stop orderflow-health test lint ci-lint format clean security deadcode check verify verify-docker \
+		prod-deploy prod-runtime-metrics-install prod-runtime-metrics-health prod-measurement-report prod-exchange-coverage-report prod-exchange-source-economics-report prod-source-lead-report prod-source-lead-capture-health prod-episode-replay prod-virtual-strategy-report prod-virtual-entry-challenger-report prod-virtual-threshold-challenger-report prod-virtual-exit-policy-report prod-virtual-exit-discovery-report prod-virtual-score-challenger-report prod-candle-anomaly-report prod-derivatives-context-report prod-decision-quality-report prod-liquid-taker-report prod-long-horizon-report prod-open-ended-margin-report prod-open-ended-margin-health prod-maker-entry-report prod-pump-magnitude-report prod-orderflow-pilot-report prod-exit-liquidity-calibration-report prod-orderflow-start prod-orderflow-stop prod-orderflow-health prod-logs prod-backup prod-restore-local prod-health
 
 GOLANGCI_LINT_VERSION = v2.1.6
 PROD_REPORT_MIN_HEADROOM_MB ?= 1280
@@ -43,6 +43,7 @@ help:
 	@echo "  make liquid-taker-report  Replay prospective low-impact taker shelf"
 	@echo "  make liquid-taker-wider-stop-report  Compare prospective fixed-risk wider stop"
 	@echo "  make long-horizon-report  Describe 24h/72h/7d returns and signed funding"
+	@echo "  make open-ended-margin-report  Describe 14d/21d/28d margin-buffer survival"
 	@echo "  make maker-entry-report  Estimate the maker-entry OHLCV upper bound"
 	@echo "  make pump-magnitude-report  Explore 20% to 200% pump entry floors"
 	@echo "  make orderflow-pilot-report  Analyze bounded Bybit event/control captures"
@@ -77,6 +78,8 @@ help:
 	@echo "  make prod-liquid-taker-report  Production low-impact taker replay"
 	@echo "  make prod-liquid-taker-wider-stop-report  Production wider-stop shadow replay"
 	@echo "  make prod-long-horizon-report  Production long-horizon funding research"
+	@echo "  make prod-open-ended-margin-report  Production open-ended margin research"
+	@echo "  make prod-open-ended-margin-health  Show extended outcome/funding progress"
 	@echo "  make prod-maker-entry-report  Production maker-entry upper-bound report"
 	@echo "  make prod-pump-magnitude-report  Production pump-magnitude discovery surface"
 	@echo "  make prod-orderflow-pilot-report  Production Bybit order-flow pilot report"
@@ -293,6 +296,14 @@ liquid-taker-wider-stop-report:
 long-horizon-report:
 	@DATABASE_URL="$${DATABASE_URL:-postgresql://schurfer:schurfer_dev@localhost:5432/schurfer}" \
 		uv run --package schurfer-analytics long-horizon-report \
+		--code-revision="$$(git rev-parse HEAD)" \
+		$$(test -z "$$(git status --porcelain)" \
+			&& printf '%s' '--no-working-tree-dirty' \
+			|| printf '%s' '--working-tree-dirty') $(ARGS)
+
+open-ended-margin-report:
+	@DATABASE_URL="$${DATABASE_URL:-postgresql://schurfer:schurfer_dev@localhost:5432/schurfer}" \
+		uv run --package schurfer-analytics open-ended-margin-report \
 		--code-revision="$$(git rev-parse HEAD)" \
 		$$(test -z "$$(git status --porcelain)" \
 			&& printf '%s' '--no-working-tree-dirty' \
@@ -673,6 +684,31 @@ prod-long-horizon-report:
 			&& printf '%s' '--no-working-tree-dirty' \
 			|| printf '%s' '--working-tree-dirty') $(ARGS)
 
+prod-open-ended-margin-report:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
+	@$(_PROD) run --rm --no-deps --entrypoint open-ended-margin-report analytics \
+		--code-revision="$$(git rev-parse HEAD)" \
+		$$(test -z "$$(git status --porcelain)" \
+			&& printf '%s' '--no-working-tree-dirty' \
+			|| printf '%s' '--working-tree-dirty') $(ARGS)
+
+prod-open-ended-margin-health:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	@$(_PROD) exec -T postgres psql -U schurfer -d schurfer -v ON_ERROR_STOP=1 -c "\
+	SELECT horizon_minutes, status, count(*) AS outcomes, max(resolved_at) AS latest \
+	FROM app.trade_decision_outcomes \
+	WHERE resolver_version = 'forward_v1' \
+	  AND horizon_minutes IN (20160, 30240, 40320) \
+	GROUP BY horizon_minutes, status \
+	ORDER BY horizon_minutes, status; \
+	SELECT exchange, status, count(*) AS runs, sum(in_window_rows) AS samples, \
+	       max(attempt_count) AS max_attempts, max(resolved_at) AS latest \
+	FROM app.pump_derivatives_context_runs \
+	WHERE resolver_version = 'open_ended_margin_funding_v1' \
+	  AND method = 'funding_rate_history' \
+	GROUP BY exchange, status \
+	ORDER BY exchange, status;"
+
 prod-maker-entry-report:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
 	@$(_PROD) run --rm --no-deps --entrypoint maker-entry-report analytics \
@@ -792,6 +828,7 @@ verify-docker: verify
 	docker run --rm --entrypoint decision-quality-report schurfer-analytics:ci --help
 	docker run --rm --entrypoint liquid-taker-report schurfer-analytics:ci --help
 	docker run --rm --entrypoint long-horizon-report schurfer-analytics:ci --help
+	docker run --rm --entrypoint open-ended-margin-report schurfer-analytics:ci --help
 	docker run --rm --entrypoint pump-magnitude-report schurfer-analytics:ci --help
 	docker run --rm --entrypoint maker-entry-report schurfer-analytics:ci --help
 	docker run --rm --entrypoint orderflow-pilot-report schurfer-analytics:ci --help

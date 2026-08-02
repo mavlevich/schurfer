@@ -518,7 +518,10 @@ the new cohort separately.
     > backups/reports/long-horizon-2026-08-05.json
   ```
 
-  The report uses exact-venue 24-hour, 72-hour, and seven-day outcomes. It sums the
+  Report schema `long_horizon_signed_funding_report_v2` adds explicit time/asset
+  concentration and collateral-capital diagnostics; it does not silently mutate the
+  earlier v1 output contract. The report uses exact-venue 24-hour, 72-hour, and
+  seven-day outcomes. It sums the
   observed signed funding rates after entry, where a positive rate credits a short
   and a negative rate debits it, then applies the recorded position size only as a
   modeled cash flow. Missing runs, missing settlements, duplicate timestamps,
@@ -527,6 +530,39 @@ the new cohort separately.
   fixed-horizon return beside initial-stop survival, MFE/MAE, and the full-hold
   concurrency upper bound. This is discovery output and cannot extend the production
   maximum hold.
+
+- Open-ended margin research: the worker also records exact-venue 14-, 21-, and
+  28-day `forward_v1` checkpoints. A separate funding-only lane,
+  `open_ended_margin_funding_v1`, waits for a complete 28-day window instead of
+  reusing terminal seven-day runs. Both the funding lane and the untouched report
+  cohort are locked to `2026-08-03T00:00:00Z`; earlier episodes are not backfilled
+  into this contract.
+
+  Check collection without assembling a report:
+
+  ```bash
+  make prod-open-ended-margin-health
+
+  docker logs schurfer-outcome-resolver --since 15m 2>&1 \
+    | grep -E 'open_ended_margin_funding.starting|open_ended_margin_funding.tick_failed|outcomes.resolved'
+  ```
+
+  The first prospective 14-, 21-, and 28-day decisions mature from August 17,
+  August 24, and August 31 respectively. The complete signed-funding report becomes
+  meaningful only after the 28-day lane matures:
+
+  ```bash
+  make prod-open-ended-margin-report
+  make prod-open-ended-margin-report \
+    ARGS="--until 2026-09-30T00:00:00Z --format json" \
+    > backups/reports/open-ended-margin-2026-09-30.json
+  ```
+
+  `open-ended` removes only the research clock exit. The output marks positions at
+  finite checkpoints and compares observed MAE with collateral/notional screens.
+  It is not an exact liquidation model and cannot authorize a production position
+  without a time limit. See
+  [the frozen contract](../research/open-ended-margin-v1.md).
 
   The report manifest pins the convention
   `positive_rate_long_pays_short_v1`. This matches the official

@@ -7,7 +7,7 @@ from datetime import timedelta
 from typing import TYPE_CHECKING, Any, Protocol
 
 from schurfer_journal.models import TradeDecision, TradeDecisionOutcome
-from sqlalchemy import Integer, and_, column, func, or_, select, true, values
+from sqlalchemy import Integer, and_, column, false, func, or_, select, true, values
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import URL, make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
@@ -31,6 +31,8 @@ class OutcomeStore(Protocol):
         max_attempts: int,
         retry_after_seconds: int,
         batch_size: int,
+        extended_horizons: tuple[int, ...] = (),
+        extended_strategy_versions: tuple[str, ...] = (),
     ) -> list[Decision]: ...
 
     async def persist_outcomes(
@@ -58,8 +60,12 @@ def due_decisions_statement(
     max_attempts: int,
     retry_after_seconds: int,
     batch_size: int,
+    extended_horizons: tuple[int, ...] = (),
+    extended_strategy_versions: tuple[str, ...] = (),
 ) -> Select[Any]:
     """Build the due-work query without embedding values in handwritten SQL."""
+    if extended_horizons and not extended_strategy_versions:
+        raise ValueError("extended outcome horizons require a strategy scope")
     decisions = TradeDecision.__table__
     outcomes = TradeDecisionOutcome.__table__
     horizon_values = values(
@@ -74,6 +80,14 @@ def due_decisions_statement(
     )
     due_at = decisions.c.ts + horizon_values.c.horizon_minutes * timedelta(minutes=1)
     retry_at = outcomes.c.updated_at + timedelta(seconds=retry_after_seconds)
+    extended_scope = (
+        or_(
+            horizon_values.c.horizon_minutes.not_in(extended_horizons),
+            decisions.c.strategy_version.in_(extended_strategy_versions),
+        )
+        if extended_horizons
+        else true()
+    )
 
     return (
         select(
@@ -88,6 +102,7 @@ def due_decisions_statement(
         .select_from(decisions.join(horizon_values, true()).outerjoin(outcomes, outcome_match))
         .where(
             decisions.c.decision_id.is_not(None),
+            extended_scope,
             due_at <= func.now(),
             or_(
                 outcomes.c.id.is_(None),
@@ -104,6 +119,11 @@ def due_decisions_statement(
         # once useful work is done.
         .order_by(
             or_(decisions.c.price.is_(None), decisions.c.price <= 0),
+            (
+                horizon_values.c.horizon_minutes.in_(extended_horizons)
+                if extended_horizons
+                else false()
+            ),
             decisions.c.ts,
             horizon_values.c.horizon_minutes,
         )
@@ -182,6 +202,8 @@ class OutcomeRepository:
         max_attempts: int,
         retry_after_seconds: int,
         batch_size: int,
+        extended_horizons: tuple[int, ...] = (),
+        extended_strategy_versions: tuple[str, ...] = (),
     ) -> list[Decision]:
         statement = due_decisions_statement(
             horizons=horizons,
@@ -190,6 +212,8 @@ class OutcomeRepository:
             max_attempts=max_attempts,
             retry_after_seconds=retry_after_seconds,
             batch_size=batch_size,
+            extended_horizons=extended_horizons,
+            extended_strategy_versions=extended_strategy_versions,
         )
         async with self._engine.connect() as connection:
             result = await connection.execute(statement)

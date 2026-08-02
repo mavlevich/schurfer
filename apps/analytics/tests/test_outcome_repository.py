@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from schurfer_analytics.outcome_models import Outcome
 from schurfer_analytics.outcome_repository import (
     OutcomeRepository,
@@ -107,6 +108,40 @@ def test_due_statement_prioritizes_decisions_with_a_usable_price() -> None:
     assert order_by.lstrip().startswith(
         "app.trade_decisions.price IS NULL OR app.trade_decisions.price <="
     )
+
+
+def test_due_statement_scopes_extended_paths_to_the_registered_strategy() -> None:
+    statement = due_decisions_statement(
+        horizons=(10_080, 20_160, 30_240, 40_320),
+        resolver_version="forward_v1",
+        retryable_statuses=("partial",),
+        max_attempts=8,
+        retry_after_seconds=900,
+        batch_size=50,
+        extended_horizons=(20_160, 30_240, 40_320),
+        extended_strategy_versions=("pump_short_v1_market_quality",),
+    )
+    compiled = statement.compile(
+        dialect=postgresql.dialect(),  # type: ignore[no-untyped-call]
+        compile_kwargs={"literal_binds": True},
+    )
+    sql = str(compiled)
+
+    assert "horizons.horizon_minutes NOT IN (20160, 30240, 40320)" in sql
+    assert "trade_decisions.strategy_version IN ('pump_short_v1_market_quality')" in sql
+
+
+def test_due_statement_rejects_unscoped_extended_paths() -> None:
+    with pytest.raises(ValueError, match="strategy scope"):
+        due_decisions_statement(
+            horizons=(20_160,),
+            resolver_version="forward_v1",
+            retryable_statuses=("partial",),
+            max_attempts=8,
+            retry_after_seconds=900,
+            batch_size=50,
+            extended_horizons=(20_160,),
+        )
 
 
 def test_upsert_statement_uses_idempotency_constraint_and_increments_attempts() -> None:

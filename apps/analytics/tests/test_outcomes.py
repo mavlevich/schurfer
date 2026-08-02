@@ -11,7 +11,10 @@ from schurfer_analytics.outcome_models import Decision
 from schurfer_analytics.outcome_worker import run_outcome_resolver
 from schurfer_analytics.outcomes import (
     EXACT_OUTCOME_STATUSES,
+    EXTENDED_HORIZON_STRATEGY_VERSIONS,
+    EXTENDED_HORIZONS_MINUTES,
     FALLBACK_OUTCOME_STATUSES,
+    HORIZONS_MINUTES,
     OutcomeConfig,
     compute_outcome,
     exchange_candidates,
@@ -54,6 +57,11 @@ def _store(decisions: list[Decision]) -> AsyncMock:
 
 def test_persisted_success_statuses_fit_database_contract() -> None:
     assert all(len(status) <= 32 for status in EXACT_OUTCOME_STATUSES + FALLBACK_OUTCOME_STATUSES)
+
+
+def test_outcome_schedule_includes_registered_two_three_and_four_week_checkpoints() -> None:
+    assert EXTENDED_HORIZONS_MINUTES == (20_160, 30_240, 40_320)
+    assert HORIZONS_MINUTES[-3:] == EXTENDED_HORIZONS_MINUTES
 
 
 def test_compute_outcome_for_short() -> None:
@@ -385,6 +393,14 @@ async def test_resolve_once_marks_lbank_only_path_terminal_without_fetch() -> No
     retryable = store.load_due_decisions.await_args.kwargs["retryable_statuses"]
     assert "market_path_unavailable" not in retryable
     assert "complete_fallback_unsupported" not in retryable
+    assert store.load_due_decisions.await_args.kwargs["extended_horizons"] == (
+        20_160,
+        30_240,
+        40_320,
+    )
+    assert store.load_due_decisions.await_args.kwargs["extended_strategy_versions"] == (
+        EXTENDED_HORIZON_STRATEGY_VERSIONS
+    )
 
 
 async def test_resolve_once_selects_exchange_independently_per_horizon() -> None:
@@ -643,6 +659,60 @@ async def test_runner_resolves_long_horizon_funding_as_an_independent_lane() -> 
     )
     assert resolve_context.await_args_list[1].kwargs == {
         "resolver_version": "long_horizon_funding_v1"
+    }
+    exchange.close.assert_awaited_once()
+
+
+async def test_runner_resolves_open_ended_funding_as_a_third_independent_lane() -> None:
+    cfg = OutcomeConfig("postgresql://test", ("binance",))
+    context_cfg = DerivativesContextResolverConfig()
+    long_funding_cfg = DerivativesContextResolverConfig(
+        anchor_mode="closed",
+        method_names=("funding_rate_history",),
+    )
+    open_ended_cfg = DerivativesContextResolverConfig(
+        after_minutes=40_320,
+        anchor_mode="closed",
+        method_names=("funding_rate_history",),
+        maximum_window_minutes=40_320,
+    )
+    exchange = AsyncMock()
+    outcome_store = _store([])
+    context_store = AsyncMock()
+
+    with (
+        patch.dict(
+            "schurfer_analytics.outcome_worker.EXCHANGE_FACTORIES",
+            {"binance": lambda: exchange},
+            clear=True,
+        ),
+        patch(
+            "schurfer_analytics.outcome_worker.resolve_once",
+            AsyncMock(return_value=0),
+        ),
+        patch(
+            "schurfer_analytics.outcome_worker.resolve_derivatives_context_once",
+            AsyncMock(side_effect=(1, 2, 3)),
+        ) as resolve_context,
+    ):
+        await run_outcome_resolver(
+            cfg,
+            once=True,
+            store=outcome_store,
+            context_config=context_cfg,
+            long_funding_config=long_funding_cfg,
+            open_ended_funding_config=open_ended_cfg,
+            context_store=context_store,
+        )
+
+    assert resolve_context.await_count == 3
+    assert resolve_context.await_args_list[2].args == (
+        open_ended_cfg,
+        {"binance": exchange},
+        context_store,
+    )
+    assert resolve_context.await_args_list[2].kwargs == {
+        "resolver_version": "open_ended_margin_funding_v1"
     }
     exchange.close.assert_awaited_once()
 

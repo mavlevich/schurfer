@@ -11,9 +11,12 @@ from schurfer_analytics.derivatives_context_resolver import (
     DERIVATIVES_CONTEXT_RESOLVER_VERSION,
     LONG_HORIZON_FUNDING_COHORT_START,
     LONG_HORIZON_FUNDING_RESOLVER_VERSION,
+    OPEN_ENDED_MARGIN_FUNDING_COHORT_START,
+    OPEN_ENDED_MARGIN_FUNDING_RESOLVER_VERSION,
     PERSISTED_METHODS_BY_EXCHANGE,
     DerivativesContextResolverConfig,
     long_horizon_funding_config_from_env,
+    open_ended_margin_funding_config_from_env,
     resolve_derivatives_context_once,
 )
 
@@ -104,6 +107,21 @@ def test_long_horizon_funding_config_is_closed_anchor_and_funding_only() -> None
         ("htx", "funding_rate_history"),
     )
     assert LONG_HORIZON_FUNDING_RESOLVER_VERSION == "long_horizon_funding_v1"
+
+
+def test_open_ended_margin_funding_is_a_separate_28_day_lane() -> None:
+    cfg = open_ended_margin_funding_config_from_env()
+
+    assert cfg.enabled is True
+    assert cfg.cohort_start == OPEN_ENDED_MARGIN_FUNDING_COHORT_START
+    assert cfg.cohort_start == datetime(2026, 8, 3, tzinfo=UTC)
+    assert cfg.before_minutes == 1_440
+    assert cfg.after_minutes == 40_320
+    assert cfg.batch_size == 4
+    assert cfg.anchor_mode == "closed"
+    assert cfg.method_names == ("funding_rate_history",)
+    assert cfg.maximum_window_minutes == 40_320
+    assert OPEN_ENDED_MARGIN_FUNDING_RESOLVER_VERSION == "open_ended_margin_funding_v1"
 
 
 async def test_resolver_reuses_loaded_client_and_persists_samples() -> None:

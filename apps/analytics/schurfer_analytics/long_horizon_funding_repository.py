@@ -72,6 +72,8 @@ class _FundingSeriesBuilder:
 
 def funding_series_statement(
     keys: tuple[tuple[int, str], ...],
+    *,
+    resolver_version: str = LONG_HORIZON_FUNDING_RESOLVER_VERSION,
 ) -> Select[Any]:
     """Select exact event/venue funding runs and their persisted samples."""
     if not keys:
@@ -103,7 +105,7 @@ def funding_series_statement(
                     runs.c.event_id == key_values.c.event_id,
                     runs.c.exchange == key_values.c.exchange,
                     runs.c.method == "funding_rate_history",
-                    runs.c.resolver_version == LONG_HORIZON_FUNDING_RESOLVER_VERSION,
+                    runs.c.resolver_version == resolver_version,
                 ),
             ).outerjoin(samples, samples.c.run_id == runs.c.id)
         )
@@ -155,18 +157,30 @@ def funding_series_fingerprint(series: tuple[FundingSeries, ...]) -> str:
 
 
 class LongHorizonFundingRepository:
-    def __init__(self, engine: AsyncEngine) -> None:
+    def __init__(
+        self,
+        engine: AsyncEngine,
+        *,
+        resolver_version: str = LONG_HORIZON_FUNDING_RESOLVER_VERSION,
+    ) -> None:
         self._engine = engine
+        self._resolver_version = resolver_version
 
     @classmethod
-    def from_url(cls, db_url: str) -> LongHorizonFundingRepository:
+    def from_url(
+        cls,
+        db_url: str,
+        *,
+        resolver_version: str = LONG_HORIZON_FUNDING_RESOLVER_VERSION,
+    ) -> LongHorizonFundingRepository:
         return cls(
             create_async_engine(
                 async_database_url(db_url),
                 pool_pre_ping=True,
                 pool_size=1,
                 max_overflow=0,
-            )
+            ),
+            resolver_version=resolver_version,
         )
 
     async def load(
@@ -182,7 +196,12 @@ class LongHorizonFundingRepository:
                 postgresql_readonly=True,
             )
             async with connection.begin():
-                result = await connection.execute(funding_series_statement(normalized_keys))
+                result = await connection.execute(
+                    funding_series_statement(
+                        normalized_keys,
+                        resolver_version=self._resolver_version,
+                    )
+                )
                 rows = result.mappings().all()
         return map_funding_series(rows)
 

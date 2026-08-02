@@ -31,7 +31,7 @@ Rules:
   decisions are not independent N; repeated episodes of the same asset are clustered
   as specified by the protocol.
 - **Status:** the generic outcome windows are locked by `forward_v1` (15m, 30m, 1h,
-  4h, 8h, 24h, 72h, 7d). The baseline selection, costs, and exit simulation are locked
+  4h, 8h, 24h, 72h, 7d, 14d, 21d, 28d). The baseline selection, costs, and exit simulation are locked
   by `virtual_strategy_report_v2`. The HYP-002 entry family below is locked by
   `entry_confirmation_family_v1`. Other experiment details remain intent until their
   own manifests are committed.
@@ -65,6 +65,13 @@ and dollar-risk-preserving position size. Point-in-time and censoring checks app
 the complete episode path, while long-horizon outcome completeness applies only to the
 baseline-selected decision. A later repeated decision cannot delay an already mature
 selected decision.
+
+The separate [open-ended margin-buffer contract](open-ended-margin-v1.md) starts at
+`2026-08-03T00:00:00Z`. It removes only the research clock exit and marks the same
+selected short at 14, 21, and 28 days. It does not remove liquidation or operational
+risk and cannot change production. A versioned 28-day funding lane and explicit
+collateral/notional price-distance screens keep this hypothesis separate from the
+existing seven-day descriptive report.
 
 ---
 
