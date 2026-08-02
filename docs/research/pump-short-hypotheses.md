@@ -71,7 +71,11 @@ The separate [open-ended margin-buffer contract](open-ended-margin-v1.md) starts
 selected short at 14, 21, and 28 days. It does not remove liquidation or operational
 risk and cannot change production. A versioned 28-day funding lane and explicit
 collateral/notional price-distance screens keep this hypothesis separate from the
-existing seven-day descriptive report.
+existing seven-day descriptive report. It runs as background boundary measurement,
+does not displace the liquid-taker confirmatory lane, and has a pre-registered 14-day
+early no-go when 80% path survival already requires more than 100% collateral. Even a
+positive final result can only motivate a separately registered bounded-risk exit
+challenger, never an open-ended production hold.
 
 ---
 

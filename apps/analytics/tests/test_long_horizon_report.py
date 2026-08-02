@@ -12,9 +12,12 @@ from schurfer_analytics.long_horizon_report import (
     LONG_HORIZON_STRATEGY_VERSIONS,
     LONG_HORIZONS,
     SHORT_FUNDING_SIGN_CONVENTION,
+    CapitalEfficiencyGateSpec,
     build_long_horizon_dataset,
     build_long_horizon_report,
     build_parser,
+    build_progressive_long_horizon_dataset,
+    evaluate_capital_efficiency_gate,
     render_json,
     render_markdown,
     signed_funding_for_window,
@@ -277,6 +280,103 @@ def test_margin_screen_excludes_cross_venue_fallback_paths() -> None:
     assert buffer.price_distance_survival_rate_pct is None
 
 
+def test_capital_efficiency_gate_fails_on_ready_14d_survival_floor() -> None:
+    decision, filters = _inputs()
+    dataset = build_replay_dataset([decision], filters)
+    report = build_long_horizon_report(
+        dataset,
+        filters,
+        (_funding(decision),),
+        generated_at=filters.until,
+        code_revision="abc123",
+        working_tree_dirty=False,
+    )
+    template = report.results[0]
+    rows = tuple(
+        replace(
+            template,
+            pump_event_id=index,
+            cluster_key=f"base:{index % 10}",
+            decision_at=template.decision_at + timedelta(days=index % 14),
+            horizon_minutes=20_160,
+            exact_venue_path=True,
+            mae_pct=101 if index < 7 else 50,
+        )
+        for index in range(30)
+    )
+    spec = CapitalEfficiencyGateSpec(
+        version="test_v1",
+        interim_horizon_minutes=20_160,
+        final_horizon_minutes=40_320,
+        collateral_cap_pct=100,
+        minimum_survival_rate_pct=80,
+        interim_min_exact_paths=30,
+        interim_min_asset_clusters=10,
+        interim_min_utc_weeks=2,
+        final_min_exact_paths=100,
+        final_min_asset_clusters=30,
+        final_min_utc_weeks=4,
+    )
+
+    gate = evaluate_capital_efficiency_gate(rows, spec)
+
+    assert gate.interim.ready is True
+    assert gate.interim.survival_rate_pct == pytest.approx(76.6666667)
+    assert gate.final.ready is False
+    assert gate.state == "no_go_capital_efficiency"
+    assert "20160m" in gate.reason
+
+
+def test_capital_efficiency_gate_never_promotes_open_ended_hold() -> None:
+    decision, filters = _inputs()
+    dataset = build_replay_dataset([decision], filters)
+    report = build_long_horizon_report(
+        dataset,
+        filters,
+        (_funding(decision),),
+        generated_at=filters.until,
+        code_revision="abc123",
+        working_tree_dirty=False,
+    )
+    template = report.results[0]
+    interim = tuple(
+        replace(
+            template,
+            pump_event_id=index,
+            cluster_key=f"base:{index % 30}",
+            decision_at=template.decision_at + timedelta(days=index % 28),
+            horizon_minutes=20_160,
+            exact_venue_path=True,
+            mae_pct=50,
+        )
+        for index in range(100)
+    )
+    final = tuple(
+        replace(row, horizon_minutes=40_320, mae_pct=50 if index < 85 else 110)
+        for index, row in enumerate(interim)
+    )
+    spec = CapitalEfficiencyGateSpec(
+        version="test_v1",
+        interim_horizon_minutes=20_160,
+        final_horizon_minutes=40_320,
+        collateral_cap_pct=100,
+        minimum_survival_rate_pct=80,
+        interim_min_exact_paths=30,
+        interim_min_asset_clusters=10,
+        interim_min_utc_weeks=2,
+        final_min_exact_paths=100,
+        final_min_asset_clusters=30,
+        final_min_utc_weeks=4,
+    )
+
+    gate = evaluate_capital_efficiency_gate((*interim, *final), spec)
+
+    assert gate.final.ready is True
+    assert gate.final.survival_rate_pct == 85
+    assert gate.state == "boundary_only_ready"
+    assert "cannot promote" in gate.reason
+
+
 def test_report_models_negative_funding_as_short_debit() -> None:
     decision, filters = _inputs()
     dataset = build_replay_dataset([decision], filters)
@@ -339,6 +439,21 @@ def test_dataset_still_excludes_missing_selected_long_outcome() -> None:
 
     assert dataset.eligible_episodes == ()
     assert dataset.episodes[0].exclusion_reasons == ("missing_outcome:10080",)
+
+
+def test_progressive_dataset_keeps_mature_early_horizon_before_final_checkpoint() -> None:
+    decision, filters = _inputs()
+    partial = replace(
+        decision,
+        outcomes=tuple(
+            outcome for outcome in decision.outcomes if outcome.horizon_minutes == 1_440
+        ),
+    )
+
+    dataset = build_progressive_long_horizon_dataset([partial], filters)
+
+    assert len(dataset.eligible_episodes) == 1
+    assert dataset.eligible_episodes[0].exclusion_reasons == ()
 
 
 def test_report_does_not_turn_missing_funding_into_zero() -> None:
