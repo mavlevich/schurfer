@@ -36,14 +36,42 @@ edge. Second, build a reusable market-research platform only where shared
 infrastructure directly reduces the cost or latency of those tests. Platform work is
 not a substitute for strategy evidence.
 
+### Four research levels
+
+| Level        | What happens                                            | Parallelism                           | What the result means                  |
+| ------------ | ------------------------------------------------------- | ------------------------------------- | -------------------------------------- |
+| Observation  | Bounded collectors record non-recoverable data          | Several collectors at once            | Creates a dataset, no claim            |
+| Discovery    | Cheap screens against already-collected/historical data | Wide, batched — many variants at once | Generates a hypothesis, proves nothing |
+| Confirmation | A frozen contract plus a new untouched forward cohort   | At most 2 concurrent lines            | Tests whether an edge reproduces       |
+| Promotion    | Paper fills with real costs, then micro-live            | One strategy at a time                | Tests real executability               |
+
+Discovery is meant to be wide and cheap — running many combinations against one
+IDEAS.md candidate in a single pass is encouraged, not discouraged. It is not free or
+unlimited, though: reusing one historical window across many variants turns that
+window into a training set for everything screened against it, so a good result from
+the same window afterward is not new evidence — it needs its own untouched forward
+cutoff before Confirmation, exactly like a cross-family result already requires. A
+batch of many cheap screens will also produce false positives at a predictable rate
+even when nothing in it has real edge. [docs/research/discovery-ledger.md](docs/research/discovery-ledger.md)
+logs every registered screen, including rejected and parked ones, so a batch can
+never quietly present its one positive row as the whole story.
+
 The portfolio is bounded as follows:
 
-- From `2026-07-29`, spend at most 10 new evidence-producing pull requests before a
-  portfolio review on `2026-11-30`. Maintenance and security fixes do not consume the
-  budget, but a new collector, signal, replay family, or execution model does.
-- Keep no more than two active strategy research lanes at once. Pump reversion is the
-  primary lane. One cheap market-intelligence probe may run in parallel. Other ideas
-  remain parked until a lane passes its gate or is stopped.
+- From `2026-07-29`, spend at most 10 new experiment families before a portfolio
+  review on `2026-11-30`. An experiment family is a new collector, signal, replay
+  family, or execution model entered in the discovery ledger or moved to
+  Confirmation — not a count of pull requests. One family can take several PRs
+  (infrastructure, then a screen, then a report); one PR can also carry more than one
+  family. Track pull-request count separately as an engineering-velocity signal, not
+  as this budget. Maintenance, security fixes, and re-running an already-registered
+  report never consume it. Families merged since `2026-07-29` have not yet been
+  counted against this cap under the new unit — do that count before registering
+  another new family.
+- Keep no more than two active Confirmation-level lines (a frozen contract plus its
+  own forward cohort) at once. Pump reversion is the primary line. One cheap
+  market-intelligence probe may run in parallel. Other ideas stay in Discovery until
+  a line passes its gate or is stopped.
 - A sample is not promotion-ready from event count alone. It must cover at least four
   distinct UTC calendar weeks, report concentration by week and asset, and show
   sensitivity to removing the busiest week. A future regime classifier may refine

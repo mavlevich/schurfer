@@ -8,7 +8,11 @@
 
 When the freeze lifts, prioritize ideas that (a) are cheap to compute from data we
 already store, and (b) directly move measured expectancy. Not the ones that are most
-interesting to build.
+interesting to build. A cheap screen against an idea here is Discovery-level work and
+does not need the freeze to lift — register it in
+[docs/research/discovery-ledger.md](docs/research/discovery-ledger.md) whatever the
+result. What the freeze blocks is building new production-facing signal
+infrastructure before an existing lane clears Confirmation.
 
 ---
 
