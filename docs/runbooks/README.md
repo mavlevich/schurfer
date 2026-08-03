@@ -720,14 +720,37 @@ prod-source-lead-capture-health`.
   deployment health is established, record the next clean UTC boundary; earlier rows
   remain smoke data and cannot enter `gate_source_lead_4h_v1`.
 
+  Build the reproducible identity-review queue without approving any ticker match:
+
+  ```bash
+  make prod-source-lead-identity-report
+  make prod-source-lead-identity-report \
+    ARGS="--until 2026-08-04T00:00:00Z --format json" \
+    > backups/reports/source-lead-identity-review-2026-08-04.json
+  ```
+
+  The report is database-only and does not instantiate CCXT clients. It preserves
+  excluded captures in the denominator, groups exact point-in-time instrument keys,
+  detects version and base collisions, requires complete two-sided $50 depth before
+  calling a target executable, and emits a deliberately non-loadable registry
+  skeleton. Null evidence fields and `review_status=unapproved` are safety features;
+  the output must never be copied into the approved registry without archived
+  authoritative evidence and independent review.
+
 The authenticated **Research** page is the primary continuous view after the
 `2026-08-02T00:00:00Z` forward cutoff. It refreshes every minute and shows exact
 database counts for the source denominator, target eligibility, mature four-hour
 windows, clusters, UTC weeks, one-hour confirmations, target quote latency, spread,
-$50 entry impact, stale `collecting`, and `abandoned` rows. Use
+$50 entry impact, stale `collecting`, `abandoned` rows, and the continuously updated
+point-in-time identity review queue. Use
 `make prod-source-lead-capture-health` for the detailed SQL breakdown when the card
 shows `degraded` or `unhealthy`; the UI is not a strategy verdict and provisional
 base-symbol identity remains in force.
+
+The UI identity table is intentionally raw telemetry. It does not calculate
+`review_state`, because reproducing the cross-group collision rules in Go/SQL would
+create a second, weaker classifier. Run `make prod-source-lead-identity-report` for
+the authoritative conflict classification and registry-review skeleton.
 
 Qualified-capture rows are append-only and displayed separately. An empty reviewed
 registry produces `source_identity_unapproved`; this is expected and must not be

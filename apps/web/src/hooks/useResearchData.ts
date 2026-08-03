@@ -84,6 +84,17 @@ export interface SourceLeadTargetProgress {
   entry_impact_p90_bps: number | null;
 }
 
+export interface SourceLeadIdentityReviewCandidate {
+  base: string;
+  source_identity_key: string | null;
+  captures: number;
+  first_observed_at: string;
+  last_observed_at: string;
+  executable_targets: string;
+  exact_target_identities: number;
+  source_conflict: boolean;
+}
+
 export interface SourceLeadProgress {
   contract: string;
   cohort_start: string;
@@ -114,6 +125,7 @@ export interface SourceLeadProgress {
   identity_registry_mixed: boolean;
   last_observed_at: string | null;
   targets: SourceLeadTargetProgress[];
+  identity_review_candidates: SourceLeadIdentityReviewCandidate[];
   health_flags: string[];
   latest_report: ProspectiveCohort['latest_report'];
   interpretation: string;

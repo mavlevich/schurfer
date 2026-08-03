@@ -210,6 +210,7 @@ func TestReadinessQueriesStartedWiderCohort(t *testing.T) {
 		}},
 		{values: []any{105, 100, 3, 2, 900.0, 1_500.0, 4.0, 8.0, 2.0, 5.0}},
 		{values: []any{105, 99, 4, 2, 1_000.0, 1_700.0, 5.0, 9.0, 2.5, 5.5}},
+		{values: []any{`[]`}},
 		{err: pgx.ErrNoRows},
 	}}
 	rdb, closeRedis := testRedis(t, nil)
@@ -239,7 +240,7 @@ func TestReadinessQueriesStartedWiderCohort(t *testing.T) {
 	if !payload.SourceLead.MatureFourHourWindows.Exact {
 		t.Fatal("source-lead database progress must be exact")
 	}
-	if len(db.calls) != 9 {
+	if len(db.calls) != 10 {
 		t.Fatalf("started wider cohort should query database, got %d calls", len(db.calls))
 	}
 }
@@ -254,6 +255,7 @@ func TestSourceLeadProgressExposesOperationalFailures(t *testing.T) {
 		}},
 		{values: []any{8, 7, 0, 1, 800.0, 1_400.0, 3.0, 7.0, 1.5, 4.0}},
 		{values: []any{8, 6, 1, 1, 900.0, 1_600.0, 4.0, 8.0, 2.0, 5.0}},
+		{values: []any{`[{"base":"ABC","source_identity_key":"gate:swap:ABC_USDT:1","captures":2,"first_observed_at":"2026-08-02T01:00:00Z","last_observed_at":"2026-08-03T01:00:00Z","executable_targets":"binance,bybit","exact_target_identities":2,"source_conflict":false}]`}},
 		{err: pgx.ErrNoRows},
 	}}
 	handler := &Handler{db: db, now: func() time.Time { return now }}
@@ -282,6 +284,10 @@ func TestSourceLeadProgressExposesOperationalFailures(t *testing.T) {
 	}
 	if len(progress.Targets) != 2 || progress.Targets[0].SourceToQuoteP90MS == nil {
 		t.Fatalf("target metrics: got %#v", progress.Targets)
+	}
+	if len(progress.IdentityReviewCandidates) != 1 ||
+		progress.IdentityReviewCandidates[0].ExactTargetIdentities != 2 {
+		t.Fatalf("identity review candidates: got %#v", progress.IdentityReviewCandidates)
 	}
 }
 
@@ -351,8 +357,10 @@ func TestQueriesPreserveResearchBoundaries(t *testing.T) {
 		"identity_registry_fingerprint",
 		"count(DISTINCT identity_registry_version)",
 		"IS DISTINCT FROM (identity_registry_fingerprint IS NULL)",
+		"exact_target_identities",
 	}
-	sourceLeadQueries := sourceLeadProgressSQL + sourceLeadTargetProgressSQL
+	sourceLeadQueries := sourceLeadProgressSQL + sourceLeadTargetProgressSQL +
+		sourceLeadIdentityReviewSQL
 	for _, fragment := range requiredSourceLeadFragments {
 		if !strings.Contains(sourceLeadQueries, fragment) {
 			t.Fatalf("source-lead query missing %q", fragment)

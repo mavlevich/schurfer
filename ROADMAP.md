@@ -1,6 +1,6 @@
 # Roadmap
 
-> Living document. Updated as we progress. Last refreshed 2026-07-31.
+> Living document. Updated as we progress. Last refreshed 2026-08-03.
 
 ## Guiding principle
 
@@ -72,6 +72,51 @@ claim. Every candidate must publish capacity and capital economics before micro-
 No live capital is authorized by this roadmap. If conservative capacity implies
 economically immaterial profit even when the edge survives, stop strategy-specific
 engineering and keep only the reusable research output.
+
+## Committed next pull requests (2026-08-03)
+
+Keep the current measurement services running while this queue is executed. Safety
+and data-integrity fixes do not consume the evidence-producing PR budget. Do not mix
+these independent changes into one branch.
+
+1. **Finish point-in-time source-lead identity review.** Merge the current bounded
+   review-queue PR after independent review. The authenticated page exposes only raw
+   source/target identity observations; the Python report remains the sole conflict
+   classifier. No equal-ticker link is approved by the UI or report skeleton.
+2. **Repair Bybit WebSocket read liveness.** Add a renewable read deadline to ticker
+   and public-trade streams, reset it after every received frame, and route silence
+   through the existing reconnect loop. Publish timeout/reconnect diagnostics and
+   test a half-open connection. This protects the order-flow evidence being collected
+   now and is the immediate next PR after identity review.
+3. **Make execution order locks renewable.** Replace the fixed 30-second assumption
+   in both open and close paths with an owner-checked lease heartbeat and retain the
+   atomic owner-only release. Test a deliberately slow exchange path and lease loss.
+   This is required before button-approved or automatic live orders, but does not
+   block current `DRY_RUN` measurement.
+4. **Escalate unresolved exchange fills durably.** Resolve price from average, price,
+   then valid cost/filled and trade evidence. If it remains unknown, persist a
+   de-duplicated incident, revoke PnL readiness, alert Telegram once, retry, expose it
+   in status, and send recovery after reconciliation. Never fabricate a fill price.
+5. **Close the Bybit order-flow discovery gate on 2026-08-06.** Read early-long,
+   squeeze-avoidance, and delayed-short as separate books. If no lane has pre-trigger
+   lead time, multi-asset/day robustness, and plausible after-cost value, stop the
+   order-flow line and do not add Binance or L2. If one lane passes, register exactly
+   one untouched forward shadow contract:
+   - early-long wins: Bybit-only aggressive-buy acceleration while price remains
+     below a frozen move cap, with a source-time $50 quote, rejected fills as cash,
+     fixed-dollar risk, a hard stop, and bounded 30/60/120-second exits;
+   - squeeze-avoidance wins: add one shadow-only veto to the existing short book;
+   - delayed-short wins: add one shadow entry-timing challenger after buy pressure
+     fades.
+6. **Advance Gate source-lead only after identity evidence exists.** Review exact
+   Gate/Binance/Bybit links, archive authoritative evidence and hashes, bump registry
+   plus qualification versions, deploy, and choose the next clean UTC cutoff for one
+   `gate_source_lead_4h_v1` cohort. Historical confirmed survivors cannot enter it.
+
+The liquid-taker and wider-stop cohorts continue unchanged toward their August 27
+and August 29 checkpoints. The open-ended margin study remains a background boundary
+test. Korean listings, more order-flow venues, DEX/on-chain smart money, paid data,
+and ML stay parked until one active lane passes or is stopped.
 
 ## Near-term delivery sequence: execution and exit decision
 
@@ -1197,6 +1242,11 @@ auto.
         The initial registry is deliberately empty; populate and independently
         review it before choosing a strategy cohort cutoff
         ([source-lead-qualified-capture-v1.md](docs/research/source-lead-qualified-capture-v1.md)).
+  - [x] Add an auditable point-in-time identity review queue before populating the
+        registry: exact Gate and target identity versions, executable two-sided $50
+        route evidence, collision diagnostics, deterministic input fingerprint, a
+        deliberately non-loadable unapproved registry skeleton, and continuous
+        authenticated UI visibility. Equal tickers still cannot create approval.
   - [x] Alert once on source-lead captures stale for ten minutes or abandoned in the
         last 24 hours, recover once, and filter the detailed production health query
         at the explicit operational cohort cutoff by default.

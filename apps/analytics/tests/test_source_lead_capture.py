@@ -4,7 +4,6 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 from schurfer_analytics.source_lead_capture import (
-    CAPTURE_VERSION,
     IDENTITY_MATCH_METHOD,
     ClaimedCapture,
     SourceLeadCandidate,
@@ -17,6 +16,7 @@ from schurfer_analytics.source_lead_capture import (
     prepare_source_lead_captures,
     summarize_order_book,
 )
+from schurfer_analytics.source_lead_contract import CAPTURE_VERSION
 from schurfer_analytics.source_lead_qualification import (
     QualificationResult,
     parse_identity_registry,
