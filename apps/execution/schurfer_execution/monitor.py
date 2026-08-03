@@ -3,13 +3,15 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+import uuid
 from typing import TYPE_CHECKING, Any
 
 import structlog
 
 from . import exit as exit_module
-from . import journal, notify
+from . import incidents, journal, notify
 from .account import fetch_positions
+from .fill_price import FILL_UNRESOLVED, resolve_fill_price
 from .orders import close_position
 
 if TYPE_CHECKING:
@@ -113,14 +115,29 @@ async def _check_exit(
         base=base,
         reason=reason,
         rdb=rdb,
+        cfg=cfg,
     )
 
     if result.get("closed"):
-        exit_price = float(result.get("exit_price") or mark)
         # The exchange-side close is confirmed at this point regardless of the
         # journal write outcome below — safe to stop monitoring this position.
         await rdb.delete(bp_key)
         await rdb.delete(exit_module.params_key(exchange, base))
+
+        exit_price = result.get("exit_price")
+        if exit_price is None:
+            # close_position already created a durable incident and revoked PnL
+            # readiness. Never fabricate a price from the current mark to keep
+            # this notify/journal path running — the incident worker completes
+            # the journal close once resolve_fill_price confirms a real price.
+            log.warning(
+                "position_monitor.close_fill_unresolved",
+                base=base,
+                exchange=exchange,
+                incident_id=result.get("incident_id"),
+            )
+            return
+        exit_price = float(exit_price)
 
         trade_id_key = _TRADE_ID_KEY.format(exchange=exchange, base=base.upper())
         trade_id_raw = await rdb.get(trade_id_key)
@@ -151,6 +168,44 @@ async def _check_exit(
                     exchange=exchange,
                     trade_id=trade_id,
                 )
+        elif cfg.db_url:
+            # No trade-id pointer at close time — most likely the matching
+            # open's own journal write is itself still deferred behind an
+            # unresolved-fill incident (or the Redis cache was evicted).
+            # Losing this close silently would leave a real exit unrecorded
+            # forever; track it the same durable way as an unresolved fill so
+            # the incident worker can complete it once a trade_id is
+            # available (see incidents.has_pending_open / _complete_close).
+            await journal.revoke_pnl_readiness(rdb)
+            incident_id = await incidents.create_incident(
+                cfg.db_url,
+                exchange=exchange,
+                base=base,
+                operation="close",
+                order_id=str(result.get("order_id") or f"unknown:{uuid.uuid4()}"),
+                trade_id=None,
+                context={"reason": reason},
+            )
+            if incident_id is not None and await incidents.claim_creation_notification(
+                cfg.db_url, incident_id
+            ):
+                creds = notify.credentials(cfg)
+                if creds:
+                    await notify.notify_alert(
+                        *creds,
+                        text=(
+                            f"Close confirmed for {base} on {exchange} but no trade-id "
+                            f"pointer was available to journal it against (order "
+                            f"{result.get('order_id')}). Tracking as incident {incident_id} "
+                            "until a trade can be found."
+                        ),
+                    )
+            log.error(
+                "position_monitor.close_missing_trade_id",
+                base=base,
+                exchange=exchange,
+                incident_id=incident_id,
+            )
 
         creds = notify.credentials(cfg)
         if creds:
@@ -200,27 +255,6 @@ async def _reconcile_vanished_positions(
             log.error("position_monitor.reconcile_error", base=base, exchange=exchange, err=str(e))
 
 
-async def _resolve_fill_price(ex: Any, symbol: str, order: dict[str, Any]) -> float | None:
-    """Best-effort determination of what price a filled order actually
-    executed at. Returns None (never 0) if it genuinely can't be determined —
-    callers must not fabricate a price, since exit_price=0 on a short reads
-    as a false +100% profit."""
-    price = order.get("average") or order.get("price")
-    if price:
-        return float(price)
-    try:
-        trades = await ex.fetch_order_trades(order.get("id"), symbol)
-    except Exception:
-        return None
-    if not trades:
-        return None
-    total_cost = sum(float(t.get("price", 0)) * float(t.get("amount", 0)) for t in trades)
-    total_amount = sum(float(t.get("amount", 0)) for t in trades)
-    if total_amount <= 0:
-        return None
-    return total_cost / total_amount
-
-
 async def _reconcile_one(
     exchange: str,
     base: str,
@@ -255,23 +289,57 @@ async def _reconcile_one(
         )
         return
 
-    exit_price = await _resolve_fill_price(ex, symbol, order)
-    if exit_price is None or exit_price <= 0:
+    resolution = await resolve_fill_price(ex, symbol=symbol, order=order)
+    if resolution.status == FILL_UNRESOLVED:
         # Filled, but we can't determine at what price. Do NOT fabricate a
-        # value (0 would read as a false +100% profit on a short) and do NOT
-        # clean up any state — leave everything for the next tick, which will
-        # re-check this same (still 'closed') order and try again. The real
-        # PnL impact is unknown at this point, so any currently-valid
-        # readiness lease is stale — revoke it now, don't wait for the
-        # tracker's next tick to notice.
+        # value (0 would read as a false +100% profit on a short). Unlike the
+        # old ad-hoc retry, this is now a durable, alerted incident instead of
+        # a silent in-memory retry that could loop forever with no one
+        # noticing — see incidents.create_incident.
         await journal.revoke_pnl_readiness(rdb)
+        trade_id_for_incident_raw = await rdb.get(f"trade:id:{exchange}:{base}")
+        try:
+            trade_id_for_incident = (
+                int(trade_id_for_incident_raw) if trade_id_for_incident_raw else None
+            )
+        except (TypeError, ValueError):
+            # A corrupt/unexpected cache value must not crash reconciliation —
+            # the incident worker can still find the trade later by exchange+base.
+            trade_id_for_incident = None
+        incident_id = None
+        if cfg.db_url:
+            incident_id = await incidents.create_incident(
+                cfg.db_url,
+                exchange=exchange,
+                base=base,
+                operation="close",
+                order_id=sl_order_id,
+                trade_id=trade_id_for_incident,
+                context={"reason": "exchange_stop_loss_triggered"},
+            )
+            if incident_id is not None and await incidents.claim_creation_notification(
+                cfg.db_url, incident_id
+            ):
+                creds = notify.credentials(cfg)
+                if creds:
+                    await notify.notify_alert(
+                        *creds,
+                        text=(
+                            f"Fill price unresolved for exchange-triggered stop-loss "
+                            f"on {base}/{exchange} (order {sl_order_id}). PnL is "
+                            f"unknown until reconciled. See incident {incident_id}."
+                        ),
+                    )
         log.error(
             "position_monitor.reconcile.exit_price_unresolved",
             base=base,
             exchange=exchange,
             order_id=sl_order_id,
+            incident_id=incident_id,
         )
         return
+    exit_price = resolution.price
+    assert exit_price is not None  # FILL_UNRESOLVED already returned above
 
     trade_id_key = _TRADE_ID_KEY.format(exchange=exchange, base=base)
     trade_id_raw = await rdb.get(trade_id_key)

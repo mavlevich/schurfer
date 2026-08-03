@@ -5,7 +5,6 @@ from schurfer_execution.monitor import (
     _parse_sl_key,
     _reconcile_one,
     _reconcile_vanished_positions,
-    _resolve_fill_price,
     _retry_one_pending_close,
     _retry_pending_closes,
 )
@@ -71,42 +70,6 @@ class TestReconcileVanishedPositions:
             await _reconcile_vanished_positions({}, rdb, cfg, live_pairs=set())
         # No assertion needed beyond "did not raise" — the second key must
         # still be processed despite the first one's failure.
-
-
-class TestResolveFillPrice:
-    async def test_uses_average_when_present(self) -> None:
-        ex = MagicMock()
-        price = await _resolve_fill_price(ex, "BEAT/USDT:USDT", {"average": 1.25})
-        assert price == 1.25
-
-    async def test_falls_back_to_price_field(self) -> None:
-        ex = MagicMock()
-        price = await _resolve_fill_price(ex, "BEAT/USDT:USDT", {"price": 1.1})
-        assert price == 1.1
-
-    async def test_computes_weighted_average_from_trades(self) -> None:
-        ex = MagicMock()
-        ex.fetch_order_trades = AsyncMock(
-            return_value=[
-                {"price": 100.0, "amount": 1.0},
-                {"price": 110.0, "amount": 3.0},
-            ]
-        )
-        price = await _resolve_fill_price(ex, "BEAT/USDT:USDT", {"id": "sl-1"})
-        # (1*100 + 3*110) / 4 = 107.5
-        assert price == 107.5
-
-    async def test_returns_none_when_nothing_resolvable(self) -> None:
-        ex = MagicMock()
-        ex.fetch_order_trades = AsyncMock(return_value=[])
-        price = await _resolve_fill_price(ex, "BEAT/USDT:USDT", {"id": "sl-1"})
-        assert price is None
-
-    async def test_returns_none_when_trades_fetch_fails(self) -> None:
-        ex = MagicMock()
-        ex.fetch_order_trades = AsyncMock(side_effect=RuntimeError("not supported"))
-        price = await _resolve_fill_price(ex, "BEAT/USDT:USDT", {"id": "sl-1"})
-        assert price is None
 
 
 def _rdb_with(entries: dict[str, bytes | None]) -> MagicMock:
@@ -186,12 +149,14 @@ class TestReconcileOne:
         lease must still be revoked immediately (P0)."""
         ex = MagicMock()
         ex.fetch_order = AsyncMock(return_value={"status": "closed", "id": "sl-1"})
+        ex.has = {"fetchOrderTrades": True, "fetchMyTrades": False}
         ex.fetch_order_trades = AsyncMock(return_value=[])
 
-        rdb = MagicMock()
-        rdb.get = AsyncMock(return_value=b"sl-1")
-        rdb.delete = AsyncMock()
-        cfg = _mock_cfg()
+        rdb = _rdb_with({"position:sl_order_id:bingx:BEAT": b"sl-1"})
+        # db_url=None: this test is about never fabricating a price and still
+        # revoking readiness, not about incident creation (covered separately
+        # in test_incidents.py / test_fill_price.py).
+        cfg = _mock_cfg(db_url=None)
 
         with (
             patch("schurfer_execution.monitor.journal.try_commit_close", AsyncMock()) as mock_close,
@@ -208,6 +173,7 @@ class TestReconcileOne:
     async def test_falls_back_to_weighted_trades_when_order_fields_missing(self) -> None:
         ex = MagicMock()
         ex.fetch_order = AsyncMock(return_value={"status": "closed", "id": "sl-1"})
+        ex.has = {"fetchOrderTrades": True, "fetchMyTrades": False}
         ex.fetch_order_trades = AsyncMock(
             return_value=[{"price": 100.0, "amount": 1.0}, {"price": 110.0, "amount": 3.0}]
         )
@@ -231,6 +197,37 @@ class TestReconcileOne:
             await _reconcile_one("bingx", "BEAT", {"bingx": ex}, rdb, cfg)
 
         assert mock_close.call_args.kwargs["exit_price"] == 107.5
+
+    async def test_unresolved_sl_fill_creates_a_durable_incident_and_alerts_once(self) -> None:
+        ex = MagicMock()
+        ex.fetch_order = AsyncMock(return_value={"status": "closed", "id": "sl-1"})
+        ex.has = {"fetchOrderTrades": False, "fetchMyTrades": False}
+        rdb = _rdb_with({"position:sl_order_id:bingx:BEAT": b"sl-1", "trade:id:bingx:BEAT": b"42"})
+        cfg = _mock_cfg()
+
+        with (
+            patch(
+                "schurfer_execution.monitor.incidents.create_incident",
+                AsyncMock(return_value=7),
+            ) as mock_create,
+            patch(
+                "schurfer_execution.monitor.incidents.claim_creation_notification",
+                AsyncMock(return_value=True),
+            ),
+            patch(
+                "schurfer_execution.monitor.notify.credentials",
+                return_value=("tok", "chat"),
+            ),
+            patch("schurfer_execution.monitor.notify.notify_alert", AsyncMock()) as mock_alert,
+            patch("schurfer_execution.monitor.journal.revoke_pnl_readiness", AsyncMock()),
+        ):
+            await _reconcile_one("bingx", "BEAT", {"bingx": ex}, rdb, cfg)
+
+        mock_create.assert_called_once()
+        assert mock_create.call_args.kwargs["operation"] == "close"
+        assert mock_create.call_args.kwargs["order_id"] == "sl-1"
+        assert mock_create.call_args.kwargs["trade_id"] == 42
+        mock_alert.assert_awaited_once()
 
     async def test_journal_close_failure_keeps_trade_id_but_cleans_position_keys(self) -> None:
         """The exchange-side SL fill is already confirmed, so position-monitoring

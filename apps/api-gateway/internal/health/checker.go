@@ -33,6 +33,7 @@ type Report struct {
 	ContainerRuntime *ContainerRuntime `json:"container_runtime"`
 	MarketPipeline   *MarketPipeline   `json:"market_pipeline"`
 	OrderflowPilot   *OrderflowPilot   `json:"orderflow_pilot"`
+	FillIncidents    *FillIncidents    `json:"fill_incidents"`
 }
 
 type SignalReadiness struct {
@@ -90,6 +91,7 @@ type Config struct {
 // Call Close when the application shuts down.
 type Checker struct {
 	pool         *pgxpool.Pool
+	db           queryRower
 	rdb          *redis.Client
 	nc           *nats.Conn
 	systemProbe  func() *SystemLoad
@@ -121,6 +123,7 @@ func NewChecker(ctx context.Context, cfg Config) (*Checker, error) {
 	systemProbe := newSystemProbe("/proc", "/")
 	return &Checker{
 		pool:        pool,
+		db:          &poolAdapter{inner: pool},
 		rdb:         rdb,
 		nc:          nc,
 		systemProbe: systemProbe,
@@ -161,6 +164,7 @@ func (c *Checker) Check(ctx context.Context) Report {
 		ContainerRuntime: containerRuntime,
 		MarketPipeline:   c.checkMarketPipeline(ctx),
 		OrderflowPilot:   c.checkOrderflowPilot(ctx),
+		FillIncidents:    c.checkFillIncidents(ctx),
 	}
 }
 

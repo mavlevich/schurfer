@@ -12,6 +12,7 @@ from fastapi import FastAPI
 from .config import Config
 from .decisions import _REDIS_SOCKET_TIMEOUT_SECONDS, run_decision_writer
 from .exchanges import build_exchange_clients, close_exchange_clients
+from .incident_worker import run_incident_worker
 from .monitor import run_position_monitor
 from .paper import run_paper_monitor
 from .routers import account, control, orders
@@ -76,6 +77,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
             socket_connect_timeout=5.0,
         )
         dec_writer = asyncio.create_task(run_decision_writer(writer_rdb, cfg.db_url))
+    incident_worker = (
+        asyncio.create_task(run_incident_worker(trading_exchanges, rdb, cfg))
+        if cfg.db_url
+        else None
+    )
     log.info(
         "execution.start",
         market_exchanges=list(market_exchanges),
@@ -95,6 +101,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         # Unacked entries stay in the Redis Stream and are reprocessed on restart,
         # so there is no in-process queue to drain here.
         dec_writer.cancel()
+    if incident_worker:
+        incident_worker.cancel()
     with contextlib.suppress(asyncio.CancelledError):
         await tracker
     with contextlib.suppress(asyncio.CancelledError):
@@ -108,6 +116,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     if dec_writer:
         with contextlib.suppress(asyncio.CancelledError):
             await dec_writer
+    if incident_worker:
+        with contextlib.suppress(asyncio.CancelledError):
+            await incident_worker
     await close_exchange_clients(clients)
     await rdb.aclose()
     if writer_rdb is not None:

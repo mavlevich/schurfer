@@ -167,7 +167,9 @@ class TestLockBehavior:
         ex.fetch_ticker = AsyncMock(return_value={"last": 1.0})
         ex.amount_to_precision = MagicMock(return_value="100.0")
         ex.price_to_precision = MagicMock(return_value="1.1")
-        ex.create_market_order = AsyncMock(return_value={"id": "ord999", "status": "closed"})
+        ex.create_market_order = AsyncMock(
+            return_value={"id": "ord999", "status": "closed", "average": 1.0}
+        )
         ex.create_stop_market_order = AsyncMock(return_value={"id": "sl-999"})
 
         rdb = MagicMock()
@@ -254,7 +256,9 @@ async def test_place_order_rounds_up_to_exchange_minimum(
     ex.fetch_ticker = AsyncMock(return_value={"last": 5.0})
     ex.amount_to_precision = MagicMock(return_value="1.0")
     ex.price_to_precision = MagicMock(return_value="5.5")
-    ex.create_market_order = AsyncMock(return_value={"id": "ord-rounded", "status": "closed"})
+    ex.create_market_order = AsyncMock(
+        return_value={"id": "ord-rounded", "status": "closed", "average": 5.0}
+    )
     ex.create_stop_market_order = AsyncMock(return_value={"id": "sl-rounded"})
 
     result = await place_order(**_kwargs(size_usd=1.0, exchanges={"bingx": ex}))
@@ -366,7 +370,9 @@ async def test_place_order_no_round_up_when_above_minimum(
     ex.fetch_ticker = AsyncMock(return_value={"last": 1.0})
     ex.amount_to_precision = MagicMock(return_value="100.0")
     ex.price_to_precision = MagicMock(return_value="1.1")
-    ex.create_market_order = AsyncMock(return_value={"id": "ord-ok", "status": "closed"})
+    ex.create_market_order = AsyncMock(
+        return_value={"id": "ord-ok", "status": "closed", "average": 1.0}
+    )
     ex.create_stop_market_order = AsyncMock(return_value={"id": "sl-ok"})
 
     result = await place_order(**_kwargs(size_usd=100.0, exchanges={"bingx": ex}))
@@ -410,7 +416,9 @@ class TestExchangeStopLoss:
         ex.fetch_ticker = AsyncMock(return_value={"last": 1.0})
         ex.amount_to_precision = MagicMock(return_value="100.0")
         ex.price_to_precision = MagicMock(side_effect=lambda _sym, p: str(round(p, 6)))
-        ex.create_market_order = AsyncMock(return_value={"id": "entry-1", "status": "closed"})
+        ex.create_market_order = AsyncMock(
+            return_value={"id": "entry-1", "status": "closed", "average": 1.0}
+        )
         return ex
 
     @patch("schurfer_execution.orders.fetch_positions", return_value=([], set()))
