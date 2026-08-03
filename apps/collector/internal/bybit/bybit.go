@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"sync/atomic"
 	"time"
 )
 
@@ -32,10 +33,49 @@ type TickerEvent struct {
 // PublishFn publishes a TickerEvent to NATS.
 type PublishFn func(ctx context.Context, event TickerEvent) error
 
-// Source streams Bybit linear perpetual tickers.
-type Source struct{}
+type streamConfig struct {
+	URL            string
+	PingInterval   time.Duration
+	ReadTimeout    time.Duration
+	ReconnectDelay time.Duration
+}
 
-func NewSource() *Source { return &Source{} }
+// StreamStats is a monotonic snapshot of Bybit WebSocket recovery activity.
+type StreamStats struct {
+	TickerReconnectTotal   uint64
+	TickerReadTimeoutTotal uint64
+	TradeReconnectTotal    uint64
+	TradeReadTimeoutTotal  uint64
+}
+
+// Source streams Bybit linear perpetual market data.
+type Source struct {
+	streamConfig streamConfig
+
+	tickerReconnectTotal   atomic.Uint64
+	tickerReadTimeoutTotal atomic.Uint64
+	tradeReconnectTotal    atomic.Uint64
+	tradeReadTimeoutTotal  atomic.Uint64
+}
+
+func NewSource() *Source {
+	return &Source{streamConfig: streamConfig{
+		URL:            wsURL,
+		PingInterval:   pingInterval,
+		ReadTimeout:    readTimeout,
+		ReconnectDelay: reconnDelay,
+	}}
+}
+
+// StreamStats returns a race-safe snapshot suitable for health telemetry.
+func (s *Source) StreamStats() StreamStats {
+	return StreamStats{
+		TickerReconnectTotal:   s.tickerReconnectTotal.Load(),
+		TickerReadTimeoutTotal: s.tickerReadTimeoutTotal.Load(),
+		TradeReconnectTotal:    s.tradeReconnectTotal.Load(),
+		TradeReadTimeoutTotal:  s.tradeReadTimeoutTotal.Load(),
+	}
+}
 
 // FetchSymbols returns all active USDT-settled linear perp symbols.
 // Retries with exponential backoff on failure.

@@ -76,6 +76,7 @@ type application struct {
 	store      *orderflow.FileStore
 	hotset     *hotset.RedisStore
 	redis      *redis.Client
+	source     *bybit.Source
 	trades     <-chan bybit.PublicTrade
 	dropped    *atomic.Uint64
 	seenEvents map[int64]time.Time
@@ -170,6 +171,7 @@ func run() error {
 		store:      store,
 		hotset:     activationStore,
 		redis:      rdb,
+		source:     source,
 		trades:     trades,
 		dropped:    &queueDropped,
 		seenEvents: make(map[int64]time.Time),
@@ -337,6 +339,10 @@ func (app *application) flush(_ context.Context) {
 
 func (app *application) storeHealth(ctx context.Context, now time.Time) {
 	app.stats.queueDroppedTotal = app.dropped.Load()
+	streamStats := bybit.StreamStats{}
+	if app.source != nil {
+		streamStats = app.source.StreamStats()
+	}
 	elapsed := now.Sub(app.stats.lastHealthAt).Seconds()
 	rate := 0.0
 	if elapsed > 0 {
@@ -366,38 +372,40 @@ func (app *application) storeHealth(ctx context.Context, now time.Time) {
 		lastEventAtMS = app.stats.lastEventAt.UnixMilli()
 	}
 	fields := map[string]any{
-		"schema_version":          1,
-		"capture_contract":        orderflow.ContractVersion,
-		"status":                  status,
-		"started_at_ms":           app.startedAt.UnixMilli(),
-		"updated_at_ms":           now.UnixMilli(),
-		"uptime_seconds":          int64(uptime.Seconds()),
-		"last_event_at_ms":        lastEventAtMS,
-		"events_total":            app.stats.eventsTotal,
-		"event_rate_per_sec":      fmt.Sprintf("%.2f", rate),
-		"observed_symbols":        app.engine.ObservedSymbols(),
-		"completed_buckets_total": app.engine.CompletedBuckets(),
-		"buffered_buckets":        app.engine.BufferedBuckets(),
-		"active_captures":         app.engine.ActiveCaptures(),
-		"seen_events":             len(app.seenEvents),
-		"activation_total":        app.stats.activationTotal,
-		"left_censored_total":     app.stats.leftCensoredTotal,
-		"capacity_rejected_total": app.stats.capacityRejected,
-		"controls_selected_total": app.stats.controlsSelected,
-		"records_persisted_total": app.stats.recordsPersisted,
-		"queue_dropped_total":     app.stats.queueDroppedTotal,
-		"pending_dropped_total":   app.stats.pendingDropped,
-		"invalid_total":           app.stats.invalidTotal,
-		"duplicate_total":         app.stats.duplicateTotal,
-		"out_of_order_total":      app.stats.outOfOrderTotal,
-		"persist_errors_total":    app.stats.persistErrors,
-		"storage_limited_total":   app.stats.storageLimited,
-		"storage_bytes":           app.store.SizeBytes(),
-		"storage_bytes_per_day":   fmt.Sprintf("%.0f", storageBytesPerDay),
-		"last_write_bytes":        app.stats.lastPersistedBytes,
-		"last_lag_ms":             app.stats.lastLag.Milliseconds(),
-		"max_lag_ms":              app.stats.maxLag.Milliseconds(),
-		"window_max_lag_ms":       app.stats.windowMaxLag.Milliseconds(),
+		"schema_version":           1,
+		"capture_contract":         orderflow.ContractVersion,
+		"status":                   status,
+		"started_at_ms":            app.startedAt.UnixMilli(),
+		"updated_at_ms":            now.UnixMilli(),
+		"uptime_seconds":           int64(uptime.Seconds()),
+		"last_event_at_ms":         lastEventAtMS,
+		"events_total":             app.stats.eventsTotal,
+		"event_rate_per_sec":       fmt.Sprintf("%.2f", rate),
+		"observed_symbols":         app.engine.ObservedSymbols(),
+		"completed_buckets_total":  app.engine.CompletedBuckets(),
+		"buffered_buckets":         app.engine.BufferedBuckets(),
+		"active_captures":          app.engine.ActiveCaptures(),
+		"seen_events":              len(app.seenEvents),
+		"activation_total":         app.stats.activationTotal,
+		"left_censored_total":      app.stats.leftCensoredTotal,
+		"capacity_rejected_total":  app.stats.capacityRejected,
+		"controls_selected_total":  app.stats.controlsSelected,
+		"records_persisted_total":  app.stats.recordsPersisted,
+		"queue_dropped_total":      app.stats.queueDroppedTotal,
+		"pending_dropped_total":    app.stats.pendingDropped,
+		"invalid_total":            app.stats.invalidTotal,
+		"duplicate_total":          app.stats.duplicateTotal,
+		"out_of_order_total":       app.stats.outOfOrderTotal,
+		"persist_errors_total":     app.stats.persistErrors,
+		"storage_limited_total":    app.stats.storageLimited,
+		"trade_reconnect_total":    streamStats.TradeReconnectTotal,
+		"trade_read_timeout_total": streamStats.TradeReadTimeoutTotal,
+		"storage_bytes":            app.store.SizeBytes(),
+		"storage_bytes_per_day":    fmt.Sprintf("%.0f", storageBytesPerDay),
+		"last_write_bytes":         app.stats.lastPersistedBytes,
+		"last_lag_ms":              app.stats.lastLag.Milliseconds(),
+		"max_lag_ms":               app.stats.maxLag.Milliseconds(),
+		"window_max_lag_ms":        app.stats.windowMaxLag.Milliseconds(),
 	}
 	pipe := app.redis.Pipeline()
 	pipe.HSet(ctx, healthKey, fields)

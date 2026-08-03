@@ -136,7 +136,12 @@ The pilot aggregates all Bybit linear-perpetual public trades in memory but writ
 only bounded pump-event and matched-control windows to the `orderflow_data` volume.
 Raw trades do not enter NATS, Redis, or PostgreSQL. `market:orderflow:health` expires
 after 30 seconds, so a stale or absent key means the trial is not healthy. The
-default local disk budget is 5 GiB and retention is 14 days; crossing the budget
+health hash and Research Readiness page also expose cumulative public-trade
+`trade_reconnect_total` and `trade_read_timeout_total` counters. An isolated,
+successfully recovered reconnect is diagnostic rather than a drop/error. Investigate
+when read-timeout counts grow continuously, the health status becomes `stale`, or
+the event stream does not resume after a reconnect. The default local disk budget
+is 5 GiB and retention is 14 days; crossing the budget
 fails closed and is reported as `storage_limited`. The trial has no automatic
 restart policy, so a memory-limit exit remains stopped instead of entering a restart
 loop. The start command also refuses to run below 768 MiB available RAM or 15 GiB

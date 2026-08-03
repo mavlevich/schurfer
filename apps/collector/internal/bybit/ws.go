@@ -3,8 +3,10 @@ package bybit
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -18,8 +20,11 @@ const (
 	subChunk     = 10
 	maxTopics    = 200
 	pingInterval = 20 * time.Second
+	readTimeout  = 3 * pingInterval
 	reconnDelay  = 5 * time.Second
 )
+
+var errReadTimeout = errors.New("websocket read timeout")
 
 // Run streams tickers for the given symbols. Blocks until ctx is cancelled.
 func (s *Source) Run(ctx context.Context, symbols []string, publish PublishFn) error {
@@ -46,19 +51,33 @@ func (s *Source) streamLoop(ctx context.Context, symbols []string, publish Publi
 			if ctx.Err() != nil {
 				return
 			}
-			slog.Warn("bybit.reconnecting", "err", err, "delay", reconnDelay)
+			readTimedOut := isReadTimeout(err)
+			reconnects := s.tickerReconnectTotal.Add(1)
+			if readTimedOut {
+				s.tickerReadTimeoutTotal.Add(1)
+			}
+			stats := s.StreamStats()
+			slog.Warn(
+				"bybit.reconnecting",
+				"stream", "ticker",
+				"err", err,
+				"read_timeout", readTimedOut,
+				"reconnect_total", reconnects,
+				"read_timeout_total", stats.TickerReadTimeoutTotal,
+				"delay", s.streamConfig.ReconnectDelay,
+			)
 		}
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(reconnDelay):
+		case <-time.After(s.streamConfig.ReconnectDelay):
 		}
 	}
 }
 
 func (s *Source) stream(ctx context.Context, symbols []string, state map[string]tickerState, publish PublishFn) error {
 	dialer := websocket.Dialer{HandshakeTimeout: 10 * time.Second}
-	conn, resp, err := dialer.DialContext(ctx, wsURL, http.Header{})
+	conn, resp, err := dialer.DialContext(ctx, s.streamConfig.URL, http.Header{})
 	if err != nil {
 		if resp != nil {
 			_ = resp.Body.Close()
@@ -95,7 +114,7 @@ func (s *Source) stream(ctx context.Context, symbols []string, state map[string]
 	pingDone := make(chan struct{})
 	go func() {
 		defer close(pingDone)
-		t := time.NewTicker(pingInterval)
+		t := time.NewTicker(s.streamConfig.PingInterval)
 		defer t.Stop()
 		for {
 			select {
@@ -117,6 +136,9 @@ func (s *Source) stream(ctx context.Context, symbols []string, state map[string]
 		_ = conn.SetReadDeadline(time.Now())
 	})
 	defer stop()
+	if err := configureReadLiveness(conn, s.streamConfig.ReadTimeout); err != nil {
+		return fmt.Errorf("configure read liveness: %w", err)
+	}
 
 	for {
 		_, b, err := conn.ReadMessage()
@@ -124,7 +146,10 @@ func (s *Source) stream(ctx context.Context, symbols []string, state map[string]
 			if ctx.Err() != nil {
 				return nil
 			}
-			return err
+			return classifyReadError(err)
+		}
+		if err := refreshReadDeadline(conn, s.streamConfig.ReadTimeout); err != nil {
+			return fmt.Errorf("refresh read deadline: %w", err)
 		}
 
 		var msg struct {
@@ -147,6 +172,43 @@ func (s *Source) stream(ctx context.Context, symbols []string, state map[string]
 			handleTicker(msg.Data, msg.TS, state, publish, ctx)
 		}
 	}
+}
+
+func refreshReadDeadline(conn *websocket.Conn, timeout time.Duration) error {
+	return conn.SetReadDeadline(time.Now().Add(timeout))
+}
+
+func configureReadLiveness(conn *websocket.Conn, timeout time.Duration) error {
+	if err := refreshReadDeadline(conn, timeout); err != nil {
+		return err
+	}
+	pingHandler := conn.PingHandler()
+	conn.SetPingHandler(func(message string) error {
+		if err := refreshReadDeadline(conn, timeout); err != nil {
+			return err
+		}
+		return pingHandler(message)
+	})
+	pongHandler := conn.PongHandler()
+	conn.SetPongHandler(func(message string) error {
+		if err := refreshReadDeadline(conn, timeout); err != nil {
+			return err
+		}
+		return pongHandler(message)
+	})
+	return nil
+}
+
+func isReadTimeout(err error) bool {
+	return errors.Is(err, errReadTimeout)
+}
+
+func classifyReadError(err error) error {
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return fmt.Errorf("read frame: %w: %w", errReadTimeout, err)
+	}
+	return fmt.Errorf("read frame: %w", err)
 }
 
 func handleTicker(data json.RawMessage, ts int64, state map[string]tickerState, publish PublishFn, ctx context.Context) {

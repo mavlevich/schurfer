@@ -79,15 +79,15 @@ Keep the current measurement services running while this queue is executed. Safe
 and data-integrity fixes do not consume the evidence-producing PR budget. Do not mix
 these independent changes into one branch.
 
-1. **Finish point-in-time source-lead identity review.** Merge the current bounded
+1. **[Completed] Finish point-in-time source-lead identity review.** Merge the current bounded
    review-queue PR after independent review. The authenticated page exposes only raw
    source/target identity observations; the Python report remains the sole conflict
    classifier. No equal-ticker link is approved by the UI or report skeleton.
-2. **Repair Bybit WebSocket read liveness.** Add a renewable read deadline to ticker
-   and public-trade streams, reset it after every received frame, and route silence
-   through the existing reconnect loop. Publish timeout/reconnect diagnostics and
-   test a half-open connection. This protects the order-flow evidence being collected
-   now and is the immediate next PR after identity review.
+2. **[Completed] Repair Bybit WebSocket read liveness.** Add a renewable read
+   deadline to ticker and public-trade streams, reset it after every received frame,
+   and route silence through the existing reconnect loop. Publish timeout/reconnect
+   diagnostics and test a half-open connection. This protects the order-flow evidence
+   being collected now and is the immediate next PR after identity review.
 3. **Make execution order locks renewable.** Replace the fixed 30-second assumption
    in both open and close paths with an owner-checked lease heartbeat and retain the
    atomic owner-only release. Test a deliberately slow exchange path and lease loss.
