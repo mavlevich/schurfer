@@ -141,6 +141,8 @@ type OrderflowProgress struct {
 	StorageBytes             int64     `json:"storage_bytes"`
 	WindowMaxLagMS           int64     `json:"window_max_lag_ms"`
 	DropOrErrorTotal         int64     `json:"drop_or_error_total"`
+	TradeReconnectTotal      int64     `json:"trade_reconnect_total"`
+	TradeReadTimeoutTotal    int64     `json:"trade_read_timeout_total"`
 	UpdatedAt                time.Time `json:"updated_at"`
 	Interpretation           string    `json:"interpretation"`
 }
@@ -864,12 +866,14 @@ func (h *Handler) orderflowProgress(ctx context.Context, now time.Time) *Orderfl
 			Target:  orderflowDays,
 			Exact:   false,
 		},
-		RecordsPersisted: optionalInt64(values, "records_persisted_total"),
-		StorageBytes:     optionalInt64(values, "storage_bytes"),
-		WindowMaxLagMS:   optionalInt64(values, "window_max_lag_ms"),
-		DropOrErrorTotal: errors,
-		UpdatedAt:        time.UnixMilli(updatedAtMS).UTC(),
-		Interpretation:   "operational_estimate_report_validates_complete_episodes_clusters_and_days",
+		RecordsPersisted:      optionalInt64(values, "records_persisted_total"),
+		StorageBytes:          optionalInt64(values, "storage_bytes"),
+		WindowMaxLagMS:        optionalInt64(values, "window_max_lag_ms"),
+		DropOrErrorTotal:      errors,
+		TradeReconnectTotal:   optionalInt64(values, "trade_reconnect_total"),
+		TradeReadTimeoutTotal: optionalInt64(values, "trade_read_timeout_total"),
+		UpdatedAt:             time.UnixMilli(updatedAtMS).UTC(),
+		Interpretation:        "operational_estimate_report_validates_complete_episodes_clusters_and_days",
 	}
 }
 

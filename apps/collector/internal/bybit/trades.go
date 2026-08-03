@@ -60,19 +60,33 @@ func (s *Source) tradeStreamLoop(ctx context.Context, symbols []string, consume 
 			if ctx.Err() != nil {
 				return
 			}
-			slog.Warn("bybit.trades.reconnecting", "err", err, "delay", reconnDelay)
+			readTimedOut := isReadTimeout(err)
+			reconnects := s.tradeReconnectTotal.Add(1)
+			if readTimedOut {
+				s.tradeReadTimeoutTotal.Add(1)
+			}
+			stats := s.StreamStats()
+			slog.Warn(
+				"bybit.trades.reconnecting",
+				"stream", "public_trade",
+				"err", err,
+				"read_timeout", readTimedOut,
+				"reconnect_total", reconnects,
+				"read_timeout_total", stats.TradeReadTimeoutTotal,
+				"delay", s.streamConfig.ReconnectDelay,
+			)
 		}
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(reconnDelay):
+		case <-time.After(s.streamConfig.ReconnectDelay):
 		}
 	}
 }
 
 func (s *Source) tradeStream(ctx context.Context, symbols []string, consume TradeFn) error {
 	dialer := websocket.Dialer{HandshakeTimeout: 10 * time.Second}
-	conn, response, err := dialer.DialContext(ctx, wsURL, http.Header{})
+	conn, response, err := dialer.DialContext(ctx, s.streamConfig.URL, http.Header{})
 	if err != nil {
 		if response != nil {
 			_ = response.Body.Close()
@@ -105,7 +119,7 @@ func (s *Source) tradeStream(ctx context.Context, symbols []string, consume Trad
 	pingDone := make(chan struct{})
 	go func() {
 		defer close(pingDone)
-		ticker := time.NewTicker(pingInterval)
+		ticker := time.NewTicker(s.streamConfig.PingInterval)
 		defer ticker.Stop()
 		for {
 			select {
@@ -125,6 +139,9 @@ func (s *Source) tradeStream(ctx context.Context, symbols []string, consume Trad
 		_ = conn.SetReadDeadline(time.Now())
 	})
 	defer stop()
+	if err := configureReadLiveness(conn, s.streamConfig.ReadTimeout); err != nil {
+		return fmt.Errorf("configure read liveness: %w", err)
+	}
 
 	for {
 		_, payload, err := conn.ReadMessage()
@@ -132,7 +149,10 @@ func (s *Source) tradeStream(ctx context.Context, symbols []string, consume Trad
 			if ctx.Err() != nil {
 				return nil
 			}
-			return err
+			return classifyReadError(err)
+		}
+		if err := refreshReadDeadline(conn, s.streamConfig.ReadTimeout); err != nil {
+			return fmt.Errorf("refresh read deadline: %w", err)
 		}
 		if err := handleTradePayload(ctx, payload, time.Now(), consume); err != nil {
 			return err

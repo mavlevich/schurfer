@@ -66,6 +66,8 @@ export interface OrderflowProgress {
   storage_bytes: number;
   window_max_lag_ms: number;
   drop_or_error_total: number;
+  trade_reconnect_total: number;
+  trade_read_timeout_total: number;
   updated_at: string;
   interpretation: string;
 }

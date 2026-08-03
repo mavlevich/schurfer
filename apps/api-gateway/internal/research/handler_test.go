@@ -123,19 +123,21 @@ func TestReadinessSeparatesExactAndOperationalProgress(t *testing.T) {
 		{values: []any{6, 6, 6, 6, meanDelta}},
 	}}
 	rdb, closeRedis := testRedis(t, map[string]string{
-		"updated_at_ms":           strconv64(now.Add(-time.Second).UnixMilli()),
-		"started_at_ms":           strconv64(orderflowStart.UnixMilli()),
-		"status":                  "ok",
-		"event_rate_per_sec":      "445.8",
-		"activation_total":        "37",
-		"active_captures":         "6",
-		"records_persisted_total": "116137",
-		"storage_bytes":           "12687769",
-		"window_max_lag_ms":       "101",
-		"queue_dropped_total":     "0",
-		"pending_dropped_total":   "0",
-		"persist_errors_total":    "0",
-		"storage_limited_total":   "0",
+		"updated_at_ms":            strconv64(now.Add(-time.Second).UnixMilli()),
+		"started_at_ms":            strconv64(orderflowStart.UnixMilli()),
+		"status":                   "ok",
+		"event_rate_per_sec":       "445.8",
+		"activation_total":         "37",
+		"active_captures":          "6",
+		"records_persisted_total":  "116137",
+		"storage_bytes":            "12687769",
+		"window_max_lag_ms":        "101",
+		"queue_dropped_total":      "0",
+		"pending_dropped_total":    "0",
+		"persist_errors_total":     "0",
+		"storage_limited_total":    "0",
+		"trade_reconnect_total":    "3",
+		"trade_read_timeout_total": "2",
 	})
 	defer closeRedis()
 
@@ -157,6 +159,10 @@ func TestReadinessSeparatesExactAndOperationalProgress(t *testing.T) {
 	}
 	if payload.ProspectiveCohorts[0].MatureInputEpisodes.Exact {
 		t.Fatal("mature input count must not claim formal-report exactness")
+	}
+	if payload.Orderflow == nil || payload.Orderflow.TradeReconnectTotal != 3 ||
+		payload.Orderflow.TradeReadTimeoutTotal != 2 {
+		t.Fatalf("unexpected order-flow recovery telemetry: %+v", payload.Orderflow)
 	}
 	diagnostics := payload.ProspectiveCohorts[0].InputDiagnostics
 	if diagnostics.ClosedCandidateEpisodes != 16 {

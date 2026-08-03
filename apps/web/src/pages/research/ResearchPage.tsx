@@ -686,7 +686,7 @@ export function ResearchPage() {
                       label="Market days elapsed"
                       milestone={data.orderflow.market_days_elapsed}
                     />
-                    <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+                    <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-5">
                       <div>
                         <p className="text-xs text-muted-foreground">Active</p>
                         <p className="font-mono">{data.orderflow.active_captures}</p>
@@ -708,6 +708,15 @@ export function ResearchPage() {
                           )}
                         >
                           {data.orderflow.drop_or_error_total}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">WS recovery</p>
+                        <p className="font-mono">
+                          {data.orderflow.trade_reconnect_total} reconnects
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {data.orderflow.trade_read_timeout_total} read timeouts
                         </p>
                       </div>
                     </div>
