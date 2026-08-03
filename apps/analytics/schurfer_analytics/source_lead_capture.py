@@ -20,6 +20,7 @@ import structlog
 
 from .exchange_registry import EXCHANGE_FACTORIES, ExchangeFactory
 from .instruments import instrument_metadata
+from .source_lead_contract import CAPTURE_VERSION
 from .source_lead_qualification import (
     QUALIFICATION_VERSION,
     VENUE_SELECTOR_VERSION,
@@ -31,7 +32,6 @@ from .source_lead_qualification import (
 
 log = structlog.get_logger()
 
-CAPTURE_VERSION = "source_lead_prospective_capture_v1"
 SOURCE_EXCHANGE = "gate"
 IDENTITY_MATCH_METHOD = "base_symbol_v1"
 

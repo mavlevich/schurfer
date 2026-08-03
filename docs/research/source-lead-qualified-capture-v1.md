@@ -34,6 +34,26 @@ The initial registry intentionally has no links. This makes deployment testable
 without silently approving any asset. Captures will record
 `source_identity_unapproved` until reviewed links are added.
 
+## Identity review queue
+
+`source_lead_identity_review_v1` turns the raw prospective captures into a bounded,
+reproducible manual-review queue. It groups the exact Gate identity that existed at
+source time with the exact Binance/Bybit instrument identities and executable $50
+quotes observed by the forward collector. The report includes the full capture
+denominator, an input fingerprint, first/last observation times, instrument-version
+conflicts, exact target metadata, and a deliberately non-loadable registry skeleton.
+
+The skeleton contains `review_status=unapproved` and null evidence fields. It is a
+work queue, not a registry update. Its proposed internal asset id is only a stable
+label for review; equal base tickers never authorize a link. An independent reviewer
+must verify authoritative project or venue evidence, archive the reviewed payload,
+record its SHA-256, and approve every exact instrument key in a new versioned
+registry. The Research page exposes only raw point-in-time Gate groups, raw persisted
+source conflict flags, and executable-target coverage continuously, so missing
+identities do not require manual SQL to discover. It deliberately does not reproduce
+the report's cross-group classification logic; this Python report is the sole source
+of `review_state` and `review_flags`.
+
 ## Deterministic venue selector
 
 `lowest_round_trip_impact_v1` considers only target observations that:
@@ -73,11 +93,12 @@ are logged and never converted into a false health alert.
 
 Before registering `gate_source_lead_4h_v1`:
 
-1. add and independently review authoritative links for the intended asset scope;
-2. bump the registry and qualification versions;
-3. deploy and verify qualification/alert health;
-4. choose the next clean UTC boundary after deployment;
-5. freeze the selector, horizon, exit, cost, cash, and missing-data semantics.
+1. run `source-lead-identity-report` and resolve every conflict in the intended scope;
+2. archive and independently review authoritative evidence for each exact link;
+3. add approved links and bump the registry and qualification versions;
+4. deploy and verify qualification/alert health;
+5. choose the next clean UTC boundary after deployment;
+6. freeze the selector, horizon, exit, cost, cash, and missing-data semantics.
 
 Pre-cutoff provisional and empty-registry rows remain useful for capacity, latency,
 and exclusion analysis, but they cannot support a PnL verdict.

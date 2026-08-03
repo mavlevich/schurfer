@@ -268,6 +268,8 @@ function formatLatency(value: number | null): string {
 }
 
 function SourceLeadCard({ progress }: { progress: SourceLeadProgress }) {
+  const identityCandidates = progress.identity_review_candidates ?? [];
+
   return (
     <Card>
       <CardHeader className="space-y-3">
@@ -356,6 +358,72 @@ function SourceLeadCard({ progress }: { progress: SourceLeadProgress }) {
           <p className="mt-3 text-muted-foreground">
             selected Binance <span className="font-mono">{progress.selected_binance}</span> · Bybit{' '}
             <span className="font-mono">{progress.selected_bybit}</span>
+          </p>
+        </div>
+
+        <div className="rounded-md border p-3 text-xs">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="font-medium">Point-in-time identity review</p>
+            <span className="text-muted-foreground">
+              {identityCandidates.length} exact Gate groups
+            </span>
+          </div>
+          {identityCandidates.length > 0 ? (
+            <div className="mt-3 overflow-x-auto">
+              <table className="w-full min-w-[680px] text-left">
+                <thead className="text-muted-foreground">
+                  <tr className="border-b">
+                    <th className="pb-2 pr-3 font-medium">Asset</th>
+                    <th className="pb-2 pr-3 font-medium">Observed</th>
+                    <th className="pb-2 pr-3 font-medium">Executable targets</th>
+                    <th className="pb-2 pr-3 font-medium">Exact identities</th>
+                    <th className="pb-2 font-medium">Raw source flag</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {identityCandidates.map((candidate) => (
+                    <tr
+                      key={`${candidate.base}:${candidate.source_identity_key ?? 'missing'}`}
+                      className="border-b last:border-0"
+                    >
+                      <td className="py-2 pr-3">
+                        <p className="font-mono text-foreground">{candidate.base}</p>
+                        <p
+                          className="max-w-56 truncate font-mono text-[10px] text-muted-foreground"
+                          title={candidate.source_identity_key ?? 'missing source identity'}
+                        >
+                          {candidate.source_identity_key ?? 'missing source identity'}
+                        </p>
+                      </td>
+                      <td className="py-2 pr-3 font-mono text-foreground">{candidate.captures}</td>
+                      <td className="py-2 pr-3 font-mono text-foreground">
+                        {candidate.executable_targets || 'none'}
+                      </td>
+                      <td className="py-2 pr-3 font-mono text-foreground">
+                        {candidate.exact_target_identities}
+                      </td>
+                      <td
+                        className={cn(
+                          'py-2 font-mono',
+                          candidate.source_conflict ? 'text-red-400' : 'text-muted-foreground',
+                        )}
+                      >
+                        {candidate.source_conflict ? 'capture conflict' : 'none observed'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="mt-3 text-muted-foreground">
+              No complete eligible source identities have been captured yet.
+            </p>
+          )}
+          <p className="mt-3 text-muted-foreground">
+            This table shows raw point-in-time observations only. It does not classify or approve
+            equal tickers. The versioned Python report is the sole source of conflict state and
+            still requires authoritative evidence before any strategy cohort can start.
           </p>
         </div>
 

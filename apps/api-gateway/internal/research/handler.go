@@ -159,39 +159,51 @@ type SourceLeadTargetProgress struct {
 	EntryImpactP90BPS  *float64 `json:"entry_impact_p90_bps"`
 }
 
+type SourceLeadIdentityReviewCandidate struct {
+	Base                  string    `json:"base"`
+	SourceIdentityKey     *string   `json:"source_identity_key"`
+	Captures              int       `json:"captures"`
+	FirstObservedAt       time.Time `json:"first_observed_at"`
+	LastObservedAt        time.Time `json:"last_observed_at"`
+	ExecutableTargets     string    `json:"executable_targets"`
+	ExactTargetIdentities int       `json:"exact_target_identities"`
+	SourceConflict        bool      `json:"source_conflict"`
+}
+
 type SourceLeadProgress struct {
-	Contract                    string                     `json:"contract"`
-	CohortStart                 time.Time                  `json:"cohort_start"`
-	Status                      string                     `json:"status"`
-	Captures                    int                        `json:"captures"`
-	SourceEligible              int                        `json:"source_eligible"`
-	Complete                    int                        `json:"complete"`
-	Excluded                    int                        `json:"excluded"`
-	Abandoned                   int                        `json:"abandoned"`
-	RecentAbandoned             int                        `json:"recent_abandoned"`
-	RecentCriticalAbandoned     int                        `json:"recent_critical_abandoned"`
-	RecentRoutineAbandoned      int                        `json:"recent_routine_abandoned"`
-	Collecting                  int                        `json:"collecting"`
-	StaleCollecting             int                        `json:"stale_collecting"`
-	TargetEligible              Milestone                  `json:"target_eligible"`
-	MatureFourHourWindows       Milestone                  `json:"mature_four_hour_windows"`
-	AssetClusters               Milestone                  `json:"asset_clusters"`
-	CalendarWeeks               Milestone                  `json:"calendar_weeks"`
-	ConfirmedWithinHour         int                        `json:"confirmed_within_hour"`
-	Qualified                   int                        `json:"qualified"`
-	QualificationMissing        int                        `json:"qualification_missing"`
-	IdentityUnapproved          int                        `json:"identity_unapproved"`
-	NoExecutableTarget          int                        `json:"no_approved_executable_target"`
-	SelectedBinance             int                        `json:"selected_binance"`
-	SelectedBybit               int                        `json:"selected_bybit"`
-	IdentityRegistry            *string                    `json:"identity_registry_version"`
-	IdentityRegistryFingerprint *string                    `json:"identity_registry_fingerprint"`
-	IdentityRegistryMixed       bool                       `json:"identity_registry_mixed"`
-	LastObservedAt              *time.Time                 `json:"last_observed_at"`
-	Targets                     []SourceLeadTargetProgress `json:"targets"`
-	HealthFlags                 []string                   `json:"health_flags"`
-	LatestReport                *RegisteredReportRun       `json:"latest_report"`
-	Interpretation              string                     `json:"interpretation"`
+	Contract                    string                              `json:"contract"`
+	CohortStart                 time.Time                           `json:"cohort_start"`
+	Status                      string                              `json:"status"`
+	Captures                    int                                 `json:"captures"`
+	SourceEligible              int                                 `json:"source_eligible"`
+	Complete                    int                                 `json:"complete"`
+	Excluded                    int                                 `json:"excluded"`
+	Abandoned                   int                                 `json:"abandoned"`
+	RecentAbandoned             int                                 `json:"recent_abandoned"`
+	RecentCriticalAbandoned     int                                 `json:"recent_critical_abandoned"`
+	RecentRoutineAbandoned      int                                 `json:"recent_routine_abandoned"`
+	Collecting                  int                                 `json:"collecting"`
+	StaleCollecting             int                                 `json:"stale_collecting"`
+	TargetEligible              Milestone                           `json:"target_eligible"`
+	MatureFourHourWindows       Milestone                           `json:"mature_four_hour_windows"`
+	AssetClusters               Milestone                           `json:"asset_clusters"`
+	CalendarWeeks               Milestone                           `json:"calendar_weeks"`
+	ConfirmedWithinHour         int                                 `json:"confirmed_within_hour"`
+	Qualified                   int                                 `json:"qualified"`
+	QualificationMissing        int                                 `json:"qualification_missing"`
+	IdentityUnapproved          int                                 `json:"identity_unapproved"`
+	NoExecutableTarget          int                                 `json:"no_approved_executable_target"`
+	SelectedBinance             int                                 `json:"selected_binance"`
+	SelectedBybit               int                                 `json:"selected_bybit"`
+	IdentityRegistry            *string                             `json:"identity_registry_version"`
+	IdentityRegistryFingerprint *string                             `json:"identity_registry_fingerprint"`
+	IdentityRegistryMixed       bool                                `json:"identity_registry_mixed"`
+	LastObservedAt              *time.Time                          `json:"last_observed_at"`
+	Targets                     []SourceLeadTargetProgress          `json:"targets"`
+	IdentityReviewCandidates    []SourceLeadIdentityReviewCandidate `json:"identity_review_candidates"`
+	HealthFlags                 []string                            `json:"health_flags"`
+	LatestReport                *RegisteredReportRun                `json:"latest_report"`
+	Interpretation              string                              `json:"interpretation"`
 }
 
 type Response struct {
@@ -599,6 +611,58 @@ SELECT
 		FILTER (WHERE status = 'sampled' AND entry_impact_bps >= 0)
 FROM observations`
 
+const sourceLeadIdentityReviewSQL = `
+WITH identity_groups AS (
+	SELECT
+		upper(c.base) AS base,
+		c.source_identity_key,
+		count(DISTINCT c.id) AS captures,
+		min(c.source_first_observed_at) AS first_observed_at,
+		max(c.source_first_observed_at) AS last_observed_at,
+		string_agg(DISTINCT t.target_exchange, ',' ORDER BY t.target_exchange)
+			FILTER (
+				WHERE t.status = 'sampled'
+				  AND nullif(t.instrument->>'identity_key', '') IS NOT NULL
+				  AND jsonb_typeof(t.liquidity->'bid_impact_bps') = 'number'
+				  AND jsonb_typeof(t.liquidity->'ask_impact_bps') = 'number'
+				  AND jsonb_typeof(t.liquidity->'bid_filled_notional_usd') = 'number'
+				  AND jsonb_typeof(t.liquidity->'ask_filled_notional_usd') = 'number'
+				  AND (t.liquidity->>'bid_filled_notional_usd')::numeric + 0.01
+					>= t.requested_notional_usd
+				  AND (t.liquidity->>'ask_filled_notional_usd')::numeric + 0.01
+					>= t.requested_notional_usd
+			) AS executable_targets,
+		count(DISTINCT (t.target_exchange, t.instrument->>'identity_key'))
+			FILTER (
+				WHERE t.status = 'sampled'
+				  AND nullif(t.instrument->>'identity_key', '') IS NOT NULL
+			) AS exact_target_identities,
+		bool_or(c.source_payload @> '{"identity_conflict": true}'::jsonb) AS source_conflict
+	FROM app.source_lead_captures AS c
+	LEFT JOIN app.source_lead_target_observations AS t ON t.capture_id = c.id
+	WHERE c.capture_version = 'source_lead_prospective_capture_v1'
+	  AND c.source_first_observed_at >= $1
+	  AND c.source_first_observed_at < $2
+	  AND c.status = 'complete'
+	  AND c.eligibility_reason = 'eligible'
+	GROUP BY upper(c.base), c.source_identity_key
+)
+SELECT coalesce(
+	jsonb_agg(
+		jsonb_build_object(
+			'base', base,
+			'source_identity_key', source_identity_key,
+			'captures', captures,
+			'first_observed_at', first_observed_at,
+			'last_observed_at', last_observed_at,
+			'executable_targets', coalesce(executable_targets, ''),
+			'exact_target_identities', exact_target_identities,
+			'source_conflict', source_conflict
+		) ORDER BY last_observed_at DESC, base, source_identity_key
+	), '[]'::jsonb
+)::text
+FROM identity_groups`
+
 func sourceLeadStatus(now time.Time, progress SourceLeadProgress) string {
 	switch {
 	case now.Before(progress.CohortStart):
@@ -629,7 +693,8 @@ func (h *Handler) sourceLeadProgress(
 			{Exchange: "binance"},
 			{Exchange: "bybit"},
 		},
-		HealthFlags: []string{},
+		HealthFlags:              []string{},
+		IdentityReviewCandidates: []SourceLeadIdentityReviewCandidate{},
 		Interpretation: "exact_operational_capture_progress_no_strategy_verdict_" +
 			"provisional_identity",
 	}
@@ -702,6 +767,22 @@ func (h *Handler) sourceLeadProgress(
 			return progress, err
 		}
 		progress.Targets[index] = target
+	}
+	var identityReviewJSON string
+	err = h.db.QueryRow(
+		ctx,
+		sourceLeadIdentityReviewSQL,
+		sourceLeadStart,
+		now,
+	).Scan(&identityReviewJSON)
+	if err != nil {
+		return progress, err
+	}
+	if err = json.Unmarshal(
+		[]byte(identityReviewJSON),
+		&progress.IdentityReviewCandidates,
+	); err != nil {
+		return progress, err
 	}
 	progress.LatestReport, err = h.latestReport(ctx, sourceLeadContract)
 	if err != nil {
