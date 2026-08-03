@@ -119,7 +119,7 @@ class OrderLockLease:
         self,
         exc_type: type[BaseException] | None,
         exc: BaseException | None,
-        traceback: TracebackType | None,
+        _exc_tb: TracebackType | None,
     ) -> bool:
         await self._stop_heartbeat()
         await self._release()
