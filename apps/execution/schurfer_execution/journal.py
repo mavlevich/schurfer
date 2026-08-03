@@ -116,6 +116,13 @@ WHERE id = %s
 # Excludes paper (dry-run) trades: setup_context->paper is only set to true
 # for paper trades, absent for real ones. Real daily PnL must not be polluted
 # by paper losses/gains.
+_FIND_OPEN_TRADE = """
+SELECT id FROM app.trades
+WHERE exchange = %s AND symbol = %s AND status = 'open'
+ORDER BY entry_at DESC
+LIMIT 1
+"""
+
 _REALIZED_PNL_TODAY = """
 SELECT COALESCE(SUM(pnl_usd), 0)
 FROM app.trades
@@ -394,6 +401,25 @@ async def record_exit_liquidity(
             err=str(exc),
         )
         return False
+
+
+async def find_open_trade_id(db_url: str, *, exchange: str, base: str) -> int | None:
+    """Fallback lookup for a close incident whose trade_id wasn't captured at
+    creation time (it was created while the matching open was still an
+    unresolved-fill incident, before journal.open_trade ran). Looks up the most
+    recent open trade for this exchange/base directly from the journal, which
+    is authoritative once open_trade has actually run — unlike the Redis
+    trade:id cache, this can't have simply never been written yet.
+    """
+    try:
+        aconn = await psycopg.AsyncConnection.connect(db_url)
+        async with aconn, aconn.cursor() as cur:
+            await cur.execute(_FIND_OPEN_TRADE, (exchange, f"{base.upper()}/USDT:USDT"))
+            row = await cur.fetchone()
+            return int(row[0]) if row else None
+    except Exception as exc:
+        log.error("journal.find_open_trade_id.failed", exchange=exchange, base=base, err=str(exc))
+        return None
 
 
 async def realized_pnl_today(db_url: str) -> float | None:

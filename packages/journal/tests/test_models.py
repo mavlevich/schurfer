@@ -4,6 +4,7 @@ from schurfer_journal.models import (
     Alert,
     AlertStatus,
     Exchange,
+    FillResolutionIncident,
     MarketType,
     OutcomeLabel,
     OutcomeQuality,
@@ -408,3 +409,31 @@ class TestPumpAlertDeliveryModel:
 
         assert fks == {"app.pump_events.id"}
         assert "uq_pump_alert_delivery_event_channel_kind_threshold" in constraints
+
+
+class TestFillResolutionIncidentModel:
+    def test_table_shape(self) -> None:
+        assert FillResolutionIncident.__tablename__ == "fill_resolution_incidents"
+        assert FillResolutionIncident.__table__.schema == "app"
+        columns = FillResolutionIncident.__table__.columns
+        assert columns["exchange"].nullable is False
+        assert columns["base"].nullable is False
+        assert columns["operation"].nullable is False
+        assert columns["order_id"].nullable is False
+        assert columns["trade_id"].nullable is True
+        assert columns["status"].nullable is False
+        assert columns["resolved_price"].nullable is True
+        assert columns["context"].nullable is False
+
+    def test_idempotency_key_and_constraints(self) -> None:
+        indexes = {index.name: index for index in FillResolutionIncident.__table__.indexes}
+        constraints = {
+            constraint.name for constraint in FillResolutionIncident.__table__.constraints
+        }
+        fks = {fk.target_fullname for fk in FillResolutionIncident.__table__.foreign_keys}
+
+        assert indexes["ux_fill_resolution_incidents_exchange_order"].unique
+        assert "ck_fill_resolution_incidents_operation" in constraints
+        assert "ck_fill_resolution_incidents_status" in constraints
+        assert "ck_fill_resolution_incidents_resolution" in constraints
+        assert fks == {"app.trades.id"}

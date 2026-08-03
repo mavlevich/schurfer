@@ -342,6 +342,36 @@ async def test_realized_pnl_today_returns_none_on_db_error() -> None:
     assert result is None
 
 
+async def test_find_open_trade_id_returns_matching_row() -> None:
+    conn, cur = _mock_conn([(77,)])
+
+    with patch("psycopg.AsyncConnection.connect", AsyncMock(return_value=conn)):
+        result = await journal.find_open_trade_id("postgresql://x", exchange="bybit", base="beat")
+
+    assert result == 77
+    query, params = cur.execute.call_args_list[0].args
+    assert "status = 'open'" in query
+    assert params == ("bybit", "BEAT/USDT:USDT")
+
+
+async def test_find_open_trade_id_returns_none_when_no_open_trade() -> None:
+    conn, _cur = _mock_conn([None])
+
+    with patch("psycopg.AsyncConnection.connect", AsyncMock(return_value=conn)):
+        result = await journal.find_open_trade_id("postgresql://x", exchange="bybit", base="BEAT")
+
+    assert result is None
+
+
+async def test_find_open_trade_id_returns_none_on_db_error() -> None:
+    with patch(
+        "psycopg.AsyncConnection.connect", AsyncMock(side_effect=Exception("connection refused"))
+    ):
+        result = await journal.find_open_trade_id("postgresql://x", exchange="bybit", base="BEAT")
+
+    assert result is None
+
+
 class TestTryCommitClose:
     async def test_success_clears_any_pending_marker(self) -> None:
         conn, _cur = _mock_conn([_trade_row(), (1,)])

@@ -140,6 +140,24 @@ these independent changes into one branch.
    Gate/Binance/Bybit links, archive authoritative evidence and hashes, bump registry
    plus qualification versions, deploy, and choose the next clean UTC cutoff for one
    `gate_source_lead_4h_v1` cohort. Historical confirmed survivors cannot enter it.
+7. **[Bundle into the next scanner/notifier/episode-lifecycle PR] Fix duplicate-alert
+   spam from premature episode closure on thin/flaky venues.** `app.pump_events`
+   closes an episode once `miss_count` reaches its threshold and opens a new
+   `pump_event_id` on the next detection (`persistence.py`'s `_CLOSE_DUE` /
+   `_INSERT_EPISODE`). The notifier de-dupes per `pump_event_id`
+   (`notifier.go`'s `seenKey`), so one real, still-elevated pump that briefly drops
+   out of the scan window on a thin-liquidity/flaky venue re-alerts every time it
+   reopens. Observed on `2026-08-03`: CATE on LBank sent 4 Telegram alerts across
+   ~70 minutes for what was one continuous +4900-5500% move, confirmed via 4 distinct
+   `pump_event_id`s (2569, 2578, 2580, 2584) in the notifier's own logs — not a
+   Redis/notifier restart, not a duplicate-notification bug, just repeated episode
+   reopening. Not a safety issue (no capital at risk), just channel noise. Fix
+   direction: raise or make venue-aware the `miss_count` close threshold, and/or make
+   the notifier's de-dup resilient to a same-base reopen within a short window (the
+   base-scoped `notifier:seen:{base}` fallback key already exists for rollout
+   compatibility — give it its own short cooldown instead of only checking it once).
+   This is a bug fix, not an experiment family, and does not consume the evidence
+   budget above.
 
 The liquid-taker and wider-stop cohorts continue unchanged toward their August 27
 and August 29 checkpoints. The open-ended margin study remains a background boundary

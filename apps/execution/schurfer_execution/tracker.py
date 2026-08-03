@@ -3,7 +3,7 @@ from typing import Any
 
 import structlog
 
-from . import journal
+from . import incidents, journal
 from .account import fetch_positions
 from .risk import DAILY_PNL_KEY, PNL_READY_KEY
 
@@ -43,6 +43,13 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, db_url: str | None) -> None
             # so daily_pnl would understate real exposure if declared ready now.
             await rdb.delete(PNL_READY_KEY)
             log.warning("pnl_tracker.skipping_update", reason="pending_close_outstanding")
+            return
+        if await incidents.any_open_incidents(db_url):
+            # A fill's price is not yet confirmed at all (see fill_price.py) —
+            # its PnL impact is unknown, not zero, so daily_pnl must not be
+            # declared fresh while it's outstanding.
+            await rdb.delete(PNL_READY_KEY)
+            log.warning("pnl_tracker.skipping_update", reason="fill_incident_outstanding")
             return
     else:
         realized = 0.0

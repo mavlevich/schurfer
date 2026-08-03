@@ -560,6 +560,7 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 initial_sl_pct=exit_params["initial_sl_pct"],
                 liquidation_buffer_pct=cfg.liquidation_buffer_pct,
                 cfg=cfg,
+                setup_context=setup_context,
             )
         except OrderLockLostError as exc:
             # Exclusivity became uncertain mid-operation (see order_lock.py). The
@@ -591,7 +592,39 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
             )
             continue
 
-        if result.get("allowed"):
+        if result.get("allowed") and result.get("fill_status") == "unresolved":
+            # Order is confirmed placed on the exchange; the fill price is not.
+            # place_order already created a durable incident and revoked PnL
+            # readiness (fill_price.py / incidents.py). Recording a trade here
+            # would need a price we don't have — the incident worker completes
+            # journal.open_trade and exit tracking once resolve_fill_price
+            # confirms a real one for this same order id. seen_key is still
+            # marked "traded": a real position exists, so this token must not
+            # be re-entered.
+            log.warning(
+                "trader.open_fill_unresolved",
+                base=base,
+                exchange=exchange,
+                incident_id=result.get("incident_id"),
+            )
+            await decisions.write_decision(
+                rdb,
+                base=base,
+                exchange=exchange,
+                action="opened_pending_fill",
+                reason="fill_unresolved",
+                score=score,
+                pump_pct=pump_pct,
+                decision_id=decision_id,
+                strategy_version=cfg.strategy_version,
+                features=features,
+                liquidity=liq,
+                price=decision_price,
+                pump_event_id=pump_event_id,
+                seen_key=seen_key,
+                seen_ttl=_SEEN_TTL_TRADED,
+            )
+        elif result.get("allowed"):
             log.info(
                 "trader.opened",
                 base=base,
@@ -617,7 +650,7 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 seen_ttl=_SEEN_TTL_TRADED,
             )
 
-            entry_price = result.get("price", 0)
+            entry_price = result["price"]
             await rdb.set(
                 exit_module.params_key(exchange, base),
                 json.dumps(exit_params),
@@ -660,7 +693,7 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                     exchange=exchange,
                     size_usd=size_usd,
                     leverage=cfg.signal_leverage,
-                    price=result.get("price", 0),
+                    price=result["price"],
                     score=score,
                     paper=False,
                 )

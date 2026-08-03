@@ -398,16 +398,25 @@ async def test_manual_close_no_exit_price_does_not_call_journal() -> None:
     assert "trade:id:bybit:BEAT" not in deleted
 
 
-async def test_manual_close_no_exit_price_still_revokes_readiness() -> None:
-    """Regression (P0): PnL impact is unknown when no exit price is available
-    — the readiness lease must be revoked immediately even though we can't
-    commit or queue a retry yet, not left to expire on the tracker's own TTL."""
+async def test_manual_close_no_exit_price_does_not_double_revoke_readiness() -> None:
+    """close_position itself now revokes PnL readiness and creates a durable
+    incident the moment a fill price can't be confirmed (fill_price.py /
+    incidents.py) — the router must not also call revoke_pnl_readiness, or a
+    future accidental double-revoke would be indistinguishable from this
+    correct single-revoke behavior."""
     rdb = _close_rdb(**{"trade:id:bybit:BEAT": b"42"})
     cfg = _close_cfg(db_url="postgresql://localhost/test")
     body = CloseBody(exchange="bybit", base="BEAT")
     request = _close_request(cfg, rdb)
 
-    close_result = {"closed": True, "order_id": "ord-1", "exit_price": None, "side": "short"}
+    close_result = {
+        "closed": True,
+        "order_id": "ord-1",
+        "exit_price": None,
+        "side": "short",
+        "fill_status": "unresolved",
+        "incident_id": 7,
+    }
     with (
         patch(
             "schurfer_execution.routers.account.close_position",
@@ -421,4 +430,4 @@ async def test_manual_close_no_exit_price_still_revokes_readiness() -> None:
     ):
         await manual_close_position(body, request)
 
-    mock_revoke.assert_called_once_with(rdb)
+    mock_revoke.assert_not_called()

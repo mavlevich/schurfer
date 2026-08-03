@@ -69,6 +69,10 @@ OHLCV storage exists: ATR and volatility, max intraday wick.
 
 - News pipeline: CryptoPanic and RSS, a cheap model pre-filter, then Claude scoring.
 - Smart-money tracker for Solana (Helius).
+- Known-fund and large-trader positioning tracker (public 13F-style disclosures,
+  exchange leaderboards, on-chain fund wallets): surface what's currently in favor
+  among visibly successful players, then decide via our own backtested metrics
+  whether to mirror a similar strategy or allocation — not copy-trade blindly.
 - Pre-launch short detector (TGE-aware, low-float VC tokens).
 - MM history database (DWF, Wintermute patterns).
 - Investigator-based signals (ZachXBT, MetaSleuth).
@@ -94,6 +98,10 @@ OHLCV storage exists: ATR and volatility, max intraday wick.
 
 - BTC dominance shift: BTC.D falling means alt season, rising sharply means risk-off.
   Avoid shorting alts into a bull market.
+- Bitcoin-versus-altcoin regime classifier: combine BTC.D trend, altcoin volume
+  share, and breadth (percent of top-N alts outperforming BTC) into one regime
+  label, if it turns out to add anything beyond BTC.D alone — needs a cheap
+  Discovery-level check before building.
 - Aggregate funding-rate index: average funding across the top 20 perps. Over 0.08%
   per 8h plus Fear and Greed over 75 means macro crowded-long, the best window to
   fade pumps.

@@ -28,6 +28,13 @@ def _patch_no_pending(return_value: bool = False):  # type: ignore[no-untyped-de
     )
 
 
+def _patch_no_incidents(return_value: bool = False):  # type: ignore[no-untyped-def]
+    return patch(
+        "schurfer_execution.tracker.incidents.any_open_incidents",
+        AsyncMock(return_value=return_value),
+    )
+
+
 async def test_tick_combines_realized_and_unrealized() -> None:
     rdb = _mock_rdb()
     with (
@@ -35,6 +42,7 @@ async def test_tick_combines_realized_and_unrealized() -> None:
             "schurfer_execution.tracker.journal.realized_pnl_today", AsyncMock(return_value=-20.0)
         ),
         _patch_no_pending(),
+        _patch_no_incidents(),
     ):
         await _tick({"bybit": _mock_exchange(-5.0)}, rdb, db_url="postgresql://x")
 
@@ -53,6 +61,7 @@ async def test_tick_recomputes_from_source_of_truth_every_call() -> None:
             AsyncMock(return_value=-100.0),
         ),
         _patch_no_pending(),
+        _patch_no_incidents(),
     ):
         await _tick({"bybit": _mock_exchange(0.0)}, rdb, db_url="postgresql://x")
         await _tick({"bybit": _mock_exchange(0.0)}, rdb, db_url="postgresql://x")
@@ -145,6 +154,7 @@ async def test_tick_revokes_lease_if_pending_close_lands_between_check_and_publi
             "schurfer_execution.tracker.journal.any_pending_closes",
             AsyncMock(side_effect=[False, True]),
         ),
+        _patch_no_incidents(),
     ):
         await _tick({"bybit": _mock_exchange(-5.0)}, rdb, db_url="postgresql://x")
 
@@ -170,6 +180,7 @@ async def test_tick_sums_unrealized_across_exchanges() -> None:
     with (
         patch("schurfer_execution.tracker.journal.realized_pnl_today", AsyncMock(return_value=0.0)),
         _patch_no_pending(),
+        _patch_no_incidents(),
     ):
         await _tick({"bybit": ex1, "bingx": ex2}, rdb, db_url="postgresql://x")
 

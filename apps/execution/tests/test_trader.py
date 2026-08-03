@@ -726,7 +726,7 @@ async def test_tick_writes_decision_on_successful_open() -> None:
         patch(
             "schurfer_execution.trader.place_order",
             new_callable=AsyncMock,
-            return_value={"allowed": True, "order_id": "ord-1"},
+            return_value={"allowed": True, "order_id": "ord-1", "price": 1.0},
         ),
         patch(
             "schurfer_execution.trader.decisions.write_decision", new_callable=AsyncMock
@@ -800,7 +800,7 @@ async def test_tick_market_quality_gate_allows_tradeable_book() -> None:
         patch(
             "schurfer_execution.trader.place_order",
             new_callable=AsyncMock,
-            return_value={"allowed": True, "order_id": "ord-123"},
+            return_value={"allowed": True, "order_id": "ord-123", "price": 1.0},
         ) as mock_order,
     ):
         await _tick({"bybit": ex}, rdb, cfg)
@@ -954,7 +954,7 @@ async def test_tick_places_short_when_score_sufficient() -> None:
     with patch(
         "schurfer_execution.trader.place_order",
         new_callable=AsyncMock,
-        return_value={"allowed": True, "order_id": "ord-123"},
+        return_value={"allowed": True, "order_id": "ord-123", "price": 1.0},
     ) as mock_order:
         await _tick({"bybit": MagicMock()}, rdb, _cfg(score_threshold=6))
 
@@ -972,7 +972,7 @@ async def test_tick_sets_long_ttl_after_successful_trade() -> None:
     with patch(
         "schurfer_execution.trader.place_order",
         new_callable=AsyncMock,
-        return_value={"allowed": True, "order_id": "ord-123"},
+        return_value={"allowed": True, "order_id": "ord-123", "price": 1.0},
     ):
         await _tick({"bybit": MagicMock()}, rdb, _cfg())
 
@@ -1013,7 +1013,7 @@ async def test_tick_picks_highest_volume_exchange() -> None:
     with patch(
         "schurfer_execution.trader.place_order",
         new_callable=AsyncMock,
-        return_value={"allowed": True, "order_id": "ord-x"},
+        return_value={"allowed": True, "order_id": "ord-x", "price": 1.0},
     ) as mock_order:
         await _tick({"bybit": MagicMock(), "bingx": MagicMock()}, rdb, _cfg())
 
@@ -1151,7 +1151,7 @@ async def test_tick_proceeds_when_funding_rate_above_threshold() -> None:
     with patch(
         "schurfer_execution.trader.place_order",
         new_callable=AsyncMock,
-        return_value={"allowed": True, "order_id": "ord-1"},
+        return_value={"allowed": True, "order_id": "ord-1", "price": 1.0},
     ) as mock_order:
         await _tick({"bybit": _exchange_mock(-0.0005)}, rdb, _cfg(min_funding_rate_pct=-0.1))
 
@@ -1164,7 +1164,7 @@ async def test_tick_proceeds_when_funding_rate_fetch_fails() -> None:
     with patch(
         "schurfer_execution.trader.place_order",
         new_callable=AsyncMock,
-        return_value={"allowed": True, "order_id": "ord-2"},
+        return_value={"allowed": True, "order_id": "ord-2", "price": 1.0},
     ) as mock_order:
         await _tick({"bybit": _exchange_mock(None)}, rdb, _cfg(min_funding_rate_pct=-0.1))
 
@@ -1230,7 +1230,7 @@ async def test_tick_proceeds_when_require_funding_rate_false_and_fetch_fails() -
     with patch(
         "schurfer_execution.trader.place_order",
         new_callable=AsyncMock,
-        return_value={"allowed": True, "order_id": "ord-x"},
+        return_value={"allowed": True, "order_id": "ord-x", "price": 1.0},
     ) as mock_order:
         await _tick(
             {"bybit": _exchange_mock(None)},
@@ -1280,7 +1280,7 @@ async def test_tick_uses_fixed_size_when_risk_pct_disabled() -> None:
     with patch(
         "schurfer_execution.trader.place_order",
         new_callable=AsyncMock,
-        return_value={"allowed": True, "order_id": "ord-1"},
+        return_value={"allowed": True, "order_id": "ord-1", "price": 1.0},
     ) as mock_order:
         await _tick({"bybit": _exchange_mock(0.0001)}, rdb, _cfg(risk_per_trade_pct=0.0))
 
@@ -1304,7 +1304,7 @@ async def test_tick_computes_size_from_equity_when_risk_pct_enabled() -> None:
     with patch(
         "schurfer_execution.trader.place_order",
         new_callable=AsyncMock,
-        return_value={"allowed": True, "order_id": "ord-2"},
+        return_value={"allowed": True, "order_id": "ord-2", "price": 1.0},
     ) as mock_order:
         await _tick({"bybit": ex}, rdb, _cfg(risk_per_trade_pct=0.5))
 
@@ -1377,7 +1377,7 @@ async def test_tick_proceeds_when_red_candle_present() -> None:
     with patch(
         "schurfer_execution.trader.place_order",
         new_callable=AsyncMock,
-        return_value={"allowed": True, "order_id": "ord-1"},
+        return_value={"allowed": True, "order_id": "ord-1", "price": 1.0},
     ) as mock_order:
         await _tick({"bybit": ex}, rdb, _cfg(require_red_candle=True))
     mock_order.assert_called_once()
@@ -1390,7 +1390,7 @@ async def test_tick_proceeds_when_entry_filters_disabled() -> None:
     with patch(
         "schurfer_execution.trader.place_order",
         new_callable=AsyncMock,
-        return_value={"allowed": True, "order_id": "ord-2"},
+        return_value={"allowed": True, "order_id": "ord-2", "price": 1.0},
     ) as mock_order:
         await _tick({"bybit": ex}, rdb, _cfg(require_red_candle=False, min_retrace_pct=0.0))
     mock_order.assert_called_once()
@@ -1429,7 +1429,7 @@ async def test_tick_continues_other_pumps_after_order_lock_lost() -> None:
             new_callable=AsyncMock,
             side_effect=[
                 OrderLockLostError("order lock lease lost during open: ownership changed"),
-                {"allowed": True, "order_id": "ord-2"},
+                {"allowed": True, "order_id": "ord-2", "price": 1.0},
             ],
         ) as mock_order,
         patch(

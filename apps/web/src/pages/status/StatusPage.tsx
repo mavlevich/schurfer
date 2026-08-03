@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   Activity,
+  AlertTriangle,
   Cpu,
   Database,
   Gauge,
@@ -109,6 +110,23 @@ interface OrderflowPilotState {
   capacity_rejected_total: number;
 }
 
+interface FillIncidentSummary {
+  id: number;
+  exchange: string;
+  base: string;
+  operation: string;
+  order_id: string;
+  status: string;
+  attempt_count: number;
+  last_error: string | null;
+  created_at: string;
+}
+
+interface FillIncidentsState {
+  pnl_ready: boolean;
+  open: FillIncidentSummary[];
+}
+
 interface ResourceSample {
   captured_at_ms: number;
   cpu_pct: number | null;
@@ -127,6 +145,7 @@ interface ServiceState {
   container_runtime: ContainerRuntimeState | null;
   market_pipeline: MarketPipelineState | null;
   orderflow_pilot: OrderflowPilotState | null;
+  fill_incidents: FillIncidentsState | null;
 }
 
 interface WsStatusMessage {
@@ -146,6 +165,7 @@ const INITIAL_STATE: ServiceState = {
   container_runtime: null,
   market_pipeline: null,
   orderflow_pilot: null,
+  fill_incidents: null,
 };
 
 const WS_URL =
@@ -307,6 +327,8 @@ export function StatusPage() {
   const containerRuntime = services.container_runtime;
   const marketPipeline = services.market_pipeline;
   const orderflowPilot = services.orderflow_pilot;
+  const fillIncidents = services.fill_incidents;
+  const hasOpenFillIncidents = !!fillIncidents && fillIncidents.open.length > 0;
   const cpuHistory = resourceHistory
     .map((sample) => sample.cpu_pct)
     .filter((value): value is number => value !== null);
@@ -373,6 +395,98 @@ export function StatusPage() {
           <Badge variant={anyDown ? 'destructive' : allUp ? 'success' : 'secondary'}>
             {anyDown ? 'Degraded' : allUp ? 'Operational' : 'Unknown'}
           </Badge>
+        </CardContent>
+      </Card>
+
+      {/* Fill resolution / PnL readiness */}
+      <Card>
+        <CardHeader className="flex-row items-center justify-between space-y-0">
+          <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+            Fill Resolution
+          </CardTitle>
+          <Badge
+            variant={
+              !fillIncidents
+                ? 'secondary'
+                : hasOpenFillIncidents
+                  ? 'destructive'
+                  : fillIncidents.pnl_ready
+                    ? 'success'
+                    : 'warning'
+            }
+          >
+            {!fillIncidents
+              ? 'No telemetry'
+              : hasOpenFillIncidents
+                ? `${fillIncidents.open.length} unresolved`
+                : fillIncidents.pnl_ready
+                  ? 'PnL confirmed'
+                  : 'PnL not ready'}
+          </Badge>
+        </CardHeader>
+        <CardContent className="space-y-3 pt-0">
+          {!fillIncidents ? (
+            <p className="text-xs text-muted-foreground">Fill-incident telemetry is unavailable.</p>
+          ) : (
+            <>
+              <div className="flex items-center gap-3">
+                <AlertTriangle
+                  className={`h-4 w-4 ${fillIncidents.pnl_ready ? 'text-muted-foreground' : 'text-amber-500'}`}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {fillIncidents.pnl_ready
+                    ? 'PnL readiness lease is valid — every recent fill resolved to a real exchange price.'
+                    : 'PnL readiness lease is revoked. A fill price could not be confirmed — treat displayed PnL as provisional until it resolves.'}
+                </p>
+              </div>
+              {hasOpenFillIncidents && (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[560px] text-left text-xs">
+                    <thead className="text-muted-foreground">
+                      <tr className="border-b">
+                        <th className="py-2 font-medium">Exchange / base</th>
+                        <th className="py-2 font-medium">Operation</th>
+                        <th className="py-2 font-medium">Order</th>
+                        <th className="py-2 font-medium">Status</th>
+                        <th className="py-2 text-right font-medium">Attempts</th>
+                        <th className="py-2 font-medium">Age</th>
+                        <th className="py-2 font-medium">Last error</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {fillIncidents.open.map((incident) => (
+                        <tr key={incident.id} className="border-b last:border-0">
+                          <td className="py-2 font-mono">
+                            {incident.exchange}/{incident.base}
+                          </td>
+                          <td className="py-2">{incident.operation}</td>
+                          <td className="py-2 font-mono">{incident.order_id}</td>
+                          <td className="py-2">
+                            <span
+                              className={
+                                incident.status === 'manual_required'
+                                  ? 'text-red-500'
+                                  : 'text-amber-500'
+                              }
+                            >
+                              {incident.status}
+                            </span>
+                          </td>
+                          <td className="py-2 text-right font-mono">{incident.attempt_count}</td>
+                          <td className="py-2 text-muted-foreground">
+                            {timeAgo(new Date(incident.created_at).getTime())}
+                          </td>
+                          <td className="py-2 text-muted-foreground">
+                            {incident.last_error ?? '—'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          )}
         </CardContent>
       </Card>
 

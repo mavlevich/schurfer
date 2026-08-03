@@ -52,7 +52,9 @@ def _exchange(*, contracts: float = 10.0, symbol: str = "BEAT/USDT:USDT") -> Mag
     ex.fetch_positions = AsyncMock(
         return_value=[{"symbol": symbol, "contracts": contracts, "side": "short"}]
     )
-    ex.create_market_order = AsyncMock(return_value={"id": "order-123", "status": "closed"})
+    ex.create_market_order = AsyncMock(
+        return_value={"id": "order-123", "status": "closed", "average": 1.0}
+    )
     ex.amount_to_precision = MagicMock(side_effect=lambda sym, amt: str(amt))
     return ex
 
@@ -220,6 +222,29 @@ async def test_close_deletes_opened_at_key_on_success() -> None:
     rdb.delete.assert_called_once_with("position:opened_at:bybit:BEAT")
 
 
+async def test_close_unresolved_fill_never_fabricates_exit_price() -> None:
+    # No average/price/cost/filled anywhere, no fetchable order-trades support —
+    # close_position must never invent an exit price from mark/ticker data.
+    ex = _exchange()
+    ex.create_market_order = AsyncMock(return_value={"id": "order-999", "status": "closed"})
+    ex.has = {"fetchOrderTrades": False, "fetchMyTrades": False}
+    rdb = _rdb()
+
+    result = await close_position(
+        exchanges={"bybit": ex},
+        exchange="bybit",
+        base="BEAT",
+        reason="test",
+        rdb=rdb,
+        cfg=_cfg(),
+    )
+
+    assert result["closed"] is True
+    assert result["exit_price"] is None
+    assert result["fill_status"] == "unresolved"
+    rdb.delete.assert_any_call("risk:pnl_ready")
+
+
 # --- monitor _check_exit ---
 
 
@@ -247,6 +272,50 @@ async def test_check_exit_trailing_stop_triggers_close() -> None:
         await _check_exit(pos, rdb, _cfg(), {})
         mock_close.assert_called_once()
         assert "trailing_stop" in mock_close.call_args.kwargs["reason"]
+
+
+async def test_check_exit_resolved_close_without_trade_id_creates_durable_incident() -> None:
+    """Regression: a resolved exit price with no trade:id pointer (e.g. the
+    matching open's journal write is itself still deferred behind its own
+    unresolved-fill incident) must not be silently dropped — it has to become
+    a durable, alerted incident like any other close the journal can't
+    complete inline."""
+    pos = _pos(entry=100.0, mark=111.0, side="short")
+    rdb = _rdb(exit_params_raw=_params_bytes(75.0))
+    cfg = _cfg()
+    cfg.db_url = "postgresql://x"
+    cfg.telegram_bot_token = "tok"  # noqa: S105
+    cfg.telegram_chat_id = "chat"
+    close_result = {"closed": True, "order_id": "ord-1", "exit_price": 111.0}
+
+    with (
+        patch("schurfer_execution.monitor.close_position", new_callable=AsyncMock) as mock_close,
+        patch(
+            "schurfer_execution.monitor.incidents.create_incident",
+            new_callable=AsyncMock,
+            return_value=55,
+        ) as mock_create,
+        patch(
+            "schurfer_execution.monitor.incidents.claim_creation_notification",
+            new_callable=AsyncMock,
+            return_value=True,
+        ),
+        patch(
+            "schurfer_execution.monitor.notify.notify_alert", new_callable=AsyncMock
+        ) as mock_alert,
+        patch(
+            "schurfer_execution.monitor.journal.revoke_pnl_readiness", new_callable=AsyncMock
+        ) as mock_revoke,
+    ):
+        mock_close.return_value = close_result
+        await _check_exit(pos, rdb, cfg, {})
+
+    mock_create.assert_called_once()
+    assert mock_create.call_args.kwargs["operation"] == "close"
+    assert mock_create.call_args.kwargs["trade_id"] is None
+    assert mock_create.call_args.kwargs["order_id"] == "ord-1"
+    mock_revoke.assert_called_once()
+    mock_alert.assert_awaited_once()
 
 
 async def test_check_exit_max_hold_triggers_close() -> None:
