@@ -3,8 +3,6 @@
 
 GOLANGCI_LINT_VERSION = v2.1.6
 DEADCODE_VERSION = v0.48.0
-GO_INSTALL_BIN := $(or $(shell go env GOBIN),$(shell go env GOPATH)/bin)
-DEADCODE_BIN := $(GO_INSTALL_BIN)/deadcode
 PROD_REPORT_MIN_HEADROOM_MB ?= 1280
 PROD_ORDERFLOW_MIN_AVAILABLE_MB ?= 768
 PROD_ORDERFLOW_MIN_DISK_MB ?= 15360
@@ -115,7 +113,9 @@ install-golangci-lint:
 	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 
 install-deadcode:
-	@test -x "$(DEADCODE_BIN)" || { \
+	@go_bin="$$(go env GOBIN)"; \
+	if test -z "$$go_bin"; then go_bin="$$(go env GOPATH)/bin"; fi; \
+	test -x "$$go_bin/deadcode" || { \
 		echo "-> Installing deadcode $(DEADCODE_VERSION)..."; \
 		go install golang.org/x/tools/cmd/deadcode@$(DEADCODE_VERSION); \
 	}
@@ -399,9 +399,11 @@ deadcode:
 	@echo "-> Go dead code..."
 	@if find . -name 'go.mod' -not -path './vendor/*' 2>/dev/null | grep -q .; then \
 		$(MAKE) install-deadcode; \
+		go_bin="$$(go env GOBIN)"; \
+		if test -z "$$go_bin"; then go_bin="$$(go env GOPATH)/bin"; fi; \
 		grep '^use ' go.work | awk '{print $$2}' | while read -r dir; do \
 			echo "=== deadcode $$dir ==="; \
-			(cd "$$dir" && "$(DEADCODE_BIN)" ./...); \
+			(cd "$$dir" && "$$go_bin/deadcode" ./...); \
 		done; \
 	else \
 		echo "  (no Go code yet)"; \
