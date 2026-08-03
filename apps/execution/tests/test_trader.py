@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from schurfer_execution.config import Config
+from schurfer_execution.order_lock import OrderLockLostError
 from schurfer_execution.trader import (
     _SEEN_TTL_ENTRY_WAIT,
     _SEEN_TTL_MEASUREMENT_RECHECK,
@@ -1416,3 +1417,32 @@ async def test_tick_skips_when_entry_candles_malformed() -> None:
         await _tick({"bybit": ex}, rdb, _cfg(require_red_candle=True))
     mock_order.assert_not_called()
     assert rdb.set.call_args.kwargs["ex"] == _SEEN_TTL_ENTRY_WAIT
+
+
+async def test_tick_continues_other_pumps_after_order_lock_lost() -> None:
+    # A lease lost mid-operation on one candidate (see order_lock.py) must not abort
+    # evaluation of the remaining candidates queued in the same tick.
+    rdb = _rdb(pumps_raw=_pumps("BEAT", "MOON"), signal_score=7)
+    with (
+        patch(
+            "schurfer_execution.trader.place_order",
+            new_callable=AsyncMock,
+            side_effect=[
+                OrderLockLostError("order lock lease lost during open: ownership changed"),
+                {"allowed": True, "order_id": "ord-2"},
+            ],
+        ) as mock_order,
+        patch(
+            "schurfer_execution.trader.decisions.write_decision", new_callable=AsyncMock
+        ) as mock_write,
+    ):
+        await _tick({"bybit": MagicMock()}, rdb, _cfg())
+
+    assert mock_order.await_count == 2
+    assert mock_write.call_count == 2
+    first, second = (call.kwargs for call in mock_write.call_args_list)
+    assert first["base"] == "BEAT"
+    assert first["action"] == "skipped"
+    assert first["reason"] == "order_lock_lost_outcome_uncertain"
+    assert second["base"] == "MOON"
+    assert second["action"] == "opened"

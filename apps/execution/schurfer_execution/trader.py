@@ -14,6 +14,7 @@ import structlog
 from . import decisions, journal, liquidity, notify, paper, risk
 from . import exit as exit_module
 from .account import fetch_margin_balance
+from .order_lock import OrderLockLostError
 from .orders import place_order
 
 _FUNDING_FETCH_TIMEOUT = 5  # seconds
@@ -543,22 +544,52 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
             )
             continue
 
-        result = await place_order(
-            base=base,
-            exchange=exchange,
-            side="short",
-            size_usd=size_usd,
-            leverage=cfg.signal_leverage,
-            exchanges=exchanges,
-            rdb=rdb,
-            max_positions=cfg.max_positions,
-            max_position_usd=cfg.max_position_usd,
-            daily_loss_limit_usd=cfg.daily_loss_limit_usd,
-            liquidity_checked_usd=depth_target,
-            initial_sl_pct=exit_params["initial_sl_pct"],
-            liquidation_buffer_pct=cfg.liquidation_buffer_pct,
-            cfg=cfg,
-        )
+        try:
+            result = await place_order(
+                base=base,
+                exchange=exchange,
+                side="short",
+                size_usd=size_usd,
+                leverage=cfg.signal_leverage,
+                exchanges=exchanges,
+                rdb=rdb,
+                max_positions=cfg.max_positions,
+                max_position_usd=cfg.max_position_usd,
+                daily_loss_limit_usd=cfg.daily_loss_limit_usd,
+                liquidity_checked_usd=depth_target,
+                initial_sl_pct=exit_params["initial_sl_pct"],
+                liquidation_buffer_pct=cfg.liquidation_buffer_pct,
+                cfg=cfg,
+            )
+        except OrderLockLostError as exc:
+            # Exclusivity became uncertain mid-operation (see order_lock.py). The
+            # exchange-side outcome is unverified here, not necessarily a skip — but
+            # one candidate losing its lease must not abort evaluation of every other
+            # pump still queued in this tick.
+            log.critical(
+                "trader.order_lock_lost",
+                base=base,
+                exchange=exchange,
+                err=str(exc),
+            )
+            await decisions.write_decision(
+                rdb,
+                base=base,
+                exchange=exchange,
+                action="skipped",
+                reason="order_lock_lost_outcome_uncertain",
+                score=score,
+                pump_pct=pump_pct,
+                decision_id=decision_id,
+                strategy_version=cfg.strategy_version,
+                features=features,
+                liquidity=liq,
+                price=decision_price,
+                pump_event_id=pump_event_id,
+                seen_key=seen_key,
+                seen_ttl=_SEEN_TTL_SKIP,
+            )
+            continue
 
         if result.get("allowed"):
             log.info(
