@@ -1,11 +1,11 @@
 import time
-import uuid
 from typing import Any
 
 import structlog
 
 from . import notify
 from .account import fetch_margin_balance, fetch_positions
+from .order_lock import OrderLockLease
 from .risk import (
     DAILY_PNL_KEY,
     PNL_READY_KEY,
@@ -19,16 +19,6 @@ from .risk import (
 log = structlog.get_logger()
 
 SL_ORDER_ID_KEY = "position:sl_order_id:{exchange}:{base}"
-
-# Atomic compare-and-delete: only release the lock if we still own it.
-# Prevents request A from deleting request B's lock after A's TTL expired.
-_RELEASE_LOCK = """
-if redis.call("get", KEYS[1]) == ARGV[1] then
-    return redis.call("del", KEYS[1])
-else
-    return 0
-end
-"""
 
 
 async def place_order(
@@ -49,12 +39,11 @@ async def place_order(
     cfg: Any = None,
 ) -> dict[str, Any]:
     lock_key = f"lock:order:{exchange}:{base.upper()}"
-    lock_token = str(uuid.uuid4())
-    locked = await rdb.set(lock_key, lock_token, nx=True, px=30_000)
-    if not locked:
+    lease = await OrderLockLease.acquire(rdb=rdb, key=lock_key, operation="open")
+    if lease is None:
         return {"allowed": False, "reason": f"order in progress for {base} on {exchange}"}
 
-    try:
+    async with lease:
         # Fail-closed: a missing key (fresh deploy, Redis eviction/flush) means
         # trading is NOT enabled. Must be explicitly turned on via POST /resume.
         trading_flag = (await rdb.get(TRADING_ENABLED_KEY) or b"0").decode()
@@ -253,12 +242,7 @@ async def place_order(
             "status": order.get("status"),
             "rounded_up": rounded_up,
         }
-    finally:
-        try:
-            await rdb.eval(_RELEASE_LOCK, 1, lock_key, lock_token)
-        except Exception as e:
-            # Best-effort release. Lock expires via TTL. Do not override order result.
-            log.error("execution.lock_release_failed", lock_key=lock_key, err=str(e))
+    raise RuntimeError("open order lease exited without an operation result")
 
 
 async def close_position(
@@ -270,15 +254,14 @@ async def close_position(
     rdb: Any,
 ) -> dict[str, Any]:
     lock_key = f"lock:order:{exchange}:{base.upper()}"
-    lock_token = str(uuid.uuid4())
-    locked = await rdb.set(lock_key, lock_token, nx=True, px=30_000)
-    if not locked:
+    lease = await OrderLockLease.acquire(rdb=rdb, key=lock_key, operation="close")
+    if lease is None:
         return {
             "closed": False,
             "reason": f"close already in progress for {base} on {exchange}",
         }
 
-    try:
+    async with lease:
         ex = exchanges.get(exchange)
         if not ex:
             return {"closed": False, "reason": f"exchange {exchange!r} not configured"}
@@ -350,8 +333,4 @@ async def close_position(
             "reason": reason,
             "exit_price": exit_price,
         }
-    finally:
-        try:
-            await rdb.eval(_RELEASE_LOCK, 1, lock_key, lock_token)
-        except Exception as e:
-            log.error("execution.close.lock_release_failed", lock_key=lock_key, err=str(e))
+    raise RuntimeError("close order lease exited without an operation result")

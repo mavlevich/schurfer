@@ -81,6 +81,14 @@ Caveat: this path skips both the backup and the migration. If the change include
 new Alembic migration, use `make prod-deploy` instead. When in doubt, use
 `make prod-deploy`.
 
+Execution open/close operations hold an owner-token Redis lease for their full
+exchange sequence. The 30-second TTL is renewed every 10 seconds with an atomic
+owner check, and release remains owner-only. An
+`execution.order_lock.lost` critical log means exclusivity became uncertain: do not
+blindly retry the order. Verify the exchange position and orders first. Durable
+incident persistence, alerting, and reconciliation are handled by the next safety
+milestone; until then this condition deliberately surfaces as an operation error.
+
 ### Post-deploy verification
 
 Do not trust "containers are up". After a change that writes new data, look at the

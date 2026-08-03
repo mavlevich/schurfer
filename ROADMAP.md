@@ -88,11 +88,11 @@ these independent changes into one branch.
    and route silence through the existing reconnect loop. Publish timeout/reconnect
    diagnostics and test a half-open connection. This protects the order-flow evidence
    being collected now and is the immediate next PR after identity review.
-3. **Make execution order locks renewable.** Replace the fixed 30-second assumption
-   in both open and close paths with an owner-checked lease heartbeat and retain the
-   atomic owner-only release. Test a deliberately slow exchange path and lease loss.
-   This is required before button-approved or automatic live orders, but does not
-   block current `DRY_RUN` measurement.
+3. **[Completed] Make execution order locks renewable.** Replace the fixed 30-second
+   assumption in both open and close paths with an owner-checked lease heartbeat and
+   retain the atomic owner-only release. Test a deliberately slow exchange path and
+   lease loss. This is required before button-approved or automatic live orders, but
+   does not block current `DRY_RUN` measurement.
 4. **Escalate unresolved exchange fills durably.** Resolve price from average, price,
    then valid cost/filled and trade evidence. If it remains unknown, persist a
    de-duplicated incident, revoke PnL readiness, alert Telegram once, retry, expose it
