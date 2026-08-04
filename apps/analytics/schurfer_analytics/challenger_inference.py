@@ -62,6 +62,13 @@ class ChallengerEpisode:
     cluster_key: str
     baseline_return_pct: float | None
     challenger_returns_pct: tuple[tuple[str, float | None], ...]
+    # Whether this episode was a real trade versus a zero_return_cash_episode
+    # (e.g. a threshold that was never crossed). Optional: only required when
+    # build_challenger_inference's minimum_triggered_episodes gate is used —
+    # families where every resolved episode is inherently a real trade (most
+    # exit/score challengers) can leave these at their defaults.
+    baseline_triggered: bool = True
+    challenger_triggered: tuple[tuple[str, bool], ...] = ()
 
     def __post_init__(self) -> None:
         if self.pump_event_id <= 0:
@@ -71,6 +78,8 @@ class ChallengerEpisode:
         keys = [key for key, _ in self.challenger_returns_pct]
         if any(not key.strip() for key in keys) or len(keys) != len(set(keys)):
             raise ValueError("challenger keys must be unique and non-empty")
+        if self.challenger_triggered and {key for key, _ in self.challenger_triggered} != set(keys):
+            raise ValueError("challenger_triggered keys must match challenger_returns_pct keys")
         values = [
             value
             for value in (
@@ -104,6 +113,11 @@ class InferenceReadiness:
     formal_sample_clusters: int
     baseline_resolved: int
     completely_paired_episodes: int
+    # Populated only when build_challenger_inference was called with
+    # minimum_triggered_episodes — see the module docstring on ChallengerEpisode.
+    minimum_triggered_episodes: int | None = None
+    least_triggered_variant: str | None = None
+    least_triggered_count: int | None = None
 
 
 @dataclass(frozen=True)
@@ -158,6 +172,8 @@ def _readiness(
     baseline_resolved: int,
     completely_paired: int,
     formal_sample_size: int,
+    minimum_triggered_episodes: int | None,
+    least_triggered_count: int | None,
 ) -> str:
     if eligible_episodes < DIRECTIONAL_EPISODES:
         return "collecting"
@@ -167,6 +183,18 @@ def _readiness(
         return "insufficient_diversity"
     if baseline_resolved < formal_sample_size or completely_paired < formal_sample_size:
         return "insufficient_resolution"
+    if (
+        minimum_triggered_episodes is not None
+        and least_triggered_count is not None
+        and least_triggered_count < minimum_triggered_episodes
+    ):
+        # A "resolved" episode can be a zero_return_cash_episode (threshold never
+        # crossed, no trade made). A family with a low trigger rate can reach every
+        # gate above almost entirely on cash episodes while the informative,
+        # actually-traded sample is still tiny — see the 2026-08-04 entry-floor
+        # finding, where +35/+40/+50% each had exactly one triggered trade in the
+        # locked 100-episode formal sample despite the sample itself being "ready".
+        return "insufficient_triggers"
     return "formal_sample_ready"
 
 
@@ -215,8 +243,17 @@ def build_challenger_inference(
     *,
     settings: InferenceSettings = DEFAULT_INFERENCE_SETTINGS,
     inference_version: str = DEFAULT_INFERENCE_VERSION,
+    minimum_triggered_episodes: int | None = None,
 ) -> ChallengerInference:
-    """Evaluate episodes supplied in deterministic chronological cohort order."""
+    """Evaluate episodes supplied in deterministic chronological cohort order.
+
+    minimum_triggered_episodes requires every formal-sample episode to carry
+    baseline_triggered/challenger_triggered (see ChallengerEpisode) and gates
+    readiness on the least-triggered strategy in the family, not just on
+    resolved-episode counts — a low-trigger-rate family (e.g. a rare entry
+    threshold) can otherwise report "ready" on a sample that is almost entirely
+    zero_return_cash_episode rows.
+    """
     normalized_version = inference_version.strip()
     if not normalized_version:
         raise ValueError("inference version must not be empty")
@@ -250,6 +287,27 @@ def build_challenger_inference(
         and all(value is not None for _, value in episode.challenger_returns_pct)
         for episode in formal_sample
     )
+    least_triggered_variant: str | None = None
+    least_triggered_count: int | None = None
+    if minimum_triggered_episodes is not None:
+        missing = [
+            episode.pump_event_id
+            for episode in formal_sample
+            if len(episode.challenger_triggered) != len(variant_keys)
+        ]
+        if missing:
+            raise ValueError(
+                "minimum_triggered_episodes requires challenger_triggered on every "
+                f"formal-sample episode; missing on event ids {missing[:5]}"
+            )
+        trigger_counts = {"baseline": sum(ep.baseline_triggered for ep in formal_sample)}
+        for variant_key in variant_keys:
+            trigger_counts[variant_key] = sum(
+                dict(ep.challenger_triggered)[variant_key] for ep in formal_sample
+            )
+        least_triggered_variant, least_triggered_count = min(
+            trigger_counts.items(), key=lambda item: item[1]
+        )
     readiness = InferenceReadiness(
         status=_readiness(
             eligible_episodes=len(episodes),
@@ -257,12 +315,17 @@ def build_challenger_inference(
             baseline_resolved=baseline_resolved,
             completely_paired=completely_paired,
             formal_sample_size=len(formal_sample),
+            minimum_triggered_episodes=minimum_triggered_episodes,
+            least_triggered_count=least_triggered_count,
         ),
         eligible_episodes=len(episodes),
         formal_sample_episodes=len(formal_sample),
         formal_sample_clusters=len(cluster_counts),
         baseline_resolved=baseline_resolved,
         completely_paired_episodes=completely_paired,
+        minimum_triggered_episodes=minimum_triggered_episodes,
+        least_triggered_variant=least_triggered_variant,
+        least_triggered_count=least_triggered_count,
     )
     base = ChallengerInference(
         inference_version=normalized_version,
