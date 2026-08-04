@@ -26,6 +26,7 @@ def build_entry_challenger_inference(
     variant_keys: tuple[str, ...],
     *,
     settings: InferenceSettings = DEFAULT_INFERENCE_SETTINGS,
+    minimum_triggered_episodes: int | None = None,
 ) -> EntryChallengerInference:
     """Preserve the registered entry-family inference contract."""
     return build_challenger_inference(
@@ -33,6 +34,7 @@ def build_entry_challenger_inference(
         variant_keys,
         settings=settings,
         inference_version=ENTRY_INFERENCE_VERSION,
+        minimum_triggered_episodes=minimum_triggered_episodes,
     )
 
 

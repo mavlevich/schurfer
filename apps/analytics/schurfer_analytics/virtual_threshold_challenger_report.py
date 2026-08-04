@@ -72,6 +72,13 @@ ENTRY_THRESHOLD_STRATEGY_VERSIONS = (
     "pump_short_measurement_v1",
     "pump_short_v1_market_quality",
 )
+# A threshold that is rarely crossed can reach every other formal-sample gate
+# (100 eligible episodes, 30 clusters, full resolution) almost entirely on
+# zero_return_cash_episode rows while the actually-traded sample stays tiny —
+# see the 2026-08-04 finding where +35/+40/+50% each had exactly one triggered
+# trade in the locked 100-episode window. Require a floor of real trades before
+# calling any threshold's read formal.
+MINIMUM_TRIGGERED_EPISODES = 20
 
 
 @dataclass(frozen=True)
@@ -402,6 +409,9 @@ def build_entry_threshold_report(
                 pump_event_id=episode.pump_event_id,
                 cluster_key=episode.cluster_key,
                 baseline_return_pct=baseline_by_event[episode.pump_event_id].episode_net_return_pct,
+                baseline_triggered=(
+                    baseline_by_event[episode.pump_event_id].selected_decision_id is not None
+                ),
                 challenger_returns_pct=tuple(
                     (
                         variant.key,
@@ -409,10 +419,19 @@ def build_entry_threshold_report(
                     )
                     for variant in ENTRY_THRESHOLD_VARIANTS
                 ),
+                challenger_triggered=tuple(
+                    (
+                        variant.key,
+                        by_key_event[(variant.key, episode.pump_event_id)].selected_decision_id
+                        is not None,
+                    )
+                    for variant in ENTRY_THRESHOLD_VARIANTS
+                ),
             )
             for episode in dataset.eligible_episodes
         ),
         tuple(variant.key for variant in ENTRY_THRESHOLD_VARIANTS),
+        minimum_triggered_episodes=MINIMUM_TRIGGERED_EPISODES,
     )
     exclusions = Counter(
         reason for episode in dataset.excluded_episodes for reason in episode.exclusion_reasons
@@ -544,6 +563,18 @@ def render_markdown(report: EntryThresholdReport) -> str:
                 (
                     "Completely paired formal episodes",
                     report.inference.readiness.completely_paired_episodes,
+                ),
+                (
+                    "Least-triggered variant (formal window)",
+                    report.inference.readiness.least_triggered_variant or "n/a",
+                ),
+                (
+                    "Least-triggered count (formal window)",
+                    (
+                        report.inference.readiness.least_triggered_count
+                        if report.inference.readiness.least_triggered_count is not None
+                        else "n/a"
+                    ),
                 ),
                 ("Inference readiness", report.inference.readiness.status),
             ],

@@ -164,6 +164,30 @@ def test_report_selects_different_recorded_decisions_and_cash_for_higher_floors(
     assert all(row.episodes == 1 for row in report.paired_comparisons)
 
 
+def test_trigger_gate_tracks_least_triggered_floor_even_before_formal_sample() -> None:
+    """Regression: never_reaches_baseline/never_reaches_higher_floors should count
+    toward the trigger gate (see challenger_inference.build_challenger_inference's
+    minimum_triggered_episodes), not just toward eligible-episode resolution — a
+    rare threshold can otherwise look "ready" on almost entirely cash episodes."""
+    dataset, filters, _decisions, paths = _inputs()
+
+    report = build_entry_threshold_report(
+        dataset,
+        filters,
+        paths,
+        generated_at=datetime(2026, 7, 28, tzinfo=UTC),
+        code_revision="abc123",
+        working_tree_dirty=False,
+    )
+
+    # floor_40/floor_50 never trigger in this fixture (pump_pct only reaches 35);
+    # every other strategy (baseline floor_30, floor_20, floor_25, floor_35)
+    # triggers once. Tied at zero, floor_40 sorts first in the registered order.
+    assert report.inference.readiness.least_triggered_count == 0
+    assert report.inference.readiness.least_triggered_variant == "floor_40"
+    assert report.inference.readiness.minimum_triggered_episodes == 20
+
+
 def test_episode_that_never_reaches_baseline_remains_in_universe_as_cash() -> None:
     dataset, filters, _, paths = _inputs(include_entry_crossing=False)
 

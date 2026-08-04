@@ -460,18 +460,27 @@ lightweight dataset-health visibility remains operational follow-up.
         observed peak separately from the exchange-derived rolling 24h high. Retry
         transient Postgres failures through an AOF-backed Redis outbox with an
         idempotent insert and poison-message DLQ.
-  - [ ] Capture the pre-optimization latency baseline for at least 72 hours and 20
-        delivered pump events, whichever takes longer. The durable source is
-        `app.pump_alert_deliveries`; `app.pump_event_sources` contains the later
-        highest change actually observed for the same event/venue. Check component
-        p50/p95 rather than only the total. Use the verification commands directly
-        below this checklist.
+  - [x] Capture the pre-optimization latency baseline for at least 72 hours and 20
+        delivered pump events, whichever takes longer. Read `2026-08-04T19:20Z` over
+        78 alerts spanning `2026-07-27T01:42Z`-`2026-08-04T16:55Z` (207 hours): scan-to-publish
+        p50 `4.6s`/p95 `8.1s`; notifier pickup (publish to notification start) p50
+        `23.7s`/p95 `55.3s`; Telegram send p95 `0.2s`; end-to-end p95 `61s`; outbox and
+        DLQ both empty. Notifier pickup — bounded by `SCAN_INTERVAL=60s`, since the
+        notifier only checks for new pumps once per scan tick — dominates the total by
+        a wide margin; scan-to-publish and Telegram send are not bottlenecks. This
+        confirms the fast-loop decoupling below is where any speed win would actually
+        come from, not scanner or delivery optimization.
 
   - [ ] Decouple a fast Redis-only notifier loop from the broad exchange scan interval,
         then promote active candidates into a bounded 1-to-5-second hot set using
         targeted polling or websockets. Use explicit WATCH, HOT, NEW_HIGH, and RETRACE
         transitions. Do not increase whole-market REST frequency until rate-limit and
-        host-load measurements support it.
+        host-load measurements support it. On `2026-08-04` the production host (2 CPU,
+        3.7GB RAM) hit resource exhaustion twice in one day from ordinary ad hoc
+        analytics load (see the postgres `shm_size` fix and the report-container
+        memory incident) — real evidence the host-load precondition is not yet met.
+        Do not start this until host capacity is addressed (bigger host, or hard
+        resource limits on ad hoc report containers) and re-checked.
 
 Latency baseline verification commands:
 
@@ -766,6 +775,30 @@ The intended stream topology is:
           familywise paired lower bound, Holm rejection, positive top-cluster
           sensitivity) is not met by any floor. No floor change is authorized;
           `+30%` stays in production.
+          **Caveat found `2026-08-04` on closer inspection**: the `formal_sample_ready`
+          gate (100 eligible episodes, 34 clusters) counts eligible episodes, not
+          triggered trades. At baseline's `2.92%` trigger rate, the locked 100-episode
+          formal window contains only 3 triggered trades for `+30%`, 4 for `+20%`/`+25%`,
+          and exactly 1 — the same single episode (`event 1008`, COTI) — for
+          `+35%`/`+40%`/`+50%` each (confirmed by filtering `episode_results` to
+          `inference.formal_sample_event_ids`; this is also why those three floors'
+          formal point estimates are numerically identical). A `no_go`/`inconclusive`
+          verdict built on 1-4 trades is not informative either way — read this as "not
+          enough triggered trades yet to judge these floors," not as a confirmed
+          rejection. **Fixed `2026-08-04`**: `challenger_inference.build_challenger_inference`
+          now takes an optional `minimum_triggered_episodes`, requiring every
+          formal-sample episode to carry `baseline_triggered`/`challenger_triggered` and
+          reporting a new `insufficient_triggers` status (with `least_triggered_variant`/
+          `least_triggered_count`) instead of a false `formal_sample_ready` when the
+          least-triggered strategy in the family falls short. Wired into
+          `virtual_threshold_challenger_report.py` at a floor of 20 triggered episodes;
+          existing callers that don't opt in (`virtual_exit_policy_report.py`,
+          `virtual_score_challenger_report.py`'s current usage) are unaffected by
+          default. `virtual_entry_challenger_report.py` and
+          `virtual_score_challenger_report.py` likely have the same latent gap — not yet
+          extended there, since their trigger rates (confirmation appearing, score
+          crossing 4/5) are plausibly much higher than a rare price floor and this needs
+          checking per report before assuming the same fix applies.
     - [x] Add a separate discovery-only pump-magnitude surface over +20%, +30%, +50%,
           +70%, +100%, +150%, and +200%. It reuses the same point-in-time gate
           reconstruction, exact selected venue, next complete 5-minute entry,

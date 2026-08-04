@@ -63,6 +63,101 @@ def test_formal_sample_is_locked_to_first_100_episodes() -> None:
     assert all(row.paired.holm_rejected for row in report.challengers)
 
 
+def _episodes_with_triggers(
+    count: int,
+    clusters: int,
+    *,
+    triggered_challenger_count: int,
+) -> tuple[InferenceEpisode, ...]:
+    """Baseline always triggers; only the first triggered_challenger_count episodes
+    have a real 'rare' challenger trade — the rest are zero_return_cash_episode."""
+    episodes = []
+    for index in range(count):
+        rare_triggered = index < triggered_challenger_count
+        episodes.append(
+            InferenceEpisode(
+                pump_event_id=index + 1,
+                cluster_key=f"base:TOKEN{index % clusters}",
+                baseline_return_pct=1,
+                baseline_triggered=True,
+                challenger_returns_pct=(("common", 2), ("rare", 3 if rare_triggered else 0)),
+                challenger_triggered=(("common", True), ("rare", rare_triggered)),
+            )
+        )
+    return tuple(episodes)
+
+
+def test_low_trigger_rate_challenger_is_not_formal_sample_ready() -> None:
+    """Regression (2026-08-04 entry-floor finding): a rare challenger can reach every
+    other formal-sample gate almost entirely on zero_return_cash_episode rows while
+    the informative, actually-triggered sample stays tiny. minimum_triggered_episodes
+    must catch this instead of reporting formal_sample_ready."""
+    report = build_entry_challenger_inference(
+        _episodes_with_triggers(100, 40, triggered_challenger_count=3),
+        ("common", "rare"),
+        settings=TEST_SETTINGS,
+        minimum_triggered_episodes=20,
+    )
+
+    assert report.readiness.status == "insufficient_triggers"
+    assert report.readiness.least_triggered_variant == "rare"
+    assert report.readiness.least_triggered_count == 3
+    assert report.baseline is None
+    assert report.challengers == ()
+
+
+def test_trigger_gate_passes_once_every_strategy_clears_the_floor() -> None:
+    report = build_entry_challenger_inference(
+        _episodes_with_triggers(100, 40, triggered_challenger_count=25),
+        ("common", "rare"),
+        settings=TEST_SETTINGS,
+        minimum_triggered_episodes=20,
+    )
+
+    assert report.readiness.status == "formal_sample_ready"
+    assert report.readiness.least_triggered_variant == "rare"
+    assert report.readiness.least_triggered_count == 25
+    assert report.baseline is not None
+
+
+def test_trigger_gate_is_off_by_default() -> None:
+    """Existing callers that never populate challenger_triggered must see
+    identical behavior to before this gate existed."""
+    report = build_entry_challenger_inference(
+        _episodes(100, 40),
+        VARIANTS,
+        settings=TEST_SETTINGS,
+    )
+
+    assert report.readiness.status == "formal_sample_ready"
+    assert report.readiness.minimum_triggered_episodes is None
+    assert report.readiness.least_triggered_variant is None
+    assert report.readiness.least_triggered_count is None
+
+
+def test_trigger_gate_requires_trigger_data_on_every_formal_episode() -> None:
+    episodes = _episodes(100, 40)  # challenger_triggered left at its empty default
+
+    with pytest.raises(ValueError, match="challenger_triggered"):
+        build_entry_challenger_inference(
+            episodes,
+            VARIANTS,
+            settings=TEST_SETTINGS,
+            minimum_triggered_episodes=20,
+        )
+
+
+def test_challenger_triggered_keys_must_match_returns_keys() -> None:
+    with pytest.raises(ValueError, match="challenger_triggered"):
+        InferenceEpisode(
+            pump_event_id=1,
+            cluster_key="base:ERA",
+            baseline_return_pct=1,
+            challenger_returns_pct=(("red", 2), ("retrace", 3), ("combined", 4)),
+            challenger_triggered=(("red", True),),
+        )
+
+
 def test_formal_inference_requires_cluster_diversity() -> None:
     report = build_entry_challenger_inference(
         _episodes(100, 10),
