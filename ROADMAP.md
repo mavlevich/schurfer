@@ -121,7 +121,7 @@ these independent changes into one branch.
    retain the atomic owner-only release. Test a deliberately slow exchange path and
    lease loss. This is required before button-approved or automatic live orders, but
    does not block current `DRY_RUN` measurement.
-4. **Escalate unresolved exchange fills durably.** Resolve price from average, price,
+4. **[Completed] Escalate unresolved exchange fills durably.** Resolve price from average, price,
    then valid cost/filled and trade evidence. If it remains unknown, persist a
    de-duplicated incident, revoke PnL readiness, alert Telegram once, retry, expose it
    in status, and send recovery after reconciliation. Never fabricate a fill price.
