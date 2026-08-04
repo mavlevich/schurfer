@@ -2,6 +2,11 @@ services:
   postgres:
     image: timescale/timescaledb:latest-pg17
     container_name: schurfer-postgres
+    # Docker's 64MB default /dev/shm is too small once queries need real
+    # working memory (parallel workers, hash joins) — Postgres fails with
+    # "could not resize shared memory segment: No space left on device"
+    # long before the host's own /dev/shm (sized off total RAM) is close to full.
+    shm_size: '256m'
     environment:
       POSTGRES_USER: schurfer
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.prod}
