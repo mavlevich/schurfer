@@ -121,7 +121,7 @@ these independent changes into one branch.
    retain the atomic owner-only release. Test a deliberately slow exchange path and
    lease loss. This is required before button-approved or automatic live orders, but
    does not block current `DRY_RUN` measurement.
-4. **Escalate unresolved exchange fills durably.** Resolve price from average, price,
+4. **[Completed] Escalate unresolved exchange fills durably.** Resolve price from average, price,
    then valid cost/filled and trade evidence. If it remains unknown, persist a
    de-duplicated incident, revoke PnL readiness, alert Telegram once, retry, expose it
    in status, and send recovery after reconciliation. Never fabricate a fill price.
@@ -753,35 +753,19 @@ The intended stream topology is:
           episode; missing decision-time data or exact paths remain unresolved.
           Different floors may select different decisions and venues inside one parent
           `pump_event_id`, but never create additional inference observations.
-    - [ ] Entry-floor challenger verification after merge:
-      - Deploy analytics only. Wait until the prospective events have closed and every
-        recorded decision has its exact-anchor 8-hour outcome. The default command is
-        locked to the registered cohort and both measurement/entry strategy versions:
-
-        ```bash
-        make prod-deploy-svc SERVICE=analytics
-        make prod-virtual-threshold-challenger-report
-        ```
-
-      - Before the formal read, choose an exclusive UTC cutoff without inspecting the
-        threshold results. Archive the reproducible JSON manifest outside Git:
-
-        ```bash
-        mkdir -p backups/reports
-        make prod-virtual-threshold-challenger-report \
-          ARGS="--until 2026-08-10T00:00:00Z --format json" \
-          > backups/reports/entry-thresholds-2026-08-10.json
-        ```
-
-      - Check excluded episodes, unresolved decisions/paths, selected decision and
-        venue per floor, no-trigger cash episodes, cluster concentration, conditional
-        trade rate, net expectancy, initial-SL rate, and paired delta versus +30%.
-        The five challengers are one Holm-corrected family. Formal output stays hidden
-        before the locked first 100 episodes are fully paired with at least 30 asset
-        clusters. A pass requires positive own expectancy, positive conservative
-        familywise paired lower bound, Holm rejection, and positive top-cluster
-        sensitivity, and produces only a live-shadow candidate.
-
+    - [x] Entry-floor challenger verification after merge. Read `2026-08-03T21:50:50Z`
+          (`backups/reports/entry-floor-2026-08-03.json`, archived outside git):
+          891 eligible episodes, 100 completely paired, 34 asset clusters — the
+          formal sample gate is reached. Baseline (+30%, production) is itself
+          `inconclusive` (95% CI `[-0.52%, +0.02%]`, straddles zero). None of the
+          five challengers reached Holm rejection (`holm_p=1.0` for all). `+20%`
+          is `no_go` (paired delta `-0.017%` versus baseline). `+35%`/`+40%`/`+50%`
+          show a directionally positive paired delta (`+0.075%`) but their own
+          confidence interval and the familywise paired lower bound are not
+          positive, so the pass bar above (positive own expectancy, positive
+          familywise paired lower bound, Holm rejection, positive top-cluster
+          sensitivity) is not met by any floor. No floor change is authorized;
+          `+30%` stays in production.
     - [x] Add a separate discovery-only pump-magnitude surface over +20%, +30%, +50%,
           +70%, +100%, +150%, and +200%. It reuses the same point-in-time gate
           reconstruction, exact selected venue, next complete 5-minute entry,
