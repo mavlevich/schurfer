@@ -19,16 +19,18 @@ ONE_MINUTE_MS = 60 * 1000
 _FETCH_LIMIT = 1000
 _FETCH_TIMEOUT_SECONDS = 20
 # Every window fetched here is fully historical (always well before "now"), so an
-# empty page while meaningfully more of the requested range remains is a fetch
-# anomaly, not "no data yet" — retry it a bounded number of times before giving up.
-# Found 2026-08-05: a single transient empty response from Bitget mid-fetch (71 of
-# ~120 required bars) silently truncated an exit-policy replay's market path,
+# empty page is always a fetch anomaly, never "no data yet" — retry it a bounded
+# number of times before giving up, at any position in the window, including the
+# tail. Found 2026-08-05: a single transient empty response from Bitget mid-fetch
+# (71 of 72 required bars) silently truncated an exit-policy replay's market path,
 # reported downstream as an unresolvable data gap even though the exchange had the
-# full range available moments later. A page near the tail of the requested window
-# is left alone — an empty response there is the ordinary, expected way the loop
-# discovers it has reached the end of what's available.
+# full range available moments later — the missing bar turned out to be the very
+# last one in the window. An earlier version of this fix only retried when more
+# than a few bars remained, on the theory that an empty page near the tail is the
+# ordinary way the loop discovers it has reached the end of what's available — that
+# theory is wrong for a fully historical window: there is no bar, anywhere in the
+# requested range including the last one, that legitimately "hasn't happened yet".
 _EMPTY_PAGE_MAX_RETRIES = 2
-_EMPTY_PAGE_MIN_REMAINING_BARS_TO_RETRY = 3
 _EMPTY_PAGE_RETRY_DELAY_SECONDS = 1.0
 
 
@@ -161,19 +163,14 @@ async def fetch_symbol_candles(
             break
         remaining = math.ceil((end_ms - cursor) / timeframe_ms)
         limit = max(1, min(_FETCH_LIMIT, remaining + 1))
-        attempts = (
-            _EMPTY_PAGE_MAX_RETRIES + 1
-            if remaining > _EMPTY_PAGE_MIN_REMAINING_BARS_TO_RETRY
-            else 1
-        )
         page: list[Candle] = []
-        for attempt in range(attempts):
+        for attempt in range(_EMPTY_PAGE_MAX_RETRIES + 1):
             raw = await asyncio.wait_for(
                 exchange.fetch_ohlcv(symbol, timeframe, since=cursor, limit=limit),
                 timeout=_FETCH_TIMEOUT_SECONDS,
             )
             page = normalize_candles(raw, timeframe_ms=timeframe_ms)
-            if page or attempt == attempts - 1:
+            if page or attempt == _EMPTY_PAGE_MAX_RETRIES:
                 break
             await asyncio.sleep(_EMPTY_PAGE_RETRY_DELAY_SECONDS)
         if not page:

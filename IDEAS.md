@@ -42,6 +42,20 @@ a regular pump.
 - Feed into the scanner with a "listing" tag on the signal.
 - The delisting-short backtest itself is promoted to ROADMAP Phase 1. It has a known
   catalyst and clean historical data.
+- Delisting-crash pattern (2026-08-05): after a delisting _announcement_, price looks
+  volatile short-term, then tends to grind toward zero over roughly the following 7
+  days as liquidity leaves and holders exit before the deadline — a candidate short,
+  not a pump-reversion trade, so it needs its own selection/exit model rather than
+  reusing the pump-short one. Magnitude plausibly depends on the delisting exchange's
+  market-share/liquidity for that token — segment by exchange significance (major vs
+  thin/secondary venue), not just delisting-yes/no, before pooling into one sample.
+- Detection-method comparison, for both listing and delisting events: measure actual
+  lead time before building either path. Diffing the exchange's own market list
+  (cheap, near-100% precision, but only as fast as the exchange's own list update) versus
+  scraping official announcement feeds (potentially earlier — some exchanges
+  pre-announce ahead of the actual market-list change — but fragile and
+  per-exchange-bespoke to maintain). Measure both against the same historical events
+  before committing engineering effort to either.
 
 ## Token risk profile module
 

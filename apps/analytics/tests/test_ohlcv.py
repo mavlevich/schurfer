@@ -144,12 +144,22 @@ async def test_fetch_symbol_candles_gives_up_after_bounded_empty_retries(
     assert exchange.fetch_ohlcv.await_count == 3
 
 
-async def test_fetch_symbol_candles_does_not_retry_empty_page_near_tail() -> None:
-    """A tiny requested window is the ordinary way this loop discovers it has
-    reached the end of the range — no need to pay the retry cost there."""
+async def test_fetch_symbol_candles_retries_empty_page_at_the_tail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression (2026-08-05): the exact real-world case that slipped through the
+    first version of this fix — a window one bar short, where the missing bar was
+    the very last one. A fully historical window has no legitimate "hasn't happened
+    yet" bar anywhere, including at the tail, so the tail must retry too."""
+    monkeypatch.setattr("schurfer_analytics.ohlcv._EMPTY_PAGE_RETRY_DELAY_SECONDS", 0)
     start = int(datetime(2026, 7, 22, 12, 0, tzinfo=UTC).timestamp() * 1000)
     exchange = AsyncMock()
-    exchange.fetch_ohlcv = AsyncMock(return_value=[])
+    exchange.fetch_ohlcv = AsyncMock(
+        side_effect=[
+            [],  # transient empty response for the one and only requested bar
+            [_bar(start, 0)],  # retry succeeds
+        ]
+    )
 
     result = await fetch_symbol_candles(
         exchange,
@@ -158,11 +168,14 @@ async def test_fetch_symbol_candles_does_not_retry_empty_page_near_tail() -> Non
         start + TIMEFRAME_MS,
     )
 
-    assert result == []
-    assert exchange.fetch_ohlcv.await_count == 1
+    assert [c.ts_ms for c in result] == [start]
+    assert exchange.fetch_ohlcv.await_count == 2
 
 
-async def test_fetch_symbol_candles_preserves_identity_validated_symbol() -> None:
+async def test_fetch_symbol_candles_preserves_identity_validated_symbol(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("schurfer_analytics.ohlcv._EMPTY_PAGE_RETRY_DELAY_SECONDS", 0)
     start = int(datetime(2026, 7, 22, 12, 0, tzinfo=UTC).timestamp() * 1000)
     exchange = AsyncMock()
     exchange.fetch_ohlcv = AsyncMock(return_value=[])
@@ -174,7 +187,7 @@ async def test_fetch_symbol_candles_preserves_identity_validated_symbol() -> Non
         start + TIMEFRAME_MS,
     )
 
-    exchange.fetch_ohlcv.assert_awaited_once_with(
+    exchange.fetch_ohlcv.assert_awaited_with(
         "1000EDGE/USDT:USDT",
         "5m",
         since=start,
