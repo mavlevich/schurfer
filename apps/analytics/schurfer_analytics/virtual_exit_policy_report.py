@@ -67,6 +67,14 @@ EXIT_POLICY_MARKET_PATH_VERSION = "ccxt_5m_exact_exit_policy_family_v1"
 EXIT_POLICY_INFERENCE_VERSION = "exit_policy_formal_inference_v1"
 EXIT_POLICY_COHORT_START = datetime(2026, 7, 29, tzinfo=UTC)
 EXIT_POLICY_STRATEGY_VERSIONS = ("pump_short_v1_market_quality",)
+# Manually verified 2026-08-05: with the locked 100-episode formal window at
+# 99/100, the one remaining gap (BGSC/Gate, decision-time bid/ask impact was never
+# captured) is a genuine, permanent, isolated data-capture limitation — not a fetch
+# bug. The four Bitget gaps found the same day were a real bug and were fixed at
+# the source (ohlcv.py's exclusive-`since` fix) instead of tolerated here. Revisit
+# this value (and re-verify the remaining gap is still isolated, not systematic) if
+# the shortfall ever grows.
+EXIT_POLICY_MAX_UNRESOLVED_TOLERANCE = 1
 
 
 @dataclass(frozen=True)
@@ -420,6 +428,7 @@ def build_exit_policy_report(
         ),
         tuple(policy.key for policy in challengers),
         inference_version=EXIT_POLICY_INFERENCE_VERSION,
+        max_unresolved_tolerance=EXIT_POLICY_MAX_UNRESOLVED_TOLERANCE,
     )
     exclusions = Counter(
         reason for episode in dataset.excluded_episodes for reason in episode.exclusion_reasons
@@ -598,6 +607,10 @@ def render_markdown(report: ExitPolicyReport) -> str:
                 (
                     "Completely paired formal episodes",
                     report.inference.readiness.completely_paired_episodes,
+                ),
+                (
+                    "Max unresolved tolerance",
+                    report.inference.readiness.max_unresolved_tolerance,
                 ),
                 ("Inference readiness", report.inference.readiness.status),
             ],
