@@ -172,6 +172,34 @@ async def test_fetch_symbol_candles_retries_empty_page_at_the_tail(
     assert exchange.fetch_ohlcv.await_count == 2
 
 
+async def test_fetch_symbol_candles_recovers_bar_dropped_by_exclusive_since() -> None:
+    """Regression (2026-08-05): the actual root cause behind the SKUU/Bitget
+    exit-policy gap — `since` is exclusive on at least Bitget's swap OHLCV endpoint,
+    so requesting since=X silently drops the bar starting exactly at X. Confirmed
+    directly against the exchange for two different `since` values. The earlier
+    empty-page retries (above) do not help here: the page is never empty, it is
+    just missing its first bar."""
+    start = int(datetime(2026, 7, 22, 12, 0, tzinfo=UTC).timestamp() * 1000)
+
+    async def exclusive_since_fetch_ohlcv(
+        _symbol: str, _timeframe: str, since: int, limit: int
+    ) -> list[list[float]]:
+        bars = [_bar(start, offset) for offset in range(6) if start + offset * TIMEFRAME_MS > since]
+        return bars[:limit]
+
+    exchange = AsyncMock()
+    exchange.fetch_ohlcv = AsyncMock(side_effect=exclusive_since_fetch_ohlcv)
+
+    result = await fetch_symbol_candles(
+        exchange,
+        "SKUU/USDT:USDT",
+        start,
+        start + 6 * TIMEFRAME_MS,
+    )
+
+    assert [c.ts_ms for c in result] == [start + offset * TIMEFRAME_MS for offset in range(6)]
+
+
 async def test_fetch_symbol_candles_preserves_identity_validated_symbol(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -190,8 +218,8 @@ async def test_fetch_symbol_candles_preserves_identity_validated_symbol(
     exchange.fetch_ohlcv.assert_awaited_with(
         "1000EDGE/USDT:USDT",
         "5m",
-        since=start,
-        limit=2,
+        since=start - TIMEFRAME_MS,
+        limit=3,
     )
 
 

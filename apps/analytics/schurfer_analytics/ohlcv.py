@@ -20,18 +20,21 @@ _FETCH_LIMIT = 1000
 _FETCH_TIMEOUT_SECONDS = 20
 # Every window fetched here is fully historical (always well before "now"), so an
 # empty page is always a fetch anomaly, never "no data yet" — retry it a bounded
-# number of times before giving up, at any position in the window, including the
-# tail. Found 2026-08-05: a single transient empty response from Bitget mid-fetch
-# (71 of 72 required bars) silently truncated an exit-policy replay's market path,
-# reported downstream as an unresolvable data gap even though the exchange had the
-# full range available moments later — the missing bar turned out to be the very
-# last one in the window. An earlier version of this fix only retried when more
-# than a few bars remained, on the theory that an empty page near the tail is the
-# ordinary way the loop discovers it has reached the end of what's available — that
-# theory is wrong for a fully historical window: there is no bar, anywhere in the
-# requested range including the last one, that legitimately "hasn't happened yet".
+# number of times before giving up. Genuinely useful for a transient exchange
+# hiccup, but it turned out NOT to be the cause of the 2026-08-05 finding below —
+# kept as a separate, complementary defense.
 _EMPTY_PAGE_MAX_RETRIES = 2
 _EMPTY_PAGE_RETRY_DELAY_SECONDS = 1.0
+# Root cause of the 2026-08-05 finding (an exit-policy replay missing exactly one
+# bar out of 72 on Bitget): `since` is exclusive on at least Bitget's swap OHLCV
+# endpoint — `fetch_ohlcv(..., since=X)` returns bars strictly after X, dropping the
+# bar starting exactly at X. Confirmed directly against the exchange (two different
+# `since` values, same off-by-one both times). Requesting one bar earlier than the
+# logical cursor and letting the existing start_ms filter in closed_candles() trim
+# the (possibly duplicate, always harmless) extra leading bar works for both
+# exclusive-since exchanges (this recovers the dropped bar) and inclusive-since ones
+# (the duplicate is deduplicated by normalize_candles's timestamp keying).
+_SINCE_LOOKBACK_BARS = 1
 
 
 @dataclass(frozen=True)
@@ -162,11 +165,12 @@ async def fetch_symbol_candles(
         if cursor >= end_ms:
             break
         remaining = math.ceil((end_ms - cursor) / timeframe_ms)
-        limit = max(1, min(_FETCH_LIMIT, remaining + 1))
+        limit = max(1, min(_FETCH_LIMIT, remaining + 1 + _SINCE_LOOKBACK_BARS))
+        fetch_since = max(0, cursor - _SINCE_LOOKBACK_BARS * timeframe_ms)
         page: list[Candle] = []
         for attempt in range(_EMPTY_PAGE_MAX_RETRIES + 1):
             raw = await asyncio.wait_for(
-                exchange.fetch_ohlcv(symbol, timeframe, since=cursor, limit=limit),
+                exchange.fetch_ohlcv(symbol, timeframe, since=fetch_since, limit=limit),
                 timeout=_FETCH_TIMEOUT_SECONDS,
             )
             page = normalize_candles(raw, timeframe_ms=timeframe_ms)
