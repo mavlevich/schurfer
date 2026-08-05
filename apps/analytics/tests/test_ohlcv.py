@@ -89,6 +89,79 @@ async def test_fetch_candles_stops_when_exchange_does_not_advance_cursor() -> No
     assert exchange.fetch_ohlcv.await_count == 2
 
 
+def _bar(start: int, offset: int) -> list[float]:
+    ts = start + offset * TIMEFRAME_MS
+    return [ts, 100, 101, 99, 100, 1]
+
+
+async def test_fetch_symbol_candles_retries_transient_empty_page_mid_fetch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression (2026-08-05): a single transient empty response partway through a
+    long historical window (e.g. Bitget mid-fetch) must not be treated as "no more
+    data" — every window fetched here is fully in the past, so more data is expected
+    to exist until the requested end."""
+    monkeypatch.setattr("schurfer_analytics.ohlcv._EMPTY_PAGE_RETRY_DELAY_SECONDS", 0)
+    start = int(datetime(2026, 7, 22, 12, 0, tzinfo=UTC).timestamp() * 1000)
+    exchange = AsyncMock()
+    exchange.fetch_ohlcv = AsyncMock(
+        side_effect=[
+            [_bar(start, offset) for offset in range(4)],  # page 1: bars 0-3
+            [],  # page 2: transient empty response from the exchange
+            [_bar(start, offset) for offset in range(4, 10)],  # retry completes the window
+        ]
+    )
+
+    result = await fetch_symbol_candles(
+        exchange,
+        "ERA/USDT:USDT",
+        start,
+        start + 10 * TIMEFRAME_MS,
+    )
+
+    assert [c.ts_ms for c in result] == [start + offset * TIMEFRAME_MS for offset in range(10)]
+    assert exchange.fetch_ohlcv.await_count == 3
+
+
+async def test_fetch_symbol_candles_gives_up_after_bounded_empty_retries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("schurfer_analytics.ohlcv._EMPTY_PAGE_RETRY_DELAY_SECONDS", 0)
+    start = int(datetime(2026, 7, 22, 12, 0, tzinfo=UTC).timestamp() * 1000)
+    exchange = AsyncMock()
+    exchange.fetch_ohlcv = AsyncMock(return_value=[])
+
+    result = await fetch_symbol_candles(
+        exchange,
+        "ERA/USDT:USDT",
+        start,
+        start + 6 * TIMEFRAME_MS,
+    )
+
+    assert result == []
+    # 1 initial attempt + _EMPTY_PAGE_MAX_RETRIES retries, then give up — not an
+    # unbounded loop.
+    assert exchange.fetch_ohlcv.await_count == 3
+
+
+async def test_fetch_symbol_candles_does_not_retry_empty_page_near_tail() -> None:
+    """A tiny requested window is the ordinary way this loop discovers it has
+    reached the end of the range — no need to pay the retry cost there."""
+    start = int(datetime(2026, 7, 22, 12, 0, tzinfo=UTC).timestamp() * 1000)
+    exchange = AsyncMock()
+    exchange.fetch_ohlcv = AsyncMock(return_value=[])
+
+    result = await fetch_symbol_candles(
+        exchange,
+        "ERA/USDT:USDT",
+        start,
+        start + TIMEFRAME_MS,
+    )
+
+    assert result == []
+    assert exchange.fetch_ohlcv.await_count == 1
+
+
 async def test_fetch_symbol_candles_preserves_identity_validated_symbol() -> None:
     start = int(datetime(2026, 7, 22, 12, 0, tzinfo=UTC).timestamp() * 1000)
     exchange = AsyncMock()
