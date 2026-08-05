@@ -23,12 +23,38 @@ SCORE_COMPONENTS = (
     "retrace_from_peak",
 )
 
+# Registered hypothesis (2026-08-05): informal reads across the entry-floor and
+# decision-quality reports both showed a worse short win rate at both smaller
+# (20-25%) and much larger (35%+) pre-entry pump magnitude than at the 30%
+# baseline floor — a "sweet spot" shape, not the straight line the live
+# price_extent component assumes (it grants its max points to the LARGEST move,
+# >100%). Bands below are round numbers bracketing the observed 30% peak with
+# margin, chosen from the general shape only — not fit to this window's specific
+# numbers. This is registered to be validated against data collected FROM THIS
+# POINT FORWARD; the window already inspected above must not be used to tune it
+# further, or this becomes the exact p-hacking the project's own inference
+# discipline exists to prevent.
+BANDED_PRICE_EXTENT_COMPONENT = "banded_price_extent"
+
+
+def banded_price_extent_points(peak_pct: float) -> int:
+    """Alternate price_extent scoring: reward a mid-range pump, not the largest one."""
+    if 25.0 <= peak_pct < 40.0:
+        return 2
+    if 15.0 <= peak_pct < 60.0:
+        return 1
+    return 0
+
 
 @dataclass(frozen=True)
 class ScorePolicy:
     key: str
     min_score: int
     omitted_component: str | None = None
+    # Mutually exclusive with omitted_component: replaces price_extent's recorded
+    # points with banded_price_extent_points(value) instead of dropping it to
+    # zero. See BANDED_PRICE_EXTENT_COMPONENT above.
+    use_banded_price_extent: bool = False
 
     def __post_init__(self) -> None:
         if not self.key.strip():
@@ -37,6 +63,8 @@ class ScorePolicy:
             raise ValueError("score policy threshold must be between zero and ten")
         if self.omitted_component is not None and self.omitted_component not in SCORE_COMPONENTS:
             raise ValueError("unknown omitted score component")
+        if self.omitted_component is not None and self.use_banded_price_extent:
+            raise ValueError("omitted_component and use_banded_price_extent are mutually exclusive")
 
 
 MARKET_QUALITY_CONTROL_POLICY = ScorePolicy("score_any", 0)
@@ -44,6 +72,7 @@ SCORE_POLICIES = (
     MARKET_QUALITY_CONTROL_POLICY,
     *(ScorePolicy(f"score_{score}", score) for score in range(4, 10)),
     *(ScorePolicy(f"score_6_without_{component}", 6, component) for component in SCORE_COMPONENTS),
+    ScorePolicy("score_6_with_banded_price_extent", 6, use_banded_price_extent=True),
 )
 SCORE_THRESHOLD_BASELINE_POLICY = ScorePolicy(BASELINE_POLICY_KEY, 6)
 SCORE_THRESHOLD_CHALLENGER_POLICIES = (
@@ -187,7 +216,7 @@ def select_score_policy(
 
         components: tuple[ComponentSnapshot, ...] = ()
         effective_score = decision.score
-        if policy.omitted_component is not None:
+        if policy.omitted_component is not None or policy.use_banded_price_extent:
             parsed, error = component_snapshot(decision)
             if error is not None or parsed is None:
                 return ScoreSelection(
@@ -198,8 +227,14 @@ def select_score_policy(
                     error=error or "invalid_score_components",
                 )
             components = parsed
-            omitted = next(item for item in components if item.name == policy.omitted_component)
-            effective_score -= omitted.points
+            if policy.omitted_component is not None:
+                omitted = next(item for item in components if item.name == policy.omitted_component)
+                effective_score -= omitted.points
+            else:
+                price_extent = next(item for item in components if item.name == "price_extent")
+                effective_score += (
+                    banded_price_extent_points(price_extent.value) - price_extent.points
+                )
 
         if effective_score < policy.min_score:
             if decision.action in RECORDED_OPEN_ACTIONS:
