@@ -8,6 +8,7 @@ from schurfer_analytics.decision_quality import (
     SCORE_COMPONENTS,
     SCORE_POLICIES,
     ScorePolicy,
+    banded_price_extent_points,
     component_snapshot,
     select_score_policy,
     selected_policy_decisions,
@@ -15,10 +16,17 @@ from schurfer_analytics.decision_quality import (
 from schurfer_analytics.replay import ReplayDecision, ReplayEpisode
 
 
-def _components(points: tuple[int, ...]) -> dict[str, object]:
+def _components(
+    points: tuple[int, ...],
+    *,
+    price_extent_value: float | None = None,
+) -> dict[str, object]:
+    values = {name: float(index + 1) for index, name in enumerate(SCORE_COMPONENTS)}
+    if price_extent_value is not None:
+        values["price_extent"] = price_extent_value
     return {
-        name: {"value": float(index + 1), "points": score, "max": 2, "note": ""}
-        for index, (name, score) in enumerate(zip(SCORE_COMPONENTS, points, strict=True))
+        name: {"value": values[name], "points": score, "max": 2, "note": ""}
+        for name, score in zip(SCORE_COMPONENTS, points, strict=True)
     }
 
 
@@ -33,6 +41,7 @@ def _decision(
     quality_allowed: object = True,
     require_market_quality: object = True,
     signal_data_quality: object | None = None,
+    price_extent_value: float | None = None,
 ) -> ReplayDecision:
     ts = datetime(2026, 7, 26, tzinfo=UTC) + timedelta(minutes=row_id)
     return ReplayDecision(
@@ -54,7 +63,7 @@ def _decision(
         features={
             "signal": {
                 "computed_at": ts.timestamp(),
-                "components": _components(points),
+                "components": _components(points, price_extent_value=price_extent_value),
                 "data_quality": (
                     _data_quality() if signal_data_quality is None else signal_data_quality
                 ),
@@ -90,7 +99,49 @@ def test_registered_policies_lock_control_thresholds_and_ablations() -> None:
         "score_6_without_oi_trend",
         "score_6_without_funding_rate",
         "score_6_without_retrace_from_peak",
+        "score_6_with_banded_price_extent",
     )
+
+
+@pytest.mark.parametrize(
+    ("peak_pct", "expected_points"),
+    [
+        (10.0, 0),
+        (15.0, 1),
+        (24.9, 1),
+        (25.0, 2),
+        (39.9, 2),
+        (40.0, 1),
+        (59.9, 1),
+        (60.0, 0),
+        (200.0, 0),
+    ],
+)
+def test_banded_price_extent_points_rewards_the_mid_range(
+    peak_pct: float,
+    expected_points: int,
+) -> None:
+    assert banded_price_extent_points(peak_pct) == expected_points
+
+
+def test_banded_price_extent_policy_recomputes_effective_score_from_raw_value() -> None:
+    """Registered hypothesis (2026-08-05): a memecoin that's already up 150% should
+    score WORSE on this alternate component than one that's up 30%, even though the
+    live price_extent component currently scores it higher."""
+    huge_pump = _decision(1, (1, 2, 1, 1, 1), price_extent_value=150.0)
+    sweet_spot_pump = _decision(2, (1, 1, 1, 1, 1), price_extent_value=30.0)
+    policy = ScorePolicy("score_6_with_banded_price_extent", 6, use_banded_price_extent=True)
+
+    huge_result = select_score_policy(_episode(huge_pump), policy)
+    sweet_spot_result = select_score_policy(_episode(sweet_spot_pump), policy)
+
+    # Live score_extent already counted 2 pts for the 150% pump; banding drops it
+    # to 0, so 1+2+1+1+1=6 becomes 1+0+1+1+1=4 — below the threshold.
+    assert huge_result.status == "not_triggered"
+    # The 30% pump's live price_extent was only 1 pt; banding raises it to 2, so
+    # 1+1+1+1+1=5 becomes 1+2+1+1+1=6 — now crosses the threshold.
+    assert sweet_spot_result.status == "selected"
+    assert sweet_spot_result.effective_score == 6
 
 
 def test_score_policy_selects_first_quality_eligible_threshold_crossing() -> None:
