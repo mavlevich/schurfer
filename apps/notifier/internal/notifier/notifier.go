@@ -12,17 +12,32 @@ import (
 )
 
 const (
-	redisKeyPumps        = "pumps:latest"
-	redisKeyHeartbeat    = "notifier:heartbeat"
-	redisKeySeenPfx      = "notifier:seen:"
-	redisKeyStaleAlerted = "notifier:stale_alerted"
-	redisKeyMissingSince = "notifier:pumps_missing_since"
-	redisKeyAlertOutbox  = "notifier:alert_delivery_outbox"
-	redisKeyAlertDLQ     = "notifier:alert_delivery_dlq"
+	redisKeyPumps             = "pumps:latest"
+	redisKeyHeartbeat         = "notifier:heartbeat"
+	redisKeySeenPfx           = "notifier:seen:"
+	redisKeyReopenCooldownPfx = "notifier:reopen_cooldown:"
+	redisKeyStaleAlerted      = "notifier:stale_alerted"
+	redisKeyMissingSince      = "notifier:pumps_missing_since"
+	redisKeyAlertOutbox       = "notifier:alert_delivery_outbox"
+	redisKeyAlertDLQ          = "notifier:alert_delivery_dlq"
 	// Event ids are immutable and episodes may stay above the scanner threshold
 	// longer than one day. Retain the compact de-dup key well beyond a normal
 	// episode without growing Redis indefinitely.
 	seenTTL = 30 * 24 * time.Hour
+	// A pump on a thin or flaky venue can drop out of the scanner's live list for
+	// a few scan ticks and reappear as a brand-new pump_event_id (app.pump_events
+	// closes an episode after PUMP_CLOSE_AFTER_MISSES consecutive absences and
+	// opens a fresh one on the next detection) even though the real move never
+	// stopped. The per-event seenTTL key above treats that new id as unseen and
+	// re-alerts. Observed on 2026-08-03: CATE/LBank sent 4 alerts across ~70
+	// minutes for one continuous move, with gaps up to 37 minutes between
+	// reopens. reopenCooldown is set above that observed gap (with margin) and is
+	// refreshed on every reopen it suppresses, so it keeps sliding for as long as
+	// the base keeps reopening and only lets a new alert through once the base
+	// has been fully quiet for the whole window. This does not touch
+	// app.pump_events' own episode-lifecycle semantics or its miss-count
+	// threshold — only notifier-side alerting.
+	reopenCooldown = 45 * time.Minute
 )
 
 type Config struct {
@@ -232,9 +247,20 @@ func (n *Notifier) tick(ctx context.Context) error {
 			slog.Warn("notifier.seen.check.failed", "base", pump.Base, "err", err)
 			continue
 		}
-		if exists == 0 {
-			newPumps = append(newPumps, pump)
+		if exists > 0 {
+			continue
 		}
+		// A new event id for this base — could be a genuinely new pump, or a
+		// reopen of one that briefly dropped out of the scan (see reopenCooldown).
+		inCooldown, err := n.extendReopenCooldown(ctx, pump.Base)
+		if err != nil {
+			slog.Warn("notifier.reopen_cooldown.check.failed", "base", pump.Base, "err", err)
+			continue
+		}
+		if inCooldown {
+			continue
+		}
+		newPumps = append(newPumps, pump)
 	}
 
 	if len(newPumps) == 0 {
@@ -289,6 +315,22 @@ func (n *Notifier) tick(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// extendReopenCooldown reports whether base is still within its reopen
+// cooldown window, and unconditionally (re)sets the key with a fresh TTL —
+// so a base that keeps reopening keeps sliding the window forward, and only
+// clears it once genuinely quiet for the full reopenCooldown duration.
+func (n *Notifier) extendReopenCooldown(ctx context.Context, base string) (bool, error) {
+	key := redisKeyReopenCooldownPfx + base
+	existed, err := n.rdb.Exists(ctx, key).Result()
+	if err != nil {
+		return false, err
+	}
+	if err := n.rdb.Set(ctx, key, 1, reopenCooldown).Err(); err != nil {
+		return false, err
+	}
+	return existed > 0, nil
 }
 
 func seenKey(p pump) string {
