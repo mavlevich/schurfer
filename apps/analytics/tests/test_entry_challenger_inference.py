@@ -202,6 +202,79 @@ def test_unresolved_member_of_first_100_is_not_replaced_by_later_episode() -> No
     assert report.baseline is None
 
 
+def test_max_unresolved_tolerance_is_off_by_default() -> None:
+    """Existing callers that never pass max_unresolved_tolerance must see identical
+    (strict) behavior to before this parameter existed."""
+    episodes = list(_episodes(101, 40))
+    episodes[0] = InferenceEpisode(
+        pump_event_id=1,
+        cluster_key="base:TOKEN0",
+        baseline_return_pct=1,
+        challenger_returns_pct=(("red", None), ("retrace", 3), ("combined", 4)),
+    )
+
+    report = build_entry_challenger_inference(tuple(episodes), VARIANTS, settings=TEST_SETTINGS)
+
+    assert report.readiness.status == "insufficient_resolution"
+    assert report.readiness.max_unresolved_tolerance == 0
+
+
+def test_max_unresolved_tolerance_allows_a_bounded_permanent_gap() -> None:
+    """Regression (2026-08-05 exit-policy finding): a single genuine, permanent,
+    isolated data-capture gap (e.g. BGSC/Gate cost_inputs_unavailable) must not
+    permanently block the formal sample from ever reaching formal_sample_ready."""
+    episodes = list(_episodes(101, 40))
+    episodes[0] = InferenceEpisode(
+        pump_event_id=1,
+        cluster_key="base:TOKEN0",
+        baseline_return_pct=1,
+        challenger_returns_pct=(("red", None), ("retrace", 3), ("combined", 4)),
+    )
+
+    report = build_entry_challenger_inference(
+        tuple(episodes),
+        VARIANTS,
+        settings=TEST_SETTINGS,
+        max_unresolved_tolerance=1,
+    )
+
+    assert report.readiness.status == "formal_sample_ready"
+    assert report.readiness.completely_paired_episodes == 99
+    assert report.readiness.max_unresolved_tolerance == 1
+    assert report.baseline is not None
+    # The unresolved episode is simply dropped from the bootstrap sample, not
+    # imputed or counted as zero.
+    assert report.baseline.estimate.point_estimate == 1
+
+
+def test_max_unresolved_tolerance_does_not_mask_a_larger_shortfall() -> None:
+    """A tolerance of 1 must still catch a second, unexpected gap rather than
+    silently widening to absorb it."""
+    episodes = list(_episodes(102, 40))
+    episodes[0] = InferenceEpisode(
+        pump_event_id=1,
+        cluster_key="base:TOKEN0",
+        baseline_return_pct=1,
+        challenger_returns_pct=(("red", None), ("retrace", 3), ("combined", 4)),
+    )
+    episodes[1] = InferenceEpisode(
+        pump_event_id=2,
+        cluster_key="base:TOKEN1",
+        baseline_return_pct=1,
+        challenger_returns_pct=(("red", 2), ("retrace", None), ("combined", 4)),
+    )
+
+    report = build_entry_challenger_inference(
+        tuple(episodes),
+        VARIANTS,
+        settings=TEST_SETTINGS,
+        max_unresolved_tolerance=1,
+    )
+
+    assert report.readiness.status == "insufficient_resolution"
+    assert report.readiness.completely_paired_episodes == 98
+
+
 def test_negative_expectancy_is_no_go() -> None:
     report = build_entry_challenger_inference(
         _episodes(100, 40, baseline=-1, challengers=(-2, -3, -4)),

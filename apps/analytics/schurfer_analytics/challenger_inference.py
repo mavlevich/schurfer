@@ -118,6 +118,9 @@ class InferenceReadiness:
     minimum_triggered_episodes: int | None = None
     least_triggered_variant: str | None = None
     least_triggered_count: int | None = None
+    # Always populated (defaults to 0, meaning no tolerance was configured). See
+    # build_challenger_inference's max_unresolved_tolerance.
+    max_unresolved_tolerance: int = 0
 
 
 @dataclass(frozen=True)
@@ -174,6 +177,7 @@ def _readiness(
     formal_sample_size: int,
     minimum_triggered_episodes: int | None,
     least_triggered_count: int | None,
+    max_unresolved_tolerance: int,
 ) -> str:
     if eligible_episodes < DIRECTIONAL_EPISODES:
         return "collecting"
@@ -181,7 +185,19 @@ def _readiness(
         return "directional_only"
     if formal_sample_clusters < MIN_FORMAL_CLUSTERS:
         return "insufficient_diversity"
-    if baseline_resolved < formal_sample_size or completely_paired < formal_sample_size:
+    # completely_paired always requires baseline_return_pct to be resolved (a
+    # necessary condition of "completely paired"), so completely_paired <=
+    # baseline_resolved always — gating on completely_paired's shortfall alone
+    # already implies baseline_resolved clears the same bar.
+    if formal_sample_size - completely_paired > max_unresolved_tolerance:
+        # max_unresolved_tolerance defaults to 0 (unchanged strict behavior). A
+        # caller opts into a small nonzero tolerance only after manually confirming
+        # the remaining gap is a genuine, isolated data-capture limitation — not a
+        # fetch bug — since this check has no way to tell the two apart on its own.
+        # See the 2026-08-05 exit-policy finding: a real, permanent
+        # cost_inputs_unavailable gap on one episode versus the four Bitget
+        # episodes fixed the same day, which were a genuine fetch bug and were not
+        # tolerated here — they were fixed at the source instead.
         return "insufficient_resolution"
     if (
         minimum_triggered_episodes is not None
@@ -244,6 +260,7 @@ def build_challenger_inference(
     settings: InferenceSettings = DEFAULT_INFERENCE_SETTINGS,
     inference_version: str = DEFAULT_INFERENCE_VERSION,
     minimum_triggered_episodes: int | None = None,
+    max_unresolved_tolerance: int = 0,
 ) -> ChallengerInference:
     """Evaluate episodes supplied in deterministic chronological cohort order.
 
@@ -253,6 +270,12 @@ def build_challenger_inference(
     resolved-episode counts — a low-trigger-rate family (e.g. a rare entry
     threshold) can otherwise report "ready" on a sample that is almost entirely
     zero_return_cash_episode rows.
+
+    max_unresolved_tolerance (default 0, unchanged strict behavior) allows the
+    formal sample to proceed with up to this many unresolved episodes out of the
+    locked window. Only raise it after manually confirming the gap is a genuine,
+    isolated data-capture limitation, not a fetch bug that should be fixed at the
+    source instead — this check cannot tell the two apart on its own.
     """
     normalized_version = inference_version.strip()
     if not normalized_version:
@@ -317,6 +340,7 @@ def build_challenger_inference(
             formal_sample_size=len(formal_sample),
             minimum_triggered_episodes=minimum_triggered_episodes,
             least_triggered_count=least_triggered_count,
+            max_unresolved_tolerance=max_unresolved_tolerance,
         ),
         eligible_episodes=len(episodes),
         formal_sample_episodes=len(formal_sample),
@@ -326,6 +350,7 @@ def build_challenger_inference(
         minimum_triggered_episodes=minimum_triggered_episodes,
         least_triggered_variant=least_triggered_variant,
         least_triggered_count=least_triggered_count,
+        max_unresolved_tolerance=max_unresolved_tolerance,
     )
     base = ChallengerInference(
         inference_version=normalized_version,
