@@ -394,6 +394,143 @@ func TestTick_LegacyBaseSeenKeySuppressesRolloutDuplicate(t *testing.T) {
 	}
 }
 
+func TestTick_ReopenWithinCooldownSuppressesSecondEventID(t *testing.T) {
+	// Regression (2026-08-03 CATE/LBank incident): one continuous move that
+	// briefly drops out of the scan reopens under a new pump_event_id, which
+	// the per-event seen key alone treats as unseen and re-alerts.
+	calls, done := newTelegramCounter(t)
+	defer done()
+
+	mr := miniredis.RunT(t)
+	n := newTestNotifier(t, mr, "tok", "cid")
+
+	setPumpsPayload(t, mr, payload{
+		Scanned: []string{"lbank"},
+		Pumps: []pump{{
+			Base:         "CATE",
+			PumpEventID:  2569,
+			MaxChangePct: 4963,
+			Exchanges:    []exchange{{Exchange: "lbank", ChangePct: 4963}},
+		}},
+	})
+	if err := n.tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if *calls != 1 {
+		t.Fatalf("expected 1 alert for the first event, got %d", *calls)
+	}
+
+	// Episode closed and reopened under a new event id for the same base.
+	setPumpsPayload(t, mr, payload{
+		Scanned: []string{"lbank"},
+		Pumps: []pump{{
+			Base:         "CATE",
+			PumpEventID:  2578,
+			MaxChangePct: 4925,
+			Exchanges:    []exchange{{Exchange: "lbank", ChangePct: 4925}},
+		}},
+	})
+	if err := n.tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if *calls != 1 {
+		t.Errorf("expected the reopen within the cooldown window to stay suppressed, got %d calls", *calls)
+	}
+}
+
+func TestTick_ReopenAfterCooldownExpiryAlertsAgain(t *testing.T) {
+	calls, done := newTelegramCounter(t)
+	defer done()
+
+	mr := miniredis.RunT(t)
+	n := newTestNotifier(t, mr, "tok", "cid")
+
+	setPumpsPayload(t, mr, payload{
+		Scanned: []string{"lbank"},
+		Pumps: []pump{{
+			Base:         "CATE",
+			PumpEventID:  2569,
+			MaxChangePct: 4963,
+			Exchanges:    []exchange{{Exchange: "lbank", ChangePct: 4963}},
+		}},
+	})
+	if err := n.tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	mr.FastForward(reopenCooldown + time.Minute)
+
+	setPumpsPayload(t, mr, payload{
+		Scanned: []string{"lbank"},
+		Pumps: []pump{{
+			Base:         "CATE",
+			PumpEventID:  2578,
+			MaxChangePct: 4925,
+			Exchanges:    []exchange{{Exchange: "lbank", ChangePct: 4925}},
+		}},
+	})
+	if err := n.tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if *calls != 2 {
+		t.Errorf("expected a reopen after the base went fully quiet to alert again, got %d calls", *calls)
+	}
+}
+
+func TestTick_ReopenCooldownSlidesOnEachSuppression(t *testing.T) {
+	// A reopen that lands just before the cooldown would have expired must
+	// push the window forward again, not let it lapse on the original timer.
+	calls, done := newTelegramCounter(t)
+	defer done()
+
+	mr := miniredis.RunT(t)
+	n := newTestNotifier(t, mr, "tok", "cid")
+
+	setPumpsPayload(t, mr, payload{
+		Scanned: []string{"lbank"},
+		Pumps: []pump{{
+			Base: "CATE", PumpEventID: 1, MaxChangePct: 4963,
+			Exchanges: []exchange{{Exchange: "lbank", ChangePct: 4963}},
+		}},
+	})
+	if err := n.tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	// Reopen with only 10 minutes left before the original cooldown expires.
+	mr.FastForward(reopenCooldown - 10*time.Minute)
+	setPumpsPayload(t, mr, payload{
+		Scanned: []string{"lbank"},
+		Pumps: []pump{{
+			Base: "CATE", PumpEventID: 2, MaxChangePct: 4925,
+			Exchanges: []exchange{{Exchange: "lbank", ChangePct: 4925}},
+		}},
+	})
+	if err := n.tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if *calls != 1 {
+		t.Fatalf("expected the first reopen to stay suppressed, got %d calls", *calls)
+	}
+
+	// 15 minutes later: past the ORIGINAL cooldown, but well within the window
+	// as slid forward by the reopen above.
+	mr.FastForward(15 * time.Minute)
+	setPumpsPayload(t, mr, payload{
+		Scanned: []string{"lbank"},
+		Pumps: []pump{{
+			Base: "CATE", PumpEventID: 3, MaxChangePct: 4900,
+			Exchanges: []exchange{{Exchange: "lbank", ChangePct: 4900}},
+		}},
+	})
+	if err := n.tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if *calls != 1 {
+		t.Errorf("expected the cooldown to have slid forward on the first reopen, got %d calls", *calls)
+	}
+}
+
 func TestTick_BelowThresholdNoAlertNotSeen(t *testing.T) {
 	calls, done := newTelegramCounter(t)
 	defer done()
