@@ -178,6 +178,36 @@ these independent changes into one branch.
    Gate/Binance/Bybit links, archive authoritative evidence and hashes, bump registry
    plus qualification versions, deploy, and choose the next clean UTC cutoff for one
    `gate_source_lead_4h_v1` cohort. Historical confirmed survivors cannot enter it.
+
+   **Derivatives regime feasibility (long/short ratio), registered 2026-08-06.**
+   `app.pump_derivatives_context_samples` already holds real `binance`
+   `long_short_ratio_history` and `open_interest_history` series for hundreds of
+   episodes — collected as a side effect of ordinary operation, not a new
+   collector. Before spending a research PR on any feature built from it,
+   `derivatives_regime_feasibility.py` answers one question only, without
+   looking at any outcome/PnL association: does a large enough, honestly
+   eligible sample exist. Canonical scope, never mixed: `binance` only,
+   `long_short_ratio_history` only, `derivatives_context_v2` only, `5m` only —
+   funding/OI and other exchanges/timeframes are separate scopes, never
+   combined into one series. One continuous feature only
+   (`(recent_median[-30m,0) - baseline_median[-4h,-30m)) / baseline_MAD`, exact
+   `42`/`6` point counts, `MAD = 0` → unresolved) — no OI, no liquidations, no
+   multi-factor model until this one is read. Liquidations (only `htx`, tiny N)
+   stay a descriptive appendix, never their own family.
+
+   2026-08-06 first read (`backups/reports/derivatives-regime-feasibility-2026-08-06.md`):
+   142 feature-complete episodes, 73 bases — both already past the 100/30
+   thresholds — but only **2 UTC weeks** against the required 4, and the
+   largest single week holds **69% of the sample**. Status: `collecting`, not a
+   sample-size problem but a **temporal-concentration** one; do not register
+   the historical-discovery LSR read (`analysis/long-short-ratio-regime-v1`)
+   until week concentration is broken up by more calendar time passing, even
+   though the raw episode/base counts already clear their own bars. Also found:
+   `has_unconflicted_binance_source` is the dominant bottleneck (301 → 142
+   eligible episodes, 53% loss) — everything downstream of a present Binance
+   source resolves at 100%, so the pipeline itself is reliable once that one
+   precondition is met.
+
 7. **[Completed] Fix duplicate-alert spam from premature episode closure on
    thin/flaky venues.** `app.pump_events`
    closes an episode once `miss_count` reaches its threshold and opens a new
