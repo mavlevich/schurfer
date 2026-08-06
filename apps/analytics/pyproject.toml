@@ -28,6 +28,7 @@ virtual-threshold-challenger-report = "schurfer_analytics.virtual_threshold_chal
 virtual-exit-policy-report = "schurfer_analytics.virtual_exit_policy_report:main"
 virtual-exit-discovery-report = "schurfer_analytics.virtual_exit_discovery_report:main"
 virtual-score-challenger-report = "schurfer_analytics.virtual_score_challenger_report:main"
+virtual-banded-price-extent-report = "schurfer_analytics.virtual_banded_price_extent_report:main"
 candle-anomaly-report = "schurfer_analytics.candle_anomaly_report:main"
 derivatives-context-report = "schurfer_analytics.derivatives_context_report:main"
 decision-quality-report = "schurfer_analytics.decision_quality_report:main"
