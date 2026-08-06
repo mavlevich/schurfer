@@ -125,8 +125,8 @@ these independent changes into one branch.
    then valid cost/filled and trade evidence. If it remains unknown, persist a
    de-duplicated incident, revoke PnL readiness, alert Telegram once, retry, expose it
    in status, and send recovery after reconciliation. Never fabricate a fill price.
-5. **[Blocked: gate_inconclusive_endpoint_completeness] Close the Bybit order-flow
-   discovery gate on 2026-08-06.** Read early-long, squeeze-avoidance, and
+5. **[Stopped 2026-08-06: no lane passed] Close the Bybit order-flow
+   discovery gate.** Read early-long, squeeze-avoidance, and
    delayed-short as separate books. If no lane has pre-trigger lead time,
    multi-asset/day robustness, and plausible after-cost value, stop the
    order-flow line and do not add Binance or L2. If one lane passes, register exactly
@@ -138,7 +138,7 @@ these independent changes into one branch.
    - delayed-short wins: add one shadow entry-timing challenger after buy pressure
      fades.
 
-   **2026-08-06 status: `gate_inconclusive_endpoint_completeness`, not a lane
+   **2026-08-06, step 1: `gate_inconclusive_endpoint_completeness`, not a lane
    verdict.** Ran and archived the unmodified `v1` report (never edited the
    registered contract for this decision) — see
    `backups/reports/orderflow-pilot-v1-2026-08-06.{json,md}`. Result: 8 complete
@@ -147,20 +147,32 @@ these independent changes into one branch.
    (5000ms) is applied independently at the anchor plus four post-trigger
    horizons across the event and all 3 controls — roughly 20 conditions that must
    _all_ pass — and on Bybit's actual per-symbol trade frequency for pump
-   candidates, the anchor alone is fresh enough only ~35% of the time. This says
-   the registered `v1` completeness contract is a poor fit for real trade
-   frequency; it does **not** say early-long, squeeze-avoidance, or delayed-short
-   lack a pre-trigger effect — no lane has been evaluated yet at any sample size.
-   Do not read this as "order flow failed" or loosen `v1`'s threshold to force a
-   reading; a threshold picked after seeing which value clears the gate is
-   exactly the p-hacking this project's own inference discipline exists to
-   prevent. Next: a separate, versioned `bybit_orderflow_endpoint_sensitivity_v1`
-   report showing 5/10/15/20/30s side by side (60s shown only as an explicitly
-   unusable diagnostic bound for the 1-minute lane) with per-lane, per-asset,
-   per-day robustness. Decide by whether a lane's effect direction holds stable
-   across that range, not by the single most favorable row. Do not touch `v1`
-   itself, do not add ticker/mid capture, 5-6 controls, or a 24h accumulation
-   layer until that sensitivity read is in.
+   candidates, the anchor alone is fresh enough only ~35% of the time. This said
+   the registered `v1` completeness contract was a poor fit for real trade
+   frequency; it did not by itself say whether any lane has a pre-trigger effect.
+
+   **2026-08-06, step 2: `bybit_orderflow_endpoint_sensitivity_v1` closes the
+   gate — stopped, no lane passed.** Built a read-only, versioned sensitivity
+   report (`orderflow_endpoint_sensitivity_report.py`) that re-parses the same
+   raw captures without touching `v1`, evaluating 5/10/15/20/30s side by side
+   (60s shown only as an explicitly unusable diagnostic bound for the 1-minute
+   lane) — see `backups/reports/orderflow-endpoint-sensitivity-2026-08-06.md`.
+   At 15-20s the sample is already adequate (92-146 complete episodes, 33-45
+   clusters, 8 UTC days), so this is a real read, not another data-volume
+   shortfall. Result: every lane's rank correlation between its feature and its
+   return lift collapses toward zero as the sample grows from N=8 (5s) to
+   N=146-232 (20-30s) — early-long 0.69→-0.04, squeeze-avoidance 0.88→0.07,
+   delayed-short's return lift even flips sign (-0.66%→+0.03%). This is the
+   textbook signature of small-sample noise dissolving with more data, not a
+   real effect strengthening or holding stable. early-long's median return lift
+   stays positive across all bounds, but with no accompanying stable
+   correlation this is better explained by a tautology (a token just flagged as
+   pumping tends to keep rising briefly relative to an arbitrary matched
+   control) than by the order-flow feature itself. No lane showed pre-trigger
+   lead time, robustness, or plausible value — stop the order-flow line. Do not
+   add Binance, L2, ticker/mid capture, 5-6 controls, or a 24h accumulation
+   layer. The freed market-intelligence slot goes to item 6 (Gate source-lead),
+   not both at once.
 
 6. **Advance Gate source-lead only after identity evidence exists.** Review exact
    Gate/Binance/Bybit links, archive authoritative evidence and hashes, bump registry
