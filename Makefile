@@ -1,5 +1,5 @@
-.PHONY: help install install-golangci-lint install-deadcode dev dev-init dev-stop dev-reset dev-logs dev-test migrate measurement-report exchange-coverage-report exchange-source-economics-report source-lead-report source-lead-identity-report episode-replay virtual-strategy-report virtual-entry-challenger-report virtual-threshold-challenger-report virtual-exit-policy-report virtual-exit-discovery-report virtual-score-challenger-report virtual-banded-price-extent-report candle-anomaly-report derivatives-context-report decision-quality-report liquid-taker-report long-horizon-report open-ended-margin-report maker-entry-report pump-magnitude-report orderflow-pilot-report exit-liquidity-calibration-report orderflow-start orderflow-stop orderflow-health test lint ci-lint format clean security deadcode check verify verify-docker \
-		prod-deploy prod-runtime-metrics-install prod-runtime-metrics-health prod-research-checkpoints-install prod-research-checkpoints-run prod-research-checkpoints-health prod-measurement-report prod-exchange-coverage-report prod-exchange-source-economics-report prod-source-lead-report prod-source-lead-identity-report prod-source-lead-capture-health prod-episode-replay prod-virtual-strategy-report prod-virtual-entry-challenger-report prod-virtual-threshold-challenger-report prod-virtual-exit-policy-report prod-virtual-exit-discovery-report prod-virtual-score-challenger-report prod-virtual-banded-price-extent-report prod-candle-anomaly-report prod-derivatives-context-report prod-decision-quality-report prod-liquid-taker-report prod-long-horizon-report prod-open-ended-margin-report prod-open-ended-margin-health prod-maker-entry-report prod-pump-magnitude-report prod-orderflow-pilot-report prod-exit-liquidity-calibration-report prod-orderflow-start prod-orderflow-stop prod-orderflow-health prod-logs prod-backup prod-restore-local prod-health
+.PHONY: help install install-golangci-lint install-deadcode dev dev-init dev-stop dev-reset dev-logs dev-test migrate measurement-report exchange-coverage-report exchange-source-economics-report source-lead-report source-lead-identity-report episode-replay virtual-strategy-report virtual-entry-challenger-report virtual-threshold-challenger-report virtual-exit-policy-report virtual-exit-discovery-report virtual-score-challenger-report virtual-banded-price-extent-report candle-anomaly-report derivatives-context-report decision-quality-report liquid-taker-report long-horizon-report open-ended-margin-report maker-entry-report pump-magnitude-report orderflow-pilot-report orderflow-endpoint-sensitivity-report exit-liquidity-calibration-report orderflow-start orderflow-stop orderflow-health test lint ci-lint format clean security deadcode check verify verify-docker \
+		prod-deploy prod-runtime-metrics-install prod-runtime-metrics-health prod-research-checkpoints-install prod-research-checkpoints-run prod-research-checkpoints-health prod-measurement-report prod-exchange-coverage-report prod-exchange-source-economics-report prod-source-lead-report prod-source-lead-identity-report prod-source-lead-capture-health prod-episode-replay prod-virtual-strategy-report prod-virtual-entry-challenger-report prod-virtual-threshold-challenger-report prod-virtual-exit-policy-report prod-virtual-exit-discovery-report prod-virtual-score-challenger-report prod-virtual-banded-price-extent-report prod-candle-anomaly-report prod-derivatives-context-report prod-decision-quality-report prod-liquid-taker-report prod-long-horizon-report prod-open-ended-margin-report prod-open-ended-margin-health prod-maker-entry-report prod-pump-magnitude-report prod-orderflow-pilot-report prod-orderflow-endpoint-sensitivity-report prod-exit-liquidity-calibration-report prod-orderflow-start prod-orderflow-stop prod-orderflow-health prod-logs prod-backup prod-restore-local prod-health
 
 GOLANGCI_LINT_VERSION = v2.1.6
 DEADCODE_VERSION = v0.48.0
@@ -49,6 +49,7 @@ help:
 	@echo "  make maker-entry-report  Estimate the maker-entry OHLCV upper bound"
 	@echo "  make pump-magnitude-report  Explore 20% to 200% pump entry floors"
 	@echo "  make orderflow-pilot-report  Analyze bounded Bybit event/control captures"
+	@echo "  make orderflow-endpoint-sensitivity-report  Compare pilot readiness across staleness bounds"
 	@echo "  make exit-liquidity-calibration-report  Compare modeled and close-time exit quotes"
 	@echo "  make orderflow-start  Start the bounded local Bybit order-flow pilot"
 	@echo "  make orderflow-health  Show local order-flow pilot health"
@@ -90,6 +91,7 @@ help:
 	@echo "  make prod-maker-entry-report  Production maker-entry upper-bound report"
 	@echo "  make prod-pump-magnitude-report  Production pump-magnitude discovery surface"
 	@echo "  make prod-orderflow-pilot-report  Production Bybit order-flow pilot report"
+	@echo "  make prod-orderflow-endpoint-sensitivity-report  Production staleness-bound sensitivity report"
 	@echo "  make prod-exit-liquidity-calibration-report  Production exit quote calibration"
 	@echo "  make prod-orderflow-start  Explicitly start the bounded order-flow trial"
 	@echo "  make prod-orderflow-health  Show order-flow trial health and resource use"
@@ -169,6 +171,13 @@ orderflow-health:
 
 orderflow-pilot-report:
 	@uv run --package schurfer-analytics orderflow-pilot-report \
+		--code-revision="$$(git rev-parse HEAD)" \
+		$$(test -z "$$(git status --porcelain)" \
+			&& printf '%s' '--no-working-tree-dirty' \
+			|| printf '%s' '--working-tree-dirty') $(ARGS)
+
+orderflow-endpoint-sensitivity-report:
+	@uv run --package schurfer-analytics orderflow-endpoint-sensitivity-report \
 		--code-revision="$$(git rev-parse HEAD)" \
 		$$(test -z "$$(git status --porcelain)" \
 			&& printf '%s' '--no-working-tree-dirty' \
@@ -817,6 +826,14 @@ prod-pump-magnitude-report:
 prod-orderflow-pilot-report:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
 	@$(_PROD) run --rm --no-deps --entrypoint orderflow-pilot-report analytics \
+		--code-revision="$$(git rev-parse HEAD)" \
+		$$(test -z "$$(git status --porcelain)" \
+			&& printf '%s' '--no-working-tree-dirty' \
+			|| printf '%s' '--working-tree-dirty') $(ARGS)
+
+prod-orderflow-endpoint-sensitivity-report:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
+	@$(_PROD) run --rm --no-deps --entrypoint orderflow-endpoint-sensitivity-report analytics \
 		--code-revision="$$(git rev-parse HEAD)" \
 		$$(test -z "$$(git status --porcelain)" \
 			&& printf '%s' '--no-working-tree-dirty' \
