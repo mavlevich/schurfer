@@ -125,9 +125,10 @@ these independent changes into one branch.
    then valid cost/filled and trade evidence. If it remains unknown, persist a
    de-duplicated incident, revoke PnL readiness, alert Telegram once, retry, expose it
    in status, and send recovery after reconciliation. Never fabricate a fill price.
-5. **Close the Bybit order-flow discovery gate on 2026-08-06.** Read early-long,
-   squeeze-avoidance, and delayed-short as separate books. If no lane has pre-trigger
-   lead time, multi-asset/day robustness, and plausible after-cost value, stop the
+5. **[Blocked: gate_inconclusive_endpoint_completeness] Close the Bybit order-flow
+   discovery gate on 2026-08-06.** Read early-long, squeeze-avoidance, and
+   delayed-short as separate books. If no lane has pre-trigger lead time,
+   multi-asset/day robustness, and plausible after-cost value, stop the
    order-flow line and do not add Binance or L2. If one lane passes, register exactly
    one untouched forward shadow contract:
    - early-long wins: Bybit-only aggressive-buy acceleration while price remains
@@ -136,6 +137,31 @@ these independent changes into one branch.
    - squeeze-avoidance wins: add one shadow-only veto to the existing short book;
    - delayed-short wins: add one shadow entry-timing challenger after buy pressure
      fades.
+
+   **2026-08-06 status: `gate_inconclusive_endpoint_completeness`, not a lane
+   verdict.** Ran and archived the unmodified `v1` report (never edited the
+   registered contract for this decision) — see
+   `backups/reports/orderflow-pilot-v1-2026-08-06.{json,md}`. Result: 8 complete
+   matched episodes, 8 asset clusters, 5 UTC market days, against a registered
+   threshold of 100/30/7. Root cause found: `ORDERFLOW_MAX_ENDPOINT_STALENESS_MS`
+   (5000ms) is applied independently at the anchor plus four post-trigger
+   horizons across the event and all 3 controls — roughly 20 conditions that must
+   _all_ pass — and on Bybit's actual per-symbol trade frequency for pump
+   candidates, the anchor alone is fresh enough only ~35% of the time. This says
+   the registered `v1` completeness contract is a poor fit for real trade
+   frequency; it does **not** say early-long, squeeze-avoidance, or delayed-short
+   lack a pre-trigger effect — no lane has been evaluated yet at any sample size.
+   Do not read this as "order flow failed" or loosen `v1`'s threshold to force a
+   reading; a threshold picked after seeing which value clears the gate is
+   exactly the p-hacking this project's own inference discipline exists to
+   prevent. Next: a separate, versioned `bybit_orderflow_endpoint_sensitivity_v1`
+   report showing 5/10/15/20/30s side by side (60s shown only as an explicitly
+   unusable diagnostic bound for the 1-minute lane) with per-lane, per-asset,
+   per-day robustness. Decide by whether a lane's effect direction holds stable
+   across that range, not by the single most favorable row. Do not touch `v1`
+   itself, do not add ticker/mid capture, 5-6 controls, or a 24h accumulation
+   layer until that sensitivity read is in.
+
 6. **Advance Gate source-lead only after identity evidence exists.** Review exact
    Gate/Binance/Bybit links, archive authoritative evidence and hashes, bump registry
    plus qualification versions, deploy, and choose the next clean UTC cutoff for one
