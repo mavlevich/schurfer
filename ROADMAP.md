@@ -179,6 +179,26 @@ these independent changes into one branch.
    plus qualification versions, deploy, and choose the next clean UTC cutoff for one
    `gate_source_lead_4h_v1` cohort. Historical confirmed survivors cannot enter it.
 
+   **[x] Candidate tooling, registered 2026-08-06.**
+   `gate_identity_candidate_tooling.py` fetches Gate's own official
+   currency/network contract addresses (`ccxt.fetch_currencies`, public, no
+   keys needed) plus CoinGecko as secondary corroboration, and proposes one of
+   five statuses (`candidate`/`conflict`/`insufficient_evidence`/`not_same_asset`/
+   `manual_review_required`) per (base, target exchange) pair. **It never writes
+   `approved=true`** — every output still needs the human review checklist in
+   the module docstring applied before entering the registry. Primary identity
+   is chain + normalized contract address, never a ticker alone, so a symbol
+   collision or a wrapped/native mismatch cannot be silently merged, and a
+   migrated contract surfaces as a conflict rather than resolving to whichever
+   address looks newer. Live-verified against real data: `UB` (Unibase) —
+   Gate's contract cleanly resolves to CoinGecko's canonical project, but
+   Binance/Bybit are perpetual-only (no on-chain contract for a derivative) and
+   our trading API keys have no wallet-read scope to check their spot side
+   either, so the tool honestly returns `manual_review_required` rather than a
+   false `candidate` — this is the expected, structural outcome for
+   perpetual-only listings, not a bug. `make gate-identity-candidate-tooling
+ARGS='--base <TICKER> --target-exchange binance'`.
+
    **Derivatives regime feasibility (long/short ratio), registered 2026-08-06.**
    `app.pump_derivatives_context_samples` already holds real `binance`
    `long_short_ratio_history` and `open_interest_history` series for hundreds of

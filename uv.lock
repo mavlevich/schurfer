@@ -1753,6 +1753,7 @@ source = { editable = "apps/analytics" }
 dependencies = [
     { name = "ccxt" },
     { name = "greenlet" },
+    { name = "httpx" },
     { name = "psycopg", extra = ["binary"] },
     { name = "redis" },
     { name = "schurfer-journal" },
@@ -1765,6 +1766,7 @@ dependencies = [
 requires-dist = [
     { name = "ccxt", specifier = "==4.5.68" },
     { name = "greenlet", specifier = ">=3.2" },
+    { name = "httpx", specifier = ">=0.28" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
     { name = "redis", specifier = ">=5.2" },
     { name = "schurfer-journal", editable = "packages/journal" },
