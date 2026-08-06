@@ -72,6 +72,13 @@ SCORE_THRESHOLD_REPORT_VERSION = "virtual_score_challenger_report_v1"
 SCORE_THRESHOLD_INFERENCE_VERSION = "score_threshold_downward_formal_inference_v1"
 SCORE_THRESHOLD_COHORT_START = datetime(2026, 7, 31, tzinfo=UTC)
 SCORE_THRESHOLD_STRATEGY_VERSIONS = ("pump_short_v1_market_quality",)
+# Same latent gap as the 2026-08-04 entry-floor finding: a threshold rarely
+# crossed can reach every other formal-sample gate almost entirely on
+# not_triggered (cash) episodes while the actually-traded sample stays tiny.
+# Require a floor of real trades — for both baseline and challengers, since
+# score_6 baseline can itself fail to cross — before calling any policy's read
+# formal.
+MINIMUM_TRIGGERED_EPISODES = 20
 
 
 @dataclass(frozen=True)
@@ -417,10 +424,21 @@ def build_score_threshold_report(
                 pump_event_id=episode.pump_event_id,
                 cluster_key=episode.cluster_key,
                 baseline_return_pct=_resolved_return(baseline_by_event[episode.pump_event_id]),
+                baseline_triggered=(
+                    baseline_by_event[episode.pump_event_id].selected_decision_id is not None
+                ),
                 challenger_returns_pct=tuple(
                     (
                         policy.key,
                         _resolved_return(by_policy_event[(policy.key, episode.pump_event_id)]),
+                    )
+                    for policy in SCORE_THRESHOLD_CHALLENGER_POLICIES
+                ),
+                challenger_triggered=tuple(
+                    (
+                        policy.key,
+                        by_policy_event[(policy.key, episode.pump_event_id)].selected_decision_id
+                        is not None,
                     )
                     for policy in SCORE_THRESHOLD_CHALLENGER_POLICIES
                 ),
@@ -429,6 +447,7 @@ def build_score_threshold_report(
         ),
         tuple(policy.key for policy in SCORE_THRESHOLD_CHALLENGER_POLICIES),
         inference_version=SCORE_THRESHOLD_INFERENCE_VERSION,
+        minimum_triggered_episodes=MINIMUM_TRIGGERED_EPISODES,
     )
     exclusions = Counter(
         reason for episode in dataset.excluded_episodes for reason in episode.exclusion_reasons
@@ -576,6 +595,18 @@ def render_markdown(report: ScoreThresholdReport) -> str:
                 (
                     "Completely paired formal episodes",
                     report.inference.readiness.completely_paired_episodes,
+                ),
+                (
+                    "Least-triggered variant (formal window)",
+                    report.inference.readiness.least_triggered_variant or "n/a",
+                ),
+                (
+                    "Least-triggered count (formal window)",
+                    (
+                        report.inference.readiness.least_triggered_count
+                        if report.inference.readiness.least_triggered_count is not None
+                        else "n/a"
+                    ),
                 ),
                 ("Inference readiness", report.inference.readiness.status),
             ],
