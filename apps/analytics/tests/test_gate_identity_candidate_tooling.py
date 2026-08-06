@@ -366,6 +366,38 @@ async def test_search_coingecko_returns_empty_on_no_hits() -> None:
     assert await search_coingecko(fake_http_get, "NOPE") == ()
 
 
+async def test_search_coingecko_fails_closed_when_search_itself_errors() -> None:
+    """Regression (2026-08-06 live run): a 429 or any other transport error on
+    CoinGecko must be treated as "no corroboration right now", not crash the
+    whole multi-base batch that _run is in the middle of."""
+
+    async def failing_http_get(url: str, params: dict[str, str]) -> Any:
+        raise RuntimeError("429 Too Many Requests")
+
+    assert await search_coingecko(failing_http_get, "UB") == ()
+
+
+async def test_search_coingecko_skips_only_the_failing_coin_detail() -> None:
+    """One coin's /coins/{id} call failing must not discard hits that already
+    succeeded or would have succeeded for other coins in the same search."""
+
+    async def fake_http_get(url: str, params: dict[str, str]) -> Any:
+        if url.endswith("/search"):
+            return {
+                "coins": [
+                    {"id": "will-fail", "symbol": "UB", "name": "Will Fail"},
+                    {"id": "will-succeed", "symbol": "UB", "name": "Will Succeed"},
+                ]
+            }
+        if url.endswith("/coins/will-fail"):
+            raise RuntimeError("429 Too Many Requests")
+        return {"name": "Will Succeed", "platforms": {"ethereum": "0x" + "2" * 40}}
+
+    projects = await search_coingecko(fake_http_get, "UB")
+
+    assert [project.coingecko_id for project in projects] == ["will-succeed"]
+
+
 # --- build_candidate: end-to-end wiring with fakes ------------------------------
 
 
@@ -373,18 +405,16 @@ async def test_build_candidate_wires_fetch_and_classification_end_to_end() -> No
     address = "0x" + "f" * 40
     gate = _FakeExchange({"UB": {"networks": {"ERC20": {"info": {"addr": address}}}}})
     binance = _FakeExchange({"UB": {"networks": {"ERC20": {"info": {"addr": address}}}}})
-
-    async def fake_http_get(url: str, params: dict[str, str]) -> Any:
-        if url.endswith("/search"):
-            return {"coins": [{"id": "unibase", "symbol": "UB", "name": "Unibase"}]}
-        return {"name": "Unibase", "platforms": {"ethereum": address}}
+    coingecko_candidates = (
+        CoinGeckoProject("unibase", "Unibase", "UB", (ChainContract("ethereum", address),)),
+    )
 
     candidate = await build_candidate(
         source_exchange_name="gate",
         source_exchange_client=gate,
         target_exchange_name="binance",
         target_exchange_client=binance,
-        http_get=fake_http_get,
+        coingecko_candidates=coingecko_candidates,
         base="UB",
         generated_at=GENERATED_AT,
         code_revision="abc123",
@@ -395,3 +425,31 @@ async def test_build_candidate_wires_fetch_and_classification_end_to_end() -> No
     assert candidate.matched_chains == ("ethereum",)
     assert candidate.coingecko_id == "unibase"
     assert candidate.generated_at == GENERATED_AT
+
+
+async def test_build_candidate_reuses_the_same_coingecko_candidates_across_targets() -> None:
+    """Regression: CoinGecko must be queried once per base by the caller (_run),
+    not once per (base, target) pair -- see the 2026-08-06 live rate-limit
+    finding. build_candidate itself must accept pre-fetched candidates rather
+    than performing its own search."""
+    address = "0x" + "1" * 40
+    gate = _FakeExchange({"UB": {"networks": {"ERC20": {"info": {"addr": address}}}}})
+    binance = _FakeExchange({"UB": {"networks": {"ERC20": {"info": {"addr": address}}}}})
+    bybit = _FakeExchange({"UB": {"networks": {"ERC20": {"info": {"addr": address}}}}})
+    coingecko_candidates = (
+        CoinGeckoProject("unibase", "Unibase", "UB", (ChainContract("ethereum", address),)),
+    )
+
+    for target_name, target_client in (("binance", binance), ("bybit", bybit)):
+        candidate = await build_candidate(
+            source_exchange_name="gate",
+            source_exchange_client=gate,
+            target_exchange_name=target_name,
+            target_exchange_client=target_client,
+            coingecko_candidates=coingecko_candidates,
+            base="UB",
+            generated_at=GENERATED_AT,
+            code_revision="abc123",
+            working_tree_dirty=False,
+        )
+        assert candidate.status == "candidate"
