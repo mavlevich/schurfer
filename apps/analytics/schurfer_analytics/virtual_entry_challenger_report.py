@@ -64,6 +64,13 @@ from .virtual_strategy import (
 ENTRY_CHALLENGER_REPORT_VERSION = "virtual_entry_challenger_report_v2"
 ENTRY_CHALLENGER_MARKET_PATH_VERSION = "ccxt_5m_exact_anchor_entry_context_v1"
 ENTRY_CHALLENGER_COHORT_START = datetime(2026, 7, 29, tzinfo=UTC)
+# Same latent gap as the 2026-08-04 entry-floor finding: a challenger whose entry
+# condition rarely confirms can reach every other formal-sample gate almost
+# entirely on not_confirmed (cash-equivalent) episodes while the actually-entered
+# sample stays tiny. Require a floor of real confirmed entries before calling any
+# variant's read formal. Baseline always has a recorded decision to replay (no
+# threshold to fail), so only the challengers can fall short of this floor.
+MINIMUM_TRIGGERED_EPISODES = 20
 
 
 @dataclass(frozen=True)
@@ -491,10 +498,21 @@ def build_entry_challenger_report(
                     )
                     for variant in ENTRY_VARIANTS
                 ),
+                challenger_triggered=tuple(
+                    (
+                        variant.key,
+                        result_by_event_variant[
+                            (episode.pump_event_id, variant.key)
+                        ].confirmation.status
+                        == "confirmed",
+                    )
+                    for variant in ENTRY_VARIANTS
+                ),
             )
             for episode in dataset.eligible_episodes
         ),
         tuple(variant.key for variant in ENTRY_VARIANTS),
+        minimum_triggered_episodes=MINIMUM_TRIGGERED_EPISODES,
     )
     metric_pairs = tuple(
         _metrics(variant, results, baseline_by_event) for variant in ENTRY_VARIANTS
@@ -649,6 +667,18 @@ def render_markdown(report: EntryChallengerReport) -> str:
                 (
                     "Completely paired formal episodes",
                     report.inference.readiness.completely_paired_episodes,
+                ),
+                (
+                    "Least-triggered variant (formal window)",
+                    report.inference.readiness.least_triggered_variant or "n/a",
+                ),
+                (
+                    "Least-triggered count (formal window)",
+                    (
+                        report.inference.readiness.least_triggered_count
+                        if report.inference.readiness.least_triggered_count is not None
+                        else "n/a"
+                    ),
                 ),
                 ("Inference readiness", report.inference.readiness.status),
             ],

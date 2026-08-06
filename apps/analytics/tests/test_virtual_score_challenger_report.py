@@ -156,6 +156,31 @@ def test_report_selects_point_in_time_score_crossings() -> None:
     assert all(row.episodes == 1 for row in report.paired_comparisons)
 
 
+def test_trigger_gate_tracks_least_triggered_policy_even_before_formal_sample() -> None:
+    """Regression: not_triggered (cash) episodes should count toward the trigger
+    gate (challenger_inference.build_challenger_inference's
+    minimum_triggered_episodes), not just toward eligible-episode resolution —
+    including for the baseline itself, which (unlike the entry-floor/entry
+    -challenger families) has its own threshold to cross and so can also fall
+    short. See the 2026-08-04 entry-floor finding this mirrors."""
+    dataset, filters, _decisions, paths = _inputs()
+
+    report = build_score_threshold_report(
+        dataset,
+        filters,
+        paths,
+        generated_at=SCORE_THRESHOLD_COHORT_START + timedelta(days=1),
+        code_revision="abc123",
+        working_tree_dirty=False,
+    )
+
+    # baseline (score_6), score_4, and score_5 each trigger exactly once in this
+    # single-episode fixture; tied at one, "baseline" sorts first.
+    assert report.inference.readiness.least_triggered_count == 1
+    assert report.inference.readiness.least_triggered_variant == "baseline"
+    assert report.inference.readiness.minimum_triggered_episodes == 20
+
+
 def test_threshold_never_reached_is_zero_return_cash() -> None:
     dataset, filters, _, paths = _inputs(include_baseline=False)
 

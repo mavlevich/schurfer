@@ -119,6 +119,31 @@ def test_report_treats_no_confirmation_as_zero_return_cash_episode() -> None:
         assert comparison.improved_episodes == 1
 
 
+def test_trigger_gate_tracks_least_triggered_variant_even_before_formal_sample() -> None:
+    """Regression: not_confirmed (cash-equivalent) episodes should count toward
+    the trigger gate (challenger_inference.build_challenger_inference's
+    minimum_triggered_episodes), not just toward eligible-episode resolution — a
+    rarely-confirming variant can otherwise look "ready" on almost entirely
+    not_confirmed episodes. See the 2026-08-04 entry-floor finding this mirrors."""
+    dataset, filters, path = _inputs()
+
+    report = build_entry_challenger_report(
+        dataset,
+        filters,
+        (path,),
+        generated_at=datetime(2026, 7, 28, tzinfo=UTC),
+        code_revision="abc123",
+        working_tree_dirty=False,
+    )
+
+    # None of the 3 challengers confirm in this fixture; baseline always has a
+    # recorded decision to replay, so it triggers once. Tied at zero, the first
+    # registered variant sorts first.
+    assert report.inference.readiness.least_triggered_count == 0
+    assert report.inference.readiness.least_triggered_variant == ENTRY_VARIANTS[0].key
+    assert report.inference.readiness.minimum_triggered_episodes == 20
+
+
 def test_report_registers_exact_family_and_serializes_confirmation() -> None:
     dataset, filters, path = _inputs(confirmed=True)
 
