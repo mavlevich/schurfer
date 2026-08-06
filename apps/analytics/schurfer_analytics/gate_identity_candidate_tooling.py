@@ -176,6 +176,44 @@ def _match_contracts(
     return tuple(matched), tuple(conflicts)
 
 
+def _direct_match_result(
+    source_evidence: ExchangeAssetEvidence,
+    target_evidence: ExchangeAssetEvidence,
+) -> tuple[CandidateStatus, tuple[str, ...], tuple[str, ...]] | None:
+    """Compare the source and target exchanges' own reported contracts
+    directly against each other, no third party involved. This is the
+    strongest possible evidence — it is exactly the "same chain, same
+    contract" criterion the human review checklist already requires — so it
+    is tried before ever spending a CoinGecko call.
+
+    Returns (status, matched_chains, conflict_flags) when this alone is
+    conclusive (the two exchanges share at least one reported chain, either
+    agreeing or disagreeing on its address). Returns None when inconclusive
+    — no chain is reported by both sides, or one side has no contract at
+    all — in which case the caller must fall back to a CoinGecko-mediated
+    bridge (see the module docstring for why a third party is needed there:
+    e.g. Gate reports a Solana contract while the target reports the same
+    project's Ethereum contract, and only a project-level registry links
+    the two)."""
+    if (
+        source_evidence.source != "exchange_api"
+        or not source_evidence.contracts
+        or target_evidence.source != "exchange_api"
+        or not target_evidence.contracts
+    ):
+        return None
+    matched, conflicts = _match_contracts(target_evidence.contracts, source_evidence.contracts)
+    if conflicts:
+        return (
+            "conflict",
+            (),
+            tuple(f"target_contract_conflict:{chain}" for chain in conflicts),
+        )
+    if matched:
+        return "candidate", matched, ()
+    return None
+
+
 def resolve_coingecko_project(
     source_evidence: ExchangeAssetEvidence,
     candidates: tuple[CoinGeckoProject, ...],
@@ -227,7 +265,12 @@ def classify_candidate(
     coingecko_candidates: tuple[CoinGeckoProject, ...],
 ) -> tuple[CandidateStatus, tuple[str, ...], str | None, tuple[str, ...], tuple[str, ...]]:
     """Pure classification (no I/O). Returns (status, matched_chains,
-    coingecko_id, conflict_flags, missing_fields)."""
+    coingecko_id, conflict_flags, missing_fields).
+
+    Tries a direct source-vs-target contract comparison first (see
+    _direct_match_result) and only falls back to a CoinGecko-mediated bridge
+    when that is inconclusive — see the module docstring for why a third
+    party is needed there."""
     if source_evidence.source != "exchange_api" or not source_evidence.contracts:
         return (
             "insufficient_evidence",
@@ -236,6 +279,10 @@ def classify_candidate(
             (),
             ("source_network_metadata_unavailable",),
         )
+    direct = _direct_match_result(source_evidence, target_evidence)
+    if direct is not None:
+        status, matched_chains, conflict_flags = direct
+        return status, matched_chains, None, conflict_flags, ()
     project, resolve_flags = resolve_coingecko_project(source_evidence, coingecko_candidates)
     if project is None:
         if "multiple_coingecko_projects_match_source_contract_ambiguous" in resolve_flags:
@@ -473,25 +520,21 @@ async def search_coingecko_with_budget(
 async def build_candidate(
     *,
     source_exchange_name: str,
-    source_exchange_client: Any,
+    source_evidence: ExchangeAssetEvidence,
     target_exchange_name: str,
-    target_exchange_client: Any,
+    target_evidence: ExchangeAssetEvidence,
     coingecko_candidates: tuple[CoinGeckoProject, ...],
     base: str,
     generated_at: datetime,
     code_revision: str,
     working_tree_dirty: bool,
 ) -> IdentityCandidate:
-    """coingecko_candidates is fetched once per base by the caller (see _run)
-    and reused across every target exchange evaluated for that base — CoinGecko
-    has nothing to do with which target we're checking, and re-querying it per
-    target only burns rate-limit budget for no new information."""
-    source_evidence = await fetch_exchange_evidence(
-        source_exchange_client, source_exchange_name, base
-    )
-    target_evidence = await fetch_exchange_evidence(
-        target_exchange_client, target_exchange_name, base
-    )
+    """Both evidence objects are fetched once per base by the caller (see
+    _run) and reused across every target exchange evaluated for that base —
+    re-fetching per (base, target) pair only burns rate-limit/API budget for
+    no new information. coingecko_candidates may be empty when the caller
+    determined no target for this base needs the CoinGecko bridge (see
+    classify_candidate / _direct_match_result)."""
     status, matched_chains, coingecko_id, conflict_flags, missing_fields = classify_candidate(
         source_evidence=source_evidence,
         target_evidence=target_evidence,
@@ -655,14 +698,30 @@ async def _run(args: argparse.Namespace) -> str:
         for index, base in enumerate(args.base):
             if index > 0:
                 await asyncio.sleep(_INTER_BASE_DELAY_SECONDS)
-            coingecko_candidates = await search_coingecko_with_budget(_http_get, base)
-            for target_name, target_client in targets.items():
+            source_evidence = await fetch_exchange_evidence(gate, "gate", base)
+            target_evidence_by_name = {
+                target_name: await fetch_exchange_evidence(target_client, target_name, base)
+                for target_name, target_client in targets.items()
+            }
+            # Only spend a CoinGecko call for this base if at least one target
+            # can't be resolved by direct source-vs-target contract comparison
+            # alone (see classify_candidate / _direct_match_result) — this is
+            # what keeps the common, easy case (both exchanges agree on the
+            # same chain) from ever touching CoinGecko's rate limit.
+            needs_coingecko = any(
+                _direct_match_result(source_evidence, target_evidence_by_name[target_name]) is None
+                for target_name in targets
+            )
+            coingecko_candidates = (
+                await search_coingecko_with_budget(_http_get, base) if needs_coingecko else ()
+            )
+            for target_name in targets:
                 candidates.append(
                     await build_candidate(
                         source_exchange_name="gate",
-                        source_exchange_client=gate,
+                        source_evidence=source_evidence,
                         target_exchange_name=target_name,
-                        target_exchange_client=target_client,
+                        target_evidence=target_evidence_by_name[target_name],
                         coingecko_candidates=coingecko_candidates,
                         base=base,
                         generated_at=generated_at,

@@ -10,6 +10,7 @@ from schurfer_analytics.gate_identity_candidate_tooling import (
     ChainContract,
     CoinGeckoProject,
     ExchangeAssetEvidence,
+    _direct_match_result,
     build_candidate,
     classify_candidate,
     confidence_reason,
@@ -78,6 +79,43 @@ def _evidence(*contracts: ChainContract, source: str = "exchange_api") -> Exchan
         raw_network_names=(),
         source=source,  # type: ignore[arg-type]
     )
+
+
+# --- _direct_match_result: source-vs-target comparison, no CoinGecko -----------
+
+
+def test_direct_match_is_a_candidate_on_shared_chain_same_address() -> None:
+    address = "0x" + "a" * 40
+    source = _evidence(ChainContract("ethereum", address))
+    target = _evidence(ChainContract("ethereum", address))
+
+    result = _direct_match_result(source, target)
+
+    assert result == ("candidate", ("ethereum",), ())
+
+
+def test_direct_match_is_a_conflict_on_shared_chain_different_address() -> None:
+    source = _evidence(ChainContract("ethereum", "0x" + "a" * 40))
+    target = _evidence(ChainContract("ethereum", "0x" + "b" * 40))
+
+    result = _direct_match_result(source, target)
+
+    assert result == ("conflict", (), ("target_contract_conflict:ethereum",))
+
+
+def test_direct_match_is_inconclusive_when_chains_dont_overlap() -> None:
+    source = _evidence(ChainContract("solana", "sol-address"))
+    target = _evidence(ChainContract("ethereum", "0x" + "a" * 40))
+
+    assert _direct_match_result(source, target) is None
+
+
+def test_direct_match_is_inconclusive_when_either_side_has_no_contract() -> None:
+    source = _evidence(ChainContract("ethereum", "0x" + "a" * 40))
+    no_contract_target = _evidence(source="missing")
+
+    assert _direct_match_result(source, no_contract_target) is None
+    assert _direct_match_result(no_contract_target, source) is None
 
 
 def test_resolve_matches_the_one_project_with_a_confirmed_contract() -> None:
@@ -191,15 +229,45 @@ def test_migrated_contract_surfaces_as_conflict_not_a_silent_resolution() -> Non
     assert flags == ("no_coingecko_project_matches_source_contract",)
 
 
-def test_target_contract_conflict_after_project_is_resolved() -> None:
-    """Once the source resolves a project cleanly, if the TARGET exchange's own
-    reported contract mismatches that same project's canonical address (e.g.
-    the target's data reflects a pre-migration state), it must be a conflict."""
+def test_target_contract_conflict_is_detected_directly_without_coingecko() -> None:
+    """Source and target both report the SAME chain with DIFFERENT addresses —
+    this is conclusive on its own (no third party needed) and must short-
+    circuit before ever consulting CoinGecko, per _direct_match_result."""
     address = "0x" + "8" * 40
     stale_target_address = "0x" + "9" * 40
     source = _evidence(ChainContract("ethereum", address))
     target = _evidence(ChainContract("ethereum", stale_target_address))
-    project = CoinGeckoProject("proj", "Proj", "PRJ", (ChainContract("ethereum", address),))
+
+    status, _matched, coingecko_id, conflicts, _missing = classify_candidate(
+        source_evidence=source,
+        target_evidence=target,
+        coingecko_candidates=(),  # must not be needed for this to resolve
+    )
+
+    assert status == "conflict"
+    assert coingecko_id is None
+    assert conflicts == ("target_contract_conflict:ethereum",)
+
+
+def test_coingecko_mediated_conflict_when_direct_chains_dont_overlap() -> None:
+    """Source and target report DIFFERENT chains (nothing to compare directly),
+    so classification must fall back to CoinGecko. If the target's own chain
+    mismatches that project's canonical address there, it is still a
+    conflict — just detected via the bridge, not directly."""
+    solana_address = "SoLTokenAddressXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+    canonical_eth_address = "0x" + "8" * 40
+    stale_eth_address = "0x" + "9" * 40
+    source = _evidence(ChainContract("solana", solana_address))
+    target = _evidence(ChainContract("ethereum", stale_eth_address))
+    project = CoinGeckoProject(
+        "proj",
+        "Proj",
+        "PRJ",
+        (
+            ChainContract("solana", solana_address),
+            ChainContract("ethereum", canonical_eth_address),
+        ),
+    )
 
     status, _matched, coingecko_id, conflicts, _missing = classify_candidate(
         source_evidence=source,
@@ -435,19 +503,21 @@ async def test_search_coingecko_with_budget_passes_through_a_fast_result() -> No
 
 
 async def test_build_candidate_wires_fetch_and_classification_end_to_end() -> None:
+    """Source and target agree directly (same chain, same address), so this
+    resolves via _direct_match_result and never needs coingecko_candidates at
+    all -- passing an empty tuple proves the wiring doesn't depend on it."""
     address = "0x" + "f" * 40
     gate = _FakeExchange({"UB": {"networks": {"ERC20": {"info": {"addr": address}}}}})
     binance = _FakeExchange({"UB": {"networks": {"ERC20": {"info": {"addr": address}}}}})
-    coingecko_candidates = (
-        CoinGeckoProject("unibase", "Unibase", "UB", (ChainContract("ethereum", address),)),
-    )
+    source_evidence = await fetch_exchange_evidence(gate, "gate", "UB")
+    target_evidence = await fetch_exchange_evidence(binance, "binance", "UB")
 
     candidate = await build_candidate(
         source_exchange_name="gate",
-        source_exchange_client=gate,
+        source_evidence=source_evidence,
         target_exchange_name="binance",
-        target_exchange_client=binance,
-        coingecko_candidates=coingecko_candidates,
+        target_evidence=target_evidence,
+        coingecko_candidates=(),
         base="UB",
         generated_at=GENERATED_AT,
         code_revision="abc123",
@@ -456,7 +526,7 @@ async def test_build_candidate_wires_fetch_and_classification_end_to_end() -> No
 
     assert candidate.status == "candidate"
     assert candidate.matched_chains == ("ethereum",)
-    assert candidate.coingecko_id == "unibase"
+    assert candidate.coingecko_id is None
     assert candidate.generated_at == GENERATED_AT
 
 
@@ -464,25 +534,30 @@ async def test_build_candidate_reuses_the_same_coingecko_candidates_across_targe
     """Regression: CoinGecko must be queried once per base by the caller (_run),
     not once per (base, target) pair -- see the 2026-08-06 live rate-limit
     finding. build_candidate itself must accept pre-fetched candidates rather
-    than performing its own search."""
+    than performing its own search. Both targets are perpetual-only (no
+    on-chain contract at all) so direct comparison is inconclusive for both
+    and each must fall back to the SAME pre-fetched coingecko_candidates."""
     address = "0x" + "1" * 40
     gate = _FakeExchange({"UB": {"networks": {"ERC20": {"info": {"addr": address}}}}})
-    binance = _FakeExchange({"UB": {"networks": {"ERC20": {"info": {"addr": address}}}}})
-    bybit = _FakeExchange({"UB": {"networks": {"ERC20": {"info": {"addr": address}}}}})
+    binance = _FakeExchange({})  # perpetual-only: no currency/contract entry
+    bybit = _FakeExchange({})
     coingecko_candidates = (
         CoinGeckoProject("unibase", "Unibase", "UB", (ChainContract("ethereum", address),)),
     )
+    source_evidence = await fetch_exchange_evidence(gate, "gate", "UB")
 
     for target_name, target_client in (("binance", binance), ("bybit", bybit)):
+        target_evidence = await fetch_exchange_evidence(target_client, target_name, "UB")
         candidate = await build_candidate(
             source_exchange_name="gate",
-            source_exchange_client=gate,
+            source_evidence=source_evidence,
             target_exchange_name=target_name,
-            target_exchange_client=target_client,
+            target_evidence=target_evidence,
             coingecko_candidates=coingecko_candidates,
             base="UB",
             generated_at=GENERATED_AT,
             code_revision="abc123",
             working_tree_dirty=False,
         )
-        assert candidate.status == "candidate"
+        assert candidate.status == "manual_review_required"
+        assert candidate.coingecko_id == "unibase"
