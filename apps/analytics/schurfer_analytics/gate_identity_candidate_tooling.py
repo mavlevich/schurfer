@@ -57,6 +57,10 @@ COINGECKO_API_BASE = "https://api.coingecko.com/api/v3"
 # strong signal of ambiguity worth a human's attention, not something to keep
 # paging through.
 MAX_COINGECKO_SEARCH_HITS = 5
+# Hard ceiling on the WHOLE per-base CoinGecko lookup, not just each request —
+# see search_coingecko's docstring for why sustained (not transient) rate
+# limiting otherwise turns into a multi-minute hang per base.
+COINGECKO_LOOKUP_BUDGET_SECONDS = 12.0
 
 CandidateStatus = Literal[
     "candidate",
@@ -376,7 +380,16 @@ async def search_coingecko(http_get: HttpGetter, symbol: str) -> tuple[CoinGecko
     same honest signal as a missing project, never a crashed batch — a 429 on
     base #3 of a 20-base run must not discard the other 19 results. A failure
     on the /search call itself skips the whole symbol; a failure on one coin's
-    /coins/{id} detail call skips only that one candidate, not the others."""
+    /coins/{id} detail call skips only that one candidate, not the others.
+
+    Wrapped by the caller (see _lookup_with_budget) in an overall wall-clock
+    budget -- SUSTAINED rate limiting (not just one transient 429) means every
+    retry in the per-request backoff can burn its full budget, and with up to
+    MAX_COINGECKO_SEARCH_HITS coin-detail calls each retrying independently, a
+    single base could otherwise grind for minutes before giving up. A hard
+    ceiling on the whole lookup, not just each request, is what actually
+    bounds a many-base batch's worst case (found via a real ~90s hang running
+    this against the live queue on 2026-08-06)."""
     try:
         search_payload = await http_get(f"{COINGECKO_API_BASE}/search", {"query": symbol})
     except Exception as exc:
@@ -431,6 +444,30 @@ async def search_coingecko(http_get: HttpGetter, symbol: str) -> tuple[CoinGecko
             )
         )
     return tuple(projects)
+
+
+async def search_coingecko_with_budget(
+    http_get: HttpGetter,
+    symbol: str,
+    *,
+    budget_seconds: float = COINGECKO_LOOKUP_BUDGET_SECONDS,
+) -> tuple[CoinGeckoProject, ...]:
+    """Wraps search_coingecko with a hard wall-clock ceiling on the whole
+    lookup. Use this (not the bare function) for any live, real-network batch
+    — see search_coingecko's docstring for the incident this fixes. Times out
+    to an empty result (fail closed), same as any other CoinGecko failure."""
+    try:
+        return await asyncio.wait_for(
+            search_coingecko(http_get, symbol),
+            timeout=budget_seconds,
+        )
+    except TimeoutError:
+        log.warning(
+            "gate_identity.coingecko_lookup_budget_exceeded",
+            symbol=symbol,
+            budget_seconds=budget_seconds,
+        )
+        return ()
 
 
 async def build_candidate(
@@ -570,11 +607,15 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 # CoinGecko's public tier rate-limits aggressively (observed 429s after a
-# handful of requests in quick succession). Bounded retry with backoff, plus a
-# small pause between bases in _run below, keeps a multi-base batch from
-# failing outright on a transient limit.
-_HTTP_MAX_ATTEMPTS = 4
-_HTTP_BACKOFF_SECONDS = 2.0
+# handful of requests in quick succession, and SUSTAINED limiting across a
+# whole multi-base run, not just one transient hit — see the 2026-08-06
+# incident in search_coingecko_with_budget's docstring). Kept deliberately
+# small: worst case is 1 initial attempt + 1 retry at ~1.5s, so even if every
+# one of MAX_COINGECKO_SEARCH_HITS coin-detail calls hits its retry, the whole
+# lookup still has room to finish inside COINGECKO_LOOKUP_BUDGET_SECONDS
+# instead of the budget being the only thing that saves it.
+_HTTP_MAX_ATTEMPTS = 2
+_HTTP_BACKOFF_SECONDS = 1.5
 _INTER_BASE_DELAY_SECONDS = 1.5
 
 
@@ -614,7 +655,7 @@ async def _run(args: argparse.Namespace) -> str:
         for index, base in enumerate(args.base):
             if index > 0:
                 await asyncio.sleep(_INTER_BASE_DELAY_SECONDS)
-            coingecko_candidates = await search_coingecko(_http_get, base)
+            coingecko_candidates = await search_coingecko_with_budget(_http_get, base)
             for target_name, target_client in targets.items():
                 candidates.append(
                     await build_candidate(

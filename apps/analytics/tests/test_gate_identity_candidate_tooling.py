@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import time
 from datetime import UTC, datetime
 from typing import Any
 
@@ -17,6 +19,7 @@ from schurfer_analytics.gate_identity_candidate_tooling import (
     normalize_non_evm_address,
     resolve_coingecko_project,
     search_coingecko,
+    search_coingecko_with_budget,
 )
 
 GENERATED_AT = datetime(2026, 8, 6, tzinfo=UTC)
@@ -396,6 +399,36 @@ async def test_search_coingecko_skips_only_the_failing_coin_detail() -> None:
     projects = await search_coingecko(fake_http_get, "UB")
 
     assert [project.coingecko_id for project in projects] == ["will-succeed"]
+
+
+async def test_search_coingecko_with_budget_cuts_off_a_hanging_lookup() -> None:
+    """Regression (2026-08-06 live incident): sustained rate limiting made a
+    single base's CoinGecko lookup grind for 60-90+ seconds (every coin detail
+    call independently retrying its own backoff). The overall budget must cap
+    the WHOLE lookup, not just individual requests, and return empty rather
+    than hang."""
+
+    async def hanging_http_get(url: str, params: dict[str, str]) -> Any:
+        await asyncio.sleep(60)  # far longer than any reasonable test budget
+        raise AssertionError("should never actually complete this sleep")
+
+    started = time.monotonic()
+    projects = await search_coingecko_with_budget(hanging_http_get, "SLOW", budget_seconds=0.2)
+    elapsed = time.monotonic() - started
+
+    assert projects == ()
+    assert elapsed < 5.0  # bounded by the budget, not the fake's 60s sleep
+
+
+async def test_search_coingecko_with_budget_passes_through_a_fast_result() -> None:
+    async def fast_http_get(url: str, params: dict[str, str]) -> Any:
+        if url.endswith("/search"):
+            return {"coins": [{"id": "unibase", "symbol": "UB", "name": "Unibase"}]}
+        return {"name": "Unibase", "platforms": {"ethereum": "0x" + "3" * 40}}
+
+    projects = await search_coingecko_with_budget(fast_http_get, "UB", budget_seconds=5.0)
+
+    assert [project.coingecko_id for project in projects] == ["unibase"]
 
 
 # --- build_candidate: end-to-end wiring with fakes ------------------------------
