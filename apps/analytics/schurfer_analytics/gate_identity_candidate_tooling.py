@@ -45,7 +45,11 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal, Protocol
 
+import structlog
+
 from .reporting import json_ready, markdown_table, normalize_code_revision, parse_utc_datetime
+
+log = structlog.get_logger()
 
 GATE_IDENTITY_CANDIDATE_VERSION = "gate_identity_candidate_tooling_v1"
 COINGECKO_API_BASE = "https://api.coingecko.com/api/v3"
@@ -365,8 +369,22 @@ class HttpGetter(Protocol):
 async def search_coingecko(http_get: HttpGetter, symbol: str) -> tuple[CoinGeckoProject, ...]:
     """Search CoinGecko by symbol, then fetch each hit's canonical contract
     addresses. Bounded to MAX_COINGECKO_SEARCH_HITS -- a wider hit list is
-    itself worth a human's attention, not something to fetch further into."""
-    search_payload = await http_get(f"{COINGECKO_API_BASE}/search", {"query": symbol})
+    itself worth a human's attention, not something to fetch further into.
+
+    Fails closed on any HTTP error (rate limiting, timeout, outage): a
+    CoinGecko fetch failure means "no corroboration available right now", the
+    same honest signal as a missing project, never a crashed batch — a 429 on
+    base #3 of a 20-base run must not discard the other 19 results. A failure
+    on the /search call itself skips the whole symbol; a failure on one coin's
+    /coins/{id} detail call skips only that one candidate, not the others."""
+    try:
+        search_payload = await http_get(f"{COINGECKO_API_BASE}/search", {"query": symbol})
+    except Exception as exc:
+        # Deliberately fail closed, not crash the batch — see the module-level
+        # note above this function for why a 429 here must not lose every other
+        # base's results.
+        log.warning("gate_identity.coingecko_search_failed", symbol=symbol, error=str(exc)[:300])
+        return ()
     coins = search_payload.get("coins") if isinstance(search_payload, dict) else None
     if not isinstance(coins, list):
         return ()
@@ -382,10 +400,18 @@ async def search_coingecko(http_get: HttpGetter, symbol: str) -> tuple[CoinGecko
         coin_id = coin.get("id")
         if not isinstance(coin_id, str):
             continue
-        detail = await http_get(
-            f"{COINGECKO_API_BASE}/coins/{coin_id}",
-            {"localization": "false", "tickers": "false", "market_data": "false"},
-        )
+        try:
+            detail = await http_get(
+                f"{COINGECKO_API_BASE}/coins/{coin_id}",
+                {"localization": "false", "tickers": "false", "market_data": "false"},
+            )
+        except Exception as exc:
+            log.warning(
+                "gate_identity.coingecko_coin_detail_failed",
+                coin_id=coin_id,
+                error=str(exc)[:300],
+            )
+            continue
         platforms = detail.get("platforms") if isinstance(detail, dict) else None
         contracts: list[ChainContract] = []
         if isinstance(platforms, dict):
@@ -413,19 +439,22 @@ async def build_candidate(
     source_exchange_client: Any,
     target_exchange_name: str,
     target_exchange_client: Any,
-    http_get: HttpGetter,
+    coingecko_candidates: tuple[CoinGeckoProject, ...],
     base: str,
     generated_at: datetime,
     code_revision: str,
     working_tree_dirty: bool,
 ) -> IdentityCandidate:
+    """coingecko_candidates is fetched once per base by the caller (see _run)
+    and reused across every target exchange evaluated for that base — CoinGecko
+    has nothing to do with which target we're checking, and re-querying it per
+    target only burns rate-limit budget for no new information."""
     source_evidence = await fetch_exchange_evidence(
         source_exchange_client, source_exchange_name, base
     )
     target_evidence = await fetch_exchange_evidence(
         target_exchange_client, target_exchange_name, base
     )
-    coingecko_candidates = await search_coingecko(http_get, base)
     status, matched_chains, coingecko_id, conflict_flags, missing_fields = classify_candidate(
         source_evidence=source_evidence,
         target_evidence=target_evidence,
@@ -540,11 +569,32 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+# CoinGecko's public tier rate-limits aggressively (observed 429s after a
+# handful of requests in quick succession). Bounded retry with backoff, plus a
+# small pause between bases in _run below, keeps a multi-base batch from
+# failing outright on a transient limit.
+_HTTP_MAX_ATTEMPTS = 4
+_HTTP_BACKOFF_SECONDS = 2.0
+_INTER_BASE_DELAY_SECONDS = 1.5
+
+
 async def _http_get(url: str, params: dict[str, str]) -> Any:
     import httpx
 
     async with httpx.AsyncClient(timeout=15.0) as client:
-        response = await client.get(url, params=params)
+        for attempt in range(_HTTP_MAX_ATTEMPTS):
+            response = await client.get(url, params=params)
+            if response.status_code == 429 and attempt < _HTTP_MAX_ATTEMPTS - 1:
+                retry_after = response.headers.get("Retry-After")
+                delay = (
+                    float(retry_after)
+                    if retry_after and retry_after.isdigit()
+                    else _HTTP_BACKOFF_SECONDS * (2**attempt)
+                )
+                await asyncio.sleep(delay)
+                continue
+            response.raise_for_status()
+            return response.json()
         response.raise_for_status()
         return response.json()
 
@@ -561,7 +611,10 @@ async def _run(args: argparse.Namespace) -> str:
     targets = {name: EXCHANGE_FACTORIES[name]() for name in target_exchanges}
     try:
         candidates = []
-        for base in args.base:
+        for index, base in enumerate(args.base):
+            if index > 0:
+                await asyncio.sleep(_INTER_BASE_DELAY_SECONDS)
+            coingecko_candidates = await search_coingecko(_http_get, base)
             for target_name, target_client in targets.items():
                 candidates.append(
                     await build_candidate(
@@ -569,7 +622,7 @@ async def _run(args: argparse.Namespace) -> str:
                         source_exchange_client=gate,
                         target_exchange_name=target_name,
                         target_exchange_client=target_client,
-                        http_get=_http_get,
+                        coingecko_candidates=coingecko_candidates,
                         base=base,
                         generated_at=generated_at,
                         code_revision=args.code_revision,
