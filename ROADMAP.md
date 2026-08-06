@@ -522,6 +522,13 @@ lightweight dataset-health visibility remains operational follow-up.
         Do not start this until host capacity is addressed (bigger host, or hard
         resource limits on ad hoc report containers) and re-checked.
 
+        **2026-08-06:** `mem_limit`/`memswap_limit`/`cpus` added to the `analytics`
+        service in `docker-compose.prod.yml` (1536m/1536m/1.0, overridable via
+        `ANALYTICS_MEM_LIMIT`/`ANALYTICS_CPU_LIMIT`) — this covers the
+        report-container half of the precondition. Host capacity itself has not
+        been re-checked or upgraded; re-verify actual headroom under a real ad hoc
+        report before treating this item as unblocked.
+
 Latency baseline verification commands:
 
 ```bash

@@ -245,6 +245,25 @@ services:
       context: ../../
       dockerfile: apps/analytics/Dockerfile
     container_name: schurfer-analytics
+    # This image also backs every ad-hoc `docker compose run --entrypoint <report>
+    # analytics ...` report invocation (Makefile's prod-*-report targets), not just
+    # the persistent scanner below. On 2026-07-30 an unbounded ad-hoc report
+    # reached ~1GB RSS and was OOM-killed by the host; on 2026-08-04/05 the host (2
+    # vCPU, 3.7GB) hit full resource exhaustion twice from ordinary ad-hoc
+    # analytics load. `docker compose run` has no per-invocation --memory/--cpus
+    # flag, so the limit has to live here, on the shared service definition.
+    # memswap_limit == mem_limit disables swap growth for this container
+    # specifically (the observed failure mode was swap thrashing the whole host,
+    # not a clean OOM) — the host's own emergency swap file remains a crash
+    # backstop, not extra capacity for this container to lean on. 1536m sits above
+    # the live scanner's ~710MB baseline and the ~1GB a legitimate heavy replay
+    # has already been observed to need, while still bounding a runaway report
+    # well short of the host's own 3.7GB. Override per-deploy with
+    # ANALYTICS_MEM_LIMIT/ANALYTICS_CPU_LIMIT if a specific report genuinely needs
+    # more; do not raise the default without a fresh headroom check.
+    mem_limit: ${ANALYTICS_MEM_LIMIT:-1536m}
+    memswap_limit: ${ANALYTICS_MEM_LIMIT:-1536m}
+    cpus: ${ANALYTICS_CPU_LIMIT:-1.0}
     environment:
       DATABASE_URL: postgresql://schurfer:${POSTGRES_PASSWORD}@postgres:5432/schurfer
       REDIS_ADDR: redis:6379
