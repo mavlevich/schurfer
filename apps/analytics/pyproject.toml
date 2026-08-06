@@ -5,6 +5,7 @@ requires-python = ">=3.13"
 dependencies = [
     "ccxt==4.5.68",
     "greenlet>=3.2",
+    "httpx>=0.28",
     "psycopg[binary]>=3.2",
     "redis>=5.2",
     "schurfer-journal",
@@ -21,6 +22,7 @@ exchange-coverage-report = "schurfer_analytics.exchange_coverage_report:main"
 exchange-source-economics-report = "schurfer_analytics.exchange_source_economics_report:main"
 source-lead-report = "schurfer_analytics.source_lead_report:main"
 source-lead-identity-report = "schurfer_analytics.source_lead_identity_report:main"
+gate-identity-candidate-tooling = "schurfer_analytics.gate_identity_candidate_tooling:main"
 episode-replay = "schurfer_analytics.episode_replay:main"
 virtual-strategy-report = "schurfer_analytics.virtual_strategy_report:main"
 virtual-entry-challenger-report = "schurfer_analytics.virtual_entry_challenger_report:main"
