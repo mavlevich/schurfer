@@ -860,6 +860,54 @@ The intended stream topology is:
         A passing policy becomes only a live-shadow candidate and cannot change
         production `SCORE_THRESHOLD`.
 
+    - [x] Pre-register and implement the banded price-extent hypothesis
+          (2026-08-05). Informal reads across the entry-floor and decision-quality
+          reports both showed a worse short win rate at both smaller (20-25%) and
+          much larger (35%+) pre-entry pump magnitude than at the 30% baseline
+          floor — a "sweet spot" shape, not the straight line the live
+          `price_extent` score component assumes (it currently grants its maximum
+          points to the LARGEST move, >100%). `score_6_with_banded_price_extent`
+          (`decision_quality.py`) recomputes only that one component from its own
+          already-recorded raw value: 2 points in [25, 40)%, 1 point in [15, 25) or
+          [40, 60)%, 0 otherwise. Everything else about the decision is unchanged.
+          A first attempt registered this challenger inside the general-purpose,
+          full-history `decision_quality_report.py` discovery tool — reviewed and
+          rejected before merge: that report's default cohort starts
+          `2026-07-26T00:00:00Z`, which overlaps the exact window used to invent
+          the bands, so any read from it would validate the hypothesis on the data
+          it was fitted to. Corrected to a dedicated formal report,
+          `virtual_banded_price_extent_report.py`, with its own report/inference
+          version, a cohort locked to `2026-08-06T00:00:00Z` (the day after
+          registration, enforced by exact-match, not merely "not earlier"), and a
+          manifest that records the exact band boundaries and points instead of a
+          code comment. Never widen this cohort backward to reach a faster read.
+    - [ ] Banded price-extent verification after merge:
+      - Deploy analytics only after the registered cohort begins. Wait until
+        candidate episodes close and their exact-anchor 8-hour outcomes resolve:
+
+        ```bash
+        make prod-deploy-svc SERVICE=analytics
+        make prod-virtual-banded-price-extent-report
+        ```
+
+      - Before a formal read, choose an exclusive UTC cutoff without inspecting
+        the comparison and archive its JSON manifest:
+
+        ```bash
+        mkdir -p backups/reports
+        make prod-virtual-banded-price-extent-report \
+          ARGS="--until <chosen-cutoff> --format json" \
+          > backups/reports/banded-price-extent-<chosen-cutoff-date>.json
+        ```
+
+      - Check exclusions, exact selected-decision paths, no-trigger cash, cluster
+        concentration, trade rate, episode and conditional-trade net expectancy,
+        profit factor, drawdown, initial stops, captured MFE, and the paired delta
+        versus score 6. Formal output remains hidden before the first 100
+        episodes are fully paired across at least 30 clusters. A passing
+        challenger becomes only a live-shadow candidate and cannot change
+        production scoring.
+
     - [x] Pre-registered exit-policy family (OBS-001): compare the production clock
           with breakeven-after-activation, no-progress timeout, their combination,
           and one recent-progress bounded extension on the same point-in-time decision

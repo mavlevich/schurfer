@@ -99,8 +99,16 @@ def test_registered_policies_lock_control_thresholds_and_ablations() -> None:
         "score_6_without_oi_trend",
         "score_6_without_funding_rate",
         "score_6_without_retrace_from_peak",
-        "score_6_with_banded_price_extent",
     )
+
+
+def test_banded_price_extent_challenger_is_excluded_from_the_unbounded_discovery_family() -> None:
+    """Regression: this policy must only ever be evaluated by
+    virtual_banded_price_extent_report.py's forward-cohort-locked formal report,
+    never by decision_quality_report.py's full-history discovery tool — the
+    latter's default cohort overlaps the exact window the hypothesis was invented
+    from (see decision_quality.py's comment on BANDED_PRICE_EXTENT_CHALLENGER_POLICY)."""
+    assert "score_6_with_banded_price_extent" not in {policy.key for policy in SCORE_POLICIES}
 
 
 @pytest.mark.parametrize(
