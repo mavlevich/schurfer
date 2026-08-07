@@ -50,6 +50,11 @@ class CheckpointSpec:
     timeout_minutes: int
     min_headroom_mb: int
     min_disk_gb: int = 5
+    # Set only when a research line has been closed out-of-band (a human decision
+    # recorded in ROADMAP.md, not something the checkpoint's own report can infer).
+    # When set, the runner never invokes make_target again — it stamps this verdict
+    # once, notifies, and the checkpoint stays terminal forever after that.
+    retired_verdict: str | None = None
 
 
 CHECKPOINTS = (
@@ -62,6 +67,13 @@ CHECKPOINTS = (
         24,
         20,
         512,
+        # Closed 2026-08-06: bybit_orderflow_endpoint_sensitivity_v1 showed every
+        # lane's correlation collapsing toward zero as sample size grew — no lane
+        # passed. See ROADMAP.md item 5. The v1 pilot report this checkpoint runs
+        # has no concept of that verdict (it only ever emits collecting/
+        # discovery_ready), so without this the checkpoint would keep polling and
+        # alerting on a research line that is already permanently closed.
+        retired_verdict="no_go",
     ),
     CheckpointSpec(
         "liquid_taker",
@@ -104,6 +116,18 @@ CHECKPOINTS = (
         512,
     ),
 )
+
+
+def _validate_checkpoints(specs: tuple[CheckpointSpec, ...]) -> None:
+    for spec in specs:
+        if spec.retired_verdict is not None and spec.retired_verdict not in TERMINAL_STATES:
+            raise ValueError(
+                f"{spec.key} retired_verdict {spec.retired_verdict!r} is not a terminal state"
+            )
+
+
+_validate_checkpoints(CHECKPOINTS)
+
 logger = logging.getLogger("research-checkpoints")
 
 
@@ -359,38 +383,49 @@ def run_once(
         spec, row = selected
         row["last_attempt_at"] = _utc(now)
         row["next_attempt_at"] = _utc(now + timedelta(hours=spec.cadence_hours))
-        try:
-            headroom_mb = _headroom_mb()
-            disk_free_gb = _disk_free_gb(root)
-            if headroom_mb < spec.min_headroom_mb or disk_free_gb < spec.min_disk_gb:
-                row.update(
-                    state="blocked_resources",
-                    error=(
-                        f"requires {spec.min_headroom_mb} MiB headroom and "
-                        f"{spec.min_disk_gb} GiB disk; observed {headroom_mb} MiB and "
-                        f"{disk_free_gb} GiB"
-                    ),
-                    next_attempt_at=_utc(now + timedelta(hours=1)),
-                )
-            else:
-                report, report_path, digest = _run_report(
-                    spec,
-                    now=now,
-                    root=root,
-                    report_dir=report_dir,
-                )
-                report_status, verdict, state = _report_outcome(spec.key, report)
-                row.update(
-                    state=state,
-                    report_status=report_status,
-                    verdict=verdict,
-                    report_file=report_path.name,
-                    report_sha256=digest,
-                    last_success_at=_utc(now),
-                    error=None,
-                )
-        except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as exc:
-            row.update(state="error", error=str(exc))
+        if spec.retired_verdict is not None:
+            row.update(
+                state=spec.retired_verdict,
+                report_status=spec.retired_verdict,
+                verdict=spec.retired_verdict,
+                report_file=None,
+                report_sha256=None,
+                last_success_at=_utc(now),
+                error=None,
+            )
+        else:
+            try:
+                headroom_mb = _headroom_mb()
+                disk_free_gb = _disk_free_gb(root)
+                if headroom_mb < spec.min_headroom_mb or disk_free_gb < spec.min_disk_gb:
+                    row.update(
+                        state="blocked_resources",
+                        error=(
+                            f"requires {spec.min_headroom_mb} MiB headroom and "
+                            f"{spec.min_disk_gb} GiB disk; observed {headroom_mb} MiB and "
+                            f"{disk_free_gb} GiB"
+                        ),
+                        next_attempt_at=_utc(now + timedelta(hours=1)),
+                    )
+                else:
+                    report, report_path, digest = _run_report(
+                        spec,
+                        now=now,
+                        root=root,
+                        report_dir=report_dir,
+                    )
+                    report_status, verdict, state = _report_outcome(spec.key, report)
+                    row.update(
+                        state=state,
+                        report_status=report_status,
+                        verdict=verdict,
+                        report_file=report_path.name,
+                        report_sha256=digest,
+                        last_success_at=_utc(now),
+                        error=None,
+                    )
+            except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as exc:
+                row.update(state="error", error=str(exc))
 
     for row in rows:
         previous_state = str(row.get("notified_state") or "") or None

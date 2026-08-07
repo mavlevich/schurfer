@@ -63,6 +63,11 @@ def test_runner_executes_only_one_due_checkpoint_and_writes_sanitized_status(
         path.write_text("{}")
         return {"readiness": "discovery_ready"}, path, "a" * 64
 
+    monkeypatch.setattr(
+        checkpoints,
+        "CHECKPOINTS",
+        (replace(checkpoints.CHECKPOINTS[0], retired_verdict=None),),
+    )
     monkeypatch.setattr(checkpoints, "_run_report", fake_run_report)
     monkeypatch.setattr(checkpoints, "_headroom_mb", lambda: 4096)
     monkeypatch.setattr(checkpoints, "_disk_free_gb", lambda _path: 100)
@@ -224,10 +229,109 @@ def test_terminal_checkpoint_retries_failed_notification_without_rerunning_repor
     assert "alert_error" not in orderflow
 
 
+def test_orderflow_checkpoint_is_registered_retired_no_go() -> None:
+    orderflow_spec = next(spec for spec in checkpoints.CHECKPOINTS if spec.key == "orderflow")
+    assert orderflow_spec.retired_verdict == "no_go"
+
+
+def test_validate_checkpoints_rejects_a_non_terminal_retired_verdict() -> None:
+    bogus = replace(checkpoints.CHECKPOINTS[0], retired_verdict="collecting")
+    with pytest.raises(ValueError, match="not a terminal state"):
+        checkpoints._validate_checkpoints((bogus,))
+
+
+def test_retired_checkpoint_closes_out_without_running_its_report(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    retired_spec = replace(checkpoints.CHECKPOINTS[0], retired_verdict="no_go")
+    monkeypatch.setattr(checkpoints, "CHECKPOINTS", (retired_spec,))
+    monkeypatch.setattr(
+        checkpoints,
+        "_run_report",
+        lambda *_args, **_kwargs: pytest.fail("retired checkpoint must not run its report"),
+    )
+    messages: list[str] = []
+    monkeypatch.setattr(checkpoints, "_notify", lambda message: messages.append(message) or None)
+    snapshot = tmp_path / "research.json"
+    row = checkpoints._default_row(retired_spec)
+    row.update(state="collecting", verdict="withheld", notified_state="collecting")
+    checkpoints._atomic_json(
+        snapshot,
+        {
+            "version": checkpoints.SNAPSHOT_VERSION,
+            "generated_at": checkpoints._utc(datetime(2026, 8, 6, tzinfo=UTC)),
+            "runner_state": "idle",
+            "checkpoints": [row],
+        },
+    )
+
+    payload = checkpoints.run_once(
+        now=datetime(2026, 8, 7, 19, 0, tzinfo=UTC),
+        root=tmp_path,
+        snapshot_path=snapshot,
+        report_dir=tmp_path / "reports",
+    )
+
+    orderflow = payload["checkpoints"][0]
+    assert orderflow["state"] == "no_go"
+    assert orderflow["verdict"] == "no_go"
+    assert orderflow["report_file"] is None
+    assert orderflow["notified_state"] == "no_go"
+    assert len(messages) == 1
+    assert "🛑" in messages[0]
+    assert "no_go" in messages[0]
+
+
+def test_retired_checkpoint_stays_terminal_and_silent_on_later_runs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    retired_spec = replace(checkpoints.CHECKPOINTS[0], retired_verdict="no_go")
+    monkeypatch.setattr(checkpoints, "CHECKPOINTS", (retired_spec,))
+    monkeypatch.setattr(
+        checkpoints,
+        "_run_report",
+        lambda *_args, **_kwargs: pytest.fail("retired checkpoint must not run its report"),
+    )
+    monkeypatch.setattr(
+        checkpoints,
+        "_notify",
+        lambda _message: pytest.fail("an already-notified terminal state must not re-notify"),
+    )
+    snapshot = tmp_path / "research.json"
+    row = checkpoints._default_row(retired_spec)
+    row.update(state="no_go", verdict="no_go", notified_state="no_go")
+    checkpoints._atomic_json(
+        snapshot,
+        {
+            "version": checkpoints.SNAPSHOT_VERSION,
+            "generated_at": checkpoints._utc(datetime(2026, 8, 7, tzinfo=UTC)),
+            "runner_state": "idle",
+            "checkpoints": [row],
+        },
+    )
+
+    payload = checkpoints.run_once(
+        now=datetime(2026, 9, 1, tzinfo=UTC),
+        root=tmp_path,
+        snapshot_path=snapshot,
+        report_dir=tmp_path / "reports",
+    )
+
+    orderflow = payload["checkpoints"][0]
+    assert orderflow["state"] == "no_go"
+
+
 def test_resource_gate_blocks_without_invoking_report(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(
+        checkpoints,
+        "CHECKPOINTS",
+        (replace(checkpoints.CHECKPOINTS[0], retired_verdict=None),),
+    )
     monkeypatch.setattr(checkpoints, "_headroom_mb", lambda: 100)
     monkeypatch.setattr(checkpoints, "_disk_free_gb", lambda _path: 100)
     monkeypatch.setattr(
