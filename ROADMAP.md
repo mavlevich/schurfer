@@ -395,6 +395,16 @@ remains `DRY_RUN=true`, `AUTO_TRADE=false`.
    model or the tradable venue set on this sample; revisit once the report reaches
    100 observations and check whether the MEXC/`initial_sl` gap persists.
 
+   **[Implemented] Pump-short failure attribution (2026-08-08).** A separate,
+   read-only `pump-short-failure-attribution-report` decomposes the baseline
+   (`score_6`) strategy's real historical trades by component calibration,
+   loss concentration, two pre-declared interactions, and exactly five fixed
+   single-component vetoes (force cash when one component is CONFIRMED zero
+   points — never a threshold search). No p-value, no production change; at
+   most one veto can become a new, separately forward-locked contract. See
+   the module docstring for the full fail-closed data-availability and
+   paired-delta-sensitivity discipline this report follows.
+
 9. **[Parked] Conditional maker paper simulator.** OBS-009 did not survive its
    defensive sensitivity checks, so no simulator is authorized. Reconsider only
    after a fresh registered maker cohort or an independently proven executable edge.
