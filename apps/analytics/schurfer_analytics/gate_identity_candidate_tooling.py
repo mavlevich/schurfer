@@ -662,12 +662,26 @@ _HTTP_BACKOFF_SECONDS = 1.5
 _INTER_BASE_DELAY_SECONDS = 1.5
 
 
+def _coingecko_headers() -> dict[str, str]:
+    """Optional: a free CoinGecko Demo API key (see
+    https://www.coingecko.com/en/developers/dashboard, no credit card
+    required — 100 req/min and 10k/mo vs. the anonymous tier's much tighter,
+    undocumented limit) raises the ceiling that made a hard lookup budget
+    necessary in the first place. Read from the environment only — never
+    passed as a CLI argument or logged, so it never ends up in shell history
+    or process listings. Works identically (just slower/more rate-limited)
+    when unset."""
+    api_key = os.getenv("COINGECKO_API_KEY", "").strip()
+    return {"x-cg-demo-api-key": api_key} if api_key else {}
+
+
 async def _http_get(url: str, params: dict[str, str]) -> Any:
     import httpx
 
+    headers = _coingecko_headers()
     async with httpx.AsyncClient(timeout=15.0) as client:
         for attempt in range(_HTTP_MAX_ATTEMPTS):
-            response = await client.get(url, params=params)
+            response = await client.get(url, params=params, headers=headers)
             if response.status_code == 429 and attempt < _HTTP_MAX_ATTEMPTS - 1:
                 retry_after = response.headers.get("Retry-After")
                 delay = (

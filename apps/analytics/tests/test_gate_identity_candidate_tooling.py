@@ -10,6 +10,7 @@ from schurfer_analytics.gate_identity_candidate_tooling import (
     ChainContract,
     CoinGeckoProject,
     ExchangeAssetEvidence,
+    _coingecko_headers,
     _direct_match_result,
     build_candidate,
     classify_candidate,
@@ -24,6 +25,27 @@ from schurfer_analytics.gate_identity_candidate_tooling import (
 )
 
 GENERATED_AT = datetime(2026, 8, 6, tzinfo=UTC)
+
+# --- _coingecko_headers: optional API key from the environment only ------------
+
+
+def test_coingecko_headers_empty_when_env_var_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("COINGECKO_API_KEY", raising=False)
+
+    assert _coingecko_headers() == {}
+
+
+def test_coingecko_headers_empty_when_env_var_is_blank(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("COINGECKO_API_KEY", "   ")
+
+    assert _coingecko_headers() == {}
+
+
+def test_coingecko_headers_carries_the_key_when_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("COINGECKO_API_KEY", "CG-test-key")
+
+    assert _coingecko_headers() == {"x-cg-demo-api-key": "CG-test-key"}
+
 
 # --- normalize_evm_address ----------------------------------------------------
 
