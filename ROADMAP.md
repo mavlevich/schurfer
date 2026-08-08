@@ -378,6 +378,23 @@ remains `DRY_RUN=true`, `AUTO_TRADE=false`.
    reason, duration, spread, requested depth, and modeled impact, fails closed on
    identity, timestamp, notional, and visible-depth mismatches, and never presents a
    paper quote as an actual fill or realized slippage.
+
+   **2026-08-08, directional (65/100 observations): the model is well-calibrated
+   overall (median delta -0.01bps) but underestimates real exit cost specifically
+   for MEXC's `initial_sl` exits.** Segmented by (venue, exit reason): binance
+   `initial_sl` stayed tight around zero as its sample grew from n=3 (2026-08-04)
+   to n=12 (2026-08-08), mean delta 0.10 -> 0.39bps. MEXC `initial_sl` over the
+   same window went from n=2 (mean 2.16bps) to n=4 (mean 76.70bps) as two new
+   cases arrived: TENDIES (modeled 4.28bps vs. observed 282.49bps, a captured
+   181bps spread at exit) and JIMOTHY (modeled 47.18bps vs. observed 71.45bps,
+   60bps spread). `max_hold` and `trailing_stop` exits stay well-calibrated on
+   every venue observed, including MEXC's own non-stop-loss exits. The pattern is
+   physically plausible (thin books evaporate fastest exactly when a stop fires on
+   a sharp adverse move, worst on the thinnest venue in the mix) but the MEXC cell
+   is only 4 observations — a lead, not yet a decision. Do not change the cost
+   model or the tradable venue set on this sample; revisit once the report reaches
+   100 observations and check whether the MEXC/`initial_sl` gap persists.
+
 9. **[Parked] Conditional maker paper simulator.** OBS-009 did not survive its
    defensive sensitivity checks, so no simulator is authorized. Reconsider only
    after a fresh registered maker cohort or an independently proven executable edge.
@@ -815,6 +832,10 @@ The intended stream topology is:
           Bonferroni paired interval, and run leave-one-out sensitivity over the five
           most frequent clusters. Formal values are withheld before readiness; a pass
           produces only a live-shadow candidate.
+          **Checked 2026-08-08 (no formal read — `baseline`/`challengers` empty)**:
+          `status=insufficient_resolution`, 257 eligible episodes, 100 locked into
+          the formal sample across 70 clusters, but only 99/100 completely paired
+          — one episode short of a formal read. Re-check once it clears.
     - [ ] Entry-challenger verification after merge:
       - Data sources: `app.trade_decisions` and `app.pump_events` define chronological
         episodes; `app.trade_decision_outcomes` supplies the required exact-anchor 8h
@@ -954,6 +975,15 @@ The intended stream topology is:
         before the first 100 episodes are fully paired across at least 30 clusters.
         A passing policy becomes only a live-shadow candidate and cannot change
         production `SCORE_THRESHOLD`.
+        **Checked 2026-08-08 (no formal read — `baseline`/`challengers` empty)**:
+        `status=insufficient_triggers`. Pairing itself is complete (200 eligible,
+        100/100 formal-sample episodes fully paired, 56 clusters — well past the
+        30/100 gates), but the baseline (score >= 6) policy itself only triggered
+        16 times inside this locked window against the required
+        `minimum_triggered_episodes=20`. This is not a data-volume problem in the
+        usual sense — more eligible episodes will not fix it directly, since the
+        gap is in how often the baseline itself fires, not in how many episodes
+        exist to evaluate.
 
     - [x] Pre-register and implement the banded price-extent hypothesis
           (2026-08-05). Informal reads across the entry-floor and decision-quality
