@@ -280,6 +280,9 @@ services:
       SOURCE_LEAD_BATCH_SIZE: ${SOURCE_LEAD_BATCH_SIZE:-8}
       SOURCE_LEAD_QUEUE_SIZE: ${SOURCE_LEAD_QUEUE_SIZE:-16}
       SOURCE_LEAD_SHUTDOWN_TIMEOUT_SECONDS: ${SOURCE_LEAD_SHUTDOWN_TIMEOUT_SECONDS:-10}
+      # Optional: raises gate-identity-candidate-tooling's CoinGecko rate limit
+      # ceiling. Blank still works, just at the anonymous public tier's limit.
+      COINGECKO_API_KEY: ${COINGECKO_API_KEY:-}
     volumes:
       - orderflow_data:/data/orderflow:ro
     depends_on:

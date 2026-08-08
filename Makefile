@@ -234,7 +234,8 @@ source-lead-identity-report:
 			|| printf '%s' '--working-tree-dirty') $(ARGS)
 
 gate-identity-candidate-tooling:
-	@uv run --package schurfer-analytics gate-identity-candidate-tooling \
+	@set -a; [ -f .env ] && . ./.env; set +a; \
+	uv run --package schurfer-analytics gate-identity-candidate-tooling \
 		--code-revision="$$(git rev-parse HEAD)" \
 		$$(test -z "$$(git status --porcelain)" \
 			&& printf '%s' '--no-working-tree-dirty' \
