@@ -43,7 +43,13 @@ otherwise usable. That question is exactly what step 2 exists to answer.
 
 Ready decisions are not the same count as ready instruments: several
 decisions can share one exact instrument (repeat pumps on the same token).
-The instrument-level summary below is what step 2 actually samples from.
+The instrument-level summary below is what step 2 picks buckets and
+candidates from; step 2 then resolves each chosen instrument back to one of
+this report's own `IdentityRecord` rows (by exchange and identity_key) to
+read its `onboarded_at`, rather than re-querying `pump_event_sources`
+separately, since that table is mutable and a second, later query could
+legitimately disagree with the snapshot this report's fingerprint already
+covers.
 """
 
 from __future__ import annotations
@@ -109,6 +115,13 @@ class IdentityRecord:
     identity_key: str | None
     unified_symbol: str | None
     available_history_days: int | None
+    # Populated only when readiness == "identity_ready", same discipline as
+    # available_history_days: this is the exact input that number was derived
+    # from, and step 2 needs it (not just the derived day count) to build its
+    # own fetch window from the SAME DB snapshot this report already read,
+    # instead of re-querying pump_event_sources later against what could by
+    # then be a different (mutable) row.
+    onboarded_at: datetime | None
 
 
 def identity_readiness(
@@ -155,6 +168,18 @@ def identity_readiness(
         return "onboarded_at_after_decision", None
     available_days = (decision_ts - source.onboarded_at).days
     return "identity_ready", available_days
+
+
+def _record_onboarded_at(readiness: str, source: PumpEventSource | None) -> datetime | None:
+    """Same discipline as `available_history_days`: only a record whose
+    identity resolved all the way to `identity_ready` carries the raw
+    `onboarded_at` it was computed from. Step 2 needs this exact value (not
+    just the derived day count) to build its fetch window from this report's
+    own DB snapshot instead of re-reading the mutable `pump_event_sources`
+    row later, when it could legitimately have changed."""
+    if readiness != "identity_ready" or source is None:
+        return None
+    return source.onboarded_at
 
 
 def _history_window_bucket(available_days: int) -> str:
@@ -394,6 +419,7 @@ async def build_token_history_preflight_report(
                 identity_key=source.identity_key if source is not None else None,
                 unified_symbol=source.unified_symbol if source is not None else None,
                 available_history_days=available_days,
+                onboarded_at=_record_onboarded_at(readiness, source),
             )
         )
 

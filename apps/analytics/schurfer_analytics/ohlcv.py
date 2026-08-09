@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import math
+import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Callable, Iterable
     from datetime import datetime
 
 TIMEFRAME = "5m"
@@ -177,6 +178,62 @@ class IncompleteFetchError(RuntimeError):
         )
 
 
+@dataclass(frozen=True)
+class PageFetchObservation:
+    """One real API call made by `fetch_symbol_candles`, passed to an optional
+    `on_page` callback. Exists so a caller (the token-behavior-history live
+    sample, specifically) can measure actual exchange paging behavior without
+    duplicating the pagination loop itself. `raw_bar_count` and
+    `normalized_bar_count` are reported separately because they can honestly
+    differ: an exchange can return 200 rows of which `normalize_candles`
+    accepts only 198, and collapsing that distinction into one count would
+    silently mix "how big is the page" with "how much of it was valid data."
+    """
+
+    api_call_index: int
+    attempt_index: int
+    requested_since_ms: int
+    requested_limit: int
+    cursor_before_ms: int
+    raw_bar_count: int | None
+    normalized_bar_count: int | None
+    latency_seconds: float
+    outcome: str  # "success" | "empty" | "timeout" | "error"
+    error_type: str | None
+
+
+def _observe_page(
+    on_page: Callable[[PageFetchObservation], None] | None,
+    *,
+    api_call_index: int,
+    attempt_index: int,
+    requested_since_ms: int,
+    requested_limit: int,
+    cursor_before_ms: int,
+    raw_bar_count: int | None,
+    normalized_bar_count: int | None,
+    latency_seconds: float,
+    outcome: str,
+    error_type: str | None,
+) -> None:
+    if on_page is None:
+        return
+    on_page(
+        PageFetchObservation(
+            api_call_index=api_call_index,
+            attempt_index=attempt_index,
+            requested_since_ms=requested_since_ms,
+            requested_limit=requested_limit,
+            cursor_before_ms=cursor_before_ms,
+            raw_bar_count=raw_bar_count,
+            normalized_bar_count=normalized_bar_count,
+            latency_seconds=latency_seconds,
+            outcome=outcome,
+            error_type=error_type,
+        )
+    )
+
+
 async def fetch_candles(
     exchange: Any,
     base: str,
@@ -206,6 +263,7 @@ async def fetch_symbol_candles(
     *,
     timeframe: str = TIMEFRAME,
     timeframe_ms: int = TIMEFRAME_MS,
+    on_page: Callable[[PageFetchObservation], None] | None = None,
 ) -> list[Candle]:
     """Fetch candles for an already identity-validated exact unified symbol.
 
@@ -221,6 +279,15 @@ async def fetch_symbol_candles(
     non-empty and advancing, which is the silent-truncation bug this queries
     were never at risk of failing on before requests started spanning months
     instead of hours (see the 2026-08-10 finding above).
+
+    `on_page`, if given, is called once for every real API call this makes
+    (including retry attempts and calls that time out or raise), with a
+    `PageFetchObservation` describing it. This is a pure diagnostic hook: it
+    must not raise, and it cannot change what this function returns. If it
+    does raise, that exception propagates immediately and aborts the fetch,
+    same as any other unexpected error here; the callback is not wrapped in
+    its own try/except, so a broken observer is a hard failure, not a
+    silently swallowed one.
     """
     if not symbol.strip():
         raise ValueError("symbol must not be empty")
@@ -244,11 +311,61 @@ async def fetch_symbol_candles(
         page: list[Candle] = []
         for attempt in range(_EMPTY_PAGE_MAX_RETRIES + 1):
             api_calls += 1
-            raw = await asyncio.wait_for(
-                exchange.fetch_ohlcv(symbol, timeframe, since=fetch_since, limit=limit),
-                timeout=_FETCH_TIMEOUT_SECONDS,
-            )
+            started = time.perf_counter()
+            try:
+                raw = await asyncio.wait_for(
+                    exchange.fetch_ohlcv(symbol, timeframe, since=fetch_since, limit=limit),
+                    timeout=_FETCH_TIMEOUT_SECONDS,
+                )
+            except TimeoutError as exc:
+                _observe_page(
+                    on_page,
+                    api_call_index=api_calls,
+                    attempt_index=attempt,
+                    requested_since_ms=fetch_since,
+                    requested_limit=limit,
+                    cursor_before_ms=cursor,
+                    raw_bar_count=None,
+                    normalized_bar_count=None,
+                    latency_seconds=time.perf_counter() - started,
+                    outcome="timeout",
+                    error_type=type(exc).__name__,
+                )
+                raise
+            except Exception as exc:
+                _observe_page(
+                    on_page,
+                    api_call_index=api_calls,
+                    attempt_index=attempt,
+                    requested_since_ms=fetch_since,
+                    requested_limit=limit,
+                    cursor_before_ms=cursor,
+                    raw_bar_count=None,
+                    normalized_bar_count=None,
+                    latency_seconds=time.perf_counter() - started,
+                    outcome="error",
+                    error_type=type(exc).__name__,
+                )
+                raise
+            latency_seconds = time.perf_counter() - started
             page = normalize_candles(raw, timeframe_ms=timeframe_ms)
+            try:
+                raw_bar_count = len(raw)
+            except TypeError:
+                raw_bar_count = None
+            _observe_page(
+                on_page,
+                api_call_index=api_calls,
+                attempt_index=attempt,
+                requested_since_ms=fetch_since,
+                requested_limit=limit,
+                cursor_before_ms=cursor,
+                raw_bar_count=raw_bar_count,
+                normalized_bar_count=len(page),
+                latency_seconds=latency_seconds,
+                outcome="success" if page else "empty",
+                error_type=None,
+            )
             if page or attempt == _EMPTY_PAGE_MAX_RETRIES:
                 break
             await asyncio.sleep(_EMPTY_PAGE_RETRY_DELAY_SECONDS)

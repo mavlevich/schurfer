@@ -1,6 +1,6 @@
 # Roadmap
 
-> Living document. Updated as we progress. Last refreshed 2026-08-03.
+> Living document. Updated as we progress. Last refreshed 2026-08-10.
 
 ## Guiding principle
 
@@ -18,7 +18,7 @@ tomorrow.
 The parked idea catalog lives in [IDEAS.md](IDEAS.md). It is frozen until edge is
 proven. Post-MVP strategy and exit improvements live in the exit-strategy notes.
 
-## Current state (2026-07-29)
+## Current state (2026-08-10)
 
 - Live in production on Hetzner. Private access over Tailscale only. Caddy serves
   the Tailscale hostname with a static cert. Public ports 80 and 443 are closed
@@ -28,6 +28,14 @@ proven. Post-MVP strategy and exit improvements live in the exit-strategy notes.
 - The durable decision/outcome dataset and market-quality gate are live. The scanner
   now has 17 configured linear-USDT perp venues. The immediate task is measuring
   which venues add unique discoveries or useful lead time before adding more feeds.
+- The original near-trigger Bybit order-flow family is retired after its endpoint
+  sensitivity read dissolved the apparent signal. Pump-short remains a measured,
+  losing baseline rather than a proven strategy; its registered challengers keep
+  collecting, but no additional score tuning is authorized without new information.
+- Token-behavior history is at step 2 of a gated three-step feasibility line. A
+  DB-only identity preflight found 51 exact same-venue instruments; the current
+  bounded live OHLCV sample must now prove real pagination, retention, and gap
+  behavior before any full historical dataset is built.
 
 ## Research portfolio and capital discipline
 
@@ -101,7 +109,112 @@ No live capital is authorized by this roadmap. If conservative capacity implies
 economically immaterial profit even when the edge survives, stop strategy-specific
 engineering and keep only the reusable research output.
 
-## Committed next pull requests (2026-08-03)
+## Active course from 2026-08-10
+
+The next product direction is **evidence-first early momentum detection**, not more
+parameter tuning around the currently unprofitable pump-short baseline. The intended
+product is an independent market-intelligence system that can identify accumulation,
+breakout, squeeze, and later reversion states. Public alert channels may be used to
+name useful product concepts and construct post-hoc case studies, but they are never
+a data source, ground-truth label, dependency, or reason to copy an undisclosed
+signal. Every production claim must come from Schurfer's own timestamped inputs.
+
+This is deliberately different from the retired order-flow family. That family
+tested near-trigger one-minute taker imbalance and failed. The new family may proceed
+only as a separately versioned experiment over **hours of pre-price accumulation**,
+combining point-in-time OI amount/value, aggressive buy/sell notional, price response,
+turnover, and eventually liquidations. It must not reuse the retired family name,
+cutoff, report, or positive-looking eight-episode slice.
+
+Execute the following sequence. Only one implementation PR is active at a time;
+once a bounded collector is deployed and merely accumulating observations, the next
+analysis PR may proceed without counting that passive collection as a second build
+front.
+
+1. **Finish `analysis/token-history-ohlcv-sample-v1` (current branch).** Keep it a
+   non-representative, deterministic live probe: one instrument per
+   exchange/history bucket, at most 365 daily bars per instrument, sequential clients,
+   exact same-venue identity, explicit partial coverage, and no outcome/score join.
+   Run the canonical sample only after merge and archive one JSON result plus its
+   hash. Any human-readable Markdown summary must be derived from that archived JSON,
+   not produced by a second live fetch that could legitimately observe different
+   exchange behavior. Record API calls, raw and normalized page sizes, latency,
+   retries, gaps, client failures, and coverage outcome separately.
+2. **Make a no-code step-3 decision from that sample.** Full token-history fetching
+   is authorized only if at least 80% of selected probes return normally, there are no
+   unexplained page-budget truncations, internal/trailing missing full days stay below
+   1% on the usable probes, and the 365-day probes fit within 10 API calls each with
+   p95 call latency below 5 seconds. A transient failure may be repeated once; a
+   persistent venue failure narrows or stops that venue instead of weakening the
+   contract globally. If the gate fails, archive the result and stop this family at
+   feasibility rather than building storage around unusable history.
+3. **Build the bounded historical dataset only if step 2 passes.** Store exact-venue
+   daily OHLCV as partitioned Parquet with schema version, CCXT version, identity key,
+   request/observation bounds, source timestamps where available, gap flags, and file
+   hashes. DuckDB reads partitions; Postgres stores only bounded run/catalog metadata.
+   Do not introduce a queue, object store, ClickHouse, cross-venue ticker matching, or
+   5-minute year-long firehose in this step.
+4. **Run one wide token-behavior discovery report.** Compute only pre-decision
+   descriptors: prior spike count and magnitude, realized volatility, historical
+   drawdown/recovery time, range compression/expansion, volume shock, listing age,
+   and recurrence of similar moves. Evaluate them together in one discovery family
+   with cash-inclusive after-cost economics, capacity, week/asset concentration,
+   multiple-testing correction, and holdout-by-time. The output can nominate at most
+   one frozen forward filter; it cannot edit the score or justify historical trading.
+5. **Start a bounded Bybit early-momentum capture as the next non-recoverable-data
+   PR.** Extend the existing ticker websocket decoder to retain both `openInterest`
+   and `openInterestValue`; reuse public trades to aggregate taker buy/sell notional.
+   Cover the whole eligible linear-USDT universe continuously so activation cannot
+   create left-censoring. Persist 1-minute aggregates, 5-minute/hour rollups, and
+   bounded event windows, not raw trades. Initial discovery lookbacks are
+   5/15/30 minutes and 1/2/4/8/12/24 hours; none is primary until a discovery read
+   ends and a fresh forward cutoff is registered. Store exchange/event/receive times,
+   sequence/gap diagnostics, reconnects, lag, and drop counters. Alerts are WATCH-only;
+   no paper or real long is opened by this PR.
+6. **Hold a 48-to-72-hour resource and data-quality checkpoint.** Start with a hard
+   512 MiB/1 CPU container budget and a 500 MiB/day storage ceiling. Require zero
+   persistence/drop errors, bounded reconnects, p99 processing lag below one second,
+   RSS below 400 MiB, and no sustained host swap-in/swap-out. Keep at least 1 GiB
+   `MemAvailable` before starting ad-hoc report containers. If the 4 GB production
+   host cannot satisfy those bounds, do not silently consume swap: run reports locally
+   through the DB tunnel and move the always-on collector to a separate 8 GB VPS before
+   expanding venues. A Mac mini is useful for DuckDB/backfills/ML, not as the sole
+   unattended 24/7 market collector.
+7. **Expand venues only after the Bybit checkpoint passes.** First publish a capability
+   matrix for OI amount/value, trades with aggressor side, liquidation stream,
+   timestamps, symbol identity, rate limits, and reconnect semantics. Add at most one
+   small source group and one target/confirmation group per PR. Gate/MEXC/XT are
+   candidate discovery sources; Binance/Bybit/OKX/Bitget are candidate confirmation
+   and execution venues. A venue survives only if it adds point-in-time lead,
+   coverage, or executable depth, not merely another copy of the same event. Designing
+   for 10-20 venues is allowed; connecting all 10-20 before measuring the first group
+   is not.
+8. **Run an early-momentum discovery report after 2-4 UTC weeks.** Model a state
+   sequence (accumulation: OI and buy flow rise while price is contained; breakout;
+   squeeze/liquidations; and reversion) rather than one magic threshold. Report
+   opportunities/day, lead time, precision, false WATCH rate, maximum adverse/favorable
+   excursion, common-exit after-cost long economics, liquidity/capacity, and stability
+   by asset, week, venue, and market regime. Missing inputs are unresolved, never
+   neutral. ML is allowed only as a later benchmark against a frozen simple-rule
+   baseline and time-split data; it is not an excuse to fit the discovery window.
+9. **Register at most one forward long shadow if the discovery gate passes.** Freeze
+   one primary lookback, eligibility rule, entry quote, stop, bounded exit horizons,
+   cost model, minimum sample/diversity, and no-go rule on a new untouched cohort.
+   Begin with WATCH notifications, then `$50` paper fills; real capital remains behind
+   the normal promotion ladder. If no robust precursor survives, close the family and
+   keep the market-intelligence dashboard without inventing another threshold.
+10. **Let existing contracts mature without new tuning PRs.** Run the registered
+    OI-growth, source-lead, liquidity, banded-price-extent, and pump-short checkpoint
+    reports at their already frozen gates. The `2026-08-31` decision remains: promote
+    one bounded shadow supported by forward evidence or park pump-short. These reads
+    do not block collection of non-recoverable early-momentum data, but they do block
+    further production score/exit/leverage changes.
+
+Before item 5 is registered as a new experiment family, update the discovery ledger
+and count all families introduced since `2026-07-29` against the ten-family budget.
+This administrative gate cannot be skipped merely because the collector is cheap.
+
+## Previous committed sequence (2026-08-03; retained as decision log)
 
 Keep the current measurement services running while this queue is executed. Safety
 and data-integrity fixes do not consume the evidence-producing PR budget. Do not mix
@@ -509,19 +622,17 @@ filter-report` (`confirmed_oi_growth_baseline_filter_v1`) tests this as a
    history merging is explicitly deferred to a later phase, since it needs
    chain+contract-level identity this project has not built for arbitrary
    tokens (only for Gate so far).
-   Next: step 2, a bounded live-exchange sample (a handful of instruments
-   per exchange, spanning short/medium/long available history, picked from
-   this report's sampling-frame table) to measure real OHLCV page sizes,
-   retention limits, and gaps before committing to a full fetch.
-   `apps/analytics/schurfer_analytics/ohlcv.py`'s `fetch_symbol_candles` has
-   a known pagination gap for this use case: `max_pages` is sized assuming
-   the exchange returns full `_FETCH_LIMIT`-sized pages, so an exchange that
-   silently caps pages lower (plausible for a 90-365 day request) can cause
-   a silent, un-flagged truncation. Confirmed by direct calculation, not yet
-   exercised by any existing caller (every current caller requests a window
-   of hours, not months). Must be fixed (bounded by reaching `end_ms`, not
-   by an assumed page count, with a generous hard safety cap) before step 2
-   fetches anything.
+   `apps/analytics/schurfer_analytics/ohlcv.py`'s `fetch_symbol_candles` had
+   a pagination gap for this use case: `max_pages` was sized assuming the
+   exchange returns full `_FETCH_LIMIT`-sized pages, so an exchange that
+   silently caps pages lower (plausible for a 90-365 day request) could
+   cause a silent, un-flagged truncation. Fixed (2026-08-10, PR #170):
+   `max_pages` is now bounded by the exact expected bar count for the window
+   plus a small buffer, capped by a page-count sanity limit, and
+   `fetch_symbol_candles` raises `IncompleteFetchError` if it still exhausts
+   that budget without reaching `end_ms` while every page kept genuinely
+   advancing. Step 2 (a bounded live-exchange sample) is in progress in a
+   separate PR; this entry will be updated once it merges.
 
 9. **[Parked] Conditional maker paper simulator.** OBS-009 did not survive its
    defensive sensitivity checks, so no simulator is authorized. Reconsider only

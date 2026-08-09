@@ -15,6 +15,7 @@ from schurfer_analytics.token_history_identity_preflight_report import (
     _history_window_bucket,
     _identity_fingerprint,
     _instrument_summaries,
+    _record_onboarded_at,
     _select_baseline_decisions,
     identity_readiness,
     pump_event_sources_statement,
@@ -176,6 +177,26 @@ def test_identity_readiness_ready_computes_available_days() -> None:
     assert days == 200
 
 
+# --- _record_onboarded_at (pure) -----------------------------------------
+
+
+def test_record_onboarded_at_ready_returns_the_raw_value() -> None:
+    onboarded_at = T0 - timedelta(days=200)
+    source = _source(onboarded_at=onboarded_at)
+    assert _record_onboarded_at("identity_ready", source) == onboarded_at
+
+
+def test_record_onboarded_at_none_for_any_non_ready_reason() -> None:
+    source = _source(onboarded_at=T0 - timedelta(days=200))
+    assert _record_onboarded_at("identity_conflict", source) is None
+    assert _record_onboarded_at("missing_identity", source) is None
+    assert _record_onboarded_at("onboarded_at_after_decision", source) is None
+
+
+def test_record_onboarded_at_none_when_source_is_none() -> None:
+    assert _record_onboarded_at("identity_ready", None) is None
+
+
 # --- _history_window_bucket ---------------------------------------------
 
 
@@ -226,6 +247,7 @@ def _record(
     identity_key: str | None = "key-1",
     unified_symbol: str | None = "ERA/USDT:USDT",
     available_history_days: int | None = 200,
+    onboarded_at: datetime | None = T0 - timedelta(days=200),
 ) -> IdentityRecord:
     return IdentityRecord(
         pump_event_id=pump_event_id,
@@ -236,6 +258,7 @@ def _record(
         identity_key=identity_key,
         unified_symbol=unified_symbol,
         available_history_days=available_history_days,
+        onboarded_at=onboarded_at,
     )
 
 
@@ -384,7 +407,15 @@ def test_render_markdown_smoke() -> None:
         instruments=(InstrumentSummary("binance", "key-1", "ERA/USDT:USDT", "ERA", 2, 100, 300),),
         records=(
             IdentityRecord(
-                42, "ERA", "binance", T0, "identity_ready", "key-1", "ERA/USDT:USDT", 200
+                42,
+                "ERA",
+                "binance",
+                T0,
+                "identity_ready",
+                "key-1",
+                "ERA/USDT:USDT",
+                200,
+                T0 - timedelta(days=200),
             ),
         ),
     )
