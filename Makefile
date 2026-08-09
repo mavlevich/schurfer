@@ -4,6 +4,7 @@
 GOLANGCI_LINT_VERSION = v2.1.6
 DEADCODE_VERSION = v0.48.0
 PROD_REPORT_MIN_HEADROOM_MB ?= 1280
+PROD_REPORT_MIN_AVAILABLE_MB ?= 1024
 PROD_ORDERFLOW_MIN_AVAILABLE_MB ?= 768
 PROD_ORDERFLOW_MIN_DISK_MB ?= 15360
 
@@ -821,7 +822,13 @@ prod-token-history-ohlcv-sample-report:
 		available_kb=$$(awk '/^MemAvailable:/ {print $$2}' /proc/meminfo); \
 		swap_kb=$$(awk '/^SwapFree:/ {print $$2}' /proc/meminfo); \
 		headroom_kb=$$((available_kb + swap_kb)); \
+		required_available_kb=$$(( $(PROD_REPORT_MIN_AVAILABLE_MB) * 1024 )); \
 		required_kb=$$(( $(PROD_REPORT_MIN_HEADROOM_MB) * 1024 )); \
+		if test "$$available_kb" -lt "$$required_available_kb"; then \
+			echo "ERROR: token-history OHLCV sample requires at least $(PROD_REPORT_MIN_AVAILABLE_MB) MiB of MemAvailable; free swap is not a substitute for working RAM."; \
+			echo "Current MemAvailable: $$((available_kb / 1024)) MiB. Run the report locally through the DB tunnel or wait for host headroom."; \
+			exit 1; \
+		fi; \
 		if test "$$headroom_kb" -lt "$$required_kb"; then \
 			echo "ERROR: token-history OHLCV sample requires at least $(PROD_REPORT_MIN_HEADROOM_MB) MiB of available RAM + free swap."; \
 			echo "Current headroom: $$((headroom_kb / 1024)) MiB. Refusing to risk a host OOM."; \
