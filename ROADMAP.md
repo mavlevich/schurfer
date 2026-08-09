@@ -405,6 +405,33 @@ remains `DRY_RUN=true`, `AUTO_TRADE=false`.
    the module docstring for the full fail-closed data-availability and
    paired-delta-sensitivity discipline this report follows.
 
+   **[Implemented] Pump-short re-entry audit (2026-08-09).** A separate,
+   read-only `pump-short-reentry-audit-report` measures how far actual paper
+   re-entries diverge from the first-open-per-event assumption every virtual
+   report (`select_episode_decision`/`select_score_policy`, and therefore
+   entry-challenger, score-challenger, banded-price-extent, and the
+   failure-attribution report above) makes. The real execution service has no
+   per-event entry limit at all — its only guard is a flat, per-`base` 24h
+   Redis cooldown started at decision time, and a `pump_events` episode can
+   stay open for days, so a token can legitimately re-enter the same event
+   once the cooldown expires (confirmed on real data: `pump_event_id=3518`,
+   TUT/xt, 24h05m entry-to-entry, ~22h33m exit-to-entry). Measurement-only:
+   never touches `virtual_strategy.py`, computes no p-value, and proposes
+   but does not choose between three future fixes (one-trade-per-event with
+   a durable fence; a stateful base+24h replay; or re-entry as its own
+   separately-gated challenger). See the module docstring for the full
+   funnel/identity/observability discipline (fail-closed on a one-to-many
+   decision<->trade link, cooldown classified on the full operational
+   decision set rather than only fully-accounted trades, reentry-opportunity
+   evaluated as of the report's own cutoff rather than "now").
+   _Preliminary numbers only_ (dirty, pre-merge local run, not yet the
+   canonical archived report) — pending the official post-merge run: 77
+   comparable real trades, 6 multiple-entry events (out of 71 total), zero
+   cooldown-invariant violations, and re-entries net **-$6.06** across those
+   6 events (all-trades PF 0.926 vs. first-open-only PF 0.965). This section
+   will be updated with the canonical figures once run against the merged
+   commit.
+
 9. **[Parked] Conditional maker paper simulator.** OBS-009 did not survive its
    defensive sensitivity checks, so no simulator is authorized. Reconsider only
    after a fresh registered maker cohort or an independently proven executable edge.
