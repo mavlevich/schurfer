@@ -45,6 +45,7 @@ orderflow-pilot-report = "schurfer_analytics.orderflow_pilot_report:main"
 orderflow-endpoint-sensitivity-report = "schurfer_analytics.orderflow_endpoint_sensitivity_report:main"
 exit-liquidity-calibration-report = "schurfer_analytics.exit_liquidity_calibration_report:main"
 pump-short-failure-attribution-report = "schurfer_analytics.pump_short_failure_attribution_report:main"
+pump-short-reentry-audit-report = "schurfer_analytics.pump_short_reentry_audit_report:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
