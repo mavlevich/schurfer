@@ -482,6 +482,47 @@ filter-report` (`confirmed_oi_growth_baseline_filter_v1`) tests this as a
    against a losing baseline is not by itself a profitable strategy). No
    production score change from a discovery run, regardless of outcome.
 
+   **[Implemented, step 1 of 3] Token-behavior-history identity preflight
+   (2026-08-09).** First step of the `analysis/token-behavior-history-v1`
+   feasibility line: does a point-in-time-usable, already-recorded market
+   identity exist to fetch per-token pre-decision OHLCV history against, and
+   how many distinct exact instruments that actually is.
+   `token-history-identity-preflight-report` joins every replay-eligible
+   baseline decision to its own `app.pump_event_sources` row on
+   (pump_event_id, exchange), reusing `source_lead.py`'s full identity
+   discipline (identity_conflict, identity_key/unified_symbol presence,
+   market_type must be "swap", base/quote/settle asset match, naive
+   timestamps fail closed rather than being guessed as UTC) rather than a
+   narrower ad hoc check. Zero exchange calls, zero new dependencies, no
+   feature computation, no score change. Fingerprint covers both the
+   decision dataset and the fetched (mutable) identity rows, since the
+   latter can change independently between runs. Real production run
+   (2026-07-26 to date): 441 eligible episodes, 210 excluded (reasons
+   shown), 75 replay-eligible baseline decisions, 72 (96%) identity-ready,
+   3 excluded for a missing `onboarded_at`, zero identity conflicts, zero
+   excluded by the additional swap/base/quote/settle checks on this sample.
+   Those 72 ready decisions collapse to 51 unique exact instruments (41 on
+   binance, 5 on mexc, 2 each on bybit/xt, 1 on gate, 0 on bitget). Available
+   history upper bound (decision time minus onboarding, not yet
+   exchange-verified): 30 at least 365 days, 20 at least 90 days, 22 under
+   90 days, median 301.5 days. Same-exchange identity only; cross-exchange
+   history merging is explicitly deferred to a later phase, since it needs
+   chain+contract-level identity this project has not built for arbitrary
+   tokens (only for Gate so far).
+   Next: step 2, a bounded live-exchange sample (a handful of instruments
+   per exchange, spanning short/medium/long available history, picked from
+   this report's sampling-frame table) to measure real OHLCV page sizes,
+   retention limits, and gaps before committing to a full fetch.
+   `apps/analytics/schurfer_analytics/ohlcv.py`'s `fetch_symbol_candles` has
+   a known pagination gap for this use case: `max_pages` is sized assuming
+   the exchange returns full `_FETCH_LIMIT`-sized pages, so an exchange that
+   silently caps pages lower (plausible for a 90-365 day request) can cause
+   a silent, un-flagged truncation. Confirmed by direct calculation, not yet
+   exercised by any existing caller (every current caller requests a window
+   of hours, not months). Must be fixed (bounded by reaching `end_ms`, not
+   by an assumed page count, with a generous hard safety cap) before step 2
+   fetches anything.
+
 9. **[Parked] Conditional maker paper simulator.** OBS-009 did not survive its
    defensive sensitivity checks, so no simulator is authorized. Reconsider only
    after a fresh registered maker cohort or an independently proven executable edge.
