@@ -6,6 +6,7 @@ from schurfer_analytics.ohlcv import (
     ONE_MINUTE_MS,
     TIMEFRAME_MS,
     IncompleteFetchError,
+    PageFetchObservation,
     closed_candles,
     fetch_candles,
     fetch_symbol_candles,
@@ -387,6 +388,133 @@ async def test_fetch_symbol_candles_empty_page_still_returns_partial_silently(
     )
 
     assert [c.ts_ms for c in result] == [start, start + DAY_MS]
+
+
+async def test_fetch_symbol_candles_on_page_reports_full_field_set_on_success() -> None:
+    start = int(datetime(2026, 1, 1, tzinfo=UTC).timestamp() * 1000)
+    exchange = AsyncMock()
+    exchange.fetch_ohlcv = AsyncMock(return_value=[_daily_bar(start, 0)])
+    observations: list[PageFetchObservation] = []
+
+    await fetch_symbol_candles(
+        exchange,
+        "ERA/USDT:USDT",
+        start,
+        start + DAY_MS,
+        timeframe="1d",
+        timeframe_ms=DAY_MS,
+        on_page=observations.append,
+    )
+
+    assert len(observations) == 1
+    observation = observations[0]
+    assert observation.api_call_index == 1
+    assert observation.attempt_index == 0
+    assert observation.cursor_before_ms == start
+    assert observation.requested_since_ms == start - DAY_MS
+    assert observation.raw_bar_count == 1
+    assert observation.normalized_bar_count == 1
+    assert observation.outcome == "success"
+    assert observation.error_type is None
+    assert observation.latency_seconds >= 0
+
+
+async def test_fetch_symbol_candles_on_page_distinguishes_raw_from_normalized_counts() -> None:
+    """A page can contain rows the exchange sent but normalize_candles rejects
+    (here: high below close, an invalid OHLC ordering). raw_bar_count must
+    still reflect what the exchange actually returned, separate from
+    normalized_bar_count, so page-size measurement is not silently mixed
+    with data-quality filtering."""
+    start = int(datetime(2026, 1, 1, tzinfo=UTC).timestamp() * 1000)
+    valid = _daily_bar(start, 0)
+    invalid = [start + DAY_MS, 100, 90, 99, 100, 1]  # high < close: rejected
+    exchange = AsyncMock()
+    exchange.fetch_ohlcv = AsyncMock(return_value=[valid, invalid])
+    observations: list[PageFetchObservation] = []
+
+    result = await fetch_symbol_candles(
+        exchange,
+        "ERA/USDT:USDT",
+        start,
+        start + DAY_MS,
+        timeframe="1d",
+        timeframe_ms=DAY_MS,
+        on_page=observations.append,
+    )
+
+    assert [c.ts_ms for c in result] == [start]
+    assert len(observations) == 1
+    assert observations[0].raw_bar_count == 2
+    assert observations[0].normalized_bar_count == 1
+    assert observations[0].outcome == "success"
+
+
+async def test_fetch_symbol_candles_on_page_reports_timeout_and_propagates() -> None:
+    start = int(datetime(2026, 1, 1, tzinfo=UTC).timestamp() * 1000)
+    exchange = AsyncMock()
+    exchange.fetch_ohlcv = AsyncMock(side_effect=TimeoutError("exchange hung"))
+    observations: list[PageFetchObservation] = []
+
+    with pytest.raises(TimeoutError):
+        await fetch_symbol_candles(
+            exchange,
+            "ERA/USDT:USDT",
+            start,
+            start + DAY_MS,
+            timeframe="1d",
+            timeframe_ms=DAY_MS,
+            on_page=observations.append,
+        )
+
+    assert len(observations) == 1
+    assert observations[0].outcome == "timeout"
+    assert observations[0].error_type == "TimeoutError"
+    assert observations[0].raw_bar_count is None
+    assert observations[0].normalized_bar_count is None
+
+
+async def test_fetch_symbol_candles_on_page_reports_error_and_propagates() -> None:
+    start = int(datetime(2026, 1, 1, tzinfo=UTC).timestamp() * 1000)
+    exchange = AsyncMock()
+    exchange.fetch_ohlcv = AsyncMock(side_effect=ValueError("exchange rejected request"))
+    observations: list[PageFetchObservation] = []
+
+    with pytest.raises(ValueError, match="exchange rejected request"):
+        await fetch_symbol_candles(
+            exchange,
+            "ERA/USDT:USDT",
+            start,
+            start + DAY_MS,
+            timeframe="1d",
+            timeframe_ms=DAY_MS,
+            on_page=observations.append,
+        )
+
+    assert len(observations) == 1
+    assert observations[0].outcome == "error"
+    assert observations[0].error_type == "ValueError"
+
+
+async def test_fetch_symbol_candles_on_page_callback_exception_propagates() -> None:
+    """The callback contract is deliberately unguarded: a broken observer is a
+    hard failure, not something fetch_symbol_candles silently swallows."""
+    start = int(datetime(2026, 1, 1, tzinfo=UTC).timestamp() * 1000)
+    exchange = AsyncMock()
+    exchange.fetch_ohlcv = AsyncMock(return_value=[_daily_bar(start, 0)])
+
+    def broken_observer(_observation: PageFetchObservation) -> None:
+        raise RuntimeError("observer bug")
+
+    with pytest.raises(RuntimeError, match="observer bug"):
+        await fetch_symbol_candles(
+            exchange,
+            "ERA/USDT:USDT",
+            start,
+            start + DAY_MS,
+            timeframe="1d",
+            timeframe_ms=DAY_MS,
+            on_page=broken_observer,
+        )
 
 
 def test_one_minute_normalization_and_strict_next_bar_are_explicit() -> None:
