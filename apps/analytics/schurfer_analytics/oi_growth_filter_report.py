@@ -1,5 +1,5 @@
 """Read-only formal report for the pre-registered confirmed-OI-growth baseline
-filter — a forward-only challenger, never a production score change.
+filter: a forward-only challenger, never a production score change.
 
 Why this exists: the live `oi_trend` score component (`apps/api-gateway/
 internal/pumps/handler.go`, `oiChangeThresholdPct = 5.0`) scores a recorded
@@ -9,7 +9,7 @@ aggregate OI change from the strategy's anchor time to decision time above
 baseline's own triggered replay trades (2026-07-26 to 2026-08-09, via
 `component_snapshot`) found the opposite direction on the subset where OI was
 CONFIRMED growing (`data_available=True`, `points=0`): N=23, 17 assets, mean
-return +0.94%, PF 1.38 — but concentrated in exactly 2 UTC weeks, one slightly
+return +0.94%, PF 1.38, but concentrated in exactly 2 UTC weeks, one slightly
 negative and one strongly positive. That is a lead, not evidence: too easy for
 the aggregate sign to be one lucky week away from flipping.
 
@@ -18,18 +18,18 @@ inversion. The baseline (`score_6`, live formula) is completely unchanged.
 The challenger trades exactly the same decision the baseline would have taken,
 but ONLY when `oi_trend.data_available is True and points == 0` AND the raw
 recorded `value` independently agrees with this filter's own frozen +-5%
-threshold (see `oi_growth_reason` — a `points`/`value` disagreement, e.g. from
+threshold (see `oi_growth_reason`: a `points`/`value` disagreement, e.g. from
 a since-changed live threshold, is `unresolved`, never silently trusted via
-`points` alone) — every other baseline-triggered decision (declining OI,
+`points` alone), and every other baseline-triggered decision (declining OI,
 neutral OI, unconfirmed/missing OI data) becomes cash for the challenger. This
 is deliberately NOT the same shape of change as
 `virtual_banded_price_extent_report.py`: that challenger recomputes a score
 component and can select a different decision than the baseline; this one
-never recomputes anything and never selects a different decision — it only
+never recomputes anything and never selects a different decision. It only
 ever gates the baseline's own decision to cash or not.
 
 Cohort start is locked to the day AFTER this hypothesis was registered
-(2026-08-10) — the window inspected to find the lead must never be reused to
+(2026-08-10). The window inspected to find the lead must never be reused to
 "confirm" it, or this becomes exactly the p-hacking the project's inference
 discipline exists to prevent. If this PR merges after that date, the cohort
 start must move to the first full UTC day after actual registration instead
@@ -38,51 +38,51 @@ of silently running against a date already in the past.
 Population the formal sample is built on (critical, see `build_
 oi_growth_filter_report`): NOT the first 100 eligible episodes overall.
 Baseline itself only triggers on a small share of all eligible episodes, and
-confirmed growth is a further subset of that — freezing the formal sample on
+confirmed growth is a further subset of that. Freezing the formal sample on
 "eligible episodes" would almost certainly stall forever at
 `insufficient_triggers` regardless of how much time passes, since
 `challenger_inference` freezes its formal sample as the first `FORMAL_
 EPISODES` items of whatever it is given and never revisits that slice. The
 formal sample here is instead the first 100 baseline-triggered opportunities
 with a CONFIRMED oi_trend reading (missing/unknown-quality readings are
-excluded from this population entirely, not folded into cash — see
+excluded from this population entirely, not folded into cash; see
 `operational_challenger_metrics` for that view separately, kept out of the
 primary population so a data-availability pattern can never masquerade as the
 OI-growth effect itself). Overall eligible-episode counts and capacity are
 still reported for context, just not used to freeze the formal sample.
 
 "Triggered" (both baseline and challenger) means the selection criteria
-fired, independent of whether the market path later resolved to a return —
-matching `virtual_threshold_challenger_report.py`'s established convention
-(`baseline_triggered = selected_decision_id is not None`). Resolution is a
-separate, orthogonal concern tracked via `status`/return-is-None.
+fired, independent of whether the market path later resolved to a return.
+This matches `virtual_threshold_challenger_report.py`'s established
+convention (`baseline_triggered = selected_decision_id is not None`).
+Resolution is a separate, orthogonal concern tracked via `status`/return-is-
+None.
 
 Promotion requires ALL of:
 - The run is canonical (no CLI override of strategy cohort, resolver,
-  fallback tolerance, or costs — see `_is_canonical_run`). A sensitivity run
+  fallback tolerance, or costs; see `_is_canonical_run`). A sensitivity run
   can never emit a promotion verdict regardless of its numbers.
 - `challenger_inference.build_challenger_inference`'s own formal machinery on
   the population above: >=100 formal-sample opportunities, >=30 distinct
   asset clusters, `minimum_triggered_episodes=20` (a low-trigger-rate family
-  reaching "ready" on an almost-entirely-cash sample must not look ready —
+  reaching "ready" on an almost-entirely-cash sample must not look ready;
   see that module's own docstring on this exact failure mode), a
   paired-delta bootstrap CI whose lower bound is above zero after Holm
   correction, and a positive minimum leave-one-asset-out delta.
 - At least 4 distinct UTC weeks in the frozen formal sample, AND an
   independent minimum leave-one-UTC-week-out delta above zero, computed
-  separately over that same frozen sample (see `_week_sensitivity`) —
-  because the historical lead's own sign flipped between its two observed
-  weeks, and asset-level sensitivity alone cannot see that risk. A single-
-  week sample cannot even compute leave-one-out (excluding the only week
-  would remove every observation) and is reported as collecting, not a
-  crash.
+  separately over that same frozen sample (see `_week_sensitivity`), because
+  the historical lead's own sign flipped between its two observed weeks, and
+  asset-level sensitivity alone cannot see that risk. A single-week sample
+  cannot even compute leave-one-out (excluding the only week would remove
+  every observation) and is reported as collecting, not a crash.
 - The challenger's own absolute profit factor, computed on the SAME frozen
   formal sample the statistical verdict used (never the whole, still-growing
   history, which could silently drift the verdict later without a new
-  cohort) — above 1. A positive paired delta against a losing baseline is
-  not by itself a profitable strategy; all of the above must hold together.
+  cohort), above 1. A positive paired delta against a losing baseline is not
+  by itself a profitable strategy; all of the above must hold together.
 
-No missing or ambiguous OI reading is ever treated as confirmed growth —
+No missing or ambiguous OI reading is ever treated as confirmed growth.
 `data_available` must be exactly `True`; `False` (confirmed missing) and
 `None` (unknown quality) both fail closed to cash, same as every other
 component-availability check in this project's discovery tooling.
@@ -159,7 +159,7 @@ if TYPE_CHECKING:
 OI_GROWTH_FILTER_REPORT_VERSION = "oi_growth_filter_report_v1"
 OI_GROWTH_FILTER_CANDIDATE_VERSION = "confirmed_oi_growth_baseline_filter_v1"
 OI_GROWTH_FILTER_INFERENCE_VERSION = "oi_growth_filter_formal_inference_v1"
-# Registered 2026-08-10 — the day after the historical lead (2026-07-26 to
+# Registered 2026-08-10, the day after the historical lead (2026-07-26 to
 # 2026-08-09) was found. That window must never be reused to "confirm" this.
 OI_GROWTH_FILTER_COHORT_START = datetime(2026, 8, 10, tzinfo=UTC)
 OI_GROWTH_FILTER_STRATEGY_VERSIONS = ("pump_short_v1_market_quality",)
@@ -169,8 +169,8 @@ OI_GROWTH_FILTER_STRATEGY_VERSIONS = ("pump_short_v1_market_quality",)
 OI_CHANGE_THRESHOLD_PCT = 5.0
 OI_GROWTH_MIN_TRIGGERED_EPISODES = 20
 OI_GROWTH_MIN_PROFIT_FACTOR = 1.0
-# The historical lead's own sign flipped between its two observed weeks —
-# promotion must never rest on a sample this temporally concentrated again.
+# The historical lead's own sign flipped between its two observed weeks.
+# Promotion must never rest on a sample this temporally concentrated again.
 OI_GROWTH_MIN_FORMAL_SAMPLE_WEEKS = 4
 CHALLENGER_VARIANT_KEY = "confirmed_oi_growth"
 
@@ -252,7 +252,7 @@ def _missing_path(episode: ReplayEpisode, decision: ReplayDecision) -> MarketPat
 
 
 def _classify_by_value(value: float) -> str:
-    """The registered v1 threshold (+-5%) is frozen at registration time —
+    """The registered v1 threshold (+-5%) is frozen at registration time,
     independent of whatever `handler.go`'s own threshold happens to be when
     this runs. If the two ever disagree (a future change to the live
     threshold, or a decision recorded under an older threshold), that is an
@@ -272,11 +272,11 @@ def _classify_by_points(points: int) -> str | None:
 
 def oi_growth_reason(oi: ComponentSnapshot) -> str:
     """Pure, fail-closed classification of the already-recorded oi_trend
-    component. `data_available` must be exactly True to ever confirm growth —
+    component. `data_available` must be exactly True to ever confirm growth;
     False (confirmed missing) and None (unknown quality) both fail closed.
     Independently re-derives the classification from the raw `value` against
     this filter's own frozen +-5% threshold and requires it to agree with the
-    recorded `points` — see `_classify_by_value`."""
+    recorded `points`. See `_classify_by_value`."""
     if oi.data_available is False:
         return "oi_data_confirmed_missing"
     if oi.data_available is None:
@@ -294,7 +294,7 @@ def evaluate_oi_growth_episode(
     costs: CostParameters,
 ) -> OiGrowthEpisodeResult:
     """Pure per-episode evaluation (no I/O beyond the already-fetched market
-    path map) — testable directly against hand-built episodes/decisions."""
+    path map), testable directly against hand-built episodes/decisions."""
     baseline_selection = select_score_policy(episode, SCORE_THRESHOLD_BASELINE_POLICY)
     week = _week_key(episode.first_decision_at)
 
@@ -310,7 +310,7 @@ def evaluate_oi_growth_episode(
 
     decision = baseline_selection.decision
     # Week is keyed by the actually-selected decision's own timestamp, not
-    # the episode's first-seen time — they can diverge when the score
+    # the episode's first-seen time. They can diverge when the score
     # crossing happens well after the episode was first observed.
     week = _week_key(decision.ts)
     components, err = component_snapshot(decision)
@@ -342,7 +342,7 @@ def evaluate_oi_growth_episode(
         selection_reason=f"oi_growth_filter:{OI_GROWTH_FILTER_CANDIDATE_VERSION}",
         costs=costs,
     )
-    # "Triggered" means the selection criteria fired — independent of
+    # "Triggered" means the selection criteria fired, independent of
     # whether the market path later resolved to a return. Resolution is a
     # separate, orthogonal concern (see `status` below), matching the
     # established convention in virtual_threshold_challenger_report.py
@@ -402,7 +402,7 @@ def _metrics(
     trades: list[VirtualTrade],
 ) -> OiGrowthMetrics:
     """`triggered_flags` is selection-based (see evaluate_oi_growth_episode)
-    and is independent of `resolved_returns` — a triggered episode can still
+    and is independent of `resolved_returns`. A triggered episode can still
     be unresolved (missing market data), so `triggered` is not simply
     `len(resolved) - cash` here."""
     resolved = [value for value in resolved_returns if value is not None]
@@ -515,10 +515,10 @@ def _week_sensitivity(
     formal_sample_event_ids: tuple[int, ...],
 ) -> WeekSensitivity | None:
     """Independent leave-one-UTC-week-out check on the paired delta, over the
-    exact same formal sample `challenger_inference` locked — see module
+    exact same formal sample `challenger_inference` locked. See module
     docstring on why asset-level sensitivity alone is not enough here.
     `results` must already be restricted to the population fed into that
-    inference (baseline-triggered, OI-resolved) — an unrestricted `results`
+    inference (baseline-triggered, OI-resolved). An unrestricted `results`
     would let baseline-not-triggered cash episodes (delta always exactly
     zero) dilute the sensitivity read."""
     by_event = {result.pump_event_id: result for result in results}
@@ -538,7 +538,7 @@ def _week_sensitivity(
     weeks = tuple(sorted({observation.cluster_key for observation in observations}))
     if len(weeks) < 2:
         # leave_one_cluster_out_means raises if excluding the only cluster
-        # would remove every observation — with a single UTC week that is
+        # would remove every observation, and with a single UTC week that is
         # exactly what would happen. Report the count so the caller can see
         # collection is still in progress, without crashing.
         return WeekSensitivity(
@@ -554,7 +554,7 @@ def _week_sensitivity(
 
 def _is_canonical_run(filters: ReplayFilters, costs: CostParameters) -> bool:
     """Only the registered, unmodified configuration may ever produce a
-    `shadow_candidate` verdict — any override (a different strategy cohort,
+    `shadow_candidate` verdict. Any override (a different strategy cohort,
     resolver, fallback tolerance, or cost assumption) makes this a
     sensitivity run, however the numbers come out. The CLI still allows
     these overrides for legitimate ad hoc comparison; this just stops one
@@ -630,14 +630,14 @@ def build_oi_growth_filter_report(
         result.trade for result in results if result.baseline_triggered and result.trade
     ]
 
-    # "Opportunities": episodes where the baseline itself selected a trade —
-    # only these are ever relevant to the challenger's own gating decision.
+    # "Opportunities": episodes where the baseline itself selected a trade.
+    # Only these are ever relevant to the challenger's own gating decision.
     opportunities = tuple(result for result in results if result.baseline_triggered)
     # The population the formal inference is built on: opportunities with a
     # CONFIRMED oi_trend reading. Missing/unknown-quality readings are
     # excluded here entirely (not folded into cash) so a data-availability
-    # pattern can never masquerade as the OI-growth effect being tested —
-    # see module docstring. They still appear in `operational_metrics` below.
+    # pattern can never masquerade as the OI-growth effect being tested.
+    # See module docstring. They still appear in `operational_metrics` below.
     missing_or_unknown = {"oi_data_confirmed_missing", "oi_data_quality_unknown"}
     formal_population = tuple(
         result for result in opportunities if result.oi_selection_reason not in missing_or_unknown
@@ -663,8 +663,8 @@ def build_oi_growth_filter_report(
     )
     week_sensitivity = _week_sensitivity(formal_population, inference.formal_sample_event_ids)
 
-    # Promotion-relevant PF uses exactly the frozen formal sample — the same
-    # population challenger_inference locked — never the whole, still-
+    # Promotion-relevant PF uses exactly the frozen formal sample (the same
+    # population challenger_inference locked), never the whole, still-
     # growing history (which could drift the verdict later without a new
     # cohort). All-to-date PF is shown separately, informational only.
     formal_sample_ids = set(inference.formal_sample_event_ids)
@@ -940,8 +940,8 @@ def render_markdown(report: OiGrowthReport) -> str:
         lines.append("_No paired episodes available yet._")
     elif report.week_sensitivity.distinct_weeks < 2:
         lines.append(
-            f"_Only {report.week_sensitivity.distinct_weeks} distinct UTC week(s) so far — "
-            "leave-one-week-out needs at least 2 to be computable at all, and promotion "
+            f"_Only {report.week_sensitivity.distinct_weeks} distinct UTC week(s) so far. "
+            "Leave-one-week-out needs at least 2 to be computable at all, and promotion "
             f"requires at least {manifest.min_formal_sample_weeks}._"
         )
     else:
@@ -960,7 +960,7 @@ def render_markdown(report: OiGrowthReport) -> str:
             (
                 "_Computed independently of `challenger_inference`'s own asset-level "
                 "leave-one-out, because the historical lead's sign flipped between its "
-                "two observed weeks — asset-level sensitivity alone cannot see that "
+                "two observed weeks, and asset-level sensitivity alone cannot see that "
                 "risk. See the module docstring._"
             ),
             "",
