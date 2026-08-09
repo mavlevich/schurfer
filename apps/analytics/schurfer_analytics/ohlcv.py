@@ -19,15 +19,15 @@ ONE_MINUTE_MS = 60 * 1000
 _FETCH_LIMIT = 1000
 _FETCH_TIMEOUT_SECONDS = 20
 # Every window fetched here is fully historical (always well before "now"), so an
-# empty page is always a fetch anomaly, never "no data yet" — retry it a bounded
+# empty page is always a fetch anomaly, never "no data yet". Retry it a bounded
 # number of times before giving up. Genuinely useful for a transient exchange
-# hiccup, but it turned out NOT to be the cause of the 2026-08-05 finding below —
+# hiccup, but it turned out NOT to be the cause of the 2026-08-05 finding below;
 # kept as a separate, complementary defense.
 _EMPTY_PAGE_MAX_RETRIES = 2
 _EMPTY_PAGE_RETRY_DELAY_SECONDS = 1.0
 # Root cause of the 2026-08-05 finding (an exit-policy replay missing exactly one
 # bar out of 72 on Bitget): `since` is exclusive on at least Bitget's swap OHLCV
-# endpoint — `fetch_ohlcv(..., since=X)` returns bars strictly after X, dropping the
+# endpoint. `fetch_ohlcv(..., since=X)` returns bars strictly after X, dropping the
 # bar starting exactly at X. Confirmed directly against the exchange (two different
 # `since` values, same off-by-one both times). Requesting one bar earlier than the
 # logical cursor and letting the existing start_ms filter in closed_candles() trim
@@ -35,6 +35,24 @@ _EMPTY_PAGE_RETRY_DELAY_SECONDS = 1.0
 # exclusive-since exchanges (this recovers the dropped bar) and inclusive-since ones
 # (the duplicate is deduplicated by normalize_candles's timestamp keying).
 _SINCE_LOOKBACK_BARS = 1
+# 2026-08-10 finding: `max_pages` used to be sized assuming every page returns a
+# full `_FETCH_LIMIT` bars. An exchange that silently caps pages lower than the
+# requested `limit` (plausible for a 90-365 day request; no existing caller before
+# this had ever asked for a window longer than a few hours) would then exhaust
+# `max_pages` before reaching `end_ms`, and the function would just return the
+# partial result with no signal that anything was cut short. `expected_bars` is a
+# mathematically exact worst-case bound instead of a guess about exchange
+# behavior: as long as a page contributes at least one new bar (the only case this
+# guards; see `_exhausted_page_budget` below), the fetch cannot need more than
+# `expected_bars` pages, plus a small buffer for the lookback/dedup overlap.
+# `_MAX_PAGES_HARD_CAP` is a secondary sanity limit on page count, not a
+# wall-clock budget: at `_FETCH_TIMEOUT_SECONDS` per page, this still allows a
+# multi-hour worst case if an exchange keeps genuinely paging that long. It is
+# sized with headroom over the known 90-365 day daily-timeframe windows
+# (expected_bars there tops out around 367), not as a guarantee against a
+# pathological exchange; a real wall-clock budget would need its own,
+# separate check if a future caller asks for a window large enough to need one.
+_MAX_PAGES_HARD_CAP = 512
 
 
 @dataclass(frozen=True)
@@ -122,6 +140,43 @@ def closed_candles(
     ]
 
 
+class IncompleteFetchError(RuntimeError):
+    """Raised when `fetch_symbol_candles` could not reach `end_ms` within its
+    page budget, even though every page it received was non-empty and kept
+    advancing the cursor. This is the silent-truncation risk the 2026-08-10
+    finding identified: an exchange that keeps returning genuine data, just
+    in smaller pages than expected, used to make the fetch return an
+    unflagged partial result instead. It is deliberately NOT raised for an
+    empty page or a stalled cursor (see `fetch_symbol_candles`'s docstring):
+    those are pre-existing, silent partial-result terminations that this fix
+    does not change, since there is no way from here to tell a real retention
+    limit apart from a genuine fetch failure, and treating that ambiguity as
+    an error would be a much larger behavior change than this fix is scoped
+    to."""
+
+    def __init__(
+        self,
+        *,
+        symbol: str,
+        start_ms: int,
+        end_ms: int,
+        next_cursor_ms: int,
+        successful_pages: int,
+        api_calls: int,
+    ) -> None:
+        self.symbol = symbol
+        self.start_ms = start_ms
+        self.end_ms = end_ms
+        self.next_cursor_ms = next_cursor_ms
+        self.successful_pages = successful_pages
+        self.api_calls = api_calls
+        super().__init__(
+            f"{symbol}: exhausted the page budget ({successful_pages} successful "
+            f"pages, {api_calls} API calls) before reaching end_ms; cursor stopped "
+            f"at {next_cursor_ms}, needed {end_ms}"
+        )
+
+
 async def fetch_candles(
     exchange: Any,
     base: str,
@@ -152,23 +207,43 @@ async def fetch_symbol_candles(
     timeframe: str = TIMEFRAME,
     timeframe_ms: int = TIMEFRAME_MS,
 ) -> list[Candle]:
-    """Fetch candles for an already identity-validated exact unified symbol."""
+    """Fetch candles for an already identity-validated exact unified symbol.
+
+    Can return a PARTIAL result (fewer bars than the window implies) without
+    raising, in two cases that predate this docstring: the exchange returned
+    an empty page even after retries (it may have no more historical data,
+    e.g. a retention limit or a young/delisted instrument), or the cursor
+    failed to advance between pages. Neither is distinguishable from here as
+    "expected" versus "wrong": the caller must compare the returned bar count
+    against what the window implies and classify the gap itself. This
+    function only raises `IncompleteFetchError` for a third, different
+    condition: the page budget ran out while every page was still genuinely
+    non-empty and advancing, which is the silent-truncation bug this queries
+    were never at risk of failing on before requests started spanning months
+    instead of hours (see the 2026-08-10 finding above).
+    """
     if not symbol.strip():
         raise ValueError("symbol must not be empty")
     cursor = start_ms
     collected: list[Candle] = []
     if timeframe_ms <= 0:
         raise ValueError("timeframe_ms must be positive")
-    max_pages = math.ceil(max(0, end_ms - start_ms) / timeframe_ms / _FETCH_LIMIT) + 2
+    expected_bars = math.ceil(max(0, end_ms - start_ms) / timeframe_ms)
+    max_pages = min(expected_bars + 2, _MAX_PAGES_HARD_CAP)
 
+    successful_pages = 0
+    api_calls = 0
+    exhausted_page_budget = True
     for _ in range(max_pages):
         if cursor >= end_ms:
+            exhausted_page_budget = False
             break
         remaining = math.ceil((end_ms - cursor) / timeframe_ms)
         limit = max(1, min(_FETCH_LIMIT, remaining + 1 + _SINCE_LOOKBACK_BARS))
         fetch_since = max(0, cursor - _SINCE_LOOKBACK_BARS * timeframe_ms)
         page: list[Candle] = []
         for attempt in range(_EMPTY_PAGE_MAX_RETRIES + 1):
+            api_calls += 1
             raw = await asyncio.wait_for(
                 exchange.fetch_ohlcv(symbol, timeframe, since=fetch_since, limit=limit),
                 timeout=_FETCH_TIMEOUT_SECONDS,
@@ -178,12 +253,32 @@ async def fetch_symbol_candles(
                 break
             await asyncio.sleep(_EMPTY_PAGE_RETRY_DELAY_SECONDS)
         if not page:
+            # The exchange has no more data, or gave up after retries. Not a
+            # page-budget problem, and not distinguishable from here as a real
+            # retention limit versus a fetch failure, so it stays a silent
+            # pre-existing partial-result termination, matching the behavior
+            # this fix does not change.
+            exhausted_page_budget = False
             break
+        successful_pages += 1
         collected.extend(page)
         next_cursor = page[-1].ts_ms + timeframe_ms
         if next_cursor <= cursor:
+            # The cursor stalled: also a pre-existing, separate failure
+            # mode, not a page-budget problem. Kept silent, same as above.
+            exhausted_page_budget = False
             break
         cursor = next_cursor
+
+    if exhausted_page_budget and cursor < end_ms:
+        raise IncompleteFetchError(
+            symbol=symbol,
+            start_ms=start_ms,
+            end_ms=end_ms,
+            next_cursor_ms=cursor,
+            successful_pages=successful_pages,
+            api_calls=api_calls,
+        )
 
     return closed_candles(
         normalize_candles(
