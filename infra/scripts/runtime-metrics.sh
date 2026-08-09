@@ -26,7 +26,7 @@ while true; do
     echo "[states]"
     if ((${#container_ids[@]} > 0)); then
       docker inspect --format \
-        '{"name":{{json .Name}},"restart_count":{{.RestartCount}},"status":{{json .State.Status}},"health":{{if .State.Health}}{{json .State.Health.Status}}{{else}}"none"{{end}},"started_at":{{json .State.StartedAt}}}' \
+        '{"name":{{json .Name}},"restart_count":{{.RestartCount}},"status":{{json .State.Status}},"health":{{if .State.Health}}{{json .State.Health.Status}}{{else}}"none"{{end}},"started_at":{{json .State.StartedAt}},"oom_killed":{{json .State.OOMKilled}}}' \
         "${container_ids[@]}"
     fi
   } >"$tmp_path"
