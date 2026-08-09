@@ -424,13 +424,17 @@ remains `DRY_RUN=true`, `AUTO_TRADE=false`.
    decision<->trade link, cooldown classified on the full operational
    decision set rather than only fully-accounted trades, reentry-opportunity
    evaluated as of the report's own cutoff rather than "now").
-   _Preliminary numbers only_ (dirty, pre-merge local run, not yet the
-   canonical archived report) — pending the official post-merge run: 77
-   comparable real trades, 6 multiple-entry events (out of 71 total), zero
-   cooldown-invariant violations, and re-entries net **-$6.06** across those
-   6 events (all-trades PF 0.926 vs. first-open-only PF 0.965). This section
-   will be updated with the canonical figures once run against the merged
-   commit.
+   Canonical run at `86be772` (merged, clean tree), 2026-07-26 to
+   2026-08-09: 78 comparable real trades, 6 multiple-entry events (out of 72
+   total), zero cooldown-invariant violations on the full operational set,
+   and re-entries net **-$6.06** across those 6 events (`all_actual_trades`
+   PF 0.929 / total -$9.93 vs. `actual_first_open_per_event` PF 0.968 /
+   total -$3.87). Archived at `backups/reports/reentry-audit-2026-08-09.{md,json}`
+   (git-ignored, local-only) with `MANIFEST-reentry-audit-2026-08-09.json`.
+   Small sample, but consistently the opposite direction from "re-entries
+   rescue losers" across both the pre- and post-review runs — informs, but
+   does not by itself force, the choice between the three future-fix options
+   above.
 
 9. **[Parked] Conditional maker paper simulator.** OBS-009 did not survive its
    defensive sensitivity checks, so no simulator is authorized. Reconsider only
