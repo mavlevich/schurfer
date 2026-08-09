@@ -5,6 +5,7 @@ import pytest
 from schurfer_analytics.ohlcv import (
     ONE_MINUTE_MS,
     TIMEFRAME_MS,
+    IncompleteFetchError,
     closed_candles,
     fetch_candles,
     fetch_symbol_candles,
@@ -12,6 +13,8 @@ from schurfer_analytics.ohlcv import (
     normalize_candles,
     window_bounds,
 )
+
+DAY_MS = 24 * 60 * 60 * 1000
 
 
 def test_normalize_candles_validates_deduplicates_and_sorts() -> None:
@@ -226,6 +229,164 @@ async def test_fetch_symbol_candles_preserves_identity_validated_symbol(
 async def test_fetch_symbol_candles_rejects_empty_symbol() -> None:
     with pytest.raises(ValueError, match="symbol"):
         await fetch_symbol_candles(AsyncMock(), " ", 0, TIMEFRAME_MS)
+
+
+# --- 2026-08-10 finding: max_pages must not assume full-sized pages --------
+
+
+def _daily_bar(start: int, offset: int) -> list[float]:
+    ts = start + offset * DAY_MS
+    return [ts, 100, 101, 99, 100, 1]
+
+
+async def test_fetch_symbol_candles_completes_large_window_despite_capped_pages() -> None:
+    """Regression (2026-08-10): a 365-day daily window used to size its page
+    budget assuming full 1000-bar pages. An exchange that silently caps
+    pages at a fraction of that (plausible for a historical daily endpoint)
+    used to make the fetch return a truncated result with no signal. The
+    response is derived from the real `since`/`limit` arguments, not a fixed
+    sequence, so this also exercises the real cursor/lookback/dedup math,
+    not just the mock's ability to hand back eight pages."""
+    start = int(datetime(2026, 1, 1, tzinfo=UTC).timestamp() * 1000)
+    total_days = 365
+    page_cap = 50  # far below what the exchange was actually asked for
+
+    async def capped_fetch_ohlcv(
+        _symbol: str, _timeframe: str, since: int, limit: int
+    ) -> list[list[float]]:
+        bars = [
+            _daily_bar(start, offset)
+            for offset in range(total_days)
+            if start + offset * DAY_MS >= since
+        ]
+        return bars[: min(limit, page_cap)]
+
+    exchange = AsyncMock()
+    exchange.fetch_ohlcv = AsyncMock(side_effect=capped_fetch_ohlcv)
+
+    result = await fetch_symbol_candles(
+        exchange,
+        "ERA/USDT:USDT",
+        start,
+        start + total_days * DAY_MS,
+        timeframe="1d",
+        timeframe_ms=DAY_MS,
+    )
+
+    assert [c.ts_ms for c in result] == [start + offset * DAY_MS for offset in range(total_days)]
+    # ceil(365 / 50) = 8 pages needed; well within the corrected budget.
+    assert exchange.fetch_ohlcv.await_count == 8
+
+
+async def test_fetch_symbol_candles_raises_when_page_budget_truly_exhausted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A pathological exchange that only ever advances by one bar per page,
+    for a window whose hard page-count cap has been lowered (here, to keep
+    the test fast) below what that would take, must fail closed instead of
+    returning a silently truncated result."""
+    monkeypatch.setattr("schurfer_analytics.ohlcv._MAX_PAGES_HARD_CAP", 3)
+    start = int(datetime(2026, 1, 1, tzinfo=UTC).timestamp() * 1000)
+    total_days = 10  # needs 10 pages at 1 bar/page, but the cap above is 3
+
+    async def one_bar_at_a_time_fetch_ohlcv(
+        _symbol: str, _timeframe: str, since: int, limit: int
+    ) -> list[list[float]]:
+        # Exclusive since, matching exclusive_since_fetch_ohlcv above: a page cap
+        # of 1 bar combined with an inclusive-since mock would keep returning the
+        # same lookback-overlap bar forever, hitting the stall path instead of
+        # actually exercising genuine per-page progress.
+        bars = [
+            _daily_bar(start, offset)
+            for offset in range(total_days)
+            if start + offset * DAY_MS > since
+        ]
+        return bars[:1]
+
+    exchange = AsyncMock()
+    exchange.fetch_ohlcv = AsyncMock(side_effect=one_bar_at_a_time_fetch_ohlcv)
+
+    with pytest.raises(IncompleteFetchError) as exc_info:
+        await fetch_symbol_candles(
+            exchange,
+            "ERA/USDT:USDT",
+            start,
+            start + total_days * DAY_MS,
+            timeframe="1d",
+            timeframe_ms=DAY_MS,
+        )
+
+    assert exc_info.value.symbol == "ERA/USDT:USDT"
+    assert exc_info.value.successful_pages == 3
+    assert exc_info.value.next_cursor_ms < start + total_days * DAY_MS
+
+
+async def test_fetch_symbol_candles_boundary_completion_on_last_budgeted_page(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The window completes on exactly the last page the budget allows.
+    This must succeed, not raise: `exhausted_page_budget` is only a problem
+    when the cursor has NOT reached end_ms by the time the budget runs out."""
+    monkeypatch.setattr("schurfer_analytics.ohlcv._MAX_PAGES_HARD_CAP", 3)
+    start = int(datetime(2026, 1, 1, tzinfo=UTC).timestamp() * 1000)
+    total_days = 3  # exactly matches the lowered hard cap of 3 one-bar pages
+
+    async def one_bar_at_a_time_fetch_ohlcv(
+        _symbol: str, _timeframe: str, since: int, limit: int
+    ) -> list[list[float]]:
+        # Exclusive since, matching exclusive_since_fetch_ohlcv above: see the
+        # comment in the exhaustion test just above for why.
+        bars = [
+            _daily_bar(start, offset)
+            for offset in range(total_days)
+            if start + offset * DAY_MS > since
+        ]
+        return bars[:1]
+
+    exchange = AsyncMock()
+    exchange.fetch_ohlcv = AsyncMock(side_effect=one_bar_at_a_time_fetch_ohlcv)
+
+    result = await fetch_symbol_candles(
+        exchange,
+        "ERA/USDT:USDT",
+        start,
+        start + total_days * DAY_MS,
+        timeframe="1d",
+        timeframe_ms=DAY_MS,
+    )
+
+    assert [c.ts_ms for c in result] == [start + offset * DAY_MS for offset in range(total_days)]
+
+
+async def test_fetch_symbol_candles_empty_page_still_returns_partial_silently(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unchanged pre-existing semantics, documented explicitly: an empty
+    page after retries is still a silent partial result, not
+    IncompleteFetchError. This fix only changes the page-budget-exhaustion
+    case."""
+    monkeypatch.setattr("schurfer_analytics.ohlcv._EMPTY_PAGE_RETRY_DELAY_SECONDS", 0)
+    start = int(datetime(2026, 1, 1, tzinfo=UTC).timestamp() * 1000)
+    exchange = AsyncMock()
+    exchange.fetch_ohlcv = AsyncMock(
+        side_effect=[
+            [_daily_bar(start, 0), _daily_bar(start, 1)],
+            [],
+            [],
+            [],
+        ]
+    )
+
+    result = await fetch_symbol_candles(
+        exchange,
+        "ERA/USDT:USDT",
+        start,
+        start + 5 * DAY_MS,
+        timeframe="1d",
+        timeframe_ms=DAY_MS,
+    )
+
+    assert [c.ts_ms for c in result] == [start, start + DAY_MS]
 
 
 def test_one_minute_normalization_and_strict_next_bar_are_explicit() -> None:
