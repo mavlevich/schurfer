@@ -443,7 +443,7 @@ handler.go`, `oiChangeThresholdPct = 5.0`) scores a recorded aggregate OI
    for a short (0 points) and below -5% as good (2 points). An informal read
    of the score_6 baseline's own triggered replay trades (2026-07-26 to
    2026-08-09) found the opposite direction on the confirmed-growth subset:
-   N=23, 17 assets, mean +0.94%, PF 1.38 — but concentrated in exactly 2 UTC
+   N=23, 17 assets, mean +0.94%, PF 1.38, but concentrated in exactly 2 UTC
    weeks, one slightly negative and one strongly positive. `oi-growth-
 filter-report` (`confirmed_oi_growth_baseline_filter_v1`) tests this as a
    forward-only filter on top of the unchanged score_6 baseline (never a
@@ -451,23 +451,23 @@ filter-report` (`confirmed_oi_growth_baseline_filter_v1`) tests this as a
    trades only when `oi_trend.data_available is True`, `points == 0`, AND the
    raw recorded value independently agrees with this filter's own frozen
    +-5% threshold (a `points`/`value` disagreement is treated as unresolved,
-   never trusted via `points` alone) — cash otherwise. Cohort start is
-   locked to the day after registration — the window that produced the lead
+   never trusted via `points` alone), cash otherwise. Cohort start is
+   locked to the day after registration; the window that produced the lead
    must never be reused to confirm it (and must move forward again if this
    PR merges after 2026-08-10).
    The formal sample is built on the first 100 baseline-triggered
-   opportunities with a confirmed OI reading — not the first 100 eligible
+   opportunities with a confirmed OI reading, not the first 100 eligible
    episodes overall, which would almost certainly never accumulate 20
    growth-triggers and stall forever (baseline itself is already a small
    share of eligible episodes, and confirmed growth a further subset of
    that). Missing/unknown-quality OI readings are excluded from this primary
    population entirely, not folded into cash, so a data-availability pattern
-   can never masquerade as the OI-growth effect itself — shown separately as
+   can never masquerade as the OI-growth effect itself. Shown separately as
    an operational-sensitivity view. "Triggered" means the selection fired,
    independent of whether the market path later resolved (matching
    `virtual_threshold_challenger_report.py`'s convention).
    Promotion requires ALL of: the run is canonical (no CLI override of
-   strategy cohort, resolver, fallback, or costs — a sensitivity run can
+   strategy cohort, resolver, fallback, or costs; a sensitivity run can
    never emit a promotion verdict); `challenger_inference`'s formal machinery
    on that population (>=100 formal-sample opportunities, >=30 asset
    clusters, >=20 actually-triggered challenger trades, a paired-delta

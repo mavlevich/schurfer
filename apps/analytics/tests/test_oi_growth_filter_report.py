@@ -107,7 +107,7 @@ def test_oi_growth_reason_confirmed_growth() -> None:
 
 def test_oi_growth_reason_points_value_mismatch_fails_closed() -> None:
     # points=0 ("growth") but the raw value doesn't clear the frozen +5%
-    # threshold — must not be silently trusted via points alone.
+    # threshold. Must not be silently trusted via points alone.
     assert oi_growth_reason(_oi(0, data_available=True, value=1.0)) == "oi_points_value_mismatch"
 
 
@@ -287,7 +287,7 @@ def test_evaluate_neutral_oi_is_cash_for_challenger() -> None:
 
 def test_evaluate_confirmed_missing_oi_data_fails_closed_to_cash() -> None:
     # points=0 would normally mean "growth", but data_quality.oi=False means
-    # the reading is not confirmed — must fail closed, never confirm growth.
+    # the reading is not confirmed. Must fail closed, never confirm growth.
     decision = _decision(1, oi_points=0, oi_data_available=False)
     episode = _episode(decision)
     path_by_decision = {decision.decision_id or "": _complete_path(decision)}
@@ -295,7 +295,7 @@ def test_evaluate_confirmed_missing_oi_data_fails_closed_to_cash() -> None:
     assert result.oi_selection_reason == "oi_data_confirmed_missing"
     assert result.challenger_net_return_pct == 0.0
     assert result.challenger_triggered is False
-    # Baseline itself is unaffected by OI data-quality — it still trades and
+    # Baseline itself is unaffected by OI data-quality: it still trades and
     # is still "triggered" (selection-based), even though the challenger
     # never fires on this episode.
     assert result.baseline_triggered is True
@@ -303,7 +303,7 @@ def test_evaluate_confirmed_missing_oi_data_fails_closed_to_cash() -> None:
 
 def test_evaluate_points_value_mismatch_is_unresolved_not_cash() -> None:
     # points=0 claims growth, but the recorded value contradicts it against
-    # this filter's own frozen threshold — must be unresolved, not folded
+    # this filter's own frozen threshold. Must be unresolved, not folded
     # into either "growth" or plain cash.
     decision = _decision(1, oi_points=0, oi_value=1.0, oi_data_available=True)
     episode = _episode(decision)
@@ -323,7 +323,7 @@ def test_evaluate_confirmed_growth_with_missing_market_path_is_unresolved_not_ca
     # No path supplied at all -> _missing_path -> trade never resolves.
     result = evaluate_oi_growth_episode(episode, {}, DEFAULT_COSTS)
     assert result.status == "unresolved_path"
-    # Selection still fired even though the market path never resolved —
+    # Selection still fired even though the market path never resolved.
     # "triggered" tracks selection, not resolution (see module docstring).
     assert result.baseline_triggered is True
     assert result.baseline_net_return_pct is None
@@ -335,7 +335,7 @@ def test_evaluate_confirmed_growth_with_missing_market_path_is_unresolved_not_ca
 
 def test_evaluate_declining_oi_with_missing_market_path_stays_cash_not_triggered() -> None:
     # Even with an unresolved market path, a non-growth reason is *always*
-    # cash for the challenger — never contingent on data availability.
+    # cash for the challenger, never contingent on data availability.
     decision = _decision(1, oi_points=2, oi_data_available=True)
     episode = _episode(decision)
     result = evaluate_oi_growth_episode(episode, {}, DEFAULT_COSTS)
