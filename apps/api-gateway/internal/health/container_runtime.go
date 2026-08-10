@@ -31,6 +31,11 @@ type ContainerMetric struct {
 	Health           string  `json:"health"`
 	RestartCount     int64   `json:"restart_count"`
 	StartedAt        string  `json:"started_at"`
+	// OOMKilled distinguishes a container the kernel killed for memory from
+	// any other "exited" reason (a clean stop, an intentional retirement).
+	// Status/Health alone cannot tell these apart once the container is no
+	// longer running.
+	OOMKilled bool `json:"oom_killed"`
 }
 
 type dockerStatsLine struct {
@@ -47,6 +52,7 @@ type dockerStateLine struct {
 	Status       string `json:"status"`
 	Health       string `json:"health"`
 	StartedAt    string `json:"started_at"`
+	OOMKilled    bool   `json:"oom_killed"`
 }
 
 func readContainerRuntime(path string) *ContainerRuntime {
@@ -148,6 +154,7 @@ func buildContainerMetric(
 		Health:       state.Health,
 		RestartCount: state.RestartCount,
 		StartedAt:    state.StartedAt,
+		OOMKilled:    state.OOMKilled,
 	}
 	if stats.Name == "" {
 		return metric, nil
