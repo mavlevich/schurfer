@@ -192,9 +192,14 @@ front.
    512 MiB/1 CPU container budget. Storage is two separate gates, not one, since a
    single number conflates the hot uncompressed chunk with the compressed
    steady-state one: hot/uncompressed growth at most 1.5 GiB/day, compressed
-   steady-state growth at most 500 MiB/day, both measured directly (`pg_relation_size`
-   plus indexes, not extrapolated from a single row) rather than assumed, per the
-   real capture-and-compression benchmark in
+   steady-state growth at most 500 MiB/day. A hypertable's rows live in per-chunk
+   child tables, not the parent relation, so measure both gates with
+   `hypertable_detailed_size(...)` (or `hypertable_size(...)` for the quick total),
+   not plain `pg_relation_size` on the parent, and report chunk count/compression
+   state with compressed and uncompressed footprint tracked separately rather than
+   one blended number. Confirm against real measured disk growth over an interval,
+   not extrapolated from a single row, per the real capture-and-compression
+   benchmark in
    `packages/journal/migrations/versions/0024_bybit_momentum_bars_1m.py`'s own
    docstring. Require zero persistence/drop errors, bounded reconnects, p99
    processing lag below one second, RSS below 400 MiB, and no sustained host
