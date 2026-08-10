@@ -1,5 +1,5 @@
-.PHONY: help install install-golangci-lint install-deadcode dev dev-init dev-stop dev-reset dev-logs dev-test migrate measurement-report exchange-coverage-report exchange-source-economics-report source-lead-report source-lead-identity-report gate-identity-candidate-tooling episode-replay virtual-strategy-report virtual-entry-challenger-report virtual-threshold-challenger-report virtual-exit-policy-report virtual-exit-discovery-report virtual-score-challenger-report virtual-banded-price-extent-report candle-anomaly-report derivatives-context-report decision-quality-report derivatives-regime-feasibility-report liquid-taker-report long-horizon-report open-ended-margin-report maker-entry-report pump-magnitude-report orderflow-pilot-report orderflow-endpoint-sensitivity-report exit-liquidity-calibration-report pump-short-failure-attribution-report pump-short-reentry-audit-report oi-growth-filter-report token-history-identity-preflight-report token-history-ohlcv-sample-report token-history-parquet-dataset orderflow-start orderflow-stop orderflow-health test lint ci-lint format clean security deadcode check verify verify-docker \
-		prod-deploy prod-runtime-metrics-install prod-runtime-metrics-health prod-research-checkpoints-install prod-research-checkpoints-run prod-research-checkpoints-health prod-measurement-report prod-exchange-coverage-report prod-exchange-source-economics-report prod-source-lead-report prod-source-lead-identity-report prod-gate-identity-candidate-tooling prod-source-lead-capture-health prod-episode-replay prod-virtual-strategy-report prod-virtual-entry-challenger-report prod-virtual-threshold-challenger-report prod-virtual-exit-policy-report prod-virtual-exit-discovery-report prod-virtual-score-challenger-report prod-virtual-banded-price-extent-report prod-candle-anomaly-report prod-derivatives-context-report prod-decision-quality-report prod-derivatives-regime-feasibility-report prod-liquid-taker-report prod-long-horizon-report prod-open-ended-margin-report prod-open-ended-margin-health prod-maker-entry-report prod-pump-magnitude-report prod-orderflow-pilot-report prod-orderflow-endpoint-sensitivity-report prod-exit-liquidity-calibration-report prod-pump-short-failure-attribution-report prod-pump-short-reentry-audit-report prod-oi-growth-filter-report prod-token-history-identity-preflight-report prod-token-history-ohlcv-sample-report prod-token-history-parquet-dataset prod-orderflow-start prod-orderflow-stop prod-orderflow-health prod-logs prod-backup prod-restore-local prod-health
+.PHONY: help install install-golangci-lint install-deadcode dev dev-init dev-stop dev-reset dev-logs dev-test migrate measurement-report exchange-coverage-report exchange-source-economics-report source-lead-report source-lead-identity-report gate-identity-candidate-tooling episode-replay virtual-strategy-report virtual-entry-challenger-report virtual-threshold-challenger-report virtual-exit-policy-report virtual-exit-discovery-report virtual-score-challenger-report virtual-banded-price-extent-report candle-anomaly-report derivatives-context-report decision-quality-report derivatives-regime-feasibility-report liquid-taker-report long-horizon-report open-ended-margin-report maker-entry-report pump-magnitude-report orderflow-pilot-report orderflow-endpoint-sensitivity-report exit-liquidity-calibration-report pump-short-failure-attribution-report pump-short-reentry-audit-report oi-growth-filter-report token-history-identity-preflight-report token-history-ohlcv-sample-report token-history-parquet-dataset orderflow-start orderflow-stop orderflow-health momentum-capture-start momentum-capture-stop momentum-capture-health test lint ci-lint format clean security deadcode check verify verify-docker \
+		prod-deploy prod-runtime-metrics-install prod-runtime-metrics-health prod-research-checkpoints-install prod-research-checkpoints-run prod-research-checkpoints-health prod-measurement-report prod-exchange-coverage-report prod-exchange-source-economics-report prod-source-lead-report prod-source-lead-identity-report prod-gate-identity-candidate-tooling prod-source-lead-capture-health prod-episode-replay prod-virtual-strategy-report prod-virtual-entry-challenger-report prod-virtual-threshold-challenger-report prod-virtual-exit-policy-report prod-virtual-exit-discovery-report prod-virtual-score-challenger-report prod-virtual-banded-price-extent-report prod-candle-anomaly-report prod-derivatives-context-report prod-decision-quality-report prod-derivatives-regime-feasibility-report prod-liquid-taker-report prod-long-horizon-report prod-open-ended-margin-report prod-open-ended-margin-health prod-maker-entry-report prod-pump-magnitude-report prod-orderflow-pilot-report prod-orderflow-endpoint-sensitivity-report prod-exit-liquidity-calibration-report prod-pump-short-failure-attribution-report prod-pump-short-reentry-audit-report prod-oi-growth-filter-report prod-token-history-identity-preflight-report prod-token-history-ohlcv-sample-report prod-token-history-parquet-dataset prod-orderflow-start prod-orderflow-stop prod-orderflow-health prod-momentum-capture-start prod-momentum-capture-stop prod-momentum-capture-health prod-logs prod-backup prod-restore-local prod-health
 
 GOLANGCI_LINT_VERSION = v2.1.6
 DEADCODE_VERSION = v0.48.0
@@ -7,6 +7,20 @@ PROD_REPORT_MIN_HEADROOM_MB ?= 1280
 PROD_REPORT_MIN_AVAILABLE_MB ?= 1024
 PROD_ORDERFLOW_MIN_AVAILABLE_MB ?= 768
 PROD_ORDERFLOW_MIN_DISK_MB ?= 15360
+# mem_limit is 512m; requiring roughly 2x that available before starting
+# mirrors the same margin PROD_ORDERFLOW_MIN_AVAILABLE_MB gives
+# orderflow-pilot's 384m.
+PROD_MOMENTUM_CAPTURE_MIN_AVAILABLE_MB ?= 1024
+# momentum-capture has no local container volume of its own, but its data
+# still lands on the SAME host disk as everything else, via Postgres's
+# volume: at the measured ~1.14 GiB/day hot uncompressed
+# (packages/journal/migrations/versions/0024_bybit_momentum_bars_1m.py),
+# roughly 2 days of hot data before the first chunk compresses, plus WAL
+# and index overhead, plausibly reaches several GiB over a 48-72h canary.
+# 10 GiB is a deliberately conservative margin above that estimate, shared
+# with whatever else is already on the disk; revisit once the canary has
+# measured real WAL growth instead of estimating it.
+PROD_MOMENTUM_CAPTURE_MIN_DISK_MB ?= 10240
 
 help:
 	@echo "Schurfer - common commands"
@@ -63,6 +77,9 @@ help:
 	@echo "  make orderflow-start  Start the bounded local Bybit order-flow pilot"
 	@echo "  make orderflow-health  Show local order-flow pilot health"
 	@echo "  make orderflow-stop  Stop the local order-flow pilot"
+	@echo "  make momentum-capture-start  Start the bounded local Bybit momentum-capture line"
+	@echo "  make momentum-capture-health  Show local momentum-capture health"
+	@echo "  make momentum-capture-stop  Stop the local momentum-capture line"
 	@echo ""
 	@echo "Production (run on server with .env.prod present):"
 	@echo "  make prod-deploy          Pull + rebuild + restart all services"
@@ -113,6 +130,9 @@ help:
 	@echo "  make prod-orderflow-start  Explicitly start the bounded order-flow trial"
 	@echo "  make prod-orderflow-health  Show order-flow trial health and resource use"
 	@echo "  make prod-orderflow-stop  Stop the order-flow trial"
+	@echo "  make prod-momentum-capture-start  Explicitly start the bounded momentum-capture canary"
+	@echo "  make prod-momentum-capture-health  Show momentum-capture canary health and resource use"
+	@echo "  make prod-momentum-capture-stop  Stop the momentum-capture canary"
 
 install:
 	@echo "-> Installing Python deps via uv..."
@@ -185,6 +205,21 @@ orderflow-health:
 		--profile orderflow ps orderflow-pilot
 	@docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
 		exec -T redis redis-cli --raw HGETALL market:orderflow:health
+
+momentum-capture-start:
+	@test -f .env || (echo "ERROR: .env not found. Run make dev-init first." && exit 1)
+	docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		--profile momentum-capture up -d --build momentum-capture
+
+momentum-capture-stop:
+	docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		--profile momentum-capture stop momentum-capture
+
+momentum-capture-health:
+	@docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		--profile momentum-capture ps momentum-capture
+	@docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		exec -T redis redis-cli --raw HGETALL market:momentumcapture:health
 
 orderflow-pilot-report:
 	@uv run --package schurfer-analytics orderflow-pilot-report \
@@ -1107,6 +1142,35 @@ prod-orderflow-health:
 	@$(_PROD) --profile orderflow ps orderflow-pilot
 	@$(_PROD) exec -T redis redis-cli --raw HGETALL market:orderflow:health
 	@docker stats --no-stream schurfer-orderflow-pilot schurfer-collector schurfer-market-hotset
+
+prod-momentum-capture-start:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	@test "$$(git branch --show-current)" = "main" || (echo "ERROR: deploy only from main." && exit 1)
+	@test -z "$$(git status --porcelain)" || (echo "ERROR: working tree not clean." && exit 1)
+	@if test -r /proc/meminfo; then \
+		available_mb=$$(awk '/^MemAvailable:/ {print int($$2 / 1024)}' /proc/meminfo); \
+		if test "$$available_mb" -lt "$(PROD_MOMENTUM_CAPTURE_MIN_AVAILABLE_MB)"; then \
+			echo "ERROR: momentum-capture requires $(PROD_MOMENTUM_CAPTURE_MIN_AVAILABLE_MB) MiB available RAM; found $$available_mb MiB."; \
+			exit 1; \
+		fi; \
+	fi
+	@available_disk_mb=$$(df -Pm / | awk 'NR == 2 {print $$4}'); \
+	if test "$$available_disk_mb" -lt "$(PROD_MOMENTUM_CAPTURE_MIN_DISK_MB)"; then \
+		echo "ERROR: momentum-capture requires $(PROD_MOMENTUM_CAPTURE_MIN_DISK_MB) MiB free disk; found $$available_disk_mb MiB."; \
+		exit 1; \
+	fi
+	$(_PROD) --profile momentum-capture up -d --build momentum-capture
+	@$(_PROD) --profile momentum-capture ps momentum-capture
+
+prod-momentum-capture-stop:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	$(_PROD) --profile momentum-capture stop momentum-capture
+
+prod-momentum-capture-health:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	@$(_PROD) --profile momentum-capture ps momentum-capture
+	@$(_PROD) exec -T redis redis-cli --raw HGETALL market:momentumcapture:health
+	@docker stats --no-stream schurfer-momentum-capture schurfer-collector
 
 verify-docker: verify
 	@echo "=== Docker: analytics build + import check ==="

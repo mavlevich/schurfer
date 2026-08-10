@@ -44,7 +44,7 @@ func TestTradeStreamReconnectsAfterHalfOpenReadTimeout(t *testing.T) {
 		defer close(done)
 		source.tradeStreamLoop(ctx, []string{"BTCUSDT"}, func(context.Context, PublicTrade) error {
 			return nil
-		})
+		}, func(TradeLifecycleEvent) {})
 	}()
 
 	waitForReconnect(t, reconnected, cancel, done)
@@ -68,7 +68,7 @@ func TestTradeStreamRenewsReadDeadlineOnControlFrames(t *testing.T) {
 	startedAt := time.Now()
 	err := source.tradeStream(ctx, []string{"BTCUSDT"}, func(context.Context, PublicTrade) error {
 		return nil
-	})
+	}, func(TradeLifecycleEvent) {})
 	if !isReadTimeout(err) {
 		t.Fatalf("trade stream error = %v, want read timeout", err)
 	}
