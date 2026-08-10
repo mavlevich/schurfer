@@ -10,30 +10,57 @@ known in advance and can change (a restart moves it) -- a fixed-date checkpoint
 spec cannot express that, so this is a small runner with its own state file
 instead of a new CHECKPOINTS entry.
 
+State model (one JSON snapshot file):
+
+    {
+      "active_epoch": {
+        "started_at_ms": ...,
+        "status": "running" | "interrupted",
+        "baseline": {...} | null,          # captured once, at epoch creation
+        "checkpoints": {
+          "24": {"state": "pending"|"collected"|"notified"|"missed", ...},
+          "48": {...},
+          "72": {...},
+        },
+        "late_snapshots": [...],           # catch-up reads after a long gap
+        "diagnostic_snapshots": [...],     # from --sample-now, never official
+      },
+      "archived_epochs": [...]             # previous epochs, never discarded
+    }
+
 Each run:
 1. Reads the momentum-capture service's own started_at_ms from its Redis
    health snapshot (market:momentumcapture:health) -- never a value this
-   script computes or is told, so a restart is detected and the checkpoint
-   clock resets automatically rather than needing a human to re-point it.
-2. Computes the 24h/48h/72h due times from that real start.
-3. For each due-but-not-yet-fired checkpoint, collects health, container
-   RSS/CPU, host swap counters, and Timescale-hypertable storage (chunk-aware:
-   hypertable_detailed_size and hypertable_compression_stats, not a bare
-   pg_relation_size on the parent relation, since hypertable rows live in
-   per-chunk child tables), writes an atomic JSON snapshot, and sends one
-   Telegram summary.
+   script computes or is told. A changed started_at_ms means a restart:
+   the OLD epoch is archived (full history kept, a Telegram alert sent), not
+   silently wiped -- a restart at hour 70 must not erase evidence of a
+   struggling canary, and whether the new epoch counts as a fresh canary is a
+   human decision, not this script's.
+2. If health is unreadable while an epoch is active, that is itself alerted
+   once (edge-triggered, like the notifier's own stale/recovered pattern) and
+   the epoch is marked interrupted, so a momentum-capture death at hour 24
+   cannot pass in total silence.
+3. A baseline (storage, swap counters, health) is captured once at epoch
+   start. Every checkpoint after that reports both the absolute numbers and
+   the delta/rate-per-day since baseline, because the ROADMAP gates this
+   canary exists for (bytes/day, sustained swap) are rate gates, not
+   snapshot gates.
+4. Checkpoints are collected within 2h of their true due time; later than
+   that (e.g. the host was down across the window) the offset is marked
+   "missed" and, once per run, a single distinctly-labeled late/catch-up
+   snapshot is taken instead of mislabeling stale data as if it were that
+   checkpoint's own timely read.
+5. A Telegram send failure never permanently loses a checkpoint: data is
+   saved atomically as "collected" first, and only promoted to "notified"
+   once delivery actually succeeds, retried every run until it does.
+6. --sample-now takes an out-of-band diagnostic read and always sends it, but
+   never touches official checkpoint state -- it cannot pre-empt a real
+   24/48/72h checkpoint.
 
 This never stops or restarts momentum-capture. The 48-to-72h checkpoint in
 ROADMAP.md item 6 is a human go/no-go decision; this runner's only job is to
-make sure that decision has real, timely numbers in front of it instead of
-someone remembering to run `make prod-momentum-capture-health` by hand.
-
-Swap is reported two ways because a single point-in-time sample cannot show
-whether swapping was "sustained" (the ROADMAP gate's actual wording): current
-swap used (a snapshot) plus cumulative pswpin/pswpout page counters from
-/proc/vmstat (since-boot totals) -- a human diffing those counters across the
-24h/48h/72h snapshots sees real swap activity during the canary window, which
-a single sample cannot.
+make sure that decision has real, timely, honestly-labeled numbers in front
+of it.
 """
 
 from __future__ import annotations
@@ -51,7 +78,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-SNAPSHOT_VERSION = "momentum_canary_checkpoints_v1"
+SNAPSHOT_VERSION = "momentum_canary_checkpoints_v2"
 
 REDIS_CONTAINER = "schurfer-redis"
 POSTGRES_CONTAINER = "schurfer-postgres"
@@ -65,6 +92,12 @@ HYPERTABLE = "timeseries.bybit_momentum_bars_1m"
 # 24h is an early warning, not itself a decision point; 48h/72h bracket the
 # ROADMAP item 6 go/no-go window.
 CHECKPOINT_OFFSETS_HOURS = (24, 48, 72)
+
+# A checkpoint collected within this much of its true due time still counts
+# as that checkpoint. Sized well above normal 15-minute timer jitter so it
+# only kicks in for a real interruption (host down, timer disabled), not
+# routine scheduling slack.
+CHECKPOINT_GRACE = timedelta(hours=2)
 
 logger = logging.getLogger("momentum-canary-checkpoints")
 
@@ -236,6 +269,10 @@ def _mib(byte_count: int) -> float:
     return byte_count / (1024 * 1024)
 
 
+def _utc(value: datetime) -> str:
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
+
+
 def collect_checkpoint(
     *, health: dict[str, str], now: datetime, epoch_started_at_ms: int
 ) -> dict[str, Any]:
@@ -257,121 +294,339 @@ def collect_checkpoint(
     }
 
 
-def _notification_text(offset_hours: int, snapshot: dict[str, Any]) -> str:
+def _rate_per_day(delta: float, elapsed_hours: float) -> float | None:
+    if elapsed_hours <= 0:
+        return None
+    return delta / (elapsed_hours / 24)
+
+
+def _delta_block(current: dict[str, Any], baseline: dict[str, Any] | None) -> dict[str, Any] | None:
+    if baseline is None:
+        return None
+    elapsed_hours = current["elapsed_hours"] - baseline["elapsed_hours"]
+    storage_delta = (
+        current["timescale_storage"]["total_bytes"] - baseline["timescale_storage"]["total_bytes"]
+    )
+    rows_delta = (
+        current["timescale_storage"]["row_count"] - baseline["timescale_storage"]["row_count"]
+    )
+    pswpin_delta = current["host_swap_counters"].get("pswpin", 0) - baseline[
+        "host_swap_counters"
+    ].get("pswpin", 0)
+    pswpout_delta = current["host_swap_counters"].get("pswpout", 0) - baseline[
+        "host_swap_counters"
+    ].get("pswpout", 0)
+    return {
+        "elapsed_hours_since_baseline": round(elapsed_hours, 2),
+        "storage_delta_bytes": storage_delta,
+        "storage_rate_bytes_per_day": _rate_per_day(storage_delta, elapsed_hours),
+        "rows_delta": rows_delta,
+        "pswpin_delta": pswpin_delta,
+        "pswpout_delta": pswpout_delta,
+    }
+
+
+# Health fields surfaced verbatim in the Telegram summary, grouped for
+# readability. Kept in sync with redis_store.go's StoreHealth -- if a field
+# is added there for operational visibility, it belongs here too, per the
+# "show every drop/error counter, not a hand-picked few" review note.
+_HEALTH_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (
+        "Universe",
+        (
+            "ready_symbols",
+            "subscribed_symbols",
+            "universe_stale",
+            "added_since_start_count",
+            "removed_since_start_count",
+            "symbols_missing_ticker_count",
+            "symbols_missing_trades_count",
+        ),
+    ),
+    (
+        "Feed",
+        (
+            "input_queue_depth",
+            "input_queue_peak",
+            "input_queue_drops_total",
+            "bars_completed_total",
+            "late_events_total",
+            "ticker_gap_total",
+            "trade_reconnect_total",
+            "trade_read_timeout_total",
+            "nats_disconnect_total",
+            "nats_reconnect_total",
+            "nats_slow_consumer_total",
+            "nats_dropped_total",
+        ),
+    ),
+    (
+        "Writer",
+        (
+            "writer_queue_depth",
+            "writer_queue_peak",
+            "writer_queue_drops_total",
+            "bars_persisted_total",
+            "persist_errors_total",
+            "persist_retries_total",
+            "rows_written_total",
+            "payload_hash_mismatch_total",
+        ),
+    ),
+    ("Lag", ("trade_lag_max_ms", "ticker_lag_max_ms")),
+)
+
+
+def _notification_text(
+    label: str, snapshot: dict[str, Any], *, baseline: dict[str, Any] | None = None
+) -> str:
     health = snapshot["health"]
     storage = snapshot["timescale_storage"]
     mc = snapshot["momentum_capture_container"]
     coll = snapshot["collector_container"]
-    return (
-        f"\U0001f3af Momentum-capture canary checkpoint: {offset_hours}h\n"
-        f"Elapsed: {snapshot['elapsed_hours']:.1f}h\n"
-        f"Bars completed: {health.get('bars_completed_total', 'n/a')}\n"
-        f"Missing ticker/trades symbols: {health.get('symbols_missing_ticker_count', 'n/a')}"
-        f"/{health.get('symbols_missing_trades_count', 'n/a')}\n"
-        f"Persist retries: {health.get('persist_retries_total', 'n/a')}  "
-        f"NATS drops: {health.get('nats_dropped_total', 'n/a')}  "
-        f"Late events: {health.get('late_events_total', 'n/a')}\n"
-        f"Writer queue depth: {health.get('writer_queue_depth', 'n/a')}\n"
-        f"RSS momentum-capture: {mc.get('MemUsage', 'n/a')}  CPU: {mc.get('CPUPerc', 'n/a')}\n"
-        f"RSS collector: {coll.get('MemUsage', 'n/a')}  CPU: {coll.get('CPUPerc', 'n/a')}\n"
+    lines = [
+        f"\U0001f3af Momentum-capture canary checkpoint: {label}",
+        f"Status: {health.get('status', 'n/a')}  Elapsed: {snapshot['elapsed_hours']:.1f}h",
+    ]
+    for group_name, fields in _HEALTH_GROUPS:
+        rendered = "  ".join(f"{field}={health.get(field, 'n/a')}" for field in fields)
+        lines.append(f"{group_name}: {rendered}")
+    lines.append(
+        f"RSS momentum-capture: {mc.get('MemUsage', 'n/a')}  CPU: {mc.get('CPUPerc', 'n/a')}"
+    )
+    lines.append(f"RSS collector: {coll.get('MemUsage', 'n/a')}  CPU: {coll.get('CPUPerc', 'n/a')}")
+    lines.append(
         f"Host swap used: {snapshot['host_swap_used_mb']} MiB "
         f"(pswpin={snapshot['host_swap_counters'].get('pswpin', 'n/a')} "
-        f"pswpout={snapshot['host_swap_counters'].get('pswpout', 'n/a')} since boot)\n"
+        f"pswpout={snapshot['host_swap_counters'].get('pswpout', 'n/a')} since boot)"
+    )
+    lines.append(
         f"Timescale storage: {_mib(storage['total_bytes']):.0f} MiB total, "
         f"{storage['compressed_chunks']}/{storage['total_chunks']} chunks compressed "
         f"(before={_mib(storage['before_compression_total_bytes']):.0f} MiB, "
-        f"after={_mib(storage['after_compression_total_bytes']):.0f} MiB)\n"
-        f"Rows: {storage['row_count']:,}"
+        f"after={_mib(storage['after_compression_total_bytes']):.0f} MiB), "
+        f"rows={storage['row_count']:,}"
     )
+    delta = _delta_block(snapshot, baseline)
+    if delta is not None:
+        rate = delta["storage_rate_bytes_per_day"]
+        rate_text = f"{_mib(rate):.0f} MiB/day" if rate is not None else "n/a"
+        storage_delta_mib = _mib(delta["storage_delta_bytes"])
+        storage_sign = "+" if delta["storage_delta_bytes"] >= 0 else ""
+        rows_sign = "+" if delta["rows_delta"] >= 0 else ""
+        lines.append(
+            f"Since baseline ({delta['elapsed_hours_since_baseline']:.1f}h): "
+            f"storage {storage_sign}{storage_delta_mib:.0f} MiB ({rate_text}), "
+            f"rows {rows_sign}{delta['rows_delta']:,}, "
+            f"swap pswpin +{delta['pswpin_delta']} pswpout +{delta['pswpout_delta']}"
+        )
+    return "\n".join(lines)
 
 
-def _utc(value: datetime) -> str:
-    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
+def _new_epoch(started_at_ms: int) -> dict[str, Any]:
+    epoch_start = datetime.fromtimestamp(started_at_ms / 1000, tz=UTC)
+    return {
+        "started_at_ms": started_at_ms,
+        "status": "running",
+        "baseline": None,
+        "baseline_collected_at": None,
+        "interrupted_since": None,
+        "last_error": None,
+        "checkpoints": {
+            str(hours): {
+                "state": "pending",
+                "due_at": _utc(epoch_start + timedelta(hours=hours)),
+            }
+            for hours in CHECKPOINT_OFFSETS_HOURS
+        },
+        "late_snapshots": [],
+        "diagnostic_snapshots": [],
+    }
 
 
 def run_once(
     *,
     now: datetime,
     snapshot_path: Path,
-    force_offset: int | None = None,
+    sample_now_offset: int | None = None,
 ) -> dict[str, Any]:
     previous = _read_json(snapshot_path)
     if previous.get("version") != SNAPSHOT_VERSION:
         previous = {}
 
+    archived_epochs: list[dict[str, Any]] = list(previous.get("archived_epochs", []))
+    active_epoch: dict[str, Any] | None = previous.get("active_epoch")
+
     try:
         health = _read_momentum_health()
         epoch_started_at_ms = int(health["started_at_ms"])
+        health_error: str | None = None
     except (RuntimeError, KeyError, ValueError) as exc:
+        health = None
+        epoch_started_at_ms = None
+        health_error = str(exc)
+
+    if health_error is not None:
+        if active_epoch is not None:
+            if active_epoch.get("status") != "interrupted":
+                active_epoch["status"] = "interrupted"
+                active_epoch["interrupted_since"] = _utc(now)
+                old_start = datetime.fromtimestamp(active_epoch["started_at_ms"] / 1000, tz=UTC)
+                _notify(
+                    f"\U0001f534 Momentum-capture canary: health became unreadable mid-epoch "
+                    f"(started {_utc(old_start)}).\nError: {health_error}\n"
+                    f"Will keep checking for recovery; this alert will not repeat."
+                )
+            active_epoch["last_error"] = health_error
         payload = {
-            **previous,
             "version": SNAPSHOT_VERSION,
             "generated_at": _utc(now),
-            "last_error": str(exc),
+            "active_epoch": active_epoch,
+            "archived_epochs": archived_epochs,
         }
         _atomic_json(snapshot_path, payload)
-        raise
+        raise RuntimeError(health_error)
 
-    if previous.get("epoch_started_at_ms") != epoch_started_at_ms:
-        # New epoch: momentum-capture started (or restarted) since we last
-        # looked. The checkpoint clock resets to this real start automatically
-        # -- no human needs to re-point anything.
-        logger.info(
-            "new momentum-capture epoch detected: started_at_ms=%s (previous=%s)",
-            epoch_started_at_ms,
-            previous.get("epoch_started_at_ms"),
-        )
-        previous = {
-            "epoch_started_at_ms": epoch_started_at_ms,
-            "fired_offsets_hours": [],
-            "error_notified_offsets_hours": [],
-            "history": [],
-        }
+    assert health is not None and epoch_started_at_ms is not None  # narrows for type checkers
 
-    epoch_start = datetime.fromtimestamp(epoch_started_at_ms / 1000, tz=UTC)
-    fired = set(previous.get("fired_offsets_hours", []))
-    error_notified = set(previous.get("error_notified_offsets_hours", []))
-    history = list(previous.get("history", []))
-    last_error: str | None = None
+    if active_epoch is not None and active_epoch.get("status") == "interrupted":
+        active_epoch["status"] = "running"
+        active_epoch["interrupted_since"] = None
+        active_epoch["last_error"] = None
+        _notify("\U0001f7e2 Momentum-capture canary: health readable again after an interruption.")
 
-    for offset_hours in CHECKPOINT_OFFSETS_HOURS:
-        if offset_hours in fired:
-            continue
-        due_at = epoch_start + timedelta(hours=offset_hours)
-        if now < due_at and force_offset != offset_hours:
-            continue
+    if active_epoch is None or active_epoch.get("started_at_ms") != epoch_started_at_ms:
+        if active_epoch is not None:
+            old_start = datetime.fromtimestamp(active_epoch["started_at_ms"] / 1000, tz=UTC)
+            ran_hours = (now - old_start).total_seconds() / 3600
+            archived = dict(active_epoch)
+            archived["archived_at"] = _utc(now)
+            archived["archived_reason"] = "restart_detected"
+            archived_epochs.append(archived)
+            logger.info(
+                "new momentum-capture epoch detected: started_at_ms=%s (previous=%s)",
+                epoch_started_at_ms,
+                active_epoch["started_at_ms"],
+            )
+            _notify(
+                f"⚠️ Momentum-capture restarted mid-canary. Previous epoch "
+                f"(started {_utc(old_start)}, ran {ran_hours:.1f}h) archived, not discarded.\n"
+                f"New epoch started "
+                f"{_utc(datetime.fromtimestamp(epoch_started_at_ms / 1000, tz=UTC))}.\n"
+                f"Whether this counts as a fresh canary or a continuation is a human call; "
+                f"the previous epoch's evidence is preserved in the snapshot either way."
+            )
+        active_epoch = _new_epoch(epoch_started_at_ms)
+
+    if active_epoch["baseline"] is None:
         try:
-            checkpoint = collect_checkpoint(
+            baseline = collect_checkpoint(
                 health=health, now=now, epoch_started_at_ms=epoch_started_at_ms
             )
-            message = _notification_text(offset_hours, checkpoint)
-            alert_error = _notify(message)
-            history.append(
-                {"offset_hours": offset_hours, **checkpoint, "notify_error": alert_error}
-            )
-            fired.add(offset_hours)
-            error_notified.discard(offset_hours)
+            active_epoch["baseline"] = baseline
+            active_epoch["baseline_collected_at"] = _utc(now)
         except (RuntimeError, ValueError) as exc:
-            last_error = f"{offset_hours}h checkpoint due but collection failed: {exc}"
-            logger.error(last_error)
-            if offset_hours not in error_notified:
-                _notify(
+            active_epoch["last_error"] = f"baseline collection failed: {exc}"
+            logger.error(active_epoch["last_error"])
+
+    epoch_start = datetime.fromtimestamp(active_epoch["started_at_ms"] / 1000, tz=UTC)
+    late_snapshot_taken_this_run = False
+
+    for offset_hours in CHECKPOINT_OFFSETS_HOURS:
+        key = str(offset_hours)
+        cp = active_epoch["checkpoints"][key]
+
+        if sample_now_offset == offset_hours:
+            try:
+                sample = collect_checkpoint(
+                    health=health, now=now, epoch_started_at_ms=active_epoch["started_at_ms"]
+                )
+                message = _notification_text(
+                    f"{offset_hours}h (diagnostic sample-now)",
+                    sample,
+                    baseline=active_epoch["baseline"],
+                )
+                notify_error = _notify(message)
+                active_epoch["diagnostic_snapshots"].append(
+                    {
+                        "requested_offset_hours": offset_hours,
+                        "notify_error": notify_error,
+                        **sample,
+                    }
+                )
+            except (RuntimeError, ValueError) as exc:
+                logger.error("sample-now %sh failed: %s", offset_hours, exc)
+            continue
+
+        if cp["state"] in ("notified", "missed"):
+            continue
+
+        if cp["state"] == "collected":
+            # Data already gathered; only the previous Telegram send failed.
+            # Retry delivery of the SAME saved message rather than
+            # re-collecting -- re-collecting here would silently replace this
+            # checkpoint's true point-in-time numbers with much later ones.
+            notify_error = _notify(cp["message"])
+            cp["notify_error"] = notify_error
+            if notify_error is None:
+                cp["state"] = "notified"
+            continue
+
+        due_at = epoch_start + timedelta(hours=offset_hours)
+        if now < due_at:
+            continue
+
+        if now - due_at > CHECKPOINT_GRACE:
+            cp["state"] = "missed"
+            cp["missed_at"] = _utc(now)
+            if not late_snapshot_taken_this_run:
+                try:
+                    sample = collect_checkpoint(
+                        health=health, now=now, epoch_started_at_ms=active_epoch["started_at_ms"]
+                    )
+                    message = _notification_text(
+                        "late catch-up (a checkpoint window was missed)",
+                        sample,
+                        baseline=active_epoch["baseline"],
+                    )
+                    notify_error = _notify(message)
+                    active_epoch["late_snapshots"].append({"notify_error": notify_error, **sample})
+                    late_snapshot_taken_this_run = True
+                except (RuntimeError, ValueError) as exc:
+                    logger.error("late catch-up snapshot failed: %s", exc)
+            continue
+
+        try:
+            data = collect_checkpoint(
+                health=health, now=now, epoch_started_at_ms=active_epoch["started_at_ms"]
+            )
+            message = _notification_text(
+                f"{offset_hours}h", data, baseline=active_epoch["baseline"]
+            )
+            notify_error = _notify(message)
+            cp["data"] = data
+            cp["message"] = message
+            cp["collected_at"] = _utc(now)
+            cp["notify_error"] = notify_error
+            cp["state"] = "notified" if notify_error is None else "collected"
+        except (RuntimeError, ValueError) as exc:
+            active_epoch["last_error"] = (
+                f"{offset_hours}h checkpoint due but collection failed: {exc}"
+            )
+            logger.error(active_epoch["last_error"])
+            if not cp.get("collection_error_notified", False):
+                alert_error = _notify(
                     f"⚠️ Momentum-capture canary checkpoint {offset_hours}h is due but "
                     f"data collection failed: {exc}\n"
-                    f"Will keep retrying; this alert will not repeat."
+                    f"Will keep retrying; this alert will not repeat once delivered."
                 )
-                error_notified.add(offset_hours)
-        if force_offset == offset_hours:
-            break
+                cp["collection_error_notified"] = alert_error is None
 
     payload = {
         "version": SNAPSHOT_VERSION,
         "generated_at": _utc(now),
-        "epoch_started_at_ms": epoch_started_at_ms,
-        "fired_offsets_hours": sorted(fired),
-        "error_notified_offsets_hours": sorted(error_notified),
-        "last_error": last_error,
-        "history": history,
+        "active_epoch": active_epoch,
+        "archived_epochs": archived_epochs,
     }
     _atomic_json(snapshot_path, payload)
     return payload
@@ -385,10 +640,14 @@ def build_parser() -> argparse.ArgumentParser:
         default=Path("/opt/schurfer/runtime/momentum-canary-checkpoints.json"),
     )
     parser.add_argument(
-        "--force",
+        "--sample-now",
         type=int,
         choices=CHECKPOINT_OFFSETS_HOURS,
-        help="Collect and notify this checkpoint immediately, even if not yet due.",
+        help=(
+            "Take an out-of-band diagnostic reading labeled as this offset and send it, "
+            "without touching official checkpoint state (the real 24/48/72h checkpoint "
+            "still fires normally later)."
+        ),
     )
     return parser
 
@@ -403,7 +662,9 @@ def main() -> None:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise SystemExit("momentum canary checkpoint runner is already active") from None
-        run_once(now=datetime.now(UTC), snapshot_path=args.snapshot, force_offset=args.force)
+        run_once(
+            now=datetime.now(UTC), snapshot_path=args.snapshot, sample_now_offset=args.sample_now
+        )
 
 
 if __name__ == "__main__":

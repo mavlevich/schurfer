@@ -1182,7 +1182,8 @@ prod-momentum-capture-health:
 prod-momentum-canary-checkpoints-install:
 	@test "$$(git branch --show-current)" = "main" || (echo "ERROR: not on main (on '$$(git branch --show-current)'). Install only from main." && exit 1)
 	@test -z "$$(git status --porcelain)" || (echo "ERROR: working tree not clean. Commit or stash first." && exit 1)
-	@mkdir -p runtime
+	@mkdir -p runtime runtime/checkpoint-docker-config
+	@chmod 0700 runtime/checkpoint-docker-config
 	sudo install -m 0644 infra/systemd/schurfer-momentum-canary-checkpoints.service /etc/systemd/system/schurfer-momentum-canary-checkpoints.service
 	sudo install -m 0644 infra/systemd/schurfer-momentum-canary-checkpoints.timer /etc/systemd/system/schurfer-momentum-canary-checkpoints.timer
 	sudo systemctl daemon-reload
