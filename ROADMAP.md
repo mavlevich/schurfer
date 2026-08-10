@@ -602,7 +602,7 @@ filter-report` (`confirmed_oi_growth_baseline_filter_v1`) tests this as a
    how many distinct exact instruments that actually is.
    `token-history-identity-preflight-report` joins every replay-eligible
    baseline decision to its own `app.pump_event_sources` row on
-   (pump_event_id, exchange), reusing `source_lead.py`'s full identity
+   (pump*event_id, exchange), reusing `source_lead.py`'s full identity
    discipline (identity_conflict, identity_key/unified_symbol presence,
    market_type must be "swap", base/quote/settle asset match, naive
    timestamps fail closed rather than being guessed as UTC) rather than a
@@ -631,8 +631,31 @@ filter-report` (`confirmed_oi_growth_baseline_filter_v1`) tests this as a
    plus a small buffer, capped by a page-count sanity limit, and
    `fetch_symbol_candles` raises `IncompleteFetchError` if it still exhausts
    that budget without reaching `end_ms` while every page kept genuinely
-   advancing. Step 2 (a bounded live-exchange sample) is in progress in a
-   separate PR; this entry will be updated once it merges.
+   advancing. Step 2 (a bounded live-exchange sample, PR #171, merged
+   2026-08-10) ran its canonical live sample against all 5 exchanges with a
+   ready instrument (11 probes). Verdict: `global_gate_not_met_scoped_step3*
+   authorized`. The global gate failed on p95 call latency (9.02s observed
+   against the pre-registered `<5s`; the other 4 criteria passed cleanly, 0%
+   gap rate). The archived run, its manifest, and its content hashes were
+   independently reverified; the 9.02s measurement itself was not re-run
+   live. The threshold is not relaxed after the fact. A permitted repeat
+   attempt did not complete within ~86s and produced no data: it is
+   inconclusive, neither confirming nor ruling out a one-off fluke, so the
+   original measurement stands as the only completed one. Per the rule above (a
+   persistent single-venue problem narrows scope, not the global contract),
+   decision `partial_go_scoped_venues`: step 3 is authorized scoped to
+   binance, bybit, and xt (45 of 51 exact instruments, about 88%). gate and
+   mexc are excluded with an explicit `venue_live_sample_not_ready`reason
+   (gate: its only 365-day probe took 10.88s; mexc:`CATE/USDT:USDT`returned
+   7 of 364 days and a repeat attempt also failed to complete) and remain
+   counted in the 51-instrument denominator rather than silently dropped.
+   Purely an operational-feasibility scope, decided before any connection to
+   outcomes. Next:`feat/token-history-parquet-dataset-v1`, frozen to the
+   binance/bybit/xt allowlist, exact same-venue identity, at most 365 days at
+   `1d`, Parquet+Zstd read via DuckDB, schema/CCXT versions and content
+   hashes recorded, coverage/gaps/latency/fetch provenance per instrument,
+   `IncompleteFetchError` fail-closed, no outcomes, no score changes, no
+   cross-venue fallback.
 
 9. **[Parked] Conditional maker paper simulator.** OBS-009 did not survive its
    defensive sensitivity checks, so no simulator is authorized. Reconsider only
