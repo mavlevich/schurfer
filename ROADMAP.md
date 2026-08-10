@@ -91,6 +91,7 @@ The portfolio is bounded as follows:
   infrastructure only, with no discovery-ledger entry or Confirmation move yet, so
   neither counts here; item 5 will be counted only if and when a real momentum
   screen produces a loggable result, not for the collector merging.
+
 - Keep no more than two active Confirmation-level lines (a frozen contract plus its
   own forward cohort) at once. Pump reversion is the primary line. One cheap
   market-intelligence probe may run in parallel. Other ideas stay in Discovery until
