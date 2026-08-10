@@ -148,12 +148,15 @@ front.
    persistent venue failure narrows or stops that venue instead of weakening the
    contract globally. If the gate fails, archive the result and stop this family at
    feasibility rather than building storage around unusable history.
-3. **Build the bounded historical dataset only if step 2 passes.** Store exact-venue
-   daily OHLCV as partitioned Parquet with schema version, CCXT version, identity key,
-   request/observation bounds, source timestamps where available, gap flags, and file
-   hashes. DuckDB reads partitions; Postgres stores only bounded run/catalog metadata.
-   Do not introduce a queue, object store, ClickHouse, cross-venue ticker matching, or
-   5-minute year-long firehose in this step.
+3. **[Implemented, PR #174] Build the bounded historical dataset only if step 2
+   passes.** Stores exact-venue daily OHLCV as partitioned Parquet with schema
+   version, CCXT version, identity key, request/observation bounds, source
+   timestamps where available, gap flags, and file hashes. DuckDB reads
+   partitions; the catalog is a file-based `manifest.json` written atomically
+   per run and re-verified against disk after every write, not a Postgres
+   table. No queue, object store, ClickHouse, cross-venue ticker matching, or
+   5-minute year-long firehose was introduced. See the token-behavior-history
+   entry above for the real production run's numbers.
 4. **Run one wide token-behavior discovery report.** Compute only pre-decision
    descriptors: prior spike count and magnitude, realized volatility, historical
    drawdown/recovery time, range compression/expansion, volume shock, listing age,
@@ -164,13 +167,27 @@ front.
 5. **Start a bounded Bybit early-momentum capture as the next non-recoverable-data
    PR.** Extend the existing ticker websocket decoder to retain both `openInterest`
    and `openInterestValue`; reuse public trades to aggregate taker buy/sell notional.
+   Since only 1-minute aggregates are persisted (not raw trades), whatever notional
+   buckets are not tracked at capture time can never be recovered later: track a
+   non-cumulative, log-spaced notional histogram per side (roughly `<1k, 1-2.5k,
+2.5-5k, 5-10k, 10-25k, 25-50k, 50-100k, 100-250k, 250-500k, 500k-1M, >=1M`) plus
+   top-K largest notionals and short-window (10s/30s) burst metrics within each
+   1-minute bar, with block/RPI-flagged trades tracked separately from ordinary flow.
+   Cumulative "at least this size" views are derivable from the histogram after the
+   fact; fixed cumulative tiers alone are not, since the boundary a discovery read
+   later needs cannot be un-guessed from data that was never kept at that resolution.
    Cover the whole eligible linear-USDT universe continuously so activation cannot
-   create left-censoring. Persist 1-minute aggregates, 5-minute/hour rollups, and
-   bounded event windows, not raw trades. Initial discovery lookbacks are
-   5/15/30 minutes and 1/2/4/8/12/24 hours; none is primary until a discovery read
-   ends and a fresh forward cutoff is registered. Store exchange/event/receive times,
-   sequence/gap diagnostics, reconnects, lag, and drop counters. Alerts are WATCH-only;
-   no paper or real long is opened by this PR.
+   create left-censoring. Persist 1-minute base bars only; 5-minute/hour views are
+   computed from them at query time (or via a derived continuous aggregate), not
+   written as their own separately-maintained rows. No bounded event window table in
+   this PR: the 1-minute series over the whole universe is itself the bounded,
+   queryable structure item 8's state-machine model will define windows against, and
+   picking a trigger before that model exists would bake in the "one magic threshold"
+   item 8 explicitly rules out. Initial discovery lookbacks are 5/15/30 minutes and
+   1/2/4/8/12/24 hours; none is primary until a discovery read ends and a fresh
+   forward cutoff is registered. Store exchange/event/receive times, sequence/gap
+   diagnostics, reconnects, lag, and drop counters. Alerts are WATCH-only; no paper or
+   real long is opened by this PR.
 6. **Hold a 48-to-72-hour resource and data-quality checkpoint.** Start with a hard
    512 MiB/1 CPU container budget and a 500 MiB/day storage ceiling. Require zero
    persistence/drop errors, bounded reconnects, p99 processing lag below one second,
@@ -602,7 +619,7 @@ filter-report` (`confirmed_oi_growth_baseline_filter_v1`) tests this as a
    how many distinct exact instruments that actually is.
    `token-history-identity-preflight-report` joins every replay-eligible
    baseline decision to its own `app.pump_event_sources` row on
-   (pump*event_id, exchange), reusing `source_lead.py`'s full identity
+   (pump\*event_id, exchange), reusing `source_lead.py`'s full identity
    discipline (identity_conflict, identity_key/unified_symbol presence,
    market_type must be "swap", base/quote/settle asset match, naive
    timestamps fail closed rather than being guessed as UTC) rather than a
@@ -633,8 +650,8 @@ filter-report` (`confirmed_oi_growth_baseline_filter_v1`) tests this as a
    that budget without reaching `end_ms` while every page kept genuinely
    advancing. Step 2 (a bounded live-exchange sample, PR #171, merged
    2026-08-10) ran its canonical live sample against all 5 exchanges with a
-   ready instrument (11 probes). Verdict: `global_gate_not_met_scoped_step3*
-   authorized`. The global gate failed on p95 call latency (9.02s observed
+   ready instrument (11 probes). Verdict: `global_gate_not_met_scoped_step3_authorized`.
+   The global gate failed on p95 call latency (9.02s observed
    against the pre-registered `<5s`; the other 4 criteria passed cleanly, 0%
    gap rate). The archived run, its manifest, and its content hashes were
    independently reverified; the 9.02s measurement itself was not re-run
@@ -645,17 +662,31 @@ filter-report` (`confirmed_oi_growth_baseline_filter_v1`) tests this as a
    persistent single-venue problem narrows scope, not the global contract),
    decision `partial_go_scoped_venues`: step 3 is authorized scoped to
    binance, bybit, and xt (45 of 51 exact instruments, about 88%). gate and
-   mexc are excluded with an explicit `venue_live_sample_not_ready`reason
-   (gate: its only 365-day probe took 10.88s; mexc:`CATE/USDT:USDT`returned
-   7 of 364 days and a repeat attempt also failed to complete) and remain
-   counted in the 51-instrument denominator rather than silently dropped.
-   Purely an operational-feasibility scope, decided before any connection to
-   outcomes. Next:`feat/token-history-parquet-dataset-v1`, frozen to the
-   binance/bybit/xt allowlist, exact same-venue identity, at most 365 days at
-   `1d`, Parquet+Zstd read via DuckDB, schema/CCXT versions and content
-   hashes recorded, coverage/gaps/latency/fetch provenance per instrument,
-   `IncompleteFetchError` fail-closed, no outcomes, no score changes, no
-   cross-venue fallback.
+   mexc are excluded with an explicit `venue_live_sample_not_ready` reason
+   (gate: its only 365-day probe took 10.88s; mexc: `CATE/USDT:USDT`
+   returned 7 of 364 days and a repeat attempt also failed to complete) and
+   remain counted in the 51-instrument denominator rather than silently
+   dropped. Purely an operational-feasibility scope, decided before any
+   connection to outcomes.
+   **[Implemented, step 3 of 3, PR #174, merged and run 2026-08-10]**
+   `feat/token-history-parquet-dataset-v1`: frozen to the binance/bybit/xt
+   allowlist, exact same-venue identity, at most 365 days at `1d`,
+   Parquet+Zstd written and read back via DuckDB, schema/CCXT versions and
+   content hashes recorded, coverage/gaps/latency/fetch provenance per
+   instrument, `IncompleteFetchError` fail-closed, no outcomes, no score
+   changes, no cross-venue fallback. The catalog is a file-based
+   `manifest.json` written atomically per run, not a Postgres table: DuckDB
+   reads the Parquet partitions directly, and after every write the
+   manifest is independently re-verified against the actual files on disk
+   (hash match, no stray files) before the CLI reports success. Real
+   production run (2026-08-10, run id `20260810T081729Z-6f781fae`): the
+   live universe had grown to 53 candidate instruments by run time (identity
+   readiness keeps resolving as more decisions confirm, since/until/strategy
+   stay frozen); 47 in scope (42 binance, 3 bybit, 2 xt), 6 excluded (5
+   mexc, 1 gate, still `venue_live_sample_not_ready`), all 47 `completed`
+   and `publishable`, 0 failures, 11,582 bars, `dataset_ready=true`,
+   content fingerprint
+   `22d23eba6997b509802cd3fe7a50b7dd90958a525ade5275ffbd7444b5cd0651`.
 
 9. **[Parked] Conditional maker paper simulator.** OBS-009 did not survive its
    defensive sensitivity checks, so no simulator is authorized. Reconsider only
