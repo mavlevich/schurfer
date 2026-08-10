@@ -73,9 +73,24 @@ The portfolio is bounded as follows:
   (infrastructure, then a screen, then a report); one PR can also carry more than one
   family. Track pull-request count separately as an engineering-velocity signal, not
   as this budget. Maintenance, security fixes, and re-running an already-registered
-  report never consume it. Families merged since `2026-07-29` have not yet been
-  counted against this cap under the new unit — do that count before registering
-  another new family.
+  report never consume it.
+
+  **Count as of `2026-08-10`: 3 of 10 spent.** HYP-011 (pump-reversion) and HYP-012
+  (source-lead), both entered in
+  [docs/research/discovery-ledger.md](docs/research/discovery-ledger.md); plus the
+  OI-growth baseline filter (`confirmed_oi_growth_baseline_filter_v1`, registered
+  `2026-08-10`) as a genuinely new signal moved toward Confirmation,
+  not a variant of an existing one. Two borderline cases are counted as continuations
+  of an already-spent family, not new ones, and are not in the 3: the liquid-taker
+  wider-stop shadow (registered `2026-08-01`) reuses the complete HYP-008 selector and
+  cohort, testing one stop-width challenger against the unchanged baseline; the
+  open-ended-margin funding-buffer study (starts `2026-08-03`) reuses the same
+  `liquid_taker_candidate_v1` selector, measuring different checkpoints on the same
+  underlying candidate rather than a new one. Bybit early-momentum capture (item 5,
+  PR1-3) and the token-history data collection (items 1-3) are collector
+  infrastructure only, with no discovery-ledger entry or Confirmation move yet, so
+  neither counts here; item 5 will be counted only if and when a real momentum
+  screen produces a loggable result, not for the collector merging.
 - Keep no more than two active Confirmation-level lines (a frozen contract plus its
   own forward cohort) at once. Pump reversion is the primary line. One cheap
   market-intelligence probe may run in parallel. Other ideas stay in Discovery until
@@ -239,8 +254,12 @@ front.
     further production score/exit/leverage changes.
 
 Before item 5 is registered as a new experiment family, update the discovery ledger
-and count all families introduced since `2026-07-29` against the ten-family budget.
-This administrative gate cannot be skipped merely because the collector is cheap.
+and count all families introduced since `2026-07-29` against the ten-family budget
+(see the running count in Research portfolio and capital discipline above; item 5
+does not appear in it yet, since PR1-3 are collector infrastructure with no
+discovery-ledger entry or Confirmation move of their own; the count only grows for
+this line once a real momentum screen produces a loggable result). This
+administrative gate cannot be skipped merely because the collector is cheap.
 
 ## Previous committed sequence (2026-08-03; retained as decision log)
 
