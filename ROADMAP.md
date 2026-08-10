@@ -253,6 +253,43 @@ front.
     one bounded shadow supported by forward evidence or park pump-short. These reads
     do not block collection of non-recoverable early-momentum data, but they do block
     further production score/exit/leverage changes.
+11. **Consolidate Telegram delivery behind `schurfer-notifier` as a single notification
+    gateway.** Telegram sends are currently split across independent, unaudited paths:
+    execution sends paper open/close directly
+    (`apps/execution/schurfer_execution/notify.py`); the notifier sends both `🔥` pump
+    alerts (recorded in `app.pump_alert_deliveries`) and scanner stale/recovered
+    (never recorded anywhere); research/momentum checkpoints and the backup script
+    each send on their own. This surfaced as a real gap while investigating a
+    scanner-stale/recovered pair on `2026-08-10`: comparing total chat volume against
+    `pump_alert_deliveries` looked like evidence of an unknown sender, but was actually
+    an invalid comparison across paths with different audit coverage, not a proven
+    second process. Maintenance/reliability work, not a new experiment family; does not
+    consume the ten-family budget and does not block the momentum-capture canary. Four
+    PRs, each keeping the previous senders working until migrated:
+    1. `feat/notification-contract-and-outbox-v1`: a versioned envelope
+       (`notification_id`, `dedup_key`, `producer`, `kind`, `severity`, `payload`) on a
+       Redis Stream with a consumer group, matching the durable-stream pattern
+       execution already uses for decisions, plus an
+       `app.notification_deliveries` audit table (producer, kind, dedup_key,
+       timestamps, status, attempts, error, payload hash).
+    2. `feat/notifier-unified-delivery-v1`: notifier consumes the stream through one
+       Telegram client, with bounded retry/backoff, rate limiting, priority
+       (`critical > trade > research > info`), and health counters (pending,
+       delivered, failed, oldest-pending age, DLQ size).
+    3. `refactor/migrate-notification-producers-v1`: move execution's paper
+       open/close, the scanner's pump alerts and stale/recovered, and the
+       research/momentum checkpoints onto the new contract one producer at a time,
+       then the backup script; remove `TELEGRAM_BOT_TOKEN` from every container
+       except notifier once its producer is migrated.
+    4. `feat/notification-observability-v1`: a delivery status view (source, kind,
+       sent/failed/pending, oldest pending, DLQ, latency) plus
+       `make prod-notifier-health`; only then retire the old `_notify`/`notify.py`/raw
+       `curl` call sites.
+       Delivery is at-least-once, stated plainly rather than promised as exactly-once:
+       Telegram has no real idempotency key, so `dedup_key` plus delivery state bounds
+       duplicates without eliminating the rare crash-window repeat. No shared Python/Go
+       Telegram SDK, no bot token handed to every service, and no single big-bang
+       migration PR.
 
 Before item 5 is registered as a new experiment family, update the discovery ledger
 and count all families introduced since `2026-07-29` against the ten-family budget
