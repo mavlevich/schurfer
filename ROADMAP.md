@@ -189,14 +189,25 @@ front.
    diagnostics, reconnects, lag, and drop counters. Alerts are WATCH-only; no paper or
    real long is opened by this PR.
 6. **Hold a 48-to-72-hour resource and data-quality checkpoint.** Start with a hard
-   512 MiB/1 CPU container budget and a 500 MiB/day storage ceiling. Require zero
-   persistence/drop errors, bounded reconnects, p99 processing lag below one second,
-   RSS below 400 MiB, and no sustained host swap-in/swap-out. Keep at least 1 GiB
-   `MemAvailable` before starting ad-hoc report containers. If the 4 GB production
-   host cannot satisfy those bounds, do not silently consume swap: run reports locally
-   through the DB tunnel and move the always-on collector to a separate 8 GB VPS before
-   expanding venues. A Mac mini is useful for DuckDB/backfills/ML, not as the sole
-   unattended 24/7 market collector.
+   512 MiB/1 CPU container budget. Storage is two separate gates, not one, since a
+   single number conflates the hot uncompressed chunk with the compressed
+   steady-state one: hot/uncompressed growth at most 1.5 GiB/day, compressed
+   steady-state growth at most 500 MiB/day. A hypertable's rows live in per-chunk
+   child tables, not the parent relation, so measure both gates with
+   `hypertable_detailed_size(...)` (or `hypertable_size(...)` for the quick total),
+   not plain `pg_relation_size` on the parent, and report chunk count/compression
+   state with compressed and uncompressed footprint tracked separately rather than
+   one blended number. Confirm against real measured disk growth over an interval,
+   not extrapolated from a single row, per the real capture-and-compression
+   benchmark in
+   `packages/journal/migrations/versions/0024_bybit_momentum_bars_1m.py`'s own
+   docstring. Require zero persistence/drop errors, bounded reconnects, p99
+   processing lag below one second, RSS below 400 MiB, and no sustained host
+   swap-in/swap-out. Keep at least 1 GiB `MemAvailable` before starting ad-hoc report
+   containers. If the 4 GB production host cannot satisfy those bounds, do not
+   silently consume swap: run reports locally through the DB tunnel and move the
+   always-on collector to a separate 8 GB VPS before expanding venues. A Mac mini is
+   useful for DuckDB/backfills/ML, not as the sole unattended 24/7 market collector.
 7. **Expand venues only after the Bybit checkpoint passes.** First publish a capability
    matrix for OI amount/value, trades with aggressor side, liquidation stream,
    timestamps, symbol identity, rate limits, and reconnect semantics. Add at most one
