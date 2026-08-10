@@ -2,6 +2,7 @@ package bybit
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -16,7 +17,10 @@ import (
 )
 
 // PublicTrade is one normalized Bybit linear-perpetual public trade.
-// Side is the taker side reported by Bybit.
+// Side is the taker side reported by Bybit. BlockTrade/RPI/Seq are Bybit's
+// own "BT"/"RPI"/"seq" fields, stored verbatim: Seq is documented only as
+// an integer (no contiguity guarantee), so it is kept for bounded
+// diagnostics, never as a gap-detection signal on its own.
 type PublicTrade struct {
 	Symbol     string
 	TradeID    string
@@ -25,20 +29,62 @@ type PublicTrade struct {
 	ReceivedAt time.Time
 	Price      float64
 	Size       float64
+
+	BlockTrade bool
+	RPI        bool
+	Seq        int64
 }
 
 type TradeFn func(context.Context, PublicTrade) error
+
+// TradeLifecycleEvent reports one connect or disconnect for a single trade
+// WebSocket shard (a shard being a fixed subset of symbols on one physical
+// connection, see tradeTopicsPerConnection). Source's own StreamStats()
+// reconnect/timeout counters are global across every shard and cannot say
+// which one failed; a consumer that needs to mark exactly the affected
+// symbols as trade-feed-interrupted (not the whole universe) needs this
+// per-shard detail instead.
+type TradeLifecycleEvent struct {
+	ShardSessionID string
+	Symbols        []string
+	ConnectedAt    time.Time
+	// DisconnectedAt is the zero time for a "connected" event.
+	DisconnectedAt time.Time
+	// Reason is empty for a "connected" event, and the error text for a
+	// "disconnected" event.
+	Reason      string
+	ReadTimeout bool
+}
+
+// TradeLifecycleFn receives every TradeLifecycleEvent as it happens. It is
+// called synchronously from the shard's own goroutine and must not block.
+type TradeLifecycleFn func(TradeLifecycleEvent)
 
 const (
 	maxTradeFutureSkew       = 5 * time.Second
 	tradeTopicsPerConnection = 200
 )
 
-// RunTrades streams public trades without publishing the raw firehose to NATS.
+// RunTrades streams public trades without publishing the raw firehose to
+// NATS. It is RunTradesWithLifecycle with a no-op lifecycle callback, kept
+// so existing callers (cmd/orderflow) are unaffected.
 // Bybit currently permits more futures topics on one public connection. The
 // smaller shard is deliberate: it bounds head-of-line blocking and reconnect loss
 // while keeping the connection count tiny.
 func (s *Source) RunTrades(ctx context.Context, symbols []string, consume TradeFn) error {
+	return s.RunTradesWithLifecycle(ctx, symbols, consume, func(TradeLifecycleEvent) {})
+}
+
+// RunTradesWithLifecycle is RunTrades plus onLifecycle, fired on every
+// shard connect and disconnect with exactly that shard's own symbols and a
+// fresh session id per connection attempt (mirroring the ticker decoder's
+// StreamSessionID from the bybit-ticker-oi-contract-v1 PR).
+func (s *Source) RunTradesWithLifecycle(
+	ctx context.Context,
+	symbols []string,
+	consume TradeFn,
+	onLifecycle TradeLifecycleFn,
+) error {
 	slog.Info("bybit.trades.subscribing", "count", len(symbols))
 	chunks := chunkSlice(symbols, tradeTopicsPerConnection)
 
@@ -47,16 +93,21 @@ func (s *Source) RunTrades(ctx context.Context, symbols []string, consume TradeF
 		wg.Add(1)
 		go func(connectionSymbols []string) {
 			defer wg.Done()
-			s.tradeStreamLoop(ctx, connectionSymbols, consume)
+			s.tradeStreamLoop(ctx, connectionSymbols, consume, onLifecycle)
 		}(chunk)
 	}
 	wg.Wait()
 	return nil
 }
 
-func (s *Source) tradeStreamLoop(ctx context.Context, symbols []string, consume TradeFn) {
+func (s *Source) tradeStreamLoop(
+	ctx context.Context,
+	symbols []string,
+	consume TradeFn,
+	onLifecycle TradeLifecycleFn,
+) {
 	for {
-		if err := s.tradeStream(ctx, symbols, consume); err != nil {
+		if err := s.tradeStream(ctx, symbols, consume, onLifecycle); err != nil {
 			if ctx.Err() != nil {
 				return
 			}
@@ -84,14 +135,43 @@ func (s *Source) tradeStreamLoop(ctx context.Context, symbols []string, consume 
 	}
 }
 
-func (s *Source) tradeStream(ctx context.Context, symbols []string, consume TradeFn) error {
+func (s *Source) tradeStream(
+	ctx context.Context,
+	symbols []string,
+	consume TradeFn,
+	onLifecycle TradeLifecycleFn,
+) (err error) {
+	sessionID, sessionErr := newStreamSessionID(rand.Reader)
+	if sessionErr != nil {
+		return fmt.Errorf("trade stream session id: %w", sessionErr)
+	}
+	connectedAt := time.Now()
+	var connected bool
+	// Fires exactly one "disconnected" event per failed connection attempt
+	// that actually got as far as subscribing, covering every error-return
+	// path below uniformly instead of duplicating the call at each site. A
+	// clean shutdown (ctx cancelled, err == nil) fires nothing: it is not a
+	// feed interruption.
+	defer func() {
+		if err != nil && connected {
+			onLifecycle(TradeLifecycleEvent{
+				ShardSessionID: sessionID,
+				Symbols:        symbols,
+				ConnectedAt:    connectedAt,
+				DisconnectedAt: time.Now(),
+				Reason:         err.Error(),
+				ReadTimeout:    isReadTimeout(err),
+			})
+		}
+	}()
+
 	dialer := websocket.Dialer{HandshakeTimeout: 10 * time.Second}
-	conn, response, err := dialer.DialContext(ctx, s.streamConfig.URL, http.Header{})
-	if err != nil {
+	conn, response, dialErr := dialer.DialContext(ctx, s.streamConfig.URL, http.Header{})
+	if dialErr != nil {
 		if response != nil {
 			_ = response.Body.Close()
 		}
-		return fmt.Errorf("dial: %w", err)
+		return fmt.Errorf("dial: %w", dialErr)
 	}
 	defer func() { _ = conn.Close() }()
 
@@ -113,7 +193,9 @@ func (s *Source) tradeStream(ctx context.Context, symbols []string, consume Trad
 			return fmt.Errorf("subscribe: %w", err)
 		}
 	}
-	slog.Info("bybit.trades.connected", "symbols", len(symbols))
+	slog.Info("bybit.trades.connected", "symbols", len(symbols), "session_id", sessionID)
+	connected = true
+	onLifecycle(TradeLifecycleEvent{ShardSessionID: sessionID, Symbols: symbols, ConnectedAt: connectedAt})
 
 	pingCtx, pingCancel := context.WithCancel(ctx)
 	pingDone := make(chan struct{})
@@ -144,12 +226,12 @@ func (s *Source) tradeStream(ctx context.Context, symbols []string, consume Trad
 	}
 
 	for {
-		_, payload, err := conn.ReadMessage()
-		if err != nil {
+		_, payload, readErr := conn.ReadMessage()
+		if readErr != nil {
 			if ctx.Err() != nil {
 				return nil
 			}
-			return classifyReadError(err)
+			return classifyReadError(readErr)
 		}
 		if err := refreshReadDeadline(conn, s.streamConfig.ReadTimeout); err != nil {
 			return fmt.Errorf("refresh read deadline: %w", err)
@@ -171,12 +253,15 @@ func handleTradePayload(
 		Success *bool  `json:"success"`
 		Topic   string `json:"topic"`
 		Data    []struct {
-			EventAt int64  `json:"T"`
-			Symbol  string `json:"s"`
-			Side    string `json:"S"`
-			Size    string `json:"v"`
-			Price   string `json:"p"`
-			TradeID string `json:"i"`
+			EventAt    int64  `json:"T"`
+			Symbol     string `json:"s"`
+			Side       string `json:"S"`
+			Size       string `json:"v"`
+			Price      string `json:"p"`
+			TradeID    string `json:"i"`
+			BlockTrade bool   `json:"BT"`
+			RPI        bool   `json:"RPI"`
+			Seq        int64  `json:"seq"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(payload, &message); err != nil {
@@ -211,6 +296,9 @@ func handleTradePayload(
 			ReceivedAt: receivedAt,
 			Price:      price,
 			Size:       size,
+			BlockTrade: item.BlockTrade,
+			RPI:        item.RPI,
+			Seq:        item.Seq,
 		}
 		if err := consume(ctx, trade); err != nil {
 			return err
