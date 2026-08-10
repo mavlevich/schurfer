@@ -41,7 +41,7 @@ def _fake_checkpoint(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         canary,
         "_docker_stats",
-        lambda container, timeout=15: {"MemUsage": "28MiB / 512MiB", "CPUPerc": "12%"},
+        lambda *_args, **_kwargs: {"MemUsage": "28MiB / 512MiB", "CPUPerc": "12%"},
     )
     monkeypatch.setattr(
         canary,
@@ -64,20 +64,22 @@ def _fake_checkpoint(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_read_momentum_health_rejects_odd_hgetall_output(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(canary, "_run", lambda command, timeout: "a\n1\nb\n")
+    monkeypatch.setattr(canary, "_run", lambda *_args, **_kwargs: "a\n1\nb\n")
     with pytest.raises(RuntimeError, match="odd number"):
         canary._read_momentum_health()
 
 
 def test_read_momentum_health_rejects_empty_hash(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(canary, "_run", lambda command, timeout: "")
+    monkeypatch.setattr(canary, "_run", lambda *_args, **_kwargs: "")
     with pytest.raises(RuntimeError, match="empty or missing"):
         canary._read_momentum_health()
 
 
 def test_read_momentum_health_pairs_lines_into_a_dict(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        canary, "_run", lambda command, timeout: "started_at_ms\n123\nbars_completed_total\n5\n"
+        canary,
+        "_run",
+        lambda *_args, **_kwargs: "started_at_ms\n123\nbars_completed_total\n5\n",
     )
     assert canary._read_momentum_health() == {"started_at_ms": "123", "bars_completed_total": "5"}
 
@@ -199,9 +201,7 @@ def test_collection_failure_at_a_due_checkpoint_notifies_once_then_retries_silen
     monkeypatch.setattr(
         canary,
         "_docker_stats",
-        lambda container, timeout=15: (_ for _ in ()).throw(
-            RuntimeError("docker daemon unreachable")
-        ),
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("docker daemon unreachable")),
     )
     notified: list[str] = []
     monkeypatch.setattr(canary, "_notify", lambda message: notified.append(message) or None)
