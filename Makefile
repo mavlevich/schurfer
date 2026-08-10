@@ -1,5 +1,5 @@
 .PHONY: help install install-golangci-lint install-deadcode dev dev-init dev-stop dev-reset dev-logs dev-test migrate measurement-report exchange-coverage-report exchange-source-economics-report source-lead-report source-lead-identity-report gate-identity-candidate-tooling episode-replay virtual-strategy-report virtual-entry-challenger-report virtual-threshold-challenger-report virtual-exit-policy-report virtual-exit-discovery-report virtual-score-challenger-report virtual-banded-price-extent-report candle-anomaly-report derivatives-context-report decision-quality-report derivatives-regime-feasibility-report liquid-taker-report long-horizon-report open-ended-margin-report maker-entry-report pump-magnitude-report orderflow-pilot-report orderflow-endpoint-sensitivity-report exit-liquidity-calibration-report pump-short-failure-attribution-report pump-short-reentry-audit-report oi-growth-filter-report token-history-identity-preflight-report token-history-ohlcv-sample-report token-history-parquet-dataset orderflow-start orderflow-stop orderflow-health momentum-capture-start momentum-capture-stop momentum-capture-health test lint ci-lint format clean security deadcode check verify verify-docker \
-		prod-deploy prod-runtime-metrics-install prod-runtime-metrics-health prod-research-checkpoints-install prod-research-checkpoints-run prod-research-checkpoints-health prod-measurement-report prod-exchange-coverage-report prod-exchange-source-economics-report prod-source-lead-report prod-source-lead-identity-report prod-gate-identity-candidate-tooling prod-source-lead-capture-health prod-episode-replay prod-virtual-strategy-report prod-virtual-entry-challenger-report prod-virtual-threshold-challenger-report prod-virtual-exit-policy-report prod-virtual-exit-discovery-report prod-virtual-score-challenger-report prod-virtual-banded-price-extent-report prod-candle-anomaly-report prod-derivatives-context-report prod-decision-quality-report prod-derivatives-regime-feasibility-report prod-liquid-taker-report prod-long-horizon-report prod-open-ended-margin-report prod-open-ended-margin-health prod-maker-entry-report prod-pump-magnitude-report prod-orderflow-pilot-report prod-orderflow-endpoint-sensitivity-report prod-exit-liquidity-calibration-report prod-pump-short-failure-attribution-report prod-pump-short-reentry-audit-report prod-oi-growth-filter-report prod-token-history-identity-preflight-report prod-token-history-ohlcv-sample-report prod-token-history-parquet-dataset prod-orderflow-start prod-orderflow-stop prod-orderflow-health prod-momentum-capture-start prod-momentum-capture-stop prod-momentum-capture-health prod-logs prod-backup prod-restore-local prod-health
+		prod-deploy prod-runtime-metrics-install prod-runtime-metrics-health prod-research-checkpoints-install prod-research-checkpoints-run prod-research-checkpoints-health prod-measurement-report prod-exchange-coverage-report prod-exchange-source-economics-report prod-source-lead-report prod-source-lead-identity-report prod-gate-identity-candidate-tooling prod-source-lead-capture-health prod-episode-replay prod-virtual-strategy-report prod-virtual-entry-challenger-report prod-virtual-threshold-challenger-report prod-virtual-exit-policy-report prod-virtual-exit-discovery-report prod-virtual-score-challenger-report prod-virtual-banded-price-extent-report prod-candle-anomaly-report prod-derivatives-context-report prod-decision-quality-report prod-derivatives-regime-feasibility-report prod-liquid-taker-report prod-long-horizon-report prod-open-ended-margin-report prod-open-ended-margin-health prod-maker-entry-report prod-pump-magnitude-report prod-orderflow-pilot-report prod-orderflow-endpoint-sensitivity-report prod-exit-liquidity-calibration-report prod-pump-short-failure-attribution-report prod-pump-short-reentry-audit-report prod-oi-growth-filter-report prod-token-history-identity-preflight-report prod-token-history-ohlcv-sample-report prod-token-history-parquet-dataset prod-orderflow-start prod-orderflow-stop prod-orderflow-health prod-momentum-capture-start prod-momentum-capture-stop prod-momentum-capture-health prod-momentum-canary-checkpoints-install prod-momentum-canary-checkpoints-run prod-momentum-canary-checkpoints-health prod-logs prod-backup prod-restore-local prod-health
 
 GOLANGCI_LINT_VERSION = v2.1.6
 DEADCODE_VERSION = v0.48.0
@@ -133,6 +133,9 @@ help:
 	@echo "  make prod-momentum-capture-start  Explicitly start the bounded momentum-capture canary"
 	@echo "  make prod-momentum-capture-health  Show momentum-capture canary health and resource use"
 	@echo "  make prod-momentum-capture-stop  Stop the momentum-capture canary"
+	@echo "  make prod-momentum-canary-checkpoints-install  Install the 24/48/72h canary checkpoint timer"
+	@echo "  make prod-momentum-canary-checkpoints-run      Run one canary checkpoint pass now"
+	@echo "  make prod-momentum-canary-checkpoints-health   Inspect timer status and the checkpoint snapshot"
 
 install:
 	@echo "-> Installing Python deps via uv..."
@@ -1171,6 +1174,33 @@ prod-momentum-capture-health:
 	@$(_PROD) --profile momentum-capture ps momentum-capture
 	@$(_PROD) exec -T redis redis-cli --raw HGETALL market:momentumcapture:health
 	@docker stats --no-stream schurfer-momentum-capture schurfer-collector
+
+# Start-relative 24h/48h/72h resource and data-quality checkpoints for the
+# momentum-capture canary (ROADMAP item 6), reading the service's own real
+# started_at_ms instead of a fixed calendar date. Deliberately separate from
+# prod-research-checkpoints-*, which is for fixed-date research contracts.
+prod-momentum-canary-checkpoints-install:
+	@test "$$(git branch --show-current)" = "main" || (echo "ERROR: not on main (on '$$(git branch --show-current)'). Install only from main." && exit 1)
+	@test -z "$$(git status --porcelain)" || (echo "ERROR: working tree not clean. Commit or stash first." && exit 1)
+	@mkdir -p runtime
+	sudo install -m 0644 infra/systemd/schurfer-momentum-canary-checkpoints.service /etc/systemd/system/schurfer-momentum-canary-checkpoints.service
+	sudo install -m 0644 infra/systemd/schurfer-momentum-canary-checkpoints.timer /etc/systemd/system/schurfer-momentum-canary-checkpoints.timer
+	sudo systemctl daemon-reload
+	sudo systemctl enable --now schurfer-momentum-canary-checkpoints.timer
+	@echo "Running once now so a currently-due checkpoint (if any) fires immediately."
+	sudo systemctl start schurfer-momentum-canary-checkpoints.service
+	@$(MAKE) prod-momentum-canary-checkpoints-health
+
+prod-momentum-canary-checkpoints-run:
+	@echo "Running one pass now. Progress is also available in the systemd journal."
+	sudo systemctl start schurfer-momentum-canary-checkpoints.service
+	@$(MAKE) prod-momentum-canary-checkpoints-health
+
+prod-momentum-canary-checkpoints-health:
+	@systemctl --no-pager --full status schurfer-momentum-canary-checkpoints.timer
+	@systemctl --no-pager --full status schurfer-momentum-canary-checkpoints.service || true
+	@test -s runtime/momentum-canary-checkpoints.json || (echo "ERROR: momentum canary checkpoint snapshot is missing." && exit 1)
+	@python3 -m json.tool runtime/momentum-canary-checkpoints.json
 
 verify-docker: verify
 	@echo "=== Docker: analytics build + import check ==="
