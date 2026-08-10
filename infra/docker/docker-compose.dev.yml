@@ -150,6 +150,47 @@ services:
     mem_limit: 384m
     cpus: 0.75
 
+  momentum-capture:
+    profiles: ['momentum-capture']
+    build:
+      context: ../../
+      dockerfile: apps/collector/Dockerfile
+    container_name: schurfer-momentum-capture
+    entrypoint: ['/momentum-capture']
+    environment:
+      NATS_URL: nats://nats:4222
+      DATABASE_URL: postgresql://schurfer:schurfer_dev@postgres:5432/schurfer
+      REDIS_ADDR: redis:6379
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    depends_on:
+      nats:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # Bounded canary, not a permanent core service (ROADMAP "Active course"
+    # item 5): a human decides whether to keep running after the 48-72h
+    # resource-and-data-quality canary, so this must not silently
+    # restart-loop unattended. memswap_limit == mem_limit disables swap
+    # growth for this container specifically (see the analytics service's
+    # own comment on why: swap thrashing the whole host, not a clean OOM,
+    # is the failure mode being guarded against). pids_limit is a bounded
+    # backstop against a goroutine/fd-leak pathology; the process itself
+    # only ever runs a handful of goroutines (one event loop, a handful of
+    # trade-WS shards, NATS internals).
+    restart: 'no'
+    mem_limit: 512m
+    memswap_limit: 512m
+    cpus: 1.0
+    pids_limit: 512
+    # cmd/momentumcapture's own shutdownTimeout is 75s (bounded by the
+    # trade WS layer's own 60s read timeout, see internal/bybit/ws.go):
+    # Docker's default 10s grace period would SIGKILL it mid-drain, well
+    # before its own graceful shutdown sequence (stop producers, drain,
+    # final flush) has a chance to finish. Keep these two in sync.
+    stop_grace_period: 90s
+
   analytics:
     build:
       context: ../../

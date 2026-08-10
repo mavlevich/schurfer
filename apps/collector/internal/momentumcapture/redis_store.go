@@ -1,0 +1,128 @@
+package momentumcapture
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/redis/go-redis/v9"
+)
+
+// HealthKey is read by `make momentum-capture-health`/`make
+// prod-momentum-health`, the same redis-cli HGETALL pattern
+// hotset.RedisStore/orderflow already use for their own health keys.
+const HealthKey = "market:momentumcapture:health"
+
+// healthTTL bounds how long a stale key can be read as current: if the
+// process dies, the key expires instead of serving a frozen last-known-good
+// snapshot forever. Comfortably above healthInterval (cmd/momentumcapture)
+// so a single missed publish doesn't flip the key to missing.
+const healthTTL = 30 * time.Second
+
+// missingSymbolsSample bounds how many symbol names StoreHealth writes into
+// a single Redis hash field: SymbolsMissingTicker/Trades can hold the
+// entire universe (all 735+ symbols) right after a fresh start, and
+// redis-cli HGETALL is read by a human, not parsed by a dashboard yet. The
+// _count field always carries the true total regardless of this cap.
+const missingSymbolsSample = 20
+
+type RedisStore struct {
+	client *redis.Client
+}
+
+func NewRedisStore(client *redis.Client) (*RedisStore, error) {
+	if client == nil {
+		return nil, errors.New("redis client is required")
+	}
+	return &RedisStore{client: client}, nil
+}
+
+// StoreHealth publishes a Health snapshot to HealthKey, replacing whatever
+// was there before (HSet on an existing key does not remove fields that
+// are absent from values, but Health is built fresh from scratch and in
+// full on every call, so every field this schema defines is always
+// present).
+func (store *RedisStore) StoreHealth(ctx context.Context, health Health) error {
+	values := map[string]any{
+		"schema_version": 1,
+		"status":         health.Status,
+		"started_at_ms":  unixMilliOrZero(health.StartedAt),
+		"updated_at_ms":  unixMilliOrZero(health.UpdatedAt),
+
+		"last_bar_at_ms":     unixMilliOrZero(health.LastBarAt),
+		"last_persist_at_ms": unixMilliOrZero(health.LastPersistAt),
+
+		"universe_snapshot_at_ms":  unixMilliOrZero(health.UniverseSnapshotAt),
+		"universe_age_seconds":     strconv.FormatFloat(health.UniverseAgeSeconds, 'f', 1, 64),
+		"subscribed_symbols":       health.SubscribedSymbols,
+		"current_exchange_symbols": health.CurrentExchangeSymbols,
+		"frozen_universe_hash":     health.FrozenUniverseHash,
+		"live_universe_hash":       health.LiveUniverseHash,
+		"universe_stale":           health.UniverseStale,
+		"ready_symbols":            health.ReadySymbols,
+
+		"added_since_start_count":    len(health.AddedSinceStart),
+		"added_since_start_sample":   sampleJoin(health.AddedSinceStart, missingSymbolsSample),
+		"removed_since_start_count":  len(health.RemovedSinceStart),
+		"removed_since_start_sample": sampleJoin(health.RemovedSinceStart, missingSymbolsSample),
+
+		"symbols_missing_ticker_count":  len(health.SymbolsMissingTicker),
+		"symbols_missing_ticker_sample": sampleJoin(health.SymbolsMissingTicker, missingSymbolsSample),
+		"symbols_missing_trades_count":  len(health.SymbolsMissingTrades),
+		"symbols_missing_trades_sample": sampleJoin(health.SymbolsMissingTrades, missingSymbolsSample),
+
+		"input_queue_depth":        health.InputQueueDepth,
+		"input_queue_peak":         health.InputQueuePeak,
+		"input_queue_drops_total":  health.InputQueueDropsTotal,
+		"bars_completed_total":     health.BarsCompletedTotal,
+		"late_events_total":        health.LateEventsTotal,
+		"ticker_gap_total":         health.TickerGapTotal,
+		"last_discontinuity_at_ms": unixMilliOrZero(health.LastDiscontinuityAt),
+		"last_discontinuity_for":   health.LastDiscontinuityFor,
+
+		"trade_reconnect_total":    health.TradeReconnectTotal,
+		"trade_read_timeout_total": health.TradeReadTimeoutTotal,
+
+		"nats_disconnect_total":    health.NATSDisconnectTotal,
+		"nats_reconnect_total":     health.NATSReconnectTotal,
+		"nats_slow_consumer_total": health.NATSSlowConsumerTotal,
+		"nats_dropped_total":       health.NATSDroppedTotal,
+
+		"writer_queue_depth":          health.WriterQueueDepth,
+		"writer_queue_peak":           health.WriterQueuePeak,
+		"writer_queue_drops_total":    health.WriterQueueDropsTotal,
+		"bars_persisted_total":        health.BarsPersistedTotal,
+		"persist_errors_total":        health.PersistErrorsTotal,
+		"persist_retries_total":       health.PersistRetriesTotal,
+		"rows_written_total":          health.RowsWrittenTotal,
+		"payload_hash_mismatch_total": health.PayloadHashMismatchTotal,
+		"projected_bytes_per_day":     strconv.FormatFloat(health.ProjectedBytesPerDay, 'f', 0, 64),
+
+		"trade_lag_max_ms":  health.TradeLagMaxMs,
+		"ticker_lag_max_ms": health.TickerLagMaxMs,
+	}
+	pipe := store.client.Pipeline()
+	pipe.HSet(ctx, HealthKey, values)
+	pipe.Expire(ctx, HealthKey, healthTTL)
+	if _, err := pipe.Exec(ctx); err != nil {
+		return fmt.Errorf("store momentum-capture health: %w", err)
+	}
+	return nil
+}
+
+func unixMilliOrZero(t time.Time) int64 {
+	if t.IsZero() {
+		return 0
+	}
+	return t.UnixMilli()
+}
+
+func sampleJoin(items []string, max int) string {
+	if len(items) > max {
+		items = items[:max]
+	}
+	return strings.Join(items, ",")
+}
