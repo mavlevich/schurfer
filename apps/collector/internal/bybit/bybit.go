@@ -15,6 +15,14 @@ import (
 const restURL = "https://api.bybit.com/v5/market/instruments-info"
 
 // TickerEvent is the normalized event published to NATS.
+//
+// OpenInterest/OpenInterestValue and everything below Ask are a schema v1
+// backward-compatible extension (SchemaVersion is unchanged; all new fields
+// are pointers or have zero-value-safe defaults): a consumer built against
+// this contract must tolerate a rolling deploy where the collector binary
+// publishing these events has not yet been upgraded and simply omits them.
+// A missing OpenInterest must be read as "unknown", never as "zero" or "no
+// change" beyond what OpenInterestObservedAtMs actually attests to.
 type TickerEvent struct {
 	SchemaVersion int     `json:"schema_version"`
 	Source        string  `json:"source"`
@@ -28,6 +36,53 @@ type TickerEvent struct {
 	Turnover24h   *string `json:"turnover_24h"`
 	Bid           *string `json:"bid"`
 	Ask           *string `json:"ask"`
+	// OpenInterest is the contract quantity, OpenInterestValue its USD
+	// notional. Each has two timestamps for the last message that actually
+	// carried a fresh value for that specific field (Bybit ticker deltas
+	// omit unchanged fields, so a delta that only changed price still
+	// republishes the last known OI): EventAtMs is Bybit's own exchange-time
+	// ts for that message; ObservedAtMs is this collector's own wall-clock
+	// receive time for it. Neither is this event's own TS/ReceivedAtMs,
+	// which describe the CURRENT message, not necessarily the one that last
+	// changed OI. nil means no value has been observed yet in the current
+	// connection episode (see StreamSessionID): OI state is deliberately
+	// reset on every reconnect, unlike price/bid/ask, since it has no
+	// existing consumer whose behavior this must not disturb.
+	OpenInterest                  *string `json:"open_interest"`
+	OpenInterestEventAtMs         *int64  `json:"open_interest_event_at_ms"`
+	OpenInterestObservedAtMs      *int64  `json:"open_interest_observed_at_ms"`
+	OpenInterestValue             *string `json:"open_interest_value"`
+	OpenInterestValueEventAtMs    *int64  `json:"open_interest_value_event_at_ms"`
+	OpenInterestValueObservedAtMs *int64  `json:"open_interest_value_observed_at_ms"`
+	// ReceivedAtMs is the collector's own wall-clock receive time for this
+	// message, independent of Bybit's TS, for event/receive lag diagnostics.
+	ReceivedAtMs int64 `json:"received_at_ms"`
+	// MessageType is Bybit's own "snapshot"/"delta" tag for this message.
+	MessageType string `json:"message_type"`
+	// CrossSequence is Bybit's own "cs" field, stored verbatim. Bybit's
+	// public documentation gives no guarantee about its semantics beyond it
+	// being an integer: it is not documented as contiguous, not documented
+	// as stable for the life of a connection, and a change in it must NOT
+	// by itself be read as a gap or as the exchange resyncing this topic.
+	// Keep it only as raw ordering/diagnostic context, to be correlated
+	// against MessageType, StreamSessionID, and any independently observed
+	// time discontinuity; do not build gap-detection logic on cs alone.
+	CrossSequence *int64 `json:"cross_sequence"`
+	// ReconnectEpoch counts this connection's own reconnect attempts within
+	// one process's lifetime, starting at 0 for the first successful
+	// connection. It is local to one shard of the ticker subscription (see
+	// chunkSlice) and, critically, resets to 0 on every process restart: it
+	// cannot by itself distinguish a freshly started process from one that
+	// has been running for days. Use it only as a human-readable ordinal
+	// alongside StreamSessionID, never as the sole signal that a gap is
+	// explained.
+	ReconnectEpoch int `json:"reconnect_epoch"`
+	// StreamSessionID is a random identifier generated fresh on every dial:
+	// every reconnect within a process, and every process restart, gets a
+	// new value. A change in StreamSessionID is the authoritative signal
+	// that this is a different physical connection, which ReconnectEpoch
+	// alone cannot provide across a restart.
+	StreamSessionID string `json:"stream_session_id"`
 }
 
 // PublishFn publishes a TickerEvent to NATS.
