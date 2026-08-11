@@ -345,14 +345,42 @@ def _delta_block(current: dict[str, Any], baseline: dict[str, Any] | None) -> di
     )
     # after_compression_total_bytes is itself a monotonic cumulative counter
     # (only grows when a chunk newly compresses, never shrinks), so a plain
-    # delta is already correct here -- no rotation correction needed. Early
-    # in the canary (before any chunk has crossed the 1-day compress_after
-    # boundary) this reads as 0 and is not yet a meaningful rate; per
-    # migration 0024's own docstring, treat it as reliable starting around
-    # the 48-72h mark, once real chunks have actually compressed.
+    # delta is already correct here as a MEASUREMENT -- no rotation
+    # correction needed. It is still a systematically LAGGING one, though,
+    # for a reason distinct from the hot-inventory bug above: TimescaleDB's
+    # compress_after is measured from a chunk's own newest data, not its
+    # start. With chunk_time_interval=1 day and compress_after=1 day (see
+    # migration 0024), a chunk covering day D only becomes ELIGIBLE for
+    # compression once day D+2 00:00 arrives (a full day after the chunk's
+    # own end, which is itself a day after it started) -- not "1 day after
+    # it started" -- plus however long the background compression job takes
+    # to actually run once eligible. Over a 72h canary at most 1-2 chunks can
+    # possibly complete that full pipeline, so dividing the bytes that made
+    # it through by the FULL calendar-elapsed time systematically
+    # understates the true steady-state compressed rate, worst early in the
+    # canary. `compressed_rate_bytes_per_day` below is kept as that honest
+    # measurement (a lagging lower bound, not the number to check the 500
+    # MiB/day gate against). `steady_state_compressed_rate_bytes_per_day` is
+    # a separate ESTIMATE immune to this latency: it multiplies the directly
+    # measured raw ingest rate (no compression-job timing dependency) by the
+    # compression ratio actually observed so far (also a real, if early,
+    # measurement) -- this is the number the gate should actually be read
+    # against, clearly labeled as an estimate rather than a direct count.
     compressed_delta = (
         current_storage["after_compression_total_bytes"]
         - baseline_storage["after_compression_total_bytes"]
+    )
+    compression_ratio = None
+    if current_storage["before_compression_total_bytes"] > 0:
+        compression_ratio = (
+            current_storage["after_compression_total_bytes"]
+            / current_storage["before_compression_total_bytes"]
+        )
+    raw_ingest_rate = _rate_per_day(raw_ingest_delta, elapsed_hours)
+    steady_state_compressed_rate = (
+        raw_ingest_rate * compression_ratio
+        if raw_ingest_rate is not None and compression_ratio is not None
+        else None
     )
     rows_delta = current_storage["row_count"] - baseline_storage["row_count"]
     pswpin_delta = current["host_swap_counters"].get("pswpin", 0) - baseline[
@@ -364,9 +392,11 @@ def _delta_block(current: dict[str, Any], baseline: dict[str, Any] | None) -> di
     return {
         "elapsed_hours_since_baseline": round(elapsed_hours, 2),
         "raw_ingest_delta_bytes": raw_ingest_delta,
-        "raw_ingest_rate_bytes_per_day": _rate_per_day(raw_ingest_delta, elapsed_hours),
+        "raw_ingest_rate_bytes_per_day": raw_ingest_rate,
         "compressed_delta_bytes": compressed_delta,
         "compressed_rate_bytes_per_day": _rate_per_day(compressed_delta, elapsed_hours),
+        "compression_ratio": compression_ratio,
+        "steady_state_compressed_rate_bytes_per_day": steady_state_compressed_rate,
         "rows_delta": rows_delta,
         "pswpin_delta": pswpin_delta,
         "pswpout_delta": pswpout_delta,
@@ -465,12 +495,31 @@ def _notification_text(
         )
         compressed_sign = "+" if delta["compressed_delta_bytes"] >= 0 else ""
         rows_sign = "+" if delta["rows_delta"] >= 0 else ""
+        steady_state_rate = delta["steady_state_compressed_rate_bytes_per_day"]
+        steady_state_rate_text = (
+            f"{_mib(steady_state_rate):.0f} MiB/day" if steady_state_rate is not None else "n/a"
+        )
+        ratio_text = (
+            f"{delta['compression_ratio']:.2f}x"
+            if delta["compression_ratio"] is not None
+            else "n/a"
+        )
         lines.append(
             f"Since baseline ({delta['elapsed_hours_since_baseline']:.1f}h), ROADMAP item 6's "
             f"two separate gates (hot <=1.5 GiB/day, compressed <=500 MiB/day): "
-            f"hot {hot_sign}{_mib(delta['raw_ingest_delta_bytes']):.0f} MiB ({hot_rate_text}), "
-            f"compressed {compressed_sign}{_mib(delta['compressed_delta_bytes']):.0f} MiB "
-            f"({compressed_rate_text}, early/noisy before a real chunk has compressed)"
+            f"hot {hot_sign}{_mib(delta['raw_ingest_delta_bytes']):.0f} MiB ({hot_rate_text})"
+        )
+        lines.append(
+            f"Compressed, directly observed so far (a lagging lower bound -- a chunk only "
+            f"becomes compression-eligible ~2 days after it starts, so this understates "
+            f"steady state early in the canary): "
+            f"{compressed_sign}{_mib(delta['compressed_delta_bytes']):.0f} MiB "
+            f"({compressed_rate_text})"
+        )
+        lines.append(
+            f"Compressed, steady-state ESTIMATE (raw ingest rate x observed compression "
+            f"ratio {ratio_text}, immune to compression-job timing -- check the 500 MiB/day "
+            f"gate against THIS, not the directly-observed number above): {steady_state_rate_text}"
         )
         lines.append(
             f"rows {rows_sign}{delta['rows_delta']:,}, "
