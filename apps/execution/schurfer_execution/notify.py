@@ -21,6 +21,11 @@ def _fmt_pnl(pnl_pct: float) -> str:
     return f"{sign}{pnl_pct:.2f}%"
 
 
+def _fmt_usd(pnl_usd: float) -> str:
+    sign = "+" if pnl_usd >= 0 else "-"
+    return f"{sign}${abs(pnl_usd):.2f}"
+
+
 async def _send(token: str, chat_id: str, text: str) -> None:
     try:
         async with httpx.AsyncClient(timeout=10) as client:
@@ -69,15 +74,25 @@ async def notify_close(
     reason: str,
     paper: bool,
     pnl_kind: str = "gross",
+    pnl_usd: float | None = None,
 ) -> None:
     tag = "📄 PAPER" if paper else "🏁 CLOSED"
     emoji = "✅" if pnl_pct >= 0 else "🔴"
     pnl_label = "Modeled net PnL" if pnl_kind == "modeled_net" else "Gross PnL"
+    # pnl_usd is None when the position size behind this close could not be
+    # resolved (e.g. an old position opened before size tracking existed, or
+    # an evicted Redis key) — show the percent alone rather than fabricate a
+    # dollar figure.
+    pnl_value = (
+        f"*{_esc(_fmt_pnl(pnl_pct))}* \\({_esc(_fmt_usd(pnl_usd))}\\)"
+        if pnl_usd is not None
+        else f"*{_esc(_fmt_pnl(pnl_pct))}*"
+    )
     text = (
         f"*{_esc(tag)}: {base} {emoji}*\n"
         f"Exchange: {_esc(exchange)}\n"
         f"Entry→Exit: `{_esc(str(entry_price))}` → `{_esc(str(exit_price))}`\n"
-        f"{_esc(pnl_label)}: *{_esc(_fmt_pnl(pnl_pct))}*\n"
+        f"{_esc(pnl_label)}: {pnl_value}\n"
         f"Reason: {_esc(reason)}"
     )
     await _send(token, chat_id, text)

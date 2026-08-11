@@ -3,6 +3,7 @@
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from schurfer_execution.paper import _tick, close_paper, open_paper, paper_key
 from schurfer_performance import PAPER_ACCOUNTING_VERSION
 
@@ -216,6 +217,56 @@ async def test_close_paper_notification_uses_modeled_net_when_cost_inputs_are_co
 
     assert close_notice.call_args.kwargs["pnl_pct"] == 9.73
     assert close_notice.call_args.kwargs["pnl_kind"] == "modeled_net"
+    # size_usd=100, net_return_pct=9.73% -> ~$9.73 net, not a naive gross
+    # figure computed from the raw (pre-cost) price move.
+    assert close_notice.call_args.kwargs["pnl_usd"] == pytest.approx(9.73, abs=0.01)
+
+
+async def test_close_paper_notification_pnl_usd_is_none_when_size_usd_missing() -> None:
+    # A position stored before size tracking existed. Must show percent
+    # alone, never fabricate a dollar figure from a missing size.
+    rdb = _rdb()
+    cfg = _cfg()
+    pos = {"base": "BEAT", "exchange": "bybit", "entry_price": 0.003, "side": "short"}
+
+    with (
+        patch("schurfer_execution.paper.notify.credentials", return_value=("test", "chat")),
+        patch(
+            "schurfer_execution.paper.notify.notify_close", new_callable=AsyncMock
+        ) as close_notice,
+    ):
+        await close_paper(rdb, pos=pos, current_price=0.0025, reason="take_profit", cfg=cfg)
+
+    assert close_notice.call_args.kwargs["pnl_usd"] is None
+
+
+async def test_close_paper_notification_computes_gross_pnl_usd_without_full_accounting() -> None:
+    # size_usd present, but no (or non-matching) accounting_version -> the
+    # "legacy"/gross path. The dollar figure must match the same raw,
+    # unmodeled percent already labeled "Gross PnL" -- not a mix of a net
+    # percent with a gross dollar amount or vice versa.
+    rdb = _rdb()
+    cfg = _cfg()
+    pos = {
+        "base": "BEAT",
+        "exchange": "bybit",
+        "entry_price": 0.0030,
+        "size_usd": 50.0,
+        "side": "short",
+    }
+
+    with (
+        patch("schurfer_execution.paper.notify.credentials", return_value=("test", "chat")),
+        patch(
+            "schurfer_execution.paper.notify.notify_close", new_callable=AsyncMock
+        ) as close_notice,
+    ):
+        await close_paper(rdb, pos=pos, current_price=0.0025, reason="take_profit", cfg=cfg)
+
+    kw = close_notice.call_args.kwargs
+    assert kw["pnl_kind"] == "gross"
+    # (0.0030 - 0.0025) / 0.0030 * 100 = 16.666...% gross, on $50.
+    assert kw["pnl_usd"] == pytest.approx(50.0 * kw["pnl_pct"] / 100, abs=0.01)
 
 
 async def test_close_paper_journal_failure_keeps_trade_id() -> None:

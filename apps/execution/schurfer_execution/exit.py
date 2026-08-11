@@ -15,6 +15,7 @@ _BEST_KEY_PAPER = "exit:best:paper:{exchange}:{base}"
 _PARAMS_KEY = "exit:params:{exchange}:{base}"
 _ENTRY_KEY = "position:entry:{exchange}:{base}"
 _SIDE_KEY = "position:side:{exchange}:{base}"
+_SIZE_USD_KEY = "position:size_usd:{exchange}:{base}"
 
 _KEY_TTL = 86400 * 7
 
@@ -100,6 +101,10 @@ def entry_key(exchange: str, base: str) -> str:
 
 def side_key(exchange: str, base: str) -> str:
     return _SIDE_KEY.format(exchange=exchange, base=base.upper())
+
+
+def size_usd_key(exchange: str, base: str) -> str:
+    return _SIZE_USD_KEY.format(exchange=exchange, base=base.upper())
 
 
 async def check_exit(

@@ -119,6 +119,14 @@ async def close_paper(
     )
     accounting_status = "legacy"
     displayed_pnl_pct = pnl_pct
+    # Mirrors displayed_pnl_pct's own fallback: modeled net when the full
+    # accounting resolved (status "complete"), otherwise the same raw,
+    # unmodeled gross figure the "Gross PnL" label already promises below
+    # (never a mix of net percent with gross dollars or vice versa). A
+    # position stored before size tracking existed has no size_usd at all —
+    # None stays None rather than fabricating a dollar figure.
+    size_usd_raw = pos.get("size_usd")
+    displayed_pnl_usd = float(size_usd_raw) * pnl_pct / 100 if size_usd_raw is not None else None
     accounting_version = pos.get("accounting_version")
     if accounting_version == PAPER_ACCOUNTING_VERSION:
         accounting = calculate_performance(
@@ -133,6 +141,8 @@ async def close_paper(
         accounting_status = accounting.status
         if accounting.net_return_pct is not None:
             displayed_pnl_pct = accounting.net_return_pct
+        if accounting.net_pnl_usd is not None:
+            displayed_pnl_usd = accounting.net_pnl_usd
 
     # Paper trades are deliberately NOT routed through journal.try_commit_close:
     # that mechanism writes a journal:pending_close marker that tracker.py
@@ -197,6 +207,7 @@ async def close_paper(
             entry_price=entry_price,
             exit_price=current_price,
             pnl_pct=displayed_pnl_pct,
+            pnl_usd=displayed_pnl_usd,
             pnl_kind="modeled_net" if accounting_status == "complete" else "gross",
             reason=reason,
             paper=True,

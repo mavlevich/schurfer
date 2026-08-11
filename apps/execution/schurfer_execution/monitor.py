@@ -214,6 +214,12 @@ async def _check_exit(
                 if side == "short"
                 else (exit_price - entry) / entry * 100
             )
+            # fetch_positions' own size_usd is the position's notional as of
+            # this tick, not necessarily identical to the entry-time size,
+            # but it is the same value the risk/monitor loop already treats
+            # as authoritative elsewhere in this function.
+            size_usd = float(position.get("size_usd") or 0)
+            pnl_usd_final = size_usd * pnl_pct_final / 100 if size_usd > 0 else None
             await notify.notify_close(
                 *creds,
                 base=base,
@@ -221,6 +227,7 @@ async def _check_exit(
                 entry_price=entry,
                 exit_price=exit_price,
                 pnl_pct=pnl_pct_final,
+                pnl_usd=pnl_usd_final,
                 reason=reason,
                 paper=False,
             )
@@ -359,8 +366,10 @@ async def _reconcile_one(
     # close is still fully recoverable.
     entry_raw = await rdb.get(exit_module.entry_key(exchange, base))
     side_raw = await rdb.get(exit_module.side_key(exchange, base))
+    size_usd_raw = await rdb.get(exit_module.size_usd_key(exchange, base))
     entry_price = float(entry_raw) if entry_raw else 0.0
     side = (side_raw.decode() if isinstance(side_raw, bytes) else side_raw) or "short"
+    size_usd = float(size_usd_raw) if size_usd_raw else None
 
     log.warning(
         "position_monitor.reconcile.exchange_sl_triggered",
@@ -379,6 +388,7 @@ async def _reconcile_one(
     await rdb.delete(exit_module.params_key(exchange, base))
     await rdb.delete(exit_module.entry_key(exchange, base))
     await rdb.delete(exit_module.side_key(exchange, base))
+    await rdb.delete(exit_module.size_usd_key(exchange, base))
 
     if trade_id_raw and cfg.db_url:
         trade_id = int(trade_id_raw)
@@ -409,6 +419,7 @@ async def _reconcile_one(
             if side == "short"
             else (exit_price - entry_price) / entry_price * 100
         )
+        pnl_usd = size_usd * pnl_pct / 100 if size_usd else None
         await notify.notify_close(
             *creds,
             base=base,
@@ -416,6 +427,7 @@ async def _reconcile_one(
             entry_price=entry_price,
             exit_price=exit_price,
             pnl_pct=pnl_pct,
+            pnl_usd=pnl_usd,
             reason="exchange_stop_loss_triggered",
             paper=False,
         )

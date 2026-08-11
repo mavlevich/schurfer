@@ -1,6 +1,7 @@
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from schurfer_execution.monitor import (
     _parse_sl_key,
     _reconcile_one,
@@ -262,6 +263,75 @@ class TestReconcileOne:
         delete_calls = [c.args[0] for c in rdb.delete.call_args_list]
         assert "position:sl_order_id:bingx:BEAT" in delete_calls
         assert "position:entry:bingx:BEAT" in delete_calls
+
+    async def test_notify_close_includes_pnl_usd_when_size_usd_cached(self) -> None:
+        ex = MagicMock()
+        ex.fetch_order = AsyncMock(return_value={"status": "closed", "average": 1.2, "id": "sl-1"})
+        rdb = _rdb_with(
+            {
+                "position:sl_order_id:bingx:BEAT": b"sl-1",
+                "position:entry:bingx:BEAT": b"1.0",
+                "position:side:bingx:BEAT": b"short",
+                "position:size_usd:bingx:BEAT": b"50.0",
+                "trade:id:bingx:BEAT": b"42",
+            }
+        )
+        cfg = _mock_cfg()
+
+        with (
+            patch(
+                "schurfer_execution.monitor.journal.try_commit_close",
+                AsyncMock(return_value=True),
+            ),
+            patch("schurfer_execution.monitor.journal.delete_trade_id_if_matches", AsyncMock()),
+            patch(
+                "schurfer_execution.monitor.notify.credentials",
+                return_value=("tok", "chat"),
+            ),
+            patch(
+                "schurfer_execution.monitor.notify.notify_close", AsyncMock()
+            ) as mock_notify_close,
+        ):
+            await _reconcile_one("bingx", "BEAT", {"bingx": ex}, rdb, cfg)
+
+        kw = mock_notify_close.call_args.kwargs
+        # entry=1.0, exit=1.2, short -> -20% (a loss), on $50 -> -$10.
+        assert kw["pnl_pct"] == pytest.approx(-20.0)
+        assert kw["pnl_usd"] == pytest.approx(-10.0)
+        rdb.delete.assert_any_call("position:size_usd:bingx:BEAT")
+
+    async def test_notify_close_pnl_usd_is_none_when_size_usd_key_missing(self) -> None:
+        # No position:size_usd:* entry cached -- an older position or an
+        # evicted key. Must show percent alone, never fabricate a figure.
+        ex = MagicMock()
+        ex.fetch_order = AsyncMock(return_value={"status": "closed", "average": 1.2, "id": "sl-1"})
+        rdb = _rdb_with(
+            {
+                "position:sl_order_id:bingx:BEAT": b"sl-1",
+                "position:entry:bingx:BEAT": b"1.0",
+                "position:side:bingx:BEAT": b"short",
+                "trade:id:bingx:BEAT": b"42",
+            }
+        )
+        cfg = _mock_cfg()
+
+        with (
+            patch(
+                "schurfer_execution.monitor.journal.try_commit_close",
+                AsyncMock(return_value=True),
+            ),
+            patch("schurfer_execution.monitor.journal.delete_trade_id_if_matches", AsyncMock()),
+            patch(
+                "schurfer_execution.monitor.notify.credentials",
+                return_value=("tok", "chat"),
+            ),
+            patch(
+                "schurfer_execution.monitor.notify.notify_close", AsyncMock()
+            ) as mock_notify_close,
+        ):
+            await _reconcile_one("bingx", "BEAT", {"bingx": ex}, rdb, cfg)
+
+        assert mock_notify_close.call_args.kwargs["pnl_usd"] is None
 
     async def test_no_sl_order_id_is_a_noop(self) -> None:
         rdb = MagicMock()
