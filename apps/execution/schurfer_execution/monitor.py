@@ -214,12 +214,18 @@ async def _check_exit(
                 if side == "short"
                 else (exit_price - entry) / entry * 100
             )
-            # fetch_positions' own size_usd is the position's notional as of
-            # this tick, not necessarily identical to the entry-time size,
-            # but it is the same value the risk/monitor loop already treats
-            # as authoritative elsewhere in this function.
-            size_usd = float(position.get("size_usd") or 0)
-            pnl_usd_final = size_usd * pnl_pct_final / 100 if size_usd > 0 else None
+            # fetch_positions' own size_usd is the position's CURRENT
+            # mark-to-market notional (contracts * mark_price), not the
+            # entry-time size -- for a short in profit, price has dropped,
+            # so that notional has already shrunk with it. Multiplying the
+            # shrunk notional by the percent gain understates the real
+            # dollar profit (and the mirror-image overstates a loss). The
+            # entry-time size cached at open (same value notify_open showed)
+            # is the correct multiplier; read it the same way the
+            # reconcile path already does.
+            size_usd_raw = await rdb.get(exit_module.size_usd_key(exchange, base))
+            size_usd = float(size_usd_raw) if size_usd_raw else None
+            pnl_usd_final = size_usd * pnl_pct_final / 100 if size_usd else None
             await notify.notify_close(
                 *creds,
                 base=base,

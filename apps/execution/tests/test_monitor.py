@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from schurfer_execution.monitor import (
+    _check_exit,
     _parse_sl_key,
     _reconcile_one,
     _reconcile_vanished_positions,
@@ -82,6 +83,100 @@ def _rdb_with(entries: dict[str, bytes | None]) -> MagicMock:
     rdb.get = AsyncMock(side_effect=_get)
     rdb.delete = AsyncMock()
     return rdb
+
+
+class TestCheckExitNotifyPnlUsd:
+    async def test_uses_cached_entry_size_not_fetch_positions_live_notional(self) -> None:
+        """Regression: fetch_positions' own size_usd on the position dict is
+        the CURRENT mark-to-market notional (contracts * mark_price), not
+        the entry-time size. For a short in profit, price has dropped, so
+        that notional has already shrunk with it -- multiplying the shrunk
+        notional by the percent gain understates the real dollar profit
+        (10 contracts, $10 -> $8: true profit is $20, but 80 (shrunk
+        notional) * 20% = only $16). The entry-time size cached in Redis at
+        open (same value notify_open showed) must be used instead."""
+        position = {
+            "exchange": "bingx",
+            "base": "BEAT",
+            "side": "short",
+            "entry_price": 10.0,
+            "mark_price": 8.0,
+            # fetch_positions' own (misleading) current notional -- must be
+            # ignored as the PnL multiplier.
+            "size_usd": 80.0,
+        }
+        rdb = _rdb_with(
+            {
+                "position:size_usd:bingx:BEAT": b"100.0",
+                "trade:id:bingx:BEAT": b"42",
+            }
+        )
+
+        with (
+            patch(
+                "schurfer_execution.monitor.exit_module.check_exit",
+                AsyncMock(return_value="max_hold age=180min"),
+            ),
+            patch(
+                "schurfer_execution.monitor.close_position",
+                AsyncMock(return_value={"closed": True, "exit_price": 8.0, "order_id": "o1"}),
+            ),
+            patch(
+                "schurfer_execution.monitor.journal.try_commit_close",
+                AsyncMock(return_value=True),
+            ),
+            patch("schurfer_execution.monitor.journal.delete_trade_id_if_matches", AsyncMock()),
+            patch(
+                "schurfer_execution.monitor.notify.credentials",
+                return_value=("tok", "chat"),
+            ),
+            patch(
+                "schurfer_execution.monitor.notify.notify_close", AsyncMock()
+            ) as mock_notify_close,
+        ):
+            await _check_exit(position, rdb, _mock_cfg(), {"bingx": MagicMock()})
+
+        kw = mock_notify_close.call_args.kwargs
+        assert kw["pnl_pct"] == pytest.approx(20.0)
+        # Correct: 100 (cached entry notional) * 20% = $20, not
+        # 80 (fetch_positions' shrunk live notional) * 20% = $16.
+        assert kw["pnl_usd"] == pytest.approx(20.0)
+
+    async def test_pnl_usd_is_none_when_size_usd_key_missing(self) -> None:
+        position = {
+            "exchange": "bingx",
+            "base": "BEAT",
+            "side": "short",
+            "entry_price": 10.0,
+            "mark_price": 8.0,
+        }
+        rdb = _rdb_with({"trade:id:bingx:BEAT": b"42"})
+
+        with (
+            patch(
+                "schurfer_execution.monitor.exit_module.check_exit",
+                AsyncMock(return_value="max_hold age=180min"),
+            ),
+            patch(
+                "schurfer_execution.monitor.close_position",
+                AsyncMock(return_value={"closed": True, "exit_price": 8.0, "order_id": "o1"}),
+            ),
+            patch(
+                "schurfer_execution.monitor.journal.try_commit_close",
+                AsyncMock(return_value=True),
+            ),
+            patch("schurfer_execution.monitor.journal.delete_trade_id_if_matches", AsyncMock()),
+            patch(
+                "schurfer_execution.monitor.notify.credentials",
+                return_value=("tok", "chat"),
+            ),
+            patch(
+                "schurfer_execution.monitor.notify.notify_close", AsyncMock()
+            ) as mock_notify_close,
+        ):
+            await _check_exit(position, rdb, _mock_cfg(), {"bingx": MagicMock()})
+
+        assert mock_notify_close.call_args.kwargs["pnl_usd"] is None
 
 
 class TestReconcileOne:
