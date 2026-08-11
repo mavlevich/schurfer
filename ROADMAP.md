@@ -75,22 +75,28 @@ The portfolio is bounded as follows:
   as this budget. Maintenance, security fixes, and re-running an already-registered
   report never consume it.
 
-  **Count as of `2026-08-10`: 3 of 10 spent.** HYP-011 (pump-reversion) and HYP-012
-  (source-lead), both entered in
+  **Count as of `2026-08-11`: 4 of 10 spent.** HYP-011 (pump-reversion), HYP-012
+  (source-lead), and HYP-013 (token-behavior), all entered in
   [docs/research/discovery-ledger.md](docs/research/discovery-ledger.md); plus the
   OI-growth baseline filter (`confirmed_oi_growth_baseline_filter_v1`, registered
   `2026-08-10`) as a genuinely new signal moved toward Confirmation,
   not a variant of an existing one. Two borderline cases are counted as continuations
-  of an already-spent family, not new ones, and are not in the 3: the liquid-taker
+  of an already-spent family, not new ones, and are not in the 4: the liquid-taker
   wider-stop shadow (registered `2026-08-01`) reuses the complete HYP-008 selector and
   cohort, testing one stop-width challenger against the unchanged baseline; the
   open-ended-margin funding-buffer study (starts `2026-08-03`) reuses the same
   `liquid_taker_candidate_v1` selector, measuring different checkpoints on the same
-  underlying candidate rather than a new one. Bybit early-momentum capture (item 5,
-  PR1-3) and the token-history data collection (items 1-3) are collector
-  infrastructure only, with no discovery-ledger entry or Confirmation move yet, so
-  neither counts here; item 5 will be counted only if and when a real momentum
-  screen produces a loggable result, not for the collector merging.
+  underlying candidate rather than a new one. HYP-013 itself parked with status
+  `insufficient_triggers` on its first real pass (2026-08-11) — the frozen
+  47-instrument token-history dataset produced only 60 formal-sample episodes, and the
+  most aggressively cash-gating candidate kept only 7 of them, short of the
+  materiality floor; no statistical comparison actually ran. It still spends the
+  budget slot because the family reached the discovery ledger with a real result, per
+  this section's own rule that counting happens at the ledger-entry event, not at a
+  positive outcome. Bybit early-momentum capture (item 5, PR1-3) is still collector
+  infrastructure only, with no discovery-ledger entry or Confirmation move yet, and
+  will be counted only if and when a real momentum screen produces a loggable
+  result, not for the collector merging.
 
 - Keep no more than two active Confirmation-level lines (a frozen contract plus its
   own forward cohort) at once. Pump reversion is the primary line. One cheap
@@ -173,13 +179,25 @@ front.
    table. No queue, object store, ClickHouse, cross-venue ticker matching, or
    5-minute year-long firehose was introduced. See the token-behavior-history
    entry above for the real production run's numbers.
-4. **Run one wide token-behavior discovery report.** Compute only pre-decision
-   descriptors: prior spike count and magnitude, realized volatility, historical
-   drawdown/recovery time, range compression/expansion, volume shock, listing age,
-   and recurrence of similar moves. Evaluate them together in one discovery family
-   with cash-inclusive after-cost economics, capacity, week/asset concentration,
-   multiple-testing correction, and holdout-by-time. The output can nominate at most
-   one frozen forward filter; it cannot edit the score or justify historical trading.
+4. **[Implemented, PR #187/#188; run 2026-08-11] Run one wide token-behavior
+   discovery report.** Compute only pre-decision descriptors: prior spike count and
+   magnitude, realized volatility, historical drawdown/recovery time, range
+   compression/expansion, volume shock, listing age, and recurrence of similar
+   moves. Evaluate them together in one discovery family with cash-inclusive
+   after-cost economics, capacity, week/asset concentration, multiple-testing
+   correction, and holdout-by-time. The output can nominate at most one frozen
+   forward filter; it cannot edit the score or justify historical trading.
+   Registered as HYP-013 in
+   [docs/research/discovery-ledger.md](docs/research/discovery-ledger.md), status
+   `parked`: the frozen 47-instrument dataset produced only 60 formal-sample
+   episodes, and the most aggressively cash-gating of the 4 candidates
+   (`above_median_recovery_days`) kept only 7 of its 35 resolved episodes,
+   short of the pre-registered 10-trade materiality floor — `insufficient_triggers`,
+   no bootstrap/Holm comparison actually ran. Report archived at
+   `backups/reports/token-behavior-discovery-2026-08-11.{md,json}` (outside git).
+   A re-attempt needs a
+   non-overlapping forward window with materially more history than this ~2-week
+   dataset covers before this line can be revisited.
 5. **Start a bounded Bybit early-momentum capture as the next non-recoverable-data
    PR.** Extend the existing ticker websocket decoder to retain both `openInterest`
    and `openInterestValue`; reuse public trades to aggregate taker buy/sell notional.
