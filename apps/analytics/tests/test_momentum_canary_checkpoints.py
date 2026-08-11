@@ -524,7 +524,10 @@ def test_notification_text_reports_delta_and_rate_since_baseline() -> None:
     baseline = {
         "elapsed_hours": 0.0,
         "timescale_storage": _storage(
-            total_bytes=100 * 1024 * 1024, row_count=1000, after_compression_total_bytes=0
+            total_bytes=100 * 1024 * 1024,
+            row_count=1000,
+            after_compression_total_bytes=0,
+            before_compression_total_bytes=0,
         ),
         "host_swap_counters": {"pswpin": 0, "pswpout": 0},
     }
@@ -536,7 +539,10 @@ def test_notification_text_reports_delta_and_rate_since_baseline() -> None:
         "host_swap_used_mb": 0,
         "host_swap_counters": {"pswpin": 5, "pswpout": 3},
         "timescale_storage": _storage(
-            total_bytes=196 * 1024 * 1024, row_count=1200000, after_compression_total_bytes=0
+            total_bytes=196 * 1024 * 1024,
+            row_count=1200000,
+            after_compression_total_bytes=0,
+            before_compression_total_bytes=0,
         ),
     }
     text = canary._notification_text("24h", current, baseline=baseline)
@@ -544,7 +550,12 @@ def test_notification_text_reports_delta_and_rate_since_baseline() -> None:
     assert "ROADMAP item 6's two separate gates" in text
     assert "hot +96 MiB" in text
     assert "96 MiB/day" in text  # 96 MiB over 24h = 96 MiB/day
-    assert "compressed +0 MiB" in text
+    assert "+0 MiB (0 MiB/day)" in text  # directly-observed compressed delta
+    # No chunk has ever compressed in this scenario (before_compression_total_bytes
+    # stays 0) -- the steady-state estimate has no compression ratio to work
+    # with, must read n/a, not silently divide-by-zero into 0.
+    assert "steady-state ESTIMATE" in text
+    assert "ratio n/a" in text
     assert "pswpin +5 pswpout +3" in text
     assert "Status: healthy" in text
 
@@ -590,12 +601,77 @@ def test_raw_ingest_rate_survives_a_chunk_rotating_out_of_the_hot_bucket() -> No
     # after_compression_total_bytes is itself a monotonic counter -- a plain
     # delta is already correct, no rotation correction needed.
     assert delta["compressed_delta_bytes"] == 200 * 1024 * 1024
+    # Steady-state estimate = raw ingest rate (700 MiB/day) x observed
+    # compression ratio (200/1400 = 1/7) = 100 MiB/day -- happens to match
+    # the directly-observed rate in this single-clean-cycle scenario, but is
+    # computed independently (immune to compression-job timing lag), not
+    # derived from it.
+    assert delta["compression_ratio"] == 200 / 1400
+    assert delta["steady_state_compressed_rate_bytes_per_day"] == 100 * 1024 * 1024
 
     text = canary._notification_text("48h", current, baseline=baseline)
     assert "hot +1400 MiB" in text
     assert "700 MiB/day" in text  # 1400 MiB over 48h = 700 MiB/day raw ingest
-    assert "compressed +200 MiB" in text
-    assert "100 MiB/day" in text  # 200 MiB over 48h = 100 MiB/day compressed
+    assert "+200 MiB (100 MiB/day)" in text  # directly-observed compressed delta/rate
+    assert "steady-state ESTIMATE" in text
+    assert "ratio 0.14x" in text
+
+
+def test_steady_state_estimate_diverges_from_the_directly_observed_lagging_rate() -> None:
+    # The rotation test above happens to land on a single clean cycle where
+    # the estimate and the directly-observed rate coincide (100 MiB/day
+    # either way) -- that alone cannot prove the two numbers are actually
+    # different metrics. Here baseline starts with nothing ever compressed,
+    # and only a small, older slice (1000 MiB raw -> 100 MiB compressed) has
+    # made it through the ~2-day-plus-job-latency pipeline by the checkpoint,
+    # while a much larger amount (2100 MiB raw) is still sitting hot,
+    # uncompressed. Dividing the small compressed slice by the full elapsed
+    # time badly understates what compression would look like at steady
+    # state; the ratio-based estimate is immune to that lag.
+    baseline = {
+        "elapsed_hours": 0.0,
+        "timescale_storage": _storage(
+            total_bytes=0,
+            row_count=0,
+            after_compression_total_bytes=0,
+            before_compression_total_bytes=0,
+        ),
+        "host_swap_counters": {"pswpin": 0, "pswpout": 0},
+    }
+    current = {
+        "elapsed_hours": 24.0,
+        "health": _health(),
+        "momentum_capture_container": {"MemUsage": "28MiB / 512MiB", "CPUPerc": "12%"},
+        "collector_container": {"MemUsage": "10MiB / 3.7GiB", "CPUPerc": "9%"},
+        "host_swap_used_mb": 0,
+        "host_swap_counters": {"pswpin": 0, "pswpout": 0},
+        "timescale_storage": _storage(
+            # Hot chunk still sitting at 1100 MiB uncompressed (total 1200 -
+            # after_compression 100), plus the 100 MiB that did compress.
+            total_bytes=1200 * 1024 * 1024,
+            row_count=1_000_000,
+            after_compression_total_bytes=100 * 1024 * 1024,
+            before_compression_total_bytes=1000 * 1024 * 1024,
+        ),
+    }
+    delta = canary._delta_block(current, baseline)
+    # raw ingest = hot delta (1100) + before_compression delta (1000) = 2100 MiB/day
+    assert delta["raw_ingest_rate_bytes_per_day"] == 2100 * 1024 * 1024
+    # directly observed compressed rate: only the 100 MiB that made it
+    # through the pipeline so far, over the full 24h.
+    assert delta["compressed_rate_bytes_per_day"] == 100 * 1024 * 1024
+    # steady-state estimate: 2100 MiB/day x (100/1000) = 210 MiB/day --
+    # more than double the directly-observed number, proving the two are
+    # genuinely different metrics, not incidentally equal.
+    assert delta["steady_state_compressed_rate_bytes_per_day"] == 210 * 1024 * 1024
+    assert (
+        delta["steady_state_compressed_rate_bytes_per_day"]
+        > delta["compressed_rate_bytes_per_day"] * 2
+    )
+
+    text = canary._notification_text("24h", current, baseline=baseline)
+    assert "+100 MiB (100 MiB/day)" in text  # directly-observed, the lagging number
+    assert "210 MiB/day" in text  # the steady-state estimate, meaningfully higher
 
 
 # --- fix 5: missed-checkpoint handling for long downtime ---
