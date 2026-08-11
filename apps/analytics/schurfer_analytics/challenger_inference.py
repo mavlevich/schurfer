@@ -178,12 +178,15 @@ def _readiness(
     minimum_triggered_episodes: int | None,
     least_triggered_count: int | None,
     max_unresolved_tolerance: int,
+    directional_episodes: int,
+    formal_episodes: int,
+    min_formal_clusters: int,
 ) -> str:
-    if eligible_episodes < DIRECTIONAL_EPISODES:
+    if eligible_episodes < directional_episodes:
         return "collecting"
-    if eligible_episodes < FORMAL_EPISODES:
+    if eligible_episodes < formal_episodes:
         return "directional_only"
-    if formal_sample_clusters < MIN_FORMAL_CLUSTERS:
+    if formal_sample_clusters < min_formal_clusters:
         return "insufficient_diversity"
     # completely_paired always requires baseline_return_pct to be resolved (a
     # necessary condition of "completely paired"), so completely_paired <=
@@ -261,6 +264,9 @@ def build_challenger_inference(
     inference_version: str = DEFAULT_INFERENCE_VERSION,
     minimum_triggered_episodes: int | None = None,
     max_unresolved_tolerance: int = 0,
+    directional_episodes: int = DIRECTIONAL_EPISODES,
+    formal_episodes: int = FORMAL_EPISODES,
+    min_formal_clusters: int = MIN_FORMAL_CLUSTERS,
 ) -> ChallengerInference:
     """Evaluate episodes supplied in deterministic chronological cohort order.
 
@@ -276,10 +282,25 @@ def build_challenger_inference(
     locked window. Only raise it after manually confirming the gap is a genuine,
     isolated data-capture limitation, not a fetch bug that should be fixed at the
     source instead — this check cannot tell the two apart on its own.
+
+    directional_episodes/formal_episodes/min_formal_clusters default to the
+    shared replay.py constants every existing challenger family (oi_growth,
+    the virtual_* entry/score/threshold challengers) already relies on —
+    passing these is opt-in and changes nothing for a caller that omits
+    them. A family whose own frozen pre-registration states a different,
+    deliberately looser (or stricter) discovery-vs-confirmation bar — e.g.
+    token_behavior_discovery_report.py's own >=60/>=20 discovery floor,
+    distinct from oi_growth's >=100/>=30 confirmation floor — passes its own
+    numbers explicitly instead of silently inheriting a floor designed for a
+    different family's sample-size economics (added 2026-08-11).
     """
     normalized_version = inference_version.strip()
     if not normalized_version:
         raise ValueError("inference version must not be empty")
+    if directional_episodes <= 0 or formal_episodes <= 0 or min_formal_clusters <= 0:
+        raise ValueError("directional/formal episode and cluster floors must be positive")
+    if directional_episodes > formal_episodes:
+        raise ValueError("directional_episodes must not exceed formal_episodes")
     if not variant_keys or len(variant_keys) != len(set(variant_keys)):
         raise ValueError("registered variant keys must be unique and non-empty")
     if any(not key.strip() for key in variant_keys):
@@ -291,7 +312,7 @@ def build_challenger_inference(
         if tuple(key for key, _ in episode.challenger_returns_pct) != variant_keys:
             raise ValueError("episode challenger family does not match the manifest")
 
-    formal_sample = episodes[:FORMAL_EPISODES]
+    formal_sample = episodes[:formal_episodes]
     cluster_counts = Counter(episode.cluster_key for episode in formal_sample)
     concentration = tuple(
         ClusterConcentration(
@@ -341,6 +362,9 @@ def build_challenger_inference(
             minimum_triggered_episodes=minimum_triggered_episodes,
             least_triggered_count=least_triggered_count,
             max_unresolved_tolerance=max_unresolved_tolerance,
+            directional_episodes=directional_episodes,
+            formal_episodes=formal_episodes,
+            min_formal_clusters=min_formal_clusters,
         ),
         eligible_episodes=len(episodes),
         formal_sample_episodes=len(formal_sample),
