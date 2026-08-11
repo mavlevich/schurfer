@@ -346,6 +346,149 @@ def test_health_unreadable_with_no_prior_epoch_does_not_alert(
     assert notified == []  # nothing was ever running, so nothing "went missing"
 
 
+# --- fix 7: operational alerts (interrupted/recovered/restart) durably retry too ---
+
+
+def test_interrupted_alert_survives_a_telegram_outage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _fake_collection(monkeypatch)
+    monkeypatch.setattr(canary, "_read_momentum_health", lambda: _health())
+    snapshot = tmp_path / "runtime" / "momentum-canary.json"
+    canary.run_once(now=EPOCH_START + timedelta(hours=1), snapshot_path=snapshot)
+
+    notified: list[str] = []
+    fail = {"value": True}
+    monkeypatch.setattr(
+        canary,
+        "_notify",
+        lambda message: (notified.append(message), "telegram down" if fail["value"] else None)[1],
+    )
+
+    def broken_health() -> dict[str, str]:
+        raise RuntimeError("market:momentumcapture:health is empty or missing in redis")
+
+    monkeypatch.setattr(canary, "_read_momentum_health", broken_health)
+    with pytest.raises(RuntimeError):
+        canary.run_once(now=EPOCH_START + timedelta(hours=2), snapshot_path=snapshot)
+    payload = canary._read_json(snapshot)
+    assert payload["active_epoch"]["status"] == "interrupted"
+    assert len(payload["pending_operational_alerts"]) == 1
+    first_attempt_count = len(notified)
+
+    # Telegram recovers, but health is still broken: the queued interrupted
+    # alert must be retried and finally delivered without needing a new
+    # interruption event.
+    fail["value"] = False
+    with pytest.raises(RuntimeError):
+        canary.run_once(now=EPOCH_START + timedelta(hours=2, minutes=15), snapshot_path=snapshot)
+    payload = canary._read_json(snapshot)
+    assert payload["pending_operational_alerts"] == []
+    assert len(notified) > first_attempt_count
+
+
+def test_restart_alert_survives_a_telegram_outage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _fake_collection(monkeypatch)
+    monkeypatch.setattr(canary, "_read_momentum_health", lambda: _health())
+    snapshot = tmp_path / "runtime" / "momentum-canary.json"
+    canary.run_once(now=EPOCH_START + timedelta(hours=25), snapshot_path=snapshot)
+
+    monkeypatch.setattr(canary, "_notify", lambda message: "telegram down")
+    new_start = EPOCH_START + timedelta(hours=70)
+    new_start_ms = int(new_start.timestamp() * 1000)
+    monkeypatch.setattr(canary, "_read_momentum_health", lambda: _health(new_start_ms))
+    payload = canary.run_once(now=new_start + timedelta(hours=1), snapshot_path=snapshot)
+    assert len(payload["pending_operational_alerts"]) == 1
+    assert "restarted mid-canary" in payload["pending_operational_alerts"][0]["message"]
+
+    notified: list[str] = []
+    monkeypatch.setattr(canary, "_notify", lambda message: notified.append(message) or None)
+    payload = canary.run_once(
+        now=new_start + timedelta(hours=1, minutes=15), snapshot_path=snapshot
+    )
+    assert payload["pending_operational_alerts"] == []
+    assert any("restarted mid-canary" in message for message in notified)
+
+
+def test_recovery_alert_survives_a_telegram_outage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _fake_collection(monkeypatch)
+    snapshot = tmp_path / "runtime" / "momentum-canary.json"
+
+    # Get into an interrupted state first (Telegram up for this part).
+    monkeypatch.setattr(canary, "_read_momentum_health", lambda: _health())
+    monkeypatch.setattr(canary, "_notify", lambda message: None)
+    canary.run_once(now=EPOCH_START + timedelta(hours=1), snapshot_path=snapshot)
+
+    def broken_health() -> dict[str, str]:
+        raise RuntimeError("market:momentumcapture:health is empty or missing in redis")
+
+    monkeypatch.setattr(canary, "_read_momentum_health", broken_health)
+    with pytest.raises(RuntimeError):
+        canary.run_once(now=EPOCH_START + timedelta(hours=2), snapshot_path=snapshot)
+    assert canary._read_json(snapshot)["active_epoch"]["status"] == "interrupted"
+
+    # Health comes back, but Telegram is down for the recovery alert itself.
+    monkeypatch.setattr(canary, "_read_momentum_health", lambda: _health())
+    monkeypatch.setattr(canary, "_notify", lambda message: "telegram down")
+    payload = canary.run_once(
+        now=EPOCH_START + timedelta(hours=2, minutes=15), snapshot_path=snapshot
+    )
+    assert payload["active_epoch"]["status"] == "running"  # state transition is not lost...
+    assert len(payload["pending_operational_alerts"]) == 1
+    assert "again after an interruption" in payload["pending_operational_alerts"][0]["message"]
+
+    # Telegram recovers on a later run: the queued recovery alert is finally delivered.
+    notified: list[str] = []
+    monkeypatch.setattr(canary, "_notify", lambda message: notified.append(message) or None)
+    payload = canary.run_once(
+        now=EPOCH_START + timedelta(hours=2, minutes=30), snapshot_path=snapshot
+    )
+    assert payload["pending_operational_alerts"] == []
+    assert any("again after an interruption" in message for message in notified)
+
+
+def test_restart_while_interrupted_sends_restart_alert_only_no_false_recovery(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _fake_collection(monkeypatch)
+    snapshot = tmp_path / "runtime" / "momentum-canary.json"
+
+    monkeypatch.setattr(canary, "_read_momentum_health", lambda: _health())
+    monkeypatch.setattr(canary, "_notify", lambda message: None)
+    canary.run_once(now=EPOCH_START + timedelta(hours=1), snapshot_path=snapshot)
+
+    def broken_health() -> dict[str, str]:
+        raise RuntimeError("market:momentumcapture:health is empty or missing in redis")
+
+    monkeypatch.setattr(canary, "_read_momentum_health", broken_health)
+    with pytest.raises(RuntimeError):
+        canary.run_once(now=EPOCH_START + timedelta(hours=2), snapshot_path=snapshot)
+    assert canary._read_json(snapshot)["active_epoch"]["status"] == "interrupted"
+
+    # Health returns, but with a DIFFERENT started_at_ms: the old epoch never
+    # actually resumed, it was restarted. Must not also claim "recovered".
+    notified: list[str] = []
+    monkeypatch.setattr(canary, "_notify", lambda message: notified.append(message) or None)
+    new_start = EPOCH_START + timedelta(hours=2, minutes=5)
+    new_start_ms = int(new_start.timestamp() * 1000)
+    monkeypatch.setattr(canary, "_read_momentum_health", lambda: _health(new_start_ms))
+    payload = canary.run_once(now=new_start + timedelta(minutes=1), snapshot_path=snapshot)
+
+    assert payload["active_epoch"]["started_at_ms"] == new_start_ms
+    assert payload["active_epoch"]["status"] == "running"
+    assert not any("again after an interruption" in message for message in notified)
+    assert any("restarted mid-canary" in message for message in notified)
+    assert payload["archived_epochs"][-1]["status"] == "interrupted"
+    # The archived epoch was still interrupted at restart time; the restart
+    # alert should say so instead of pretending it recovered first.
+    restart_message = next(m for m in notified if "restarted mid-canary" in m)
+    assert "never actually resumed" in restart_message
+
+
 # --- fix 4: baseline + delta/rate ---
 
 
