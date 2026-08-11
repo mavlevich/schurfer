@@ -52,7 +52,11 @@ Each run:
    checkpoint's own timely read.
 5. A Telegram send failure never permanently loses a checkpoint: data is
    saved atomically as "collected" first, and only promoted to "notified"
-   once delivery actually succeeds, retried every run until it does.
+   once delivery actually succeeds, retried every run until it does. The same
+   protection covers the interrupted/recovered/restart operational alerts
+   (queued in pending_operational_alerts and replayed verbatim until
+   delivered), which have no underlying data to protect, just the message
+   itself.
 6. --sample-now takes an out-of-band diagnostic read and always sends it, but
    never touches official checkpoint state -- it cannot pre-empt a real
    24/48/72h checkpoint.
@@ -76,7 +80,10 @@ import urllib.parse
 import urllib.request
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 SNAPSHOT_VERSION = "momentum_canary_checkpoints_v2"
 
@@ -423,6 +430,45 @@ def _notification_text(
     return "\n".join(lines)
 
 
+def _send_or_queue(
+    pending: list[dict[str, Any]],
+    message: str,
+    now: datetime,
+    *,
+    persist: Callable[[], None],
+) -> None:
+    """Send an operational alert (interrupted/recovered/restart), or queue it for
+    retry if Telegram delivery fails.
+
+    Persist-before-send: the pending entry is written to disk via `persist`
+    BEFORE the network call, not after. Without this, a crash or systemd kill
+    during or right after _notify (a real risk: the whole rest of run_once --
+    baseline collection, the checkpoint loop -- still runs before the normal
+    end-of-run write) would lose the in-memory record that this alert was ever
+    detected, and the next run would silently start over. The cost is a rare
+    duplicate send if delivery actually succeeded moments before such a crash
+    -- acceptable, since Telegram has no real idempotency key and at-least-once
+    is the honest guarantee this runner gives everywhere, not just here.
+    """
+    pending.append({"message": message, "created_at": _utc(now), "last_error": None})
+    persist()
+    error = _notify(message)
+    if error is None:
+        pending.pop()
+    else:
+        pending[-1]["last_error"] = error
+
+
+def _flush_pending_alerts(pending: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    remaining = []
+    for entry in pending:
+        error = _notify(entry["message"])
+        if error is not None:
+            entry["last_error"] = error
+            remaining.append(entry)
+    return remaining
+
+
 def _new_epoch(started_at_ms: int) -> dict[str, Any]:
     epoch_start = datetime.fromtimestamp(started_at_ms / 1000, tz=UTC)
     return {
@@ -456,6 +502,29 @@ def run_once(
 
     archived_epochs: list[dict[str, Any]] = list(previous.get("archived_epochs", []))
     active_epoch: dict[str, Any] | None = previous.get("active_epoch")
+    # Retry any operational alert (interrupted/recovered/restart) a prior run
+    # failed to deliver, before anything else -- these are one-shot texts with
+    # no underlying data to protect, so replaying the same message is correct.
+    pending_operational_alerts: list[dict[str, Any]] = _flush_pending_alerts(
+        list(previous.get("pending_operational_alerts", []))
+    )
+
+    def _persist() -> None:
+        # Captures active_epoch/archived_epochs/pending_operational_alerts by
+        # reference (closure over run_once's locals), so it always writes
+        # whatever they currently hold -- used as the persist-before-send step
+        # in _send_or_queue, not just the final write at the end of this
+        # function.
+        _atomic_json(
+            snapshot_path,
+            {
+                "version": SNAPSHOT_VERSION,
+                "generated_at": _utc(now),
+                "active_epoch": active_epoch,
+                "archived_epochs": archived_epochs,
+                "pending_operational_alerts": pending_operational_alerts,
+            },
+        )
 
     try:
         health = _read_momentum_health()
@@ -472,33 +541,50 @@ def run_once(
                 active_epoch["status"] = "interrupted"
                 active_epoch["interrupted_since"] = _utc(now)
                 old_start = datetime.fromtimestamp(active_epoch["started_at_ms"] / 1000, tz=UTC)
-                _notify(
+                _send_or_queue(
+                    pending_operational_alerts,
                     f"\U0001f534 Momentum-capture canary: health became unreadable mid-epoch "
                     f"(started {_utc(old_start)}).\nError: {health_error}\n"
-                    f"Will keep checking for recovery; this alert will not repeat."
+                    f"Will keep checking for recovery; this alert will not repeat.",
+                    now,
+                    persist=_persist,
                 )
             active_epoch["last_error"] = health_error
-        payload = {
-            "version": SNAPSHOT_VERSION,
-            "generated_at": _utc(now),
-            "active_epoch": active_epoch,
-            "archived_epochs": archived_epochs,
-        }
-        _atomic_json(snapshot_path, payload)
+        _persist()
         raise RuntimeError(health_error)
 
     assert health is not None and epoch_started_at_ms is not None  # narrows for type checkers
 
-    if active_epoch is not None and active_epoch.get("status") == "interrupted":
+    # Checked once, up front: a restart (started_at_ms changed) is handled
+    # entirely separately from an ordinary recovery below. Without this, an
+    # epoch that was interrupted and then restarted with a NEW started_at_ms
+    # would first get a false "recovered" alert (the OLD epoch never actually
+    # resumed -- it gets archived a few lines later) on top of the real
+    # restart alert.
+    epoch_restarted = (
+        active_epoch is not None and active_epoch.get("started_at_ms") != epoch_started_at_ms
+    )
+
+    if (
+        active_epoch is not None
+        and active_epoch.get("status") == "interrupted"
+        and not epoch_restarted
+    ):
         active_epoch["status"] = "running"
         active_epoch["interrupted_since"] = None
         active_epoch["last_error"] = None
-        _notify("\U0001f7e2 Momentum-capture canary: health readable again after an interruption.")
+        _send_or_queue(
+            pending_operational_alerts,
+            "\U0001f7e2 Momentum-capture canary: health readable again after an interruption.",
+            now,
+            persist=_persist,
+        )
 
-    if active_epoch is None or active_epoch.get("started_at_ms") != epoch_started_at_ms:
+    if active_epoch is None or epoch_restarted:
         if active_epoch is not None:
             old_start = datetime.fromtimestamp(active_epoch["started_at_ms"] / 1000, tz=UTC)
             ran_hours = (now - old_start).total_seconds() / 3600
+            was_interrupted = active_epoch.get("status") == "interrupted"
             archived = dict(active_epoch)
             archived["archived_at"] = _utc(now)
             archived["archived_reason"] = "restart_detected"
@@ -508,13 +594,23 @@ def run_once(
                 epoch_started_at_ms,
                 active_epoch["started_at_ms"],
             )
-            _notify(
+            interruption_note = (
+                " It was still marked interrupted at restart time -- no separate recovery "
+                "alert was sent for it, since it never actually resumed."
+                if was_interrupted
+                else ""
+            )
+            _send_or_queue(
+                pending_operational_alerts,
                 f"⚠️ Momentum-capture restarted mid-canary. Previous epoch "
-                f"(started {_utc(old_start)}, ran {ran_hours:.1f}h) archived, not discarded.\n"
+                f"(started {_utc(old_start)}, ran {ran_hours:.1f}h) archived, not discarded."
+                f"{interruption_note}\n"
                 f"New epoch started "
                 f"{_utc(datetime.fromtimestamp(epoch_started_at_ms / 1000, tz=UTC))}.\n"
                 f"Whether this counts as a fresh canary or a continuation is a human call; "
-                f"the previous epoch's evidence is preserved in the snapshot either way."
+                f"the previous epoch's evidence is preserved in the snapshot either way.",
+                now,
+                persist=_persist,
             )
         active_epoch = _new_epoch(epoch_started_at_ms)
 
@@ -627,6 +723,7 @@ def run_once(
         "generated_at": _utc(now),
         "active_epoch": active_epoch,
         "archived_epochs": archived_epochs,
+        "pending_operational_alerts": pending_operational_alerts,
     }
     _atomic_json(snapshot_path, payload)
     return payload
