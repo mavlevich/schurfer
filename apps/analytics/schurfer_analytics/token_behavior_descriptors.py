@@ -95,8 +95,25 @@ not reimplemented here.
 
 ## Discovery readiness gates (frozen; this is discovery, not confirmation)
 
-- >= 60 comparable baseline-triggered decisions.
-- >= 20 distinct asset clusters.
+- >= 60 comparable baseline-triggered decisions and >= 20 distinct asset
+  clusters. (Twice amended 2026-08-11, same day, before any real run
+  against this module. First amendment: raised to >= 100 / >= 30 --
+  `challenger_inference.build_challenger_inference` used a single shared,
+  non-configurable floor for every challenger family in this codebase at
+  the time, `FORMAL_EPISODES`/`MIN_FORMAL_CLUSTERS` in `replay.py`, making
+  the original >= 60 / >= 20 unenforceable. That floor is sized for
+  confirmation-scale families (oi_growth and similar) and is not
+  achievable on this report's own frozen 47-instrument, ~2-week dataset --
+  an empirical count against production on 2026-08-11 found only 69
+  baseline-triggered episodes across the full frozen window, comfortably
+  clearing 60 but nowhere near 100. Second amendment, same day:
+  `build_challenger_inference` was extended to accept an optional
+  per-family `directional_episodes`/`formal_episodes`/`min_formal_clusters`
+  override, defaulting to the original shared floor for every existing
+  caller (oi_growth included, unchanged), so this report can register its
+  own genuinely-achievable >= 60 / >= 20 discovery bar explicitly instead
+  of silently inheriting a floor sized for a different family's sample
+  economics. Restored to the original, now actually-enforced, numbers.)
 - >= 2 distinct UTC weeks.
 - No single UTC week over 70% of the formal sample (concentration cap).
 - The descriptor resolved (not unresolved/missing) for >= 80% of the
@@ -115,6 +132,15 @@ not reimplemented here.
   required within a slice this small -- only sign-consistency.
 - At most ONE candidate may be nominated as a forward filter per this
   discovery pass, per ROADMAP's discovery-vs-confirmation discipline.
+  Holm-Bonferroni bounds the family-wise error rate; it does NOT cap the
+  number of rejections at one, so two or more candidates clearing every
+  gate above in the same pass is a legitimate outcome, not a bug (amended
+  2026-08-11, before any real run against this module, to pre-register the
+  tie-break rather than decide it after seeing results): if that happens,
+  the tie is broken by strongest evidence -- the lowest Holm-adjusted
+  p-value among the qualifying candidates, then by the candidate's own
+  variant key so the choice stays fully reproducible even if that also
+  ties.
 
 ## Confirmation requirement (stricter, after nomination -- a separate PR)
 
