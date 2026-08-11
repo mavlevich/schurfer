@@ -307,16 +307,54 @@ def _rate_per_day(delta: float, elapsed_hours: float) -> float | None:
     return delta / (elapsed_hours / 24)
 
 
+def _hot_bytes(storage: dict[str, Any]) -> int:
+    # ROADMAP.md item 6's two storage gates apply to different populations of
+    # chunks, not the table as a whole: the still-uncompressed "hot" chunk
+    # (normally just the current day, under the 1-day compress_after policy in
+    # migration 0024) versus everything already compressed. total_bytes (from
+    # hypertable_detailed_size) is the current physical size across ALL
+    # chunks; after_compression_total_bytes (from hypertable_compression_stats)
+    # is the physical size of only the chunks that are already compressed. The
+    # remainder is the hot chunk's own footprint.
+    return int(storage["total_bytes"]) - int(storage["after_compression_total_bytes"])
+
+
 def _delta_block(current: dict[str, Any], baseline: dict[str, Any] | None) -> dict[str, Any] | None:
     if baseline is None:
         return None
     elapsed_hours = current["elapsed_hours"] - baseline["elapsed_hours"]
-    storage_delta = (
-        current["timescale_storage"]["total_bytes"] - baseline["timescale_storage"]["total_bytes"]
+    current_storage = current["timescale_storage"]
+    baseline_storage = baseline["timescale_storage"]
+
+    # A plain delta of the hot-chunk inventory (_hot_bytes now minus
+    # _hot_bytes before) understates raw ingest whenever a chunk rotates out
+    # of the hot bucket into compressed between the two checkpoints: that
+    # whole chunk's growth would otherwise vanish from the delta the moment
+    # it compresses, since the new hot chunk starts back near zero. Fix:
+    # before_compression_total_bytes is a monotonic cumulative counter -- it
+    # only grows, by exactly a chunk's raw pre-compression size, the instant
+    # that chunk compresses -- so at any time t, hot(t) + before_compression(t)
+    # equals the total raw bytes ever ingested (mass conservation across the
+    # hot/compressed boundary, modulo retention-policy drops that are
+    # irrelevant over a 3-day canary against a 35-day retention window).
+    # Its delta plus the hot-inventory delta reconstructs the true raw
+    # ingestion rate regardless of how many rotations happened in between.
+    raw_ingest_delta = (_hot_bytes(current_storage) - _hot_bytes(baseline_storage)) + (
+        current_storage["before_compression_total_bytes"]
+        - baseline_storage["before_compression_total_bytes"]
     )
-    rows_delta = (
-        current["timescale_storage"]["row_count"] - baseline["timescale_storage"]["row_count"]
+    # after_compression_total_bytes is itself a monotonic cumulative counter
+    # (only grows when a chunk newly compresses, never shrinks), so a plain
+    # delta is already correct here -- no rotation correction needed. Early
+    # in the canary (before any chunk has crossed the 1-day compress_after
+    # boundary) this reads as 0 and is not yet a meaningful rate; per
+    # migration 0024's own docstring, treat it as reliable starting around
+    # the 48-72h mark, once real chunks have actually compressed.
+    compressed_delta = (
+        current_storage["after_compression_total_bytes"]
+        - baseline_storage["after_compression_total_bytes"]
     )
+    rows_delta = current_storage["row_count"] - baseline_storage["row_count"]
     pswpin_delta = current["host_swap_counters"].get("pswpin", 0) - baseline[
         "host_swap_counters"
     ].get("pswpin", 0)
@@ -325,8 +363,10 @@ def _delta_block(current: dict[str, Any], baseline: dict[str, Any] | None) -> di
     ].get("pswpout", 0)
     return {
         "elapsed_hours_since_baseline": round(elapsed_hours, 2),
-        "storage_delta_bytes": storage_delta,
-        "storage_rate_bytes_per_day": _rate_per_day(storage_delta, elapsed_hours),
+        "raw_ingest_delta_bytes": raw_ingest_delta,
+        "raw_ingest_rate_bytes_per_day": _rate_per_day(raw_ingest_delta, elapsed_hours),
+        "compressed_delta_bytes": compressed_delta,
+        "compressed_rate_bytes_per_day": _rate_per_day(compressed_delta, elapsed_hours),
         "rows_delta": rows_delta,
         "pswpin_delta": pswpin_delta,
         "pswpout_delta": pswpout_delta,
@@ -416,14 +456,23 @@ def _notification_text(
     )
     delta = _delta_block(snapshot, baseline)
     if delta is not None:
-        rate = delta["storage_rate_bytes_per_day"]
-        rate_text = f"{_mib(rate):.0f} MiB/day" if rate is not None else "n/a"
-        storage_delta_mib = _mib(delta["storage_delta_bytes"])
-        storage_sign = "+" if delta["storage_delta_bytes"] >= 0 else ""
+        hot_rate = delta["raw_ingest_rate_bytes_per_day"]
+        hot_rate_text = f"{_mib(hot_rate):.0f} MiB/day" if hot_rate is not None else "n/a"
+        hot_sign = "+" if delta["raw_ingest_delta_bytes"] >= 0 else ""
+        compressed_rate = delta["compressed_rate_bytes_per_day"]
+        compressed_rate_text = (
+            f"{_mib(compressed_rate):.0f} MiB/day" if compressed_rate is not None else "n/a"
+        )
+        compressed_sign = "+" if delta["compressed_delta_bytes"] >= 0 else ""
         rows_sign = "+" if delta["rows_delta"] >= 0 else ""
         lines.append(
-            f"Since baseline ({delta['elapsed_hours_since_baseline']:.1f}h): "
-            f"storage {storage_sign}{storage_delta_mib:.0f} MiB ({rate_text}), "
+            f"Since baseline ({delta['elapsed_hours_since_baseline']:.1f}h), ROADMAP item 6's "
+            f"two separate gates (hot <=1.5 GiB/day, compressed <=500 MiB/day): "
+            f"hot {hot_sign}{_mib(delta['raw_ingest_delta_bytes']):.0f} MiB ({hot_rate_text}), "
+            f"compressed {compressed_sign}{_mib(delta['compressed_delta_bytes']):.0f} MiB "
+            f"({compressed_rate_text}, early/noisy before a real chunk has compressed)"
+        )
+        lines.append(
             f"rows {rows_sign}{delta['rows_delta']:,}, "
             f"swap pswpin +{delta['pswpin_delta']} pswpout +{delta['pswpout_delta']}"
         )

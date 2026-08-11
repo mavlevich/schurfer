@@ -38,7 +38,13 @@ def _health(started_at_ms: int = EPOCH_START_MS) -> dict[str, str]:
     }
 
 
-def _storage(total_bytes: int = 120, row_count: int = 130787) -> dict[str, int]:
+def _storage(
+    total_bytes: int = 120,
+    row_count: int = 130787,
+    *,
+    after_compression_total_bytes: int = 100,
+    before_compression_total_bytes: int = 600,
+) -> dict[str, int]:
     return {
         "table_bytes": 100,
         "index_bytes": 20,
@@ -47,8 +53,8 @@ def _storage(total_bytes: int = 120, row_count: int = 130787) -> dict[str, int]:
         "total_chunks": 3,
         "compressed_chunks": 1,
         "uncompressed_chunks": 2,
-        "before_compression_total_bytes": 600,
-        "after_compression_total_bytes": 100,
+        "before_compression_total_bytes": before_compression_total_bytes,
+        "after_compression_total_bytes": after_compression_total_bytes,
         "row_count": row_count,
     }
 
@@ -512,9 +518,14 @@ def test_baseline_is_captured_once_at_epoch_creation(
 
 
 def test_notification_text_reports_delta_and_rate_since_baseline() -> None:
+    # after_compression_total_bytes held constant (no chunk newly compressed
+    # yet) so the whole 96 MiB growth attributes to the hot bucket -- the same
+    # scenario the pre-fix single blended rate used to report.
     baseline = {
         "elapsed_hours": 0.0,
-        "timescale_storage": _storage(total_bytes=100 * 1024 * 1024, row_count=1000),
+        "timescale_storage": _storage(
+            total_bytes=100 * 1024 * 1024, row_count=1000, after_compression_total_bytes=0
+        ),
         "host_swap_counters": {"pswpin": 0, "pswpout": 0},
     }
     current = {
@@ -524,14 +535,67 @@ def test_notification_text_reports_delta_and_rate_since_baseline() -> None:
         "collector_container": {"MemUsage": "10MiB / 3.7GiB", "CPUPerc": "9%"},
         "host_swap_used_mb": 0,
         "host_swap_counters": {"pswpin": 5, "pswpout": 3},
-        "timescale_storage": _storage(total_bytes=196 * 1024 * 1024, row_count=1200000),
+        "timescale_storage": _storage(
+            total_bytes=196 * 1024 * 1024, row_count=1200000, after_compression_total_bytes=0
+        ),
     }
     text = canary._notification_text("24h", current, baseline=baseline)
     assert "Since baseline (24.0h)" in text
-    assert "storage +96 MiB" in text
+    assert "ROADMAP item 6's two separate gates" in text
+    assert "hot +96 MiB" in text
     assert "96 MiB/day" in text  # 96 MiB over 24h = 96 MiB/day
+    assert "compressed +0 MiB" in text
     assert "pswpin +5 pswpout +3" in text
     assert "Status: healthy" in text
+
+
+def test_raw_ingest_rate_survives_a_chunk_rotating_out_of_the_hot_bucket() -> None:
+    # A naive delta of the hot-chunk inventory alone would miss this
+    # scenario entirely: between baseline and this checkpoint, the old hot
+    # chunk grew from 1200 to 1400 MiB raw, THEN crossed the 1-day
+    # compress_after boundary and compressed down to 200 MiB, while a brand
+    # new hot chunk started at 0 and grew back up to 1200 MiB by the time of
+    # this checkpoint. Naive hot_now - hot_before = 1200 - 1200 = 0, which
+    # would make a full chunk's worth of real ingest invisible -- exactly
+    # the false-negative risk against the 1.5 GiB/day gate this fixes.
+    baseline = {
+        "elapsed_hours": 0.0,
+        "timescale_storage": _storage(
+            total_bytes=1200 * 1024 * 1024,
+            row_count=1_000_000,
+            after_compression_total_bytes=0,
+            before_compression_total_bytes=0,
+        ),
+        "host_swap_counters": {"pswpin": 0, "pswpout": 0},
+    }
+    current = {
+        "elapsed_hours": 48.0,
+        "health": _health(),
+        "momentum_capture_container": {"MemUsage": "28MiB / 512MiB", "CPUPerc": "12%"},
+        "collector_container": {"MemUsage": "10MiB / 3.7GiB", "CPUPerc": "9%"},
+        "host_swap_used_mb": 0,
+        "host_swap_counters": {"pswpin": 0, "pswpout": 0},
+        "timescale_storage": _storage(
+            # New hot chunk (1200 MiB) + the one now-compressed chunk (200 MiB after).
+            total_bytes=1400 * 1024 * 1024,
+            row_count=2_000_000,
+            after_compression_total_bytes=200 * 1024 * 1024,
+            # The compressed chunk's own raw size before it compressed.
+            before_compression_total_bytes=1400 * 1024 * 1024,
+        ),
+    }
+    delta = canary._delta_block(current, baseline)
+    # (hot_now - hot_before) + (before_compression delta) = 0 + 1400 MiB.
+    assert delta["raw_ingest_delta_bytes"] == 1400 * 1024 * 1024
+    # after_compression_total_bytes is itself a monotonic counter -- a plain
+    # delta is already correct, no rotation correction needed.
+    assert delta["compressed_delta_bytes"] == 200 * 1024 * 1024
+
+    text = canary._notification_text("48h", current, baseline=baseline)
+    assert "hot +1400 MiB" in text
+    assert "700 MiB/day" in text  # 1400 MiB over 48h = 700 MiB/day raw ingest
+    assert "compressed +200 MiB" in text
+    assert "100 MiB/day" in text  # 200 MiB over 48h = 100 MiB/day compressed
 
 
 # --- fix 5: missed-checkpoint handling for long downtime ---
