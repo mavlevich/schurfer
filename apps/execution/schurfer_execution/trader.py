@@ -666,6 +666,16 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 "short",
                 ex=_SEEN_TTL_TRADED,
             )
+            # Cached alongside entry/side so the close notification can show a
+            # real dollar PnL without a DB round-trip — the journal row also
+            # has size_usd, but that lookup requires trade_id, which is not
+            # always resolvable at close time (see monitor.py's own comments
+            # on trade-id pointer loss).
+            await rdb.set(
+                exit_module.size_usd_key(exchange, base),
+                str(size_usd),
+                ex=_SEEN_TTL_TRADED,
+            )
 
             if cfg.db_url:
                 trade_id = await journal.open_trade(

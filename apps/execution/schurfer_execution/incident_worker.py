@@ -272,3 +272,8 @@ async def _complete_open(incident: Incident, price: float, rdb: Any, cfg: Config
         side,
         ex=86400,
     )
+    await rdb.set(
+        exit_module.size_usd_key(incident.exchange, incident.base),
+        str(size_usd),
+        ex=86400,
+    )
