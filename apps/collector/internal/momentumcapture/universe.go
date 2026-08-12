@@ -62,8 +62,9 @@ func (u Universe) Contains(symbol string) bool {
 }
 
 // DriftReport compares the frozen Universe against a freshly, independently
-// fetched live symbol list (e.g. from a periodic read-only FetchSymbols
-// call). It never mutates anything and never triggers a resubscribe:
+// fetched live symbol list (for example, the strict crypto-perpetual list from
+// a periodic read-only FetchSymbolCatalog call). It never mutates anything and
+// never triggers a resubscribe:
 // detecting drift and acting on it are deliberately kept separate for v1
 // (see the Universe doc comment).
 type DriftReport struct {

@@ -37,6 +37,10 @@ func TestRedisStoreStoresHealthWithTTLAndSampledSymbolLists(t *testing.T) {
 		UpdatedAt:                now,
 		SubscribedSymbols:        735,
 		ReadySymbols:             400,
+		CatalogItemsTotal:        775,
+		CryptoPerpetualsIncluded: 551,
+		DatedFuturesExcluded:     40,
+		StockPerpetualsExcluded:  180,
 		SymbolsMissingTicker:     missing,
 		BarsCompletedTotal:       727,
 		BarsPersistedTotal:       727,
@@ -61,6 +65,12 @@ func TestRedisStoreStoresHealthWithTTLAndSampledSymbolLists(t *testing.T) {
 	}
 	if fields["subscribed_symbols"] != "735" || fields["ready_symbols"] != "400" {
 		t.Fatalf("universe fields wrong: %+v", fields)
+	}
+	if fields["catalog_items_total"] != "775" ||
+		fields["crypto_perpetuals_included"] != "551" ||
+		fields["dated_futures_excluded"] != "40" ||
+		fields["stock_perpetuals_excluded"] != "180" {
+		t.Fatalf("catalog scope fields wrong: %+v", fields)
 	}
 	if fields["bars_completed_total"] != "727" || fields["bars_persisted_total"] != "727" {
 		t.Fatalf("bar counters wrong: %+v", fields)

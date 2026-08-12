@@ -3,6 +3,7 @@ package bybit
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -12,7 +13,46 @@ import (
 	"time"
 )
 
-const restURL = "https://api.bybit.com/v5/market/instruments-info"
+const defaultRESTURL = "https://api.bybit.com/v5/market/instruments-info"
+
+const (
+	contractTypeLinearPerpetual = "LinearPerpetual"
+	contractTypeLinearFutures   = "LinearFutures"
+	symbolTypeInnovation        = "innovation"
+	symbolTypeStock             = "stock"
+	symbolTypeCommodity         = "commodity"
+	maxInstrumentCatalogPages   = 100
+)
+
+// SymbolCatalogCounts makes the instrument scope visible instead of
+// silently dropping non-crypto products returned by Bybit's shared linear
+// endpoint. Standard and innovation symbols are both crypto perpetuals;
+// stocks, commodities, dated futures, and unknown future classifications
+// stay outside this capture contract.
+type SymbolCatalogCounts struct {
+	CatalogItemsTotal           int
+	CryptoPerpetualsIncluded    int
+	StandardCryptoIncluded      int
+	InnovationCryptoIncluded    int
+	DatedFuturesExcluded        int
+	StockPerpetualsExcluded     int
+	CommodityPerpetualsExcluded int
+	UnknownContractExcluded     int
+	UnknownSymbolTypeExcluded   int
+	InvalidInstrumentExcluded   int
+	NonUSDTExcluded             int
+	NonTradingExcluded          int
+}
+
+// SymbolCatalog is one point-in-time classification of Bybit's linear
+// instrument catalog. CryptoPerpetualSymbols is the strict momentum-capture
+// universe. AllUSDTLinearSymbols preserves the broader legacy ticker
+// collector scope until that separate production contract is reviewed.
+type SymbolCatalog struct {
+	CryptoPerpetualSymbols []string
+	AllUSDTLinearSymbols   []string
+	Counts                 SymbolCatalogCounts
+}
 
 // TickerEvent is the normalized event published to NATS.
 //
@@ -103,9 +143,12 @@ type StreamStats struct {
 	TradeReadTimeoutTotal  uint64
 }
 
-// Source streams Bybit linear perpetual market data.
+// Source streams Bybit linear market data. Callers choose either the
+// broader legacy ticker scope or the strict crypto-perpetual catalog.
 type Source struct {
 	streamConfig streamConfig
+	restURL      string
+	httpClient   *http.Client
 
 	tickerReconnectTotal   atomic.Uint64
 	tickerReadTimeoutTotal atomic.Uint64
@@ -114,12 +157,16 @@ type Source struct {
 }
 
 func NewSource() *Source {
-	return &Source{streamConfig: streamConfig{
-		URL:            wsURL,
-		PingInterval:   pingInterval,
-		ReadTimeout:    readTimeout,
-		ReconnectDelay: reconnDelay,
-	}}
+	return &Source{
+		streamConfig: streamConfig{
+			URL:            wsURL,
+			PingInterval:   pingInterval,
+			ReadTimeout:    readTimeout,
+			ReconnectDelay: reconnDelay,
+		},
+		restURL:    defaultRESTURL,
+		httpClient: &http.Client{Timeout: 10 * time.Second},
+	}
 }
 
 // StreamStats returns a race-safe snapshot suitable for health telemetry.
@@ -132,9 +179,28 @@ func (s *Source) StreamStats() StreamStats {
 	}
 }
 
-// FetchSymbols returns all active USDT-settled linear perp symbols.
-// Retries with exponential backoff on failure.
+// FetchSymbols preserves the existing collector contract: every active
+// USDT-quoted and USDT-settled instrument returned by Bybit's linear
+// endpoint. Momentum capture uses FetchSymbolCatalog directly and applies
+// its narrower crypto-perpetual scope without changing the pump scanner.
 func (s *Source) FetchSymbols(ctx context.Context) ([]string, error) {
+	catalog, err := s.fetchSymbolCatalogWithRetry(ctx, false)
+	if err != nil {
+		return nil, err
+	}
+	return catalog.AllUSDTLinearSymbols, nil
+}
+
+// FetchSymbolCatalog returns the filtered symbol universe together with
+// explicit exclusion counts. Retries with exponential backoff on failure.
+func (s *Source) FetchSymbolCatalog(ctx context.Context) (SymbolCatalog, error) {
+	return s.fetchSymbolCatalogWithRetry(ctx, true)
+}
+
+func (s *Source) fetchSymbolCatalogWithRetry(
+	ctx context.Context,
+	requireCryptoPerpetuals bool,
+) (SymbolCatalog, error) {
 	var lastErr error
 	for attempt := range 5 {
 		if attempt > 0 {
@@ -142,25 +208,37 @@ func (s *Source) FetchSymbols(ctx context.Context) ([]string, error) {
 			slog.Warn("bybit.rest.retry", "attempt", attempt, "delay", delay, "err", lastErr)
 			select {
 			case <-ctx.Done():
-				return nil, ctx.Err()
+				return SymbolCatalog{}, ctx.Err()
 			case <-time.After(delay):
 			}
 		}
-		symbols, err := s.fetchSymbols(ctx)
+		catalog, err := s.fetchSymbolCatalog(ctx)
 		if err == nil {
-			return symbols, nil
+			err = validateCatalog(catalog, requireCryptoPerpetuals)
+		}
+		if err == nil {
+			logCatalog(catalog)
+			return catalog, nil
 		}
 		lastErr = err
 	}
-	return nil, fmt.Errorf("fetch symbols after 5 attempts: %w", lastErr)
+	return SymbolCatalog{}, fmt.Errorf("fetch symbol catalog after 5 attempts: %w", lastErr)
 }
 
-func (s *Source) fetchSymbols(ctx context.Context) ([]string, error) {
-	client := &http.Client{Timeout: 10 * time.Second}
-	var symbols []string
+func (s *Source) fetchSymbolCatalog(ctx context.Context) (SymbolCatalog, error) {
+	client := s.httpClient
+	if client == nil {
+		client = &http.Client{Timeout: 10 * time.Second}
+	}
+	restURL := s.restURL
+	if restURL == "" {
+		restURL = defaultRESTURL
+	}
+	catalog := SymbolCatalog{}
 	cursor := ""
+	seenCursors := map[string]struct{}{"": {}}
 
-	for {
+	for page := 0; page < maxInstrumentCatalogPages; page++ {
 		params := url.Values{
 			"category": {"linear"},
 			"limit":    {"1000"},
@@ -172,20 +250,20 @@ func (s *Source) fetchSymbols(ctx context.Context) ([]string, error) {
 
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, restURL+"?"+params.Encode(), nil)
 		if err != nil {
-			return nil, err
+			return SymbolCatalog{}, err
 		}
 		resp, err := client.Do(req)
 		if err != nil {
-			return nil, err
+			return SymbolCatalog{}, err
 		}
 		if resp.StatusCode != http.StatusOK {
 			_ = resp.Body.Close()
-			return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+			return SymbolCatalog{}, fmt.Errorf("HTTP %d", resp.StatusCode)
 		}
 		b, err := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
 		if err != nil {
-			return nil, fmt.Errorf("read body: %w", err)
+			return SymbolCatalog{}, fmt.Errorf("read body: %w", err)
 		}
 
 		var body struct {
@@ -193,32 +271,158 @@ func (s *Source) fetchSymbols(ctx context.Context) ([]string, error) {
 			RetMsg  string `json:"retMsg"`
 			Result  struct {
 				List []struct {
-					Symbol     string `json:"symbol"`
-					QuoteCoin  string `json:"quoteCoin"`
-					SettleCoin string `json:"settleCoin"`
+					Symbol       string `json:"symbol"`
+					ContractType string `json:"contractType"`
+					Status       string `json:"status"`
+					QuoteCoin    string `json:"quoteCoin"`
+					SettleCoin   string `json:"settleCoin"`
+					SymbolType   string `json:"symbolType"`
 				} `json:"list"`
 				NextPageCursor string `json:"nextPageCursor"`
 			} `json:"result"`
 		}
 		if err := json.Unmarshal(b, &body); err != nil {
-			return nil, fmt.Errorf("decode: %w", err)
+			return SymbolCatalog{}, fmt.Errorf("decode: %w", err)
 		}
 		if body.RetCode != 0 {
-			return nil, fmt.Errorf("bybit API error %d: %s", body.RetCode, body.RetMsg)
+			return SymbolCatalog{}, fmt.Errorf("bybit API error %d: %s", body.RetCode, body.RetMsg)
 		}
 
 		for _, item := range body.Result.List {
-			if item.QuoteCoin == "USDT" && item.SettleCoin == "USDT" {
-				symbols = append(symbols, item.Symbol)
-			}
+			classifyCatalogItem(&catalog, item.Symbol, item.ContractType, item.Status, item.QuoteCoin, item.SettleCoin, item.SymbolType)
 		}
 
-		cursor = body.Result.NextPageCursor
-		if cursor == "" {
+		nextCursor := body.Result.NextPageCursor
+		if nextCursor == "" {
 			break
+		}
+		if _, exists := seenCursors[nextCursor]; exists {
+			return SymbolCatalog{}, fmt.Errorf("instrument catalog repeated cursor %q", nextCursor)
+		}
+		seenCursors[nextCursor] = struct{}{}
+		cursor = nextCursor
+		if page == maxInstrumentCatalogPages-1 {
+			return SymbolCatalog{}, fmt.Errorf(
+				"instrument catalog exceeded %d pages",
+				maxInstrumentCatalogPages,
+			)
 		}
 	}
 
-	slog.Info("bybit.symbols_loaded", "count", len(symbols))
-	return symbols, nil
+	return catalog, nil
+}
+
+func logCatalog(catalog SymbolCatalog) {
+	slog.Info(
+		"bybit.symbols_loaded",
+		"crypto_perpetual_count", len(catalog.CryptoPerpetualSymbols),
+		"all_usdt_linear_count", len(catalog.AllUSDTLinearSymbols),
+		"catalog_items_total", catalog.Counts.CatalogItemsTotal,
+		"dated_futures_excluded", catalog.Counts.DatedFuturesExcluded,
+		"stock_perpetuals_excluded", catalog.Counts.StockPerpetualsExcluded,
+		"commodity_perpetuals_excluded", catalog.Counts.CommodityPerpetualsExcluded,
+		"unknown_contract_excluded", catalog.Counts.UnknownContractExcluded,
+		"unknown_symbol_type_excluded", catalog.Counts.UnknownSymbolTypeExcluded,
+		"invalid_instrument_excluded", catalog.Counts.InvalidInstrumentExcluded,
+	)
+}
+
+func classifyCatalogItem(
+	catalog *SymbolCatalog,
+	symbol string,
+	contractType string,
+	status string,
+	quoteCoin string,
+	settleCoin string,
+	symbolType string,
+) {
+	catalog.Counts.CatalogItemsTotal++
+	if symbol == "" {
+		catalog.Counts.InvalidInstrumentExcluded++
+		return
+	}
+	if status != "Trading" {
+		catalog.Counts.NonTradingExcluded++
+		return
+	}
+	if quoteCoin != "USDT" || settleCoin != "USDT" {
+		catalog.Counts.NonUSDTExcluded++
+		return
+	}
+	catalog.AllUSDTLinearSymbols = append(catalog.AllUSDTLinearSymbols, symbol)
+	if contractType != contractTypeLinearPerpetual {
+		if contractType == contractTypeLinearFutures {
+			catalog.Counts.DatedFuturesExcluded++
+		} else {
+			catalog.Counts.UnknownContractExcluded++
+		}
+		return
+	}
+	switch symbolType {
+	case "":
+		catalog.Counts.StandardCryptoIncluded++
+	case symbolTypeInnovation:
+		catalog.Counts.InnovationCryptoIncluded++
+	case symbolTypeStock:
+		catalog.Counts.StockPerpetualsExcluded++
+		return
+	case symbolTypeCommodity:
+		catalog.Counts.CommodityPerpetualsExcluded++
+		return
+	default:
+		catalog.Counts.UnknownSymbolTypeExcluded++
+		return
+	}
+	catalog.Counts.CryptoPerpetualsIncluded++
+	catalog.CryptoPerpetualSymbols = append(catalog.CryptoPerpetualSymbols, symbol)
+}
+
+func validateCatalog(catalog SymbolCatalog, requireCryptoPerpetuals bool) error {
+	counts := catalog.Counts
+	if len(catalog.AllUSDTLinearSymbols) == 0 {
+		return errors.New("instrument catalog contains no active USDT linear symbols")
+	}
+	if requireCryptoPerpetuals && len(catalog.CryptoPerpetualSymbols) == 0 {
+		return errors.New("instrument catalog contains no eligible crypto perpetuals")
+	}
+	seen := make(map[string]struct{}, len(catalog.AllUSDTLinearSymbols))
+	for _, symbol := range catalog.AllUSDTLinearSymbols {
+		if _, exists := seen[symbol]; exists {
+			return fmt.Errorf("instrument catalog contains duplicate symbol %q", symbol)
+		}
+		seen[symbol] = struct{}{}
+	}
+	classified := counts.CryptoPerpetualsIncluded +
+		counts.DatedFuturesExcluded +
+		counts.StockPerpetualsExcluded +
+		counts.CommodityPerpetualsExcluded +
+		counts.UnknownContractExcluded +
+		counts.UnknownSymbolTypeExcluded +
+		counts.InvalidInstrumentExcluded +
+		counts.NonUSDTExcluded +
+		counts.NonTradingExcluded
+	if classified != counts.CatalogItemsTotal {
+		return fmt.Errorf(
+			"instrument catalog classification mismatch: total=%d classified=%d",
+			counts.CatalogItemsTotal,
+			classified,
+		)
+	}
+	if len(catalog.CryptoPerpetualSymbols) != counts.CryptoPerpetualsIncluded {
+		return fmt.Errorf(
+			"instrument catalog inclusion mismatch: symbols=%d included=%d",
+			len(catalog.CryptoPerpetualSymbols),
+			counts.CryptoPerpetualsIncluded,
+		)
+	}
+	if counts.StandardCryptoIncluded+counts.InnovationCryptoIncluded !=
+		counts.CryptoPerpetualsIncluded {
+		return fmt.Errorf(
+			"crypto catalog classification mismatch: standard=%d innovation=%d included=%d",
+			counts.StandardCryptoIncluded,
+			counts.InnovationCryptoIncluded,
+			counts.CryptoPerpetualsIncluded,
+		)
+	}
+	return nil
 }
