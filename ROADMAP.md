@@ -332,6 +332,15 @@ front.
        execution already uses for decisions, plus an
        `app.notification_deliveries` audit table (producer, kind, dedup_key,
        timestamps, status, attempts, error, payload hash).
+       **Implemented on `feat/notification-contract-and-outbox-v1` (2026-08-12):**
+       the machine-readable v1 contract and operational rules live in
+       `docs/contracts/notification-delivery-v1.md`; the durable queue is
+       `notifications:outbox:v1`, its backlog-safe group is
+       `notifier-delivery-v1`, and migration `0025` adds the audit and idempotency
+       boundary. This step publishes no production messages, starts no consumer,
+       and leaves every existing Telegram sender unchanged. Runtime decoding and
+       publishing code lands with its first real consumer and producer instead of
+       remaining unreachable in this contract-only change.
     2. `feat/notifier-unified-delivery-v1`: notifier consumes the stream through one
        Telegram client, with bounded retry/backoff, rate limiting, priority
        (`critical > trade > research > info`), and health counters (pending,
