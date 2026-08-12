@@ -277,6 +277,22 @@ front.
    coverage, or executable depth, not merely another copy of the same event. Designing
    for 10-20 venues is allowed; connecting all 10-20 before measuring the first group
    is not.
+
+   **Pre-gate matrix scaffolding (`analysis/momentum-venue-capability-matrix-v1`,
+   2026-08-12; no venue enabled):** the typed fail-closed matrix and review view live
+   in `apps/collector/internal/momentumvenue` and
+   `docs/research/momentum-venue-capability-matrix-v1.md`. They distinguish
+   `implemented`, `officially_documented`, `probe_required`, `unsupported`, and
+   `not_audited`; documentation alone never authorizes capture. The first reviewed
+   expansion candidate is Binance USD-M. Its `aggTrade` granularity is not silently
+   equated with Bybit individual trades, current native OI value remains unresolved,
+   and its force-order stream is explicitly censored. The matrix also records an
+   existing Bybit scope gap: `FetchSymbols()` filters linear/Trading/USDT but does not
+   currently decode `contractType`, so perpetual-only scope must be proved in the
+   canonical-interface PR without changing the running canary mid-window. This
+   preparation does not bypass item 6: canonical interface work and any Binance
+   connection remain blocked until the Bybit 72-hour checkpoint passes.
+
 8. **Run an early-momentum discovery report after 2-4 UTC weeks.** Model a state
    sequence (accumulation: OI and buy flow rise while price is contained; breakout;
    squeeze/liquidations; and reversion) rather than one magic threshold. Report
