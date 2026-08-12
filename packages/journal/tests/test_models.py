@@ -6,6 +6,7 @@ from schurfer_journal.models import (
     Exchange,
     FillResolutionIncident,
     MarketType,
+    NotificationDelivery,
     OutcomeLabel,
     OutcomeQuality,
     PumpAlertDelivery,
@@ -409,6 +410,38 @@ class TestPumpAlertDeliveryModel:
 
         assert fks == {"app.pump_events.id"}
         assert "uq_pump_alert_delivery_event_channel_kind_threshold" in constraints
+
+
+class TestNotificationDeliveryModel:
+    def test_table_shape(self) -> None:
+        assert NotificationDelivery.__tablename__ == "notification_deliveries"
+        assert NotificationDelivery.__table__.schema == "app"
+        columns = NotificationDelivery.__table__.columns
+        assert columns["notification_id"].nullable is False
+        assert columns["dedup_key"].nullable is False
+        assert columns["payload_hash"].nullable is False
+        assert columns["stream_entry_id"].nullable is False
+        assert columns["last_attempted_at"].nullable is True
+        assert columns["delivered_at"].nullable is True
+
+    def test_idempotency_and_state_constraints(self) -> None:
+        constraints = {constraint.name for constraint in NotificationDelivery.__table__.constraints}
+        indexes = {index.name for index in NotificationDelivery.__table__.indexes}
+
+        assert constraints >= {
+            "uq_notification_deliveries_notification_id",
+            "uq_notification_deliveries_producer_dedup",
+            "ck_notification_deliveries_severity",
+            "ck_notification_deliveries_channel",
+            "ck_notification_deliveries_status",
+            "ck_notification_deliveries_attempt_state",
+            "ck_notification_deliveries_completion",
+            "ck_notification_deliveries_payload_hash",
+        }
+        assert indexes >= {
+            "ix_notification_deliveries_status_enqueued",
+            "ix_notification_deliveries_kind_created",
+        }
 
 
 class TestFillResolutionIncidentModel:

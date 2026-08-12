@@ -88,6 +88,7 @@ infra/
 
 docs/
 ├── adr/             architecture decision records
+├── contracts/       versioned wire and delivery contracts
 ├── strategies/      strategy specs
 └── runbooks/        operational procedures
 ```
