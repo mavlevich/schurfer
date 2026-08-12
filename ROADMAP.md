@@ -222,6 +222,32 @@ front.
    forward cutoff is registered. Store exchange/event/receive times, sequence/gap
    diagnostics, reconnects, lag, and drop counters. Alerts are WATCH-only; no paper or
    real long is opened by this PR.
+
+   **Calibration-pass scaffolding (`analysis/bybit-early-momentum-event-study-v0`,
+   2026-08-11), built while the item 6 checkpoint runs, not a substitute for item 8's
+   own discovery report.** Freezes `momentum_flow_state_v1` as one family for the
+   ten-family budget (three lanes: `early_long`, `distribution_short`,
+   `pump_short_flow_veto`; see `momentum_flow_protocol.py` for the full
+   pre-registration), joins old pump-event/price history with the new momentum-flow
+   bars around each trigger's -24h..+4h window, and reports only descriptive
+   statistics -- coverage, flow availability, per-lookback price/OI/flow means. It
+   computes no p-value, Holm correction, profit factor, or promotion verdict, and its
+   own CLI refuses to run against live data before the checkpoint's own 72h cutoff
+   (`2026-08-13T19:05:41.810000Z`) has elapsed. Correction (2026-08-11, colleague
+   review, before any real run): an earlier draft of this note claimed the family
+   budget is spent only at a later canonical outcome-bearing read, not at this
+   calibration pass -- that contradicted `momentum_flow_protocol.py`'s own
+   pre-registration, which is correct and takes precedence. Looking at real data to
+   choose which of the three lanes to carry forward, and roughly what threshold range
+   to consider, is itself a use of the data that must count: the calibration run,
+   once it actually executes (not at this PR's merge, since it cannot run before
+   `2026-08-13T19:05:41.810000Z`), is what spends the slot -- 4/10 -> 5/10 as of that
+   date -- logged to the discovery ledger with a descriptive, non-promotable status
+   even though it reaches no statistical verdict. Matches the precedent already set by
+   HYP-013 (item 4 above): a `parked`/no-verdict result still consumes a budget slot,
+   counted at ledger-entry, not at a positive outcome. See the "before item 5 is
+   registered" gate below.
+
 6. **Hold a 48-to-72-hour resource and data-quality checkpoint.** Start with a hard
    512 MiB/1 CPU container budget. Storage is two separate gates, not one, since a
    single number conflates the hot uncompressed chunk with the compressed
