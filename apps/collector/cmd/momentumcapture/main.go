@@ -180,6 +180,7 @@ type application struct {
 	// against itself, which could never show drift regardless of what the
 	// live exchange catalog actually looks like.
 	lastDrift momentumcapture.DriftReport
+	catalog   bybit.SymbolCatalogCounts
 
 	// tradeDropsLost is the absolute last resort: incremented from a trade
 	// shard's own goroutine when even tradeDrops (itself already a
@@ -251,11 +252,11 @@ func run() error {
 	defer cancel()
 
 	source := bybit.NewSource()
-	symbols, err := source.FetchSymbols(ctx)
+	catalog, err := source.FetchSymbolCatalog(ctx)
 	if err != nil {
 		return fmt.Errorf("fetch initial universe: %w", err)
 	}
-	universe := momentumcapture.NewUniverse(symbols, time.Now())
+	universe := momentumcapture.NewUniverse(catalog.CryptoPerpetualSymbols, time.Now())
 	slog.Info("momentumcapture.universe_frozen", "symbols", universe.Count(), "hash", universe.Hash)
 
 	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
@@ -316,6 +317,7 @@ func run() error {
 		// reports a misleadingly empty placeholder for the 5 minutes
 		// before runDriftPoller's first real REST check completes.
 		lastDrift: universe.CheckDrift(universe.Symbols, now),
+		catalog:   catalog.Counts,
 	}
 
 	nc, err := nats.Connect(
@@ -406,7 +408,7 @@ func runWriter(writer *momentumcapture.Writer, inbox <-chan []momentum.Bar, done
 }
 
 // runDriftPoller re-fetches the live symbol catalog on its own goroutine:
-// FetchSymbols retries with its own exponential backoff internally and can
+// FetchSymbolCatalog retries with its own exponential backoff internally and can
 // block for real seconds, which must never stall the goroutine that owns
 // momentum.Engine. results is a small buffered channel; a result that
 // can't be delivered before the next tick is superseded anyway, so it is
@@ -425,12 +427,12 @@ func runDriftPoller(
 		case <-ctx.Done():
 			return
 		case now := <-ticker.C:
-			live, err := source.FetchSymbols(ctx)
+			catalog, err := source.FetchSymbolCatalog(ctx)
 			if err != nil {
 				slog.Warn("momentumcapture.drift_check_failed", "err", err)
 				continue
 			}
-			drift := universe.CheckDrift(live, now)
+			drift := universe.CheckDrift(catalog.CryptoPerpetualSymbols, now)
 			select {
 			case results <- drift:
 			default:
@@ -900,6 +902,18 @@ func (app *application) logHealth(ctx context.Context) {
 	}
 
 	health := momentumcapture.BuildUniverseHealth(app.universe, app.lastDrift, app.readiness, now)
+	health.CatalogItemsTotal = app.catalog.CatalogItemsTotal
+	health.CryptoPerpetualsIncluded = app.catalog.CryptoPerpetualsIncluded
+	health.StandardCryptoIncluded = app.catalog.StandardCryptoIncluded
+	health.InnovationCryptoIncluded = app.catalog.InnovationCryptoIncluded
+	health.DatedFuturesExcluded = app.catalog.DatedFuturesExcluded
+	health.StockPerpetualsExcluded = app.catalog.StockPerpetualsExcluded
+	health.CommodityPerpetualsExcluded = app.catalog.CommodityPerpetualsExcluded
+	health.UnknownContractExcluded = app.catalog.UnknownContractExcluded
+	health.UnknownSymbolTypeExcluded = app.catalog.UnknownSymbolTypeExcluded
+	health.InvalidInstrumentExcluded = app.catalog.InvalidInstrumentExcluded
+	health.NonUSDTExcluded = app.catalog.NonUSDTExcluded
+	health.NonTradingExcluded = app.catalog.NonTradingExcluded
 	health = momentumcapture.ApplyWriterStats(health, app.writer.Stats())
 	health.StartedAt = app.universe.CapturedAt
 	health.UpdatedAt = now

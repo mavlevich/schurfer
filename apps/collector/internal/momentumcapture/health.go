@@ -35,6 +35,22 @@ type Health struct {
 	SymbolsMissingTicker   []string
 	SymbolsMissingTrades   []string
 
+	// Initial Bybit catalog scope. These counters prove which instrument
+	// classes were deliberately included or excluded when the immutable
+	// universe was frozen.
+	CatalogItemsTotal           int
+	CryptoPerpetualsIncluded    int
+	StandardCryptoIncluded      int
+	InnovationCryptoIncluded    int
+	DatedFuturesExcluded        int
+	StockPerpetualsExcluded     int
+	CommodityPerpetualsExcluded int
+	UnknownContractExcluded     int
+	UnknownSymbolTypeExcluded   int
+	InvalidInstrumentExcluded   int
+	NonUSDTExcluded             int
+	NonTradingExcluded          int
+
 	// Ingestion (bounded event loop, see that step of this PR).
 	InputQueueDepth      int
 	InputQueuePeak       int

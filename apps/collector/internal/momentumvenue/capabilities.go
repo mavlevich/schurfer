@@ -76,7 +76,7 @@ func V1() Matrix {
 
 	return Matrix{
 		SchemaVersion: MatrixVersion,
-		AsOf:          time.Date(2026, time.August, 12, 0, 0, 0, 0, time.UTC),
+		AsOf:          time.Date(2026, time.August, 13, 0, 0, 0, 0, time.UTC),
 		Venues: []Venue{
 			{
 				Exchange:      "bybit",
@@ -85,12 +85,13 @@ func V1() Matrix {
 				Universe: Capability{
 					Status:             StatusImplemented,
 					Transport:          TransportRESTPoll,
-					Semantics:          "Trading category=linear symbols with quoteCoin=settleCoin=USDT, frozen at process start",
+					Semantics:          "Trading LinearPerpetual symbols with quoteCoin=settleCoin=USDT and standard or innovation crypto symbol type, frozen at process start",
 					EvidenceURLs:       []string{bybitInstruments},
-					ImplementationRefs: []string{"apps/collector/internal/bybit/bybit.go:FetchSymbols"},
+					ImplementationRefs: []string{"apps/collector/internal/bybit/bybit.go:FetchSymbolCatalog"},
 					Constraints: []string{
 						"universe changes require a controlled restart in v1",
-						"current decoder does not retain/filter contractType; perpetual-only scope must be proved before the canonical adapter",
+						"stock and commodity perpetuals are excluded into separately counted classes",
+						"unknown contract and symbol types are excluded fail-closed",
 					},
 				},
 				Trades: Capability{

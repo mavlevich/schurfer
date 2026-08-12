@@ -39,10 +39,14 @@ func TestV1DoesNotEquateDocumentedBinanceWithImplementedBybit(t *testing.T) {
 	}
 }
 
-func TestV1RecordsCurrentBybitUniverseScopeGap(t *testing.T) {
+func TestV1RecordsStrictBybitCryptoPerpetualUniverse(t *testing.T) {
 	bybit, _ := V1().Venue("bybit", "linear_usdt_perpetual")
-	if !strings.Contains(strings.Join(bybit.Universe.Constraints, " "), "contractType") {
-		t.Fatalf("Bybit universe constraints hide the current contract-type gap: %#v", bybit.Universe.Constraints)
+	if !strings.Contains(bybit.Universe.Semantics, "LinearPerpetual") {
+		t.Fatalf("Bybit universe semantics do not require perpetual contracts: %q", bybit.Universe.Semantics)
+	}
+	constraints := strings.Join(bybit.Universe.Constraints, " ")
+	if !strings.Contains(constraints, "stock and commodity") || !strings.Contains(constraints, "fail-closed") {
+		t.Fatalf("Bybit universe constraints do not preserve strict classification: %#v", bybit.Universe.Constraints)
 	}
 }
 

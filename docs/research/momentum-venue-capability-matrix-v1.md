@@ -2,7 +2,7 @@
 
 Status: pre-expansion contract; no venue is enabled by this document.
 
-As-of: 2026-08-12 UTC.
+As-of: 2026-08-13 UTC.
 
 This matrix is the fail-closed boundary between venue-specific public APIs and the
 future canonical momentum capture. It does not treat an endpoint mentioned in
@@ -55,15 +55,15 @@ flowchart LR
 
 ## Reviewed matrix
 
-| Venue              | Intended role          | Universe                                 | Trades                                            | OI amount                       | OI value              | Liquidations                                                             | Lifecycle                                    |
-| ------------------ | ---------------------- | ---------------------------------------- | ------------------------------------------------- | ------------------------------- | --------------------- | ------------------------------------------------------------------------ | -------------------------------------------- |
-| Bybit linear USDT  | confirmation/execution | implemented with contract-type scope gap | implemented individual taker-side trades          | implemented native WS           | implemented native WS | officially documented, not implemented                                   | implemented session IDs and per-shard events |
-| Binance USD-M      | confirmation/execution | officially documented                    | officially documented `aggTrade`, not implemented | officially documented REST poll | probe required        | officially documented but censored to the latest event per symbol/second | probe required                               |
-| OKX linear USDT    | confirmation/execution | not audited                              | not audited                                       | not audited                     | not audited           | not audited                                                              | not audited                                  |
-| Bitget linear USDT | confirmation/execution | not audited                              | not audited                                       | not audited                     | not audited           | not audited                                                              | not audited                                  |
-| Gate linear USDT   | discovery source       | not audited                              | not audited                                       | not audited                     | not audited           | not audited                                                              | not audited                                  |
-| MEXC linear USDT   | discovery source       | not audited                              | not audited                                       | not audited                     | not audited           | not audited                                                              | not audited                                  |
-| XT linear USDT     | discovery source       | not audited                              | not audited                                       | not audited                     | not audited           | not audited                                                              | not audited                                  |
+| Venue              | Intended role          | Universe                               | Trades                                            | OI amount                       | OI value              | Liquidations                                                             | Lifecycle                                    |
+| ------------------ | ---------------------- | -------------------------------------- | ------------------------------------------------- | ------------------------------- | --------------------- | ------------------------------------------------------------------------ | -------------------------------------------- |
+| Bybit linear USDT  | confirmation/execution | implemented crypto-perpetual allowlist | implemented individual taker-side trades          | implemented native WS           | implemented native WS | officially documented, not implemented                                   | implemented session IDs and per-shard events |
+| Binance USD-M      | confirmation/execution | officially documented                  | officially documented `aggTrade`, not implemented | officially documented REST poll | probe required        | officially documented but censored to the latest event per symbol/second | probe required                               |
+| OKX linear USDT    | confirmation/execution | not audited                            | not audited                                       | not audited                     | not audited           | not audited                                                              | not audited                                  |
+| Bitget linear USDT | confirmation/execution | not audited                            | not audited                                       | not audited                     | not audited           | not audited                                                              | not audited                                  |
+| Gate linear USDT   | discovery source       | not audited                            | not audited                                       | not audited                     | not audited           | not audited                                                              | not audited                                  |
+| MEXC linear USDT   | discovery source       | not audited                            | not audited                                       | not audited                     | not audited           | not audited                                                              | not audited                                  |
+| XT linear USDT     | discovery source       | not audited                            | not audited                                       | not audited                     | not audited           | not audited                                                              | not audited                                  |
 
 ## Findings that constrain the Binance adapter
 
@@ -83,15 +83,17 @@ flowchart LR
    needs static payload fixtures, a bounded live probe, rate-limit accounting,
    reconnect/session semantics, gap injection tests, and a separate canary.
 
-## Existing Bybit scope gap exposed by the matrix
+## Bybit universe remediation after the first canary
 
-`FetchSymbols()` currently requests `category=linear`, `status=Trading` and retains
-symbols whose quote and settlement coins are both USDT. It does not decode or filter
-the venue's `contractType` field. The current capture therefore has a working venue
-universe implementation, but the stronger claim "perpetual-only" is not yet proved by
-the adapter itself. Do not change the running canary mid-window; the canonical
-interface PR must add the exact contract-type field, fixture, filter, and a report of
-whether the frozen canary universe contained any non-perpetual instruments.
+The first bounded canary was started with the broader legacy `FetchSymbols()` scope and exposed
+that `category=linear`, `status=Trading`, and USDT quote/settlement alone also admit
+dated futures and Bybit-designated stock and commodity perpetuals. The strict
+`FetchSymbolCatalog()` contract now decodes `contractType` and `symbolType`, admits
+only standard or innovation crypto `LinearPerpetual` instruments, and counts every
+excluded class. Unknown classifications are excluded fail-closed. The shared ticker
+collector retains the broader legacy method until its independent production scope is
+reviewed. Do not deploy this remediation into the still-running fixed canary window;
+use it for the next bounded canary.
 
 ## Evidence
 

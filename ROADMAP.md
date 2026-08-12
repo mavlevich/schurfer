@@ -268,6 +268,28 @@ front.
    silently consume swap: run reports locally through the DB tunnel and move the
    always-on collector to a separate 8 GB VPS before expanding venues. A Mac mini is
    useful for DuckDB/backfills/ML, not as the sole unattended 24/7 market collector.
+
+   **48-hour canary diagnosis (2026-08-12):** persistence remained clean and the
+   service itself stayed small, but the registered gate failed on 10,270 input queue
+   drops and sustained host swap activity. The stored table remained fail-closed:
+   2,171,867 of 2,221,160 rows were complete (97.78%), while affected rows were
+   explicitly marked incomplete. The catalog also proved the known scope gap was
+   material: the frozen 735-symbol universe included dated futures, stock
+   perpetuals, and commodity perpetuals. The dated contracts alone contributed
+   17,645 incomplete rows while carrying only 14,282 trades. The local remediation
+   branch `fix/bybit-momentum-perpetual-universe-v1` decodes Bybit's official
+   `contractType` and `symbolType`, allows only standard or innovation crypto
+   `LinearPerpetual` USDT contracts, rejects unknown classifications fail-closed,
+   and exposes every inclusion/exclusion count in health. The narrow allowlist is
+   scoped to momentum capture and its drift check; the shared ticker collector keeps
+   its existing universe until that separate production contract is reviewed.
+   Bybit-designated stock and commodity derivatives are deferred to separately
+   versioned research universes; they are not silently treated as crypto. This does
+   not reclassify crypto tokens such as XAUT when Bybit itself reports them in the
+   standard crypto class. Do not deploy or restart the running canary before its fixed
+   72-hour cutoff. Queue-pressure remediation and a bounded repeat canary remain
+   separate follow-ups.
+
 7. **Expand venues only after the Bybit checkpoint passes.** First publish a capability
    matrix for OI amount/value, trades with aggressor side, liquidation stream,
    timestamps, symbol identity, rate limits, and reconnect semantics. Add at most one
@@ -287,11 +309,12 @@ front.
    expansion candidate is Binance USD-M. Its `aggTrade` granularity is not silently
    equated with Bybit individual trades, current native OI value remains unresolved,
    and its force-order stream is explicitly censored. The matrix also records an
-   existing Bybit scope gap: `FetchSymbols()` filters linear/Trading/USDT but does not
-   currently decode `contractType`, so perpetual-only scope must be proved in the
-   canonical-interface PR without changing the running canary mid-window. This
-   preparation does not bypass item 6: canonical interface work and any Binance
-   connection remain blocked until the Bybit 72-hour checkpoint passes.
+   Bybit scope gap found during the live canary: the deployed `FetchSymbols()` filters
+   linear/Trading/USDT but does not decode `contractType` or `symbolType`. The local
+   remediation described under item 6 closes that gap for the next bounded canary;
+   it is intentionally not deployed into the current fixed window. This preparation
+   does not bypass item 6: any Binance connection remains blocked until a corrected
+   Bybit canary passes.
 
 8. **Run an early-momentum discovery report after 2-4 UTC weeks.** Model a state
    sequence (accumulation: OI and buy flow rise while price is contained; breakout;
