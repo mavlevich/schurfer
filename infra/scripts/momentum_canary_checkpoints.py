@@ -463,6 +463,23 @@ _HEALTH_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
         ),
     ),
     ("Lag", ("trade_lag_max_ms", "ticker_lag_max_ms")),
+    (
+        "Processing latency (us)",
+        (
+            "trade_receive_to_handle_p99_us",
+            "trade_receive_to_handle_max_us",
+            "trade_handler_p99_us",
+            "trade_handler_max_us",
+            "ticker_receive_to_handle_p99_us",
+            "ticker_receive_to_handle_max_us",
+            "ticker_handler_p99_us",
+            "ticker_handler_max_us",
+            "flush_p99_us",
+            "flush_max_us",
+            "health_publish_p99_us",
+            "health_publish_max_us",
+        ),
+    ),
 )
 
 

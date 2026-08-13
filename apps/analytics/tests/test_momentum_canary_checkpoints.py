@@ -560,6 +560,47 @@ def test_notification_text_reports_delta_and_rate_since_baseline() -> None:
     assert "Status: healthy" in text
 
 
+def test_notification_text_keeps_latency_summary_compact() -> None:
+    health = _health()
+    health.update(
+        {
+            "trade_receive_to_handle_count": "1000000",
+            "trade_receive_to_handle_p95_us": "250",
+            "trade_receive_to_handle_p99_us": "500",
+            "trade_receive_to_handle_max_us": "900",
+            "trade_handler_count": "1000000",
+            "trade_handler_p95_us": "100",
+            "trade_handler_p99_us": "250",
+            "trade_handler_max_us": "500",
+            "ticker_receive_to_handle_p99_us": "5000",
+            "ticker_receive_to_handle_max_us": "10000",
+            "ticker_handler_p99_us": "250",
+            "ticker_handler_max_us": "500",
+            "flush_p99_us": "2500",
+            "flush_max_us": "5000",
+            "health_publish_p99_us": "10000",
+            "health_publish_max_us": "25000",
+        }
+    )
+    current = {
+        "elapsed_hours": 24.0,
+        "health": health,
+        "momentum_capture_container": {"MemUsage": "28MiB / 512MiB", "CPUPerc": "12%"},
+        "collector_container": {"MemUsage": "10MiB / 3.7GiB", "CPUPerc": "9%"},
+        "host_swap_used_mb": 0,
+        "host_swap_counters": {"pswpin": 0, "pswpout": 0},
+        "timescale_storage": _storage(),
+    }
+
+    text = canary._notification_text("24h", current)
+
+    assert "trade_receive_to_handle_p99_us=500" in text
+    assert "health_publish_max_us=25000" in text
+    assert "trade_receive_to_handle_count" not in text
+    assert "trade_receive_to_handle_p95_us" not in text
+    assert len(text) < 4096
+
+
 def test_raw_ingest_rate_survives_a_chunk_rotating_out_of_the_hot_bucket() -> None:
     # A naive delta of the hot-chunk inventory alone would miss this
     # scenario entirely: between baseline and this checkpoint, the old hot

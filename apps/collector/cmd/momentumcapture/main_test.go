@@ -281,6 +281,8 @@ func TestApplicationLogHealthPublishesToRedis(t *testing.T) {
 	app := newTestApplication([]string{"BTCUSDT", "ETHUSDT"})
 	app.healthStore = store
 	app.stats.barsCompletedTotal = 42
+	app.stats.tradeHandler.observe(200 * time.Microsecond)
+	app.stats.flush.observe(2 * time.Millisecond)
 
 	app.logHealth(context.Background())
 
@@ -297,8 +299,33 @@ func TestApplicationLogHealthPublishesToRedis(t *testing.T) {
 	if fields["bars_completed_total"] != "42" {
 		t.Fatalf("bars_completed_total = %q, want 42", fields["bars_completed_total"])
 	}
+	if fields["trade_handler_count"] != "1" || fields["trade_handler_p99_us"] != "250" {
+		t.Fatalf("trade handler latency fields wrong: %+v", fields)
+	}
+	if fields["flush_count"] != "1" || fields["flush_p99_us"] != "2500" {
+		t.Fatalf("flush latency fields wrong: %+v", fields)
+	}
 	if server.TTL(momentumcapture.HealthKey) <= 0 {
 		t.Fatal("health key should have a TTL so a dead process's last snapshot expires")
+	}
+}
+
+func TestObserveInputQueueDepthIncludesTickerBuffer(t *testing.T) {
+	t.Parallel()
+	app := newTestApplication([]string{"BTCUSDT"})
+	tradeEvents := make(chan bybit.PublicTrade, 2)
+	tradeEvents <- bybit.PublicTrade{}
+	tickerMsgs := make(chan *nats.Msg, 3)
+	tickerMsgs <- &nats.Msg{}
+	tickerMsgs <- &nats.Msg{}
+	app.tradeEvents = tradeEvents
+	app.tickerMsgs = tickerMsgs
+
+	if got := app.observeInputQueueDepth(); got != 3 {
+		t.Fatalf("input queue depth = %d, want 3 including ticker messages", got)
+	}
+	if app.stats.inputQueuePeak != 3 {
+		t.Fatalf("input queue peak = %d, want 3", app.stats.inputQueuePeak)
 	}
 }
 

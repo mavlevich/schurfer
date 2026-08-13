@@ -258,12 +258,22 @@ type tradeRecord struct {
 	notionalUSD float64
 }
 
+// burstTracker keeps exact rolling 10s/30s sums for the common case where
+// exchange event times arrive in order. Out-of-order events take a slower exact
+// rebuild path, preserving the existing semantics without making every ordinary
+// trade rescan the whole active tail.
+type burstTracker struct {
+	records        []tradeRecord
+	left10, left30 int
+	sum10, sum30   float64
+}
+
 // carryForward bundles everything that survives a bar rotation: it is
 // neither reset to zero-value nor scoped to one minute.
 type carryForward struct {
 	tickerHealthy, tradesHealthy bool
 	lastSeq                      int64
-	buyTail, sellTail            []tradeRecord
+	buyBurst, sellBurst          burstTracker
 
 	lastBidPrice, lastAskPrice *float64
 
@@ -285,7 +295,7 @@ type symbolState struct {
 	barTickerInterrupted, barTradesInterrupted bool
 	lastSeq                                    int64
 
-	buyTail, sellTail []tradeRecord
+	buyBurst, sellBurst burstTracker
 }
 
 // maxSyntheticBackfill bounds how many empty, Complete=false bars a single
@@ -362,9 +372,9 @@ func (e *Engine) AddTrade(t Trade) ([]Bar, error) {
 		}
 	}
 
-	side, tail := &state.bar.Buy, &state.buyTail
+	side, burst := &state.bar.Buy, &state.buyBurst
 	if t.Side == SideSell {
-		side, tail = &state.bar.Sell, &state.sellTail
+		side, burst = &state.bar.Sell, &state.sellBurst
 	}
 	switch {
 	case t.IsBlockTrade:
@@ -378,7 +388,13 @@ func (e *Engine) AddTrade(t Trade) ([]Bar, error) {
 		side.TradeCount++
 		addToHistogram(side.Histogram, notional)
 		side.TopNotionalsUSD = insertTopK(side.TopNotionalsUSD, notional)
-		updateBurstStats(tail, side, t.EventAt, notional)
+		max10, max30 := burst.add(t.EventAt, notional)
+		if max10 > side.Max10sNotionalUSD {
+			side.Max10sNotionalUSD = max10
+		}
+		if max30 > side.Max30sNotionalUSD {
+			side.Max30sNotionalUSD = max30
+		}
 	}
 	return closed, nil
 }
@@ -533,8 +549,8 @@ func (e *Engine) advance(symbol string, at time.Time) (*symbolState, []Bar) {
 		tickerHealthy: state.tickerHealthy,
 		tradesHealthy: state.tradesHealthy,
 		lastSeq:       state.lastSeq,
-		buyTail:       state.buyTail,
-		sellTail:      state.sellTail,
+		buyBurst:      state.buyBurst,
+		sellBurst:     state.sellBurst,
 
 		lastBidPrice: state.bar.LastBidPrice,
 		lastAskPrice: state.bar.LastAskPrice,
@@ -579,8 +595,8 @@ func newSymbolState(symbol string, bucketStart time.Time, cf carryForward) *symb
 		barTickerInterrupted: !cf.tickerHealthy,
 		barTradesInterrupted: !cf.tradesHealthy,
 		lastSeq:              cf.lastSeq,
-		buyTail:              cf.buyTail,
-		sellTail:             cf.sellTail,
+		buyBurst:             cf.buyBurst,
+		sellBurst:            cf.sellBurst,
 		bar: Bar{
 			Symbol:      symbol,
 			BucketStart: bucketStart,
@@ -608,40 +624,65 @@ func finalizeBar(state *symbolState) Bar {
 	return state.bar
 }
 
-// updateBurstStats inserts one trade into its side's rolling burst-window
-// tail in event-time order (arrival order is not assumed to match
-// event-time order: Bybit can, in principle, deliver a late-but-not-late-
-// enough-to-drop trade after one with a later timestamp), prunes anything
-// now more than 30 seconds older than the tail's own latest entry, and
-// recomputes the true maximum 10s/30s window sum over the resulting sorted
-// tail from scratch. A running max updated only incrementally at insertion
-// time would be corrupted by out-of-order arrival, since which window is
-// the true maximum can change once an earlier record is inserted.
-func updateBurstStats(tail *[]tradeRecord, stats *SideStats, eventAt time.Time, notionalUSD float64) {
-	insertSortedByEventAt(tail, tradeRecord{eventAt: eventAt, notionalUSD: notionalUSD})
+func (tracker *burstTracker) add(eventAt time.Time, notionalUSD float64) (float64, float64) {
+	record := tradeRecord{eventAt: eventAt, notionalUSD: notionalUSD}
+	if len(tracker.records) == 0 || !eventAt.Before(tracker.records[len(tracker.records)-1].eventAt) {
+		tracker.records = append(tracker.records, record)
+		tracker.sum10 += notionalUSD
+		tracker.sum30 += notionalUSD
 
-	// Compute the true max window sums BEFORE pruning: a late-arriving,
-	// out-of-order entry can land far enough behind the tail's own latest
-	// timestamp that a naive prune-then-scan would discard it before its
-	// own contribution (even a single trade trivially defines a window
-	// containing just itself) is ever counted.
-	if max10 := slidingWindowMaxSum(*tail, burstWindow10s); max10 > stats.Max10sNotionalUSD {
-		stats.Max10sNotionalUSD = max10
-	}
-	if max30 := slidingWindowMaxSum(*tail, burstWindow30s); max30 > stats.Max30sNotionalUSD {
-		stats.Max30sNotionalUSD = max30
+		for tracker.left10 < len(tracker.records) &&
+			eventAt.Sub(tracker.records[tracker.left10].eventAt) > burstWindow10s {
+			tracker.sum10 -= tracker.records[tracker.left10].notionalUSD
+			tracker.left10++
+		}
+		for tracker.left30 < len(tracker.records) &&
+			eventAt.Sub(tracker.records[tracker.left30].eventAt) > burstWindow30s {
+			tracker.sum30 -= tracker.records[tracker.left30].notionalUSD
+			tracker.left30++
+		}
+		tracker.compact()
+		return tracker.sum10, tracker.sum30
 	}
 
-	// Prune for memory only, now that every entry has already had its
-	// chance to count above.
-	latest := (*tail)[len(*tail)-1].eventAt
-	cutoff := latest.Add(-burstWindow30s)
-	i := 0
-	for i < len(*tail) && (*tail)[i].eventAt.Before(cutoff) {
-		i++
+	// Preserve the previous exact behavior for the rare out-of-order path.
+	// Logically pruned records are intentionally omitted: the old implementation
+	// had already physically discarded them before this event arrived too.
+	active := append([]tradeRecord(nil), tracker.records[tracker.left30:]...)
+	insertSortedByEventAt(&active, record)
+	max10 := slidingWindowMaxSum(active, burstWindow10s)
+	max30 := slidingWindowMaxSum(active, burstWindow30s)
+	tracker.reset(active)
+	return max10, max30
+}
+
+func (tracker *burstTracker) compact() {
+	if tracker.left30 < 1024 || tracker.left30*2 < len(tracker.records) {
+		return
 	}
-	if i > 0 {
-		*tail = (*tail)[i:]
+	tracker.records = append([]tradeRecord(nil), tracker.records[tracker.left30:]...)
+	tracker.left10 -= tracker.left30
+	tracker.left30 = 0
+}
+
+func (tracker *burstTracker) reset(sorted []tradeRecord) {
+	latest := sorted[len(sorted)-1].eventAt
+	cutoff30 := latest.Add(-burstWindow30s)
+	first30 := sort.Search(len(sorted), func(index int) bool {
+		return !sorted[index].eventAt.Before(cutoff30)
+	})
+	tracker.records = append(tracker.records[:0], sorted[first30:]...)
+	tracker.left30 = 0
+	tracker.left10 = sort.Search(len(tracker.records), func(index int) bool {
+		return latest.Sub(tracker.records[index].eventAt) <= burstWindow10s
+	})
+	tracker.sum10 = 0
+	tracker.sum30 = 0
+	for index, record := range tracker.records {
+		tracker.sum30 += record.notionalUSD
+		if index >= tracker.left10 {
+			tracker.sum10 += record.notionalUSD
+		}
 	}
 }
 

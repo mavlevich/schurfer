@@ -384,6 +384,19 @@ front.
    72-hour cutoff. Queue-pressure remediation and a bounded repeat canary remain
    separate follow-ups.
 
+   **Queue-pressure remediation (`fix/bybit-momentum-capture-integrity-v1`):** the
+   burst tracker now maintains ordered 10-second and 30-second rolling sums instead
+   of sorting and rescanning the whole active tail for every ordinary trade. The rare
+   out-of-order path retains the previous exact recomputation semantics. A 5,000-trade
+   local burst improved from roughly 200 ms to 1.2 ms on the same machine, while an
+   exact-reference test and a bounded 20,000-trade regression preserve the recorded
+   totals and burst maxima. Health schema v2 adds bounded p95/p99/max latency for feed
+   receive-to-handle, handlers, flush, and Redis health publication; Telegram keeps a
+   compact p99/max view while the complete measurements remain in Redis and checkpoint
+   JSON. These are implementation and observability results, not a passed production
+   gate. Merge does not authorize a restart before the original 72-hour checkpoint,
+   and only a new bounded canary can confirm that live input drops are eliminated.
+
 7. **Prepare Binance immediately, but activate it only after a corrected Bybit
    checkpoint and host-capacity gate pass.** The Bybit canary has already justified
    continuing the momentum data lane: it produced dense, queryable observations with

@@ -3,6 +3,8 @@ package momentum
 import (
 	"encoding/json"
 	"math"
+	"sort"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -234,6 +236,93 @@ func TestBurstWindowIsNotCorruptedByOutOfOrderArrival(t *testing.T) {
 	}
 	if buy.Max30sNotionalUSD != 200 {
 		t.Fatalf("max 30s notional = %v, want 200 (the larger of the two trades alone)", buy.Max30sNotionalUSD)
+	}
+}
+
+func TestBurstTrackerMatchesExactReferenceAcrossOrderedAndOutOfOrderEvents(t *testing.T) {
+	t.Parallel()
+	tracker := burstTracker{}
+	var reference []tradeRecord
+	var gotMax10, gotMax30, wantMax10, wantMax30 float64
+	start := at(0)
+
+	for index := range 2_000 {
+		offset := time.Duration(index*17) * time.Millisecond
+		if index%17 == 0 {
+			offset -= time.Duration(index%41) * time.Second
+		}
+		eventAt := start.Add(offset)
+		notional := float64(index%97 + 1)
+
+		got10, got30 := tracker.add(eventAt, notional)
+		gotMax10 = max(gotMax10, got10)
+		gotMax30 = max(gotMax30, got30)
+		insertSortedByEventAt(&reference, tradeRecord{eventAt: eventAt, notionalUSD: notional})
+		want10 := slidingWindowMaxSum(reference, burstWindow10s)
+		want30 := slidingWindowMaxSum(reference, burstWindow30s)
+		wantMax10 = max(wantMax10, want10)
+		wantMax30 = max(wantMax30, want30)
+		if gotMax10 != wantMax10 || gotMax30 != wantMax30 {
+			t.Fatalf(
+				"event %d at %v: burst maxima = (%v, %v), exact reference = (%v, %v); records=%d left10=%d left30=%d stored=(%v,%v) reference=%d",
+				index,
+				eventAt.Sub(start),
+				gotMax10,
+				gotMax30,
+				wantMax10,
+				wantMax30,
+				len(tracker.records),
+				tracker.left10,
+				tracker.left30,
+				tracker.sum10,
+				tracker.sum30,
+				len(reference),
+			)
+		}
+
+		latest := reference[len(reference)-1].eventAt
+		cutoff := latest.Add(-burstWindow30s)
+		first := sort.Search(len(reference), func(position int) bool {
+			return !reference[position].eventAt.Before(cutoff)
+		})
+		reference = reference[first:]
+	}
+}
+
+func TestEngineHandlesBoundedDenseBurstWithoutLosingStatistics(t *testing.T) {
+	t.Parallel()
+	const tradeCount = 20_000
+	engine := New()
+	start := at(0)
+	for index := range tradeCount {
+		eventAt := start.Add(time.Duration(index) * time.Millisecond)
+		_, err := engine.AddTrade(Trade{
+			Symbol:     "BURSTUSDT",
+			Side:       SideBuy,
+			Price:      1,
+			Size:       100,
+			EventAt:    eventAt,
+			ReceivedAt: eventAt,
+			TradeID:    strconv.Itoa(index),
+		})
+		if err != nil {
+			t.Fatalf("add trade %d: %v", index, err)
+		}
+	}
+
+	bars := engine.Flush(start.Add(time.Minute + time.Second))
+	if len(bars) != 1 {
+		t.Fatalf("closed bars = %d, want 1", len(bars))
+	}
+	buy := bars[0].Buy
+	if buy.TradeCount != tradeCount || buy.TotalNotionalUSD != tradeCount*100 {
+		t.Fatalf("dense burst totals = count %d notional %v", buy.TradeCount, buy.TotalNotionalUSD)
+	}
+	if buy.Max10sNotionalUSD != 1_000_100 {
+		t.Fatalf("max 10s notional = %v, want 1000100 with inclusive endpoints", buy.Max10sNotionalUSD)
+	}
+	if buy.Max30sNotionalUSD != tradeCount*100 {
+		t.Fatalf("max 30s notional = %v, want %d", buy.Max30sNotionalUSD, tradeCount*100)
 	}
 }
 
