@@ -94,6 +94,14 @@ def test_read_momentum_health_rejects_empty_hash(monkeypatch: pytest.MonkeyPatch
         canary._read_momentum_health()
 
 
+def test_read_momentum_health_treats_redis_cli_blank_line_as_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(canary, "_run", lambda *_args, **_kwargs: "\n")
+    with pytest.raises(RuntimeError, match="empty or missing"):
+        canary._read_momentum_health()
+
+
 def test_read_momentum_health_pairs_lines_into_a_dict(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         canary,
@@ -180,7 +188,75 @@ def test_all_three_checkpoints_fire_in_sequence(
 
     states = {k: v["state"] for k, v in final["active_epoch"]["checkpoints"].items()}
     assert states == {"24": "notified", "48": "notified", "72": "notified"}
+    assert final["active_epoch"]["status"] == "completed"
+    assert (
+        final["active_epoch"]["completed_at"]
+        == final["active_epoch"]["checkpoints"]["72"]["collected_at"]
+    )
     assert len(notified) == 3
+
+
+def test_missing_health_after_completed_epoch_is_not_an_interruption(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _fake_collection(monkeypatch)
+    notified: list[str] = []
+    monkeypatch.setattr(canary, "_notify", lambda message: notified.append(message) or None)
+    monkeypatch.setattr(canary, "_read_momentum_health", lambda: _health())
+
+    snapshot = tmp_path / "runtime" / "momentum-canary.json"
+    final = canary.run_once(now=EPOCH_START + timedelta(hours=73), snapshot_path=snapshot)
+    assert final["active_epoch"]["status"] == "completed"
+    checkpoint_notifications = len(notified)
+
+    # Reproduce the production snapshot written by the old runner: all three
+    # checkpoints were notified, then the expired health key changed status to
+    # interrupted before terminal epochs existed as a concept.
+    previous = canary._read_json(snapshot)
+    previous["active_epoch"]["status"] = "interrupted"
+    previous["active_epoch"]["interrupted_since"] = (
+        EPOCH_START + timedelta(hours=73, minutes=5)
+    ).isoformat()
+    previous["active_epoch"]["last_error"] = (
+        "market:momentumcapture:health HGETALL returned an odd number of fields"
+    )
+    canary._atomic_json(snapshot, previous)
+
+    def missing_health() -> dict[str, str]:
+        raise RuntimeError("market:momentumcapture:health is empty or missing in redis")
+
+    monkeypatch.setattr(canary, "_read_momentum_health", missing_health)
+    after_stop = canary.run_once(
+        now=EPOCH_START + timedelta(hours=73, minutes=15), snapshot_path=snapshot
+    )
+
+    assert after_stop["active_epoch"]["status"] == "completed"
+    assert after_stop["active_epoch"]["interrupted_since"] is None
+    assert len(notified) == checkpoint_notifications
+
+
+def test_new_epoch_after_completion_archives_without_mid_canary_alert(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _fake_collection(monkeypatch)
+    notified: list[str] = []
+    monkeypatch.setattr(canary, "_notify", lambda message: notified.append(message) or None)
+    monkeypatch.setattr(canary, "_read_momentum_health", lambda: _health())
+
+    snapshot = tmp_path / "runtime" / "momentum-canary.json"
+    canary.run_once(now=EPOCH_START + timedelta(hours=73), snapshot_path=snapshot)
+    checkpoint_notifications = len(notified)
+
+    new_start = EPOCH_START + timedelta(hours=74)
+    new_start_ms = int(new_start.timestamp() * 1000)
+    monkeypatch.setattr(canary, "_read_momentum_health", lambda: _health(new_start_ms))
+    payload = canary.run_once(now=new_start + timedelta(minutes=1), snapshot_path=snapshot)
+
+    assert payload["active_epoch"]["started_at_ms"] == new_start_ms
+    assert payload["active_epoch"]["status"] == "running"
+    assert payload["archived_epochs"][-1]["status"] == "completed"
+    assert payload["archived_epochs"][-1]["archived_reason"] == "new_epoch_after_completion"
+    assert len(notified) == checkpoint_notifications
 
 
 # --- fix 1: restart archives, does not wipe ---
