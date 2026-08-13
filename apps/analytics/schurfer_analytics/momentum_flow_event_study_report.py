@@ -73,9 +73,10 @@ from .reporting import (
 if TYPE_CHECKING:
     from .momentum_flow_event_repository import MeasurementEvent
 
-EVENT_STUDY_REPORT_VERSION = "momentum_flow_event_study_report_v2"
+EVENT_STUDY_REPORT_VERSION = "momentum_flow_event_study_report_v3"
 _LOOKBACK_START_MS = LOOKBACK_OFFSETS_MINUTES[0] * 60_000
 _LOOKBACK_END_MS = LOOKBACK_OFFSETS_MINUTES[-1] * 60_000
+_FLOW_BAR_DURATION_MS = 60_000
 _MAX_CONCURRENT_FETCHES = 4
 
 # Price-fetch outcome statuses, tracked per event so a discrepancy between
@@ -734,7 +735,16 @@ def _window_flow_bars(
     result: dict[int, tuple[FlowBar, ...]] = {}
     for event in events:
         trigger_ms = int(event.trigger_at.timestamp() * 1000)
-        start_ms = trigger_ms + _LOOKBACK_START_MS
+        timeline_start_ms = trigger_ms + _LOOKBACK_START_MS
+        # OI is a point-in-time level anchored at timeline_start_ms. When
+        # the event carries non-zero seconds, the most recent minute bar
+        # already known at that instant starts in the preceding UTC minute.
+        # Keep that one anchor candidate in the event-local slice. The
+        # cumulative flow window still filters from timeline_start_ms itself
+        # in momentum_flow_timeline._flow_window, so this bar can resolve the
+        # OI reference but can never leak into the buy/sell sums.
+        grid_floor_ms = timeline_start_ms // _FLOW_BAR_DURATION_MS * _FLOW_BAR_DURATION_MS
+        start_ms = grid_floor_ms - _FLOW_BAR_DURATION_MS
         end_ms = trigger_ms + _LOOKBACK_END_MS
         symbol_bars = flow_bars_by_symbol.get(bybit_linear_symbol(event.base), ())
         result[event.pump_event_id] = tuple(
