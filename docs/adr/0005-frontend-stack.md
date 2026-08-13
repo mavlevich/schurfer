@@ -1,7 +1,13 @@
 # ADR-0005: Frontend stack - React + Vite + Redux Toolkit
 
 Date: 2026-05-08
-Status: Accepted
+Status: Superseded
+
+Supersession note: React and Vite remain, but the Redux Toolkit decision was not
+implemented. The current application uses TanStack Query and local React state; the
+reviewed direction is documented in
+[`docs/architecture/web-ui-evolution-v1.md`](../architecture/web-ui-evolution-v1.md).
+The original decision below is retained unchanged as history.
 
 ## Context
 
