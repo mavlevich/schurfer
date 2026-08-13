@@ -16,6 +16,7 @@ from schurfer_analytics.momentum_flow_event_study_report import (
     PriceFetchResult,
     _fetch_price_bars_by_event,
     _flow_input_fingerprint,
+    _window_flow_bars,
     aggregate_lookback,
     build_momentum_flow_event_study_report,
     render_json,
@@ -361,6 +362,23 @@ def test_event_record_flow_scoping_ignores_bars_outside_the_events_own_window() 
     assert report.event_records[0].flow_bar_count == 0
     assert report.event_records[0].any_complete_flow_bar is False
     assert decoy_bar  # constructed only to document the scenario in-line
+
+
+def test_window_flow_bars_keeps_preceding_minute_for_point_in_time_oi_anchor() -> None:
+    trigger = datetime(2026, 8, 12, 12, 0, 41, tzinfo=UTC)
+    event = _event(100, "ERA", trigger)
+    timeline_start_ms = int((trigger - timedelta(days=1)).timestamp() * 1000)
+    grid_floor_ms = timeline_start_ms // 60_000 * 60_000
+    anchor_candidate = _flow_bar(grid_floor_ms - 60_000)
+    first_cumulative_bar = _flow_bar(grid_floor_ms + 60_000)
+    too_old = _flow_bar(grid_floor_ms - 120_000)
+
+    windowed = _window_flow_bars(
+        {"ERAUSDT": [too_old, anchor_candidate, first_cumulative_bar]},
+        (event,),
+    )
+
+    assert windowed == {100: (anchor_candidate, first_cumulative_bar)}
 
 
 def test_pre_fetch_exclusions_fold_into_the_funnel_and_cohort_count() -> None:
