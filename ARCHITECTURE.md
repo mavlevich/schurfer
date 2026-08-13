@@ -11,6 +11,10 @@ regenerates the diagrams from Compose and executable entrypoints, use
 [the documentation source-of-truth map](docs/README.md) and treat the production
 Compose file as authoritative for deployed service boundaries.
 
+The reviewed future direction is intentionally separate in
+[Target Platform Architecture v1](docs/architecture/target-platform-v1.md). Its
+services and data paths must not be read as already deployed.
+
 ## Overview
 
 Schurfer is a private multi-service trading platform. One product, several services.

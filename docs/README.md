@@ -10,37 +10,39 @@ is listed explicitly so historical plans cannot be mistaken for deployed behavio
 
 ## Start here
 
-| Need                                           | Read                                                              |
-| ---------------------------------------------- | ----------------------------------------------------------------- |
-| Install and run locally                        | [Root README](../README.md)                                       |
-| Current priorities and research gates          | [ROADMAP](../ROADMAP.md)                                          |
-| Browse uncommitted ideas                       | [IDEAS](../IDEAS.md), which is not an implementation queue        |
-| Current service overview                       | [Architecture](../ARCHITECTURE.md) and the deployed Compose files |
-| Deploy, recover, inspect production            | [Runbooks](runbooks/README.md)                                    |
-| Understand an accepted design decision         | [ADR index](adr/README.md)                                        |
-| Review frozen research methods and results     | [Research](#research)                                             |
-| Review strategy lifecycle and production rules | [Strategies](strategies/README.md)                                |
-| Review interface and delivery contracts        | [Contracts](contracts/)                                           |
-| Plan UI evolution                              | [Web UI evolution plan](architecture/web-ui-evolution-v1.md)      |
+| Need                                           | Read                                                               |
+| ---------------------------------------------- | ------------------------------------------------------------------ |
+| Install and run locally                        | [Root README](../README.md)                                        |
+| Current priorities and research gates          | [ROADMAP](../ROADMAP.md)                                           |
+| Browse uncommitted ideas                       | [IDEAS](../IDEAS.md), which is not an implementation queue         |
+| Current service overview                       | [Architecture](../ARCHITECTURE.md) and the deployed Compose files  |
+| Deploy, recover, inspect production            | [Runbooks](runbooks/README.md)                                     |
+| Understand an accepted design decision         | [ADR index](adr/README.md)                                         |
+| Review frozen research methods and results     | [Research](#research)                                              |
+| Review strategy lifecycle and production rules | [Strategies](strategies/README.md)                                 |
+| Review interface and delivery contracts        | [Contracts](contracts/)                                            |
+| Understand the reviewed platform direction     | [Target platform architecture](architecture/target-platform-v1.md) |
+| Plan UI evolution                              | [Web UI evolution plan](architecture/web-ui-evolution-v1.md)       |
 
 ## Source-of-truth map
 
 No Markdown file overrides running code, a database constraint, or an exchange API.
 The table identifies the maintained documentation authority for each kind of claim.
 
-| Subject                         | Documentation authority                                         | Runtime authority                                        | Conflict rule                                                                 |
-| ------------------------------- | --------------------------------------------------------------- | -------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| Product priority and sequencing | [ROADMAP](../ROADMAP.md)                                        | n/a                                                      | New work follows the latest dated active-course section and its gates.        |
-| Uncommitted idea backlog        | [IDEAS](../IDEAS.md)                                            | n/a                                                      | An idea becomes work only after ROADMAP gives it a gate and priority.         |
-| Service topology and data flow  | [Architecture](../ARCHITECTURE.md)                              | `infra/docker/docker-compose.*.yml`, service entrypoints | Compose and entrypoints win; record drift before changing architecture prose. |
-| Local setup and common commands | [Root README](../README.md), [Contributing](../CONTRIBUTING.md) | `Makefile`, package manifests                            | Commands must exist in the Makefile or package scripts.                       |
-| Production operations           | [Runbooks](runbooks/README.md)                                  | prod Compose, systemd units, operational scripts         | A runbook change ships with the operational change it describes.              |
-| Durable architecture decisions  | [ADRs](adr/README.md)                                           | accepted implementation                                  | Never rewrite decision history; supersede an ADR and link the replacement.    |
-| Frozen research methodology     | versioned files in [`research/`](research/)                     | report constants, manifests, cohort tables               | The registered contract and code must agree before a canonical read.          |
-| Research-family status          | [Discovery ledger](research/discovery-ledger.md)                | archived report manifest                                 | A descriptive number does not override the ledger verdict.                    |
-| Strategy behavior               | versioned files in [`strategies/`](strategies/)                 | strategy version constants and execution code            | Code changes require an explicit strategy/contract version decision.          |
-| Wire and delivery behavior      | versioned files in [`contracts/`](contracts/)                   | schemas, migrations, producer/consumer tests             | Consumers fail closed on unsupported versions.                                |
-| UI information architecture     | [Web UI evolution plan](architecture/web-ui-evolution-v1.md)    | routes, API contracts, component tests                   | The plan is a target, not a claim that an unfinished route exists.            |
+| Subject                         | Documentation authority                                            | Runtime authority                                        | Conflict rule                                                                         |
+| ------------------------------- | ------------------------------------------------------------------ | -------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Product priority and sequencing | [ROADMAP](../ROADMAP.md)                                           | n/a                                                      | New work follows the latest dated active-course section and its gates.                |
+| Uncommitted idea backlog        | [IDEAS](../IDEAS.md)                                               | n/a                                                      | An idea becomes work only after ROADMAP gives it a gate and priority.                 |
+| Service topology and data flow  | [Architecture](../ARCHITECTURE.md)                                 | `infra/docker/docker-compose.*.yml`, service entrypoints | Compose and entrypoints win; record drift before changing architecture prose.         |
+| Local setup and common commands | [Root README](../README.md), [Contributing](../CONTRIBUTING.md)    | `Makefile`, package manifests                            | Commands must exist in the Makefile or package scripts.                               |
+| Production operations           | [Runbooks](runbooks/README.md)                                     | prod Compose, systemd units, operational scripts         | A runbook change ships with the operational change it describes.                      |
+| Durable architecture decisions  | [ADRs](adr/README.md)                                              | accepted implementation                                  | Never rewrite decision history; supersede an ADR and link the replacement.            |
+| Frozen research methodology     | versioned files in [`research/`](research/)                        | report constants, manifests, cohort tables               | The registered contract and code must agree before a canonical read.                  |
+| Research-family status          | [Discovery ledger](research/discovery-ledger.md)                   | archived report manifest                                 | A descriptive number does not override the ledger verdict.                            |
+| Strategy behavior               | versioned files in [`strategies/`](strategies/)                    | strategy version constants and execution code            | Code changes require an explicit strategy/contract version decision.                  |
+| Wire and delivery behavior      | versioned files in [`contracts/`](contracts/)                      | schemas, migrations, producer/consumer tests             | Consumers fail closed on unsupported versions.                                        |
+| UI information architecture     | [Web UI evolution plan](architecture/web-ui-evolution-v1.md)       | routes, API contracts, component tests                   | The plan is a target, not a claim that an unfinished route exists.                    |
+| Target platform boundaries      | [Target platform architecture](architecture/target-platform-v1.md) | n/a                                                      | The target guides bounded designs but never overrides current Compose or entrypoints. |
 
 ## Document states
 
@@ -90,14 +92,14 @@ Research documents have different roles and must not be blended:
 
 ## Known drift and bounded follow-ups
 
-| Area                       | Current classification                                                                                                                     | Follow-up                                                                                                               |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
-| `ARCHITECTURE.md`          | Partially current. Core services are useful, but the bounded order-flow section is retired and momentum capture is not fully integrated.   | `docs/current-architecture-refresh-v1`: regenerate current service/data-flow diagrams from Compose and entrypoints.     |
-| ADR-0004/0005/0006/0008    | Superseded in practice by hosted CI, TanStack Query, changed service-language boundaries, and Hetzner hosting.                             | Record replacement decisions during the architecture refresh; do not rewrite the old rationale.                         |
-| Empty scaffold directories | `apps/collectors`, `apps/telegram-bot`, `packages/core`, `packages/exchanges`, and `packages/indicators` are not active services/packages. | Remove or formally activate them in a separate repository-hygiene PR after import/build references are checked.         |
-| Retired order-flow runtime | Code, Compose profile, reports, and old docs remain for auditability, but the research verdict is no-go.                                   | Move the operational path to an explicit retired profile/archive only after verifying no active consumer depends on it. |
-| Web UI                     | The target structure is reviewed; current pages remain incremental MVP implementations.                                                    | `refactor/web-design-contract-v1`, then one user workflow per PR.                                                       |
-| Notification delivery      | Contract v1 exists; migration to one gateway/outbox is incomplete.                                                                         | Follow the staged producer migration in the contract and ROADMAP.                                                       |
+| Area                       | Current classification                                                                                                                     | Follow-up                                                                                                                                                  |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ARCHITECTURE.md`          | Partially current. Core services are useful, but the bounded order-flow section is retired and momentum capture is not fully integrated.   | `docs/current-architecture-refresh-v1`: add the complete current service map, dependency matrix, and bounded subsystem views from Compose and entrypoints. |
+| ADR-0004/0005/0006/0008    | Superseded in practice by hosted CI, TanStack Query, changed service-language boundaries, and Hetzner hosting.                             | Record replacement decisions during the architecture refresh; do not rewrite the old rationale.                                                            |
+| Empty scaffold directories | `apps/collectors`, `apps/telegram-bot`, `packages/core`, `packages/exchanges`, and `packages/indicators` are not active services/packages. | Remove or formally activate them in a separate repository-hygiene PR after import/build references are checked.                                            |
+| Retired order-flow runtime | Code, Compose profile, reports, and old docs remain for auditability, but the research verdict is no-go.                                   | Move the operational path to an explicit retired profile/archive only after verifying no active consumer depends on it.                                    |
+| Web UI                     | The target structure is reviewed; current pages remain incremental MVP implementations.                                                    | `refactor/web-design-contract-v1`, then one user workflow per PR.                                                                                          |
+| Notification delivery      | Contract v1 exists; migration to one gateway/outbox is incomplete.                                                                         | Follow the staged producer migration in the contract and ROADMAP.                                                                                          |
 
 ## Change rules
 
