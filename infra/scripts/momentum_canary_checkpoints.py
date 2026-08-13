@@ -15,7 +15,7 @@ State model (one JSON snapshot file):
     {
       "active_epoch": {
         "started_at_ms": ...,
-        "status": "running" | "interrupted",
+        "status": "running" | "interrupted" | "completed",
         "baseline": {...} | null,          # captured once, at epoch creation
         "checkpoints": {
           "24": {"state": "pending"|"collected"|"notified"|"missed", ...},
@@ -132,6 +132,8 @@ def _read_momentum_health(timeout: int = 15) -> dict[str, str]:
         ["docker", "exec", REDIS_CONTAINER, "redis-cli", "--raw", "HGETALL", HEALTH_KEY],
         timeout=timeout,
     )
+    if not raw.strip():
+        raise RuntimeError(f"{HEALTH_KEY} is empty or missing in redis")
     lines = raw.splitlines()
     if not lines:
         raise RuntimeError(f"{HEALTH_KEY} is empty or missing in redis")
@@ -617,6 +619,34 @@ def _new_epoch(started_at_ms: int) -> dict[str, Any]:
     }
 
 
+def _mark_epoch_completed(epoch: dict[str, Any] | None) -> bool:
+    """Move an epoch to its terminal state once every checkpoint is final.
+
+    A completed canary remains active until a new service start is observed.
+    Archiving it immediately would make the next timer run create another
+    canary for the same still-running process.
+    """
+    if epoch is None:
+        return False
+    checkpoints = epoch.get("checkpoints")
+    if not isinstance(checkpoints, dict):
+        return False
+    states = [checkpoints.get(str(hours), {}).get("state") for hours in CHECKPOINT_OFFSETS_HOURS]
+    if not states or any(state not in {"notified", "missed"} for state in states):
+        return False
+
+    final_checkpoint = checkpoints[str(CHECKPOINT_OFFSETS_HOURS[-1])]
+    epoch["status"] = "completed"
+    epoch["completed_at"] = (
+        final_checkpoint.get("collected_at")
+        or final_checkpoint.get("missed_at")
+        or final_checkpoint.get("due_at")
+    )
+    epoch["interrupted_since"] = None
+    epoch["last_error"] = None
+    return True
+
+
 def run_once(
     *,
     now: datetime,
@@ -629,6 +659,9 @@ def run_once(
 
     archived_epochs: list[dict[str, Any]] = list(previous.get("archived_epochs", []))
     active_epoch: dict[str, Any] | None = previous.get("active_epoch")
+    # Normalizes snapshots written by older runner versions that left a fully
+    # delivered 72-hour epoch in running/interrupted state forever.
+    _mark_epoch_completed(active_epoch)
     # Retry any operational alert (interrupted/recovered/restart) a prior run
     # failed to deliver, before anything else -- these are one-shot texts with
     # no underlying data to protect, so replaying the same message is correct.
@@ -664,6 +697,17 @@ def run_once(
 
     if health_error is not None:
         if active_epoch is not None:
+            if active_epoch.get("status") == "completed":
+                # The canary contract is already fully observed. A deliberately
+                # stopped service must not be reported as dying "mid-epoch".
+                _persist()
+                return {
+                    "version": SNAPSHOT_VERSION,
+                    "generated_at": _utc(now),
+                    "active_epoch": active_epoch,
+                    "archived_epochs": archived_epochs,
+                    "pending_operational_alerts": pending_operational_alerts,
+                }
             if active_epoch.get("status") != "interrupted":
                 active_epoch["status"] = "interrupted"
                 active_epoch["interrupted_since"] = _utc(now)
@@ -712,9 +756,12 @@ def run_once(
             old_start = datetime.fromtimestamp(active_epoch["started_at_ms"] / 1000, tz=UTC)
             ran_hours = (now - old_start).total_seconds() / 3600
             was_interrupted = active_epoch.get("status") == "interrupted"
+            was_completed = active_epoch.get("status") == "completed"
             archived = dict(active_epoch)
             archived["archived_at"] = _utc(now)
-            archived["archived_reason"] = "restart_detected"
+            archived["archived_reason"] = (
+                "new_epoch_after_completion" if was_completed else "restart_detected"
+            )
             archived_epochs.append(archived)
             logger.info(
                 "new momentum-capture epoch detected: started_at_ms=%s (previous=%s)",
@@ -727,18 +774,19 @@ def run_once(
                 if was_interrupted
                 else ""
             )
-            _send_or_queue(
-                pending_operational_alerts,
-                f"⚠️ Momentum-capture restarted mid-canary. Previous epoch "
-                f"(started {_utc(old_start)}, ran {ran_hours:.1f}h) archived, not discarded."
-                f"{interruption_note}\n"
-                f"New epoch started "
-                f"{_utc(datetime.fromtimestamp(epoch_started_at_ms / 1000, tz=UTC))}.\n"
-                f"Whether this counts as a fresh canary or a continuation is a human call; "
-                f"the previous epoch's evidence is preserved in the snapshot either way.",
-                now,
-                persist=_persist,
-            )
+            if not was_completed:
+                _send_or_queue(
+                    pending_operational_alerts,
+                    f"⚠️ Momentum-capture restarted mid-canary. Previous epoch "
+                    f"(started {_utc(old_start)}, ran {ran_hours:.1f}h) archived, not discarded."
+                    f"{interruption_note}\n"
+                    f"New epoch started "
+                    f"{_utc(datetime.fromtimestamp(epoch_started_at_ms / 1000, tz=UTC))}.\n"
+                    f"Whether this counts as a fresh canary or a continuation is a human call; "
+                    f"the previous epoch's evidence is preserved in the snapshot either way.",
+                    now,
+                    persist=_persist,
+                )
         active_epoch = _new_epoch(epoch_started_at_ms)
 
     if active_epoch["baseline"] is None:
@@ -844,6 +892,8 @@ def run_once(
                     f"Will keep retrying; this alert will not repeat once delivered."
                 )
                 cp["collection_error_notified"] = alert_error is None
+
+    _mark_epoch_completed(active_epoch)
 
     payload = {
         "version": SNAPSHOT_VERSION,
