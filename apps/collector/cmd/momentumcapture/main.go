@@ -148,6 +148,12 @@ type counters struct {
 	lastBarAt              time.Time
 	tradeLagMaxMs          int64
 	tickerLagMaxMs         int64
+	tradeReceiveToHandle   latencyHistogram
+	tradeHandler           latencyHistogram
+	tickerReceiveToHandle  latencyHistogram
+	tickerHandler          latencyHistogram
+	flush                  latencyHistogram
+	healthPublish          latencyHistogram
 }
 
 type application struct {
@@ -520,15 +526,19 @@ func (app *application) loop(ctx context.Context, tradesDone <-chan struct{}, wr
 			return app.shutdown(tradesDone, writerDone)
 
 		case trade := <-app.tradeEvents:
+			app.observeInputQueueDepth()
 			app.handleTrade(trade)
 
 		case trade := <-app.tradeDrops:
+			app.observeInputQueueDepth()
 			app.handleTradeDrop(trade)
 
 		case event := <-app.lifecycleEvents:
+			app.observeInputQueueDepth()
 			app.handleLifecycle(event)
 
 		case fault := <-app.natsFaults:
+			app.observeInputQueueDepth()
 			app.handleNATSFault(fault)
 
 		case msg, ok := <-app.tickerMsgs:
@@ -541,9 +551,11 @@ func (app *application) loop(ctx context.Context, tradesDone <-chan struct{}, wr
 				// over silently.
 				return errors.New("NATS ticker channel closed")
 			}
+			app.observeInputQueueDepth()
 			app.handleTickerMessage(msg, time.Now())
 
 		case now := <-flushTicker.C:
+			started := time.Now()
 			// Any loss latched since the last tick, and any newly silent
 			// symbol, must be reflected BEFORE Flush closes bars for this
 			// tick: closing first and marking after would let exactly the
@@ -552,6 +564,7 @@ func (app *application) loop(ctx context.Context, tradesDone <-chan struct{}, wr
 			app.consumeLossLatches()
 			app.checkTickerGaps(now)
 			app.enqueue(app.engine.Flush(now))
+			app.stats.flush.observe(time.Since(started))
 
 		case drift := <-app.driftResults:
 			app.handleDriftResult(drift)
@@ -611,15 +624,20 @@ drain:
 	for {
 		select {
 		case trade := <-app.tradeEvents:
+			app.observeInputQueueDepth()
 			app.handleTrade(trade)
 		case trade := <-app.tradeDrops:
+			app.observeInputQueueDepth()
 			app.handleTradeDrop(trade)
 		case event := <-app.lifecycleEvents:
+			app.observeInputQueueDepth()
 			app.handleLifecycle(event)
 		case fault := <-app.natsFaults:
+			app.observeInputQueueDepth()
 			app.handleNATSFault(fault)
 		case msg, ok := <-app.tickerMsgs:
 			if ok {
+				app.observeInputQueueDepth()
 				app.handleTickerMessage(msg, time.Now())
 			}
 			// ok=false here is defensive only: see this function's own
@@ -646,7 +664,9 @@ drain:
 	}
 
 	app.consumeLossLatches()
+	flushStarted := time.Now()
 	final := app.engine.Flush(time.Now())
+	app.stats.flush.observe(time.Since(flushStarted))
 	app.recordBarStats(final)
 	if len(final) > 0 {
 		select {
@@ -724,6 +744,11 @@ func (app *application) recordBarStats(bars []momentum.Bar) {
 }
 
 func (app *application) handleTrade(trade bybit.PublicTrade) {
+	started := time.Now()
+	defer func() { app.stats.tradeHandler.observe(time.Since(started)) }()
+	if !trade.ReceivedAt.IsZero() && !trade.ReceivedAt.After(started) {
+		app.stats.tradeReceiveToHandle.observe(started.Sub(trade.ReceivedAt))
+	}
 	side := momentum.SideBuy
 	if trade.Side == "sell" {
 		side = momentum.SideSell
@@ -830,6 +855,8 @@ func (app *application) markTradesFeedInterrupted(at time.Time, reason string) {
 }
 
 func (app *application) handleTickerMessage(msg *nats.Msg, receivedAt time.Time) {
+	started := time.Now()
+	defer func() { app.stats.tickerHandler.observe(time.Since(started)) }()
 	observation, sessionID, err := parseTickerObservation(msg.Data, receivedAt)
 	if err != nil {
 		app.stats.tickersInvalidTotal++
@@ -843,6 +870,9 @@ func (app *application) handleTickerMessage(msg *nats.Msg, receivedAt time.Time)
 		// under this process's universe_version.
 		app.stats.tickersOutOfScopeTotal++
 		return
+	}
+	if !observation.ObservedAt.IsZero() && !observation.ObservedAt.After(started) {
+		app.stats.tickerReceiveToHandle.observe(started.Sub(observation.ObservedAt))
 	}
 	if lastSession, seen := app.tickerSessionBySymbol[observation.Symbol]; seen && lastSession != sessionID {
 		app.stats.tickerReconnectTotal++
@@ -896,10 +926,7 @@ func (app *application) logHealth(ctx context.Context) {
 		app.stats.natsDroppedTotal = uint64(dropped)
 	}
 
-	inputDepth := len(app.tradeEvents) + len(app.tradeDrops) + len(app.lifecycleEvents) + len(app.natsFaults)
-	if inputDepth > app.stats.inputQueuePeak {
-		app.stats.inputQueuePeak = inputDepth
-	}
+	inputDepth := app.observeInputQueueDepth()
 
 	health := momentumcapture.BuildUniverseHealth(app.universe, app.lastDrift, app.readiness, now)
 	health.CatalogItemsTotal = app.catalog.CatalogItemsTotal
@@ -934,14 +961,17 @@ func (app *application) logHealth(ctx context.Context) {
 	health.InputQueueDropsTotal = app.stats.tradeDropsTotal + app.stats.writerInboxDropsTotal + app.tradeDropsLost.Load()
 	health.TradeLagMaxMs = app.stats.tradeLagMaxMs
 	health.TickerLagMaxMs = app.stats.tickerLagMaxMs
+	applyLatencyHealth(&health, &app.stats)
 	health.ProjectedBytesPerDay = float64(app.universe.Count()) * 1440 * estimatedHotBytesPerRow
 	health.Status = deriveHealthStatus(health)
 
 	storeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
+	publishStarted := time.Now()
 	if err := app.healthStore.StoreHealth(storeCtx, health); err != nil {
 		slog.Warn("momentumcapture.health_store_failed", "err", err)
 	}
+	app.stats.healthPublish.observe(time.Since(publishStarted))
 	slog.Info(
 		"momentumcapture.health",
 		"status", health.Status,
@@ -954,6 +984,52 @@ func (app *application) logHealth(ctx context.Context) {
 		"payload_hash_mismatch_total", health.PayloadHashMismatchTotal,
 		"tickers_out_of_scope_total", app.stats.tickersOutOfScopeTotal,
 	)
+}
+
+func (app *application) observeInputQueueDepth() int {
+	depth := len(app.tradeEvents) + len(app.tradeDrops) + len(app.lifecycleEvents) + len(app.natsFaults) + len(app.tickerMsgs)
+	if depth > app.stats.inputQueuePeak {
+		app.stats.inputQueuePeak = depth
+	}
+	return depth
+}
+
+func applyLatencyHealth(health *momentumcapture.Health, stats *counters) {
+	tradeWait := stats.tradeReceiveToHandle.summary()
+	health.TradeReceiveToHandleCount = stats.tradeReceiveToHandle.count
+	health.TradeReceiveToHandleP95Us = durationMicroseconds(tradeWait.P95)
+	health.TradeReceiveToHandleP99Us = durationMicroseconds(tradeWait.P99)
+	health.TradeReceiveToHandleMaxUs = durationMicroseconds(tradeWait.Max)
+
+	tradeHandler := stats.tradeHandler.summary()
+	health.TradeHandlerCount = stats.tradeHandler.count
+	health.TradeHandlerP95Us = durationMicroseconds(tradeHandler.P95)
+	health.TradeHandlerP99Us = durationMicroseconds(tradeHandler.P99)
+	health.TradeHandlerMaxUs = durationMicroseconds(tradeHandler.Max)
+
+	tickerWait := stats.tickerReceiveToHandle.summary()
+	health.TickerReceiveToHandleCount = stats.tickerReceiveToHandle.count
+	health.TickerReceiveToHandleP95Us = durationMicroseconds(tickerWait.P95)
+	health.TickerReceiveToHandleP99Us = durationMicroseconds(tickerWait.P99)
+	health.TickerReceiveToHandleMaxUs = durationMicroseconds(tickerWait.Max)
+
+	tickerHandler := stats.tickerHandler.summary()
+	health.TickerHandlerCount = stats.tickerHandler.count
+	health.TickerHandlerP95Us = durationMicroseconds(tickerHandler.P95)
+	health.TickerHandlerP99Us = durationMicroseconds(tickerHandler.P99)
+	health.TickerHandlerMaxUs = durationMicroseconds(tickerHandler.Max)
+
+	flush := stats.flush.summary()
+	health.FlushCount = stats.flush.count
+	health.FlushP95Us = durationMicroseconds(flush.P95)
+	health.FlushP99Us = durationMicroseconds(flush.P99)
+	health.FlushMaxUs = durationMicroseconds(flush.Max)
+
+	healthPublish := stats.healthPublish.summary()
+	health.HealthPublishCount = stats.healthPublish.count
+	health.HealthPublishP95Us = durationMicroseconds(healthPublish.P95)
+	health.HealthPublishP99Us = durationMicroseconds(healthPublish.P99)
+	health.HealthPublishMaxUs = durationMicroseconds(healthPublish.Max)
 }
 
 // deriveHealthStatus picks the most severe applicable condition, most

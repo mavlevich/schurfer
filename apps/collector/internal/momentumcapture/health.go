@@ -87,6 +87,34 @@ type Health struct {
 	// the currently tracked universe.
 	TradeLagMaxMs  int64
 	TickerLagMaxMs int64
+
+	// Processing latency, measured in-process using bounded histograms.
+	// ReceiveToHandle starts at the feed adapter's local receive timestamp;
+	// handler and maintenance timings isolate work owned by this process.
+	TradeReceiveToHandleCount  uint64
+	TradeReceiveToHandleP95Us  int64
+	TradeReceiveToHandleP99Us  int64
+	TradeReceiveToHandleMaxUs  int64
+	TradeHandlerCount          uint64
+	TradeHandlerP95Us          int64
+	TradeHandlerP99Us          int64
+	TradeHandlerMaxUs          int64
+	TickerReceiveToHandleCount uint64
+	TickerReceiveToHandleP95Us int64
+	TickerReceiveToHandleP99Us int64
+	TickerReceiveToHandleMaxUs int64
+	TickerHandlerCount         uint64
+	TickerHandlerP95Us         int64
+	TickerHandlerP99Us         int64
+	TickerHandlerMaxUs         int64
+	FlushCount                 uint64
+	FlushP95Us                 int64
+	FlushP99Us                 int64
+	FlushMaxUs                 int64
+	HealthPublishCount         uint64
+	HealthPublishP95Us         int64
+	HealthPublishP99Us         int64
+	HealthPublishMaxUs         int64
 }
 
 // BuildUniverseHealth fills in Health's universe-related fields from a

@@ -47,7 +47,7 @@ func NewRedisStore(client *redis.Client) (*RedisStore, error) {
 // present).
 func (store *RedisStore) StoreHealth(ctx context.Context, health Health) error {
 	values := map[string]any{
-		"schema_version": 1,
+		"schema_version": 2,
 		"status":         health.Status,
 		"started_at_ms":  unixMilliOrZero(health.StartedAt),
 		"updated_at_ms":  unixMilliOrZero(health.UpdatedAt),
@@ -116,6 +116,31 @@ func (store *RedisStore) StoreHealth(ctx context.Context, health Health) error {
 
 		"trade_lag_max_ms":  health.TradeLagMaxMs,
 		"ticker_lag_max_ms": health.TickerLagMaxMs,
+
+		"trade_receive_to_handle_count":   health.TradeReceiveToHandleCount,
+		"trade_receive_to_handle_p95_us":  health.TradeReceiveToHandleP95Us,
+		"trade_receive_to_handle_p99_us":  health.TradeReceiveToHandleP99Us,
+		"trade_receive_to_handle_max_us":  health.TradeReceiveToHandleMaxUs,
+		"trade_handler_count":             health.TradeHandlerCount,
+		"trade_handler_p95_us":            health.TradeHandlerP95Us,
+		"trade_handler_p99_us":            health.TradeHandlerP99Us,
+		"trade_handler_max_us":            health.TradeHandlerMaxUs,
+		"ticker_receive_to_handle_count":  health.TickerReceiveToHandleCount,
+		"ticker_receive_to_handle_p95_us": health.TickerReceiveToHandleP95Us,
+		"ticker_receive_to_handle_p99_us": health.TickerReceiveToHandleP99Us,
+		"ticker_receive_to_handle_max_us": health.TickerReceiveToHandleMaxUs,
+		"ticker_handler_count":            health.TickerHandlerCount,
+		"ticker_handler_p95_us":           health.TickerHandlerP95Us,
+		"ticker_handler_p99_us":           health.TickerHandlerP99Us,
+		"ticker_handler_max_us":           health.TickerHandlerMaxUs,
+		"flush_count":                     health.FlushCount,
+		"flush_p95_us":                    health.FlushP95Us,
+		"flush_p99_us":                    health.FlushP99Us,
+		"flush_max_us":                    health.FlushMaxUs,
+		"health_publish_count":            health.HealthPublishCount,
+		"health_publish_p95_us":           health.HealthPublishP95Us,
+		"health_publish_p99_us":           health.HealthPublishP99Us,
+		"health_publish_max_us":           health.HealthPublishMaxUs,
 	}
 	pipe := store.client.Pipeline()
 	pipe.HSet(ctx, HealthKey, values)
