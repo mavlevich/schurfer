@@ -397,6 +397,38 @@ front.
    gate. Merge does not authorize a restart before the original 72-hour checkpoint,
    and only a new bounded canary can confirm that live input drops are eliminated.
 
+   **72-hour canary verdict (2026-08-13):** the original run failed its registered
+   quality gate, specifically on 23,834 input-queue drops and sustained host swap
+   activity. The persistence path itself remained clean: 3,182,504 rows persisted,
+   with zero writer drops, persistence errors, retries, or payload-hash mismatches.
+   Resource measurements also passed their storage and process bounds: hot growth was
+   1,128 MiB/day against the 1.5 GiB/day ceiling, compressed steady-state growth was
+   estimated at 222 MiB/day against 500 MiB/day, and momentum-capture RSS was about
+   25 MiB. This is a failed capture-integrity canary, not a failed momentum thesis.
+   The fixed result is archived outside git at
+   `backups/reports/momentum-canary-2026-08-13.json` with SHA-256
+   `55bd4e135a6ab77775592e764b232a6bcf06764390c37ac52ef174271e51baf3`.
+
+   The registered calibration read at the same fixed cutoff is HYP-014, status
+   `parked`. On merged report v3 it built 2,730 event timelines, including 266 events
+   with raw flow rows, but zero cumulative flow lookbacks passed the fail-closed
+   minute-completeness rule. OI remained independently observable for 135 amount and
+   154 USD-value timelines. Mean OI amount/value rose from +3.95%/+14.26% at -12h to
+   +14.05%/+37.04% at the pump trigger, a descriptive lead consistent with an
+   accumulation or squeeze path, but there were no matched controls, after-cost
+   economics, or promotional statistics. No threshold or lane is selected from this
+   read. The first report run exposed a mechanical OI anchor-window defect; the
+   invalid artifact was retained, the bug was regression-tested, and the canonical
+   report was rerun from clean merged `main` at revision `e7e61d2` with the same
+   cohort and cutoff. See
+   [docs/research/discovery-ledger.md](docs/research/discovery-ledger.md).
+
+   Production deployment of the fixes and the bounded repeat canary is blocked by
+   the existing capacity gate: the 4 GB host had only 674 MiB `MemAvailable`, below
+   the required 1 GiB. Do not bypass this check. Resize or move the always-on host to
+   at least 8 GB, then deploy the already-merged perpetual-universe, queue-pressure,
+   and OI-anchor fixes and restart the 24/48/72-hour checkpoint epoch.
+
 7. **Prepare Binance immediately, but activate it only after a corrected Bybit
    checkpoint and host-capacity gate pass.** The Bybit canary has already justified
    continuing the momentum data lane: it produced dense, queryable observations with
