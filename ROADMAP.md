@@ -1,6 +1,6 @@
 # Roadmap
 
-> Living document. Updated as we progress. Last refreshed 2026-08-10.
+> Living document. Updated as we progress. Last refreshed 2026-08-13.
 
 ## Guiding principle
 
@@ -17,6 +17,100 @@ tomorrow.
 
 The parked idea catalog lives in [IDEAS.md](IDEAS.md). It is frozen until edge is
 proven. Post-MVP strategy and exit improvements live in the exit-strategy notes.
+
+## Delivery portfolio and WIP limits
+
+Schurfer advances several product lanes, but it does not implement all of them at
+once. Parallelism means that collectors and frozen cohorts may accumulate evidence
+while another bounded change is being built. It does not mean keeping many unfinished
+branches open or alternating between unrelated changes inside one pull request.
+
+At most two implementation pull requests may be active at once:
+
+1. **Primary slot: profit and evidence.** This slot is always assigned to the highest
+   value available work that can establish, reject, or execute an edge: capture of
+   non-recoverable inputs, a frozen research read, an executable-cost check, a WATCH
+   or paper strategy, or a safety requirement that blocks those activities.
+2. **Support slot: one bounded enabling change.** Rotate this slot between platform
+   reliability, operations, UI, and documentation. Prefer work that can finish while
+   the primary lane is waiting for a canary, a forward cohort, or an external review.
+
+Passive production collection, a scheduled checkpoint, and a merged contract waiting
+for maturity do not occupy an implementation slot. A production incident, capital
+safety defect, data corruption risk, or failure of non-recoverable capture preempts
+both slots until it is contained. Ordinary refactoring, visual polish, and speculative
+scaling never preempt a healthy evidence-producing lane.
+
+Use the following rolling target for every ten merged pull requests. This is an
+engineering allocation, separate from the experiment-family budget below.
+
+| Lane                           | Target per 10 merged PRs | Examples                                                                            |
+| ------------------------------ | -----------------------: | ----------------------------------------------------------------------------------- |
+| Profit and evidence            |               at least 5 | capture, discovery/confirmation reports, WATCH/paper candidates, costs and capacity |
+| Reliability and data platform  |                  about 2 | durability, recovery, bounded queues, venue adapters, resource protection           |
+| UI and research tooling        |                  about 1 | token workspace, event timeline, progressive Research rendering                     |
+| Documentation and architecture |                  about 1 | current-state diagrams, ADR supersession, roadmap/archive maintenance               |
+| Gate-driven flex               |                  about 1 | whichever lane removes the highest-value proven blocker                             |
+
+Do not run more than two consecutive support PRs from UI, documentation, or general
+refactoring unless they remove an explicit blocker or active operational risk. After
+every merge or research verdict, select the next work again from current evidence;
+the roadmap order is not a reason to build a now-irrelevant item.
+
+```mermaid
+flowchart LR
+    G["Research or production gate"] --> P{"Immediate risk or irreversible data loss?"}
+    P -->|yes| S["Preempt: safety or capture repair"]
+    P -->|no| E["Primary slot: profit and evidence"]
+    E --> W{"Primary lane waiting?"}
+    W -->|yes| R["Support slot: rotate platform, UI, docs"]
+    W -->|no| C["Continue bounded primary PR"]
+    R --> G
+    C --> G
+    S --> G
+```
+
+Documentation changes normally accompany the code or decision they describe. A
+dedicated documentation PR is justified for cross-cutting drift, navigation, or
+architecture cleanup, but must have an explicit file list and finish condition. UI
+work follows the same rule: one coherent user workflow per PR, with backend contracts
+defined first and no empty navigation for capabilities that do not exist yet.
+
+### Near-term interleaving from 2026-08-13
+
+The support lane starts now, not after the momentum verdict. Use this order after the
+current planning branch merges, reselecting only when a gate or incident changes the
+facts. The numbers express the intended merge order where practical, not a dependency
+from a support PR to the next primary PR. Support work may overlap one primary PR and
+never blocks the next profit or evidence step.
+
+1. `fix/bybit-momentum-capture-integrity-v1`: archive the canary, correct universe and
+   backpressure, and make the repeat safe.
+2. `feat/momentum-flow-watch-v1`: freeze and deploy the prospective evaluator and
+   timing audit.
+3. `docs/documentation-system-v1`: inventory documentation, add its source-of-truth
+   map, classify drift, and define the bounded refresh PRs. This is the first support
+   PR while WATCH deployment is reviewed or the repeat canary begins.
+4. `feat/momentum-flow-paper-v1`: add the `$50` exact-venue discovery paper probe and
+   bounded outcomes.
+5. `feat/binance-momentum-adapter-v1`: implement and probe the adapter, disabled by
+   default.
+6. `refactor/web-design-contract-v1`: begin real UI implementation with shared tokens,
+   page header, async states, formatters, API errors, and one reviewed accessible
+   primitive layer. This runs while Bybit paper and canary observations accumulate;
+   it does not wait for the 2-to-4-week momentum verdict.
+7. `analysis/momentum-flow-episode-study-v1`: link pumps, WATCH decisions, matched
+   controls, latency, and outcomes under the registered measurement rules.
+8. `docs/current-architecture-refresh-v1`: update current service and data-flow
+   diagrams, supersede stale ADRs, and move retired operational paths out of the
+   current architecture view.
+9. `feat/binance-momentum-canary-v1`: activate a bounded Binance trial only if the
+   corrected Bybit and host-capacity gates pass.
+10. Select the next item from evidence: the next UI workflow, notifier delivery,
+    Confirmation contract, or a demonstrated capacity blocker.
+
+This sequence deliberately places documentation at steps 3 and 8 and UI code at step 6. No support item waits for the final strategy verdict, but none delays the initial
+WATCH and paper instrumentation either.
 
 ## Current state (2026-08-10)
 
@@ -290,15 +384,43 @@ front.
    72-hour cutoff. Queue-pressure remediation and a bounded repeat canary remain
    separate follow-ups.
 
-7. **Expand venues only after the Bybit checkpoint passes.** First publish a capability
-   matrix for OI amount/value, trades with aggressor side, liquidation stream,
-   timestamps, symbol identity, rate limits, and reconnect semantics. Add at most one
-   small source group and one target/confirmation group per PR. Gate/MEXC/XT are
-   candidate discovery sources; Binance/Bybit/OKX/Bitget are candidate confirmation
-   and execution venues. A venue survives only if it adds point-in-time lead,
-   coverage, or executable depth, not merely another copy of the same event. Designing
-   for 10-20 venues is allowed; connecting all 10-20 before measuring the first group
-   is not.
+7. **Prepare Binance immediately, but activate it only after a corrected Bybit
+   checkpoint and host-capacity gate pass.** The Bybit canary has already justified
+   continuing the momentum data lane: it produced dense, queryable observations with
+   clean persistence and useful coverage diagnostics. It has not authorized immediate
+   multi-venue activation: queue drops, incomplete bars, and active host swap proved
+   that duplicating the deployed path now would scale a known defect.
+
+   Preparation may proceed while the corrected Bybit canary accumulates: freeze the
+   normalized venue contract, implement and unit-test the Binance adapter, add a
+   disabled Compose profile, run bounded read-only endpoint probes, and calculate its
+   expected event, CPU, memory, and storage rates. None of these steps may subscribe
+   to the full Binance universe continuously in production.
+
+   Use this activation sequence:
+   1. archive the fixed-window Bybit canary result;
+   2. deploy the perpetual-universe and queue-pressure corrections;
+   3. run a bounded Bybit repeat with the same explicit quality and resource gates;
+   4. finish the disabled Binance implementation while that repeat runs;
+   5. enable a separate bounded Binance canary only after at least 48 clean Bybit
+      hours show zero queue/writer drops, bounded lag, clean persistence, and no active
+      swap churn.
+
+   The current 4 GB host is not authorized for two dense continuous venue feeds. Its
+   measured low `MemAvailable` and swap activity already trigger capacity preparation.
+   Before enabling Binance, either resize the always-on host to at least 8 GB or move
+   capture to a separate host, then re-measure the same gates. More RAM is safety
+   headroom, not a substitute for fixing backpressure. Keep reports, DuckDB backfills,
+   and future ML off the always-on capture host when they can run locally.
+
+   First publish a capability matrix for OI amount/value, trades with aggressor side,
+   liquidation stream, timestamps, symbol identity, rate limits, and reconnect
+   semantics. Add at most one small source group and one target/confirmation group per
+   PR. Gate/MEXC/XT are candidate discovery sources; Binance/Bybit/OKX/Bitget are
+   candidate confirmation and execution venues. A venue survives only if it adds
+   point-in-time lead, coverage, or executable depth, not merely another copy of the
+   same event. Designing for 10-20 venues is allowed; connecting all 10-20 before
+   measuring the first group is not.
 
    **Pre-gate matrix scaffolding (`analysis/momentum-venue-capability-matrix-v1`,
    2026-08-12; no venue enabled):** the typed fail-closed matrix and review view live
@@ -316,20 +438,59 @@ front.
    does not bypass item 6: any Binance connection remains blocked until a corrected
    Bybit canary passes.
 
-8. **Run an early-momentum discovery report after 2-4 UTC weeks.** Model a state
-   sequence (accumulation: OI and buy flow rise while price is contained; breakout;
-   squeeze/liquidations; and reversion) rather than one magic threshold. Report
-   opportunities/day, lead time, precision, false WATCH rate, maximum adverse/favorable
-   excursion, common-exit after-cost long economics, liquidity/capacity, and stability
+8. **Launch a prospective WATCH and paper baseline early; wait 2-4 UTC weeks for a
+   verdict, not for the first measurement deployment.** After the fixed 72-hour
+   calibration read and the capture-integrity fixes, freeze one broad
+   `momentum_flow_watch_v1` state machine from input distributions without consulting
+   forward returns. Deploy it alongside the corrected Bybit canary so every future
+   evaluation is recorded at decision time rather than reconstructed later.
+
+   The complete delivery order, evidence cadence, pump/control linkage, mathematical
+   definitions, latency attribution, and versioning rules live in
+   [docs/research/momentum-flow-validation-plan-v1.md](docs/research/momentum-flow-validation-plan-v1.md).
+   That document is a planning protocol, not the numerical WATCH contract; the latter
+   is frozen separately before its first forward outcome is observed.
+
+   Model a sequence (accumulation: OI and buy flow rise while price is contained;
+   breakout; squeeze/liquidations; and reversion) rather than one magic threshold.
+   WATCH evaluation must fail closed on incomplete bars, missing fresh OI, detected
+   feed gaps, stale quotes, or unresolved identity. Record both qualifying and rejected
+   evaluations with reason codes so false-WATCH rate and opportunity capacity have a
+   real denominator.
+
+   A `$50`, unlevered, exact-venue paper probe may open immediately from the same
+   frozen WATCH contract. It uses a bounded position/cooldown policy, a pre-declared
+   primary exit and cost model, and an executable decision-time quote. This early
+   paper lane is discovery instrumentation, not promotion evidence. Its data belongs
+   to the inspected discovery window; any candidate selected from it still requires a
+   new untouched Confirmation cohort under item 9.
+
+   Persist the complete timing chain: exchange event time, local receive time,
+   aggregate bucket close, state evaluation, WATCH decision, quote request/response,
+   simulated fill, notification delivery, and later outcome resolution. Decompose
+   source-to-receive, receive-to-aggregate, aggregate-to-decision,
+   decision-to-executable-quote, and total source-to-paper-fill latency. This
+   distinguishes a slow system from a deliberately later signal definition. The
+   existing pump scanner may arrive an hour after an external accumulation alert
+   because it waits for a price-pump threshold; that is not evidence of an hour of
+   compute latency.
+
+   After 2-4 UTC weeks, run the formal discovery report over the frozen baseline.
+   Report opportunities/day, lead time relative to Schurfer's own pump events,
+   precision, false WATCH rate, maximum adverse/favorable excursion, common-exit
+   after-cost long economics, liquidity/capacity, latency attribution, and stability
    by asset, week, venue, and market regime. Missing inputs are unresolved, never
-   neutral. ML is allowed only as a later benchmark against a frozen simple-rule
+   neutral. ML is allowed only as a later benchmark against the frozen simple-rule
    baseline and time-split data; it is not an excuse to fit the discovery window.
-9. **Register at most one forward long shadow if the discovery gate passes.** Freeze
+
+9. **Register at most one Confirmation shadow if the discovery gate passes.** Freeze
    one primary lookback, eligibility rule, entry quote, stop, bounded exit horizons,
-   cost model, minimum sample/diversity, and no-go rule on a new untouched cohort.
-   Begin with WATCH notifications, then `$50` paper fills; real capital remains behind
-   the normal promotion ladder. If no robust precursor survives, close the family and
-   keep the market-intelligence dashboard without inventing another threshold.
+   cost model, minimum sample/diversity, and no-go rule on a new untouched cohort. The
+   discovery WATCH/paper baseline from item 8 may keep running operationally, but its
+   already-inspected observations never enter this Confirmation result. Real capital
+   remains behind the normal promotion ladder. If no robust precursor survives, stop
+   strategy claims and keep only the independently useful market-intelligence view
+   without inventing another threshold.
 10. **Let existing contracts mature without new tuning PRs.** Run the registered
     OI-growth, source-lead, liquidity, banded-price-extent, and pump-short checkpoint
     reports at their already frozen gates. The `2026-08-31` decision remains: promote
@@ -382,6 +543,43 @@ front.
        duplicates without eliminating the rare crash-window repeat. No shared Python/Go
        Telegram SDK, no bot token handed to every service, and no single big-bang
        migration PR.
+12. **Evolve the web UI as a bounded support lane, without displacing profit work.**
+    The current dashboard is functional but its page-level spacing, tables, loading
+    states, navigation, and token links have diverged as domains were added. The
+    reviewed target architecture and delivery order live in
+    `docs/architecture/web-ui-evolution-v1.md`: formalize the shared design contract,
+    make Research readiness snapshot-backed and progressively rendered, make
+    `/tokens/:base` the canonical asset workspace, add a typed event timeline and
+    chart markers, then introduce the responsive sidebar shell. Keep React, Vite,
+    Tailwind, TanStack Query, and Lightweight Charts; evaluate one accessible headless
+    primitive layer without a big-bang library migration. Run at most one UI PR at a
+    time, preferably during canary and evidence-collection waits. Capture correctness,
+    strategy evidence, execution safety, and non-recoverable data collection always
+    take precedence. Token analysis and event visualization rank above cosmetic polish.
+13. **Audit architecture and documentation fitness before structural rewrites.** The
+    repository contains valid historical decisions alongside current-state drift: old
+    ADRs describe AWS hosting, self-hosted CI, Redux/RTK, and Go execution, while the
+    deployed system uses Hetzner, GitHub-hosted CI, TanStack Query, and Python
+    execution. Treat this as a decision audit, not automatic authorization to rewrite
+    working services.
+
+    The first bounded audit PR must inventory every service and shared datastore with:
+    current responsibility, owner of writes, latency and availability needs, measured
+    CPU/memory/storage cost, failure blast radius, current language/framework, known
+    limits, and an explicit `keep`, `adjust`, or `replace` verdict. A planned stack that
+    differs from implementation is evidence to review the decision, not proof that the
+    implementation is wrong. For example, Python execution should move to Go only if
+    measured latency, concurrency, reliability, deployment, or maintenance costs
+    justify the migration and exceed its order-safety risk.
+
+    Refresh the current architecture and data-flow diagrams, create a documentation
+    index and source-of-truth map, mark obsolete ADRs as superseded rather than editing
+    history, archive retired operational paths, and record concrete revisit triggers.
+    Multi-venue capture, on-chain and wallet graphs, portfolio analytics, tokenized
+    assets, ML workloads, and public-product boundaries belong in target architecture
+    views, clearly separated from what is deployed today. Any code migration found by
+    this audit requires its own prioritized PR and competes under the delivery
+    portfolio limits above.
 
 Before item 5 is registered as a new experiment family, update the discovery ledger
 and count all families introduced since `2026-07-29` against the ten-family budget
