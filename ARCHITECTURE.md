@@ -1,6 +1,15 @@
 # Architecture
 
-> High-level system design. Updated as decisions are made.
+Status: partially current reference.
+
+Last reviewed: 2026-08-13.
+
+The core service descriptions remain useful, but this file does not yet contain the
+complete momentum-capture and notification-outbox topology. Its bounded order-flow
+section is historical and retired. Until `docs/current-architecture-refresh-v1`
+regenerates the diagrams from Compose and executable entrypoints, use
+[the documentation source-of-truth map](docs/README.md) and treat the production
+Compose file as authoritative for deployed service boundaries.
 
 ## Overview
 
@@ -106,9 +115,13 @@ market-hotset (Go)
     +----> market:hotset:health (Redis)
 ```
 
-### Bounded order-flow pilot
+### Historical bounded order-flow pilot (retired)
 
-The next data lane is deliberately narrower than a general market-intelligence
+This lane ended with a no-go verdict. The implementation and description remain for
+auditability; they are not an active collection or strategy plan and must not be used
+as the architecture template for momentum capture.
+
+The retired lane was deliberately narrower than a general market-intelligence
 platform:
 
 ```mermaid
@@ -126,12 +139,12 @@ flowchart LR
 Every listed perpetual is observed from the start so pre-pump windows are not
 left-censored. This does not mean writing one dense row per symbol per second. Empty
 buckets are omitted, raw trades do not traverse NATS by default, and unmatched
-non-pump periods are retained only through bounded matched controls. The service is
-behind the optional `orderflow` Compose profile, so a normal deployment does not
-start it. Every persisted record identifies the
+non-pump periods are retained only through bounded matched controls. The service
+remains behind the optional `orderflow` Compose profile for audit and reproduction;
+it is not an active experiment. Every persisted record identifies the
 `bybit_orderflow_pilot_v1` capture contract and distinguishes exchange event time,
-local receive time, and pump `first_observed_at`. Its first production run is a
-bounded production trial, not a trading signal.
+local receive time, and pump `first_observed_at`. Its production run was a bounded
+measurement trial, not a trading signal.
 
 The analytics image mounts the bounded volume read-only. The
 `bybit_orderflow_pilot_report_v1` reader streams one gzip subject file at a time,

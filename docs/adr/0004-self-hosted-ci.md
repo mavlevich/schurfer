@@ -1,7 +1,11 @@
 # ADR-0004: Self-hosted GitHub Actions runner
 
 Date: 2026-05-08
-Status: Accepted
+Status: Superseded
+
+Supersession note: CI currently uses GitHub-hosted `ubuntu-latest` runners. The
+authoritative configuration is [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml).
+The original decision below is retained unchanged as history.
 
 ## Context
 

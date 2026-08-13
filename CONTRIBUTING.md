@@ -63,3 +63,19 @@ chore(ci): add arm64 docker build
 - Go: `gofmt` + `go vet`
 - TypeScript: `prettier` + `eslint`
 - Pre-commit hooks enforce formatting on commit
+
+## Documentation
+
+Use [`docs/README.md`](docs/README.md) to find the maintained source for a fact before
+adding prose. Link to that source instead of copying research rules, configuration
+tables, or runbooks into a second file.
+
+- Update docs in the same PR when behavior, commands, contracts, schemas, or
+  operational procedures change.
+- Label current behavior, target design, historical context, and retired paths
+  explicitly.
+- Supersede accepted ADRs; do not rewrite their original decision and rationale.
+- Keep Mermaid diagrams aligned with real Compose service names and data stores.
+- Never include secrets, private hostnames, account identifiers, or API keys.
+- Documentation-only cleanup stays bounded and does not hide a code or architecture
+  rewrite.
