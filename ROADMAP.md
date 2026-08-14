@@ -99,6 +99,13 @@ never blocks the next profit or evidence step.
    PR while WATCH deployment is reviewed or the repeat canary begins.
 4. `feat/momentum-flow-paper-v1`: add the `$50` exact-venue discovery paper probe and
    bounded outcomes.
+   **Implemented on `feat/momentum-flow-paper-v1`:** the prospective worker claims
+   each frozen WATCH before requesting a non-recoverable order-book quote, records
+   exact Bybit ask/bid VWAPs for a `$50` unlevered long, and resolves the registered
+   5/15/30/60/120/240-minute outcomes with conservative costs. Missing or late quotes,
+   interrupted entry claims, and unresolved exits stay explicit in the denominator.
+   The contract is documented in `docs/research/momentum-flow-paper-v1.md`; this is
+   paper discovery instrumentation only and does not change pump-short execution.
 5. `feat/binance-momentum-adapter-v1`: implement and probe the adapter, disabled by
    default.
 6. `refactor/web-design-contract-v1`: begin real UI implementation with shared tokens,
@@ -107,6 +114,13 @@ never blocks the next profit or evidence step.
    it does not wait for the 2-to-4-week momentum verdict.
 7. `analysis/momentum-flow-episode-study-v1`: link pumps, WATCH decisions, matched
    controls, latency, and outcomes under the registered measurement rules.
+   The first read may run after at least 24 hours of corrected zero-drop capture and
+   must include every measured pump at or above the existing 20% measurement floor,
+   not only traded pump-short episodes. Compare point-in-time flow/OI states at
+   15/30/60/120/240-minute leads with deterministic non-pump controls, then report
+   WATCH recall, false-WATCH rate, lead-time distribution, MFE/MAE, and after-cost
+   paper outcomes. This initial read is descriptive and cannot tune WATCH thresholds
+   on the same window.
 8. `docs/current-architecture-refresh-v1`: update current service and data-flow
    diagrams, supersede stale ADRs, and move retired operational paths out of the
    current architecture view.

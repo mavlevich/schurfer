@@ -314,6 +314,35 @@ services:
         max-size: '10m'
         max-file: '3'
 
+  momentum-paper:
+    profiles: ['momentum-paper']
+    build:
+      context: ../../
+      dockerfile: apps/analytics/Dockerfile
+    container_name: schurfer-momentum-paper
+    entrypoint: ['momentum-flow-paper']
+    environment:
+      DATABASE_URL: postgresql://schurfer:${POSTGRES_PASSWORD}@postgres:5432/schurfer
+      REDIS_ADDR: redis:6379
+      MOMENTUM_PAPER_POLL_INTERVAL: ${MOMENTUM_PAPER_POLL_INTERVAL:-5}
+      MOMENTUM_PAPER_WATCH_BATCH_SIZE: ${MOMENTUM_PAPER_WATCH_BATCH_SIZE:-20}
+      MOMENTUM_PAPER_PROBE_BATCH_SIZE: ${MOMENTUM_PAPER_PROBE_BATCH_SIZE:-100}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    mem_limit: 384m
+    memswap_limit: 384m
+    cpus: 0.75
+    pids_limit: 128
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
   analytics:
     build:
       context: ../../
