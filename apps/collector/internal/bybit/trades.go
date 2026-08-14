@@ -289,7 +289,7 @@ func handleTradePayload(
 			continue
 		}
 		trade := PublicTrade{
-			Symbol:     strings.ToUpper(strings.TrimSpace(item.Symbol)),
+			Symbol:     normalizeSymbol(item.Symbol),
 			TradeID:    strings.TrimSpace(item.TradeID),
 			Side:       side,
 			EventAt:    eventAt,
@@ -309,4 +309,14 @@ func handleTradePayload(
 
 func finitePositiveNumber(value float64) bool {
 	return !math.IsNaN(value) && !math.IsInf(value, 0) && value > 0
+}
+
+// normalizeSymbol is the one, shared definition of how a raw wire symbol
+// becomes PublicTrade.Symbol -- adapter.go's own session-id map (keyed by
+// this same function) relies on it staying identical to what actually
+// lands on PublicTrade, not a second hand-copied transformation that could
+// silently drift from this one (a code-review finding on
+// refactor/momentum-source-contract-v1).
+func normalizeSymbol(symbol string) string {
+	return strings.ToUpper(strings.TrimSpace(symbol))
 }
