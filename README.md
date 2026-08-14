@@ -64,9 +64,9 @@ flowchart LR
 | ------------------ | -------------------------------------------------------------- |
 | Analytics scanner  | Python 3.13, ccxt, psycopg3, redis-py, structlog               |
 | Execution service  | Python 3.13, FastAPI, ccxt, redis-py, structlog                |
-| API gateway        | Go 1.26.5, chi, pgx, go-redis                                  |
-| Bybit WS collector | Go 1.26.5, NATS                                                |
-| Telegram notifier  | Go 1.26.5                                                      |
+| API gateway        | Go 1.26.6, chi, pgx, go-redis                                  |
+| Bybit WS collector | Go 1.26.6, NATS                                                |
+| Telegram notifier  | Go 1.26.6                                                      |
 | Frontend           | React 19, Vite, TypeScript, shadcn/ui, lightweight-charts      |
 | Storage            | PostgreSQL 17 + TimescaleDB, Redis 7                           |
 | Message bus        | NATS 2 with JetStream                                          |
@@ -110,7 +110,7 @@ docs/
 - Docker + Docker Compose
 - Python 3.13 + [uv](https://docs.astral.sh/uv/)
 - Node 22 + [pnpm](https://pnpm.io/)
-- Go 1.26.5
+- Go 1.26.6
 
 ### 1. Install dependencies
 

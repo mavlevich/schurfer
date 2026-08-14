@@ -24,6 +24,11 @@ from sqlalchemy import (
 )
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
+from .momentum_flow_capture_contract import (
+    BYBIT_MOMENTUM_CAPTURE_VERSION,
+    BYBIT_MOMENTUM_EXCHANGE,
+    BYBIT_MOMENTUM_MARKET_TYPE,
+)
 from .outcome_repository import async_database_url
 
 if TYPE_CHECKING:
@@ -31,14 +36,6 @@ if TYPE_CHECKING:
     from typing import Any
 
     from sqlalchemy.sql import Select
-
-# Must track apps/collector/internal/momentumcapture/writer.go's
-# CaptureVersion. Analytics does not depend on the Go module, so this is a
-# deliberate, commented duplication rather than a cross-language import --
-# same convention as oi_growth_filter_report.py's OI_CHANGE_THRESHOLD_PCT.
-BYBIT_MOMENTUM_CAPTURE_VERSION = "v1"
-BYBIT_MOMENTUM_EXCHANGE = "bybit"
-BYBIT_MOMENTUM_MARKET_TYPE = "linear"
 
 _metadata = MetaData()
 _bars_table = Table(

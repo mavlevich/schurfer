@@ -191,6 +191,29 @@ services:
     # final flush) has a chance to finish. Keep these two in sync.
     stop_grace_period: 90s
 
+  momentum-watch:
+    profiles: ['momentum-watch']
+    build:
+      context: ../../
+      dockerfile: apps/analytics/Dockerfile
+    container_name: schurfer-momentum-watch
+    entrypoint: ['momentum-flow-watch']
+    environment:
+      DATABASE_URL: postgresql://schurfer:schurfer_dev@postgres:5432/schurfer
+      REDIS_ADDR: redis:6379
+      MOMENTUM_WATCH_POLL_INTERVAL: ${MOMENTUM_WATCH_POLL_INTERVAL:-10}
+      MOMENTUM_WATCH_BUCKET_BATCH_SIZE: ${MOMENTUM_WATCH_BUCKET_BATCH_SIZE:-5}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    mem_limit: 384m
+    memswap_limit: 384m
+    cpus: 0.75
+    pids_limit: 128
+
   analytics:
     build:
       context: ../../
