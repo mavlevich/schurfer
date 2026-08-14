@@ -1,5 +1,5 @@
-.PHONY: help install install-golangci-lint install-deadcode dev dev-init dev-stop dev-reset dev-logs dev-test migrate measurement-report exchange-coverage-report exchange-source-economics-report source-lead-report source-lead-identity-report gate-identity-candidate-tooling episode-replay virtual-strategy-report virtual-entry-challenger-report virtual-threshold-challenger-report virtual-exit-policy-report virtual-exit-discovery-report virtual-score-challenger-report virtual-banded-price-extent-report candle-anomaly-report derivatives-context-report decision-quality-report derivatives-regime-feasibility-report liquid-taker-report long-horizon-report open-ended-margin-report maker-entry-report pump-magnitude-report orderflow-pilot-report orderflow-endpoint-sensitivity-report exit-liquidity-calibration-report pump-short-failure-attribution-report pump-short-reentry-audit-report oi-growth-filter-report token-history-identity-preflight-report token-history-ohlcv-sample-report token-history-parquet-dataset token-behavior-discovery-report orderflow-start orderflow-stop orderflow-health momentum-capture-start momentum-capture-stop momentum-capture-health momentum-watch-start momentum-watch-stop momentum-watch-health momentum-paper-start momentum-paper-stop momentum-paper-health test lint ci-lint format clean security deadcode check verify verify-docker \
-		prod-deploy prod-runtime-metrics-install prod-runtime-metrics-health prod-research-checkpoints-install prod-research-checkpoints-run prod-research-checkpoints-health prod-measurement-report prod-exchange-coverage-report prod-exchange-source-economics-report prod-source-lead-report prod-source-lead-identity-report prod-gate-identity-candidate-tooling prod-source-lead-capture-health prod-episode-replay prod-virtual-strategy-report prod-virtual-entry-challenger-report prod-virtual-threshold-challenger-report prod-virtual-exit-policy-report prod-virtual-exit-discovery-report prod-virtual-score-challenger-report prod-virtual-banded-price-extent-report prod-candle-anomaly-report prod-derivatives-context-report prod-decision-quality-report prod-derivatives-regime-feasibility-report prod-liquid-taker-report prod-long-horizon-report prod-open-ended-margin-report prod-open-ended-margin-health prod-maker-entry-report prod-pump-magnitude-report prod-orderflow-pilot-report prod-orderflow-endpoint-sensitivity-report prod-exit-liquidity-calibration-report prod-pump-short-failure-attribution-report prod-pump-short-reentry-audit-report prod-oi-growth-filter-report prod-token-history-identity-preflight-report prod-token-history-ohlcv-sample-report prod-token-history-parquet-dataset prod-token-behavior-discovery-report prod-orderflow-start prod-orderflow-stop prod-orderflow-health prod-momentum-capture-start prod-momentum-capture-stop prod-momentum-capture-health prod-momentum-watch-start prod-momentum-watch-stop prod-momentum-watch-health prod-momentum-paper-start prod-momentum-paper-stop prod-momentum-paper-health prod-momentum-canary-checkpoints-install prod-momentum-canary-checkpoints-run prod-momentum-canary-checkpoints-health prod-logs prod-backup prod-restore-local prod-health
+.PHONY: help install install-golangci-lint install-deadcode dev dev-init dev-stop dev-reset dev-logs dev-test migrate measurement-report exchange-coverage-report exchange-source-economics-report source-lead-report source-lead-identity-report gate-identity-candidate-tooling episode-replay virtual-strategy-report virtual-entry-challenger-report virtual-threshold-challenger-report virtual-exit-policy-report virtual-exit-discovery-report virtual-score-challenger-report virtual-banded-price-extent-report candle-anomaly-report derivatives-context-report decision-quality-report derivatives-regime-feasibility-report liquid-taker-report long-horizon-report open-ended-margin-report maker-entry-report pump-magnitude-report orderflow-pilot-report orderflow-endpoint-sensitivity-report exit-liquidity-calibration-report pump-short-failure-attribution-report pump-short-reentry-audit-report oi-growth-filter-report token-history-identity-preflight-report token-history-ohlcv-sample-report token-history-parquet-dataset token-behavior-discovery-report orderflow-start orderflow-stop orderflow-health momentum-capture-start momentum-capture-stop momentum-capture-health momentum-watch-start momentum-watch-stop momentum-watch-health momentum-paper-start momentum-paper-stop momentum-paper-health momentum-flow-episode-study-report test lint ci-lint format clean security deadcode check verify verify-docker \
+		prod-deploy prod-runtime-metrics-install prod-runtime-metrics-health prod-research-checkpoints-install prod-research-checkpoints-run prod-research-checkpoints-health prod-measurement-report prod-exchange-coverage-report prod-exchange-source-economics-report prod-source-lead-report prod-source-lead-identity-report prod-gate-identity-candidate-tooling prod-source-lead-capture-health prod-episode-replay prod-virtual-strategy-report prod-virtual-entry-challenger-report prod-virtual-threshold-challenger-report prod-virtual-exit-policy-report prod-virtual-exit-discovery-report prod-virtual-score-challenger-report prod-virtual-banded-price-extent-report prod-candle-anomaly-report prod-derivatives-context-report prod-decision-quality-report prod-derivatives-regime-feasibility-report prod-liquid-taker-report prod-long-horizon-report prod-open-ended-margin-report prod-open-ended-margin-health prod-maker-entry-report prod-pump-magnitude-report prod-orderflow-pilot-report prod-orderflow-endpoint-sensitivity-report prod-exit-liquidity-calibration-report prod-pump-short-failure-attribution-report prod-pump-short-reentry-audit-report prod-oi-growth-filter-report prod-token-history-identity-preflight-report prod-token-history-ohlcv-sample-report prod-token-history-parquet-dataset prod-token-behavior-discovery-report prod-orderflow-start prod-orderflow-stop prod-orderflow-health prod-momentum-capture-start prod-momentum-capture-stop prod-momentum-capture-health prod-momentum-watch-start prod-momentum-watch-stop prod-momentum-watch-health prod-momentum-paper-start prod-momentum-paper-stop prod-momentum-paper-health prod-momentum-canary-checkpoints-install prod-momentum-canary-checkpoints-run prod-momentum-canary-checkpoints-health prod-momentum-flow-episode-study-report prod-logs prod-backup prod-restore-local prod-health
 
 GOLANGCI_LINT_VERSION = v2.1.6
 DEADCODE_VERSION = v0.48.0
@@ -88,6 +88,7 @@ help:
 	@echo "  make momentum-watch-stop  Stop the prospective momentum WATCH worker"
 	@echo "  make momentum-paper-start  Start the prospective momentum paper-long worker"
 	@echo "  make momentum-paper-health  Show prospective momentum paper-long health"
+	@echo "  make momentum-flow-episode-study-report  Descriptive prerequisites for HYP-014 (ARGS must include --capture-epoch-started-at)"
 	@echo "  make momentum-paper-stop  Stop the prospective momentum paper-long worker"
 	@echo ""
 	@echo "Production (run on server with .env.prod present):"
@@ -152,6 +153,7 @@ help:
 	@echo "  make prod-momentum-canary-checkpoints-install  Install the 24/48/72h canary checkpoint timer"
 	@echo "  make prod-momentum-canary-checkpoints-run      Run one canary checkpoint pass now"
 	@echo "  make prod-momentum-canary-checkpoints-health   Inspect timer status and the checkpoint snapshot"
+	@echo "  make prod-momentum-flow-episode-study-report  Production HYP-014 prerequisites (ARGS must include --capture-epoch-started-at)"
 
 install:
 	@echo "-> Installing Python deps via uv..."
@@ -423,6 +425,17 @@ virtual-banded-price-extent-report:
 oi-growth-filter-report:
 	@DATABASE_URL="$${DATABASE_URL:-postgresql://schurfer:schurfer_dev@localhost:5432/schurfer}" \
 		uv run --package schurfer-analytics oi-growth-filter-report \
+		--code-revision="$$(git rev-parse HEAD)" \
+		$$(test -z "$$(git status --porcelain)" \
+			&& printf '%s' '--no-working-tree-dirty' \
+			|| printf '%s' '--working-tree-dirty') $(ARGS)
+
+# --capture-epoch-started-at has no default: pass ARGS="--capture-epoch-started-at
+# <ISO8601> ..." with the value taken from market:momentumcapture:health or
+# runtime/momentum-canary-checkpoints.json at run time, never a stale copy.
+momentum-flow-episode-study-report:
+	@DATABASE_URL="$${DATABASE_URL:-postgresql://schurfer:schurfer_dev@localhost:5432/schurfer}" \
+		uv run --package schurfer-analytics momentum-flow-episode-study-report \
 		--code-revision="$$(git rev-parse HEAD)" \
 		$$(test -z "$$(git status --porcelain)" \
 			&& printf '%s' '--no-working-tree-dirty' \
@@ -912,6 +925,32 @@ prod-oi-growth-filter-report:
 			&& printf '%s' '--no-working-tree-dirty' \
 			|| printf '%s' '--working-tree-dirty') $(ARGS)
 
+# See the local target's comment: --capture-epoch-started-at is required in ARGS.
+prod-momentum-flow-episode-study-report:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
+	@if test -r /proc/meminfo; then \
+		available_kb=$$(awk '/^MemAvailable:/ {print $$2}' /proc/meminfo); \
+		swap_kb=$$(awk '/^SwapFree:/ {print $$2}' /proc/meminfo); \
+		headroom_kb=$$((available_kb + swap_kb)); \
+		required_available_kb=$$(( $(PROD_REPORT_MIN_AVAILABLE_MB) * 1024 )); \
+		required_kb=$$(( $(PROD_REPORT_MIN_HEADROOM_MB) * 1024 )); \
+		if test "$$available_kb" -lt "$$required_available_kb"; then \
+			echo "ERROR: momentum-flow episode study requires at least $(PROD_REPORT_MIN_AVAILABLE_MB) MiB of MemAvailable; free swap is not a substitute for working RAM."; \
+			echo "Current MemAvailable: $$((available_kb / 1024)) MiB. Run it locally through the DB tunnel or wait for host headroom."; \
+			exit 1; \
+		fi; \
+		if test "$$headroom_kb" -lt "$$required_kb"; then \
+			echo "ERROR: momentum-flow episode study requires at least $(PROD_REPORT_MIN_HEADROOM_MB) MiB of available RAM + free swap."; \
+			echo "Current headroom: $$((headroom_kb / 1024)) MiB. Refusing to risk a host OOM."; \
+			exit 1; \
+		fi; \
+	fi
+	@$(_PROD) run --rm --no-deps --entrypoint momentum-flow-episode-study-report analytics \
+		--code-revision="$$(git rev-parse HEAD)" \
+		$$(test -z "$$(git status --porcelain)" \
+			&& printf '%s' '--no-working-tree-dirty' \
+			|| printf '%s' '--working-tree-dirty') $(ARGS)
+
 prod-token-history-identity-preflight-report:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
 	@$(_PROD) run --rm --no-deps --entrypoint token-history-identity-preflight-report analytics \
@@ -1354,6 +1393,7 @@ verify-docker: verify
 	docker run --rm --entrypoint pump-short-failure-attribution-report schurfer-analytics:ci --help
 	docker run --rm --entrypoint pump-short-reentry-audit-report schurfer-analytics:ci --help
 	docker run --rm --entrypoint oi-growth-filter-report schurfer-analytics:ci --help
+	docker run --rm --entrypoint momentum-flow-episode-study-report schurfer-analytics:ci --help
 	docker run --rm --entrypoint token-history-identity-preflight-report schurfer-analytics:ci --help
 	docker run --rm --entrypoint token-history-ohlcv-sample-report schurfer-analytics:ci --help
 	docker run --rm --entrypoint token-history-parquet-dataset schurfer-analytics:ci --help

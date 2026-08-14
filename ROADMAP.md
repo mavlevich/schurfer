@@ -121,6 +121,18 @@ never blocks the next profit or evidence step.
    WATCH recall, false-WATCH rate, lead-time distribution, MFE/MAE, and after-cost
    paper outcomes. This initial read is descriptive and cannot tune WATCH thresholds
    on the same window.
+   **Implemented on `analysis/momentum-flow-episode-study-v1` (partial --
+   measurement prerequisites for HYP-014, not the full confirmation-track read):**
+   `momentum_flow_episode_study_report.py` covers the coverage funnel, an exact-
+   instrument matched-control selector (nearest calendar distance, +-24h
+   self/other-pump exclusion, liquidity-balance diagnostic -- see
+   `docs/research/momentum-flow-episode-study-v1.md`), the per-lookback event-vs-
+   control descriptive comparison, WATCH recall/lead-time, and liquidity/repeat-
+   token segments. It does not compute false-WATCH rate, MFE/MAE, after-cost
+   economics, capacity, p-value/Holm correction, or a promotion verdict -- those
+   remain a later report once this one shows the prerequisites are satisfiable. No
+   CCXT call, so it runs safely as a `prod-*` target. Does not move HYP-014 out of
+   `parked`; no discovery-ledger row is logged from this report's own output.
 8. `docs/current-architecture-refresh-v1`: update current service and data-flow
    diagrams, supersede stale ADRs, and move retired operational paths out of the
    current architecture view.

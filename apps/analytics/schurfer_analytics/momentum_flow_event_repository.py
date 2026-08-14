@@ -275,6 +275,46 @@ def _select_events(
     return MeasurementCohort(events=tuple(events), exclusion_reasons=exclusion_reasons)
 
 
+def bybit_source_instants_statement(*, since: datetime, until: datetime) -> Select[Any]:
+    """Every Bybit `PumpEventSource` observation timestamp in range, joined
+    to its event's canonical `base` -- deliberately NOT filtered by identity
+    readiness, "first source" status, or primary-cohort membership.
+
+    A matched-control search needs to know about every real pump this
+    instrument had on Bybit, not only the subset that happens to also be a
+    Bybit-first, identity-clean, in-scope primary event (amended after
+    colleague review, before any real run): a pump first observed on another
+    exchange but that also touched Bybit, an identity-excluded row, or an
+    event just outside the primary cohort's own `[dataset_since, until)`
+    window are all still real Bybit-instrument activity that a control point
+    must stay clear of. This is therefore a separate, wider query, not a
+    byproduct of `measurement_events_statement`'s own primary-cohort
+    selection.
+    """
+    events = PumpEvent.__table__
+    sources = PumpEventSource.__table__
+    return (
+        select(events.c.base, sources.c.first_seen_at)
+        .select_from(sources.join(events, events.c.id == sources.c.event_id))
+        .where(
+            sources.c.exchange == "bybit",
+            sources.c.first_seen_at >= since,
+            sources.c.first_seen_at < until,
+        )
+        .order_by(events.c.base, sources.c.first_seen_at)
+    )
+
+
+def group_bybit_source_instants(
+    rows: Sequence[tuple[str, datetime]],
+) -> dict[str, tuple[datetime, ...]]:
+    """Pure grouping, unit-testable without a live database."""
+    grouped: dict[str, list[datetime]] = defaultdict(list)
+    for base, first_seen_at in rows:
+        grouped[base].append(first_seen_at)
+    return {base: tuple(sorted(instants)) for base, instants in grouped.items()}
+
+
 class MomentumFlowEventRepository:
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
@@ -295,6 +335,15 @@ class MomentumFlowEventRepository:
             result = await connection.execute(statement)
             rows = result.all()
         return _select_events(rows)  # type: ignore[arg-type]
+
+    async def load_bybit_source_instants(
+        self, *, since: datetime, until: datetime
+    ) -> dict[str, tuple[datetime, ...]]:
+        statement = bybit_source_instants_statement(since=since, until=until)
+        async with self._engine.connect() as connection:
+            result = await connection.execute(statement)
+            rows = result.all()
+        return group_bybit_source_instants(rows)  # type: ignore[arg-type]
 
     async def close(self) -> None:
         await self._engine.dispose()

@@ -259,8 +259,13 @@ services:
       SOURCE_LEAD_BATCH_SIZE: ${SOURCE_LEAD_BATCH_SIZE:-8}
       SOURCE_LEAD_QUEUE_SIZE: ${SOURCE_LEAD_QUEUE_SIZE:-16}
       SOURCE_LEAD_SHUTDOWN_TIMEOUT_SECONDS: ${SOURCE_LEAD_SHUTDOWN_TIMEOUT_SECONDS:-10}
+      # See the matching prod compose entry: without this, a report's
+      # accepted capture-cohort boundary would not survive past the
+      # disposable `docker compose run --rm` container that wrote it.
+      MOMENTUM_FLOW_EPISODE_STUDY_COHORT_STATE_PATH: /runtime/momentum-flow-episode-study-cohort.json
     volumes:
       - orderflow_data:/data/orderflow:ro
+      - ../../runtime:/runtime
     depends_on:
       postgres:
         condition: service_healthy
