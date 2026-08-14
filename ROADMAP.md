@@ -515,6 +515,28 @@ front.
    does not bypass item 6: any Binance connection remains blocked until a corrected
    Bybit canary passes.
 
+   **Capability preflight (`analysis/binance-momentum-capability-preflight-v1`,
+   2026-08-14; still no venue enabled):** live-verified REST findings recorded in
+   `docs/research/binance-momentum-capability-preflight-v1.md`. Refines the matrix's
+   OI-value entry: `openInterestHist` does carry a native `sumOpenInterestValue`, but
+   only at 5-minute-or-coarser granularity, not point-in-time comparable to Bybit's
+   ticker-pushed value. Confirms Binance's universe filter is structurally cleaner
+   (`contractType=TRADIFI_PERPETUAL` cleanly tags tokenized-stock/commodity
+   perpetuals; `underlyingType=INDEX` tags the 2 non-single-asset instruments) but
+   universe churn is real (127 of 865 raw symbols were `SETTLING` at fetch time).
+   Live WebSocket throughput, timestamp lag, and reconnect behavior remain
+   unmeasured -- deferred to a bounded probe with real outbound WS connectivity, not
+   attempted from this investigation's own sandboxed environment. Also measured,
+   via direct SSH check, that the host now reports 7.6 GiB total RAM / 4 CPUs
+   (`free -h`, `nproc`) -- up from the original 4 GB host this section's own gate was
+   written against. Note this is 7.6 GiB, not a full 8 GiB: typical for a
+   nominally-marketed "8 GB" cloud plan once `free -h`'s binary GiB and any
+   hypervisor-reserved memory are accounted for, but not independently confirmed
+   against the actual Hetzner plan spec here. Whether this counts as clearing the "at
+   least 8 GB" gate as originally written is a judgment call for whoever owns that
+   gate, not asserted by this preflight -- and clearing it would not by itself
+   authorize item 6's Bybit checkpoint gate, which is unrelated and still open.
+
 8. **Launch a prospective WATCH and paper baseline early; wait 2-4 UTC weeks for a
    verdict, not for the first measurement deployment.** After the fixed 72-hour
    calibration read and the capture-integrity fixes, freeze one broad
