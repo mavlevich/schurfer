@@ -386,8 +386,21 @@ services:
       # Optional: raises gate-identity-candidate-tooling's CoinGecko rate limit
       # ceiling. Blank still works, just at the anonymous public tier's limit.
       COINGECKO_API_KEY: ${COINGECKO_API_KEY:-}
+      # Where momentum-flow-episode-study-report persists its ONE-TIME-
+      # accepted capture-cohort boundary (see momentum_flow_cohort_
+      # acceptance.py). Every `docker compose run --rm --entrypoint <report>
+      # analytics ...` invocation (every prod-*-report Makefile target) is a
+      # fresh, disposable container -- without this mounted below at
+      # /runtime, a file written inside the container would vanish the
+      # moment it exits, defeating the whole point of freezing the boundary
+      # across runs.
+      MOMENTUM_FLOW_EPISODE_STUDY_COHORT_STATE_PATH: /runtime/momentum-flow-episode-study-cohort.json
     volumes:
       - orderflow_data:/data/orderflow:ro
+      # Read-write (unlike api-gateway's own :ro mount of the same host
+      # directory below): this service is the one that WRITES the accepted
+      # cohort-boundary record; api-gateway only ever reads runtime state.
+      - ../../runtime:/runtime
     depends_on:
       postgres:
         condition: service_healthy

@@ -7,6 +7,8 @@ from schurfer_analytics.momentum_flow_event_repository import (
     EXCLUSION_NO_IDENTITY_READY_EARLIEST_SOURCE,
     MeasurementEvent,
     _select_events,
+    bybit_source_instants_statement,
+    group_bybit_source_instants,
     measurement_events_statement,
 )
 
@@ -204,3 +206,32 @@ def test_measurement_events_statement_compiles_with_and_without_since() -> None:
     # must not be pulled in just because its parent event started earlier.
     assert compiled_with_since.count("first_seen_at") >= 2
     assert compiled_without_since.count("first_seen_at") >= 2
+
+
+def test_bybit_source_instants_statement_scopes_to_bybit_exchange_only() -> None:
+    until = T0 + timedelta(days=1)
+    compiled = str(
+        bybit_source_instants_statement(since=T0, until=until).compile(
+            compile_kwargs={"literal_binds": True}
+        )
+    )
+    assert "pump_event_sources" in compiled
+    assert "pump_events" in compiled
+    assert "'bybit'" in compiled
+
+
+def test_group_bybit_source_instants_groups_and_sorts_per_base() -> None:
+    rows = [
+        ("ERA", T0 + timedelta(hours=2)),
+        ("ERA", T0),
+        ("EDGE", T0 + timedelta(hours=1)),
+    ]
+
+    grouped = group_bybit_source_instants(rows)
+
+    assert grouped["ERA"] == (T0, T0 + timedelta(hours=2))
+    assert grouped["EDGE"] == (T0 + timedelta(hours=1),)
+
+
+def test_group_bybit_source_instants_is_empty_for_no_rows() -> None:
+    assert group_bybit_source_instants([]) == {}
