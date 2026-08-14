@@ -18,6 +18,7 @@ dependencies = [
 [project.scripts]
 pump-scanner = "schurfer_analytics.main:main"
 outcome-resolver = "schurfer_analytics.outcome_worker:main"
+momentum-flow-watch = "schurfer_analytics.momentum_flow_watch_worker:main"
 measurement-report = "schurfer_analytics.measurement_report:main"
 exchange-coverage-report = "schurfer_analytics.exchange_coverage_report:main"
 exchange-source-economics-report = "schurfer_analytics.exchange_source_economics_report:main"

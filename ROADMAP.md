@@ -88,6 +88,12 @@ never blocks the next profit or evidence step.
    backpressure, and make the repeat safe.
 2. `feat/momentum-flow-watch-v1`: freeze and deploy the prospective evaluator and
    timing audit.
+   **Implemented on `feat/momentum-flow-watch-v1`:** the numerical contract is documented in
+   `docs/research/momentum-flow-watch-v1.md`. It evaluates persisted complete bars in
+   a separate worker, registers its first-start cohort boundary and contract hash in
+   Postgres, and records every WATCH, signal rejection, quality rejection, and state
+   suppression with point-in-time features and latency timestamps. It does not alter
+   the pump scanner or start paper execution.
 3. `docs/documentation-system-v1`: inventory documentation, add its source-of-truth
    map, classify drift, and define the bounded refresh PRs. This is the first support
    PR while WATCH deployment is reviewed or the repeat canary begins.

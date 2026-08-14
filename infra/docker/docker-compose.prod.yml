@@ -286,6 +286,34 @@ services:
         max-size: '10m'
         max-file: '3'
 
+  momentum-watch:
+    profiles: ['momentum-watch']
+    build:
+      context: ../../
+      dockerfile: apps/analytics/Dockerfile
+    container_name: schurfer-momentum-watch
+    entrypoint: ['momentum-flow-watch']
+    environment:
+      DATABASE_URL: postgresql://schurfer:${POSTGRES_PASSWORD}@postgres:5432/schurfer
+      REDIS_ADDR: redis:6379
+      MOMENTUM_WATCH_POLL_INTERVAL: ${MOMENTUM_WATCH_POLL_INTERVAL:-10}
+      MOMENTUM_WATCH_BUCKET_BATCH_SIZE: ${MOMENTUM_WATCH_BUCKET_BATCH_SIZE:-5}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    mem_limit: 384m
+    memswap_limit: 384m
+    cpus: 0.75
+    pids_limit: 128
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
   analytics:
     build:
       context: ../../
