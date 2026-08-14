@@ -55,15 +55,15 @@ flowchart LR
 
 ## Reviewed matrix
 
-| Venue              | Intended role          | Universe                               | Trades                                            | OI amount                       | OI value              | Liquidations                                                             | Lifecycle                                    |
-| ------------------ | ---------------------- | -------------------------------------- | ------------------------------------------------- | ------------------------------- | --------------------- | ------------------------------------------------------------------------ | -------------------------------------------- |
-| Bybit linear USDT  | confirmation/execution | implemented crypto-perpetual allowlist | implemented individual taker-side trades          | implemented native WS           | implemented native WS | officially documented, not implemented                                   | implemented session IDs and per-shard events |
-| Binance USD-M      | confirmation/execution | officially documented                  | officially documented `aggTrade`, not implemented | officially documented REST poll | probe required        | officially documented but censored to the latest event per symbol/second | probe required                               |
-| OKX linear USDT    | confirmation/execution | not audited                            | not audited                                       | not audited                     | not audited           | not audited                                                              | not audited                                  |
-| Bitget linear USDT | confirmation/execution | not audited                            | not audited                                       | not audited                     | not audited           | not audited                                                              | not audited                                  |
-| Gate linear USDT   | discovery source       | not audited                            | not audited                                       | not audited                     | not audited           | not audited                                                              | not audited                                  |
-| MEXC linear USDT   | discovery source       | not audited                            | not audited                                       | not audited                     | not audited           | not audited                                                              | not audited                                  |
-| XT linear USDT     | discovery source       | not audited                            | not audited                                       | not audited                     | not audited           | not audited                                                              | not audited                                  |
+| Venue              | Intended role          | Universe                               | Trades                                            | OI amount                       | OI value                                                  | Liquidations                                                             | Lifecycle                                    |
+| ------------------ | ---------------------- | -------------------------------------- | ------------------------------------------------- | ------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------ | -------------------------------------------- |
+| Bybit linear USDT  | confirmation/execution | implemented crypto-perpetual allowlist | implemented individual taker-side trades          | implemented native WS           | implemented native WS                                     | officially documented, not implemented                                   | implemented session IDs and per-shard events |
+| Binance USD-M      | confirmation/execution | officially documented                  | officially documented `aggTrade`, not implemented | officially documented REST poll | probe required (coarse native value found, see preflight) | officially documented but censored to the latest event per symbol/second | probe required                               |
+| OKX linear USDT    | confirmation/execution | not audited                            | not audited                                       | not audited                     | not audited                                               | not audited                                                              | not audited                                  |
+| Bitget linear USDT | confirmation/execution | not audited                            | not audited                                       | not audited                     | not audited                                               | not audited                                                              | not audited                                  |
+| Gate linear USDT   | discovery source       | not audited                            | not audited                                       | not audited                     | not audited                                               | not audited                                                              | not audited                                  |
+| MEXC linear USDT   | discovery source       | not audited                            | not audited                                       | not audited                     | not audited                                               | not audited                                                              | not audited                                  |
+| XT linear USDT     | discovery source       | not audited                            | not audited                                       | not audited                     | not audited                                               | not audited                                                              | not audited                                  |
 
 ## Findings that constrain the Binance adapter
 
@@ -72,11 +72,17 @@ flowchart LR
    individual public trade. Total taker notional may remain useful, but top-K and
    large-trade histogram comparisons are prohibited until a contract explicitly
    resolves this granularity mismatch.
-2. The reviewed current-open-interest endpoint provides native contract quantity and
-   a response timestamp, but does not establish a native current OI-value field.
-   `openInterest * current price` is not an acceptable silent substitute: it would
-   need a frozen price source, timestamp alignment, unit conversion, and derived-value
-   provenance.
+2. The reviewed current-open-interest endpoint (`GET /fapi/v1/openInterest`) provides
+   native contract quantity and a near-real-time response timestamp, but no value
+   field. `openInterest * current price` is not an acceptable silent substitute: it
+   would need a frozen price source, timestamp alignment, unit conversion, and
+   derived-value provenance. Amended by the capability preflight (docs/research/
+   binance-momentum-capability-preflight-v1.md, 2026-08-14): a SEPARATE endpoint,
+   `GET /futures/data/openInterestHist`, does carry a native `sumOpenInterestValue`,
+   live-verified -- but only at 5-minute-or-coarser bucket granularity plus several
+   minutes of publication lag, not point-in-time comparable to Bybit's ticker-pushed
+   value. Treat this as a real but structurally different data source, not as
+   resolving the point-in-time gap.
 3. Binance's all-market force-order stream emits at most the latest liquidation per
    symbol per 1000 ms. It is a censored signal, not a complete liquidation tape.
 4. Official documentation is necessary but insufficient. Before capture, the adapter
@@ -108,6 +114,7 @@ Binance USD-M:
 
 - [WebSocket market streams](https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/ws-streams/market)
 - [REST market data, exchange information, and current open interest](https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/rest-api/market-data)
+- [Capability preflight v1](binance-momentum-capability-preflight-v1.md) (2026-08-14): live-verified universe composition, the OI-value refinement above, rate limits, and a resource estimate grounded in the running Bybit adapter's own numbers.
 
 ## Gate to the next PR
 

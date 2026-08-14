@@ -170,13 +170,28 @@ func V1() Matrix {
 					Constraints:       []string{"poll cadence, rate-limit budget, and stale-read behavior require a bounded probe"},
 				},
 				OIValue: Capability{
-					Status:       StatusProbeRequired,
-					Transport:    TransportUnknown,
-					Semantics:    "no native current OI-value field is established by the reviewed openInterest endpoint",
+					Status:    StatusProbeRequired,
+					Transport: TransportRESTPoll,
+					// Amended after the capability preflight (docs/research/
+					// binance-momentum-capability-preflight-v1.md), before any
+					// adapter: GET /fapi/v1/openInterest has no value field, but
+					// GET /futures/data/openInterestHist genuinely does
+					// (sumOpenInterestValue), live-verified against real
+					// responses. Status stays probe_required -- a documented,
+					// live-REST-verified field is still not an adapter and still
+					// needs its own fixtures and bounded probe -- but the prior
+					// "no native current OI-value field" phrasing overclaimed:
+					// the field exists, just not at point-in-time freshness.
+					// Same catalog page as OIAmount's own evidence URL: Binance
+					// documents GET /fapi/v1/openInterest and GET /futures/data/
+					// openInterestHist on this one page, not two separate pages --
+					// there is no distinct URL to cite for openInterestHist alone.
+					Semantics:    "sumOpenInterestValue on the openInterestHist stats endpoint is native (not derived), but only at 5-minute-or-coarser bucket granularity with several minutes of additional staleness on top -- not point-in-time comparable to Bybit's ticker-pushed openInterestValue",
 					EvidenceURLs: []string{binanceMarketREST},
 					Constraints: []string{
-						"do not silently substitute openInterest multiplied by an unmatched current price",
-						"a derived value requires an explicit price source, timestamp-alignment rule, and provenance",
+						"do not treat openInterestHist's sumOpenInterestValue as point-in-time; it carries its own bucket-width plus publication lag",
+						"do not silently substitute openInterest multiplied by an unmatched current price as an alternative derivation",
+						"a decision to capture this coarse value at all (vs. leaving OI value unsupported for v1) is a design choice for the source-contract PR, not settled by this preflight",
 					},
 				},
 				Liquidations: Capability{

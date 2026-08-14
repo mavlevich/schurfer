@@ -39,6 +39,28 @@ func TestV1DoesNotEquateDocumentedBinanceWithImplementedBybit(t *testing.T) {
 	}
 }
 
+func TestV1RecordsBinanceOIValueAsCoarseNotAbsent(t *testing.T) {
+	// Regression for the capability preflight (docs/research/binance-
+	// momentum-capability-preflight-v1.md): the earlier "no native current
+	// OI-value field" phrasing overclaimed. openInterestHist genuinely
+	// carries sumOpenInterestValue, live-verified; the real constraint is
+	// coarse (5-minute-or-worse) granularity, not absence.
+	binance, _ := V1().Venue("binance", "linear_usdt_perpetual")
+	if binance.OIValue.Transport != TransportRESTPoll {
+		t.Fatalf("Binance OI-value transport = %q, want rest_poll now that a live source is known", binance.OIValue.Transport)
+	}
+	if strings.Contains(binance.OIValue.Semantics, "no native") {
+		t.Fatalf("Binance OI-value semantics still claim absence: %q", binance.OIValue.Semantics)
+	}
+	if !strings.Contains(binance.OIValue.Semantics, "openInterestHist") {
+		t.Fatalf("Binance OI-value semantics do not cite openInterestHist: %q", binance.OIValue.Semantics)
+	}
+	constraints := strings.Join(binance.OIValue.Constraints, " ")
+	if !strings.Contains(constraints, "point-in-time") {
+		t.Fatalf("Binance OI-value constraints drop the staleness caveat: %#v", binance.OIValue.Constraints)
+	}
+}
+
 func TestV1RecordsStrictBybitCryptoPerpetualUniverse(t *testing.T) {
 	bybit, _ := V1().Venue("bybit", "linear_usdt_perpetual")
 	if !strings.Contains(bybit.Universe.Semantics, "LinearPerpetual") {
