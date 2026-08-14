@@ -42,16 +42,28 @@ reason.
 ```mermaid
 flowchart LR
     B["Bybit adapter"] --> T["TradeSource"]
-    B --> O["OpenInterestSource"]
+    B --> K["TickerSource"]
     N["Binance adapter"] --> T
-    N --> O
+    N --> O["OpenInterestSource"]
     N --> L["LiquidationSource"]
     T --> C["Canonical momentum events"]
+    K --> C
     O --> C
     L --> C
     C --> A["Shared 1m aggregation"]
     A --> S["Versioned storage"]
 ```
+
+Amended by `refactor/momentum-source-contract-v1` (2026-08-14): the original
+diagram routed Bybit through its own `OpenInterestSource` edge, on equal
+footing with Binance's. Building the actual adapter found this was not
+right -- Bybit's OI arrives embedded in the same ticker push `TickerSource`
+already streams, so a second, independent `OpenInterestSource` subscription
+would redundantly double Bybit's own WebSocket connection count for data
+already being received once. Bybit routes OI through `TickerSource`
+instead (see `bybit.OpenInterestFromTicker`, docs/research/momentum-
+source-contract-v1.md); Binance keeps its own direct `OpenInterestSource`
+edge, since its OI genuinely is a separate REST poll.
 
 ## Reviewed matrix
 

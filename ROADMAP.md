@@ -537,6 +537,25 @@ front.
    gate, not asserted by this preflight -- and clearing it would not by itself
    authorize item 6's Bybit checkpoint gate, which is unrelated and still open.
 
+   **Source-contract refactor (`refactor/momentum-source-contract-v1`, 2026-08-14;
+   still no behavior change to the running collector):** the new `momentumsource`
+   package (`apps/collector/internal/momentumsource`) defines `UniverseSource`,
+   `TradeSource`, `TickerSource`, `OpenInterestSource`, and the shared event
+   envelope. The `bybit` package's new `Adapter` implements them by wrapping the
+   existing, UNMODIFIED `bybit.Source` -- `cmd/momentumcapture/main.go` still
+   talks to `bybit.Source` directly and does not import either new package.
+   Building the adapter found the
+   capability matrix's own diagram was wrong to show Bybit routing OI through its
+   own `OpenInterestSource`: Bybit's OI arrives embedded in the same ticker push
+   `TickerSource` already streams, so a second subscription would double Bybit's
+   own WebSocket connection count for data already received once. `Adapter`
+   therefore does not implement `OpenInterestSource`; `OpenInterestFromTicker`
+   derives the same reading from an already-consumed ticker update instead. See
+   docs/research/momentum-source-contract-v1.md. Rewiring the live binary onto
+   these interfaces is deliberately deferred to its own reviewed step, not folded
+   into this PR: the currently-running instance is the corrected canary this
+   section's own item 6 is actively measuring toward its 24/48/72-hour checkpoint.
+
 8. **Launch a prospective WATCH and paper baseline early; wait 2-4 UTC weeks for a
    verdict, not for the first measurement deployment.** After the fixed 72-hour
    calibration read and the capture-integrity fixes, freeze one broad
