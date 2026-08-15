@@ -2512,3 +2512,15 @@ net performance suitable for tax or risk accounting.
   container-start-order by default, CPU% as an opt-in view) or add an
   explicit sort-by control in the UI (name, CPU, memory) instead of one
   fixed, constantly-reshuffling order.
+- `momentum-capture`'s own container/service name carries no exchange
+  suffix (it predates Binance, back when Bybit was the only venue),
+  unlike every venue added since (`momentum-capture-binance`,
+  `momentum-watch-binance`) -- confusing on the status page next to a
+  same-prefix, explicitly-suffixed sibling. Status page display now
+  relabels it to `momentum-capture (bybit)` (display-only, see
+  `StatusPage.tsx`'s own `containerDisplayName`), but the underlying
+  container/service/Makefile-target/health-key name is still bare
+  `momentum-capture` everywhere else. A real rename means rebuilding and
+  restarting the live Bybit canary process purely for cosmetics -- do it
+  at a deliberate capture-epoch boundary alongside some other change that
+  already needs one, not as its own standalone restart.

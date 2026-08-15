@@ -227,6 +227,23 @@ function formatUptime(seconds: number): string {
   return days > 0 ? `${days}d ${hours}h` : `${hours}h`;
 }
 
+// containerDisplayName is a display-only relabel, not a rename: the
+// underlying container/service name (docker-compose, Makefile targets,
+// the canary checkpoint script, Redis health keys) stays "momentum-
+// capture" -- Bybit was the only venue when it was named, so it carries
+// no exchange suffix, unlike every venue added since ("momentum-capture-
+// binance", "momentum-watch-binance"). Renaming the actual container
+// would mean rebuilding and restarting the live Bybit canary process for
+// a purely cosmetic fix (see ROADMAP.md's own tech-debt note on this);
+// this map only clarifies what the operator is looking at.
+const CONTAINER_DISPLAY_NAMES: Record<string, string> = {
+  'momentum-capture': 'momentum-capture (bybit)',
+};
+
+function containerDisplayName(strippedName: string): string {
+  return CONTAINER_DISPLAY_NAMES[strippedName] ?? strippedName;
+}
+
 function LoadBar({
   label,
   value,
@@ -830,7 +847,7 @@ export function StatusPage() {
                       return (
                         <tr key={container.name} className="border-b last:border-0">
                           <td className="py-2 font-mono">
-                            {container.name.replace(/^schurfer-/, '')}
+                            {containerDisplayName(container.name.replace(/^schurfer-/, ''))}
                           </td>
                           <td className="py-2 text-right font-mono">
                             {container.cpu_percent.toFixed(1)}%
