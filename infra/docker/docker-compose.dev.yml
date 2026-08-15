@@ -246,6 +246,35 @@ services:
     cpus: 0.75
     pids_limit: 128
 
+  # Disabled by default: Binance's own WATCH shadow (ROADMAP phase 3),
+  # same frozen v1 logic and thresholds as momentum-watch above, reading
+  # from Binance's own captured bars once feat/binance-momentum-capture-v1
+  # is activated. Its own watch_version keeps its worker lock, _runs row,
+  # and Redis health key completely isolated from the Bybit worker -- see
+  # docs/research/binance-momentum-watch-v1.md.
+  momentum-watch-binance:
+    profiles: ['momentum-watch-binance']
+    build:
+      context: ../../
+      dockerfile: apps/analytics/Dockerfile
+    container_name: schurfer-momentum-watch-binance
+    entrypoint: ['momentum-flow-watch-binance']
+    environment:
+      DATABASE_URL: postgresql://schurfer:schurfer_dev@postgres:5432/schurfer
+      REDIS_ADDR: redis:6379
+      MOMENTUM_WATCH_POLL_INTERVAL: ${MOMENTUM_WATCH_POLL_INTERVAL:-10}
+      MOMENTUM_WATCH_BUCKET_BATCH_SIZE: ${MOMENTUM_WATCH_BUCKET_BATCH_SIZE:-5}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    mem_limit: 384m
+    memswap_limit: 384m
+    cpus: 0.75
+    pids_limit: 128
+
   momentum-paper:
     profiles: ['momentum-paper']
     build:

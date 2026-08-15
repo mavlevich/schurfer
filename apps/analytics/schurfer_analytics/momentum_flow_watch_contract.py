@@ -111,3 +111,21 @@ FROZEN_WATCH_CONTRACT = WatchContract()
 WATCH_CONTRACT_SHA256 = "f112c05005e8eb5c81670df09beedb741351bce55c307019aa347552c5dd6f97"
 if FROZEN_WATCH_CONTRACT.sha256_hex() != WATCH_CONTRACT_SHA256:
     raise RuntimeError("momentum WATCH v1 contract changed without an explicit version decision")
+
+# Binance's own WATCH instance (ROADMAP phase 3: "Binance WATCH shadow,
+# frozen v1 logic, own version hash"). Every threshold below, including
+# min_cross_section_size, is reused verbatim from FROZEN_WATCH_CONTRACT;
+# only the two identity fields differ. Full rationale for why
+# watch_version specifically (not just source_exchange) has to be a
+# distinct string, and why min_cross_section_size stays untouched despite
+# Binance's smaller universe, is in
+# docs/research/binance-momentum-watch-v1.md.
+BINANCE_WATCH_CONTRACT = WatchContract(
+    watch_version="momentum_flow_watch_v1_binance",
+    source_exchange="binance",
+)
+BINANCE_WATCH_CONTRACT_SHA256 = "f47199562827b58c7aa31ad032d80c2eaf7d43f7aef3979ca723fa3b8d5f1aa1"
+if BINANCE_WATCH_CONTRACT.sha256_hex() != BINANCE_WATCH_CONTRACT_SHA256:
+    raise RuntimeError(
+        "momentum WATCH v1 binance contract changed without an explicit version decision"
+    )

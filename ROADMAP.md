@@ -660,6 +660,26 @@ front.
    neutral. ML is allowed only as a later benchmark against the frozen simple-rule
    baseline and time-split data; it is not an excuse to fit the discovery window.
 
+   **Binance WATCH shadow (`feat/binance-momentum-watch-v1`, 2026-08-15;
+   implemented and unit-tested, Compose profile disabled by default):** a
+   second WATCH worker running the exact same frozen `momentum_flow_watch_v1`
+   thresholds, scoped to Binance's own captured bars via its own contract
+   identity (`BINANCE_WATCH_CONTRACT`, distinct `watch_version`, so its own
+   Postgres advisory lock, `_runs` row, and Redis health key never collide
+   with the live Bybit worker's). Every threshold reused byte-identical from
+   the live contract, enforced by a test -- no retuning `min_cross_section_size`
+   for Binance's smaller universe; if that turns out to be a real limiting
+   factor, real data should show it before the bar gets loosened.
+   `run_watch_worker` gained `contract`/
+   `contract_sha256` parameters (defaulting to the live Bybit contract, zero
+   behavior change for the existing entrypoint) rather than being forked --
+   `evaluate_bucket` and the repository layer were already contract-
+   parameterized, only the outer orchestration and the Redis health key were
+   hardcoded to one venue. See docs/research/binance-momentum-watch-v1.md.
+   **Not activated by this PR: this section's own Compose profile stays off
+   until `feat/binance-momentum-capture-v1`'s own activation gates pass and
+   Binance bars actually exist to watch.**
+
 9. **Register at most one Confirmation shadow if the discovery gate passes.** Freeze
    one primary lookback, eligibility rule, entry quote, stop, bounded exit horizons,
    cost model, minimum sample/diversity, and no-go rule on a new untouched cohort. The
