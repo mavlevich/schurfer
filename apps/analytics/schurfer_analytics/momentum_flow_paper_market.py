@@ -165,7 +165,18 @@ def summarize_book(
     )
 
 
-class BybitPaperMarket:
+class CcxtPaperMarket:
+    """Exact-venue order-book quote source for the paper worker. Named
+    generically (a code-review finding: this was originally
+    BybitPaperMarket, which was misleading once Binance started using it
+    too via EXCHANGE_FACTORIES[contract.source_exchange] -- the class
+    itself was never Bybit-specific, only its name was; every field this
+    reads (market["id"], market["swap"], market["linear"],
+    market["settle"], market["contractSize"]) is a ccxt-unified field, not
+    a Bybit quirk). Which venue this actually talks to is entirely
+    determined by the ccxt exchange instance passed in, not by anything
+    in this class."""
+
     def __init__(self, exchange: Any, contract: PaperContract) -> None:
         self._exchange = exchange
         self._contract = contract

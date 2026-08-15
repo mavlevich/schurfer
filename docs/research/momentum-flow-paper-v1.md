@@ -59,9 +59,13 @@ make prod-momentum-paper-start
 make prod-momentum-paper-health
 ```
 
-Health is published at `market:momentumpaper:health`. The worker has its own Compose
-profile and resource limit, so it is not part of the normal production deployment.
-Stopping it does not stop capture, WATCH evaluation, the pump scanner, or execution.
+Health is published at `market:momentumpaper:health:<paper_version>` (scoped per
+contract since `feat/binance-momentum-paper-v1`, so a second venue's own worker can
+never overwrite this one's snapshot -- see `momentum_flow_paper_worker.health_key`'s
+own doc comment), `market:momentumpaper:health:momentum_flow_paper_v1` for the live
+Bybit worker specifically. The worker has its own Compose profile and resource limit,
+so it is not part of the normal production deployment. Stopping it does not stop
+capture, WATCH evaluation, the pump scanner, or execution.
 
 ## Interpretation
 

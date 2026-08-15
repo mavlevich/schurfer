@@ -15,6 +15,8 @@ from hashlib import sha256
 from schurfer_performance import COST_MODEL_VERSION
 
 from .momentum_flow_watch_contract import (
+    BINANCE_WATCH_CONTRACT,
+    BINANCE_WATCH_CONTRACT_SHA256,
     MARKET_TYPE,
     SOURCE_EXCHANGE,
     WATCH_CONTRACT_SHA256,
@@ -105,3 +107,27 @@ FROZEN_PAPER_CONTRACT = PaperContract()
 PAPER_CONTRACT_SHA256 = "d2e1c4cb81c9ac7e4100bfbef677f1e3d14b9f6e5fcb04644f6bb6ccca07c945"
 if FROZEN_PAPER_CONTRACT.sha256_hex() != PAPER_CONTRACT_SHA256:
     raise RuntimeError("momentum paper v1 contract changed without an explicit version decision")
+
+# Binance's own paper instance -- same Foundation-then-Resolution venue-
+# expansion pattern as momentum_flow_watch_contract.BINANCE_WATCH_CONTRACT.
+# Every threshold below (position size, stop, hold window, outcome
+# horizons, timing/latency bounds, cost model) is reused verbatim from
+# FROZEN_PAPER_CONTRACT; only the identity fields differ: paper_version
+# (its own distinct string, so acquire_worker_lock/register_run/the Redis
+# health key never collide with the live Bybit worker's -- see
+# momentum_flow_paper_worker.health_key's own doc comment), and
+# watch_version/watch_contract_sha256, which point at
+# BINANCE_WATCH_CONTRACT instead of the live Bybit WatchContract so this
+# worker only ever claims WATCH decisions its own Binance WATCH shadow
+# actually produced.
+BINANCE_PAPER_CONTRACT = PaperContract(
+    paper_version="momentum_flow_paper_v1_binance",
+    watch_version=BINANCE_WATCH_CONTRACT.watch_version,
+    watch_contract_sha256=BINANCE_WATCH_CONTRACT_SHA256,
+    source_exchange="binance",
+)
+BINANCE_PAPER_CONTRACT_SHA256 = "c862fdfa6d2748a899cd813b0202960eb745a94da5881e7597361c07b0e4767a"
+if BINANCE_PAPER_CONTRACT.sha256_hex() != BINANCE_PAPER_CONTRACT_SHA256:
+    raise RuntimeError(
+        "momentum paper v1 binance contract changed without an explicit version decision"
+    )
