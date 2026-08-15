@@ -201,7 +201,10 @@ def _install_fake_redis(monkeypatch: pytest.MonkeyPatch) -> _FakeRedis:
 
     class _FakeRedisFactory:
         @staticmethod
-        def from_url(url: str, decode_responses: bool = True) -> _FakeRedis:
+        def from_url(url: str, **_kwargs: object) -> _FakeRedis:
+            # **_kwargs absorbs decode_responses (and anything else the real
+            # redis.asyncio.Redis.from_url accepts) without vulture flagging
+            # an intentionally-unused named parameter.
             return fake
 
     monkeypatch.setattr(momentum_flow_watch_worker, "Redis", _FakeRedisFactory)
