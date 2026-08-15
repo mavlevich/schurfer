@@ -556,6 +556,25 @@ front.
    into this PR: the currently-running instance is the corrected canary this
    section's own item 6 is actively measuring toward its 24/48/72-hour checkpoint.
 
+   **Binance momentum source (`feat/binance-momentum-source-v1`, 2026-08-15;
+   implemented and unit-tested, still no Compose profile or running binary):**
+   `apps/collector/internal/binance` implements `UniverseSource`, `TradeSource`,
+   and `OpenInterestSource` for real -- unlike Bybit, Binance's OI genuinely is
+   a separate REST poll, so `Adapter` implements that interface directly instead
+   of deriving it from a ticker push. Deliberately does not implement
+   `TickerSource` yet (Binance's markPrice/bookTicker streams do not map onto
+   TickerUpdate's fields without conflating different kinds of price) or poll
+   `openInterestHist` (the coarse native value the preflight found). See
+   docs/research/binance-momentum-source-v1.md. Extracted apps/collector/
+   internal/wsstream during this PR: read-liveness, read-timeout
+   classification, session-id generation, and two small pure helpers had been
+   copy-pasted from bybit verbatim; both packages now share one implementation,
+   bybit's own call sites unchanged. Live WebSocket throughput, timestamp lag,
+   and reconnect behavior against real Binance servers remain unverified --
+   open work for `feat/binance-momentum-capture-v1` (this section's own item 6
+   equivalent for Binance), which also owns the actual Compose profile and
+   database writer.
+
 8. **Launch a prospective WATCH and paper baseline early; wait 2-4 UTC weeks for a
    verdict, not for the first measurement deployment.** After the fixed 72-hour
    calibration read and the capture-integrity fixes, freeze one broad

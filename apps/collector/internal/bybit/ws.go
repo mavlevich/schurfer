@@ -3,19 +3,17 @@ package bybit
 import (
 	"context"
 	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/mavlevich/schurfer/collector/internal/wsstream"
 )
 
 const (
@@ -27,7 +25,11 @@ const (
 	reconnDelay  = 5 * time.Second
 )
 
-var errReadTimeout = errors.New("websocket read timeout")
+// errReadTimeout is bybit's own name for wsstream.ErrReadTimeout, kept so
+// existing call sites and tests (errors.Is(err, errReadTimeout),
+// isReadTimeout) do not need to change -- see wsstream's own package
+// docstring on why this logic moved there.
+var errReadTimeout = wsstream.ErrReadTimeout
 
 // Run streams tickers for the given symbols. Blocks until ctx is cancelled.
 func (s *Source) Run(ctx context.Context, symbols []string, publish PublishFn) error {
@@ -116,11 +118,7 @@ func resetOpenInterestState(state map[string]tickerState) {
 // non-unique value, defeating the exact guarantee this field exists to
 // provide without anything downstream ever noticing.
 func newStreamSessionID(source io.Reader) (string, error) {
-	var b [8]byte
-	if _, err := io.ReadFull(source, b[:]); err != nil {
-		return "", fmt.Errorf("read random bytes: %w", err)
-	}
-	return hex.EncodeToString(b[:]), nil
+	return wsstream.NewSessionID(source)
 }
 
 func (s *Source) stream(
@@ -275,41 +273,24 @@ type tickerMessage struct {
 	sessionID   string
 }
 
+// refreshReadDeadline, configureReadLiveness, isReadTimeout, and
+// classifyReadError are thin delegates to wsstream (see this file's own
+// import-level note) -- kept under their original names so existing call
+// sites and tests do not need to change.
 func refreshReadDeadline(conn *websocket.Conn, timeout time.Duration) error {
-	return conn.SetReadDeadline(time.Now().Add(timeout))
+	return wsstream.RefreshReadDeadline(conn, timeout)
 }
 
 func configureReadLiveness(conn *websocket.Conn, timeout time.Duration) error {
-	if err := refreshReadDeadline(conn, timeout); err != nil {
-		return err
-	}
-	pingHandler := conn.PingHandler()
-	conn.SetPingHandler(func(message string) error {
-		if err := refreshReadDeadline(conn, timeout); err != nil {
-			return err
-		}
-		return pingHandler(message)
-	})
-	pongHandler := conn.PongHandler()
-	conn.SetPongHandler(func(message string) error {
-		if err := refreshReadDeadline(conn, timeout); err != nil {
-			return err
-		}
-		return pongHandler(message)
-	})
-	return nil
+	return wsstream.ConfigureReadLiveness(conn, timeout)
 }
 
 func isReadTimeout(err error) bool {
-	return errors.Is(err, errReadTimeout)
+	return wsstream.IsReadTimeout(err)
 }
 
 func classifyReadError(err error) error {
-	var netErr net.Error
-	if errors.As(err, &netErr) && netErr.Timeout() {
-		return fmt.Errorf("read frame: %w: %w", errReadTimeout, err)
-	}
-	return fmt.Errorf("read frame: %w", err)
+	return wsstream.ClassifyReadError(err)
 }
 
 func handleTicker(msg tickerMessage, state map[string]tickerState, publish PublishFn, ctx context.Context) {
@@ -464,10 +445,5 @@ func nonEmpty(s string) *string {
 }
 
 func chunkSlice[T any](s []T, size int) [][]T {
-	var out [][]T
-	for i := 0; i < len(s); i += size {
-		end := min(i+size, len(s))
-		out = append(out, s[i:end])
-	}
-	return out
+	return wsstream.ChunkSlice(s, size)
 }

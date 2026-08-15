@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -14,6 +13,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/mavlevich/schurfer/collector/internal/wsstream"
 )
 
 // PublicTrade is one normalized Bybit linear-perpetual public trade.
@@ -308,15 +308,14 @@ func handleTradePayload(
 }
 
 func finitePositiveNumber(value float64) bool {
-	return !math.IsNaN(value) && !math.IsInf(value, 0) && value > 0
+	return wsstream.FinitePositiveNumber(value)
 }
 
-// normalizeSymbol is the one, shared definition of how a raw wire symbol
-// becomes PublicTrade.Symbol -- adapter.go's own session-id map (keyed by
-// this same function) relies on it staying identical to what actually
-// lands on PublicTrade, not a second hand-copied transformation that could
-// silently drift from this one (a code-review finding on
-// refactor/momentum-source-contract-v1).
+// normalizeSymbol delegates to wsstream.NormalizeSymbol (moved there after
+// a code-review finding on feat/binance-momentum-source-v1: this and
+// binance's own copy were byte-identical, risking silent drift between
+// them). Kept under this name so existing call sites in this package do
+// not need to change.
 func normalizeSymbol(symbol string) string {
-	return strings.ToUpper(strings.TrimSpace(symbol))
+	return wsstream.NormalizeSymbol(symbol)
 }
