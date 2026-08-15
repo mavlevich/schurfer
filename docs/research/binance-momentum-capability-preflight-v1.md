@@ -47,7 +47,7 @@ Binance tags tokenized-stock and commodity perpetuals with their own
 PERPETUAL` check excludes them entirely -- Bybit's own catalog mixes these
 into the same symbol type and needs the separate `stock_perpetuals_excluded`
 / `commodity_perpetuals_excluded` counters already visible in
-`market:momentumcapture:health` to filter them out after the fact. The
+`market:momentumcapture:health:bybit` to filter them out after the fact. The
 source-contract refactor (PR 3) should still keep an explicit,
 independently-counted exclusion path for `INDEX`-type USDT perpetuals and
 for `TRADIFI_PERPETUAL`, fail-closed, matching the project's existing

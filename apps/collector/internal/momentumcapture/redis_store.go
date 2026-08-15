@@ -11,10 +11,19 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// HealthKey is read by `make momentum-capture-health`/`make
-// prod-momentum-health`, the same redis-cli HGETALL pattern
+// HealthKeyPrefix is read by `make momentum-capture-health`/`make
+// prod-momentum-capture-health`, the same redis-cli HGETALL pattern
 // hotset.RedisStore/orderflow already use for their own health keys.
-const HealthKey = "market:momentumcapture:health"
+// HealthKey appends the exchange so multiple venues' momentum-capture
+// processes (Bybit today, Binance once feat/binance-momentum-capture-v1
+// activates) each get their own key -- before this, every venue shared
+// the one unparameterized key, so a second venue's process would
+// silently overwrite the first's snapshot instead of coexisting with it.
+const HealthKeyPrefix = "market:momentumcapture:health"
+
+func HealthKey(exchange string) string {
+	return HealthKeyPrefix + ":" + exchange
+}
 
 // healthTTL bounds how long a stale key can be read as current: if the
 // process dies, the key expires instead of serving a frozen last-known-good
@@ -40,14 +49,20 @@ func NewRedisStore(client *redis.Client) (*RedisStore, error) {
 	return &RedisStore{client: client}, nil
 }
 
-// StoreHealth publishes a Health snapshot to HealthKey, replacing whatever
-// was there before (HSet on an existing key does not remove fields that
-// are absent from values, but Health is built fresh from scratch and in
-// full on every call, so every field this schema defines is always
-// present).
+// StoreHealth publishes a Health snapshot to HealthKey(health.Exchange),
+// replacing whatever was there before (HSet on an existing key does not
+// remove fields that are absent from values, but Health is built fresh
+// from scratch and in full on every call, so every field this schema
+// defines is always present). Fails closed if Exchange is unset: silently
+// falling back to some default would recreate exactly the shared-key
+// masking risk HealthKey's own per-exchange scoping exists to prevent.
 func (store *RedisStore) StoreHealth(ctx context.Context, health Health) error {
+	if health.Exchange == "" {
+		return errors.New("store momentum-capture health: Exchange is required")
+	}
 	values := map[string]any{
 		"schema_version": 2,
+		"exchange":       health.Exchange,
 		"status":         health.Status,
 		"started_at_ms":  unixMilliOrZero(health.StartedAt),
 		"updated_at_ms":  unixMilliOrZero(health.UpdatedAt),
@@ -142,9 +157,10 @@ func (store *RedisStore) StoreHealth(ctx context.Context, health Health) error {
 		"health_publish_p99_us":           health.HealthPublishP99Us,
 		"health_publish_max_us":           health.HealthPublishMaxUs,
 	}
+	key := HealthKey(health.Exchange)
 	pipe := store.client.Pipeline()
-	pipe.HSet(ctx, HealthKey, values)
-	pipe.Expire(ctx, HealthKey, healthTTL)
+	pipe.HSet(ctx, key, values)
+	pipe.Expire(ctx, key, healthTTL)
 	if _, err := pipe.Exec(ctx); err != nil {
 		return fmt.Errorf("store momentum-capture health: %w", err)
 	}

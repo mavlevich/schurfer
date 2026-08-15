@@ -2,7 +2,7 @@
 study.
 
 `capture_epoch_started_at` (the momentum-capture epoch's own started_at_ms)
-used to be re-derived FRESH from `market:momentumcapture:health` on every
+used to be re-derived FRESH from `market:momentumcapture:health:bybit` on every
 single run, per the CLI's own original help text ("never a value relayed
 second-hand, and never defaulted, since a restart moves it"). That advice
 was right about WHERE the value comes from and wrong about how OFTEN to

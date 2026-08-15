@@ -32,6 +32,7 @@ func TestRedisStoreStoresHealthWithTTLAndSampledSymbolLists(t *testing.T) {
 	}
 	now := time.Unix(2_000, 0).UTC()
 	health := Health{
+		Exchange:                 "bybit",
 		Status:                   "ok",
 		StartedAt:                time.Unix(1_000, 0).UTC(),
 		UpdatedAt:                now,
@@ -58,13 +59,17 @@ func TestRedisStoreStoresHealthWithTTLAndSampledSymbolLists(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if ttl := server.TTL(HealthKey); ttl <= 0 || ttl > healthTTL {
+	key := HealthKey("bybit")
+	if ttl := server.TTL(key); ttl <= 0 || ttl > healthTTL {
 		t.Fatalf("health key TTL = %v, want (0, %v]", ttl, healthTTL)
 	}
 
-	fields, err := client.HGetAll(context.Background(), HealthKey).Result()
+	fields, err := client.HGetAll(context.Background(), key).Result()
 	if err != nil {
 		t.Fatal(err)
+	}
+	if fields["exchange"] != "bybit" {
+		t.Fatalf("exchange = %q, want bybit", fields["exchange"])
 	}
 	if fields["status"] != "ok" {
 		t.Fatalf("status = %q, want ok", fields["status"])
@@ -102,6 +107,62 @@ func TestRedisStoreStoresHealthWithTTLAndSampledSymbolLists(t *testing.T) {
 	}
 	if fields["updated_at_ms"] != "2000000" {
 		t.Fatalf("updated_at_ms = %q, want 2000000", fields["updated_at_ms"])
+	}
+}
+
+func TestStoreHealthRejectsUnsetExchange(t *testing.T) {
+	t.Parallel()
+	server := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
+	t.Cleanup(func() { _ = client.Close() })
+	store, err := NewRedisStore(client)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Regression: an unset Exchange used to silently publish to the one
+	// shared HealthKey constant. Failing closed here, rather than falling
+	// back to some default venue, is what makes it impossible for a second
+	// venue's process to mask the first's health snapshot by omission.
+	if err := store.StoreHealth(context.Background(), Health{Status: "ok"}); err == nil {
+		t.Fatal("expected an error for a Health with no Exchange set")
+	}
+}
+
+func TestStoreHealthKeysEachExchangeSeparately(t *testing.T) {
+	t.Parallel()
+	server := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
+	t.Cleanup(func() { _ = client.Close() })
+	store, err := NewRedisStore(client)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.StoreHealth(context.Background(), Health{Exchange: "bybit", Status: "ok", SubscribedSymbols: 735}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.StoreHealth(context.Background(), Health{Exchange: "binance", Status: "ok", SubscribedSymbols: 210}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Regression: this is the actual "no shared/masking counters" case --
+	// two venues publishing health at the same moment must never collide
+	// on one Redis key, or the second StoreHealth call would silently
+	// erase the first venue's snapshot.
+	bybitFields, err := client.HGetAll(context.Background(), HealthKey("bybit")).Result()
+	if err != nil {
+		t.Fatal(err)
+	}
+	binanceFields, err := client.HGetAll(context.Background(), HealthKey("binance")).Result()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bybitFields["subscribed_symbols"] != "735" {
+		t.Fatalf("bybit subscribed_symbols = %q, want 735 (unaffected by the binance write)", bybitFields["subscribed_symbols"])
+	}
+	if binanceFields["subscribed_symbols"] != "210" {
+		t.Fatalf("binance subscribed_symbols = %q, want 210", binanceFields["subscribed_symbols"])
 	}
 }
 

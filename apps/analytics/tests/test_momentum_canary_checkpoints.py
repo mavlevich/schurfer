@@ -218,12 +218,12 @@ def test_missing_health_after_completed_epoch_is_not_an_interruption(
         EPOCH_START + timedelta(hours=73, minutes=5)
     ).isoformat()
     previous["active_epoch"]["last_error"] = (
-        "market:momentumcapture:health HGETALL returned an odd number of fields"
+        "market:momentumcapture:health:bybit HGETALL returned an odd number of fields"
     )
     canary._atomic_json(snapshot, previous)
 
     def missing_health() -> dict[str, str]:
-        raise RuntimeError("market:momentumcapture:health is empty or missing in redis")
+        raise RuntimeError("market:momentumcapture:health:bybit is empty or missing in redis")
 
     monkeypatch.setattr(canary, "_read_momentum_health", missing_health)
     after_stop = canary.run_once(
@@ -387,7 +387,7 @@ def test_health_unreadable_during_active_epoch_alerts_and_marks_interrupted(
     assert notified == []  # nothing due yet, baseline collection is silent
 
     def broken_health() -> dict[str, str]:
-        raise RuntimeError("market:momentumcapture:health is empty or missing in redis")
+        raise RuntimeError("market:momentumcapture:health:bybit is empty or missing in redis")
 
     monkeypatch.setattr(canary, "_read_momentum_health", broken_health)
     with pytest.raises(RuntimeError):
@@ -419,7 +419,7 @@ def test_health_unreadable_with_no_prior_epoch_does_not_alert(
     monkeypatch.setattr(canary, "_notify", lambda message: notified.append(message) or None)
 
     def broken_health() -> dict[str, str]:
-        raise RuntimeError("market:momentumcapture:health is empty or missing in redis")
+        raise RuntimeError("market:momentumcapture:health:bybit is empty or missing in redis")
 
     monkeypatch.setattr(canary, "_read_momentum_health", broken_health)
     snapshot = tmp_path / "runtime" / "momentum-canary.json"
@@ -448,7 +448,7 @@ def test_interrupted_alert_survives_a_telegram_outage(
     )
 
     def broken_health() -> dict[str, str]:
-        raise RuntimeError("market:momentumcapture:health is empty or missing in redis")
+        raise RuntimeError("market:momentumcapture:health:bybit is empty or missing in redis")
 
     monkeypatch.setattr(canary, "_read_momentum_health", broken_health)
     with pytest.raises(RuntimeError):
@@ -506,7 +506,7 @@ def test_recovery_alert_survives_a_telegram_outage(
     canary.run_once(now=EPOCH_START + timedelta(hours=1), snapshot_path=snapshot)
 
     def broken_health() -> dict[str, str]:
-        raise RuntimeError("market:momentumcapture:health is empty or missing in redis")
+        raise RuntimeError("market:momentumcapture:health:bybit is empty or missing in redis")
 
     monkeypatch.setattr(canary, "_read_momentum_health", broken_health)
     with pytest.raises(RuntimeError):
@@ -544,7 +544,7 @@ def test_restart_while_interrupted_sends_restart_alert_only_no_false_recovery(
     canary.run_once(now=EPOCH_START + timedelta(hours=1), snapshot_path=snapshot)
 
     def broken_health() -> dict[str, str]:
-        raise RuntimeError("market:momentumcapture:health is empty or missing in redis")
+        raise RuntimeError("market:momentumcapture:health:bybit is empty or missing in redis")
 
     monkeypatch.setattr(canary, "_read_momentum_health", broken_health)
     with pytest.raises(RuntimeError):
