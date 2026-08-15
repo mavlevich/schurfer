@@ -17,7 +17,24 @@ import (
 )
 
 const (
-	wsBaseURL = "wss://fstream.binance.com/stream"
+	// wsMarketBaseURL is Binance's routed "market" category combined-stream
+	// endpoint. Named explicitly (not just wsBaseURL) so a future stream
+	// added to this package -- bookTicker, depth, a private/user-data
+	// stream -- cannot casually reuse this constant without whoever adds
+	// it noticing the category mismatch: Binance routes WS streams by
+	// category (public/market/private) since their 2026-04-23 WebSocket
+	// migration (see Binance's own "Important WebSocket Change Notice"),
+	// and only "market" streams (aggTrade, markPrice, kline, liquidations)
+	// live under /market/stream -- "public" streams (bookTicker among
+	// them) still resolve under the old unrouted /stream path, which is
+	// exactly why bookTicker kept working during the incident this
+	// constant fixes (a code-review/production finding, 2026-08-15): the
+	// old unrouted /stream URL completes the WS handshake successfully
+	// for a market-category stream name (101 Switching Protocols, no
+	// error) but never pushes a single application frame -- transport
+	// stays alive via ping/pong (see wsstream.ConfigureReadLiveness),
+	// masking what is actually a silent, 100%, indefinite data outage.
+	wsMarketBaseURL = "wss://fstream.binance.com/market/stream"
 	// Binance's own documented combined-stream limits are not yet verified
 	// against a live bounded probe (see docs/research/binance-momentum-
 	// capability-preflight-v1.md's own "Live WebSocket throughput -- not
@@ -208,9 +225,9 @@ func (s *Source) tradeStream(
 }
 
 func (s *Source) tradeStreamURL(symbols []string) string {
-	base := s.wsBaseURL
+	base := s.wsMarketBaseURL
 	if base == "" {
-		base = wsBaseURL
+		base = wsMarketBaseURL
 	}
 	streams := make([]string, len(symbols))
 	for i, symbol := range symbols {

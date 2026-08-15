@@ -168,7 +168,24 @@ func tradeDataWebSocketServer(t *testing.T, symbol string, aggTradeID int64) str
 }
 
 func testSource(url string) *Source {
-	return &Source{wsBaseURL: url, httpClient: &http.Client{Timeout: 2 * time.Second}}
+	return &Source{wsMarketBaseURL: url, httpClient: &http.Client{Timeout: 2 * time.Second}}
+}
+
+// TestTradeStreamURLUsesTheRoutedMarketEndpointByDefault is a regression
+// for a production incident (2026-08-15): a Source built via NewSource
+// (the zero-config path every real caller uses) must build aggTrade URLs
+// against Binance's routed /market/stream endpoint, not the old unrouted
+// /stream path. The old path silently completes the WS handshake for an
+// aggTrade stream name and then never delivers a single application
+// frame -- see wsMarketBaseURL's own doc comment for the full incident.
+func TestTradeStreamURLUsesTheRoutedMarketEndpointByDefault(t *testing.T) {
+	t.Parallel()
+	source := NewSource()
+	got := source.tradeStreamURL([]string{"BTCUSDT", "ETHUSDT"})
+	want := "wss://fstream.binance.com/market/stream?streams=btcusdt@aggTrade/ethusdt@aggTrade"
+	if got != want {
+		t.Fatalf("tradeStreamURL() = %q, want %q", got, want)
+	}
 }
 
 func TestTradeStreamFiresConnectedLifecycleEventAndDeliversATrade(t *testing.T) {

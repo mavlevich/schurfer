@@ -65,16 +65,16 @@ type SymbolCatalog struct {
 
 // Source streams Binance USD-M futures market data.
 type Source struct {
-	restURL    string
-	wsBaseURL  string
-	httpClient *http.Client
+	restURL         string
+	wsMarketBaseURL string
+	httpClient      *http.Client
 }
 
 func NewSource() *Source {
 	return &Source{
-		restURL:    defaultRESTURL,
-		wsBaseURL:  wsBaseURL,
-		httpClient: &http.Client{Timeout: 10 * time.Second},
+		restURL:         defaultRESTURL,
+		wsMarketBaseURL: wsMarketBaseURL,
+		httpClient:      &http.Client{Timeout: 10 * time.Second},
 	}
 }
 
