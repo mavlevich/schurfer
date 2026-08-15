@@ -9,8 +9,12 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/mavlevich/schurfer/collector/internal/momentumsource"
 )
 
 const defaultRESTURL = "https://api.bybit.com/v5/market/instruments-info"
@@ -48,9 +52,15 @@ type SymbolCatalogCounts struct {
 // instrument catalog. CryptoPerpetualSymbols is the strict momentum-capture
 // universe. AllUSDTLinearSymbols preserves the broader legacy ticker
 // collector scope until that separate production contract is reviewed.
+// Instruments is additive (feat/momentum-universe-identity-foundation-v1):
+// one momentumsource.Instrument per CryptoPerpetualSymbols entry, same
+// order, same length -- see validateCatalog. CryptoPerpetualSymbols itself
+// is untouched by this addition; nothing that already reads it needs to
+// change.
 type SymbolCatalog struct {
 	CryptoPerpetualSymbols []string
 	AllUSDTLinearSymbols   []string
+	Instruments            []momentumsource.Instrument
 	Counts                 SymbolCatalogCounts
 }
 
@@ -237,6 +247,10 @@ func (s *Source) fetchSymbolCatalog(ctx context.Context) (SymbolCatalog, error) 
 	catalog := SymbolCatalog{}
 	cursor := ""
 	seenCursors := map[string]struct{}{"": {}}
+	// observedAt is fixed once for this entire fetch (potentially several
+	// paginated requests), not re-read per page: every Instrument this
+	// catalog produces describes the same point-in-time snapshot.
+	observedAt := time.Now()
 
 	for page := 0; page < maxInstrumentCatalogPages; page++ {
 		params := url.Values{
@@ -274,9 +288,11 @@ func (s *Source) fetchSymbolCatalog(ctx context.Context) (SymbolCatalog, error) 
 					Symbol       string `json:"symbol"`
 					ContractType string `json:"contractType"`
 					Status       string `json:"status"`
+					BaseCoin     string `json:"baseCoin"`
 					QuoteCoin    string `json:"quoteCoin"`
 					SettleCoin   string `json:"settleCoin"`
 					SymbolType   string `json:"symbolType"`
+					LaunchTime   string `json:"launchTime"`
 				} `json:"list"`
 				NextPageCursor string `json:"nextPageCursor"`
 			} `json:"result"`
@@ -289,7 +305,11 @@ func (s *Source) fetchSymbolCatalog(ctx context.Context) (SymbolCatalog, error) 
 		}
 
 		for _, item := range body.Result.List {
-			classifyCatalogItem(&catalog, item.Symbol, item.ContractType, item.Status, item.QuoteCoin, item.SettleCoin, item.SymbolType)
+			classifyCatalogItem(
+				&catalog, item.Symbol, item.ContractType, item.Status,
+				item.BaseCoin, item.QuoteCoin, item.SettleCoin, item.SymbolType,
+				item.LaunchTime, observedAt,
+			)
 		}
 
 		nextCursor := body.Result.NextPageCursor
@@ -332,9 +352,12 @@ func classifyCatalogItem(
 	symbol string,
 	contractType string,
 	status string,
+	baseCoin string,
 	quoteCoin string,
 	settleCoin string,
 	symbolType string,
+	launchTime string,
+	observedAt time.Time,
 ) {
 	catalog.Counts.CatalogItemsTotal++
 	if symbol == "" {
@@ -375,6 +398,32 @@ func classifyCatalogItem(
 	}
 	catalog.Counts.CryptoPerpetualsIncluded++
 	catalog.CryptoPerpetualSymbols = append(catalog.CryptoPerpetualSymbols, symbol)
+	catalog.Instruments = append(catalog.Instruments, momentumsource.NewInstrument(
+		exchangeName, symbol, baseCoin, quoteCoin, settleCoin,
+		contractType, MarketType, parseLaunchTimeMs(launchTime), observedAt,
+	))
+}
+
+// parseLaunchTimeMs parses Bybit's own launchTime field: a Unix-milliseconds
+// value carried as a JSON string, unlike Binance's onboardDate (a JSON
+// number) -- this string can be genuinely unparseable, a failure mode
+// momentumsource.ClassifyOnboardedAtMs's own int64-typed signature cannot
+// represent, so that structural case is handled here before delegating
+// the shared absent/zero/negative/valid classification rule to it.
+func parseLaunchTimeMs(raw string) *time.Time {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return momentumsource.ClassifyOnboardedAtMs(0, false)
+	}
+	ms, err := strconv.ParseInt(trimmed, 10, 64)
+	if err != nil {
+		// Present but structurally unparseable: treated the same as a
+		// negative value (present but semantically unusable), not as
+		// "absent" -- see ClassifyOnboardedAtMs's own doc comment.
+		invalid := time.Time{}
+		return &invalid
+	}
+	return momentumsource.ClassifyOnboardedAtMs(ms, true)
 }
 
 func validateCatalog(catalog SymbolCatalog, requireCryptoPerpetuals bool) error {
@@ -413,6 +462,13 @@ func validateCatalog(catalog SymbolCatalog, requireCryptoPerpetuals bool) error 
 			"instrument catalog inclusion mismatch: symbols=%d included=%d",
 			len(catalog.CryptoPerpetualSymbols),
 			counts.CryptoPerpetualsIncluded,
+		)
+	}
+	if len(catalog.Instruments) != len(catalog.CryptoPerpetualSymbols) {
+		return fmt.Errorf(
+			"instrument catalog identity mismatch: instruments=%d symbols=%d",
+			len(catalog.Instruments),
+			len(catalog.CryptoPerpetualSymbols),
 		)
 	}
 	if counts.StandardCryptoIncluded+counts.InnovationCryptoIncluded !=

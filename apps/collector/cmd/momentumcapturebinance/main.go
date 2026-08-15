@@ -262,6 +262,22 @@ func run() error {
 		return fmt.Errorf("database ping: %w", err)
 	}
 
+	// Capture-startup invariant (feat/momentum-universe-identity-
+	// foundation-v1, mirrors cmd/momentumcapture's own identical addition):
+	// fetch venue catalog -> normalize/validate -> freeze the subscription
+	// universe (universe.Hash/CapturedAt above -- needed as part of the
+	// snapshot's own key, so it is computed before persisting) -> persist
+	// that frozen snapshot atomically -> start capture. This process must
+	// never subscribe to a universe with no matching identity catalog
+	// durably recorded. See momentumcapture.PersistCaptureStartupSnapshot's
+	// own doc comment (shared with cmd/momentumcapture, not duplicated
+	// here).
+	if err := momentumcapture.PersistCaptureStartupSnapshot(
+		ctx, pool, exchange, universe.Hash, catalog.Instruments, universe.CapturedAt,
+	); err != nil {
+		return err
+	}
+
 	rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr})
 	defer func() {
 		if err := rdb.Close(); err != nil {

@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/mavlevich/schurfer/collector/internal/momentumsource"
 )
 
 func TestFetchSymbolCatalogIncludesOnlyUSDTSettledCryptoPerpetuals(t *testing.T) {
@@ -157,6 +159,75 @@ func TestValidateCatalogRejectsEmptyAndDuplicateEligibleUniverse(t *testing.T) {
 	}
 }
 
+func TestFetchSymbolCatalogBuildsInstrumentsWithIdentityMetadata(t *testing.T) {
+	t.Parallel()
+
+	items := []map[string]string{
+		instrumentWithIdentity("BTCUSDT", "LinearPerpetual", "Trading", "USDT", "USDT", "", "BTC", "1611648000000"),
+		instrumentWithIdentity("MISSINGUSDT", "LinearPerpetual", "Trading", "USDT", "USDT", "", "MISSING", ""),
+		instrumentWithIdentity("GARBLEDUSDT", "LinearPerpetual", "Trading", "USDT", "USDT", "", "GARBLED", "not-a-number"),
+		instrumentWithIdentity("ZEROUSDT", "LinearPerpetual", "Trading", "USDT", "USDT", "", "ZERO", "0"),
+		instrumentWithIdentity("NEGATIVEUSDT", "LinearPerpetual", "Trading", "USDT", "USDT", "", "NEGATIVE", "-1"),
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeInstrumentResponse(t, w, items, "")
+	}))
+	t.Cleanup(server.Close)
+
+	source := &Source{restURL: server.URL, httpClient: server.Client()}
+	catalog, err := source.FetchSymbolCatalog(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(catalog.Instruments) != 5 {
+		t.Fatalf("got %d instruments, want 5 (one per CryptoPerpetualSymbols entry)", len(catalog.Instruments))
+	}
+
+	byMarketID := make(map[string]momentumsource.Instrument, len(catalog.Instruments))
+	for _, inst := range catalog.Instruments {
+		byMarketID[inst.NativeMarketID] = inst
+	}
+
+	btc := byMarketID["BTCUSDT"]
+	if btc.IdentityStatus != momentumsource.IdentityStatusReady {
+		t.Fatalf("BTCUSDT status = %q, want ready", btc.IdentityStatus)
+	}
+	if btc.Base != "BTC" || btc.Quote != "USDT" || btc.Settle != "USDT" {
+		t.Fatalf("BTCUSDT base/quote/settle = %q/%q/%q", btc.Base, btc.Quote, btc.Settle)
+	}
+	if btc.Exchange != "bybit" || btc.CanonicalMarketType != MarketType {
+		t.Fatalf("BTCUSDT exchange/market type = %q/%q", btc.Exchange, btc.CanonicalMarketType)
+	}
+	if btc.OnboardedAt == nil || btc.OnboardedAt.UnixMilli() != 1611648000000 {
+		t.Fatalf("BTCUSDT OnboardedAt = %v, want 1611648000000ms", btc.OnboardedAt)
+	}
+	if _, ok := btc.IdentityKey(); !ok {
+		t.Fatal("BTCUSDT should produce a real identity key")
+	}
+
+	// Regression: an empty launchTime ("" -- Bybit's own convention for
+	// "no recorded launch time") must classify as MISSING, not INVALID.
+	if got := byMarketID["MISSINGUSDT"].IdentityStatus; got != momentumsource.IdentityStatusMissingOnboardedAt {
+		t.Fatalf("MISSINGUSDT status = %q, want missing_onboarded_at", got)
+	}
+	// Regression: a present-but-unparseable launchTime is a DIFFERENT
+	// failure than an absent one.
+	if got := byMarketID["GARBLEDUSDT"].IdentityStatus; got != momentumsource.IdentityStatusInvalidOnboardedAt {
+		t.Fatalf("GARBLEDUSDT status = %q, want invalid_onboarded_at", got)
+	}
+	// Regression: Bybit's own "0" sentinel means the same as an absent
+	// value, not a Unix-epoch-1970 onboard date.
+	if got := byMarketID["ZEROUSDT"].IdentityStatus; got != momentumsource.IdentityStatusMissingOnboardedAt {
+		t.Fatalf("ZEROUSDT status = %q, want missing_onboarded_at", got)
+	}
+	// Regression for a code-review finding: a negative launchTime used to
+	// parse successfully into a valid-looking pre-1970 time.Time and get
+	// classified ready, producing an identity key from a garbled value.
+	if got := byMarketID["NEGATIVEUSDT"].IdentityStatus; got != momentumsource.IdentityStatusInvalidOnboardedAt {
+		t.Fatalf("NEGATIVEUSDT status = %q, want invalid_onboarded_at", got)
+	}
+}
+
 func TestValidateCatalogKeepsLegacyCollectorIndependentFromCryptoScope(t *testing.T) {
 	t.Parallel()
 
@@ -175,6 +246,12 @@ func TestValidateCatalogKeepsLegacyCollectorIndependentFromCryptoScope(t *testin
 	}
 }
 
+// instrument builds a fixture with an arbitrary but always-present, always-
+// valid baseCoin/launchTime: none of this file's own pre-existing tests
+// inspect catalog.Instruments, so a fixed default here keeps every one of
+// their call sites unchanged. Tests that DO care about identity fields
+// (baseCoin/launchTime parsing specifically) use instrumentWithIdentity
+// instead.
 func instrument(
 	symbol string,
 	contractType string,
@@ -183,13 +260,28 @@ func instrument(
 	settleCoin string,
 	symbolType string,
 ) map[string]string {
+	return instrumentWithIdentity(symbol, contractType, status, quoteCoin, settleCoin, symbolType, "BASE", "1700000000000")
+}
+
+func instrumentWithIdentity(
+	symbol string,
+	contractType string,
+	status string,
+	quoteCoin string,
+	settleCoin string,
+	symbolType string,
+	baseCoin string,
+	launchTime string,
+) map[string]string {
 	return map[string]string{
 		"symbol":       symbol,
 		"contractType": contractType,
 		"status":       status,
+		"baseCoin":     baseCoin,
 		"quoteCoin":    quoteCoin,
 		"settleCoin":   settleCoin,
 		"symbolType":   symbolType,
+		"launchTime":   launchTime,
 	}
 }
 

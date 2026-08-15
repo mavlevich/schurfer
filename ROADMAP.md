@@ -680,6 +680,35 @@ front.
    until `feat/binance-momentum-capture-v1`'s own activation gates pass and
    Binance bars actually exist to watch.**
 
+   **Momentum universe identity foundation
+   (`feat/momentum-universe-identity-foundation-v1`, 2026-08-15;
+   implemented and unit-tested, including a real-Postgres integration
+   suite and a verified migration upgrade/downgrade/upgrade cycle):**
+   foundation half of cross-venue instrument identity -- designed with a
+   colleague before implementation started, matching the same "Foundation"
+   vs. full-resolution split the pump-scanner's own "Canonical instrument
+   identity" checklist item (this file, phase 2) already uses. Adds
+   durable, versioned per-instrument identity metadata (native market id,
+   base/quote/settle, onboarding time, a fail-closed identity status with
+   no `confirmed`/`conflict` value yet -- a single venue's own catalog
+   fetch has no way to know either) for both Bybit and Binance, persisted
+   atomically alongside each venue's own frozen universe. A new shared
+   `momentumsource.Instrument` type replaces near-duplicate per-venue
+   catalog metadata; a new `catalog_version` (separate from
+   `universe_version`) catches an identity-relevant change a same-symbol-
+   set hash alone would miss (a delisted-and-relisted ticker under the
+   same native market id); two new tables
+   (`app.momentum_universe_snapshots`/`_instruments`, natural composite
+   keys, no surrogate id) store one row set per fetch, atomically linked.
+   See docs/research/momentum-universe-identity-foundation-v1.md. **Not
+   cross-venue matching: nothing here compares two venues' own instruments
+   against each other -- that is a separate, not-yet-built resolution PR.
+   Operational note: touches `cmd/momentumcapture/main.go`'s own startup
+   sequence with a genuine new behavior (a new database write before
+   capture starts), not a passive addition -- deploy only at a deliberate
+   capture-epoch boundary, same standing discipline as every other PR in
+   this section.**
+
 9. **Register at most one Confirmation shadow if the discovery gate passes.** Freeze
    one primary lookback, eligibility rule, entry quote, stop, bounded exit horizons,
    cost model, minimum sample/diversity, and no-go rule on a new untouched cohort. The
