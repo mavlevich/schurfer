@@ -78,7 +78,9 @@ flowchart LR
 apps/
 ├── analytics/       Python  - pump scanner, persistence, snapshots, OI/funding collection
 ├── api-gateway/     Go      - REST API, OHLCV proxy, pump history, signal scoring, Redis ticker
-├── collector/       Go      - Bybit feeds, bounded hotset, and momentum-capture binaries
+├── collector/       Go      - Bybit/Binance feeds, bounded hotset, and momentum-capture
+│                              binaries (cmd/momentumcapture is Bybit, unsuffixed -- named
+│                              before Binance existed; cmd/momentumcapturebinance is Binance)
 ├── execution/       Python  - order execution, risk checks, position monitor, signal trader
 ├── notifier/        Go      - Telegram alerts, reads Redis pumps:latest
 └── web/             TS      - React dashboard (/pumps, /pumps/:base)
@@ -236,7 +238,8 @@ make dev-logs     # tail all service logs
 make dev-stop     # stop containers
 make dev-reset    # stop containers and wipe all data volumes
 make migrate      # run Alembic migrations against local DB
-make momentum-capture-health  # inspect optional local momentum capture
+make momentum-capture-health  # inspect optional local momentum capture (Bybit; unsuffixed
+                               # name predates Binance -- see momentum-capture-binance-health)
 ```
 
 ## License
