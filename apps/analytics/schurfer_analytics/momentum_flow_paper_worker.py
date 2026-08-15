@@ -19,7 +19,7 @@ from .momentum_flow_paper_contract import (
     PaperContract,
 )
 from .momentum_flow_paper_market import (
-    BybitPaperMarket,
+    CcxtPaperMarket,
     ExecutableQuote,
     QuoteFailure,
     QuoteResult,
@@ -37,7 +37,19 @@ if TYPE_CHECKING:
     from uuid import UUID
 
 log = structlog.get_logger()
-HEALTH_KEY = "market:momentumpaper:health"
+HEALTH_KEY_PREFIX = "market:momentumpaper:health"
+
+
+def health_key(paper_version: str) -> str:
+    """Scope the Redis health key per paper_version, so a second contract's
+    worker (e.g. Binance's own, see momentum_flow_paper_contract.
+    BINANCE_PAPER_CONTRACT) never overwrites the first's snapshot -- same
+    "no shared/masking counters" fix as momentum_flow_watch_worker.
+    health_key and momentumcapture.HealthKey on the Go side (see
+    docs/research/momentum-canary-multivenue-v1.md). paper_version is
+    already the row-identity key acquire_worker_lock/register_run use, so
+    reusing it here needs no new parameter."""
+    return f"{HEALTH_KEY_PREFIX}:{paper_version}"
 
 
 class PaperStore(Protocol):
@@ -134,6 +146,18 @@ class PaperWorkerConfig:
 
     @classmethod
     def from_env(cls) -> PaperWorkerConfig:
+        # PaperWorkerConfig is built once from the environment before
+        # run_paper_worker's own contract argument is chosen (dev/prod
+        # entrypoints construct it the same way for every venue -- see
+        # momentum_flow_paper_binance_worker.py), so this cross-check can
+        # only compare against ONE frozen contract's own poll_interval_
+        # seconds, not whichever one actually ends up running. Pinned to
+        # FROZEN_PAPER_CONTRACT (Bybit) specifically because
+        # BINANCE_PAPER_CONTRACT reuses the exact same value by design
+        # (every threshold does -- see its own doc comment); if a future
+        # contract ever needs a genuinely different poll cadence, this
+        # check needs to become contract-aware, not just get its constant
+        # swapped.
         config = cls(
             database_url=os.getenv("DATABASE_URL", ""),
             redis_addr=os.getenv("REDIS_ADDR", "redis:6379"),
@@ -336,7 +360,7 @@ async def _write_health(
     }
     if tick is not None:
         mapping.update({f"last_tick_{key}": str(value) for key, value in asdict(tick).items()})
-    await redis.hset(HEALTH_KEY, mapping=cast("Any", mapping))
+    await redis.hset(health_key(run.paper_version), mapping=cast("Any", mapping))
 
 
 async def _try_write_health(
@@ -369,7 +393,27 @@ async def run_paper_worker(
     once: bool = False,
     store: PaperStore | None = None,
     market: PaperMarket | None = None,
+    contract: PaperContract = FROZEN_PAPER_CONTRACT,
+    contract_sha256: str = PAPER_CONTRACT_SHA256,
 ) -> None:
+    """Run one paper worker for contract (defaults to the live Bybit
+    FROZEN_PAPER_CONTRACT: every existing caller that does not pass
+    contract/contract_sha256 gets the exact same acquire_worker_lock/
+    register_run/due_watches/... arguments as before these parameters
+    existed -- see this file's own worker tests). A second venue (see
+    momentum_flow_paper_binance_worker.py) reuses this exact function
+    with BINANCE_PAPER_CONTRACT instead of forking it: PaperStore and
+    MomentumFlowPaperRepository were already contract-parameterized from
+    the start (mirrors momentum_flow_watch_worker.run_watch_worker's own
+    precedent), only this function itself hardcoded one contract."""
+    if contract.sha256_hex() != contract_sha256:
+        # Same defense as run_watch_worker's own identical check: contract
+        # and contract_sha256 are two independently supplied parameters,
+        # not derived from each other at the call site.
+        raise RuntimeError(
+            f"contract_sha256 does not match contract.sha256_hex() for paper_version="
+            f"{contract.paper_version!r}: the (contract, contract_sha256) pair is inconsistent"
+        )
     structlog.configure(
         processors=[
             structlog.stdlib.add_log_level,
@@ -384,9 +428,7 @@ async def run_paper_worker(
     if active_store is None:
         raise RuntimeError("momentum paper store is unavailable")
     owned_market = (
-        BybitPaperMarket(
-            EXCHANGE_FACTORIES[FROZEN_PAPER_CONTRACT.source_exchange](), FROZEN_PAPER_CONTRACT
-        )
+        CcxtPaperMarket(EXCHANGE_FACTORIES[contract.source_exchange](), contract)
         if market is None
         else None
     )
@@ -395,15 +437,15 @@ async def run_paper_worker(
         raise RuntimeError("momentum paper market is unavailable")
     redis = Redis.from_url(_redis_url(config.redis_addr), decode_responses=True)
     try:
-        if not await active_store.acquire_worker_lock(FROZEN_PAPER_CONTRACT.paper_version):
+        if not await active_store.acquire_worker_lock(contract.paper_version):
             raise RuntimeError("another momentum paper worker already holds the version lock")
         run = await active_store.register_run(
-            contract=FROZEN_PAPER_CONTRACT,
-            contract_sha256=PAPER_CONTRACT_SHA256,
+            contract=contract,
+            contract_sha256=contract_sha256,
             now=datetime.now(UTC),
         )
         interrupted = await active_store.abandon_interrupted_entries(
-            contract=FROZEN_PAPER_CONTRACT,
+            contract=contract,
             now=datetime.now(UTC),
         )
         log.info(
@@ -413,7 +455,7 @@ async def run_paper_worker(
             cohort_started_at=run.cohort_started_at.isoformat(),
             interrupted_entries=interrupted,
         )
-        starting_health = await active_store.health(contract=FROZEN_PAPER_CONTRACT)
+        starting_health = await active_store.health(contract=contract)
         await _try_write_health(
             redis,
             run=run,
@@ -429,8 +471,9 @@ async def run_paper_worker(
                     market=active_market,
                     run=run,
                     config=config,
+                    contract=contract,
                 )
-                health = await active_store.health(contract=FROZEN_PAPER_CONTRACT)
+                health = await active_store.health(contract=contract)
                 await _try_write_health(
                     redis,
                     run=run,
@@ -447,7 +490,7 @@ async def run_paper_worker(
             except Exception as exc:
                 log.exception("momentum_paper.tick_failed", error=str(exc))
                 try:
-                    health = await active_store.health(contract=FROZEN_PAPER_CONTRACT)
+                    health = await active_store.health(contract=contract)
                 except Exception as health_exc:
                     log.warning("momentum_paper.health_read_failed", error=str(health_exc))
                 else:

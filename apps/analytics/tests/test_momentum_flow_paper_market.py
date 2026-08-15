@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock
 import pytest
 from schurfer_analytics.momentum_flow_paper_contract import FROZEN_PAPER_CONTRACT
 from schurfer_analytics.momentum_flow_paper_market import (
-    BybitPaperMarket,
+    CcxtPaperMarket,
     ExecutableQuote,
     QuoteFailure,
     execution_vwap,
@@ -74,7 +74,7 @@ async def test_market_resolves_exact_bybit_market_id() -> None:
     exchange.fetch_order_book = AsyncMock(
         return_value={"bids": [[9.9, 100]], "asks": [[10.1, 100]]}
     )
-    market = BybitPaperMarket(exchange, FROZEN_PAPER_CONTRACT)
+    market = CcxtPaperMarket(exchange, FROZEN_PAPER_CONTRACT)
 
     result = await market.quote("ERAUSDT", "ask")
 
@@ -104,7 +104,7 @@ async def test_market_refreshes_metadata_once_for_new_listing() -> None:
     exchange.fetch_order_book = AsyncMock(
         return_value={"bids": [[9.9, 100]], "asks": [[10.1, 100]]}
     )
-    market = BybitPaperMarket(exchange, FROZEN_PAPER_CONTRACT)
+    market = CcxtPaperMarket(exchange, FROZEN_PAPER_CONTRACT)
 
     result = await market.quote("ERAUSDT", "ask")
 
@@ -116,7 +116,7 @@ async def test_market_rejects_ambiguous_or_missing_identity() -> None:
     exchange = AsyncMock()
     exchange.markets = {}
     exchange.load_markets = AsyncMock(return_value={})
-    market = BybitPaperMarket(exchange, FROZEN_PAPER_CONTRACT)
+    market = CcxtPaperMarket(exchange, FROZEN_PAPER_CONTRACT)
 
     result = await market.quote("ERAUSDT", "ask")
 
@@ -133,7 +133,7 @@ async def test_quote_timeout_includes_initial_market_load() -> None:
 
     exchange.load_markets = AsyncMock(side_effect=slow_load)
     contract = replace(FROZEN_PAPER_CONTRACT, max_quote_latency_seconds=1)
-    market = BybitPaperMarket(exchange, contract)
+    market = CcxtPaperMarket(exchange, contract)
 
     result = await market.quote("ERAUSDT", "ask")
 

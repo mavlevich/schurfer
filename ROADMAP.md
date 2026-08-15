@@ -709,6 +709,36 @@ front.
    capture-epoch boundary, same standing discipline as every other PR in
    this section.**
 
+   **Binance aggTrade WS routing fix (`fix/binance-market-stream-route`,
+   2026-08-15; merged):** the Binance canary was activated the same day
+   (after the corrected-Bybit and host-capacity gates both cleared) and
+   immediately hit a silent, 100% trade-feed outage -- the WS handshake
+   for `<symbol>@aggTrade` succeeded every time (`101 Switching
+Protocols`, no error, no reconnect) but zero application frames ever
+   arrived, for any symbol, because Binance's own ping/pong keepalive
+   convention (`wsstream.ConfigureReadLiveness`, refreshing the read
+   deadline on any control frame) kept the transport looking healthy the
+   whole time. Root cause (found by a colleague, independently verified
+   twice from two separate networks before the fix landed): Binance
+   started routing WS streams by category (public/market/private) as of
+   their own 2026-04-23 WebSocket migration; "market" streams (aggTrade,
+   markPrice, kline, liquidations) now require the routed
+   `wss://fstream.binance.com/market/stream` endpoint, while "public"
+   streams (`bookTicker`, which is why it looked fine in the same
+   incident) still resolve on the old unrouted `/stream` path. Renamed
+   `wsBaseURL` -> `wsMarketBaseURL` (constant and `Source` field) so a
+   future public/private stream can't casually reuse the market-routed
+   constant, and pinned `NewSource()`'s default URL with a regression
+   test. ~30k bars written during the outage window are all already
+   `trades_complete=false`/`complete=false` (no completeness bug, nothing
+   to quarantine). **Open follow-up, not yet built: a data-liveness
+   circuit breaker** (`symbols_missing_trades_count` staying near 100% of
+   subscribed symbols past a short warm-up window should itself be a
+   fail-closed condition -- alert loudly and/or stop persisting -- not
+   just a passive health field nothing reacts to; this exact gap is what
+   let the outage run silently for 25+ minutes before manual
+   investigation caught it).
+
 9. **Register at most one Confirmation shadow if the discovery gate passes.** Freeze
    one primary lookback, eligibility rule, entry quote, stop, bounded exit horizons,
    cost model, minimum sample/diversity, and no-go rule on a new untouched cohort. The
