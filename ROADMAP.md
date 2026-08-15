@@ -2474,3 +2474,11 @@ net performance suitable for tax or risk accounting.
   ATR).
 - Telegram: persist `seen_bases` in Redis to avoid a startup alert storm, plus
   drop-below and "still pumping" follow-up alerts.
+- Status page container list re-sorts by live CPU% every poll
+  (`apps/api-gateway/internal/health/container_runtime.go`'s own
+  `sort.Slice` on `CPUPercent` descending, name as the only tie-break), so
+  rows visibly jump around as load fluctuates -- not useful for someone
+  scanning the list. Either stabilize the ordering (e.g. sort by name/
+  container-start-order by default, CPU% as an opt-in view) or add an
+  explicit sort-by control in the UI (name, CPU, memory) instead of one
+  fixed, constantly-reshuffling order.
