@@ -122,8 +122,11 @@ its queues. Start it explicitly with `make prod-momentum-watch-start`; this appl
 the migration and starts only the profiled worker, without restarting the active
 momentum capture canary.
 
-Health is published at `market:momentumwatch:health` and is available through
-`make prod-momentum-watch-health`. Qualifying WATCH rows also emit structured logs.
+Health is published at `market:momentumwatch:health:momentum_flow_watch_v1`
+(scoped by `watch_version` since `feat/binance-momentum-watch-v1`'s own
+health-key fix -- see docs/research/binance-momentum-watch-v1.md) and is
+available through `make prod-momentum-watch-health`. Qualifying WATCH
+rows also emit structured logs.
 
 There is deliberately no direct Telegram sender in v1. The unified notification
 outbox currently defines only its contract and audit schema; its consumer is not yet

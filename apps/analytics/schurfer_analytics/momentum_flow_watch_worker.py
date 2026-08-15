@@ -35,7 +35,18 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 log = structlog.get_logger()
-HEALTH_KEY = "market:momentumwatch:health"
+HEALTH_KEY_PREFIX = "market:momentumwatch:health"
+
+
+def health_key(watch_version: str) -> str:
+    """Scope the Redis health key per watch_version, so a second contract's
+    worker (e.g. Binance's own, see momentum_flow_watch_contract.
+    BINANCE_WATCH_CONTRACT) never overwrites the first's snapshot -- same
+    "no shared/masking counters" fix as momentumcapture.HealthKey on the Go
+    side (see docs/research/momentum-canary-multivenue-v1.md). watch_version
+    is already the row-identity key acquire_worker_lock/register_run use, so
+    reusing it here needs no new parameter."""
+    return f"{HEALTH_KEY_PREFIX}:{watch_version}"
 
 
 class WatchStore(Protocol):
@@ -233,7 +244,7 @@ async def _write_health(
         "suppressed": str(result.suppressed if result else 0),
         "evaluator_duration_ms": str(result.evaluator_duration_ms if result else 0),
     }
-    await redis.hset(HEALTH_KEY, mapping=cast("Any", mapping))
+    await redis.hset(health_key(run.watch_version), mapping=cast("Any", mapping))
 
 
 async def _try_write_health(
@@ -263,7 +274,32 @@ async def run_watch_worker(
     *,
     once: bool = False,
     store: WatchStore | None = None,
+    contract: WatchContract = FROZEN_WATCH_CONTRACT,
+    contract_sha256: str = WATCH_CONTRACT_SHA256,
 ) -> None:
+    """Run one WATCH worker for contract (defaults to the live Bybit
+    FROZEN_WATCH_CONTRACT: every existing caller that does not pass
+    contract/contract_sha256 gets the exact same acquire_worker_lock/
+    register_run/due_buckets/load_states arguments as before these
+    parameters existed -- see this file's own worker tests). A second
+    venue (see momentum_flow_watch_binance_worker.py) reuses this exact
+    function with BINANCE_WATCH_CONTRACT instead of forking it:
+    evaluate_bucket, WatchStore, and MomentumFlowWatchRepository were
+    already contract-parameterized from the start, so nothing here needed
+    to change to serve a second venue, only to stop hardcoding one."""
+    if contract.sha256_hex() != contract_sha256:
+        # contract and contract_sha256 are two independently supplied
+        # parameters; every call site in this repo sources both from the
+        # same module-level pair in momentum_flow_watch_contract.py
+        # (itself guarded by an identical check at import time), but
+        # nothing forces a future caller to. Checked here too rather than
+        # trusting the caller, since register_run's own equality check
+        # only compares contract_sha256 against the DB row IT just wrote
+        # from that same value -- tautological, not a real cross-check.
+        raise RuntimeError(
+            f"contract_sha256 does not match contract.sha256_hex() for watch_version="
+            f"{contract.watch_version!r}: the (contract, contract_sha256) pair is inconsistent"
+        )
     structlog.configure(
         processors=[
             structlog.stdlib.add_log_level,
@@ -279,14 +315,14 @@ async def run_watch_worker(
         raise RuntimeError("momentum WATCH store is unavailable")
     redis = Redis.from_url(_redis_url(config.redis_addr), decode_responses=True)
     try:
-        if not await active_store.acquire_worker_lock(FROZEN_WATCH_CONTRACT.watch_version):
+        if not await active_store.acquire_worker_lock(contract.watch_version):
             raise RuntimeError("another momentum WATCH worker already holds the version lock")
         run = await active_store.register_run(
-            contract=FROZEN_WATCH_CONTRACT,
-            contract_sha256=WATCH_CONTRACT_SHA256,
+            contract=contract,
+            contract_sha256=contract_sha256,
             now=datetime.now(UTC),
         )
-        states = await active_store.load_states(contract=FROZEN_WATCH_CONTRACT)
+        states = await active_store.load_states(contract=contract)
         await _try_write_health(redis, run=run, result=None, status="starting")
         log.info(
             "momentum_watch.starting",
@@ -299,20 +335,24 @@ async def run_watch_worker(
         while True:
             try:
                 due = await active_store.due_buckets(
-                    contract=FROZEN_WATCH_CONTRACT,
+                    contract=contract,
                     cohort_started_at=run.cohort_started_at,
                     limit=config.bucket_batch_size,
                 )
                 for bucket_start in due:
                     evaluated = await evaluate_bucket(
                         store=active_store,
-                        contract=FROZEN_WATCH_CONTRACT,
+                        contract=contract,
                         bucket_start=bucket_start,
                         states=states,
                     )
                     if evaluated is not None:
                         last_result = evaluated
-                        log.info("momentum_watch.bucket_completed", **asdict(evaluated))
+                        log.info(
+                            "momentum_watch.bucket_completed",
+                            watch_version=contract.watch_version,
+                            **asdict(evaluated),
+                        )
                 await _try_write_health(redis, run=run, result=last_result, status="ok")
                 if once:
                     return

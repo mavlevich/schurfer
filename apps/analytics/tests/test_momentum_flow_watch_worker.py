@@ -1,17 +1,29 @@
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import fields, replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from schurfer_analytics.momentum_flow_watch_contract import WatchContract
+from schurfer_analytics import momentum_flow_watch_worker
+from schurfer_analytics.momentum_flow_watch_contract import (
+    BINANCE_WATCH_CONTRACT,
+    BINANCE_WATCH_CONTRACT_SHA256,
+    FROZEN_WATCH_CONTRACT,
+    WATCH_CONTRACT_SHA256,
+    WatchContract,
+)
 from schurfer_analytics.momentum_flow_watch_evaluator import SymbolWatchState, WatchBar
 from schurfer_analytics.momentum_flow_watch_repository import (
     EvaluationWrite,
     WatchBucketInput,
     WatchRun,
 )
-from schurfer_analytics.momentum_flow_watch_worker import WatchWorkerConfig, evaluate_bucket
+from schurfer_analytics.momentum_flow_watch_worker import (
+    WatchWorkerConfig,
+    evaluate_bucket,
+    health_key,
+    run_watch_worker,
+)
 
 
 def _bars(symbol: str, *, strong: bool) -> tuple[WatchBar, ...]:
@@ -159,3 +171,178 @@ def test_worker_config_rejects_non_positive_poll_and_batch() -> None:
         WatchWorkerConfig("postgresql://example", "redis:6379", poll_interval_seconds=0)
     with pytest.raises(ValueError, match="bucket_batch_size"):
         WatchWorkerConfig("postgresql://example", "redis:6379", bucket_batch_size=0)
+
+
+def test_health_key_scopes_by_watch_version() -> None:
+    assert (
+        health_key("momentum_flow_watch_v1") == "market:momentumwatch:health:momentum_flow_watch_v1"
+    )
+    # Regression: this is the actual "no shared/masking counters" case --
+    # two contracts' own health snapshots must never collide on one key.
+    assert health_key("momentum_flow_watch_v1_binance") != health_key("momentum_flow_watch_v1")
+
+
+class _FakeRedis:
+    """Stands in for redis.asyncio.Redis: records every hset call instead
+    of touching a real (or fake) network connection."""
+
+    def __init__(self) -> None:
+        self.hset_calls: list[tuple[str, dict[str, str]]] = []
+
+    async def hset(self, key: str, mapping: dict[str, str]) -> None:
+        self.hset_calls.append((key, dict(mapping)))
+
+    async def aclose(self) -> None:
+        pass
+
+
+def _install_fake_redis(monkeypatch: pytest.MonkeyPatch) -> _FakeRedis:
+    fake = _FakeRedis()
+
+    class _FakeRedisFactory:
+        @staticmethod
+        def from_url(url: str, decode_responses: bool = True) -> _FakeRedis:
+            return fake
+
+    monkeypatch.setattr(momentum_flow_watch_worker, "Redis", _FakeRedisFactory)
+    return fake
+
+
+class RecordingStore:
+    """A WatchStore that records exactly which contract each method was
+    called with, for asserting run_watch_worker threads its own contract
+    parameter through end to end instead of silently falling back to a
+    hardcoded default anywhere along the way. due_buckets always returns
+    empty so load_bucket/persist_bucket are never reached -- this file
+    tests contract plumbing, not bucket evaluation (see evaluate_bucket's
+    own tests above for that)."""
+
+    def __init__(self) -> None:
+        self.lock_calls: list[str] = []
+        self.register_run_calls: list[WatchContract] = []
+        self.due_buckets_calls: list[WatchContract] = []
+        self.load_states_calls: list[WatchContract] = []
+
+    async def acquire_worker_lock(self, watch_version: str) -> bool:
+        self.lock_calls.append(watch_version)
+        return True
+
+    async def register_run(
+        self, *, contract: WatchContract, contract_sha256: str, now: datetime
+    ) -> WatchRun:
+        self.register_run_calls.append(contract)
+        return WatchRun(contract.watch_version, contract_sha256, {}, now, None, "active")
+
+    async def due_buckets(
+        self, *, contract: WatchContract, cohort_started_at: datetime, limit: int
+    ) -> tuple[datetime, ...]:
+        self.due_buckets_calls.append(contract)
+        return ()
+
+    async def load_bucket(
+        self, *, contract: WatchContract, bucket_start: datetime
+    ) -> WatchBucketInput | None:
+        raise AssertionError("no bucket should be loaded: due_buckets returns none")
+
+    async def load_states(self, *, contract: WatchContract) -> dict[str, SymbolWatchState]:
+        self.load_states_calls.append(contract)
+        return {}
+
+    async def persist_bucket(
+        self, writes: tuple[EvaluationWrite, ...], *, contract: WatchContract
+    ) -> None:
+        raise AssertionError("no bucket should ever be persisted in this test")
+
+
+async def test_run_watch_worker_defaults_to_the_live_bybit_contract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: run_watch_worker gained contract/contract_sha256
+    parameters after already being in production for the Bybit worker.
+    Every existing caller (main(), and the live deploy) must see
+    byte-identical behavior when it does not pass them explicitly."""
+    fake_redis = _install_fake_redis(monkeypatch)
+    store = RecordingStore()
+    config = WatchWorkerConfig("postgresql://example", "redis:6379")
+
+    await run_watch_worker(config, once=True, store=store)
+
+    assert store.lock_calls == [FROZEN_WATCH_CONTRACT.watch_version]
+    assert store.register_run_calls == [FROZEN_WATCH_CONTRACT]
+    assert store.due_buckets_calls == [FROZEN_WATCH_CONTRACT]
+    assert store.load_states_calls == [FROZEN_WATCH_CONTRACT]
+    assert fake_redis.hset_calls
+    key, mapping = fake_redis.hset_calls[-1]
+    assert key == health_key(FROZEN_WATCH_CONTRACT.watch_version)
+    assert mapping["watch_version"] == FROZEN_WATCH_CONTRACT.watch_version
+
+
+async def test_run_watch_worker_threads_a_different_contract_through(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The actual regression this PR exists to prevent: passing
+    BINANCE_WATCH_CONTRACT must reach every store call AND the health key,
+    not silently fall back to the hardcoded Bybit default anywhere."""
+    fake_redis = _install_fake_redis(monkeypatch)
+    store = RecordingStore()
+    config = WatchWorkerConfig("postgresql://example", "redis:6379")
+
+    await run_watch_worker(
+        config,
+        once=True,
+        store=store,
+        contract=BINANCE_WATCH_CONTRACT,
+        contract_sha256=BINANCE_WATCH_CONTRACT_SHA256,
+    )
+
+    assert store.lock_calls == [BINANCE_WATCH_CONTRACT.watch_version]
+    assert store.register_run_calls == [BINANCE_WATCH_CONTRACT]
+    assert store.due_buckets_calls == [BINANCE_WATCH_CONTRACT]
+    assert store.load_states_calls == [BINANCE_WATCH_CONTRACT]
+    key, mapping = fake_redis.hset_calls[-1]
+    assert key == health_key(BINANCE_WATCH_CONTRACT.watch_version)
+    assert key != health_key(FROZEN_WATCH_CONTRACT.watch_version)
+    assert mapping["watch_version"] == BINANCE_WATCH_CONTRACT.watch_version
+
+
+def test_binance_watch_contract_reuses_every_frozen_threshold_verbatim() -> None:
+    """Regression for ROADMAP's own "frozen v1 logic" instruction: only
+    identity fields (watch_version, source_exchange) may differ from the
+    live Bybit contract -- every threshold this contract is frozen on must
+    be byte-identical, not independently retuned for Binance's smaller
+    universe."""
+    identity_fields = {"watch_version", "source_exchange"}
+    for field in fields(FROZEN_WATCH_CONTRACT):
+        if field.name in identity_fields:
+            continue
+        bybit_value = getattr(FROZEN_WATCH_CONTRACT, field.name)
+        binance_value = getattr(BINANCE_WATCH_CONTRACT, field.name)
+        assert binance_value == bybit_value, f"{field.name} drifted from the frozen v1 contract"
+    assert BINANCE_WATCH_CONTRACT.watch_version != FROZEN_WATCH_CONTRACT.watch_version
+    assert BINANCE_WATCH_CONTRACT.source_exchange != FROZEN_WATCH_CONTRACT.source_exchange
+    assert BINANCE_WATCH_CONTRACT.sha256_hex() == BINANCE_WATCH_CONTRACT_SHA256
+    assert BINANCE_WATCH_CONTRACT.sha256_hex() != WATCH_CONTRACT_SHA256
+
+
+async def test_run_watch_worker_rejects_a_mismatched_contract_and_hash_pair(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression for a code-review finding: register_run's own equality
+    check only compares contract_sha256 against the DB row it just wrote
+    from that same value, which is tautological on the very first run --
+    it can never catch a caller passing a contract_sha256 that does not
+    actually match contract.sha256_hex(). run_watch_worker must catch this
+    itself, before ever reaching the store."""
+    _install_fake_redis(monkeypatch)
+    store = RecordingStore()
+    config = WatchWorkerConfig("postgresql://example", "redis:6379")
+
+    with pytest.raises(RuntimeError, match="contract_sha256 does not match"):
+        await run_watch_worker(
+            config,
+            once=True,
+            store=store,
+            contract=BINANCE_WATCH_CONTRACT,
+            contract_sha256=WATCH_CONTRACT_SHA256,  # the Bybit hash, wrong for this contract
+        )
+    assert store.lock_calls == []
