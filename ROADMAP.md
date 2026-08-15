@@ -595,6 +595,26 @@ front.
    own item 6 24/48/72-hour checkpoint decision is made** -- merging to
    `main` alone does not deploy or restart anything.
 
+   **Binance momentum capture (`feat/binance-momentum-capture-v1`,
+   2026-08-15; implemented and unit-tested, Compose profile disabled by
+   default):** `cmd/momentumcapturebinance`, a complete second capture
+   binary structurally parallel to `cmd/momentumcapture` -- own event loop,
+   own health snapshot (`Exchange: "binance"`), own writer bound to the
+   SAME `timeseries.bybit_momentum_bars_1m` table (already exchange-scoped
+   by its own primary key, no new migration needed). The one structural
+   difference: this process has no ticker feed at all, since
+   `binance.Adapter` does not implement `TickerSource` -- its only
+   price-or-OI signal is an in-process `PollOpenInterest` REST poll, so
+   every Binance bar's OHLC/bid/ask stays permanently nil, OI-only. Wired
+   into a disabled-by-default `momentum-capture-binance` Compose profile in
+   both dev and prod, with its own start/stop/health Makefile targets (the
+   prod start target gated by the same RAM/disk capacity check
+   `prod-momentum-capture-start` already uses). See docs/research/binance-
+   momentum-capture-v1.md. **Not activated by this PR: this section's own
+   "activate it only after a corrected Bybit checkpoint and host-capacity
+   gate pass" rule still applies in full** -- the profile stays off until a
+   human runs the start target deliberately, after both gates pass.
+
 8. **Launch a prospective WATCH and paper baseline early; wait 2-4 UTC weeks for a
    verdict, not for the first measurement deployment.** After the fixed 72-hour
    calibration read and the capture-integrity fixes, freeze one broad

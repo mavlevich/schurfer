@@ -166,6 +166,66 @@ func TestStoreHealthKeysEachExchangeSeparately(t *testing.T) {
 	}
 }
 
+func TestStoreHealthEncodesExclusionCountsAsDeterministicJSON(t *testing.T) {
+	t.Parallel()
+	server := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
+	t.Cleanup(func() { _ = client.Close() })
+	store, err := NewRedisStore(client)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	health := Health{
+		Exchange: "binance",
+		Status:   "ok",
+		ExclusionCounts: map[string]int{
+			"underlying_index":        2,
+			"non_perpetual_contract":  14,
+			"unknown_underlying_type": 0,
+		},
+	}
+	if err := store.StoreHealth(context.Background(), health); err != nil {
+		t.Fatal(err)
+	}
+
+	fields, err := client.HGetAll(context.Background(), HealthKey("binance")).Result()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Regression: map iteration order is randomized in Go, but
+	// json.Marshal on a map always sorts keys -- this asserts the exact
+	// serialized string, not just that it round-trips, so an accidental
+	// switch to a non-deterministic encoding would fail this test.
+	want := `{"non_perpetual_contract":14,"underlying_index":2,"unknown_underlying_type":0}`
+	if fields["exclusion_counts_json"] != want {
+		t.Fatalf("exclusion_counts_json = %q, want %q", fields["exclusion_counts_json"], want)
+	}
+}
+
+func TestStoreHealthEncodesNilExclusionCountsAsEmptyObject(t *testing.T) {
+	t.Parallel()
+	server := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
+	t.Cleanup(func() { _ = client.Close() })
+	store, err := NewRedisStore(client)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.StoreHealth(context.Background(), Health{Exchange: "bybit", Status: "ok"}); err != nil {
+		t.Fatal(err)
+	}
+
+	fields, err := client.HGetAll(context.Background(), HealthKey("bybit")).Result()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fields["exclusion_counts_json"] != "{}" {
+		t.Fatalf("exclusion_counts_json = %q, want {} for a venue with no such exclusions", fields["exclusion_counts_json"])
+	}
+}
+
 func TestSampleJoinCapsWithoutMutatingTheInputSlice(t *testing.T) {
 	t.Parallel()
 	items := []string{"A", "B", "C", "D"}
