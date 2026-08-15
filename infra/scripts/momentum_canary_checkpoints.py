@@ -30,8 +30,8 @@ State model (one JSON snapshot file):
 
 Each run:
 1. Reads the momentum-capture service's own started_at_ms from its Redis
-   health snapshot (market:momentumcapture:health) -- never a value this
-   script computes or is told. A changed started_at_ms means a restart:
+   health snapshot (market:momentumcapture:health:bybit) -- never a value
+   this script computes or is told. A changed started_at_ms means a restart:
    the OLD epoch is archived (full history kept, a Telegram alert sent), not
    silently wiped -- a restart at hour 70 must not erase evidence of a
    struggling canary, and whether the new epoch counts as a fresh canary is a
@@ -93,7 +93,14 @@ MOMENTUM_CONTAINER = "schurfer-momentum-capture"
 COLLECTOR_CONTAINER = "schurfer-collector"
 DB_USER = "schurfer"
 DB_NAME = "schurfer"
-HEALTH_KEY = "market:momentumcapture:health"
+# This runner is deliberately scoped to the Bybit canary only (ROADMAP item
+# 6's own framing); apps/collector/internal/momentumcapture.HealthKey now
+# scopes the Redis key per exchange so a future Binance momentum-capture
+# process (feat/binance-momentum-capture-v1) publishes its own health
+# snapshot under a separate key instead of overwriting this one. A Binance
+# canary runner is its own future script, not a parameter added here ahead
+# of that PR actually existing.
+HEALTH_KEY = "market:momentumcapture:health:bybit"
 HYPERTABLE = "timeseries.bybit_momentum_bars_1m"
 
 # 24h is an early warning, not itself a decision point; 48h/72h bracket the

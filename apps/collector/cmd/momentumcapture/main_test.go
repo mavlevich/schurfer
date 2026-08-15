@@ -286,7 +286,7 @@ func TestApplicationLogHealthPublishesToRedis(t *testing.T) {
 
 	app.logHealth(context.Background())
 
-	fields, err := client.HGetAll(context.Background(), momentumcapture.HealthKey).Result()
+	fields, err := client.HGetAll(context.Background(), momentumcapture.HealthKey("bybit")).Result()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -305,7 +305,7 @@ func TestApplicationLogHealthPublishesToRedis(t *testing.T) {
 	if fields["flush_count"] != "1" || fields["flush_p99_us"] != "2500" {
 		t.Fatalf("flush latency fields wrong: %+v", fields)
 	}
-	if server.TTL(momentumcapture.HealthKey) <= 0 {
+	if server.TTL(momentumcapture.HealthKey("bybit")) <= 0 {
 		t.Fatal("health key should have a TTL so a dead process's last snapshot expires")
 	}
 }

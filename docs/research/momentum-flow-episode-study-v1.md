@@ -29,7 +29,7 @@ repository.py`'s existing point-in-time source/identity selection). A pump
   corrected capture epoch has accumulated its own full pre-trigger window.
   `--capture-epoch-started-at` is a required CLI argument with no default --
   never hardcoded. On the FIRST run of this research line, take it from
-  `market:momentumcapture:health` or `runtime/momentum-canary-checkpoints
+  `market:momentumcapture:health:bybit` or `runtime/momentum-canary-checkpoints
 .json`; from then on, this exact boundary is FROZEN by `momentum_flow_
 cohort_acceptance.py` and every later run must re-supply the SAME value
   (amended after third colleague review, before any real run: the earlier
@@ -215,7 +215,7 @@ make momentum-flow-episode-study-report \
   ARGS="--capture-epoch-started-at 2026-08-14T12:04:47.168Z --format json"
 
 make prod-momentum-flow-episode-study-report \
-  ARGS="--capture-epoch-started-at <value from market:momentumcapture:health> \
+  ARGS="--capture-epoch-started-at <value from market:momentumcapture:health:bybit> \
         --until 2026-09-01T00:00:00Z --format json" \
   > backups/reports/momentum-flow-episode-study-<date>.json
 ```

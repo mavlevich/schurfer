@@ -14,6 +14,16 @@ import "time"
 // writer exist (later steps of this PR); the struct is defined in full
 // now so later steps extend it rather than redesign it.
 type Health struct {
+	// Exchange identifies which venue's momentum-capture process produced
+	// this snapshot ("bybit", "binance", ...). Required: RedisStore.
+	// StoreHealth refuses to publish a Health with this unset, because an
+	// empty Exchange used to mean every venue's process would key its
+	// health snapshot identically (a single unparameterized HealthKey
+	// constant) -- the second venue's process would silently overwrite the
+	// first's, the same masking-counter failure mode as any other
+	// unscoped shared key, just for observability instead of accounting.
+	// See docs/research/momentum-canary-multivenue-v1.md.
+	Exchange      string
 	Status        string // "ok" | "degraded_universe_stale" | "degraded_queue_pressure" | ...
 	StartedAt     time.Time
 	UpdatedAt     time.Time

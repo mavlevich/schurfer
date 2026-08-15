@@ -240,7 +240,7 @@ momentum-capture-health:
 	@docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
 		--profile momentum-capture ps momentum-capture
 	@docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
-		exec -T redis redis-cli --raw HGETALL market:momentumcapture:health
+		exec -T redis redis-cli --raw HGETALL market:momentumcapture:health:bybit
 
 momentum-watch-start:
 	@test -f .env || (echo "ERROR: .env not found. Run make dev-init first." && exit 1)
@@ -431,7 +431,7 @@ oi-growth-filter-report:
 			|| printf '%s' '--working-tree-dirty') $(ARGS)
 
 # --capture-epoch-started-at has no default: pass ARGS="--capture-epoch-started-at
-# <ISO8601> ..." with the value taken from market:momentumcapture:health or
+# <ISO8601> ..." with the value taken from market:momentumcapture:health:bybit or
 # runtime/momentum-canary-checkpoints.json at run time, never a stale copy.
 momentum-flow-episode-study-report:
 	@DATABASE_URL="$${DATABASE_URL:-postgresql://schurfer:schurfer_dev@localhost:5432/schurfer}" \
@@ -1280,7 +1280,7 @@ prod-momentum-capture-stop:
 prod-momentum-capture-health:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
 	@$(_PROD) --profile momentum-capture ps momentum-capture
-	@$(_PROD) exec -T redis redis-cli --raw HGETALL market:momentumcapture:health
+	@$(_PROD) exec -T redis redis-cli --raw HGETALL market:momentumcapture:health:bybit
 	@docker stats --no-stream schurfer-momentum-capture schurfer-collector
 
 prod-momentum-watch-start:

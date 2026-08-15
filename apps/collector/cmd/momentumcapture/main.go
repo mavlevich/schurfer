@@ -929,6 +929,7 @@ func (app *application) logHealth(ctx context.Context) {
 	inputDepth := app.observeInputQueueDepth()
 
 	health := momentumcapture.BuildUniverseHealth(app.universe, app.lastDrift, app.readiness, now)
+	health.Exchange = exchange
 	health.CatalogItemsTotal = app.catalog.CatalogItemsTotal
 	health.CryptoPerpetualsIncluded = app.catalog.CryptoPerpetualsIncluded
 	health.StandardCryptoIncluded = app.catalog.StandardCryptoIncluded

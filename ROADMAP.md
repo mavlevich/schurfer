@@ -575,6 +575,26 @@ front.
    equivalent for Binance), which also owns the actual Compose profile and
    database writer.
 
+   **Multivenue canary telemetry (`refactor/momentum-canary-multivenue-v1`,
+   2026-08-15; merged, not yet deployed):** the next PR starts a second
+   momentum-capture process, and its Redis health snapshot needed somewhere
+   to go that would not collide with the running Bybit canary's own.
+   `momentumcapture.HealthKey` was a single unparameterized constant every
+   venue's process would have shared -- Binance's health snapshot would have
+   silently overwritten Bybit's the moment it started publishing, exactly
+   the "no shared/masking counters" failure this section's own item 6 is
+   trying to measure honestly. `Health` now carries an `Exchange` field,
+   `HealthKey` takes it as a parameter, and `RedisStore.StoreHealth` fails
+   closed on an unset `Exchange` rather than falling back to some default
+   venue. The canary-checkpoints script, the Makefile health targets, and
+   doc references were all updated to the new
+   `market:momentumcapture:health:bybit` key. See
+   docs/research/momentum-canary-multivenue-v1.md. **Operational note: this
+   PR touches the file backing the currently-running Bybit canary process.
+   Deploying it restarts that process. Do not deploy until this section's
+   own item 6 24/48/72-hour checkpoint decision is made** -- merging to
+   `main` alone does not deploy or restart anything.
+
 8. **Launch a prospective WATCH and paper baseline early; wait 2-4 UTC weeks for a
    verdict, not for the first measurement deployment.** After the fixed 72-hour
    calibration read and the capture-integrity fixes, freeze one broad

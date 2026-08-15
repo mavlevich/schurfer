@@ -753,7 +753,7 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
         help=(
             "The momentum-capture cohort's ACCEPTED started_at_ms for this research line. "
-            "On the very first run, take it from market:momentumcapture:health or "
+            "On the very first run, take it from market:momentumcapture:health:bybit or "
             "runtime/momentum-canary-checkpoints.json and it becomes frozen from then on "
             "(see momentum_flow_cohort_acceptance.py) -- on every later run, re-supply the "
             "SAME already-accepted value. A differing value is refused unless "
