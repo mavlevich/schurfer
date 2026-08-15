@@ -7,16 +7,35 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/mavlevich/schurfer/collector/internal/momentumsource"
 )
 
+// instrument builds a fixture with an arbitrary but always-present, always-
+// valid baseAsset/onboardDate: none of this file's own pre-existing tests
+// inspect catalog.Instruments, so a fixed default here keeps every one of
+// their call sites unchanged. Tests that DO care about identity fields use
+// instrumentWithIdentity instead.
 func instrument(symbol, contractType, status, quoteAsset, marginAsset, underlyingType string) map[string]any {
+	return instrumentWithIdentity(symbol, contractType, status, quoteAsset, marginAsset, underlyingType, "BASE", int64(1700000000000))
+}
+
+// onboardDate accepts nil (field entirely absent from the response) or an
+// int64 Unix-milliseconds value, matching *int64's own two real states.
+func instrumentWithIdentity(
+	symbol, contractType, status, quoteAsset, marginAsset, underlyingType, baseAsset string,
+	onboardDate any,
+) map[string]any {
 	return map[string]any{
 		"symbol":         symbol,
 		"contractType":   contractType,
 		"status":         status,
+		"baseAsset":      baseAsset,
 		"quoteAsset":     quoteAsset,
 		"marginAsset":    marginAsset,
 		"underlyingType": underlyingType,
+		"onboardDate":    onboardDate,
 	}
 }
 
@@ -92,6 +111,74 @@ func TestFetchSymbolCatalogIncludesOnlyUSDTCryptoPerpetuals(t *testing.T) {
 	}
 }
 
+func TestFetchSymbolCatalogBuildsInstrumentsWithIdentityMetadata(t *testing.T) {
+	t.Parallel()
+	items := []map[string]any{
+		instrumentWithIdentity("BTCUSDT", "PERPETUAL", "TRADING", "USDT", "USDT", "COIN", "BTC", int64(1569398400000)),
+		instrumentWithIdentity("MISSINGUSDT", "PERPETUAL", "TRADING", "USDT", "USDT", "COIN", "MISSING", nil),
+		instrumentWithIdentity("ZEROUSDT", "PERPETUAL", "TRADING", "USDT", "USDT", "COIN", "ZERO", int64(0)),
+		instrumentWithIdentity("NEGATIVEUSDT", "PERPETUAL", "TRADING", "USDT", "USDT", "COIN", "NEGATIVE", int64(-1)),
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeExchangeInfoResponse(t, w, items)
+	}))
+	t.Cleanup(server.Close)
+
+	source := &Source{restURL: server.URL, httpClient: server.Client()}
+	catalog, err := source.FetchSymbolCatalog(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(catalog.Instruments) != 4 {
+		t.Fatalf("got %d instruments, want 4 (one per CryptoPerpetualSymbols entry)", len(catalog.Instruments))
+	}
+
+	byMarketID := make(map[string]momentumsource.Instrument, len(catalog.Instruments))
+	for _, inst := range catalog.Instruments {
+		byMarketID[inst.NativeMarketID] = inst
+	}
+
+	btc := byMarketID["BTCUSDT"]
+	if btc.IdentityStatus != momentumsource.IdentityStatusReady {
+		t.Fatalf("BTCUSDT status = %q, want ready", btc.IdentityStatus)
+	}
+	if btc.Base != "BTC" || btc.Quote != "USDT" || btc.Settle != "USDT" {
+		t.Fatalf("BTCUSDT base/quote/settle = %q/%q/%q", btc.Base, btc.Quote, btc.Settle)
+	}
+	if btc.Exchange != "binance" || btc.CanonicalMarketType != MarketType {
+		t.Fatalf("BTCUSDT exchange/market type = %q/%q", btc.Exchange, btc.CanonicalMarketType)
+	}
+	if btc.OnboardedAt == nil || btc.OnboardedAt.UnixMilli() != 1569398400000 {
+		t.Fatalf("BTCUSDT OnboardedAt = %v, want 1569398400000ms", btc.OnboardedAt)
+	}
+	if _, ok := btc.IdentityKey(); !ok {
+		t.Fatal("BTCUSDT should produce a real identity key")
+	}
+
+	// Regression: an onboardDate field entirely absent from the JSON
+	// response must classify as MISSING.
+	if got := byMarketID["MISSINGUSDT"].IdentityStatus; got != momentumsource.IdentityStatusMissingOnboardedAt {
+		t.Fatalf("MISSINGUSDT status = %q, want missing_onboarded_at", got)
+	}
+	// Regression: 0 is Binance's own "not recorded" sentinel, not a real
+	// Unix-epoch-1970 onboard date.
+	if got := byMarketID["ZEROUSDT"].IdentityStatus; got != momentumsource.IdentityStatusMissingOnboardedAt {
+		t.Fatalf("ZEROUSDT status = %q, want missing_onboarded_at", got)
+	}
+	// Regression (a code-review finding): a negative value is data
+	// Binance actually sent, just semantically impossible as an onboard
+	// date -- kept distinct from the 0/absent "not recorded" sentinel,
+	// same as bybit.parseLaunchTimeMs's own handling of a negative
+	// launchTime, so a genuinely garbled onboardDate is not silently
+	// indistinguishable from a routine absent field.
+	if got := byMarketID["NEGATIVEUSDT"].IdentityStatus; got != momentumsource.IdentityStatusInvalidOnboardedAt {
+		t.Fatalf("NEGATIVEUSDT status = %q, want invalid_onboarded_at", got)
+	}
+	if byMarketID["NEGATIVEUSDT"].OnboardedAt != nil {
+		t.Fatalf("NEGATIVEUSDT OnboardedAt = %v, want nil (not ready, must not carry a value)", byMarketID["NEGATIVEUSDT"].OnboardedAt)
+	}
+}
+
 func TestValidateCatalogRejectsEmptyEligibleUniverse(t *testing.T) {
 	// Exercises validateCatalog directly rather than through
 	// FetchSymbolCatalog's own retry wrapper: this failure is permanent
@@ -100,7 +187,7 @@ func TestValidateCatalogRejectsEmptyEligibleUniverse(t *testing.T) {
 	// covering anything FetchSymbolCatalogRetriesOnTransientFailure does
 	// not already cover for the retry loop itself.
 	var catalog SymbolCatalog
-	classifyCatalogItem(&catalog, "XAUUSDT", "TRADIFI_PERPETUAL", "TRADING", "USDT", "USDT", "COIN")
+	classifyCatalogItem(&catalog, "XAUUSDT", "TRADIFI_PERPETUAL", "TRADING", "XAU", "USDT", "USDT", "COIN", nil, time.Now())
 
 	err := validateCatalog(catalog)
 	if err == nil || !strings.Contains(err.Error(), "no eligible crypto perpetuals") {
@@ -127,8 +214,9 @@ func TestClassifyCatalogItemAccountingIsExhaustive(t *testing.T) {
 		{"WEIRDUSDT", "PERPETUAL", "TRADING", "USDT", "USDT", "SOMETHING_NEW"},
 		{"", "PERPETUAL", "TRADING", "USDT", "USDT", "COIN"},
 	}
+	onboardedAt := int64(1700000000000)
 	for _, row := range rows {
-		classifyCatalogItem(&catalog, row.symbol, row.contractType, row.status, row.quoteAsset, row.marginAsset, row.underlyingType)
+		classifyCatalogItem(&catalog, row.symbol, row.contractType, row.status, "BASE", row.quoteAsset, row.marginAsset, row.underlyingType, &onboardedAt, time.Now())
 	}
 	if err := validateCatalog(catalog); err != nil {
 		t.Fatalf("validateCatalog() error = %v", err)

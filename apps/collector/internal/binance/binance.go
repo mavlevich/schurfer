@@ -19,6 +19,8 @@ import (
 	"net/http"
 	"net/url"
 	"time"
+
+	"github.com/mavlevich/schurfer/collector/internal/momentumsource"
 )
 
 const defaultRESTURL = "https://fapi.binance.com"
@@ -51,9 +53,13 @@ type SymbolCatalogCounts struct {
 // futures catalog, restricted to the strict momentum-capture universe:
 // PERPETUAL contractType, TRADING status, USDT quote AND margin asset,
 // COIN underlyingType (excludes the 2 INDEX-type instruments the
-// preflight found, e.g. BTCDOMUSDT/ALLUSDT).
+// preflight found, e.g. BTCDOMUSDT/ALLUSDT). Instruments is additive
+// (feat/momentum-universe-identity-foundation-v1): one momentumsource.
+// Instrument per CryptoPerpetualSymbols entry, same order, same length --
+// see validateCatalog. CryptoPerpetualSymbols itself is untouched.
 type SymbolCatalog struct {
 	CryptoPerpetualSymbols []string
+	Instruments            []momentumsource.Instrument
 	Counts                 SymbolCatalogCounts
 }
 
@@ -147,19 +153,34 @@ func (s *Source) fetchSymbolCatalog(ctx context.Context) (SymbolCatalog, error) 
 			Symbol            string   `json:"symbol"`
 			ContractType      string   `json:"contractType"`
 			Status            string   `json:"status"`
+			BaseAsset         string   `json:"baseAsset"`
 			QuoteAsset        string   `json:"quoteAsset"`
 			MarginAsset       string   `json:"marginAsset"`
 			UnderlyingType    string   `json:"underlyingType"`
 			UnderlyingSubType []string `json:"underlyingSubType"`
+			// OnboardDate is a pointer specifically so a JSON response that
+			// omits the field entirely is distinguishable from one that
+			// carries an explicit 0/negative sentinel -- both end up
+			// IdentityStatusMissingOnboardedAt (see parseOnboardDateMs),
+			// but only because that is checked explicitly, not because a
+			// bare int64 zero value made the two indistinguishable.
+			OnboardDate *int64 `json:"onboardDate"`
 		} `json:"symbols"`
 	}
 	if err := json.Unmarshal(b, &body); err != nil {
 		return SymbolCatalog{}, fmt.Errorf("decode: %w", err)
 	}
 
+	// observedAt is fixed once for this entire response: every Instrument
+	// this catalog produces describes the same point-in-time snapshot.
+	observedAt := time.Now()
 	catalog := SymbolCatalog{}
 	for _, item := range body.Symbols {
-		classifyCatalogItem(&catalog, item.Symbol, item.ContractType, item.Status, item.QuoteAsset, item.MarginAsset, item.UnderlyingType)
+		classifyCatalogItem(
+			&catalog, item.Symbol, item.ContractType, item.Status,
+			item.BaseAsset, item.QuoteAsset, item.MarginAsset, item.UnderlyingType,
+			item.OnboardDate, observedAt,
+		)
 	}
 	return catalog, nil
 }
@@ -169,9 +190,12 @@ func classifyCatalogItem(
 	symbol string,
 	contractType string,
 	status string,
+	baseAsset string,
 	quoteAsset string,
 	marginAsset string,
 	underlyingType string,
+	onboardDateMs *int64,
+	observedAt time.Time,
 ) {
 	catalog.Counts.CatalogItemsTotal++
 	if symbol == "" {
@@ -194,11 +218,37 @@ func classifyCatalogItem(
 	case underlyingTypeCoin:
 		catalog.Counts.CryptoPerpetualsIncluded++
 		catalog.CryptoPerpetualSymbols = append(catalog.CryptoPerpetualSymbols, symbol)
+		// Settle: Binance's own USD-M futures settle in the margin asset,
+		// same value marginAsset already carries -- no separate settle
+		// field exists on this endpoint to decode.
+		catalog.Instruments = append(catalog.Instruments, momentumsource.NewInstrument(
+			exchangeName, symbol, baseAsset, quoteAsset, marginAsset,
+			contractType, MarketType, parseOnboardDateMs(onboardDateMs), observedAt,
+		))
 	case "INDEX":
 		catalog.Counts.UnderlyingIndexExcluded++
 	default:
 		catalog.Counts.UnknownUnderlyingTypeExcluded++
 	}
+}
+
+// parseOnboardDateMs parses Binance's own onboardDate field: Unix
+// milliseconds, carried as a JSON number (unlike Bybit's launchTime, a
+// JSON string -- see bybit.parseLaunchTimeMs). A nil pointer means the
+// field was absent from the response; anything else is real data the
+// venue sent, decoded already. The absent/zero/negative/valid
+// classification rule itself (0 is Binance's own "not recorded" sentinel;
+// negative is present-but-semantically-impossible, not "missing") is
+// shared with Bybit's own equivalent field -- see
+// momentumsource.ClassifyOnboardedAtMs's own doc comment (a code-review
+// finding: this and bybit.parseLaunchTimeMs originally reimplemented the
+// same rule twice, and a negative-value fix had to be applied to both
+// separately before this was factored out).
+func parseOnboardDateMs(raw *int64) *time.Time {
+	if raw == nil {
+		return momentumsource.ClassifyOnboardedAtMs(0, false)
+	}
+	return momentumsource.ClassifyOnboardedAtMs(*raw, true)
 }
 
 func validateCatalog(catalog SymbolCatalog) error {
@@ -230,6 +280,12 @@ func validateCatalog(catalog SymbolCatalog) error {
 		return fmt.Errorf(
 			"instrument catalog inclusion mismatch: symbols=%d included=%d",
 			len(catalog.CryptoPerpetualSymbols), counts.CryptoPerpetualsIncluded,
+		)
+	}
+	if len(catalog.Instruments) != len(catalog.CryptoPerpetualSymbols) {
+		return fmt.Errorf(
+			"instrument catalog identity mismatch: instruments=%d symbols=%d",
+			len(catalog.Instruments), len(catalog.CryptoPerpetualSymbols),
 		)
 	}
 	return nil
