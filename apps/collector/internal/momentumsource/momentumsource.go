@@ -151,6 +151,12 @@ type OpenInterestReading struct {
 	ValueObservedAt  *time.Time
 }
 
+// OpenInterestConsumer receives each reading. As with TickerConsumer,
+// whether a returned error stops or reconnects the underlying source is
+// NOT guaranteed uniformly -- see binance.Adapter.StreamOpenInterest's own
+// doc comment: a poll-based source has no connection to reconnect, so it
+// logs a consume error and keeps polling rather than stopping collection
+// for every symbol over one transient downstream failure.
 type OpenInterestConsumer func(context.Context, Envelope, OpenInterestReading) error
 
 // OpenInterestSource streams (or, for a poll-based venue, periodically
