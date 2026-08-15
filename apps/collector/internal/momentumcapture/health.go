@@ -45,9 +45,19 @@ type Health struct {
 	SymbolsMissingTicker   []string
 	SymbolsMissingTrades   []string
 
-	// Initial Bybit catalog scope. These counters prove which instrument
-	// classes were deliberately included or excluded when the immutable
-	// universe was frozen.
+	// Initial catalog scope. These counters prove which instrument classes
+	// were deliberately included or excluded when the immutable universe
+	// was frozen. CatalogItemsTotal/CryptoPerpetualsIncluded/
+	// NonUSDTExcluded/NonTradingExcluded/InvalidInstrumentExcluded are
+	// genuinely shared vocabulary across venues (both bybit.
+	// SymbolCatalogCounts and binance.SymbolCatalogCounts carry the same
+	// concept under the same name); the rest of this named-field block
+	// (StandardCryptoIncluded..UnknownSymbolTypeExcluded) is Bybit's own
+	// finer-grained classification and stays zero for every other venue,
+	// which is honest, not a lossy compromise -- each venue's own
+	// exclusion reasons that have no Bybit equivalent belong in
+	// ExclusionCounts below instead of being force-fit into a Bybit-shaped
+	// field.
 	CatalogItemsTotal           int
 	CryptoPerpetualsIncluded    int
 	StandardCryptoIncluded      int
@@ -60,6 +70,13 @@ type Health struct {
 	InvalidInstrumentExcluded   int
 	NonUSDTExcluded             int
 	NonTradingExcluded          int
+	// ExclusionCounts is every catalog exclusion reason that has no
+	// Bybit-shaped field above, keyed the same way momentumsource.
+	// UniverseSnapshot.ExclusionCounts already keys them (see binance.
+	// translateUniverse) -- "non_perpetual_contract", "underlying_index",
+	// "unknown_underlying_type" for Binance today. nil/empty for a venue
+	// whose whole taxonomy fit the named fields above.
+	ExclusionCounts map[string]int
 
 	// Ingestion (bounded event loop, see that step of this PR).
 	InputQueueDepth      int

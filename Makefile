@@ -1,5 +1,5 @@
-.PHONY: help install install-golangci-lint install-deadcode dev dev-init dev-stop dev-reset dev-logs dev-test migrate measurement-report exchange-coverage-report exchange-source-economics-report source-lead-report source-lead-identity-report gate-identity-candidate-tooling episode-replay virtual-strategy-report virtual-entry-challenger-report virtual-threshold-challenger-report virtual-exit-policy-report virtual-exit-discovery-report virtual-score-challenger-report virtual-banded-price-extent-report candle-anomaly-report derivatives-context-report decision-quality-report derivatives-regime-feasibility-report liquid-taker-report long-horizon-report open-ended-margin-report maker-entry-report pump-magnitude-report orderflow-pilot-report orderflow-endpoint-sensitivity-report exit-liquidity-calibration-report pump-short-failure-attribution-report pump-short-reentry-audit-report oi-growth-filter-report token-history-identity-preflight-report token-history-ohlcv-sample-report token-history-parquet-dataset token-behavior-discovery-report orderflow-start orderflow-stop orderflow-health momentum-capture-start momentum-capture-stop momentum-capture-health momentum-watch-start momentum-watch-stop momentum-watch-health momentum-paper-start momentum-paper-stop momentum-paper-health momentum-flow-episode-study-report test lint ci-lint format clean security deadcode check verify verify-docker \
-		prod-deploy prod-runtime-metrics-install prod-runtime-metrics-health prod-research-checkpoints-install prod-research-checkpoints-run prod-research-checkpoints-health prod-measurement-report prod-exchange-coverage-report prod-exchange-source-economics-report prod-source-lead-report prod-source-lead-identity-report prod-gate-identity-candidate-tooling prod-source-lead-capture-health prod-episode-replay prod-virtual-strategy-report prod-virtual-entry-challenger-report prod-virtual-threshold-challenger-report prod-virtual-exit-policy-report prod-virtual-exit-discovery-report prod-virtual-score-challenger-report prod-virtual-banded-price-extent-report prod-candle-anomaly-report prod-derivatives-context-report prod-decision-quality-report prod-derivatives-regime-feasibility-report prod-liquid-taker-report prod-long-horizon-report prod-open-ended-margin-report prod-open-ended-margin-health prod-maker-entry-report prod-pump-magnitude-report prod-orderflow-pilot-report prod-orderflow-endpoint-sensitivity-report prod-exit-liquidity-calibration-report prod-pump-short-failure-attribution-report prod-pump-short-reentry-audit-report prod-oi-growth-filter-report prod-token-history-identity-preflight-report prod-token-history-ohlcv-sample-report prod-token-history-parquet-dataset prod-token-behavior-discovery-report prod-orderflow-start prod-orderflow-stop prod-orderflow-health prod-momentum-capture-start prod-momentum-capture-stop prod-momentum-capture-health prod-momentum-watch-start prod-momentum-watch-stop prod-momentum-watch-health prod-momentum-paper-start prod-momentum-paper-stop prod-momentum-paper-health prod-momentum-canary-checkpoints-install prod-momentum-canary-checkpoints-run prod-momentum-canary-checkpoints-health prod-momentum-flow-episode-study-report prod-logs prod-backup prod-restore-local prod-health
+.PHONY: help install install-golangci-lint install-deadcode dev dev-init dev-stop dev-reset dev-logs dev-test migrate measurement-report exchange-coverage-report exchange-source-economics-report source-lead-report source-lead-identity-report gate-identity-candidate-tooling episode-replay virtual-strategy-report virtual-entry-challenger-report virtual-threshold-challenger-report virtual-exit-policy-report virtual-exit-discovery-report virtual-score-challenger-report virtual-banded-price-extent-report candle-anomaly-report derivatives-context-report decision-quality-report derivatives-regime-feasibility-report liquid-taker-report long-horizon-report open-ended-margin-report maker-entry-report pump-magnitude-report orderflow-pilot-report orderflow-endpoint-sensitivity-report exit-liquidity-calibration-report pump-short-failure-attribution-report pump-short-reentry-audit-report oi-growth-filter-report token-history-identity-preflight-report token-history-ohlcv-sample-report token-history-parquet-dataset token-behavior-discovery-report orderflow-start orderflow-stop orderflow-health momentum-capture-start momentum-capture-stop momentum-capture-health momentum-capture-binance-start momentum-capture-binance-stop momentum-capture-binance-health momentum-watch-start momentum-watch-stop momentum-watch-health momentum-paper-start momentum-paper-stop momentum-paper-health momentum-flow-episode-study-report test lint ci-lint format clean security deadcode check verify verify-docker \
+		prod-deploy prod-runtime-metrics-install prod-runtime-metrics-health prod-research-checkpoints-install prod-research-checkpoints-run prod-research-checkpoints-health prod-measurement-report prod-exchange-coverage-report prod-exchange-source-economics-report prod-source-lead-report prod-source-lead-identity-report prod-gate-identity-candidate-tooling prod-source-lead-capture-health prod-episode-replay prod-virtual-strategy-report prod-virtual-entry-challenger-report prod-virtual-threshold-challenger-report prod-virtual-exit-policy-report prod-virtual-exit-discovery-report prod-virtual-score-challenger-report prod-virtual-banded-price-extent-report prod-candle-anomaly-report prod-derivatives-context-report prod-decision-quality-report prod-derivatives-regime-feasibility-report prod-liquid-taker-report prod-long-horizon-report prod-open-ended-margin-report prod-open-ended-margin-health prod-maker-entry-report prod-pump-magnitude-report prod-orderflow-pilot-report prod-orderflow-endpoint-sensitivity-report prod-exit-liquidity-calibration-report prod-pump-short-failure-attribution-report prod-pump-short-reentry-audit-report prod-oi-growth-filter-report prod-token-history-identity-preflight-report prod-token-history-ohlcv-sample-report prod-token-history-parquet-dataset prod-token-behavior-discovery-report prod-orderflow-start prod-orderflow-stop prod-orderflow-health prod-momentum-capture-start prod-momentum-capture-stop prod-momentum-capture-health prod-momentum-capture-binance-start prod-momentum-capture-binance-stop prod-momentum-capture-binance-health prod-momentum-watch-start prod-momentum-watch-stop prod-momentum-watch-health prod-momentum-paper-start prod-momentum-paper-stop prod-momentum-paper-health prod-momentum-canary-checkpoints-install prod-momentum-canary-checkpoints-run prod-momentum-canary-checkpoints-health prod-momentum-flow-episode-study-report prod-logs prod-backup prod-restore-local prod-health
 
 GOLANGCI_LINT_VERSION = v2.1.6
 DEADCODE_VERSION = v0.48.0
@@ -21,6 +21,22 @@ PROD_MOMENTUM_CAPTURE_MIN_AVAILABLE_MB ?= 1024
 # with whatever else is already on the disk; revisit once the canary has
 # measured real WAL growth instead of estimating it.
 PROD_MOMENTUM_CAPTURE_MIN_DISK_MB ?= 10240
+# Same 512m mem_limit / 2x-headroom reasoning as PROD_MOMENTUM_CAPTURE_MIN_
+# AVAILABLE_MB above, checked independently so this process's own start
+# target still refuses to run underprovisioned even if invoked alone. In
+# practice this runs ALONGSIDE momentum-capture (ROADMAP item 7: prepare
+# immediately, activate only after the corrected Bybit canary passes AND
+# the host is resized), so available RAM at invocation time already
+# reflects whatever Bybit's own process is already using -- this is not a
+# substitute for that separate resize decision, just a floor.
+PROD_MOMENTUM_CAPTURE_BINANCE_MIN_AVAILABLE_MB ?= 1024
+# Reuses momentum-capture's own conservative disk estimate rather than a
+# fresh measurement: Binance's strict USDT-perpetual universe is smaller
+# than Bybit's (see docs/research/binance-momentum-capability-preflight-
+# v1.md), so this is if anything more conservative than the real number,
+# and both venues' rows land on the SAME hypertable/disk (packages/
+# journal/migrations/versions/0024_bybit_momentum_bars_1m.py).
+PROD_MOMENTUM_CAPTURE_BINANCE_MIN_DISK_MB ?= 10240
 PROD_MOMENTUM_WATCH_MIN_AVAILABLE_MB ?= 768
 PROD_MOMENTUM_PAPER_MIN_AVAILABLE_MB ?= 768
 
@@ -83,6 +99,9 @@ help:
 	@echo "  make momentum-capture-start  Start the bounded local Bybit momentum-capture line"
 	@echo "  make momentum-capture-health  Show local momentum-capture health"
 	@echo "  make momentum-capture-stop  Stop the local momentum-capture line"
+	@echo "  make momentum-capture-binance-start  Start the bounded local Binance momentum-capture line"
+	@echo "  make momentum-capture-binance-health  Show local Binance momentum-capture health"
+	@echo "  make momentum-capture-binance-stop  Stop the local Binance momentum-capture line"
 	@echo "  make momentum-watch-start  Start the prospective momentum WATCH worker"
 	@echo "  make momentum-watch-health  Show prospective momentum WATCH health"
 	@echo "  make momentum-watch-stop  Stop the prospective momentum WATCH worker"
@@ -144,6 +163,9 @@ help:
 	@echo "  make prod-momentum-capture-start  Explicitly start the bounded momentum-capture canary"
 	@echo "  make prod-momentum-capture-health  Show momentum-capture canary health and resource use"
 	@echo "  make prod-momentum-capture-stop  Stop the momentum-capture canary"
+	@echo "  make prod-momentum-capture-binance-start  Explicitly start the bounded Binance momentum-capture canary"
+	@echo "  make prod-momentum-capture-binance-health  Show Binance momentum-capture canary health and resource use"
+	@echo "  make prod-momentum-capture-binance-stop  Stop the Binance momentum-capture canary"
 	@echo "  make prod-momentum-watch-start  Start the prospective momentum WATCH worker"
 	@echo "  make prod-momentum-watch-health  Show prospective momentum WATCH health"
 	@echo "  make prod-momentum-watch-stop  Stop the prospective momentum WATCH worker"
@@ -241,6 +263,21 @@ momentum-capture-health:
 		--profile momentum-capture ps momentum-capture
 	@docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
 		exec -T redis redis-cli --raw HGETALL market:momentumcapture:health:bybit
+
+momentum-capture-binance-start:
+	@test -f .env || (echo "ERROR: .env not found. Run make dev-init first." && exit 1)
+	docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		--profile momentum-capture-binance up -d --build momentum-capture-binance
+
+momentum-capture-binance-stop:
+	docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		--profile momentum-capture-binance stop momentum-capture-binance
+
+momentum-capture-binance-health:
+	@docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		--profile momentum-capture-binance ps momentum-capture-binance
+	@docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		exec -T redis redis-cli --raw HGETALL market:momentumcapture:health:binance
 
 momentum-watch-start:
 	@test -f .env || (echo "ERROR: .env not found. Run make dev-init first." && exit 1)
@@ -1282,6 +1319,35 @@ prod-momentum-capture-health:
 	@$(_PROD) --profile momentum-capture ps momentum-capture
 	@$(_PROD) exec -T redis redis-cli --raw HGETALL market:momentumcapture:health:bybit
 	@docker stats --no-stream schurfer-momentum-capture schurfer-collector
+
+prod-momentum-capture-binance-start:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	@test "$$(git branch --show-current)" = "main" || (echo "ERROR: deploy only from main." && exit 1)
+	@test -z "$$(git status --porcelain)" || (echo "ERROR: working tree not clean." && exit 1)
+	@if test -r /proc/meminfo; then \
+		available_mb=$$(awk '/^MemAvailable:/ {print int($$2 / 1024)}' /proc/meminfo); \
+		if test "$$available_mb" -lt "$(PROD_MOMENTUM_CAPTURE_BINANCE_MIN_AVAILABLE_MB)"; then \
+			echo "ERROR: momentum-capture-binance requires $(PROD_MOMENTUM_CAPTURE_BINANCE_MIN_AVAILABLE_MB) MiB available RAM; found $$available_mb MiB."; \
+			exit 1; \
+		fi; \
+	fi
+	@available_disk_mb=$$(df -Pm / | awk 'NR == 2 {print $$4}'); \
+	if test "$$available_disk_mb" -lt "$(PROD_MOMENTUM_CAPTURE_BINANCE_MIN_DISK_MB)"; then \
+		echo "ERROR: momentum-capture-binance requires $(PROD_MOMENTUM_CAPTURE_BINANCE_MIN_DISK_MB) MiB free disk; found $$available_disk_mb MiB."; \
+		exit 1; \
+	fi
+	$(_PROD) --profile momentum-capture-binance up -d --build momentum-capture-binance
+	@$(_PROD) --profile momentum-capture-binance ps momentum-capture-binance
+
+prod-momentum-capture-binance-stop:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	$(_PROD) --profile momentum-capture-binance stop momentum-capture-binance
+
+prod-momentum-capture-binance-health:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	@$(_PROD) --profile momentum-capture-binance ps momentum-capture-binance
+	@$(_PROD) exec -T redis redis-cli --raw HGETALL market:momentumcapture:health:binance
+	@docker stats --no-stream schurfer-momentum-capture-binance
 
 prod-momentum-watch-start:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)

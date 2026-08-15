@@ -191,6 +191,38 @@ services:
     # final flush) has a chance to finish. Keep these two in sync.
     stop_grace_period: 90s
 
+  # Disabled by default (own profile, separate from momentum-capture's own
+  # so activating one never activates the other): prepared per ROADMAP
+  # "Active course" item 7, not to be started before the corrected Bybit
+  # canary passes and the host is resized for a second capture process --
+  # see docs/research/binance-momentum-capture-v1.md.
+  momentum-capture-binance:
+    profiles: ['momentum-capture-binance']
+    build:
+      context: ../../
+      dockerfile: apps/collector/Dockerfile
+    container_name: schurfer-momentum-capture-binance
+    entrypoint: ['/momentum-capture-binance']
+    environment:
+      DATABASE_URL: postgresql://schurfer:schurfer_dev@postgres:5432/schurfer
+      REDIS_ADDR: redis:6379
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # No nats dependency: unlike momentum-capture, this process has no
+    # separate ticker/OI feed process to depend on (see cmd/
+    # momentumcapturebinance's own package doc comment) -- its "ticker"
+    # side is an in-process REST poll.
+    restart: 'no'
+    mem_limit: 512m
+    memswap_limit: 512m
+    cpus: 1.0
+    pids_limit: 512
+    stop_grace_period: 90s
+
   momentum-watch:
     profiles: ['momentum-watch']
     build:

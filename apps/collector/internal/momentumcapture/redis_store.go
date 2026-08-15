@@ -2,6 +2,7 @@ package momentumcapture
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -101,6 +102,7 @@ func (store *RedisStore) StoreHealth(ctx context.Context, health Health) error {
 		"invalid_instrument_excluded":   health.InvalidInstrumentExcluded,
 		"non_usdt_excluded":             health.NonUSDTExcluded,
 		"non_trading_excluded":          health.NonTradingExcluded,
+		"exclusion_counts_json":         exclusionCountsJSON(health.ExclusionCounts),
 
 		"input_queue_depth":        health.InputQueueDepth,
 		"input_queue_peak":         health.InputQueuePeak,
@@ -179,4 +181,23 @@ func sampleJoin(items []string, max int) string {
 		items = items[:max]
 	}
 	return strings.Join(items, ",")
+}
+
+// exclusionCountsJSON encodes Health.ExclusionCounts for a single Redis
+// hash field: an arbitrary, venue-defined set of keys does not fit the
+// fixed-field HSet schema every other catalog counter above uses.
+// json.Marshal on a map[string]int always emits keys in sorted order, so
+// this is deterministic across calls, not just valid. nil/empty encodes as
+// "{}" rather than "null" or "", so a reader never has to special-case a
+// venue with no such exclusions.
+func exclusionCountsJSON(counts map[string]int) string {
+	if len(counts) == 0 {
+		return "{}"
+	}
+	encoded, err := json.Marshal(counts)
+	if err != nil {
+		// map[string]int cannot fail to marshal; this is defensive only.
+		return "{}"
+	}
+	return string(encoded)
 }
