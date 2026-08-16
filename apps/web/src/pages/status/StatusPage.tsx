@@ -58,6 +58,23 @@ interface SystemLoadState {
   system_uptime_seconds: number;
 }
 
+// DiskUsageState breaks down host disk usage into what a deploy-time cleanup
+// decision actually needs: reclaimable build artifacts (Docker images,
+// build cache) versus real data (Postgres, backups) that must never be
+// pruned. See health.DiskUsage's own doc comment for why this comes from a
+// host-side snapshot file rather than the api-gateway container itself.
+interface DiskUsageState {
+  captured_at_ms: number;
+  images_bytes: number;
+  images_reclaimable_bytes: number;
+  containers_bytes: number;
+  volumes_bytes: number;
+  build_cache_bytes: number;
+  build_cache_reclaimable_bytes: number;
+  postgres_data_bytes: number;
+  backups_bytes: number;
+}
+
 interface ContainerMetricState {
   name: string;
   cpu_percent: number;
@@ -147,6 +164,7 @@ interface ServiceState {
   telegram_bot: ServiceStatus;
   signal_readiness: SignalReadinessState | null;
   system_load: SystemLoadState | null;
+  disk_usage: DiskUsageState | null;
   container_runtime: ContainerRuntimeState | null;
   market_pipeline: MarketPipelineState | null;
   orderflow_pilot: OrderflowPilotState | null;
@@ -167,6 +185,7 @@ const INITIAL_STATE: ServiceState = {
   telegram_bot: 'unknown',
   signal_readiness: null,
   system_load: null,
+  disk_usage: null,
   container_runtime: null,
   market_pipeline: null,
   orderflow_pilot: null,
@@ -184,6 +203,13 @@ const WS_URL =
 // PROD_REPORT_MIN_HEADROOM_MB), so this warning trips before those reports
 // would refuse to start, not after.
 const LOW_MEM_AVAILABLE_THRESHOLD_BYTES = 768 * 1024 * 1024;
+
+// Above this much reclaimable Docker build cache, flag it: a 2026-08-16
+// incident found 15.6 GiB of stale build cache (a third of the disk used at
+// the time) that `make prod-deploy`'s own `docker image prune -f` never
+// touches (it only prunes dangling images, not the builder's own layer
+// cache) -- unbounded growth across every deploy, not a one-time thing.
+const HIGH_RECLAIMABLE_BUILD_CACHE_THRESHOLD_BYTES = 5 * 1024 ** 3;
 
 // Containers deliberately left stopped as part of a past decision, not a
 // crash. An "exited" container outside this set is treated as unexpected.
@@ -415,6 +441,7 @@ export function StatusPage() {
 
   const signalReadiness = services.signal_readiness;
   const systemLoad = services.system_load;
+  const diskUsage = services.disk_usage;
   const containerRuntime = services.container_runtime;
   const marketPipeline = services.market_pipeline;
   const fillIncidents = services.fill_incidents;
@@ -765,6 +792,57 @@ export function StatusPage() {
                 detail={`${formatBytes(systemLoad.disk_used_bytes)} / ${formatBytes(systemLoad.disk_total_bytes)}`}
                 icon={HardDrive}
               />
+              {diskUsage && (
+                <div className="ml-7 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span
+                      className={`text-xs ${
+                        diskUsage.build_cache_reclaimable_bytes >=
+                        HIGH_RECLAIMABLE_BUILD_CACHE_THRESHOLD_BYTES
+                          ? 'text-amber-500'
+                          : 'text-muted-foreground'
+                      }`}
+                    >
+                      Docker build cache (reclaimable)
+                    </span>
+                    <span
+                      className={`text-xs font-mono ${
+                        diskUsage.build_cache_reclaimable_bytes >=
+                        HIGH_RECLAIMABLE_BUILD_CACHE_THRESHOLD_BYTES
+                          ? 'text-amber-500'
+                          : 'text-muted-foreground'
+                      }`}
+                    >
+                      {formatBytes(diskUsage.build_cache_bytes)}
+                    </span>
+                  </div>
+                  {diskUsage.build_cache_reclaimable_bytes >=
+                    HIGH_RECLAIMABLE_BUILD_CACHE_THRESHOLD_BYTES && (
+                    <p className="text-xs text-muted-foreground">
+                      Stale build layers the normal deploy&apos;s own image prune never touches.
+                      Reclaimable with a builder prune.
+                    </p>
+                  )}
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">Docker images</span>
+                    <span className="text-xs font-mono text-muted-foreground">
+                      {formatBytes(diskUsage.images_bytes)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">Postgres data</span>
+                    <span className="text-xs font-mono text-muted-foreground">
+                      {formatBytes(diskUsage.postgres_data_bytes)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">Deploy backups</span>
+                    <span className="text-xs font-mono text-muted-foreground">
+                      {formatBytes(diskUsage.backups_bytes)}
+                    </span>
+                  </div>
+                </div>
+              )}
             </>
           ) : (
             <p className="text-xs text-muted-foreground">
