@@ -1,0 +1,13 @@
+[Unit]
+Description=Weekly Schurfer Docker build cache and image prune
+
+[Timer]
+OnCalendar=weekly
+Persistent=true
+# Spreads the actual run across a half-hour window instead of every host on
+# this schedule firing at exactly the same second -- harmless with one host,
+# but costs nothing and matches good systemd-timer hygiene.
+RandomizedDelaySec=1800
+
+[Install]
+WantedBy=timers.target
