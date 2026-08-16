@@ -172,3 +172,44 @@ if LEVERAGED_PAPER_CONTRACT.sha256_hex() != LEVERAGED_PAPER_CONTRACT_SHA256:
     raise RuntimeError(
         "momentum paper v1 lev3 contract changed without an explicit version decision"
     )
+
+# A longer-hold sizing-unchanged variant of the SAME live Bybit WATCH signal
+# FROZEN_PAPER_CONTRACT already probes -- not a venue or sizing expansion
+# (watch_version/source_exchange/position_notional_usd/leverage are all
+# identical to FROZEN_PAPER_CONTRACT's own), a hold-duration expansion.
+# Prompted by HYP-015 (docs/research/discovery-ledger.md): an informal,
+# non-pre-registered bar-by-bar sweep of FROZEN_PAPER_CONTRACT's own
+# already-collected probes found the live 240-minute/5%-stop defaults
+# underperforming most other cells in a 60-1440 minute grid, but that sweep
+# had no cost model (notably no funding) and reused the same probes across
+# every cell -- a hypothesis, not evidence. This contract exists to test it
+# honestly: a genuinely new forward cohort, with the production pipeline's
+# own real fee/funding accounting applied automatically, not another replay
+# of the same already-viewed window. 720 minutes (12h) is a deliberate
+# middle-of-range pick from HYP-015's own tested grid, not the single
+# best-looking cell -- funding accrues every 8h on a perp, so the raw
+# sweep's own apparent improvement from 4h up through 12-24h is likely
+# overstated before costs are applied, and 12h keeps this comfortably
+# short of the 36h/48h cells that already turned net negative even before
+# costs. outcome_horizons_minutes extends FROZEN_PAPER_CONTRACT's own
+# horizon list with two more points (480, 720) rather than replacing it,
+# so results stay comparable at every horizon the baseline already reports.
+# Its own distinct paper_version keeps acquire_worker_lock/register_run/the
+# Redis health key and its own uq_momentum_flow_paper_watch(paper_version,
+# watch_id) row fully isolated from FROZEN_PAPER_CONTRACT's worker, so both
+# independently claim and probe every WATCH decision the live Bybit WATCH
+# worker produces.
+HOLD12H_PAPER_CONTRACT = PaperContract(
+    paper_version="momentum_flow_paper_v1_hold12h",
+    max_hold_minutes=720,
+    outcome_horizons_minutes=(5, 15, 30, 60, 120, 240, 480, 720),
+)
+HOLD12H_PAPER_CONTRACT_SHA256 = "f280bd1430c17fb1530b438a17c171e100e16e0f813806cc941c0383ae88e22b"
+if HOLD12H_PAPER_CONTRACT.sha256_hex() != HOLD12H_PAPER_CONTRACT_SHA256:
+    raise RuntimeError(
+        "momentum paper v1 hold12h contract changed without an explicit version decision"
+    )
+if HOLD12H_PAPER_CONTRACT.sha256_hex() != HOLD12H_PAPER_CONTRACT_SHA256:
+    raise RuntimeError(
+        "momentum paper v1 hold12h contract changed without an explicit version decision"
+    )

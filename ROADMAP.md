@@ -1470,6 +1470,16 @@ depth, impact, or fills.
   exposes as `disk_usage` on `/api/health`; the Status page's own "Server Load" card
   now breaks Disk down into build cache (flagged amber above 5 GiB reclaimable),
   images, Postgres data, and deploy backups.
+- Momentum-flow paper hold-duration variant: `momentum_flow_paper_v1_hold12h`
+  (`HOLD12H_PAPER_CONTRACT`), a sibling of `momentum_flow_paper_v1` that probes the
+  SAME live Bybit WATCH signal with `max_hold_minutes=720` (12h) instead of 240,
+  keeping position size/leverage/stop unchanged. Prompted by `HYP-015`
+  (`docs/research/discovery-ledger.md`), an informal exit-hold/stop-loss discovery
+  sweep against `momentum_flow_paper_v1`'s own already-collected probes that found
+  the live 240min/5%-stop defaults underperforming most other cells in a 60-1440
+  minute grid, without a cost model. See
+  `docs/research/momentum-flow-paper-v1.md`'s own "Hold-duration variant: hold12h"
+  section.
 
 ---
 
