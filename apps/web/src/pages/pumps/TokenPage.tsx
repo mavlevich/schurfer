@@ -465,7 +465,7 @@ export function TokenPage() {
         className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
       >
         <ArrowLeft className="h-3 w-3" />
-        Pump Scanner
+        Scanner
       </Link>
 
       {detailsLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
