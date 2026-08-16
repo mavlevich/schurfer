@@ -1639,7 +1639,6 @@ prod-momentum-paper-hold12h-health:
 	@$(_PROD) --profile momentum-paper-hold12h ps momentum-paper-hold12h
 	@$(_PROD) exec -T redis redis-cli --raw HGETALL market:momentumpaper:health:momentum_flow_paper_v1_hold12h
 	@docker stats --no-stream schurfer-momentum-paper-hold12h
-	@docker stats --no-stream schurfer-momentum-paper-lev3
 
 # Start-relative 24h/48h/72h resource and data-quality checkpoints for the
 # momentum-capture canary (ROADMAP item 6), reading the service's own real
