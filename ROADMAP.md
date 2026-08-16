@@ -739,6 +739,23 @@ Protocols`, no error, no reconnect) but zero application frames ever
    let the outage run silently for 25+ minutes before manual
    investigation caught it).
 
+   **Telegram alerts for momentum_flow paper probes
+   (notifier's own `momentum_flow_alerts.go`, 2026-08-16):** closes a real
+   visibility gap found the same night -- 140+ real paper longs had
+   opened (Bybit and Binance both) with zero Telegram notification and no
+   web visibility, because `notifier` only ever watched `pumps:latest`
+   (the pump-scanner's own key), nothing about `momentum_flow`'s own
+   tables. New poller (same shape as `source_lead_health.go`'s own
+   pattern: a bounded lookback window each tick, per-row Redis `SetNX`
+   dedup) alerts once on paper entry and once on each probe's own FINAL
+   (max-hold) outcome, not all six intermediate horizons. Deliberately
+   NOT merged into the pump-scanner's own alert format -- explicit
+   "research probe, not a live position" wording and a distinct 🔭 icon,
+   so a WATCH/paper signal is never visually mistaken for the already-
+   promoted pump-short strategy's own live alerts. Web visibility (a
+   separate momentum_flow tab, plus a unified but clearly-tagged Trades
+   view) is a separate, not-yet-built follow-up.
+
 9. **Register at most one Confirmation shadow if the discovery gate passes.** Freeze
    one primary lookback, eligibility rule, entry quote, stop, bounded exit horizons,
    cost model, minimum sample/diversity, and no-go rule on a new untouched cohort. The

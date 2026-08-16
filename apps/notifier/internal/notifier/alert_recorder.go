@@ -33,6 +33,12 @@ type alertRecorder interface {
 type alertDB interface {
 	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
 	QueryRow(context.Context, string, ...any) pgx.Row
+	// Query is needed by momentum_flow_alerts.go's own multi-row reads
+	// (a bounded window of newly-opened paper probes or newly-resolved
+	// outcomes each tick, not a single scalar like ReadSourceLeadHealth's
+	// own QueryRow-only reads) -- everything else in this package still
+	// only ever needs QueryRow/Exec.
+	Query(context.Context, string, ...any) (pgx.Rows, error)
 	Close()
 }
 
