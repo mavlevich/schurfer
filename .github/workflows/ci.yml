@@ -81,6 +81,31 @@ jobs:
     name: Test Go
     runs-on: ubuntu-latest
     needs: lint
+    # A real Postgres, not just the stub-based tests: apps/collector's own
+    # *_integration_test.go files and apps/api-gateway's own
+    # momentum_watch_integration_test.go / combined_cte_integration_test.go
+    # connect to exactly this (testDatabaseURL in each, matching
+    # infra/docker/docker-compose.dev.yml's own dev credentials) rather than
+    # skipping, so a genuine NULL-scan mismatch between a nullable SQL column
+    # and a non-pointer Go destination field actually fails CI instead of
+    # only surfacing in production (two such incidents on 2026-08-16 prompted
+    # this: see combinedTradesCTE's and momentumWatchQuery's own doc
+    # comments). Without this service those tests still run locally for
+    # anyone with `make dev` up, but were previously always skipped here.
+    services:
+      postgres:
+        image: timescale/timescaledb:latest-pg17
+        env:
+          POSTGRES_USER: schurfer
+          POSTGRES_PASSWORD: schurfer_dev
+          POSTGRES_DB: schurfer
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U schurfer"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -90,6 +115,18 @@ jobs:
             apps/api-gateway/go.sum
             apps/collector/go.sum
             apps/notifier/go.sum
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Initialize test database schema
+        run: PGPASSWORD=schurfer_dev psql -h localhost -U schurfer -d schurfer -f infra/docker/init-db.sql
+      - name: Run Alembic migrations against the test database
+        run: |
+          uv sync --frozen --extra dev --all-packages
+          cd packages/journal && \
+            DATABASE_URL=postgresql://schurfer:schurfer_dev@localhost:5432/schurfer \
+            uv run --package schurfer-journal alembic upgrade head
       - name: Check for Go modules
         id: check
         run: |
