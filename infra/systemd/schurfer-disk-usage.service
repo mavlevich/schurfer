@@ -1,0 +1,25 @@
+[Unit]
+Description=Schurfer disk and Docker usage snapshot
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=deploy
+Group=deploy
+WorkingDirectory=/opt/schurfer
+Environment=DISK_USAGE_PATH=/opt/schurfer/runtime/disk-usage.snapshot
+Environment=DISK_USAGE_INTERVAL_SECONDS=300
+Environment=DISK_USAGE_BACKUPS_DIR=/opt/schurfer/backups
+ExecStart=/opt/schurfer/infra/scripts/disk-usage.sh
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/opt/schurfer/runtime
+ReadOnlyPaths=/opt/schurfer/backups
+
+[Install]
+WantedBy=multi-user.target

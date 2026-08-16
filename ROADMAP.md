@@ -1458,6 +1458,15 @@ depth, impact, or fills.
   while keeping real capital at risk at $50 either way (`MARGIN_USD`, enforced by
   `PaperContract.__post_init__`). See `docs/research/momentum-flow-paper-v1.md`'s own
   "Sizing variant: lev3" section.
+- Disk/Docker usage on the Status page (2026-08-16): a deploy-cadence incident found
+  15.6 GiB of stale Docker build cache (a third of disk used at the time) that the
+  normal deploy's own image prune never touches. New host-side systemd service
+  (`infra/scripts/disk-usage.sh`, mirrors `runtime-metrics.sh`'s own snapshot-file
+  pattern, since `docker system df` needs the host's own Docker socket that
+  api-gateway is deliberately never given) writes a snapshot api-gateway reads and
+  exposes as `disk_usage` on `/api/health`; the Status page's own "Server Load" card
+  now breaks Disk down into build cache (flagged amber above 5 GiB reclaimable),
+  images, Postgres data, and deploy backups.
 
 ---
 

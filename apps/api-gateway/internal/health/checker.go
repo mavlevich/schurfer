@@ -31,6 +31,7 @@ type Report struct {
 	SignalReadiness  *SignalReadiness  `json:"signal_readiness"`
 	SystemLoad       *SystemLoad       `json:"system_load"`
 	ContainerRuntime *ContainerRuntime `json:"container_runtime"`
+	DiskUsage        *DiskUsage        `json:"disk_usage"`
 	MarketPipeline   *MarketPipeline   `json:"market_pipeline"`
 	OrderflowPilot   *OrderflowPilot   `json:"orderflow_pilot"`
 	FillIncidents    *FillIncidents    `json:"fill_incidents"`
@@ -91,17 +92,19 @@ type Config struct {
 	RedisAddr          string
 	NATSUrl            string
 	RuntimeMetricsPath string
+	DiskUsagePath      string
 }
 
 // Checker holds shared clients and pings them on each check.
 // Call Close when the application shuts down.
 type Checker struct {
-	pool         *pgxpool.Pool
-	db           queryRower
-	rdb          *redis.Client
-	nc           *nats.Conn
-	systemProbe  func() *SystemLoad
-	runtimeProbe func() *ContainerRuntime
+	pool           *pgxpool.Pool
+	db             queryRower
+	rdb            *redis.Client
+	nc             *nats.Conn
+	systemProbe    func() *SystemLoad
+	runtimeProbe   func() *ContainerRuntime
+	diskUsageProbe func() *DiskUsage
 }
 
 func NewChecker(ctx context.Context, cfg Config) (*Checker, error) {
@@ -136,6 +139,9 @@ func NewChecker(ctx context.Context, cfg Config) (*Checker, error) {
 		runtimeProbe: func() *ContainerRuntime {
 			return readContainerRuntime(cfg.RuntimeMetricsPath)
 		},
+		diskUsageProbe: func() *DiskUsage {
+			return readDiskUsage(cfg.DiskUsagePath)
+		},
 	}, nil
 }
 
@@ -158,6 +164,10 @@ func (c *Checker) Check(ctx context.Context) Report {
 	if c.runtimeProbe != nil {
 		containerRuntime = c.runtimeProbe()
 	}
+	var diskUsage *DiskUsage
+	if c.diskUsageProbe != nil {
+		diskUsage = c.diskUsageProbe()
+	}
 	// Collector and Execution have no dedicated heartbeat key of their own;
 	// each is instead inferred from telemetry only that service writes, on a
 	// short Redis TTL the service itself refreshes (30s for market:hotset:health,
@@ -176,6 +186,7 @@ func (c *Checker) Check(ctx context.Context) Report {
 		SignalReadiness:  signalReadiness,
 		SystemLoad:       systemLoad,
 		ContainerRuntime: containerRuntime,
+		DiskUsage:        diskUsage,
 		MarketPipeline:   marketPipeline,
 		OrderflowPilot:   c.checkOrderflowPilot(ctx),
 		FillIncidents:    c.checkFillIncidents(ctx),
