@@ -1566,3 +1566,93 @@ func TestSignalStrategyAnchorAt(t *testing.T) {
 		t.Fatalf("qualified anchor = %d, want %d", got, qualifiedAt)
 	}
 }
+
+// ---- MomentumWatch ----
+
+// serveMomentumWatch routes a GET request through chi and returns the recorder.
+func serveMomentumWatch(q pgxPool) *httptest.ResponseRecorder {
+	h := &Handler{pool: q}
+	r := chi.NewRouter()
+	r.Get("/api/pumps/momentum-watch", h.MomentumWatch)
+	req := httptest.NewRequest(http.MethodGet, "/api/pumps/momentum-watch", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	return w
+}
+
+// momentumWatchRowVals mirrors the Scan order in momentumWatchQuery.
+func momentumWatchRowVals(symbol, exchange string, clearStreak int) []any {
+	return []any{
+		exchange, "linear", symbol, "d72ca3bc-3f28-573b-a7f5-2d1978055870",
+		int64(1_800_000_000), int64(1_800_000_500), clearStreak, int64(1_800_000_500),
+		(*float64)(nil), (*float64)(nil), (*float64)(nil),
+		(*float64)(nil), (*float64)(nil), (*float64)(nil),
+	}
+}
+
+func TestMomentumWatchReturnsEmptyWhenNoActiveEpisodes(t *testing.T) {
+	q := &stubQuerier{
+		onQuery: func(_ context.Context, _ string, _ ...any) (pgx.Rows, error) {
+			return &stubRows{}, nil
+		},
+	}
+	w := serveMomentumWatch(q)
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", w.Code)
+	}
+	var resp momentumWatchResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.Count != 0 || len(resp.Watch) != 0 {
+		t.Errorf("want empty watch list, got %+v", resp)
+	}
+}
+
+func TestMomentumWatchReturnsActiveEpisodes(t *testing.T) {
+	q := &stubQuerier{
+		onQuery: func(_ context.Context, _ string, _ ...any) (pgx.Rows, error) {
+			return &stubRows{cols: [][]any{
+				momentumWatchRowVals("GPSUSDT", "bybit", 2),
+			}}, nil
+		},
+	}
+	w := serveMomentumWatch(q)
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", w.Code)
+	}
+	var resp momentumWatchResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.Count != 1 || len(resp.Watch) != 1 {
+		t.Fatalf("want 1 entry, got %+v", resp)
+	}
+	e := resp.Watch[0]
+	if e.Symbol != "GPSUSDT" || e.Exchange != "bybit" || e.ClearStreak != 2 {
+		t.Errorf("entry = %+v, want symbol=GPSUSDT exchange=bybit clear_streak=2", e)
+	}
+	if e.EpisodeID != "d72ca3bc-3f28-573b-a7f5-2d1978055870" {
+		t.Errorf("episode_id = %q, unexpected", e.EpisodeID)
+	}
+}
+
+// TestMomentumWatchQueryOnlySelectsActiveEpisodes is a regression: this
+// endpoint must never surface rejected/suppressed/cleared WATCH evaluations
+// as if they were live prospective longs, only app.momentum_flow_watch_states
+// rows still flagged active_episode.
+func TestMomentumWatchQueryOnlySelectsActiveEpisodes(t *testing.T) {
+	if !strings.Contains(momentumWatchQuery, "WHERE s.active_episode") {
+		t.Error("momentumWatchQuery must filter to active_episode = true")
+	}
+}
+
+// TestMomentumWatchQueryNeverTouchesPumpEventsTables is a regression for the
+// same never-merge-the-underlying-tables rule already enforced on the trades
+// page's combinedTradesCTE: this endpoint reads only momentum_flow's own
+// tables and must never join or union against app.pump_events / app.trades.
+func TestMomentumWatchQueryNeverTouchesPumpEventsTables(t *testing.T) {
+	if strings.Contains(momentumWatchQuery, "pump_events") || strings.Contains(momentumWatchQuery, "app.trades") {
+		t.Error("momentumWatchQuery must stay isolated to momentum_flow's own tables")
+	}
+}
