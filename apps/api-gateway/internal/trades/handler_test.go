@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strconv"
 	"testing"
 	"time"
 
@@ -252,7 +253,7 @@ var epoch = time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 // tradeRowVals returns a slice matching the Scan order in handler.go.
 func tradeRowVals(id int64, status, exchange string) []any {
 	return []any{
-		id, "BEAT/USDT:USDT", exchange, "perp", "short",
+		"pump_short:" + strconv.FormatInt(id, 10), "pump_short", "BEAT/USDT:USDT", exchange, "perp", "short",
 		float64(50), float64(3),
 		float64(0.0030), epoch,
 		(*float64)(nil), (*time.Time)(nil),
@@ -408,6 +409,74 @@ func TestListBothFiltersPassedToSQL(t *testing.T) {
 	}
 	if capturedArgs[1] != "bybit" {
 		t.Errorf("want args[1]=bybit, got %v", capturedArgs[1])
+	}
+}
+
+func TestListOriginFilterPassedToSQL(t *testing.T) {
+	var capturedArgs []any
+	q := &stubQuerier{
+		onQueryRow: func(_ context.Context, _ string, args ...any) pgxRow {
+			capturedArgs = args
+			return &stubRow{vals: []any{int64(0)}}
+		},
+	}
+	serveTrades(q, "/api/trades?origin=momentum_flow_paper")
+	if len(capturedArgs) != 1 || capturedArgs[0] != "momentum_flow_paper" {
+		t.Errorf("want origin arg=[momentum_flow_paper], got %v", capturedArgs)
+	}
+}
+
+// momentumFlowPaperRowVals mirrors tradeRowVals but for the momentum_flow_paper
+// side of the UNION: a UUID-shaped string id, origin set, and no legacy
+// pump-short-only fields (entry_slippage_bps/exit_slippage_bps/slippage_usd/
+// pnl_usd/pnl_pct all NULL, per combinedTradesCTE's own doc comment on why
+// those have no real equivalent on the paper side).
+func momentumFlowPaperRowVals(paperID, status, exchange string) []any {
+	return []any{
+		"momentum_flow_paper:" + paperID, "momentum_flow_paper", "ERAUSDT", exchange, "linear", "long",
+		float64(50), float64(1),
+		float64(10.5), epoch,
+		(*float64)(nil), (*time.Time)(nil),
+		(*float64)(nil), (*float64)(nil),
+		float64(0), float64(0), (*float64)(nil),
+		(*float64)(nil), (*float64)(nil),
+		(*float64)(nil), (*float64)(nil),
+		(*float64)(nil), (*float64)(nil),
+		"momentum_flow_paper_v1", "pending", (*string)(nil),
+		status, (*string)(nil),
+		json.RawMessage(`{}`), (*string)(nil), epoch,
+	}
+}
+
+func TestListReturnsBothOriginsTaggedAndSortedTogether(t *testing.T) {
+	q := &stubQuerier{
+		onQueryRow: func(_ context.Context, _ string, _ ...any) pgxRow {
+			return &stubRow{vals: []any{int64(2)}}
+		},
+		onQuery: func(_ context.Context, _ string, _ ...any) (pgx.Rows, error) {
+			return &stubRows{cols: [][]any{
+				tradeRowVals(1, "closed", "bybit"),
+				momentumFlowPaperRowVals("11111111-1111-1111-1111-111111111111", "open", "binance"),
+			}}, nil
+		},
+	}
+	w := serveTrades(q, "/api/trades")
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", w.Code)
+	}
+	var resp listResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Trades) != 2 {
+		t.Fatalf("want 2 trades, got %d", len(resp.Trades))
+	}
+	if resp.Trades[0].Origin != "pump_short" || resp.Trades[0].ID != "pump_short:1" {
+		t.Errorf("trade 0 = %+v, want origin=pump_short id=pump_short:1", resp.Trades[0])
+	}
+	if resp.Trades[1].Origin != "momentum_flow_paper" ||
+		resp.Trades[1].ID != "momentum_flow_paper:11111111-1111-1111-1111-111111111111" {
+		t.Errorf("trade 1 = %+v, want origin=momentum_flow_paper with its own uuid-shaped id", resp.Trades[1])
 	}
 }
 
