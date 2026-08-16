@@ -1,5 +1,5 @@
-.PHONY: help install install-golangci-lint install-deadcode dev dev-init dev-stop dev-reset dev-logs dev-test migrate measurement-report exchange-coverage-report exchange-source-economics-report source-lead-report source-lead-identity-report gate-identity-candidate-tooling episode-replay virtual-strategy-report virtual-entry-challenger-report virtual-threshold-challenger-report virtual-exit-policy-report virtual-exit-discovery-report virtual-score-challenger-report virtual-banded-price-extent-report candle-anomaly-report derivatives-context-report decision-quality-report derivatives-regime-feasibility-report liquid-taker-report long-horizon-report open-ended-margin-report maker-entry-report pump-magnitude-report orderflow-pilot-report orderflow-endpoint-sensitivity-report exit-liquidity-calibration-report pump-short-failure-attribution-report pump-short-reentry-audit-report oi-growth-filter-report token-history-identity-preflight-report token-history-ohlcv-sample-report token-history-parquet-dataset token-behavior-discovery-report orderflow-start orderflow-stop orderflow-health momentum-capture-start momentum-capture-stop momentum-capture-health momentum-capture-binance-start momentum-capture-binance-stop momentum-capture-binance-health momentum-watch-start momentum-watch-stop momentum-watch-health momentum-watch-binance-start momentum-watch-binance-stop momentum-watch-binance-health momentum-paper-start momentum-paper-stop momentum-paper-health momentum-paper-binance-start momentum-paper-binance-stop momentum-paper-binance-health momentum-flow-episode-study-report test lint ci-lint format clean security deadcode check verify verify-docker \
-		prod-deploy prod-runtime-metrics-install prod-runtime-metrics-health prod-research-checkpoints-install prod-research-checkpoints-run prod-research-checkpoints-health prod-measurement-report prod-exchange-coverage-report prod-exchange-source-economics-report prod-source-lead-report prod-source-lead-identity-report prod-gate-identity-candidate-tooling prod-source-lead-capture-health prod-episode-replay prod-virtual-strategy-report prod-virtual-entry-challenger-report prod-virtual-threshold-challenger-report prod-virtual-exit-policy-report prod-virtual-exit-discovery-report prod-virtual-score-challenger-report prod-virtual-banded-price-extent-report prod-candle-anomaly-report prod-derivatives-context-report prod-decision-quality-report prod-derivatives-regime-feasibility-report prod-liquid-taker-report prod-long-horizon-report prod-open-ended-margin-report prod-open-ended-margin-health prod-maker-entry-report prod-pump-magnitude-report prod-orderflow-pilot-report prod-orderflow-endpoint-sensitivity-report prod-exit-liquidity-calibration-report prod-pump-short-failure-attribution-report prod-pump-short-reentry-audit-report prod-oi-growth-filter-report prod-token-history-identity-preflight-report prod-token-history-ohlcv-sample-report prod-token-history-parquet-dataset prod-token-behavior-discovery-report prod-orderflow-start prod-orderflow-stop prod-orderflow-health prod-momentum-capture-start prod-momentum-capture-stop prod-momentum-capture-health prod-momentum-capture-binance-start prod-momentum-capture-binance-stop prod-momentum-capture-binance-health prod-momentum-watch-start prod-momentum-watch-stop prod-momentum-watch-health prod-momentum-watch-binance-start prod-momentum-watch-binance-stop prod-momentum-watch-binance-health prod-momentum-paper-start prod-momentum-paper-stop prod-momentum-paper-health prod-momentum-paper-binance-start prod-momentum-paper-binance-stop prod-momentum-paper-binance-health prod-momentum-canary-checkpoints-install prod-momentum-canary-checkpoints-run prod-momentum-canary-checkpoints-health prod-momentum-flow-episode-study-report prod-logs prod-backup prod-restore-local prod-health
+.PHONY: help install install-golangci-lint install-deadcode dev dev-init dev-stop dev-reset dev-logs dev-test migrate measurement-report exchange-coverage-report exchange-source-economics-report source-lead-report source-lead-identity-report gate-identity-candidate-tooling episode-replay virtual-strategy-report virtual-entry-challenger-report virtual-threshold-challenger-report virtual-exit-policy-report virtual-exit-discovery-report virtual-score-challenger-report virtual-banded-price-extent-report candle-anomaly-report derivatives-context-report decision-quality-report derivatives-regime-feasibility-report liquid-taker-report long-horizon-report open-ended-margin-report maker-entry-report pump-magnitude-report orderflow-pilot-report orderflow-endpoint-sensitivity-report exit-liquidity-calibration-report pump-short-failure-attribution-report pump-short-reentry-audit-report oi-growth-filter-report token-history-identity-preflight-report token-history-ohlcv-sample-report token-history-parquet-dataset token-behavior-discovery-report orderflow-start orderflow-stop orderflow-health momentum-capture-start momentum-capture-stop momentum-capture-health momentum-capture-binance-start momentum-capture-binance-stop momentum-capture-binance-health momentum-watch-start momentum-watch-stop momentum-watch-health momentum-watch-binance-start momentum-watch-binance-stop momentum-watch-binance-health momentum-paper-start momentum-paper-stop momentum-paper-health momentum-paper-binance-start momentum-paper-binance-stop momentum-paper-binance-health momentum-paper-lev3-start momentum-paper-lev3-stop momentum-paper-lev3-health momentum-flow-episode-study-report test lint ci-lint format clean security deadcode check verify verify-docker \
+		prod-deploy prod-runtime-metrics-install prod-runtime-metrics-health prod-research-checkpoints-install prod-research-checkpoints-run prod-research-checkpoints-health prod-measurement-report prod-exchange-coverage-report prod-exchange-source-economics-report prod-source-lead-report prod-source-lead-identity-report prod-gate-identity-candidate-tooling prod-source-lead-capture-health prod-episode-replay prod-virtual-strategy-report prod-virtual-entry-challenger-report prod-virtual-threshold-challenger-report prod-virtual-exit-policy-report prod-virtual-exit-discovery-report prod-virtual-score-challenger-report prod-virtual-banded-price-extent-report prod-candle-anomaly-report prod-derivatives-context-report prod-decision-quality-report prod-derivatives-regime-feasibility-report prod-liquid-taker-report prod-long-horizon-report prod-open-ended-margin-report prod-open-ended-margin-health prod-maker-entry-report prod-pump-magnitude-report prod-orderflow-pilot-report prod-orderflow-endpoint-sensitivity-report prod-exit-liquidity-calibration-report prod-pump-short-failure-attribution-report prod-pump-short-reentry-audit-report prod-oi-growth-filter-report prod-token-history-identity-preflight-report prod-token-history-ohlcv-sample-report prod-token-history-parquet-dataset prod-token-behavior-discovery-report prod-orderflow-start prod-orderflow-stop prod-orderflow-health prod-momentum-capture-start prod-momentum-capture-stop prod-momentum-capture-health prod-momentum-capture-binance-start prod-momentum-capture-binance-stop prod-momentum-capture-binance-health prod-momentum-watch-start prod-momentum-watch-stop prod-momentum-watch-health prod-momentum-watch-binance-start prod-momentum-watch-binance-stop prod-momentum-watch-binance-health prod-momentum-paper-start prod-momentum-paper-stop prod-momentum-paper-health prod-momentum-paper-binance-start prod-momentum-paper-binance-stop prod-momentum-paper-binance-health prod-momentum-paper-lev3-start prod-momentum-paper-lev3-stop prod-momentum-paper-lev3-health prod-momentum-canary-checkpoints-install prod-momentum-canary-checkpoints-run prod-momentum-canary-checkpoints-health prod-momentum-flow-episode-study-report prod-logs prod-backup prod-restore-local prod-health
 
 GOLANGCI_LINT_VERSION = v2.1.6
 DEADCODE_VERSION = v0.48.0
@@ -44,6 +44,7 @@ PROD_MOMENTUM_WATCH_MIN_AVAILABLE_MB ?= 768
 PROD_MOMENTUM_WATCH_BINANCE_MIN_AVAILABLE_MB ?= 768
 PROD_MOMENTUM_PAPER_MIN_AVAILABLE_MB ?= 768
 PROD_MOMENTUM_PAPER_BINANCE_MIN_AVAILABLE_MB ?= 768
+PROD_MOMENTUM_PAPER_LEV3_MIN_AVAILABLE_MB ?= 768
 
 help:
 	@echo "Schurfer - common commands"
@@ -119,6 +120,9 @@ help:
 	@echo "  make momentum-paper-binance-start  Start Binance's own prospective momentum paper-long worker"
 	@echo "  make momentum-paper-binance-health  Show Binance's own prospective momentum paper-long health"
 	@echo "  make momentum-paper-binance-stop  Stop Binance's own prospective momentum paper-long worker"
+	@echo "  make momentum-paper-lev3-start  Start the 3x-leveraged-sizing momentum paper-long worker"
+	@echo "  make momentum-paper-lev3-health  Show the 3x-leveraged-sizing momentum paper-long health"
+	@echo "  make momentum-paper-lev3-stop  Stop the 3x-leveraged-sizing momentum paper-long worker"
 	@echo "  make momentum-flow-episode-study-report  Descriptive prerequisites for HYP-014 (ARGS must include --capture-epoch-started-at)"
 	@echo ""
 	@echo "Production (run on server with .env.prod present):"
@@ -189,6 +193,9 @@ help:
 	@echo "  make prod-momentum-paper-binance-start  Start Binance's own prospective momentum paper-long worker"
 	@echo "  make prod-momentum-paper-binance-health  Show Binance's own prospective momentum paper-long health"
 	@echo "  make prod-momentum-paper-binance-stop  Stop Binance's own prospective momentum paper-long worker"
+	@echo "  make prod-momentum-paper-lev3-start  Start the 3x-leveraged-sizing momentum paper-long worker"
+	@echo "  make prod-momentum-paper-lev3-health  Show the 3x-leveraged-sizing momentum paper-long health"
+	@echo "  make prod-momentum-paper-lev3-stop  Stop the 3x-leveraged-sizing momentum paper-long worker"
 	@echo "  make prod-momentum-canary-checkpoints-install  Install the 24/48/72h canary checkpoint timer"
 	@echo "  make prod-momentum-canary-checkpoints-run      Run one canary checkpoint pass now"
 	@echo "  make prod-momentum-canary-checkpoints-health   Inspect timer status and the checkpoint snapshot"
@@ -359,6 +366,22 @@ momentum-paper-binance-health:
 		--profile momentum-paper-binance ps momentum-paper-binance
 	@docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
 		exec -T redis redis-cli --raw HGETALL market:momentumpaper:health:momentum_flow_paper_v1_binance
+
+momentum-paper-lev3-start:
+	@test -f .env || (echo "ERROR: .env not found. Run make dev-init first." && exit 1)
+	@$(MAKE) migrate
+	docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		--profile momentum-paper-lev3 up -d --build --no-deps momentum-paper-lev3
+
+momentum-paper-lev3-stop:
+	docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		--profile momentum-paper-lev3 stop momentum-paper-lev3
+
+momentum-paper-lev3-health:
+	@docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		--profile momentum-paper-lev3 ps momentum-paper-lev3
+	@docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		exec -T redis redis-cli --raw HGETALL market:momentumpaper:health:momentum_flow_paper_v1_lev3
 
 orderflow-pilot-report:
 	@uv run --package schurfer-analytics orderflow-pilot-report \
@@ -1501,6 +1524,32 @@ prod-momentum-paper-binance-health:
 	@$(_PROD) --profile momentum-paper-binance ps momentum-paper-binance
 	@$(_PROD) exec -T redis redis-cli --raw HGETALL market:momentumpaper:health:momentum_flow_paper_v1_binance
 	@docker stats --no-stream schurfer-momentum-paper-binance
+
+prod-momentum-paper-lev3-start:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	@test "$$(git branch --show-current)" = "main" || (echo "ERROR: deploy only from main." && exit 1)
+	@test -z "$$(git status --porcelain)" || (echo "ERROR: working tree not clean." && exit 1)
+	@if test -r /proc/meminfo; then \
+		available_mb=$$(awk '/^MemAvailable:/ {print int($$2 / 1024)}' /proc/meminfo); \
+		if test "$$available_mb" -lt "$(PROD_MOMENTUM_PAPER_LEV3_MIN_AVAILABLE_MB)"; then \
+			echo "ERROR: momentum-paper-lev3 requires $(PROD_MOMENTUM_PAPER_LEV3_MIN_AVAILABLE_MB) MiB available RAM; found $$available_mb MiB."; \
+			exit 1; \
+		fi; \
+	fi
+	@$(MAKE) prod-backup
+	@$(MAKE) prod-migrate
+	$(_PROD) --profile momentum-paper-lev3 up -d --build --no-deps momentum-paper-lev3
+	@$(_PROD) --profile momentum-paper-lev3 ps momentum-paper-lev3
+
+prod-momentum-paper-lev3-stop:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	$(_PROD) --profile momentum-paper-lev3 stop momentum-paper-lev3
+
+prod-momentum-paper-lev3-health:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	@$(_PROD) --profile momentum-paper-lev3 ps momentum-paper-lev3
+	@$(_PROD) exec -T redis redis-cli --raw HGETALL market:momentumpaper:health:momentum_flow_paper_v1_lev3
+	@docker stats --no-stream schurfer-momentum-paper-lev3
 
 # Start-relative 24h/48h/72h resource and data-quality checkpoints for the
 # momentum-capture canary (ROADMAP item 6), reading the service's own real
