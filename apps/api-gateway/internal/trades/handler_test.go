@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -409,6 +410,28 @@ func TestListBothFiltersPassedToSQL(t *testing.T) {
 	}
 	if capturedArgs[1] != "bybit" {
 		t.Errorf("want args[1]=bybit, got %v", capturedArgs[1])
+	}
+}
+
+// TestCombinedTradesCTECoalescesNullableMomentumFlowCosts is a regression
+// for a production incident (2026-08-16): app.momentum_flow_paper_probes'
+// own fees_usd/funding_usd are nullable (NULL until that probe's own cost
+// accounting completes, independent of entry_status='opened' -- a still-
+// open probe legitimately has neither yet), but tradeRow.FeesUSD/
+// FundingUSD are plain non-pointer float64 (matching app.trades' own
+// NOT NULL columns). Without a fail-closed COALESCE on the momentum_flow
+// side of the UNION, the very first still-open probe in a result page
+// crashed the entire List query with "cannot scan NULL into *float64" --
+// this is a lightweight text check (this package has no real-Postgres
+// integration test harness, see handler_test.go's own stub-only
+// convention) rather than a real scan reproduction; the fix itself was
+// verified directly against production data before shipping.
+func TestCombinedTradesCTECoalescesNullableMomentumFlowCosts(t *testing.T) {
+	if !strings.Contains(combinedTradesCTE, "coalesce(p.fees_usd, 0)") {
+		t.Error("momentum_flow_paper fees_usd must be coalesced to 0, not left nullable")
+	}
+	if !strings.Contains(combinedTradesCTE, "coalesce(p.funding_usd, 0)") {
+		t.Error("momentum_flow_paper funding_usd must be coalesced to 0, not left nullable")
 	}
 }
 

@@ -39,6 +39,20 @@ const (
 // no real equivalent captured on the paper side (spread_bps/impact_bps
 // are different metrics, not slippage) and are left NULL rather than
 // mislabeled.
+//
+// fees_usd/funding_usd are coalesced to 0 on the paper side specifically
+// (a production incident, 2026-08-16): app.trades' own fees_usd/
+// funding_usd are NOT NULL, so tradeRow.FeesUSD/FundingUSD are plain
+// float64, not pointers -- but momentum_flow_paper_probes' own columns
+// ARE nullable (NULL until that probe's own cost accounting completes,
+// which is independent of entry_status='opened'; a still-open probe has
+// no accounted costs yet). Scanning that NULL into a non-pointer float64
+// panics the whole List query -- verified this is the only such gap:
+// entry_vwap/entry_at/entry_filled_notional_usd are always non-NULL for
+// entry_status='opened' rows (checked directly against production data),
+// only fees_usd/funding_usd are not. Coalescing here matches app.trades'
+// own implicit "always a real number, 0 means no cost yet" convention
+// rather than changing the shared JSON contract to nullable.
 const combinedTradesCTE = `
 	WITH combined AS (
 		SELECT
@@ -69,7 +83,7 @@ const combinedTradesCTE = `
 			p.exit_vwap::float8 AS exit_price, p.exit_at,
 			NULL::float8 AS entry_slippage_bps,
 			NULL::float8 AS exit_slippage_bps,
-			p.fees_usd::float8 AS fees_usd, p.funding_usd::float8 AS funding_usd,
+			coalesce(p.fees_usd, 0)::float8 AS fees_usd, coalesce(p.funding_usd, 0)::float8 AS funding_usd,
 			NULL::float8 AS slippage_usd,
 			p.gross_pnl_usd::float8 AS gross_pnl_usd, p.gross_return_pct::float8 AS gross_pnl_pct,
 			p.net_pnl_usd::float8 AS net_pnl_usd, p.net_return_pct::float8 AS net_pnl_pct,
