@@ -137,6 +137,35 @@ type fundingResponse struct {
 	Exchanges       []fundingEntry `json:"exchanges"`
 }
 
+// momentumWatchEntry is a currently-active momentum_flow WATCH episode: the
+// prospective-long counterpart of a pump-scanner pumpEntry, but built from a
+// completely different signal (60m price return / OI growth / order-flow
+// imbalance, not 24h % change). Deliberately its own response shape rather
+// than shoehorned into pumpEntry's columns -- see MomentumWatch's own doc
+// comment for why this stays a separate query and a separate frontend table
+// instead of a row-level UNION like combinedTradesCTE in the trades package.
+type momentumWatchEntry struct {
+	Exchange            string   `json:"exchange"`
+	MarketType          string   `json:"market_type"`
+	Symbol              string   `json:"symbol"`
+	EpisodeID           string   `json:"episode_id"`
+	FirstWatchAt        int64    `json:"first_watch_at"`
+	LastWatchAt         int64    `json:"last_watch_at"`
+	ClearStreak         int      `json:"clear_streak"`
+	DecisionAt          int64    `json:"decision_at"`
+	PriceReturn60mPct   *float64 `json:"price_return_60m_pct"`
+	PriceReturn15mPct   *float64 `json:"price_return_15m_pct"`
+	OIGrowth60mPct      *float64 `json:"oi_growth_60m_pct"`
+	BuyImbalance15m     *float64 `json:"buy_imbalance_15m"`
+	FlowNotional15mUSD  *float64 `json:"flow_notional_15m_usd"`
+	FlowAcceleration15m *float64 `json:"flow_acceleration_15m_vs_prior_45m"`
+}
+
+type momentumWatchResponse struct {
+	Count int                  `json:"count"`
+	Watch []momentumWatchEntry `json:"watch"`
+}
+
 // pgxRow is satisfied by pgx.Row from pgxpool — extracted into an interface
 // so tests can inject stubs without a live database connection.
 type pgxRow interface {
@@ -584,6 +613,83 @@ func (h *Handler) Funding(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)
+}
+
+// momentumWatchQuery lists every currently-active momentum_flow WATCH episode
+// (app.momentum_flow_watch_states.active_episode = true) with the feature
+// snapshot from its own most recent evaluation and the decision_at of its own
+// first 'watch' bucket. This is read-only against momentum_flow's own tables
+// (app.momentum_flow_watch_states, timeseries.momentum_flow_watch_evaluations_1m)
+// -- it does not touch app.pump_events or anything the pump scanner writes,
+// mirroring the same never-merge-the-underlying-tables rule already applied to
+// the trades page's own combinedTradesCTE (see apps/api-gateway/internal/trades
+// /handler.go). The two surfaces stay two separate queries feeding two separate
+// frontend tables because their columns mean genuinely different things (24h %
+// change vs 60m return / OI growth / flow imbalance) -- forcing them into one
+// row shape would be the same mistake as physically merging trades and
+// momentum_flow_paper_probes, which was already rejected earlier this project.
+const momentumWatchQuery = `
+	SELECT
+		s.exchange, s.market_type, s.symbol, s.episode_id::text,
+		extract(epoch from fw.first_watch_at)::bigint,
+		extract(epoch from s.last_watch_at)::bigint,
+		s.clear_streak,
+		extract(epoch from e.decision_at)::bigint,
+		e.price_return_60m_pct, e.price_return_15m_pct, e.oi_growth_60m_pct,
+		e.buy_imbalance_15m, e.flow_notional_15m_usd, e.flow_acceleration_15m_vs_prior_45m
+	FROM app.momentum_flow_watch_states s
+	JOIN timeseries.momentum_flow_watch_evaluations_1m e
+		ON e.watch_version = s.watch_version AND e.exchange = s.exchange
+		AND e.market_type = s.market_type AND e.symbol = s.symbol
+		AND e.bucket_start = s.last_bucket_start
+	JOIN LATERAL (
+		-- Each episode's own first 'watch' bucket, not the episode row's own
+		-- last_watch_at (which is the most recent one, not the first).
+		SELECT min(e2.decision_at) AS first_watch_at
+		FROM timeseries.momentum_flow_watch_evaluations_1m e2
+		WHERE e2.watch_version = s.watch_version AND e2.exchange = s.exchange
+			AND e2.market_type = s.market_type AND e2.symbol = s.symbol
+			AND e2.episode_id = s.episode_id AND e2.decision_status = 'watch'
+	) fw ON true
+	WHERE s.active_episode
+	ORDER BY s.last_watch_at DESC
+`
+
+// MomentumWatch returns every currently-active momentum_flow WATCH episode --
+// the prospective-long counterpart of the pump scanner's own "active pumps"
+// list, but sourced from momentum_flow's own signal (see momentumWatchQuery).
+func (h *Handler) MomentumWatch(w http.ResponseWriter, r *http.Request) {
+	rows, err := h.pool.Query(r.Context(), momentumWatchQuery)
+	if err != nil {
+		slog.Error("pumps.momentum_watch.query", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	entries := make([]momentumWatchEntry, 0)
+	for rows.Next() {
+		var e momentumWatchEntry
+		if err := rows.Scan(
+			&e.Exchange, &e.MarketType, &e.Symbol, &e.EpisodeID,
+			&e.FirstWatchAt, &e.LastWatchAt, &e.ClearStreak, &e.DecisionAt,
+			&e.PriceReturn60mPct, &e.PriceReturn15mPct, &e.OIGrowth60mPct,
+			&e.BuyImbalance15m, &e.FlowNotional15mUSD, &e.FlowAcceleration15m,
+		); err != nil {
+			slog.Error("pumps.momentum_watch.scan", "err", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		entries = append(entries, e)
+	}
+	if err := rows.Err(); err != nil {
+		slog.Error("pumps.momentum_watch.rows", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(momentumWatchResponse{Count: len(entries), Watch: entries})
 }
 
 type signalComponent struct {

@@ -91,6 +91,7 @@ func run() error {
 		r.Get("/api/health", healthHandler.Health)
 		r.Get("/api/pumps", pumpsHandler.List)
 		r.Get("/api/pumps/history", pumpsHandler.History)
+		r.Get("/api/pumps/momentum-watch", pumpsHandler.MomentumWatch)
 		r.Get("/api/pumps/{base}", pumpsHandler.Token)
 		r.Get("/api/pumps/{base}/ohlcv", pumpsHandler.OHLCV)
 		r.Get("/api/pumps/{base}/history", pumpsHandler.TokenHistory)
