@@ -1438,6 +1438,12 @@ depth, impact, or fills.
 - Production deploy: Hetzner, Docker Compose prod stack, Caddy, Tailscale, Postgres
   backup and a tested restore, GitHub Actions CI (lint, tests for Go, Python, TS,
   security).
+- Momentum-flow paper sizing variant: `momentum_flow_paper_v1_lev3`
+  (`LEVERAGED_PAPER_CONTRACT`), a sibling of `momentum_flow_paper_v1` that probes the
+  SAME live Bybit WATCH signal at $150 simulated notional (3x) instead of $50 (1x),
+  while keeping real capital at risk at $50 either way (`MARGIN_USD`, enforced by
+  `PaperContract.__post_init__`). See `docs/research/momentum-flow-paper-v1.md`'s own
+  "Sizing variant: lev3" section.
 
 ---
 

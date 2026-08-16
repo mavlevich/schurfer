@@ -28,6 +28,13 @@ SIDE = "long"
 POSITION_NOTIONAL_USD = 50.0
 LEVERAGE = 1
 
+# Real capital committed per probe, independent of leverage. FROZEN_PAPER_CONTRACT
+# (leverage=1) commits its whole notional as margin; LEVERAGED_PAPER_CONTRACT below
+# (leverage=3) commits the SAME real capital but sizes the simulated position at
+# 3x that -- position_notional_usd = MARGIN_USD * leverage is enforced below so a
+# future sibling contract can't drift the real-capital-at-risk figure by accident.
+MARGIN_USD = 50.0
+
 STOP_LOSS_PCT = 5.0
 MAX_HOLD_MINUTES = 240
 OUTCOME_HORIZONS_MINUTES = (5, 15, 30, 60, 120, 240)
@@ -66,8 +73,17 @@ class PaperContract:
             raise ValueError("momentum paper v1 must remain a long probe")
         if self.position_notional_usd <= 0:
             raise ValueError("paper notional must be positive")
-        if self.leverage != 1:
-            raise ValueError("momentum paper v1 must remain unlevered")
+        if self.leverage < 1:
+            raise ValueError("leverage must be a positive integer")
+        if self.position_notional_usd != MARGIN_USD * self.leverage:
+            raise ValueError(
+                f"position_notional_usd ({self.position_notional_usd}) must equal "
+                f"MARGIN_USD ({MARGIN_USD}) x leverage ({self.leverage}) = "
+                f"{MARGIN_USD * self.leverage}: the real capital committed per probe "
+                "must stay exactly MARGIN_USD regardless of which sibling contract "
+                "sizes the simulated position, or a leveraged variant could silently "
+                "commit more real capital than intended"
+            )
         if not 0 < self.stop_loss_pct < 100:
             raise ValueError("stop loss must be in (0, 100)")
         if self.max_hold_minutes <= 0:
@@ -130,4 +146,29 @@ BINANCE_PAPER_CONTRACT_SHA256 = "c862fdfa6d2748a899cd813b0202960eb745a94da5881e7
 if BINANCE_PAPER_CONTRACT.sha256_hex() != BINANCE_PAPER_CONTRACT_SHA256:
     raise RuntimeError(
         "momentum paper v1 binance contract changed without an explicit version decision"
+    )
+
+# A leveraged sizing variant of the SAME live Bybit WATCH signal FROZEN_PAPER_CONTRACT
+# already probes -- not a venue expansion (watch_version/source_exchange are identical
+# to FROZEN_PAPER_CONTRACT's own), a sizing expansion. Real capital at risk per probe
+# stays MARGIN_USD ($50, enforced by __post_init__ above); the simulated position is
+# sized at 3x that ($150 notional) via leverage=3, so this deliberately does NOT just
+# replay FROZEN_PAPER_CONTRACT's own results scaled by 3 after the fact -- a $150
+# simulated fill walks further into the real order book than a $50 one
+# (momentum_flow_paper_market.py's own target_usd=contract.position_notional_usd feeds
+# straight into the executable-VWAP/impact simulation), so entry_impact_bps and
+# entry_spread_bps genuinely differ, not just the dollar P&L. Its own distinct
+# paper_version keeps acquire_worker_lock/register_run/the Redis health key and its
+# own uq_momentum_flow_paper_watch(paper_version, watch_id) row fully isolated from
+# FROZEN_PAPER_CONTRACT's worker, so both independently claim and probe every WATCH
+# decision the live Bybit WATCH worker produces.
+LEVERAGED_PAPER_CONTRACT = PaperContract(
+    paper_version="momentum_flow_paper_v1_lev3",
+    position_notional_usd=MARGIN_USD * 3,
+    leverage=3,
+)
+LEVERAGED_PAPER_CONTRACT_SHA256 = "5e3df53461ce4ac83a4fb44a9dc585fe9545602e37089bbdd916e5955d280dbd"
+if LEVERAGED_PAPER_CONTRACT.sha256_hex() != LEVERAGED_PAPER_CONTRACT_SHA256:
+    raise RuntimeError(
+        "momentum paper v1 lev3 contract changed without an explicit version decision"
     )
