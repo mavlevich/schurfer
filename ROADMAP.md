@@ -749,12 +749,26 @@ Protocols`, no error, no reconnect) but zero application frames ever
    pattern: a bounded lookback window each tick, per-row Redis `SetNX`
    dedup) alerts once on paper entry and once on each probe's own FINAL
    (max-hold) outcome, not all six intermediate horizons. Deliberately
-   NOT merged into the pump-scanner's own alert format -- explicit
-   "research probe, not a live position" wording and a distinct 🔭 icon,
-   so a WATCH/paper signal is never visually mistaken for the already-
-   promoted pump-short strategy's own live alerts. Web visibility (a
-   separate momentum_flow tab, plus a unified but clearly-tagged Trades
-   view) is a separate, not-yet-built follow-up.
+   NOT merged into the pump-scanner's own alert format -- a distinct 🔭
+   icon and explicit "MOMENTUM-FLOW LONG" naming, so a WATCH/paper signal
+   is never visually mistaken for the already-promoted pump-short
+   strategy's own live alerts. Web visibility (a separate momentum_flow
+   tab, plus a unified but clearly-tagged Trades view) shipped 2026-08-16
+   (see `PumpsPage.tsx`'s own Scanner tabs, `TradesPage.tsx`'s own
+   `OriginBadge`).
+
+   **Alert redesign (2026-08-16):** the original "research probe, not a
+   live position" wording named neither the strategy nor why a symbol
+   qualified, and used an em-dash. Replaced with an explicit
+   "MOMENTUM-FLOW LONG" label, the triggering WATCH decision's own
+   feature snapshot (60m return / OI growth / buy imbalance, LEFT JOINed
+   by `watch_id` so a pruned evaluation row degrades to omitting the line
+   rather than failing the alert), readable UTC timestamps for both
+   detection and fill, and leverage/margin stated explicitly (`$150
+   notional, 3x leverage ($50 margin)` for `momentum_flow_paper_v1_lev3`,
+   `$50 notional, no leverage` for the unlevered v1/Binance contracts) --
+   see `formatMomentumFlowOpenMessage`/`formatMomentumFlowOutcomeMessage`
+   in `momentum_flow_alerts.go`.
 
 9. **Register at most one Confirmation shadow if the discovery gate passes.** Freeze
    one primary lookback, eligibility rule, entry quote, stop, bounded exit horizons,

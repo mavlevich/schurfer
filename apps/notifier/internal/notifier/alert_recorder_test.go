@@ -122,6 +122,22 @@ func (r *stubAlertRows) Scan(dest ...any) error {
 			*pointer = value.(float64)
 		case *int:
 			*pointer = value.(int)
+		case *time.Time:
+			*pointer = value.(time.Time)
+		case **float64:
+			if value == nil {
+				*pointer = nil
+			} else {
+				v := value.(float64)
+				*pointer = &v
+			}
+		case **time.Time:
+			if value == nil {
+				*pointer = nil
+			} else {
+				v := value.(time.Time)
+				*pointer = &v
+			}
 		default:
 			return errors.New("unexpected scan destination")
 		}
