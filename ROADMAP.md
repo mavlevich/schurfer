@@ -201,18 +201,21 @@ The portfolio is bounded as follows:
   as this budget. Maintenance, security fixes, and re-running an already-registered
   report never consume it.
 
-  **Count as of `2026-08-11`: 4 of 10 spent.** HYP-011 (pump-reversion), HYP-012
-  (source-lead), and HYP-013 (token-behavior), all entered in
+  **Count as of `2026-08-16`: 5 of 10 spent.** HYP-011 (pump-reversion), HYP-012
+  (source-lead), HYP-013 (token-behavior), and HYP-014 (momentum-flow), all entered in
   [docs/research/discovery-ledger.md](docs/research/discovery-ledger.md); plus the
   OI-growth baseline filter (`confirmed_oi_growth_baseline_filter_v1`, registered
   `2026-08-10`) as a genuinely new signal moved toward Confirmation,
-  not a variant of an existing one. Two borderline cases are counted as continuations
-  of an already-spent family, not new ones, and are not in the 4: the liquid-taker
+  not a variant of an existing one. Three borderline cases are counted as continuations
+  of an already-spent family, not new ones, and are not in the 5: the liquid-taker
   wider-stop shadow (registered `2026-08-01`) reuses the complete HYP-008 selector and
   cohort, testing one stop-width challenger against the unchanged baseline; the
   open-ended-margin funding-buffer study (starts `2026-08-03`) reuses the same
   `liquid_taker_candidate_v1` selector, measuring different checkpoints on the same
-  underlying candidate rather than a new one. HYP-013 itself parked with status
+  underlying candidate rather than a new one; HYP-015 (`2026-08-16`) is a continuation
+  of HYP-014's own momentum-flow family, an informal exit-hold/stop-loss discovery
+  sweep against `momentum_flow_paper_v1`'s own already-collected probes, not a new
+  signal. HYP-013 itself parked with status
   `insufficient_triggers` on its first real pass (2026-08-11) — the frozen
   47-instrument token-history dataset produced only 60 formal-sample episodes, and the
   most aggressively cash-gating candidate kept only 7 of them, short of the
