@@ -6,6 +6,11 @@ have produced an executable entry on the same Bybit linear USDT market and measu
 bounded, after-cost outcomes. It never sends a real order and does not change the
 production pump-short strategy.
 
+`momentum_flow_paper_v1_lev3` is a sibling sizing variant, not a venue expansion: the
+same live Bybit WATCH signal, the same $50 of real capital committed per probe, but
+the simulated position is sized at 3x that ($150 notional) instead of 1x. See
+"Sizing variant: lev3" below.
+
 ## Frozen contract
 
 | Field                        |                                                    Value |
@@ -66,6 +71,38 @@ own doc comment), `market:momentumpaper:health:momentum_flow_paper_v1` for the l
 Bybit worker specifically. The worker has its own Compose profile and resource limit,
 so it is not part of the normal production deployment. Stopping it does not stop
 capture, WATCH evaluation, the pump scanner, or execution.
+
+## Sizing variant: lev3
+
+`momentum_flow_paper_v1_lev3` (`LEVERAGED_PAPER_CONTRACT`) reuses every threshold in
+the frozen contract table above verbatim -- same `watch_version`, same stop, hold
+window, outcome horizons, timing bounds, and cost model -- except:
+
+| Field                | `momentum_flow_paper_v1` | `momentum_flow_paper_v1_lev3` |
+| -------------------- | -----------------------: | ----------------------------: |
+| Position notional    |                      $50 |                          $150 |
+| Leverage             |                       1x |                            3x |
+| Real capital at risk |                      $50 |                           $50 |
+
+Real capital at risk (`MARGIN_USD`) is a project-wide constant enforced by
+`PaperContract.__post_init__`: `position_notional_usd` must equal `MARGIN_USD x
+leverage`, so a future sibling contract cannot silently commit more real capital than
+`MARGIN_USD` while only appearing to change a "leverage" label. Fees, funding, and P&L
+are all computed on the position's own notional (not the margin), so this is not a
+scaled replay of the leverage=1 contract's own results: a $150 simulated fill walks
+further into the real order book than a $50 one, so `entry_impact_bps` and
+`entry_spread_bps` genuinely differ, not just the dollar P&L.
+
+Its own `paper_version` keeps its worker lock, `_runs` row, and Redis health key
+(`market:momentumpaper:health:momentum_flow_paper_v1_lev3`) fully isolated from the
+leverage=1 Bybit worker, so both independently claim and probe every WATCH decision
+the live Bybit WATCH worker produces. Own Compose profile and resource limit, same as
+every other sibling worker:
+
+```bash
+make prod-momentum-paper-lev3-start
+make prod-momentum-paper-lev3-health
+```
 
 ## Interpretation
 
