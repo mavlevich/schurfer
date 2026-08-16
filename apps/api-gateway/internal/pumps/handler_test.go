@@ -1656,3 +1656,19 @@ func TestMomentumWatchQueryNeverTouchesPumpEventsTables(t *testing.T) {
 		t.Error("momentumWatchQuery must stay isolated to momentum_flow's own tables")
 	}
 }
+
+// TestMomentumWatchQueryFallsBackFirstWatchToLastWatch is a regression for a
+// production incident (2026-08-16): an episode reactivated via the
+// evaluator's own suppressed_cooldown path has no decision_status='watch'
+// row at all for its current episode_id, so the first-watch lateral
+// subquery's own min() was NULL -- scanning NULL into Go's non-pointer
+// int64 FirstWatchAt crashed the whole endpoint the moment such an episode
+// (TAOUSDT, confirmed directly against production data) was active. This is
+// a lightweight text check (this package has no real-Postgres integration
+// harness, see the stub-only convention above); the fix itself was verified
+// by running the full query directly against production before shipping.
+func TestMomentumWatchQueryFallsBackFirstWatchToLastWatch(t *testing.T) {
+	if !strings.Contains(momentumWatchQuery, "coalesce(min(e2.bucket_start), s.last_watch_at)") {
+		t.Error("first_watch_at must fall back to s.last_watch_at instead of staying NULL")
+	}
+}

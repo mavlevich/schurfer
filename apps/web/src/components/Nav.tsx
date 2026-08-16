@@ -44,7 +44,7 @@ export function Nav() {
               }
             >
               <TrendingUp className="h-3.5 w-3.5" />
-              Pump Scanner
+              Scanner
             </NavLink>
             <NavLink
               to="/account"

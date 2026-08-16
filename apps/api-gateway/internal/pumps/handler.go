@@ -643,9 +643,26 @@ const momentumWatchQuery = `
 		AND e.market_type = s.market_type AND e.symbol = s.symbol
 		AND e.bucket_start = s.last_bucket_start
 	JOIN LATERAL (
-		-- Each episode's own first 'watch' bucket, not the episode row's own
-		-- last_watch_at (which is the most recent one, not the first).
-		SELECT min(e2.decision_at) AS first_watch_at
+		-- Each episode's own first 'watch' BUCKET (not decision_at, which is
+		-- evaluator wall-clock time and can lag bucket_start by tens of
+		-- seconds -- comparing it against last_watch_at, which IS
+		-- bucket_start-based per momentum_flow_watch_evaluator.py's own
+		-- last_watch_at=event_time assignment, produced nonsensical "first
+		-- watch after last watch" rows for single-watch episodes, a
+		-- production incident 2026-08-16).
+		--
+		-- Falls back to s.last_watch_at when this episode_id has no 'watch'
+		-- row at all: an episode reactivated via the evaluator's own
+		-- suppressed_cooldown path (a fresh qualifying signal arriving
+		-- within watch_cooldown_minutes of a PRIOR, already-closed episode's
+		-- last watch) gets a brand new episode_id and active_episode=true
+		-- without ever recording a fresh 'watch' decision for it -- see
+		-- evaluate_prepared's own suppressed_cooldown branch, which carries
+		-- the OLD last_watch_at forward under the NEW episode_id. Without
+		-- this fallback min() is NULL for exactly those rows, and scanning
+		-- NULL into Go's non-pointer int64 FirstWatchAt crashed the whole
+		-- endpoint (production incident, 2026-08-16).
+		SELECT coalesce(min(e2.bucket_start), s.last_watch_at) AS first_watch_at
 		FROM timeseries.momentum_flow_watch_evaluations_1m e2
 		WHERE e2.watch_version = s.watch_version AND e2.exchange = s.exchange
 			AND e2.market_type = s.market_type AND e2.symbol = s.symbol
