@@ -63,6 +63,7 @@ type Notifier struct {
 	rdb              *redis.Client
 	recorder         alertRecorder
 	sourceLeadHealth sourceLeadHealthReader
+	momentumFlow     momentumFlowReader
 }
 
 func New(ctx context.Context, cfg Config) (*Notifier, error) {
@@ -76,6 +77,7 @@ func New(ctx context.Context, cfg Config) (*Notifier, error) {
 		}
 		notifier.recorder = postgresRecorder
 		notifier.sourceLeadHealth = postgresRecorder
+		notifier.momentumFlow = postgresRecorder
 	}
 	return notifier, nil
 }
@@ -194,6 +196,7 @@ func (n *Notifier) tick(ctx context.Context) error {
 	_ = n.rdb.Set(ctx, redisKeyHeartbeat, time.Now().Unix(), 3*n.cfg.Interval).Err()
 	n.drainAlertOutbox(ctx)
 	n.reportSourceLeadHealth(ctx)
+	n.reportMomentumFlow(ctx)
 
 	// A silently dead, stuck, or garbage-producing scanner is the main way the
 	// dataset develops gaps, so alert on those before doing anything else.
