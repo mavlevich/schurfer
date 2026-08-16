@@ -492,6 +492,43 @@ services:
         max-size: '10m'
         max-file: '3'
 
+  # A longer-hold variant of the SAME live Bybit WATCH signal momentum-paper
+  # already probes -- not a venue or sizing expansion, a hold-duration
+  # expansion (see momentum_flow_paper_contract.HOLD12H_PAPER_CONTRACT's own
+  # doc comment, prompted by HYP-015 in docs/research/discovery-ledger.md):
+  # same real capital/leverage/stop as the live worker, max_hold_minutes=720
+  # (12h) instead of 240. Its own paper_version keeps its worker lock, _runs
+  # row, and Redis health key completely isolated from the 240-minute Bybit
+  # worker, so both independently claim and probe every WATCH decision the
+  # live Bybit WATCH worker produces.
+  momentum-paper-hold12h:
+    profiles: ['momentum-paper-hold12h']
+    build:
+      context: ../../
+      dockerfile: apps/analytics/Dockerfile
+    container_name: schurfer-momentum-paper-hold12h
+    entrypoint: ['momentum-flow-paper-hold12h']
+    environment:
+      DATABASE_URL: postgresql://schurfer:${POSTGRES_PASSWORD}@postgres:5432/schurfer
+      REDIS_ADDR: redis:6379
+      MOMENTUM_PAPER_WATCH_BATCH_SIZE: ${MOMENTUM_PAPER_WATCH_BATCH_SIZE:-20}
+      MOMENTUM_PAPER_PROBE_BATCH_SIZE: ${MOMENTUM_PAPER_PROBE_BATCH_SIZE:-100}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    mem_limit: 384m
+    memswap_limit: 384m
+    cpus: 0.75
+    pids_limit: 128
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
   analytics:
     build:
       context: ../../

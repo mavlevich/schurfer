@@ -11,6 +11,11 @@ same live Bybit WATCH signal, the same $50 of real capital committed per probe, 
 the simulated position is sized at 3x that ($150 notional) instead of 1x. See
 "Sizing variant: lev3" below.
 
+`momentum_flow_paper_v1_hold12h` is a sibling hold-duration variant: the same live
+Bybit WATCH signal, the same $50 notional/1x leverage/5% stop as `momentum_flow_paper_v1`,
+but `max_hold_minutes=720` (12h) instead of 240. See "Hold-duration variant: hold12h"
+below.
+
 ## Frozen contract
 
 | Field                        |                                                    Value |
@@ -103,6 +108,45 @@ every other sibling worker:
 make prod-momentum-paper-lev3-start
 make prod-momentum-paper-lev3-health
 ```
+
+## Hold-duration variant: hold12h
+
+`momentum_flow_paper_v1_hold12h` (`HOLD12H_PAPER_CONTRACT`) reuses every threshold in
+the frozen contract table above verbatim -- same `watch_version`, same position
+notional, leverage, stop, timing bounds, and cost model -- except `max_hold_minutes`
+and the outcome horizons that extend to match it:
+
+| Field            |    `momentum_flow_paper_v1` |      `momentum_flow_paper_v1_hold12h` |
+| ---------------- | --------------------------: | ------------------------------------: |
+| Maximum hold     |                 240 minutes |                           720 minutes |
+| Outcome horizons | 5, 15, 30, 60, 120, 240 min | 5, 15, 30, 60, 120, 240, 480, 720 min |
+
+Prompted by `HYP-015` (`docs/research/discovery-ledger.md`): an informal, non-pre-
+registered bar-by-bar sweep of `momentum_flow_paper_v1`'s own already-collected probes
+found the live 240-minute/5%-stop defaults underperforming most other cells in a
+60-1440 minute grid, but that sweep had no cost model (notably no funding, which
+accrues every 8h on a perp) and reused the same probes across every cell -- a
+hypothesis, not evidence. 720 minutes is a deliberate middle-of-range pick from that
+grid, not the single best-looking cell, since the apparent 12-24h improvement is most
+exposed to the missing funding cost and the 36h/48h cells already turned net negative
+even before costs.
+
+Its own `paper_version` keeps its worker lock, `_runs` row, and Redis health key
+(`market:momentumpaper:health:momentum_flow_paper_v1_hold12h`) fully isolated from the
+240-minute Bybit worker, so both independently claim and probe every WATCH decision
+the live Bybit WATCH worker produces. Own Compose profile and resource limit, same as
+every other sibling worker:
+
+```bash
+make prod-momentum-paper-hold12h-start
+make prod-momentum-paper-hold12h-health
+```
+
+Per HYP-015's own `confirmation_requirement`: do not reuse HYP-015's own already-
+viewed `2026-08-14` through `2026-08-16` window to draw a hold-duration conclusion.
+This worker's results are a genuinely new forward cohort, with the production
+pipeline's real fee/funding accounting applied automatically -- the comparison that
+actually answers the question, once enough of this contract's own probes close.
 
 ## Interpretation
 
