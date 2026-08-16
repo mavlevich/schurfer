@@ -11,7 +11,7 @@ import {
   TableCell,
 } from '@/components/ui/table';
 import { useTrades, useTradeStats } from '@/hooks/useTradesData';
-import type { Trade, TradeStats } from '@/hooks/useTradesData';
+import type { Trade, TradeOrigin, TradeStats } from '@/hooks/useTradesData';
 
 const PAGE_SIZE = 50;
 
@@ -105,6 +105,30 @@ function PnlCell({ trade }: { trade: Trade }) {
         <div className="text-xs text-muted-foreground">costs {fmtUsd(-costs)}</div>
       )}
     </div>
+  );
+}
+
+// OriginBadge is deliberately visually distinct from the pre-existing "paper"
+// text next to a pump_short token (isPaper below) -- that flag means "this
+// specific pump-short trade ran in dry-run mode", a different concept from
+// origin="momentum_flow_paper" (this row is not a pump-short trade at all, it
+// is momentum_flow's own discovery instrumentation). A momentum_flow_paper
+// row must never look like an already-vetted pump-short trade.
+function OriginBadge({ origin }: { origin: TradeOrigin }) {
+  if (origin === 'momentum_flow_paper') {
+    return (
+      <span
+        title="momentum_flow WATCH->paper: research probe, not promotion evidence"
+        className="inline-flex items-center rounded-full border border-violet-400/20 bg-violet-400/10 px-2 py-0.5 text-xs font-medium text-violet-400"
+      >
+        🔭 research
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center rounded-full border border-border bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+      pump-short
+    </span>
   );
 }
 
@@ -219,15 +243,20 @@ function StatRow({ stats }: { stats?: TradeStats }) {
 export function TradesPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [exchangeFilter, setExchangeFilter] = useState('');
+  const [originFilter, setOriginFilter] = useState<TradeOrigin | ''>('');
   const [offset, setOffset] = useState(0);
 
   const { data, isError, isFetching, dataUpdatedAt } = useTrades({
     status: statusFilter || undefined,
     exchange: exchangeFilter || undefined,
+    origin: originFilter || undefined,
     limit: PAGE_SIZE,
     offset,
   });
-  const { data: stats } = useTradeStats({ exchange: exchangeFilter || undefined });
+  const { data: stats } = useTradeStats({
+    exchange: exchangeFilter || undefined,
+    origin: originFilter || undefined,
+  });
 
   const trades = data?.trades ?? [];
   const total = data?.total ?? 0;
@@ -241,6 +270,11 @@ export function TradesPage() {
       setter(e.target.value);
       setOffset(0);
     };
+  }
+
+  function handleOriginFilterChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    setOriginFilter(e.target.value as TradeOrigin | '');
+    setOffset(0);
   }
 
   return (
@@ -276,6 +310,15 @@ export function TradesPage() {
               <option value="mexc">MEXC</option>
               <option value="okx">OKX</option>
               <option value="kucoin">KuCoin</option>
+            </select>
+            <select
+              value={originFilter}
+              onChange={handleOriginFilterChange}
+              className="rounded border border-input bg-background px-2 py-1 text-sm text-foreground"
+            >
+              <option value="">All sources</option>
+              <option value="pump_short">Pump-short</option>
+              <option value="momentum_flow_paper">Research (momentum_flow)</option>
             </select>
           </div>
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -316,6 +359,7 @@ export function TradesPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead>Source</TableHead>
                     <TableHead>Token</TableHead>
                     <TableHead>Exchange</TableHead>
                     <TableHead>Side</TableHead>
@@ -334,6 +378,9 @@ export function TradesPage() {
                     const held = holdMinutes(t);
                     return (
                       <TableRow key={t.id}>
+                        <TableCell>
+                          <OriginBadge origin={t.origin} />
+                        </TableCell>
                         <TableCell className="font-mono font-semibold">
                           {t.symbol.split('/')[0]}
                           {isPaper(t) && (
