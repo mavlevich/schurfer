@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 )
 
@@ -23,14 +24,28 @@ const (
 	redisKeyMomentumFlowOutcomeSeenPfx = "notifier:momentum_flow:outcome_seen:"
 )
 
-// momentumFlowPaperOpen is one momentum_flow_paper_v1 (or its Binance
-// counterpart) probe that just opened a real (paper) long entry.
+// momentumFlowPaperOpen is one momentum_flow_paper_v1 (or a sibling contract
+// -- Binance's own venue expansion, or the lev3 sizing expansion, see
+// momentum_flow_paper_contract.py) probe that just opened a real (paper)
+// long entry. Leverage/NotionalUSD come from the specific sibling contract
+// that opened this probe (joined via its own paper_version's contract_json),
+// not hardcoded, so the alert stays accurate as more sibling contracts are
+// added. Return60mPct/OIGrowth60mPct/BuyImbalance15m are the triggering
+// WATCH decision's own feature snapshot (LEFT JOINed on watch_id, so a
+// pruned/archived evaluation row degrades this alert to omitting the
+// signal line rather than failing to claim/send it at all).
 type momentumFlowPaperOpen struct {
-	PaperID     string
-	Symbol      string
-	Exchange    string
-	EntryVWAP   float64
-	NotionalUSD float64
+	PaperID         string
+	Symbol          string
+	Exchange        string
+	EntryVWAP       float64
+	NotionalUSD     float64
+	Leverage        int
+	WatchDecisionAt time.Time
+	EntryAt         time.Time
+	Return60mPct    *float64
+	OIGrowth60mPct  *float64
+	BuyImbalance15m *float64
 }
 
 // momentumFlowPaperOutcome is one probe's own FINAL outcome -- the row at
@@ -39,6 +54,11 @@ type momentumFlowPaperOpen struct {
 // OUTCOME_HORIZONS_MINUTES), not one of the five earlier intermediate
 // horizon reads. Reporting only the final horizon (not all six) keeps
 // this from being six times noisier than the entry alert it pairs with.
+// ExitAt is nullable: a max-hold exit that could not get a clean quote
+// before its deadline becomes exit_unresolved (position_status <> 'closed'),
+// which the schema's own momentum_flow_paper_exit_shape CHECK requires
+// exit_at to be NULL for -- see docs/research/momentum-flow-paper-v1.md's
+// own "Point-in-time and failure rules".
 type momentumFlowPaperOutcome struct {
 	PaperID        string
 	Symbol         string
@@ -46,6 +66,8 @@ type momentumFlowPaperOutcome struct {
 	HorizonMinutes int
 	NetReturnPct   float64
 	NetPnLUSD      float64
+	EntryAt        time.Time
+	ExitAt         *time.Time
 }
 
 type momentumFlowReader interface {
@@ -60,10 +82,17 @@ func (r *postgresAlertRecorder) ReadNewMomentumFlowPaperOpens(
 	defer cancel()
 
 	rows, err := r.pool.Query(readCtx, `
-		SELECT paper_id, symbol, exchange, entry_vwap, entry_filled_notional_usd
-		FROM app.momentum_flow_paper_probes
-		WHERE entry_status = 'opened'
-		  AND entry_at >= now() - (interval '1 second' * $1::double precision)`,
+		SELECT p.paper_id, p.symbol, p.exchange, p.entry_vwap, p.entry_filled_notional_usd,
+		       coalesce((r.contract_json->>'leverage')::int, 1),
+		       p.watch_decision_at, p.entry_at,
+		       e.price_return_60m_pct, e.oi_growth_60m_pct, e.buy_imbalance_15m
+		FROM app.momentum_flow_paper_probes p
+		JOIN app.momentum_flow_paper_runs r ON r.paper_version = p.paper_version
+		LEFT JOIN timeseries.momentum_flow_watch_evaluations_1m e
+		  ON e.watch_version = p.watch_version AND e.exchange = p.exchange
+		  AND e.market_type = p.market_type AND e.symbol = p.symbol AND e.watch_id = p.watch_id
+		WHERE p.entry_status = 'opened'
+		  AND p.entry_at >= now() - (interval '1 second' * $1::double precision)`,
 		momentumFlowLookback.Seconds(),
 	)
 	if err != nil {
@@ -76,6 +105,8 @@ func (r *postgresAlertRecorder) ReadNewMomentumFlowPaperOpens(
 		var open momentumFlowPaperOpen
 		if err := rows.Scan(
 			&open.PaperID, &open.Symbol, &open.Exchange, &open.EntryVWAP, &open.NotionalUSD,
+			&open.Leverage, &open.WatchDecisionAt, &open.EntryAt,
+			&open.Return60mPct, &open.OIGrowth60mPct, &open.BuyImbalance15m,
 		); err != nil {
 			return nil, err
 		}
@@ -98,7 +129,7 @@ func (r *postgresAlertRecorder) ReadNewMomentumFlowPaperOutcomes(
 
 	rows, err := r.pool.Query(readCtx, `
 		SELECT o.paper_id, p.symbol, p.exchange, o.horizon_minutes,
-		       o.net_return_pct, o.net_pnl_usd
+		       o.net_return_pct, o.net_pnl_usd, p.entry_at, p.exit_at
 		FROM app.momentum_flow_paper_outcomes o
 		JOIN app.momentum_flow_paper_probes p ON p.paper_id = o.paper_id
 		WHERE o.status = 'complete'
@@ -120,7 +151,7 @@ func (r *postgresAlertRecorder) ReadNewMomentumFlowPaperOutcomes(
 		var outcome momentumFlowPaperOutcome
 		if err := rows.Scan(
 			&outcome.PaperID, &outcome.Symbol, &outcome.Exchange, &outcome.HorizonMinutes,
-			&outcome.NetReturnPct, &outcome.NetPnLUSD,
+			&outcome.NetReturnPct, &outcome.NetPnLUSD, &outcome.EntryAt, &outcome.ExitAt,
 		); err != nil {
 			return nil, err
 		}
@@ -160,10 +191,7 @@ func (n *Notifier) reportMomentumFlowPaperOpen(ctx context.Context, open momentu
 	if !claimed {
 		return
 	}
-	message := fmt.Sprintf(
-		"🔭 WATCH→PAPER: LONG %s (%s)\nEntry VWAP: %s\nSize: $%.0f — research probe, not a live position",
-		open.Symbol, open.Exchange, formatPrice(open.EntryVWAP), open.NotionalUSD,
-	)
+	message := formatMomentumFlowOpenMessage(open)
 	if err := sendMessage(ctx, message, n.cfg.BotToken, n.cfg.ChatID); err != nil {
 		slog.Warn("notifier.momentum_flow.open_alert_failed", "err", err)
 		if delErr := n.rdb.Del(ctx, key).Err(); delErr != nil {
@@ -186,15 +214,7 @@ func (n *Notifier) reportMomentumFlowPaperOutcome(
 	if !claimed {
 		return
 	}
-	icon := "🟢"
-	if outcome.NetReturnPct < 0 {
-		icon = "🔴"
-	}
-	message := fmt.Sprintf(
-		"%s PAPER closed: LONG %s (%s)\n%dmin result: %+.2f%% (%s) — research probe, not a live position",
-		icon, outcome.Symbol, outcome.Exchange, outcome.HorizonMinutes,
-		outcome.NetReturnPct, formatSignedUSD(outcome.NetPnLUSD),
-	)
+	message := formatMomentumFlowOutcomeMessage(outcome)
 	if err := sendMessage(ctx, message, n.cfg.BotToken, n.cfg.ChatID); err != nil {
 		slog.Warn("notifier.momentum_flow.outcome_alert_failed", "err", err)
 		if delErr := n.rdb.Del(ctx, key).Err(); delErr != nil {
@@ -206,6 +226,94 @@ func (n *Notifier) reportMomentumFlowPaperOutcome(
 		"notifier.momentum_flow.closed",
 		"symbol", outcome.Symbol, "exchange", outcome.Exchange, "net_return_pct", outcome.NetReturnPct,
 	)
+}
+
+// formatMomentumFlowOpenMessage names the strategy that opened this probe
+// and why (the triggering WATCH signal's own feature snapshot), instead of a
+// generic "research probe" label that says nothing about either -- and
+// states real capital at risk explicitly rather than leaving a reader to
+// infer margin from a bare notional + leverage pair. No em/en-dash: plain
+// ASCII "·" separators and "->"-free "→" for direction, matching this
+// codebase's own existing pump-alert and execution-notify conventions.
+func formatMomentumFlowOpenMessage(open momentumFlowPaperOpen) string {
+	return fmt.Sprintf(
+		"🔭 MOMENTUM-FLOW LONG · %s (%s)\nEntry %s · %s\n%s\nDetected %s · opened %s (+%s)",
+		open.Symbol, open.Exchange, formatPrice(open.EntryVWAP), momentumFlowSizeLine(open.NotionalUSD, open.Leverage),
+		momentumFlowSignalLine(open.Return60mPct, open.OIGrowth60mPct, open.BuyImbalance15m),
+		formatUTC(open.WatchDecisionAt), formatUTC(open.EntryAt), open.EntryAt.Sub(open.WatchDecisionAt).Round(time.Second),
+	)
+}
+
+// formatMomentumFlowOutcomeMessage mirrors formatMomentumFlowOpenMessage's
+// own naming and separator conventions for the paired close alert.
+func formatMomentumFlowOutcomeMessage(outcome momentumFlowPaperOutcome) string {
+	icon := "🟢"
+	if outcome.NetReturnPct < 0 {
+		icon = "🔴"
+	}
+	return fmt.Sprintf(
+		"%s MOMENTUM-FLOW LONG CLOSED · %s (%s)\n%dmin result: %+.2f%% (%s)\n%s",
+		icon, outcome.Symbol, outcome.Exchange, outcome.HorizonMinutes,
+		outcome.NetReturnPct, formatSignedUSD(outcome.NetPnLUSD),
+		momentumFlowTimingLine(outcome.EntryAt, outcome.ExitAt),
+	)
+}
+
+// formatUTC gives a readable, unambiguous timestamp for a Telegram audience
+// that reads alerts from multiple timezones -- always UTC, always labeled,
+// never a bare local-feeling "HH:MM" that silently means different things
+// to different readers.
+func formatUTC(t time.Time) string {
+	return t.UTC().Format("15:04:05 UTC")
+}
+
+// momentumFlowSizeLine names the real capital committed the same way
+// regardless of which sibling paper contract opened this probe: leverage=1
+// (FROZEN_PAPER_CONTRACT) reads as its own notional with "no leverage";
+// leverage>1 (e.g. LEVERAGED_PAPER_CONTRACT) also states the margin that
+// notional implies, so a reader never has to do the division themselves to
+// see how much real capital is actually at risk.
+func momentumFlowSizeLine(notionalUSD float64, leverage int) string {
+	if leverage <= 1 {
+		return fmt.Sprintf("$%.0f notional, no leverage", notionalUSD)
+	}
+	margin := notionalUSD / float64(leverage)
+	return fmt.Sprintf("$%.0f notional, %dx leverage ($%.0f margin)", notionalUSD, leverage, margin)
+}
+
+// momentumFlowSignalLine reports the triggering WATCH decision's own feature
+// snapshot -- the actual reason this symbol qualified -- rather than a bare
+// "research probe" label that says nothing about why. Any feature missing
+// (a pruned/archived evaluation row, see the LEFT JOIN in
+// ReadNewMomentumFlowPaperOpens) is simply omitted from the line rather than
+// shown as a fabricated zero.
+func momentumFlowSignalLine(return60mPct, oiGrowth60mPct, buyImbalance15m *float64) string {
+	parts := make([]string, 0, 3)
+	if return60mPct != nil {
+		parts = append(parts, fmt.Sprintf("60m return %+.1f%%", *return60mPct))
+	}
+	if oiGrowth60mPct != nil {
+		parts = append(parts, fmt.Sprintf("OI growth 60m %+.1f%%", *oiGrowth60mPct))
+	}
+	if buyImbalance15m != nil {
+		parts = append(parts, fmt.Sprintf("buy imbalance 15m %+.2f", *buyImbalance15m))
+	}
+	if len(parts) == 0 {
+		return "Signal: unavailable"
+	}
+	return "Signal: " + strings.Join(parts, " · ")
+}
+
+// momentumFlowTimingLine reports when the position opened and (if resolved
+// with a clean quote) closed. exitAt is nil for exit_unresolved outcomes --
+// a max-hold exit that could not get a clean quote before its deadline, see
+// momentumFlowPaperOutcome's own doc comment -- in which case this only
+// reports the open time rather than fabricating a close time.
+func momentumFlowTimingLine(entryAt time.Time, exitAt *time.Time) string {
+	if exitAt == nil {
+		return fmt.Sprintf("Opened %s", formatUTC(entryAt))
+	}
+	return fmt.Sprintf("Opened %s → closed %s", formatUTC(entryAt), formatUTC(*exitAt))
 }
 
 func formatPrice(price float64) string {
