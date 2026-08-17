@@ -804,6 +804,43 @@ Protocols`, no error, no reconnect) but zero application frames ever
    see `formatMomentumFlowOpenMessage`/`formatMomentumFlowOutcomeMessage`
    in `momentum_flow_alerts.go`.
 
+   **Binance WATCH input-readiness gate
+   (`fix/binance-watch-input-readiness-v1`, 2026-08-17):** `momentum_flow_
+   watch_binance` had produced zero `watch` decisions since its own
+   2026-08-15 startup -- Binance capture bars never populate close*price
+   (a documented v1 limitation) and `_fresh_oi` requires an OI reading
+   within the exact 1-minute bucket being evaluated, which Binance's
+   sequential-blocking OI poller structurally cannot meet (measured p50
+   127s / p95 255s / max 1010s per-symbol refresh gap against a 60s
+   target). Both workers reported `status: "ok"` the whole time -- health
+   answered "did my tick run" not "can my upstream even feed me." Two new
+   statuses (`blocked_upstream_incompatible`, `degraded_dependency*
+   unavailable`): both `run_watch_worker`/`run_paper_worker`check
+   readiness every tick, before acting, and neither raises/exits when
+   blocked -- they stay in their own loop and resume`"ok"`on their own
+   once the upstream recovers, no restart needed (a first draft crash-
+   looped instead; a colleague review caught this and two other P1s --
+   see docs/research/binance-watch-input-readiness-v1.md's own "Colleague
+   review" section for the full list, including the most serious one: the
+   first draft's paper worker stopped servicing already-open positions'
+   own stops/exits while blocked).`run_watch_worker`checks a *complete*
+   recent bar with`close_price > 0`; `run_paper_worker`checks its
+   upstream WATCH worker's own health hash for a *recent*`status: "ok"`   (a stale one does not count) and only gates new entries, never
+   existing-position bookkeeping.`momentum-watch-binance`/`momentum-
+   paper-binance` stopped on prod (`momentum-capture-binance`stays up --
+   trades/OI remain useful for offline discovery and PR3's own scheduler
+   work). See docs/research/binance-watch-input-readiness-v1.md for the
+   full incident writeup, retroactive`input_contract_incompatible`
+   labeling of the 2026-08-15..2026-08-17 period, and the 4-PR
+   remediation sequence this unblocks
+   (`feat/momentum-trade-price-source-v1`->
+  `fix/binance-oi-poll-scheduler-v1`->
+  `analysis/binance-watch-input-coverage-v1`->
+  `feat/binance-momentum-watch-v2`, conditional). **Sequenced ahead of
+   item 9 (multivenue combiner): a combiner premised on Binance
+   independently confirming a WATCH decision cannot be validated while
+   Binance structurally cannot produce one.**
+
 9. **Register at most one Confirmation shadow if the discovery gate passes.** Freeze
    one primary lookback, eligibility rule, entry quote, stop, bounded exit horizons,
    cost model, minimum sample/diversity, and no-go rule on a new untouched cohort. The

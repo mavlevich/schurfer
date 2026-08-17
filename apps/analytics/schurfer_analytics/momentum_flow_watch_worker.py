@@ -12,6 +12,11 @@ from typing import TYPE_CHECKING, Any, Protocol, cast
 import structlog
 from redis.asyncio import Redis
 
+from .momentum_flow_producer_readiness import (
+    BLOCKED_STATUS,
+    DEPENDENCY_UNAVAILABLE_STATUS,
+    PRICE_READINESS_LOOKBACK_MINUTES,
+)
 from .momentum_flow_watch_contract import (
     FROZEN_WATCH_CONTRACT,
     WATCH_CONTRACT_SHA256,
@@ -80,6 +85,13 @@ class WatchStore(Protocol):
         *,
         contract: WatchContract,
     ) -> dict[str, SymbolWatchState]: ...
+
+    async def has_any_recent_valid_price(
+        self,
+        *,
+        contract: WatchContract,
+        lookback_minutes: int,
+    ) -> bool: ...
 
     async def persist_bucket(
         self,
@@ -212,6 +224,39 @@ async def evaluate_bucket(
     )
 
 
+async def _price_readiness_block(
+    store: WatchStore, *, contract: WatchContract
+) -> tuple[str, str] | None:
+    """Returns None if ready. Otherwise (status, error): BLOCKED_STATUS if
+    the check ran and genuinely found no valid recent price, or
+    DEPENDENCY_UNAVAILABLE_STATUS if the check itself could not run (a
+    transient DB error) -- see momentum_flow_producer_readiness's own doc
+    comment for why these are kept distinct rather than both collapsing
+    to BLOCKED_STATUS. Either way this never raises: the caller is
+    expected to keep looping and recheck next tick, not crash (see
+    run_watch_worker's own doc comment on why a startup-only gate that
+    raises was replaced with this)."""
+    try:
+        ready = await store.has_any_recent_valid_price(
+            contract=contract, lookback_minutes=PRICE_READINESS_LOOKBACK_MINUTES
+        )
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        return DEPENDENCY_UNAVAILABLE_STATUS, f"price readiness check itself failed: {exc}"
+    if ready:
+        return None
+    return BLOCKED_STATUS, (
+        f"no valid recent bar (close_price > 0, complete) in the last "
+        f"{PRICE_READINESS_LOOKBACK_MINUTES} minutes for exchange="
+        f"{contract.source_exchange!r} capture_version={contract.capture_version!r} "
+        "-- this venue's own capture producer does not (yet) satisfy what "
+        "momentum_flow_watch needs. Note: this only confirms SOME symbol "
+        "has a valid price, not that the whole cross-section/OI is ready "
+        "-- see docs/research/binance-watch-input-readiness-v1.md."
+    )
+
+
 def _redis_url(redis_addr: str) -> str:
     if redis_addr.startswith(("redis://", "rediss://")):
         return redis_addr
@@ -334,6 +379,37 @@ async def run_watch_worker(
         last_result: BucketResult | None = None
         while True:
             try:
+                # Readiness check every tick, not a startup-only gate: a
+                # worker that raised here used to crash-loop under Docker's
+                # own restart: unless-stopped policy the whole time its
+                # producer stayed incompatible -- pure churn, since nothing
+                # about restarting changes the producer. Staying in the
+                # loop and reporting BLOCKED_STATUS/DEPENDENCY_UNAVAILABLE_
+                # STATUS instead means recovery (once the producer becomes
+                # ready) needs no restart at all. Known tradeoff: a
+                # brand-new venue's very first tick, moments after its own
+                # capture process starts, has no bars at all yet in the
+                # lookback window either -- this cannot distinguish that
+                # from a structurally incompatible producer and reports
+                # blocked either way. Acceptable for now (every venue this
+                # repo captures today has run for hours before its own
+                # WATCH worker is ever started).
+                blocked = await _price_readiness_block(active_store, contract=contract)
+                if blocked is not None:
+                    status, error = blocked
+                    log.warning(
+                        "momentum_watch.producer_not_ready",
+                        watch_version=run.watch_version,
+                        status=status,
+                        error=error,
+                    )
+                    await _try_write_health(
+                        redis, run=run, result=last_result, status=status, error=error
+                    )
+                    if once:
+                        return
+                    await asyncio.sleep(config.poll_interval_seconds)
+                    continue
                 due = await active_store.due_buckets(
                     contract=contract,
                     cohort_started_at=run.cohort_started_at,
