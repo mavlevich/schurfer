@@ -346,6 +346,39 @@ class MomentumFlowWatchRepository:
         result = await self._execute(statement)
         return tuple(_utc(row[0]) for row in result.all())
 
+    async def list_bucket_starts_in_window(
+        self,
+        *,
+        contract: WatchContract,
+        since: datetime,
+        until: datetime,
+    ) -> tuple[datetime, ...]:
+        """Every distinct bucket_start captured for contract's own
+        (exchange, market_type, capture_version) in [since, until) --
+        for OFFLINE analysis (binance_watch_input_coverage_report.py's own
+        replay of prepare_symbol_evaluation against already-captured bars),
+        not the live worker's own due_buckets, which additionally tracks
+        cohort/run state and a real-time decision-delay margin. No
+        upper-bound safety margin against "still forming" buckets is
+        applied here on purpose: a report call is explicitly given until,
+        not implicitly trusting func.now()."""
+        if since >= until:
+            raise ValueError("since must be earlier than until")
+        statement = (
+            select(_bars.c.bucket_start)
+            .where(
+                _bars.c.exchange == contract.source_exchange,
+                _bars.c.market_type == contract.market_type,
+                _bars.c.capture_version == contract.capture_version,
+                _bars.c.bucket_start >= _utc(since),
+                _bars.c.bucket_start < _utc(until),
+            )
+            .distinct()
+            .order_by(_bars.c.bucket_start)
+        )
+        result = await self._execute(statement)
+        return tuple(_utc(row[0]) for row in result.all())
+
     async def load_bucket(
         self,
         *,
