@@ -25,6 +25,7 @@ momentum-flow-paper-binance = "schurfer_analytics.momentum_flow_paper_binance_wo
 momentum-flow-paper-lev3 = "schurfer_analytics.momentum_flow_paper_lev3_worker:main"
 momentum-flow-paper-hold12h = "schurfer_analytics.momentum_flow_paper_hold12h_worker:main"
 momentum-flow-episode-study-report = "schurfer_analytics.momentum_flow_episode_study_report:main"
+binance-watch-input-coverage-report = "schurfer_analytics.binance_watch_input_coverage_report:main"
 measurement-report = "schurfer_analytics.measurement_report:main"
 exchange-coverage-report = "schurfer_analytics.exchange_coverage_report:main"
 exchange-source-economics-report = "schurfer_analytics.exchange_source_economics_report:main"

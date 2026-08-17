@@ -902,6 +902,36 @@ Protocols`, no error, no reconnect) but zero application frames ever
    `momentum-watch-binance`/`momentum-paper-binance` remain stopped on prod
    pending PR4's own coverage read.
 
+   **WATCH input-coverage report (`analysis/binance-watch-input-coverage-v1`,
+   2026-08-17):** PR4, tooling only -- built ahead of the 24-48h clean-data
+   window it needs a full read from, so it is ready to run the moment
+   enough has accumulated post-PR2/PR3, rather than sitting idle waiting.
+   Descriptive only: no threshold tuning, no outcomes, no re-enable
+   decision made by the report itself. Since `momentum-watch-binance`
+   stays stopped, no `momentum_flow_watch_evaluations_1m` rows exist to
+   read for this window -- `binance_watch_input_coverage_report.py`
+   instead REPLAYS the real, unmodified
+   `momentum_flow_watch_evaluator.prepare_symbol_evaluation` against
+   already-captured bars for every bucket in the window, using
+   `BINANCE_WATCH_CONTRACT` unchanged (a deliberate choice over a
+   hand-rolled SQL approximation: `prepare_symbol_evaluation` IS the
+   frozen v1 contract). New `MomentumFlowWatchRepository.
+   list_bucket_starts_in_window` enumerates buckets for offline analysis,
+   scoped by the contract's own (exchange, market_type, capture_version)
+   over a half-open `[since, until)` range. A colleague-review pass on
+   the first draft found and fixed two real issues: an omitted `--until`
+   defaulted straight to `now()` with no margin, which would have
+   replayed the newest 1-2 buckets before capture had actually finished
+   writing them (not a real quality-gate failure, just real time not
+   having caught up) -- now padded by `decision-delay-seconds + 30s`
+   past `now()` when not given explicitly; and the bucket-by-bucket
+   replay loop had no upper bound, so an accidentally wide window could
+   silently turn into a slow, DB-hammering job -- now fails loudly past
+   `--max-buckets` (default 3000, comfortably covering this report's own
+   24-48h target) rather than truncating and mislabeling what was
+   actually covered. `make binance-watch-input-coverage-report ARGS='
+   --since ...'` / `make prod-binance-watch-input-coverage-report`.
+
 9. **Register at most one Confirmation shadow if the discovery gate passes.** Freeze
    one primary lookback, eligibility rule, entry quote, stop, bounded exit horizons,
    cost model, minimum sample/diversity, and no-go rule on a new untouched cohort. The
