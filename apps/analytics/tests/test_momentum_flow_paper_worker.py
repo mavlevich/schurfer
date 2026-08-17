@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, fields
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 import pytest
@@ -23,9 +23,14 @@ from schurfer_analytics.momentum_flow_paper_repository import (
 from schurfer_analytics.momentum_flow_paper_worker import (
     PaperWorkerConfig,
     _process_entry,
+    _upstream_watch_block,
     health_key,
     process_tick,
     run_paper_worker,
+)
+from schurfer_analytics.momentum_flow_producer_readiness import (
+    BLOCKED_STATUS,
+    DEPENDENCY_UNAVAILABLE_STATUS,
 )
 
 T0 = datetime(2026, 8, 14, 12, tzinfo=UTC)
@@ -194,6 +199,42 @@ async def test_process_tick_counts_entry_and_probe_results() -> None:
     assert store.applied == [probe_id]
 
 
+async def test_process_tick_with_entries_disallowed_still_services_existing_probes() -> None:
+    """The P1 fix a colleague review's own finding on the first version of
+    this readiness gate demanded: blocking new entries must never also
+    stop stop/max-hold/horizon-outcome bookkeeping for an ALREADY-open
+    position. A candidate is present but must not be claimed; a probe is
+    present and must still be quoted/processed exactly as if entries were
+    allowed."""
+    candidate = _candidate()
+    store = FakeStore((candidate,))
+    probe_id = uuid4()
+    store.probes = (PaperProbe(probe_id, "ERAUSDT", T0, 10, "open", 0, 0),)
+    run = PaperRun(
+        FROZEN_PAPER_CONTRACT.paper_version,
+        "hash",
+        {},
+        T0 - timedelta(seconds=1),
+        "active",
+    )
+    config = PaperWorkerConfig("postgresql://test", "redis:6379")
+
+    result = await process_tick(
+        store=store,
+        market=FakeMarket([_quote(side="bid")]),
+        run=run,
+        config=config,
+        clock=lambda: T0 + timedelta(seconds=1),
+        allow_new_entries=False,
+    )
+
+    assert result.watches_seen == 0
+    assert result.entries_opened == 0
+    assert store.claimed == []
+    assert result.probes_quoted == 1
+    assert store.applied == [probe_id]
+
+
 def test_runtime_cannot_override_frozen_poll_interval(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DATABASE_URL", "postgresql://test")
     monkeypatch.setenv("MOMENTUM_PAPER_POLL_INTERVAL", "10")
@@ -215,11 +256,42 @@ class _FakeRedis:
     """Stands in for redis.asyncio.Redis: records every hset call instead
     of touching a real (or fake) network connection."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        upstream_watch_status: str | None = "ok",
+        upstream_watch_generated_at: str | None = None,
+    ) -> None:
         self.hset_calls: list[tuple[str, dict[str, str]]] = []
+        # Defaults to "ok" / a fresh generated_at (computed lazily at read
+        # time, see hmget below): every existing test in this file
+        # exercises the happy path, where the upstream WATCH worker this
+        # paper worker depends on is healthy and recently reported so.
+        # Tests for the blocked-upstream gate (see _upstream_watch_block)
+        # construct their own _FakeRedis with a different status/
+        # generated_at, or None for "key never written".
+        self.upstream_watch_status = upstream_watch_status
+        self.upstream_watch_generated_at = upstream_watch_generated_at
+        # When set, hmget pops one (status, generated_at) pair per call
+        # (holding the last entry once exhausted) -- lets a test simulate
+        # "upstream was ok on the first tick, degraded on the next".
+        self.upstream_watch_status_sequence: list[tuple[str | None, str | None]] | None = None
 
     async def hset(self, key: str, mapping: dict[str, str]) -> None:
         self.hset_calls.append((key, dict(mapping)))
+
+    async def hmget(self, key: str, keys: list[str]) -> list[str | None]:
+        assert keys == ["status", "generated_at"]
+        if self.upstream_watch_status_sequence:
+            if len(self.upstream_watch_status_sequence) > 1:
+                status, generated_at = self.upstream_watch_status_sequence.pop(0)
+            else:
+                status, generated_at = self.upstream_watch_status_sequence[0]
+            return [status, generated_at]
+        generated_at = self.upstream_watch_generated_at
+        if generated_at is None and self.upstream_watch_status is not None:
+            generated_at = datetime.now(UTC).isoformat()
+        return [self.upstream_watch_status, generated_at]
 
     async def aclose(self) -> None:
         pass
@@ -364,6 +436,164 @@ async def test_run_paper_worker_threads_a_different_contract_through(
     assert key == health_key(BINANCE_PAPER_CONTRACT.paper_version)
     assert key != health_key(FROZEN_PAPER_CONTRACT.paper_version)
     assert mapping["paper_version"] == BINANCE_PAPER_CONTRACT.paper_version
+
+
+async def test_run_paper_worker_reports_blocked_instead_of_crashing_when_upstream_not_ok(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The paper-side half of the same regression run_watch_worker's own
+    test guards: momentum_paper_binance reported "ok, total=0" for 32+
+    hours while its own upstream WATCH worker could never produce a
+    decision for it to claim. Must report BLOCKED_STATUS for that tick --
+    and, per a colleague review's own finding on the first version of this
+    fix, must NOT crash/raise to do it (a paper worker that refuses to
+    even start also stops servicing its own already-open positions'
+    stops/exits, a materially worse failure than the one being fixed;
+    see process_tick's own allow_new_entries tests above for that half).
+    due_watches must not even be called for that tick -- there is nothing
+    real to claim."""
+    fake_redis = _install_fake_redis(monkeypatch)
+    fake_redis.upstream_watch_status = BLOCKED_STATUS
+    store = RecordingStore()
+    market = FakeMarket([])
+    config = PaperWorkerConfig("postgresql://example", "redis:6379")
+
+    await run_paper_worker(config, once=True, store=store, market=market)
+
+    key, mapping = fake_redis.hset_calls[-1]
+    assert key == health_key(FROZEN_PAPER_CONTRACT.paper_version)
+    assert mapping["status"] == BLOCKED_STATUS
+    assert mapping["last_error"]
+    assert store.due_watches_calls == []
+    # Existing positions are still serviced even while blocked.
+    assert store.expire_deadlines_calls == [FROZEN_PAPER_CONTRACT]
+    assert store.monitored_probes_calls == [FROZEN_PAPER_CONTRACT]
+
+
+async def test_run_paper_worker_reports_blocked_when_upstream_watch_health_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A missing upstream health key (that WATCH worker has never run at
+    all) must not be silently treated as ready by omission."""
+    fake_redis = _install_fake_redis(monkeypatch)
+    fake_redis.upstream_watch_status = None
+    store = RecordingStore()
+    market = FakeMarket([])
+    config = PaperWorkerConfig("postgresql://example", "redis:6379")
+
+    await run_paper_worker(config, once=True, store=store, market=market)
+
+    _, mapping = fake_redis.hset_calls[-1]
+    assert mapping["status"] == BLOCKED_STATUS
+
+
+async def test_run_paper_worker_treats_a_stale_ok_status_as_blocked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A colleague review's own finding on the first version of this fix:
+    if WATCH is hard-killed (OOM, host reboot -- anything that skips its
+    own graceful health-write paths entirely), its last-written status=ok
+    sits in Redis forever. Reading status alone, with no freshness check,
+    would let paper believe a WATCH process that has not ticked in hours
+    (or ever again) is still healthy."""
+    fake_redis = _install_fake_redis(monkeypatch)
+    fake_redis.upstream_watch_status = "ok"
+    fake_redis.upstream_watch_generated_at = (
+        datetime.now(tz=UTC) - timedelta(minutes=10)
+    ).isoformat()
+    store = RecordingStore()
+    market = FakeMarket([])
+    config = PaperWorkerConfig("postgresql://example", "redis:6379")
+
+    await run_paper_worker(config, once=True, store=store, market=market)
+
+    assert store.due_watches_calls == []
+    _, mapping = fake_redis.hset_calls[-1]
+    assert mapping["status"] == BLOCKED_STATUS
+
+
+async def test_run_paper_worker_allows_entries_when_upstream_ok_is_fresh(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_redis = _install_fake_redis(monkeypatch)
+    fake_redis.upstream_watch_status = "ok"
+    fake_redis.upstream_watch_generated_at = datetime.now(tz=UTC).isoformat()
+    store = RecordingStore()
+    market = FakeMarket([])
+    config = PaperWorkerConfig("postgresql://example", "redis:6379")
+
+    await run_paper_worker(config, once=True, store=store, market=market)
+
+    assert store.due_watches_calls == [FROZEN_PAPER_CONTRACT]
+    _, mapping = fake_redis.hset_calls[-1]
+    assert mapping["status"] == "ok"
+
+
+async def test_run_paper_worker_reports_blocked_when_upstream_watch_degrades_mid_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Upstream WATCH was fresh "ok" on the first tick, but degrades
+    before a later tick's own re-check -- must not report "ok" for that
+    tick either. The gap this specific test closes: an earlier version of
+    this fix only checked upstream readiness once, at startup, and then
+    unconditionally wrote status="ok" on every following tick."""
+    fake_redis = _install_fake_redis(monkeypatch)
+    now = datetime.now(tz=UTC).isoformat()
+    fake_redis.upstream_watch_status_sequence = [("ok", now), ("degraded", now)]
+    store = RecordingStore()
+    market = FakeMarket([])
+    config = PaperWorkerConfig("postgresql://example", "redis:6379")
+
+    await run_paper_worker(config, once=True, store=store, market=market)
+    await run_paper_worker(config, once=True, store=store, market=market)
+
+    _, mapping = fake_redis.hset_calls[-1]
+    assert mapping["status"] == BLOCKED_STATUS
+    assert mapping["last_error"]
+
+
+async def test_run_paper_worker_recovers_from_blocked_to_ready_without_a_restart(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Direct test of the "no crash loop" fix: the SAME running process,
+    across consecutive ticks, must go from BLOCKED_STATUS back to "ok" the
+    moment upstream recovers -- no restart, no re-registration."""
+    fake_redis = _install_fake_redis(monkeypatch)
+    now = datetime.now(tz=UTC).isoformat()
+    fake_redis.upstream_watch_status_sequence = [(None, None), ("ok", now)]
+    store = RecordingStore()
+    market = FakeMarket([])
+    config = PaperWorkerConfig("postgresql://example", "redis:6379")
+
+    await run_paper_worker(config, once=True, store=store, market=market)
+    first_status = fake_redis.hset_calls[-1][1]["status"]
+    await run_paper_worker(config, once=True, store=store, market=market)
+    second_status = fake_redis.hset_calls[-1][1]["status"]
+
+    assert first_status == BLOCKED_STATUS
+    assert second_status == "ok"
+    assert store.lock_calls.count(FROZEN_PAPER_CONTRACT.paper_version) == 2
+
+
+async def test_upstream_watch_block_reports_dependency_unavailable_on_a_redis_error() -> None:
+    """A Redis error while checking must not propagate as a bare
+    exception -- fail-closed, same reasoning as run_watch_worker's own
+    readiness-check error handling. Reported distinctly from BLOCKED_
+    STATUS: an infra blip is a different situation from a confirmed
+    incompatible upstream."""
+
+    class _RaisingRedis:
+        async def hmget(self, key: str, keys: list[str]) -> list[str | None]:
+            raise ConnectionError("redis unavailable")
+
+    block = await _upstream_watch_block(
+        cast("Any", _RaisingRedis()), watch_version="momentum_flow_watch_v1"
+    )
+
+    assert block is not None
+    status, error = block
+    assert status == DEPENDENCY_UNAVAILABLE_STATUS
+    assert "could not read upstream WATCH health" in error
 
 
 def test_binance_paper_contract_reuses_every_frozen_threshold_verbatim() -> None:

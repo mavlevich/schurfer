@@ -5,6 +5,10 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from schurfer_analytics import momentum_flow_watch_worker
+from schurfer_analytics.momentum_flow_producer_readiness import (
+    BLOCKED_STATUS,
+    DEPENDENCY_UNAVAILABLE_STATUS,
+)
 from schurfer_analytics.momentum_flow_watch_contract import (
     BINANCE_WATCH_CONTRACT,
     BINANCE_WATCH_CONTRACT_SHA256,
@@ -86,6 +90,11 @@ class FakeStore:
 
     async def load_states(self, *, contract: WatchContract) -> dict[str, SymbolWatchState]:
         return {}
+
+    async def has_any_recent_valid_price(
+        self, *, contract: WatchContract, lookback_minutes: int
+    ) -> bool:
+        raise AssertionError("evaluate_bucket never calls has_any_recent_valid_price directly")
 
     async def persist_bucket(
         self, writes: tuple[EvaluationWrite, ...], *, contract: WatchContract
@@ -220,11 +229,21 @@ class RecordingStore:
     tests contract plumbing, not bucket evaluation (see evaluate_bucket's
     own tests above for that)."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self, *, price_ready: bool = True, price_ready_sequence: list[bool] | None = None
+    ) -> None:
         self.lock_calls: list[str] = []
         self.register_run_calls: list[WatchContract] = []
         self.due_buckets_calls: list[WatchContract] = []
         self.load_states_calls: list[WatchContract] = []
+        self.has_any_recent_valid_price_calls: list[WatchContract] = []
+        self.price_ready = price_ready
+        # When set, has_any_recent_valid_price pops one value per call
+        # (holding the last entry once exhausted) instead of returning the
+        # same price_ready value every time -- lets a test simulate
+        # "producer was ready on the first tick, degraded on the next"
+        # without a separate fake class.
+        self._price_ready_sequence = price_ready_sequence
 
     async def acquire_worker_lock(self, watch_version: str) -> bool:
         self.lock_calls.append(watch_version)
@@ -250,6 +269,16 @@ class RecordingStore:
     async def load_states(self, *, contract: WatchContract) -> dict[str, SymbolWatchState]:
         self.load_states_calls.append(contract)
         return {}
+
+    async def has_any_recent_valid_price(
+        self, *, contract: WatchContract, lookback_minutes: int
+    ) -> bool:
+        self.has_any_recent_valid_price_calls.append(contract)
+        if self._price_ready_sequence:
+            if len(self._price_ready_sequence) > 1:
+                return self._price_ready_sequence.pop(0)
+            return self._price_ready_sequence[0]
+        return self.price_ready
 
     async def persist_bucket(
         self, writes: tuple[EvaluationWrite, ...], *, contract: WatchContract
@@ -306,6 +335,79 @@ async def test_run_watch_worker_threads_a_different_contract_through(
     assert key == health_key(BINANCE_WATCH_CONTRACT.watch_version)
     assert key != health_key(FROZEN_WATCH_CONTRACT.watch_version)
     assert mapping["watch_version"] == BINANCE_WATCH_CONTRACT.watch_version
+
+
+async def test_run_watch_worker_reports_blocked_instead_of_crashing_when_producer_not_ready(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The regression this whole module exists to prevent: momentum_flow_
+    watch_binance ran 32+ hours reporting status "ok" against a producer
+    that never once populated close_price (see momentum_flow_producer_
+    readiness's own doc comment). This worker must report BLOCKED_STATUS
+    for a tick where has_any_recent_valid_price says no -- and, per a
+    colleague review's own finding on the first version of this fix, must
+    NOT crash/raise to do it: a worker that raises here just crash-loops
+    under Docker's own restart policy forever, since restarting changes
+    nothing about the producer. due_buckets must not even be called for
+    that tick -- there is nothing valid to evaluate."""
+    fake_redis = _install_fake_redis(monkeypatch)
+    store = RecordingStore(price_ready=False)
+    config = WatchWorkerConfig("postgresql://example", "redis:6379")
+
+    await run_watch_worker(config, once=True, store=store)
+
+    assert store.has_any_recent_valid_price_calls == [FROZEN_WATCH_CONTRACT]
+    assert store.due_buckets_calls == []
+    key, mapping = fake_redis.hset_calls[-1]
+    assert key == health_key(FROZEN_WATCH_CONTRACT.watch_version)
+    assert mapping["status"] == BLOCKED_STATUS
+    assert mapping["last_error"]
+
+
+async def test_run_watch_worker_reports_blocked_when_producer_degrades_mid_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The producer was ready on the first tick but a later tick's own
+    re-check finds it is not -- must not report "ok" for that tick."""
+    fake_redis = _install_fake_redis(monkeypatch)
+    store = RecordingStore(price_ready_sequence=[True, False])
+    config = WatchWorkerConfig("postgresql://example", "redis:6379")
+
+    await run_watch_worker(config, once=True, store=store)
+    await run_watch_worker(config, once=True, store=store)
+
+    assert len(store.has_any_recent_valid_price_calls) == 2
+    _, mapping = fake_redis.hset_calls[-1]
+    assert mapping["status"] == BLOCKED_STATUS
+    assert mapping["last_error"]
+
+
+async def test_run_watch_worker_reports_dependency_unavailable_on_a_failed_readiness_check(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A transient DB error while checking readiness must not crash with a
+    bare, unexplained traceback -- it should keep running (not raise) and
+    report DEPENDENCY_UNAVAILABLE_STATUS, distinct from BLOCKED_STATUS: an
+    infra blip is a different situation from a confirmed incompatible
+    producer (fail-closed either way: this worker cannot confirm it can
+    produce anything real, so it should not report "ok")."""
+
+    class _RaisingRecordingStore(RecordingStore):
+        async def has_any_recent_valid_price(
+            self, *, contract: WatchContract, lookback_minutes: int
+        ) -> bool:
+            raise ConnectionError("database unavailable")
+
+    fake_redis = _install_fake_redis(monkeypatch)
+    store = _RaisingRecordingStore()
+    config = WatchWorkerConfig("postgresql://example", "redis:6379")
+
+    await run_watch_worker(config, once=True, store=store)
+
+    key, mapping = fake_redis.hset_calls[-1]
+    assert key == health_key(FROZEN_WATCH_CONTRACT.watch_version)
+    assert mapping["status"] == DEPENDENCY_UNAVAILABLE_STATUS
+    assert "readiness check itself failed" in mapping["last_error"]
 
 
 def test_binance_watch_contract_reuses_every_frozen_threshold_verbatim() -> None:
