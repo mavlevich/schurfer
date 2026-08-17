@@ -265,8 +265,12 @@ def test_recovery_missing_reference_price_is_distinct_from_no_prior_spike() -> N
         spike_history=SpikeHistory(spikes=(broken_spike,), coverage_ok=True),
         recovery_band_pct=10.0,
     )
+    # Distinguishes from "no_prior_spike" by construction: the two are
+    # non-overlapping Literal values, so asserting equality to the correct
+    # one already rules out the other -- a separate != check would be
+    # statically tautological once this equality narrows result.status's
+    # own type (mypy's own comparison-overlap check catches exactly that).
     assert result.status == "missing_reference_price"
-    assert result.status != "no_prior_spike"
 
 
 def test_recovery_found_within_band_measured_from_episode_end() -> None:

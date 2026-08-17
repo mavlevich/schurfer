@@ -3,6 +3,7 @@ import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import ModuleType
+from typing import Any
 
 import pytest
 
@@ -74,7 +75,9 @@ def _fake_collection(
     monkeypatch.setattr(canary, "_swap_activity_counters", lambda: {"pswpin": 0, "pswpout": 0})
 
 
-def _run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, now: datetime, **kwargs):
+def _run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, now: datetime, **kwargs: Any
+) -> tuple[Any, Path]:
     snapshot = kwargs.pop("snapshot_path", None) or tmp_path / "runtime" / "momentum-canary.json"
     return canary.run_once(now=now, snapshot_path=snapshot, **kwargs), snapshot
 
@@ -144,7 +147,7 @@ def test_no_checkpoint_fires_before_24h(tmp_path: Path, monkeypatch: pytest.Monk
     monkeypatch.setattr(canary, "_read_momentum_health", lambda: _health())
     _fake_collection(monkeypatch)
     notified: list[str] = []
-    monkeypatch.setattr(canary, "_notify", lambda message: notified.append(message) or None)
+    monkeypatch.setattr(canary, "_notify", lambda message: notified.append(message))
 
     payload, _ = _run(tmp_path, monkeypatch, EPOCH_START + timedelta(hours=10))
 
@@ -159,7 +162,7 @@ def test_24h_checkpoint_fires_once_and_is_not_refired(
     monkeypatch.setattr(canary, "_read_momentum_health", lambda: _health())
     _fake_collection(monkeypatch)
     notified: list[str] = []
-    monkeypatch.setattr(canary, "_notify", lambda message: notified.append(message) or None)
+    monkeypatch.setattr(canary, "_notify", lambda message: notified.append(message))
 
     payload, snapshot = _run(tmp_path, monkeypatch, EPOCH_START + timedelta(hours=24, minutes=5))
     assert payload["active_epoch"]["checkpoints"]["24"]["state"] == "notified"
@@ -179,7 +182,7 @@ def test_all_three_checkpoints_fire_in_sequence(
     monkeypatch.setattr(canary, "_read_momentum_health", lambda: _health())
     _fake_collection(monkeypatch)
     notified: list[str] = []
-    monkeypatch.setattr(canary, "_notify", lambda message: notified.append(message) or None)
+    monkeypatch.setattr(canary, "_notify", lambda message: notified.append(message))
 
     snapshot = tmp_path / "runtime" / "momentum-canary.json"
     canary.run_once(now=EPOCH_START + timedelta(hours=25), snapshot_path=snapshot)
@@ -201,7 +204,7 @@ def test_missing_health_after_completed_epoch_is_not_an_interruption(
 ) -> None:
     _fake_collection(monkeypatch)
     notified: list[str] = []
-    monkeypatch.setattr(canary, "_notify", lambda message: notified.append(message) or None)
+    monkeypatch.setattr(canary, "_notify", lambda message: notified.append(message))
     monkeypatch.setattr(canary, "_read_momentum_health", lambda: _health())
 
     snapshot = tmp_path / "runtime" / "momentum-canary.json"
@@ -240,7 +243,7 @@ def test_new_epoch_after_completion_archives_without_mid_canary_alert(
 ) -> None:
     _fake_collection(monkeypatch)
     notified: list[str] = []
-    monkeypatch.setattr(canary, "_notify", lambda message: notified.append(message) or None)
+    monkeypatch.setattr(canary, "_notify", lambda message: notified.append(message))
     monkeypatch.setattr(canary, "_read_momentum_health", lambda: _health())
 
     snapshot = tmp_path / "runtime" / "momentum-canary.json"
@@ -267,7 +270,7 @@ def test_restart_archives_previous_epoch_instead_of_wiping_it(
 ) -> None:
     _fake_collection(monkeypatch)
     notified: list[str] = []
-    monkeypatch.setattr(canary, "_notify", lambda message: notified.append(message) or None)
+    monkeypatch.setattr(canary, "_notify", lambda message: notified.append(message))
 
     monkeypatch.setattr(canary, "_read_momentum_health", lambda: _health())
     snapshot = tmp_path / "runtime" / "momentum-canary.json"
@@ -297,7 +300,7 @@ def test_telegram_failure_keeps_checkpoint_collected_and_retries_without_recolle
     collection_calls = {"n": 0}
     real_collect = canary.collect_checkpoint
 
-    def counting_collect(*args, **kwargs):
+    def counting_collect(*args: Any, **kwargs: Any) -> Any:
         collection_calls["n"] += 1
         return real_collect(*args, **kwargs)
 
@@ -348,11 +351,12 @@ def test_collection_failure_alert_itself_retries_on_telegram_failure(
     )
     sent: list[str] = []
     fail_notify = {"value": True}
-    monkeypatch.setattr(
-        canary,
-        "_notify",
-        lambda message: (sent.append(message), "fail" if fail_notify["value"] else None)[1],
-    )
+
+    def _fake_notify(message: str) -> str | None:
+        sent.append(message)
+        return "fail" if fail_notify["value"] else None
+
+    monkeypatch.setattr(canary, "_notify", _fake_notify)
 
     snapshot = tmp_path / "runtime" / "momentum-canary.json"
     payload = canary.run_once(now=EPOCH_START + timedelta(hours=25), snapshot_path=snapshot)
@@ -379,7 +383,7 @@ def test_health_unreadable_during_active_epoch_alerts_and_marks_interrupted(
 ) -> None:
     _fake_collection(monkeypatch)
     notified: list[str] = []
-    monkeypatch.setattr(canary, "_notify", lambda message: notified.append(message) or None)
+    monkeypatch.setattr(canary, "_notify", lambda message: notified.append(message))
 
     monkeypatch.setattr(canary, "_read_momentum_health", lambda: _health())
     snapshot = tmp_path / "runtime" / "momentum-canary.json"
@@ -416,7 +420,7 @@ def test_health_unreadable_with_no_prior_epoch_does_not_alert(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     notified: list[str] = []
-    monkeypatch.setattr(canary, "_notify", lambda message: notified.append(message) or None)
+    monkeypatch.setattr(canary, "_notify", lambda message: notified.append(message))
 
     def broken_health() -> dict[str, str]:
         raise RuntimeError("market:momentumcapture:health:bybit is empty or missing in redis")
@@ -441,11 +445,12 @@ def test_interrupted_alert_survives_a_telegram_outage(
 
     notified: list[str] = []
     fail = {"value": True}
-    monkeypatch.setattr(
-        canary,
-        "_notify",
-        lambda message: (notified.append(message), "telegram down" if fail["value"] else None)[1],
-    )
+
+    def _fake_notify(message: str) -> str | None:
+        notified.append(message)
+        return "telegram down" if fail["value"] else None
+
+    monkeypatch.setattr(canary, "_notify", _fake_notify)
 
     def broken_health() -> dict[str, str]:
         raise RuntimeError("market:momentumcapture:health:bybit is empty or missing in redis")
@@ -486,7 +491,7 @@ def test_restart_alert_survives_a_telegram_outage(
     assert "restarted mid-canary" in payload["pending_operational_alerts"][0]["message"]
 
     notified: list[str] = []
-    monkeypatch.setattr(canary, "_notify", lambda message: notified.append(message) or None)
+    monkeypatch.setattr(canary, "_notify", lambda message: notified.append(message))
     payload = canary.run_once(
         now=new_start + timedelta(hours=1, minutes=15), snapshot_path=snapshot
     )
@@ -525,7 +530,7 @@ def test_recovery_alert_survives_a_telegram_outage(
 
     # Telegram recovers on a later run: the queued recovery alert is finally delivered.
     notified: list[str] = []
-    monkeypatch.setattr(canary, "_notify", lambda message: notified.append(message) or None)
+    monkeypatch.setattr(canary, "_notify", lambda message: notified.append(message))
     payload = canary.run_once(
         now=EPOCH_START + timedelta(hours=2, minutes=30), snapshot_path=snapshot
     )
@@ -554,7 +559,7 @@ def test_restart_while_interrupted_sends_restart_alert_only_no_false_recovery(
     # Health returns, but with a DIFFERENT started_at_ms: the old epoch never
     # actually resumed, it was restarted. Must not also claim "recovered".
     notified: list[str] = []
-    monkeypatch.setattr(canary, "_notify", lambda message: notified.append(message) or None)
+    monkeypatch.setattr(canary, "_notify", lambda message: notified.append(message))
     new_start = EPOCH_START + timedelta(hours=2, minutes=5)
     new_start_ms = int(new_start.timestamp() * 1000)
     monkeypatch.setattr(canary, "_read_momentum_health", lambda: _health(new_start_ms))
@@ -817,7 +822,7 @@ def test_checkpoint_missed_after_long_downtime_produces_one_late_snapshot_not_a_
     monkeypatch.setattr(canary, "_read_momentum_health", lambda: _health())
     _fake_collection(monkeypatch)
     notified: list[str] = []
-    monkeypatch.setattr(canary, "_notify", lambda message: notified.append(message) or None)
+    monkeypatch.setattr(canary, "_notify", lambda message: notified.append(message))
 
     snapshot = tmp_path / "runtime" / "momentum-canary.json"
     # Host was "down" until hour 51: both 24h (27h late) and 48h (3h late)
@@ -860,7 +865,7 @@ def test_sample_now_does_not_consume_the_official_checkpoint_slot(
     monkeypatch.setattr(canary, "_read_momentum_health", lambda: _health())
     _fake_collection(monkeypatch)
     notified: list[str] = []
-    monkeypatch.setattr(canary, "_notify", lambda message: notified.append(message) or None)
+    monkeypatch.setattr(canary, "_notify", lambda message: notified.append(message))
 
     snapshot = tmp_path / "runtime" / "momentum-canary.json"
     payload = canary.run_once(
