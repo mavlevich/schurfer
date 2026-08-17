@@ -62,6 +62,29 @@ class WatchBar:
     unbackfilled_gap_minutes: int
     complete: bool
 
+    # feat/momentum-trade-price-source-v1's own canonical price-provenance
+    # fields (apps/collector/internal/momentum.Bar's own PriceSource/
+    # Price* doc comments): populated identically in spirit for both
+    # venues -- Bybit's own AddTickerObservation mirrors these from its
+    # existing Ticker* fields on every call that carries a LastPrice
+    # (mechanically identical to last_ticker_event_at/last_ticker_received_at
+    # whenever that happens, which is every call in normal Bybit operation
+    # -- see momentum.go's own AddTickerObservation), Binance's own AddTrade
+    # populates them from accepted aggTrade prices (Binance has no ticker/
+    # price feed at all -- see cmd/momentumcapturebinance's own package doc
+    # comment). stale_quote (below) reads last_price_received_at instead of
+    # last_ticker_received_at specifically so it means the same thing on
+    # both venues; the reason code name itself is not changed (frozen v1
+    # contract).
+    price_source: str | None
+    first_price_event_at: datetime | None
+    last_price_event_at: datetime | None
+    first_price_received_at: datetime | None
+    last_price_received_at: datetime | None
+    price_observed_this_minute: bool
+    open_interest_complete: bool
+    price_complete: bool
+
 
 @dataclass(frozen=True)
 class WatchFeatures:
@@ -236,7 +259,17 @@ def prepare_symbol_evaluation(
 
     current = ordered[-1] if ordered else None
     if current is not None:
-        received = _latest(current.last_ticker_received_at)
+        # last_price_received_at, not last_ticker_received_at: the latter
+        # is Binance's own OI-poll timestamp (Binance's only
+        # AddTickerObservation caller is its OI poller, never a real
+        # price feed), which would make this check silently mean
+        # "is our OI poller alive" instead of "is our price fresh" for
+        # that venue. last_price_received_at is the canonical,
+        # source-agnostic field (see WatchBar's own doc comment above);
+        # for Bybit it matches last_ticker_received_at whenever a ticker
+        # observation carries a LastPrice (every call in normal operation),
+        # so this is a no-op there in practice.
+        received = _latest(current.last_price_received_at)
         ready_at = _utc(current.created_at)
         max_delay = timedelta(seconds=contract.max_bucket_decision_delay_seconds)
         if (

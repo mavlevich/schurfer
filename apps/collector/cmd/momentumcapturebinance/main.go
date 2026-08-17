@@ -23,15 +23,27 @@
 // that this binary has no equivalent of. binance.Adapter deliberately does
 // not implement momentumsource.TickerSource (see docs/research/binance-
 // momentum-source-v1.md) -- Binance's OI is a REST poll this process runs
-// itself, in-process, with no price/bid/ask at all. Every bar this process
-// produces will have OpenPrice/HighPrice/LowPrice/ClosePrice/LastBidPrice/
-// LastAskPrice permanently nil: momentum.Engine only ever sets those from
-// AddTickerObservation, and this process's only TickerObservation calls
+// itself, in-process, and this process's only TickerObservation calls
 // carry OpenInterest with LastPrice/BidPrice/AskPrice left nil, which the
 // engine's own TickerObservation contract already supports ("a delta can
-// carry price with no OI, OI with no price change, or neither"). This is a
-// real, known limitation of what Binance momentum bars can show in v1, not
-// a bug -- see the doc's own "What this still cannot capture" section.
+// carry price with no OI, OI with no price change, or neither").
+//
+// This originally meant every bar had OpenPrice/HighPrice/LowPrice/
+// ClosePrice permanently nil too (momentum.Engine only ever set those
+// from AddTickerObservation, which this process never calls with a real
+// price) -- see docs/research/binance-watch-input-readiness-v1.md for
+// the incident that caused (momentum_flow_watch_binance producing zero
+// decisions for 32+ hours while reporting healthy). Fixed by feat/
+// momentum-trade-price-source-v1: this Engine is constructed with
+// momentum.PriceSourceAggregateTrade (see main()'s own wiring below),
+// so OHLC is derived from the same aggTrade prices already flowing for
+// flow/notional accounting, with its own explicit provenance (see
+// momentum.Bar's own PriceSource/FirstPriceEventAt doc comments) --
+// never silently repurposing the ticker-specific fields. LastBidPrice/
+// LastAskPrice remain permanently nil: those genuinely need a real
+// bid/ask feed, which Binance still does not provide here (see
+// docs/research/momentum-trade-price-source-v1.md's own "What this
+// still cannot capture" section).
 package main
 
 import (
@@ -306,7 +318,12 @@ func run() error {
 	}
 
 	app := &application{
-		engine:                 momentum.New(),
+		// Explicit, not New()'s own implicit default: Binance has no
+		// ticker/price feed at all (see this file's own package doc
+		// comment), so its OHLC comes from aggTrade prices instead --
+		// see momentum.PriceSource's own doc comment for why this
+		// choice belongs at construction, said out loud, not inferred.
+		engine:                 momentum.NewWithPriceSource(momentum.PriceSourceAggregateTrade),
 		writer:                 writer,
 		universe:               universe,
 		readiness:              momentumcapture.NewReadinessTracker(universe),

@@ -64,6 +64,18 @@ _bars = Table(
     Column("unbackfilled_gap_minutes", Integer),
     Column("complete", Boolean),
     Column("created_at", DateTime(timezone=True)),
+    # feat/momentum-trade-price-source-v1 (0030_momentum_bars_trade_price_
+    # source_v1): canonical, venue-agnostic price provenance and
+    # capability-specific completeness. See WatchBar's own doc comment in
+    # momentum_flow_watch_evaluator.py.
+    Column("price_source", String),
+    Column("first_price_event_at", DateTime(timezone=True)),
+    Column("last_price_event_at", DateTime(timezone=True)),
+    Column("first_price_received_at", DateTime(timezone=True)),
+    Column("last_price_received_at", DateTime(timezone=True)),
+    Column("price_observed_this_minute", Boolean),
+    Column("open_interest_complete", Boolean),
+    Column("price_complete", Boolean),
     schema="timeseries",
 )
 
@@ -376,6 +388,14 @@ class MomentumFlowWatchRepository:
                 _bars.c.last_ticker_received_at,
                 _bars.c.unbackfilled_gap_minutes,
                 _bars.c.complete,
+                _bars.c.price_source,
+                _bars.c.first_price_event_at,
+                _bars.c.last_price_event_at,
+                _bars.c.first_price_received_at,
+                _bars.c.last_price_received_at,
+                _bars.c.price_observed_this_minute,
+                _bars.c.open_interest_complete,
+                _bars.c.price_complete,
             )
             .where(
                 _bars.c.exchange == contract.source_exchange,
@@ -406,6 +426,18 @@ class MomentumFlowWatchRepository:
                 last_ticker_received_at=row.last_ticker_received_at,
                 unbackfilled_gap_minutes=int(row.unbackfilled_gap_minutes or 0),
                 complete=bool(row.complete),
+                price_source=(str(row.price_source) if row.price_source is not None else None),
+                first_price_event_at=row.first_price_event_at,
+                last_price_event_at=row.last_price_event_at,
+                first_price_received_at=row.first_price_received_at,
+                last_price_received_at=row.last_price_received_at,
+                # bool(None) is False: nullable, no-backfill columns (see
+                # 0030_momentum_bars_trade_price_source_v1) read as
+                # "not tracked" for any bar written before this migration,
+                # same convention as complete=bool(row.complete) above.
+                price_observed_this_minute=bool(row.price_observed_this_minute),
+                open_interest_complete=bool(row.open_interest_complete),
+                price_complete=bool(row.price_complete),
             )
             grouped.setdefault(bar.symbol, []).append(bar)
         symbols = tuple(sorted(grouped))

@@ -68,6 +68,19 @@ func TestWriterFlushAgainstRealPostgres(t *testing.T) {
 		TickerComplete:           true,
 		TradesComplete:           true,
 		Complete:                 true,
+
+		// feat/momentum-trade-price-source-v1's own new columns -- exercised
+		// here specifically because only a real Postgres round-trip can
+		// catch a column-name/type mismatch a mocked writerDB (writer_test.go)
+		// cannot.
+		PriceSource:             momentum.PriceSourceTickerLast,
+		FirstPriceEventAt:       &bucket,
+		LastPriceEventAt:        &bucket,
+		FirstPriceReceivedAt:    &bucket,
+		LastPriceReceivedAt:     &bucket,
+		PriceObservedThisMinute: true,
+		OpenInterestComplete:    true,
+		PriceComplete:           true,
 	}
 
 	// First insert: must succeed as a fresh row.
@@ -81,10 +94,18 @@ func TestWriterFlushAgainstRealPostgres(t *testing.T) {
 
 	var storedTopNotional []float64
 	var storedComplete bool
+	var storedPriceSource string
+	var storedPriceObservedThisMinute, storedOpenInterestComplete, storedPriceComplete bool
+	var storedLastPriceEventAt time.Time
 	if err := pool.QueryRow(ctx,
-		`SELECT sell_top_notional, complete FROM timeseries.bybit_momentum_bars_1m WHERE symbol = $1`,
+		`SELECT sell_top_notional, complete, price_source, price_observed_this_minute,
+		        open_interest_complete, price_complete, last_price_event_at
+		 FROM timeseries.bybit_momentum_bars_1m WHERE symbol = $1`,
 		symbol,
-	).Scan(&storedTopNotional, &storedComplete); err != nil {
+	).Scan(
+		&storedTopNotional, &storedComplete, &storedPriceSource, &storedPriceObservedThisMinute,
+		&storedOpenInterestComplete, &storedPriceComplete, &storedLastPriceEventAt,
+	); err != nil {
 		t.Fatalf("read back: %v", err)
 	}
 	if storedTopNotional == nil || len(storedTopNotional) != 0 {
@@ -92,6 +113,16 @@ func TestWriterFlushAgainstRealPostgres(t *testing.T) {
 	}
 	if !storedComplete {
 		t.Fatal("complete should have round-tripped as true")
+	}
+	if storedPriceSource != string(momentum.PriceSourceTickerLast) {
+		t.Fatalf("price_source round-tripped as %q, want %q", storedPriceSource, momentum.PriceSourceTickerLast)
+	}
+	if !storedPriceObservedThisMinute || !storedOpenInterestComplete || !storedPriceComplete {
+		t.Fatalf("price_observed_this_minute/open_interest_complete/price_complete = %v/%v/%v, want true/true/true",
+			storedPriceObservedThisMinute, storedOpenInterestComplete, storedPriceComplete)
+	}
+	if !storedLastPriceEventAt.Equal(bucket) {
+		t.Fatalf("last_price_event_at round-tripped as %v, want %v", storedLastPriceEventAt, bucket)
 	}
 
 	// Second insert of the identical bar: a harmless retry, same PK, same

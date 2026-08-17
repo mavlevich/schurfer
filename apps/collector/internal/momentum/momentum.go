@@ -184,14 +184,37 @@ type Bar struct {
 	Symbol      string
 	BucketStart time.Time // UTC, truncated to the minute
 
-	// Price OHLC within the minute, from real ticker ticks only: a quiet
-	// minute with no price observation leaves these nil rather than
-	// fabricating unchanged OHLC. LastBidPrice/LastAskPrice/OpenInterest*
-	// are state, not activity, and DO carry forward from the last known
-	// reading (with that reading's own original timestamps) when a minute
-	// has no fresh observation of its own; see advance.
+	// Price OHLC within the minute, from a real price observation only (see
+	// PriceSource): a quiet minute with no observation leaves these nil
+	// rather than fabricating unchanged OHLC. LastBidPrice/LastAskPrice/
+	// OpenInterest* are state, not activity, and DO carry forward from the
+	// last known reading (with that reading's own original timestamps)
+	// when a minute has no fresh observation of its own; see advance.
 	OpenPrice, HighPrice, LowPrice, ClosePrice *float64
 	LastBidPrice, LastAskPrice                 *float64
+
+	// PriceSource records which observation type this bar's own OHLC (if
+	// any) was actually derived from -- always set, on every bar, by
+	// whichever Engine produced it (see finalizeBar), regardless of
+	// whether that minute had a real observation. A downstream consumer
+	// must never infer the source from which OHLC/diagnostic fields
+	// happen to be non-nil; this field is the single source of truth.
+	PriceSource PriceSource
+	// PriceObservedThisMinute mirrors TickerObservedThisMinute's own
+	// informational-only contract for whichever feed PriceSource
+	// identifies: Binance's own aggTrade stream has no per-symbol
+	// heartbeat guarantee either, and a quiet minute on a healthy
+	// connection is normal, not an outage.
+	PriceObservedThisMinute bool
+	// FirstPriceEventAt/LastPriceEventAt/FirstPriceReceivedAt/
+	// LastPriceReceivedAt are the canonical price-freshness timestamps a
+	// consumer should read regardless of PriceSource -- populated
+	// identically in spirit by AddTickerObservation (mirrored from its own
+	// Ticker* diagnostics) and AddTrade in PriceSourceAggregateTrade mode,
+	// so a freshness check never needs to branch on PriceSource itself to
+	// find the right field.
+	FirstPriceEventAt, LastPriceEventAt       *time.Time
+	FirstPriceReceivedAt, LastPriceReceivedAt *time.Time
 
 	Buy  SideStats
 	Sell SideStats
@@ -248,9 +271,30 @@ type Bar struct {
 	// TickerComplete/TradesComplete reflect feed HEALTH for this bar's
 	// entire window (see the package doc), not activity. Complete is their
 	// conjunction.
-	TickerComplete bool
-	TradesComplete bool
-	Complete       bool
+	//
+	// TickerComplete is a capture-line-specific name kept for backward
+	// compatibility (renaming it is a bigger, separate change deliberately
+	// not made now -- a colleague review's own finding): for an Engine
+	// whose AddTickerObservation calls only ever carry OI (Binance, via
+	// its own REST poller, never LastPrice/BidPrice/AskPrice), this field
+	// actually reflects OI-feed health, not ticker health. OpenInterest
+	// Complete/PriceComplete below are the same underlying health signal
+	// under capability-specific names, so a consumer never has to know
+	// that history to read the right thing:
+	//   - OpenInterestComplete mirrors TickerComplete exactly (both
+	//     ultimately track AddTickerObservation's own feed-interruption
+	//     state, which is an OI-only concern for every Engine that has no
+	//     genuine ticker feed).
+	//   - PriceComplete mirrors TickerComplete for a PriceSourceTickerLast
+	//     Engine, or TradesComplete for a PriceSourceAggregateTrade one --
+	//     whichever feed this bar's own PriceSource actually draws OHLC
+	//     from. False (not mirrored from either) for a PriceSource this
+	//     package does not yet implement (PriceSourceMarkPrice/BookMid).
+	TickerComplete       bool
+	TradesComplete       bool
+	OpenInterestComplete bool
+	PriceComplete        bool
+	Complete             bool
 }
 
 type tradeRecord struct {
@@ -315,15 +359,70 @@ var (
 	ErrInvalidTickerObservation = errors.New("invalid ticker observation")
 )
 
+// PriceSource identifies which observation type an Engine derives its own
+// OHLC price from -- provenance a downstream consumer can trust without
+// having to guess from which fields happen to be non-nil. Fixed for an
+// Engine's entire lifetime at construction (see NewWithPriceSource's own
+// doc comment): never inferred per-call, never switched mid-stream. A
+// venue's own capture binary picks exactly one and wires it in explicitly;
+// there is no dynamic fallback between sources within one running process.
+type PriceSource string
+
+const (
+	// PriceSourceTickerLast is the default: OHLC comes exclusively from
+	// AddTickerObservation's own LastPrice field (Bybit's own push ticker
+	// feed). Matches every Engine ever built before PriceSource existed --
+	// see New's own doc comment.
+	PriceSourceTickerLast PriceSource = "ticker_last"
+	// PriceSourceAggregateTrade derives OHLC from AddTrade's own Price
+	// field instead, for a venue with no ticker/price feed at all (see
+	// cmd/momentumcapturebinance's own package doc comment on why Binance
+	// needs this). Named for Binance's own aggTrade stream specifically,
+	// not a generic "trade" -- a future venue's own price source should
+	// get an equally specific name for its own wire format, not reuse
+	// this one by convention.
+	PriceSourceAggregateTrade PriceSource = "aggregate_trade"
+	// PriceSourceMarkPrice and PriceSourceBookMid are declared for a
+	// future venue that needs them, not implemented by this package yet:
+	// an Engine constructed with either currently behaves identically to
+	// one with no price-capable observation ever wired to it (OHLC stays
+	// permanently nil) -- a real, valid, fail-closed state, not silently
+	// wrong, until a future PR adds the corresponding Add* method.
+	PriceSourceMarkPrice PriceSource = "mark_price"
+	PriceSourceBookMid   PriceSource = "book_mid"
+)
+
 // Engine aggregates Trade and TickerObservation values into per-symbol,
 // per-minute Bars. It is not safe for concurrent use.
 type Engine struct {
-	states map[string]*symbolState
+	states      map[string]*symbolState
+	priceSource PriceSource
 }
 
-// New returns an empty Engine.
+// New returns an empty Engine using PriceSourceTickerLast. Every Engine
+// built before PriceSource existed used ticker-derived OHLC exclusively,
+// so this keeps that behavior the implicit, unchanged default rather than
+// forcing every existing call site -- this package's own several dozen
+// unit tests among them -- to specify a parameter they do not care about.
+// Both production capture binaries call NewWithPriceSource explicitly
+// instead of relying on this default; see that constructor's own doc
+// comment for why a real venue wiring should never rely on New's implicit
+// choice.
 func New() *Engine {
-	return &Engine{states: make(map[string]*symbolState)}
+	return NewWithPriceSource(PriceSourceTickerLast)
+}
+
+// NewWithPriceSource returns an empty Engine whose own OHLC price comes
+// exclusively from source for its entire lifetime: fixed here, at
+// construction, never inferred per-call and never switched mid-stream
+// (see PriceSource's own doc comment on why). Both production capture
+// binaries call this explicitly -- cmd/momentumcapture:
+// PriceSourceTickerLast, cmd/momentumcapturebinance:
+// PriceSourceAggregateTrade -- so a future venue's own capture binary
+// cannot forget to make this choice by falling through to New's own
+// default.
+func NewWithPriceSource(source PriceSource) *Engine {
+	return &Engine{states: make(map[string]*symbolState), priceSource: source}
 }
 
 // AddTrade folds one trade into the current bar for its symbol, returning
@@ -354,6 +453,10 @@ func (e *Engine) AddTrade(t Trade) ([]Bar, error) {
 	}
 	state.dedup[t.TradeID] = struct{}{}
 	state.tradesHealthy = true
+
+	if e.priceSource == PriceSourceAggregateTrade {
+		recordTradePriceObservation(&state.bar, t)
+	}
 
 	state.bar.TradeCount++
 	recordTradeDiagnostics(&state.bar, t)
@@ -414,6 +517,46 @@ func recordTradeDiagnostics(bar *Bar, t Trade) {
 	bar.TradeLagCount++
 }
 
+// recordTradePriceObservation folds one accepted trade's own price into
+// the current bar's OHLC when the owning Engine is in
+// PriceSourceAggregateTrade mode. Deliberately compares t.EventAt against
+// the earliest/latest EventAt this bar has accepted SO FAR, rather than
+// trusting arrival order the way AddTickerObservation's own Open (first
+// accepted call wins) and Close (last accepted call wins) can: a public
+// WS trade stream has no ordering guarantee anywhere near as strong as
+// Bybit's own NATS-relayed ticker feed, and reconnects/replay make
+// out-of-order delivery a real, not theoretical, case here (a colleague
+// review's own finding). Open is the price of whichever accepted trade
+// has the EARLIEST EventAt seen so far -- so a late-arriving trade with
+// an earlier EventAt than what was previously treated as Open corrects
+// it. Close is symmetric, for the LATEST EventAt. High/Low are a plain
+// running min/max over every accepted trade's own price, arrival order
+// never matters there.
+//
+// This is called AFTER AddTrade's own dedup and late-bucket checks (a
+// duplicate or already-closed-minute trade never reaches here), matching
+// the "dedup first, price second" ordering a colleague review's own
+// checklist required.
+func recordTradePriceObservation(bar *Bar, t Trade) {
+	bar.PriceObservedThisMinute = true
+	if bar.HighPrice == nil || t.Price > *bar.HighPrice {
+		bar.HighPrice = clonePtr(t.Price)
+	}
+	if bar.LowPrice == nil || t.Price < *bar.LowPrice {
+		bar.LowPrice = clonePtr(t.Price)
+	}
+	if bar.FirstPriceEventAt == nil || t.EventAt.Before(*bar.FirstPriceEventAt) {
+		bar.FirstPriceEventAt = clonePtr(t.EventAt)
+		bar.FirstPriceReceivedAt = clonePtr(t.ReceivedAt)
+		bar.OpenPrice = clonePtr(t.Price)
+	}
+	if bar.LastPriceEventAt == nil || !t.EventAt.Before(*bar.LastPriceEventAt) {
+		bar.LastPriceEventAt = clonePtr(t.EventAt)
+		bar.LastPriceReceivedAt = clonePtr(t.ReceivedAt)
+		bar.ClosePrice = clonePtr(t.Price)
+	}
+}
+
 // AddTickerObservation folds one ticker/OI reading into the current bar for
 // its symbol, returning any bars that close as a result. Later
 // observations within the same minute overwrite earlier ones for
@@ -438,7 +581,17 @@ func (e *Engine) AddTickerObservation(o TickerObservation) ([]Bar, error) {
 	state.bar.TickerObservedThisMinute = true
 	recordTickerDiagnostics(&state.bar, o)
 
-	if o.LastPrice != nil {
+	// Gated on e.priceSource, not just o.LastPrice != nil: PriceSource is
+	// documented as fixed per-Engine, never inferred per-call (see the
+	// type's own doc comment) -- without this guard, a hypothetical future
+	// TickerObservation carrying a real LastPrice on a
+	// PriceSourceAggregateTrade engine (nothing in the wire format
+	// prevents it, only today's Binance wiring, which never sets it) would
+	// silently overwrite the canonical OHLC/Price* fields with
+	// arrival-order semantics while Bar.PriceSource still reported
+	// "aggregate_trade", corrupting the single-source-of-truth invariant
+	// this whole abstraction exists to enforce.
+	if o.LastPrice != nil && e.priceSource == PriceSourceTickerLast {
 		price := *o.LastPrice
 		if state.bar.OpenPrice == nil {
 			state.bar.OpenPrice = clonePtr(price)
@@ -450,6 +603,19 @@ func (e *Engine) AddTickerObservation(o TickerObservation) ([]Bar, error) {
 			state.bar.LowPrice = clonePtr(price)
 		}
 		state.bar.ClosePrice = clonePtr(price)
+		// Mirrors FirstTickerEventAt/LastTickerEventAt/*ReceivedAt exactly
+		// (same values, same arrival-order semantics as this block's own
+		// Open/Close above) into the canonical Price* fields, so a
+		// downstream freshness check can read those unconditionally
+		// without branching on PriceSource -- see Bar.FirstPriceEventAt's
+		// own doc comment.
+		state.bar.PriceObservedThisMinute = true
+		if state.bar.FirstPriceEventAt == nil {
+			state.bar.FirstPriceEventAt = clonePtr(o.EventAt)
+			state.bar.FirstPriceReceivedAt = clonePtr(o.ObservedAt)
+		}
+		state.bar.LastPriceEventAt = clonePtr(o.EventAt)
+		state.bar.LastPriceReceivedAt = clonePtr(o.ObservedAt)
 	}
 	if o.BidPrice != nil {
 		state.bar.LastBidPrice = clonePtr(*o.BidPrice)
@@ -566,13 +732,13 @@ func (e *Engine) advance(symbol string, at time.Time) (*symbolState, []Bar) {
 	totalGapMinutes := int(bucketStart.Sub(state.bucketStart)/time.Minute) - 1
 	backfillCount := min(totalGapMinutes, maxSyntheticBackfill)
 
-	closed := []Bar{finalizeBar(state)}
+	closed := []Bar{finalizeBar(state, e.priceSource)}
 	next := state.bucketStart.Add(time.Minute)
 	for range backfillCount {
 		gap := newSymbolState(symbol, next, cf)
 		gap.barTickerInterrupted = true
 		gap.barTradesInterrupted = true
-		closed = append(closed, finalizeBar(gap))
+		closed = append(closed, finalizeBar(gap, e.priceSource))
 		next = next.Add(time.Minute)
 	}
 
@@ -616,11 +782,27 @@ func newSymbolState(symbol string, bucketStart time.Time, cf carryForward) *symb
 	}
 }
 
-func finalizeBar(state *symbolState) Bar {
+func finalizeBar(state *symbolState, priceSource PriceSource) Bar {
 	state.bar.LateTradesDropped = state.lateDropped
+	state.bar.PriceSource = priceSource
 	state.bar.TickerComplete = !state.barTickerInterrupted
 	state.bar.TradesComplete = !state.barTradesInterrupted
 	state.bar.Complete = state.bar.TickerComplete && state.bar.TradesComplete
+	// OpenInterestComplete/PriceComplete: capability-specific names for the
+	// same underlying feed-health signals as TickerComplete/TradesComplete
+	// -- see Bar.TickerComplete's own doc comment for why those originals
+	// are not renamed here.
+	state.bar.OpenInterestComplete = state.bar.TickerComplete
+	switch priceSource {
+	case PriceSourceTickerLast:
+		state.bar.PriceComplete = state.bar.TickerComplete
+	case PriceSourceAggregateTrade:
+		state.bar.PriceComplete = state.bar.TradesComplete
+	default:
+		// PriceSourceMarkPrice/BookMid: not implemented by this package
+		// yet (see PriceSource's own doc comment) -- no feed-health signal
+		// exists to mirror, so this stays false rather than guessing.
+	}
 	return state.bar
 }
 

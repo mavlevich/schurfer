@@ -61,6 +61,19 @@ def _bars(
                 last_ticker_received_at=bucket + timedelta(seconds=58),
                 unbackfilled_gap_minutes=0,
                 complete=True,
+                # Mirrors last_ticker_event_at/last_ticker_received_at
+                # exactly, same as Bybit's real AddTickerObservation does
+                # (see WatchBar's own doc comment): a Bybit-shaped fixture
+                # bar, so stale_quote's own switch to last_price_received_at
+                # is a no-op for these existing tests.
+                price_source="ticker_last",
+                first_price_event_at=bucket + timedelta(seconds=1),
+                last_price_event_at=bucket + timedelta(seconds=57),
+                first_price_received_at=bucket + timedelta(seconds=2),
+                last_price_received_at=bucket + timedelta(seconds=58),
+                price_observed_this_minute=True,
+                open_interest_complete=True,
+                price_complete=True,
             )
         )
     return tuple(rows)
@@ -199,6 +212,43 @@ def test_prepare_rejects_delayed_evaluation_as_stale_quote() -> None:
         contract=_contract(),
     )
     assert "stale_quote" in result.quality_reasons
+
+
+def test_prepare_stale_quote_reads_last_price_received_at_not_ticker() -> None:
+    """Regression for feat/momentum-trade-price-source-v1's own switch:
+    stale_quote must key off last_price_received_at, not
+    last_ticker_received_at -- for Binance the latter is secretly the OI
+    poller's own timestamp, not a price timestamp. A bar with a fresh
+    last_ticker_received_at but no last_price_received_at at all must
+    still be flagged stale (proves the check no longer reads the ticker
+    field), while the reverse -- a stale last_ticker_received_at paired
+    with a fresh last_price_received_at -- must NOT be flagged (proves the
+    check now reads the canonical field exclusively, not either)."""
+    bars = list(_bars())
+    decision_at = bars[-1].bucket_start + timedelta(minutes=1, seconds=10)
+
+    missing_price_freshness = (*bars[:-1], replace(bars[-1], last_price_received_at=None))
+    result = prepare_symbol_evaluation(
+        symbol="TESTUSDT",
+        bucket_start=bars[-1].bucket_start,
+        bars=missing_price_freshness,
+        evaluator_started_at=decision_at,
+        contract=_contract(),
+    )
+    assert "stale_quote" in result.quality_reasons
+
+    stale_ticker_fresh_price = (
+        *bars[:-1],
+        replace(bars[-1], last_ticker_received_at=bars[-1].bucket_start - timedelta(hours=1)),
+    )
+    result = prepare_symbol_evaluation(
+        symbol="TESTUSDT",
+        bucket_start=bars[-1].bucket_start,
+        bars=stale_ticker_fresh_price,
+        evaluator_started_at=decision_at,
+        contract=_contract(),
+    )
+    assert "stale_quote" not in result.quality_reasons
 
 
 def test_prepare_rejects_undefined_zero_flow_baseline() -> None:
