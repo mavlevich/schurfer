@@ -53,6 +53,18 @@ def _bars(symbol: str, *, strong: bool) -> tuple[WatchBar, ...]:
                 last_ticker_received_at=bucket + timedelta(seconds=58),
                 unbackfilled_gap_minutes=0,
                 complete=True,
+                # Mirrors last_ticker_event_at/last_ticker_received_at,
+                # same as Bybit's real AddTickerObservation (see WatchBar's
+                # own doc comment): stale_quote reads last_price_received_at
+                # now, so this fixture must carry it too.
+                price_source="ticker_last",
+                first_price_event_at=bucket + timedelta(seconds=1),
+                last_price_event_at=bucket + timedelta(seconds=57),
+                first_price_received_at=bucket + timedelta(seconds=2),
+                last_price_received_at=bucket + timedelta(seconds=58),
+                price_observed_this_minute=True,
+                open_interest_complete=True,
+                price_complete=True,
             )
         )
     return tuple(rows)

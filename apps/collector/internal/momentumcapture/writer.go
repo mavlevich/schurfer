@@ -319,6 +319,9 @@ INSERT INTO timeseries.bybit_momentum_bars_1m (
 	ticker_lag_sum_ms, ticker_lag_max_ms, ticker_lag_count,
 	unbackfilled_gap_minutes, unbackfilled_gap_from, unbackfilled_gap_to,
 	ticker_complete, trades_complete, complete,
+	price_source, first_price_event_at, last_price_event_at,
+	first_price_received_at, last_price_received_at, price_observed_this_minute,
+	open_interest_complete, price_complete,
 	payload_hash
 )
 VALUES (
@@ -340,7 +343,10 @@ VALUES (
 	$59, $60, $61,
 	$62, $63, $64,
 	$65, $66, $67,
-	$68
+	$68, $69, $70,
+	$71, $72, $73,
+	$74, $75,
+	$76
 )
 ON CONFLICT (exchange, market_type, symbol, capture_version, bucket_start)
 DO UPDATE SET created_at = bybit_momentum_bars_1m.created_at
@@ -419,6 +425,12 @@ type canonicalRow struct {
 	TickerComplete bool
 	TradesComplete bool
 	Complete       bool
+
+	PriceSource                               string
+	FirstPriceEventAt, LastPriceEventAt       *time.Time
+	FirstPriceReceivedAt, LastPriceReceivedAt *time.Time
+	PriceObservedThisMinute                   bool
+	OpenInterestComplete, PriceComplete       bool
 }
 
 // rowArgs builds the positional args for insertRowSQL and the payload_hash
@@ -471,6 +483,12 @@ func (w *Writer) rowArgs(bar momentum.Bar) ([]any, [32]byte) {
 		UnbackfilledGapMinutes: bar.UnbackfilledGapMinutes, UnbackfilledGapFrom: bar.UnbackfilledGapFrom, UnbackfilledGapTo: bar.UnbackfilledGapTo,
 
 		TickerComplete: bar.TickerComplete, TradesComplete: bar.TradesComplete, Complete: bar.Complete,
+
+		PriceSource:       string(bar.PriceSource),
+		FirstPriceEventAt: bar.FirstPriceEventAt, LastPriceEventAt: bar.LastPriceEventAt,
+		FirstPriceReceivedAt: bar.FirstPriceReceivedAt, LastPriceReceivedAt: bar.LastPriceReceivedAt,
+		PriceObservedThisMinute: bar.PriceObservedThisMinute,
+		OpenInterestComplete:    bar.OpenInterestComplete, PriceComplete: bar.PriceComplete,
 	}
 
 	hash := hashRow(row)
@@ -493,6 +511,9 @@ func (w *Writer) rowArgs(bar momentum.Bar) ([]any, [32]byte) {
 		row.TickerLagSumMs, row.TickerLagMaxMs, row.TickerLagCount,
 		row.UnbackfilledGapMinutes, row.UnbackfilledGapFrom, row.UnbackfilledGapTo,
 		row.TickerComplete, row.TradesComplete, row.Complete,
+		row.PriceSource, row.FirstPriceEventAt, row.LastPriceEventAt,
+		row.FirstPriceReceivedAt, row.LastPriceReceivedAt, row.PriceObservedThisMinute,
+		row.OpenInterestComplete, row.PriceComplete,
 		hash[:],
 	}
 	return args, hash

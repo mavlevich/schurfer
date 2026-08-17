@@ -841,6 +841,38 @@ Protocols`, no error, no reconnect) but zero application frames ever
    independently confirming a WATCH decision cannot be validated while
    Binance structurally cannot produce one.**
 
+   **Trade-derived price source (`feat/momentum-trade-price-source-v1`,
+   2026-08-17):** PR2 of the 4-PR remediation sequence above, fixing root
+   cause 1 (`missing_price`, 100% of evaluations). `momentum.Engine` gained
+   a `PriceSource` type fixed per-`Engine` at construction -- Bybit stays on
+   `PriceSourceTickerLast` (byte-for-byte unchanged: same ticker-derived,
+   arrival-order Open/Close), Binance moved to `PriceSourceAggregateTrade`
+   (OHLC from accepted aggTrade prices, using each trade's own `EventAt` --
+   not arrival order -- for Open/Close, since Binance's public WS trade
+   delivery has materially weaker ordering guarantees than Bybit's own
+   internal NATS-relayed ticker feed). New canonical, venue-agnostic price-
+   provenance fields (`PriceSource`, `First/LastPriceEventAt`,
+   `First/LastPriceReceivedAt`, `PriceObservedThisMinute`) are populated
+   identically in spirit by both venues, plus additive capability-
+   completeness fields (`OpenInterestComplete`/`PriceComplete`) alongside
+   the existing `TickerComplete`/`TradesComplete` (not a rename -- a bigger,
+   separate change deliberately deferred). `momentum_flow_watch_evaluator`'s
+   `stale_quote` check now reads the canonical `last_price_received_at`
+   instead of `last_ticker_received_at` (for Binance, secretly the OI
+   poller's own timestamp, not a price timestamp) -- the reason-code string
+   itself is unchanged, per explicit colleague-review instruction not to
+   silently repurpose a frozen v1 contract's reason code. Also folds in an
+   independently colleague-found bug: `binance.PollOpenInterest`'s own
+   `ObservedAt` was captured before the HTTP response was read rather than
+   after. New real-Postgres integration test seeds rows shaped exactly as
+   the Go writer now persists them for both `price_source` values and
+   proves both clear the evaluator's full quality gate through the same
+   code path production uses -- the exact end-to-end gap identified in
+   binance-watch-input-readiness-v1.md's own "Process critique." See
+   docs/research/momentum-trade-price-source-v1.md for the full writeup.
+   `momentum-watch-binance`/`momentum-paper-binance` remain stopped on prod
+   pending PR3 (OI poll scheduler) and a coverage read.
+
 9. **Register at most one Confirmation shadow if the discovery gate passes.** Freeze
    one primary lookback, eligibility rule, entry quote, stop, bounded exit horizons,
    cost model, minimum sample/diversity, and no-go rule on a new untouched cohort. The

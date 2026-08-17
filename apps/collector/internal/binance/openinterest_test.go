@@ -42,6 +42,43 @@ func TestFetchOpenInterestNormalizesSymbolAndTimestamp(t *testing.T) {
 	if reading.ObservedAt.IsZero() {
 		t.Fatal("ObservedAt is zero, want the local fetch time")
 	}
+	if reading.RequestedAt.IsZero() {
+		t.Fatal("RequestedAt is zero, want the local pre-request time")
+	}
+	if reading.ObservedAt.Before(reading.RequestedAt) {
+		t.Fatalf("ObservedAt (%v) before RequestedAt (%v)", reading.ObservedAt, reading.RequestedAt)
+	}
+}
+
+// TestFetchOpenInterestObservedAtIsAfterTheResponseIsRead is a colleague-
+// review regression: an earlier version stamped ObservedAt BEFORE
+// client.Do(), making it optimistic by exactly the request's own
+// round-trip latency (the caller had not actually learned the value yet
+// at that instant). A slow-responding server makes this concretely
+// measurable, not just structurally plausible: ObservedAt must land at
+// least as long after RequestedAt as the server's own artificial delay.
+func TestFetchOpenInterestObservedAtIsAfterTheResponseIsRead(t *testing.T) {
+	t.Parallel()
+	const delay = 50 * time.Millisecond
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(delay)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"symbol":"BTCUSDT","openInterest":"1","time":1786737418938}`))
+	}))
+	t.Cleanup(server.Close)
+
+	source := &Source{restURL: server.URL, httpClient: server.Client()}
+	reading, err := source.fetchOpenInterest(context.Background(), "BTCUSDT")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if elapsed := reading.ObservedAt.Sub(reading.RequestedAt); elapsed < delay {
+		t.Fatalf(
+			"ObservedAt - RequestedAt = %v, want at least the server's own %v delay "+
+				"(ObservedAt must be stamped after the response is read, not before the request)",
+			elapsed, delay,
+		)
+	}
 }
 
 func TestFetchOpenInterestRejectsIncompleteResponse(t *testing.T) {

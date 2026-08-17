@@ -321,7 +321,12 @@ func run() error {
 	}
 
 	app := &application{
-		engine:                momentum.New(),
+		// Explicit, not New()'s own implicit default: Bybit's own ticker
+		// feed is this venue's real price source, and every capture
+		// binary's own wiring should say so out loud rather than rely on
+		// a package default a future venue might one day change (see
+		// momentum.PriceSource's own doc comment).
+		engine:                momentum.NewWithPriceSource(momentum.PriceSourceTickerLast),
 		writer:                writer,
 		universe:              universe,
 		readiness:             momentumcapture.NewReadinessTracker(universe),

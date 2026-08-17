@@ -21,10 +21,21 @@ import (
 // "What this PR does not do" section) -- capturing it is a design choice
 // left to a later PR, not settled here.
 type OpenInterestReading struct {
-	Symbol     string
-	Amount     string
-	EventAt    time.Time
-	ObservedAt time.Time
+	Symbol  string
+	Amount  string
+	EventAt time.Time
+	// RequestedAt is stamped immediately before the HTTP request is sent;
+	// ObservedAt is stamped only after the response body has been read and
+	// successfully decoded -- a colleague-review finding: an earlier
+	// version stamped what is now RequestedAt's own moment into
+	// ObservedAt, making every reading's own "when did we learn this"
+	// value optimistic by exactly the request's round-trip latency (the
+	// data was not actually known yet at that instant). ObservedAt is
+	// what point-in-time freshness checks must use; RequestedAt exists so
+	// request-to-response latency itself is measurable, not to be treated
+	// as an observation time.
+	RequestedAt time.Time
+	ObservedAt  time.Time
 }
 
 type OpenInterestFn func(context.Context, OpenInterestReading) error
@@ -100,7 +111,7 @@ func (s *Source) PollOpenInterest(
 func (s *Source) fetchOpenInterest(ctx context.Context, symbol string) (OpenInterestReading, error) {
 	client := s.httpClientOrDefault()
 	restURL := s.restURLOrDefault()
-	observedAt := time.Now()
+	requestedAt := time.Now()
 	// Regression: Binance's REST API matches the symbol query param
 	// case-exactly (it does not accept "btcusdt" the way it accepts
 	// "BTCUSDT") -- a caller passing a non-normalized symbol must still
@@ -139,9 +150,13 @@ func (s *Source) fetchOpenInterest(ctx context.Context, symbol string) (OpenInte
 		return OpenInterestReading{}, fmt.Errorf("incomplete open interest response for %s", symbol)
 	}
 	return OpenInterestReading{
-		Symbol:     wsstream.NormalizeSymbol(body.Symbol),
-		Amount:     body.OpenInterest,
-		EventAt:    time.UnixMilli(body.Time),
-		ObservedAt: observedAt,
+		Symbol:      wsstream.NormalizeSymbol(body.Symbol),
+		Amount:      body.OpenInterest,
+		EventAt:     time.UnixMilli(body.Time),
+		RequestedAt: requestedAt,
+		// Stamped now, after the body is fully read and decoded -- see
+		// OpenInterestReading's own doc comment on why this must not move
+		// earlier.
+		ObservedAt: time.Now(),
 	}, nil
 }

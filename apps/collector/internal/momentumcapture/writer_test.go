@@ -150,8 +150,8 @@ func TestWriterFlushQueuesOneStatementPerPendingBarAndClearsPendingOnSuccess(t *
 		t.Fatalf("batch len = %v, want 2", db.lastBatch)
 	}
 	for _, qq := range db.lastBatch.QueuedQueries {
-		if len(qq.Arguments) != 68 {
-			t.Fatalf("args per row = %d, want 68 (matches insertRowSQL's column list)", len(qq.Arguments))
+		if len(qq.Arguments) != 76 {
+			t.Fatalf("args per row = %d, want 76 (matches insertRowSQL's column list)", len(qq.Arguments))
 		}
 	}
 	if len(w.pending) != 0 {
