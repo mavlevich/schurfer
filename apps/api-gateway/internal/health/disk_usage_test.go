@@ -92,6 +92,41 @@ func TestReadDiskUsageFailsClosed(t *testing.T) {
 	}
 }
 
+// TestReadDiskUsageFailsClosedWhenVolumesLineMissingTrailingNewline is a
+// regression for a real prod incident (2026-08-17): `docker system df -v
+// --format '{{json .Volumes}}'` does not guarantee its own output ends in
+// a newline, and infra/scripts/disk-usage.sh relied on that guarantee --
+// on the affected host, the array's closing `]` landed glued directly onto
+// the same line as the next `[extra]` marker with no separator at all,
+// exactly reproduced below. This silently zeroed out the whole
+// disk_usage block on the Status page for hours with no error anywhere
+// (fails closed, by design -- see readDiskUsage's own doc comment), which
+// is what made it hard to notice. The script itself now writes an
+// explicit blank line before `[extra]` regardless of the docker command's
+// own trailing newline; this test documents the failure mode that fix
+// exists to prevent, not the fix itself (a bash script isn't
+// Go-testable).
+func TestReadDiskUsageFailsClosedWhenVolumesLineMissingTrailingNewline(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "disk-usage.snapshot")
+	snapshot := `SCHURFER_DISK_USAGE_V1
+1786972705093
+[docker_summary]
+{"Active":"20","Reclaimable":"1.4GB (41%)","Size":"3.343GB","TotalCount":"27","Type":"Images"}
+{"Active":"17","Reclaimable":"91.3MB (31%)","Size":"289.7MB","TotalCount":"20","Type":"Containers"}
+{"Active":"6","Reclaimable":"0B (0%)","Size":"10.16GB","TotalCount":"6","Type":"Local Volumes"}
+{"Active":"0","Reclaimable":"2.518GB","Size":"2.518GB","TotalCount":"109","Type":"Build Cache"}
+[docker_volumes]
+[{"Name":"docker_caddy_data","Size":"1.139kB"},{"Name":"docker_postgres_data","Size":"9.693GB"}][extra]
+backups_bytes=26716126765
+`
+	if err := os.WriteFile(path, []byte(snapshot), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := readDiskUsage(path); got != nil {
+		t.Fatalf("expected the glued-together [docker_volumes]/[extra] line to fail closed, got %+v", got)
+	}
+}
+
 func TestReadDiskUsageFailsClosedOnUnknownType(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "disk-usage.snapshot")
 	snapshot := `SCHURFER_DISK_USAGE_V1

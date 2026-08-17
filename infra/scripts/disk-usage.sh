@@ -33,7 +33,16 @@ while true; do
     echo "[docker_summary]"
     docker system df --format '{{json .}}' 2>/dev/null || true
     echo "[docker_volumes]"
+    # Explicit trailing echo, not relying on the docker command's own
+    # output ending in a newline: `docker system df -v --format
+    # '{{json .Volumes}}'` prints a single JSON array with no guaranteed
+    # trailing newline on every Docker version, which glued its own
+    # closing `]` directly onto the next line's `[extra]` marker on this
+    # host -- disk_usage.go's own reader fails closed on any structural
+    # mismatch, so this silently zeroed out the whole disk_usage block on
+    # the frontend with no visible error anywhere.
     docker system df -v --format '{{json .Volumes}}' 2>/dev/null || true
+    echo
     echo "[extra]"
     echo "backups_bytes=${backups_bytes:-0}"
   } >"$tmp_path"
