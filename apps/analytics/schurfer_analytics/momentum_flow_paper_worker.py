@@ -31,6 +31,12 @@ from .momentum_flow_paper_repository import (
     PaperRun,
     WatchCandidate,
 )
+from .momentum_flow_producer_readiness import (
+    BLOCKED_STATUS,
+    DEPENDENCY_UNAVAILABLE_STATUS,
+    upstream_health_is_ready,
+)
+from .momentum_flow_watch_worker import health_key as watch_health_key
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -281,11 +287,25 @@ async def process_tick(
     config: PaperWorkerConfig,
     contract: PaperContract = FROZEN_PAPER_CONTRACT,
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+    allow_new_entries: bool = True,
 ) -> TickResult:
-    candidates = await store.due_watches(
-        contract=contract,
-        cohort_started_at=run.cohort_started_at,
-        limit=config.watch_batch_size,
+    """allow_new_entries=False skips claiming/opening new WATCH candidates
+    (the due_watches/_process_entry step below) but always still runs
+    expire_deadlines/monitored_probes/_process_probe -- an already-open
+    position's own stop/max-hold/horizon-outcome bookkeeping must never
+    stop just because new entries are currently disallowed (see
+    momentum_flow_producer_readiness's own doc comment: this is exactly
+    the distinction between "upstream cannot support a NEW decision right
+    now" and "this worker has nothing left to do," which are not the same
+    thing for a worker that also owns already-open positions)."""
+    candidates = (
+        await store.due_watches(
+            contract=contract,
+            cohort_started_at=run.cohort_started_at,
+            limit=config.watch_batch_size,
+        )
+        if allow_new_entries
+        else ()
     )
     entry_results: list[str] = []
     for candidate in candidates:
@@ -387,6 +407,49 @@ async def _try_write_health(
         log.warning("momentum_paper.health_write_failed", error=str(exc))
 
 
+async def _upstream_watch_block(redis: Redis, *, watch_version: str) -> tuple[str, str] | None:
+    """Returns None if the upstream WATCH worker this contract's own
+    watch_version identifies is itself both reporting status "ok" AND
+    reporting it recently (see momentum_flow_producer_readiness.
+    upstream_health_is_ready's own doc comment for why a stale "ok" does
+    not count -- a hard-crashed WATCH process leaves its last-written
+    status sitting in Redis forever otherwise). Otherwise (status, error):
+    BLOCKED_STATUS if WATCH's own health says it is not ready (or has
+    never run at all -- a missing key), or DEPENDENCY_UNAVAILABLE_STATUS
+    if reading Redis itself failed.
+
+    Deliberately broader than just checking for momentum_flow_producer_
+    readiness.BLOCKED_STATUS specifically: paper depends on WATCH's own
+    decisions entirely, so there is no separate "is paper's own upstream
+    ready" question to answer independently of whatever WATCH itself
+    already decided about its own readiness -- "starting"/"degraded"/a
+    missing health key all mean paper has nothing real to claim right
+    now either, not just the specific incompatible-producer case.
+    Reading a foreign worker's own health hash by key, rather than
+    re-deriving readiness from bars directly here, keeps WATCH's own
+    gate the single source of truth."""
+    key = watch_health_key(watch_version)
+    try:
+        raw_status, raw_generated_at = await redis.hmget(key, ["status", "generated_at"])
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        return DEPENDENCY_UNAVAILABLE_STATUS, f"could not read upstream WATCH health: {exc}"
+    # redis-py's own stub types hmget's return as list[bytes | str | None]
+    # regardless of decode_responses -- this client is always constructed
+    # with decode_responses=True (see _redis_url's own caller), so these
+    # are always str | None at runtime; str(...) is a no-op then, and only
+    # exists to satisfy the stub's own wider declared type.
+    status = str(raw_status) if raw_status is not None else None
+    generated_at = str(raw_generated_at) if raw_generated_at is not None else None
+    if upstream_health_is_ready(status=status, generated_at=generated_at):
+        return None
+    return BLOCKED_STATUS, (
+        f"upstream WATCH worker (watch_version={watch_version!r}) is not reporting a "
+        f"recent status=ok (status={status!r}, generated_at={generated_at!r})"
+    )
+
+
 async def run_paper_worker(
     config: PaperWorkerConfig,
     *,
@@ -466,20 +529,43 @@ async def run_paper_worker(
         last_tick: TickResult | None = None
         while True:
             try:
+                # Checked BEFORE process_tick, not after: this worker owns
+                # more than just opening new entries (see process_tick's
+                # own allow_new_entries doc comment) -- an already-open
+                # position's own stop/max-hold/horizon-outcome bookkeeping
+                # must run every tick regardless of upstream readiness,
+                # only claiming brand-new WATCH candidates is conditional
+                # on it. Checking readiness AFTER acting (the first
+                # version of this fix did) would let a tick open a
+                # position before the worker had even confirmed it was
+                # allowed to.
+                block = await _upstream_watch_block(redis, watch_version=contract.watch_version)
                 last_tick = await process_tick(
                     store=active_store,
                     market=active_market,
                     run=run,
                     config=config,
                     contract=contract,
+                    allow_new_entries=block is None,
                 )
                 health = await active_store.health(contract=contract)
+                if block is not None:
+                    status, error = block
+                    log.warning(
+                        "momentum_paper.upstream_not_ready",
+                        paper_version=run.paper_version,
+                        status=status,
+                        error=error,
+                    )
+                else:
+                    status, error = "ok", ""
                 await _try_write_health(
                     redis,
                     run=run,
                     health=health,
                     tick=last_tick,
-                    status="ok",
+                    status=status,
+                    error=error,
                 )
                 if any(asdict(last_tick).values()):
                     log.info("momentum_paper.tick_completed", **asdict(last_tick))

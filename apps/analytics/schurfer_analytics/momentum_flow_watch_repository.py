@@ -416,6 +416,49 @@ class MomentumFlowWatchRepository:
             bars_by_symbol={symbol: tuple(grouped[symbol]) for symbol in symbols},
         )
 
+    async def has_any_recent_valid_price(
+        self,
+        *,
+        contract: WatchContract,
+        lookback_minutes: int,
+    ) -> bool:
+        """True if at least one COMPLETE bar with a positive close_price
+        exists for this contract's own (exchange, market_type,
+        capture_version) in the last lookback_minutes -- see
+        momentum_flow_producer_readiness's own doc comment for why this
+        exists. Requires close_price > 0 (not just NOT NULL: a zero or
+        negative price would pass a bare non-NULL check while still being
+        garbage) and complete = true (a still-forming or gap-marked
+        synthetic bar is not evidence the producer can feed a real
+        decision).
+
+        Deliberately named for exactly what it checks, not more: this is
+        a LIMIT 1 existence check against ONE symbol somewhere in the
+        whole captured universe, not a coverage ratio. A producer that
+        feeds valid price to one symbol out of hundreds still passes this
+        -- it answers "is price capability present at all" (the binary
+        failure mode the 2026-08-15..17 incident actually was: Binance
+        had ZERO valid prices anywhere), not "is the full cross-section/
+        OI ready for a real decision." That stronger, coverage-aware
+        readiness question belongs to a future PR4 coverage gate (see
+        docs/research/binance-watch-input-readiness-v1.md), not this
+        method -- do not read a True here as "the producer is fully
+        healthy."""
+        since = datetime.now(UTC) - timedelta(minutes=lookback_minutes)
+        result = await self._execute(
+            select(_bars.c.symbol)
+            .where(
+                _bars.c.exchange == contract.source_exchange,
+                _bars.c.market_type == contract.market_type,
+                _bars.c.capture_version == contract.capture_version,
+                _bars.c.bucket_start >= since,
+                _bars.c.close_price > 0,
+                _bars.c.complete.is_(True),
+            )
+            .limit(1)
+        )
+        return result.first() is not None
+
     async def load_states(
         self,
         *,
