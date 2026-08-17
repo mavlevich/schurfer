@@ -873,6 +873,35 @@ Protocols`, no error, no reconnect) but zero application frames ever
    `momentum-watch-binance`/`momentum-paper-binance` remain stopped on prod
    pending PR3 (OI poll scheduler) and a coverage read.
 
+   **OI poll scheduler (`fix/binance-oi-poll-scheduler-v1`, 2026-08-17):**
+   PR3 of the 4-PR remediation sequence, fixing root cause 2
+   (`missing_fresh_oi`, ~94% of evaluations). The previous
+   `binance.PollOpenInterest` ran a single goroutine on a single
+   `time.Ticker`, one blocking HTTP request per tick -- `time.Ticker`
+   drops missed ticks rather than queueing them, so any request slower
+   than the per-symbol delay (~114ms at ~525 symbols) stalled the ENTIRE
+   round-robin, not just that symbol (measured real per-symbol OI refresh
+   gap: p50 127s / p95 255s / p99 505s / max 1010s against a 60s target).
+   Replaced with a bounded concurrent worker pool (`OpenInterestSchedulerConfig
+   {Workers, RateLimitPerMinute}`, default 8 workers / 1200 req-min, both
+   overridable via `OI_POLL_WORKERS`/`OI_POLL_RATE_LIMIT_PER_MINUTE`) paced
+   by a real token bucket (`internal/binance/ratelimit.go`) -- worker count
+   hides HTTP latency, the token bucket alone enforces the rate. `GET /
+   fapi/v1/openInterest` 429/418 responses now pause the WHOLE pool (not
+   just the worker that hit it) for the response's own `Retry-After`,
+   compare-and-swap-extended so concurrent hits never shorten an
+   already-longer pause; a 418 logs at Error, a 429 at Warn.
+   `X-Mbx-Used-Weight-1m` is parsed and logged at Warn past 80% of the real
+   2400/min budget. `checkOpenInterestGaps`'s own threshold is no longer a
+   hardcoded 180s constant -- computed at startup from the real universe
+   size and configured rate (floored at 30s so a tiny universe's own
+   near-zero expected cycle cannot false-positive on ordinary request
+   jitter). At 525 symbols and the default config, one full round now
+   takes ~26s, roughly 5x faster than the previous design's own p50. See
+   docs/research/binance-oi-poll-scheduler-v1.md for the full writeup.
+   `momentum-watch-binance`/`momentum-paper-binance` remain stopped on prod
+   pending PR4's own coverage read.
+
 9. **Register at most one Confirmation shadow if the discovery gate passes.** Freeze
    one primary lookback, eligibility rule, entry quote, stop, bounded exit horizons,
    cost model, minimum sample/diversity, and no-go rule on a new untouched cohort. The

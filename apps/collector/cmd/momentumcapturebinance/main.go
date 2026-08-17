@@ -87,11 +87,11 @@ const (
 	tradeEventBuffer     = 8192
 	tradeDropBuffer      = 256
 	lifecycleEventBuffer = 64
-	// openInterestEventBuffer is sized far below tradeEventBuffer: OI
-	// readings arrive at most one per PollOpenInterest tick (roughly one
-	// every DefaultOpenInterestPollInterval/len(symbols), a few hundred ms
-	// at today's universe size), nothing like the trade firehose's burst
-	// rate.
+	// openInterestEventBuffer is sized far below tradeEventBuffer: even
+	// under fix/binance-oi-poll-scheduler-v1's own concurrent worker pool,
+	// at most cfg.OpenInterestScheduler.Workers (default 8) readings can
+	// land near-simultaneously -- a small, bounded burst, nothing like the
+	// trade firehose's own rate.
 	openInterestEventBuffer = 512
 	writerInboxBuffer       = 64
 	driftResultBuffer       = 2
@@ -108,17 +108,30 @@ const (
 	// this budget.
 	shutdownTimeout = 75 * time.Second
 
-	// openInterestGapThreshold proactively marks a symbol's OI feed
-	// interrupted after this long without any observation, the direct
-	// analog of cmd/momentumcapture's own tickerGapThreshold -- but here
-	// it is the ONLY discontinuity-detection mechanism for this feed
-	// (Bybit additionally gets reconnect-based detection via a per-symbol
-	// StreamSessionID change; a REST poll has no "session" to change).
-	// 3x binance.DefaultOpenInterestPollInterval (180s) is a deliberately
-	// conservative multiple of the interval every symbol is expected to
-	// refresh within, picked without a live-measured poll-latency
-	// distribution, same honesty as cmd/momentumcapture's own choice.
-	openInterestGapThreshold = 3 * binance.DefaultOpenInterestPollInterval
+	// openInterestGapThresholdMultiple proactively marks a symbol's OI feed
+	// interrupted after this many expected full-cycle durations pass with
+	// no observation at all -- the direct analog of cmd/momentumcapture's
+	// own tickerGapThreshold, and here it is the ONLY discontinuity-
+	// detection mechanism for this feed (Bybit additionally gets
+	// reconnect-based detection via a per-symbol StreamSessionID change; a
+	// REST poll has no "session" to change). The actual threshold
+	// (openInterestGapThreshold, an application field, not a const) is
+	// computed at startup from the real universe size and the configured
+	// scheduler's own rate limit -- see openInterestExpectedCycleDuration
+	// -- instead of a single hardcoded interval, because fix/binance-oi-
+	// poll-scheduler-v1's whole point is that per-symbol cadence is no
+	// longer one fixed number independent of how many symbols exist.
+	openInterestGapThresholdMultiple = 3
+
+	// openInterestGapThresholdFloor keeps the computed threshold from
+	// collapsing to near-zero for a small universe (a handful of symbols
+	// still divides a generous per-minute budget into a tiny expected
+	// cycle -- and this repo's own tests run against 1-2 symbol
+	// fixtures): even one symbol's own single-request latency can jitter
+	// by a meaningful fraction of a second under real network conditions,
+	// so a threshold below this floor would false-positive on ordinary
+	// variance, not a genuine interruption.
+	openInterestGapThresholdFloor = 30 * time.Second
 
 	// estimatedHotBytesPerRow reuses cmd/momentumcapture's own measured
 	// figure: both venues write the identical row shape to the identical
@@ -134,6 +147,13 @@ const (
 type config struct {
 	DatabaseURL string
 	RedisAddr   string
+	// OpenInterestScheduler overrides binance.DefaultOpenInterestSchedulerConfig
+	// via OI_POLL_WORKERS/OI_POLL_RATE_LIMIT_PER_MINUTE -- operationally
+	// tunable without a code change once a real measured per-request
+	// latency distribution exists (see docs/research/
+	// binance-oi-poll-scheduler-v1.md's own "What this PR does not do"),
+	// rather than hardcoding a guess now.
+	OpenInterestScheduler binance.OpenInterestSchedulerConfig
 }
 
 type counters struct {
@@ -202,6 +222,13 @@ type application struct {
 
 	openInterestLastSeenAt map[string]time.Time
 	openInterestGapMarked  map[string]bool
+	// openInterestGapThreshold is openInterestGapThresholdMultiple times
+	// the real expected full-cycle duration for this run's own universe
+	// size and configured scheduler rate -- computed once at startup (see
+	// openInterestExpectedCycleDuration), not a package-level const,
+	// because it genuinely depends on how many symbols this process is
+	// actually subscribed to.
+	openInterestGapThreshold time.Duration
 
 	lastDrift momentumcapture.DriftReport
 	catalog   binance.SymbolCatalogCounts
@@ -323,22 +350,23 @@ func run() error {
 		// comment), so its OHLC comes from aggTrade prices instead --
 		// see momentum.PriceSource's own doc comment for why this
 		// choice belongs at construction, said out loud, not inferred.
-		engine:                 momentum.NewWithPriceSource(momentum.PriceSourceAggregateTrade),
-		writer:                 writer,
-		universe:               universe,
-		readiness:              momentumcapture.NewReadinessTracker(universe),
-		source:                 source,
-		healthStore:            healthStore,
-		tradeEvents:            make(chan binance.PublicTrade, tradeEventBuffer),
-		tradeDrops:             make(chan binance.PublicTrade, tradeDropBuffer),
-		lifecycleEvents:        make(chan binance.TradeLifecycleEvent, lifecycleEventBuffer),
-		openInterestEvents:     make(chan binance.OpenInterestReading, openInterestEventBuffer),
-		writerInbox:            make(chan []momentum.Bar, writerInboxBuffer),
-		driftResults:           make(chan momentumcapture.DriftReport, driftResultBuffer),
-		openInterestLastSeenAt: oiLastSeenAt,
-		openInterestGapMarked:  make(map[string]bool, universe.Count()),
-		lastDrift:              universe.CheckDrift(universe.Symbols, now),
-		catalog:                catalog.Counts,
+		engine:                   momentum.NewWithPriceSource(momentum.PriceSourceAggregateTrade),
+		writer:                   writer,
+		universe:                 universe,
+		readiness:                momentumcapture.NewReadinessTracker(universe),
+		source:                   source,
+		healthStore:              healthStore,
+		tradeEvents:              make(chan binance.PublicTrade, tradeEventBuffer),
+		tradeDrops:               make(chan binance.PublicTrade, tradeDropBuffer),
+		lifecycleEvents:          make(chan binance.TradeLifecycleEvent, lifecycleEventBuffer),
+		openInterestEvents:       make(chan binance.OpenInterestReading, openInterestEventBuffer),
+		writerInbox:              make(chan []momentum.Bar, writerInboxBuffer),
+		driftResults:             make(chan momentumcapture.DriftReport, driftResultBuffer),
+		openInterestLastSeenAt:   oiLastSeenAt,
+		openInterestGapMarked:    make(map[string]bool, universe.Count()),
+		openInterestGapThreshold: computeOpenInterestGapThreshold(universe.Count(), cfg.OpenInterestScheduler),
+		lastDrift:                universe.CheckDrift(universe.Symbols, now),
+		catalog:                  catalog.Counts,
 	}
 
 	writerDone := make(chan error, 1)
@@ -357,7 +385,7 @@ func run() error {
 	oiDone := make(chan struct{})
 	go func() {
 		defer close(oiDone)
-		if err := source.PollOpenInterest(ctx, universe.Symbols, binance.DefaultOpenInterestPollInterval, app.consumeOpenInterest); err != nil {
+		if err := source.PollOpenInterest(ctx, universe.Symbols, cfg.OpenInterestScheduler, app.consumeOpenInterest); err != nil {
 			slog.Error("momentumcapturebinance.open_interest.stopped", "err", err)
 		}
 	}()
@@ -464,13 +492,20 @@ func (app *application) consumeLifecycle(event binance.TradeLifecycleEvent) {
 	}
 }
 
-// consumeOpenInterest is called synchronously from PollOpenInterest's own
-// single dedicated goroutine (not per-symbol, not concurrent with itself),
-// so unlike consumeTrade there is only ever one producer to worry about;
-// the same non-blocking-drop-and-count contract still applies so a stalled
-// loop goroutine can never make the poller itself block. openInterestDropsLost
-// is atomic (not a counters field) for the same reason tradeDropsLost is:
-// this runs on a producer goroutine, never the loop goroutine.
+// consumeOpenInterest is called from PollOpenInterest's own worker pool --
+// as of fix/binance-oi-poll-scheduler-v1, up to cfg.OpenInterestScheduler.Workers
+// (default 8) goroutines call this concurrently with each other, not the
+// single dedicated goroutine an earlier version of this comment described.
+// Safe as written: a channel send and an atomic increment are both
+// concurrency-safe on their own, so nothing here needed to change for the
+// new concurrency -- but a future edit that adds a plain (non-atomic)
+// field write or map access here would introduce a real data race under
+// this now-concurrent design, unlike when this really was single-
+// producer. The same non-blocking-drop-and-count contract still applies
+// so a stalled loop goroutine can never make the poller itself block.
+// openInterestDropsLost is atomic (not a counters field) for the same
+// reason tradeDropsLost is: this runs on a producer goroutine, never the
+// loop goroutine.
 func (app *application) consumeOpenInterest(_ context.Context, reading binance.OpenInterestReading) error {
 	select {
 	case app.openInterestEvents <- reading:
@@ -786,16 +821,44 @@ func (app *application) handleOpenInterest(reading binance.OpenInterestReading) 
 	app.enqueue(bars)
 }
 
+// computeOpenInterestGapThreshold combines openInterestExpectedCycleDuration
+// with openInterestGapThresholdMultiple and openInterestGapThresholdFloor
+// into the actual threshold checkOpenInterestGaps uses -- the one place
+// both run() and this package's own tests (newTestApplication) compute it,
+// so the two can never quietly drift apart.
+func computeOpenInterestGapThreshold(universeSize int, cfg binance.OpenInterestSchedulerConfig) time.Duration {
+	threshold := openInterestGapThresholdMultiple * openInterestExpectedCycleDuration(universeSize, cfg)
+	if threshold < openInterestGapThresholdFloor {
+		return openInterestGapThresholdFloor
+	}
+	return threshold
+}
+
+// openInterestExpectedCycleDuration is how long one full round of every
+// symbol in universeSize should take under cfg's own rate limit: the
+// scheduler's real, budget-driven cadence, computed from the actual
+// numbers this run started with instead of a single hardcoded interval
+// that stops being true the moment the universe size or configured rate
+// changes. Returns 0 for a non-positive input (never used as a gap
+// threshold's own basis when the run has no symbols at all).
+func openInterestExpectedCycleDuration(universeSize int, cfg binance.OpenInterestSchedulerConfig) time.Duration {
+	if universeSize <= 0 || cfg.RateLimitPerMinute <= 0 {
+		return 0
+	}
+	return time.Duration(universeSize) * time.Minute / time.Duration(cfg.RateLimitPerMinute)
+}
+
 // checkOpenInterestGaps is the direct analog of cmd/momentumcapture's own
 // checkTickerGaps, and here it is the ONLY discontinuity-detection
-// mechanism for this feed (see openInterestGapThreshold's own doc comment).
+// mechanism for this feed (see application.openInterestGapThreshold's own
+// doc comment).
 func (app *application) checkOpenInterestGaps(now time.Time) {
 	for _, symbol := range app.universe.Symbols {
 		if app.openInterestGapMarked[symbol] {
 			continue
 		}
 		lastSeen, ok := app.openInterestLastSeenAt[symbol]
-		if !ok || now.Sub(lastSeen) < openInterestGapThreshold {
+		if !ok || now.Sub(lastSeen) < app.openInterestGapThreshold {
 			continue
 		}
 		app.stats.openInterestGapTotal++
@@ -959,9 +1022,14 @@ func configureLogging() {
 }
 
 func loadConfig() config {
+	defaultScheduler := binance.DefaultOpenInterestSchedulerConfig()
 	return config{
 		DatabaseURL: envString("DATABASE_URL", "postgres://schurfer:schurfer_dev@localhost:5432/schurfer"),
 		RedisAddr:   envString("REDIS_ADDR", "localhost:6379"),
+		OpenInterestScheduler: binance.OpenInterestSchedulerConfig{
+			Workers:            envInt("OI_POLL_WORKERS", defaultScheduler.Workers),
+			RateLimitPerMinute: envInt("OI_POLL_RATE_LIMIT_PER_MINUTE", defaultScheduler.RateLimitPerMinute),
+		},
 	}
 }
 
@@ -970,4 +1038,17 @@ func envString(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func envInt(key string, fallback int) int {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return fallback
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value <= 0 {
+		slog.Warn("momentumcapturebinance.invalid_env_int", "key", key, "value", raw, "fallback", fallback)
+		return fallback
+	}
+	return value
 }

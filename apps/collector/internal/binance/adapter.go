@@ -3,7 +3,6 @@ package binance
 import (
 	"context"
 	"sync"
-	"time"
 
 	"github.com/mavlevich/schurfer/collector/internal/momentumsource"
 	"github.com/mavlevich/schurfer/collector/internal/wsstream"
@@ -14,13 +13,6 @@ import (
 const MarketType = "linear_usdt_perpetual"
 
 const exchangeName = "binance"
-
-// DefaultOpenInterestPollInterval spaces PollOpenInterest calls across
-// symbols so total request weight stays well inside the 2400/min budget
-// the capability preflight measured (weight 1 per call): even at 525
-// symbols, a 60s interval costs 525 weight/min, comfortably under budget
-// with headroom for exchangeInfo re-polling alongside it.
-const DefaultOpenInterestPollInterval = 60 * time.Second
 
 // Adapter exposes an already-constructed *Source through the canonical
 // momentumsource interfaces, mirroring bybit.Adapter's own shape and
@@ -111,16 +103,16 @@ func translateTrade(trade PublicTrade, sessionID string) momentumsource.Trade {
 // real, unlike bybit.Adapter: Binance's OI genuinely is a separate REST
 // poll (GET /fapi/v1/openInterest, weight 1), not something embedded in a
 // push stream this adapter already consumes elsewhere -- see the
-// capability preflight's own finding. Uses DefaultOpenInterestPollInterval
-// unless a caller needs a different cadence; PollOpenInterest itself is
-// exported on Source for that case. A consume error is logged and does not
-// stop polling -- see PollOpenInterest's own doc comment.
+// capability preflight's own finding. Uses DefaultOpenInterestSchedulerConfig
+// unless a caller needs a different worker count/rate limit; PollOpenInterest
+// itself is exported on Source for that case. A consume error is logged and
+// does not stop polling -- see PollOpenInterest's own doc comment.
 func (a *Adapter) StreamOpenInterest(
 	ctx context.Context,
 	symbols []string,
 	consume momentumsource.OpenInterestConsumer,
 ) error {
-	return a.source.PollOpenInterest(ctx, symbols, DefaultOpenInterestPollInterval, func(ctx context.Context, reading OpenInterestReading) error {
+	return a.source.PollOpenInterest(ctx, symbols, DefaultOpenInterestSchedulerConfig(), func(ctx context.Context, reading OpenInterestReading) error {
 		envelope := momentumsource.Envelope{
 			Exchange:       exchangeName,
 			MarketType:     MarketType,

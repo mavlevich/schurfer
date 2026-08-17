@@ -16,15 +16,16 @@ import (
 func newTestApplication(symbols []string) *application {
 	universe := momentumcapture.NewUniverse(symbols, time.Unix(0, 0))
 	return &application{
-		engine:                 momentum.New(),
-		writer:                 momentumcapture.NewWriter(nil, "binance", marketType, universe.Hash),
-		universe:               universe,
-		readiness:              momentumcapture.NewReadinessTracker(universe),
-		source:                 binance.NewSource(), // never started: no goroutine touches it in these tests
-		writerInbox:            make(chan []momentum.Bar, writerInboxBuffer),
-		openInterestLastSeenAt: make(map[string]time.Time),
-		openInterestGapMarked:  make(map[string]bool),
-		lastDrift:              universe.CheckDrift(universe.Symbols, time.Unix(0, 0)),
+		engine:                   momentum.New(),
+		writer:                   momentumcapture.NewWriter(nil, "binance", marketType, universe.Hash),
+		universe:                 universe,
+		readiness:                momentumcapture.NewReadinessTracker(universe),
+		source:                   binance.NewSource(), // never started: no goroutine touches it in these tests
+		writerInbox:              make(chan []momentum.Bar, writerInboxBuffer),
+		openInterestLastSeenAt:   make(map[string]time.Time),
+		openInterestGapMarked:    make(map[string]bool),
+		openInterestGapThreshold: computeOpenInterestGapThreshold(len(symbols), binance.DefaultOpenInterestSchedulerConfig()),
+		lastDrift:                universe.CheckDrift(universe.Symbols, time.Unix(0, 0)),
 	}
 }
 
@@ -311,7 +312,7 @@ func TestCheckOpenInterestGapsMarksSilentSymbolOnceThenStopsUntilFreshObservatio
 	start := time.Unix(1000, 0).UTC()
 	app.openInterestLastSeenAt["BTCUSDT"] = start
 
-	app.checkOpenInterestGaps(start.Add(openInterestGapThreshold + time.Second))
+	app.checkOpenInterestGaps(start.Add(app.openInterestGapThreshold + time.Second))
 	if app.stats.openInterestGapTotal != 1 {
 		t.Fatalf("openInterestGapTotal = %d, want 1", app.stats.openInterestGapTotal)
 	}
@@ -321,7 +322,7 @@ func TestCheckOpenInterestGapsMarksSilentSymbolOnceThenStopsUntilFreshObservatio
 
 	// A second check without any fresh observation must not re-mark (and
 	// re-count) the same still-ongoing gap.
-	app.checkOpenInterestGaps(start.Add(openInterestGapThreshold + 2*time.Second))
+	app.checkOpenInterestGaps(start.Add(app.openInterestGapThreshold + 2*time.Second))
 	if app.stats.openInterestGapTotal != 1 {
 		t.Fatalf("openInterestGapTotal = %d after a second check, want still 1 (idempotent)", app.stats.openInterestGapTotal)
 	}
@@ -336,6 +337,44 @@ func TestCheckOpenInterestGapsIgnoresRecentlySeenSymbols(t *testing.T) {
 	app.checkOpenInterestGaps(now.Add(time.Second))
 	if app.stats.openInterestGapTotal != 0 {
 		t.Fatalf("openInterestGapTotal = %d, want 0 for a symbol seen a second ago", app.stats.openInterestGapTotal)
+	}
+}
+
+// TestComputeOpenInterestGapThresholdAppliesTheFloorForASmallUniverse is a
+// regression: openInterestExpectedCycleDuration scales linearly with
+// universe size, so a tiny universe (this package's own test fixtures use
+// 1-2 symbols) divides a generous per-minute budget into a near-zero
+// expected cycle -- a threshold that small would false-positive on
+// ordinary single-request latency jitter, not catch a genuine
+// interruption. TestCheckOpenInterestGapsIgnoresRecentlySeenSymbols above
+// depends on this floor already; this test pins the exact mechanism so a
+// future change to the multiplier/formula cannot silently drop it.
+func TestComputeOpenInterestGapThresholdAppliesTheFloorForASmallUniverse(t *testing.T) {
+	t.Parallel()
+	got := computeOpenInterestGapThreshold(1, binance.OpenInterestSchedulerConfig{Workers: 8, RateLimitPerMinute: 1200})
+	if got != openInterestGapThresholdFloor {
+		t.Fatalf("computeOpenInterestGapThreshold(1 symbol) = %v, want the floor %v (the raw formula gives %v)",
+			got, openInterestGapThresholdFloor,
+			openInterestGapThresholdMultiple*openInterestExpectedCycleDuration(1, binance.OpenInterestSchedulerConfig{Workers: 8, RateLimitPerMinute: 1200}))
+	}
+}
+
+// TestComputeOpenInterestGapThresholdScalesWithRealisticUniverseSize is
+// the complementary case: at production scale the floor must NOT be what
+// binds -- the real, budget-driven cadence should govern, matching this
+// whole PR's own point (fix/binance-oi-poll-scheduler-v1: per-symbol
+// cadence depends on universe size and configured rate, not one hardcoded
+// constant).
+func TestComputeOpenInterestGapThresholdScalesWithRealisticUniverseSize(t *testing.T) {
+	t.Parallel()
+	cfg := binance.OpenInterestSchedulerConfig{Workers: 8, RateLimitPerMinute: 1200}
+	got := computeOpenInterestGapThreshold(525, cfg)
+	if got <= openInterestGapThresholdFloor {
+		t.Fatalf("computeOpenInterestGapThreshold(525 symbols) = %v, want it well above the %v floor at production scale", got, openInterestGapThresholdFloor)
+	}
+	want := openInterestGapThresholdMultiple * openInterestExpectedCycleDuration(525, cfg)
+	if got != want {
+		t.Fatalf("computeOpenInterestGapThreshold(525 symbols) = %v, want the raw formula's %v (floor should not have applied)", got, want)
 	}
 }
 

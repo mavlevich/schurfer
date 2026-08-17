@@ -303,6 +303,14 @@ services:
       DATABASE_URL: postgresql://schurfer:${POSTGRES_PASSWORD}@postgres:5432/schurfer
       REDIS_ADDR: redis:6379
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # fix/binance-oi-poll-scheduler-v1's own scheduler knobs -- see
+      # binance.DefaultOpenInterestSchedulerConfig's own doc comment for
+      # why these defaults are conservative rather than measured. Override
+      # in .env.prod once a real per-request latency distribution justifies
+      # a different worker count/rate limit; no code change or rebuild
+      # needed for that.
+      OI_POLL_WORKERS: ${OI_POLL_WORKERS:-8}
+      OI_POLL_RATE_LIMIT_PER_MINUTE: ${OI_POLL_RATE_LIMIT_PER_MINUTE:-1200}
     depends_on:
       postgres:
         condition: service_healthy
