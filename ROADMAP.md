@@ -712,6 +712,37 @@ front.
    capture-epoch boundary, same standing discipline as every other PR in
    this section.**
 
+   **Momentum universe identity resolution
+   (`feat/momentum-universe-identity-resolution-v1`, 2026-08-17;
+   implemented and unit-tested, including a real-Postgres integration
+   test and a sanity run against real prod data):** resolution half of
+   cross-venue instrument identity, completing item 8. A pure classifier
+   groups every captured exchange's own ready instruments by `(base,
+   canonical_market_type)` and assigns each group member its own
+   `match_status` (`candidate`/`confirmed`/`conflict`/`insufficient_
+   evidence`/`manual_review_required`/`not_same_asset`, per the
+   foundation doc's own colleague-specified vocabulary and worked
+   example). Venue-count-agnostic by design (a cluster model, not
+   hardcoded Bybit/Binance columns) -- adding a third venue later is new
+   capture-side work, not a schema or classifier rewrite. Two new tables
+   (`app.momentum_universe_asset_clusters`/`_cluster_members`), a new
+   ad-hoc report (`make momentum-universe-identity-match`, not a
+   persistent worker -- the upstream snapshot data itself only refreshes
+   on a capture-process restart, so a periodic timer would be premature).
+   Real prod data (2026-08-17, 516 Bybit / 525 Binance ready instruments):
+   463 clusters, 904 confirmed / 18 candidate / 4 insufficient_evidence /
+   0 conflict / 0 manual_review_required members. See docs/research/
+   momentum-universe-identity-resolution-v1.md.
+   **Tracking note (explicit user decision, not an oversight): the
+   established-both-sides branch promotes straight to `confirmed` from a
+   bare `base` + `canonical_market_type` match alone, which the
+   foundation doc's own review explicitly warned against in general. This
+   was a deliberate choice to ship the simpler rule now and tighten it
+   later once a real second evidence source exists (e.g. a price-
+   correlation check) -- revisit this branch specifically when that
+   evidence source is built, do not assume it stays this permissive
+   forever.**
+
    **Binance aggTrade WS routing fix (`fix/binance-market-stream-route`,
    2026-08-15; merged):** the Binance canary was activated the same day
    (after the corrected-Bybit and host-capacity gates both cleared) and
