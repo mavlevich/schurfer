@@ -14,8 +14,21 @@ Requires=docker.service
 Type=oneshot
 User=deploy
 Group=deploy
-ExecStart=/usr/bin/docker builder prune -af --filter until=168h
-ExecStart=/usr/bin/docker image prune -af --filter until=168h
+# --config points the docker CLI at a private, systemd-managed scratch dir
+# instead of the real ~/.docker (found broken 2026-08-17, three days after
+# this unit first shipped: ProtectHome=true correctly hides /home/deploy/
+# .docker from this service, but the docker CLI itself doesn't treat a
+# missing/unreadable config.json as "use defaults" -- it warns "permission
+# denied", then fails the whole invocation with exit 125 before ever
+# running the prune, so the weekly timer had been silently doing nothing
+# since it was installed. This service only ever prunes the local daemon's
+# own build cache/images -- no registry auth, no pull/push -- so it never
+# legitimately needed the real ~/.docker (which may hold real registry
+# credentials) in the first place; RuntimeDirectory gives it an empty one
+# of its own instead of loosening ProtectHome to read the real one.
+RuntimeDirectory=schurfer-docker-prune
+ExecStart=/usr/bin/docker --config /run/schurfer-docker-prune builder prune -af --filter until=168h
+ExecStart=/usr/bin/docker --config /run/schurfer-docker-prune image prune -af --filter until=168h
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=true
