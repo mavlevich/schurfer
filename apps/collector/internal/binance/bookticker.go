@@ -99,7 +99,7 @@ func (s *Source) RunBookTickerWithLifecycle(
 	}
 	wg.Wait()
 	//nolint:nilerr
-		return nil
+	return nil
 }
 
 func (s *Source) bookTickerStreamLoop(
@@ -196,7 +196,7 @@ func (s *Source) bookTickerStream(
 		if readErr != nil {
 			if ctx.Err() != nil {
 				//nolint:nilerr
-		return nil
+				return nil
 			}
 			return wsstream.ClassifyReadError(readErr)
 		}

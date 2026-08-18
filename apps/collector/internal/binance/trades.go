@@ -108,7 +108,7 @@ func (s *Source) RunTradesWithLifecycle(
 	}
 	wg.Wait()
 	//nolint:nilerr
-		return nil
+	return nil
 }
 
 func (s *Source) tradeStreamLoop(
@@ -213,7 +213,7 @@ func (s *Source) tradeStream(
 		if readErr != nil {
 			if ctx.Err() != nil {
 				//nolint:nilerr
-		return nil
+				return nil
 			}
 			return wsstream.ClassifyReadError(readErr)
 		}

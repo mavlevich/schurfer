@@ -949,7 +949,7 @@ func (app *application) logHealth(ctx context.Context) {
 			app.markTickerFeedInterrupted(now, "nats_client_buffer_dropped")
 		}
 		//nolint:gosec
-			app.stats.natsDroppedTotal = uint64(dropped)
+		app.stats.natsDroppedTotal = uint64(dropped)
 	}
 
 	inputDepth := app.observeInputQueueDepth()

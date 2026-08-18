@@ -11,6 +11,7 @@ import (
 )
 
 // publishEnvelope constructs a v1 notification envelope and pushes it to Redis.
+//
 //nolint:unparam
 func (n *Notifier) publishEnvelope(
 	ctx context.Context,
