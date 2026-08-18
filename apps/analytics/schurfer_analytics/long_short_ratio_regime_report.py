@@ -674,7 +674,7 @@ async def build_feasibility_report(
         if not entry_decision:
             continue
 
-        outcome = next((o for o in entry_decision.outcomes if o.horizon_minutes == 240), None)
+        outcome = next((o for o in entry_decision.outcomes if o.horizon_minutes == 480), None)
         if not outcome or outcome.short_return_pct is None:
             continue
 
@@ -886,7 +886,7 @@ def render_markdown(report: LongShortRatioRegimeReport) -> str:
     lines.extend(
         [
             "",
-            "## ML Evaluation: PnL by Long/Short Ratio Regime (240m horizon)",
+            "## ML Evaluation: PnL by Long/Short Ratio Regime (480m horizon)",
             "",
             "| Regime | Episodes | Avg Short Return |",
             "|---|---|---|",
