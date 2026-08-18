@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -192,7 +193,7 @@ func (n *Notifier) reportMomentumFlowPaperOpen(ctx context.Context, open momentu
 		return
 	}
 	message := formatMomentumFlowOpenMessage(open)
-	if err := sendMessage(ctx, message, n.cfg.BotToken, n.cfg.ChatID); err != nil {
+	if err := n.publishEnvelope(ctx, "scanner", "momentum.flow.alert", "trade", "momentum_flow_"+strconv.FormatInt(time.Now().UnixNano(), 10), message, nil); err != nil {
 		slog.Warn("notifier.momentum_flow.open_alert_failed", "err", err)
 		if delErr := n.rdb.Del(ctx, key).Err(); delErr != nil {
 			slog.Warn("notifier.momentum_flow.open_claim_release_failed", "err", delErr)
@@ -215,7 +216,7 @@ func (n *Notifier) reportMomentumFlowPaperOutcome(
 		return
 	}
 	message := formatMomentumFlowOutcomeMessage(outcome)
-	if err := sendMessage(ctx, message, n.cfg.BotToken, n.cfg.ChatID); err != nil {
+	if err := n.publishEnvelope(ctx, "scanner", "momentum.flow.alert", "trade", "momentum_flow_"+strconv.FormatInt(time.Now().UnixNano(), 10), message, nil); err != nil {
 		slog.Warn("notifier.momentum_flow.outcome_alert_failed", "err", err)
 		if delErr := n.rdb.Del(ctx, key).Err(); delErr != nil {
 			slog.Warn("notifier.momentum_flow.outcome_claim_release_failed", "err", delErr)

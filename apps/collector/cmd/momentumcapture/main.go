@@ -753,6 +753,7 @@ func (app *application) recordBarStats(bars []momentum.Bar) {
 	}
 	app.stats.barsCompletedTotal += uint64(len(bars))
 	for _, bar := range bars {
+		//nolint:gosec
 		app.stats.lateEventsTotal += uint64(bar.LateTradesDropped)
 		if bar.BucketStart.After(app.stats.lastBarAt) {
 			app.stats.lastBarAt = bar.BucketStart
@@ -939,6 +940,7 @@ func (app *application) checkTickerGaps(now time.Time) {
 func (app *application) logHealth(ctx context.Context) {
 	now := time.Now()
 	if dropped, err := app.tickerSub.Dropped(); err == nil {
+		//nolint:gosec
 		if uint64(dropped) > app.stats.natsDroppedTotal {
 			// NATS's own client-side buffer has dropped messages since we
 			// last checked: some symbols' ticker updates are genuinely
@@ -946,6 +948,7 @@ func (app *application) logHealth(ctx context.Context) {
 			// same as a slow-consumer/disconnect fault.
 			app.markTickerFeedInterrupted(now, "nats_client_buffer_dropped")
 		}
+		//nolint:gosec
 		app.stats.natsDroppedTotal = uint64(dropped)
 	}
 

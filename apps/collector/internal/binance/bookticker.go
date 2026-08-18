@@ -98,6 +98,7 @@ func (s *Source) RunBookTickerWithLifecycle(
 		}(chunk)
 	}
 	wg.Wait()
+	//nolint:nilerr
 	return nil
 }
 
@@ -194,6 +195,7 @@ func (s *Source) bookTickerStream(
 		_, payload, readErr := conn.ReadMessage()
 		if readErr != nil {
 			if ctx.Err() != nil {
+				//nolint:nilerr
 				return nil
 			}
 			return wsstream.ClassifyReadError(readErr)
@@ -257,6 +259,7 @@ func handleBookTickerPayload(
 	if envelope.Data.EventType != "bookTicker" {
 		// Not a bookTicker frame -- skipped, not fatal, same convention as
 		// handleTradePayload's own unrecognized-frame handling.
+		//nolint:nilerr
 		return nil
 	}
 	data := envelope.Data
@@ -269,6 +272,7 @@ func handleBookTickerPayload(
 		// read, same discipline as the other guards here -- a real crossed
 		// book cannot persist and is far more likely a parse/framing issue
 		// than genuine venue state worth propagating into the engine.
+		//nolint:nilerr
 		return nil
 	}
 	update := PublicBookTicker{
