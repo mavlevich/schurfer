@@ -74,7 +74,7 @@ func setPumpsPayload(t *testing.T, mr *miniredis.Miniredis, p payload) {
 	}
 }
 
-func TestRun_DisabledSkipsHeartbeat(t *testing.T) { 
+func TestRun_DisabledSkipsHeartbeat(t *testing.T) {
 	t.Skip("migrating to outbox")
 
 	mr := miniredis.RunT(t)
@@ -90,7 +90,7 @@ func TestRun_DisabledSkipsHeartbeat(t *testing.T) {
 	}
 }
 
-func TestTick_HeartbeatWrittenWhenKeyMissing(t *testing.T) { 
+func TestTick_HeartbeatWrittenWhenKeyMissing(t *testing.T) {
 	t.Skip("migrating to outbox")
 
 	mr := miniredis.RunT(t)
@@ -104,7 +104,7 @@ func TestTick_HeartbeatWrittenWhenKeyMissing(t *testing.T) {
 	}
 }
 
-func TestTick_HeartbeatWrittenWhenScannedEmpty(t *testing.T) { 
+func TestTick_HeartbeatWrittenWhenScannedEmpty(t *testing.T) {
 	t.Skip("migrating to outbox")
 
 	mr := miniredis.RunT(t)
@@ -118,7 +118,7 @@ func TestTick_HeartbeatWrittenWhenScannedEmpty(t *testing.T) {
 	}
 }
 
-func TestTick_EmptyScannedNoAlerts(t *testing.T) { 
+func TestTick_EmptyScannedNoAlerts(t *testing.T) {
 	t.Skip("migrating to outbox")
 
 	requests := 0
@@ -147,7 +147,7 @@ func TestTick_EmptyScannedNoAlerts(t *testing.T) {
 	}
 }
 
-func TestTick_SuccessfulAlertMarksSeen(t *testing.T) { 
+func TestTick_SuccessfulAlertMarksSeen(t *testing.T) {
 	t.Skip("migrating to outbox")
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -177,7 +177,7 @@ func TestTick_SuccessfulAlertMarksSeen(t *testing.T) {
 	}
 }
 
-func TestTick_SuccessfulAlertRecordsPointInTimeDelivery(t *testing.T) { 
+func TestTick_SuccessfulAlertRecordsPointInTimeDelivery(t *testing.T) {
 	t.Skip("migrating to outbox")
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -252,7 +252,7 @@ func TestTick_SuccessfulAlertRecordsPointInTimeDelivery(t *testing.T) {
 	}
 }
 
-func TestTick_MeasurementFailureDoesNotDuplicateDeliveredAlert(t *testing.T) { 
+func TestTick_MeasurementFailureDoesNotDuplicateDeliveredAlert(t *testing.T) {
 	t.Skip("migrating to outbox")
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -300,7 +300,7 @@ func TestTick_MeasurementFailureDoesNotDuplicateDeliveredAlert(t *testing.T) {
 	}
 }
 
-func TestDrainAlertOutboxMovesMalformedPayloadToDLQ(t *testing.T) { 
+func TestDrainAlertOutboxMovesMalformedPayloadToDLQ(t *testing.T) {
 	t.Skip("migrating to outbox")
 
 	mr := miniredis.RunT(t)
@@ -320,7 +320,7 @@ func TestDrainAlertOutboxMovesMalformedPayloadToDLQ(t *testing.T) {
 	}
 }
 
-func TestTick_FailedAlertDoesNotMarkSeen(t *testing.T) { 
+func TestTick_FailedAlertDoesNotMarkSeen(t *testing.T) {
 	t.Skip("migrating to outbox")
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -349,7 +349,7 @@ func TestTick_FailedAlertDoesNotMarkSeen(t *testing.T) {
 	}
 }
 
-func TestTick_AlreadySeenSkipsAlert(t *testing.T) { 
+func TestTick_AlreadySeenSkipsAlert(t *testing.T) {
 	t.Skip("migrating to outbox")
 
 	requests := 0
@@ -386,7 +386,7 @@ func TestTick_AlreadySeenSkipsAlert(t *testing.T) {
 	}
 }
 
-func TestTick_LegacyBaseSeenKeySuppressesRolloutDuplicate(t *testing.T) { 
+func TestTick_LegacyBaseSeenKeySuppressesRolloutDuplicate(t *testing.T) {
 	t.Skip("migrating to outbox")
 
 	calls, done := newTelegramCounter(t)
@@ -416,7 +416,7 @@ func TestTick_LegacyBaseSeenKeySuppressesRolloutDuplicate(t *testing.T) {
 	}
 }
 
-func TestTick_ReopenWithinCooldownSuppressesSecondEventID(t *testing.T) { 
+func TestTick_ReopenWithinCooldownSuppressesSecondEventID(t *testing.T) {
 	t.Skip("migrating to outbox")
 
 	// Regression (2026-08-03 CATE/LBank incident): one continuous move that
@@ -462,7 +462,7 @@ func TestTick_ReopenWithinCooldownSuppressesSecondEventID(t *testing.T) {
 	}
 }
 
-func TestTick_ReopenAfterCooldownExpiryAlertsAgain(t *testing.T) { 
+func TestTick_ReopenAfterCooldownExpiryAlertsAgain(t *testing.T) {
 	t.Skip("migrating to outbox")
 
 	calls, done := newTelegramCounter(t)
@@ -503,7 +503,7 @@ func TestTick_ReopenAfterCooldownExpiryAlertsAgain(t *testing.T) {
 	}
 }
 
-func TestTick_ReopenCooldownSlidesOnEachSuppression(t *testing.T) { 
+func TestTick_ReopenCooldownSlidesOnEachSuppression(t *testing.T) {
 	t.Skip("migrating to outbox")
 
 	// A reopen that lands just before the cooldown would have expired must
@@ -559,7 +559,7 @@ func TestTick_ReopenCooldownSlidesOnEachSuppression(t *testing.T) {
 	}
 }
 
-func TestTick_BelowThresholdNoAlertNotSeen(t *testing.T) { 
+func TestTick_BelowThresholdNoAlertNotSeen(t *testing.T) {
 	t.Skip("migrating to outbox")
 
 	calls, done := newTelegramCounter(t)
@@ -587,7 +587,7 @@ func TestTick_BelowThresholdNoAlertNotSeen(t *testing.T) {
 	}
 }
 
-func TestTick_AtThresholdAlerts(t *testing.T) { 
+func TestTick_AtThresholdAlerts(t *testing.T) {
 	t.Skip("migrating to outbox")
 
 	calls, done := newTelegramCounter(t)
@@ -634,7 +634,7 @@ func staleUnixMinutesAgo(m int) string {
 	return strconv.FormatInt(time.Now().Add(-time.Duration(m)*time.Minute).Unix(), 10)
 }
 
-func TestTick_MissingKeyWithinGraceNoAlert(t *testing.T) { 
+func TestTick_MissingKeyWithinGraceNoAlert(t *testing.T) {
 	t.Skip("migrating to outbox")
 
 	calls, done := newTelegramCounter(t)
@@ -653,7 +653,7 @@ func TestTick_MissingKeyWithinGraceNoAlert(t *testing.T) {
 	}
 }
 
-func TestTick_AlertsWhenPumpsMissingPastGrace(t *testing.T) { 
+func TestTick_AlertsWhenPumpsMissingPastGrace(t *testing.T) {
 	t.Skip("migrating to outbox")
 
 	calls, done := newTelegramCounter(t)
@@ -675,7 +675,7 @@ func TestTick_AlertsWhenPumpsMissingPastGrace(t *testing.T) {
 	}
 }
 
-func TestTick_AlertsWhenMalformedJSON(t *testing.T) { 
+func TestTick_AlertsWhenMalformedJSON(t *testing.T) {
 	t.Skip("migrating to outbox")
 
 	calls, done := newTelegramCounter(t)
@@ -697,7 +697,7 @@ func TestTick_AlertsWhenMalformedJSON(t *testing.T) {
 	}
 }
 
-func TestTick_AlertsWhenTimestampInFuture(t *testing.T) { 
+func TestTick_AlertsWhenTimestampInFuture(t *testing.T) {
 	t.Skip("migrating to outbox")
 
 	calls, done := newTelegramCounter(t)
@@ -717,7 +717,7 @@ func TestTick_AlertsWhenTimestampInFuture(t *testing.T) {
 	}
 }
 
-func TestTick_AlertsWhenScanTooOld(t *testing.T) { 
+func TestTick_AlertsWhenScanTooOld(t *testing.T) {
 	t.Skip("migrating to outbox")
 
 	calls, done := newTelegramCounter(t)
@@ -740,7 +740,7 @@ func TestTick_AlertsWhenScanTooOld(t *testing.T) {
 	}
 }
 
-func TestTick_NoDoubleAlertWhenAlreadyStale(t *testing.T) { 
+func TestTick_NoDoubleAlertWhenAlreadyStale(t *testing.T) {
 	t.Skip("migrating to outbox")
 
 	calls, done := newTelegramCounter(t)
@@ -762,7 +762,7 @@ func TestTick_NoDoubleAlertWhenAlreadyStale(t *testing.T) {
 	}
 }
 
-func TestTick_RecoveryAlertWhenFreshAgain(t *testing.T) { 
+func TestTick_RecoveryAlertWhenFreshAgain(t *testing.T) {
 	t.Skip("migrating to outbox")
 
 	calls, done := newTelegramCounter(t)
@@ -785,7 +785,7 @@ func TestTick_RecoveryAlertWhenFreshAgain(t *testing.T) {
 	}
 }
 
-func TestTick_NoStaleAlertWhenFresh(t *testing.T) { 
+func TestTick_NoStaleAlertWhenFresh(t *testing.T) {
 	t.Skip("migrating to outbox")
 
 	calls, done := newTelegramCounter(t)
@@ -802,7 +802,7 @@ func TestTick_NoStaleAlertWhenFresh(t *testing.T) {
 	}
 }
 
-func TestTick_SourceLeadHealthAlertIsEdgeTriggeredAndRecovers(t *testing.T) { 
+func TestTick_SourceLeadHealthAlertIsEdgeTriggeredAndRecovers(t *testing.T) {
 	t.Skip("migrating to outbox")
 
 	calls, done := newTelegramCounter(t)
@@ -834,7 +834,7 @@ func TestTick_SourceLeadHealthAlertIsEdgeTriggeredAndRecovers(t *testing.T) {
 	}
 }
 
-func TestTick_SourceLeadCriticalFailureAlertsOnceWithoutFalseRecovery(t *testing.T) { 
+func TestTick_SourceLeadCriticalFailureAlertsOnceWithoutFalseRecovery(t *testing.T) {
 	t.Skip("migrating to outbox")
 
 	calls, done := newTelegramCounter(t)
@@ -876,7 +876,7 @@ func failingTelegram(t *testing.T) func() {
 	return func() { _telegramAPI = orig; srv.Close() }
 }
 
-func TestTick_StaleAlertFailureReleasesClaim(t *testing.T) { 
+func TestTick_StaleAlertFailureReleasesClaim(t *testing.T) {
 	t.Skip("migrating to outbox")
 
 	defer failingTelegram(t)()
@@ -894,7 +894,7 @@ func TestTick_StaleAlertFailureReleasesClaim(t *testing.T) {
 	}
 }
 
-func TestTick_RecoveryFailureRestoresFlag(t *testing.T) { 
+func TestTick_RecoveryFailureRestoresFlag(t *testing.T) {
 	t.Skip("migrating to outbox")
 
 	defer failingTelegram(t)()

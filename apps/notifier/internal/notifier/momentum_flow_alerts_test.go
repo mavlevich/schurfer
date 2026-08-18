@@ -29,7 +29,7 @@ func (r stubMomentumFlowReader) ReadNewMomentumFlowPaperOutcomes(
 	return r.outcomes, r.outcomesErr
 }
 
-func TestPostgresAlertRecorderReadsNewMomentumFlowPaperOpens(t *testing.T) { 
+func TestPostgresAlertRecorderReadsNewMomentumFlowPaperOpens(t *testing.T) {
 	t.Skip("migrating to outbox")
 
 	watchDecisionAt := time.Date(2026, 8, 16, 14, 32, 7, 0, time.UTC)
@@ -74,7 +74,7 @@ func TestPostgresAlertRecorderReadsNewMomentumFlowPaperOpens(t *testing.T) {
 // regression: an evaluation row can be pruned/archived by the time this
 // alert reads it (the LEFT JOIN in the query), so the signal features must
 // come back nil rather than crash the scan or fabricate zeros.
-func TestPostgresAlertRecorderReadsMomentumFlowPaperOpenWithMissingSignal(t *testing.T) { 
+func TestPostgresAlertRecorderReadsMomentumFlowPaperOpenWithMissingSignal(t *testing.T) {
 	t.Skip("migrating to outbox")
 
 	watchDecisionAt := time.Date(2026, 8, 16, 14, 32, 7, 0, time.UTC)
@@ -100,7 +100,7 @@ func TestPostgresAlertRecorderReadsMomentumFlowPaperOpenWithMissingSignal(t *tes
 	}
 }
 
-func TestPostgresAlertRecorderReadsNewMomentumFlowPaperOutcomes(t *testing.T) { 
+func TestPostgresAlertRecorderReadsNewMomentumFlowPaperOutcomes(t *testing.T) {
 	t.Skip("migrating to outbox")
 
 	entryAt := time.Date(2026, 8, 16, 10, 26, 34, 0, time.UTC)
@@ -137,7 +137,7 @@ func TestPostgresAlertRecorderReadsNewMomentumFlowPaperOutcomes(t *testing.T) {
 // exit that could not get a clean quote before its deadline -- the schema's
 // own momentum_flow_paper_exit_shape CHECK requires this), so ExitAt must
 // come back nil rather than crash the scan or fabricate a close time.
-func TestPostgresAlertRecorderReadsMomentumFlowPaperOutcomeWithUnresolvedExit(t *testing.T) { 
+func TestPostgresAlertRecorderReadsMomentumFlowPaperOutcomeWithUnresolvedExit(t *testing.T) {
 	t.Skip("migrating to outbox")
 
 	entryAt := time.Date(2026, 8, 16, 10, 26, 34, 0, time.UTC)
@@ -158,7 +158,7 @@ func TestPostgresAlertRecorderReadsMomentumFlowPaperOutcomeWithUnresolvedExit(t 
 	}
 }
 
-func TestPostgresAlertRecorderPropagatesMomentumFlowQueryError(t *testing.T) { 
+func TestPostgresAlertRecorderPropagatesMomentumFlowQueryError(t *testing.T) {
 	t.Skip("migrating to outbox")
 
 	want := errors.New("db down")
@@ -172,7 +172,7 @@ func TestPostgresAlertRecorderPropagatesMomentumFlowQueryError(t *testing.T) {
 	}
 }
 
-func TestTick_MomentumFlowPaperOpenAlertsOncePerProbe(t *testing.T) { 
+func TestTick_MomentumFlowPaperOpenAlertsOncePerProbe(t *testing.T) {
 	t.Skip("migrating to outbox")
 
 	calls, done := newTelegramCounter(t)
@@ -198,7 +198,7 @@ func TestTick_MomentumFlowPaperOpenAlertsOncePerProbe(t *testing.T) {
 	}
 }
 
-func TestTick_MomentumFlowPaperOutcomeAlertsOncePerProbe(t *testing.T) { 
+func TestTick_MomentumFlowPaperOutcomeAlertsOncePerProbe(t *testing.T) {
 	t.Skip("migrating to outbox")
 
 	calls, done := newTelegramCounter(t)
@@ -227,7 +227,7 @@ func TestTick_MomentumFlowPaperOutcomeAlertsOncePerProbe(t *testing.T) {
 	}
 }
 
-func TestTick_MomentumFlowOpenAlertFailureReleasesClaim(t *testing.T) { 
+func TestTick_MomentumFlowOpenAlertFailureReleasesClaim(t *testing.T) {
 	t.Skip("migrating to outbox")
 
 	defer failingTelegram(t)()
@@ -248,7 +248,7 @@ func TestTick_MomentumFlowOpenAlertFailureReleasesClaim(t *testing.T) {
 	}
 }
 
-func TestTick_MomentumFlowOutcomeAlertFailureReleasesClaim(t *testing.T) { 
+func TestTick_MomentumFlowOutcomeAlertFailureReleasesClaim(t *testing.T) {
 	t.Skip("migrating to outbox")
 
 	defer failingTelegram(t)()
@@ -272,7 +272,7 @@ func TestTick_MomentumFlowOutcomeAlertFailureReleasesClaim(t *testing.T) {
 	}
 }
 
-func TestMomentumFlowSizeLine(t *testing.T) { 
+func TestMomentumFlowSizeLine(t *testing.T) {
 	t.Skip("migrating to outbox")
 
 	if got := momentumFlowSizeLine(50, 1); got != "$50 notional, no leverage" {
@@ -283,7 +283,7 @@ func TestMomentumFlowSizeLine(t *testing.T) {
 	}
 }
 
-func TestMomentumFlowSignalLine(t *testing.T) { 
+func TestMomentumFlowSignalLine(t *testing.T) {
 	t.Skip("migrating to outbox")
 
 	if got := momentumFlowSignalLine(nil, nil, nil); got != "Signal: unavailable" {
@@ -297,7 +297,7 @@ func TestMomentumFlowSignalLine(t *testing.T) {
 	}
 }
 
-func TestMomentumFlowSignalLinePartial(t *testing.T) { 
+func TestMomentumFlowSignalLinePartial(t *testing.T) {
 	t.Skip("migrating to outbox")
 
 	r := 2.3
@@ -307,7 +307,7 @@ func TestMomentumFlowSignalLinePartial(t *testing.T) {
 	}
 }
 
-func TestMomentumFlowTimingLine(t *testing.T) { 
+func TestMomentumFlowTimingLine(t *testing.T) {
 	t.Skip("migrating to outbox")
 
 	entry := time.Date(2026, 8, 16, 10, 26, 34, 0, time.UTC)
@@ -325,7 +325,7 @@ func TestMomentumFlowTimingLine(t *testing.T) {
 // "research probe, not a live position" phrasing used an em-dash ("—"),
 // which reads as an AI trace and was flagged for it. Neither message may
 // contain one going forward.
-func TestMomentumFlowMessagesHaveNoEmDash(t *testing.T) { 
+func TestMomentumFlowMessagesHaveNoEmDash(t *testing.T) {
 	t.Skip("migrating to outbox")
 
 	watchDecisionAt := time.Date(2026, 8, 16, 14, 32, 7, 0, time.UTC)
@@ -359,7 +359,7 @@ func TestMomentumFlowMessagesHaveNoEmDash(t *testing.T) {
 	}
 }
 
-func TestFormatSignedUSD(t *testing.T) { 
+func TestFormatSignedUSD(t *testing.T) {
 	t.Skip("migrating to outbox")
 
 	cases := map[float64]string{
@@ -374,7 +374,7 @@ func TestFormatSignedUSD(t *testing.T) {
 	}
 }
 
-func TestFormatPrice(t *testing.T) { 
+func TestFormatPrice(t *testing.T) {
 	t.Skip("migrating to outbox")
 
 	cases := map[float64]string{
@@ -388,7 +388,7 @@ func TestFormatPrice(t *testing.T) {
 	}
 }
 
-func TestTick_MomentumFlowOutcomesStillProcessedWhenOpensReadFails(t *testing.T) { 
+func TestTick_MomentumFlowOutcomesStillProcessedWhenOpensReadFails(t *testing.T) {
 	t.Skip("migrating to outbox")
 
 	calls, done := newTelegramCounter(t)
