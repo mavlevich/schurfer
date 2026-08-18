@@ -432,10 +432,7 @@ async def _load_lsr_feature_stats(
         max_ratio=max(all_ratios) if all_ratios else None,
         median_endpoint_staleness_minutes=median(stalenesses) if stalenesses else None,
     )
-    feature_complete_by_event = {
-        event_id: result.feature_complete for event_id, result in results.items()
-    }
-    return stats, feature_complete_by_event
+    return stats, results
 
 
 def liquidations_runs_statement(event_ids: list[int]) -> Any:
