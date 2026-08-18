@@ -84,7 +84,7 @@ func (n *Notifier) reportSourceLeadStaleHealth(ctx context.Context, staleCollect
 			"🔴 Schurfer source-lead capture unhealthy: stale_collecting=%d",
 			staleCollecting,
 		)
-		if sendErr := sendMessage(ctx, message, n.cfg.BotToken, n.cfg.ChatID); sendErr != nil {
+		if sendErr := n.publishEnvelope(ctx, "scanner", "source.unhealthy", "critical", "source_unhealthy", message, nil); sendErr != nil {
 			slog.Warn("notifier.source_lead.alert_failed", "err", sendErr)
 			if delErr := n.rdb.Del(ctx, redisKeySourceLeadHealthAlerted).Err(); delErr != nil {
 				slog.Warn("notifier.source_lead.claim_release_failed", "err", delErr)
@@ -106,11 +106,14 @@ func (n *Notifier) reportSourceLeadStaleHealth(ctx context.Context, staleCollect
 	if removed == 0 {
 		return
 	}
-	if err := sendMessage(
+	if err := n.publishEnvelope(
 		ctx,
+		"scanner",
+		"source.recovered",
+		"info",
+		"source_recovered_"+fmt.Sprintf("%d", time.Now().Unix()),
 		"🟢 Schurfer source-lead capture recovered",
-		n.cfg.BotToken,
-		n.cfg.ChatID,
+		nil,
 	); err != nil {
 		slog.Warn("notifier.source_lead.recovery_failed", "err", err)
 		if setErr := n.rdb.Set(
@@ -143,7 +146,7 @@ func (n *Notifier) reportSourceLeadCriticalFailure(ctx context.Context, captureI
 		"🔴 Schurfer source-lead capture failed: capture_id=%d",
 		captureID,
 	)
-	if err := sendMessage(ctx, message, n.cfg.BotToken, n.cfg.ChatID); err != nil {
+	if err := n.publishEnvelope(ctx, "scanner", "source.unhealthy", "critical", "source_unhealthy", message, nil); err != nil {
 		slog.Warn("notifier.source_lead.failure_alert_failed", "err", err)
 		if delErr := n.rdb.Del(ctx, key).Err(); delErr != nil {
 			slog.Warn("notifier.source_lead.failure_claim_release_failed", "err", delErr)
