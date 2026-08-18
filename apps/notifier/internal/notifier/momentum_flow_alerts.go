@@ -2,7 +2,9 @@ package notifier
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"github.com/redis/go-redis/v9"
 	"log/slog"
 	"strconv"
 	"strings"
@@ -180,6 +182,7 @@ func (n *Notifier) reportMomentumFlow(ctx context.Context) {
 	for _, outcome := range outcomes {
 		n.reportMomentumFlowPaperOutcome(ctx, outcome)
 	}
+	n.maybeSendPaperTradesSummary(ctx)
 }
 
 func (n *Notifier) reportMomentumFlowPaperOpen(ctx context.Context, open momentumFlowPaperOpen) {
@@ -335,4 +338,68 @@ func formatSignedUSD(amount float64) string {
 		amount = -amount
 	}
 	return fmt.Sprintf("%s$%.2f", sign, amount)
+}
+
+var extractSummaryScript = redis.NewScript(`
+local list_key = KEYS[1]
+local time_key = KEYS[2]
+local current_time = tonumber(ARGV[1])
+local interval = tonumber(ARGV[2])
+
+local last_time = tonumber(redis.call('GET', time_key) or '0')
+
+if (current_time - last_time) < interval then
+    return {}
+end
+
+local items = redis.call('LRANGE', list_key, 0, -1)
+if #items > 0 then
+    redis.call('DEL', list_key)
+end
+redis.call('SET', time_key, current_time)
+
+return items
+`)
+
+func (n *Notifier) maybeSendPaperTradesSummary(ctx context.Context) {
+	const summaryInterval = int64(4 * 3600)
+	res, err := extractSummaryScript.Run(ctx, n.rdb,
+		[]string{"notifier:paper_trades_summary_list", "notifier:paper_trades_summary_last"},
+		time.Now().Unix(), summaryInterval,
+	).StringSlice()
+
+	if err != nil || len(res) == 0 {
+		return
+	}
+
+	type summary struct {
+		Count  int
+		SumPnL float64
+	}
+	totals := make(map[string]*summary)
+
+	for _, raw := range res {
+		var o momentumFlowPaperOutcome
+		if err := json.Unmarshal([]byte(raw), &o); err == nil {
+			if totals[o.Exchange] == nil {
+				totals[o.Exchange] = &summary{}
+			}
+			totals[o.Exchange].Count++
+			totals[o.Exchange].SumPnL += o.NetReturnPct
+		}
+	}
+
+	msg := "📝 **Paper Trades Summary (Last 4h)**\n\n"
+	for ex, s := range totals {
+		msg += fmt.Sprintf("• **%s**: %d trades, %+.2f%% net\n", ex, s.Count, s.SumPnL)
+	}
+
+	_ = n.publishEnvelope(ctx,
+		"scanner",
+		"momentum.flow.summary",
+		"trade",
+		"momentum_flow_summary_"+strconv.FormatInt(time.Now().UnixNano(), 10),
+		msg,
+		nil,
+	)
 }
