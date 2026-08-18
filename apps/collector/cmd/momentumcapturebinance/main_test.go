@@ -306,6 +306,124 @@ func TestApplicationHandleOpenInterestClearsAnOpenGapMark(t *testing.T) {
 	}
 }
 
+func TestHandleBookTickerRecordsReceiveToHandleLatency(t *testing.T) {
+	t.Parallel()
+	app := newTestApplication([]string{"BTCUSDT"})
+	receivedAt := time.Now().Add(-5 * time.Millisecond)
+	app.handleBookTicker(binance.PublicBookTicker{
+		Symbol: "BTCUSDT", BidPrice: 99, AskPrice: 101,
+		EventAt: receivedAt, ReceivedAt: receivedAt,
+	})
+	// Shares openInterestReceiveToHandle/openInterestHandler with the OI
+	// path (see handleBookTicker's own doc comment on why) -- so this
+	// assertion is deliberately on the same field TestHandleOpenInterest
+	// RecordsReceiveToHandleLatency checks.
+	if app.stats.openInterestReceiveToHandle.count != 1 {
+		t.Fatalf("openInterestReceiveToHandle.count = %d, want 1", app.stats.openInterestReceiveToHandle.count)
+	}
+}
+
+// TestApplicationHandleBookTickerAcceptsValidUpdateAndMarksReadiness is the
+// bookTicker-side mirror of TestApplicationHandleOpenInterestAcceptsValid
+// ReadingAndMarksReadiness: same shape, opposite field group (BidPrice/
+// AskPrice populated, everything else -- OHLC, OpenInterest -- must stay
+// nil, since this call carries neither a trade price nor an OI reading).
+func TestApplicationHandleBookTickerAcceptsValidUpdateAndMarksReadiness(t *testing.T) {
+	t.Parallel()
+	app := newTestApplication([]string{"BTCUSDT"})
+	app.handleBookTicker(binance.PublicBookTicker{
+		Symbol: "BTCUSDT", BidPrice: 99.5, AskPrice: 100.5,
+		EventAt: time.Unix(60, 0).UTC(), ReceivedAt: time.Unix(60, 0).UTC(),
+	})
+	if app.stats.bookTickerAcceptedTotal != 1 {
+		t.Fatalf("bookTickerAcceptedTotal = %d, want 1", app.stats.bookTickerAcceptedTotal)
+	}
+	for _, symbol := range app.readiness.MissingTicker() {
+		if symbol == "BTCUSDT" {
+			t.Fatal("BTCUSDT should no longer be missing a ticker/OI observation")
+		}
+	}
+	bars := app.engine.Flush(time.Unix(120, 0).UTC())
+	if len(bars) != 1 {
+		t.Fatalf("got %d bars, want 1", len(bars))
+	}
+	bar := bars[0]
+	if bar.LastBidPrice == nil || *bar.LastBidPrice != 99.5 {
+		t.Fatalf("LastBidPrice = %v, want 99.5", bar.LastBidPrice)
+	}
+	if bar.LastAskPrice == nil || *bar.LastAskPrice != 100.5 {
+		t.Fatalf("LastAskPrice = %v, want 100.5", bar.LastAskPrice)
+	}
+	if bar.OpenPrice != nil || bar.ClosePrice != nil {
+		t.Fatalf("OHLC must stay nil from a bookTicker-only observation: open=%v close=%v", bar.OpenPrice, bar.ClosePrice)
+	}
+	if bar.OpenInterest != nil {
+		t.Fatalf("OpenInterest = %v, want nil: this feed carries no OI", bar.OpenInterest)
+	}
+}
+
+func TestApplicationHandleBookTickerRejectsOutOfScopeSymbol(t *testing.T) {
+	t.Parallel()
+	app := newTestApplication([]string{"BTCUSDT"}) // ETHUSDT deliberately not in the frozen universe
+	app.handleBookTicker(binance.PublicBookTicker{
+		Symbol: "ETHUSDT", BidPrice: 99, AskPrice: 101,
+		EventAt: time.Unix(60, 0).UTC(), ReceivedAt: time.Unix(60, 0).UTC(),
+	})
+	if app.stats.bookTickerOutOfScopeTotal != 1 {
+		t.Fatalf("bookTickerOutOfScopeTotal = %d, want 1", app.stats.bookTickerOutOfScopeTotal)
+	}
+	if app.stats.bookTickerAcceptedTotal != 0 {
+		t.Fatal("an out-of-scope symbol must never be accepted into the engine")
+	}
+	for _, bar := range app.engine.Flush(time.Unix(120, 0).UTC()) {
+		if bar.Symbol == "ETHUSDT" {
+			t.Fatal("the engine must never have created state for a symbol outside the frozen universe")
+		}
+	}
+}
+
+func TestConsumeBookTickerRoutesOverflowToADropLogRatherThanBlocking(t *testing.T) {
+	t.Parallel()
+	app := newTestApplication([]string{"BTCUSDT"})
+	app.bookTickerEvents = make(chan binance.PublicBookTicker, 1)
+	app.bookTickerEvents <- binance.PublicBookTicker{Symbol: "BTCUSDT"}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- app.consumeBookTicker(context.Background(), binance.PublicBookTicker{Symbol: "ETHUSDT"})
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("consumeBookTicker returned an error: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("consumeBookTicker must never block RunBookTicker's own goroutine on a full channel")
+	}
+	if got := app.bookTickerDropsLost.Load(); got != 1 {
+		t.Fatalf("bookTickerDropsLost = %d, want 1", got)
+	}
+}
+
+func TestObserveInputQueueDepthIncludesBookTickerBuffer(t *testing.T) {
+	t.Parallel()
+	app := newTestApplication([]string{"BTCUSDT"})
+	tradeEvents := make(chan binance.PublicTrade, 2)
+	tradeEvents <- binance.PublicTrade{}
+	bookTickerEvents := make(chan binance.PublicBookTicker, 3)
+	bookTickerEvents <- binance.PublicBookTicker{}
+	bookTickerEvents <- binance.PublicBookTicker{}
+	app.tradeEvents = tradeEvents
+	app.bookTickerEvents = bookTickerEvents
+
+	if got := app.observeInputQueueDepth(); got != 3 {
+		t.Fatalf("input queue depth = %d, want 3 including book ticker updates", got)
+	}
+	if app.stats.inputQueuePeak != 3 {
+		t.Fatalf("input queue peak = %d, want 3", app.stats.inputQueuePeak)
+	}
+}
+
 func TestCheckOpenInterestGapsMarksSilentSymbolOnceThenStopsUntilFreshObservation(t *testing.T) {
 	t.Parallel()
 	app := newTestApplication([]string{"BTCUSDT"})
@@ -548,7 +666,7 @@ func TestApplicationShutdownReturnsWriterFlushError(t *testing.T) {
 	writerDone := make(chan error, 1)
 	go drainWriterInbox(app.writerInbox, writerDone, errors.New("db unavailable"))
 
-	if err := app.shutdown(closedChan(), closedChan(), writerDone); err == nil {
+	if err := app.shutdown(closedChan(), closedChan(), closedChan(), writerDone); err == nil {
 		t.Fatal("shutdown must propagate a failed final writer flush, not report success")
 	}
 }
@@ -567,11 +685,16 @@ func TestApplicationShutdownDrainsBufferedTradeAndOpenInterestBeforeFinalFlush(t
 		Symbol: "BTCUSDT", Amount: "1000",
 		EventAt: time.Unix(60, 0).UTC(), ObservedAt: time.Unix(60, 0).UTC(),
 	}
+	app.bookTickerEvents = make(chan binance.PublicBookTicker, 1)
+	app.bookTickerEvents <- binance.PublicBookTicker{
+		Symbol: "BTCUSDT", BidPrice: 99, AskPrice: 101,
+		EventAt: time.Unix(60, 0).UTC(), ReceivedAt: time.Unix(60, 0).UTC(),
+	}
 
 	writerDone := make(chan error, 1)
 	go drainWriterInbox(app.writerInbox, writerDone, nil)
 
-	if err := app.shutdown(closedChan(), closedChan(), writerDone); err != nil {
+	if err := app.shutdown(closedChan(), closedChan(), closedChan(), writerDone); err != nil {
 		t.Fatalf("shutdown: %v", err)
 	}
 	if app.stats.tradesAcceptedTotal != 1 {
@@ -580,9 +703,12 @@ func TestApplicationShutdownDrainsBufferedTradeAndOpenInterestBeforeFinalFlush(t
 	if app.stats.openInterestAcceptedTotal != 1 {
 		t.Fatal("shutdown must drain an OI reading already buffered before its final flush")
 	}
+	if app.stats.bookTickerAcceptedTotal != 1 {
+		t.Fatal("shutdown must drain a book ticker update already buffered before its final flush")
+	}
 }
 
-func TestApplicationShutdownWaitsForBothTradesAndOpenInterestToStop(t *testing.T) {
+func TestApplicationShutdownWaitsForTradesOpenInterestAndBookTickerToStop(t *testing.T) {
 	t.Parallel()
 	app := newTestApplication([]string{"BTCUSDT"})
 	writerDone := make(chan error, 1)
@@ -595,11 +721,32 @@ func TestApplicationShutdownWaitsForBothTradesAndOpenInterestToStop(t *testing.T
 	}()
 
 	started := time.Now()
-	if err := app.shutdown(closedChan(), oiDone, writerDone); err != nil {
+	if err := app.shutdown(closedChan(), oiDone, closedChan(), writerDone); err != nil {
 		t.Fatalf("shutdown: %v", err)
 	}
 	if time.Since(started) < 20*time.Millisecond {
 		t.Fatal("shutdown must wait for the OI poller to confirm stopped, not only the trade producer")
+	}
+}
+
+func TestApplicationShutdownWaitsForBookTickerToStop(t *testing.T) {
+	t.Parallel()
+	app := newTestApplication([]string{"BTCUSDT"})
+	writerDone := make(chan error, 1)
+	go drainWriterInbox(app.writerInbox, writerDone, nil)
+
+	bookTickerDone := make(chan struct{})
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		close(bookTickerDone)
+	}()
+
+	started := time.Now()
+	if err := app.shutdown(closedChan(), closedChan(), bookTickerDone, writerDone); err != nil {
+		t.Fatalf("shutdown: %v", err)
+	}
+	if time.Since(started) < 20*time.Millisecond {
+		t.Fatal("shutdown must wait for the book ticker stream to confirm stopped, not only the trade producer")
 	}
 }
 
@@ -611,7 +758,7 @@ func TestApplicationShutdownAppliesPendingLossLatchesBeforeFinalFlush(t *testing
 	writerDone := make(chan error, 1)
 	go drainWriterInbox(app.writerInbox, writerDone, nil)
 
-	if err := app.shutdown(closedChan(), closedChan(), writerDone); err != nil {
+	if err := app.shutdown(closedChan(), closedChan(), closedChan(), writerDone); err != nil {
 		t.Fatalf("shutdown: %v", err)
 	}
 	if app.stats.lastDiscontinuityFor != "*" {

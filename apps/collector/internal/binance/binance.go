@@ -67,6 +67,7 @@ type SymbolCatalog struct {
 type Source struct {
 	restURL         string
 	wsMarketBaseURL string
+	wsPublicBaseURL string
 	httpClient      *http.Client
 }
 
@@ -74,6 +75,7 @@ func NewSource() *Source {
 	return &Source{
 		restURL:         defaultRESTURL,
 		wsMarketBaseURL: wsMarketBaseURL,
+		wsPublicBaseURL: wsPublicBaseURL,
 		httpClient:      &http.Client{Timeout: 10 * time.Second},
 	}
 }

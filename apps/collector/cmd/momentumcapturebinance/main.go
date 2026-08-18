@@ -22,15 +22,17 @@
 // ticker/OI feed arrives over NATS from a SEPARATE process (cmd/collector)
 // that this binary has no equivalent of. binance.Adapter deliberately does
 // not implement momentumsource.TickerSource (see docs/research/binance-
-// momentum-source-v1.md) -- Binance's OI is a REST poll this process runs
-// itself, in-process, and this process's only TickerObservation calls
-// carry OpenInterest with LastPrice/BidPrice/AskPrice left nil, which the
+// momentum-source-v1.md) -- this process instead calls AddTickerObservation
+// itself from two independent in-process producers: an OI REST poll
+// (handleOpenInterest, OpenInterest-only, LastPrice/BidPrice/AskPrice
+// always nil) and a bookTicker WS stream (handleBookTicker, BidPrice/
+// AskPrice-only, LastPrice/OpenInterest always nil) -- exactly what the
 // engine's own TickerObservation contract already supports ("a delta can
 // carry price with no OI, OI with no price change, or neither").
 //
 // This originally meant every bar had OpenPrice/HighPrice/LowPrice/
 // ClosePrice permanently nil too (momentum.Engine only ever set those
-// from AddTickerObservation, which this process never calls with a real
+// from AddTickerObservation, which this process never called with a real
 // price) -- see docs/research/binance-watch-input-readiness-v1.md for
 // the incident that caused (momentum_flow_watch_binance producing zero
 // decisions for 32+ hours while reporting healthy). Fixed by feat/
@@ -40,10 +42,12 @@
 // flow/notional accounting, with its own explicit provenance (see
 // momentum.Bar's own PriceSource/FirstPriceEventAt doc comments) --
 // never silently repurposing the ticker-specific fields. LastBidPrice/
-// LastAskPrice remain permanently nil: those genuinely need a real
-// bid/ask feed, which Binance still does not provide here (see
-// docs/research/momentum-trade-price-source-v1.md's own "What this
-// still cannot capture" section).
+// LastAskPrice used to remain permanently nil for the same underlying
+// reason (see docs/research/momentum-trade-price-source-v1.md's own
+// "What this still cannot capture" section) -- fixed by analysis/
+// momentum-flow-bidirectional-burst-study-v1's own follow-up capture work
+// (see docs/research/binance-bookticker-capture-v1.md): a real bid/ask
+// feed now exists, internal/binance/bookticker.go's bookTicker stream.
 package main
 
 import (
@@ -93,8 +97,13 @@ const (
 	// land near-simultaneously -- a small, bounded burst, nothing like the
 	// trade firehose's own rate.
 	openInterestEventBuffer = 512
-	writerInboxBuffer       = 64
-	driftResultBuffer       = 2
+	// bookTickerEventBuffer sizing mirrors openInterestEventBuffer's own
+	// reasoning, not tradeEventBuffer's: a best-bid/ask update per symbol
+	// is comparable in arrival rate to an OI reading, nothing like the
+	// trade firehose.
+	bookTickerEventBuffer = 512
+	writerInboxBuffer     = 64
+	driftResultBuffer     = 2
 
 	flushInterval       = 5 * time.Second
 	driftCheckInterval  = 5 * time.Minute
@@ -137,9 +146,10 @@ const (
 	// figure: both venues write the identical row shape to the identical
 	// table, so a real Bybit measurement is the right estimate here too,
 	// not a guess. Revisit once Binance's own row width is independently
-	// measured (its rows are hollow across the entire OHLC/bid/ask column
-	// group, which trades bytes for compressibility in a way the estimate
-	// does not distinguish).
+	// measured: OHLC and bid/ask are no longer permanently hollow here
+	// (feat/momentum-trade-price-source-v1 filled OHLC; this bookTicker
+	// feed fills LastBidPrice/LastAskPrice), which trades bytes for
+	// compressibility in a way the estimate does not distinguish.
 	estimatedHotBytesPerRow   = 1143.6
 	queuePressureWarnFraction = 0.5
 )
@@ -171,7 +181,18 @@ type counters struct {
 	// one counter erases that distinction.
 	openInterestOutOfScopeTotal uint64
 	openInterestGapTotal        uint64 // proactive per-symbol silence detections
-	tradeLifecycleTotal         uint64
+	// bookTickerAcceptedTotal/bookTickerInvalidTotal/bookTickerOutOfScopeTotal
+	// mirror the openInterest* counters immediately above, same three-way
+	// split and same reasoning: two distinct producers (OI's REST poll,
+	// bookTicker's WS stream) both feed AddTickerObservation, and keeping
+	// each producer's own accepted/invalid/out-of-scope counts separate is
+	// what actually lets an operator tell "the bookTicker feed is
+	// unhealthy" apart from "the OI feed is unhealthy" instead of one
+	// blended number that could hide either.
+	bookTickerAcceptedTotal   uint64
+	bookTickerInvalidTotal    uint64
+	bookTickerOutOfScopeTotal uint64
+	tradeLifecycleTotal       uint64
 	// tradeReconnectTotal/tradeReadTimeoutTotal are tallied directly from
 	// TradeLifecycleEvent here, unlike cmd/momentumcapture which reads
 	// bybit.Source.StreamStats()'s own atomic counters: binance.Source has
@@ -197,7 +218,14 @@ type counters struct {
 	// tradeReceiveToHandle: how long a reading waited in openInterestEvents
 	// before handleOpenInterest actually ran (a code-review finding --
 	// an earlier version tracked handler duration but not queue wait,
-	// unlike the trade path).
+	// unlike the trade path). Also now fed by handleBookTicker: the
+	// momentumcapture.Health struct's own Ticker* fields are one generic
+	// bucket, not split per producer (see applyLatencyHealth), so both of
+	// this process's two AddTickerObservation producers (OI's REST poll,
+	// bookTicker's WS stream) share these same two histograms rather than
+	// each getting its own dedicated pair the Health struct has no slot
+	// for. bookTickerAcceptedTotal/etc. above stay separately countable
+	// where that distinction does matter.
 	openInterestReceiveToHandle latencyHistogram
 	openInterestHandler         latencyHistogram
 	flush                       latencyHistogram
@@ -216,6 +244,7 @@ type application struct {
 	tradeDrops         chan binance.PublicTrade
 	lifecycleEvents    chan binance.TradeLifecycleEvent
 	openInterestEvents chan binance.OpenInterestReading
+	bookTickerEvents   chan binance.PublicBookTicker
 
 	writerInbox  chan []momentum.Bar
 	driftResults chan momentumcapture.DriftReport
@@ -244,6 +273,10 @@ type application struct {
 	// honors). Incremented from PollOpenInterest's own goroutine, so it
 	// alone must be atomic too, same reasoning as tradeDropsLost.
 	openInterestDropsLost atomic.Uint64
+	// bookTickerDropsLost is consumeBookTicker's own equivalent, same
+	// non-blocking-drop-and-count contract, same atomic reasoning
+	// (incremented from a book-ticker shard's own read goroutine).
+	bookTickerDropsLost atomic.Uint64
 
 	tradeVisibilityLost     lossLatch
 	lifecycleVisibilityLost lossLatch
@@ -360,6 +393,7 @@ func run() error {
 		tradeDrops:               make(chan binance.PublicTrade, tradeDropBuffer),
 		lifecycleEvents:          make(chan binance.TradeLifecycleEvent, lifecycleEventBuffer),
 		openInterestEvents:       make(chan binance.OpenInterestReading, openInterestEventBuffer),
+		bookTickerEvents:         make(chan binance.PublicBookTicker, bookTickerEventBuffer),
 		writerInbox:              make(chan []momentum.Bar, writerInboxBuffer),
 		driftResults:             make(chan momentumcapture.DriftReport, driftResultBuffer),
 		openInterestLastSeenAt:   oiLastSeenAt,
@@ -390,8 +424,22 @@ func run() error {
 		}
 	}()
 
+	bookTickerDone := make(chan struct{})
+	go func() {
+		defer close(bookTickerDone)
+		// No lifecycle callback (unlike trades' WithLifecycle variant):
+		// bookTickerStreamLoop already logs its own reconnect attempts
+		// unconditionally, and this first cut deliberately does not wire
+		// per-shard reconnect/read-timeout counters the way the trade path
+		// does -- see docs/research/binance-bookticker-capture-v1.md's own
+		// "What this PR does not do".
+		if err := source.RunBookTicker(ctx, universe.Symbols, app.consumeBookTicker); err != nil {
+			slog.Error("momentumcapturebinance.bookticker.stopped", "err", err)
+		}
+	}()
+
 	slog.Info("momentumcapturebinance.starting", "symbols", universe.Count())
-	return app.loop(ctx, tradesDone, oiDone, writerDone)
+	return app.loop(ctx, tradesDone, oiDone, bookTickerDone, writerDone)
 }
 
 // runWriter is copied verbatim from cmd/momentumcapture: identical
@@ -516,7 +564,25 @@ func (app *application) consumeOpenInterest(_ context.Context, reading binance.O
 	return nil
 }
 
-func (app *application) loop(ctx context.Context, tradesDone, oiDone <-chan struct{}, writerDone <-chan error) error {
+// consumeBookTicker mirrors consumeOpenInterest exactly: called from
+// RunBookTicker's own per-shard read goroutines (one per WS connection,
+// concurrent with each other), same non-blocking-drop-and-count contract,
+// same atomic-counter reasoning.
+func (app *application) consumeBookTicker(_ context.Context, update binance.PublicBookTicker) error {
+	select {
+	case app.bookTickerEvents <- update:
+	default:
+		app.bookTickerDropsLost.Add(1)
+		slog.Warn("momentumcapturebinance.bookticker_queue_full", "symbol", update.Symbol)
+	}
+	return nil
+}
+
+func (app *application) loop(
+	ctx context.Context,
+	tradesDone, oiDone, bookTickerDone <-chan struct{},
+	writerDone <-chan error,
+) error {
 	flushTicker := time.NewTicker(flushInterval)
 	defer flushTicker.Stop()
 	healthTicker := time.NewTicker(healthInterval)
@@ -525,7 +591,7 @@ func (app *application) loop(ctx context.Context, tradesDone, oiDone <-chan stru
 	for {
 		select {
 		case <-ctx.Done():
-			return app.shutdown(tradesDone, oiDone, writerDone)
+			return app.shutdown(tradesDone, oiDone, bookTickerDone, writerDone)
 
 		case trade := <-app.tradeEvents:
 			app.observeInputQueueDepth()
@@ -542,6 +608,10 @@ func (app *application) loop(ctx context.Context, tradesDone, oiDone <-chan stru
 		case reading := <-app.openInterestEvents:
 			app.observeInputQueueDepth()
 			app.handleOpenInterest(reading)
+
+		case update := <-app.bookTickerEvents:
+			app.observeInputQueueDepth()
+			app.handleBookTicker(update)
 
 		case now := <-flushTicker.C:
 			started := time.Now()
@@ -562,16 +632,19 @@ func (app *application) loop(ctx context.Context, tradesDone, oiDone <-chan stru
 // shutdown mirrors cmd/momentumcapture's own shutdown sequence (stop
 // producers, drain, finalize; order matters throughout), simplified by
 // having no NATS subscription to unsubscribe from and no ticker-message
-// channel with its own never-closes caveat. oiDone additionally gates the
-// drain here: unlike the trade WS layer (whose 60s read timeout can make it
-// slow to notice ctx cancellation), PollOpenInterest returns almost
-// immediately once ctx is done, so waiting for it costs virtually nothing
-// and keeps this function's own "every producer confirmed stopped before
-// draining is final" invariant exact, not approximate.
-func (app *application) shutdown(tradesDone, oiDone <-chan struct{}, writerDone <-chan error) error {
+// channel with its own never-closes caveat. oiDone/bookTickerDone
+// additionally gate the drain here: unlike the trade WS layer (whose 60s
+// read timeout can make it slow to notice ctx cancellation), PollOpenInterest
+// returns almost immediately once ctx is done (bookTicker's RunBookTicker,
+// with no lifecycle callback to wait on either, behaves the same way for
+// the same shutdown-signal reason), so waiting for both costs virtually
+// nothing and keeps this function's own "every producer confirmed stopped
+// before draining is final" invariant exact, not approximate.
+func (app *application) shutdown(tradesDone, oiDone, bookTickerDone <-chan struct{}, writerDone <-chan error) error {
 	deadline := time.Now().Add(shutdownTimeout)
 	tradesStopped := false
 	oiStopped := false
+	bookTickerStopped := false
 
 drain:
 	for {
@@ -588,18 +661,24 @@ drain:
 		case reading := <-app.openInterestEvents:
 			app.observeInputQueueDepth()
 			app.handleOpenInterest(reading)
+		case update := <-app.bookTickerEvents:
+			app.observeInputQueueDepth()
+			app.handleBookTicker(update)
 		case <-tradesDone:
 			tradesStopped = true
 			tradesDone = nil
 		case <-oiDone:
 			oiStopped = true
 			oiDone = nil
+		case <-bookTickerDone:
+			bookTickerStopped = true
+			bookTickerDone = nil
 		default:
-			if tradesStopped && oiStopped {
+			if tradesStopped && oiStopped && bookTickerStopped {
 				break drain
 			}
 			if time.Now().After(deadline) {
-				slog.Warn("momentumcapturebinance.shutdown_drain_timed_out", "trades_stopped", tradesStopped, "oi_stopped", oiStopped)
+				slog.Warn("momentumcapturebinance.shutdown_drain_timed_out", "trades_stopped", tradesStopped, "oi_stopped", oiStopped, "bookticker_stopped", bookTickerStopped)
 				break drain
 			}
 			time.Sleep(5 * time.Millisecond)
@@ -760,13 +839,15 @@ func (app *application) markTradesFeedInterrupted(at time.Time, reason string) {
 	slog.Warn("momentumcapturebinance.trades_feed_interrupted", "reason", reason)
 }
 
-// handleOpenInterest is this process's only source of AddTickerObservation
-// calls: LastPrice/BidPrice/AskPrice are always nil (see this file's own
-// package doc comment on what that means for OHLC), only OpenInterest and
-// its own EventAt/ObservedAt pair are ever populated. OpenInterestValue
-// stays nil always too: binance.OpenInterestReading itself has no value
-// field (see internal/binance/openinterest.go's own doc comment on why,
-// tracing to the capability preflight).
+// handleOpenInterest is one of this process's two AddTickerObservation
+// producers (handleBookTicker, below, is the other): LastPrice is always
+// nil here (see this file's own package doc comment on what that means
+// for OHLC), only OpenInterest and its own EventAt/ObservedAt pair are
+// ever populated -- BidPrice/AskPrice stay nil on every call this function
+// makes specifically (handleBookTicker populates those instead).
+// OpenInterestValue stays nil always too: binance.OpenInterestReading
+// itself has no value field (see internal/binance/openinterest.go's own
+// doc comment on why, tracing to the capability preflight).
 func (app *application) handleOpenInterest(reading binance.OpenInterestReading) {
 	started := time.Now()
 	defer func() { app.stats.openInterestHandler.observe(time.Since(started)) }()
@@ -818,6 +899,48 @@ func (app *application) handleOpenInterest(reading binance.OpenInterestReading) 
 	}
 	app.stats.openInterestAcceptedTotal++
 	app.readiness.ObserveTicker(reading.Symbol)
+	app.enqueue(bars)
+}
+
+// handleBookTicker is this process's OTHER AddTickerObservation producer
+// (handleOpenInterest, above, is the first): BidPrice/AskPrice are the
+// only fields it ever populates -- LastPrice and every OpenInterest* field
+// stay nil on every call this function makes, same "a delta can carry
+// price with no OI, OI with no price, or neither" contract
+// AddTickerObservation already documents. This is what finally gives
+// Binance's own bars a real LastBidPrice/LastAskPrice (see this file's own
+// package doc comment, updated by this same change) instead of the
+// permanently-nil state binance-momentum-capture-v1 shipped with.
+func (app *application) handleBookTicker(update binance.PublicBookTicker) {
+	started := time.Now()
+	defer func() { app.stats.openInterestHandler.observe(time.Since(started)) }()
+	if !update.ReceivedAt.IsZero() && !update.ReceivedAt.After(started) {
+		app.stats.openInterestReceiveToHandle.observe(started.Sub(update.ReceivedAt))
+	}
+
+	if !app.universe.Contains(update.Symbol) {
+		// Same defensive posture as handleOpenInterest's own out-of-scope
+		// guard: RunBookTicker is only ever started with this process's own
+		// frozen universe.Symbols, so this should never trigger.
+		app.stats.bookTickerOutOfScopeTotal++
+		return
+	}
+
+	bid := update.BidPrice
+	ask := update.AskPrice
+	bars, err := app.engine.AddTickerObservation(momentum.TickerObservation{
+		Symbol:     update.Symbol,
+		BidPrice:   &bid,
+		AskPrice:   &ask,
+		EventAt:    update.EventAt,
+		ObservedAt: update.ReceivedAt,
+	})
+	if err != nil {
+		app.stats.bookTickerInvalidTotal++
+		return
+	}
+	app.stats.bookTickerAcceptedTotal++
+	app.readiness.ObserveTicker(update.Symbol)
 	app.enqueue(bars)
 }
 
@@ -910,7 +1033,7 @@ func (app *application) logHealth(ctx context.Context) {
 	health.InputQueueDepth = inputDepth
 	health.InputQueuePeak = app.stats.inputQueuePeak
 	health.InputQueueDropsTotal = app.stats.tradeDropsTotal + app.stats.writerInboxDropsTotal +
-		app.tradeDropsLost.Load() + app.openInterestDropsLost.Load()
+		app.tradeDropsLost.Load() + app.openInterestDropsLost.Load() + app.bookTickerDropsLost.Load()
 	health.TradeLagMaxMs = app.stats.tradeLagMaxMs
 	health.TickerLagMaxMs = app.stats.tickerLagMaxMs
 	applyLatencyHealth(&health, &app.stats)
@@ -935,11 +1058,15 @@ func (app *application) logHealth(ctx context.Context) {
 		"persist_errors_total", health.PersistErrorsTotal,
 		"payload_hash_mismatch_total", health.PayloadHashMismatchTotal,
 		"open_interest_out_of_scope_total", app.stats.openInterestOutOfScopeTotal,
+		"book_ticker_accepted_total", app.stats.bookTickerAcceptedTotal,
+		"book_ticker_invalid_total", app.stats.bookTickerInvalidTotal,
+		"book_ticker_out_of_scope_total", app.stats.bookTickerOutOfScopeTotal,
 	)
 }
 
 func (app *application) observeInputQueueDepth() int {
-	depth := len(app.tradeEvents) + len(app.tradeDrops) + len(app.lifecycleEvents) + len(app.openInterestEvents)
+	depth := len(app.tradeEvents) + len(app.tradeDrops) + len(app.lifecycleEvents) +
+		len(app.openInterestEvents) + len(app.bookTickerEvents)
 	if depth > app.stats.inputQueuePeak {
 		app.stats.inputQueuePeak = depth
 	}
