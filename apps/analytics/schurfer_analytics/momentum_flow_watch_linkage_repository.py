@@ -174,8 +174,10 @@ class WatchLinkage:
     # `watch_observable` (see module docstring). Kept alongside the boolean
     # gate the same way `TimelinePoint.flow_coverage_pct` sits alongside
     # `flow_availability`.
-    pre_trigger_evaluation_coverage_pct: float
-    watch_observable: bool
+    pre_trigger_operational_coverage_pct: float
+    operational_observable: bool
+    pre_trigger_quality_coverage_pct: float
+    quality_observable: bool
     earliest_watch_before_trigger_at: datetime | None
     lead_minutes: float | None
     first_watch_at: datetime | None
@@ -294,7 +296,12 @@ def build_watch_linkage(
         # cannot stand in for `pumps_with_complete_pre_window`'s own
         # quality-ready requirement). Floored to the minute defensively,
         # rather than assuming exact on-grid alignment.
-        observed_minutes = {
+        operational_minutes = {
+            row.bucket_start.replace(second=0, microsecond=0)
+            for row in candidates
+            if pre <= row.bucket_start <= window.trigger_at and row.decision_at <= window.trigger_at
+        }
+        quality_minutes = {
             row.bucket_start.replace(second=0, microsecond=0)
             for row in candidates
             if pre <= row.bucket_start <= window.trigger_at
@@ -302,13 +309,17 @@ def build_watch_linkage(
             and row.quality_ready
         }
         expected_minutes = _expected_evaluation_minutes(pre, window.trigger_at)
-        coverage_pct = (
-            min(len(observed_minutes) / expected_minutes, 1.0) if expected_minutes > 0 else 0.0
+        operational_coverage_pct = (
+            min(len(operational_minutes) / expected_minutes, 1.0) if expected_minutes > 0 else 0.0
         )
-        watch_observable = coverage_pct >= FLOW_FULL_COVERAGE_FRACTION
+        quality_coverage_pct = (
+            min(len(quality_minutes) / expected_minutes, 1.0) if expected_minutes > 0 else 0.0
+        )
+        operational_observable = operational_coverage_pct >= FLOW_FULL_COVERAGE_FRACTION
+        quality_observable = quality_coverage_pct >= FLOW_FULL_COVERAGE_FRACTION
 
         watch_decisions = sorted(
-            row.decision_at for row in candidates if row.decision_status == "watch"
+            row.bucket_start for row in candidates if row.decision_status == "watch"
         )
         before_trigger = [at for at in watch_decisions if at <= window.trigger_at]
         earliest_before = min(before_trigger) if before_trigger else None
@@ -321,8 +332,10 @@ def build_watch_linkage(
         linkage[window.pump_event_id] = WatchLinkage(
             pump_event_id=window.pump_event_id,
             watch_evaluations_in_window=len(candidates),
-            pre_trigger_evaluation_coverage_pct=coverage_pct,
-            watch_observable=watch_observable,
+            pre_trigger_operational_coverage_pct=operational_coverage_pct,
+            operational_observable=operational_observable,
+            pre_trigger_quality_coverage_pct=quality_coverage_pct,
+            quality_observable=quality_observable,
             earliest_watch_before_trigger_at=earliest_before,
             lead_minutes=lead_minutes,
             first_watch_at=first_watch_at,
