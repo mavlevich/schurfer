@@ -160,6 +160,7 @@ class LongShortRatioRegimeReport:
     lsr_feature_stats: LsrFeatureStats
     liquidations: LiquidationsAppendix
     readiness: ReadinessVerdict
+    pnl_splits: dict[str, dict[str, float]]
 
 
 def _bases_days_weeks(episodes: tuple[ReplayEpisode, ...]) -> tuple[int, int, int]:
@@ -296,6 +297,7 @@ def _finite_ratio(payload: Any) -> float | None:
 class _EpisodeFeatureResult:
     event_id: int
     feature_complete: bool
+    mad_score: float | None
     mad_zero: bool
     invalid_or_missing: bool
     ratios: tuple[float, ...]
@@ -352,10 +354,16 @@ def evaluate_episode_feature(
     )
     baseline_finite = [value for value in baseline_values if value is not None]
     mad_zero = False
+    mad_score = None
     if not invalid_or_missing and baseline_finite:
         baseline_median = median(baseline_finite)
         mad = median(abs(value - baseline_median) for value in baseline_finite)
         mad_zero = mad == 0
+        if not mad_zero:
+            recent_finite = [v for v in recent_values if v is not None]
+            if recent_finite:
+                recent_median = median(recent_finite)
+                mad_score = (recent_median - baseline_median) / mad
     last_point_at = points[-1][0] if points else None
     staleness_minutes = (
         (anchor_at - last_point_at).total_seconds() / 60 if last_point_at is not None else None
@@ -363,6 +371,7 @@ def evaluate_episode_feature(
     return _EpisodeFeatureResult(
         event_id=event_id,
         feature_complete=not invalid_or_missing and not mad_zero,
+        mad_score=mad_score,
         mad_zero=mad_zero,
         invalid_or_missing=invalid_or_missing,
         ratios=tuple(value for value in baseline_finite if value is not None),
@@ -373,7 +382,7 @@ def evaluate_episode_feature(
 async def _load_lsr_feature_stats(
     engine: AsyncEngine,
     runs_by_event: dict[int, _RunRow],
-) -> tuple[LsrFeatureStats, dict[int, bool]]:
+) -> tuple[LsrFeatureStats, dict[int, _EpisodeFeatureResult]]:
     """Stream every sample for the fully-covered, sampled runs and check point-
     count/finiteness feasibility only — never touches any outcome/return field."""
     fully_covered = {
@@ -594,11 +603,12 @@ async def build_feasibility_report(
         if episode not in step_full_coverage
     )
 
-    lsr_stats, feature_complete_by_event = await _load_lsr_feature_stats(engine, run_by_event)
+    lsr_stats, feature_results_by_event = await _load_lsr_feature_stats(engine, run_by_event)
     step_feature_complete = tuple(
         episode
         for episode in step_full_coverage
-        if feature_complete_by_event.get(episode.pump_event_id, False)
+        if feature_results_by_event.get(episode.pump_event_id)
+        and feature_results_by_event[episode.pump_event_id].feature_complete
     )
     feature_exclusions = Counter(
         "invalid_missing_or_zero_mad_series"
@@ -650,6 +660,44 @@ async def build_feasibility_report(
         ),
     )
 
+    splits: dict[str, dict[str, float]] = {
+        "mad_high (>= 1.5)": {"count": 0, "sum_ret": 0.0},
+        "mad_neutral (-1.5 to 1.5)": {"count": 0, "sum_ret": 0.0},
+        "mad_low (<= -1.5)": {"count": 0, "sum_ret": 0.0},
+    }
+
+    for episode in step_feature_complete:
+        mad = feature_results_by_event[episode.pump_event_id].mad_score
+        if mad is None:
+            continue
+
+        entry_decision = next(
+            (d for d in episode.decisions if d.action in ("opened", "opened_dry_run")), None
+        )
+        if not entry_decision:
+            continue
+
+        outcome = next((o for o in entry_decision.outcomes if o.horizon_minutes == 240), None)
+        if not outcome or outcome.short_return_pct is None:
+            continue
+
+        ret = outcome.short_return_pct
+        if mad >= 1.5:
+            splits["mad_high (>= 1.5)"]["count"] += 1
+            splits["mad_high (>= 1.5)"]["sum_ret"] += ret
+        elif mad <= -1.5:
+            splits["mad_low (<= -1.5)"]["count"] += 1
+            splits["mad_low (<= -1.5)"]["sum_ret"] += ret
+        else:
+            splits["mad_neutral (-1.5 to 1.5)"]["count"] += 1
+            splits["mad_neutral (-1.5 to 1.5)"]["sum_ret"] += ret
+
+    for split in splits.values():
+        if split["count"] > 0:
+            split["avg_ret"] = split["sum_ret"] / split["count"]
+        else:
+            split["avg_ret"] = 0.0
+
     return LongShortRatioRegimeReport(
         manifest=DerivativesFeasibilityManifest(
             contract_version=FEASIBILITY_CONTRACT_VERSION,
@@ -670,6 +718,7 @@ async def build_feasibility_report(
         lsr_feature_stats=lsr_stats,
         liquidations=liquidations,
         readiness=_readiness(step_feature_complete),
+        pnl_splits=splits,
     )
 
 
@@ -837,6 +886,18 @@ def render_markdown(report: LongShortRatioRegimeReport) -> str:
             "",
         ]
     )
+    lines.extend(
+        [
+            "",
+            "## ML Evaluation: PnL by Long/Short Ratio Regime (240m horizon)",
+            "",
+            "| Regime | Episodes | Avg Short Return |",
+            "|---|---|---|",
+        ]
+    )
+    for k, v in report.pnl_splits.items():
+        lines.append(f"| {k} | {v['count']:.0f} | {v.get('avg_ret', 0.0):+.2f}% |")
+
     return "\n".join(lines) + "\n"
 
 
