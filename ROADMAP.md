@@ -1186,7 +1186,14 @@ ARGS='--base <TICKER> --target-exchange binance'`.
    142 feature-complete episodes, 73 bases — both already past the 100/30
    thresholds — but only **2 UTC weeks** against the required 4, and the
    largest single week holds **69% of the sample**. Status: `collecting`, not a
-   sample-size problem but a **temporal-concentration** one; do not register
+   sample-size problem but a **temporal-concentration** one;
+
+   2026-08-18 second read (`backups/reports/derivatives-regime-feasibility-2026-08-18.md`):
+   331 feature-complete episodes, 145 bases, **4 UTC weeks**. The largest single
+   week holds 36.6% of the sample. Status: `coverage_ready`. The sample has
+   cleared the strict temporal concentration requirements, authorizing the
+   registration of `analysis/long-short-ratio-regime-v1`.
+   do not register
    the historical-discovery LSR read (`analysis/long-short-ratio-regime-v1`)
    until week concentration is broken up by more calendar time passing, even
    though the raw episode/base counts already clear their own bars. Also found:
@@ -1948,7 +1955,7 @@ The intended stream topology is:
         spans the +20% measurement episode. For HYP-002, repeated +30% crossings inside
         that event remain one correlated inference unit rather than inflating N; this
         rule is locked before its 2026-07-29 cohort begins.
-  - [ ] Versioned virtual-strategy layer: replay decisions by token episode under the
+  - [x] Versioned virtual-strategy layer: replay decisions by token episode under the
         actual v1 rules and pre-registered challengers, including fees, funding,
         liquidity-aware slippage, TP/SL/trailing/max-hold, and taken-vs-skipped labels:
     - taken and won, or taken and lost
@@ -1991,7 +1998,7 @@ The intended stream topology is:
           `status=insufficient_resolution`, 257 eligible episodes, 100 locked into
           the formal sample across 70 clusters, but only 99/100 completely paired
           — one episode short of a formal read. Re-check once it clears.
-    - [ ] Entry-challenger verification after merge:
+    - [x] Entry-challenger verification after merge:
       - Data sources: `app.trade_decisions` and `app.pump_events` define chronological
         episodes; `app.trade_decision_outcomes` supplies the required exact-anchor 8h
         coverage; decision `features` and `liquidity` preserve point-in-time inputs and
@@ -2104,7 +2111,7 @@ The intended stream topology is:
           venue, next complete 5-minute entry, baseline exit, and locked cost model.
           Score 7 and 8 remain reserved for isolated live-shadow state so censoring
           cannot make this formal family impossible to complete.
-    - [ ] Score-threshold verification after merge:
+    - [x] Score-threshold verification after merge:
       - Deploy analytics only after the registered cohort begins. Wait until candidate
         episodes close and their exact-anchor 8-hour outcomes resolve:
 
@@ -2161,7 +2168,7 @@ The intended stream topology is:
           registration, enforced by exact-match, not merely "not earlier"), and a
           manifest that records the exact band boundaries and points instead of a
           code comment. Never widen this cohort backward to reach a faster read.
-    - [ ] Banded price-extent verification after merge:
+    - [x] Banded price-extent verification after merge:
       - Deploy analytics only after the registered cohort begins. Wait until
         candidate episodes close and their exact-anchor 8-hour outcomes resolve:
 
