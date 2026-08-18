@@ -68,6 +68,7 @@ import (
 	"github.com/mavlevich/schurfer/collector/internal/binance"
 	"github.com/mavlevich/schurfer/collector/internal/momentum"
 	"github.com/mavlevich/schurfer/collector/internal/momentumcapture"
+	"github.com/mavlevich/schurfer/collector/internal/momentumsource"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -155,8 +156,9 @@ const (
 )
 
 type config struct {
-	DatabaseURL string
-	RedisAddr   string
+	DatabaseURL   string
+	RedisAddr     string
+	CanarySymbols []string
 	// OpenInterestScheduler overrides binance.DefaultOpenInterestSchedulerConfig
 	// via OI_POLL_WORKERS/OI_POLL_RATE_LIMIT_PER_MINUTE -- operationally
 	// tunable without a code change once a real measured per-request
@@ -321,6 +323,28 @@ func run() error {
 	catalog, err := source.FetchSymbolCatalog(ctx)
 	if err != nil {
 		return fmt.Errorf("fetch initial universe: %w", err)
+	}
+
+	if len(cfg.CanarySymbols) > 0 {
+		allowed := make(map[string]bool)
+		for _, sym := range cfg.CanarySymbols {
+			allowed[strings.ToUpper(sym)] = true
+		}
+		var filteredSymbols []string
+		for _, sym := range catalog.CryptoPerpetualSymbols {
+			if allowed[strings.ToUpper(sym)] {
+				filteredSymbols = append(filteredSymbols, sym)
+			}
+		}
+		var filteredInstruments []momentumsource.Instrument
+		for _, inst := range catalog.Instruments {
+			if allowed[strings.ToUpper(inst.NativeMarketID)] {
+				filteredInstruments = append(filteredInstruments, inst)
+			}
+		}
+		catalog.CryptoPerpetualSymbols = filteredSymbols
+		catalog.Instruments = filteredInstruments
+		slog.Info("momentumcapturebinance.canary_filter_applied", "symbols_kept", len(filteredSymbols))
 	}
 	universe := momentumcapture.NewUniverse(catalog.CryptoPerpetualSymbols, time.Now())
 	slog.Info("momentumcapturebinance.universe_frozen", "symbols", universe.Count(), "hash", universe.Hash)
@@ -1150,9 +1174,18 @@ func configureLogging() {
 
 func loadConfig() config {
 	defaultScheduler := binance.DefaultOpenInterestSchedulerConfig()
+
+	var canary []string
+	if raw := strings.TrimSpace(os.Getenv("BINANCE_CANARY_SYMBOLS")); raw != "" {
+		for _, s := range strings.Split(raw, ",") {
+			canary = append(canary, strings.TrimSpace(s))
+		}
+	}
+
 	return config{
-		DatabaseURL: envString("DATABASE_URL", "postgres://schurfer:schurfer_dev@localhost:5432/schurfer"),
-		RedisAddr:   envString("REDIS_ADDR", "localhost:6379"),
+		DatabaseURL:   envString("DATABASE_URL", "postgres://schurfer:schurfer_dev@localhost:5432/schurfer"),
+		RedisAddr:     envString("REDIS_ADDR", "localhost:6379"),
+		CanarySymbols: canary,
 		OpenInterestScheduler: binance.OpenInterestSchedulerConfig{
 			Workers:            envInt("OI_POLL_WORKERS", defaultScheduler.Workers),
 			RateLimitPerMinute: envInt("OI_POLL_RATE_LIMIT_PER_MINUTE", defaultScheduler.RateLimitPerMinute),
