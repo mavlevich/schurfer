@@ -400,6 +400,6 @@ func (n *Notifier) maybeSendPaperTradesSummary(ctx context.Context) {
 		"trade",
 		"momentum_flow_summary_"+strconv.FormatInt(time.Now().UnixNano(), 10),
 		msg,
-		nil,
+		map[string]any{"parse_mode": "Markdown"},
 	)
 }
