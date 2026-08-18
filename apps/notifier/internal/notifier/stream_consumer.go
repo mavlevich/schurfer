@@ -170,7 +170,7 @@ func (c *StreamConsumer) processMessage(ctx context.Context, msg redis.XMessage)
 		slog.Error("consumer.db_begin_failed", "error", err)
 		return
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	var (
 		status       string
@@ -200,14 +200,14 @@ func (c *StreamConsumer) processMessage(ctx context.Context, msg redis.XMessage)
 	// 2. Treat mismatched payload hash as conflict
 	if string(storedHash) != string(hash) {
 		slog.Warn("consumer.hash_conflict", "dedup_key", env.DedupKey)
-		tx.Commit(ctx)
+		_ = tx.Commit(ctx)
 		c.moveToDLQ(ctx, msg, "mismatched payload hash for same dedup_key")
 		return
 	}
 
 	// 3. Skip if already delivered
 	if status == "delivered" {
-		tx.Commit(ctx)
+		_ = tx.Commit(ctx)
 		c.ackAndDel(ctx, msg.ID)
 		return
 	}
@@ -241,7 +241,7 @@ func (c *StreamConsumer) processMessage(ctx context.Context, msg redis.XMessage)
 			SET status = 'delivered', delivered_at = now()
 			WHERE producer = $1 AND dedup_key = $2
 		`, env.Producer, env.DedupKey)
-		tx.Commit(ctx)
+		_ = tx.Commit(ctx)
 		c.ackAndDel(ctx, msg.ID)
 		return
 	}
@@ -256,10 +256,10 @@ func (c *StreamConsumer) processMessage(ctx context.Context, msg redis.XMessage)
 			SET status = 'failed', last_error = $1
 			WHERE producer = $2 AND dedup_key = $3
 		`, sendErr.Error(), env.Producer, env.DedupKey)
-		tx.Commit(ctx)
+		_ = tx.Commit(ctx)
 		c.moveToDLQ(ctx, msg, sendErr.Error())
 	} else {
-		tx.Commit(ctx)
+		_ = tx.Commit(ctx)
 	}
 }
 
