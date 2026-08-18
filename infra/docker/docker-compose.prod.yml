@@ -311,6 +311,7 @@ services:
       # needed for that.
       OI_POLL_WORKERS: ${OI_POLL_WORKERS:-8}
       OI_POLL_RATE_LIMIT_PER_MINUTE: ${OI_POLL_RATE_LIMIT_PER_MINUTE:-1200}
+      BINANCE_CANARY_SYMBOLS: ${BINANCE_CANARY_SYMBOLS:-}
     depends_on:
       postgres:
         condition: service_healthy
