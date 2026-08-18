@@ -296,7 +296,7 @@ func (n *Notifier) tick(ctx context.Context) error {
 
 			startedAt := time.Now().UTC()
 			dedupKey := fmt.Sprintf("pump:%s:%d", p.Base, p.PumpEventID)
-			if err := n.publishEnvelope(ctx, "scanner", "pump.detected", "trade", dedupKey, formatAlert(p), map[string]any{"base": p.Base, "event_id": p.PumpEventID}); err != nil {
+			if err := n.publishEnvelope(ctx, "scanner", "pump.detected", "trade", dedupKey, formatAlert(p), map[string]any{"base": p.Base, "event_id": p.PumpEventID, "parse_mode": "MarkdownV2"}); err != nil {
 				slog.Warn("notifier.alert.enqueue_failed", "base", p.Base, "err", err)
 				return
 			}

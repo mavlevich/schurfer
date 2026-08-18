@@ -17,11 +17,15 @@ var _telegramAPI = "https://api.telegram.org/bot%s/sendMessage"
 
 // sendMessage sends a plain-text message. Used for operational alerts (like a
 // stale scanner) where MarkdownV2 escaping would only get in the way.
-func sendMessage(ctx context.Context, text, botToken, chatID string) error {
-	return postMessage(ctx, botToken, map[string]string{
+func sendMessage(ctx context.Context, text, botToken, chatID, parseMode string) error {
+	fields := map[string]string{
 		"chat_id": chatID,
 		"text":    text,
-	})
+	}
+	if parseMode != "" {
+		fields["parse_mode"] = parseMode
+	}
+	return postMessage(ctx, botToken, fields)
 }
 
 func postMessage(ctx context.Context, botToken string, fields map[string]string) error {
