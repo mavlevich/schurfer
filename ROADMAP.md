@@ -932,6 +932,36 @@ Protocols`, no error, no reconnect) but zero application frames ever
    actually covered. `make binance-watch-input-coverage-report ARGS='
    --since ...'` / `make prod-binance-watch-input-coverage-report`.
 
+   **Binance bookTicker capture (`analysis/binance-bookticker-capture-v1`,
+   2026-08-18):** not part of the 4-PR remediation sequence above -- the
+   first slice of a separate "capture non-recoverable data now, fit
+   later" plan agreed after the 2026-08-17 discovery-screen colleague
+   review. Closes a gap that existed since `cmd/momentumcapturebinance`
+   first shipped: `binance.Adapter` never implemented `momentumsource.
+   TickerSource`, so `LastBidPrice`/`LastAskPrice` were the only two
+   columns Binance bars never populated (OHLC was already fixed by
+   `feat/momentum-trade-price-source-v1`). Motivated concretely by the
+   same-day forensic read of the 8 real `momentum_flow_paper_v1`
+   stop_loss trades, which found exit spread consistently 2-6x wider than
+   entry spread right at the stop -- visible only as two snapshot points
+   (entry/exit quote) with nothing in between. New `internal/binance/
+   bookticker.go` (`RunBookTicker`, mirroring `trades.go`'s own shard/
+   reconnect pattern) subscribes to Binance's `bookTicker` stream on the
+   OLD unrouted `/stream` path (not `/market/stream` -- `trades.go`'s own
+   2026-08-15 incident this split traces to), wired into a new
+   `handleBookTicker` as this process's second `AddTickerObservation`
+   producer (`handleOpenInterest` is the first), `BidPrice`/`AskPrice`
+   only -- no migration, no writer change, the columns and write path
+   already existed. Real bug found and fixed while writing this, caught
+   by its own test before touching a live connection: Binance's
+   bookTicker payload carries both `"b"`/`"a"` (price) and `"B"`/`"A"`
+   (quantity) in the same frame, and Go's `encoding/json` case-insensitive
+   fallback silently let the quantity clobber the price in a struct that
+   declared only the lowercase-tagged fields. See docs/research/binance-
+   bookticker-capture-v1.md for the full writeup, including this PR's own
+   "What this PR does not do" (no lifecycle/reconnect counters, no gap
+   detector, Binance only).
+
 9. **Register at most one Confirmation shadow if the discovery gate passes.** Freeze
    one primary lookback, eligibility rule, entry quote, stop, bounded exit horizons,
    cost model, minimum sample/diversity, and no-go rule on a new untouched cohort. The
