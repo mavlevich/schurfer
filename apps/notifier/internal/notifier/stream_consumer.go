@@ -232,7 +232,8 @@ func (c *StreamConsumer) processMessage(ctx context.Context, msg redis.XMessage)
 	}
 
 	// Attempt delivery
-	sendErr := sendMessage(ctx, env.Payload.Text, c.botToken, c.chatID)
+	parseMode, _ := env.Payload.Metadata["parse_mode"].(string)
+	sendErr := sendMessage(ctx, env.Payload.Text, c.botToken, c.chatID, parseMode)
 
 	if sendErr == nil {
 		// 5. On success, mark delivered in PG, XACK + XDEL
