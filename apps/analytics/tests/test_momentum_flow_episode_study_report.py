@@ -275,8 +275,10 @@ def test_complete_episode_resolves_control_and_watch_linkage() -> None:
     watch = WatchLinkage(
         pump_event_id=1,
         watch_evaluations_in_window=2,
-        pre_trigger_evaluation_coverage_pct=1.0,
-        watch_observable=True,
+        pre_trigger_operational_coverage_pct=1.0,
+        pre_trigger_quality_coverage_pct=1.0,
+        operational_observable=True,
+        quality_observable=True,
         earliest_watch_before_trigger_at=trigger_at - timedelta(minutes=20),
         lead_minutes=20.0,
         first_watch_at=trigger_at - timedelta(minutes=20),
@@ -311,7 +313,7 @@ def test_complete_episode_resolves_control_and_watch_linkage() -> None:
 
 def test_repeat_token_flag_is_set_on_the_second_event_for_the_same_base() -> None:
     first_at = CAPTURE_START + timedelta(days=5)
-    second_at = CAPTURE_START + timedelta(days=15)
+    second_at = CAPTURE_START + timedelta(days=5, hours=12)
     until = second_at + timedelta(days=10)
     events = (
         _event(1, trigger_at=first_at),
@@ -491,7 +493,7 @@ def test_unobservable_watch_coverage_is_not_counted_as_a_watch_miss() -> None:
     """Regression for the second colleague review: an event whose own WATCH
     evaluation coverage was insufficient (worker not verifiably running, or
     with a gap) must not be silently counted as a WATCH miss -- it belongs
-    in `unresolved_events`, not the recall denominator."""
+    in `unresolved_operational_events`, not the recall denominator."""
     trigger_at = CAPTURE_START + timedelta(days=10)
     until = trigger_at + timedelta(days=20)
     event = _event(1, trigger_at=trigger_at)
@@ -499,8 +501,10 @@ def test_unobservable_watch_coverage_is_not_counted_as_a_watch_miss() -> None:
     unobservable_watch = WatchLinkage(
         pump_event_id=1,
         watch_evaluations_in_window=0,
-        pre_trigger_evaluation_coverage_pct=0.0,
-        watch_observable=False,
+        pre_trigger_operational_coverage_pct=0.0,
+        pre_trigger_quality_coverage_pct=0.0,
+        operational_observable=False,
+        quality_observable=False,
         earliest_watch_before_trigger_at=None,
         lead_minutes=None,
         first_watch_at=None,
@@ -515,7 +519,7 @@ def test_unobservable_watch_coverage_is_not_counted_as_a_watch_miss() -> None:
     )
 
     assert report.watch_recall.denominator_events == 0
-    assert report.watch_recall.unresolved_events == 1
+    assert report.watch_recall.unresolved_operational_events == 1
     assert report.watch_recall.recall_pct is None
 
 

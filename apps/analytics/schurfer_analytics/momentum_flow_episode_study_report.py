@@ -180,13 +180,8 @@ class WatchRecallSummary:
     median_lead_minutes: float | None
     watch_only_after_trigger: int
     watch_only_after_trigger_pct: float | None
-    # Mature, in-scope-by-time events excluded from `denominator_events`
-    # because WATCH evaluation coverage over their own pre-trigger span was
-    # insufficient (`WatchLinkage.watch_observable` is False) -- the worker
-    # was not verifiably running, so an absent `watch` decision there cannot
-    # be counted as a genuine miss (amended after second colleague review,
-    # before any real run).
-    unresolved_events: int
+    unresolved_operational_events: int
+    unresolved_quality_events: int
 
 
 @dataclass(frozen=True)
@@ -562,11 +557,14 @@ def _aggregate_report(
     )
 
     bybit_native = [event for event in events if event.exchange == "bybit"]
-    seen_bases: set[str] = set()
+    last_seen_by_base: dict[str, datetime] = {}
     episode_results: list[EpisodeResult] = []
     for event in sorted(bybit_native, key=lambda item: (item.trigger_at, item.pump_event_id)):
-        repeat_token = event.base in seen_bases
-        seen_bases.add(event.base)
+        last_seen = last_seen_by_base.get(event.base)
+        repeat_token = last_seen is not None and (event.trigger_at - last_seen) < timedelta(
+            hours=24
+        )
+        last_seen_by_base[event.base] = event.trigger_at
         # `event.market_id` is Bybit's own EXACT traded market id for this
         # bybit_native event (the identity-ready earliest source for it WAS
         # Bybit -- see momentum_flow_event_repository._select_events's own
@@ -687,8 +685,12 @@ def render_markdown(report: EpisodeStudyReport) -> str:
                 ("Median lead (minutes)", _fmt(recall.median_lead_minutes, 1)),
                 ("WATCH arrived only after trigger", recall.watch_only_after_trigger),
                 (
-                    "Unresolved (in-scope but WATCH coverage insufficient)",
-                    recall.unresolved_events,
+                    "Unresolved (system operational miss)",
+                    recall.unresolved_operational_events,
+                ),
+                (
+                    "Unresolved (quality rejected)",
+                    recall.unresolved_quality_events,
                 ),
             ],
         ),
@@ -907,13 +909,16 @@ async def _run(args: argparse.Namespace) -> str:
             symbol_bars = tuple(
                 _to_flow_bar(row) for row in sorted(symbol_rows, key=lambda item: item.bucket_start)
             )
-            seen_bases_for_symbol: set[str] = set()
+            last_seen_by_base_for_symbol: dict[str, datetime] = {}
             symbol_events_sorted = sorted(
                 symbol_events, key=lambda item: (item.trigger_at, item.pump_event_id)
             )
             for event in symbol_events_sorted:
-                repeat_token = event.base in seen_bases_for_symbol
-                seen_bases_for_symbol.add(event.base)
+                last_seen = last_seen_by_base_for_symbol.get(event.base)
+                repeat_token = last_seen is not None and (event.trigger_at - last_seen) < timedelta(
+                    hours=24
+                )
+                last_seen_by_base_for_symbol[event.base] = event.trigger_at
                 other_pump_instants = tuple(
                     at
                     for at in contamination_instants_by_base.get(event.base, ())
@@ -1008,13 +1013,23 @@ def _finish_report(
         for row in episode_results
         if row.pump_event_id in eligible_by_time_ids
         and row.watch is not None
-        and row.watch.watch_observable
+        and row.watch.quality_observable
     ]
-    unresolved_events = sum(
+    unresolved_operational_events = sum(
         1
         for row in episode_results
         if row.pump_event_id in eligible_by_time_ids
-        and (row.watch is None or not row.watch.watch_observable)
+        and (row.watch is None or not row.watch.operational_observable)
+    )
+    unresolved_quality_events = sum(
+        1
+        for row in episode_results
+        if row.pump_event_id in eligible_by_time_ids
+        and (
+            row.watch is not None
+            and row.watch.operational_observable
+            and not row.watch.quality_observable
+        )
     )
     before = [w for w in watch_rows if w.earliest_watch_before_trigger_at is not None]
     only_after = [w for w in watch_rows if w.watch_arrived_only_after_trigger]
@@ -1027,7 +1042,8 @@ def _finish_report(
         watch_only_after_trigger_pct=(
             (len(only_after) / len(watch_rows) * 100) if watch_rows else None
         ),
-        unresolved_events=unresolved_events,
+        unresolved_operational_events=unresolved_operational_events,
+        unresolved_quality_events=unresolved_quality_events,
     )
 
     lookback_rows: list[LookbackComparisonRow] = []
@@ -1097,7 +1113,7 @@ def _finish_report(
                 for row in rows
                 if row.pump_event_id in eligible_by_time_ids
                 and row.watch is not None
-                and row.watch.watch_observable
+                and row.watch.quality_observable
             ]
             bucket_before = [
                 w for w in bucket_watch if w.earliest_watch_before_trigger_at is not None

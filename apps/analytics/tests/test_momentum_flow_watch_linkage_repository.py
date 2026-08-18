@@ -188,8 +188,8 @@ def test_linkage_reports_no_evaluations_without_error() -> None:
     assert linkage.watch_arrived_only_after_trigger is False
     # Regression for the second colleague review: zero evaluation rows is
     # zero coverage, not a resolved "no watch" reading.
-    assert linkage.pre_trigger_evaluation_coverage_pct == 0.0
-    assert linkage.watch_observable is False
+    assert linkage.pre_trigger_operational_coverage_pct == 0.0
+    assert linkage.operational_observable is False
 
 
 def test_linkage_full_pre_trigger_coverage_is_observable() -> None:
@@ -204,8 +204,8 @@ def test_linkage_full_pre_trigger_coverage_is_observable() -> None:
 
     linkage = build_watch_linkage((window,), rows)[window.pump_event_id]
 
-    assert linkage.pre_trigger_evaluation_coverage_pct == pytest.approx(1.0)
-    assert linkage.watch_observable is True
+    assert linkage.pre_trigger_operational_coverage_pct == pytest.approx(1.0)
+    assert linkage.operational_observable is True
 
 
 def test_linkage_partial_pre_trigger_coverage_is_not_observable() -> None:
@@ -225,8 +225,8 @@ def test_linkage_partial_pre_trigger_coverage_is_not_observable() -> None:
 
     linkage = build_watch_linkage((window,), rows)[window.pump_event_id]
 
-    assert linkage.pre_trigger_evaluation_coverage_pct < 1.0
-    assert linkage.watch_observable is False
+    assert linkage.pre_trigger_quality_coverage_pct < 1.0
+    assert linkage.operational_observable is False
 
 
 def test_coverage_uses_bucket_start_not_decision_at_during_a_catchup_burst() -> None:
@@ -260,8 +260,8 @@ def test_coverage_uses_bucket_start_not_decision_at_during_a_catchup_burst() -> 
     # Under the OLD (decision_at-keyed) coverage logic this would have
     # floored to ONE single minute across all 241 rows, reading as ~0.4%
     # coverage instead of the correct 100%.
-    assert linkage.pre_trigger_evaluation_coverage_pct == pytest.approx(1.0)
-    assert linkage.watch_observable is True
+    assert linkage.pre_trigger_operational_coverage_pct == pytest.approx(1.0)
+    assert linkage.operational_observable is True
 
 
 def test_coverage_excludes_a_bucket_whose_decision_arrived_after_the_trigger() -> None:
@@ -290,8 +290,8 @@ def test_coverage_excludes_a_bucket_whose_decision_arrived_after_the_trigger() -
 
     linkage = build_watch_linkage((window,), rows)[window.pump_event_id]
 
-    assert linkage.pre_trigger_evaluation_coverage_pct < 1.0
-    assert linkage.watch_observable is False
+    assert linkage.pre_trigger_quality_coverage_pct < 1.0
+    assert linkage.operational_observable is False
 
 
 def test_coverage_excludes_quality_rejected_buckets() -> None:
@@ -319,5 +319,5 @@ def test_coverage_excludes_quality_rejected_buckets() -> None:
 
     linkage = build_watch_linkage((window,), rows)[window.pump_event_id]
 
-    assert linkage.pre_trigger_evaluation_coverage_pct < 1.0
-    assert linkage.watch_observable is False
+    assert linkage.pre_trigger_quality_coverage_pct < 1.0
+    assert linkage.quality_observable is False
