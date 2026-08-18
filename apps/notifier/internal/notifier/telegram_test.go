@@ -1,8 +1,6 @@
 package notifier
 
 import (
-	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -12,8 +10,6 @@ func volumeUSD(value float64) *float64 {
 }
 
 func TestFormatAlert_SingleExchange(t *testing.T) {
-	t.Skip("migrating to outbox")
-
 	p := pump{
 		Base:         "BTC",
 		MaxChangePct: 45.2,
@@ -30,8 +26,6 @@ func TestFormatAlert_SingleExchange(t *testing.T) {
 }
 
 func TestFormatAlert_24hHighShownWhenHigher(t *testing.T) {
-	t.Skip("migrating to outbox")
-
 	// price=100, change=+25% → open=80, rolling high=160 → +100%
 	p := pump{
 		Base:         "ETH",
@@ -47,8 +41,6 @@ func TestFormatAlert_24hHighShownWhenHigher(t *testing.T) {
 }
 
 func TestFormatAlert_24hHighHiddenWhenEqual(t *testing.T) {
-	t.Skip("migrating to outbox")
-
 	// price=100, change=+25%, high=100 → rolling high < current
 	p := pump{
 		Base:         "SOL",
@@ -64,8 +56,6 @@ func TestFormatAlert_24hHighHiddenWhenEqual(t *testing.T) {
 }
 
 func TestFormatAlert_LargeVolume(t *testing.T) {
-	t.Skip("migrating to outbox")
-
 	p := pump{
 		Base:         "BTC",
 		MaxChangePct: 30.0,
@@ -78,49 +68,7 @@ func TestFormatAlert_LargeVolume(t *testing.T) {
 	}
 }
 
-func TestSendAlert_Success(t *testing.T) {
-	t.Skip("migrating to outbox")
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"ok":true}`))
-	}))
-	defer srv.Close()
-
-	// Patch _telegramAPI for test
-	original := _telegramAPI
-	_telegramAPI = srv.URL + "/%s/sendMessage"
-	defer func() { _telegramAPI = original }()
-
-	p := pump{Base: "DOGE", MaxChangePct: 35.0, Exchanges: []exchange{
-		{Exchange: "bybit", ChangePct: 35.0, VolumeUSD: volumeUSD(5_000_000)},
-	}}
-	if err := sendAlert(t.Context(), p, "test-token", "12345"); err != nil {
-		t.Errorf("unexpected error: %v", err)
-	}
-}
-
-func TestSendAlert_ServerError(t *testing.T) {
-	t.Skip("migrating to outbox")
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusUnauthorized)
-	}))
-	defer srv.Close()
-
-	original := _telegramAPI
-	_telegramAPI = srv.URL + "/%s/sendMessage"
-	defer func() { _telegramAPI = original }()
-
-	p := pump{Base: "BTC", MaxChangePct: 40.0, Exchanges: []exchange{}}
-	if err := sendAlert(t.Context(), p, "bad-token", "12345"); err == nil {
-		t.Error("expected error on 401, got nil")
-	}
-}
-
 func TestFormatAlert_SpecialCharsEscaped(t *testing.T) {
-	t.Skip("migrating to outbox")
-
 	// Underscore in base and dot in exchange name must be escaped for MarkdownV2.
 	p := pump{
 		Base:         "ABC_DEF",
@@ -139,8 +87,6 @@ func TestFormatAlert_SpecialCharsEscaped(t *testing.T) {
 }
 
 func TestFormatAlert_UnknownVolumeIsNotReportedAsZero(t *testing.T) {
-	t.Skip("migrating to outbox")
-
 	p := pump{
 		Base:         "GME1",
 		MaxChangePct: 63.2,
@@ -160,8 +106,6 @@ func TestFormatAlert_UnknownVolumeIsNotReportedAsZero(t *testing.T) {
 }
 
 func TestFormatAlert_PartialVolumeIsMarkedAsLowerBound(t *testing.T) {
-	t.Skip("migrating to outbox")
-
 	p := pump{
 		Base:         "BTC",
 		MaxChangePct: 40,
