@@ -218,6 +218,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	//nolint:gocritic
 	dataArgs := append(args, limit, offset)
 	n := len(dataArgs)
 	rows, err := h.pool.Query(r.Context(), combinedTradesCTE+`

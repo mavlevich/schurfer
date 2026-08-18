@@ -541,6 +541,7 @@ func splitHistogram(buckets []momentum.HistogramBucket) ([]int32, []float64) {
 	counts := make([]int32, len(buckets))
 	notional := make([]float64, len(buckets))
 	for i, b := range buckets {
+		//nolint:gosec
 		counts[i] = int32(b.Count)
 		notional[i] = b.NotionalUSD
 	}

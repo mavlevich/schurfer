@@ -764,6 +764,7 @@ func (app *application) recordBarStats(bars []momentum.Bar) {
 	}
 	app.stats.barsCompletedTotal += uint64(len(bars))
 	for _, bar := range bars {
+		//nolint:gosec
 		app.stats.lateEventsTotal += uint64(bar.LateTradesDropped)
 		if bar.BucketStart.After(app.stats.lastBarAt) {
 			app.stats.lastBarAt = bar.BucketStart

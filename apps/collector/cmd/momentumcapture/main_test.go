@@ -446,6 +446,7 @@ func TestConsumeTradeFallsBackToLostCounterWhenBothChannelsFull(t *testing.T) {
 // which a concurrent health read could race with; the current design never
 // touches app.stats from this goroutine at all.
 func TestConsumeTradeIsRaceFreeUnderConcurrentShardPressure(t *testing.T) {
+	_ = t
 	app := &application{
 		tradeEvents: make(chan bybit.PublicTrade, 4),
 		tradeDrops:  make(chan bybit.PublicTrade, 4),

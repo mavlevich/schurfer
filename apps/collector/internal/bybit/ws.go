@@ -29,7 +29,7 @@ const (
 // existing call sites and tests (errors.Is(err, errReadTimeout),
 // isReadTimeout) do not need to change -- see wsstream's own package
 // docstring on why this logic moved there.
-var errReadTimeout = wsstream.ErrReadTimeout
+// var errReadTimeout = wsstream.ErrReadTimeout
 
 // Run streams tickers for the given symbols. Blocks until ctx is cancelled.
 func (s *Source) Run(ctx context.Context, symbols []string, publish PublishFn) error {

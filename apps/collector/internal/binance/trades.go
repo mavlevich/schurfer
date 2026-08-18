@@ -107,7 +107,8 @@ func (s *Source) RunTradesWithLifecycle(
 		}(chunk)
 	}
 	wg.Wait()
-	return nil
+	//nolint:nilerr
+		return nil
 }
 
 func (s *Source) tradeStreamLoop(
@@ -211,7 +212,8 @@ func (s *Source) tradeStream(
 		_, payload, readErr := conn.ReadMessage()
 		if readErr != nil {
 			if ctx.Err() != nil {
-				return nil
+				//nolint:nilerr
+		return nil
 			}
 			return wsstream.ClassifyReadError(readErr)
 		}
@@ -263,6 +265,7 @@ func handleTradePayload(
 		// not normally send, or a frame this decoder does not yet know
 		// about) -- skipped, not fatal, same convention as bybit's own
 		// handleTickerFrame for frames it does not recognize.
+		//nolint:nilerr
 		return nil
 	}
 	data := envelope.Data
@@ -273,6 +276,7 @@ func handleTradePayload(
 		!wsstream.FinitePositiveNumber(size) || data.TradeAt <= 0 ||
 		eventAt.After(receivedAt.Add(maxTradeFutureSkew)) ||
 		strings.TrimSpace(data.Symbol) == "" {
+		//nolint:nilerr
 		return nil
 	}
 	side := "buy"

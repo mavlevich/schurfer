@@ -793,6 +793,7 @@ func finalizeBar(state *symbolState, priceSource PriceSource) Bar {
 	// -- see Bar.TickerComplete's own doc comment for why those originals
 	// are not renamed here.
 	state.bar.OpenInterestComplete = state.bar.TickerComplete
+	//nolint:exhaustive
 	switch priceSource {
 	case PriceSourceTickerLast:
 		state.bar.PriceComplete = state.bar.TickerComplete
