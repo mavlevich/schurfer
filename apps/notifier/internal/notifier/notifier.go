@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -64,6 +65,7 @@ type Notifier struct {
 	recorder         alertRecorder
 	sourceLeadHealth sourceLeadHealthReader
 	momentumFlow     momentumFlowReader
+	consumer         *StreamConsumer
 }
 
 func New(ctx context.Context, cfg Config) (*Notifier, error) {
@@ -78,6 +80,10 @@ func New(ctx context.Context, cfg Config) (*Notifier, error) {
 		notifier.recorder = postgresRecorder
 		notifier.sourceLeadHealth = postgresRecorder
 		notifier.momentumFlow = postgresRecorder
+		pool, ok := postgresRecorder.pool.(*pgxpool.Pool)
+		if ok {
+			notifier.consumer = NewStreamConsumer(rdb, pool, cfg.BotToken, cfg.ChatID)
+		}
 	}
 	return notifier, nil
 }
@@ -97,6 +103,10 @@ func (n *Notifier) Run(ctx context.Context) error {
 	}
 
 	slog.Info("notifier.starting", "interval", n.cfg.Interval)
+
+	if n.consumer != nil {
+		go n.consumer.Run(ctx)
+	}
 
 	if err := n.tick(ctx); err != nil {
 		slog.Warn("notifier.tick.failed", "err", err)
