@@ -134,6 +134,7 @@ async def check_exit(
     tighten_after_min = params["tighten_after_min"]
     max_hold_min = params["max_hold_min"]
     no_progress_min = params.get("no_progress_min", max_hold_min)
+    take_profit_pct = params.get("take_profit_pct")
 
     elapsed_min = (time.time() - opened_at) / 60
     if elapsed_min >= max_hold_min:
@@ -144,6 +145,9 @@ async def check_exit(
         move_pct = (entry_price - current_price) / entry_price * 100
     else:
         move_pct = (current_price - entry_price) / entry_price * 100
+
+    if take_profit_pct is not None and move_pct >= take_profit_pct:
+        return f"take_profit move={move_pct:.1f}%"
 
     best_raw = await rdb.get(bp_key)
 

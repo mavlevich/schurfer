@@ -39,8 +39,14 @@ async def open_paper(
     score: int,
     setup_context: dict[str, Any],
     cfg: Config,
+    side: str = "short",
+    exit_params: dict[str, float] | None = None,
 ) -> None:
-    params = exit_module.exit_params(setup_context.get("pump_pct"))
+    params = (
+        exit_params
+        if exit_params is not None
+        else exit_module.exit_params(setup_context.get("pump_pct"))
+    )
     paper_context = {**setup_context, "paper": True}
     (
         accounting_version,
@@ -51,7 +57,7 @@ async def open_paper(
     entry = {
         "base": base,
         "exchange": exchange,
-        "side": "short",
+        "side": side,
         "entry_price": price,
         "size_usd": size_usd,
         "leverage": leverage,
