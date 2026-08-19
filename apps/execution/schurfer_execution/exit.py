@@ -65,7 +65,6 @@ _REQUIRED_PARAM_KEYS = frozenset(
         "trail_pct",
         "trail_tighten_pct",
         "tighten_after_min",
-        "no_progress_min",
         "max_hold_min",
     }
 )
@@ -134,7 +133,7 @@ async def check_exit(
     trail_tighten_pct = params["trail_tighten_pct"]
     tighten_after_min = params["tighten_after_min"]
     max_hold_min = params["max_hold_min"]
-    no_progress_min = params["no_progress_min"]
+    no_progress_min = params.get("no_progress_min", max_hold_min)
 
     elapsed_min = (time.time() - opened_at) / 60
     if elapsed_min >= max_hold_min:

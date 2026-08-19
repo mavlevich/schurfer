@@ -747,6 +747,19 @@ services:
         max-size: '10m'
         max-file: '3'
 
+  lsr-subscriber:
+    build:
+      context: ../../
+      dockerfile: apps/market-hotset/Dockerfile
+    container_name: schurfer-lsr-subscriber
+    environment:
+      NATS_URL: nats://nats:4222
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/schurfer?sslmode=disable
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 volumes:
   postgres_data:
   redis_data:
