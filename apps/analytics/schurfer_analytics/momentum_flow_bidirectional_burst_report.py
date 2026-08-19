@@ -212,8 +212,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=DEFAULT_MAX_CANDIDATE_MINUTES,
         help=(
-            f"default {DEFAULT_MAX_CANDIDATE_MINUTES}; fails loudly rather than "
-            "silently truncating"
+            f"default {DEFAULT_MAX_CANDIDATE_MINUTES}; fails loudly rather than silently truncating"
         ),
     )
     parser.add_argument("--format", choices=("markdown", "json"), default="markdown")

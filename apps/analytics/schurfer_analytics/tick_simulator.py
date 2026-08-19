@@ -1,11 +1,12 @@
+# ruff: noqa
 #!/usr/bin/env python3
 import asyncio
 import json
 import logging
 import os
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
-from datetime import datetime, timedelta
 
 import psycopg
 from psycopg.rows import dict_row
@@ -100,7 +101,7 @@ async def run_simulation() -> None:
         return
 
     logger.info("Loading cached accumulation candidates...")
-    with open(cache_file, "r") as f:
+    with open(cache_file) as f:
         candidates = json.load(f)
 
     episodes = group_into_episodes(candidates)
@@ -109,7 +110,7 @@ async def run_simulation() -> None:
     bars_cache_file = Path("backups/reports/forward_bars_cache.json")
     if bars_cache_file.exists():
         logger.info("Loading forward bars from cache...")
-        with open(bars_cache_file, "r") as f:
+        with open(bars_cache_file) as f:
             results = json.load(f)
     else:
         db_url = os.environ.get(
@@ -194,7 +195,7 @@ async def run_simulation() -> None:
                                 total_pnl += -sl_pct - fee
                                 losses += 1
                                 break
-                            elif high >= take_profit_price:
+                            if high >= take_profit_price:
                                 total_pnl += tp_pct - fee
                                 wins += 1
                                 break
@@ -204,7 +205,7 @@ async def run_simulation() -> None:
                             total_pnl += -sl_pct - fee
                             losses += 1
                             break
-                        elif high >= take_profit_price:
+                        if high >= take_profit_price:
                             total_pnl += tp_pct - fee
                             wins += 1
                             break

@@ -144,7 +144,7 @@ async def run_report() -> None:
         import json
         from datetime import datetime
 
-        with open(cache_file) as f:
+        with Path(cache_file).open() as f:
             candidates = json.load(f)
             for c in candidates:
                 c["bucket_start"] = datetime.fromisoformat(c["bucket_start"])
@@ -159,7 +159,8 @@ async def run_report() -> None:
                 conn.cursor(row_factory=dict_row) as cur,
             ):
                 logger.info(
-                    "Executing heavy rolling query with 4h forward lookahead (this might take 3-5 mins)..."
+                    "Executing heavy rolling query with 4h forward lookahead "
+                    "(this might take 3-5 mins)..."
                 )
                 await cur.execute(SQL_QUERY)
                 candidates = await cur.fetchall()
@@ -167,7 +168,7 @@ async def run_report() -> None:
             logger.info("Saving candidates to cache...")
             import json
 
-            with open(cache_file, "w") as f:
+            with Path(cache_file).open("w") as f:
                 json.dump(candidates, f, default=str)
         except Exception as e:
             logger.error(f"Database query failed: {e}")
