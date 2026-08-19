@@ -12,7 +12,7 @@ from .config import Config
 
 log = structlog.get_logger()
 
-_WATCH_PREFIX = "market:early_momentum:watch:{base}"
+_WATCH_PREFIX = "market:early_momentum:watch:{exchange}:{base}"
 _SCAN_INTERVAL = 60
 _TRIGGER_INTERVAL = 60
 
@@ -20,6 +20,7 @@ _TRIGGER_INTERVAL = 60
 _SQL_SCANNER = """
 WITH recent_bars AS (
     SELECT
+        exchange,
         symbol,
         bucket_start,
         close_price,
@@ -32,6 +33,7 @@ WITH recent_bars AS (
 ),
 rolling AS (
     SELECT
+        exchange,
         symbol,
         bucket_start,
         close_price,
@@ -43,16 +45,16 @@ rolling AS (
         SUM(sell_total_notional_usd) OVER w AS sell_vol_2h
     FROM recent_bars
     WINDOW w AS (
-        PARTITION BY symbol
+        PARTITION BY exchange, symbol
         ORDER BY bucket_start
         ROWS BETWEEN 120 PRECEDING AND CURRENT ROW
     )
 ),
 latest AS (
-    -- Only take the single most recent row for each symbol to evaluate current state
-    SELECT DISTINCT ON (symbol) *
+    -- Only take the single most recent row for each exchange+symbol to evaluate current state
+    SELECT DISTINCT ON (exchange, symbol) *
     FROM rolling
-    ORDER BY symbol, bucket_start DESC
+    ORDER BY exchange, symbol, bucket_start DESC
 )
 SELECT *
 FROM latest
@@ -80,9 +82,10 @@ async def run_early_momentum_scanner(rdb: Any, cfg: Config) -> None:
                 candidates = await cur.fetchall()
 
             for c in candidates:
+                source_exchange = c["exchange"]
                 base = c["symbol"].split("/")[0]  # e.g. "BTC/USDT:USDT" -> "BTC"
                 ceiling = float(c["price_max_2h"])
-                key = _WATCH_PREFIX.format(base=base)
+                key = _WATCH_PREFIX.format(exchange=source_exchange, base=base)
 
                 # Check if we already have a watch for this base to avoid spamming logs
                 exists = await rdb.exists(key)
@@ -100,6 +103,7 @@ async def run_early_momentum_scanner(rdb: Any, cfg: Config) -> None:
                 data = {
                     "ceiling": ceiling,
                     "symbol": c["symbol"],
+                    "source_exchange": source_exchange,
                     "bucket_start": str(c["bucket_start"]),
                     "added_at": time.time(),
                 }
@@ -146,6 +150,7 @@ async def run_early_momentum_trigger(exchanges: dict[str, Any], rdb: Any, cfg: C
                     else key.split(":")[-1]
                 )
                 symbol = data["symbol"]
+                source_exchange = data.get("source_exchange", "bybit")
                 ceiling = data["ceiling"]
 
                 ticker = tickers.get(symbol)
@@ -178,12 +183,16 @@ async def run_early_momentum_trigger(exchanges: dict[str, Any], rdb: Any, cfg: C
                     await paper.open_paper(
                         rdb,
                         base=base,
-                        exchange=exchange,
+                        exchange=exchange,  # Execute on Bybit regardless of source
                         price=last_price,
                         size_usd=100.0,
-                        leverage=2,
+                        leverage=5,
                         score=100,  # Synthetic score
-                        setup_context={"strategy": "early_momentum_v1", "breakout_price": ceiling},
+                        setup_context={
+                            "strategy": "early_momentum_v1",
+                            "breakout_price": ceiling,
+                            "signal_source": source_exchange,
+                        },
                         cfg=cfg,
                         side="long",
                         exit_params=exit_params,
