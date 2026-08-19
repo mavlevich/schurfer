@@ -222,6 +222,28 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
             )
             continue
 
+        mad_score = features.get("mad_score")
+        if mad_score is not None and mad_score < 1.5:
+            log.info("trader.skip.mad_score", base=base, mad_score=mad_score)
+            await decisions.write_decision(
+                rdb,
+                base=base,
+                exchange=exchange or "",
+                action="skipped",
+                reason="mad_score_too_low",
+                score=score,
+                pump_pct=pump_pct,
+                decision_id=decision_id,
+                strategy_version=cfg.strategy_version,
+                features=features,
+                liquidity=liq,
+                price=decision_price,
+                pump_event_id=pump_event_id,
+                seen_key=seen_key,
+                seen_ttl=_SEEN_TTL_SKIP,
+            )
+            continue
+
         if score < cfg.score_threshold:
             log.info("trader.skip.score", base=base, score=score, threshold=cfg.score_threshold)
             await decisions.write_decision(
@@ -914,7 +936,12 @@ def _decision_features(
     the effective config. strategy_version is a coarse label; this fingerprint is
     the actual settings in force, so decisions stay comparable across rule changes.
     """
+    mad_score = None
+    if signal.payload and "components" in signal.payload:
+        mad_score = signal.payload["components"].get("mad_score")
+
     return {
+        "mad_score": mad_score,
         "signal": signal.payload,
         "signal_status": signal.status,
         "measurement_only": measurement_only,
