@@ -181,7 +181,7 @@ async def run_early_momentum_trigger(exchanges: dict[str, Any], rdb: Any, cfg: C
                         exchange=exchange,
                         price=last_price,
                         size_usd=100.0,
-                        leverage=2,
+                        leverage=5,
                         score=100,  # Synthetic score
                         setup_context={"strategy": "early_momentum_v1", "breakout_price": ceiling},
                         cfg=cfg,
