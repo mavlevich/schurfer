@@ -722,6 +722,7 @@ type signalComponents struct {
 	OiTrend         signalComponent `json:"oi_trend"`
 	FundingRate     signalComponent `json:"funding_rate"`
 	RetraceFromPeak signalComponent `json:"retrace_from_peak"`
+	MadScore        *float64        `json:"mad_score,omitempty"`
 }
 
 type signalEpisode struct {
@@ -1067,7 +1068,54 @@ func (h *Handler) computeSignals(ctx context.Context, base string) (signalsRespo
 		slog.Warn("pumps.signals.funding_unavailable", "base", base)
 	}
 
+	var madScore *float64
+	{
+		rows, err := h.pool.Query(ctx,
+			`SELECT extract(epoch from ts)::bigint, ratio
+			 FROM app.live_long_short_ratio
+			 WHERE base = $1
+			   AND ts >= to_timestamp($2) - interval '4 hours'
+			   AND ts < to_timestamp($2)
+			 ORDER BY ts ASC`,
+			base, strategyAnchorAtUnix)
+		if err == nil {
+			var baseline []float64
+			var recent []float64
+			cutoff := strategyAnchorAtUnix - 30*60
+			for rows.Next() {
+				var ts int64
+				var ratio float64
+				if err := rows.Scan(&ts, &ratio); err == nil {
+					if ts < cutoff {
+						baseline = append(baseline, ratio)
+					} else {
+						recent = append(recent, ratio)
+					}
+				}
+			}
+			rows.Close()
+
+			if len(baseline) > 0 && len(recent) > 0 {
+				baselineMedian := medianFloat64(baseline)
+				var absDev []float64
+				for _, v := range baseline {
+					absDev = append(absDev, math.Abs(v-baselineMedian))
+				}
+				mad := medianFloat64(absDev)
+
+				if mad > 0 {
+					recentMedian := medianFloat64(recent)
+					score := (recentMedian - baselineMedian) / mad
+					madScore = &score
+				}
+			}
+		} else {
+			slog.Warn("pumps.signals.lsr_unavailable", "base", base, "err", err)
+		}
+	}
+
 	components, score := scoreSignals(ep, currentOI, baselineOI, maxFunding)
+	components.MadScore = madScore
 	verdict := signalVerdict(score)
 	if !oiOK && !fundingOK {
 		verdict = "insufficient_data"
@@ -1162,6 +1210,20 @@ func aggregateOI(snapshots []oiSnapshotEntry, firstSeenAt *int64) (current, base
 		deltaPct = &d
 	}
 	return current, baseline, deltaPct
+}
+
+func medianFloat64(data []float64) float64 {
+	if len(data) == 0 {
+		return 0
+	}
+	sorted := make([]float64, len(data))
+	copy(sorted, data)
+	sort.Float64s(sorted)
+	n := len(sorted)
+	if n%2 == 0 {
+		return (sorted[n/2-1] + sorted[n/2]) / 2
+	}
+	return sorted[n/2]
 }
 
 func parseUnixParam(s string) *int64 {

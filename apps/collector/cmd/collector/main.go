@@ -12,6 +12,10 @@ import (
 	"time"
 
 	"github.com/mavlevich/schurfer/collector/internal/bybit"
+
+	"github.com/mavlevich/schurfer/collector/internal/binance"
+	"golang.org/x/sync/errgroup"
+
 	"github.com/nats-io/nats.go"
 )
 
@@ -49,6 +53,12 @@ func run() error {
 	defer cancel()
 
 	src := bybit.NewSource()
+	binanceSrc := binance.NewSource()
+
+	binanceCatalog, err := binanceSrc.FetchSymbolCatalog(ctx)
+	if err != nil {
+		return fmt.Errorf("fetch binance catalog: %w", err)
+	}
 
 	symbols := cfg.Symbols
 	if len(symbols) == 0 {
@@ -63,6 +73,7 @@ func run() error {
 	slog.Info("collector.starting", "symbols", len(symbols))
 
 	publish := func(ctx context.Context, event bybit.TickerEvent) error {
+		_ = ctx
 		data, err := json.Marshal(event)
 		if err != nil {
 			return err
@@ -74,7 +85,39 @@ func run() error {
 		return nil
 	}
 
-	return src.Run(ctx, symbols, publish)
+	g, gctx := errgroup.WithContext(ctx)
+
+	g.Go(func() error {
+		return src.Run(gctx, symbols, publish)
+	})
+
+	g.Go(func() error {
+		// Calculate rate limit to fetch each symbol once every 5 minutes
+		rpm := len(binanceCatalog.CryptoPerpetualSymbols) / 5
+		if rpm < 1 {
+			rpm = 1
+		}
+
+		cfgLSR := binance.LSRSchedulerConfig{
+			Workers:            2,
+			RateLimitPerMinute: rpm,
+		}
+		slog.Info("collector.lsr.starting", "symbols", len(binanceCatalog.CryptoPerpetualSymbols), "rpm", rpm)
+		return binanceSrc.PollLongShortRatio(gctx, binanceCatalog.CryptoPerpetualSymbols, cfgLSR, func(ctx context.Context, reading binance.LongShortRatioReading) error {
+			_ = ctx
+			data, err := json.Marshal(reading)
+			if err != nil {
+				return err
+			}
+			if err := nc.Publish("binance.lsr."+reading.Symbol, data); err != nil {
+				return err
+			}
+			slog.Debug("published_lsr", "symbol", reading.Symbol, "ratio", reading.Ratio)
+			return nil
+		})
+	})
+
+	return g.Wait()
 }
 
 type config struct {
