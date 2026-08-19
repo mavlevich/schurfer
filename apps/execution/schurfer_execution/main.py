@@ -11,6 +11,7 @@ from fastapi import FastAPI
 
 from .config import Config
 from .decisions import _REDIS_SOCKET_TIMEOUT_SECONDS, run_decision_writer
+from .early_momentum import run_early_momentum_scanner, run_early_momentum_trigger
 from .exchanges import build_exchange_clients, close_exchange_clients
 from .incident_worker import run_incident_worker
 from .monitor import run_position_monitor
@@ -65,6 +66,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     paper = (
         asyncio.create_task(run_paper_monitor(market_exchanges, rdb, cfg)) if cfg.dry_run else None
     )
+    early_momentum_scanner = (
+        asyncio.create_task(run_early_momentum_scanner(rdb, cfg)) if cfg.dry_run else None
+    )
+    early_momentum_trigger = (
+        asyncio.create_task(run_early_momentum_trigger(market_exchanges, rdb, cfg))
+        if cfg.dry_run
+        else None
+    )
     # The decision writer does long blocking XREADGROUP reads, so it gets its own client
     # with a socket timeout above the BLOCK window. Keeping it separate leaves the trading
     # hot path fail-fast instead of inheriting the writer's longer timeout.
@@ -97,6 +106,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         trader.cancel()
     if paper:
         paper.cancel()
+    if early_momentum_scanner:
+        early_momentum_scanner.cancel()
+    if early_momentum_trigger:
+        early_momentum_trigger.cancel()
     if dec_writer:
         # Unacked entries stay in the Redis Stream and are reprocessed on restart,
         # so there is no in-process queue to drain here.
