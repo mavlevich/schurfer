@@ -2741,6 +2741,8 @@ net performance suitable for tax or risk accounting.
 
 ## Tech debt and DX (opportunistic)
 
+- **Execution Engine Resilience**: Add a `try...except` "bulletproof vest" inside the individual trade loop for `monitor.py` and `paper.py`. This ensures that if one legacy or malformed position raises an exception (like missing keys), it doesn't crash the entire monitoring cycle and block other healthy trades from closing.
+
 - Pre-push hook: run `make verify` as a pre-push stage so broken code does not reach
   CI.
 - CI caching (Go modules, pnpm store, uv cache) keyed on lockfile hashes.
