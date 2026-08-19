@@ -34,3 +34,12 @@ This document records the findings, parameters, and future ideas for the Early M
 
 - **Goal:** Protect capital from desyncs. If the execution engine crashes after sending an order but before recording it to the DB, the position is "orphaned" without a stop-loss.
 - **Implementation:** A background worker that compares active exchange positions against the Postgres database and emergency-manages any unrecognized positions.
+
+## For Analysts: How to run the Simulation
+
+If you want to run your own analysis, modify the parameters, or test new ideas, all the heavy lifting tools are included in `apps/analytics/schurfer_analytics/`.
+
+1. **Prerequisites:** Ensure you have the `.venv` active and the DB tunnel open (`ssh -L 5432:localhost:5432 ...`).
+2. **Find Candidates:** Run `uv run early-momentum-discovery-report` to generate the base accumulation candidates. This uses heavy SQL Window functions instead of Pandas to avoid OOM limits.
+3. **Run Simulator:** Run `uv run python apps/analytics/schurfer_analytics/tick_simulator.py`. This script fetches 1m Klines for every candidate, caches them locally as JSON (so it runs instantly on subsequent runs), and steps through every minute to simulate precise Stop Loss / Take Profit hits.
+4. **Experiment:** Open `tick_simulator.py` and modify the grid search ranges (`sl_grid` and `tp_grid`) or add custom exit logic (e.g. trailing stops) inside the `simulate()` loop to test your own strategies!
