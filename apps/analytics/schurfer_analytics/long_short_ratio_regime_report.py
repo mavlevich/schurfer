@@ -432,10 +432,7 @@ async def _load_lsr_feature_stats(
         max_ratio=max(all_ratios) if all_ratios else None,
         median_endpoint_staleness_minutes=median(stalenesses) if stalenesses else None,
     )
-    feature_complete_by_event = {
-        event_id: result.feature_complete for event_id, result in results.items()
-    }
-    return stats, feature_complete_by_event
+    return stats, results
 
 
 def liquidations_runs_statement(event_ids: list[int]) -> Any:
@@ -677,7 +674,7 @@ async def build_feasibility_report(
         if not entry_decision:
             continue
 
-        outcome = next((o for o in entry_decision.outcomes if o.horizon_minutes == 240), None)
+        outcome = next((o for o in entry_decision.outcomes if o.horizon_minutes == 480), None)
         if not outcome or outcome.short_return_pct is None:
             continue
 
@@ -889,7 +886,7 @@ def render_markdown(report: LongShortRatioRegimeReport) -> str:
     lines.extend(
         [
             "",
-            "## ML Evaluation: PnL by Long/Short Ratio Regime (240m horizon)",
+            "## ML Evaluation: PnL by Long/Short Ratio Regime (480m horizon)",
             "",
             "| Regime | Episodes | Avg Short Return |",
             "|---|---|---|",
