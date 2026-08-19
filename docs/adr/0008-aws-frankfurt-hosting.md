@@ -1,7 +1,12 @@
 # ADR-0008: AWS EC2 Frankfurt for production hosting
 
 Date: 2026-05-28
-Status: Accepted
+Status: Superseded
+
+Supersession note: production now runs on Hetzner. The current operational facts are
+documented in [`docs/runbooks/README.md`](../runbooks/README.md). A replacement hosting
+ADR will be recorded during `docs/current-architecture-refresh-v1`; the original
+decision below is retained unchanged as history.
 
 ## Context
 

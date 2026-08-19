@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"sync"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -63,6 +65,8 @@ type Notifier struct {
 	rdb              *redis.Client
 	recorder         alertRecorder
 	sourceLeadHealth sourceLeadHealthReader
+	momentumFlow     momentumFlowReader
+	consumer         *StreamConsumer
 }
 
 func New(ctx context.Context, cfg Config) (*Notifier, error) {
@@ -76,6 +80,11 @@ func New(ctx context.Context, cfg Config) (*Notifier, error) {
 		}
 		notifier.recorder = postgresRecorder
 		notifier.sourceLeadHealth = postgresRecorder
+		notifier.momentumFlow = postgresRecorder
+		pool, ok := postgresRecorder.pool.(*pgxpool.Pool)
+		if ok {
+			notifier.consumer = NewStreamConsumer(rdb, pool, cfg.BotToken, cfg.ChatID)
+		}
 	}
 	return notifier, nil
 }
@@ -95,6 +104,10 @@ func (n *Notifier) Run(ctx context.Context) error {
 	}
 
 	slog.Info("notifier.starting", "interval", n.cfg.Interval)
+
+	if n.consumer != nil {
+		go n.consumer.Run(ctx)
+	}
 
 	if err := n.tick(ctx); err != nil {
 		slog.Warn("notifier.tick.failed", "err", err)
@@ -153,7 +166,7 @@ func (n *Notifier) reportStaleness(ctx context.Context, stale bool, reason strin
 		if !claimed {
 			return // already alerted
 		}
-		if err := sendMessage(ctx, "🔴 Schurfer scanner stale: "+reason, n.cfg.BotToken, n.cfg.ChatID); err != nil {
+		if err := n.publishEnvelope(ctx, "scanner", "scanner.stale", "critical", "scanner_stale", "🔴 Schurfer scanner stale: "+reason, nil); err != nil {
 			slog.Warn("notifier.stale.alert.failed", "err", err)
 			if derr := n.rdb.Del(ctx, redisKeyStaleAlerted).Err(); derr != nil {
 				slog.Warn("notifier.stale.claim.release.failed", "err", derr)
@@ -174,7 +187,7 @@ func (n *Notifier) reportStaleness(ctx context.Context, stale bool, reason strin
 	if removed == 0 {
 		return // was not in an alerted state
 	}
-	if err := sendMessage(ctx, "🟢 Schurfer scanner recovered", n.cfg.BotToken, n.cfg.ChatID); err != nil {
+	if err := n.publishEnvelope(ctx, "scanner", "scanner.recovered", "info", "scanner_recovered_"+strconv.FormatInt(time.Now().Unix(), 10), "🟢 Schurfer scanner recovered", nil); err != nil {
 		slog.Warn("notifier.stale.recovery.failed", "err", err)
 		if serr := n.rdb.Set(ctx, redisKeyStaleAlerted, time.Now().Unix(), 0).Err(); serr != nil {
 			slog.Warn("notifier.stale.flag.restore.failed", "err", serr)
@@ -194,6 +207,7 @@ func (n *Notifier) tick(ctx context.Context) error {
 	_ = n.rdb.Set(ctx, redisKeyHeartbeat, time.Now().Unix(), 3*n.cfg.Interval).Err()
 	n.drainAlertOutbox(ctx)
 	n.reportSourceLeadHealth(ctx)
+	n.reportMomentumFlow(ctx)
 
 	// A silently dead, stuck, or garbage-producing scanner is the main way the
 	// dataset develops gaps, so alert on those before doing anything else.
@@ -281,8 +295,9 @@ func (n *Notifier) tick(ctx context.Context) error {
 			defer func() { <-sem }()
 
 			startedAt := time.Now().UTC()
-			if err := sendAlert(ctx, p, n.cfg.BotToken, n.cfg.ChatID); err != nil {
-				slog.Warn("notifier.alert.failed", "base", p.Base, "err", err)
+			dedupKey := fmt.Sprintf("pump:%s:%d", p.Base, p.PumpEventID)
+			if err := n.publishEnvelope(ctx, "scanner", "pump.detected", "trade", dedupKey, formatAlert(p), map[string]any{"base": p.Base, "event_id": p.PumpEventID, "parse_mode": "MarkdownV2"}); err != nil {
+				slog.Warn("notifier.alert.enqueue_failed", "base", p.Base, "err", err)
 				return
 			}
 			sentAt := time.Now().UTC()

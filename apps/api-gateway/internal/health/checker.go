@@ -31,6 +31,7 @@ type Report struct {
 	SignalReadiness  *SignalReadiness  `json:"signal_readiness"`
 	SystemLoad       *SystemLoad       `json:"system_load"`
 	ContainerRuntime *ContainerRuntime `json:"container_runtime"`
+	DiskUsage        *DiskUsage        `json:"disk_usage"`
 	MarketPipeline   *MarketPipeline   `json:"market_pipeline"`
 	OrderflowPilot   *OrderflowPilot   `json:"orderflow_pilot"`
 	FillIncidents    *FillIncidents    `json:"fill_incidents"`
@@ -46,17 +47,23 @@ type SignalReadiness struct {
 }
 
 type MarketPipeline struct {
-	UpdatedAtMS         int64   `json:"updated_at_ms"`
-	ObservedSymbols     int64   `json:"observed_symbols"`
-	HotSymbols          int64   `json:"hot_symbols"`
-	EventRatePerSecond  float64 `json:"event_rate_per_sec"`
-	LastLagMS           int64   `json:"last_lag_ms"`
-	MaxLagMS            int64   `json:"max_lag_ms"`
-	NATSDroppedTotal    int64   `json:"nats_dropped_total"`
-	PendingDroppedTotal int64   `json:"pending_dropped_total"`
-	PersistErrorsTotal  int64   `json:"persist_errors_total"`
-	BarsPersistedTotal  int64   `json:"bars_persisted_total"`
-	PumpFeedStatus      string  `json:"pump_feed_status"`
+	UpdatedAtMS        int64   `json:"updated_at_ms"`
+	ObservedSymbols    int64   `json:"observed_symbols"`
+	HotSymbols         int64   `json:"hot_symbols"`
+	EventRatePerSecond float64 `json:"event_rate_per_sec"`
+	LastLagMS          int64   `json:"last_lag_ms"`
+	// MaxLagMS is the lifetime maximum since the collector started: a single
+	// historical outlier stays in this field forever and must never be shown
+	// as if it were a current condition. WindowMaxLagMS is the collector's
+	// own rolling-window maximum and is what "is lag currently a problem?"
+	// should be judged against.
+	MaxLagMS            int64  `json:"max_lag_ms"`
+	WindowMaxLagMS      int64  `json:"window_max_lag_ms"`
+	NATSDroppedTotal    int64  `json:"nats_dropped_total"`
+	PendingDroppedTotal int64  `json:"pending_dropped_total"`
+	PersistErrorsTotal  int64  `json:"persist_errors_total"`
+	BarsPersistedTotal  int64  `json:"bars_persisted_total"`
+	PumpFeedStatus      string `json:"pump_feed_status"`
 }
 
 type OrderflowPilot struct {
@@ -85,17 +92,19 @@ type Config struct {
 	RedisAddr          string
 	NATSUrl            string
 	RuntimeMetricsPath string
+	DiskUsagePath      string
 }
 
 // Checker holds shared clients and pings them on each check.
 // Call Close when the application shuts down.
 type Checker struct {
-	pool         *pgxpool.Pool
-	db           queryRower
-	rdb          *redis.Client
-	nc           *nats.Conn
-	systemProbe  func() *SystemLoad
-	runtimeProbe func() *ContainerRuntime
+	pool           *pgxpool.Pool
+	db             queryRower
+	rdb            *redis.Client
+	nc             *nats.Conn
+	systemProbe    func() *SystemLoad
+	runtimeProbe   func() *ContainerRuntime
+	diskUsageProbe func() *DiskUsage
 }
 
 func NewChecker(ctx context.Context, cfg Config) (*Checker, error) {
@@ -130,6 +139,9 @@ func NewChecker(ctx context.Context, cfg Config) (*Checker, error) {
 		runtimeProbe: func() *ContainerRuntime {
 			return readContainerRuntime(cfg.RuntimeMetricsPath)
 		},
+		diskUsageProbe: func() *DiskUsage {
+			return readDiskUsage(cfg.DiskUsagePath)
+		},
 	}, nil
 }
 
@@ -152,20 +164,40 @@ func (c *Checker) Check(ctx context.Context) Report {
 	if c.runtimeProbe != nil {
 		containerRuntime = c.runtimeProbe()
 	}
+	var diskUsage *DiskUsage
+	if c.diskUsageProbe != nil {
+		diskUsage = c.diskUsageProbe()
+	}
+	// Collector and Execution have no dedicated heartbeat key of their own;
+	// each is instead inferred from telemetry only that service writes, on a
+	// short Redis TTL the service itself refreshes (30s for market:hotset:health,
+	// 180s for execution:signal_readiness). Presence therefore already means
+	// "wrote fresh telemetry within its own TTL window", so there is no
+	// separate staleness case to handle here: absence (nil) already covers it.
+	marketPipeline := c.checkMarketPipeline(ctx)
+	signalReadiness := c.checkSignalReadiness(ctx)
 	return Report{
 		Postgres:         c.checkPostgres(ctx),
 		Redis:            c.checkRedis(ctx),
 		NATS:             c.checkNATS(),
-		Collector:        StatusUnknown, // populated via NATS heartbeats later
-		Execution:        StatusUnknown,
+		Collector:        statusFromPresence(marketPipeline != nil),
+		Execution:        statusFromPresence(signalReadiness != nil),
 		TelegramBot:      c.checkTelegramBot(ctx),
-		SignalReadiness:  c.checkSignalReadiness(ctx),
+		SignalReadiness:  signalReadiness,
 		SystemLoad:       systemLoad,
 		ContainerRuntime: containerRuntime,
-		MarketPipeline:   c.checkMarketPipeline(ctx),
+		DiskUsage:        diskUsage,
+		MarketPipeline:   marketPipeline,
 		OrderflowPilot:   c.checkOrderflowPilot(ctx),
 		FillIncidents:    c.checkFillIncidents(ctx),
 	}
+}
+
+func statusFromPresence(present bool) Status {
+	if present {
+		return StatusUp
+	}
+	return StatusDown
 }
 
 func (c *Checker) checkOrderflowPilot(ctx context.Context) *OrderflowPilot {
@@ -251,6 +283,7 @@ func (c *Checker) checkMarketPipeline(ctx context.Context) *MarketPipeline {
 		EventRatePerSecond:  eventRate,
 		LastLagMS:           optionalInt64(values, "last_lag_ms"),
 		MaxLagMS:            optionalInt64(values, "max_lag_ms"),
+		WindowMaxLagMS:      optionalInt64(values, "window_max_lag_ms"),
 		NATSDroppedTotal:    optionalInt64(values, "nats_dropped_total"),
 		PendingDroppedTotal: optionalInt64(values, "pending_dropped_total"),
 		PersistErrorsTotal:  optionalInt64(values, "persist_errors_total"),

@@ -1,6 +1,8 @@
 # exchanges
 
-Wrappers over exchange APIs (Binance, Bybit, OKX, Hyperliquid).
-Read-only client + execution client per exchange.
+Status: inactive scaffold.
 
-Status: empty.
+Originally planned for shared read-only and execution wrappers over exchange APIs.
+
+No shared wrapper package exists here today. Active adapters remain service-local
+until a reviewed interface has at least two real implementations.

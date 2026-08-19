@@ -1,0 +1,20 @@
+[Unit]
+Description=Schurfer momentum-capture canary checkpoint runner
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=deploy
+Group=deploy
+WorkingDirectory=/opt/schurfer
+EnvironmentFile=-/opt/schurfer/.env.prod
+Environment=DOCKER_CONFIG=/opt/schurfer/runtime/checkpoint-docker-config
+ExecStart=/usr/bin/python3 /opt/schurfer/infra/scripts/momentum_canary_checkpoints.py
+TimeoutStartSec=5min
+Nice=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/opt/schurfer/runtime

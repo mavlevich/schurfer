@@ -46,6 +46,7 @@ func run() error {
 		RedisAddr:          cfg.RedisAddr,
 		NATSUrl:            cfg.NATSUrl,
 		RuntimeMetricsPath: cfg.RuntimeMetricsPath,
+		DiskUsagePath:      cfg.DiskUsagePath,
 	})
 	if err != nil {
 		return fmt.Errorf("health checker: %w", err)
@@ -91,6 +92,7 @@ func run() error {
 		r.Get("/api/health", healthHandler.Health)
 		r.Get("/api/pumps", pumpsHandler.List)
 		r.Get("/api/pumps/history", pumpsHandler.History)
+		r.Get("/api/pumps/momentum-watch", pumpsHandler.MomentumWatch)
 		r.Get("/api/pumps/{base}", pumpsHandler.Token)
 		r.Get("/api/pumps/{base}/ohlcv", pumpsHandler.OHLCV)
 		r.Get("/api/pumps/{base}/history", pumpsHandler.TokenHistory)
@@ -201,6 +203,7 @@ type config struct {
 	Env                string
 	ExecutionURL       string
 	RuntimeMetricsPath string
+	DiskUsagePath      string
 }
 
 func loadConfig() config {
@@ -216,6 +219,10 @@ func loadConfig() config {
 		RuntimeMetricsPath: getEnv(
 			"RUNTIME_METRICS_PATH",
 			"/runtime/container-metrics.snapshot",
+		),
+		DiskUsagePath: getEnv(
+			"DISK_USAGE_PATH",
+			"/runtime/disk-usage.snapshot",
 		),
 	}
 }

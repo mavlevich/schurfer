@@ -46,13 +46,33 @@ interface SystemLoadState {
   memory_used_bytes: number;
   memory_total_bytes: number;
   memory_used_pct: number;
+  mem_available_bytes: number;
   swap_used_bytes: number;
   swap_total_bytes: number;
   swap_used_pct: number;
+  swap_in_bytes_per_sec: number | null;
+  swap_out_bytes_per_sec: number | null;
   disk_used_bytes: number;
   disk_total_bytes: number;
   disk_used_pct: number;
   system_uptime_seconds: number;
+}
+
+// DiskUsageState breaks down host disk usage into what a deploy-time cleanup
+// decision actually needs: reclaimable build artifacts (Docker images,
+// build cache) versus real data (Postgres, backups) that must never be
+// pruned. See health.DiskUsage's own doc comment for why this comes from a
+// host-side snapshot file rather than the api-gateway container itself.
+interface DiskUsageState {
+  captured_at_ms: number;
+  images_bytes: number;
+  images_reclaimable_bytes: number;
+  containers_bytes: number;
+  volumes_bytes: number;
+  build_cache_bytes: number;
+  build_cache_reclaimable_bytes: number;
+  postgres_data_bytes: number;
+  backups_bytes: number;
 }
 
 interface ContainerMetricState {
@@ -66,6 +86,7 @@ interface ContainerMetricState {
   health: string;
   restart_count: number;
   started_at: string;
+  oom_killed: boolean;
 }
 
 interface ContainerRuntimeState {
@@ -82,6 +103,7 @@ interface MarketPipelineState {
   event_rate_per_sec: number;
   last_lag_ms: number;
   max_lag_ms: number;
+  window_max_lag_ms: number;
   nats_dropped_total: number;
   pending_dropped_total: number;
   persist_errors_total: number;
@@ -142,6 +164,7 @@ interface ServiceState {
   telegram_bot: ServiceStatus;
   signal_readiness: SignalReadinessState | null;
   system_load: SystemLoadState | null;
+  disk_usage: DiskUsageState | null;
   container_runtime: ContainerRuntimeState | null;
   market_pipeline: MarketPipelineState | null;
   orderflow_pilot: OrderflowPilotState | null;
@@ -162,6 +185,7 @@ const INITIAL_STATE: ServiceState = {
   telegram_bot: 'unknown',
   signal_readiness: null,
   system_load: null,
+  disk_usage: null,
   container_runtime: null,
   market_pipeline: null,
   orderflow_pilot: null,
@@ -172,6 +196,41 @@ const WS_URL =
   typeof window !== 'undefined'
     ? `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws/status`
     : 'ws://localhost:8000/ws/status';
+
+// Below this much real MemAvailable, a new process risks swapping before it
+// even finishes starting up. Chosen to sit below the combined RAM+swap
+// budget the ad-hoc analytics reports already require (see Makefile's
+// PROD_REPORT_MIN_HEADROOM_MB), so this warning trips before those reports
+// would refuse to start, not after.
+const LOW_MEM_AVAILABLE_THRESHOLD_BYTES = 768 * 1024 * 1024;
+
+// Above this much reclaimable Docker build cache, flag it: a 2026-08-16
+// incident found 15.6 GiB of stale build cache (a third of the disk used at
+// the time) that `make prod-deploy`'s own `docker image prune -f` never
+// touches (it only prunes dangling images, not the builder's own layer
+// cache) -- unbounded growth across every deploy, not a one-time thing.
+const HIGH_RECLAIMABLE_BUILD_CACHE_THRESHOLD_BYTES = 5 * 1024 ** 3;
+
+// Containers deliberately left stopped as part of a past decision, not a
+// crash. An "exited" container outside this set is treated as unexpected.
+const RETIRED_CONTAINER_NAMES = new Set(['schurfer-orderflow-pilot']);
+
+type ContainerSeverity = 'bad' | 'retired' | 'stale' | 'ok';
+
+function containerSeverity(container: ContainerMetricState, fresh: boolean): ContainerSeverity {
+  if (
+    container.oom_killed ||
+    container.status === 'restarting' ||
+    container.health === 'unhealthy'
+  ) {
+    return 'bad';
+  }
+  if (container.status === 'exited') {
+    return RETIRED_CONTAINER_NAMES.has(container.name) ? 'retired' : 'bad';
+  }
+  if (!fresh) return 'stale';
+  return 'ok';
+}
 
 function timeAgo(tsMs: number): string {
   const secs = Math.max(0, Math.floor((Date.now() - tsMs) / 1000));
@@ -192,6 +251,23 @@ function formatUptime(seconds: number): string {
   const days = Math.floor(seconds / 86_400);
   const hours = Math.floor((seconds % 86_400) / 3_600);
   return days > 0 ? `${days}d ${hours}h` : `${hours}h`;
+}
+
+// containerDisplayName is a display-only relabel, not a rename: the
+// underlying container/service name (docker-compose, Makefile targets,
+// the canary checkpoint script, Redis health keys) stays "momentum-
+// capture" -- Bybit was the only venue when it was named, so it carries
+// no exchange suffix, unlike every venue added since ("momentum-capture-
+// binance", "momentum-watch-binance"). Renaming the actual container
+// would mean rebuilding and restarting the live Bybit canary process for
+// a purely cosmetic fix (see ROADMAP.md's own tech-debt note on this);
+// this map only clarifies what the operator is looking at.
+const CONTAINER_DISPLAY_NAMES: Record<string, string> = {
+  'momentum-capture': 'momentum-capture (bybit)',
+};
+
+function containerDisplayName(strippedName: string): string {
+  return CONTAINER_DISPLAY_NAMES[strippedName] ?? strippedName;
 }
 
 function LoadBar({
@@ -225,11 +301,28 @@ function LoadBar({
   );
 }
 
+interface DropTrackingState {
+  previousTotal: number | null;
+  previousUpdatedAtMs: number | null;
+  recentDelta: number;
+  recentWindowMs: number | null;
+  lastDropAtMs: number | null;
+}
+
+const INITIAL_DROP_TRACKING: DropTrackingState = {
+  previousTotal: null,
+  previousUpdatedAtMs: null,
+  recentDelta: 0,
+  recentWindowMs: null,
+  lastDropAtMs: null,
+};
+
 export function StatusPage() {
   const [services, setServices] = useState<ServiceState>(INITIAL_STATE);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [scanner, setScanner] = useState<ScannerState | null>(null);
   const [resourceHistory, setResourceHistory] = useState<ResourceSample[]>([]);
+  const [dropTracking, setDropTracking] = useState<DropTrackingState>(INITIAL_DROP_TRACKING);
 
   const recordResourceSample = (load: SystemLoadState | null | undefined) => {
     if (!load) return;
@@ -249,12 +342,38 @@ export function StatusPage() {
     });
   };
 
+  // Drops are a lifetime cumulative counter: comparing consecutive samples is
+  // the only way to tell "already happened once, long ago" apart from
+  // "happening right now". The first sample of a fresh page load never
+  // counts as a fresh drop, however large the lifetime total already is.
+  const recordDropSample = (pipeline: MarketPipelineState | null | undefined) => {
+    if (!pipeline) return;
+    const total = pipeline.nats_dropped_total + pipeline.pending_dropped_total;
+    setDropTracking((previous) => {
+      if (previous.previousUpdatedAtMs === pipeline.updated_at_ms) return previous;
+      const delta =
+        previous.previousTotal === null ? 0 : Math.max(0, total - previous.previousTotal);
+      const windowMs =
+        previous.previousUpdatedAtMs === null
+          ? null
+          : pipeline.updated_at_ms - previous.previousUpdatedAtMs;
+      return {
+        previousTotal: total,
+        previousUpdatedAtMs: pipeline.updated_at_ms,
+        recentDelta: delta,
+        recentWindowMs: windowMs,
+        lastDropAtMs: delta > 0 ? pipeline.updated_at_ms : previous.lastDropAtMs,
+      };
+    });
+  };
+
   const { status: wsStatus } = useWebSocket(WS_URL, {
     onMessage: (data) => {
       const msg = data as WsStatusMessage;
       if (msg.type === 'status') {
         setServices((prev) => ({ ...prev, ...msg.data }));
         recordResourceSample(msg.data.system_load);
+        recordDropSample(msg.data.market_pipeline);
         setLastUpdated(new Date());
       }
     },
@@ -278,6 +397,7 @@ export function StatusPage() {
           const data = (await res.json()) as Partial<ServiceState>;
           setServices((prev) => ({ ...prev, ...data }));
           recordResourceSample(data.system_load);
+          recordDropSample(data.market_pipeline);
           setLastUpdated(new Date());
         } else {
           setServices(INITIAL_STATE);
@@ -319,14 +439,11 @@ export function StatusPage() {
     { key: 'telegram_bot' as const, label: 'Telegram Bot' },
   ];
 
-  const serviceStatuses = [...infra, ...apps].map(({ key }) => services[key]);
-  const allUp = serviceStatuses.every((status) => status === 'up');
-  const anyDown = serviceStatuses.some((status) => status === 'down');
   const signalReadiness = services.signal_readiness;
   const systemLoad = services.system_load;
+  const diskUsage = services.disk_usage;
   const containerRuntime = services.container_runtime;
   const marketPipeline = services.market_pipeline;
-  const orderflowPilot = services.orderflow_pilot;
   const fillIncidents = services.fill_incidents;
   const hasOpenFillIncidents = !!fillIncidents && fillIncidents.open.length > 0;
   const cpuHistory = resourceHistory
@@ -344,20 +461,64 @@ export function StatusPage() {
   const pipelineDrops = marketPipeline
     ? marketPipeline.nats_dropped_total + marketPipeline.pending_dropped_total
     : 0;
-  const orderflowAgeMS = orderflowPilot ? Date.now() - orderflowPilot.updated_at_ms : null;
-  const orderflowFresh = orderflowAgeMS !== null && orderflowAgeMS >= 0 && orderflowAgeMS < 60_000;
-  const orderflowErrors = orderflowPilot
-    ? orderflowPilot.queue_dropped_total +
-      orderflowPilot.pending_dropped_total +
-      orderflowPilot.persist_errors_total +
-      orderflowPilot.storage_limited_total
-    : 0;
   const readinessVariant =
     signalReadiness && signalReadiness.evaluated > 0 && signalReadiness.deferred === 0
       ? 'success'
       : signalReadiness && signalReadiness.ready === 0 && signalReadiness.deferred > 0
         ? 'destructive'
         : 'secondary';
+
+  // Overall status is three-tiered, not just up/down: a critical dependency
+  // being down is Degraded, but low memory headroom, active swap churn, or
+  // drops happening right now are Operational-with-warnings, not Degraded,
+  // since the service is still working, just worth a human's attention.
+  const criticalServiceKeys = ['postgres', 'redis', 'nats', 'collector', 'execution'] as const;
+  const criticalDown = criticalServiceKeys.some((key) => services[key] === 'down');
+  const containerSeverities = (containerRuntime?.containers ?? []).map((container) =>
+    containerSeverity(container, containerFresh),
+  );
+  const anyContainerBad = containerSeverities.includes('bad');
+  const degraded = criticalDown || anyContainerBad;
+
+  const lowMemoryHeadroom = systemLoad
+    ? systemLoad.mem_available_bytes < LOW_MEM_AVAILABLE_THRESHOLD_BYTES
+    : false;
+  const activeSwapChurn = systemLoad
+    ? (systemLoad.swap_in_bytes_per_sec ?? 0) > 0 || (systemLoad.swap_out_bytes_per_sec ?? 0) > 0
+    : false;
+  const dropsIncreasingNow = dropTracking.recentDelta > 0;
+  const telegramDown = services.telegram_bot === 'down';
+  const containerTelemetryStale = !!containerRuntime && !containerFresh && !anyContainerBad;
+  const hasWarnings =
+    !degraded &&
+    (lowMemoryHeadroom ||
+      activeSwapChurn ||
+      dropsIncreasingNow ||
+      telegramDown ||
+      containerTelemetryStale);
+  const overallStatus: 'degraded' | 'warning' | 'operational' = degraded
+    ? 'degraded'
+    : hasWarnings
+      ? 'warning'
+      : 'operational';
+  const overallLabel =
+    overallStatus === 'degraded'
+      ? 'Degraded'
+      : overallStatus === 'warning'
+        ? 'Operational with warnings'
+        : 'Operational';
+  const overallMessage =
+    overallStatus === 'degraded'
+      ? 'Some services are down'
+      : overallStatus === 'warning'
+        ? 'Operational, with items worth a look'
+        : 'All systems operational';
+  const overallVariant =
+    overallStatus === 'degraded'
+      ? 'destructive'
+      : overallStatus === 'warning'
+        ? 'warning'
+        : 'success';
 
   return (
     <PageShell width="content">
@@ -379,22 +540,14 @@ export function StatusPage() {
         <CardContent className="flex items-center gap-3 py-4">
           <Activity className="h-5 w-5 text-muted-foreground" />
           <div className="flex-1">
-            <p className="text-sm font-medium">
-              {anyDown
-                ? 'Some services are down'
-                : allUp
-                  ? 'All systems operational'
-                  : 'Checking services...'}
-            </p>
+            <p className="text-sm font-medium">{overallMessage}</p>
             {lastUpdated && (
               <p className="text-xs text-muted-foreground">
                 Updated {lastUpdated.toLocaleTimeString()}
               </p>
             )}
           </div>
-          <Badge variant={anyDown ? 'destructive' : allUp ? 'success' : 'secondary'}>
-            {anyDown ? 'Degraded' : allUp ? 'Operational' : 'Unknown'}
-          </Badge>
+          <Badge variant={overallVariant}>{overallLabel}</Badge>
         </CardContent>
       </Card>
 
@@ -541,14 +694,22 @@ export function StatusPage() {
           </CardTitle>
           <Badge
             variant={
-              systemLoad && Math.max(systemLoad.disk_used_pct, systemLoad.memory_used_pct) >= 80
-                ? 'destructive'
-                : systemLoad
-                  ? 'success'
-                  : 'secondary'
+              lowMemoryHeadroom || activeSwapChurn
+                ? 'warning'
+                : systemLoad && Math.max(systemLoad.disk_used_pct, systemLoad.memory_used_pct) >= 80
+                  ? 'destructive'
+                  : systemLoad
+                    ? 'success'
+                    : 'secondary'
             }
           >
-            {systemLoad ? formatUptime(systemLoad.system_uptime_seconds) : 'No telemetry'}
+            {!systemLoad
+              ? 'No telemetry'
+              : lowMemoryHeadroom
+                ? 'Low memory headroom'
+                : activeSwapChurn
+                  ? 'Active swap churn'
+                  : formatUptime(systemLoad.system_uptime_seconds)}
           </Badge>
         </CardHeader>
         <CardContent className="space-y-4 pt-0">
@@ -581,13 +742,49 @@ export function StatusPage() {
                 detail={`${formatBytes(systemLoad.memory_used_bytes)} / ${formatBytes(systemLoad.memory_total_bytes)}${memoryPeak === null ? '' : ` · 60m peak ${memoryPeak.toFixed(1)}%`}`}
                 icon={MemoryStick}
               />
+              <div className="ml-7 flex items-center justify-between">
+                <span
+                  className={`text-xs ${lowMemoryHeadroom ? 'text-amber-500' : 'text-muted-foreground'}`}
+                >
+                  Real available (MemAvailable)
+                </span>
+                <span
+                  className={`text-xs font-mono ${lowMemoryHeadroom ? 'text-amber-500' : 'text-muted-foreground'}`}
+                >
+                  {formatBytes(systemLoad.mem_available_bytes)}
+                </span>
+              </div>
               {systemLoad.swap_total_bytes > 0 && (
-                <LoadBar
-                  label="Swap"
-                  value={systemLoad.swap_used_pct}
-                  detail={`${formatBytes(systemLoad.swap_used_bytes)} / ${formatBytes(systemLoad.swap_total_bytes)}`}
-                  icon={MemoryStick}
-                />
+                <>
+                  <LoadBar
+                    label="Swap"
+                    value={systemLoad.swap_used_pct}
+                    detail={`${formatBytes(systemLoad.swap_used_bytes)} / ${formatBytes(systemLoad.swap_total_bytes)}`}
+                    icon={MemoryStick}
+                  />
+                  <div className="ml-7 flex items-center justify-between">
+                    <span
+                      className={`text-xs ${activeSwapChurn ? 'text-amber-500' : 'text-muted-foreground'}`}
+                    >
+                      Swap activity (in / out)
+                    </span>
+                    <span
+                      className={`text-xs font-mono ${activeSwapChurn ? 'text-amber-500' : 'text-muted-foreground'}`}
+                    >
+                      {systemLoad.swap_in_bytes_per_sec === null
+                        ? 'measuring...'
+                        : `${formatBytes(systemLoad.swap_in_bytes_per_sec)}/s / ${formatBytes(
+                            systemLoad.swap_out_bytes_per_sec ?? 0,
+                          )}/s`}
+                    </span>
+                  </div>
+                  {!activeSwapChurn && systemLoad.swap_used_bytes > 0 && (
+                    <p className="ml-7 text-xs text-muted-foreground">
+                      Swap is in use but not actively paging right now: usage alone is not a current
+                      problem.
+                    </p>
+                  )}
+                </>
               )}
               <LoadBar
                 label="Disk"
@@ -595,6 +792,57 @@ export function StatusPage() {
                 detail={`${formatBytes(systemLoad.disk_used_bytes)} / ${formatBytes(systemLoad.disk_total_bytes)}`}
                 icon={HardDrive}
               />
+              {diskUsage && (
+                <div className="ml-7 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span
+                      className={`text-xs ${
+                        diskUsage.build_cache_reclaimable_bytes >=
+                        HIGH_RECLAIMABLE_BUILD_CACHE_THRESHOLD_BYTES
+                          ? 'text-amber-500'
+                          : 'text-muted-foreground'
+                      }`}
+                    >
+                      Docker build cache (reclaimable)
+                    </span>
+                    <span
+                      className={`text-xs font-mono ${
+                        diskUsage.build_cache_reclaimable_bytes >=
+                        HIGH_RECLAIMABLE_BUILD_CACHE_THRESHOLD_BYTES
+                          ? 'text-amber-500'
+                          : 'text-muted-foreground'
+                      }`}
+                    >
+                      {formatBytes(diskUsage.build_cache_bytes)}
+                    </span>
+                  </div>
+                  {diskUsage.build_cache_reclaimable_bytes >=
+                    HIGH_RECLAIMABLE_BUILD_CACHE_THRESHOLD_BYTES && (
+                    <p className="text-xs text-muted-foreground">
+                      Stale build layers the normal deploy&apos;s own image prune never touches.
+                      Reclaimable with a builder prune.
+                    </p>
+                  )}
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">Docker images</span>
+                    <span className="text-xs font-mono text-muted-foreground">
+                      {formatBytes(diskUsage.images_bytes)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">Postgres data</span>
+                    <span className="text-xs font-mono text-muted-foreground">
+                      {formatBytes(diskUsage.postgres_data_bytes)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">Deploy backups</span>
+                    <span className="text-xs font-mono text-muted-foreground">
+                      {formatBytes(diskUsage.backups_bytes)}
+                    </span>
+                  </div>
+                </div>
+              )}
             </>
           ) : (
             <p className="text-xs text-muted-foreground">
@@ -611,9 +859,23 @@ export function StatusPage() {
             Containers
           </CardTitle>
           <Badge
-            variant={!containerRuntime ? 'secondary' : containerFresh ? 'success' : 'destructive'}
+            variant={
+              !containerRuntime
+                ? 'secondary'
+                : anyContainerBad
+                  ? 'destructive'
+                  : containerFresh
+                    ? 'success'
+                    : 'warning'
+            }
           >
-            {!containerRuntime ? 'No telemetry' : containerFresh ? 'Live' : 'Stale'}
+            {!containerRuntime
+              ? 'No telemetry'
+              : anyContainerBad
+                ? 'Unhealthy'
+                : containerFresh
+                  ? 'Live'
+                  : 'Telemetry stale'}
           </Badge>
         </CardHeader>
         <CardContent className="pt-0">
@@ -643,13 +905,27 @@ export function StatusPage() {
                   </thead>
                   <tbody>
                     {containerRuntime.containers.map((container) => {
-                      const healthy =
-                        container.status === 'running' &&
-                        (container.health === 'healthy' || container.health === 'none');
+                      const severity = containerSeverity(container, containerFresh);
+                      const severityClass =
+                        severity === 'bad'
+                          ? 'text-red-500'
+                          : severity === 'stale'
+                            ? 'text-amber-500'
+                            : severity === 'retired'
+                              ? 'text-muted-foreground'
+                              : 'text-emerald-500';
+                      const label =
+                        severity === 'retired'
+                          ? 'retired'
+                          : container.oom_killed
+                            ? 'oom-killed'
+                            : container.health === 'none'
+                              ? container.status
+                              : container.health;
                       return (
                         <tr key={container.name} className="border-b last:border-0">
                           <td className="py-2 font-mono">
-                            {container.name.replace(/^schurfer-/, '')}
+                            {containerDisplayName(container.name.replace(/^schurfer-/, ''))}
                           </td>
                           <td className="py-2 text-right font-mono">
                             {container.cpu_percent.toFixed(1)}%
@@ -663,9 +939,7 @@ export function StatusPage() {
                           <td className="py-2 text-right font-mono">{container.pids}</td>
                           <td className="py-2 text-right font-mono">{container.restart_count}</td>
                           <td className="py-2 text-right">
-                            <span className={healthy ? 'text-emerald-500' : 'text-amber-500'}>
-                              {container.health === 'none' ? container.status : container.health}
-                            </span>
+                            <span className={severityClass}>{label}</span>
                           </td>
                         </tr>
                       );
@@ -716,17 +990,45 @@ export function StatusPage() {
             </span>
           </div>
           <div className="flex items-center justify-between">
-            <span className="text-sm">Latest / maximum lag</span>
+            <span className="text-sm">Current / window / lifetime-max lag</span>
             <span className="text-xs font-mono text-muted-foreground">
               {marketPipeline
-                ? `${marketPipeline.last_lag_ms} / ${marketPipeline.max_lag_ms} ms`
+                ? `${marketPipeline.last_lag_ms} / ${marketPipeline.window_max_lag_ms} / ${marketPipeline.max_lag_ms} ms`
+                : 'n/a'}
+            </span>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            The lifetime-max figure can be a single old outlier; judge current health by the first
+            two numbers, not the third.
+          </p>
+          <div className="flex items-center justify-between">
+            <span className="text-sm">Drops (recent / lifetime)</span>
+            <span
+              className={`text-xs font-mono ${dropsIncreasingNow ? 'text-red-500' : 'text-muted-foreground'}`}
+            >
+              {marketPipeline
+                ? `${dropTracking.recentDelta} / ${pipelineDrops}${
+                    dropTracking.recentWindowMs !== null
+                      ? ` (last ${Math.round(dropTracking.recentWindowMs / 1000)}s)`
+                      : ''
+                  }`
                 : 'n/a'}
             </span>
           </div>
           <div className="flex items-center justify-between">
-            <span className="text-sm">Drops / persistence errors</span>
+            <span className="text-sm">Last drop observed</span>
+            <span className="text-xs text-muted-foreground">
+              {dropTracking.lastDropAtMs
+                ? timeAgo(dropTracking.lastDropAtMs)
+                : pipelineDrops > 0
+                  ? 'none since page loaded (lifetime total predates this session)'
+                  : 'none'}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm">Persistence errors (lifetime)</span>
             <span className="text-xs font-mono text-muted-foreground">
-              {marketPipeline ? `${pipelineDrops} / ${marketPipeline.persist_errors_total}` : 'n/a'}
+              {marketPipeline ? marketPipeline.persist_errors_total : 'n/a'}
             </span>
           </div>
           <div className="flex items-center justify-between">
@@ -738,79 +1040,11 @@ export function StatusPage() {
         </CardContent>
       </Card>
 
-      {/* Bounded order-flow trial */}
-      <Card>
-        <CardHeader className="flex-row items-center justify-between space-y-0">
-          <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-            Order-Flow Trial
-          </CardTitle>
-          <Badge
-            variant={
-              !orderflowPilot
-                ? 'secondary'
-                : orderflowFresh && orderflowPilot.status === 'ok' && orderflowErrors === 0
-                  ? 'success'
-                  : 'destructive'
-            }
-          >
-            {!orderflowPilot ? 'Not running' : !orderflowFresh ? 'Stale' : orderflowPilot.status}
-          </Badge>
-        </CardHeader>
-        <CardContent className="space-y-3 pt-0">
-          <div className="flex items-center justify-between">
-            <span className="text-sm">Symbols / throughput</span>
-            <span className="text-xs font-mono text-muted-foreground">
-              {orderflowPilot
-                ? `${orderflowPilot.observed_symbols} / ${orderflowPilot.event_rate_per_sec.toFixed(0)} trades/s`
-                : 'n/a'}
-            </span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-sm">Active / total captures</span>
-            <span className="text-xs font-mono text-muted-foreground">
-              {orderflowPilot
-                ? `${orderflowPilot.active_captures} / ${orderflowPilot.activation_total}`
-                : 'n/a'}
-            </span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-sm">Latest / window lag</span>
-            <span className="text-xs font-mono text-muted-foreground">
-              {orderflowPilot
-                ? `${orderflowPilot.last_lag_ms} / ${orderflowPilot.window_max_lag_ms} ms`
-                : 'n/a'}
-            </span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-sm">Records / storage</span>
-            <span className="text-xs font-mono text-muted-foreground">
-              {orderflowPilot
-                ? `${orderflowPilot.records_persisted_total} / ${formatBytes(orderflowPilot.storage_bytes)}`
-                : 'n/a'}
-            </span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-sm">Projected storage</span>
-            <span className="text-xs font-mono text-muted-foreground">
-              {orderflowPilot
-                ? `${formatBytes(orderflowPilot.storage_bytes_per_day)} / day`
-                : 'n/a'}
-            </span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-sm">Drops / errors</span>
-            <span className="text-xs font-mono text-muted-foreground">
-              {orderflowPilot ? orderflowErrors : 'n/a'}
-            </span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-sm">Last telemetry</span>
-            <span className="text-xs text-muted-foreground">
-              {orderflowPilot ? timeAgo(orderflowPilot.updated_at_ms) : 'n/a'}
-            </span>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Bybit order-flow trial retired 2026-08-06 (see ROADMAP.md): its
+          historical results live on the Research page, not here. The
+          Redis-backed OrderflowPilotState wire type is kept for backward
+          compatibility with anything still reading /api/health directly,
+          but this page no longer renders it. */}
 
       {/* Pump scanner stats */}
       <Card>

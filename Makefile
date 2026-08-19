@@ -1,11 +1,51 @@
-.PHONY: help install install-golangci-lint install-deadcode dev dev-init dev-stop dev-reset dev-logs dev-test migrate measurement-report exchange-coverage-report exchange-source-economics-report source-lead-report source-lead-identity-report gate-identity-candidate-tooling episode-replay virtual-strategy-report virtual-entry-challenger-report virtual-threshold-challenger-report virtual-exit-policy-report virtual-exit-discovery-report virtual-score-challenger-report virtual-banded-price-extent-report candle-anomaly-report derivatives-context-report decision-quality-report derivatives-regime-feasibility-report liquid-taker-report long-horizon-report open-ended-margin-report maker-entry-report pump-magnitude-report orderflow-pilot-report orderflow-endpoint-sensitivity-report exit-liquidity-calibration-report pump-short-failure-attribution-report pump-short-reentry-audit-report oi-growth-filter-report token-history-identity-preflight-report token-history-ohlcv-sample-report orderflow-start orderflow-stop orderflow-health test lint ci-lint format clean security deadcode check verify verify-docker \
-		prod-deploy prod-runtime-metrics-install prod-runtime-metrics-health prod-research-checkpoints-install prod-research-checkpoints-run prod-research-checkpoints-health prod-measurement-report prod-exchange-coverage-report prod-exchange-source-economics-report prod-source-lead-report prod-source-lead-identity-report prod-gate-identity-candidate-tooling prod-source-lead-capture-health prod-episode-replay prod-virtual-strategy-report prod-virtual-entry-challenger-report prod-virtual-threshold-challenger-report prod-virtual-exit-policy-report prod-virtual-exit-discovery-report prod-virtual-score-challenger-report prod-virtual-banded-price-extent-report prod-candle-anomaly-report prod-derivatives-context-report prod-decision-quality-report prod-derivatives-regime-feasibility-report prod-liquid-taker-report prod-long-horizon-report prod-open-ended-margin-report prod-open-ended-margin-health prod-maker-entry-report prod-pump-magnitude-report prod-orderflow-pilot-report prod-orderflow-endpoint-sensitivity-report prod-exit-liquidity-calibration-report prod-pump-short-failure-attribution-report prod-pump-short-reentry-audit-report prod-oi-growth-filter-report prod-token-history-identity-preflight-report prod-token-history-ohlcv-sample-report prod-orderflow-start prod-orderflow-stop prod-orderflow-health prod-logs prod-backup prod-restore-local prod-health
+.PHONY: help install install-golangci-lint install-deadcode dev dev-init dev-stop dev-reset dev-logs dev-test migrate measurement-report exchange-coverage-report exchange-source-economics-report source-lead-report source-lead-identity-report gate-identity-candidate-tooling episode-replay virtual-strategy-report virtual-entry-challenger-report virtual-threshold-challenger-report virtual-exit-policy-report virtual-exit-discovery-report virtual-score-challenger-report virtual-banded-price-extent-report candle-anomaly-report derivatives-context-report decision-quality-report derivatives-regime-feasibility-report long-short-ratio-regime-report liquid-taker-report long-horizon-report open-ended-margin-report maker-entry-report pump-magnitude-report orderflow-pilot-report orderflow-endpoint-sensitivity-report exit-liquidity-calibration-report pump-short-failure-attribution-report pump-short-reentry-audit-report oi-growth-filter-report token-history-identity-preflight-report token-history-ohlcv-sample-report token-history-parquet-dataset token-behavior-discovery-report momentum-universe-identity-match orderflow-start orderflow-stop orderflow-health momentum-capture-start momentum-capture-stop momentum-capture-health momentum-capture-binance-start momentum-capture-binance-stop momentum-capture-binance-health momentum-watch-start momentum-watch-stop momentum-watch-health momentum-watch-binance-start momentum-watch-binance-stop momentum-watch-binance-health momentum-paper-start momentum-paper-stop momentum-paper-health momentum-paper-binance-start momentum-paper-binance-stop momentum-paper-binance-health momentum-paper-lev3-start momentum-paper-lev3-stop momentum-paper-lev3-health momentum-paper-hold12h-start momentum-paper-hold12h-stop momentum-paper-hold12h-health momentum-flow-episode-study-report binance-watch-input-coverage-report bidirectional-burst-study-report test lint ci-lint format clean security deadcode check verify verify-docker \
+		prod-deploy prod-runtime-metrics-install prod-runtime-metrics-health prod-disk-usage-install prod-disk-usage-health prod-docker-prune-install prod-docker-prune-run prod-docker-prune-health prod-research-checkpoints-install prod-research-checkpoints-run prod-research-checkpoints-health prod-measurement-report prod-exchange-coverage-report prod-exchange-source-economics-report prod-source-lead-report prod-source-lead-identity-report prod-gate-identity-candidate-tooling prod-source-lead-capture-health prod-episode-replay prod-virtual-strategy-report prod-virtual-entry-challenger-report prod-virtual-threshold-challenger-report prod-virtual-exit-policy-report prod-virtual-exit-discovery-report prod-virtual-score-challenger-report prod-virtual-banded-price-extent-report prod-candle-anomaly-report prod-derivatives-context-report prod-decision-quality-report prod-derivatives-regime-feasibility-report prod-long-short-ratio-regime-report prod-liquid-taker-report prod-long-horizon-report prod-open-ended-margin-report prod-open-ended-margin-health prod-maker-entry-report prod-pump-magnitude-report prod-orderflow-pilot-report prod-orderflow-endpoint-sensitivity-report prod-exit-liquidity-calibration-report prod-pump-short-failure-attribution-report prod-pump-short-reentry-audit-report prod-oi-growth-filter-report prod-token-history-identity-preflight-report prod-token-history-ohlcv-sample-report prod-token-history-parquet-dataset prod-token-behavior-discovery-report prod-momentum-universe-identity-match prod-orderflow-start prod-orderflow-stop prod-orderflow-health prod-momentum-capture-start prod-momentum-capture-stop prod-momentum-capture-health prod-momentum-capture-binance-start prod-momentum-capture-binance-stop prod-momentum-capture-binance-health prod-momentum-watch-start prod-momentum-watch-stop prod-momentum-watch-health prod-momentum-watch-binance-start prod-momentum-watch-binance-stop prod-momentum-watch-binance-health prod-momentum-paper-start prod-momentum-paper-stop prod-momentum-paper-health prod-momentum-paper-binance-start prod-momentum-paper-binance-stop prod-momentum-paper-binance-health prod-momentum-paper-lev3-start prod-momentum-paper-lev3-stop prod-momentum-paper-lev3-health prod-momentum-paper-hold12h-start prod-momentum-paper-hold12h-stop prod-momentum-paper-hold12h-health prod-momentum-canary-checkpoints-install prod-momentum-canary-checkpoints-run prod-momentum-canary-checkpoints-health prod-momentum-flow-episode-study-report prod-binance-watch-input-coverage-report prod-bidirectional-burst-study-report prod-logs prod-backup prod-restore-local prod-health
 
 GOLANGCI_LINT_VERSION = v2.1.6
 DEADCODE_VERSION = v0.48.0
 PROD_REPORT_MIN_HEADROOM_MB ?= 1280
+PROD_REPORT_MIN_AVAILABLE_MB ?= 1024
 PROD_ORDERFLOW_MIN_AVAILABLE_MB ?= 768
 PROD_ORDERFLOW_MIN_DISK_MB ?= 15360
+# mem_limit is 512m; requiring roughly 2x that available before starting
+# mirrors the same margin PROD_ORDERFLOW_MIN_AVAILABLE_MB gives
+# orderflow-pilot's 384m.
+PROD_MOMENTUM_CAPTURE_MIN_AVAILABLE_MB ?= 1024
+# momentum-capture has no local container volume of its own, but its data
+# still lands on the SAME host disk as everything else, via Postgres's
+# volume: at the measured ~1.14 GiB/day hot uncompressed
+# (packages/journal/migrations/versions/0024_bybit_momentum_bars_1m.py),
+# roughly 2 days of hot data before the first chunk compresses, plus WAL
+# and index overhead, plausibly reaches several GiB over a 48-72h canary.
+# 10 GiB is a deliberately conservative margin above that estimate, shared
+# with whatever else is already on the disk; revisit once the canary has
+# measured real WAL growth instead of estimating it.
+PROD_MOMENTUM_CAPTURE_MIN_DISK_MB ?= 10240
+# Same 512m mem_limit / 2x-headroom reasoning as PROD_MOMENTUM_CAPTURE_MIN_
+# AVAILABLE_MB above, checked independently so this process's own start
+# target still refuses to run underprovisioned even if invoked alone. In
+# practice this runs ALONGSIDE momentum-capture (ROADMAP item 7: prepare
+# immediately, activate only after the corrected Bybit canary passes AND
+# the host is resized), so available RAM at invocation time already
+# reflects whatever Bybit's own process is already using -- this is not a
+# substitute for that separate resize decision, just a floor.
+PROD_MOMENTUM_CAPTURE_BINANCE_MIN_AVAILABLE_MB ?= 1024
+# Reuses momentum-capture's own conservative disk estimate rather than a
+# fresh measurement: Binance's strict USDT-perpetual universe is smaller
+# than Bybit's (see docs/research/binance-momentum-capability-preflight-
+# v1.md), so this is if anything more conservative than the real number,
+# and both venues' rows land on the SAME hypertable/disk (packages/
+# journal/migrations/versions/0024_bybit_momentum_bars_1m.py).
+PROD_MOMENTUM_CAPTURE_BINANCE_MIN_DISK_MB ?= 10240
+PROD_MOMENTUM_WATCH_MIN_AVAILABLE_MB ?= 768
+# Same margin as momentum-watch's own (384m mem_limit x 2); Binance's WATCH
+# worker is a separate process with the same resource shape, not a bigger
+# one.
+PROD_MOMENTUM_WATCH_BINANCE_MIN_AVAILABLE_MB ?= 768
+PROD_MOMENTUM_PAPER_MIN_AVAILABLE_MB ?= 768
+PROD_MOMENTUM_PAPER_BINANCE_MIN_AVAILABLE_MB ?= 768
+PROD_MOMENTUM_PAPER_LEV3_MIN_AVAILABLE_MB ?= 768
+PROD_MOMENTUM_PAPER_HOLD12H_MIN_AVAILABLE_MB ?= 768
 
 help:
 	@echo "Schurfer - common commands"
@@ -58,14 +98,49 @@ help:
 	@echo "  make oi-growth-filter-report  Forward challenger: confirmed-OI-growth baseline filter"
 	@echo "  make token-history-identity-preflight-report  DB-only identity preflight for token-behavior-history"
 	@echo "  make token-history-ohlcv-sample-report  Bounded live-exchange OHLCV sample (step 2 of 3)"
+	@echo "  make token-history-parquet-dataset  Scoped historical Parquet backfill (step 3 of 3)"
+	@echo "  make token-behavior-discovery-report  Token-behavior discovery pass against the frozen dataset"
+	@echo "  make momentum-universe-identity-match  Cross-venue instrument identity matching (item 8 resolution)"
 	@echo "  make orderflow-start  Start the bounded local Bybit order-flow pilot"
 	@echo "  make orderflow-health  Show local order-flow pilot health"
 	@echo "  make orderflow-stop  Stop the local order-flow pilot"
+	@echo "  make momentum-capture-start  Start the bounded local Bybit momentum-capture line"
+	@echo "  make momentum-capture-health  Show local momentum-capture health"
+	@echo "  make momentum-capture-stop  Stop the local momentum-capture line"
+	@echo "  make momentum-capture-binance-start  Start the bounded local Binance momentum-capture line"
+	@echo "  make momentum-capture-binance-health  Show local Binance momentum-capture health"
+	@echo "  make momentum-capture-binance-stop  Stop the local Binance momentum-capture line"
+	@echo "  make momentum-watch-start  Start the prospective momentum WATCH worker"
+	@echo "  make momentum-watch-health  Show prospective momentum WATCH health"
+	@echo "  make momentum-watch-stop  Stop the prospective momentum WATCH worker"
+	@echo "  make momentum-watch-binance-start  Start Binance's own prospective momentum WATCH worker"
+	@echo "  make momentum-watch-binance-health  Show Binance's own prospective momentum WATCH health"
+	@echo "  make momentum-watch-binance-stop  Stop Binance's own prospective momentum WATCH worker"
+	@echo "  make momentum-paper-start  Start the prospective momentum paper-long worker"
+	@echo "  make momentum-paper-health  Show prospective momentum paper-long health"
+	@echo "  make momentum-paper-stop  Stop the prospective momentum paper-long worker"
+	@echo "  make momentum-paper-binance-start  Start Binance's own prospective momentum paper-long worker"
+	@echo "  make momentum-paper-binance-health  Show Binance's own prospective momentum paper-long health"
+	@echo "  make momentum-paper-binance-stop  Stop Binance's own prospective momentum paper-long worker"
+	@echo "  make momentum-paper-lev3-start  Start the 3x-leveraged-sizing momentum paper-long worker"
+	@echo "  make momentum-paper-lev3-health  Show the 3x-leveraged-sizing momentum paper-long health"
+	@echo "  make momentum-paper-lev3-stop  Stop the 3x-leveraged-sizing momentum paper-long worker"
+	@echo "  make momentum-paper-hold12h-start  Start the 12h-hold momentum paper-long worker (HYP-015)"
+	@echo "  make momentum-paper-hold12h-health  Show the 12h-hold momentum paper-long health"
+	@echo "  make momentum-paper-hold12h-stop  Stop the 12h-hold momentum paper-long worker"
+	@echo "  make momentum-flow-episode-study-report  Descriptive prerequisites for HYP-014 (ARGS must include --capture-epoch-started-at)"
+	@echo "  make binance-watch-input-coverage-report  Descriptive Binance WATCH quality-gate coverage (ARGS must include --since)"
+	@echo "  make bidirectional-burst-study-report  Discovery-level buy/sell volume-burst study (ARGS must include --since --until)"
 	@echo ""
 	@echo "Production (run on server with .env.prod present):"
 	@echo "  make prod-deploy          Pull + rebuild + restart all services"
 	@echo "  make prod-runtime-metrics-install  Install host container-metrics service"
 	@echo "  make prod-runtime-metrics-health   Inspect host container-metrics service"
+	@echo "  make prod-disk-usage-install  Install host disk/Docker usage snapshot service"
+	@echo "  make prod-disk-usage-health   Inspect host disk/Docker usage snapshot service"
+	@echo "  make prod-docker-prune-install  Install weekly Docker build cache prune timer"
+	@echo "  make prod-docker-prune-run      Run the Docker prune now"
+	@echo "  make prod-docker-prune-health   Inspect the Docker prune timer"
 	@echo "  make prod-research-checkpoints-install  Install bounded research timer"
 	@echo "  make prod-research-checkpoints-run      Run one due checkpoint now"
 	@echo "  make prod-research-checkpoints-health   Inspect timer and sanitized status"
@@ -107,9 +182,42 @@ help:
 	@echo "  make prod-oi-growth-filter-report  Production confirmed-OI-growth baseline filter"
 	@echo "  make prod-token-history-identity-preflight-report  Production token-history identity preflight"
 	@echo "  make prod-token-history-ohlcv-sample-report  Production bounded live-exchange OHLCV sample"
+	@echo "  make prod-token-history-parquet-dataset  Production scoped historical Parquet backfill"
+	@echo "  make prod-token-behavior-discovery-report  Production token-behavior discovery pass against the frozen dataset"
+	@echo "  make prod-momentum-universe-identity-match  Production cross-venue instrument identity matching"
 	@echo "  make prod-orderflow-start  Explicitly start the bounded order-flow trial"
 	@echo "  make prod-orderflow-health  Show order-flow trial health and resource use"
 	@echo "  make prod-orderflow-stop  Stop the order-flow trial"
+	@echo "  make prod-momentum-capture-start  Explicitly start the bounded momentum-capture canary"
+	@echo "  make prod-momentum-capture-health  Show momentum-capture canary health and resource use"
+	@echo "  make prod-momentum-capture-stop  Stop the momentum-capture canary"
+	@echo "  make prod-momentum-capture-binance-start  Explicitly start the bounded Binance momentum-capture canary"
+	@echo "  make prod-momentum-capture-binance-health  Show Binance momentum-capture canary health and resource use"
+	@echo "  make prod-momentum-capture-binance-stop  Stop the Binance momentum-capture canary"
+	@echo "  make prod-momentum-watch-start  Start the prospective momentum WATCH worker"
+	@echo "  make prod-momentum-watch-health  Show prospective momentum WATCH health"
+	@echo "  make prod-momentum-watch-stop  Stop the prospective momentum WATCH worker"
+	@echo "  make prod-momentum-watch-binance-start  Start Binance's own prospective momentum WATCH worker"
+	@echo "  make prod-momentum-watch-binance-health  Show Binance's own prospective momentum WATCH health"
+	@echo "  make prod-momentum-watch-binance-stop  Stop Binance's own prospective momentum WATCH worker"
+	@echo "  make prod-momentum-paper-start  Start the prospective momentum paper-long worker"
+	@echo "  make prod-momentum-paper-health  Show prospective momentum paper-long health"
+	@echo "  make prod-momentum-paper-stop  Stop the prospective momentum paper-long worker"
+	@echo "  make prod-momentum-paper-binance-start  Start Binance's own prospective momentum paper-long worker"
+	@echo "  make prod-momentum-paper-binance-health  Show Binance's own prospective momentum paper-long health"
+	@echo "  make prod-momentum-paper-binance-stop  Stop Binance's own prospective momentum paper-long worker"
+	@echo "  make prod-momentum-paper-lev3-start  Start the 3x-leveraged-sizing momentum paper-long worker"
+	@echo "  make prod-momentum-paper-lev3-health  Show the 3x-leveraged-sizing momentum paper-long health"
+	@echo "  make prod-momentum-paper-lev3-stop  Stop the 3x-leveraged-sizing momentum paper-long worker"
+	@echo "  make prod-momentum-paper-hold12h-start  Start the 12h-hold momentum paper-long worker (HYP-015)"
+	@echo "  make prod-momentum-paper-hold12h-health  Show the 12h-hold momentum paper-long health"
+	@echo "  make prod-momentum-paper-hold12h-stop  Stop the 12h-hold momentum paper-long worker"
+	@echo "  make prod-momentum-canary-checkpoints-install  Install the 24/48/72h canary checkpoint timer"
+	@echo "  make prod-momentum-canary-checkpoints-run      Run one canary checkpoint pass now"
+	@echo "  make prod-momentum-canary-checkpoints-health   Inspect timer status and the checkpoint snapshot"
+	@echo "  make prod-momentum-flow-episode-study-report  Production HYP-014 prerequisites (ARGS must include --capture-epoch-started-at)"
+	@echo "  make prod-binance-watch-input-coverage-report  Production Binance WATCH quality-gate coverage (ARGS must include --since)"
+	@echo "  make prod-bidirectional-burst-study-report  Production discovery-level buy/sell volume-burst study (ARGS must include --since --until)"
 
 install:
 	@echo "-> Installing Python deps via uv..."
@@ -183,6 +291,132 @@ orderflow-health:
 	@docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
 		exec -T redis redis-cli --raw HGETALL market:orderflow:health
 
+momentum-capture-start:
+	@test -f .env || (echo "ERROR: .env not found. Run make dev-init first." && exit 1)
+	docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		--profile momentum-capture up -d --build momentum-capture
+
+momentum-capture-stop:
+	docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		--profile momentum-capture stop momentum-capture
+
+momentum-capture-health:
+	@docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		--profile momentum-capture ps momentum-capture
+	@docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		exec -T redis redis-cli --raw HGETALL market:momentumcapture:health:bybit
+
+momentum-capture-binance-start:
+	@test -f .env || (echo "ERROR: .env not found. Run make dev-init first." && exit 1)
+	docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		--profile momentum-capture-binance up -d --build momentum-capture-binance
+
+momentum-capture-binance-stop:
+	docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		--profile momentum-capture-binance stop momentum-capture-binance
+
+momentum-capture-binance-health:
+	@docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		--profile momentum-capture-binance ps momentum-capture-binance
+	@docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		exec -T redis redis-cli --raw HGETALL market:momentumcapture:health:binance
+
+momentum-watch-start:
+	@test -f .env || (echo "ERROR: .env not found. Run make dev-init first." && exit 1)
+	@$(MAKE) migrate
+	docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		--profile momentum-watch up -d --build --no-deps momentum-watch
+
+momentum-watch-stop:
+	docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		--profile momentum-watch stop momentum-watch
+
+momentum-watch-health:
+	@docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		--profile momentum-watch ps momentum-watch
+	@docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		exec -T redis redis-cli --raw HGETALL market:momentumwatch:health:momentum_flow_watch_v1
+
+momentum-watch-binance-start:
+	@test -f .env || (echo "ERROR: .env not found. Run make dev-init first." && exit 1)
+	@$(MAKE) migrate
+	docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		--profile momentum-watch-binance up -d --build --no-deps momentum-watch-binance
+
+momentum-watch-binance-stop:
+	docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		--profile momentum-watch-binance stop momentum-watch-binance
+
+momentum-watch-binance-health:
+	@docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		--profile momentum-watch-binance ps momentum-watch-binance
+	@docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		exec -T redis redis-cli --raw HGETALL market:momentumwatch:health:momentum_flow_watch_v1_binance
+
+momentum-paper-start:
+	@test -f .env || (echo "ERROR: .env not found. Run make dev-init first." && exit 1)
+	@$(MAKE) migrate
+	docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		--profile momentum-paper up -d --build --no-deps momentum-paper
+
+momentum-paper-stop:
+	docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		--profile momentum-paper stop momentum-paper
+
+momentum-paper-health:
+	@docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		--profile momentum-paper ps momentum-paper
+	@docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		exec -T redis redis-cli --raw HGETALL market:momentumpaper:health:momentum_flow_paper_v1
+
+momentum-paper-binance-start:
+	@test -f .env || (echo "ERROR: .env not found. Run make dev-init first." && exit 1)
+	@$(MAKE) migrate
+	docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		--profile momentum-paper-binance up -d --build --no-deps momentum-paper-binance
+
+momentum-paper-binance-stop:
+	docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		--profile momentum-paper-binance stop momentum-paper-binance
+
+momentum-paper-binance-health:
+	@docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		--profile momentum-paper-binance ps momentum-paper-binance
+	@docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		exec -T redis redis-cli --raw HGETALL market:momentumpaper:health:momentum_flow_paper_v1_binance
+
+momentum-paper-lev3-start:
+	@test -f .env || (echo "ERROR: .env not found. Run make dev-init first." && exit 1)
+	@$(MAKE) migrate
+	docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		--profile momentum-paper-lev3 up -d --build --no-deps momentum-paper-lev3
+
+momentum-paper-lev3-stop:
+	docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		--profile momentum-paper-lev3 stop momentum-paper-lev3
+
+momentum-paper-lev3-health:
+	@docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		--profile momentum-paper-lev3 ps momentum-paper-lev3
+	@docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		exec -T redis redis-cli --raw HGETALL market:momentumpaper:health:momentum_flow_paper_v1_lev3
+
+momentum-paper-hold12h-start:
+	@test -f .env || (echo "ERROR: .env not found. Run make dev-init first." && exit 1)
+	@$(MAKE) migrate
+	docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		--profile momentum-paper-hold12h up -d --build --no-deps momentum-paper-hold12h
+
+momentum-paper-hold12h-stop:
+	docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		--profile momentum-paper-hold12h stop momentum-paper-hold12h
+
+momentum-paper-hold12h-health:
+	@docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		--profile momentum-paper-hold12h ps momentum-paper-hold12h
+	@docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		exec -T redis redis-cli --raw HGETALL market:momentumpaper:health:momentum_flow_paper_v1_hold12h
+
 orderflow-pilot-report:
 	@uv run --package schurfer-analytics orderflow-pilot-report \
 		--code-revision="$$(git rev-parse HEAD)" \
@@ -234,6 +468,14 @@ measurement-report:
 exchange-coverage-report:
 	@DATABASE_URL="$${DATABASE_URL:-postgresql://schurfer:schurfer_dev@localhost:5432/schurfer}" \
 		uv run --package schurfer-analytics exchange-coverage-report $(ARGS)
+
+binance-watch-input-coverage-report:
+	@DATABASE_URL="$${DATABASE_URL:-postgresql://schurfer:schurfer_dev@localhost:5432/schurfer}" \
+		uv run --package schurfer-analytics binance-watch-input-coverage-report $(ARGS)
+
+bidirectional-burst-study-report:
+	@DATABASE_URL="$${DATABASE_URL:-postgresql://schurfer:schurfer_dev@localhost:5432/schurfer}" \
+		uv run --package schurfer-analytics bidirectional-burst-study-report $(ARGS)
 
 exchange-source-economics-report:
 	@DATABASE_URL="$${DATABASE_URL:-postgresql://schurfer:schurfer_dev@localhost:5432/schurfer}" \
@@ -339,6 +581,17 @@ oi-growth-filter-report:
 			&& printf '%s' '--no-working-tree-dirty' \
 			|| printf '%s' '--working-tree-dirty') $(ARGS)
 
+# --capture-epoch-started-at has no default: pass ARGS="--capture-epoch-started-at
+# <ISO8601> ..." with the value taken from market:momentumcapture:health:bybit or
+# runtime/momentum-canary-checkpoints.json at run time, never a stale copy.
+momentum-flow-episode-study-report:
+	@DATABASE_URL="$${DATABASE_URL:-postgresql://schurfer:schurfer_dev@localhost:5432/schurfer}" \
+		uv run --package schurfer-analytics momentum-flow-episode-study-report \
+		--code-revision="$$(git rev-parse HEAD)" \
+		$$(test -z "$$(git status --porcelain)" \
+			&& printf '%s' '--no-working-tree-dirty' \
+			|| printf '%s' '--working-tree-dirty') $(ARGS)
+
 token-history-identity-preflight-report:
 	@DATABASE_URL="$${DATABASE_URL:-postgresql://schurfer:schurfer_dev@localhost:5432/schurfer}" \
 		uv run --package schurfer-analytics token-history-identity-preflight-report \
@@ -350,6 +603,35 @@ token-history-identity-preflight-report:
 token-history-ohlcv-sample-report:
 	@DATABASE_URL="$${DATABASE_URL:-postgresql://schurfer:schurfer_dev@localhost:5432/schurfer}" \
 		uv run --package schurfer-analytics token-history-ohlcv-sample-report \
+		--code-revision="$$(git rev-parse HEAD)" \
+		$$(test -z "$$(git status --porcelain)" \
+			&& printf '%s' '--no-working-tree-dirty' \
+			|| printf '%s' '--working-tree-dirty') $(ARGS)
+
+token-history-parquet-dataset:
+	@DATABASE_URL="$${DATABASE_URL:-postgresql://schurfer:schurfer_dev@localhost:5432/schurfer}" \
+		uv run --package schurfer-analytics token-history-parquet-dataset \
+		--code-revision="$$(git rev-parse HEAD)" \
+		$$(test -z "$$(git status --porcelain)" \
+			&& printf '%s' '--no-working-tree-dirty' \
+			|| printf '%s' '--working-tree-dirty') $(ARGS)
+
+token-behavior-discovery-report:
+	@DATABASE_URL="$${DATABASE_URL:-postgresql://schurfer:schurfer_dev@localhost:5432/schurfer}" \
+		uv run --package schurfer-analytics token-behavior-discovery-report \
+		--code-revision="$$(git rev-parse HEAD)" \
+		$$(test -z "$$(git status --porcelain)" \
+			&& printf '%s' '--no-working-tree-dirty' \
+			|| printf '%s' '--working-tree-dirty') $(ARGS)
+
+# Ad-hoc, not a periodic timer: reads the latest already-persisted momentum_
+# universe_instruments snapshot per exchange (written once at capture-process
+# startup, see momentum_universe_identity_repository.py's own doc comment) --
+# re-run by hand after either momentum-capture or momentum-capture-binance has
+# restarted since the last run.
+momentum-universe-identity-match:
+	@DATABASE_URL="$${DATABASE_URL:-postgresql://schurfer:schurfer_dev@localhost:5432/schurfer}" \
+		uv run --package schurfer-analytics momentum-universe-identity-match \
 		--code-revision="$$(git rev-parse HEAD)" \
 		$$(test -z "$$(git status --porcelain)" \
 			&& printf '%s' '--no-working-tree-dirty' \
@@ -596,6 +878,41 @@ prod-runtime-metrics-health:
 	@test -s runtime/container-metrics.snapshot || (echo "ERROR: runtime metrics snapshot is missing." && exit 1)
 	@head -n 4 runtime/container-metrics.snapshot
 
+prod-disk-usage-install:
+	@test "$$(git branch --show-current)" = "main" || (echo "ERROR: not on main (on '$$(git branch --show-current)'). Install only from main." && exit 1)
+	@test -z "$$(git status --porcelain)" || (echo "ERROR: working tree not clean. Commit or stash first." && exit 1)
+	@mkdir -p runtime
+	@chmod 0755 infra/scripts/disk-usage.sh
+	sudo install -m 0644 infra/systemd/schurfer-disk-usage.service /etc/systemd/system/schurfer-disk-usage.service
+	sudo systemctl daemon-reload
+	sudo systemctl enable schurfer-disk-usage.service
+	sudo systemctl restart schurfer-disk-usage.service
+	@sleep 2
+	@$(MAKE) prod-disk-usage-health
+
+prod-disk-usage-health:
+	@systemctl --no-pager --full status schurfer-disk-usage.service
+	@test -s runtime/disk-usage.snapshot || (echo "ERROR: disk usage snapshot is missing." && exit 1)
+	@head -n 2 runtime/disk-usage.snapshot
+
+prod-docker-prune-install:
+	@test "$$(git branch --show-current)" = "main" || (echo "ERROR: not on main (on '$$(git branch --show-current)'). Install only from main." && exit 1)
+	@test -z "$$(git status --porcelain)" || (echo "ERROR: working tree not clean. Commit or stash first." && exit 1)
+	sudo install -m 0644 infra/systemd/schurfer-docker-prune.service /etc/systemd/system/schurfer-docker-prune.service
+	sudo install -m 0644 infra/systemd/schurfer-docker-prune.timer /etc/systemd/system/schurfer-docker-prune.timer
+	sudo systemctl daemon-reload
+	sudo systemctl enable --now schurfer-docker-prune.timer
+	@$(MAKE) prod-docker-prune-health
+
+prod-docker-prune-run:
+	sudo systemctl start schurfer-docker-prune.service
+	@sleep 2
+	@journalctl -u schurfer-docker-prune.service --no-pager -n 20
+
+prod-docker-prune-health:
+	@systemctl --no-pager --full status schurfer-docker-prune.timer
+	@systemctl list-timers schurfer-docker-prune.timer --no-pager
+
 prod-research-checkpoints-install:
 	@test "$$(git branch --show-current)" = "main" || (echo "ERROR: not on main (on '$$(git branch --show-current)'). Install only from main." && exit 1)
 	@test -z "$$(git status --porcelain)" || (echo "ERROR: working tree not clean. Commit or stash first." && exit 1)
@@ -638,6 +955,14 @@ prod-measurement-report:
 prod-exchange-coverage-report:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
 	$(_PROD) run --rm --no-deps --entrypoint exchange-coverage-report analytics $(ARGS)
+
+prod-binance-watch-input-coverage-report:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
+	$(_PROD) run --rm --no-deps --entrypoint binance-watch-input-coverage-report analytics $(ARGS)
+
+prod-bidirectional-burst-study-report:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
+	$(_PROD) run --rm --no-deps --entrypoint bidirectional-burst-study-report analytics $(ARGS)
 
 prod-exchange-source-economics-report:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
@@ -807,6 +1132,32 @@ prod-oi-growth-filter-report:
 			&& printf '%s' '--no-working-tree-dirty' \
 			|| printf '%s' '--working-tree-dirty') $(ARGS)
 
+# See the local target's comment: --capture-epoch-started-at is required in ARGS.
+prod-momentum-flow-episode-study-report:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
+	@if test -r /proc/meminfo; then \
+		available_kb=$$(awk '/^MemAvailable:/ {print $$2}' /proc/meminfo); \
+		swap_kb=$$(awk '/^SwapFree:/ {print $$2}' /proc/meminfo); \
+		headroom_kb=$$((available_kb + swap_kb)); \
+		required_available_kb=$$(( $(PROD_REPORT_MIN_AVAILABLE_MB) * 1024 )); \
+		required_kb=$$(( $(PROD_REPORT_MIN_HEADROOM_MB) * 1024 )); \
+		if test "$$available_kb" -lt "$$required_available_kb"; then \
+			echo "ERROR: momentum-flow episode study requires at least $(PROD_REPORT_MIN_AVAILABLE_MB) MiB of MemAvailable; free swap is not a substitute for working RAM."; \
+			echo "Current MemAvailable: $$((available_kb / 1024)) MiB. Run it locally through the DB tunnel or wait for host headroom."; \
+			exit 1; \
+		fi; \
+		if test "$$headroom_kb" -lt "$$required_kb"; then \
+			echo "ERROR: momentum-flow episode study requires at least $(PROD_REPORT_MIN_HEADROOM_MB) MiB of available RAM + free swap."; \
+			echo "Current headroom: $$((headroom_kb / 1024)) MiB. Refusing to risk a host OOM."; \
+			exit 1; \
+		fi; \
+	fi
+	@$(_PROD) run --rm --no-deps --entrypoint momentum-flow-episode-study-report analytics \
+		--code-revision="$$(git rev-parse HEAD)" \
+		$$(test -z "$$(git status --porcelain)" \
+			&& printf '%s' '--no-working-tree-dirty' \
+			|| printf '%s' '--working-tree-dirty') $(ARGS)
+
 prod-token-history-identity-preflight-report:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
 	@$(_PROD) run --rm --no-deps --entrypoint token-history-identity-preflight-report analytics \
@@ -821,7 +1172,13 @@ prod-token-history-ohlcv-sample-report:
 		available_kb=$$(awk '/^MemAvailable:/ {print $$2}' /proc/meminfo); \
 		swap_kb=$$(awk '/^SwapFree:/ {print $$2}' /proc/meminfo); \
 		headroom_kb=$$((available_kb + swap_kb)); \
+		required_available_kb=$$(( $(PROD_REPORT_MIN_AVAILABLE_MB) * 1024 )); \
 		required_kb=$$(( $(PROD_REPORT_MIN_HEADROOM_MB) * 1024 )); \
+		if test "$$available_kb" -lt "$$required_available_kb"; then \
+			echo "ERROR: token-history OHLCV sample requires at least $(PROD_REPORT_MIN_AVAILABLE_MB) MiB of MemAvailable; free swap is not a substitute for working RAM."; \
+			echo "Current MemAvailable: $$((available_kb / 1024)) MiB. Run the report locally through the DB tunnel or wait for host headroom."; \
+			exit 1; \
+		fi; \
 		if test "$$headroom_kb" -lt "$$required_kb"; then \
 			echo "ERROR: token-history OHLCV sample requires at least $(PROD_REPORT_MIN_HEADROOM_MB) MiB of available RAM + free swap."; \
 			echo "Current headroom: $$((headroom_kb / 1024)) MiB. Refusing to risk a host OOM."; \
@@ -829,6 +1186,57 @@ prod-token-history-ohlcv-sample-report:
 		fi; \
 	fi
 	@$(_PROD) run --rm --no-deps --entrypoint token-history-ohlcv-sample-report analytics \
+		--code-revision="$$(git rev-parse HEAD)" \
+		$$(test -z "$$(git status --porcelain)" \
+			&& printf '%s' '--no-working-tree-dirty' \
+			|| printf '%s' '--working-tree-dirty') $(ARGS)
+
+prod-token-history-parquet-dataset:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
+	@if test -r /proc/meminfo; then \
+		available_kb=$$(awk '/^MemAvailable:/ {print $$2}' /proc/meminfo); \
+		swap_kb=$$(awk '/^SwapFree:/ {print $$2}' /proc/meminfo); \
+		headroom_kb=$$((available_kb + swap_kb)); \
+		required_available_kb=$$(( $(PROD_REPORT_MIN_AVAILABLE_MB) * 1024 )); \
+		required_kb=$$(( $(PROD_REPORT_MIN_HEADROOM_MB) * 1024 )); \
+		if test "$$available_kb" -lt "$$required_available_kb"; then \
+			echo "ERROR: token-history parquet dataset requires at least $(PROD_REPORT_MIN_AVAILABLE_MB) MiB of MemAvailable; free swap is not a substitute for working RAM."; \
+			echo "Current MemAvailable: $$((available_kb / 1024)) MiB. Run it locally through the DB tunnel or wait for host headroom."; \
+			exit 1; \
+		fi; \
+		if test "$$headroom_kb" -lt "$$required_kb"; then \
+			echo "ERROR: token-history parquet dataset requires at least $(PROD_REPORT_MIN_HEADROOM_MB) MiB of available RAM + free swap."; \
+			echo "Current headroom: $$((headroom_kb / 1024)) MiB. Refusing to risk a host OOM."; \
+			exit 1; \
+		fi; \
+	fi
+	@mkdir -p backups/token-history
+	@$(_PROD) run --rm --no-deps \
+		--volume "$(CURDIR)/backups/token-history:/data/token-history" \
+		--entrypoint token-history-parquet-dataset analytics \
+		$(ARGS) \
+		--output-root /data/token-history \
+		--code-revision="$$(git rev-parse HEAD)" \
+		$$(test -z "$$(git status --porcelain)" \
+			&& printf '%s' '--no-working-tree-dirty' \
+			|| printf '%s' '--working-tree-dirty')
+
+prod-token-behavior-discovery-report:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
+	@test -d backups/token-history/token_history_ohlcv_v1/20260810T081729Z-6f781fae \
+		|| (echo "ERROR: frozen token-history dataset not found at backups/token-history/token_history_ohlcv_v1/20260810T081729Z-6f781fae. scp it here first." && exit 1)
+	@$(_PROD) run --rm --no-deps \
+		--volume "$(CURDIR)/backups/token-history/token_history_ohlcv_v1/20260810T081729Z-6f781fae:/data/token-behavior-dataset:ro" \
+		--entrypoint token-behavior-discovery-report analytics \
+		--dataset-root /data/token-behavior-dataset \
+		--code-revision="$$(git rev-parse HEAD)" \
+		$$(test -z "$$(git status --porcelain)" \
+			&& printf '%s' '--no-working-tree-dirty' \
+			|| printf '%s' '--working-tree-dirty') $(ARGS)
+
+prod-momentum-universe-identity-match:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
+	@$(_PROD) run --rm --no-deps --entrypoint momentum-universe-identity-match analytics \
 		--code-revision="$$(git rev-parse HEAD)" \
 		$$(test -z "$$(git status --porcelain)" \
 			&& printf '%s' '--no-working-tree-dirty' \
@@ -1061,6 +1469,248 @@ prod-orderflow-health:
 	@$(_PROD) exec -T redis redis-cli --raw HGETALL market:orderflow:health
 	@docker stats --no-stream schurfer-orderflow-pilot schurfer-collector schurfer-market-hotset
 
+prod-momentum-capture-start:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	@test "$$(git branch --show-current)" = "main" || (echo "ERROR: deploy only from main." && exit 1)
+	@test -z "$$(git status --porcelain)" || (echo "ERROR: working tree not clean." && exit 1)
+	@if test -r /proc/meminfo; then \
+		available_mb=$$(awk '/^MemAvailable:/ {print int($$2 / 1024)}' /proc/meminfo); \
+		if test "$$available_mb" -lt "$(PROD_MOMENTUM_CAPTURE_MIN_AVAILABLE_MB)"; then \
+			echo "ERROR: momentum-capture requires $(PROD_MOMENTUM_CAPTURE_MIN_AVAILABLE_MB) MiB available RAM; found $$available_mb MiB."; \
+			exit 1; \
+		fi; \
+	fi
+	@available_disk_mb=$$(df -Pm / | awk 'NR == 2 {print $$4}'); \
+	if test "$$available_disk_mb" -lt "$(PROD_MOMENTUM_CAPTURE_MIN_DISK_MB)"; then \
+		echo "ERROR: momentum-capture requires $(PROD_MOMENTUM_CAPTURE_MIN_DISK_MB) MiB free disk; found $$available_disk_mb MiB."; \
+		exit 1; \
+	fi
+	$(_PROD) --profile momentum-capture up -d --build momentum-capture
+	@$(_PROD) --profile momentum-capture ps momentum-capture
+
+prod-momentum-capture-stop:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	$(_PROD) --profile momentum-capture stop momentum-capture
+
+prod-momentum-capture-health:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	@$(_PROD) --profile momentum-capture ps momentum-capture
+	@$(_PROD) exec -T redis redis-cli --raw HGETALL market:momentumcapture:health:bybit
+	@docker stats --no-stream schurfer-momentum-capture schurfer-collector
+
+prod-momentum-capture-binance-start:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	@test "$$(git branch --show-current)" = "main" || (echo "ERROR: deploy only from main." && exit 1)
+	@test -z "$$(git status --porcelain)" || (echo "ERROR: working tree not clean." && exit 1)
+	@if test -r /proc/meminfo; then \
+		available_mb=$$(awk '/^MemAvailable:/ {print int($$2 / 1024)}' /proc/meminfo); \
+		if test "$$available_mb" -lt "$(PROD_MOMENTUM_CAPTURE_BINANCE_MIN_AVAILABLE_MB)"; then \
+			echo "ERROR: momentum-capture-binance requires $(PROD_MOMENTUM_CAPTURE_BINANCE_MIN_AVAILABLE_MB) MiB available RAM; found $$available_mb MiB."; \
+			exit 1; \
+		fi; \
+	fi
+	@available_disk_mb=$$(df -Pm / | awk 'NR == 2 {print $$4}'); \
+	if test "$$available_disk_mb" -lt "$(PROD_MOMENTUM_CAPTURE_BINANCE_MIN_DISK_MB)"; then \
+		echo "ERROR: momentum-capture-binance requires $(PROD_MOMENTUM_CAPTURE_BINANCE_MIN_DISK_MB) MiB free disk; found $$available_disk_mb MiB."; \
+		exit 1; \
+	fi
+	$(_PROD) --profile momentum-capture-binance up -d --build momentum-capture-binance
+	@$(_PROD) --profile momentum-capture-binance ps momentum-capture-binance
+
+prod-momentum-capture-binance-stop:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	$(_PROD) --profile momentum-capture-binance stop momentum-capture-binance
+
+prod-momentum-capture-binance-health:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	@$(_PROD) --profile momentum-capture-binance ps momentum-capture-binance
+	@$(_PROD) exec -T redis redis-cli --raw HGETALL market:momentumcapture:health:binance
+	@docker stats --no-stream schurfer-momentum-capture-binance
+
+prod-momentum-watch-start:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	@test "$$(git branch --show-current)" = "main" || (echo "ERROR: deploy only from main." && exit 1)
+	@test -z "$$(git status --porcelain)" || (echo "ERROR: working tree not clean." && exit 1)
+	@if test -r /proc/meminfo; then \
+		available_mb=$$(awk '/^MemAvailable:/ {print int($$2 / 1024)}' /proc/meminfo); \
+		if test "$$available_mb" -lt "$(PROD_MOMENTUM_WATCH_MIN_AVAILABLE_MB)"; then \
+			echo "ERROR: momentum-watch requires $(PROD_MOMENTUM_WATCH_MIN_AVAILABLE_MB) MiB available RAM; found $$available_mb MiB."; \
+			exit 1; \
+		fi; \
+	fi
+	@$(MAKE) prod-backup
+	@$(MAKE) prod-migrate
+	$(_PROD) --profile momentum-watch up -d --build --no-deps momentum-watch
+	@$(_PROD) --profile momentum-watch ps momentum-watch
+
+prod-momentum-watch-stop:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	$(_PROD) --profile momentum-watch stop momentum-watch
+
+prod-momentum-watch-health:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	@$(_PROD) --profile momentum-watch ps momentum-watch
+	@$(_PROD) exec -T redis redis-cli --raw HGETALL market:momentumwatch:health:momentum_flow_watch_v1
+	@docker stats --no-stream schurfer-momentum-watch
+
+prod-momentum-watch-binance-start:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	@test "$$(git branch --show-current)" = "main" || (echo "ERROR: deploy only from main." && exit 1)
+	@test -z "$$(git status --porcelain)" || (echo "ERROR: working tree not clean." && exit 1)
+	@if test -r /proc/meminfo; then \
+		available_mb=$$(awk '/^MemAvailable:/ {print int($$2 / 1024)}' /proc/meminfo); \
+		if test "$$available_mb" -lt "$(PROD_MOMENTUM_WATCH_BINANCE_MIN_AVAILABLE_MB)"; then \
+			echo "ERROR: momentum-watch-binance requires $(PROD_MOMENTUM_WATCH_BINANCE_MIN_AVAILABLE_MB) MiB available RAM; found $$available_mb MiB."; \
+			exit 1; \
+		fi; \
+	fi
+	@$(MAKE) prod-backup
+	@$(MAKE) prod-migrate
+	$(_PROD) --profile momentum-watch-binance up -d --build --no-deps momentum-watch-binance
+	@$(_PROD) --profile momentum-watch-binance ps momentum-watch-binance
+
+prod-momentum-watch-binance-stop:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	$(_PROD) --profile momentum-watch-binance stop momentum-watch-binance
+
+prod-momentum-watch-binance-health:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	@$(_PROD) --profile momentum-watch-binance ps momentum-watch-binance
+	@$(_PROD) exec -T redis redis-cli --raw HGETALL market:momentumwatch:health:momentum_flow_watch_v1_binance
+	@docker stats --no-stream schurfer-momentum-watch-binance
+
+prod-momentum-paper-start:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	@test "$$(git branch --show-current)" = "main" || (echo "ERROR: deploy only from main." && exit 1)
+	@test -z "$$(git status --porcelain)" || (echo "ERROR: working tree not clean." && exit 1)
+	@if test -r /proc/meminfo; then \
+		available_mb=$$(awk '/^MemAvailable:/ {print int($$2 / 1024)}' /proc/meminfo); \
+		if test "$$available_mb" -lt "$(PROD_MOMENTUM_PAPER_MIN_AVAILABLE_MB)"; then \
+			echo "ERROR: momentum-paper requires $(PROD_MOMENTUM_PAPER_MIN_AVAILABLE_MB) MiB available RAM; found $$available_mb MiB."; \
+			exit 1; \
+		fi; \
+	fi
+	@$(MAKE) prod-backup
+	@$(MAKE) prod-migrate
+	$(_PROD) --profile momentum-paper up -d --build --no-deps momentum-paper
+	@$(_PROD) --profile momentum-paper ps momentum-paper
+
+prod-momentum-paper-stop:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	$(_PROD) --profile momentum-paper stop momentum-paper
+
+prod-momentum-paper-health:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	@$(_PROD) --profile momentum-paper ps momentum-paper
+	@$(_PROD) exec -T redis redis-cli --raw HGETALL market:momentumpaper:health:momentum_flow_paper_v1
+	@docker stats --no-stream schurfer-momentum-paper
+
+prod-momentum-paper-binance-start:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	@test "$$(git branch --show-current)" = "main" || (echo "ERROR: deploy only from main." && exit 1)
+	@test -z "$$(git status --porcelain)" || (echo "ERROR: working tree not clean." && exit 1)
+	@if test -r /proc/meminfo; then \
+		available_mb=$$(awk '/^MemAvailable:/ {print int($$2 / 1024)}' /proc/meminfo); \
+		if test "$$available_mb" -lt "$(PROD_MOMENTUM_PAPER_BINANCE_MIN_AVAILABLE_MB)"; then \
+			echo "ERROR: momentum-paper-binance requires $(PROD_MOMENTUM_PAPER_BINANCE_MIN_AVAILABLE_MB) MiB available RAM; found $$available_mb MiB."; \
+			exit 1; \
+		fi; \
+	fi
+	@$(MAKE) prod-backup
+	@$(MAKE) prod-migrate
+	$(_PROD) --profile momentum-paper-binance up -d --build --no-deps momentum-paper-binance
+	@$(_PROD) --profile momentum-paper-binance ps momentum-paper-binance
+
+prod-momentum-paper-binance-stop:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	$(_PROD) --profile momentum-paper-binance stop momentum-paper-binance
+
+prod-momentum-paper-binance-health:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	@$(_PROD) --profile momentum-paper-binance ps momentum-paper-binance
+	@$(_PROD) exec -T redis redis-cli --raw HGETALL market:momentumpaper:health:momentum_flow_paper_v1_binance
+	@docker stats --no-stream schurfer-momentum-paper-binance
+
+prod-momentum-paper-lev3-start:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	@test "$$(git branch --show-current)" = "main" || (echo "ERROR: deploy only from main." && exit 1)
+	@test -z "$$(git status --porcelain)" || (echo "ERROR: working tree not clean." && exit 1)
+	@if test -r /proc/meminfo; then \
+		available_mb=$$(awk '/^MemAvailable:/ {print int($$2 / 1024)}' /proc/meminfo); \
+		if test "$$available_mb" -lt "$(PROD_MOMENTUM_PAPER_LEV3_MIN_AVAILABLE_MB)"; then \
+			echo "ERROR: momentum-paper-lev3 requires $(PROD_MOMENTUM_PAPER_LEV3_MIN_AVAILABLE_MB) MiB available RAM; found $$available_mb MiB."; \
+			exit 1; \
+		fi; \
+	fi
+	@$(MAKE) prod-backup
+	@$(MAKE) prod-migrate
+	$(_PROD) --profile momentum-paper-lev3 up -d --build --no-deps momentum-paper-lev3
+	@$(_PROD) --profile momentum-paper-lev3 ps momentum-paper-lev3
+
+prod-momentum-paper-lev3-stop:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	$(_PROD) --profile momentum-paper-lev3 stop momentum-paper-lev3
+
+prod-momentum-paper-lev3-health:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	@$(_PROD) --profile momentum-paper-lev3 ps momentum-paper-lev3
+	@$(_PROD) exec -T redis redis-cli --raw HGETALL market:momentumpaper:health:momentum_flow_paper_v1_lev3
+	@docker stats --no-stream schurfer-momentum-paper-lev3
+
+prod-momentum-paper-hold12h-start:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	@test "$$(git branch --show-current)" = "main" || (echo "ERROR: deploy only from main." && exit 1)
+	@test -z "$$(git status --porcelain)" || (echo "ERROR: working tree not clean." && exit 1)
+	@if test -r /proc/meminfo; then \
+		available_mb=$$(awk '/^MemAvailable:/ {print int($$2 / 1024)}' /proc/meminfo); \
+		if test "$$available_mb" -lt "$(PROD_MOMENTUM_PAPER_HOLD12H_MIN_AVAILABLE_MB)"; then \
+			echo "ERROR: momentum-paper-hold12h requires $(PROD_MOMENTUM_PAPER_HOLD12H_MIN_AVAILABLE_MB) MiB available RAM; found $$available_mb MiB."; \
+			exit 1; \
+		fi; \
+	fi
+	@$(MAKE) prod-backup
+	@$(MAKE) prod-migrate
+	$(_PROD) --profile momentum-paper-hold12h up -d --build --no-deps momentum-paper-hold12h
+	@$(_PROD) --profile momentum-paper-hold12h ps momentum-paper-hold12h
+
+prod-momentum-paper-hold12h-stop:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	$(_PROD) --profile momentum-paper-hold12h stop momentum-paper-hold12h
+
+prod-momentum-paper-hold12h-health:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	@$(_PROD) --profile momentum-paper-hold12h ps momentum-paper-hold12h
+	@$(_PROD) exec -T redis redis-cli --raw HGETALL market:momentumpaper:health:momentum_flow_paper_v1_hold12h
+	@docker stats --no-stream schurfer-momentum-paper-hold12h
+
+# Start-relative 24h/48h/72h resource and data-quality checkpoints for the
+# momentum-capture canary (ROADMAP item 6), reading the service's own real
+# started_at_ms instead of a fixed calendar date. Deliberately separate from
+# prod-research-checkpoints-*, which is for fixed-date research contracts.
+prod-momentum-canary-checkpoints-install:
+	@test "$$(git branch --show-current)" = "main" || (echo "ERROR: not on main (on '$$(git branch --show-current)'). Install only from main." && exit 1)
+	@test -z "$$(git status --porcelain)" || (echo "ERROR: working tree not clean. Commit or stash first." && exit 1)
+	@mkdir -p runtime runtime/checkpoint-docker-config
+	@chmod 0700 runtime/checkpoint-docker-config
+	sudo install -m 0644 infra/systemd/schurfer-momentum-canary-checkpoints.service /etc/systemd/system/schurfer-momentum-canary-checkpoints.service
+	sudo install -m 0644 infra/systemd/schurfer-momentum-canary-checkpoints.timer /etc/systemd/system/schurfer-momentum-canary-checkpoints.timer
+	sudo systemctl daemon-reload
+	sudo systemctl enable --now schurfer-momentum-canary-checkpoints.timer
+	@echo "Running once now so a currently-due checkpoint (if any) fires immediately."
+	sudo systemctl start schurfer-momentum-canary-checkpoints.service
+	@$(MAKE) prod-momentum-canary-checkpoints-health
+
+prod-momentum-canary-checkpoints-run:
+	@echo "Running one pass now. Progress is also available in the systemd journal."
+	sudo systemctl start schurfer-momentum-canary-checkpoints.service
+	@$(MAKE) prod-momentum-canary-checkpoints-health
+
+prod-momentum-canary-checkpoints-health:
+	@systemctl --no-pager --full status schurfer-momentum-canary-checkpoints.timer
+	@systemctl --no-pager --full status schurfer-momentum-canary-checkpoints.service || true
+	@test -s runtime/momentum-canary-checkpoints.json || (echo "ERROR: momentum canary checkpoint snapshot is missing." && exit 1)
+	@python3 -m json.tool runtime/momentum-canary-checkpoints.json
+
 verify-docker: verify
 	@echo "=== Docker: analytics build + import check ==="
 	docker build -f apps/analytics/Dockerfile -t schurfer-analytics:ci . -q
@@ -1068,6 +1718,8 @@ verify-docker: verify
 	docker run --rm --entrypoint outcome-resolver schurfer-analytics:ci --help
 	docker run --rm --entrypoint measurement-report schurfer-analytics:ci --help
 	docker run --rm --entrypoint exchange-coverage-report schurfer-analytics:ci --help
+	docker run --rm --entrypoint binance-watch-input-coverage-report schurfer-analytics:ci --help
+	docker run --rm --entrypoint bidirectional-burst-study-report schurfer-analytics:ci --help
 	docker run --rm --entrypoint exchange-source-economics-report schurfer-analytics:ci --help
 	docker run --rm --entrypoint source-lead-report schurfer-analytics:ci --help
 	docker run --rm --entrypoint source-lead-identity-report schurfer-analytics:ci --help
@@ -1091,11 +1743,29 @@ verify-docker: verify
 	docker run --rm --entrypoint pump-short-failure-attribution-report schurfer-analytics:ci --help
 	docker run --rm --entrypoint pump-short-reentry-audit-report schurfer-analytics:ci --help
 	docker run --rm --entrypoint oi-growth-filter-report schurfer-analytics:ci --help
+	docker run --rm --entrypoint momentum-flow-episode-study-report schurfer-analytics:ci --help
 	docker run --rm --entrypoint token-history-identity-preflight-report schurfer-analytics:ci --help
 	docker run --rm --entrypoint token-history-ohlcv-sample-report schurfer-analytics:ci --help
+	docker run --rm --entrypoint token-history-parquet-dataset schurfer-analytics:ci --help
 	@docker rmi schurfer-analytics:ci --force > /dev/null
 	@echo "=== Docker: execution build + import check ==="
 	docker build -f apps/execution/Dockerfile -t schurfer-execution:ci . -q
 	docker run --rm --entrypoint python schurfer-execution:ci -c "import schurfer_execution; print('ok')"
 	@docker rmi schurfer-execution:ci --force > /dev/null
 	@echo "=== verify-docker passed ==="
+
+long-short-ratio-regime-report:
+	@DATABASE_URL="$${DATABASE_URL:-postgresql://schurfer:schurfer_dev@localhost:5432/schurfer}" \
+		uv run --package schurfer-analytics long-short-ratio-regime-report \
+		--code-revision="$$(git rev-parse HEAD)" \
+		$$(test -z "$$(git status --porcelain)" \
+			&& printf '%s' '--no-working-tree-dirty' \
+			|| printf '%s' '--working-tree-dirty') $(ARGS)
+
+prod-long-short-ratio-regime-report:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
+	@$(_PROD) run --rm --no-deps --entrypoint long-short-ratio-regime-report analytics \
+		--code-revision="$$(git rev-parse HEAD)" \
+		$$(test -z "$$(git status --porcelain)" \
+			&& printf '%s' '--no-working-tree-dirty' \
+			|| printf '%s' '--working-tree-dirty') $(ARGS)

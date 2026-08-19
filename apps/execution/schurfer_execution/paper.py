@@ -119,6 +119,14 @@ async def close_paper(
     )
     accounting_status = "legacy"
     displayed_pnl_pct = pnl_pct
+    # Mirrors displayed_pnl_pct's own fallback: modeled net when the full
+    # accounting resolved (status "complete"), otherwise the same raw,
+    # unmodeled gross figure the "Gross PnL" label already promises below
+    # (never a mix of net percent with gross dollars or vice versa). A
+    # position stored before size tracking existed has no size_usd at all —
+    # None stays None rather than fabricating a dollar figure.
+    size_usd_raw = pos.get("size_usd")
+    displayed_pnl_usd = float(size_usd_raw) * pnl_pct / 100 if size_usd_raw is not None else None
     accounting_version = pos.get("accounting_version")
     if accounting_version == PAPER_ACCOUNTING_VERSION:
         accounting = calculate_performance(
@@ -133,6 +141,8 @@ async def close_paper(
         accounting_status = accounting.status
         if accounting.net_return_pct is not None:
             displayed_pnl_pct = accounting.net_return_pct
+        if accounting.net_pnl_usd is not None:
+            displayed_pnl_usd = accounting.net_pnl_usd
 
     # Paper trades are deliberately NOT routed through journal.try_commit_close:
     # that mechanism writes a journal:pending_close marker that tracker.py
@@ -197,6 +207,7 @@ async def close_paper(
             entry_price=entry_price,
             exit_price=current_price,
             pnl_pct=displayed_pnl_pct,
+            pnl_usd=displayed_pnl_usd,
             pnl_kind="modeled_net" if accounting_status == "complete" else "gross",
             reason=reason,
             paper=True,
@@ -282,55 +293,59 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
         return
 
     for key in keys:
-        raw = await rdb.get(key)
-        if not raw:
-            continue
         try:
-            pos = json.loads(raw)
-        except Exception as exc:
-            log.warning("paper.bad_payload", key=str(key), err=str(exc))
-            continue
+            raw = await rdb.get(key)
+            if not raw:
+                continue
+            try:
+                pos = json.loads(raw)
+            except Exception as exc:
+                log.warning("paper.bad_payload", key=str(key), err=str(exc))
+                continue
 
-        base = pos["base"]
-        exchange = pos["exchange"]
-        entry_price = float(pos["entry_price"])
-        opened_at = float(pos.get("opened_at", 0))
-        side = pos.get("side", "short")
+            base = pos["base"]
+            exchange = pos["exchange"]
+            entry_price = float(pos["entry_price"])
+            opened_at = float(pos.get("opened_at", 0))
+            side = pos.get("side", "short")
 
-        ex = exchanges.get(exchange)
-        if not ex:
-            continue
+            ex = exchanges.get(exchange)
+            if not ex:
+                continue
 
-        try:
-            ticker = await ex.fetch_ticker(f"{base.upper()}/USDT:USDT")
-            mark = float(ticker.get("last") or 0)
-        except Exception as exc:
-            log.warning("paper.ticker_failed", base=base, exchange=exchange, err=str(exc))
-            continue
+            try:
+                ticker = await ex.fetch_ticker(f"{base.upper()}/USDT:USDT")
+                mark = float(ticker.get("last") or 0)
+            except Exception as exc:
+                log.warning("paper.ticker_failed", base=base, exchange=exchange, err=str(exc))
+                continue
 
-        if mark <= 0:
-            continue
+            if mark <= 0:
+                continue
 
-        params = pos.get("exit_params") or exit_module.exit_params(None)
-        bp_key = exit_module.best_price_key(exchange, base, paper=True)
+            params = pos.get("exit_params") or exit_module.exit_params(None)
+            bp_key = exit_module.best_price_key(exchange, base, paper=True)
 
-        reason = await exit_module.check_exit(
-            side=side,
-            entry_price=entry_price,
-            current_price=mark,
-            opened_at=opened_at,
-            params=params,
-            rdb=rdb,
-            bp_key=bp_key,
-        )
-
-        if reason:
-            await rdb.delete(bp_key)
-            await close_paper(
-                rdb,
-                pos=pos,
+            reason = await exit_module.check_exit(
+                side=side,
+                entry_price=entry_price,
                 current_price=mark,
-                reason=reason,
-                cfg=cfg,
-                exchange_client=ex,
+                opened_at=opened_at,
+                params=params,
+                rdb=rdb,
+                bp_key=bp_key,
             )
+
+            if reason:
+                await rdb.delete(bp_key)
+                await close_paper(
+                    rdb,
+                    pos=pos,
+                    current_price=mark,
+                    reason=reason,
+                    cfg=cfg,
+                    exchange_client=ex,
+                )
+        except Exception as exc:
+            log.error("paper.trade_error", key=str(key), err=str(exc))
+            continue

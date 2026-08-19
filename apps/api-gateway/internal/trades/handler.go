@@ -17,6 +17,87 @@ const (
 	defaultLimit = 50
 )
 
+// combinedTradesCTE unions app.trades (the pump-short strategy's own
+// live/dry-run execution ledger) with app.momentum_flow_paper_probes
+// (the momentum_flow WATCH->paper discovery instrumentation's own
+// simulated long positions) into one column shape, tagged by origin.
+// This is a display-only union: the two underlying tables stay
+// physically separate (different writers, different promotion status --
+// momentum_flow_paper is explicitly discovery instrumentation, not
+// promotion evidence, see docs/research/momentum-flow-paper-v1.md), only
+// this read-side query ever treats them as one list. Every consumer of
+// this CTE (List and Stats below) must keep origin visible in its own
+// response so momentum_flow_paper rows are never silently presented as
+// if they were the already-promoted pump-short strategy's own trades.
+//
+// The momentum_flow side only includes entry_status = 'opened' probes: a
+// probe whose entry never actually filled (stale, quote_rejected,
+// still pending) is not a position, so it has no place in a trades list.
+// Its own position_status ('open'/'closed') already matches app.trades'
+// own status vocabulary exactly, so no remapping is needed there.
+// entry_slippage_bps/exit_slippage_bps/slippage_usd/pnl_usd/pnl_pct have
+// no real equivalent captured on the paper side (spread_bps/impact_bps
+// are different metrics, not slippage) and are left NULL rather than
+// mislabeled.
+//
+// fees_usd/funding_usd are coalesced to 0 on the paper side specifically
+// (a production incident, 2026-08-16): app.trades' own fees_usd/
+// funding_usd are NOT NULL, so tradeRow.FeesUSD/FundingUSD are plain
+// float64, not pointers -- but momentum_flow_paper_probes' own columns
+// ARE nullable (NULL until that probe's own cost accounting completes,
+// which is independent of entry_status='opened'; a still-open probe has
+// no accounted costs yet). Scanning that NULL into a non-pointer float64
+// panics the whole List query -- verified this is the only such gap:
+// entry_vwap/entry_at/entry_filled_notional_usd are always non-NULL for
+// entry_status='opened' rows (checked directly against production data),
+// only fees_usd/funding_usd are not. Coalescing here matches app.trades'
+// own implicit "always a real number, 0 means no cost yet" convention
+// rather than changing the shared JSON contract to nullable.
+const combinedTradesCTE = `
+	WITH combined AS (
+		SELECT
+			'pump_short:' || t.id::text AS id,
+			'pump_short'::text AS origin,
+			t.symbol, t.exchange, t.market_type, t.side,
+			t.size_usd::float8 AS size_usd, t.leverage::float8 AS leverage,
+			t.entry_price::float8 AS entry_price, t.entry_at,
+			t.exit_price::float8 AS exit_price, t.exit_at,
+			t.entry_slippage_bps::float8 AS entry_slippage_bps,
+			t.exit_slippage_bps::float8 AS exit_slippage_bps,
+			t.fees_usd::float8 AS fees_usd, t.funding_usd::float8 AS funding_usd,
+			t.slippage_usd::float8 AS slippage_usd,
+			t.gross_pnl_usd::float8 AS gross_pnl_usd, t.gross_pnl_pct::float8 AS gross_pnl_pct,
+			t.net_pnl_usd::float8 AS net_pnl_usd, t.net_pnl_pct::float8 AS net_pnl_pct,
+			t.pnl_usd::float8 AS pnl_usd, t.pnl_pct::float8 AS pnl_pct,
+			t.accounting_version, t.accounting_status, t.accounting_error,
+			t.status, t.outcome_label,
+			t.setup_context, t.notes, t.created_at
+		FROM app.trades t
+		UNION ALL
+		SELECT
+			'momentum_flow_paper:' || p.paper_id::text AS id,
+			'momentum_flow_paper'::text AS origin,
+			p.symbol, p.exchange, p.market_type, 'long'::varchar AS side,
+			p.entry_filled_notional_usd::float8 AS size_usd, 1::float8 AS leverage,
+			p.entry_vwap::float8 AS entry_price, p.entry_at,
+			p.exit_vwap::float8 AS exit_price, p.exit_at,
+			NULL::float8 AS entry_slippage_bps,
+			NULL::float8 AS exit_slippage_bps,
+			coalesce(p.fees_usd, 0)::float8 AS fees_usd, coalesce(p.funding_usd, 0)::float8 AS funding_usd,
+			NULL::float8 AS slippage_usd,
+			p.gross_pnl_usd::float8 AS gross_pnl_usd, p.gross_return_pct::float8 AS gross_pnl_pct,
+			p.net_pnl_usd::float8 AS net_pnl_usd, p.net_return_pct::float8 AS net_pnl_pct,
+			NULL::float8 AS pnl_usd, NULL::float8 AS pnl_pct,
+			'momentum_flow_paper_v1'::varchar AS accounting_version,
+			coalesce(p.accounting_status, 'pending')::varchar AS accounting_status,
+			p.accounting_error,
+			p.position_status AS status, p.exit_reason AS outcome_label,
+			'{}'::jsonb AS setup_context, NULL::text AS notes, p.created_at
+		FROM app.momentum_flow_paper_probes p
+		WHERE p.entry_status = 'opened'
+	)
+`
+
 // pgxRow is satisfied by pgx.Row — extracted for test injection.
 type pgxRow interface {
 	Scan(dest ...any) error
@@ -47,7 +128,8 @@ func NewHandler(pool *pgxpool.Pool) *Handler {
 }
 
 type tradeRow struct {
-	ID                int64           `json:"id"`
+	ID                string          `json:"id"`
+	Origin            string          `json:"origin"`
 	Symbol            string          `json:"symbol"`
 	Exchange          string          `json:"exchange"`
 	MarketType        string          `json:"market_type"`
@@ -87,12 +169,13 @@ type listResponse struct {
 }
 
 // List handles GET /api/trades
-// Query params: status (open|closed), exchange, limit, offset
+// Query params: status (open|closed), exchange, origin (pump_short|momentum_flow_paper), limit, offset
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 
 	status := q.Get("status")
 	exchange := q.Get("exchange")
+	origin := q.Get("origin")
 
 	limit := defaultLimit
 	if v := q.Get("limit"); v != "" {
@@ -115,39 +198,44 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	where := "WHERE 1=1"
 	if status != "" {
 		args = append(args, status)
-		where += " AND t.status = $" + strconv.Itoa(len(args))
+		where += " AND status = $" + strconv.Itoa(len(args))
 	}
 	if exchange != "" {
 		args = append(args, exchange)
-		where += " AND t.exchange = $" + strconv.Itoa(len(args))
+		where += " AND exchange = $" + strconv.Itoa(len(args))
+	}
+	if origin != "" {
+		args = append(args, origin)
+		where += " AND origin = $" + strconv.Itoa(len(args))
 	}
 
 	var total int
 	if err := h.pool.QueryRow(r.Context(),
-		"SELECT COUNT(*) FROM app.trades t "+where, args...,
+		combinedTradesCTE+"SELECT COUNT(*) FROM combined "+where, args...,
 	).Scan(&total); err != nil {
 		slog.Error("trades.count", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 
+	//nolint:gocritic
 	dataArgs := append(args, limit, offset)
 	n := len(dataArgs)
-	rows, err := h.pool.Query(r.Context(), `
-		SELECT t.id, t.symbol, t.exchange, t.market_type, t.side,
-		       t.size_usd::float8, t.leverage::float8,
-		       t.entry_price::float8, t.entry_at,
-		       t.exit_price::float8, t.exit_at,
-		       t.entry_slippage_bps::float8, t.exit_slippage_bps::float8,
-		       t.fees_usd::float8, t.funding_usd::float8, t.slippage_usd::float8,
-		       t.gross_pnl_usd::float8, t.gross_pnl_pct::float8,
-		       t.net_pnl_usd::float8, t.net_pnl_pct::float8,
-		       t.pnl_usd::float8, t.pnl_pct::float8,
-		       t.accounting_version, t.accounting_status, t.accounting_error,
-		       t.status, t.outcome_label,
-		       t.setup_context, t.notes, t.created_at
-		FROM app.trades t `+where+`
-		ORDER BY t.entry_at DESC
+	rows, err := h.pool.Query(r.Context(), combinedTradesCTE+`
+		SELECT id, origin, symbol, exchange, market_type, side,
+		       size_usd, leverage,
+		       entry_price, entry_at,
+		       exit_price, exit_at,
+		       entry_slippage_bps, exit_slippage_bps,
+		       fees_usd, funding_usd, slippage_usd,
+		       gross_pnl_usd, gross_pnl_pct,
+		       net_pnl_usd, net_pnl_pct,
+		       pnl_usd, pnl_pct,
+		       accounting_version, accounting_status, accounting_error,
+		       status, outcome_label,
+		       setup_context, notes, created_at
+		FROM combined `+where+`
+		ORDER BY entry_at DESC
 		LIMIT $`+strconv.Itoa(n-1)+` OFFSET $`+strconv.Itoa(n),
 		dataArgs...,
 	)
@@ -162,7 +250,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var t tradeRow
 		if err := rows.Scan(
-			&t.ID, &t.Symbol, &t.Exchange, &t.MarketType, &t.Side,
+			&t.ID, &t.Origin, &t.Symbol, &t.Exchange, &t.MarketType, &t.Side,
 			&t.SizeUSD, &t.Leverage,
 			&t.EntryPrice, &t.EntryAt,
 			&t.ExitPrice, &t.ExitAt,
@@ -286,40 +374,47 @@ func computeStats(a statsAgg) statsResponse {
 }
 
 // Stats handles GET /api/trades/stats: aggregate performance over the whole set of
-// closed trades (optionally filtered by exchange), not just one page of the list.
+// closed trades (optionally filtered by exchange and/or origin), not just one page
+// of the list.
 func (h *Handler) Stats(w http.ResponseWriter, r *http.Request) {
-	exchange := r.URL.Query().Get("exchange")
+	q := r.URL.Query()
+	exchange := q.Get("exchange")
+	origin := q.Get("origin")
 
 	args := []any{}
-	where := "WHERE t.status = 'closed' AND t.gross_pnl_pct IS NOT NULL"
+	where := "WHERE status = 'closed' AND gross_pnl_pct IS NOT NULL"
 	if exchange != "" {
 		args = append(args, exchange)
-		where += " AND t.exchange = $" + strconv.Itoa(len(args))
+		where += " AND exchange = $" + strconv.Itoa(len(args))
+	}
+	if origin != "" {
+		args = append(args, origin)
+		where += " AND origin = $" + strconv.Itoa(len(args))
 	}
 
 	var a statsAgg
-	if err := h.pool.QueryRow(r.Context(), `
-		SELECT count(*) FILTER (WHERE t.gross_pnl_pct IS NOT NULL),
-		       count(*) FILTER (WHERE t.gross_pnl_pct > 0),
-		       count(*) FILTER (WHERE t.gross_pnl_pct < 0),
-		       COALESCE(sum(t.gross_pnl_pct), 0)::float8,
-		       COALESCE(sum(t.gross_pnl_pct) FILTER (WHERE t.gross_pnl_pct > 0), 0)::float8,
-		       COALESCE(sum(t.gross_pnl_pct) FILTER (WHERE t.gross_pnl_pct < 0), 0)::float8,
-		       COALESCE(sum(t.gross_pnl_usd), 0)::float8,
-		       COALESCE(sum(t.gross_pnl_usd) FILTER (WHERE t.gross_pnl_usd > 0), 0)::float8,
-		       COALESCE(sum(t.gross_pnl_usd) FILTER (WHERE t.gross_pnl_usd < 0), 0)::float8,
-		       count(*) FILTER (WHERE t.net_pnl_pct IS NOT NULL),
-		       count(*) FILTER (WHERE t.net_pnl_pct > 0),
-		       count(*) FILTER (WHERE t.net_pnl_pct < 0),
-		       COALESCE(sum(t.net_pnl_pct), 0)::float8,
-		       COALESCE(sum(t.net_pnl_pct) FILTER (WHERE t.net_pnl_pct > 0), 0)::float8,
-		       COALESCE(sum(t.net_pnl_pct) FILTER (WHERE t.net_pnl_pct < 0), 0)::float8,
-		       COALESCE(sum(t.net_pnl_usd), 0)::float8,
-		       COALESCE(sum(t.net_pnl_usd) FILTER (WHERE t.net_pnl_usd > 0), 0)::float8,
-		       COALESCE(sum(t.net_pnl_usd) FILTER (WHERE t.net_pnl_usd < 0), 0)::float8,
-		       count(*) FILTER (WHERE t.accounting_status = 'legacy'),
-		       count(*) FILTER (WHERE t.accounting_status = 'incomplete')
-		FROM app.trades t `+where, args...,
+	if err := h.pool.QueryRow(r.Context(), combinedTradesCTE+`
+		SELECT count(*) FILTER (WHERE gross_pnl_pct IS NOT NULL),
+		       count(*) FILTER (WHERE gross_pnl_pct > 0),
+		       count(*) FILTER (WHERE gross_pnl_pct < 0),
+		       COALESCE(sum(gross_pnl_pct), 0)::float8,
+		       COALESCE(sum(gross_pnl_pct) FILTER (WHERE gross_pnl_pct > 0), 0)::float8,
+		       COALESCE(sum(gross_pnl_pct) FILTER (WHERE gross_pnl_pct < 0), 0)::float8,
+		       COALESCE(sum(gross_pnl_usd), 0)::float8,
+		       COALESCE(sum(gross_pnl_usd) FILTER (WHERE gross_pnl_usd > 0), 0)::float8,
+		       COALESCE(sum(gross_pnl_usd) FILTER (WHERE gross_pnl_usd < 0), 0)::float8,
+		       count(*) FILTER (WHERE net_pnl_pct IS NOT NULL),
+		       count(*) FILTER (WHERE net_pnl_pct > 0),
+		       count(*) FILTER (WHERE net_pnl_pct < 0),
+		       COALESCE(sum(net_pnl_pct), 0)::float8,
+		       COALESCE(sum(net_pnl_pct) FILTER (WHERE net_pnl_pct > 0), 0)::float8,
+		       COALESCE(sum(net_pnl_pct) FILTER (WHERE net_pnl_pct < 0), 0)::float8,
+		       COALESCE(sum(net_pnl_usd), 0)::float8,
+		       COALESCE(sum(net_pnl_usd) FILTER (WHERE net_pnl_usd > 0), 0)::float8,
+		       COALESCE(sum(net_pnl_usd) FILTER (WHERE net_pnl_usd < 0), 0)::float8,
+		       count(*) FILTER (WHERE accounting_status = 'legacy'),
+		       count(*) FILTER (WHERE accounting_status = 'incomplete')
+		FROM combined `+where, args...,
 	).Scan(
 		&a.Gross.N, &a.Gross.Wins, &a.Gross.Losses,
 		&a.Gross.SumPct, &a.Gross.SumWinPct, &a.Gross.SumLossPct,

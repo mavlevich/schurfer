@@ -1,7 +1,17 @@
 import { useQuery } from '@tanstack/react-query';
 
+// origin distinguishes the pump-short strategy's own live/dry-run execution
+// ledger (already-promoted, app.trades) from momentum_flow's own WATCH->paper
+// discovery instrumentation (app.momentum_flow_paper_probes) -- the two never
+// share a table (see docs/research/momentum-flow-paper-v1.md), only this API's
+// own read-time UNION presents them together. Always show origin visibly next
+// to a trade; a momentum_flow_paper row is a research probe, not promotion
+// evidence, and must never look like an already-vetted live trade.
+export type TradeOrigin = 'pump_short' | 'momentum_flow_paper';
+
 export interface Trade {
-  id: number;
+  id: string;
+  origin: TradeOrigin;
   symbol: string;
   exchange: string;
   market_type: string;
@@ -66,11 +76,18 @@ async function fetchJSON<T>(url: string): Promise<T> {
 }
 
 export function useTrades(
-  params: { status?: string; exchange?: string; limit?: number; offset?: number } = {},
+  params: {
+    status?: string;
+    exchange?: string;
+    origin?: TradeOrigin;
+    limit?: number;
+    offset?: number;
+  } = {},
 ) {
   const q = new URLSearchParams();
   if (params.status) q.set('status', params.status);
   if (params.exchange) q.set('exchange', params.exchange);
+  if (params.origin) q.set('origin', params.origin);
   if (params.limit) q.set('limit', String(params.limit));
   if (params.offset) q.set('offset', String(params.offset));
   const url = `/api/trades${q.size ? '?' + q.toString() : ''}`;
@@ -86,9 +103,10 @@ export function useTrades(
 
 // Aggregate stats over the whole closed-trade set (optionally by exchange), computed
 // server-side so they cover every trade, not just the current page of the list.
-export function useTradeStats(params: { exchange?: string } = {}) {
+export function useTradeStats(params: { exchange?: string; origin?: TradeOrigin } = {}) {
   const q = new URLSearchParams();
   if (params.exchange) q.set('exchange', params.exchange);
+  if (params.origin) q.set('origin', params.origin);
   const url = `/api/trades/stats${q.size ? '?' + q.toString() : ''}`;
 
   return useQuery({

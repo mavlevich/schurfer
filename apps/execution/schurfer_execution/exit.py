@@ -15,6 +15,7 @@ _BEST_KEY_PAPER = "exit:best:paper:{exchange}:{base}"
 _PARAMS_KEY = "exit:params:{exchange}:{base}"
 _ENTRY_KEY = "position:entry:{exchange}:{base}"
 _SIDE_KEY = "position:side:{exchange}:{base}"
+_SIZE_USD_KEY = "position:size_usd:{exchange}:{base}"
 
 _KEY_TTL = 86400 * 7
 
@@ -34,6 +35,7 @@ def exit_params(pump_pct: float | None) -> dict[str, float]:
             "trail_tighten_pct": 8.0,
             "tighten_after_min": 90.0,
             "max_hold_min": 180.0,
+            "no_progress_min": 60.0,
         }
     if p < 100:
         return {
@@ -43,6 +45,7 @@ def exit_params(pump_pct: float | None) -> dict[str, float]:
             "trail_tighten_pct": 10.0,
             "tighten_after_min": 120.0,
             "max_hold_min": 240.0,
+            "no_progress_min": 60.0,
         }
     return {
         "initial_sl_pct": 12.0,
@@ -51,6 +54,7 @@ def exit_params(pump_pct: float | None) -> dict[str, float]:
         "trail_tighten_pct": 12.0,
         "tighten_after_min": 180.0,
         "max_hold_min": 360.0,
+        "no_progress_min": 60.0,
     }
 
 
@@ -102,6 +106,10 @@ def side_key(exchange: str, base: str) -> str:
     return _SIDE_KEY.format(exchange=exchange, base=base.upper())
 
 
+def size_usd_key(exchange: str, base: str) -> str:
+    return _SIZE_USD_KEY.format(exchange=exchange, base=base.upper())
+
+
 async def check_exit(
     *,
     side: str,
@@ -125,6 +133,7 @@ async def check_exit(
     trail_tighten_pct = params["trail_tighten_pct"]
     tighten_after_min = params["tighten_after_min"]
     max_hold_min = params["max_hold_min"]
+    no_progress_min = params.get("no_progress_min", max_hold_min)
 
     elapsed_min = (time.time() - opened_at) / 60
     if elapsed_min >= max_hold_min:
@@ -140,6 +149,8 @@ async def check_exit(
 
     if best_raw is None:
         # Phase 1: fixed initial SL
+        if elapsed_min >= no_progress_min:
+            return f"no_progress age={elapsed_min:.0f}min"
         if move_pct <= -initial_sl_pct:
             return f"initial_sl move={move_pct:.1f}%"
         # Activate trailing when in profit by activation_pct

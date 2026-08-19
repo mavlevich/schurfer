@@ -13,11 +13,13 @@ import (
 )
 
 type stubAlertDB struct {
-	query  string
-	args   []any
-	err    error
-	closed bool
-	row    stubAlertRow
+	query    string
+	args     []any
+	err      error
+	closed   bool
+	row      stubAlertRow
+	rows     *stubAlertRows
+	queryErr error
 }
 
 type stubAlertRow struct {
@@ -64,8 +66,83 @@ func (db *stubAlertDB) QueryRow(
 	return db.row
 }
 
+func (db *stubAlertDB) Query(
+	_ context.Context,
+	query string,
+	args ...any,
+) (pgx.Rows, error) {
+	db.query = query
+	db.args = args
+	if db.queryErr != nil {
+		return nil, db.queryErr
+	}
+	if db.rows == nil {
+		return &stubAlertRows{}, nil
+	}
+	return db.rows, nil
+}
+
 func (db *stubAlertDB) Close() {
 	db.closed = true
+}
+
+// stubAlertRows is a minimal pgx.Rows fake: only Next/Scan/Err/Close do
+// real work (everything this package's own multi-row readers actually
+// use), the rest of the interface returns zero values since nothing here
+// calls them.
+type stubAlertRows struct {
+	values [][]any
+	index  int
+	err    error
+}
+
+func (r *stubAlertRows) Close()                                       {}
+func (r *stubAlertRows) Err() error                                   { return r.err }
+func (r *stubAlertRows) CommandTag() pgconn.CommandTag                { return pgconn.CommandTag{} }
+func (r *stubAlertRows) FieldDescriptions() []pgconn.FieldDescription { return nil }
+func (r *stubAlertRows) Values() ([]any, error)                       { return nil, nil }
+func (r *stubAlertRows) RawValues() [][]byte                          { return nil }
+func (r *stubAlertRows) Conn() *pgx.Conn                              { return nil }
+
+func (r *stubAlertRows) Next() bool {
+	if r.index >= len(r.values) {
+		return false
+	}
+	r.index++
+	return true
+}
+
+func (r *stubAlertRows) Scan(dest ...any) error {
+	row := r.values[r.index-1]
+	for i, value := range row {
+		switch pointer := dest[i].(type) {
+		case *string:
+			*pointer = value.(string)
+		case *float64:
+			*pointer = value.(float64)
+		case *int:
+			*pointer = value.(int)
+		case *time.Time:
+			*pointer = value.(time.Time)
+		case **float64:
+			if value == nil {
+				*pointer = nil
+			} else {
+				v := value.(float64)
+				*pointer = &v
+			}
+		case **time.Time:
+			if value == nil {
+				*pointer = nil
+			} else {
+				v := value.(time.Time)
+				*pointer = &v
+			}
+		default:
+			return errors.New("unexpected scan destination")
+		}
+	}
+	return nil
 }
 
 func TestPostgresAlertRecorderRecordsIdempotentDelivery(t *testing.T) {

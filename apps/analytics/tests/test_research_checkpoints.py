@@ -252,7 +252,7 @@ def test_retired_checkpoint_closes_out_without_running_its_report(
         lambda *_args, **_kwargs: pytest.fail("retired checkpoint must not run its report"),
     )
     messages: list[str] = []
-    monkeypatch.setattr(checkpoints, "_notify", lambda message: messages.append(message) or None)
+    monkeypatch.setattr(checkpoints, "_notify", lambda message: messages.append(message))
     snapshot = tmp_path / "research.json"
     row = checkpoints._default_row(retired_spec)
     row.update(state="collecting", verdict="withheld", notified_state="collecting")

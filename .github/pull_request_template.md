@@ -15,3 +15,4 @@
 - [ ] Tests pass
 - [ ] Linter passes
 - [ ] Structured logging added for new code paths
+- [ ] Documentation updated, or this change does not alter documented behavior

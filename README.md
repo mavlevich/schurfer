@@ -7,18 +7,22 @@
 Live in production on Hetzner, private access over Tailscale, running in DRY_RUN
 (paper mode, no real orders). The platform scans 17 perpetual venues, records
 point-in-time decisions and liquidity, resolves forward outcomes from 15 minutes
-through 7 days, and replays locked strategy variants on matched episodes. Current
-research keeps the low-impact taker and fixed-risk wider-stop contracts frozen while
-they collect prospective evidence. A discovery replay found no support for requiring
-50% to 200% pumps, so the next independent data lane is an optional, capped Bybit
-public-trades pilot that tests timing rather than another entry-floor tweak. It is not
-an unconditional multi-exchange firehose. See [ROADMAP.md](ROADMAP.md).
+through 28 days for explicitly scoped contracts, and replays locked strategy variants
+on matched episodes. The pump-short baseline remains research-only while its frozen
+contracts mature. The primary new evidence lane is bounded Bybit early-momentum
+capture: the public-trade feed plus ticker/open-interest observations are aggregated
+into one-minute TimescaleDB bars under an explicit storage and canary budget. It does
+not authorize live capital or unconditional multi-venue expansion. See
+[ROADMAP.md](ROADMAP.md) for gates and [docs/README.md](docs/README.md) for the
+documentation map.
 
 ## What it does
 
 - Scans 17 CEX perpetual markets every 60s for price pumps above a configurable threshold
 - Persists pump episodes with peak %, retrace %, and timeline snapshots (+1h/+4h/+24h)
 - Scores each active pump on 5 components: age, price extent, OI trend, funding rate, retrace from peak (0 to 10)
+- Captures bounded Bybit one-minute momentum-flow bars with explicit gaps, drops, lag,
+  and storage telemetry
 - Token detail page: OHLCV chart (5m/15m/1h/4h), exchange breakdown, episode history, signal components
 - Telegram alerts on new pump detection
 - Automated short execution when `AUTO_TRADE=true`: opens positions on high-score pumps, monitors TP/SL/max-hold, closes automatically
@@ -35,7 +39,10 @@ flowchart LR
     COL --> NATS["NATS"]
     NATS --> HOT["Market hotset"]
     HOT --> REDIS["Redis hot state"]
-    SCAN --> PG["PostgreSQL / TimescaleDB"]
+    NATS --> MOM["Momentum capture"]
+    TRADES["Bybit public trades"] --> MOM
+    MOM --> TS["TimescaleDB 1m momentum bars"]
+    SCAN --> PG["PostgreSQL journal"]
     SCAN --> REDIS
     REDIS --> API["API gateway"]
     PG --> API
@@ -47,9 +54,8 @@ flowchart LR
     API --> WEB["React dashboard"]
     API --> STATUS["Status and load telemetry"]
 
-    BYBIT -. "optional bounded public trades pilot" .-> FLOW["Sparse 1s order-flow aggregates"]
-    FLOW -.-> FILES["Capped event and control windows"]
-    FILES -.-> OFREPORT["Read-only three-lane discovery report"]
+    TS --> STUDY["Read-only event studies"]
+    STUDY --> WATCH["Prospective WATCH and paper contracts"]
 ```
 
 ## Stack
@@ -58,9 +64,9 @@ flowchart LR
 | ------------------ | -------------------------------------------------------------- |
 | Analytics scanner  | Python 3.13, ccxt, psycopg3, redis-py, structlog               |
 | Execution service  | Python 3.13, FastAPI, ccxt, redis-py, structlog                |
-| API gateway        | Go 1.24, chi, pgx, go-redis                                    |
-| Bybit WS collector | Go 1.24, NATS                                                  |
-| Telegram notifier  | Go 1.24                                                        |
+| API gateway        | Go 1.26.6, chi, pgx, go-redis                                  |
+| Bybit WS collector | Go 1.26.6, NATS                                                |
+| Telegram notifier  | Go 1.26.6                                                      |
 | Frontend           | React 19, Vite, TypeScript, shadcn/ui, lightweight-charts      |
 | Storage            | PostgreSQL 17 + TimescaleDB, Redis 7                           |
 | Message bus        | NATS 2 with JetStream                                          |
@@ -72,7 +78,9 @@ flowchart LR
 apps/
 ├── analytics/       Python  - pump scanner, persistence, snapshots, OI/funding collection
 ├── api-gateway/     Go      - REST API, OHLCV proxy, pump history, signal scoring, Redis ticker
-├── collector/       Go      - Bybit ticker websocket publisher and bounded hotset consumer
+├── collector/       Go      - Bybit/Binance feeds, bounded hotset, and momentum-capture
+│                              binaries (cmd/momentumcapture is Bybit, unsuffixed -- named
+│                              before Binance existed; cmd/momentumcapturebinance is Binance)
 ├── execution/       Python  - order execution, risk checks, position monitor, signal trader
 ├── notifier/        Go      - Telegram alerts, reads Redis pumps:latest
 └── web/             TS      - React dashboard (/pumps, /pumps/:base)
@@ -87,9 +95,14 @@ infra/
     └── init-db.sql
 
 docs/
+├── README.md        documentation index and source-of-truth map
 ├── adr/             architecture decision records
+├── architecture/    reviewed current/target architecture plans
+├── contracts/       versioned wire and delivery contracts
+├── research/        frozen protocols, feasibility studies, and discovery ledger
 ├── strategies/      strategy specs
-└── runbooks/        operational procedures
+├── runbooks/        operational procedures
+└── tasks/           bounded external/upstream engineering tasks
 ```
 
 ## Quick start
@@ -99,7 +112,7 @@ docs/
 - Docker + Docker Compose
 - Python 3.13 + [uv](https://docs.astral.sh/uv/)
 - Node 22 + [pnpm](https://pnpm.io/)
-- Go 1.24
+- Go 1.26.6
 
 ### 1. Install dependencies
 
@@ -192,24 +205,30 @@ GET  /healthz                        service health check
 
 The production server is intentionally not a raw market-data warehouse. Redis keeps
 bounded hot state, PostgreSQL keeps durable decisions and research outputs, and raw
-market data is admitted only under an explicit byte budget. The optional order-flow
-pilot observes every Bybit perpetual but persists only sparse one-second event and
-matched-control windows rather than dense symbol-seconds or every raw trade.
+market data is admitted only under an explicit byte budget. Momentum capture does not
+persist raw trades: it stores one minute per eligible symbol with buy/sell histograms,
+top trades, burst measures, OI, price, provenance, and explicit completeness flags.
+Historical token-behavior OHLCV is a separate, hashed Parquet+Zstd dataset generated
+by a bounded read-only job rather than an always-on firehose.
 
 - stop raw writes at 80% disk usage;
 - reserve at least 15 GiB for the operating system and deployments;
 - measure real bytes/day for 24 hours before locking retention;
-- keep local aggregate windows under a configurable 5 GiB / 14-day hard cap during
-  the bounded trial;
-- derive 5s/1m views during analysis until longer retention proves useful;
-- upload selected Parquet+Zstd windows only after checksum verification;
-- expand beyond Bybit only after a point-in-time predictive and economic gate passes.
+- measure hot and steady-state compressed bytes/day separately during every capture
+  canary;
+- use Timescale compression and retention policies only under their registered disk
+  gates;
+- keep report/backfill compute off the constrained production host when real
+  `MemAvailable` headroom is insufficient;
+- retain Parquet+Zstd artifacts only with a manifest and verified content hashes;
+- expand beyond Bybit only after capture integrity and host-capacity gates pass;
+- authorize strategy promotion only from point-in-time predictive and economic
+  evidence, never from data availability alone.
 
 ## Development commands
 
 ```bash
 make verify       # full pre-PR gate: lint, types, tests, build, compose config
-make orderflow-pilot-report ARGS="--root /path/to/orderflow"
 make test         # run all tests (Python + Go + TS)
 make lint         # run all linters via pre-commit
 make ci-lint      # run the exact all-files lint gate used by GitHub Actions
@@ -219,6 +238,8 @@ make dev-logs     # tail all service logs
 make dev-stop     # stop containers
 make dev-reset    # stop containers and wipe all data volumes
 make migrate      # run Alembic migrations against local DB
+make momentum-capture-health  # inspect optional local momentum capture (Bybit; unsuffixed
+                               # name predates Binance -- see momentum-capture-binance-health)
 ```
 
 ## License

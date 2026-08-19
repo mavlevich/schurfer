@@ -137,6 +137,35 @@ type fundingResponse struct {
 	Exchanges       []fundingEntry `json:"exchanges"`
 }
 
+// momentumWatchEntry is a currently-active momentum_flow WATCH episode: the
+// prospective-long counterpart of a pump-scanner pumpEntry, but built from a
+// completely different signal (60m price return / OI growth / order-flow
+// imbalance, not 24h % change). Deliberately its own response shape rather
+// than shoehorned into pumpEntry's columns -- see MomentumWatch's own doc
+// comment for why this stays a separate query and a separate frontend table
+// instead of a row-level UNION like combinedTradesCTE in the trades package.
+type momentumWatchEntry struct {
+	Exchange            string   `json:"exchange"`
+	MarketType          string   `json:"market_type"`
+	Symbol              string   `json:"symbol"`
+	EpisodeID           string   `json:"episode_id"`
+	FirstWatchAt        int64    `json:"first_watch_at"`
+	LastWatchAt         int64    `json:"last_watch_at"`
+	ClearStreak         int      `json:"clear_streak"`
+	DecisionAt          int64    `json:"decision_at"`
+	PriceReturn60mPct   *float64 `json:"price_return_60m_pct"`
+	PriceReturn15mPct   *float64 `json:"price_return_15m_pct"`
+	OIGrowth60mPct      *float64 `json:"oi_growth_60m_pct"`
+	BuyImbalance15m     *float64 `json:"buy_imbalance_15m"`
+	FlowNotional15mUSD  *float64 `json:"flow_notional_15m_usd"`
+	FlowAcceleration15m *float64 `json:"flow_acceleration_15m_vs_prior_45m"`
+}
+
+type momentumWatchResponse struct {
+	Count int                  `json:"count"`
+	Watch []momentumWatchEntry `json:"watch"`
+}
+
 // pgxRow is satisfied by pgx.Row from pgxpool — extracted into an interface
 // so tests can inject stubs without a live database connection.
 type pgxRow interface {
@@ -586,6 +615,100 @@ func (h *Handler) Funding(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(out)
 }
 
+// momentumWatchQuery lists every currently-active momentum_flow WATCH episode
+// (app.momentum_flow_watch_states.active_episode = true) with the feature
+// snapshot from its own most recent evaluation and the decision_at of its own
+// first 'watch' bucket. This is read-only against momentum_flow's own tables
+// (app.momentum_flow_watch_states, timeseries.momentum_flow_watch_evaluations_1m)
+// -- it does not touch app.pump_events or anything the pump scanner writes,
+// mirroring the same never-merge-the-underlying-tables rule already applied to
+// the trades page's own combinedTradesCTE (see apps/api-gateway/internal/trades
+// /handler.go). The two surfaces stay two separate queries feeding two separate
+// frontend tables because their columns mean genuinely different things (24h %
+// change vs 60m return / OI growth / flow imbalance) -- forcing them into one
+// row shape would be the same mistake as physically merging trades and
+// momentum_flow_paper_probes, which was already rejected earlier this project.
+const momentumWatchQuery = `
+	SELECT
+		s.exchange, s.market_type, s.symbol, s.episode_id::text,
+		extract(epoch from fw.first_watch_at)::bigint,
+		extract(epoch from s.last_watch_at)::bigint,
+		s.clear_streak,
+		extract(epoch from e.decision_at)::bigint,
+		e.price_return_60m_pct, e.price_return_15m_pct, e.oi_growth_60m_pct,
+		e.buy_imbalance_15m, e.flow_notional_15m_usd, e.flow_acceleration_15m_vs_prior_45m
+	FROM app.momentum_flow_watch_states s
+	JOIN timeseries.momentum_flow_watch_evaluations_1m e
+		ON e.watch_version = s.watch_version AND e.exchange = s.exchange
+		AND e.market_type = s.market_type AND e.symbol = s.symbol
+		AND e.bucket_start = s.last_bucket_start
+	JOIN LATERAL (
+		-- Each episode's own first 'watch' BUCKET (not decision_at, which is
+		-- evaluator wall-clock time and can lag bucket_start by tens of
+		-- seconds -- comparing it against last_watch_at, which IS
+		-- bucket_start-based per momentum_flow_watch_evaluator.py's own
+		-- last_watch_at=event_time assignment, produced nonsensical "first
+		-- watch after last watch" rows for single-watch episodes, a
+		-- production incident 2026-08-16).
+		--
+		-- Falls back to s.last_watch_at when this episode_id has no 'watch'
+		-- row at all: an episode reactivated via the evaluator's own
+		-- suppressed_cooldown path (a fresh qualifying signal arriving
+		-- within watch_cooldown_minutes of a PRIOR, already-closed episode's
+		-- last watch) gets a brand new episode_id and active_episode=true
+		-- without ever recording a fresh 'watch' decision for it -- see
+		-- evaluate_prepared's own suppressed_cooldown branch, which carries
+		-- the OLD last_watch_at forward under the NEW episode_id. Without
+		-- this fallback min() is NULL for exactly those rows, and scanning
+		-- NULL into Go's non-pointer int64 FirstWatchAt crashed the whole
+		-- endpoint (production incident, 2026-08-16).
+		SELECT coalesce(min(e2.bucket_start), s.last_watch_at) AS first_watch_at
+		FROM timeseries.momentum_flow_watch_evaluations_1m e2
+		WHERE e2.watch_version = s.watch_version AND e2.exchange = s.exchange
+			AND e2.market_type = s.market_type AND e2.symbol = s.symbol
+			AND e2.episode_id = s.episode_id AND e2.decision_status = 'watch'
+	) fw ON true
+	WHERE s.active_episode
+	ORDER BY s.last_watch_at DESC
+`
+
+// MomentumWatch returns every currently-active momentum_flow WATCH episode --
+// the prospective-long counterpart of the pump scanner's own "active pumps"
+// list, but sourced from momentum_flow's own signal (see momentumWatchQuery).
+func (h *Handler) MomentumWatch(w http.ResponseWriter, r *http.Request) {
+	rows, err := h.pool.Query(r.Context(), momentumWatchQuery)
+	if err != nil {
+		slog.Error("pumps.momentum_watch.query", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	entries := make([]momentumWatchEntry, 0)
+	for rows.Next() {
+		var e momentumWatchEntry
+		if err := rows.Scan(
+			&e.Exchange, &e.MarketType, &e.Symbol, &e.EpisodeID,
+			&e.FirstWatchAt, &e.LastWatchAt, &e.ClearStreak, &e.DecisionAt,
+			&e.PriceReturn60mPct, &e.PriceReturn15mPct, &e.OIGrowth60mPct,
+			&e.BuyImbalance15m, &e.FlowNotional15mUSD, &e.FlowAcceleration15m,
+		); err != nil {
+			slog.Error("pumps.momentum_watch.scan", "err", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		entries = append(entries, e)
+	}
+	if err := rows.Err(); err != nil {
+		slog.Error("pumps.momentum_watch.rows", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(momentumWatchResponse{Count: len(entries), Watch: entries})
+}
+
 type signalComponent struct {
 	Value  float64 `json:"value"`
 	Points int     `json:"points"`
@@ -599,6 +722,7 @@ type signalComponents struct {
 	OiTrend         signalComponent `json:"oi_trend"`
 	FundingRate     signalComponent `json:"funding_rate"`
 	RetraceFromPeak signalComponent `json:"retrace_from_peak"`
+	MadScore        *float64        `json:"mad_score,omitempty"`
 }
 
 type signalEpisode struct {
@@ -944,7 +1068,54 @@ func (h *Handler) computeSignals(ctx context.Context, base string) (signalsRespo
 		slog.Warn("pumps.signals.funding_unavailable", "base", base)
 	}
 
+	var madScore *float64
+	{
+		rows, err := h.pool.Query(ctx,
+			`SELECT extract(epoch from ts)::bigint, ratio
+			 FROM app.live_long_short_ratio
+			 WHERE base = $1
+			   AND ts >= to_timestamp($2) - interval '4 hours'
+			   AND ts < to_timestamp($2)
+			 ORDER BY ts ASC`,
+			base, strategyAnchorAtUnix)
+		if err == nil {
+			var baseline []float64
+			var recent []float64
+			cutoff := strategyAnchorAtUnix - 30*60
+			for rows.Next() {
+				var ts int64
+				var ratio float64
+				if err := rows.Scan(&ts, &ratio); err == nil {
+					if ts < cutoff {
+						baseline = append(baseline, ratio)
+					} else {
+						recent = append(recent, ratio)
+					}
+				}
+			}
+			rows.Close()
+
+			if len(baseline) > 0 && len(recent) > 0 {
+				baselineMedian := medianFloat64(baseline)
+				var absDev []float64
+				for _, v := range baseline {
+					absDev = append(absDev, math.Abs(v-baselineMedian))
+				}
+				mad := medianFloat64(absDev)
+
+				if mad > 0 {
+					recentMedian := medianFloat64(recent)
+					score := (recentMedian - baselineMedian) / mad
+					madScore = &score
+				}
+			}
+		} else {
+			slog.Warn("pumps.signals.lsr_unavailable", "base", base, "err", err)
+		}
+	}
+
 	components, score := scoreSignals(ep, currentOI, baselineOI, maxFunding)
+	components.MadScore = madScore
 	verdict := signalVerdict(score)
 	if !oiOK && !fundingOK {
 		verdict = "insufficient_data"
@@ -1039,6 +1210,20 @@ func aggregateOI(snapshots []oiSnapshotEntry, firstSeenAt *int64) (current, base
 		deltaPct = &d
 	}
 	return current, baseline, deltaPct
+}
+
+func medianFloat64(data []float64) float64 {
+	if len(data) == 0 {
+		return 0
+	}
+	sorted := make([]float64, len(data))
+	copy(sorted, data)
+	sort.Float64s(sorted)
+	n := len(sorted)
+	if n%2 == 0 {
+		return (sorted[n/2-1] + sorted[n/2]) / 2
+	}
+	return sorted[n/2]
 }
 
 func parseUnixParam(s string) *int64 {

@@ -102,6 +102,34 @@ export interface SignalsResponse {
   };
 }
 
+// MomentumWatchEntry is a currently-active momentum_flow WATCH episode: the
+// prospective-long counterpart of PumpEntry, but built from a completely
+// different signal (60m price return / OI growth / order-flow imbalance, not
+// 24h % change). Kept as its own shape rather than merged into PumpEntry's
+// columns -- the two surfaces stay two separate API calls feeding two
+// separate tables on the Scanner page.
+export interface MomentumWatchEntry {
+  exchange: string;
+  market_type: string;
+  symbol: string;
+  episode_id: string;
+  first_watch_at: number;
+  last_watch_at: number;
+  clear_streak: number;
+  decision_at: number;
+  price_return_60m_pct: number | null;
+  price_return_15m_pct: number | null;
+  oi_growth_60m_pct: number | null;
+  buy_imbalance_15m: number | null;
+  flow_notional_15m_usd: number | null;
+  flow_acceleration_15m_vs_prior_45m: number | null;
+}
+
+export interface MomentumWatchResponse {
+  count: number;
+  watch: MomentumWatchEntry[];
+}
+
 export interface TokenStats {
   base: string;
   episode_count: number;

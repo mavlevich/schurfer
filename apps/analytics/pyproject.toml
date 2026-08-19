@@ -4,6 +4,7 @@ version = "0.1.0"
 requires-python = ">=3.13"
 dependencies = [
     "ccxt==4.5.68",
+    "duckdb==1.5.5",
     "greenlet>=3.2",
     "httpx>=0.28",
     "psycopg[binary]>=3.2",
@@ -17,6 +18,15 @@ dependencies = [
 [project.scripts]
 pump-scanner = "schurfer_analytics.main:main"
 outcome-resolver = "schurfer_analytics.outcome_worker:main"
+momentum-flow-watch = "schurfer_analytics.momentum_flow_watch_worker:main"
+momentum-flow-watch-binance = "schurfer_analytics.momentum_flow_watch_binance_worker:main"
+momentum-flow-paper = "schurfer_analytics.momentum_flow_paper_worker:main"
+momentum-flow-paper-binance = "schurfer_analytics.momentum_flow_paper_binance_worker:main"
+momentum-flow-paper-lev3 = "schurfer_analytics.momentum_flow_paper_lev3_worker:main"
+momentum-flow-paper-hold12h = "schurfer_analytics.momentum_flow_paper_hold12h_worker:main"
+momentum-flow-episode-study-report = "schurfer_analytics.momentum_flow_episode_study_report:main"
+binance-watch-input-coverage-report = "schurfer_analytics.binance_watch_input_coverage_report:main"
+bidirectional-burst-study-report = "schurfer_analytics.momentum_flow_bidirectional_burst_report:main"
 measurement-report = "schurfer_analytics.measurement_report:main"
 exchange-coverage-report = "schurfer_analytics.exchange_coverage_report:main"
 exchange-source-economics-report = "schurfer_analytics.exchange_source_economics_report:main"
@@ -35,6 +45,7 @@ candle-anomaly-report = "schurfer_analytics.candle_anomaly_report:main"
 derivatives-context-report = "schurfer_analytics.derivatives_context_report:main"
 decision-quality-report = "schurfer_analytics.decision_quality_report:main"
 derivatives-regime-feasibility-report = "schurfer_analytics.derivatives_regime_feasibility:main"
+long-short-ratio-regime-report = "schurfer_analytics.long_short_ratio_regime_report:main"
 liquid-taker-report = "schurfer_analytics.liquid_taker_report:main"
 liquid-taker-wider-stop-report = "schurfer_analytics.liquid_taker_wider_stop_report:main"
 long-horizon-report = "schurfer_analytics.long_horizon_report:main"
@@ -49,6 +60,9 @@ pump-short-reentry-audit-report = "schurfer_analytics.pump_short_reentry_audit_r
 oi-growth-filter-report = "schurfer_analytics.oi_growth_filter_report:main"
 token-history-identity-preflight-report = "schurfer_analytics.token_history_identity_preflight_report:main"
 token-history-ohlcv-sample-report = "schurfer_analytics.token_history_ohlcv_sample_report:main"
+token-history-parquet-dataset = "schurfer_analytics.token_history_parquet_dataset:main"
+token-behavior-discovery-report = "schurfer_analytics.token_behavior_discovery_report:main"
+momentum-universe-identity-match = "schurfer_analytics.momentum_universe_identity_matcher:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

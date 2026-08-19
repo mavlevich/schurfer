@@ -1,6 +1,6 @@
 # Roadmap
 
-> Living document. Updated as we progress. Last refreshed 2026-08-10.
+> Living document. Updated as we progress. Last refreshed 2026-08-13.
 
 ## Guiding principle
 
@@ -17,6 +17,132 @@ tomorrow.
 
 The parked idea catalog lives in [IDEAS.md](IDEAS.md). It is frozen until edge is
 proven. Post-MVP strategy and exit improvements live in the exit-strategy notes.
+
+## Delivery portfolio and WIP limits
+
+Schurfer advances several product lanes, but it does not implement all of them at
+once. Parallelism means that collectors and frozen cohorts may accumulate evidence
+while another bounded change is being built. It does not mean keeping many unfinished
+branches open or alternating between unrelated changes inside one pull request.
+
+At most two implementation pull requests may be active at once:
+
+1. **Primary slot: profit and evidence.** This slot is always assigned to the highest
+   value available work that can establish, reject, or execute an edge: capture of
+   non-recoverable inputs, a frozen research read, an executable-cost check, a WATCH
+   or paper strategy, or a safety requirement that blocks those activities.
+2. **Support slot: one bounded enabling change.** Rotate this slot between platform
+   reliability, operations, UI, and documentation. Prefer work that can finish while
+   the primary lane is waiting for a canary, a forward cohort, or an external review.
+
+Passive production collection, a scheduled checkpoint, and a merged contract waiting
+for maturity do not occupy an implementation slot. A production incident, capital
+safety defect, data corruption risk, or failure of non-recoverable capture preempts
+both slots until it is contained. Ordinary refactoring, visual polish, and speculative
+scaling never preempt a healthy evidence-producing lane.
+
+Use the following rolling target for every ten merged pull requests. This is an
+engineering allocation, separate from the experiment-family budget below.
+
+| Lane                           | Target per 10 merged PRs | Examples                                                                            |
+| ------------------------------ | -----------------------: | ----------------------------------------------------------------------------------- |
+| Profit and evidence            |               at least 5 | capture, discovery/confirmation reports, WATCH/paper candidates, costs and capacity |
+| Reliability and data platform  |                  about 2 | durability, recovery, bounded queues, venue adapters, resource protection           |
+| UI and research tooling        |                  about 1 | token workspace, event timeline, progressive Research rendering                     |
+| Documentation and architecture |                  about 1 | current-state diagrams, ADR supersession, roadmap/archive maintenance               |
+| Gate-driven flex               |                  about 1 | whichever lane removes the highest-value proven blocker                             |
+
+Do not run more than two consecutive support PRs from UI, documentation, or general
+refactoring unless they remove an explicit blocker or active operational risk. After
+every merge or research verdict, select the next work again from current evidence;
+the roadmap order is not a reason to build a now-irrelevant item.
+
+```mermaid
+flowchart LR
+    G["Research or production gate"] --> P{"Immediate risk or irreversible data loss?"}
+    P -->|yes| S["Preempt: safety or capture repair"]
+    P -->|no| E["Primary slot: profit and evidence"]
+    E --> W{"Primary lane waiting?"}
+    W -->|yes| R["Support slot: rotate platform, UI, docs"]
+    W -->|no| C["Continue bounded primary PR"]
+    R --> G
+    C --> G
+    S --> G
+```
+
+Documentation changes normally accompany the code or decision they describe. A
+dedicated documentation PR is justified for cross-cutting drift, navigation, or
+architecture cleanup, but must have an explicit file list and finish condition. UI
+work follows the same rule: one coherent user workflow per PR, with backend contracts
+defined first and no empty navigation for capabilities that do not exist yet.
+
+### Near-term interleaving from 2026-08-13
+
+The support lane starts now, not after the momentum verdict. Use this order after the
+current planning branch merges, reselecting only when a gate or incident changes the
+facts. The numbers express the intended merge order where practical, not a dependency
+from a support PR to the next primary PR. Support work may overlap one primary PR and
+never blocks the next profit or evidence step.
+
+1. `fix/bybit-momentum-capture-integrity-v1`: archive the canary, correct universe and
+   backpressure, and make the repeat safe.
+2. `feat/momentum-flow-watch-v1`: freeze and deploy the prospective evaluator and
+   timing audit.
+   **Implemented on `feat/momentum-flow-watch-v1`:** the numerical contract is documented in
+   `docs/research/momentum-flow-watch-v1.md`. It evaluates persisted complete bars in
+   a separate worker, registers its first-start cohort boundary and contract hash in
+   Postgres, and records every WATCH, signal rejection, quality rejection, and state
+   suppression with point-in-time features and latency timestamps. It does not alter
+   the pump scanner or start paper execution.
+3. `docs/documentation-system-v1`: inventory documentation, add its source-of-truth
+   map, classify drift, and define the bounded refresh PRs. This is the first support
+   PR while WATCH deployment is reviewed or the repeat canary begins.
+4. `feat/momentum-flow-paper-v1`: add the `$50` exact-venue discovery paper probe and
+   bounded outcomes.
+   **Implemented on `feat/momentum-flow-paper-v1`:** the prospective worker claims
+   each frozen WATCH before requesting a non-recoverable order-book quote, records
+   exact Bybit ask/bid VWAPs for a `$50` unlevered long, and resolves the registered
+   5/15/30/60/120/240-minute outcomes with conservative costs. Missing or late quotes,
+   interrupted entry claims, and unresolved exits stay explicit in the denominator.
+   The contract is documented in `docs/research/momentum-flow-paper-v1.md`; this is
+   paper discovery instrumentation only and does not change pump-short execution.
+5. `feat/binance-momentum-adapter-v1`: implement and probe the adapter, disabled by
+   default.
+6. `refactor/web-design-contract-v1`: begin real UI implementation with shared tokens,
+   page header, async states, formatters, API errors, and one reviewed accessible
+   primitive layer. This runs while Bybit paper and canary observations accumulate;
+   it does not wait for the 2-to-4-week momentum verdict.
+7. `analysis/momentum-flow-episode-study-v1`: link pumps, WATCH decisions, matched
+   controls, latency, and outcomes under the registered measurement rules.
+   The first read may run after at least 24 hours of corrected zero-drop capture and
+   must include every measured pump at or above the existing 20% measurement floor,
+   not only traded pump-short episodes. Compare point-in-time flow/OI states at
+   15/30/60/120/240-minute leads with deterministic non-pump controls, then report
+   WATCH recall, false-WATCH rate, lead-time distribution, MFE/MAE, and after-cost
+   paper outcomes. This initial read is descriptive and cannot tune WATCH thresholds
+   on the same window.
+   **Implemented on `analysis/momentum-flow-episode-study-v1` (partial --
+   measurement prerequisites for HYP-014, not the full confirmation-track read):**
+   `momentum_flow_episode_study_report.py` covers the coverage funnel, an exact-
+   instrument matched-control selector (nearest calendar distance, +-24h
+   self/other-pump exclusion, liquidity-balance diagnostic -- see
+   `docs/research/momentum-flow-episode-study-v1.md`), the per-lookback event-vs-
+   control descriptive comparison, WATCH recall/lead-time, and liquidity/repeat-
+   token segments. It does not compute false-WATCH rate, MFE/MAE, after-cost
+   economics, capacity, p-value/Holm correction, or a promotion verdict -- those
+   remain a later report once this one shows the prerequisites are satisfiable. No
+   CCXT call, so it runs safely as a `prod-*` target. Does not move HYP-014 out of
+   `parked`; no discovery-ledger row is logged from this report's own output.
+8. `docs/current-architecture-refresh-v1`: update current service and data-flow
+   diagrams, supersede stale ADRs, and move retired operational paths out of the
+   current architecture view.
+9. `feat/binance-momentum-canary-v1`: activate a bounded Binance trial only if the
+   corrected Bybit and host-capacity gates pass.
+10. Select the next item from evidence: the next UI workflow, notifier delivery,
+    Confirmation contract, or a demonstrated capacity blocker.
+
+This sequence deliberately places documentation at steps 3 and 8 and UI code at step 6. No support item waits for the final strategy verdict, but none delays the initial
+WATCH and paper instrumentation either.
 
 ## Current state (2026-08-10)
 
@@ -73,9 +199,34 @@ The portfolio is bounded as follows:
   (infrastructure, then a screen, then a report); one PR can also carry more than one
   family. Track pull-request count separately as an engineering-velocity signal, not
   as this budget. Maintenance, security fixes, and re-running an already-registered
-  report never consume it. Families merged since `2026-07-29` have not yet been
-  counted against this cap under the new unit — do that count before registering
-  another new family.
+  report never consume it.
+
+  **Count as of `2026-08-16`: 5 of 10 spent.** HYP-011 (pump-reversion), HYP-012
+  (source-lead), HYP-013 (token-behavior), and HYP-014 (momentum-flow), all entered in
+  [docs/research/discovery-ledger.md](docs/research/discovery-ledger.md); plus the
+  OI-growth baseline filter (`confirmed_oi_growth_baseline_filter_v1`, registered
+  `2026-08-10`) as a genuinely new signal moved toward Confirmation,
+  not a variant of an existing one. Three borderline cases are counted as continuations
+  of an already-spent family, not new ones, and are not in the 5: the liquid-taker
+  wider-stop shadow (registered `2026-08-01`) reuses the complete HYP-008 selector and
+  cohort, testing one stop-width challenger against the unchanged baseline; the
+  open-ended-margin funding-buffer study (starts `2026-08-03`) reuses the same
+  `liquid_taker_candidate_v1` selector, measuring different checkpoints on the same
+  underlying candidate rather than a new one; HYP-015 (`2026-08-16`) is a continuation
+  of HYP-014's own momentum-flow family, an informal exit-hold/stop-loss discovery
+  sweep against `momentum_flow_paper_v1`'s own already-collected probes, not a new
+  signal. HYP-013 itself parked with status
+  `insufficient_triggers` on its first real pass (2026-08-11) — the frozen
+  47-instrument token-history dataset produced only 60 formal-sample episodes, and the
+  most aggressively cash-gating candidate kept only 7 of them, short of the
+  materiality floor; no statistical comparison actually ran. It still spends the
+  budget slot because the family reached the discovery ledger with a real result, per
+  this section's own rule that counting happens at the ledger-entry event, not at a
+  positive outcome. Bybit early-momentum capture (item 5, PR1-3) is still collector
+  infrastructure only, with no discovery-ledger entry or Confirmation move yet, and
+  will be counted only if and when a real momentum screen produces a loggable
+  result, not for the collector merging.
+
 - Keep no more than two active Confirmation-level lines (a frozen contract plus its
   own forward cohort) at once. Pump reversion is the primary line. One cheap
   market-intelligence probe may run in parallel. Other ideas stay in Discovery until
@@ -148,71 +299,774 @@ front.
    persistent venue failure narrows or stops that venue instead of weakening the
    contract globally. If the gate fails, archive the result and stop this family at
    feasibility rather than building storage around unusable history.
-3. **Build the bounded historical dataset only if step 2 passes.** Store exact-venue
-   daily OHLCV as partitioned Parquet with schema version, CCXT version, identity key,
-   request/observation bounds, source timestamps where available, gap flags, and file
-   hashes. DuckDB reads partitions; Postgres stores only bounded run/catalog metadata.
-   Do not introduce a queue, object store, ClickHouse, cross-venue ticker matching, or
-   5-minute year-long firehose in this step.
-4. **Run one wide token-behavior discovery report.** Compute only pre-decision
-   descriptors: prior spike count and magnitude, realized volatility, historical
-   drawdown/recovery time, range compression/expansion, volume shock, listing age,
-   and recurrence of similar moves. Evaluate them together in one discovery family
-   with cash-inclusive after-cost economics, capacity, week/asset concentration,
-   multiple-testing correction, and holdout-by-time. The output can nominate at most
-   one frozen forward filter; it cannot edit the score or justify historical trading.
+3. **[Implemented, PR #174] Build the bounded historical dataset only if step 2
+   passes.** Stores exact-venue daily OHLCV as partitioned Parquet with schema
+   version, CCXT version, identity key, request/observation bounds, source
+   timestamps where available, gap flags, and file hashes. DuckDB reads
+   partitions; the catalog is a file-based `manifest.json` written atomically
+   per run and re-verified against disk after every write, not a Postgres
+   table. No queue, object store, ClickHouse, cross-venue ticker matching, or
+   5-minute year-long firehose was introduced. See the token-behavior-history
+   entry above for the real production run's numbers.
+4. **[Implemented, PR #187/#188; run 2026-08-11] Run one wide token-behavior
+   discovery report.** Compute only pre-decision descriptors: prior spike count and
+   magnitude, realized volatility, historical drawdown/recovery time, range
+   compression/expansion, volume shock, listing age, and recurrence of similar
+   moves. Evaluate them together in one discovery family with cash-inclusive
+   after-cost economics, capacity, week/asset concentration, multiple-testing
+   correction, and holdout-by-time. The output can nominate at most one frozen
+   forward filter; it cannot edit the score or justify historical trading.
+   Registered as HYP-013 in
+   [docs/research/discovery-ledger.md](docs/research/discovery-ledger.md), status
+   `parked`: the frozen 47-instrument dataset produced only 60 formal-sample
+   episodes, and the most aggressively cash-gating of the 4 candidates
+   (`above_median_recovery_days`) kept only 7 of its 35 resolved episodes,
+   short of the pre-registered 10-trade materiality floor — `insufficient_triggers`,
+   no bootstrap/Holm comparison actually ran. Report archived at
+   `backups/reports/token-behavior-discovery-2026-08-11.{md,json}` (outside git).
+   A re-attempt needs a
+   non-overlapping forward window with materially more history than this ~2-week
+   dataset covers before this line can be revisited.
 5. **Start a bounded Bybit early-momentum capture as the next non-recoverable-data
    PR.** Extend the existing ticker websocket decoder to retain both `openInterest`
    and `openInterestValue`; reuse public trades to aggregate taker buy/sell notional.
+   Since only 1-minute aggregates are persisted (not raw trades), whatever notional
+   buckets are not tracked at capture time can never be recovered later: track a
+   non-cumulative, log-spaced notional histogram per side (roughly `<1k, 1-2.5k,
+2.5-5k, 5-10k, 10-25k, 25-50k, 50-100k, 100-250k, 250-500k, 500k-1M, >=1M`) plus
+   top-K largest notionals and short-window (10s/30s) burst metrics within each
+   1-minute bar, with block/RPI-flagged trades tracked separately from ordinary flow.
+   Cumulative "at least this size" views are derivable from the histogram after the
+   fact; fixed cumulative tiers alone are not, since the boundary a discovery read
+   later needs cannot be un-guessed from data that was never kept at that resolution.
    Cover the whole eligible linear-USDT universe continuously so activation cannot
-   create left-censoring. Persist 1-minute aggregates, 5-minute/hour rollups, and
-   bounded event windows, not raw trades. Initial discovery lookbacks are
-   5/15/30 minutes and 1/2/4/8/12/24 hours; none is primary until a discovery read
-   ends and a fresh forward cutoff is registered. Store exchange/event/receive times,
-   sequence/gap diagnostics, reconnects, lag, and drop counters. Alerts are WATCH-only;
-   no paper or real long is opened by this PR.
+   create left-censoring. Persist 1-minute base bars only; 5-minute/hour views are
+   computed from them at query time (or via a derived continuous aggregate), not
+   written as their own separately-maintained rows. No bounded event window table in
+   this PR: the 1-minute series over the whole universe is itself the bounded,
+   queryable structure item 8's state-machine model will define windows against, and
+   picking a trigger before that model exists would bake in the "one magic threshold"
+   item 8 explicitly rules out. Initial discovery lookbacks are 5/15/30 minutes and
+   1/2/4/8/12/24 hours; none is primary until a discovery read ends and a fresh
+   forward cutoff is registered. Store exchange/event/receive times, sequence/gap
+   diagnostics, reconnects, lag, and drop counters. Alerts are WATCH-only; no paper or
+   real long is opened by this PR.
+
+   **Calibration-pass scaffolding (`analysis/bybit-early-momentum-event-study-v0`,
+   2026-08-11), built while the item 6 checkpoint runs, not a substitute for item 8's
+   own discovery report.** Freezes `momentum_flow_state_v1` as one family for the
+   ten-family budget (three lanes: `early_long`, `distribution_short`,
+   `pump_short_flow_veto`; see `momentum_flow_protocol.py` for the full
+   pre-registration), joins old pump-event/price history with the new momentum-flow
+   bars around each trigger's -24h..+4h window, and reports only descriptive
+   statistics -- coverage, flow availability, per-lookback price/OI/flow means. It
+   computes no p-value, Holm correction, profit factor, or promotion verdict, and its
+   own CLI refuses to run against live data before the checkpoint's own 72h cutoff
+   (`2026-08-13T19:05:41.810000Z`) has elapsed. Correction (2026-08-11, colleague
+   review, before any real run): an earlier draft of this note claimed the family
+   budget is spent only at a later canonical outcome-bearing read, not at this
+   calibration pass -- that contradicted `momentum_flow_protocol.py`'s own
+   pre-registration, which is correct and takes precedence. Looking at real data to
+   choose which of the three lanes to carry forward, and roughly what threshold range
+   to consider, is itself a use of the data that must count: the calibration run,
+   once it actually executes (not at this PR's merge, since it cannot run before
+   `2026-08-13T19:05:41.810000Z`), is what spends the slot -- 4/10 -> 5/10 as of that
+   date -- logged to the discovery ledger with a descriptive, non-promotable status
+   even though it reaches no statistical verdict. Matches the precedent already set by
+   HYP-013 (item 4 above): a `parked`/no-verdict result still consumes a budget slot,
+   counted at ledger-entry, not at a positive outcome. See the "before item 5 is
+   registered" gate below.
+
 6. **Hold a 48-to-72-hour resource and data-quality checkpoint.** Start with a hard
-   512 MiB/1 CPU container budget and a 500 MiB/day storage ceiling. Require zero
-   persistence/drop errors, bounded reconnects, p99 processing lag below one second,
-   RSS below 400 MiB, and no sustained host swap-in/swap-out. Keep at least 1 GiB
-   `MemAvailable` before starting ad-hoc report containers. If the 4 GB production
-   host cannot satisfy those bounds, do not silently consume swap: run reports locally
-   through the DB tunnel and move the always-on collector to a separate 8 GB VPS before
-   expanding venues. A Mac mini is useful for DuckDB/backfills/ML, not as the sole
-   unattended 24/7 market collector.
-7. **Expand venues only after the Bybit checkpoint passes.** First publish a capability
-   matrix for OI amount/value, trades with aggressor side, liquidation stream,
-   timestamps, symbol identity, rate limits, and reconnect semantics. Add at most one
-   small source group and one target/confirmation group per PR. Gate/MEXC/XT are
-   candidate discovery sources; Binance/Bybit/OKX/Bitget are candidate confirmation
-   and execution venues. A venue survives only if it adds point-in-time lead,
-   coverage, or executable depth, not merely another copy of the same event. Designing
-   for 10-20 venues is allowed; connecting all 10-20 before measuring the first group
-   is not.
-8. **Run an early-momentum discovery report after 2-4 UTC weeks.** Model a state
-   sequence (accumulation: OI and buy flow rise while price is contained; breakout;
-   squeeze/liquidations; and reversion) rather than one magic threshold. Report
-   opportunities/day, lead time, precision, false WATCH rate, maximum adverse/favorable
-   excursion, common-exit after-cost long economics, liquidity/capacity, and stability
+   512 MiB/1 CPU container budget. Storage is two separate gates, not one, since a
+   single number conflates the hot uncompressed chunk with the compressed
+   steady-state one: hot/uncompressed growth at most 1.5 GiB/day, compressed
+   steady-state growth at most 500 MiB/day. A hypertable's rows live in per-chunk
+   child tables, not the parent relation, so measure both gates with
+   `hypertable_detailed_size(...)` (or `hypertable_size(...)` for the quick total),
+   not plain `pg_relation_size` on the parent, and report chunk count/compression
+   state with compressed and uncompressed footprint tracked separately rather than
+   one blended number. Confirm against real measured disk growth over an interval,
+   not extrapolated from a single row, per the real capture-and-compression
+   benchmark in
+   `packages/journal/migrations/versions/0024_bybit_momentum_bars_1m.py`'s own
+   docstring. Require zero persistence/drop errors, bounded reconnects, p99
+   processing lag below one second, RSS below 400 MiB, and no sustained host
+   swap-in/swap-out. Keep at least 1 GiB `MemAvailable` before starting ad-hoc report
+   containers. If the 4 GB production host cannot satisfy those bounds, do not
+   silently consume swap: run reports locally through the DB tunnel and move the
+   always-on collector to a separate 8 GB VPS before expanding venues. A Mac mini is
+   useful for DuckDB/backfills/ML, not as the sole unattended 24/7 market collector.
+
+   **48-hour canary diagnosis (2026-08-12):** persistence remained clean and the
+   service itself stayed small, but the registered gate failed on 10,270 input queue
+   drops and sustained host swap activity. The stored table remained fail-closed:
+   2,171,867 of 2,221,160 rows were complete (97.78%), while affected rows were
+   explicitly marked incomplete. The catalog also proved the known scope gap was
+   material: the frozen 735-symbol universe included dated futures, stock
+   perpetuals, and commodity perpetuals. The dated contracts alone contributed
+   17,645 incomplete rows while carrying only 14,282 trades. The local remediation
+   branch `fix/bybit-momentum-perpetual-universe-v1` decodes Bybit's official
+   `contractType` and `symbolType`, allows only standard or innovation crypto
+   `LinearPerpetual` USDT contracts, rejects unknown classifications fail-closed,
+   and exposes every inclusion/exclusion count in health. The narrow allowlist is
+   scoped to momentum capture and its drift check; the shared ticker collector keeps
+   its existing universe until that separate production contract is reviewed.
+   Bybit-designated stock and commodity derivatives are deferred to separately
+   versioned research universes; they are not silently treated as crypto. This does
+   not reclassify crypto tokens such as XAUT when Bybit itself reports them in the
+   standard crypto class. Do not deploy or restart the running canary before its fixed
+   72-hour cutoff. Queue-pressure remediation and a bounded repeat canary remain
+   separate follow-ups.
+
+   **Queue-pressure remediation (`fix/bybit-momentum-capture-integrity-v1`):** the
+   burst tracker now maintains ordered 10-second and 30-second rolling sums instead
+   of sorting and rescanning the whole active tail for every ordinary trade. The rare
+   out-of-order path retains the previous exact recomputation semantics. A 5,000-trade
+   local burst improved from roughly 200 ms to 1.2 ms on the same machine, while an
+   exact-reference test and a bounded 20,000-trade regression preserve the recorded
+   totals and burst maxima. Health schema v2 adds bounded p95/p99/max latency for feed
+   receive-to-handle, handlers, flush, and Redis health publication; Telegram keeps a
+   compact p99/max view while the complete measurements remain in Redis and checkpoint
+   JSON. These are implementation and observability results, not a passed production
+   gate. Merge does not authorize a restart before the original 72-hour checkpoint,
+   and only a new bounded canary can confirm that live input drops are eliminated.
+
+   **72-hour canary verdict (2026-08-13):** the original run failed its registered
+   quality gate, specifically on 23,834 input-queue drops and sustained host swap
+   activity. The persistence path itself remained clean: 3,182,504 rows persisted,
+   with zero writer drops, persistence errors, retries, or payload-hash mismatches.
+   Resource measurements also passed their storage and process bounds: hot growth was
+   1,128 MiB/day against the 1.5 GiB/day ceiling, compressed steady-state growth was
+   estimated at 222 MiB/day against 500 MiB/day, and momentum-capture RSS was about
+   25 MiB. This is a failed capture-integrity canary, not a failed momentum thesis.
+   The fixed result is archived outside git at
+   `backups/reports/momentum-canary-2026-08-13.json` with SHA-256
+   `55bd4e135a6ab77775592e764b232a6bcf06764390c37ac52ef174271e51baf3`.
+
+   The registered calibration read at the same fixed cutoff is HYP-014, status
+   `parked`. On merged report v3 it built 2,730 event timelines, including 266 events
+   with raw flow rows, but zero cumulative flow lookbacks passed the fail-closed
+   minute-completeness rule. OI remained independently observable for 135 amount and
+   154 USD-value timelines. Mean OI amount/value rose from +3.95%/+14.26% at -12h to
+   +14.05%/+37.04% at the pump trigger, a descriptive lead consistent with an
+   accumulation or squeeze path, but there were no matched controls, after-cost
+   economics, or promotional statistics. No threshold or lane is selected from this
+   read. The first report run exposed a mechanical OI anchor-window defect; the
+   invalid artifact was retained, the bug was regression-tested, and the canonical
+   report was rerun from clean merged `main` at revision `e7e61d2` with the same
+   cohort and cutoff. See
+   [docs/research/discovery-ledger.md](docs/research/discovery-ledger.md).
+
+   Production deployment of the fixes and the bounded repeat canary is blocked by
+   the existing capacity gate: the 4 GB host had only 674 MiB `MemAvailable`, below
+   the required 1 GiB. Do not bypass this check. Resize or move the always-on host to
+   at least 8 GB, then deploy the already-merged perpetual-universe, queue-pressure,
+   and OI-anchor fixes and restart the 24/48/72-hour checkpoint epoch.
+
+7. **Prepare Binance immediately, but activate it only after a corrected Bybit
+   checkpoint and host-capacity gate pass.** The Bybit canary has already justified
+   continuing the momentum data lane: it produced dense, queryable observations with
+   clean persistence and useful coverage diagnostics. It has not authorized immediate
+   multi-venue activation: queue drops, incomplete bars, and active host swap proved
+   that duplicating the deployed path now would scale a known defect.
+
+   Preparation may proceed while the corrected Bybit canary accumulates: freeze the
+   normalized venue contract, implement and unit-test the Binance adapter, add a
+   disabled Compose profile, run bounded read-only endpoint probes, and calculate its
+   expected event, CPU, memory, and storage rates. None of these steps may subscribe
+   to the full Binance universe continuously in production.
+
+   Use this activation sequence:
+   1. archive the fixed-window Bybit canary result;
+   2. deploy the perpetual-universe and queue-pressure corrections;
+   3. run a bounded Bybit repeat with the same explicit quality and resource gates;
+   4. finish the disabled Binance implementation while that repeat runs;
+   5. enable a separate bounded Binance canary only after at least 48 clean Bybit
+      hours show zero queue/writer drops, bounded lag, clean persistence, and no active
+      swap churn.
+
+   The current 4 GB host is not authorized for two dense continuous venue feeds. Its
+   measured low `MemAvailable` and swap activity already trigger capacity preparation.
+   Before enabling Binance, either resize the always-on host to at least 8 GB or move
+   capture to a separate host, then re-measure the same gates. More RAM is safety
+   headroom, not a substitute for fixing backpressure. Keep reports, DuckDB backfills,
+   and future ML off the always-on capture host when they can run locally.
+
+   First publish a capability matrix for OI amount/value, trades with aggressor side,
+   liquidation stream, timestamps, symbol identity, rate limits, and reconnect
+   semantics. Add at most one small source group and one target/confirmation group per
+   PR. Gate/MEXC/XT are candidate discovery sources; Binance/Bybit/OKX/Bitget are
+   candidate confirmation and execution venues. A venue survives only if it adds
+   point-in-time lead, coverage, or executable depth, not merely another copy of the
+   same event. Designing for 10-20 venues is allowed; connecting all 10-20 before
+   measuring the first group is not.
+
+   **Pre-gate matrix scaffolding (`analysis/momentum-venue-capability-matrix-v1`,
+   2026-08-12; no venue enabled):** the typed fail-closed matrix and review view live
+   in `apps/collector/internal/momentumvenue` and
+   `docs/research/momentum-venue-capability-matrix-v1.md`. They distinguish
+   `implemented`, `officially_documented`, `probe_required`, `unsupported`, and
+   `not_audited`; documentation alone never authorizes capture. The first reviewed
+   expansion candidate is Binance USD-M. Its `aggTrade` granularity is not silently
+   equated with Bybit individual trades, current native OI value remains unresolved,
+   and its force-order stream is explicitly censored. The matrix also records an
+   Bybit scope gap found during the live canary: the deployed `FetchSymbols()` filters
+   linear/Trading/USDT but does not decode `contractType` or `symbolType`. The local
+   remediation described under item 6 closes that gap for the next bounded canary;
+   it is intentionally not deployed into the current fixed window. This preparation
+   does not bypass item 6: any Binance connection remains blocked until a corrected
+   Bybit canary passes.
+
+   **Capability preflight (`analysis/binance-momentum-capability-preflight-v1`,
+   2026-08-14; still no venue enabled):** live-verified REST findings recorded in
+   `docs/research/binance-momentum-capability-preflight-v1.md`. Refines the matrix's
+   OI-value entry: `openInterestHist` does carry a native `sumOpenInterestValue`, but
+   only at 5-minute-or-coarser granularity, not point-in-time comparable to Bybit's
+   ticker-pushed value. Confirms Binance's universe filter is structurally cleaner
+   (`contractType=TRADIFI_PERPETUAL` cleanly tags tokenized-stock/commodity
+   perpetuals; `underlyingType=INDEX` tags the 2 non-single-asset instruments) but
+   universe churn is real (127 of 865 raw symbols were `SETTLING` at fetch time).
+   Live WebSocket throughput, timestamp lag, and reconnect behavior remain
+   unmeasured -- deferred to a bounded probe with real outbound WS connectivity, not
+   attempted from this investigation's own sandboxed environment. Also measured,
+   via direct SSH check, that the host now reports 7.6 GiB total RAM / 4 CPUs
+   (`free -h`, `nproc`) -- up from the original 4 GB host this section's own gate was
+   written against. Note this is 7.6 GiB, not a full 8 GiB: typical for a
+   nominally-marketed "8 GB" cloud plan once `free -h`'s binary GiB and any
+   hypervisor-reserved memory are accounted for, but not independently confirmed
+   against the actual Hetzner plan spec here. Whether this counts as clearing the "at
+   least 8 GB" gate as originally written is a judgment call for whoever owns that
+   gate, not asserted by this preflight -- and clearing it would not by itself
+   authorize item 6's Bybit checkpoint gate, which is unrelated and still open.
+
+   **Source-contract refactor (`refactor/momentum-source-contract-v1`, 2026-08-14;
+   still no behavior change to the running collector):** the new `momentumsource`
+   package (`apps/collector/internal/momentumsource`) defines `UniverseSource`,
+   `TradeSource`, `TickerSource`, `OpenInterestSource`, and the shared event
+   envelope. The `bybit` package's new `Adapter` implements them by wrapping the
+   existing, UNMODIFIED `bybit.Source` -- `cmd/momentumcapture/main.go` still
+   talks to `bybit.Source` directly and does not import either new package.
+   Building the adapter found the
+   capability matrix's own diagram was wrong to show Bybit routing OI through its
+   own `OpenInterestSource`: Bybit's OI arrives embedded in the same ticker push
+   `TickerSource` already streams, so a second subscription would double Bybit's
+   own WebSocket connection count for data already received once. `Adapter`
+   therefore does not implement `OpenInterestSource`; `OpenInterestFromTicker`
+   derives the same reading from an already-consumed ticker update instead. See
+   docs/research/momentum-source-contract-v1.md. Rewiring the live binary onto
+   these interfaces is deliberately deferred to its own reviewed step, not folded
+   into this PR: the currently-running instance is the corrected canary this
+   section's own item 6 is actively measuring toward its 24/48/72-hour checkpoint.
+
+   **Binance momentum source (`feat/binance-momentum-source-v1`, 2026-08-15;
+   implemented and unit-tested, still no Compose profile or running binary):**
+   `apps/collector/internal/binance` implements `UniverseSource`, `TradeSource`,
+   and `OpenInterestSource` for real -- unlike Bybit, Binance's OI genuinely is
+   a separate REST poll, so `Adapter` implements that interface directly instead
+   of deriving it from a ticker push. Deliberately does not implement
+   `TickerSource` yet (Binance's markPrice/bookTicker streams do not map onto
+   TickerUpdate's fields without conflating different kinds of price) or poll
+   `openInterestHist` (the coarse native value the preflight found). See
+   docs/research/binance-momentum-source-v1.md. Extracted apps/collector/
+   internal/wsstream during this PR: read-liveness, read-timeout
+   classification, session-id generation, and two small pure helpers had been
+   copy-pasted from bybit verbatim; both packages now share one implementation,
+   bybit's own call sites unchanged. Live WebSocket throughput, timestamp lag,
+   and reconnect behavior against real Binance servers remain unverified --
+   open work for `feat/binance-momentum-capture-v1` (this section's own item 6
+   equivalent for Binance), which also owns the actual Compose profile and
+   database writer.
+
+   **Multivenue canary telemetry (`refactor/momentum-canary-multivenue-v1`,
+   2026-08-15; merged, not yet deployed):** the next PR starts a second
+   momentum-capture process, and its Redis health snapshot needed somewhere
+   to go that would not collide with the running Bybit canary's own.
+   `momentumcapture.HealthKey` was a single unparameterized constant every
+   venue's process would have shared -- Binance's health snapshot would have
+   silently overwritten Bybit's the moment it started publishing, exactly
+   the "no shared/masking counters" failure this section's own item 6 is
+   trying to measure honestly. `Health` now carries an `Exchange` field,
+   `HealthKey` takes it as a parameter, and `RedisStore.StoreHealth` fails
+   closed on an unset `Exchange` rather than falling back to some default
+   venue. The canary-checkpoints script, the Makefile health targets, and
+   doc references were all updated to the new
+   `market:momentumcapture:health:bybit` key. See
+   docs/research/momentum-canary-multivenue-v1.md. **Operational note: this
+   PR touches the file backing the currently-running Bybit canary process.
+   Deploying it restarts that process. Do not deploy until this section's
+   own item 6 24/48/72-hour checkpoint decision is made** -- merging to
+   `main` alone does not deploy or restart anything.
+
+   **Binance momentum capture (`feat/binance-momentum-capture-v1`,
+   2026-08-15; implemented and unit-tested, Compose profile disabled by
+   default):** `cmd/momentumcapturebinance`, a complete second capture
+   binary structurally parallel to `cmd/momentumcapture` -- own event loop,
+   own health snapshot (`Exchange: "binance"`), own writer bound to the
+   SAME `timeseries.bybit_momentum_bars_1m` table (already exchange-scoped
+   by its own primary key, no new migration needed). The one structural
+   difference: this process has no ticker feed at all, since
+   `binance.Adapter` does not implement `TickerSource` -- its only
+   price-or-OI signal is an in-process `PollOpenInterest` REST poll, so
+   every Binance bar's OHLC/bid/ask stays permanently nil, OI-only. Wired
+   into a disabled-by-default `momentum-capture-binance` Compose profile in
+   both dev and prod, with its own start/stop/health Makefile targets (the
+   prod start target gated by the same RAM/disk capacity check
+   `prod-momentum-capture-start` already uses). See docs/research/binance-
+   momentum-capture-v1.md. **Not activated by this PR: this section's own
+   "activate it only after a corrected Bybit checkpoint and host-capacity
+   gate pass" rule still applies in full** -- the profile stays off until a
+   human runs the start target deliberately, after both gates pass.
+
+8. **Launch a prospective WATCH and paper baseline early; wait 2-4 UTC weeks for a
+   verdict, not for the first measurement deployment.** After the fixed 72-hour
+   calibration read and the capture-integrity fixes, freeze one broad
+   `momentum_flow_watch_v1` state machine from input distributions without consulting
+   forward returns. Deploy it alongside the corrected Bybit canary so every future
+   evaluation is recorded at decision time rather than reconstructed later.
+
+   The complete delivery order, evidence cadence, pump/control linkage, mathematical
+   definitions, latency attribution, and versioning rules live in
+   [docs/research/momentum-flow-validation-plan-v1.md](docs/research/momentum-flow-validation-plan-v1.md).
+   That document is a planning protocol, not the numerical WATCH contract; the latter
+   is frozen separately before its first forward outcome is observed.
+
+   Model a sequence (accumulation: OI and buy flow rise while price is contained;
+   breakout; squeeze/liquidations; and reversion) rather than one magic threshold.
+   WATCH evaluation must fail closed on incomplete bars, missing fresh OI, detected
+   feed gaps, stale quotes, or unresolved identity. Record both qualifying and rejected
+   evaluations with reason codes so false-WATCH rate and opportunity capacity have a
+   real denominator.
+
+   A `$50`, unlevered, exact-venue paper probe may open immediately from the same
+   frozen WATCH contract. It uses a bounded position/cooldown policy, a pre-declared
+   primary exit and cost model, and an executable decision-time quote. This early
+   paper lane is discovery instrumentation, not promotion evidence. Its data belongs
+   to the inspected discovery window; any candidate selected from it still requires a
+   new untouched Confirmation cohort under item 9.
+
+   Persist the complete timing chain: exchange event time, local receive time,
+   aggregate bucket close, state evaluation, WATCH decision, quote request/response,
+   simulated fill, notification delivery, and later outcome resolution. Decompose
+   source-to-receive, receive-to-aggregate, aggregate-to-decision,
+   decision-to-executable-quote, and total source-to-paper-fill latency. This
+   distinguishes a slow system from a deliberately later signal definition. The
+   existing pump scanner may arrive an hour after an external accumulation alert
+   because it waits for a price-pump threshold; that is not evidence of an hour of
+   compute latency.
+
+   After 2-4 UTC weeks, run the formal discovery report over the frozen baseline.
+   Report opportunities/day, lead time relative to Schurfer's own pump events,
+   precision, false WATCH rate, maximum adverse/favorable excursion, common-exit
+   after-cost long economics, liquidity/capacity, latency attribution, and stability
    by asset, week, venue, and market regime. Missing inputs are unresolved, never
-   neutral. ML is allowed only as a later benchmark against a frozen simple-rule
+   neutral. ML is allowed only as a later benchmark against the frozen simple-rule
    baseline and time-split data; it is not an excuse to fit the discovery window.
-9. **Register at most one forward long shadow if the discovery gate passes.** Freeze
+
+   **Binance WATCH shadow (`feat/binance-momentum-watch-v1`, 2026-08-15;
+   implemented and unit-tested, Compose profile disabled by default):** a
+   second WATCH worker running the exact same frozen `momentum_flow_watch_v1`
+   thresholds, scoped to Binance's own captured bars via its own contract
+   identity (`BINANCE_WATCH_CONTRACT`, distinct `watch_version`, so its own
+   Postgres advisory lock, `_runs` row, and Redis health key never collide
+   with the live Bybit worker's). Every threshold reused byte-identical from
+   the live contract, enforced by a test -- no retuning `min_cross_section_size`
+   for Binance's smaller universe; if that turns out to be a real limiting
+   factor, real data should show it before the bar gets loosened.
+   `run_watch_worker` gained `contract`/
+   `contract_sha256` parameters (defaulting to the live Bybit contract, zero
+   behavior change for the existing entrypoint) rather than being forked --
+   `evaluate_bucket` and the repository layer were already contract-
+   parameterized, only the outer orchestration and the Redis health key were
+   hardcoded to one venue. See docs/research/binance-momentum-watch-v1.md.
+   **Not activated by this PR: this section's own Compose profile stays off
+   until `feat/binance-momentum-capture-v1`'s own activation gates pass and
+   Binance bars actually exist to watch.**
+
+   **Momentum universe identity foundation
+   (`feat/momentum-universe-identity-foundation-v1`, 2026-08-15;
+   implemented and unit-tested, including a real-Postgres integration
+   suite and a verified migration upgrade/downgrade/upgrade cycle):**
+   foundation half of cross-venue instrument identity -- designed with a
+   colleague before implementation started, matching the same "Foundation"
+   vs. full-resolution split the pump-scanner's own "Canonical instrument
+   identity" checklist item (this file, phase 2) already uses. Adds
+   durable, versioned per-instrument identity metadata (native market id,
+   base/quote/settle, onboarding time, a fail-closed identity status with
+   no `confirmed`/`conflict` value yet -- a single venue's own catalog
+   fetch has no way to know either) for both Bybit and Binance, persisted
+   atomically alongside each venue's own frozen universe. A new shared
+   `momentumsource.Instrument` type replaces near-duplicate per-venue
+   catalog metadata; a new `catalog_version` (separate from
+   `universe_version`) catches an identity-relevant change a same-symbol-
+   set hash alone would miss (a delisted-and-relisted ticker under the
+   same native market id); two new tables
+   (`app.momentum_universe_snapshots`/`_instruments`, natural composite
+   keys, no surrogate id) store one row set per fetch, atomically linked.
+   See docs/research/momentum-universe-identity-foundation-v1.md. **Not
+   cross-venue matching: nothing here compares two venues' own instruments
+   against each other -- that is a separate, not-yet-built resolution PR.
+   Operational note: touches `cmd/momentumcapture/main.go`'s own startup
+   sequence with a genuine new behavior (a new database write before
+   capture starts), not a passive addition -- deploy only at a deliberate
+   capture-epoch boundary, same standing discipline as every other PR in
+   this section.**
+
+   **Momentum universe identity resolution
+   (`feat/momentum-universe-identity-resolution-v1`, 2026-08-17;
+   implemented and unit-tested, including a real-Postgres integration
+   test and a sanity run against real prod data):** resolution half of
+   cross-venue instrument identity, completing item 8. A pure classifier
+   groups every captured exchange's own ready instruments by `(base,
+   canonical_market_type)` and assigns each group member its own
+   `match_status` (`candidate`/`confirmed`/`conflict`/`insufficient_
+   evidence`/`manual_review_required`/`not_same_asset`, per the
+   foundation doc's own colleague-specified vocabulary and worked
+   example). Venue-count-agnostic by design (a cluster model, not
+   hardcoded Bybit/Binance columns) -- adding a third venue later is new
+   capture-side work, not a schema or classifier rewrite. Two new tables
+   (`app.momentum_universe_asset_clusters`/`_cluster_members`), a new
+   ad-hoc report (`make momentum-universe-identity-match`, not a
+   persistent worker -- the upstream snapshot data itself only refreshes
+   on a capture-process restart, so a periodic timer would be premature).
+   Real prod data (2026-08-17, 516 Bybit / 525 Binance ready instruments):
+   463 clusters, 904 confirmed / 18 candidate / 4 insufficient_evidence /
+   0 conflict / 0 manual_review_required members. See docs/research/
+   momentum-universe-identity-resolution-v1.md.
+   **Tracking note (explicit user decision, not an oversight): the
+   established-both-sides branch promotes straight to `confirmed` from a
+   bare `base` + `canonical_market_type` match alone, which the
+   foundation doc's own review explicitly warned against in general. This
+   was a deliberate choice to ship the simpler rule now and tighten it
+   later once a real second evidence source exists (e.g. a price-
+   correlation check) -- revisit this branch specifically when that
+   evidence source is built, do not assume it stays this permissive
+   forever.**
+
+   **Binance aggTrade WS routing fix (`fix/binance-market-stream-route`,
+   2026-08-15; merged):** the Binance canary was activated the same day
+   (after the corrected-Bybit and host-capacity gates both cleared) and
+   immediately hit a silent, 100% trade-feed outage -- the WS handshake
+   for `<symbol>@aggTrade` succeeded every time (`101 Switching
+Protocols`, no error, no reconnect) but zero application frames ever
+   arrived, for any symbol, because Binance's own ping/pong keepalive
+   convention (`wsstream.ConfigureReadLiveness`, refreshing the read
+   deadline on any control frame) kept the transport looking healthy the
+   whole time. Root cause (found by a colleague, independently verified
+   twice from two separate networks before the fix landed): Binance
+   started routing WS streams by category (public/market/private) as of
+   their own 2026-04-23 WebSocket migration; "market" streams (aggTrade,
+   markPrice, kline, liquidations) now require the routed
+   `wss://fstream.binance.com/market/stream` endpoint, while "public"
+   streams (`bookTicker`, which is why it looked fine in the same
+   incident) still resolve on the old unrouted `/stream` path. Renamed
+   `wsBaseURL` -> `wsMarketBaseURL` (constant and `Source` field) so a
+   future public/private stream can't casually reuse the market-routed
+   constant, and pinned `NewSource()`'s default URL with a regression
+   test. ~30k bars written during the outage window are all already
+   `trades_complete=false`/`complete=false` (no completeness bug, nothing
+   to quarantine). **Open follow-up, not yet built: a data-liveness
+   circuit breaker** (`symbols_missing_trades_count` staying near 100% of
+   subscribed symbols past a short warm-up window should itself be a
+   fail-closed condition -- alert loudly and/or stop persisting -- not
+   just a passive health field nothing reacts to; this exact gap is what
+   let the outage run silently for 25+ minutes before manual
+   investigation caught it).
+
+   **Telegram alerts for momentum_flow paper probes
+   (notifier's own `momentum_flow_alerts.go`, 2026-08-16):** closes a real
+   visibility gap found the same night -- 140+ real paper longs had
+   opened (Bybit and Binance both) with zero Telegram notification and no
+   web visibility, because `notifier` only ever watched `pumps:latest`
+   (the pump-scanner's own key), nothing about `momentum_flow`'s own
+   tables. New poller (same shape as `source_lead_health.go`'s own
+   pattern: a bounded lookback window each tick, per-row Redis `SetNX`
+   dedup) alerts once on paper entry and once on each probe's own FINAL
+   (max-hold) outcome, not all six intermediate horizons. Deliberately
+   NOT merged into the pump-scanner's own alert format -- a distinct 🔭
+   icon and explicit "MOMENTUM-FLOW LONG" naming, so a WATCH/paper signal
+   is never visually mistaken for the already-promoted pump-short
+   strategy's own live alerts. Web visibility (a separate momentum_flow
+   tab, plus a unified but clearly-tagged Trades view) shipped 2026-08-16
+   (see `PumpsPage.tsx`'s own Scanner tabs, `TradesPage.tsx`'s own
+   `OriginBadge`).
+
+   **Alert redesign (2026-08-16):** the original "research probe, not a
+   live position" wording named neither the strategy nor why a symbol
+   qualified, and used an em-dash. Replaced with an explicit
+   "MOMENTUM-FLOW LONG" label, the triggering WATCH decision's own
+   feature snapshot (60m return / OI growth / buy imbalance, LEFT JOINed
+   by `watch_id` so a pruned evaluation row degrades to omitting the line
+   rather than failing the alert), readable UTC timestamps for both
+   detection and fill, and leverage/margin stated explicitly (`$150
+   notional, 3x leverage ($50 margin)` for `momentum_flow_paper_v1_lev3`,
+   `$50 notional, no leverage` for the unlevered v1/Binance contracts) --
+   see `formatMomentumFlowOpenMessage`/`formatMomentumFlowOutcomeMessage`
+   in `momentum_flow_alerts.go`.
+
+   **Binance WATCH input-readiness gate
+   (`fix/binance-watch-input-readiness-v1`, 2026-08-17):** `momentum_flow_
+   watch_binance` had produced zero `watch` decisions since its own
+   2026-08-15 startup -- Binance capture bars never populate close*price
+   (a documented v1 limitation) and `_fresh_oi` requires an OI reading
+   within the exact 1-minute bucket being evaluated, which Binance's
+   sequential-blocking OI poller structurally cannot meet (measured p50
+   127s / p95 255s / max 1010s per-symbol refresh gap against a 60s
+   target). Both workers reported `status: "ok"` the whole time -- health
+   answered "did my tick run" not "can my upstream even feed me." Two new
+   statuses (`blocked_upstream_incompatible`, `degraded_dependency*
+   unavailable`): both `run_watch_worker`/`run_paper_worker`check
+   readiness every tick, before acting, and neither raises/exits when
+   blocked -- they stay in their own loop and resume`"ok"`on their own
+   once the upstream recovers, no restart needed (a first draft crash-
+   looped instead; a colleague review caught this and two other P1s --
+   see docs/research/binance-watch-input-readiness-v1.md's own "Colleague
+   review" section for the full list, including the most serious one: the
+   first draft's paper worker stopped servicing already-open positions'
+   own stops/exits while blocked).`run_watch_worker`checks a *complete*
+   recent bar with`close_price > 0`; `run_paper_worker`checks its
+   upstream WATCH worker's own health hash for a *recent*`status: "ok"`   (a stale one does not count) and only gates new entries, never
+   existing-position bookkeeping.`momentum-watch-binance`/`momentum-
+   paper-binance` stopped on prod (`momentum-capture-binance`stays up --
+   trades/OI remain useful for offline discovery and PR3's own scheduler
+   work). See docs/research/binance-watch-input-readiness-v1.md for the
+   full incident writeup, retroactive`input_contract_incompatible`
+   labeling of the 2026-08-15..2026-08-17 period, and the 4-PR
+   remediation sequence this unblocks
+   (`feat/momentum-trade-price-source-v1`->
+  `fix/binance-oi-poll-scheduler-v1`->
+  `analysis/binance-watch-input-coverage-v1`->
+  `feat/binance-momentum-watch-v2`, conditional). **Sequenced ahead of
+   item 9 (multivenue combiner): a combiner premised on Binance
+   independently confirming a WATCH decision cannot be validated while
+   Binance structurally cannot produce one.**
+
+   **Trade-derived price source (`feat/momentum-trade-price-source-v1`,
+   2026-08-17):** PR2 of the 4-PR remediation sequence above, fixing root
+   cause 1 (`missing_price`, 100% of evaluations). `momentum.Engine` gained
+   a `PriceSource` type fixed per-`Engine` at construction -- Bybit stays on
+   `PriceSourceTickerLast` (byte-for-byte unchanged: same ticker-derived,
+   arrival-order Open/Close), Binance moved to `PriceSourceAggregateTrade`
+   (OHLC from accepted aggTrade prices, using each trade's own `EventAt` --
+   not arrival order -- for Open/Close, since Binance's public WS trade
+   delivery has materially weaker ordering guarantees than Bybit's own
+   internal NATS-relayed ticker feed). New canonical, venue-agnostic price-
+   provenance fields (`PriceSource`, `First/LastPriceEventAt`,
+   `First/LastPriceReceivedAt`, `PriceObservedThisMinute`) are populated
+   identically in spirit by both venues, plus additive capability-
+   completeness fields (`OpenInterestComplete`/`PriceComplete`) alongside
+   the existing `TickerComplete`/`TradesComplete` (not a rename -- a bigger,
+   separate change deliberately deferred). `momentum_flow_watch_evaluator`'s
+   `stale_quote` check now reads the canonical `last_price_received_at`
+   instead of `last_ticker_received_at` (for Binance, secretly the OI
+   poller's own timestamp, not a price timestamp) -- the reason-code string
+   itself is unchanged, per explicit colleague-review instruction not to
+   silently repurpose a frozen v1 contract's reason code. Also folds in an
+   independently colleague-found bug: `binance.PollOpenInterest`'s own
+   `ObservedAt` was captured before the HTTP response was read rather than
+   after. New real-Postgres integration test seeds rows shaped exactly as
+   the Go writer now persists them for both `price_source` values and
+   proves both clear the evaluator's full quality gate through the same
+   code path production uses -- the exact end-to-end gap identified in
+   binance-watch-input-readiness-v1.md's own "Process critique." See
+   docs/research/momentum-trade-price-source-v1.md for the full writeup.
+   `momentum-watch-binance`/`momentum-paper-binance` remain stopped on prod
+   pending PR3 (OI poll scheduler) and a coverage read.
+
+   **OI poll scheduler (`fix/binance-oi-poll-scheduler-v1`, 2026-08-17):**
+   PR3 of the 4-PR remediation sequence, fixing root cause 2
+   (`missing_fresh_oi`, ~94% of evaluations). The previous
+   `binance.PollOpenInterest` ran a single goroutine on a single
+   `time.Ticker`, one blocking HTTP request per tick -- `time.Ticker`
+   drops missed ticks rather than queueing them, so any request slower
+   than the per-symbol delay (~114ms at ~525 symbols) stalled the ENTIRE
+   round-robin, not just that symbol (measured real per-symbol OI refresh
+   gap: p50 127s / p95 255s / p99 505s / max 1010s against a 60s target).
+   Replaced with a bounded concurrent worker pool (`OpenInterestSchedulerConfig
+   {Workers, RateLimitPerMinute}`, default 8 workers / 1200 req-min, both
+   overridable via `OI_POLL_WORKERS`/`OI_POLL_RATE_LIMIT_PER_MINUTE`) paced
+   by a real token bucket (`internal/binance/ratelimit.go`) -- worker count
+   hides HTTP latency, the token bucket alone enforces the rate. `GET /
+   fapi/v1/openInterest` 429/418 responses now pause the WHOLE pool (not
+   just the worker that hit it) for the response's own `Retry-After`,
+   compare-and-swap-extended so concurrent hits never shorten an
+   already-longer pause; a 418 logs at Error, a 429 at Warn.
+   `X-Mbx-Used-Weight-1m` is parsed and logged at Warn past 80% of the real
+   2400/min budget. `checkOpenInterestGaps`'s own threshold is no longer a
+   hardcoded 180s constant -- computed at startup from the real universe
+   size and configured rate (floored at 30s so a tiny universe's own
+   near-zero expected cycle cannot false-positive on ordinary request
+   jitter). At 525 symbols and the default config, one full round now
+   takes ~26s, roughly 5x faster than the previous design's own p50. See
+   docs/research/binance-oi-poll-scheduler-v1.md for the full writeup.
+   `momentum-watch-binance`/`momentum-paper-binance` remain stopped on prod
+   pending PR4's own coverage read.
+
+   **WATCH input-coverage report (`analysis/binance-watch-input-coverage-v1`,
+   2026-08-17):** PR4, tooling only -- built ahead of the 24-48h clean-data
+   window it needs a full read from, so it is ready to run the moment
+   enough has accumulated post-PR2/PR3, rather than sitting idle waiting.
+   Descriptive only: no threshold tuning, no outcomes, no re-enable
+   decision made by the report itself. Since `momentum-watch-binance`
+   stays stopped, no `momentum_flow_watch_evaluations_1m` rows exist to
+   read for this window -- `binance_watch_input_coverage_report.py`
+   instead REPLAYS the real, unmodified
+   `momentum_flow_watch_evaluator.prepare_symbol_evaluation` against
+   already-captured bars for every bucket in the window, using
+   `BINANCE_WATCH_CONTRACT` unchanged (a deliberate choice over a
+   hand-rolled SQL approximation: `prepare_symbol_evaluation` IS the
+   frozen v1 contract). New `MomentumFlowWatchRepository.
+   list_bucket_starts_in_window` enumerates buckets for offline analysis,
+   scoped by the contract's own (exchange, market_type, capture_version)
+   over a half-open `[since, until)` range. A colleague-review pass on
+   the first draft found and fixed two real issues: an omitted `--until`
+   defaulted straight to `now()` with no margin, which would have
+   replayed the newest 1-2 buckets before capture had actually finished
+   writing them (not a real quality-gate failure, just real time not
+   having caught up) -- now padded by `decision-delay-seconds + 30s`
+   past `now()` when not given explicitly; and the bucket-by-bucket
+   replay loop had no upper bound, so an accidentally wide window could
+   silently turn into a slow, DB-hammering job -- now fails loudly past
+   `--max-buckets` (default 3000, comfortably covering this report's own
+   24-48h target) rather than truncating and mislabeling what was
+   actually covered. `make binance-watch-input-coverage-report ARGS='
+   --since ...'` / `make prod-binance-watch-input-coverage-report`.
+
+   **Binance bookTicker capture (`analysis/binance-bookticker-capture-v1`,
+   2026-08-18):** not part of the 4-PR remediation sequence above -- the
+   first slice of a separate "capture non-recoverable data now, fit
+   later" plan agreed after the 2026-08-17 discovery-screen colleague
+   review. Closes a gap that existed since `cmd/momentumcapturebinance`
+   first shipped: `binance.Adapter` never implemented `momentumsource.
+   TickerSource`, so `LastBidPrice`/`LastAskPrice` were the only two
+   columns Binance bars never populated (OHLC was already fixed by
+   `feat/momentum-trade-price-source-v1`). Motivated concretely by the
+   same-day forensic read of the 8 real `momentum_flow_paper_v1`
+   stop_loss trades, which found exit spread consistently 2-6x wider than
+   entry spread right at the stop -- visible only as two snapshot points
+   (entry/exit quote) with nothing in between. New `internal/binance/
+   bookticker.go` (`RunBookTicker`, mirroring `trades.go`'s own shard/
+   reconnect pattern) subscribes to Binance's `bookTicker` stream on the
+   OLD unrouted `/stream` path (not `/market/stream` -- `trades.go`'s own
+   2026-08-15 incident this split traces to), wired into a new
+   `handleBookTicker` as this process's second `AddTickerObservation`
+   producer (`handleOpenInterest` is the first), `BidPrice`/`AskPrice`
+   only -- no migration, no writer change, the columns and write path
+   already existed. Real bug found and fixed while writing this, caught
+   by its own test before touching a live connection: Binance's
+   bookTicker payload carries both `"b"`/`"a"` (price) and `"B"`/`"A"`
+   (quantity) in the same frame, and Go's `encoding/json` case-insensitive
+   fallback silently let the quantity clobber the price in a struct that
+   declared only the lowercase-tagged fields. See docs/research/binance-
+   bookticker-capture-v1.md for the full writeup, including this PR's own
+   "What this PR does not do" (no lifecycle/reconnect counters, no gap
+   detector, Binance only).
+
+9. **Register at most one Confirmation shadow if the discovery gate passes.** Freeze
    one primary lookback, eligibility rule, entry quote, stop, bounded exit horizons,
-   cost model, minimum sample/diversity, and no-go rule on a new untouched cohort.
-   Begin with WATCH notifications, then `$50` paper fills; real capital remains behind
-   the normal promotion ladder. If no robust precursor survives, close the family and
-   keep the market-intelligence dashboard without inventing another threshold.
+   cost model, minimum sample/diversity, and no-go rule on a new untouched cohort. The
+   discovery WATCH/paper baseline from item 8 may keep running operationally, but its
+   already-inspected observations never enter this Confirmation result. Real capital
+   remains behind the normal promotion ladder. If no robust precursor survives, stop
+   strategy claims and keep only the independently useful market-intelligence view
+   without inventing another threshold.
 10. **Let existing contracts mature without new tuning PRs.** Run the registered
     OI-growth, source-lead, liquidity, banded-price-extent, and pump-short checkpoint
     reports at their already frozen gates. The `2026-08-31` decision remains: promote
     one bounded shadow supported by forward evidence or park pump-short. These reads
     do not block collection of non-recoverable early-momentum data, but they do block
     further production score/exit/leverage changes.
+11. **Consolidate Telegram delivery behind `schurfer-notifier` as a single notification
+    gateway.** Telegram sends are currently split across independent, unaudited paths:
+    execution sends paper open/close directly
+    (`apps/execution/schurfer_execution/notify.py`); the notifier sends both `🔥` pump
+    alerts (recorded in `app.pump_alert_deliveries`) and scanner stale/recovered
+    (never recorded anywhere); research/momentum checkpoints and the backup script
+    each send on their own. This surfaced as a real gap while investigating a
+    scanner-stale/recovered pair on `2026-08-10`: comparing total chat volume against
+    `pump_alert_deliveries` looked like evidence of an unknown sender, but was actually
+    an invalid comparison across paths with different audit coverage, not a proven
+    second process. Maintenance/reliability work, not a new experiment family; does not
+    consume the ten-family budget and does not block the momentum-capture canary. Four
+    PRs, each keeping the previous senders working until migrated:
+    1. `feat/notification-contract-and-outbox-v1`: a versioned envelope
+       (`notification_id`, `dedup_key`, `producer`, `kind`, `severity`, `payload`) on a
+       Redis Stream with a consumer group, matching the durable-stream pattern
+       execution already uses for decisions, plus an
+       `app.notification_deliveries` audit table (producer, kind, dedup_key,
+       timestamps, status, attempts, error, payload hash).
+       **Implemented on `feat/notification-contract-and-outbox-v1` (2026-08-12):**
+       the machine-readable v1 contract and operational rules live in
+       `docs/contracts/notification-delivery-v1.md`; the durable queue is
+       `notifications:outbox:v1`, its backlog-safe group is
+       `notifier-delivery-v1`, and migration `0025` adds the audit and idempotency
+       boundary. This step publishes no production messages, starts no consumer,
+       and leaves every existing Telegram sender unchanged. Runtime decoding and
+       publishing code lands with its first real consumer and producer instead of
+       remaining unreachable in this contract-only change.
+    2. `feat/notifier-unified-delivery-v1`: notifier consumes the stream through one
+       Telegram client, with bounded retry/backoff, rate limiting, priority
+       (`critical > trade > research > info`), and health counters (pending,
+       delivered, failed, oldest-pending age, DLQ size).
+    3. `refactor/migrate-notification-producers-v1`: move execution's paper
+       open/close, the scanner's pump alerts and stale/recovered, and the
+       research/momentum checkpoints onto the new contract one producer at a time,
+       then the backup script; remove `TELEGRAM_BOT_TOKEN` from every container
+       except notifier once its producer is migrated.
+    4. `feat/notification-observability-v1`: a delivery status view (source, kind,
+       sent/failed/pending, oldest pending, DLQ, latency) plus
+       `make prod-notifier-health`; only then retire the old `_notify`/`notify.py`/raw
+       `curl` call sites.
+       Delivery is at-least-once, stated plainly rather than promised as exactly-once:
+       Telegram has no real idempotency key, so `dedup_key` plus delivery state bounds
+       duplicates without eliminating the rare crash-window repeat. No shared Python/Go
+       Telegram SDK, no bot token handed to every service, and no single big-bang
+       migration PR.
+12. **Evolve the web UI as a bounded support lane, without displacing profit work.**
+    The current dashboard is functional but its page-level spacing, tables, loading
+    states, navigation, and token links have diverged as domains were added. The
+    reviewed target architecture and delivery order live in
+    `docs/architecture/web-ui-evolution-v1.md`: formalize the shared design contract,
+    make Research readiness snapshot-backed and progressively rendered, make
+    `/tokens/:base` the canonical asset workspace, add a typed event timeline and
+    chart markers, then introduce the responsive sidebar shell. Keep React, Vite,
+    Tailwind, TanStack Query, and Lightweight Charts; evaluate one accessible headless
+    primitive layer without a big-bang library migration. Run at most one UI PR at a
+    time, preferably during canary and evidence-collection waits. Capture correctness,
+    strategy evidence, execution safety, and non-recoverable data collection always
+    take precedence. Token analysis and event visualization rank above cosmetic polish.
+13. **Audit architecture and documentation fitness before structural rewrites.** The
+    repository contains valid historical decisions alongside current-state drift: old
+    ADRs describe AWS hosting, self-hosted CI, Redux/RTK, and Go execution, while the
+    deployed system uses Hetzner, GitHub-hosted CI, TanStack Query, and Python
+    execution. Treat this as a decision audit, not automatic authorization to rewrite
+    working services.
+
+    The first bounded audit PR must inventory every service and shared datastore with:
+    current responsibility, owner of writes, latency and availability needs, measured
+    CPU/memory/storage cost, failure blast radius, current language/framework, known
+    limits, and an explicit `keep`, `adjust`, or `replace` verdict. A planned stack that
+    differs from implementation is evidence to review the decision, not proof that the
+    implementation is wrong. For example, Python execution should move to Go only if
+    measured latency, concurrency, reliability, deployment, or maintenance costs
+    justify the migration and exceed its order-safety risk.
+
+    Refresh the current architecture and data-flow diagrams, create a documentation
+    index and source-of-truth map, mark obsolete ADRs as superseded rather than editing
+    history, archive retired operational paths, and record concrete revisit triggers.
+    Multi-venue capture, on-chain and wallet graphs, portfolio analytics, tokenized
+    assets, ML workloads, and public-product boundaries belong in target architecture
+    views, clearly separated from what is deployed today. Any code migration found by
+    this audit requires its own prioritized PR and competes under the delivery
+    portfolio limits above.
 
 Before item 5 is registered as a new experiment family, update the discovery ledger
-and count all families introduced since `2026-07-29` against the ten-family budget.
-This administrative gate cannot be skipped merely because the collector is cheap.
+and count all families introduced since `2026-07-29` against the ten-family budget
+(see the running count in Research portfolio and capital discipline above; item 5
+does not appear in it yet, since PR1-3 are collector infrastructure with no
+discovery-ledger entry or Confirmation move of their own; the count only grows for
+this line once a real momentum screen produces a loggable result). This
+administrative gate cannot be skipped merely because the collector is cheap.
 
 ## Previous committed sequence (2026-08-03; retained as decision log)
 
@@ -332,7 +1186,14 @@ ARGS='--base <TICKER> --target-exchange binance'`.
    142 feature-complete episodes, 73 bases — both already past the 100/30
    thresholds — but only **2 UTC weeks** against the required 4, and the
    largest single week holds **69% of the sample**. Status: `collecting`, not a
-   sample-size problem but a **temporal-concentration** one; do not register
+   sample-size problem but a **temporal-concentration** one;
+
+   2026-08-18 second read (`backups/reports/derivatives-regime-feasibility-2026-08-18.md`):
+   331 feature-complete episodes, 145 bases, **4 UTC weeks**. The largest single
+   week holds 36.6% of the sample. Status: `coverage_ready`. The sample has
+   cleared the strict temporal concentration requirements, authorizing the
+   registration of `analysis/long-short-ratio-regime-v1`.
+   do not register
    the historical-discovery LSR read (`analysis/long-short-ratio-regime-v1`)
    until week concentration is broken up by more calendar time passing, even
    though the raw episode/base counts already clear their own bars. Also found:
@@ -602,7 +1463,7 @@ filter-report` (`confirmed_oi_growth_baseline_filter_v1`) tests this as a
    how many distinct exact instruments that actually is.
    `token-history-identity-preflight-report` joins every replay-eligible
    baseline decision to its own `app.pump_event_sources` row on
-   (pump_event_id, exchange), reusing `source_lead.py`'s full identity
+   (pump\*event_id, exchange), reusing `source_lead.py`'s full identity
    discipline (identity_conflict, identity_key/unified_symbol presence,
    market_type must be "swap", base/quote/settle asset match, naive
    timestamps fail closed rather than being guessed as UTC) rather than a
@@ -631,8 +1492,45 @@ filter-report` (`confirmed_oi_growth_baseline_filter_v1`) tests this as a
    plus a small buffer, capped by a page-count sanity limit, and
    `fetch_symbol_candles` raises `IncompleteFetchError` if it still exhausts
    that budget without reaching `end_ms` while every page kept genuinely
-   advancing. Step 2 (a bounded live-exchange sample) is in progress in a
-   separate PR; this entry will be updated once it merges.
+   advancing. Step 2 (a bounded live-exchange sample, PR #171, merged
+   2026-08-10) ran its canonical live sample against all 5 exchanges with a
+   ready instrument (11 probes). Verdict: `global_gate_not_met_scoped_step3_authorized`.
+   The global gate failed on p95 call latency (9.02s observed
+   against the pre-registered `<5s`; the other 4 criteria passed cleanly, 0%
+   gap rate). The archived run, its manifest, and its content hashes were
+   independently reverified; the 9.02s measurement itself was not re-run
+   live. The threshold is not relaxed after the fact. A permitted repeat
+   attempt did not complete within ~86s and produced no data: it is
+   inconclusive, neither confirming nor ruling out a one-off fluke, so the
+   original measurement stands as the only completed one. Per the rule above (a
+   persistent single-venue problem narrows scope, not the global contract),
+   decision `partial_go_scoped_venues`: step 3 is authorized scoped to
+   binance, bybit, and xt (45 of 51 exact instruments, about 88%). gate and
+   mexc are excluded with an explicit `venue_live_sample_not_ready` reason
+   (gate: its only 365-day probe took 10.88s; mexc: `CATE/USDT:USDT`
+   returned 7 of 364 days and a repeat attempt also failed to complete) and
+   remain counted in the 51-instrument denominator rather than silently
+   dropped. Purely an operational-feasibility scope, decided before any
+   connection to outcomes.
+   **[Implemented, step 3 of 3, PR #174, merged and run 2026-08-10]**
+   `feat/token-history-parquet-dataset-v1`: frozen to the binance/bybit/xt
+   allowlist, exact same-venue identity, at most 365 days at `1d`,
+   Parquet+Zstd written and read back via DuckDB, schema/CCXT versions and
+   content hashes recorded, coverage/gaps/latency/fetch provenance per
+   instrument, `IncompleteFetchError` fail-closed, no outcomes, no score
+   changes, no cross-venue fallback. The catalog is a file-based
+   `manifest.json` written atomically per run, not a Postgres table: DuckDB
+   reads the Parquet partitions directly, and after every write the
+   manifest is independently re-verified against the actual files on disk
+   (hash match, no stray files) before the CLI reports success. Real
+   production run (2026-08-10, run id `20260810T081729Z-6f781fae`): the
+   live universe had grown to 53 candidate instruments by run time (identity
+   readiness keeps resolving as more decisions confirm, since/until/strategy
+   stay frozen); 47 in scope (42 binance, 3 bybit, 2 xt), 6 excluded (5
+   mexc, 1 gate, still `venue_live_sample_not_ready`), all 47 `completed`
+   and `publishable`, 0 failures, 11,582 bars, `dataset_ready=true`,
+   content fingerprint
+   `22d23eba6997b509802cd3fe7a50b7dd90958a525ade5275ffbd7444b5cd0651`.
 
 9. **[Parked] Conditional maker paper simulator.** OBS-009 did not survive its
    defensive sensitivity checks, so no simulator is authorized. Reconsider only
@@ -753,6 +1651,31 @@ depth, impact, or fills.
 - Production deploy: Hetzner, Docker Compose prod stack, Caddy, Tailscale, Postgres
   backup and a tested restore, GitHub Actions CI (lint, tests for Go, Python, TS,
   security).
+- Momentum-flow paper sizing variant: `momentum_flow_paper_v1_lev3`
+  (`LEVERAGED_PAPER_CONTRACT`), a sibling of `momentum_flow_paper_v1` that probes the
+  SAME live Bybit WATCH signal at $150 simulated notional (3x) instead of $50 (1x),
+  while keeping real capital at risk at $50 either way (`MARGIN_USD`, enforced by
+  `PaperContract.__post_init__`). See `docs/research/momentum-flow-paper-v1.md`'s own
+  "Sizing variant: lev3" section.
+- Disk/Docker usage on the Status page (2026-08-16): a deploy-cadence incident found
+  15.6 GiB of stale Docker build cache (a third of disk used at the time) that the
+  normal deploy's own image prune never touches. New host-side systemd service
+  (`infra/scripts/disk-usage.sh`, mirrors `runtime-metrics.sh`'s own snapshot-file
+  pattern, since `docker system df` needs the host's own Docker socket that
+  api-gateway is deliberately never given) writes a snapshot api-gateway reads and
+  exposes as `disk_usage` on `/api/health`; the Status page's own "Server Load" card
+  now breaks Disk down into build cache (flagged amber above 5 GiB reclaimable),
+  images, Postgres data, and deploy backups.
+- Momentum-flow paper hold-duration variant: `momentum_flow_paper_v1_hold12h`
+  (`HOLD12H_PAPER_CONTRACT`), a sibling of `momentum_flow_paper_v1` that probes the
+  SAME live Bybit WATCH signal with `max_hold_minutes=720` (12h) instead of 240,
+  keeping position size/leverage/stop unchanged. Prompted by `HYP-015`
+  (`docs/research/discovery-ledger.md`), an informal exit-hold/stop-loss discovery
+  sweep against `momentum_flow_paper_v1`'s own already-collected probes that found
+  the live 240min/5%-stop defaults underperforming most other cells in a 60-1440
+  minute grid, without a cost model. See
+  `docs/research/momentum-flow-paper-v1.md`'s own "Hold-duration variant: hold12h"
+  section.
 
 ---
 
@@ -1032,7 +1955,7 @@ The intended stream topology is:
         spans the +20% measurement episode. For HYP-002, repeated +30% crossings inside
         that event remain one correlated inference unit rather than inflating N; this
         rule is locked before its 2026-07-29 cohort begins.
-  - [ ] Versioned virtual-strategy layer: replay decisions by token episode under the
+  - [x] Versioned virtual-strategy layer: replay decisions by token episode under the
         actual v1 rules and pre-registered challengers, including fees, funding,
         liquidity-aware slippage, TP/SL/trailing/max-hold, and taken-vs-skipped labels:
     - taken and won, or taken and lost
@@ -1075,7 +1998,7 @@ The intended stream topology is:
           `status=insufficient_resolution`, 257 eligible episodes, 100 locked into
           the formal sample across 70 clusters, but only 99/100 completely paired
           — one episode short of a formal read. Re-check once it clears.
-    - [ ] Entry-challenger verification after merge:
+    - [x] Entry-challenger verification after merge:
       - Data sources: `app.trade_decisions` and `app.pump_events` define chronological
         episodes; `app.trade_decision_outcomes` supplies the required exact-anchor 8h
         coverage; decision `features` and `liquidity` preserve point-in-time inputs and
@@ -1188,7 +2111,7 @@ The intended stream topology is:
           venue, next complete 5-minute entry, baseline exit, and locked cost model.
           Score 7 and 8 remain reserved for isolated live-shadow state so censoring
           cannot make this formal family impossible to complete.
-    - [ ] Score-threshold verification after merge:
+    - [x] Score-threshold verification after merge:
       - Deploy analytics only after the registered cohort begins. Wait until candidate
         episodes close and their exact-anchor 8-hour outcomes resolve:
 
@@ -1245,7 +2168,7 @@ The intended stream topology is:
           registration, enforced by exact-match, not merely "not earlier"), and a
           manifest that records the exact band boundaries and points instead of a
           code comment. Never widen this cohort backward to reach a faster read.
-    - [ ] Banded price-extent verification after merge:
+    - [x] Banded price-extent verification after merge:
       - Deploy analytics only after the registered cohort begins. Wait until
         candidate episodes close and their exact-anchor 8-hour outcomes resolve:
 
@@ -1818,6 +2741,8 @@ net performance suitable for tax or risk accounting.
 
 ## Tech debt and DX (opportunistic)
 
+- **Execution Engine Resilience**: Add a `try...except` "bulletproof vest" inside the individual trade loop for `monitor.py` and `paper.py`. This ensures that if one legacy or malformed position raises an exception (like missing keys), it doesn't crash the entire monitoring cycle and block other healthy trades from closing.
+
 - Pre-push hook: run `make verify` as a pre-push stage so broken code does not reach
   CI.
 - CI caching (Go modules, pnpm store, uv cache) keyed on lockfile hashes.
@@ -1836,3 +2761,23 @@ net performance suitable for tax or risk accounting.
   ATR).
 - Telegram: persist `seen_bases` in Redis to avoid a startup alert storm, plus
   drop-below and "still pumping" follow-up alerts.
+- Status page container list re-sorts by live CPU% every poll
+  (`apps/api-gateway/internal/health/container_runtime.go`'s own
+  `sort.Slice` on `CPUPercent` descending, name as the only tie-break), so
+  rows visibly jump around as load fluctuates -- not useful for someone
+  scanning the list. Either stabilize the ordering (e.g. sort by name/
+  container-start-order by default, CPU% as an opt-in view) or add an
+  explicit sort-by control in the UI (name, CPU, memory) instead of one
+  fixed, constantly-reshuffling order.
+- `momentum-capture`'s own container/service name carries no exchange
+  suffix (it predates Binance, back when Bybit was the only venue),
+  unlike every venue added since (`momentum-capture-binance`,
+  `momentum-watch-binance`) -- confusing on the status page next to a
+  same-prefix, explicitly-suffixed sibling. Status page display now
+  relabels it to `momentum-capture (bybit)` (display-only, see
+  `StatusPage.tsx`'s own `containerDisplayName`), but the underlying
+  container/service/Makefile-target/health-key name is still bare
+  `momentum-capture` everywhere else. A real rename means rebuilding and
+  restarting the live Bybit canary process purely for cosmetics -- do it
+  at a deliberate capture-epoch boundary alongside some other change that
+  already needs one, not as its own standalone restart.

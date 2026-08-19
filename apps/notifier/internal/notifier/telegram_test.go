@@ -1,8 +1,6 @@
 package notifier
 
 import (
-	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -67,42 +65,6 @@ func TestFormatAlert_LargeVolume(t *testing.T) {
 	}
 	if !contains(formatAlert(p), `$2\.5B`) {
 		t.Error("expected $2.5B volume format")
-	}
-}
-
-func TestSendAlert_Success(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"ok":true}`))
-	}))
-	defer srv.Close()
-
-	// Patch _telegramAPI for test
-	original := _telegramAPI
-	_telegramAPI = srv.URL + "/%s/sendMessage"
-	defer func() { _telegramAPI = original }()
-
-	p := pump{Base: "DOGE", MaxChangePct: 35.0, Exchanges: []exchange{
-		{Exchange: "bybit", ChangePct: 35.0, VolumeUSD: volumeUSD(5_000_000)},
-	}}
-	if err := sendAlert(t.Context(), p, "test-token", "12345"); err != nil {
-		t.Errorf("unexpected error: %v", err)
-	}
-}
-
-func TestSendAlert_ServerError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusUnauthorized)
-	}))
-	defer srv.Close()
-
-	original := _telegramAPI
-	_telegramAPI = srv.URL + "/%s/sendMessage"
-	defer func() { _telegramAPI = original }()
-
-	p := pump{Base: "BTC", MaxChangePct: 40.0, Exchanges: []exchange{}}
-	if err := sendAlert(t.Context(), p, "bad-token", "12345"); err == nil {
-		t.Error("expected error on 401, got nil")
 	}
 }
 

@@ -1,7 +1,12 @@
 # ADR-0006: Go + Python for backend, Rust only if needed
 
 Date: 2026-05-08
-Status: Accepted
+Status: Superseded
+
+Supersession note: the project still uses Go and Python, but the service allocation
+changed: execution is Python and notifier is Go. Current executable boundaries are
+defined by the service entrypoints and production Compose file. The original decision
+below is retained unchanged as history.
 
 ## Context
 
