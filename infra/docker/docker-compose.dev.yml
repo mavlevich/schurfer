@@ -569,7 +569,7 @@ services:
     container_name: schurfer-lsr-subscriber
     environment:
       NATS_URL: nats://nats:4222
-      DATABASE_URL: postgres://postgres:postgres@postgres:5432/schurfer?sslmode=disable
+      DATABASE_URL: postgresql://schurfer:${POSTGRES_PASSWORD}@postgres:5432/schurfer
     restart: unless-stopped
     depends_on:
       postgres:
