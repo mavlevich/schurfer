@@ -73,11 +73,21 @@ class PaperStore(Protocol):
         self, *, contract: PaperContract, now: datetime
     ) -> int: ...
 
-    async def due_watches(
+    async def due_fresh_watches(
         self,
         *,
         contract: PaperContract,
         cohort_started_at: datetime,
+        now: datetime,
+        limit: int,
+    ) -> tuple[WatchCandidate, ...]: ...
+
+    async def due_expired_watches(
+        self,
+        *,
+        contract: PaperContract,
+        cohort_started_at: datetime,
+        now: datetime,
         limit: int,
     ) -> tuple[WatchCandidate, ...]: ...
 
@@ -90,6 +100,13 @@ class PaperStore(Protocol):
     ) -> UUID | None: ...
 
     async def reject_stale_entry(self, paper_id: UUID, *, now: datetime) -> None: ...
+    async def bulk_reject_stale_watches(
+        self,
+        candidates: tuple[WatchCandidate, ...],
+        *,
+        contract: PaperContract,
+        now: datetime,
+    ) -> int: ...
 
     async def reject_quote(self, paper_id: UUID, failure: QuoteFailure) -> None: ...
 
@@ -129,7 +146,9 @@ class PaperStore(Protocol):
 
     async def record_quote_failure(self, paper_id: UUID, failure: QuoteFailure) -> None: ...
 
-    async def health(self, *, contract: PaperContract) -> PaperHealth: ...
+    async def health(
+        self, *, contract: PaperContract, cohort_started_at: datetime
+    ) -> PaperHealth: ...
 
 
 class PaperMarket(Protocol):
@@ -188,6 +207,7 @@ class TickResult:
     watches_seen: int
     entries_opened: int
     entries_stale: int
+    entries_stale_cleaned: int
     entries_quote_rejected: int
     probes_quoted: int
     quote_failures: int
@@ -289,26 +309,21 @@ async def process_tick(
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     allow_new_entries: bool = True,
 ) -> TickResult:
-    """allow_new_entries=False skips claiming/opening new WATCH candidates
-    (the due_watches/_process_entry step below) but always still runs
-    expire_deadlines/monitored_probes/_process_probe -- an already-open
-    position's own stop/max-hold/horizon-outcome bookkeeping must never
-    stop just because new entries are currently disallowed (see
-    momentum_flow_producer_readiness's own doc comment: this is exactly
-    the distinction between "upstream cannot support a NEW decision right
-    now" and "this worker has nothing left to do," which are not the same
-    thing for a worker that also owns already-open positions)."""
-    candidates = (
-        await store.due_watches(
+    now = clock()
+
+    # 1. Process fresh candidates.
+    fresh_candidates = (
+        await store.due_fresh_watches(
             contract=contract,
             cohort_started_at=run.cohort_started_at,
+            now=now,
             limit=config.watch_batch_size,
         )
         if allow_new_entries
         else ()
     )
     entry_results: list[str] = []
-    for candidate in candidates:
+    for candidate in fresh_candidates:
         entry_results.append(
             await _process_entry(
                 candidate,
@@ -318,6 +333,10 @@ async def process_tick(
                 clock=clock,
             )
         )
+
+    # 2. Service existing positions before backlog cleanup. Refresh the
+    # scheduling clock after entry quotes so a slow venue call cannot make
+    # deadline and monitored-probe selection use the tick's stale start time.
     expired_outcomes, unresolved_exits = await store.expire_deadlines(
         contract=contract,
         now=clock(),
@@ -340,10 +359,34 @@ async def process_tick(
         probes_quoted += int(quoted)
         quote_failures += int(not quoted)
         positions_closed += int(closed)
+
+    # 3. Clean up one bounded batch in one transaction.
+    cleanup_now = clock()
+    expired_candidates = (
+        await store.due_expired_watches(
+            contract=contract,
+            cohort_started_at=run.cohort_started_at,
+            now=cleanup_now,
+            limit=config.watch_batch_size,
+        )
+        if allow_new_entries
+        else ()
+    )
+    stale_cleaned = (
+        await store.bulk_reject_stale_watches(
+            expired_candidates,
+            contract=contract,
+            now=clock(),
+        )
+        if expired_candidates
+        else 0
+    )
+
     return TickResult(
-        watches_seen=len(candidates),
+        watches_seen=len(fresh_candidates) + len(expired_candidates),
         entries_opened=entry_results.count("opened"),
         entries_stale=entry_results.count("stale"),
+        entries_stale_cleaned=stale_cleaned,
         entries_quote_rejected=entry_results.count("quote_rejected"),
         probes_quoted=probes_quoted,
         quote_failures=quote_failures,
@@ -518,7 +561,9 @@ async def run_paper_worker(
             cohort_started_at=run.cohort_started_at.isoformat(),
             interrupted_entries=interrupted,
         )
-        starting_health = await active_store.health(contract=contract)
+        starting_health = await active_store.health(
+            contract=contract, cohort_started_at=run.cohort_started_at
+        )
         await _try_write_health(
             redis,
             run=run,
@@ -548,7 +593,9 @@ async def run_paper_worker(
                     contract=contract,
                     allow_new_entries=block is None,
                 )
-                health = await active_store.health(contract=contract)
+                health = await active_store.health(
+                    contract=contract, cohort_started_at=run.cohort_started_at
+                )
                 if block is not None:
                     status, error = block
                     log.warning(
@@ -576,7 +623,9 @@ async def run_paper_worker(
             except Exception as exc:
                 log.exception("momentum_paper.tick_failed", error=str(exc))
                 try:
-                    health = await active_store.health(contract=contract)
+                    health = await active_store.health(
+                        contract=contract, cohort_started_at=run.cohort_started_at
+                    )
                 except Exception as health_exc:
                     log.warning("momentum_paper.health_read_failed", error=str(health_exc))
                 else:

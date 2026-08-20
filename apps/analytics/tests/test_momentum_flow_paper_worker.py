@@ -88,6 +88,7 @@ class FakeStore:
         self.claimed: list[UUID] = []
         self.opened: list[UUID] = []
         self.stale: list[UUID] = []
+        self.bulk_stale: list[WatchCandidate] = []
         self.rejected: list[UUID] = []
         self.probes: tuple[PaperProbe, ...] = ()
         self.applied: list[UUID] = []
@@ -101,8 +102,11 @@ class FakeStore:
     async def abandon_interrupted_entries(self, **_: Any) -> int:
         return 0
 
-    async def due_watches(self, **_: Any) -> tuple[WatchCandidate, ...]:
+    async def due_fresh_watches(self, **_: Any) -> tuple[WatchCandidate, ...]:
         return self.candidates
+
+    async def due_expired_watches(self, **_: Any) -> tuple[WatchCandidate, ...]:
+        return ()
 
     async def claim_watch(self, candidate: WatchCandidate, **_: Any) -> UUID:
         paper_id = uuid4()
@@ -111,6 +115,12 @@ class FakeStore:
 
     async def reject_stale_entry(self, paper_id: UUID, **_: Any) -> None:
         self.stale.append(paper_id)
+
+    async def bulk_reject_stale_watches(
+        self, candidates: tuple[WatchCandidate, ...], **_: Any
+    ) -> int:
+        self.bulk_stale.extend(candidates)
+        return len(candidates)
 
     async def reject_quote(self, paper_id: UUID, failure: QuoteFailure) -> None:
         self.rejected.append(paper_id)
@@ -134,8 +144,10 @@ class FakeStore:
     async def record_quote_failure(self, paper_id: UUID, failure: QuoteFailure) -> None:
         self.rejected.append(paper_id)
 
-    async def health(self, **_: Any) -> PaperHealth:
-        return PaperHealth(0, 0, 0, 0, 0, 0, 0, 0, 0, None, None)
+    async def health(self, *, contract: PaperContract, cohort_started_at: datetime) -> PaperHealth:
+        return PaperHealth(
+            0, 0, 0, 0, 0, 0, 0, 0, 0, None, None, 0, 0, None, None, None, 0, 0, 0, 0
+        )
 
 
 async def test_process_entry_opens_fresh_exact_quote() -> None:
@@ -170,6 +182,21 @@ async def test_process_entry_rejects_stale_without_fetching_quote() -> None:
     assert result == "stale"
     assert store.stale == store.claimed
     assert market.results == []
+
+
+async def test_process_entry_accepts_exact_deadline_boundary() -> None:
+    store = FakeStore()
+
+    result = await _process_entry(
+        _candidate(),
+        store=store,
+        market=FakeMarket([_quote()]),
+        contract=FROZEN_PAPER_CONTRACT,
+        clock=lambda: T0 + timedelta(seconds=30),
+    )
+
+    assert result == "opened"
+    assert store.opened == store.claimed
 
 
 async def test_process_tick_counts_entry_and_probe_results() -> None:
@@ -313,7 +340,7 @@ class RecordingStore:
     """A PaperStore that records exactly which contract each method was
     called with, for asserting run_paper_worker threads its own contract
     parameter through end to end instead of silently falling back to a
-    hardcoded default anywhere along the way. due_watches/monitored_probes
+    hardcoded default anywhere along the way. due_fresh_watches/monitored_probes
     always return empty so _process_entry/_process_probe are never
     reached -- this class tests contract plumbing, not entry/exit
     business logic (see FakeStore's own tests above for that)."""
@@ -322,7 +349,7 @@ class RecordingStore:
         self.lock_calls: list[str] = []
         self.register_run_calls: list[PaperContract] = []
         self.abandon_calls: list[PaperContract] = []
-        self.due_watches_calls: list[PaperContract] = []
+        self.due_fresh_watches_calls: list[PaperContract] = []
         self.expire_deadlines_calls: list[PaperContract] = []
         self.monitored_probes_calls: list[PaperContract] = []
         self.health_calls: list[PaperContract] = []
@@ -341,14 +368,24 @@ class RecordingStore:
         self.abandon_calls.append(contract)
         return 0
 
-    async def due_watches(
-        self, *, contract: PaperContract, cohort_started_at: datetime, limit: int
+    async def due_fresh_watches(
+        self, *, contract: PaperContract, cohort_started_at: datetime, now: datetime, limit: int
     ) -> tuple[WatchCandidate, ...]:
-        self.due_watches_calls.append(contract)
+        self.due_fresh_watches_calls.append(contract)
+        return ()
+
+    async def due_expired_watches(
+        self, *, contract: PaperContract, cohort_started_at: datetime, now: datetime, limit: int
+    ) -> tuple[WatchCandidate, ...]:
         return ()
 
     async def claim_watch(self, candidate: WatchCandidate, **_: Any) -> UUID | None:
         raise AssertionError("no candidate should ever be claimed: due_watches returns none")
+
+    async def bulk_reject_stale_watches(
+        self, candidates: tuple[WatchCandidate, ...], **_: Any
+    ) -> int:
+        raise AssertionError("no stale candidate should be returned")
 
     async def reject_stale_entry(self, paper_id: UUID, **_: Any) -> None:
         raise AssertionError("unreachable")
@@ -378,9 +415,11 @@ class RecordingStore:
     async def record_quote_failure(self, paper_id: UUID, failure: QuoteFailure) -> None:
         raise AssertionError("unreachable")
 
-    async def health(self, *, contract: PaperContract) -> PaperHealth:
+    async def health(self, *, contract: PaperContract, cohort_started_at: datetime) -> PaperHealth:
         self.health_calls.append(contract)
-        return PaperHealth(0, 0, 0, 0, 0, 0, 0, 0, 0, None, None)
+        return PaperHealth(
+            0, 0, 0, 0, 0, 0, 0, 0, 0, None, None, 0, 0, None, None, None, 0, 0, 0, 0
+        )
 
 
 async def test_run_paper_worker_defaults_to_the_live_bybit_contract(
@@ -399,7 +438,7 @@ async def test_run_paper_worker_defaults_to_the_live_bybit_contract(
 
     assert store.lock_calls == [FROZEN_PAPER_CONTRACT.paper_version]
     assert store.register_run_calls == [FROZEN_PAPER_CONTRACT]
-    assert store.due_watches_calls == [FROZEN_PAPER_CONTRACT]
+    assert store.due_fresh_watches_calls == [FROZEN_PAPER_CONTRACT]
     assert store.monitored_probes_calls == [FROZEN_PAPER_CONTRACT]
     assert fake_redis.hset_calls
     key, mapping = fake_redis.hset_calls[-1]
@@ -430,7 +469,7 @@ async def test_run_paper_worker_threads_a_different_contract_through(
 
     assert store.lock_calls == [BINANCE_PAPER_CONTRACT.paper_version]
     assert store.register_run_calls == [BINANCE_PAPER_CONTRACT]
-    assert store.due_watches_calls == [BINANCE_PAPER_CONTRACT]
+    assert store.due_fresh_watches_calls == [BINANCE_PAPER_CONTRACT]
     assert store.monitored_probes_calls == [BINANCE_PAPER_CONTRACT]
     key, mapping = fake_redis.hset_calls[-1]
     assert key == health_key(BINANCE_PAPER_CONTRACT.paper_version)
@@ -450,7 +489,7 @@ async def test_run_paper_worker_reports_blocked_instead_of_crashing_when_upstrea
     even start also stops servicing its own already-open positions'
     stops/exits, a materially worse failure than the one being fixed;
     see process_tick's own allow_new_entries tests above for that half).
-    due_watches must not even be called for that tick -- there is nothing
+    due_fresh_watches must not even be called for that tick -- there is nothing
     real to claim."""
     fake_redis = _install_fake_redis(monkeypatch)
     fake_redis.upstream_watch_status = BLOCKED_STATUS
@@ -464,7 +503,7 @@ async def test_run_paper_worker_reports_blocked_instead_of_crashing_when_upstrea
     assert key == health_key(FROZEN_PAPER_CONTRACT.paper_version)
     assert mapping["status"] == BLOCKED_STATUS
     assert mapping["last_error"]
-    assert store.due_watches_calls == []
+    assert store.due_fresh_watches_calls == []
     # Existing positions are still serviced even while blocked.
     assert store.expire_deadlines_calls == [FROZEN_PAPER_CONTRACT]
     assert store.monitored_probes_calls == [FROZEN_PAPER_CONTRACT]
@@ -507,7 +546,7 @@ async def test_run_paper_worker_treats_a_stale_ok_status_as_blocked(
 
     await run_paper_worker(config, once=True, store=store, market=market)
 
-    assert store.due_watches_calls == []
+    assert store.due_fresh_watches_calls == []
     _, mapping = fake_redis.hset_calls[-1]
     assert mapping["status"] == BLOCKED_STATUS
 
@@ -524,7 +563,7 @@ async def test_run_paper_worker_allows_entries_when_upstream_ok_is_fresh(
 
     await run_paper_worker(config, once=True, store=store, market=market)
 
-    assert store.due_watches_calls == [FROZEN_PAPER_CONTRACT]
+    assert store.due_fresh_watches_calls == [FROZEN_PAPER_CONTRACT]
     _, mapping = fake_redis.hset_calls[-1]
     assert mapping["status"] == "ok"
 
@@ -642,3 +681,77 @@ async def test_run_paper_worker_rejects_a_mismatched_contract_and_hash_pair(
             contract_sha256=PAPER_CONTRACT_SHA256,  # the Bybit hash, wrong for this contract
         )
     assert store.lock_calls == []
+
+
+async def test_process_tick_prevents_starvation_and_prioritizes_fresh() -> None:
+    class StarvationStore(FakeStore):
+        def __init__(self) -> None:
+            super().__init__()
+            self.action_log: list[str] = []
+            self.expired = tuple(
+                _candidate(decision_at=T0 - timedelta(seconds=31 + offset)) for offset in range(100)
+            )
+
+        async def due_fresh_watches(self, **kwargs: Any) -> tuple[WatchCandidate, ...]:
+            self.action_log.append("due_fresh_watches")
+            return (_candidate(decision_at=T0),)
+
+        async def due_expired_watches(self, **kwargs: Any) -> tuple[WatchCandidate, ...]:
+            self.action_log.append("due_expired_watches")
+            limit = cast("int", kwargs["limit"])
+            assert limit == config.watch_batch_size
+            return self.expired[:limit]
+
+        async def monitored_probes(self, **kwargs: Any) -> tuple[PaperProbe, ...]:
+            self.action_log.append("monitored_probes")
+            return (
+                PaperProbe(
+                    uuid4(),
+                    "ERAUSDT",
+                    T0,
+                    10,
+                    "open",
+                    0,
+                    0,
+                ),
+            )
+
+        async def claim_watch(self, candidate: WatchCandidate, **_: Any) -> UUID:
+            self.action_log.append("claim_watch")
+            return uuid4()
+
+        async def expire_deadlines(self, **_: Any) -> tuple[int, int]:
+            self.action_log.append("expire_deadlines")
+            return 0, 0
+
+        async def bulk_reject_stale_watches(
+            self, candidates: tuple[WatchCandidate, ...], **_: Any
+        ) -> int:
+            self.action_log.append("bulk_reject_stale")
+            return len(candidates)
+
+    store = StarvationStore()
+    market = FakeMarket([_quote(), _quote(side="bid")])
+    run = PaperRun("version", "hash", {}, T0 - timedelta(hours=1), "active")
+    config = PaperWorkerConfig("postgresql://fake", "redis://fake")
+
+    result = await process_tick(
+        store=store,
+        market=market,
+        run=run,
+        config=config,
+        clock=lambda: T0 + timedelta(seconds=1),
+        allow_new_entries=True,
+    )
+
+    # Order must be: fresh -> claim -> expire -> monitor -> due_expired -> bulk_reject
+    assert store.action_log == [
+        "due_fresh_watches",
+        "claim_watch",
+        "expire_deadlines",
+        "monitored_probes",
+        "due_expired_watches",
+        "bulk_reject_stale",
+    ]
+    assert result.watches_seen == 1 + config.watch_batch_size
+    assert result.entries_stale_cleaned == config.watch_batch_size

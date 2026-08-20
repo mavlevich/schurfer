@@ -6,7 +6,7 @@ import argparse
 import asyncio
 import os
 from dataclasses import asdict, dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
 import structlog
@@ -138,6 +138,10 @@ class BucketResult:
     rejected_signal: int
     suppressed: int
     evaluator_duration_ms: int
+    bucket_lag_seconds: int
+    catch_up_mode: bool
+    decision_to_persistence_latency_ms: int
+    producer_lag_seconds: int | None
 
 
 async def evaluate_bucket(
@@ -204,7 +208,22 @@ async def evaluate_bucket(
             features=asdict(watch.features) if watch.features is not None else None,
             cross_section_size=watch.thresholds.sample_size,
         )
+    persistence_completed_at = clock()
+    decision_to_persistence_latency_ms = int(
+        (persistence_completed_at - decision_at).total_seconds() * 1000
+    )
     duration_ms = int((evaluator_completed_at - evaluator_started_at).total_seconds() * 1000)
+
+    bucket_closed_at = bucket.bucket_start + timedelta(minutes=1)
+    ready_times = tuple(row.bucket_ready_at for row in prepared if row.bucket_ready_at is not None)
+    producer_lag_seconds = (
+        max(0, int((max(ready_times) - bucket_closed_at).total_seconds())) if ready_times else None
+    )
+    bucket_lag_seconds = max(
+        0, int((persistence_completed_at - bucket.bucket_start).total_seconds())
+    )
+    catch_up_mode = bucket_lag_seconds > contract.max_bucket_decision_delay_seconds
+
     return BucketResult(
         bucket_start=bucket.bucket_start,
         symbols_total=len(writes),
@@ -221,6 +240,10 @@ async def evaluate_bucket(
             write.evaluation.decision_status.startswith("suppressed_") for write in writes
         ),
         evaluator_duration_ms=duration_ms,
+        bucket_lag_seconds=bucket_lag_seconds,
+        catch_up_mode=catch_up_mode,
+        decision_to_persistence_latency_ms=decision_to_persistence_latency_ms,
+        producer_lag_seconds=producer_lag_seconds,
     )
 
 
@@ -288,6 +311,16 @@ async def _write_health(
         "rejected_signal": str(result.rejected_signal if result else 0),
         "suppressed": str(result.suppressed if result else 0),
         "evaluator_duration_ms": str(result.evaluator_duration_ms if result else 0),
+        "bucket_lag_seconds": str(result.bucket_lag_seconds if result else 0),
+        "catch_up_mode": "true" if result is not None and result.catch_up_mode else "false",
+        "decision_to_persistence_latency_ms": str(
+            result.decision_to_persistence_latency_ms if result else 0
+        ),
+        "producer_lag_seconds": (
+            str(result.producer_lag_seconds)
+            if result is not None and result.producer_lag_seconds is not None
+            else ""
+        ),
     }
     await redis.hset(health_key(run.watch_version), mapping=cast("Any", mapping))
 
