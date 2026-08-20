@@ -138,6 +138,16 @@ async def run_early_momentum_trigger(exchanges: dict[str, Any], rdb: Any, cfg: C
             # or just iterate. Since Bybit has a global ticker endpoint:
             tickers = await ex.fetch_tickers()
 
+            # Symbol Translator: Map raw DB symbols (e.g. BTCUSDT) to CCXT symbols
+            raw_to_ccxt = {}
+            for t_sym in tickers:
+                parts = t_sym.split("/")
+                if len(parts) == 2:
+                    b = parts[0]
+                    q = parts[1].split(":")[0]
+                    raw_to_ccxt[f"{b}{q}"] = t_sym
+                    raw_to_ccxt[b] = t_sym
+
             for key in keys:
                 raw = await rdb.get(key)
                 if not raw:
@@ -153,7 +163,9 @@ async def run_early_momentum_trigger(exchanges: dict[str, Any], rdb: Any, cfg: C
                 source_exchange = data.get("source_exchange", "bybit")
                 ceiling = data["ceiling"]
 
-                ticker = tickers.get(symbol)
+                # Translate the raw symbol to CCXT format
+                ccxt_symbol = raw_to_ccxt.get(symbol) or raw_to_ccxt.get(base)
+                ticker = tickers.get(ccxt_symbol) if ccxt_symbol else None
                 if not ticker:
                     continue
 
