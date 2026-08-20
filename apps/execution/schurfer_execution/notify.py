@@ -43,6 +43,7 @@ async def notify_open(
     token: str,
     chat_id: str,
     *,
+    side: str = "short",
     base: str,
     exchange: str,
     size_usd: float,
@@ -53,7 +54,7 @@ async def notify_open(
 ) -> None:
     tag = "📄 PAPER" if paper else "⚡ TRADE"
     text = (
-        f"*{_esc(tag)}: SHORT {_esc(base)}*\n"
+        f"*{_esc(tag)}: {_esc(side.upper())} {_esc(base)}*\n"
         f"Exchange: {_esc(exchange)}\n"
         f"Entry: `{_esc(str(price))}`\n"
         f"Size: ${_esc(str(size_usd))} x{_esc(str(leverage))}\n"

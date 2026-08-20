@@ -98,6 +98,7 @@ async def open_paper(
             leverage=leverage,
             price=price,
             score=score,
+            side=side,
             paper=True,
         )
 

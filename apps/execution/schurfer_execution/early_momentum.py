@@ -7,6 +7,8 @@ import psycopg
 import structlog
 from psycopg.rows import dict_row
 
+from apps.execution.schurfer_execution import journal
+
 from . import paper
 from .config import Config
 
@@ -172,7 +174,17 @@ async def run_early_momentum_trigger(exchanges: dict[str, Any], rdb: Any, cfg: C
                 last_price = float(ticker.get("last") or 0)
 
                 if last_price > ceiling:
+                    # Deduplicate: check if a trade is already open
+                    open_id = await journal.find_open_trade_id(
+                        cfg.db_url, exchange=exchange, base=base
+                    )
+                    if open_id:
+                        log.info("early_momentum.already_open", base=base)
+                        await rdb.delete(key)
+                        continue
+
                     # Breakout!
+
                     log.info(
                         "early_momentum.breakout", base=base, ceiling=ceiling, price=last_price
                     )
