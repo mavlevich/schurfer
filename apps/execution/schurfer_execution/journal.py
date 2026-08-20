@@ -207,7 +207,7 @@ def strategy_identity(setup_context: dict[str, Any]) -> tuple[str, str]:
 async def open_trade(
     db_url: str,
     *,
-    base: str,
+    symbol: str,
     exchange: str,
     side: str,
     order_id: str | None,
@@ -246,7 +246,7 @@ async def open_trade(
                 _INSERT_TRADE,
                 (
                     strategy_id,
-                    f"{base.upper()}/USDT:USDT",
+                    symbol,
                     exchange,
                     side,
                     order_id,
@@ -264,7 +264,7 @@ async def open_trade(
             row = await cur.fetchone()
             return row[0] if row else None
     except Exception as exc:
-        log.error("journal.open_trade.failed", base=base, exchange=exchange, err=str(exc))
+        log.error("journal.open_trade.failed", symbol=symbol, exchange=exchange, err=str(exc))
         return None
 
 
@@ -451,7 +451,7 @@ async def record_exit_liquidity(
         return False
 
 
-async def find_open_trade_id(db_url: str, *, exchange: str, base: str) -> int | None:
+async def find_open_trade_id(db_url: str, *, exchange: str, symbol: str) -> int | None:
     """Fallback lookup for a close incident whose trade_id wasn't captured at
     creation time (it was created while the matching open was still an
     unresolved-fill incident, before journal.open_trade ran). Looks up the most
@@ -462,11 +462,13 @@ async def find_open_trade_id(db_url: str, *, exchange: str, base: str) -> int | 
     try:
         aconn = await psycopg.AsyncConnection.connect(db_url)
         async with aconn, aconn.cursor() as cur:
-            await cur.execute(_FIND_OPEN_TRADE, (exchange, f"{base.upper()}/USDT:USDT"))
+            await cur.execute(_FIND_OPEN_TRADE, (exchange, symbol))
             row = await cur.fetchone()
             return int(row[0]) if row else None
     except Exception as exc:
-        log.error("journal.find_open_trade_id.failed", exchange=exchange, base=base, err=str(exc))
+        log.error(
+            "journal.find_open_trade_id.failed", exchange=exchange, symbol=symbol, err=str(exc)
+        )
         return None
 
 

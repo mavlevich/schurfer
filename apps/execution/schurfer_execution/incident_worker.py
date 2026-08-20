@@ -134,7 +134,14 @@ async def _process_one(
         )
         return
 
-    symbol = f"{incident.base}/USDT:USDT"
+    from . import symbols
+
+    try:
+        instrument = symbols.resolve_execution_instrument(exchange, incident.base)
+        symbol = instrument.symbol
+    except (RuntimeError, ValueError) as e:
+        await _bump_attempt_or_escalate(incident, db_url, cfg, error=f"unresolved symbol: {e}")
+        return
     resolution = await resolve_fill_price(exchange, symbol=symbol, order={"id": incident.order_id})
 
     if resolution.status == FILL_UNRESOLVED:
@@ -161,9 +168,9 @@ async def _process_one(
     )
 
     if incident.operation == "close":
-        await _complete_close(incident, resolution.price, rdb, cfg)
+        await _complete_close(incident, symbol, resolution.price, rdb, cfg)
     else:
-        await _complete_open(incident, resolution.price, rdb, cfg)
+        await _complete_open(incident, symbol, resolution.price, rdb, cfg)
 
     if await incidents.claim_recovery_notification(db_url, incident.id):
         creds = notify.credentials(cfg)
@@ -178,7 +185,9 @@ async def _process_one(
             )
 
 
-async def _complete_close(incident: Incident, price: float, rdb: Any, cfg: Config) -> None:
+async def _complete_close(
+    incident: Incident, symbol: str, price: float, rdb: Any, cfg: Config
+) -> None:
     if not cfg.db_url:
         return
     trade_id = incident.trade_id
@@ -188,7 +197,7 @@ async def _complete_close(incident: Incident, price: float, rdb: Any, cfg: Confi
         # manual_required instead of completing. Fall back to looking the
         # trade up directly rather than silently dropping this close forever.
         trade_id = await journal.find_open_trade_id(
-            cfg.db_url, exchange=incident.exchange, base=incident.base
+            cfg.db_url, exchange=incident.exchange, symbol=symbol
         )
     if trade_id is None:
         log.critical(
@@ -230,7 +239,9 @@ async def _complete_close(incident: Incident, price: float, rdb: Any, cfg: Confi
         )
 
 
-async def _complete_open(incident: Incident, price: float, rdb: Any, cfg: Config) -> None:
+async def _complete_open(
+    incident: Incident, symbol: str, price: float, rdb: Any, cfg: Config
+) -> None:
     if not cfg.db_url:
         return
     setup_context = incident.context.get("setup_context")
@@ -241,7 +252,7 @@ async def _complete_open(incident: Incident, price: float, rdb: Any, cfg: Config
 
     trade_id = await journal.open_trade(
         cfg.db_url,
-        base=incident.base,
+        symbol=symbol,
         exchange=incident.exchange,
         side=side,
         order_id=incident.order_id,

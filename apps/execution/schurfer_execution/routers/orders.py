@@ -5,6 +5,7 @@ import structlog
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
 
+from .. import symbols
 from ..orders import place_order
 
 log = structlog.get_logger()
@@ -39,8 +40,10 @@ async def post_order(req: OrderRequest, request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail=f"exchange {req.exchange!r} not configured")
 
     try:
+        instrument = symbols.resolve_execution_instrument(exchanges[req.exchange], req.base)
         result: dict[str, Any] = await place_order(
             base=req.base,
+            symbol=instrument.symbol,
             exchange=req.exchange,
             side=req.side,
             size_usd=req.size_usd,
@@ -52,6 +55,8 @@ async def post_order(req: OrderRequest, request: Request) -> dict[str, Any]:
             daily_loss_limit_usd=cfg.daily_loss_limit_usd,
             liquidation_buffer_pct=cfg.liquidation_buffer_pct,
         )
+    except (RuntimeError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         log.error("execution.order.failed", base=req.base, exchange=req.exchange, err=str(e))
         raise HTTPException(status_code=502, detail=str(e)) from e

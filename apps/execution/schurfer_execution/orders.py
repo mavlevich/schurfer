@@ -165,6 +165,7 @@ async def _handle_unresolved_close(
 async def place_order(
     *,
     base: str,
+    symbol: str,
     exchange: str,
     side: str,
     size_usd: float,
@@ -221,7 +222,7 @@ async def place_order(
             return {"allowed": False, "reason": liq_check.reason}
 
         ex = exchanges[exchange]
-        symbol = f"{base.upper()}/USDT:USDT"
+        # symbol passed explicitly
         ccxt_side = "sell" if side == "short" else "buy"
 
         if not ex.markets:
@@ -420,6 +421,7 @@ async def close_position(
     exchanges: dict[str, Any],
     exchange: str,
     base: str,
+    symbol: str,
     reason: str,
     rdb: Any,
     cfg: Any = None,
@@ -437,7 +439,7 @@ async def close_position(
         if not ex:
             return {"closed": False, "reason": f"exchange {exchange!r} not configured"}
 
-        symbol = f"{base.upper()}/USDT:USDT"
+        # symbol passed explicitly
         all_positions = await ex.fetch_positions()
         position = next(
             (

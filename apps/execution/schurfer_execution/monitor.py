@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 import structlog
 
 from . import exit as exit_module
-from . import incidents, journal, notify
+from . import incidents, journal, notify, symbols
 from .account import fetch_positions
 from .fill_price import FILL_UNRESOLVED, resolve_fill_price
 from .orders import close_position
@@ -113,6 +113,7 @@ async def _check_exit(
         exchanges=exchanges,
         exchange=exchange,
         base=base,
+        symbol=position["symbol"],
         reason=reason,
         rdb=rdb,
         cfg=cfg,
@@ -286,7 +287,12 @@ async def _reconcile_one(
     ex = exchanges.get(exchange)
     if not ex:
         return
-    symbol = f"{base}/USDT:USDT"
+    try:
+        instrument = symbols.resolve_execution_instrument(ex, base)
+        symbol = instrument.symbol
+    except (RuntimeError, ValueError) as e:
+        log.warning("position_monitor.unresolved_symbol", base=base, err=str(e))
+        return
 
     order = await ex.fetch_order(sl_order_id, symbol)
     if order.get("status") != "closed":

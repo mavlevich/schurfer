@@ -1,8 +1,26 @@
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from schurfer_execution.incident_worker import MAX_RESOLUTION_ATTEMPTS, _process_one, _tick
 from schurfer_execution.incidents import Incident
+from schurfer_execution.symbols import ExecutionInstrument
+
+
+@pytest.fixture(autouse=True)
+def mock_resolve_execution_instrument(monkeypatch):
+    def dummy_resolve(ex, base, *args, **kwargs):
+        return ExecutionInstrument(
+            exchange=ex.id if hasattr(ex, "id") else "bybit",
+            symbol=f"{base.upper()}/USDT:USDT",
+            native_market_id=f"{base.upper()}USDT",
+            base=base.upper(),
+            quote="USDT",
+            settle="USDT",
+            market_type="swap",
+        )
+
+    monkeypatch.setattr("schurfer_execution.symbols.resolve_execution_instrument", dummy_resolve)
 
 
 def _cfg(db_url: str | None = "postgresql://x") -> MagicMock:
@@ -187,7 +205,11 @@ async def test_process_one_close_with_missing_trade_id_falls_back_to_db_lookup()
     ):
         await _process_one(incident, {"bybit": _exchange_confirming(2.0)}, rdb, _cfg())
 
-    mock_find.assert_called_once_with("postgresql://x", exchange="bybit", base="BEAT")
+    mock_find.assert_called_once_with(
+        "postgresql://x",
+        exchange="bybit",
+        symbol="BEAT/USDT:USDT",
+    )
     mock_commit.assert_called_once()
     assert mock_commit.call_args.kwargs["trade_id"] == 55
 

@@ -2,10 +2,28 @@ import json
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from schurfer_execution.config import Config
 from schurfer_execution.exit import exit_params
 from schurfer_execution.monitor import _check_exit, _tick
 from schurfer_execution.orders import close_position
+from schurfer_execution.symbols import ExecutionInstrument
+
+
+@pytest.fixture(autouse=True)
+def mock_resolve_execution_instrument(monkeypatch):
+    def dummy_resolve(ex, base, *args, **kwargs):
+        return ExecutionInstrument(
+            exchange=ex.id if hasattr(ex, "id") else "bybit",
+            symbol=f"{base.upper()}/USDT:USDT",
+            native_market_id=f"{base.upper()}USDT",
+            base=base.upper(),
+            quote="USDT",
+            settle="USDT",
+            market_type="swap",
+        )
+
+    monkeypatch.setattr("schurfer_execution.symbols.resolve_execution_instrument", dummy_resolve)
 
 
 def _cfg() -> Config:
@@ -63,6 +81,7 @@ def _pos(entry: float, mark: float, side: str = "short") -> dict:  # type: ignor
     return {
         "exchange": "bybit",
         "base": "BEAT",
+        "symbol": "BEAT/USDT:USDT",
         "side": side,
         "entry_price": entry,
         "mark_price": mark,
@@ -81,6 +100,7 @@ async def test_close_short_places_buy_with_reduce_only() -> None:
         exchanges={"bybit": ex},
         exchange="bybit",
         base="BEAT",
+        symbol="BEAT/USDT:USDT",
         reason="test",
         rdb=rdb,
     )
@@ -101,6 +121,7 @@ async def test_close_long_places_sell_order() -> None:
         exchanges={"bybit": ex},
         exchange="bybit",
         base="BEAT",
+        symbol="BEAT/USDT:USDT",
         reason="test",
         rdb=rdb,
     )
@@ -117,6 +138,7 @@ async def test_close_side_derived_from_position_not_caller() -> None:
         exchanges={"bybit": ex},
         exchange="bybit",
         base="BEAT",
+        symbol="BEAT/USDT:USDT",
         reason="test",
         rdb=rdb,
     )
@@ -135,6 +157,7 @@ async def test_close_position_unknown_side_returns_error() -> None:
         exchanges={"bybit": ex},
         exchange="bybit",
         base="BEAT",
+        symbol="BEAT/USDT:USDT",
         reason="test",
         rdb=rdb,
     )
@@ -148,6 +171,7 @@ async def test_close_lock_contention_returns_blocked() -> None:
         exchanges={"bybit": _exchange()},
         exchange="bybit",
         base="BEAT",
+        symbol="BEAT/USDT:USDT",
         reason="test",
         rdb=rdb,
     )
@@ -161,6 +185,7 @@ async def test_close_lock_not_released_when_not_acquired() -> None:
         exchanges={"bybit": _exchange()},
         exchange="bybit",
         base="BEAT",
+        symbol="BEAT/USDT:USDT",
         reason="test",
         rdb=rdb,
     )
@@ -173,6 +198,7 @@ async def test_close_unknown_exchange_returns_not_closed() -> None:
         exchanges={},
         exchange="bybit",
         base="BEAT",
+        symbol="BEAT/USDT:USDT",
         reason="test",
         rdb=rdb,
     )
@@ -188,6 +214,7 @@ async def test_close_no_open_position_returns_not_closed() -> None:
         exchanges={"bybit": ex},
         exchange="bybit",
         base="BEAT",
+        symbol="BEAT/USDT:USDT",
         reason="test",
         rdb=rdb,
     )
@@ -203,6 +230,7 @@ async def test_close_zero_contracts_not_found() -> None:
         exchanges={"bybit": ex},
         exchange="bybit",
         base="BEAT",
+        symbol="BEAT/USDT:USDT",
         reason="test",
         rdb=rdb,
     )
@@ -216,6 +244,7 @@ async def test_close_deletes_opened_at_key_on_success() -> None:
         exchanges={"bybit": ex},
         exchange="bybit",
         base="BEAT",
+        symbol="BEAT/USDT:USDT",
         reason="test",
         rdb=rdb,
     )
@@ -234,6 +263,7 @@ async def test_close_unresolved_fill_never_fabricates_exit_price() -> None:
         exchanges={"bybit": ex},
         exchange="bybit",
         base="BEAT",
+        symbol="BEAT/USDT:USDT",
         reason="test",
         rdb=rdb,
         cfg=_cfg(),

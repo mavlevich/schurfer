@@ -31,6 +31,21 @@ log = structlog.get_logger()
 _HOT_PATH_SOCKET_TIMEOUT_SECONDS = 5.0
 
 
+async def _preload_markets(exchanges: dict[str, Any]) -> set[str]:
+    """Load venue metadata without making optional venues a global dependency."""
+    names = list(exchanges)
+    results = await asyncio.gather(
+        *(exchanges[name].load_markets() for name in names),
+        return_exceptions=True,
+    )
+    failed: set[str] = set()
+    for name, result in zip(names, results, strict=True):
+        if isinstance(result, BaseException):
+            failed.add(name)
+            log.error("startup.preload_markets_failed", exchange=name, err=str(result))
+    return failed
+
+
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     structlog.configure(
@@ -57,6 +72,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     app.state.rdb = rdb
     app.state.trading_exchanges = trading_exchanges
 
+    if market_exchanges:
+        log.info("startup.preload_markets", count=len(market_exchanges))
+        await _preload_markets(market_exchanges)
+
     tracker = asyncio.create_task(run_pnl_tracker(trading_exchanges, rdb, cfg.db_url))
     monitor = asyncio.create_task(run_position_monitor(trading_exchanges, rdb, cfg))
     trader = (
@@ -76,7 +95,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         else None
     )
     liquidation_cascade_scanner = (
-        asyncio.create_task(run_liquidation_cascade_scanner(rdb, cfg)) if cfg.dry_run else None
+        asyncio.create_task(run_liquidation_cascade_scanner(market_exchanges, rdb, cfg))
+        if cfg.dry_run
+        else None
     )
     # The decision writer does long blocking XREADGROUP reads, so it gets its own client
     # with a socket timeout above the BLOCK window. Keeping it separate leaves the trading

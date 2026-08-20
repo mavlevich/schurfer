@@ -179,6 +179,7 @@ async def test_slow_exchange_open_keeps_the_real_place_order_lock_renewed() -> N
     ):
         result = await place_order(
             base="BEAT",
+            symbol="BEAT/USDT:USDT",
             exchange="bybit",
             side="short",
             size_usd=50.0,

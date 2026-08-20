@@ -7,7 +7,7 @@ from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
 from .. import exit as exit_module
-from .. import journal
+from .. import journal, symbols
 from ..account import fetch_balance, fetch_positions
 from ..orders import close_position
 from ..risk import DAILY_PNL_KEY, TRADING_ENABLED_KEY
@@ -55,10 +55,19 @@ async def manual_close_position(body: CloseBody, request: Request) -> dict[str, 
     cfg: Config = request.app.state.cfg
     rdb = request.app.state.rdb
 
+    exchange_client = request.app.state.trading_exchanges.get(body.exchange)
+    if exchange_client is None:
+        return {"closed": False, "reason": f"exchange {body.exchange!r} not configured"}
+    try:
+        instrument = symbols.resolve_execution_instrument(exchange_client, body.base)
+    except (RuntimeError, ValueError) as exc:
+        return {"closed": False, "reason": str(exc)}
+
     result = await close_position(
         exchanges=request.app.state.trading_exchanges,
         exchange=body.exchange,
         base=body.base,
+        symbol=instrument.symbol,
         reason="manual",
         rdb=rdb,
         cfg=cfg,

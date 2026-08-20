@@ -26,6 +26,7 @@ def _kwargs(**overrides: object) -> dict:  # type: ignore[type-arg]
 
     base: dict = {  # type: ignore[type-arg]
         "base": "BEAT",
+        "symbol": "BEAT/USDT:USDT",
         "exchange": "bingx",
         "side": "short",
         "size_usd": 100.0,
@@ -43,7 +44,7 @@ def _kwargs(**overrides: object) -> dict:  # type: ignore[type-arg]
 class TestOrderRequestValidation:
     def _req(self, **kw: object) -> OrderRequest:
         return OrderRequest(
-            base="BEAT",
+            symbol="BEAT",
             exchange="bingx",
             side="short",
             size_usd=100.0,
@@ -527,7 +528,12 @@ class TestClosePositionCancelsStopLoss:
         rdb.eval = AsyncMock(return_value=1)
 
         result = await close_position(
-            exchanges={"bingx": ex}, exchange="bingx", base="BEAT", reason="test", rdb=rdb
+            exchanges={"bingx": ex},
+            exchange="bingx",
+            base="BEAT",
+            symbol="BEAT/USDT:USDT",
+            reason="test",
+            rdb=rdb,
         )
 
         assert result["closed"]
@@ -556,7 +562,12 @@ class TestClosePositionCancelsStopLoss:
         rdb.eval = AsyncMock(return_value=1)
 
         result = await close_position(
-            exchanges={"bingx": ex}, exchange="bingx", base="BEAT", reason="test", rdb=rdb
+            exchanges={"bingx": ex},
+            exchange="bingx",
+            base="BEAT",
+            symbol="BEAT/USDT:USDT",
+            reason="test",
+            rdb=rdb,
         )
 
         assert result["closed"]

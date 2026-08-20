@@ -250,7 +250,20 @@ def _close_request(cfg: Config, rdb: MagicMock) -> MagicMock:
     req = MagicMock()
     req.app.state.cfg = cfg
     req.app.state.rdb = rdb
-    req.app.state.trading_exchanges = {}
+    exchange = MagicMock()
+    exchange.id = "bybit"
+    exchange.markets = {
+        "BEAT/USDT:USDT": {
+            "id": "BEATUSDT",
+            "symbol": "BEAT/USDT:USDT",
+            "base": "BEAT",
+            "quote": "USDT",
+            "settle": "USDT",
+            "type": "swap",
+            "active": True,
+        }
+    }
+    req.app.state.trading_exchanges = {"bybit": exchange}
     return req
 
 

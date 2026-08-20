@@ -298,12 +298,12 @@ def _capture_error(exc: BaseException) -> str:
 
 async def capture_snapshot(
     ex: Any,
-    base: str,
+    symbol: str,
     *,
     required_depth_usd: float | None = None,
 ) -> SnapshotCapture:
     """Fetch and parse a bounded book while preserving status and latency."""
-    symbol = f"{base.upper()}/USDT:USDT"
+    # symbol passed explicitly
     started = time.perf_counter()
     try:
         book = await asyncio.wait_for(
