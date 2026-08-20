@@ -424,6 +424,7 @@ services:
       # accepted capture-cohort boundary would not survive past the
       # disposable `docker compose run --rm` container that wrote it.
       MOMENTUM_FLOW_EPISODE_STUDY_COHORT_STATE_PATH: /runtime/momentum-flow-episode-study-cohort.json
+      MOMENTUM_FLOW_DISCOVERY_COHORT_STATE_PATH: /runtime/momentum-flow-discovery-cohort.json
     volumes:
       - orderflow_data:/data/orderflow:ro
       - ../../runtime:/runtime

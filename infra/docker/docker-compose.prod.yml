@@ -590,6 +590,7 @@ services:
       # moment it exits, defeating the whole point of freezing the boundary
       # across runs.
       MOMENTUM_FLOW_EPISODE_STUDY_COHORT_STATE_PATH: /runtime/momentum-flow-episode-study-cohort.json
+      MOMENTUM_FLOW_DISCOVERY_COHORT_STATE_PATH: /runtime/momentum-flow-discovery-cohort.json
     volumes:
       - orderflow_data:/data/orderflow:ro
       # Read-write (unlike api-gateway's own :ro mount of the same host
