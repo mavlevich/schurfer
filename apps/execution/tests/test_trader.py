@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from schurfer_execution.config import Config
 from schurfer_execution.order_lock import OrderLockLostError
+from schurfer_execution.symbols import ExecutionInstrument
 from schurfer_execution.trader import (
     _SEEN_TTL_ENTRY_WAIT,
     _SEEN_TTL_MEASUREMENT_RECHECK,
@@ -27,6 +28,25 @@ from schurfer_execution.trader import (
     _pump_event_id,
     _tick,
 )
+
+
+@pytest.fixture(autouse=True)
+def mock_resolve_execution_instrument(monkeypatch):
+    def dummy_resolve(ex, base, *args, **kwargs):
+        return ExecutionInstrument(
+            exchange=ex.id if hasattr(ex, "id") else "bybit",
+            symbol=f"{base.upper()}/USDT:USDT",
+            native_market_id=f"{base.upper()}USDT",
+            base=base.upper(),
+            quote="USDT",
+            settle="USDT",
+            market_type="swap",
+        )
+
+    monkeypatch.setattr(
+        "schurfer_execution.trader.symbols.resolve_execution_instrument",
+        dummy_resolve,
+    )
 
 
 def _cfg(
@@ -805,7 +825,11 @@ async def test_tick_market_quality_gate_allows_tradeable_book() -> None:
     ):
         await _tick({"bybit": ex}, rdb, cfg)
 
-    snapshot_mock.assert_awaited_once_with(ex, "BEAT", required_depth_usd=100.0)
+    snapshot_mock.assert_awaited_once_with(
+        ex,
+        "BEAT/USDT:USDT",
+        required_depth_usd=100.0,
+    )
     mock_order.assert_awaited_once()
     assert mock_order.call_args.kwargs["liquidity_checked_usd"] == 100.0
 

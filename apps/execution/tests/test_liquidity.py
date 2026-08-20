@@ -136,7 +136,7 @@ async def test_snapshot_summarizes_book() -> None:
             "asks": [[100.1, 100.0], [100.2, 100.0]],
         }
     )
-    snap = await snapshot(ex, "BEAT")
+    snap = await snapshot(ex, "BEAT/USDT:USDT")
     assert snap is not None
     assert snap["best_bid"] == 99.9
     assert snap["best_ask"] == 100.1
@@ -160,8 +160,8 @@ async def test_snapshot_adds_exact_required_depth_without_duplicates() -> None:
         }
     )
 
-    custom = await snapshot(ex, "BEAT", required_depth_usd=66.67)
-    existing = await snapshot(ex, "BEAT", required_depth_usd=100.0)
+    custom = await snapshot(ex, "BEAT/USDT:USDT", required_depth_usd=66.67)
+    existing = await snapshot(ex, "BEAT/USDT:USDT", required_depth_usd=100.0)
 
     assert custom is not None
     assert custom["depth_targets_usd"] == [66.67, 100.0, 500.0, 1000.0]
@@ -185,7 +185,7 @@ async def test_snapshot_uses_derivative_contract_size_for_depth() -> None:
         }
     )
 
-    snap = await snapshot(ex, "BEAT")
+    snap = await snapshot(ex, "BEAT/USDT:USDT")
 
     assert snap is not None
     assert snap["contract_size"] == 0.01
@@ -196,19 +196,19 @@ async def test_snapshot_uses_derivative_contract_size_for_depth() -> None:
 async def test_snapshot_returns_none_on_fetch_error() -> None:
     ex = AsyncMock()
     ex.fetch_order_book = AsyncMock(side_effect=RuntimeError("boom"))
-    assert await snapshot(ex, "BEAT") is None
+    assert await snapshot(ex, "BEAT/USDT:USDT") is None
 
 
 async def test_snapshot_returns_none_on_empty_book() -> None:
     ex = AsyncMock()
     ex.fetch_order_book = AsyncMock(return_value={"bids": [], "asks": []})
-    assert await snapshot(ex, "BEAT") is None
+    assert await snapshot(ex, "BEAT/USDT:USDT") is None
 
 
 async def test_snapshot_returns_none_on_crossed_book() -> None:
     ex = AsyncMock()
     ex.fetch_order_book = AsyncMock(return_value={"bids": [[101.0, 1.0]], "asks": [[100.0, 1.0]]})
-    assert await snapshot(ex, "BEAT") is None
+    assert await snapshot(ex, "BEAT/USDT:USDT") is None
 
 
 async def test_snapshot_returns_none_on_malformed_levels_without_raising() -> None:
@@ -216,13 +216,13 @@ async def test_snapshot_returns_none_on_malformed_levels_without_raising() -> No
     # of snapshot and abort the caller's tick.
     ex = AsyncMock()
     ex.fetch_order_book = AsyncMock(return_value={"bids": [["oops", None]], "asks": [[100.1, 1.0]]})
-    assert await snapshot(ex, "BEAT") is None
+    assert await snapshot(ex, "BEAT/USDT:USDT") is None
 
 
 async def test_snapshot_returns_none_on_non_list_book() -> None:
     ex = AsyncMock()
     ex.fetch_order_book = AsyncMock(return_value={"bids": "nope", "asks": "nope"})
-    assert await snapshot(ex, "BEAT") is None
+    assert await snapshot(ex, "BEAT/USDT:USDT") is None
 
 
 async def test_snapshot_returns_none_on_nan_prices() -> None:
@@ -232,7 +232,7 @@ async def test_snapshot_returns_none_on_nan_prices() -> None:
     ex.fetch_order_book = AsyncMock(
         return_value={"bids": [["nan", 100.0]], "asks": [["nan", 100.0]]}
     )
-    assert await snapshot(ex, "BEAT") is None
+    assert await snapshot(ex, "BEAT/USDT:USDT") is None
 
 
 async def test_snapshot_impacts_are_finite_or_none() -> None:
@@ -243,7 +243,7 @@ async def test_snapshot_impacts_are_finite_or_none() -> None:
             "asks": [[100.1, 100.0]],
         }
     )
-    snap = await snapshot(ex, "BEAT")
+    snap = await snapshot(ex, "BEAT/USDT:USDT")
     assert snap is not None
     for impacts in (snap["bid_impact_bps"], snap["ask_impact_bps"]):
         for v in impacts.values():
@@ -258,14 +258,14 @@ async def test_snapshot_returns_none_on_timeout() -> None:
     ex = AsyncMock()
     ex.fetch_order_book = _hang
     with patch("schurfer_execution.liquidity._FETCH_TIMEOUT", 0.01):
-        assert await snapshot(ex, "BEAT") is None
+        assert await snapshot(ex, "BEAT/USDT:USDT") is None
 
 
 async def test_capture_snapshot_preserves_fetch_failure_status() -> None:
     ex = AsyncMock()
     ex.fetch_order_book = AsyncMock(side_effect=RuntimeError("venue unavailable"))
 
-    capture = await capture_snapshot(ex, "BEAT", required_depth_usd=50)
+    capture = await capture_snapshot(ex, "BEAT/USDT:USDT", required_depth_usd=50)
 
     assert capture.status == "fetch_failed"
     assert capture.snapshot is None
@@ -277,7 +277,7 @@ async def test_capture_snapshot_distinguishes_invalid_book() -> None:
     ex = AsyncMock()
     ex.fetch_order_book = AsyncMock(return_value={"bids": [], "asks": []})
 
-    capture = await capture_snapshot(ex, "BEAT", required_depth_usd=50)
+    capture = await capture_snapshot(ex, "BEAT/USDT:USDT", required_depth_usd=50)
 
     assert capture.status == "invalid_book"
     assert capture.snapshot is None
@@ -292,7 +292,7 @@ async def test_capture_snapshot_preserves_timeout_status() -> None:
     ex = AsyncMock()
     ex.fetch_order_book = _hang
     with patch("schurfer_execution.liquidity._FETCH_TIMEOUT", 0.01):
-        capture = await capture_snapshot(ex, "BEAT", required_depth_usd=50)
+        capture = await capture_snapshot(ex, "BEAT/USDT:USDT", required_depth_usd=50)
 
     assert capture.status == "timeout"
     assert capture.snapshot is None

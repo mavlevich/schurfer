@@ -12,7 +12,7 @@ import structlog
 from schurfer_performance import PAPER_ACCOUNTING_VERSION, calculate_performance
 
 from . import exit as exit_module
-from . import journal, liquidity, notify
+from . import journal, liquidity, notify, symbols
 
 if TYPE_CHECKING:
     from .config import Config
@@ -31,8 +31,7 @@ def paper_key(exchange: str, base: str) -> str:
 async def open_paper(
     rdb: Any,
     *,
-    base: str,
-    exchange: str,
+    instrument: symbols.ExecutionInstrument,
     price: float,
     size_usd: float,
     leverage: int,
@@ -55,8 +54,9 @@ async def open_paper(
         exit_slippage_bps,
     ) = journal.accounting_contract(paper_context)
     entry = {
-        "base": base,
-        "exchange": exchange,
+        "base": instrument.base,
+        "symbol": instrument.symbol,
+        "exchange": instrument.exchange,
         "side": side,
         "entry_price": price,
         "size_usd": size_usd,
@@ -68,13 +68,13 @@ async def open_paper(
         "entry_slippage_bps": entry_slippage_bps,
         "exit_slippage_bps": exit_slippage_bps,
     }
-    await rdb.set(paper_key(exchange, base), json.dumps(entry), ex=86400 * 7)
+    await rdb.set(paper_key(instrument.exchange, instrument.base), json.dumps(entry), ex=86400 * 7)
 
     if cfg.db_url:
         trade_id = await journal.open_trade(
             cfg.db_url,
-            base=base,
-            exchange=exchange,
+            symbol=instrument.symbol,
+            exchange=instrument.exchange,
             side=side,
             order_id=None,
             size_usd=size_usd,
@@ -84,7 +84,7 @@ async def open_paper(
         )
         if trade_id:
             await rdb.set(
-                _TRADE_ID_KEY.format(exchange=exchange, base=base.upper()),
+                _TRADE_ID_KEY.format(exchange=instrument.exchange, base=instrument.base.upper()),
                 str(trade_id),
                 ex=86400 * 7,
             )
@@ -93,8 +93,8 @@ async def open_paper(
     if creds:
         await notify.notify_open(
             *creds,
-            base=base,
-            exchange=exchange,
+            base=instrument.base,
+            exchange=instrument.exchange,
             size_usd=size_usd,
             leverage=leverage,
             price=price,
@@ -103,7 +103,13 @@ async def open_paper(
             paper=True,
         )
 
-    log.info("paper.opened", base=base, exchange=exchange, price=price, score=score)
+    log.info(
+        "paper.opened",
+        symbol=instrument.symbol,
+        exchange=instrument.exchange,
+        price=price,
+        score=score,
+    )
 
 
 async def close_paper(
@@ -117,6 +123,17 @@ async def close_paper(
 ) -> None:
     base = pos["base"]
     exchange = pos["exchange"]
+    symbol = pos.get("symbol")
+    if not symbol and exchange_client is not None:
+        try:
+            symbol = symbols.resolve_execution_instrument(exchange_client, base).symbol
+        except (RuntimeError, ValueError) as exc:
+            log.warning(
+                "paper.close.unresolved_legacy_symbol",
+                base=base,
+                exchange=exchange,
+                err=str(exc),
+            )
     entry_price = float(pos["entry_price"])
     side = pos.get("side", "short")
 
@@ -161,11 +178,11 @@ async def close_paper(
     trade_id_key = _TRADE_ID_KEY.format(exchange=exchange, base=base.upper())
     trade_id_raw = await rdb.get(trade_id_key)
     exit_observation: dict[str, Any] | None = None
-    if trade_id_raw and cfg.db_url and exchange_client is not None:
+    if trade_id_raw and cfg.db_url and exchange_client is not None and symbol is not None:
         try:
             exit_observation = await _capture_exit_liquidity(
                 exchange_client,
-                base=base,
+                symbol=symbol,
                 exchange=exchange,
                 requested_notional_usd=float(pos["size_usd"]),
             )
@@ -174,7 +191,7 @@ async def close_paper(
             # exchange response, or observation bug may keep the position open.
             log.error(
                 "paper.exit_liquidity_capture_failed",
-                base=base,
+                symbol=symbol,
                 exchange=exchange,
                 err=str(exc),
             )
@@ -201,7 +218,7 @@ async def close_paper(
         else:
             log.error(
                 "paper.journal_close_failed",
-                base=base,
+                symbol=symbol,
                 exchange=exchange,
                 trade_id=trade_id,
             )
@@ -223,7 +240,7 @@ async def close_paper(
 
     log.info(
         "paper.closed",
-        base=base,
+        symbol=symbol,
         exchange=exchange,
         gross_pnl_pct=round(pnl_pct, 2),
         displayed_pnl_pct=round(displayed_pnl_pct, 2),
@@ -238,13 +255,13 @@ async def close_paper(
 async def _capture_exit_liquidity(
     exchange_client: Any,
     *,
-    base: str,
+    symbol: str,
     exchange: str,
     requested_notional_usd: float,
 ) -> dict[str, Any]:
     capture = await liquidity.capture_snapshot(
         exchange_client,
-        base,
+        symbol,
         required_depth_usd=requested_notional_usd,
     )
     snapshot = capture.snapshot or {}
@@ -263,7 +280,7 @@ async def _capture_exit_liquidity(
     return {
         "observed_at": datetime.fromtimestamp(capture.observed_at_ms / 1000, tz=UTC),
         "exchange": exchange,
-        "symbol": f"{base.upper()}/USDT:USDT",
+        "symbol": symbol,
         "market_id": snapshot.get("market_id"),
         "status": status,
         "requested_notional_usd": requested_notional_usd,
@@ -312,6 +329,7 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 continue
 
             base = pos["base"]
+            symbol = pos.get("symbol")
             exchange = pos["exchange"]
             entry_price = float(pos["entry_price"])
             opened_at = float(pos.get("opened_at", 0))
@@ -321,11 +339,24 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
             if not ex:
                 continue
 
+            if not symbol:
+                try:
+                    instrument = symbols.resolve_execution_instrument(ex, base)
+                    symbol = instrument.symbol
+                    pos["symbol"] = symbol
+                except (RuntimeError, ValueError) as e:
+                    log.error(
+                        "paper.monitor.unresolved_legacy_symbol",
+                        base=base,
+                        err=str(e),
+                    )
+                    continue
+
             try:
-                ticker = await ex.fetch_ticker(f"{base.upper()}/USDT:USDT")
+                ticker = await ex.fetch_ticker(symbol)
                 mark = float(ticker.get("last") or 0)
             except Exception as exc:
-                log.warning("paper.ticker_failed", base=base, exchange=exchange, err=str(exc))
+                log.warning("paper.ticker_failed", symbol=symbol, exchange=exchange, err=str(exc))
                 continue
 
             if mark <= 0:

@@ -346,7 +346,11 @@ async def test_find_open_trade_id_returns_matching_row() -> None:
     conn, cur = _mock_conn([(77,)])
 
     with patch("psycopg.AsyncConnection.connect", AsyncMock(return_value=conn)):
-        result = await journal.find_open_trade_id("postgresql://x", exchange="bybit", base="beat")
+        result = await journal.find_open_trade_id(
+            "postgresql://x",
+            exchange="bybit",
+            symbol="BEAT/USDT:USDT",
+        )
 
     assert result == 77
     query, params = cur.execute.call_args_list[0].args
@@ -358,7 +362,11 @@ async def test_find_open_trade_id_returns_none_when_no_open_trade() -> None:
     conn, _cur = _mock_conn([None])
 
     with patch("psycopg.AsyncConnection.connect", AsyncMock(return_value=conn)):
-        result = await journal.find_open_trade_id("postgresql://x", exchange="bybit", base="BEAT")
+        result = await journal.find_open_trade_id(
+            "postgresql://x",
+            exchange="bybit",
+            symbol="BEAT/USDT:USDT",
+        )
 
     assert result is None
 
@@ -367,7 +375,11 @@ async def test_find_open_trade_id_returns_none_on_db_error() -> None:
     with patch(
         "psycopg.AsyncConnection.connect", AsyncMock(side_effect=Exception("connection refused"))
     ):
-        result = await journal.find_open_trade_id("postgresql://x", exchange="bybit", base="BEAT")
+        result = await journal.find_open_trade_id(
+            "postgresql://x",
+            exchange="bybit",
+            symbol="BEAT/USDT:USDT",
+        )
 
     assert result is None
 
@@ -570,7 +582,7 @@ async def test_open_trade_side_validation() -> None:
     with pytest.raises(ValueError, match="invalid side: middle"):
         await journal.open_trade(
             "dummy_url",
-            base="BTC",
+            symbol="BTC/USDT:USDT",
             exchange="bybit",
             side="middle",  # invalid
             order_id="123",
@@ -589,7 +601,7 @@ async def test_open_trade_early_momentum_v1_registration(mock_connect) -> None:
 
     trade_id = await journal.open_trade(
         "dummy_url",
-        base="BTC",
+        symbol="BTC/USDT:USDT",
         exchange="bybit",
         side="long",
         order_id="123",
@@ -626,7 +638,7 @@ async def test_open_trade_pump_caller_preserves_context(mock_connect) -> None:
 
     await journal.open_trade(
         "dummy_url",
-        base="ETH",
+        symbol="ETH/USDT:USDT",
         exchange="binance",
         side="short",
         order_id="456",
@@ -655,7 +667,7 @@ async def test_open_trade_strategy_version_exceeds_limit(mock_connect) -> None:
     with pytest.raises(ValueError, match="strategy_version exceeds 16 chars"):
         await journal.open_trade(
             "dummy",
-            base="BTC",
+            symbol="BTC/USDT:USDT",
             exchange="bybit",
             side="long",
             order_id="1",

@@ -11,7 +11,7 @@ from uuid import uuid4
 
 import structlog
 
-from . import decisions, journal, liquidity, notify, paper, risk
+from . import decisions, journal, liquidity, notify, paper, risk, symbols
 from . import exit as exit_module
 from .account import fetch_margin_balance
 from .order_lock import OrderLockLostError
@@ -141,8 +141,18 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
         # Per-decision measurement context is created only after all strategy inputs
         # are ready, so every durable row represents an actual evaluation.
         decision_id = str(uuid4())
+
         exchange = _pick_exchange(pump.get("exchanges", []), exchanges)
         ex = exchanges.get(exchange) if exchange else None
+        instrument: symbols.ExecutionInstrument | None = None
+        symbol: str | None = None
+        if ex:
+            try:
+                instrument = symbols.resolve_execution_instrument(ex, base)
+                symbol = instrument.symbol
+            except (RuntimeError, ValueError) as e:
+                log.warning("trader.unresolved_symbol", base=base, err=str(e))
+
         features = _decision_features(
             signal,
             pump,
@@ -165,7 +175,11 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
         if ex is None:
             liq = {"status": "no_exchange"}
         else:
-            snap = await liquidity.snapshot(ex, base, required_depth_usd=depth_target)
+            snap = (
+                await liquidity.snapshot(ex, symbol, required_depth_usd=depth_target)
+                if symbol
+                else None
+            )
             quality = liquidity.check_market_quality(
                 snap,
                 target_usd=depth_target,
@@ -210,6 +224,26 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 exchange="",
                 action="skipped",
                 reason="no_configured_exchange",
+                pump_pct=pump_pct,
+                decision_id=decision_id,
+                strategy_version=cfg.strategy_version,
+                features=features,
+                liquidity=liq,
+                price=decision_price,
+                pump_event_id=pump_event_id,
+                seen_key=seen_key,
+                seen_ttl=_SEEN_TTL_SKIP,
+            )
+            continue
+
+        if instrument is None or symbol is None:
+            await decisions.write_decision(
+                rdb,
+                base=base,
+                exchange=exchange,
+                action="skipped",
+                reason="execution_instrument_unresolved",
+                score=score,
                 pump_pct=pump_pct,
                 decision_id=decision_id,
                 strategy_version=cfg.strategy_version,
@@ -297,7 +331,7 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
             )
             continue
 
-        funding_rate_pct = await _fetch_funding_rate_pct(ex, base) if ex else None
+        funding_rate_pct = await _fetch_funding_rate_pct(ex, symbol) if ex and symbol else None
 
         if funding_rate_pct is None and cfg.require_funding_rate:
             reason = "funding_rate_unavailable"
@@ -346,7 +380,7 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
 
         entry_check: risk.EntryCheck | None = None
         if cfg.require_red_candle or cfg.min_retrace_pct > 0:
-            candles = await _fetch_entry_candles(ex, base) if ex else None
+            candles = await _fetch_entry_candles(ex, symbol) if ex and symbol else None
             if candles is None:
                 log.warning("trader.skip.entry_candles_unavailable", base=base)
                 await decisions.write_decision(
@@ -513,7 +547,7 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 await rdb.set(seen_key, "1", ex=_SEEN_TTL_SKIP)
                 continue
             try:
-                ticker = await ex.fetch_ticker(f"{base.upper()}/USDT:USDT")
+                ticker = await ex.fetch_ticker(instrument.symbol)
                 entry_price = float(ticker["last"])
             except Exception as exc:
                 log.warning("trader.dry_run.price_failed", base=base, err=str(exc))
@@ -538,8 +572,7 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
 
             await paper.open_paper(
                 rdb,
-                base=base,
-                exchange=exchange,
+                instrument=instrument,
                 price=entry_price,
                 size_usd=size_usd,
                 leverage=cfg.signal_leverage,
@@ -569,6 +602,7 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
         try:
             result = await place_order(
                 base=base,
+                symbol=symbol,
                 exchange=exchange,
                 side="short",
                 size_usd=size_usd,
@@ -702,7 +736,7 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
             if cfg.db_url:
                 trade_id = await journal.open_trade(
                     cfg.db_url,
-                    base=base,
+                    symbol=symbol,
                     exchange=exchange,
                     side="short",
                     order_id=result.get("order_id"),
@@ -787,7 +821,7 @@ async def _publish_signal_readiness(
 _EIGHT_HOURS_MS = 8 * 3600 * 1000  # reference period for normalization
 
 
-async def _fetch_funding_rate_pct(ex: Any, base: str) -> float | None:
+async def _fetch_funding_rate_pct(ex: Any, symbol: str) -> float | None:
     """Fetch current funding rate normalized to % per 8h equivalent.
 
     ccxt returns fundingRate as a fraction and fundingInterval in ms.
@@ -797,7 +831,7 @@ async def _fetch_funding_rate_pct(ex: Any, base: str) -> float | None:
     """
     try:
         data = await asyncio.wait_for(
-            ex.fetch_funding_rate(f"{base.upper()}/USDT:USDT"),
+            ex.fetch_funding_rate(symbol),
             timeout=_FUNDING_FETCH_TIMEOUT,
         )
         rate = data.get("fundingRate")
@@ -810,7 +844,7 @@ async def _fetch_funding_rate_pct(ex: Any, base: str) -> float | None:
             rate_8h = float(rate)  # assume 8h (Binance/Bybit/OKX standard)
         return rate_8h * 100
     except Exception as exc:
-        log.warning("trader.funding_rate.fetch_failed", base=base, err=str(exc))
+        log.warning("trader.funding_rate.fetch_failed", symbol=symbol, err=str(exc))
         return None
 
 
@@ -826,20 +860,20 @@ async def _fetch_equity_usd(exchanges: dict[str, Any], exchange: str) -> float |
     return None
 
 
-async def _fetch_entry_candles(ex: Any, base: str) -> list[list[float]] | None:
+async def _fetch_entry_candles(ex: Any, symbol: str) -> list[list[float]] | None:
     """Fetch recent 5m OHLCV candles. Returns None on any error or malformed data."""
     try:
         candles = await asyncio.wait_for(
-            ex.fetch_ohlcv(f"{base.upper()}/USDT:USDT", "5m", limit=_ENTRY_CANDLE_COUNT),
+            ex.fetch_ohlcv(symbol, "5m", limit=_ENTRY_CANDLE_COUNT),
             timeout=_ENTRY_CANDLE_TIMEOUT,
         )
         if not candles or not all(isinstance(c, list | tuple) and len(c) >= 6 for c in candles):
-            log.warning("trader.entry_candles.malformed", base=base)
+            log.warning("trader.entry_candles.malformed", symbol=symbol)
             return None
         validated: list[list[float]] = [list(c[:6]) for c in candles]
         return validated
     except Exception as exc:
-        log.warning("trader.entry_candles.fetch_failed", base=base, err=str(exc))
+        log.warning("trader.entry_candles.fetch_failed", symbol=symbol, err=str(exc))
         return None
 
 

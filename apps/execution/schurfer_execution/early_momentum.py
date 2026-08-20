@@ -83,16 +83,16 @@ async def run_early_momentum_scanner(rdb: Any, cfg: Config) -> None:
 
             for c in candidates:
                 source_exchange = c["exchange"]
-                base = c["symbol"].split("/")[0]  # e.g. "BTC/USDT:USDT" -> "BTC"
+                raw_symbol = c["symbol"]
                 ceiling = float(c["price_max_2h"])
-                key = _WATCH_PREFIX.format(exchange=source_exchange, base=base)
+                key = _WATCH_PREFIX.format(exchange=source_exchange, base=raw_symbol)
 
                 # Check if we already have a watch for this base to avoid spamming logs
                 exists = await rdb.exists(key)
                 if not exists:
                     log.info(
                         "early_momentum.watch_added",
-                        base=base,
+                        base=raw_symbol,
                         ceiling=ceiling,
                         oi_growth=round(
                             (c["open_interest"] - c["oi_start_2h"]) / c["oi_start_2h"] * 100, 2
@@ -119,6 +119,10 @@ async def run_early_momentum_scanner(rdb: Any, cfg: Config) -> None:
 
 async def run_early_momentum_trigger(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
     """Polls watched bases, checking for breakout to trigger paper trades."""
+    if not cfg.db_url:
+        log.warning("early_momentum.trigger_disabled", reason="no db_url")
+        return
+
     exchange = "bybit"  # Hardcoded for now since momentum flow is Bybit only
 
     while True:
@@ -138,34 +142,49 @@ async def run_early_momentum_trigger(exchanges: dict[str, Any], rdb: Any, cfg: C
             # or just iterate. Since Bybit has a global ticker endpoint:
             tickers = await ex.fetch_tickers()
 
-            # Symbol Translator: Map raw DB symbols (e.g. BTCUSDT) to CCXT symbols
-            raw_to_ccxt = {}
-            for t_sym in tickers:
-                parts = t_sym.split("/")
-                if len(parts) == 2:
-                    b = parts[0]
-                    q = parts[1].split(":")[0]
-                    raw_to_ccxt[f"{b}{q}"] = t_sym
-                    raw_to_ccxt[b] = t_sym
-
             for key in keys:
                 raw = await rdb.get(key)
                 if not raw:
                     continue
 
                 data = json.loads(raw)
-                base = (
+                from . import symbols
+
+                raw_symbol = (
                     key.decode("utf-8").split(":")[-1]
                     if isinstance(key, bytes)
                     else key.split(":")[-1]
                 )
-                symbol = data["symbol"]
                 source_exchange = data.get("source_exchange", "bybit")
                 ceiling = data["ceiling"]
 
-                # Translate the raw symbol to CCXT format
-                ccxt_symbol = raw_to_ccxt.get(symbol) or raw_to_ccxt.get(base)
-                ticker = tickers.get(ccxt_symbol) if ccxt_symbol else None
+                route = await symbols.resolve_route(
+                    cfg.db_url,
+                    source_exchange,
+                    raw_symbol,
+                    exchange,
+                )
+                if not route:
+                    log.warning(
+                        "early_momentum.unresolved_route",
+                        source_exchange=source_exchange,
+                        raw=raw_symbol,
+                    )
+                    continue
+                try:
+                    instrument = symbols.resolve_execution_instrument(
+                        ex,
+                        route.execution_native_id,
+                    )
+                except (RuntimeError, ValueError) as e:
+                    log.warning(
+                        "early_momentum.unresolved_symbol",
+                        raw=route.execution_native_id,
+                        err=str(e),
+                    )
+                    continue
+
+                ticker = tickers.get(instrument.symbol)
                 if not ticker:
                     continue
 
@@ -175,17 +194,20 @@ async def run_early_momentum_trigger(exchanges: dict[str, Any], rdb: Any, cfg: C
                     # Deduplicate: check if a trade is already open
                     if cfg.db_url:
                         open_id = await journal.find_open_trade_id(
-                            cfg.db_url, exchange=exchange, base=base
+                            cfg.db_url, exchange=exchange, symbol=instrument.symbol
                         )
                         if open_id:
-                            log.info("early_momentum.already_open", base=base)
+                            log.info("early_momentum.already_open", symbol=instrument.symbol)
                             await rdb.delete(key)
                             continue
 
                     # Breakout!
 
                     log.info(
-                        "early_momentum.breakout", base=base, ceiling=ceiling, price=last_price
+                        "early_momentum.breakout",
+                        base=raw_symbol,
+                        ceiling=ceiling,
+                        price=last_price,
                     )
 
                     # Delete the watch key so we don't trigger it again
@@ -205,8 +227,7 @@ async def run_early_momentum_trigger(exchanges: dict[str, Any], rdb: Any, cfg: C
                     # Size of paper trade - standard $100
                     await paper.open_paper(
                         rdb,
-                        base=base,
-                        exchange=exchange,  # Execute on Bybit regardless of source
+                        instrument=instrument,
                         price=last_price,
                         size_usd=100.0,
                         leverage=5,
@@ -215,6 +236,7 @@ async def run_early_momentum_trigger(exchanges: dict[str, Any], rdb: Any, cfg: C
                             "strategy": "early_momentum_v1",
                             "breakout_price": ceiling,
                             "signal_source": source_exchange,
+                            "source_symbol": data.get("symbol"),
                         },
                         cfg=cfg,
                         side="long",

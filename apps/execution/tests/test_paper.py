@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from schurfer_execution.paper import _tick, close_paper, open_paper, paper_key
+from schurfer_execution.symbols import ExecutionInstrument
 from schurfer_performance import PAPER_ACCOUNTING_VERSION
 
 
@@ -24,6 +25,18 @@ def _rdb() -> MagicMock:
     return rdb
 
 
+def _instrument() -> ExecutionInstrument:
+    return ExecutionInstrument(
+        exchange="bybit",
+        symbol="BEAT/USDT:USDT",
+        native_market_id="BEATUSDT",
+        base="BEAT",
+        quote="USDT",
+        settle="USDT",
+        market_type="swap",
+    )
+
+
 # --- paper_key ---
 
 
@@ -39,8 +52,7 @@ async def test_open_paper_stores_position_in_redis() -> None:
     rdb = _rdb()
     await open_paper(
         rdb,
-        base="BEAT",
-        exchange="bybit",
+        instrument=_instrument(),
         price=0.0025,
         size_usd=50.0,
         leverage=3,
@@ -78,8 +90,7 @@ async def test_open_paper_writes_journal_when_db_url_set() -> None:
         mock_jrn.return_value = 42
         await open_paper(
             rdb,
-            base="BEAT",
-            exchange="bybit",
+            instrument=_instrument(),
             price=0.0025,
             size_usd=50.0,
             leverage=3,
@@ -90,7 +101,7 @@ async def test_open_paper_writes_journal_when_db_url_set() -> None:
 
     mock_jrn.assert_called_once()
     kw = mock_jrn.call_args.kwargs
-    assert kw["base"] == "BEAT"
+    assert kw["symbol"] == "BEAT/USDT:USDT"
     assert kw["entry_price"] == 0.0025
     assert kw["setup_context"]["paper"] is True
 
@@ -100,8 +111,7 @@ async def test_open_paper_does_not_write_journal_without_db_url() -> None:
     with patch("schurfer_execution.paper.journal.open_trade", new_callable=AsyncMock) as mock_jrn:
         await open_paper(
             rdb,
-            base="BEAT",
-            exchange="bybit",
+            instrument=_instrument(),
             price=0.0025,
             size_usd=50.0,
             leverage=3,
@@ -302,6 +312,7 @@ async def test_close_paper_records_fresh_buy_to_close_quote() -> None:
     cfg.db_url = "postgresql://localhost/test"
     pos = {
         "base": "BEAT",
+        "symbol": "BEAT/USDT:USDT",
         "exchange": "bybit",
         "entry_price": 100,
         "size_usd": 50,
@@ -368,6 +379,7 @@ async def test_close_paper_persists_quote_failure_without_blocking_close() -> No
     cfg.db_url = "postgresql://localhost/test"
     pos = {
         "base": "BEAT",
+        "symbol": "BEAT/USDT:USDT",
         "exchange": "bybit",
         "entry_price": 100,
         "size_usd": 50,
@@ -416,6 +428,7 @@ async def test_exit_liquidity_persistence_failure_does_not_undo_close() -> None:
     cfg.db_url = "postgresql://localhost/test"
     pos = {
         "base": "BEAT",
+        "symbol": "BEAT/USDT:USDT",
         "exchange": "bybit",
         "entry_price": 100,
         "size_usd": 50,
@@ -465,6 +478,7 @@ async def test_close_paper_labels_insufficient_buy_to_close_depth() -> None:
     cfg.db_url = "postgresql://localhost/test"
     pos = {
         "base": "BEAT",
+        "symbol": "BEAT/USDT:USDT",
         "exchange": "bybit",
         "entry_price": 100,
         "size_usd": 50,
@@ -529,6 +543,18 @@ async def test_paper_tick_passes_same_market_client_to_close_capture() -> None:
     rdb.scan_iter = _scan_iter
     rdb.get = AsyncMock(return_value=json.dumps(pos).encode())
     ex = AsyncMock()
+    ex.id = "bybit"
+    ex.markets = {
+        "BEAT/USDT:USDT": {
+            "id": "BEATUSDT",
+            "symbol": "BEAT/USDT:USDT",
+            "base": "BEAT",
+            "quote": "USDT",
+            "settle": "USDT",
+            "type": "swap",
+            "active": True,
+        }
+    }
     ex.fetch_ticker = AsyncMock(return_value={"last": 90})
 
     with (
@@ -542,3 +568,4 @@ async def test_paper_tick_passes_same_market_client_to_close_capture() -> None:
         await _tick({"bybit": ex}, rdb, _cfg())
 
     assert close.call_args.kwargs["exchange_client"] is ex
+    assert close.call_args.kwargs["pos"]["symbol"] == "BEAT/USDT:USDT"

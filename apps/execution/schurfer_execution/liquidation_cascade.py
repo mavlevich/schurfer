@@ -54,7 +54,7 @@ WHERE price_15m_ago > 0
 """
 
 
-async def run_liquidation_cascade_scanner(rdb: Any, cfg: Config) -> None:
+async def run_liquidation_cascade_scanner(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
     """Scans for Liquidation Cascades and immediately opens trades."""
     if not cfg.db_url:
         log.warning("liquidation_cascade.scanner_disabled", reason="no db_url")
@@ -71,29 +71,68 @@ async def run_liquidation_cascade_scanner(rdb: Any, cfg: Config) -> None:
 
             for c in candidates:
                 source_exchange = c["exchange"]
-                symbol = c["symbol"]
-                base = symbol.split("/")[
-                    0
-                ]  # e.g. "BTC/USDT:USDT" -> "BTC", or "BTCUSDT" -> "BTCUSDT" (clean native)
+                from . import symbols
 
-                # Natively from Binance or Bybit it might be just 'BTCUSDT' in the DB
-                if "/" not in base and base.endswith("USDT"):
-                    base = base[:-4]
+                raw_symbol = c["symbol"]
 
-                last_price = float(c["close_price"])
-                price_drop = (last_price - float(c["price_15m_ago"])) / float(c["price_15m_ago"])
+                # We need the CCXT client to resolve exact symbol
+                ex = exchanges.get("bybit")
+                if not ex:
+                    continue
+
+                route = await symbols.resolve_route(
+                    cfg.db_url,
+                    source_exchange,
+                    raw_symbol,
+                    "bybit",
+                )
+                if not route:
+                    log.warning(
+                        "liquidation_cascade.unresolved_route",
+                        source_exchange=source_exchange,
+                        raw=raw_symbol,
+                    )
+                    continue
+                try:
+                    instrument = symbols.resolve_execution_instrument(
+                        ex,
+                        route.execution_native_id,
+                    )
+                except (RuntimeError, ValueError) as e:
+                    log.warning(
+                        "liquidation_cascade.unresolved_symbol",
+                        raw=route.execution_native_id,
+                        err=str(e),
+                    )
+                    continue
+
+                # Fetch executable price from target exchange, not source bar
+                try:
+                    ticker = await ex.fetch_ticker(instrument.symbol)
+                    last_price = float(ticker["last"])
+                except Exception as e:
+                    log.warning(
+                        "liquidation_cascade.ticker_failed", symbol=instrument.symbol, err=str(e)
+                    )
+                    continue
+
+                price_drop = (float(c["close_price"]) - float(c["price_15m_ago"])) / float(
+                    c["price_15m_ago"]
+                )
                 oi_drop = (float(c["open_interest"]) - float(c["oi_15m_ago"])) / float(
                     c["oi_15m_ago"]
                 )
 
                 # Deduplicate: check if a trade is already open
-                open_id = await journal.find_open_trade_id(cfg.db_url, exchange="bybit", base=base)
+                open_id = await journal.find_open_trade_id(
+                    cfg.db_url, exchange="bybit", symbol=instrument.symbol
+                )
                 if open_id:
                     continue
 
                 log.info(
                     "liquidation_cascade.trigger",
-                    base=base,
+                    symbol=instrument.symbol,
                     price=last_price,
                     price_drop_pct=round(price_drop * 100, 2),
                     oi_drop_pct=round(oi_drop * 100, 2),
@@ -112,8 +151,7 @@ async def run_liquidation_cascade_scanner(rdb: Any, cfg: Config) -> None:
 
                 await paper.open_paper(
                     rdb,
-                    base=base,
-                    exchange="bybit",  # Execute on Bybit
+                    instrument=instrument,
                     price=last_price,
                     size_usd=100.0,
                     leverage=5,
@@ -123,6 +161,7 @@ async def run_liquidation_cascade_scanner(rdb: Any, cfg: Config) -> None:
                         "price_drop_pct": round(price_drop * 100, 2),
                         "oi_drop_pct": round(oi_drop * 100, 2),
                         "signal_source": source_exchange,
+                        "source_symbol": raw_symbol,
                     },
                     cfg=cfg,
                     side="long",

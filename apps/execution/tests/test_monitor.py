@@ -10,6 +10,23 @@ from schurfer_execution.monitor import (
     _retry_one_pending_close,
     _retry_pending_closes,
 )
+from schurfer_execution.symbols import ExecutionInstrument
+
+
+@pytest.fixture(autouse=True)
+def mock_resolve_execution_instrument(monkeypatch):
+    def dummy_resolve(ex, base, *args, **kwargs):
+        return ExecutionInstrument(
+            exchange=ex.id if hasattr(ex, "id") else "bybit",
+            symbol=f"{base.upper()}/USDT:USDT",
+            native_market_id=f"{base.upper()}USDT",
+            base=base.upper(),
+            quote="USDT",
+            settle="USDT",
+            market_type="swap",
+        )
+
+    monkeypatch.setattr("schurfer_execution.symbols.resolve_execution_instrument", dummy_resolve)
 
 
 async def _async_iter(items: list) -> object:  # type: ignore[type-arg]
@@ -98,6 +115,7 @@ class TestCheckExitNotifyPnlUsd:
         position = {
             "exchange": "bingx",
             "base": "BEAT",
+            "symbol": "BEAT/USDT:USDT",
             "side": "short",
             "entry_price": 10.0,
             "mark_price": 8.0,
@@ -146,6 +164,7 @@ class TestCheckExitNotifyPnlUsd:
         position = {
             "exchange": "bingx",
             "base": "BEAT",
+            "symbol": "BEAT/USDT:USDT",
             "side": "short",
             "entry_price": 10.0,
             "mark_price": 8.0,
