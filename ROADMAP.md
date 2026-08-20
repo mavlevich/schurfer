@@ -663,6 +663,20 @@ front.
    neutral. ML is allowed only as a later benchmark against the frozen simple-rule
    baseline and time-split data; it is not an excuse to fit the discovery window.
 
+   **Implemented on `analysis/momentum-flow-discovery-read-v1` (descriptive read,
+   collecting):** `momentum-flow-discovery-report` reads the frozen Bybit and Binance
+   WATCH/paper contracts directly from Postgres, validates their registered hashes,
+   measures same-venue WATCH-to-pump precision/recall, operational gaps, executable
+   paper economics/costs, MFE/MAE, latency, capacity at the probed size, and
+   concentration by asset and UTC week. It has a discovery-specific frozen cohort
+   state and never mutates the episode-study boundary. Fewer than four distinct UTC
+   weeks, incomplete venue coverage, missing contracts, or absent probes remain
+   `COLLECTING`; missing capacity above the frozen probe size and BTC regime stay
+   explicitly unresolved. Because no outcome threshold was registered before this
+   cohort accrued, the report can only become `READY_FOR_MANUAL_REVIEW`, never emit
+   an automatic promotion/stop verdict. Any selected candidate still requires the
+   untouched Confirmation cohort in item 9.
+
    **Binance WATCH shadow (`feat/binance-momentum-watch-v1`, 2026-08-15;
    implemented and unit-tested, Compose profile disabled by default):** a
    second WATCH worker running the exact same frozen `momentum_flow_watch_v1`
@@ -2781,3 +2795,9 @@ net performance suitable for tax or risk accounting.
   restarting the live Bybit canary process purely for cosmetics -- do it
   at a deliberate capture-epoch boundary alongside some other change that
   already needs one, not as its own standalone restart.
+
+- `fix/research-health-freshness-v1`: Make health commands fail if container is stopped or generated_at is stale.
+- `chore/dependency-update-automation-v1`: Setup Dependabot for weekly grouped updates (CCXT separate from GitHub Actions) without auto-merge.
+- `fix/momentum-flow-live-freshness-v1`: Stop catch-up/backfill WATCH evaluations from entering the executable paper lane, expose `last_bucket_start -> now` lag and stale-rejection rate, and alert when the paper cohort has no completely accounted executable probes. Keep the 30-second quote deadline fail-closed.
+- `analysis/momentum-flow-stale-entry-counterfactual-v1`: Measure whether rejected stale WATCH decisions retain any after-cost edge at the actual late decision time using point-in-time captured bars. Treat reconstructed bar entry as descriptive only, never as an executable quote or promotion evidence; any viable delay contract requires a new prospective cohort.
+- `fix/trade-presentation-accounting-v1`: Give Telegram and the Trades UI one versioned presentation contract for strategy/mode/category plus gross/net realized PnL and ROE. Show ROE only when realized PnL, margin, leverage, side, and accounting status are complete; missing accounting stays unresolved rather than fabricated as zero.

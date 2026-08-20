@@ -1,5 +1,6 @@
 .PHONY: help install install-golangci-lint install-deadcode dev dev-init dev-stop dev-reset dev-logs dev-test migrate measurement-report exchange-coverage-report exchange-source-economics-report source-lead-report source-lead-identity-report gate-identity-candidate-tooling episode-replay virtual-strategy-report virtual-entry-challenger-report virtual-threshold-challenger-report virtual-exit-policy-report virtual-exit-discovery-report virtual-score-challenger-report virtual-banded-price-extent-report candle-anomaly-report derivatives-context-report decision-quality-report derivatives-regime-feasibility-report long-short-ratio-regime-report liquid-taker-report long-horizon-report open-ended-margin-report maker-entry-report pump-magnitude-report orderflow-pilot-report orderflow-endpoint-sensitivity-report exit-liquidity-calibration-report pump-short-failure-attribution-report pump-short-reentry-audit-report oi-growth-filter-report token-history-identity-preflight-report token-history-ohlcv-sample-report token-history-parquet-dataset token-behavior-discovery-report momentum-universe-identity-match orderflow-start orderflow-stop orderflow-health momentum-capture-start momentum-capture-stop momentum-capture-health momentum-capture-binance-start momentum-capture-binance-stop momentum-capture-binance-health momentum-watch-start momentum-watch-stop momentum-watch-health momentum-watch-binance-start momentum-watch-binance-stop momentum-watch-binance-health momentum-paper-start momentum-paper-stop momentum-paper-health momentum-paper-binance-start momentum-paper-binance-stop momentum-paper-binance-health momentum-paper-lev3-start momentum-paper-lev3-stop momentum-paper-lev3-health momentum-paper-hold12h-start momentum-paper-hold12h-stop momentum-paper-hold12h-health momentum-flow-episode-study-report binance-watch-input-coverage-report bidirectional-burst-study-report test lint ci-lint format clean security deadcode check verify verify-docker \
 		prod-deploy prod-runtime-metrics-install prod-runtime-metrics-health prod-disk-usage-install prod-disk-usage-health prod-docker-prune-install prod-docker-prune-run prod-docker-prune-health prod-research-checkpoints-install prod-research-checkpoints-run prod-research-checkpoints-health prod-measurement-report prod-exchange-coverage-report prod-exchange-source-economics-report prod-source-lead-report prod-source-lead-identity-report prod-gate-identity-candidate-tooling prod-source-lead-capture-health prod-episode-replay prod-virtual-strategy-report prod-virtual-entry-challenger-report prod-virtual-threshold-challenger-report prod-virtual-exit-policy-report prod-virtual-exit-discovery-report prod-virtual-score-challenger-report prod-virtual-banded-price-extent-report prod-candle-anomaly-report prod-derivatives-context-report prod-decision-quality-report prod-derivatives-regime-feasibility-report prod-long-short-ratio-regime-report prod-liquid-taker-report prod-long-horizon-report prod-open-ended-margin-report prod-open-ended-margin-health prod-maker-entry-report prod-pump-magnitude-report prod-orderflow-pilot-report prod-orderflow-endpoint-sensitivity-report prod-exit-liquidity-calibration-report prod-pump-short-failure-attribution-report prod-pump-short-reentry-audit-report prod-oi-growth-filter-report prod-token-history-identity-preflight-report prod-token-history-ohlcv-sample-report prod-token-history-parquet-dataset prod-token-behavior-discovery-report prod-momentum-universe-identity-match prod-orderflow-start prod-orderflow-stop prod-orderflow-health prod-momentum-capture-start prod-momentum-capture-stop prod-momentum-capture-health prod-momentum-capture-binance-start prod-momentum-capture-binance-stop prod-momentum-capture-binance-health prod-momentum-watch-start prod-momentum-watch-stop prod-momentum-watch-health prod-momentum-watch-binance-start prod-momentum-watch-binance-stop prod-momentum-watch-binance-health prod-momentum-paper-start prod-momentum-paper-stop prod-momentum-paper-health prod-momentum-paper-binance-start prod-momentum-paper-binance-stop prod-momentum-paper-binance-health prod-momentum-paper-lev3-start prod-momentum-paper-lev3-stop prod-momentum-paper-lev3-health prod-momentum-paper-hold12h-start prod-momentum-paper-hold12h-stop prod-momentum-paper-hold12h-health prod-momentum-canary-checkpoints-install prod-momentum-canary-checkpoints-run prod-momentum-canary-checkpoints-health prod-momentum-flow-episode-study-report prod-binance-watch-input-coverage-report prod-bidirectional-burst-study-report prod-logs prod-backup prod-restore-local prod-health
+.PHONY: momentum-flow-discovery-report prod-momentum-flow-discovery-report
 
 GOLANGCI_LINT_VERSION = v2.1.6
 DEADCODE_VERSION = v0.48.0
@@ -129,6 +130,7 @@ help:
 	@echo "  make momentum-paper-hold12h-health  Show the 12h-hold momentum paper-long health"
 	@echo "  make momentum-paper-hold12h-stop  Stop the 12h-hold momentum paper-long worker"
 	@echo "  make momentum-flow-episode-study-report  Descriptive prerequisites for HYP-014 (ARGS must include --capture-epoch-started-at)"
+	@echo "  make momentum-flow-discovery-report  Frozen WATCH/paper discovery read (ARGS must include --since --until --capture-epoch-started-at)"
 	@echo "  make binance-watch-input-coverage-report  Descriptive Binance WATCH quality-gate coverage (ARGS must include --since)"
 	@echo "  make bidirectional-burst-study-report  Discovery-level buy/sell volume-burst study (ARGS must include --since --until)"
 	@echo ""
@@ -216,6 +218,7 @@ help:
 	@echo "  make prod-momentum-canary-checkpoints-run      Run one canary checkpoint pass now"
 	@echo "  make prod-momentum-canary-checkpoints-health   Inspect timer status and the checkpoint snapshot"
 	@echo "  make prod-momentum-flow-episode-study-report  Production HYP-014 prerequisites (ARGS must include --capture-epoch-started-at)"
+	@echo "  make prod-momentum-flow-discovery-report  Production frozen WATCH/paper discovery read (ARGS must include --since --until --capture-epoch-started-at)"
 	@echo "  make prod-binance-watch-input-coverage-report  Production Binance WATCH quality-gate coverage (ARGS must include --since)"
 	@echo "  make prod-bidirectional-burst-study-report  Production discovery-level buy/sell volume-burst study (ARGS must include --since --until)"
 
@@ -587,6 +590,15 @@ oi-growth-filter-report:
 momentum-flow-episode-study-report:
 	@DATABASE_URL="$${DATABASE_URL:-postgresql://schurfer:schurfer_dev@localhost:5432/schurfer}" \
 		uv run --package schurfer-analytics momentum-flow-episode-study-report \
+		--code-revision="$$(git rev-parse HEAD)" \
+		$$(test -z "$$(git status --porcelain)" \
+			&& printf '%s' '--no-working-tree-dirty' \
+			|| printf '%s' '--working-tree-dirty') $(ARGS)
+
+# Uses its own frozen cohort-state file; it cannot re-baseline episode-study.
+momentum-flow-discovery-report:
+	@DATABASE_URL="$${DATABASE_URL:-postgresql://schurfer:schurfer_dev@localhost:5432/schurfer}" \
+		uv run --package schurfer-analytics momentum-flow-discovery-report \
 		--code-revision="$$(git rev-parse HEAD)" \
 		$$(test -z "$$(git status --porcelain)" \
 			&& printf '%s' '--no-working-tree-dirty' \
@@ -1153,6 +1165,31 @@ prod-momentum-flow-episode-study-report:
 		fi; \
 	fi
 	@$(_PROD) run --rm --no-deps --entrypoint momentum-flow-episode-study-report analytics \
+		--code-revision="$$(git rev-parse HEAD)" \
+		$$(test -z "$$(git status --porcelain)" \
+			&& printf '%s' '--no-working-tree-dirty' \
+			|| printf '%s' '--working-tree-dirty') $(ARGS)
+
+prod-momentum-flow-discovery-report:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
+	@if test -r /proc/meminfo; then \
+		available_kb=$$(awk '/^MemAvailable:/ {print $$2}' /proc/meminfo); \
+		swap_kb=$$(awk '/^SwapFree:/ {print $$2}' /proc/meminfo); \
+		headroom_kb=$$((available_kb + swap_kb)); \
+		required_available_kb=$$(( $(PROD_REPORT_MIN_AVAILABLE_MB) * 1024 )); \
+		required_kb=$$(( $(PROD_REPORT_MIN_HEADROOM_MB) * 1024 )); \
+		if test "$$available_kb" -lt "$$required_available_kb"; then \
+			echo "ERROR: momentum-flow discovery requires at least $(PROD_REPORT_MIN_AVAILABLE_MB) MiB of MemAvailable; free swap is not a substitute for working RAM."; \
+			echo "Current MemAvailable: $$((available_kb / 1024)) MiB. Run it locally through the DB tunnel or wait for host headroom."; \
+			exit 1; \
+		fi; \
+		if test "$$headroom_kb" -lt "$$required_kb"; then \
+			echo "ERROR: momentum-flow discovery requires at least $(PROD_REPORT_MIN_HEADROOM_MB) MiB of available RAM + free swap."; \
+			echo "Current headroom: $$((headroom_kb / 1024)) MiB. Refusing to risk a host OOM."; \
+			exit 1; \
+		fi; \
+	fi
+	@$(_PROD) run --rm --no-deps --entrypoint momentum-flow-discovery-report analytics \
 		--code-revision="$$(git rev-parse HEAD)" \
 		$$(test -z "$$(git status --porcelain)" \
 			&& printf '%s' '--no-working-tree-dirty' \
