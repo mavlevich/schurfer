@@ -5,9 +5,7 @@ import psycopg
 import structlog
 from psycopg.rows import dict_row
 
-from apps.execution.schurfer_execution import journal
-
-from . import paper
+from . import journal, paper
 from .config import Config
 
 log = structlog.get_logger()

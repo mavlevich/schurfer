@@ -18,4 +18,7 @@ COPY --from=builder /app/.venv /app/.venv
 
 ENV PATH="/app/.venv/bin:$PATH"
 
+
+# Fail the image build if the installed production package cannot import.
+RUN python -c "import schurfer_execution.main"
 ENTRYPOINT ["execution-service"]
