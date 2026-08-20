@@ -23,6 +23,7 @@ from schurfer_analytics.momentum_flow_watch_repository import (
     WatchRun,
 )
 from schurfer_analytics.momentum_flow_watch_worker import (
+    BucketResult,
     WatchWorkerConfig,
     evaluate_bucket,
     health_key,
@@ -158,6 +159,47 @@ async def test_evaluate_bucket_persists_watch_and_rejection_denominator() -> Non
     assert [write.state_changed for write in store.writes] == [True, False]
 
 
+async def test_bucket_health_separates_producer_and_end_to_end_lag() -> None:
+    strong = _bars("STRONGUSDT", strong=True)
+    bucket = WatchBucketInput(
+        bucket_start=strong[-1].bucket_start,
+        universe_version="universe-v1",
+        symbols=("STRONGUSDT",),
+        bars_by_symbol={"STRONGUSDT": strong},
+    )
+    store = FakeStore(bucket)
+    contract = replace(
+        WatchContract(),
+        min_cross_section_size=1,
+        min_flow_notional_usd_15m=1_000.0,
+        max_bucket_decision_delay_seconds=70,
+    )
+    bucket_closed_at = bucket.bucket_start + timedelta(minutes=1)
+    times = iter(
+        (
+            bucket_closed_at + timedelta(seconds=10),
+            bucket_closed_at + timedelta(seconds=11),
+            bucket_closed_at + timedelta(seconds=12),
+            bucket_closed_at + timedelta(seconds=15),
+        )
+    )
+
+    result = await evaluate_bucket(
+        store=store,
+        contract=contract,
+        bucket_start=bucket.bucket_start,
+        states={},
+        clock=lambda: next(times),
+    )
+
+    assert result is not None
+    assert result.evaluator_duration_ms == 2_000
+    assert result.decision_to_persistence_latency_ms == 4_000
+    assert result.producer_lag_seconds == 2
+    assert result.bucket_lag_seconds == 75
+    assert result.catch_up_mode is True
+
+
 async def test_failed_persist_does_not_advance_in_memory_state() -> None:
     strong = _bars("STRONGUSDT", strong=True)
     bucket = WatchBucketInput(
@@ -215,6 +257,36 @@ class _FakeRedis:
 
     async def aclose(self) -> None:
         pass
+
+
+async def test_watch_health_serializes_boolean_as_lowercase() -> None:
+    redis = _FakeRedis()
+    bucket_start = datetime(2026, 8, 14, 12, tzinfo=UTC)
+    run = WatchRun("watch-v1", "hash", {}, bucket_start, bucket_start, "active")
+    result = BucketResult(
+        bucket_start=bucket_start,
+        symbols_total=1,
+        quality_ready=1,
+        raw_qualified=1,
+        watches=1,
+        rejected_quality=0,
+        rejected_signal=0,
+        suppressed=0,
+        evaluator_duration_ms=1,
+        bucket_lag_seconds=121,
+        catch_up_mode=True,
+        decision_to_persistence_latency_ms=1,
+        producer_lag_seconds=1,
+    )
+
+    await momentum_flow_watch_worker._write_health(
+        redis,  # type: ignore[arg-type]
+        run=run,
+        result=result,
+        status="ok",
+    )
+
+    assert redis.hset_calls[-1][1]["catch_up_mode"] == "true"
 
 
 def _install_fake_redis(monkeypatch: pytest.MonkeyPatch) -> _FakeRedis:

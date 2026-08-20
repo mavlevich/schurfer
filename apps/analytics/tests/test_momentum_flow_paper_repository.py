@@ -1,14 +1,21 @@
 from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING, Any, cast
 from uuid import UUID
 
 import pytest
 from schurfer_analytics.momentum_flow_paper_contract import FROZEN_PAPER_CONTRACT
 from schurfer_analytics.momentum_flow_paper_market import ExecutableQuote
 from schurfer_analytics.momentum_flow_paper_repository import (
+    MomentumFlowPaperRepository,
     PaperProbe,
+    WatchCandidate,
     evaluate_probe_quote,
     paper_id_for,
 )
+from sqlalchemy.dialects import postgresql
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncEngine
 
 T0 = datetime(2026, 8, 14, 12, tzinfo=UTC)
 
@@ -91,3 +98,106 @@ def test_closed_probe_does_not_exit_again() -> None:
     )
 
     assert result.exit_reason is None
+
+
+class _EmptyRows:
+    def all(self) -> list[object]:
+        return []
+
+
+class _StatementRepository(MomentumFlowPaperRepository):
+    def __init__(self) -> None:
+        self.statement: Any = None
+
+    async def _execute(self, statement: Any) -> _EmptyRows:
+        self.statement = statement
+        return _EmptyRows()
+
+
+async def test_fresh_selection_excludes_future_decisions() -> None:
+    repository = _StatementRepository()
+
+    await repository.due_fresh_watches(
+        contract=FROZEN_PAPER_CONTRACT,
+        cohort_started_at=T0 - timedelta(hours=1),
+        now=T0,
+        limit=20,
+    )
+
+    sql = str(
+        repository.statement.compile(
+            dialect=postgresql.dialect(),  # type: ignore[no-untyped-call]
+            compile_kwargs={"literal_binds": True},
+        )
+    )
+    assert "decision_at >=" in sql
+    assert "decision_at <=" in sql
+
+
+class _BulkResult:
+    def all(self) -> list[tuple[UUID]]:
+        return [(UUID("00000000-0000-0000-0000-000000000010"),)]
+
+
+class _BulkConnection:
+    def __init__(self) -> None:
+        self.statement: Any = None
+
+    async def execute(self, statement: Any) -> _BulkResult:
+        self.statement = statement
+        return _BulkResult()
+
+
+class _BulkTransaction:
+    def __init__(self, connection: _BulkConnection) -> None:
+        self.connection = connection
+        self.entered = False
+        self.exited = False
+
+    async def __aenter__(self) -> _BulkConnection:
+        self.entered = True
+        return self.connection
+
+    async def __aexit__(self, *_: object) -> None:
+        self.exited = True
+
+
+class _BulkEngine:
+    def __init__(self) -> None:
+        self.connection = _BulkConnection()
+        self.transaction = _BulkTransaction(self.connection)
+
+    def begin(self) -> _BulkTransaction:
+        return self.transaction
+
+
+async def test_bulk_stale_rejection_is_transactional_and_idempotent() -> None:
+    engine = _BulkEngine()
+    repository = MomentumFlowPaperRepository(cast("AsyncEngine", engine))
+    candidate = WatchCandidate(
+        watch_id=UUID("00000000-0000-0000-0000-000000000010"),
+        episode_id=UUID("00000000-0000-0000-0000-000000000011"),
+        exchange="bybit",
+        market_type="linear",
+        symbol="ERAUSDT",
+        bucket_start=T0 - timedelta(minutes=1),
+        decision_at=T0 - timedelta(seconds=31),
+    )
+
+    inserted = await repository.bulk_reject_stale_watches(
+        (candidate,),
+        contract=FROZEN_PAPER_CONTRACT,
+        now=T0,
+    )
+
+    assert inserted == 1
+    assert engine.transaction.entered
+    assert engine.transaction.exited
+    assert engine.connection.statement is not None
+    compiled = engine.connection.statement.compile(
+        dialect=postgresql.dialect()  # type: ignore[no-untyped-call]
+    )
+    sql = str(compiled)
+    assert "ON CONFLICT (paper_version, watch_id) DO NOTHING" in sql
+    assert "created_at" not in sql
+    assert "not_open" in compiled.params.values()

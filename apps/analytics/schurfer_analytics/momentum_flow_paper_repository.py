@@ -200,6 +200,15 @@ class PaperHealth:
     missed_outcomes: int
     last_entry_at: datetime | None
     last_exit_at: datetime | None
+    fresh_unclaimed_watches: int
+    expired_unclaimed_watches: int
+    oldest_unclaimed_age_seconds: float | None
+    claim_delay_p50: float | None
+    claim_delay_p99: float | None
+    rejected_stale_count: int
+    rejected_quote_count: int
+    interrupted_count: int
+    completed_probes_count: int
 
 
 @dataclass(frozen=True)
@@ -367,39 +376,69 @@ class MomentumFlowPaperRepository:
             result = await connection.execute(statement)
             return int(result.rowcount or 0)
 
-    async def due_watches(
-        self,
-        *,
-        contract: PaperContract,
-        cohort_started_at: datetime,
-        limit: int,
-    ) -> tuple[WatchCandidate, ...]:
+    def _base_due_watches_statement(
+        self, contract: PaperContract, cohort_started_at: datetime
+    ) -> Any:
         already_claimed = exists(
             select(1).where(
                 _probes.c.paper_version == contract.paper_version,
                 _probes.c.watch_id == _watch_evaluations.c.watch_id,
             )
         )
+        return select(
+            _watch_evaluations.c.watch_id,
+            _watch_evaluations.c.episode_id,
+            _watch_evaluations.c.exchange,
+            _watch_evaluations.c.market_type,
+            _watch_evaluations.c.symbol,
+            _watch_evaluations.c.bucket_start,
+            _watch_evaluations.c.decision_at,
+        ).where(
+            _watch_evaluations.c.watch_version == contract.watch_version,
+            _watch_evaluations.c.exchange == contract.source_exchange,
+            _watch_evaluations.c.market_type == contract.market_type,
+            _watch_evaluations.c.decision_status == "watch",
+            _watch_evaluations.c.decision_at >= _utc(cohort_started_at),
+            _watch_evaluations.c.watch_id.is_not(None),
+            _watch_evaluations.c.episode_id.is_not(None),
+            ~already_claimed,
+        )
+
+    async def due_fresh_watches(
+        self,
+        *,
+        contract: PaperContract,
+        cohort_started_at: datetime,
+        now: datetime,
+        limit: int,
+    ) -> tuple[WatchCandidate, ...]:
+        # Fresh means decision_at is strictly within the allowed limit.
+        cutoff = _utc(now) - timedelta(seconds=contract.max_watch_to_quote_seconds)
         statement = (
-            select(
-                _watch_evaluations.c.watch_id,
-                _watch_evaluations.c.episode_id,
-                _watch_evaluations.c.exchange,
-                _watch_evaluations.c.market_type,
-                _watch_evaluations.c.symbol,
-                _watch_evaluations.c.bucket_start,
-                _watch_evaluations.c.decision_at,
-            )
+            self._base_due_watches_statement(contract, cohort_started_at)
             .where(
-                _watch_evaluations.c.watch_version == contract.watch_version,
-                _watch_evaluations.c.exchange == contract.source_exchange,
-                _watch_evaluations.c.market_type == contract.market_type,
-                _watch_evaluations.c.decision_status == "watch",
-                _watch_evaluations.c.decision_at >= _utc(cohort_started_at),
-                _watch_evaluations.c.watch_id.is_not(None),
-                _watch_evaluations.c.episode_id.is_not(None),
-                ~already_claimed,
+                _watch_evaluations.c.decision_at >= cutoff,
+                _watch_evaluations.c.decision_at <= _utc(now),
             )
+            .order_by(_watch_evaluations.c.decision_at)
+            .limit(limit)
+        )
+        result = await self._execute(statement)
+        return tuple(WatchCandidate(*row) for row in result.all())
+
+    async def due_expired_watches(
+        self,
+        *,
+        contract: PaperContract,
+        cohort_started_at: datetime,
+        now: datetime,
+        limit: int,
+    ) -> tuple[WatchCandidate, ...]:
+        # Expired means decision_at is older than the allowed limit.
+        cutoff = _utc(now) - timedelta(seconds=contract.max_watch_to_quote_seconds)
+        statement = (
+            self._base_due_watches_statement(contract, cohort_started_at)
+            .where(_watch_evaluations.c.decision_at < cutoff)
             .order_by(_watch_evaluations.c.decision_at)
             .limit(limit)
         )
@@ -437,6 +476,45 @@ class MomentumFlowPaperRepository:
         async with self._engine.begin() as connection:
             result = await connection.execute(statement)
             return result.scalar_one_or_none()
+
+    async def bulk_reject_stale_watches(
+        self,
+        candidates: tuple[WatchCandidate, ...],
+        *,
+        contract: PaperContract,
+        now: datetime,
+    ) -> int:
+        if not candidates:
+            return 0
+        values_list = [
+            {
+                "paper_id": paper_id_for(contract, candidate.watch_id),
+                "paper_version": contract.paper_version,
+                "watch_version": contract.watch_version,
+                "watch_id": candidate.watch_id,
+                "episode_id": candidate.episode_id,
+                "exchange": candidate.exchange,
+                "market_type": candidate.market_type,
+                "symbol": candidate.symbol,
+                "watch_bucket_start": _utc(candidate.bucket_start),
+                "watch_decision_at": _utc(candidate.decision_at),
+                "claimed_at": _utc(now),
+                "entry_status": "rejected_stale",
+                "entry_reason": "watch_to_quote_deadline_exceeded",
+                "position_status": "not_open",
+                "updated_at": _utc(now),
+            }
+            for candidate in candidates
+        ]
+        statement = (
+            insert(_probes)
+            .values(values_list)
+            .on_conflict_do_nothing(index_elements=[_probes.c.paper_version, _probes.c.watch_id])
+            .returning(_probes.c.paper_id)
+        )
+        async with self._engine.begin() as connection:
+            result = await connection.execute(statement)
+            return len(result.all())
 
     async def reject_stale_entry(self, paper_id: UUID, *, now: datetime) -> None:
         await self._update_pending_entry(
@@ -684,7 +762,7 @@ class MomentumFlowPaperRepository:
             )
             return int(outcomes.rowcount or 0), int(exits.rowcount or 0)
 
-    async def health(self, *, contract: PaperContract) -> PaperHealth:
+    async def health(self, *, contract: PaperContract, cohort_started_at: datetime) -> PaperHealth:
         result = await self._execute(
             select(
                 func.count(_probes.c.paper_id),
@@ -697,9 +775,13 @@ class MomentumFlowPaperRepository:
                 func.count().filter(_probes.c.position_status == "exit_unresolved"),
                 func.max(_probes.c.entry_at),
                 func.max(_probes.c.exit_at),
+                func.count().filter(_probes.c.entry_status == "rejected_stale"),
+                func.count().filter(_probes.c.entry_status == "rejected_quote"),
+                func.count().filter(_probes.c.entry_status == "unresolved_interrupted"),
             ).where(_probes.c.paper_version == contract.paper_version)
         )
         row = result.one()
+
         outcomes = await self._execute(
             select(
                 func.count().filter(_outcomes.c.status == "pending"),
@@ -710,6 +792,80 @@ class MomentumFlowPaperRepository:
             .where(_probes.c.paper_version == contract.paper_version)
         )
         outcome_row = outcomes.one()
+
+        pending_outcome = exists(
+            select(1).where(
+                _outcomes.c.paper_id == _probes.c.paper_id,
+                _outcomes.c.status == "pending",
+            )
+        )
+        outcome_count = (
+            select(func.count(_outcomes.c.horizon_minutes))
+            .where(_outcomes.c.paper_id == _probes.c.paper_id)
+            .scalar_subquery()
+        )
+        completed_probes_result = await self._execute(
+            select(func.count(_probes.c.paper_id)).where(
+                _probes.c.paper_version == contract.paper_version,
+                _probes.c.position_status == "closed",
+                _probes.c.accounting_status == "complete",
+                outcome_count == len(contract.outcome_horizons_minutes),
+                ~pending_outcome,
+            )
+        )
+        completed_probes_count = int(completed_probes_result.scalar_one() or 0)
+
+        # Claim delays
+        delay_sql = select(
+            func.percentile_cont(0.5).within_group(
+                func.extract("epoch", _probes.c.claimed_at - _probes.c.watch_decision_at)
+            ),
+            func.percentile_cont(0.99).within_group(
+                func.extract("epoch", _probes.c.claimed_at - _probes.c.watch_decision_at)
+            ),
+        ).where(
+            _probes.c.paper_version == contract.paper_version,
+            _probes.c.claimed_at >= func.now() - timedelta(days=2),
+            _probes.c.entry_status != "rejected_stale",
+            _probes.c.claimed_at.is_not(None),
+            _probes.c.watch_decision_at.is_not(None),
+        )
+        delay_res = await self._execute(delay_sql)
+        delay_row = delay_res.one_or_none()
+        p50 = float(delay_row[0]) if delay_row and delay_row[0] is not None else None
+        p99 = float(delay_row[1]) if delay_row and delay_row[1] is not None else None
+
+        # Backlog
+        already_claimed = exists(
+            select(1).where(
+                _probes.c.paper_version == contract.paper_version,
+                _probes.c.watch_id == _watch_evaluations.c.watch_id,
+            )
+        )
+        age_sec = func.extract("epoch", func.now() - _watch_evaluations.c.decision_at)
+        backlog_sql = select(
+            func.count().filter(age_sec <= contract.max_watch_to_quote_seconds),
+            func.count().filter(age_sec > contract.max_watch_to_quote_seconds),
+            func.max(age_sec),
+        ).where(
+            _watch_evaluations.c.watch_version == contract.watch_version,
+            _watch_evaluations.c.exchange == contract.source_exchange,
+            _watch_evaluations.c.market_type == contract.market_type,
+            _watch_evaluations.c.decision_status == "watch",
+            _watch_evaluations.c.watch_id.is_not(None),
+            _watch_evaluations.c.decision_at >= _utc(cohort_started_at),
+            _watch_evaluations.c.decision_at <= func.now(),
+            ~already_claimed,
+        )
+        backlog_res = await self._execute(backlog_sql)
+        backlog_row = backlog_res.one_or_none()
+
+        fresh_unclaimed = int(backlog_row[0]) if backlog_row and backlog_row[0] else 0
+        expired_unclaimed = int(backlog_row[1]) if backlog_row and backlog_row[1] else 0
+        oldest_unclaimed = (
+            float(backlog_row[2]) if backlog_row and backlog_row[2] is not None else None
+        )
+
         return PaperHealth(
             total=int(row[0] or 0),
             opened=int(row[1] or 0),
@@ -722,6 +878,15 @@ class MomentumFlowPaperRepository:
             missed_outcomes=int(outcome_row[2] or 0),
             last_entry_at=row[6],
             last_exit_at=row[7],
+            fresh_unclaimed_watches=fresh_unclaimed,
+            expired_unclaimed_watches=expired_unclaimed,
+            oldest_unclaimed_age_seconds=oldest_unclaimed,
+            claim_delay_p50=p50,
+            claim_delay_p99=p99,
+            rejected_stale_count=int(row[8] or 0),
+            rejected_quote_count=int(row[9] or 0),
+            interrupted_count=int(row[10] or 0),
+            completed_probes_count=completed_probes_count,
         )
 
     async def _update_pending_entry(self, paper_id: UUID, values: dict[str, Any]) -> None:
