@@ -75,6 +75,7 @@ async def open_paper(
             cfg.db_url,
             base=base,
             exchange=exchange,
+            side=side,
             order_id=None,
             size_usd=size_usd,
             leverage=leverage,

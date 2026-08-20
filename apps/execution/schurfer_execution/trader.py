@@ -704,6 +704,7 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                     cfg.db_url,
                     base=base,
                     exchange=exchange,
+                    side="short",
                     order_id=result.get("order_id"),
                     size_usd=size_usd,
                     leverage=cfg.signal_leverage,

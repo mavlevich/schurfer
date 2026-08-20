@@ -563,3 +563,105 @@ class TestAnyPendingCloses:
         rdb.scan_iter = _scan
 
         assert await journal.any_pending_closes(rdb) is False
+
+
+@pytest.mark.asyncio
+async def test_open_trade_side_validation() -> None:
+    with pytest.raises(ValueError, match="invalid side: middle"):
+        await journal.open_trade(
+            "dummy_url",
+            base="BTC",
+            exchange="bybit",
+            side="middle",  # invalid
+            order_id="123",
+            size_usd=100.0,
+            leverage=1,
+            entry_price=50000.0,
+            setup_context={},
+        )
+
+
+@pytest.mark.asyncio
+@patch("psycopg.AsyncConnection.connect")
+async def test_open_trade_early_momentum_v1_registration(mock_connect) -> None:
+    conn, cur = _mock_conn([(1,), (123,)])  # strategy_id=1, trade_id=123
+    mock_connect.return_value = conn
+
+    trade_id = await journal.open_trade(
+        "dummy_url",
+        base="BTC",
+        exchange="bybit",
+        side="long",
+        order_id="123",
+        size_usd=100.0,
+        leverage=1,
+        entry_price=50000.0,
+        setup_context={"strategy": "early_momentum_v1"},
+    )
+    assert trade_id == 123
+
+    # Check that it extracted 'early_momentum' and '1'
+    upsert_call = cur.execute.call_args_list[0]
+    assert upsert_call[0][1][0] == "early_momentum"
+    assert upsert_call[0][1][1] == "1"
+
+    # Check that LONG was passed to the 4th SQL placeholder
+    insert_call = cur.execute.call_args_list[1]
+    # placeholders: strategy_id, symbol, exchange, side, entry_order_id, ...
+    assert insert_call[0][1][3] == "long"
+
+
+@pytest.mark.asyncio
+@patch("psycopg.AsyncConnection.connect")
+async def test_open_trade_pump_caller_preserves_context(mock_connect) -> None:
+    conn, cur = _mock_conn([(1,), (123,)])
+    mock_connect.return_value = conn
+
+    # Pump caller passes strategy_version directly and market_quality
+    setup = {
+        "pump_pct": 5.0,
+        "strategy_version": "pump_short_v1_market_quality",
+        "market_quality": {"bid_impact_bps": 1.5, "ask_impact_bps": 2.0},
+    }
+
+    await journal.open_trade(
+        "dummy_url",
+        base="ETH",
+        exchange="binance",
+        side="short",
+        order_id="456",
+        size_usd=50.0,
+        leverage=1,
+        entry_price=2000.0,
+        setup_context=setup,
+    )
+
+    upsert_call = cur.execute.call_args_list[0]
+    assert upsert_call[0][1][0] == "pump_short"
+    assert upsert_call[0][1][1] == "1_market_quality"
+
+    insert_call = cur.execute.call_args_list[1]
+    assert insert_call[0][1][3] == "short"
+
+    # The setup_context JSON is the 13th parameter (index 12)
+    saved_context = json.loads(insert_call[0][1][13])
+    assert saved_context["pump_pct"] == 5.0
+    assert saved_context["market_quality"]["bid_impact_bps"] == 1.5
+
+
+@pytest.mark.asyncio
+@patch("psycopg.AsyncConnection.connect")
+async def test_open_trade_strategy_version_exceeds_limit(mock_connect) -> None:
+    with pytest.raises(ValueError, match="strategy_version exceeds 16 chars"):
+        await journal.open_trade(
+            "dummy",
+            base="BTC",
+            exchange="bybit",
+            side="long",
+            order_id="1",
+            size_usd=1.0,
+            leverage=1,
+            entry_price=1.0,
+            setup_context={"strategy_version": "12345678901234567"},  # 17 chars
+        )
+    mock_connect.assert_not_awaited()

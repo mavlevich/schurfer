@@ -243,6 +243,7 @@ async def _complete_open(incident: Incident, price: float, rdb: Any, cfg: Config
         cfg.db_url,
         base=incident.base,
         exchange=incident.exchange,
+        side=side,
         order_id=incident.order_id,
         size_usd=size_usd,
         leverage=leverage,

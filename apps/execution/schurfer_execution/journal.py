@@ -19,6 +19,8 @@ log = structlog.get_logger()
 
 _STRATEGY_NAME = "pump_short"
 _STRATEGY_VERSION = "1"
+_STRATEGY_NAME_MAX_LEN = 64
+_STRATEGY_VERSION_MAX_LEN = 16
 
 _UPSERT_STRATEGY = """
 INSERT INTO app.strategies (name, version, description)
@@ -34,7 +36,7 @@ INSERT INTO app.trades (
     entry_price, entry_at, entry_slippage_bps, exit_slippage_bps,
     accounting_version, accounting_status, status, setup_context
 ) VALUES (
-    %s, %s, %s, 'perp', 'short', %s, %s, %s, %s, %s, %s, %s, %s, %s, 'open', %s
+    %s, %s, %s, 'perp', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'open', %s
 )
 RETURNING id
 """
@@ -162,17 +164,61 @@ def accounting_contract(
     )
 
 
+def strategy_identity(setup_context: dict[str, Any]) -> tuple[str, str]:
+    """Return the normalized strategy registry identity without performing I/O."""
+    explicit_name = setup_context.get("strategy_name")
+    version_value = setup_context.get("strategy_version", _STRATEGY_VERSION)
+    strategy_value = setup_context.get("strategy")
+
+    if explicit_name is not None and not isinstance(explicit_name, str):
+        raise ValueError("strategy_name must be a string")
+    if not isinstance(version_value, str):
+        raise ValueError("strategy_version must be a string")
+    if strategy_value is not None and not isinstance(strategy_value, str):
+        raise ValueError("strategy must be a string")
+
+    strategy_name = explicit_name if explicit_name is not None else _STRATEGY_NAME
+    strategy_version = version_value
+
+    # New strategies pass a canonical "name_vN" value in strategy. The pump
+    # caller predates that contract and passes the same identifier in
+    # strategy_version, so parse it only when no explicit name was supplied.
+    strategy_identifier = strategy_value
+    if strategy_identifier is None and explicit_name is None and "_v" in strategy_version:
+        strategy_identifier = strategy_version
+    if strategy_identifier is not None:
+        if "_v" not in strategy_identifier:
+            raise ValueError("strategy must use the name_vN format")
+        strategy_name, strategy_version = strategy_identifier.rsplit("_v", 1)
+
+    strategy_name = strategy_name.strip()
+    strategy_version = strategy_version.strip()
+    if not strategy_name or not strategy_version:
+        raise ValueError("strategy name and version must not be empty")
+    if len(strategy_name) > _STRATEGY_NAME_MAX_LEN:
+        raise ValueError(f"strategy_name exceeds {_STRATEGY_NAME_MAX_LEN} chars: {strategy_name}")
+    if len(strategy_version) > _STRATEGY_VERSION_MAX_LEN:
+        raise ValueError(
+            f"strategy_version exceeds {_STRATEGY_VERSION_MAX_LEN} chars: {strategy_version}"
+        )
+    return strategy_name, strategy_version
+
+
 async def open_trade(
     db_url: str,
     *,
     base: str,
     exchange: str,
+    side: str,
     order_id: str | None,
     size_usd: float,
     leverage: int,
     entry_price: float,
     setup_context: dict[str, Any],
 ) -> int | None:
+    if side not in ("long", "short"):
+        raise ValueError(f"invalid side: {side}")
+    strategy_name, strategy_version = strategy_identity(setup_context)
     try:
         (
             accounting_version,
@@ -185,10 +231,11 @@ async def open_trade(
             "accounting_version": accounting_version,
         }
         aconn = await psycopg.AsyncConnection.connect(db_url)
+
         async with aconn, aconn.cursor() as cur:
             await cur.execute(
                 _UPSERT_STRATEGY,
-                (_STRATEGY_NAME, _STRATEGY_VERSION, "Auto-short on pump score"),
+                (strategy_name, strategy_version, f"Auto-registered strategy: {strategy_name}"),
             )
             row = await cur.fetchone()
             if row is None:
@@ -201,6 +248,7 @@ async def open_trade(
                     strategy_id,
                     f"{base.upper()}/USDT:USDT",
                     exchange,
+                    side,
                     order_id,
                     size_usd,
                     leverage,
