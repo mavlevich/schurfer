@@ -173,13 +173,14 @@ async def run_early_momentum_trigger(exchanges: dict[str, Any], rdb: Any, cfg: C
 
                 if last_price > ceiling:
                     # Deduplicate: check if a trade is already open
-                    open_id = await journal.find_open_trade_id(
-                        cfg.db_url, exchange=exchange, base=base
-                    )
-                    if open_id:
-                        log.info("early_momentum.already_open", base=base)
-                        await rdb.delete(key)
-                        continue
+                    if cfg.db_url:
+                        open_id = await journal.find_open_trade_id(
+                            cfg.db_url, exchange=exchange, base=base
+                        )
+                        if open_id:
+                            log.info("early_momentum.already_open", base=base)
+                            await rdb.delete(key)
+                            continue
 
                     # Breakout!
 
