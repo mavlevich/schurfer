@@ -197,6 +197,60 @@ def test_verdict_shows_data_and_shuffle_reasons_together_even_when_weeks_are_ins
     ]
 
 
+def test_verdict_does_not_hide_negative_test_ev_behind_insufficient_weeks() -> None:
+    # Production-data regression (2026-08-21): 83 fillable episodes across
+    # 44 assets had negative untouched-test mean net EV and negative
+    # leave-one-asset-out means, but only one UTC week.  The negative test
+    # is a hard failure; the missing temporal diversity remains visible as
+    # an additional reason rather than replacing that failure with a bare
+    # ``insufficient_data`` verdict.
+    sensitivity = {
+        "leave_one_week_out": (),
+        "leave_one_asset_out": (("BTCUSDT", -0.2),),
+    }
+    verdict, reasons = _verdict(
+        best_validation_cell=_POSITIVE_VALIDATION_CELL,
+        candidate_test_economics=_economics(
+            mean_net_return_pct=-0.235,
+            fillable_distinct_utc_weeks=1,
+            sensitivity=sensitivity,
+        ),
+        shuffled_control=_SIGNIFICANT_CONTROL,
+    )
+    assert verdict == "FAIL"
+    assert reasons == [
+        "test_net_ev_non_positive",
+        "fails_leave_one_asset_out",
+        "fewer_than_four_distinct_utc_weeks",
+    ]
+
+
+def test_verdict_does_not_hard_fail_negative_ev_below_the_episode_floor() -> None:
+    verdict, reasons = _verdict(
+        best_validation_cell=_POSITIVE_VALIDATION_CELL,
+        candidate_test_economics=_economics(
+            fillable_episodes=3,
+            mean_net_return_pct=-5.0,
+        ),
+        shuffled_control=_SIGNIFICANT_CONTROL,
+    )
+    assert verdict == "insufficient_data"
+    assert reasons == ["insufficient_test_sample"]
+
+
+def test_verdict_does_not_hard_fail_negative_ev_below_the_asset_floor() -> None:
+    verdict, reasons = _verdict(
+        best_validation_cell=_POSITIVE_VALIDATION_CELL,
+        candidate_test_economics=_economics(
+            fillable_distinct_assets=1,
+            mean_net_return_pct=-5.0,
+        ),
+        shuffled_control=_SIGNIFICANT_CONTROL,
+    )
+    assert verdict == "insufficient_data"
+    assert reasons == ["fewer_than_min_fillable_assets"]
+
+
 def test_verdict_is_insufficient_data_below_min_fillable_assets() -> None:
     verdict, reasons = _verdict(
         best_validation_cell=_POSITIVE_VALIDATION_CELL,
