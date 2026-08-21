@@ -201,6 +201,75 @@ async def test_notify_close_includes_dollar_amount_when_resolved() -> None:
     assert "16\\.70" in text
 
 
+async def test_notify_open_shows_strategy_and_margin() -> None:
+    with patch("schurfer_execution.notify.httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(return_value=MagicMock(status_code=200))
+        mock_client_cls.return_value = mock_client
+
+        await notify_open(
+            "tok",
+            "123",
+            strategy="early_momentum_v2",
+            side="long",
+            base="BEAT",
+            exchange="bybit",
+            size_usd=100.0,
+            leverage=5,
+            price=0.00239,
+            score=100,
+            paper=True,
+        )
+
+    text = mock_client.post.call_args.kwargs["json"]["text"]
+    assert "early\\_momentum\\_v2" in text
+    assert "LONG" in text
+    # margin = 100 / 5 = 20
+    assert "20\\.00" in text
+
+
+async def test_notify_close_shows_strategy_costs_and_accounting_status() -> None:
+    with patch("schurfer_execution.notify.httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(return_value=MagicMock(status_code=200))
+        mock_client_cls.return_value = mock_client
+
+        await notify_close(
+            "tok",
+            "123",
+            strategy="early_momentum_v2",
+            side="long",
+            base="BEAT",
+            exchange="bybit",
+            entry_price=100.0,
+            exit_price=109.73,
+            pnl_pct=9.73,
+            pnl_usd=9.73,
+            gross_pnl_pct=10.0,
+            pnl_kind="modeled_net",
+            size_usd=100.0,
+            margin_usd=20.0,
+            accounting_status="complete",
+            fees_usd=0.2,
+            funding_usd=0.02,
+            slippage_usd=0.07,
+            reason="take_profit",
+            paper=True,
+        )
+
+    text = mock_client.post.call_args.kwargs["json"]["text"]
+    assert "early\\_momentum\\_v2" in text
+    assert "complete" in text
+    assert "Costs" in text
+    # Gross line shown separately from the modeled-net headline figure.
+    assert "10\\.00" in text
+    assert "20\\.00" in text
+
+
 async def test_notify_close_omits_dollar_amount_when_unresolved() -> None:
     # pnl_usd=None (default) -- position size could not be resolved. Must
     # show the percent alone, never a fabricated $0.00.

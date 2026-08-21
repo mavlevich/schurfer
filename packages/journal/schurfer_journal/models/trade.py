@@ -194,6 +194,8 @@ class TradeExitLiquidityObservation(Base, TimestampMixin):
     best_ask: Mapped[Decimal | None] = mapped_column(Numeric(30, 14), nullable=True)
     mid: Mapped[Decimal | None] = mapped_column(Numeric(30, 14), nullable=True)
     spread_bps: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
+    bid_vwap: Mapped[Decimal | None] = mapped_column(Numeric(30, 14), nullable=True)
+    bid_impact_bps: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
     ask_vwap: Mapped[Decimal | None] = mapped_column(Numeric(30, 14), nullable=True)
     ask_impact_bps: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
     contract_size: Mapped[Decimal | None] = mapped_column(Numeric(24, 12), nullable=True)

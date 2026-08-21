@@ -9,7 +9,6 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 import structlog
-from schurfer_performance import PAPER_ACCOUNTING_VERSION, calculate_performance
 
 from . import exit as exit_module
 from . import journal, liquidity, notify, symbols
@@ -52,12 +51,14 @@ async def open_paper(
         _accounting_status,
         entry_slippage_bps,
         exit_slippage_bps,
-    ) = journal.accounting_contract(paper_context)
+    ) = journal.accounting_contract(paper_context, side=side)
+    strategy = setup_context.get("strategy", "unknown")
     entry = {
         "base": instrument.base,
         "symbol": instrument.symbol,
         "exchange": instrument.exchange,
         "side": side,
+        "strategy": strategy,
         "entry_price": price,
         "size_usd": size_usd,
         "leverage": leverage,
@@ -93,6 +94,7 @@ async def open_paper(
     if creds:
         await notify.notify_open(
             *creds,
+            strategy=strategy,
             base=instrument.base,
             exchange=instrument.exchange,
             size_usd=size_usd,
@@ -136,54 +138,43 @@ async def close_paper(
             )
     entry_price = float(pos["entry_price"])
     side = pos.get("side", "short")
+    strategy = pos.get("strategy", "unknown")
+    leverage_raw = pos.get("leverage")
 
-    pnl_pct = (
+    # Fallback figures for the case journal.close_trade never runs at all (no
+    # DB, no trade_id, or exchange_client unavailable). Once close_trade does
+    # run, its CloseOutcome below is the single source of truth for both the
+    # DB row and this notification — never recomputed independently, so the
+    # two can never diverge.
+    gross_pnl_pct = (
         (entry_price - current_price) / entry_price * 100
         if side == "short"
         else (current_price - entry_price) / entry_price * 100
     )
     accounting_status = "legacy"
-    displayed_pnl_pct = pnl_pct
-    # Mirrors displayed_pnl_pct's own fallback: modeled net when the full
-    # accounting resolved (status "complete"), otherwise the same raw,
-    # unmodeled gross figure the "Gross PnL" label already promises below
-    # (never a mix of net percent with gross dollars or vice versa). A
-    # position stored before size tracking existed has no size_usd at all —
+    displayed_pnl_pct = gross_pnl_pct
+    # A position stored before size tracking existed has no size_usd at all —
     # None stays None rather than fabricating a dollar figure.
     size_usd_raw = pos.get("size_usd")
-    displayed_pnl_usd = float(size_usd_raw) * pnl_pct / 100 if size_usd_raw is not None else None
-    accounting_version = pos.get("accounting_version")
-    if accounting_version == PAPER_ACCOUNTING_VERSION:
-        accounting = calculate_performance(
-            position_usd=float(pos["size_usd"]),
-            entry_price=entry_price,
-            exit_price=current_price,
-            side=side,
-            duration_minutes=max(0.0, (time.time() - float(pos["opened_at"])) / 60),
-            entry_slippage_bps=pos.get("entry_slippage_bps"),
-            exit_slippage_bps=pos.get("exit_slippage_bps"),
-        )
-        accounting_status = accounting.status
-        if accounting.net_return_pct is not None:
-            displayed_pnl_pct = accounting.net_return_pct
-        if accounting.net_pnl_usd is not None:
-            displayed_pnl_usd = accounting.net_pnl_usd
+    displayed_pnl_usd = (
+        float(size_usd_raw) * gross_pnl_pct / 100 if size_usd_raw is not None else None
+    )
+    fees_usd: float | None = None
+    funding_usd: float | None = None
+    slippage_usd: float | None = None
 
-    # Paper trades are deliberately NOT routed through journal.try_commit_close:
-    # that mechanism writes a journal:pending_close marker that tracker.py
-    # treats as "a real close is outstanding" and withholds the trading-ready
-    # lease for. A stuck paper-trade journal write must never block real
-    # order placement. Best-effort commit + log is enough here — paper stats
-    # are informational, not part of the daily-loss circuit breaker.
     trade_id_key = _TRADE_ID_KEY.format(exchange=exchange, base=base.upper())
     trade_id_raw = await rdb.get(trade_id_key)
     exit_observation: dict[str, Any] | None = None
+    exit_vwap: float | None = None
+    fresh_exit_slippage_bps: float | None = None
     if trade_id_raw and cfg.db_url and exchange_client is not None and symbol is not None:
         try:
-            exit_observation = await _capture_exit_liquidity(
+            exit_observation, exit_vwap, fresh_exit_slippage_bps = await _capture_exit_liquidity(
                 exchange_client,
                 symbol=symbol,
                 exchange=exchange,
+                side=side,
                 requested_notional_usd=float(pos["size_usd"]),
             )
         except Exception as exc:
@@ -196,44 +187,99 @@ async def close_paper(
                 err=str(exc),
             )
 
-    await rdb.delete(paper_key(exchange, base))
+    # exit_vwap (when available) already reflects the real cost of filling
+    # this size, the same way entry_vwap does at open time -- use it as the
+    # accounting/display exit price so entry and exit are priced the same
+    # way (never entry=VWAP paired with exit=mark, which would make the
+    # Entry->Exit line in Telegram misleading about what actually happened).
+    # fresh_exit_slippage_bps is already 0.0 in that case, never a second
+    # charge on top of a price that already paid it.
+    exit_price_for_accounting = exit_vwap if exit_vwap is not None else current_price
 
     if trade_id_raw and cfg.db_url:
         trade_id = int(trade_id_raw)
-        committed = await journal.close_trade(
+        outcome = await journal.close_trade(
             cfg.db_url,
             trade_id=trade_id,
             exit_order_id=None,
-            exit_price=current_price,
+            exit_price=exit_price_for_accounting,
             reason=reason,
+            fresh_exit_slippage_bps=fresh_exit_slippage_bps,
+            exit_observation=exit_observation,
         )
-        if exit_observation is not None:
-            await journal.record_exit_liquidity(
-                cfg.db_url,
-                trade_id=trade_id,
-                observation=exit_observation,
-            )
-        if committed:
-            await journal.delete_trade_id_if_matches(rdb, trade_id_key, trade_id)
-        else:
+        if not outcome.committed:
+            # Regression (colleague review): the Redis position key used to
+            # be deleted unconditionally before this call. A DB outage then
+            # meant the trade's row stayed "open" forever (never retried --
+            # paper trades deliberately skip journal.try_commit_close's
+            # pending-close/retry machinery, see below) while the position
+            # simultaneously vanished from what _tick monitors, silently
+            # orphaning it and permanently blocking re-entry on this symbol
+            # (find_open_trade_id would see it "open" forever). Leaving the
+            # position untouched here means the next monitor tick naturally
+            # re-evaluates and retries the close instead.
             log.error(
                 "paper.journal_close_failed",
                 symbol=symbol,
                 exchange=exchange,
                 trade_id=trade_id,
             )
+            return
+        await journal.delete_trade_id_if_matches(rdb, trade_id_key, trade_id)
+        if outcome.accounting_status is not None:
+            accounting_status = outcome.accounting_status
+        if outcome.gross_pnl_pct is not None:
+            gross_pnl_pct = outcome.gross_pnl_pct
+        if outcome.gross_pnl_usd is not None:
+            displayed_pnl_usd = outcome.gross_pnl_usd
+        # net when fully resolved, else the same gross figure already
+        # labeled "Gross PnL" below -- never a mix of a net percent with
+        # a gross dollar amount or vice versa. Falling back to the
+        # pre-computed pos-based estimate (not a bare None) covers the
+        # idempotent already-closed retry, where CloseOutcome carries no
+        # fresh accounting at all.
+        displayed_pnl_pct = (
+            outcome.net_pnl_pct if outcome.net_pnl_pct is not None else gross_pnl_pct
+        )
+        if outcome.net_pnl_usd is not None:
+            displayed_pnl_usd = outcome.net_pnl_usd
+        fees_usd = outcome.fees_usd
+        funding_usd = outcome.funding_usd
+        slippage_usd = outcome.slippage_usd
+
+    # Paper trades are deliberately NOT routed through journal.try_commit_close:
+    # that mechanism writes a journal:pending_close marker that tracker.py
+    # treats as "a real close is outstanding" and withholds the trading-ready
+    # lease for. A stuck paper-trade journal write must never block real
+    # order placement. Reaching here means either there was nothing to
+    # commit (no DB/trade_id) or the commit above already succeeded -- safe
+    # to stop tracking this position and report the close.
+    await rdb.delete(paper_key(exchange, base))
 
     creds = notify.credentials(cfg)
     if creds:
         await notify.notify_close(
             *creds,
+            strategy=strategy,
             base=base,
             exchange=exchange,
+            side=side,
             entry_price=entry_price,
-            exit_price=current_price,
+            exit_price=exit_price_for_accounting,
+            size_usd=size_usd_raw,
+            margin_usd=(
+                float(size_usd_raw) / float(leverage_raw)
+                if size_usd_raw is not None and leverage_raw
+                else None
+            ),
+            gross_pnl_pct=gross_pnl_pct,
             pnl_pct=displayed_pnl_pct,
             pnl_usd=displayed_pnl_usd,
             pnl_kind="modeled_net" if accounting_status == "complete" else "gross",
+            accounting_status=accounting_status,
+            fees_usd=fees_usd,
+            funding_usd=funding_usd,
+            slippage_usd=slippage_usd,
             reason=reason,
             paper=True,
         )
@@ -242,7 +288,7 @@ async def close_paper(
         "paper.closed",
         symbol=symbol,
         exchange=exchange,
-        gross_pnl_pct=round(pnl_pct, 2),
+        gross_pnl_pct=round(gross_pnl_pct, 2),
         displayed_pnl_pct=round(displayed_pnl_pct, 2),
         accounting_status=accounting_status,
         exit_liquidity_status=(
@@ -257,44 +303,67 @@ async def _capture_exit_liquidity(
     *,
     symbol: str,
     exchange: str,
+    side: str,
     requested_notional_usd: float,
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], float | None, float | None]:
+    """Capture a fresh close-time book and pick the side that actually prices
+    this position's exit (bid for LONG, ask for SHORT — see
+    liquidity.book_side_for). Both sides are recorded on the returned
+    observation for evidence.
+
+    Returns (observation, exit_vwap, fresh_exit_slippage_bps). exit_vwap is
+    the price the caller should actually book the exit at — it already
+    reflects the real cost of filling requested_notional_usd on that side,
+    the same way early_momentum.py's entry_vwap does. fresh_exit_slippage_bps
+    is therefore 0.0 exactly when exit_vwap is available (that cost is
+    already inside the price — charging it again in calculate_performance
+    would double count it), or None when the book couldn't be read or didn't
+    have enough visible depth, so net accounting correctly falls back to
+    incomplete rather than guessing.
+    """
     capture = await liquidity.capture_snapshot(
         exchange_client,
         symbol,
         required_depth_usd=requested_notional_usd,
     )
     snapshot = capture.snapshot or {}
-    target_key = liquidity.depth_target_key(requested_notional_usd)
-    ask_impacts = snapshot.get("ask_impact_bps")
-    ask_vwaps = snapshot.get("ask_vwap")
-    ask_filled = snapshot.get("ask_filled_usd")
-    ask_impact = ask_impacts.get(target_key) if isinstance(ask_impacts, dict) else None
-    ask_vwap = ask_vwaps.get(target_key) if isinstance(ask_vwaps, dict) else None
-    filled_notional = ask_filled.get(target_key) if isinstance(ask_filled, dict) else None
+    bid_vwap, bid_impact, bid_filled = liquidity.quote_for_book_side(
+        snapshot, book_side="bid", target_usd=requested_notional_usd
+    )
+    ask_vwap, ask_impact, ask_filled = liquidity.quote_for_book_side(
+        snapshot, book_side="ask", target_usd=requested_notional_usd
+    )
+    exit_book_side = liquidity.book_side_for(position_side=side, leg="exit")
+    exit_vwap, exit_filled = (
+        (bid_vwap, bid_filled) if exit_book_side == "bid" else (ask_vwap, ask_filled)
+    )
     status = capture.status
     error = capture.error
-    if status == "sampled" and ask_impact is None:
-        status = "insufficient_ask_depth"
-        error = "visible ask depth cannot fill requested notional"
-    return {
+    if status == "sampled" and exit_vwap is None:
+        status = f"insufficient_{exit_book_side}_depth"
+        error = f"visible {exit_book_side} depth cannot fill requested notional"
+    observation = {
         "observed_at": datetime.fromtimestamp(capture.observed_at_ms / 1000, tz=UTC),
         "exchange": exchange,
         "symbol": symbol,
         "market_id": snapshot.get("market_id"),
         "status": status,
         "requested_notional_usd": requested_notional_usd,
-        "filled_notional_usd": filled_notional,
+        "filled_notional_usd": exit_filled,
         "best_bid": snapshot.get("best_bid"),
         "best_ask": snapshot.get("best_ask"),
         "mid": snapshot.get("mid"),
         "spread_bps": snapshot.get("spread_bps"),
+        "bid_vwap": bid_vwap,
+        "bid_impact_bps": bid_impact,
         "ask_vwap": ask_vwap,
         "ask_impact_bps": ask_impact,
         "contract_size": snapshot.get("contract_size"),
         "latency_ms": capture.latency_ms,
         "error": error,
     }
+    fresh_exit_slippage_bps = 0.0 if exit_vwap is not None else None
+    return observation, exit_vwap, fresh_exit_slippage_bps
 
 
 async def run_paper_monitor(

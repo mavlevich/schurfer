@@ -976,6 +976,41 @@ Protocols`, no error, no reconnect) but zero application frames ever
    "What this PR does not do" (no lifecycle/reconnect counters, no gap
    detector, Binance only).
 
+   **Causal Early Momentum x Momentum Flow ensemble study (planned after clean
+   `early_momentum_v2` accounting begins, `analysis/alt-long-momentum-ensemble-shadow-v1`):**
+   keep both parent strategies frozen and independently reportable. They detect
+   related but non-identical stages of the same broad `alt_long_momentum` risk
+   family: Momentum Flow reacts to cross-sectional OI/buy-flow acceleration,
+   while Early Momentum waits for contained accumulation followed by a price
+   breakout. A preliminary same-venue timing read on `2026-08-21` found only 19
+   Early entries with a Momentum Flow entry within 60 minutes (19/83 Early
+   entries and 19/209 opened Momentum probes), so neither parent should be
+   replaced by a hard AND rule. The small overlapping slice looked stronger,
+   but it is exploratory and cannot authorize sizing or capital.
+
+   Build a separate prospective shadow contract with four mutually exclusive
+   causal lanes: `momentum_only`, `early_breakout_only`,
+   `early_armed_then_flow`, and `flow_then_breakout_scale_in`. Persist the Early
+   WATCH/armed event before any later confirmation, use canonical instrument
+   identity plus `episode_id`, and evaluate confirmation windows of 15/30/60
+   minutes. Every lane must use the quote available only after its own decision;
+   in particular, a later breakout may scale a position opened by Momentum Flow,
+   but must never be used to assign the earlier Momentum Flow fill to a strategy
+   that could not yet know the breakout would occur. Record base and scale-in
+   legs separately, including executable VWAP, fees, funding, MFE/MAE, occupancy,
+   and missed/rejected opportunities.
+
+   Treat both parents and the ensemble as one correlated portfolio-risk cluster,
+   not three independent allocations. Until the study establishes incremental
+   value, a same-symbol second signal either confirms the existing episode or is
+   explicitly rejected; it must not silently open another full-size position.
+   Compare incremental net EV, drawdown, opportunity loss, capital occupancy,
+   and concentration against each frozen parent on the same forward window.
+   Promotion requires a new untouched cohort and the normal diversity/capacity
+   gates. This remains a continuation study of the existing early-momentum/
+   momentum-flow hypotheses unless and until a genuinely new selector is entered
+   in the discovery ledger.
+
 9. **Register at most one Confirmation shadow if the discovery gate passes.** Freeze
    one primary lookback, eligibility rule, entry quote, stop, bounded exit horizons,
    cost model, minimum sample/diversity, and no-go rule on a new untouched cohort. The

@@ -44,6 +44,7 @@ async def notify_open(
     chat_id: str,
     *,
     side: str = "short",
+    strategy: str = "unknown",
     base: str,
     exchange: str,
     size_usd: float,
@@ -53,11 +54,16 @@ async def notify_open(
     paper: bool,
 ) -> None:
     tag = "📄 PAPER" if paper else "⚡ TRADE"
+    margin_usd = size_usd / leverage if leverage else None
+    size_line = f"Notional: ${_esc(str(size_usd))} x{_esc(str(leverage))}"
+    if margin_usd is not None:
+        size_line += f" \\(margin ≈ ${_esc(f'{margin_usd:.2f}')}\\)"
     text = (
         f"*{_esc(tag)}: {_esc(side.upper())} {_esc(base)}*\n"
+        f"Strategy: {_esc(strategy)}\n"
         f"Exchange: {_esc(exchange)}\n"
         f"Entry: `{_esc(str(price))}`\n"
-        f"Size: ${_esc(str(size_usd))} x{_esc(str(leverage))}\n"
+        f"{size_line}\n"
         f"Score: {_esc(str(score))}"
     )
     await _send(token, chat_id, text)
@@ -69,6 +75,8 @@ async def notify_close(
     *,
     base: str,
     exchange: str,
+    side: str = "short",
+    strategy: str = "unknown",
     entry_price: float,
     exit_price: float,
     pnl_pct: float,
@@ -76,6 +84,13 @@ async def notify_close(
     paper: bool,
     pnl_kind: str = "gross",
     pnl_usd: float | None = None,
+    gross_pnl_pct: float | None = None,
+    size_usd: float | None = None,
+    margin_usd: float | None = None,
+    accounting_status: str | None = None,
+    fees_usd: float | None = None,
+    funding_usd: float | None = None,
+    slippage_usd: float | None = None,
 ) -> None:
     tag = "📄 PAPER" if paper else "🏁 CLOSED"
     emoji = "✅" if pnl_pct >= 0 else "🔴"
@@ -89,14 +104,33 @@ async def notify_close(
         if pnl_usd is not None
         else f"*{_esc(_fmt_pnl(pnl_pct))}*"
     )
-    text = (
-        f"*{_esc(tag)}: {base} {emoji}*\n"
-        f"Exchange: {_esc(exchange)}\n"
-        f"Entry→Exit: `{_esc(str(entry_price))}` → `{_esc(str(exit_price))}`\n"
-        f"{_esc(pnl_label)}: {pnl_value}\n"
-        f"Reason: {_esc(reason)}"
-    )
-    await _send(token, chat_id, text)
+    lines = [
+        f"*{_esc(tag)}: {_esc(side.upper())} {base} {emoji}*",
+        f"Strategy: {_esc(strategy)}",
+        f"Exchange: {_esc(exchange)}",
+        f"Entry→Exit: `{_esc(str(entry_price))}` → `{_esc(str(exit_price))}`",
+    ]
+    if size_usd is not None:
+        size_line = f"Notional: ${_esc(str(size_usd))}"
+        if margin_usd is not None:
+            size_line += f" \\(margin ≈ ${_esc(f'{margin_usd:.2f}')}\\)"
+        lines.append(size_line)
+    if gross_pnl_pct is not None and pnl_kind == "modeled_net":
+        lines.append(f"Gross PnL: {_esc(_fmt_pnl(gross_pnl_pct))}")
+    lines.append(f"{_esc(pnl_label)}: {pnl_value}")
+    if fees_usd is not None or funding_usd is not None or slippage_usd is not None:
+        parts = []
+        if fees_usd is not None:
+            parts.append(f"fees {_esc(_fmt_usd(-fees_usd))}")
+        if funding_usd is not None:
+            parts.append(f"funding {_esc(_fmt_usd(-funding_usd))}")
+        if slippage_usd is not None:
+            parts.append(f"slippage {_esc(_fmt_usd(-slippage_usd))}")
+        lines.append(f"Costs: {', '.join(parts)}")
+    if accounting_status is not None:
+        lines.append(f"Accounting: {_esc(accounting_status)}")
+    lines.append(f"Reason: {_esc(reason)}")
+    await _send(token, chat_id, "\n".join(lines))
 
 
 async def notify_alert(token: str, chat_id: str, *, text: str) -> None:
