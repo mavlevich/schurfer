@@ -112,7 +112,45 @@ def episodes_for_threshold_segment(
     (`observations` must span since..until, never a pre-sliced segment),
     then return only the episodes whose complete feature-lookback/outcome-
     horizon footprint lands in `target_segment` -- purge-excluded episodes
-    are dropped here, not scored under any segment."""
+    are dropped here, not scored under any segment.
+
+    Declusters once and discards the other segments -- fine for a single
+    target segment, but a caller that needs more than one segment for the
+    same threshold pair (e.g. streaming all three at once per symbol)
+    should call `episodes_for_threshold_all_segments` instead and avoid
+    redeclustering the same minutes per segment."""
+    by_segment = episodes_for_threshold_all_segments(
+        observations,
+        price_drop_trigger_pct=price_drop_trigger_pct,
+        oi_drop_trigger_pct=oi_drop_trigger_pct,
+        boundaries=boundaries,
+        feature_lookback_minutes=feature_lookback_minutes,
+        outcome_horizon_minutes=outcome_horizon_minutes,
+        recovery_price_pct=recovery_price_pct,
+        recovery_oi_pct=recovery_oi_pct,
+        cooldown_minutes=cooldown_minutes,
+    )
+    return by_segment[target_segment]
+
+
+def episodes_for_threshold_all_segments(
+    observations: Sequence[MinuteObservation],
+    *,
+    price_drop_trigger_pct: float,
+    oi_drop_trigger_pct: float,
+    boundaries: CohortBoundaries,
+    feature_lookback_minutes: int,
+    outcome_horizon_minutes: int,
+    recovery_price_pct: float,
+    recovery_oi_pct: float,
+    cooldown_minutes: int,
+) -> dict[Segment, tuple[CascadeEpisode, ...]]:
+    """Same declustering as `episodes_for_threshold_segment`, but returns
+    every segment from the ONE declustering pass instead of discarding all
+    but one -- a caller that needs discovery, validation, AND test economics
+    for the same threshold pair (the streaming per-symbol path in
+    `liquidation_cascade_validation_report.py`) must not redecluster the
+    same minutes three times per pair."""
     states = to_minute_states(
         observations,
         price_drop_trigger_pct=price_drop_trigger_pct,
@@ -124,13 +162,12 @@ def episodes_for_threshold_segment(
         recovery_oi_pct=recovery_oi_pct,
         cooldown_minutes=cooldown_minutes,
     )
-    by_segment = classify_episodes(
+    return classify_episodes(
         episodes,
         boundaries=boundaries,
         feature_lookback_minutes=feature_lookback_minutes,
         outcome_horizon_minutes=outcome_horizon_minutes,
     )
-    return by_segment[target_segment]
 
 
 @dataclass(frozen=True)

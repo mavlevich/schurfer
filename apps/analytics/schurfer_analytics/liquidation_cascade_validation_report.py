@@ -6,11 +6,11 @@ which scored every triggering MINUTE independently (no episode grouping),
 had no train/validation/test split, and ignored fees/funding/slippage.
 
 Discovery -> validation -> untouched test, in that order:
-  1. `liquidation_cascade_grid_search.run_grid_search` sweeps entry
-     thresholds, purge-classified against the DISCOVERY segment.
+  1. Every default entry-threshold cell is scored, purge-classified,
+     against the DISCOVERY segment.
   2. The discovery shortlist is re-scored, unchanged, against the
-     VALIDATION segment (`rescore_cells`); the single best-on-validation
-     cell becomes the candidate.
+     VALIDATION segment; the single best-on-validation cell becomes the
+     candidate.
   3. The CANDIDATE's own economics on the untouched TEST segment -- never
      touched by the sweep or the validation re-score, and re-declustered
      under the candidate's OWN thresholds, not the production reference
@@ -27,6 +27,21 @@ This is still a simplification (a real reaction likely takes longer than
 one bar), disclosed rather than hidden: it is the earliest defensible
 proxy without a captured decision-latency measurement.
 
+Data is fetched via a SINGLE server-side-streamed query
+(`LiquidationCascadeRepository.stream_minute_observations`) and processed in
+bounded batches of `_SYMBOL_BATCH_SIZE` symbols at a time (`_stream_symbols`,
+`_process_batch`), never as one in-memory pass over the whole universe/
+window and never as one query per symbol (colleague review, 2026-08-21,
+twice: a real 12-hour/full-universe smoke run first found 371,520 rows
+fully materialized in Python (35s), then -- after moving to one query per
+symbol -- found wall time at 2:59 against only 35s of Python processing,
+almost all of it per-symbol round-trip overhead). Only the resulting
+episode-level `EpisodeReplay` objects -- not the raw per-minute price/OI
+series -- survive past each batch's own processing step;
+`build_validation_report` itself is a pure function over that already-
+accumulated, already-small data, kept separate from the streaming I/O
+specifically so it stays unit-testable without a database.
+
 Data-availability caveat (disclosed, not hidden): `timeseries.
 bybit_momentum_bars_1m` has a 35-day retention policy and clean, integrity-
 fixed universe capture only since roughly 2026-08-13/17 (ROADMAP.md's own
@@ -42,9 +57,9 @@ import asyncio
 import json
 import os
 import sys
-from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from itertools import product
 from statistics import fmean, median
 from typing import TYPE_CHECKING, Any
 
@@ -66,10 +81,10 @@ from .liquidation_cascade_grid_search import (
     MIN_FORMAL_SAMPLE_EPISODES,
     EpisodeReplay,
     GridCell,
+    GridSearchResult,
     MinuteObservation,
-    episodes_for_threshold_segment,
-    rescore_cells,
-    run_grid_search,
+    episodes_for_threshold_all_segments,
+    score_grid_cell,
     shortlist,
     to_minute_states,
 )
@@ -77,7 +92,7 @@ from .liquidation_cascade_repository import (
     LOOKBACK_MINUTES,
     OI_DROP_TRIGGER_PCT,
     PRICE_DROP_TRIGGER_PCT,
-    IdentityObservation,
+    IdentityLookup,
     LiquidationCascadeRepository,
     OutcomeBar,
     Quote,
@@ -105,6 +120,12 @@ PROJECTION_CAVEAT = (
     "depth is measured above that size, so $100/$250 assume unchanged fill "
     "quality -- see capacity_above_probe_usd"
 )
+PROJECTION_UNAVAILABLE_CAVEAT = (
+    "unavailable: this segment has not cleared the minimum sample/diversity "
+    "evidence floor (MIN_FORMAL_SAMPLE_EPISODES/MIN_DISTINCT_UTC_WEEKS/"
+    "MIN_FILLABLE_DISTINCT_ASSETS) -- a projection from too little data is "
+    "actively misleading, not just imprecise, so none is published"
+)
 RECOVERY_PRICE_PCT = 0.02
 RECOVERY_OI_PCT = 0.05
 COOLDOWN_MINUTES = 30
@@ -112,6 +133,10 @@ FEATURE_LOOKBACK_MINUTES = LOOKBACK_MINUTES
 OUTCOME_HORIZON_MINUTES = RUNTIME_EXIT_POLICY.max_hold_minutes
 # The earliest defensible causal entry instant -- see module doc.
 DECISION_LAG_MINUTES = 1
+_SCORED_SEGMENTS = (Segment.DISCOVERY, Segment.VALIDATION, Segment.TEST)
+_DEFAULT_GRID_CELLS = tuple(
+    product(DEFAULT_PRICE_DROP_THRESHOLDS_PCT, DEFAULT_OI_DROP_THRESHOLDS_PCT)
+)
 
 
 def _parse_args() -> argparse.Namespace:
@@ -154,32 +179,52 @@ def _worst_losing_streak(ordered_pnl_usd: Sequence[float]) -> int:
     return worst
 
 
-def _identity_stability(observations: tuple[IdentityObservation, ...]) -> dict[str, bool]:
-    """A symbol is stable only when EVERY identity observation seen for
-    that ONE symbol across the analysis window reports `identity_status ==
-    "ready"` and they all agree on one `identity_key` and one
-    `onboarded_at`. `catalog_version` is deliberately NOT used for this
-    comparison (colleague review, 2026-08-21): it hashes the WHOLE catalog
-    snapshot, so any new listing on either venue changes it for every
-    instrument, which would mark nearly every symbol unstable regardless of
-    whether THAT symbol itself was ever delisted or relisted. A genuine
-    delisted-and-relisted ticker under the same native market id instead
-    changes its OWN `onboarded_at` (see momentum_universe_identity_
-    repository.py's own module doc). A symbol with NO identity observation
-    at all is not presumed stable -- it stays absent from this map, and
-    callers must treat that the same as unresolved, never as an implicit
-    pass."""
-    by_symbol: dict[str, list[IdentityObservation]] = defaultdict(list)
-    for observation in observations:
-        by_symbol[observation.native_market_id].append(observation)
-    return {
-        symbol: (
-            all(row.identity_status == "ready" for row in rows)
-            and len({row.identity_key for row in rows}) == 1
-            and len({row.onboarded_at for row in rows}) == 1
+def _identity_stability(lookup: IdentityLookup, *, since: datetime) -> dict[str, bool]:
+    """A symbol is stable only when:
+
+    - a BASELINE observation exists (a relevant snapshot at or before
+      `since`) -- a symbol whose earliest evidence starts inside the window
+      has no confirmed pre-window identity and is unresolved, not presumed
+      stable;
+    - the symbol is present in EVERY relevant snapshot (baseline plus every
+      snapshot inside `[since, until)`) -- disappearing from one relevant
+      snapshot (a temporary delisting) is unresolved, not silently ignored;
+    - every observation for that symbol reports `identity_status ==
+      "ready"` and they all agree on one `identity_key` and one
+      `onboarded_at`.
+
+    `catalog_version` is deliberately NOT used for this comparison
+    (colleague review, 2026-08-21): it hashes the WHOLE catalog snapshot, so
+    any new listing on either venue changes it for every instrument, which
+    would mark nearly every symbol unstable regardless of whether THAT
+    symbol itself was ever delisted or relisted. A genuine delisted-and-
+    relisted ticker under the same native market id instead changes its OWN
+    `onboarded_at` (see momentum_universe_identity_repository.py's own
+    module doc). A symbol with NO identity observation at all is not
+    presumed stable -- it stays absent from this map, and callers must
+    treat that the same as unresolved, never as an implicit pass."""
+    relevant_count = len(lookup.relevant_snapshot_timestamps)
+    by_symbol: dict[str, list[Any]] = {}
+    for observation in lookup.observations:
+        by_symbol.setdefault(observation.native_market_id, []).append(observation)
+
+    stability: dict[str, bool] = {}
+    for symbol, rows in by_symbol.items():
+        has_baseline = any(row.captured_at <= since for row in rows)
+        present_in_every_relevant_snapshot = (
+            len({row.captured_at for row in rows}) == relevant_count
         )
-        for symbol, rows in by_symbol.items()
-    }
+        all_ready = all(row.identity_status == "ready" for row in rows)
+        one_identity_key = len({row.identity_key for row in rows}) == 1
+        one_onboarded_at = len({row.onboarded_at for row in rows}) == 1
+        stability[symbol] = (
+            has_baseline
+            and present_in_every_relevant_snapshot
+            and all_ready
+            and one_identity_key
+            and one_onboarded_at
+        )
+    return stability
 
 
 def _capital_occupancy(
@@ -283,14 +328,29 @@ def _segment_economics(
     }
 
     mean_return = fmean(resolved_returns) if resolved_returns else None
-    projected_monthly = {
-        str(int(notional)): (
-            mean_return * notional / 100 * (len(fillable) / window_days) * 30
-            if mean_return is not None and window_days > 0
-            else None
-        )
-        for notional in PROJECTION_NOTIONALS_USD
-    }
+    # A linear extrapolation from a handful of episodes and a few hours of
+    # window is actively misleading, not merely imprecise (colleague
+    # review, 2026-08-21: a real smoke run's 4-hour/1-week test sample
+    # projected to "$1,776/month" -- a number with no real portfolio
+    # constraints behind it, published as if it meant something). The
+    # projection is only computed once the segment clears the SAME sample/
+    # diversity floors the verdict gate itself requires; short of that it
+    # is explicitly unavailable, never a number computed from too little.
+    meets_evidence_floor = (
+        len(fillable) >= MIN_FORMAL_SAMPLE_EPISODES
+        and fillable_distinct_weeks >= MIN_DISTINCT_UTC_WEEKS
+        and fillable_distinct_assets >= MIN_FILLABLE_DISTINCT_ASSETS
+    )
+    projected_monthly: dict[str, float | None]
+    if meets_evidence_floor and mean_return is not None and window_days > 0:
+        projected_monthly = {
+            str(int(notional)): mean_return * notional / 100 * (len(fillable) / window_days) * 30
+            for notional in PROJECTION_NOTIONALS_USD
+        }
+        projection_caveat = PROJECTION_CAVEAT
+    else:
+        projected_monthly = {str(int(notional)): None for notional in PROJECTION_NOTIONALS_USD}
+        projection_caveat = PROJECTION_UNAVAILABLE_CAVEAT
 
     return SegmentEconomics(
         segment=segment.value,
@@ -313,41 +373,79 @@ def _segment_economics(
             [r.episode for r in fillable], window_days=window_days
         ),
         projected_monthly_pnl_usd=projected_monthly,
-        projected_monthly_pnl_caveat=PROJECTION_CAVEAT,
+        projected_monthly_pnl_caveat=projection_caveat,
         capacity_above_probe_usd=None,
         sensitivity=sensitivity,
     )
 
 
 def _verdict(
+    *,
+    best_validation_cell: GridCell | None,
     candidate_test_economics: SegmentEconomics | None,
     shuffled_control: ShuffledLabelControl,
 ) -> tuple[str, list[str]]:
-    if candidate_test_economics is None:
-        return "insufficient_data", ["no_validation_selected_candidate"]
-    reasons: list[str] = []
-    if candidate_test_economics.fillable_episodes < MIN_FORMAL_SAMPLE_EPISODES:
-        reasons.append("insufficient_test_sample")
-    if candidate_test_economics.fillable_distinct_utc_weeks < MIN_DISTINCT_UTC_WEEKS:
-        reasons.append("fewer_than_four_distinct_utc_weeks")
-    if candidate_test_economics.fillable_distinct_assets < MIN_FILLABLE_DISTINCT_ASSETS:
-        reasons.append("fewer_than_min_fillable_assets")
-    if reasons:
+    """A negative-mean validation cell is never promoted to candidate (see
+    `build_validation_report`'s own candidate-selection logic) -- but the
+    verdict must still say WHY, and the shuffled-label-control result is
+    always evaluated and appended alongside whatever other reason applies,
+    never gated behind the other checks passing first (colleague review,
+    2026-08-21: a real smoke run's validation-selected cell was negative
+    (mean -2.29%, PF 0.12) with a discovery shuffle p=0.692 -- pure noise
+    by both measures -- while its own untouched test segment happened to
+    look positive on four hours of data; that positive test number must
+    never be treated as a legitimate gate input for a candidate validation
+    already rejected)."""
+    shuffle_failed = (
+        shuffled_control.empirical_p_value is None
+        or shuffled_control.empirical_p_value >= SHUFFLED_LABEL_SIGNIFICANCE_THRESHOLD
+    )
+
+    if best_validation_cell is None:
+        reasons = ["no_validation_selected_candidate"]
+        if shuffle_failed:
+            reasons.append("shuffled_label_control_not_significant")
         return "insufficient_data", reasons
+
+    if (
+        best_validation_cell.mean_net_return_pct is None
+        or best_validation_cell.mean_net_return_pct <= 0
+    ):
+        reasons = ["validation_net_ev_non_positive"]
+        if shuffle_failed:
+            reasons.append("shuffled_label_control_not_significant")
+        return "FAIL", reasons
+
+    # A positive-validation cell was promoted to candidate; its own test
+    # economics must have been computed (see build_validation_report).
+    assert candidate_test_economics is not None
+
+    data_reasons: list[str] = []
+    if candidate_test_economics.fillable_episodes < MIN_FORMAL_SAMPLE_EPISODES:
+        data_reasons.append("insufficient_test_sample")
+    if candidate_test_economics.fillable_distinct_utc_weeks < MIN_DISTINCT_UTC_WEEKS:
+        data_reasons.append("fewer_than_four_distinct_utc_weeks")
+    if candidate_test_economics.fillable_distinct_assets < MIN_FILLABLE_DISTINCT_ASSETS:
+        data_reasons.append("fewer_than_min_fillable_assets")
+    if data_reasons:
+        if shuffle_failed:
+            data_reasons.append("shuffled_label_control_not_significant")
+        return "insufficient_data", data_reasons
+
+    fail_reasons: list[str] = []
     if (
         candidate_test_economics.mean_net_return_pct is None
         or candidate_test_economics.mean_net_return_pct <= 0
     ):
-        return "FAIL", ["test_net_ev_non_positive"]
+        fail_reasons.append("test_net_ev_non_positive")
     if any(value <= 0 for _, value in candidate_test_economics.sensitivity["leave_one_week_out"]):
-        return "FAIL", ["fails_leave_one_week_out"]
+        fail_reasons.append("fails_leave_one_week_out")
     if any(value <= 0 for _, value in candidate_test_economics.sensitivity["leave_one_asset_out"]):
-        return "FAIL", ["fails_leave_one_asset_out"]
-    if (
-        shuffled_control.empirical_p_value is None
-        or shuffled_control.empirical_p_value >= SHUFFLED_LABEL_SIGNIFICANCE_THRESHOLD
-    ):
-        return "FAIL", ["shuffled_label_control_not_significant"]
+        fail_reasons.append("fails_leave_one_asset_out")
+    if shuffle_failed:
+        fail_reasons.append("shuffled_label_control_not_significant")
+    if fail_reasons:
+        return "FAIL", fail_reasons
     return "PASS", []
 
 
@@ -360,7 +458,7 @@ def replay_from_minute(
     position_usd: float,
 ) -> tuple[float | None, str | None]:
     """Pure -- no I/O. `bars`/`quotes` must already be the bulk-fetched
-    series for `symbol` (see `_build_replay_cache`). Entry is modeled at
+    series for `symbol` (see `_stream_symbols`). Entry is modeled at
     `trigger_at + DECISION_LAG_MINUTES`, not at `trigger_at` itself -- see
     this module's own doc comment on why entering at the trigger bucket's
     own close is not causal."""
@@ -387,61 +485,6 @@ def replay_from_minute(
     if accounting.status != "complete" or accounting.net_return_pct is None:
         return None, f"unresolved_costs:{accounting.error or 'incomplete'}"
     return accounting.net_return_pct, None
-
-
-async def _build_replay_cache(
-    repository: LiquidationCascadeRepository,
-    observations: tuple[MinuteObservation, ...],
-    *,
-    position_usd: float,
-) -> dict[tuple[str, str, datetime], tuple[float | None, str | None]]:
-    """One BULK bars fetch and one BULK quotes fetch covering every symbol
-    that has at least one qualifying minute under the LOOSEST grid
-    threshold combination, instead of up to three round trips PER
-    qualifying minute (colleague review, 2026-08-21: the original per-
-    minute fetch could reach thousands of round trips across a full
-    analysis window). Every stricter combination's qualifying set --
-    including the production reference combo and every grid cell -- is a
-    strict subset of the loosest combo's qualifying set, so caching by
-    (exchange, symbol, bucket_start) here guarantees a cache hit for every
-    episode's own `trigger_at` that any cell or the reference rule could
-    ever produce."""
-    loosest_price = max(DEFAULT_PRICE_DROP_THRESHOLDS_PCT)
-    loosest_oi = max(DEFAULT_OI_DROP_THRESHOLDS_PCT)
-    loose_states = to_minute_states(
-        observations, price_drop_trigger_pct=loosest_price, oi_drop_trigger_pct=loosest_oi
-    )
-    qualifying = [minute for minute in loose_states if minute.is_qualifying]
-    if not qualifying:
-        return {}
-
-    exchange = qualifying[0].exchange
-    symbols = sorted({minute.symbol for minute in qualifying})
-    earliest_trigger = min(minute.bucket_start for minute in qualifying)
-    latest_trigger = max(minute.bucket_start for minute in qualifying)
-    fetch_since = earliest_trigger + timedelta(minutes=DECISION_LAG_MINUTES)
-    fetch_until = latest_trigger + timedelta(
-        minutes=DECISION_LAG_MINUTES + RUNTIME_EXIT_POLICY.max_hold_minutes + 5
-    )
-
-    bars_by_symbol = await repository.fetch_bars_for_symbols(
-        exchange=exchange, symbols=symbols, since=fetch_since, until=fetch_until
-    )
-    quotes = await repository.fetch_quotes_for_symbols(
-        exchange=exchange, symbols=symbols, since=fetch_since, until=fetch_until
-    )
-
-    cache: dict[tuple[str, str, datetime], tuple[float | None, str | None]] = {}
-    for minute in qualifying:
-        key = (minute.exchange, minute.symbol, minute.bucket_start)
-        cache[key] = replay_from_minute(
-            symbol=minute.symbol,
-            trigger_at=minute.bucket_start,
-            bars=bars_by_symbol.get(minute.symbol, ()),
-            quotes=quotes,
-            position_usd=position_usd,
-        )
-    return cache
 
 
 def _replays_from_cache(
@@ -503,11 +546,258 @@ def _candidate_ranking_key(cell: GridCell) -> tuple[bool, float]:
     return (False, -cell.mean_net_return_pct)
 
 
+@dataclass
+class Diagnostics:
+    """Surfaced in the report so a thin/broken run is visibly diagnosable
+    instead of silently producing a mathematically-honest-but-uninformative
+    zero (colleague review, 2026-08-21: the first real smoke run's zero
+    reference-rule result was correct arithmetic over a genuinely empty
+    identity lookup, and nothing in the report itself said so)."""
+
+    symbols_in_window: int = 0
+    symbols_with_data: int = 0
+    input_rows: int = 0
+    clean_lookback_rows: int = 0
+    loose_qualifying_minutes: int = 0
+    reference_qualifying_minutes: int = 0
+    reference_purge_excluded_episodes: int = 0
+    identity_ready_symbols: int = 0
+    identity_unresolved_symbols: int = 0
+
+    def as_dict(self) -> dict[str, int]:
+        return {
+            "symbols_in_window": self.symbols_in_window,
+            "symbols_with_data": self.symbols_with_data,
+            "input_rows": self.input_rows,
+            "clean_lookback_rows": self.clean_lookback_rows,
+            "loose_qualifying_minutes": self.loose_qualifying_minutes,
+            "reference_qualifying_minutes": self.reference_qualifying_minutes,
+            "reference_purge_excluded_episodes": self.reference_purge_excluded_episodes,
+            "identity_ready_symbols": self.identity_ready_symbols,
+            "identity_unresolved_symbols": self.identity_unresolved_symbols,
+        }
+
+
+@dataclass
+class _StreamedData:
+    reference_replays: dict[Segment, list[EpisodeReplay]] = field(
+        default_factory=lambda: {segment: [] for segment in _SCORED_SEGMENTS}
+    )
+    grid_replays: dict[tuple[float, float], dict[Segment, list[EpisodeReplay]]] = field(
+        default_factory=lambda: {
+            cell: {segment: [] for segment in _SCORED_SEGMENTS} for cell in _DEFAULT_GRID_CELLS
+        }
+    )
+    diagnostics: Diagnostics = field(default_factory=Diagnostics)
+
+
+# Symbols per batch: bounds peak memory to roughly this many symbols' own
+# raw minute series at once (colleague review, 2026-08-21: 25-50 is the
+# suggested range) while cutting the bars/quotes round-trip count from one
+# pair PER TRIGGERING SYMBOL to one pair per batch. Known, disclosed
+# tradeoff: a batch's combined bars/quotes fetch window spans from its
+# earliest to its latest qualifying trigger, so a symbol whose own triggers
+# are narrow can still pull back a wider row set than it alone needed if it
+# shares a batch with a symbol triggering far away in time -- acceptable
+# because the ROWS returned are still exactly-scoped per symbol (no cross-
+# symbol leakage), only the fetched TIME RANGE is shared.
+_SYMBOL_BATCH_SIZE = 50
+
+
+async def _process_batch(
+    repository: LiquidationCascadeRepository,
+    batch: list[tuple[str, tuple[MinuteObservation, ...]]],
+    *,
+    exchange: str,
+    boundaries: CohortBoundaries,
+    identity_stable: Mapping[str, bool],
+    position_usd: float,
+    accumulator: _StreamedData,
+) -> None:
+    """Processes up to `_SYMBOL_BATCH_SIZE` already-streamed symbols
+    together -- only the small `EpisodeReplay` objects it appends to
+    `accumulator` survive once this call returns; `batch`'s own raw
+    observations are released with it. See the module doc comment."""
+    diagnostics = accumulator.diagnostics
+    loosest_price = max(DEFAULT_PRICE_DROP_THRESHOLDS_PCT)
+    loosest_oi = max(DEFAULT_OI_DROP_THRESHOLDS_PCT)
+
+    # Pass 1: per symbol, find which minutes need a bar-by-bar replay at
+    # all (loosest combo -- every stricter combination, reference rule
+    # included, is a strict subset). No I/O yet.
+    per_symbol_qualifying: dict[str, list[Any]] = {}
+    for symbol, observations in batch:
+        diagnostics.symbols_with_data += 1
+        diagnostics.input_rows += len(observations)
+        diagnostics.clean_lookback_rows += sum(
+            1 for o in observations if o.price_complete and o.open_interest_complete
+        )
+        loose_states = to_minute_states(
+            observations, price_drop_trigger_pct=loosest_price, oi_drop_trigger_pct=loosest_oi
+        )
+        qualifying = [minute for minute in loose_states if minute.is_qualifying]
+        diagnostics.loose_qualifying_minutes += len(qualifying)
+        if qualifying:
+            per_symbol_qualifying[symbol] = qualifying
+
+    # Pass 2: ONE combined bars fetch and ONE combined quotes fetch for
+    # every symbol in this batch that has at least one qualifying minute --
+    # not one pair per symbol.
+    replay_cache: dict[tuple[str, str, datetime], tuple[float | None, str | None]] = {}
+    if per_symbol_qualifying:
+        trigger_symbols = list(per_symbol_qualifying)
+        earliest_trigger = min(
+            minute.bucket_start for minutes in per_symbol_qualifying.values() for minute in minutes
+        )
+        latest_trigger = max(
+            minute.bucket_start for minutes in per_symbol_qualifying.values() for minute in minutes
+        )
+        fetch_since = earliest_trigger + timedelta(minutes=DECISION_LAG_MINUTES)
+        fetch_until = latest_trigger + timedelta(
+            minutes=DECISION_LAG_MINUTES + RUNTIME_EXIT_POLICY.max_hold_minutes + 5
+        )
+        bars_by_symbol = await repository.fetch_bars_for_symbols(
+            exchange=exchange, symbols=trigger_symbols, since=fetch_since, until=fetch_until
+        )
+        quotes = await repository.fetch_quotes_for_symbols(
+            exchange=exchange, symbols=trigger_symbols, since=fetch_since, until=fetch_until
+        )
+        for symbol, minutes in per_symbol_qualifying.items():
+            bars = bars_by_symbol.get(symbol, ())
+            for minute in minutes:
+                key = (minute.exchange, minute.symbol, minute.bucket_start)
+                replay_cache[key] = replay_from_minute(
+                    symbol=symbol,
+                    trigger_at=minute.bucket_start,
+                    bars=bars,
+                    quotes=quotes,
+                    position_usd=position_usd,
+                )
+
+    # Pass 3: per symbol, decluster reference + every grid cell, replay via
+    # the batch-wide cache, and accumulate.
+    for symbol, observations in batch:
+        symbol_identity_stable = {symbol: identity_stable.get(symbol, False)}
+
+        def _replay_lookup(
+            episodes: tuple[CascadeEpisode, ...],
+            *,
+            _stable: Mapping[str, bool] = symbol_identity_stable,
+        ) -> tuple[EpisodeReplay, ...]:
+            # Default-arg capture, not a bare closure over the loop
+            # variable -- called synchronously within this same iteration
+            # either way, but this keeps it correct even if that ever
+            # changes (ruff B023).
+            return _replays_from_cache(episodes, replay_cache, identity_stable=_stable)
+
+        reference_states = to_minute_states(
+            observations,
+            price_drop_trigger_pct=PRICE_DROP_TRIGGER_PCT,
+            oi_drop_trigger_pct=OI_DROP_TRIGGER_PCT,
+        )
+        diagnostics.reference_qualifying_minutes += sum(
+            1 for state in reference_states if state.is_qualifying
+        )
+        reference_episodes = decluster_cascade_episodes(
+            reference_states,
+            recovery_price_pct=RECOVERY_PRICE_PCT,
+            recovery_oi_pct=RECOVERY_OI_PCT,
+            cooldown_minutes=COOLDOWN_MINUTES,
+        )
+        reference_by_segment = classify_episodes(
+            reference_episodes,
+            boundaries=boundaries,
+            feature_lookback_minutes=FEATURE_LOOKBACK_MINUTES,
+            outcome_horizon_minutes=OUTCOME_HORIZON_MINUTES,
+        )
+        diagnostics.reference_purge_excluded_episodes += len(
+            reference_by_segment[Segment.EXCLUDED_PURGE]
+        )
+        for segment in _SCORED_SEGMENTS:
+            accumulator.reference_replays[segment].extend(
+                _replay_lookup(reference_by_segment[segment])
+            )
+
+        for price_thresh, oi_thresh in _DEFAULT_GRID_CELLS:
+            cell_by_segment = episodes_for_threshold_all_segments(
+                observations,
+                price_drop_trigger_pct=price_thresh,
+                oi_drop_trigger_pct=oi_thresh,
+                boundaries=boundaries,
+                feature_lookback_minutes=FEATURE_LOOKBACK_MINUTES,
+                outcome_horizon_minutes=OUTCOME_HORIZON_MINUTES,
+                recovery_price_pct=RECOVERY_PRICE_PCT,
+                recovery_oi_pct=RECOVERY_OI_PCT,
+                cooldown_minutes=COOLDOWN_MINUTES,
+            )
+            cell_accumulator = accumulator.grid_replays[(price_thresh, oi_thresh)]
+            for segment in _SCORED_SEGMENTS:
+                cell_accumulator[segment].extend(_replay_lookup(cell_by_segment[segment]))
+    # `batch`, `per_symbol_qualifying`, and `replay_cache` all go out of
+    # scope when this function returns -- only the EpisodeReplay objects
+    # already appended to `accumulator` above survive.
+
+
+async def _stream_symbols(
+    repository: LiquidationCascadeRepository,
+    *,
+    exchange: str,
+    since: datetime,
+    until: datetime,
+    boundaries: CohortBoundaries,
+    identity_stable: Mapping[str, bool],
+    position_usd: float,
+    symbols_in_window: int,
+) -> _StreamedData:
+    """`symbols_in_window` is the count from the caller's own upfront
+    `fetch_symbols_in_window` call (needed there already, to size the
+    identity lookup before this -- much larger -- stream starts); this
+    function does not re-query it."""
+    accumulator = _StreamedData()
+    accumulator.diagnostics.symbols_in_window = symbols_in_window
+    accumulator.diagnostics.identity_ready_symbols = sum(
+        1 for stable in identity_stable.values() if stable
+    )
+    accumulator.diagnostics.identity_unresolved_symbols = (
+        symbols_in_window - accumulator.diagnostics.identity_ready_symbols
+    )
+
+    batch: list[tuple[str, tuple[MinuteObservation, ...]]] = []
+    async for symbol, observations in repository.stream_minute_observations(
+        exchange=exchange, since=since, until=until
+    ):
+        if not observations:
+            continue
+        batch.append((symbol, observations))
+        if len(batch) >= _SYMBOL_BATCH_SIZE:
+            await _process_batch(
+                repository,
+                batch,
+                exchange=exchange,
+                boundaries=boundaries,
+                identity_stable=identity_stable,
+                position_usd=position_usd,
+                accumulator=accumulator,
+            )
+            batch = []
+    if batch:
+        await _process_batch(
+            repository,
+            batch,
+            exchange=exchange,
+            boundaries=boundaries,
+            identity_stable=identity_stable,
+            position_usd=position_usd,
+            accumulator=accumulator,
+        )
+    return accumulator
+
+
 def build_validation_report(
     *,
-    observations: tuple[MinuteObservation, ...],
-    replay_cache: Mapping[tuple[str, str, datetime], tuple[float | None, str | None]],
-    identity_stable: Mapping[str, bool],
+    reference_replays: Mapping[Segment, tuple[EpisodeReplay, ...]],
+    grid_replays: Mapping[tuple[float, float], Mapping[Segment, tuple[EpisodeReplay, ...]]],
+    diagnostics: Diagnostics,
     boundaries: CohortBoundaries,
     since: datetime,
     until: datetime,
@@ -515,28 +805,11 @@ def build_validation_report(
     code_revision: str,
     working_tree_dirty: bool,
 ) -> dict[str, Any]:
-    def _replay_lookup(episodes: tuple[CascadeEpisode, ...]) -> tuple[EpisodeReplay, ...]:
-        return _replays_from_cache(episodes, replay_cache, identity_stable=identity_stable)
-
-    # Reference rule: descriptive context only, computed once over the FULL
-    # window then purge-classified -- never the input to `_verdict`.
-    reference_states = to_minute_states(
-        observations,
-        price_drop_trigger_pct=PRICE_DROP_TRIGGER_PCT,
-        oi_drop_trigger_pct=OI_DROP_TRIGGER_PCT,
-    )
-    reference_episodes = decluster_cascade_episodes(
-        reference_states,
-        recovery_price_pct=RECOVERY_PRICE_PCT,
-        recovery_oi_pct=RECOVERY_OI_PCT,
-        cooldown_minutes=COOLDOWN_MINUTES,
-    )
-    by_segment = classify_episodes(
-        reference_episodes,
-        boundaries=boundaries,
-        feature_lookback_minutes=FEATURE_LOOKBACK_MINUTES,
-        outcome_horizon_minutes=OUTCOME_HORIZON_MINUTES,
-    )
+    """Pure -- no I/O. `reference_replays`/`grid_replays` must already be
+    fully accumulated and eligibility-resolved (see `_stream_symbols`,
+    `_replays_from_cache`); this function only aggregates and selects.
+    Kept pure specifically so it stays testable with small, hand-built
+    inputs instead of a live database."""
     segment_windows = {
         Segment.DISCOVERY: (since, boundaries.discovery_end),
         Segment.VALIDATION: (boundaries.discovery_end, boundaries.validation_end),
@@ -544,57 +817,68 @@ def build_validation_report(
     }
     reference_segment_economics = {
         segment.value: _segment_economics(
-            segment, _replay_lookup(by_segment[segment]), since=window[0], until=window[1]
+            segment, reference_replays.get(segment, ()), since=window[0], until=window[1]
         )
         for segment, window in segment_windows.items()
     }
 
-    grid_result = run_grid_search(
-        observations=observations,
-        replay_episodes=_replay_lookup,
-        boundaries=boundaries,
-        feature_lookback_minutes=FEATURE_LOOKBACK_MINUTES,
-        outcome_horizon_minutes=OUTCOME_HORIZON_MINUTES,
-        recovery_price_pct=RECOVERY_PRICE_PCT,
-        recovery_oi_pct=RECOVERY_OI_PCT,
-        cooldown_minutes=COOLDOWN_MINUTES,
+    discovery_cells = tuple(
+        score_grid_cell(price, oi, grid_replays.get((price, oi), {}).get(Segment.DISCOVERY, ()))
+        for price, oi in _DEFAULT_GRID_CELLS
+    )
+    cell_membership = {
+        (price, oi): tuple(
+            replay.episode_key
+            for replay in grid_replays.get((price, oi), {}).get(Segment.DISCOVERY, ())
+        )
+        for price, oi in _DEFAULT_GRID_CELLS
+    }
+    episode_returns: dict[tuple[str, str, datetime], float] = {}
+    for price, oi in _DEFAULT_GRID_CELLS:
+        for replay in grid_replays.get((price, oi), {}).get(Segment.DISCOVERY, ()):
+            if replay.net_return_pct is not None:
+                episode_returns[replay.episode_key] = replay.net_return_pct
+    grid_result = GridSearchResult(
+        cells=discovery_cells, cell_membership=cell_membership, episode_returns=episode_returns
     )
     discovery_shortlist = shortlist(grid_result)
 
-    validation_cells = rescore_cells(
-        observations=observations,
-        cells=[
-            (cell.price_drop_trigger_pct, cell.oi_drop_trigger_pct) for cell in discovery_shortlist
-        ],
-        replay_episodes=_replay_lookup,
-        boundaries=boundaries,
-        target_segment=Segment.VALIDATION,
-        feature_lookback_minutes=FEATURE_LOOKBACK_MINUTES,
-        outcome_horizon_minutes=OUTCOME_HORIZON_MINUTES,
-        recovery_price_pct=RECOVERY_PRICE_PCT,
-        recovery_oi_pct=RECOVERY_OI_PCT,
-        cooldown_minutes=COOLDOWN_MINUTES,
+    validation_cells = tuple(
+        score_grid_cell(
+            cell.price_drop_trigger_pct,
+            cell.oi_drop_trigger_pct,
+            grid_replays.get((cell.price_drop_trigger_pct, cell.oi_drop_trigger_pct), {}).get(
+                Segment.VALIDATION, ()
+            ),
+        )
+        for cell in discovery_shortlist
     )
     validation_ready = [cell for cell in validation_cells if cell.formal_sample_ready]
-    candidate = min(validation_ready, key=_candidate_ranking_key) if validation_ready else None
+    best_validation_cell = (
+        min(validation_ready, key=_candidate_ranking_key) if validation_ready else None
+    )
+    # A negative (or zero) validation mean is never promoted to candidate --
+    # `best_validation_cell` stays visible in the report for transparency,
+    # but only a POSITIVE validation result ever reaches the untouched test
+    # segment (colleague review, 2026-08-21: promoting a negative-
+    # validation cell anyway let its own test-segment economics look like a
+    # legitimate PASS input on a real smoke run).
+    candidate = (
+        best_validation_cell
+        if best_validation_cell is not None
+        and best_validation_cell.mean_net_return_pct is not None
+        and best_validation_cell.mean_net_return_pct > 0
+        else None
+    )
 
     candidate_test_economics: SegmentEconomics | None = None
     if candidate is not None:
-        candidate_test_episodes = episodes_for_threshold_segment(
-            observations,
-            price_drop_trigger_pct=candidate.price_drop_trigger_pct,
-            oi_drop_trigger_pct=candidate.oi_drop_trigger_pct,
-            boundaries=boundaries,
-            target_segment=Segment.TEST,
-            feature_lookback_minutes=FEATURE_LOOKBACK_MINUTES,
-            outcome_horizon_minutes=OUTCOME_HORIZON_MINUTES,
-            recovery_price_pct=RECOVERY_PRICE_PCT,
-            recovery_oi_pct=RECOVERY_OI_PCT,
-            cooldown_minutes=COOLDOWN_MINUTES,
-        )
+        candidate_test_replays = grid_replays.get(
+            (candidate.price_drop_trigger_pct, candidate.oi_drop_trigger_pct), {}
+        ).get(Segment.TEST, ())
         candidate_test_economics = _segment_economics(
             Segment.TEST,
-            _replay_lookup(candidate_test_episodes),
+            candidate_test_replays,
             since=boundaries.validation_end,
             until=until,
         )
@@ -603,7 +887,11 @@ def build_validation_report(
         grid_result, min_formal_sample_episodes=MIN_FORMAL_SAMPLE_EPISODES
     )
 
-    verdict, verdict_reasons = _verdict(candidate_test_economics, shuffled_control)
+    verdict, verdict_reasons = _verdict(
+        best_validation_cell=best_validation_cell,
+        candidate_test_economics=candidate_test_economics,
+        shuffled_control=shuffled_control,
+    )
 
     return {
         "report_version": REPORT_VERSION,
@@ -622,6 +910,7 @@ def build_validation_report(
             "note": "must track apps/execution/schurfer_execution/liquidation_cascade.py",
         },
         "position_usd": POSITION_USD,
+        "diagnostics": diagnostics.as_dict(),
         "reference_rule_segments": {
             key: _asdict_segment(value) for key, value in reference_segment_economics.items()
         },
@@ -630,6 +919,14 @@ def build_validation_report(
             "discovery_leaderboard_top10": [_asdict_cell(cell) for cell in grid_result.cells[:10]],
             "discovery_shortlist": [_asdict_cell(cell) for cell in discovery_shortlist],
             "validation_rescoring": [_asdict_cell(cell) for cell in validation_cells],
+            # The best validation-segment cell regardless of sign -- shown
+            # for transparency even when it was rejected below.
+            "best_validation_cell": (
+                _asdict_cell(best_validation_cell) if best_validation_cell is not None else None
+            ),
+            # Only set when best_validation_cell's own mean was positive --
+            # never a cell promoted despite a non-positive validation mean.
+            "candidate_promoted": candidate is not None,
             "candidate": _asdict_cell(candidate) if candidate is not None else None,
             "candidate_test_economics": (
                 _asdict_segment(candidate_test_economics)
@@ -696,9 +993,31 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"Generated: {report['generated_at']}",
         f"Verdict: **{report['verdict']}** ({', '.join(report['verdict_reasons']) or 'clean'})",
         "",
-        "## Reference-rule segments (context only, not the gate)",
+        "## Diagnostics",
         "",
     ]
+    diagnostics = report["diagnostics"]
+    lines.append(
+        f"- symbols in window: {diagnostics['symbols_in_window']} "
+        f"({diagnostics['symbols_with_data']} with data)"
+    )
+    lines.append(
+        f"- input rows: {diagnostics['input_rows']}, "
+        f"clean lookbacks: {diagnostics['clean_lookback_rows']}"
+    )
+    lines.append(
+        f"- loose triggers: {diagnostics['loose_qualifying_minutes']}, "
+        f"reference triggers: {diagnostics['reference_qualifying_minutes']}"
+    )
+    lines.append(
+        f"- identity ready: {diagnostics['identity_ready_symbols']}, "
+        f"identity unresolved: {diagnostics['identity_unresolved_symbols']}"
+    )
+    lines.append(
+        f"- reference episodes excluded by purge: "
+        f"{diagnostics['reference_purge_excluded_episodes']}"
+    )
+    lines += ["", "## Reference-rule segments (context only, not the gate)", ""]
     for key in ("discovery", "validation", "test"):
         segment = report["reference_rule_segments"][key]
         lines.append(
@@ -712,7 +1031,11 @@ def render_markdown(report: dict[str, Any]) -> str:
         )
     lines += [
         "",
-        f"## Candidate (validation-selected): {report['grid_search']['candidate']}",
+        f"## Best validation cell (regardless of sign): "
+        f"{report['grid_search']['best_validation_cell']}",
+        "",
+        f"## Candidate (promoted only if validation mean > 0): "
+        f"{report['grid_search']['candidate']}",
         "",
         f"## Candidate test-segment economics (the actual gate input): "
         f"{report['grid_search']['candidate_test_economics']}",
@@ -772,19 +1095,32 @@ async def _run(
     owned_repository = repository is None
     repo = repository or LiquidationCascadeRepository.from_url(db_url)
     try:
-        observations = await repo.fetch_minute_observations(
+        symbols = await repo.fetch_symbols_in_window(
             exchange=args.exchange, since=args.since, until=args.until
         )
-        replay_cache = await _build_replay_cache(repo, observations, position_usd=POSITION_USD)
-        symbols = sorted({observation.symbol for observation in observations})
-        identity_observations = await repo.fetch_identity_observations(
+        identity_lookup = await repo.fetch_identity_lookup(
             exchange=args.exchange, symbols=symbols, since=args.since, until=args.until
         )
-        identity_stable = _identity_stability(identity_observations)
-        report = build_validation_report(
-            observations=observations,
-            replay_cache=replay_cache,
+        identity_stable = _identity_stability(identity_lookup, since=args.since)
+        streamed = await _stream_symbols(
+            repo,
+            exchange=args.exchange,
+            since=args.since,
+            until=args.until,
+            boundaries=boundaries,
             identity_stable=identity_stable,
+            position_usd=POSITION_USD,
+            symbols_in_window=len(symbols),
+        )
+        report = build_validation_report(
+            reference_replays={
+                segment: tuple(replays) for segment, replays in streamed.reference_replays.items()
+            },
+            grid_replays={
+                cell: {segment: tuple(replays) for segment, replays in by_segment.items()}
+                for cell, by_segment in streamed.grid_replays.items()
+            },
+            diagnostics=streamed.diagnostics,
             boundaries=boundaries,
             since=args.since,
             until=args.until,

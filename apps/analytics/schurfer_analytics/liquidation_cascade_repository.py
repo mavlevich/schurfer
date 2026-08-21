@@ -6,7 +6,7 @@ window burst query, not SQLAlchemy Core's `func.lag(...).over(...)` (no
 window-function usage via Core exists anywhere else in this codebase; raw
 SQL is how every prior report expressed one).
 
-`fetch_minute_observations` mirrors
+`stream_minute_observations` mirrors
 apps/execution/schurfer_execution/liquidation_cascade.py's own
 `_SQL_SCANNER` LAG(15)/15-minute-lookback math -- this validation report
 must measure the SAME causal rule the live scanner runs, not a redefinition
@@ -34,6 +34,30 @@ only the ones crossing the production thresholds -- both because
 many times, and because `liquidation_cascade_episodes.
 decluster_cascade_episodes` needs the non-qualifying minutes in between two
 qualifying ones to tell a genuine recovery from a mere gap in the data.
+
+`stream_minute_observations` is a SINGLE server-side-streamed query across
+the whole window/universe, grouped and yielded per symbol as the stream
+arrives -- not one query per symbol, and not one `.all()` materializing the
+whole window (colleague review, 2026-08-21, twice: a first pass moved to
+one-query-per-symbol to bound memory, but a real 12-hour/full-universe
+smoke run then measured 516 separate round trips pushing wall time to 2:59
+against only 35s of actual Python processing; a real 30-day window is
+~22 million rows, so neither "516 round trips" nor "one unbounded `.all()`"
+is acceptable). The caller
+(`liquidation_cascade_validation_report.py`) processes each symbol's own
+observations in bounded batches and discards the raw rows once done,
+keeping only the resulting episodes and returns.
+
+Identity stability (`fetch_identity_lookup`) uses a baseline-snapshot-plus-
+changes scheme, not a bare `captured_at < until` range scan (colleague
+review, 2026-08-21, confirmed against real data: a snapshot from 2026-08-15
+was invisible to a window starting 2026-08-20 under the old range-only
+query, so every requested symbol came back with zero identity observations
+and was marked unresolved). The relevant snapshot set is the most recent
+one at or before `since` (the baseline) plus every snapshot strictly inside
+`[since, until)` -- never an unbounded `captured_at < until`, which would
+pull in arbitrarily old catalogs and let a symbol's identity be judged
+against history it was never actually observed under.
 """
 
 from __future__ import annotations
@@ -54,7 +78,7 @@ from .momentum_flow_capture_contract import (
 from .outcome_repository import async_database_url
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import AsyncIterator, Sequence
     from datetime import datetime
 
 # Must track apps/execution/schurfer_execution/liquidation_cascade.py's own
@@ -62,6 +86,15 @@ if TYPE_CHECKING:
 PRICE_DROP_TRIGGER_PCT = -0.05
 OI_DROP_TRIGGER_PCT = -0.15
 LOOKBACK_MINUTES = 15
+
+_SYMBOLS_IN_WINDOW_SQL = text("""
+    SELECT DISTINCT symbol
+    FROM timeseries.bybit_momentum_bars_1m
+    WHERE exchange = :exchange AND market_type = :market_type
+      AND capture_version = :capture_version
+      AND bucket_start >= :since - INTERVAL '15 minutes' AND bucket_start < :until
+    ORDER BY symbol
+""")
 
 # LAG(..., 15) is row-position-based, exactly like the live scanner's own
 # query -- this validation must score what actually fires live, not a
@@ -71,6 +104,15 @@ LOOKBACK_MINUTES = 15
 # exists) is measured, not silently ignored: `lag_span_minutes` exposes
 # whether the row 15 back was actually 15 calendar minutes back, and any
 # minute where it was not is folded into the completeness flags below.
+#
+# Whole-window, ALL symbols, ORDERed by (exchange, symbol, bucket_start) --
+# ONE query, consumed via `stream_minute_observations`'s server-side
+# cursor, not one query per symbol (colleague review, 2026-08-21: a real
+# smoke run measured 516 separate per-symbol queries pushing wall time to
+# 2:59 against 35s of actual Python processing -- almost all of it round-
+# trip overhead). The ORDER BY groups each symbol's rows contiguously in
+# the stream, so the caller can yield one symbol's complete observation set
+# at a time without ever materializing the whole window in Python.
 _MINUTE_STATES_SQL = text("""
     WITH bars AS (
         SELECT exchange, symbol, bucket_start, close_price, open_interest,
@@ -128,6 +170,30 @@ _QUOTES_FOR_SYMBOLS_SQL = text("""
       AND bucket_start >= :since AND bucket_start < :until
 """)
 
+# The RELEVANT snapshot set for a [since, until) window is the most recent
+# snapshot AT OR BEFORE `since` (the baseline -- what a symbol's identity
+# actually was at the start of the window) plus every snapshot strictly
+# inside [since, until) (the changes). A bare `captured_at < until` range
+# scan is wrong two ways at once (colleague review, 2026-08-21, confirmed
+# against real data): it can pull in many old catalogs that have nothing to
+# do with this window, AND -- the actual observed failure -- if no snapshot
+# happened to land inside [since, until) itself, every requested symbol
+# comes back with zero rows and gets marked identity-unresolved even though
+# a perfectly good baseline exists just before `since`.
+_RELEVANT_SNAPSHOT_TIMESTAMPS_SQL = text("""
+    WITH baseline AS (
+        SELECT MAX(captured_at) AS captured_at
+        FROM app.momentum_universe_snapshots
+        WHERE exchange = :exchange AND captured_at <= :since
+    )
+    SELECT captured_at FROM baseline WHERE captured_at IS NOT NULL
+    UNION
+    SELECT DISTINCT captured_at
+    FROM app.momentum_universe_snapshots
+    WHERE exchange = :exchange AND captured_at >= :since AND captured_at < :until
+    ORDER BY captured_at
+""")
+
 # `_instruments`/`_snapshots` share (exchange, universe_version,
 # catalog_version) as their linkage -- see momentum_universe_identity_
 # repository.py's own module doc, "atomically linked, one row set per
@@ -141,10 +207,15 @@ _QUOTES_FOR_SYMBOLS_SQL = text("""
 # either venue changes it for every instrument, so comparing it across a
 # symbol's own observations would treat nearly every symbol as unstable.
 # Per-instrument stability instead compares `identity_key`/`onboarded_at`
-# for that ONE symbol across the window -- a genuine delisted-and-relisted
-# ticker under the same native market id changes its own `onboarded_at`
-# even though the surrounding catalog_version churns constantly for
-# unrelated reasons.
+# for that ONE symbol across the RELEVANT snapshots above -- a genuine
+# delisted-and-relisted ticker under the same native market id changes its
+# own `onboarded_at` even though the surrounding catalog_version churns
+# constantly for unrelated reasons. A symbol simply absent from one of the
+# relevant snapshots' own instrument rows (temporarily delisted, or never
+# listed yet) produces no row for that `captured_at` here -- callers must
+# compare the returned `captured_at` set per symbol against the full
+# relevant-snapshot set to detect that, not assume every requested symbol
+# appears in every snapshot.
 _IDENTITY_STATUS_SQL = text("""
     SELECT i.native_market_id, i.identity_status, i.identity_key, i.onboarded_at,
            s.captured_at
@@ -154,7 +225,7 @@ _IDENTITY_STATUS_SQL = text("""
      AND s.universe_version = i.universe_version
      AND s.catalog_version = i.catalog_version
     WHERE i.exchange = :exchange AND i.native_market_id = ANY(:symbols)
-      AND s.captured_at >= :since AND s.captured_at < :until
+      AND s.captured_at = ANY(:relevant_snapshot_timestamps)
     ORDER BY i.native_market_id, s.captured_at
 """)
 
@@ -184,6 +255,20 @@ class IdentityObservation:
     captured_at: datetime
 
 
+@dataclass(frozen=True)
+class IdentityLookup:
+    """`observations` covers only the RELEVANT snapshots (baseline at-or-
+    before `since`, plus changes inside `[since, until)`) -- see this
+    module's own doc comment. `relevant_snapshot_timestamps` is the full
+    set those observations were drawn from, empty-baseline included; a
+    caller needs it to tell "this symbol was absent from one relevant
+    snapshot" apart from "there was only ever one relevant snapshot to
+    begin with"."""
+
+    observations: tuple[IdentityObservation, ...]
+    relevant_snapshot_timestamps: tuple[datetime, ...]
+
+
 class LiquidationCascadeRepository:
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
@@ -199,7 +284,36 @@ class LiquidationCascadeRepository:
             )
         )
 
-    async def fetch_minute_observations(
+    async def fetch_symbols_in_window(
+        self,
+        *,
+        exchange: str,
+        since: datetime,
+        until: datetime,
+        market_type: str = BYBIT_MOMENTUM_MARKET_TYPE,
+        capture_version: str = BYBIT_MOMENTUM_CAPTURE_VERSION,
+    ) -> tuple[str, ...]:
+        """Cheap distinct-symbol listing, used to size an identity lookup
+        BEFORE the (much larger) minute-observation stream starts -- not a
+        substitute for `stream_minute_observations`, which is where the
+        real data volume lives."""
+        if since >= until:
+            raise ValueError("since must be earlier than until")
+        async with self._engine.connect() as connection:
+            result = await connection.execute(
+                _SYMBOLS_IN_WINDOW_SQL,
+                {
+                    "exchange": exchange,
+                    "market_type": market_type,
+                    "capture_version": capture_version,
+                    "since": since,
+                    "until": until,
+                },
+            )
+            rows = result.all()
+        return tuple(str(row.symbol) for row in rows)
+
+    async def stream_minute_observations(
         self,
         *,
         exchange: str,
@@ -208,11 +322,23 @@ class LiquidationCascadeRepository:
         market_type: str = BYBIT_MOMENTUM_MARKET_TYPE,
         capture_version: str = BYBIT_MOMENTUM_CAPTURE_VERSION,
         lookback_minutes: int = LOOKBACK_MINUTES,
-    ) -> tuple[MinuteObservation, ...]:
+    ) -> AsyncIterator[tuple[str, tuple[MinuteObservation, ...]]]:
+        """Yields `(symbol, observations)` pairs, one per distinct symbol,
+        from a SINGLE server-side-streamed query -- not one query per
+        symbol (colleague review, 2026-08-21: a real smoke run measured 516
+        separate per-symbol queries pushing wall time to 2:59 against 35s
+        of actual Python processing) and not one `.all()` materializing the
+        whole window (a real 30-day window is ~22 million rows). The
+        underlying query orders by `(exchange, symbol, bucket_start)`, so
+        each symbol's rows arrive contiguously and this function can yield
+        a symbol's complete, already-assembled observation tuple as soon as
+        the next symbol's first row appears, without ever holding more than
+        one symbol's rows plus the driver's own fetch buffer in memory."""
         if since >= until:
             raise ValueError("since must be earlier than until")
-        async with self._engine.connect() as connection:
-            result = await connection.execute(
+        async with (
+            self._engine.connect() as connection,
+            connection.stream(
                 _MINUTE_STATES_SQL,
                 {
                     "exchange": exchange,
@@ -222,25 +348,33 @@ class LiquidationCascadeRepository:
                     "until": until,
                     "lookback_minutes": lookback_minutes,
                 },
-            )
-            rows = result.all()
-        observations = []
-        for row in rows:
-            clean_lookback = row.lag_span_minutes is not None and math.isclose(
-                float(row.lag_span_minutes), float(lookback_minutes), abs_tol=1e-6
-            )
-            observations.append(
-                MinuteObservation(
-                    exchange=exchange,
-                    symbol=str(row.symbol),
-                    bucket_start=row.bucket_start,
-                    price_drop_pct=float(row.price_drop_pct),
-                    oi_drop_pct=float(row.oi_drop_pct),
-                    price_complete=bool(row.price_complete) and clean_lookback,
-                    open_interest_complete=bool(row.open_interest_complete) and clean_lookback,
+            ) as result,
+        ):
+            current_symbol: str | None = None
+            current_rows: list[MinuteObservation] = []
+            async for row in result:
+                symbol = str(row.symbol)
+                if symbol != current_symbol:
+                    if current_symbol is not None:
+                        yield current_symbol, tuple(current_rows)
+                    current_symbol = symbol
+                    current_rows = []
+                clean_lookback = row.lag_span_minutes is not None and math.isclose(
+                    float(row.lag_span_minutes), float(lookback_minutes), abs_tol=1e-6
                 )
-            )
-        return tuple(observations)
+                current_rows.append(
+                    MinuteObservation(
+                        exchange=exchange,
+                        symbol=symbol,
+                        bucket_start=row.bucket_start,
+                        price_drop_pct=float(row.price_drop_pct),
+                        oi_drop_pct=float(row.oi_drop_pct),
+                        price_complete=bool(row.price_complete) and clean_lookback,
+                        open_interest_complete=bool(row.open_interest_complete) and clean_lookback,
+                    )
+                )
+            if current_symbol is not None:
+                yield current_symbol, tuple(current_rows)
 
     async def fetch_outcome_path(
         self,
@@ -365,36 +499,45 @@ class LiquidationCascadeRepository:
             for row in rows
         }
 
-    async def fetch_identity_observations(
+    async def fetch_identity_lookup(
         self,
         *,
         exchange: str,
         symbols: Sequence[str],
         since: datetime,
         until: datetime,
-    ) -> tuple[IdentityObservation, ...]:
+    ) -> IdentityLookup:
         if not symbols:
-            return ()
+            return IdentityLookup(observations=(), relevant_snapshot_timestamps=())
         async with self._engine.connect() as connection:
+            snapshot_rows = await connection.execute(
+                _RELEVANT_SNAPSHOT_TIMESTAMPS_SQL,
+                {"exchange": exchange, "since": since, "until": until},
+            )
+            relevant_snapshot_timestamps = tuple(row.captured_at for row in snapshot_rows.all())
+            if not relevant_snapshot_timestamps:
+                return IdentityLookup(observations=(), relevant_snapshot_timestamps=())
             result = await connection.execute(
                 _IDENTITY_STATUS_SQL,
                 {
                     "exchange": exchange,
                     "symbols": list(dict.fromkeys(symbols)),
-                    "since": since,
-                    "until": until,
+                    "relevant_snapshot_timestamps": list(relevant_snapshot_timestamps),
                 },
             )
             rows = result.all()
-        return tuple(
-            IdentityObservation(
-                native_market_id=str(row.native_market_id),
-                identity_status=str(row.identity_status),
-                identity_key=str(row.identity_key) if row.identity_key is not None else None,
-                onboarded_at=row.onboarded_at,
-                captured_at=row.captured_at,
-            )
-            for row in rows
+        return IdentityLookup(
+            observations=tuple(
+                IdentityObservation(
+                    native_market_id=str(row.native_market_id),
+                    identity_status=str(row.identity_status),
+                    identity_key=(str(row.identity_key) if row.identity_key is not None else None),
+                    onboarded_at=row.onboarded_at,
+                    captured_at=row.captured_at,
+                )
+                for row in rows
+            ),
+            relevant_snapshot_timestamps=relevant_snapshot_timestamps,
         )
 
     async def close(self) -> None:
