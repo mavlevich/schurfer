@@ -427,21 +427,46 @@ def _verdict(
         data_reasons.append("fewer_than_four_distinct_utc_weeks")
     if candidate_test_economics.fillable_distinct_assets < MIN_FILLABLE_DISTINCT_ASSETS:
         data_reasons.append("fewer_than_min_fillable_assets")
+
+    # Economic failures take precedence over incomplete TEMPORAL diversity
+    # once the test already clears the episode and asset evidence floors.
+    # A real full-available smoke run (2026-08-21) produced 83 fillable test
+    # episodes across 44 assets with negative mean net EV and PF < 1, but
+    # only one UTC week.  Returning only ``insufficient_data`` hid that
+    # already-observed negative untouched-test result behind the missing-
+    # week gate.  Conversely, one or two losing episodes (or one losing
+    # asset) remain ``insufficient_data`` rather than becoming a hard FAIL:
+    # a tiny sample cannot establish either positive or negative economics.
+    has_economic_evidence_floor = (
+        candidate_test_economics.fillable_episodes >= MIN_FORMAL_SAMPLE_EPISODES
+        and candidate_test_economics.fillable_distinct_assets >= MIN_FILLABLE_DISTINCT_ASSETS
+    )
+    fail_reasons: list[str] = []
+    if has_economic_evidence_floor:
+        if (
+            candidate_test_economics.mean_net_return_pct is not None
+            and candidate_test_economics.mean_net_return_pct <= 0
+        ):
+            fail_reasons.append("test_net_ev_non_positive")
+        if any(
+            value <= 0 for _, value in candidate_test_economics.sensitivity["leave_one_week_out"]
+        ):
+            fail_reasons.append("fails_leave_one_week_out")
+        if any(
+            value <= 0 for _, value in candidate_test_economics.sensitivity["leave_one_asset_out"]
+        ):
+            fail_reasons.append("fails_leave_one_asset_out")
+    if fail_reasons:
+        fail_reasons.extend(data_reasons)
+        if shuffle_failed:
+            fail_reasons.append("shuffled_label_control_not_significant")
+        return "FAIL", fail_reasons
+
     if data_reasons:
         if shuffle_failed:
             data_reasons.append("shuffled_label_control_not_significant")
         return "insufficient_data", data_reasons
 
-    fail_reasons: list[str] = []
-    if (
-        candidate_test_economics.mean_net_return_pct is None
-        or candidate_test_economics.mean_net_return_pct <= 0
-    ):
-        fail_reasons.append("test_net_ev_non_positive")
-    if any(value <= 0 for _, value in candidate_test_economics.sensitivity["leave_one_week_out"]):
-        fail_reasons.append("fails_leave_one_week_out")
-    if any(value <= 0 for _, value in candidate_test_economics.sensitivity["leave_one_asset_out"]):
-        fail_reasons.append("fails_leave_one_asset_out")
     if shuffle_failed:
         fail_reasons.append("shuffled_label_control_not_significant")
     if fail_reasons:
