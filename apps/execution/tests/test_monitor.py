@@ -2,6 +2,7 @@ import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from schurfer_execution import journal
 from schurfer_execution.monitor import (
     _check_exit,
     _parse_sl_key,
@@ -581,14 +582,20 @@ class TestRetryPendingCloses:
         cfg = _mock_cfg()
 
         # First reconciliation tick: journal commit fails (DB down).
-        with patch("schurfer_execution.monitor.journal.close_trade", AsyncMock(return_value=False)):
+        with patch(
+            "schurfer_execution.monitor.journal.close_trade",
+            AsyncMock(return_value=journal.CloseOutcome(committed=False)),
+        ):
             await _reconcile_one("bingx", "BEAT", {"bingx": ex}, rdb, cfg)
 
         assert "trade:id:bingx:BEAT" in store
         assert "journal:pending_close:bingx:BEAT:42" in store
 
         # Second tick (DB back up): retry succeeds and cleans up.
-        with patch("schurfer_execution.monitor.journal.close_trade", AsyncMock(return_value=True)):
+        with patch(
+            "schurfer_execution.monitor.journal.close_trade",
+            AsyncMock(return_value=journal.CloseOutcome(committed=True)),
+        ):
             await _retry_one_pending_close("bingx", "BEAT", 42, rdb, cfg)
 
         assert "trade:id:bingx:BEAT" not in store

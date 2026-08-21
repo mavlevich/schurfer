@@ -1,13 +1,14 @@
 import asyncio
 import json
 import time
+from dataclasses import asdict
 from typing import Any
 
 import psycopg
 import structlog
 from psycopg.rows import dict_row
 
-from . import journal, paper
+from . import journal, liquidity, paper
 from .config import Config
 
 log = structlog.get_logger()
@@ -15,6 +16,11 @@ log = structlog.get_logger()
 _WATCH_PREFIX = "market:early_momentum:watch:{exchange}:{base}"
 _SCAN_INTERVAL = 60
 _TRIGGER_INTERVAL = 60
+# Size of the paper trade this strategy opens on every breakout. Kept as a
+# module constant (rather than only inline in the open_paper() call) since
+# the entry liquidity gate below needs to size its depth check to the exact
+# same notional.
+_SIZE_USD = 100.0
 
 # We need a robust CTE to find accumulation candidates for the last 120 minutes.
 _SQL_SCANNER = """
@@ -210,8 +216,55 @@ async def run_early_momentum_trigger(exchanges: dict[str, Any], rdb: Any, cfg: C
                         price=last_price,
                     )
 
-                    # Delete the watch key so we don't trigger it again
+                    # Delete the watch key so we don't trigger it again --
+                    # this happens whether or not the entry below actually
+                    # ends up filled; a thin book at this instant is not
+                    # expected to still be thin the next time this base
+                    # accumulates and breaks out.
                     await rdb.delete(key)
+
+                    # LONG entry buys, so it prices off the ask side of a
+                    # fresh order book at the actual requested notional --
+                    # never the last-trade ticker print, which says nothing
+                    # about what this size could actually fill at.
+                    #
+                    # depth_target (a multiple of the real size) is only the
+                    # market-quality gate's safety margin -- it checks depth
+                    # exists beyond just the immediate need. The VWAP actually
+                    # priced and stored below must be measured at _SIZE_USD,
+                    # the real trade size, not the gate's larger notional
+                    # (colleague review, 2026-08-21: using depth_target there
+                    # priced the entry as if it were twice the actual size).
+                    depth_target = liquidity.depth_target_usd(
+                        _SIZE_USD, cfg.liquidity_depth_multiplier
+                    )
+                    snap = await liquidity.snapshot(
+                        ex, instrument.symbol, required_depth_usd=depth_target
+                    )
+                    quality = liquidity.check_market_quality(
+                        snap,
+                        target_usd=depth_target,
+                        max_spread_bps=cfg.max_spread_bps,
+                        max_impact_bps=cfg.max_liquidity_impact_bps,
+                    )
+                    if not quality.allowed:
+                        log.info(
+                            "early_momentum.market_quality_gate_skip",
+                            base=raw_symbol,
+                            symbol=instrument.symbol,
+                            reason=quality.reason,
+                        )
+                        continue
+                    entry_vwap, entry_impact_bps, entry_filled_usd = liquidity.quote_for_side(
+                        snap, position_side="long", leg="entry", target_usd=_SIZE_USD
+                    )
+                    if entry_vwap is None:
+                        log.warning(
+                            "early_momentum.entry_quote_unavailable",
+                            base=raw_symbol,
+                            symbol=instrument.symbol,
+                        )
+                        continue
 
                     # Hardcoded best parameters from backtest
                     exit_params = {
@@ -224,19 +277,39 @@ async def run_early_momentum_trigger(exchanges: dict[str, Any], rdb: Any, cfg: C
                         "take_profit_pct": 4.0,  # The holy grail parameter
                     }
 
-                    # Size of paper trade - standard $100
                     await paper.open_paper(
                         rdb,
                         instrument=instrument,
-                        price=last_price,
-                        size_usd=100.0,
+                        price=entry_vwap,
+                        size_usd=_SIZE_USD,
                         leverage=5,
                         score=100,  # Synthetic score
                         setup_context={
-                            "strategy": "early_momentum_v1",
+                            # v2: clean-execution evidence cohort (executable
+                            # entry quote, market-quality gate, side-aware
+                            # exit accounting). Same signal/exit_params as v1
+                            # -- this is a measurement change, not a trading
+                            # rule change.
+                            "strategy": "early_momentum_v2",
                             "breakout_price": ceiling,
                             "signal_source": source_exchange,
                             "source_symbol": data.get("symbol"),
+                            # quality/market_quality reflects the gate's
+                            # safety-margined depth_target notional; these
+                            # two fields are the actual entry-side reading at
+                            # the real trade size (_SIZE_USD), which
+                            # entry_vwap above was priced from -- kept as
+                            # first-class evidence rather than discarded
+                            # (colleague review, 2026-08-21).
+                            "market_quality": asdict(quality),
+                            "entry_vwap_impact_bps": entry_impact_bps,
+                            "entry_vwap_filled_usd": entry_filled_usd,
+                            # entry_vwap above already walked the ask book to
+                            # this notional, so its gap from mid IS the entry
+                            # impact cost -- accounting_contract must not
+                            # also charge market_quality's ask_impact_bps a
+                            # second time on top of it (see journal.py).
+                            "entry_price_includes_impact": True,
                         },
                         cfg=cfg,
                         side="long",

@@ -194,6 +194,8 @@ class TestTradeExitLiquidityObservationModel:
             "best_ask",
             "mid",
             "spread_bps",
+            "bid_vwap",
+            "bid_impact_bps",
             "ask_vwap",
             "ask_impact_bps",
             "contract_size",

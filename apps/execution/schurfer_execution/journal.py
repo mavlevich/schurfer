@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
@@ -13,6 +14,7 @@ from schurfer_performance import (
     calculate_performance,
 )
 
+from . import liquidity
 from .risk import PNL_READY_KEY
 
 log = structlog.get_logger()
@@ -80,6 +82,8 @@ INSERT INTO app.trade_exit_liquidity_observations (
     best_ask,
     mid,
     spread_bps,
+    bid_vwap,
+    bid_impact_bps,
     ask_vwap,
     ask_impact_bps,
     contract_size,
@@ -87,7 +91,7 @@ INSERT INTO app.trade_exit_liquidity_observations (
     error
 ) VALUES (
     %s, %s, %s, %s, %s, %s, %s, %s, %s,
-    %s, %s, %s, %s, %s, %s, %s, %s
+    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
 )
 ON CONFLICT (trade_id) DO NOTHING
 """
@@ -101,6 +105,15 @@ ON CONFLICT (trade_id) DO NOTHING
 # "already closed" and skip re-running the UPDATE — otherwise a retry would
 # overwrite exit_at with its own later timestamp, which can shift which UTC
 # day the PnL counts toward if the retry lands after midnight.
+#
+# exit_slippage_bps is deliberately NOT selected here. The value stored on
+# the row at open_trade() time is an entry-time proxy (whatever the opposite
+# book side looked like before the position existed) — using it for exit
+# accounting silently substitutes a stale number for the real fill. Exit
+# slippage must come from a fresh order-book capture taken at close time
+# (see close_trade's fresh_exit_slippage_bps parameter); if that capture
+# failed or wasn't provided, net accounting correctly falls back to
+# "incomplete" rather than reusing the proxy.
 _SELECT_TRADE_FOR_CLOSE = """
 SELECT
     size_usd,
@@ -109,7 +122,6 @@ SELECT
     status,
     entry_at,
     entry_slippage_bps,
-    exit_slippage_bps,
     accounting_version
 FROM app.trades
 WHERE id = %s
@@ -144,11 +156,38 @@ def _optional_non_negative(value: Any) -> float | None:
 
 def accounting_contract(
     setup_context: dict[str, Any],
+    *,
+    side: str = "short",
 ) -> tuple[str, str, float | None, float | None]:
+    """Derive accounting version/status and the two entry-time slippage legs.
+
+    market_quality (when present) carries both bid_impact_bps and
+    ask_impact_bps from a single pre-trade snapshot. Which one is the entry
+    leg depends on side: a SHORT enters by selling (bid), a LONG enters by
+    buying (ask) — see liquidity.book_side_for. The exit leg read here is
+    only ever the same entry-time snapshot's opposite side, kept as a rough
+    at-open estimate; close_trade() overrides it with a fresh at-close
+    capture and never trusts this value for the final net PnL.
+
+    entry_price_includes_impact=True (set by a caller that already priced
+    its entry off an executed VWAP across the book — see early_momentum.py)
+    means the entry-side impact is already baked into the stored entry
+    price via that VWAP. Also charging market_quality's entry-side
+    impact_bps here would subtract the same cost twice: once implicitly
+    (gross PnL uses the VWAP-adjusted entry price) and once explicitly (the
+    slippage_bps term in calculate_performance). entry_slippage_bps is then
+    a known 0.0 -- not a missing reading, so accounting still reaches
+    "complete".
+    """
     quality = setup_context.get("market_quality")
     quality_data = quality if isinstance(quality, dict) else {}
-    entry_slippage_bps = _optional_non_negative(quality_data.get("bid_impact_bps"))
-    exit_slippage_bps = _optional_non_negative(quality_data.get("ask_impact_bps"))
+    entry_side = liquidity.book_side_for(position_side=side, leg="entry")
+    exit_side = liquidity.book_side_for(position_side=side, leg="exit")
+    if setup_context.get("entry_price_includes_impact") is True:
+        entry_slippage_bps: float | None = 0.0
+    else:
+        entry_slippage_bps = _optional_non_negative(quality_data.get(f"{entry_side}_impact_bps"))
+    exit_slippage_bps = _optional_non_negative(quality_data.get(f"{exit_side}_impact_bps"))
     if setup_context.get("paper") is True:
         return (
             PAPER_ACCOUNTING_VERSION,
@@ -225,7 +264,7 @@ async def open_trade(
             accounting_status,
             entry_slippage_bps,
             exit_slippage_bps,
-        ) = accounting_contract(setup_context)
+        ) = accounting_contract(setup_context, side=side)
         stored_context = {
             **setup_context,
             "accounting_version": accounting_version,
@@ -268,6 +307,52 @@ async def open_trade(
         return None
 
 
+@dataclass(frozen=True)
+class CloseOutcome:
+    """Everything a caller needs to report a close, computed exactly once.
+
+    `committed` mirrors the old bool contract: callers must not discard a
+    Redis trade-id pointer (or retry state) unless this is True. The
+    accounting fields are the SAME numbers written to the DB row — a caller
+    reporting to Telegram (or anywhere else) must read them from here rather
+    than recomputing independently, so the two can never diverge.
+    """
+
+    committed: bool
+    gross_pnl_usd: float | None = None
+    gross_pnl_pct: float | None = None
+    net_pnl_usd: float | None = None
+    net_pnl_pct: float | None = None
+    fees_usd: float | None = None
+    funding_usd: float | None = None
+    slippage_usd: float | None = None
+    accounting_status: str | None = None
+
+
+def _exit_liquidity_params(trade_id: int, observation: dict[str, Any]) -> tuple[Any, ...]:
+    return (
+        trade_id,
+        observation["observed_at"],
+        observation["exchange"],
+        observation["symbol"],
+        observation.get("market_id"),
+        observation["status"],
+        observation["requested_notional_usd"],
+        observation.get("filled_notional_usd"),
+        observation.get("best_bid"),
+        observation.get("best_ask"),
+        observation.get("mid"),
+        observation.get("spread_bps"),
+        observation.get("bid_vwap"),
+        observation.get("bid_impact_bps"),
+        observation.get("ask_vwap"),
+        observation.get("ask_impact_bps"),
+        observation.get("contract_size"),
+        observation["latency_ms"],
+        observation.get("error"),
+    )
+
+
 async def close_trade(
     db_url: str,
     *,
@@ -275,17 +360,30 @@ async def close_trade(
     exit_order_id: str | None,
     exit_price: float,
     reason: str,
-) -> bool:
-    """Returns True only if the close was durably committed to the journal.
+    fresh_exit_slippage_bps: float | None = None,
+    exit_observation: dict[str, Any] | None = None,
+) -> CloseOutcome:
+    """Commit a close to the journal, returning the accounting actually written.
 
     entry_price/side/size_usd are loaded from the trade's own row (not
     passed in) so this can always recover a trade by trade_id alone, even
     if the Redis cache of its entry price/side has been evicted.
 
     Callers must not discard the Redis trade-id pointer (or any other local
-    reference needed to retry) unless this returns True — otherwise a DB
+    reference needed to retry) unless `.committed` is True — otherwise a DB
     outage at close time permanently loses the ability to record that trade's
     realized PnL, and it silently disappears from the daily loss total.
+
+    fresh_exit_slippage_bps must come from an order-book capture taken at
+    (or immediately before) close time — never from the trade row's entry-time
+    snapshot. When None (capture failed, insufficient depth, or the caller has
+    no fresh reading — e.g. a real/legacy-accounting close), net accounting
+    correctly falls back to "incomplete" rather than reusing a stale proxy.
+
+    exit_observation, when given, is written to
+    app.trade_exit_liquidity_observations in the SAME transaction as the
+    trades UPDATE — both commit or neither does, so the evidence row can
+    never silently drift out of sync with the close it documents.
     """
     try:
         aconn = await psycopg.AsyncConnection.connect(db_url)
@@ -294,7 +392,7 @@ async def close_trade(
             row = await cur.fetchone()
             if row is None:
                 log.error("journal.close_trade.trade_not_found", trade_id=trade_id)
-                return False
+                return CloseOutcome(committed=False)
             (
                 size_usd_raw,
                 entry_price_raw,
@@ -302,7 +400,6 @@ async def close_trade(
                 status,
                 entry_at,
                 entry_slippage_raw,
-                exit_slippage_raw,
                 accounting_version,
             ) = row
             size_usd = float(size_usd_raw)
@@ -313,9 +410,11 @@ async def close_trade(
                 # never got the ack. Treat as success without touching the
                 # row again — re-running the UPDATE would overwrite exit_at
                 # with this retry's timestamp and could shift the trade into
-                # a different UTC day for realized_pnl_today() purposes.
+                # a different UTC day for realized_pnl_today() purposes. The
+                # original close already reported its own accounting; this
+                # retry has nothing new to report.
                 log.info("journal.close_trade.already_closed", trade_id=trade_id)
-                return True
+                return CloseOutcome(committed=True)
 
             closed_at = datetime.now(tz=UTC)
             if accounting_version == PAPER_ACCOUNTING_VERSION:
@@ -329,9 +428,7 @@ async def close_trade(
                     entry_slippage_bps=(
                         float(entry_slippage_raw) if entry_slippage_raw is not None else None
                     ),
-                    exit_slippage_bps=(
-                        float(exit_slippage_raw) if exit_slippage_raw is not None else None
-                    ),
+                    exit_slippage_bps=fresh_exit_slippage_bps,
                 )
                 gross_pnl_usd = round(accounting.gross_pnl_usd, 4)
                 gross_pnl_pct = round(accounting.gross_return_pct, 4)
@@ -398,10 +495,32 @@ async def close_trade(
                 ),
             )
             updated = await cur.fetchone()
-            return updated is not None
+            if updated is None:
+                return CloseOutcome(committed=False)
+
+            if exit_observation is not None:
+                # Same connection, same not-yet-committed transaction as the
+                # UPDATE above — both land together on `async with aconn`'s
+                # clean exit, or neither does on an exception.
+                await cur.execute(
+                    _INSERT_EXIT_LIQUIDITY,
+                    _exit_liquidity_params(trade_id, exit_observation),
+                )
+
+            return CloseOutcome(
+                committed=True,
+                gross_pnl_usd=gross_pnl_usd,
+                gross_pnl_pct=gross_pnl_pct,
+                net_pnl_usd=net_pnl_usd,
+                net_pnl_pct=net_pnl_pct,
+                fees_usd=fees_usd,
+                funding_usd=funding_usd,
+                slippage_usd=slippage_usd,
+                accounting_status=accounting_status,
+            )
     except Exception as exc:
         log.error("journal.close_trade.failed", trade_id=trade_id, err=str(exc))
-        return False
+        return CloseOutcome(committed=False)
 
 
 async def record_exit_liquidity(
@@ -410,35 +529,22 @@ async def record_exit_liquidity(
     trade_id: int,
     observation: dict[str, Any],
 ) -> bool:
-    """Persist the first close-time quote without changing the trade close.
+    """Persist a close-time quote independently of a trade close.
 
     The unique trade_id constraint makes retries append-once. A later retry must
     not replace the point-in-time quote (or failure) seen at the actual close.
+
+    close_trade()'s own `exit_observation` parameter is the atomic path used
+    for a normal paper close (same transaction as the trades UPDATE); this
+    standalone entry point exists for any caller that needs to persist an
+    observation on its own connection instead.
     """
     try:
         aconn = await psycopg.AsyncConnection.connect(db_url)
         async with aconn, aconn.cursor() as cur:
             await cur.execute(
                 _INSERT_EXIT_LIQUIDITY,
-                (
-                    trade_id,
-                    observation["observed_at"],
-                    observation["exchange"],
-                    observation["symbol"],
-                    observation.get("market_id"),
-                    observation["status"],
-                    observation["requested_notional_usd"],
-                    observation.get("filled_notional_usd"),
-                    observation.get("best_bid"),
-                    observation.get("best_ask"),
-                    observation.get("mid"),
-                    observation.get("spread_bps"),
-                    observation.get("ask_vwap"),
-                    observation.get("ask_impact_bps"),
-                    observation.get("contract_size"),
-                    observation["latency_ms"],
-                    observation.get("error"),
-                ),
+                _exit_liquidity_params(trade_id, observation),
             )
         return True
     except Exception as exc:
@@ -568,13 +674,14 @@ async def try_commit_close(
     itself succeeds.
     """
     await revoke_pnl_readiness(rdb)
-    committed = await close_trade(
+    outcome = await close_trade(
         db_url,
         trade_id=trade_id,
         exit_order_id=exit_order_id,
         exit_price=exit_price,
         reason=reason,
     )
+    committed = outcome.committed
     if committed:
         await rdb.delete(_pending_close_key(exchange, base, trade_id))
     else:

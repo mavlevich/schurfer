@@ -33,9 +33,12 @@ def _trade_row(
     status: str = "open",
     accounting_version: str = LEGACY_ACCOUNTING_VERSION,
     entry_slippage_bps: float | None = None,
-    exit_slippage_bps: float | None = None,
     entry_at: datetime | None = None,
 ) -> tuple:
+    # No exit_slippage_bps column: close_trade never reads the row's
+    # entry-time proxy for exit accounting -- only a fresh
+    # fresh_exit_slippage_bps passed in by the caller (see
+    # test_close_paper_trade_persists_versioned_net_accounting).
     return (
         100.0,
         100.0,
@@ -43,7 +46,6 @@ def _trade_row(
         status,
         entry_at or datetime.now(tz=UTC),
         entry_slippage_bps,
-        exit_slippage_bps,
         accounting_version,
     )
 
@@ -63,6 +65,55 @@ def test_paper_accounting_contract_uses_measured_two_sided_impact() -> None:
     assert status == "pending"
     assert entry_bps == 3.5
     assert exit_bps == 4.5
+
+
+def test_paper_accounting_contract_defaults_to_short_bid_entry_ask_exit() -> None:
+    # pump-short's existing behavior, unchanged: entry sells (bid), exit
+    # buys (ask).
+    _version, _status, entry_bps, exit_bps = journal.accounting_contract(
+        {
+            "paper": True,
+            "market_quality": {"bid_impact_bps": 3.5, "ask_impact_bps": 4.5},
+        },
+        side="short",
+    )
+    assert entry_bps == 3.5
+    assert exit_bps == 4.5
+
+
+def test_paper_accounting_contract_long_entry_reads_ask_exit_reads_bid() -> None:
+    # early_momentum/liquidation_cascade: LONG entry buys (ask), exit sells
+    # (bid) -- the inverse of short.
+    _version, _status, entry_bps, exit_bps = journal.accounting_contract(
+        {
+            "paper": True,
+            "market_quality": {"bid_impact_bps": 3.5, "ask_impact_bps": 4.5},
+        },
+        side="long",
+    )
+    assert entry_bps == 4.5
+    assert exit_bps == 3.5
+
+
+def test_paper_accounting_contract_zeroes_entry_slippage_when_price_already_includes_it() -> None:
+    # Regression (colleague review): when the entry price itself is a VWAP
+    # already walked across the book (early_momentum.py), charging
+    # market_quality's entry-side impact_bps again would double count the
+    # same cost -- once implicitly via the VWAP-adjusted entry price, once
+    # explicitly via slippage_bps. 0.0 (not None) so accounting still
+    # reaches "complete".
+    _version, _status, entry_bps, exit_bps = journal.accounting_contract(
+        {
+            "paper": True,
+            "entry_price_includes_impact": True,
+            "market_quality": {"bid_impact_bps": 3.5, "ask_impact_bps": 4.5},
+        },
+        side="long",
+    )
+    assert entry_bps == 0.0
+    # The exit leg is untouched by this flag -- it's overridden by
+    # close_trade's own fresh_exit_slippage_bps at close time regardless.
+    assert exit_bps == 3.5
 
 
 def test_real_trade_keeps_legacy_accounting_until_fill_reconciliation_exists() -> None:
@@ -89,7 +140,7 @@ async def test_close_trade_loads_entry_price_and_side_from_db() -> None:
     conn, cur = _mock_conn([_trade_row(), (1,)])
 
     with patch("psycopg.AsyncConnection.connect", AsyncMock(return_value=conn)):
-        committed = await journal.close_trade(
+        outcome = await journal.close_trade(
             "postgresql://x",
             trade_id=1,
             exit_order_id="ord-1",
@@ -97,7 +148,7 @@ async def test_close_trade_loads_entry_price_and_side_from_db() -> None:
             reason="test",
         )
 
-    assert committed is True
+    assert outcome.committed is True
     update_call = cur.execute.call_args_list[1]
     params = update_call.args[1]
     # short, entry 100 -> exit 90 = +10% move, on $100 size = $10 pnl_usd
@@ -116,7 +167,6 @@ async def test_close_paper_trade_persists_versioned_net_accounting() -> None:
             _trade_row(
                 accounting_version=PAPER_ACCOUNTING_VERSION,
                 entry_slippage_bps=3,
-                exit_slippage_bps=4,
                 entry_at=entry_at,
             ),
             (1,),
@@ -128,15 +178,18 @@ async def test_close_paper_trade_persists_versioned_net_accounting() -> None:
         patch("schurfer_execution.journal.datetime") as datetime_mock,
     ):
         datetime_mock.now.return_value = closed_at
-        committed = await journal.close_trade(
+        outcome = await journal.close_trade(
             "postgresql://x",
             trade_id=1,
             exit_order_id=None,
             exit_price=90.0,
             reason="test",
+            # Fresh exit-time reading -- not sourced from the row, which no
+            # longer even stores an exit_slippage_bps column.
+            fresh_exit_slippage_bps=4,
         )
 
-    assert committed is True
+    assert outcome.committed is True
     params = cur.execute.call_args_list[1].args[1]
     assert params[3] == 10.0
     assert params[5] == pytest.approx(9.7112)
@@ -146,22 +199,184 @@ async def test_close_paper_trade_persists_versioned_net_accounting() -> None:
     assert params[10] == params[5]
     assert params[13] == "complete"
     assert params[14] is None
+    assert outcome.net_pnl_pct == pytest.approx(9.7112)
+    assert outcome.accounting_status == "complete"
 
 
-async def test_close_paper_trade_withholds_net_when_slippage_is_missing() -> None:
+async def test_close_trade_does_not_double_count_impact_already_inside_vwap_prices() -> None:
+    """Regression (colleague review): when both entry_price and exit_price
+    are themselves executed VWAPs (the cost of crossing the book is already
+    inside the price move), entry_slippage_bps=0.0 and
+    fresh_exit_slippage_bps=0.0 (as accounting_contract/paper.py now
+    produce for that case) must mean the net PnL only sheds fees and
+    funding -- no separate slippage_usd on top of a cost that's already
+    reflected in the raw price difference."""
+    conn, cur = _mock_conn(
+        [
+            _trade_row(accounting_version=PAPER_ACCOUNTING_VERSION, entry_slippage_bps=0.0),
+            (1,),
+        ]
+    )
+
+    with patch("psycopg.AsyncConnection.connect", AsyncMock(return_value=conn)):
+        outcome = await journal.close_trade(
+            "postgresql://x",
+            trade_id=1,
+            exit_order_id=None,
+            exit_price=90.0,
+            reason="test",
+            fresh_exit_slippage_bps=0.0,
+        )
+
+    assert outcome.accounting_status == "complete"
+    assert outcome.slippage_usd == 0.0
+    params = cur.execute.call_args_list[1].args[1]
+    # gross_pnl_usd (index 3) minus only fees_usd (7) and funding_usd (8)
+    # equals net_pnl_usd (5) -- nothing else was subtracted.
+    gross_pnl_usd, net_pnl_usd, fees_usd, funding_usd = (
+        params[3],
+        params[5],
+        params[7],
+        params[8],
+    )
+    assert net_pnl_usd == pytest.approx(gross_pnl_usd - fees_usd - funding_usd)
+
+
+async def test_close_trade_uses_the_fresh_exit_reading_not_a_stale_one() -> None:
+    """Regression: exit accounting must reflect the order book actually
+    observed at close time, not whatever the entry-time snapshot's opposite
+    side happened to look like. Same row, same exit_price, two different
+    fresh_exit_slippage_bps readings must produce two different net results."""
+
+    async def _close(fresh_exit_slippage_bps: float) -> journal.CloseOutcome:
+        conn, _cur = _mock_conn(
+            [
+                _trade_row(accounting_version=PAPER_ACCOUNTING_VERSION, entry_slippage_bps=3),
+                (1,),
+            ]
+        )
+        with patch("psycopg.AsyncConnection.connect", AsyncMock(return_value=conn)):
+            return await journal.close_trade(
+                "postgresql://x",
+                trade_id=1,
+                exit_order_id=None,
+                exit_price=90.0,
+                reason="test",
+                fresh_exit_slippage_bps=fresh_exit_slippage_bps,
+            )
+
+    tight_book = await _close(2.0)
+    wide_book = await _close(50.0)
+
+    assert tight_book.accounting_status == "complete"
+    assert wide_book.accounting_status == "complete"
+    assert tight_book.net_pnl_pct is not None
+    assert wide_book.net_pnl_pct is not None
+    assert wide_book.net_pnl_pct < tight_book.net_pnl_pct
+
+
+async def test_close_paper_trade_withholds_net_when_entry_slippage_is_missing() -> None:
     conn, cur = _mock_conn(
         [
             _trade_row(
                 accounting_version=PAPER_ACCOUNTING_VERSION,
                 entry_slippage_bps=None,
-                exit_slippage_bps=4,
             ),
             (1,),
         ]
     )
 
     with patch("psycopg.AsyncConnection.connect", AsyncMock(return_value=conn)):
-        committed = await journal.close_trade(
+        outcome = await journal.close_trade(
+            "postgresql://x",
+            trade_id=1,
+            exit_order_id=None,
+            exit_price=90.0,
+            reason="test",
+            fresh_exit_slippage_bps=4,
+        )
+
+    assert outcome.committed is True
+    params = cur.execute.call_args_list[1].args[1]
+    assert params[3] == 10.0
+    assert params[5] is None
+    assert params[10] is None
+    assert params[13] == "incomplete"
+    assert params[14] == "missing entry_slippage_bps"
+    assert outcome.net_pnl_usd is None
+    assert outcome.accounting_status == "incomplete"
+
+
+async def test_close_paper_trade_withholds_net_when_exit_capture_failed() -> None:
+    """A failed/insufficient-depth exit-book capture must leave net PnL
+    unresolved, never silently fall back to a stale entry-time proxy."""
+    conn, cur = _mock_conn(
+        [
+            _trade_row(
+                accounting_version=PAPER_ACCOUNTING_VERSION,
+                entry_slippage_bps=3,
+            ),
+            (1,),
+        ]
+    )
+
+    with patch("psycopg.AsyncConnection.connect", AsyncMock(return_value=conn)):
+        outcome = await journal.close_trade(
+            "postgresql://x",
+            trade_id=1,
+            exit_order_id=None,
+            exit_price=90.0,
+            reason="test",
+            fresh_exit_slippage_bps=None,
+        )
+
+    assert outcome.committed is True
+    params = cur.execute.call_args_list[1].args[1]
+    assert params[13] == "incomplete"
+    assert params[14] == "missing exit_slippage_bps"
+    assert outcome.net_pnl_usd is None
+    assert outcome.accounting_status == "incomplete"
+
+
+async def test_close_trade_writes_exit_observation_atomically_with_the_close() -> None:
+    """Regression: the exit-liquidity evidence row must land in the SAME
+    transaction as the trades UPDATE (same connection/cursor), not a
+    separate best-effort call afterward that could succeed or fail
+    independently of the close itself."""
+    conn, cur = _mock_conn([_trade_row(), (1,)])
+    observation = {
+        "observed_at": datetime.now(tz=UTC),
+        "exchange": "bybit",
+        "symbol": "BEAT/USDT:USDT",
+        "status": "sampled",
+        "requested_notional_usd": 50,
+        "latency_ms": 12,
+    }
+
+    with patch("psycopg.AsyncConnection.connect", AsyncMock(return_value=conn)):
+        outcome = await journal.close_trade(
+            "postgresql://x",
+            trade_id=1,
+            exit_order_id=None,
+            exit_price=90.0,
+            reason="test",
+            exit_observation=observation,
+        )
+
+    assert outcome.committed is True
+    # SELECT, UPDATE, INSERT -- all three on the one cursor/connection that
+    # close_trade opened, so they commit or roll back together.
+    assert cur.execute.call_count == 3
+    insert_query, insert_params = cur.execute.call_args_list[2].args
+    assert "trade_exit_liquidity_observations" in insert_query
+    assert insert_params[0] == 1
+
+
+async def test_close_trade_omits_exit_observation_insert_when_none_given() -> None:
+    conn, cur = _mock_conn([_trade_row(), (1,)])
+
+    with patch("psycopg.AsyncConnection.connect", AsyncMock(return_value=conn)):
+        outcome = await journal.close_trade(
             "postgresql://x",
             trade_id=1,
             exit_order_id=None,
@@ -169,13 +384,8 @@ async def test_close_paper_trade_withholds_net_when_slippage_is_missing() -> Non
             reason="test",
         )
 
-    assert committed is True
-    params = cur.execute.call_args_list[1].args[1]
-    assert params[3] == 10.0
-    assert params[5] is None
-    assert params[10] is None
-    assert params[13] == "incomplete"
-    assert params[14] == "missing entry_slippage_bps"
+    assert outcome.committed is True
+    assert cur.execute.call_count == 2  # SELECT + UPDATE only
 
 
 async def test_close_trade_returns_false_on_db_error() -> None:
@@ -185,7 +395,7 @@ async def test_close_trade_returns_false_on_db_error() -> None:
     with patch(
         "psycopg.AsyncConnection.connect", AsyncMock(side_effect=Exception("connection refused"))
     ):
-        committed = await journal.close_trade(
+        outcome = await journal.close_trade(
             "postgresql://x",
             trade_id=1,
             exit_order_id="ord-1",
@@ -193,7 +403,7 @@ async def test_close_trade_returns_false_on_db_error() -> None:
             reason="test",
         )
 
-    assert committed is False
+    assert outcome.committed is False
 
 
 async def test_close_trade_missing_row_returns_false() -> None:
@@ -203,7 +413,7 @@ async def test_close_trade_missing_row_returns_false() -> None:
     conn, cur = _mock_conn([None])  # SELECT returns no row
 
     with patch("psycopg.AsyncConnection.connect", AsyncMock(return_value=conn)):
-        committed = await journal.close_trade(
+        outcome = await journal.close_trade(
             "postgresql://x",
             trade_id=999,
             exit_order_id=None,
@@ -211,7 +421,7 @@ async def test_close_trade_missing_row_returns_false() -> None:
             reason="test",
         )
 
-    assert committed is False
+    assert outcome.committed is False
     cur.execute.assert_called_once()  # never attempted the UPDATE
 
 
@@ -221,7 +431,7 @@ async def test_close_trade_zero_rows_updated_returns_false() -> None:
     conn, _cur = _mock_conn([_trade_row(), None])  # UPDATE matches nothing
 
     with patch("psycopg.AsyncConnection.connect", AsyncMock(return_value=conn)):
-        committed = await journal.close_trade(
+        outcome = await journal.close_trade(
             "postgresql://x",
             trade_id=999,
             exit_order_id=None,
@@ -229,7 +439,7 @@ async def test_close_trade_zero_rows_updated_returns_false() -> None:
             reason="test",
         )
 
-    assert committed is False
+    assert outcome.committed is False
 
 
 async def test_close_trade_already_closed_is_idempotent_success() -> None:
@@ -241,7 +451,7 @@ async def test_close_trade_already_closed_is_idempotent_success() -> None:
     conn, cur = _mock_conn([_trade_row(status="closed")])  # already closed
 
     with patch("psycopg.AsyncConnection.connect", AsyncMock(return_value=conn)):
-        committed = await journal.close_trade(
+        outcome = await journal.close_trade(
             "postgresql://x",
             trade_id=1,
             exit_order_id="ord-1",
@@ -249,7 +459,7 @@ async def test_close_trade_already_closed_is_idempotent_success() -> None:
             reason="test",
         )
 
-    assert committed is True
+    assert outcome.committed is True
     cur.execute.assert_called_once()  # only the SELECT — no UPDATE attempted
 
 
@@ -268,6 +478,8 @@ async def test_record_exit_liquidity_is_append_once() -> None:
         "best_ask": 100.1,
         "mid": 100,
         "spread_bps": 20,
+        "bid_vwap": 99.9,
+        "bid_impact_bps": 8,
         "ask_vwap": 100.1,
         "ask_impact_bps": 10,
         "contract_size": 1,
@@ -288,7 +500,8 @@ async def test_record_exit_liquidity_is_append_once() -> None:
     assert params[0] == 7
     assert params[1] == observed_at
     assert params[5] == "sampled"
-    assert params[13] == 10
+    assert params[13] == 8  # bid_impact_bps
+    assert params[15] == 10  # ask_impact_bps
 
 
 async def test_record_exit_liquidity_failure_is_non_throwing() -> None:

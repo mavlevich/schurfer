@@ -60,6 +60,67 @@ def depth_target_key(target_usd: float) -> str:
     return f"{target_usd:.2f}".rstrip("0").rstrip(".")
 
 
+def book_side_for(*, position_side: str, leg: str) -> str:
+    """Return which order-book side ("bid"/"ask") prices a given trade leg.
+
+    A LONG buys to enter (pays the ask) and sells to exit (hits the bid). A
+    SHORT is the mirror image: sells to enter (hits the bid), buys to exit
+    (pays the ask). This is the single place that encodes the convention —
+    every caller that needs a side-correct quote goes through this or
+    `quote_for_side` below instead of hardcoding "ask"/"bid" itself.
+    """
+    if position_side not in ("long", "short"):
+        raise ValueError(f"invalid position_side: {position_side}")
+    if leg not in ("entry", "exit"):
+        raise ValueError(f"invalid leg: {leg}")
+    is_ask = (position_side == "long") == (leg == "entry")
+    return "ask" if is_ask else "bid"
+
+
+def quote_for_book_side(
+    snapshot: dict[str, Any] | None,
+    *,
+    book_side: str,
+    target_usd: float,
+) -> tuple[float | None, float | None, float | None]:
+    """Return (vwap, impact_bps, filled_usd) for one literal book side
+    ("bid"/"ask") at `target_usd` notional.
+
+    All three are None when the snapshot is missing, malformed, or the
+    visible book on that side cannot fill target_usd — never a fabricated
+    or partial-fill value.
+    """
+    if not isinstance(snapshot, dict):
+        return None, None, None
+    key = depth_target_key(target_usd)
+    vwaps = snapshot.get(f"{book_side}_vwap")
+    impacts = snapshot.get(f"{book_side}_impact_bps")
+    filled = snapshot.get(f"{book_side}_filled_usd")
+    vwap = vwaps.get(key) if isinstance(vwaps, dict) else None
+    impact = impacts.get(key) if isinstance(impacts, dict) else None
+    filled_usd = filled.get(key) if isinstance(filled, dict) else None
+    return (
+        _finite_non_negative(vwap),
+        _finite_non_negative(impact),
+        _finite_non_negative(filled_usd),
+    )
+
+
+def quote_for_side(
+    snapshot: dict[str, Any] | None,
+    *,
+    position_side: str,
+    leg: str,
+    target_usd: float,
+) -> tuple[float | None, float | None, float | None]:
+    """Return (vwap, impact_bps, filled_usd) for the book side that prices
+    `leg` of a `position_side` position, at `target_usd` notional. See
+    `quote_for_book_side` for the None-handling contract.
+    """
+    book_side = book_side_for(position_side=position_side, leg=leg)
+    return quote_for_book_side(snapshot, book_side=book_side, target_usd=target_usd)
+
+
 def _finite_non_negative(value: Any) -> float | None:
     try:
         parsed = float(value)
