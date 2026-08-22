@@ -5,7 +5,17 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from schurfer_execution import journal
-from schurfer_execution.paper import _tick, close_paper, open_paper, paper_key
+from schurfer_execution.paper import (
+    _tick,
+    close_paper,
+    open_paper,
+    open_paper_for_episode,
+    paper_key,
+    reconcile_missing_positions,
+    release_reservation,
+    reservation_key,
+    reserve_position,
+)
 from schurfer_execution.symbols import ExecutionInstrument
 from schurfer_performance import PAPER_ACCOUNTING_VERSION
 
@@ -44,6 +54,74 @@ def _instrument() -> ExecutionInstrument:
 def test_paper_key_format() -> None:
     assert paper_key("bybit", "beat") == "position:paper:bybit:BEAT"
     assert paper_key("bingx", "SOL") == "position:paper:bingx:SOL"
+
+
+# --- reservation (separate namespace from the real position key) ---
+
+
+def test_reservation_key_is_a_separate_namespace_from_the_real_position_key() -> None:
+    key = reservation_key("bybit", "beat")
+    assert key == "position:paper:reservation:bybit:BEAT"
+    assert not key.startswith(paper_key("bybit", "beat"))
+    assert paper_key("bybit", "beat") not in key.split("reservation:")[0]
+
+
+async def test_reserve_position_acquires_atomically_via_lua() -> None:
+    rdb = _rdb()
+    rdb.eval = AsyncMock(return_value=1)
+    acquired = await reserve_position(rdb, exchange="bybit", base="BEAT", token="tok-1")  # noqa: S106
+    assert acquired is True
+    rdb.eval.assert_awaited_once()
+    script, numkeys, position_key, reservation_key_arg, token, ttl = rdb.eval.call_args.args
+    assert "exists" in script.lower()
+    assert numkeys == 2
+    assert position_key == "position:paper:bybit:BEAT"
+    assert reservation_key_arg == "position:paper:reservation:bybit:BEAT"
+    assert token == "tok-1"  # noqa: S105
+    assert ttl == 30
+
+
+async def test_reserve_position_fails_when_already_reserved() -> None:
+    rdb = _rdb()
+    rdb.eval = AsyncMock(return_value=0)  # NX conflict inside the Lua script
+    acquired = await reserve_position(rdb, exchange="bybit", base="BEAT", token="tok-2")  # noqa: S106
+    assert acquired is False
+
+
+async def test_reserve_position_fails_when_real_position_already_exists() -> None:
+    """Regression (colleague review): a legacy Redis-only position from a
+    different/older flow that never used the reservation namespace must
+    still block a new reservation on the same instrument, not just get
+    silently clobbered once the quote/open path finishes."""
+    rdb = _rdb()
+    rdb.eval = AsyncMock(return_value=0)  # exists-check short-circuits inside the script
+    acquired = await reserve_position(rdb, exchange="bybit", base="BEAT", token="tok-3")  # noqa: S106
+    assert acquired is False
+    script = rdb.eval.call_args.args[0]
+    assert "exists" in script.lower()
+
+
+async def test_release_reservation_is_cas_by_token_never_unconditional_delete() -> None:
+    rdb = _rdb()
+    rdb.eval = AsyncMock(return_value=1)
+    released = await release_reservation(rdb, exchange="bybit", base="BEAT", token="tok-1")  # noqa: S106
+    assert released is True
+    rdb.eval.assert_awaited_once()
+    script, numkeys, key, token = rdb.eval.call_args.args
+    assert "get" in script.lower()
+    assert numkeys == 1
+    assert key == "position:paper:reservation:bybit:BEAT"
+    assert token == "tok-1"  # noqa: S105
+    rdb.delete.assert_not_called()
+
+
+async def test_release_reservation_fails_when_token_does_not_match() -> None:
+    # A stale/expired caller's release must never remove a different (newer)
+    # reservation that has since taken the same key.
+    rdb = _rdb()
+    rdb.eval = AsyncMock(return_value=0)
+    released = await release_reservation(rdb, exchange="bybit", base="BEAT", token="stale-tok")  # noqa: S106
+    assert released is False
 
 
 # --- open_paper ---
@@ -124,6 +202,244 @@ async def test_open_paper_does_not_write_journal_without_db_url() -> None:
     mock_jrn.assert_not_called()
 
 
+# --- open_paper_for_episode ---
+
+
+async def test_open_paper_for_episode_writes_position_with_episode_id() -> None:
+    rdb = _rdb()
+    cfg = _cfg()
+    cfg.db_url = "postgresql://localhost/test"
+    outcome_value = journal.OpenTradeOutcome(
+        trade_id=42, created=True, recovered=False, claim_valid=True
+    )
+
+    with patch(
+        "schurfer_execution.paper.journal.open_trade_for_episode",
+        new_callable=AsyncMock,
+        return_value=outcome_value,
+    ) as mock_jrn:
+        outcome = await open_paper_for_episode(
+            rdb,
+            instrument=_instrument(),
+            price=1.0,
+            size_usd=100.0,
+            leverage=5,
+            score=100,
+            setup_context={"strategy": "early_momentum_v3"},
+            cfg=cfg,
+            side="long",
+            exit_params={"initial_sl_pct": 10.0},
+            episode_id="e1",
+            claim_token="tok-1",  # noqa: S106
+            entry_idempotency_key="e1:entry:base",
+        )
+
+    assert outcome == outcome_value
+    mock_jrn.assert_called_once()
+    kw = mock_jrn.call_args.kwargs
+    assert kw["episode_id"] == "e1"
+    assert kw["claim_token"] == "tok-1"  # noqa: S105
+    assert kw["entry_idempotency_key"] == "e1:entry:base"
+
+    position_calls = [c for c in rdb.set.call_args_list if c.args[0] == "position:paper:bybit:BEAT"]
+    assert len(position_calls) == 1
+    stored = json.loads(position_calls[0].args[1])
+    assert stored["episode_id"] == "e1"
+    assert stored["side"] == "long"
+    # trade_id is embedded directly in the position payload -- close_paper's
+    # primary lookup no longer depends on the separate trade:id:paper:* key
+    # surviving a crash between the two rdb.set calls (colleague review).
+    assert stored["trade_id"] == 42
+    rdb.set.assert_any_call("trade:id:paper:bybit:BEAT", "42", ex=86400 * 7)
+
+
+async def test_open_paper_for_episode_skips_redis_write_when_trade_id_is_none() -> None:
+    """A claim-invalid or idempotency-key-collision outcome must never write
+    a position under the real key -- there's nothing to track."""
+    rdb = _rdb()
+    cfg = _cfg()
+    cfg.db_url = "postgresql://localhost/test"
+    outcome_value = journal.OpenTradeOutcome(
+        trade_id=None, created=False, recovered=False, claim_valid=False
+    )
+
+    with patch(
+        "schurfer_execution.paper.journal.open_trade_for_episode",
+        new_callable=AsyncMock,
+        return_value=outcome_value,
+    ):
+        outcome = await open_paper_for_episode(
+            rdb,
+            instrument=_instrument(),
+            price=1.0,
+            size_usd=100.0,
+            leverage=5,
+            score=100,
+            setup_context={"strategy": "early_momentum_v3"},
+            cfg=cfg,
+            side="long",
+            exit_params={"initial_sl_pct": 10.0},
+            episode_id="e1",
+            claim_token="tok-1",  # noqa: S106
+            entry_idempotency_key="e1:entry:base",
+        )
+
+    assert outcome.trade_id is None
+    rdb.set.assert_not_called()
+
+
+async def test_open_paper_for_episode_requires_db_url() -> None:
+    rdb = _rdb()
+    with pytest.raises(ValueError, match="db_url"):
+        await open_paper_for_episode(
+            rdb,
+            instrument=_instrument(),
+            price=1.0,
+            size_usd=100.0,
+            leverage=5,
+            score=100,
+            setup_context={},
+            cfg=_cfg(),
+            side="long",
+            exit_params={},
+            episode_id="e1",
+            claim_token="tok-1",  # noqa: S106
+            entry_idempotency_key="e1:entry:base",
+        )
+
+
+# --- reconcile_missing_positions ---
+
+
+def _open_episode_trade(**overrides: object) -> journal.OpenEpisodeTrade:
+    import datetime as dt
+
+    fields: dict[str, object] = {
+        "trade_id": 42,
+        "symbol": "BEAT/USDT:USDT",
+        "exchange": "bybit",
+        "side": "long",
+        "entry_price": 1.0,
+        "size_usd": 100.0,
+        "leverage": 5,
+        "entry_at": dt.datetime(2026, 8, 22, tzinfo=dt.UTC),
+        "entry_slippage_bps": 0.0,
+        "exit_slippage_bps": None,
+        "accounting_version": PAPER_ACCOUNTING_VERSION,
+        "setup_context": {"strategy": "early_momentum_v3", "exit_params": {"initial_sl_pct": 10.0}},
+        "episode_id": "e1",
+    }
+    fields.update(overrides)
+    return journal.OpenEpisodeTrade(**fields)  # type: ignore[arg-type]
+
+
+def _rdb_exists(*, position: bool, trade_id_key: bool) -> AsyncMock:
+    """rdb.exists keyed by whether the call is for the position key or the
+    standalone trade-id key -- lets tests exercise the two independent
+    failure points separately."""
+
+    async def _exists(key: str) -> bool:
+        return trade_id_key if key.startswith("trade:id:paper:") else position
+
+    return AsyncMock(side_effect=_exists)
+
+
+async def test_reconcile_missing_positions_rebuilds_missing_key_from_the_trade_row() -> None:
+    rdb = _rdb()
+    rdb.exists = _rdb_exists(position=False, trade_id_key=False)  # both genuinely missing
+    cfg = _cfg()
+    cfg.db_url = "postgresql://localhost/test"
+    trade = _open_episode_trade()
+
+    with patch(
+        "schurfer_execution.paper.journal.find_open_episode_trades",
+        AsyncMock(return_value=[trade]),
+    ):
+        repaired = await reconcile_missing_positions(rdb, cfg)
+
+    assert repaired == 1
+    position_calls = [c for c in rdb.set.call_args_list if c.args[0] == "position:paper:bybit:BEAT"]
+    assert len(position_calls) == 1
+    stored = json.loads(position_calls[0].args[1])
+    assert stored["episode_id"] == "e1"
+    assert stored["entry_price"] == 1.0
+    assert stored["exit_params"] == {"initial_sl_pct": 10.0}
+    assert stored["trade_id"] == 42
+    rdb.set.assert_any_call("trade:id:paper:bybit:BEAT", "42", ex=86400 * 7)
+
+
+async def test_reconcile_missing_positions_errors_and_skips_when_exit_params_missing() -> None:
+    """A trade whose setup_context never got exit_params persisted (an
+    older/malformed row) must be skipped, never silently rebuilt with
+    whatever the code's current exit_params constant happens to be."""
+    rdb = _rdb()
+    rdb.exists = _rdb_exists(position=False, trade_id_key=False)
+    cfg = _cfg()
+    cfg.db_url = "postgresql://localhost/test"
+    trade = _open_episode_trade(setup_context={"strategy": "early_momentum_v3"})
+
+    with patch(
+        "schurfer_execution.paper.journal.find_open_episode_trades",
+        AsyncMock(return_value=[trade]),
+    ):
+        repaired = await reconcile_missing_positions(rdb, cfg)
+
+    assert repaired == 0
+    rdb.set.assert_not_called()
+
+
+async def test_reconcile_missing_positions_skips_when_both_keys_already_present() -> None:
+    rdb = _rdb()
+    rdb.exists = _rdb_exists(position=True, trade_id_key=True)  # nothing to repair
+    cfg = _cfg()
+    cfg.db_url = "postgresql://localhost/test"
+
+    with patch(
+        "schurfer_execution.paper.journal.find_open_episode_trades",
+        AsyncMock(return_value=[_open_episode_trade()]),
+    ):
+        repaired = await reconcile_missing_positions(rdb, cfg)
+
+    assert repaired == 0
+    rdb.set.assert_not_called()
+
+
+async def test_reconcile_missing_positions_repairs_trade_id_key_independently() -> None:
+    """Crash-window regression (colleague review): the position rdb.set
+    succeeds but the process dies before the trade-id rdb.set runs. Must be
+    repaired on its own -- not skipped just because the position key is
+    already present -- so close_paper's legacy fallback path can still find
+    it even for a position payload written before trade_id was embedded."""
+    rdb = _rdb()
+    rdb.exists = _rdb_exists(position=True, trade_id_key=False)
+    cfg = _cfg()
+    cfg.db_url = "postgresql://localhost/test"
+    trade = _open_episode_trade()
+
+    with patch(
+        "schurfer_execution.paper.journal.find_open_episode_trades",
+        AsyncMock(return_value=[trade]),
+    ):
+        repaired = await reconcile_missing_positions(rdb, cfg)
+
+    assert repaired == 1
+    # The already-present position key must be left untouched -- only the
+    # missing trade-id key gets written.
+    assert all(c.args[0] != "position:paper:bybit:BEAT" for c in rdb.set.call_args_list)
+    rdb.set.assert_called_once_with("trade:id:paper:bybit:BEAT", "42", ex=86400 * 7)
+
+
+async def test_reconcile_missing_positions_noop_without_db_url() -> None:
+    rdb = _rdb()
+    with patch(
+        "schurfer_execution.paper.journal.find_open_episode_trades", new_callable=AsyncMock
+    ) as find:
+        repaired = await reconcile_missing_positions(rdb, _cfg())
+
+    assert repaired == 0
+    find.assert_not_awaited()
+
+
 # --- close_paper ---
 
 
@@ -168,6 +484,40 @@ async def test_close_paper_writes_journal_when_trade_id_exists() -> None:
     assert "entry_price" not in kw
     assert "side" not in kw
     mock_cas_delete.assert_called_once_with(rdb, "trade:id:paper:bybit:BEAT", 42)
+
+
+async def test_close_paper_prefers_trade_id_embedded_in_position_over_the_redis_key() -> None:
+    """The embedded trade_id must win even when the standalone key is
+    missing/stale -- it can't be separated from the position by a crash
+    the way the standalone key's own rdb.set can (colleague review)."""
+    rdb = _rdb()
+    rdb.get = AsyncMock(return_value=None)  # standalone trade:id:* key never written
+    cfg = _cfg()
+    cfg.db_url = "postgresql://localhost/test"
+    pos = {
+        "base": "BEAT",
+        "exchange": "bybit",
+        "entry_price": 0.0030,
+        "side": "short",
+        "trade_id": 42,
+    }
+
+    with (
+        patch(
+            "schurfer_execution.paper.journal.close_trade",
+            new_callable=AsyncMock,
+            return_value=journal.CloseOutcome(committed=True),
+        ) as mock_jrn,
+        patch(
+            "schurfer_execution.paper.journal.delete_trade_id_if_matches",
+            new_callable=AsyncMock,
+        ),
+    ):
+        await close_paper(rdb, pos=pos, current_price=0.0025, reason="take_profit", cfg=cfg)
+
+    mock_jrn.assert_called_once()
+    assert mock_jrn.call_args.kwargs["trade_id"] == 42
+    rdb.get.assert_not_called()
 
 
 async def test_close_paper_pnl_computed_correctly_for_short() -> None:
@@ -406,6 +756,49 @@ async def test_close_paper_journal_failure_leaves_position_tracked_for_retry() -
     mock_cas_delete.assert_not_called()
     rdb.delete.assert_not_called()
     close_notice.assert_not_awaited()
+
+
+async def test_close_paper_with_episode_id_cas_deletes_and_marks_episode_closed() -> None:
+    rdb = _rdb()
+    rdb.get = AsyncMock(return_value=None)  # no trade_id pointer -> no DB commit path
+    rdb.eval = AsyncMock(return_value=1)
+    cfg = _cfg()
+    cfg.db_url = "postgresql://localhost/test"
+    pos = {
+        "base": "BEAT",
+        "exchange": "bybit",
+        "entry_price": 100,
+        "side": "long",
+        "episode_id": "e1",
+    }
+
+    with patch(
+        "schurfer_execution.paper.episodes.mark_closed", new_callable=AsyncMock
+    ) as mark_closed:
+        await close_paper(rdb, pos=pos, current_price=90, reason="stop_loss", cfg=cfg)
+
+    # CAS-scoped, never the plain unconditional delete.
+    rdb.delete.assert_not_called()
+    rdb.eval.assert_awaited_once()
+    script, numkeys, key, episode_id = rdb.eval.call_args.args
+    assert "cjson.decode" in script
+    assert numkeys == 1
+    assert key == "position:paper:bybit:BEAT"
+    assert episode_id == "e1"
+    mark_closed.assert_awaited_once_with(cfg.db_url, episode_id="e1")
+
+
+async def test_close_paper_without_episode_id_uses_plain_delete() -> None:
+    """v1/v2 legacy positions carry no episode_id -- unchanged behavior."""
+    rdb = _rdb()
+    rdb.get = AsyncMock(return_value=None)
+    cfg = _cfg()
+    pos = {"base": "BEAT", "exchange": "bybit", "entry_price": 100, "side": "short"}
+
+    await close_paper(rdb, pos=pos, current_price=90, reason="stop_loss", cfg=cfg)
+
+    rdb.delete.assert_any_call("position:paper:bybit:BEAT")
+    rdb.eval.assert_not_called()
 
 
 async def test_close_paper_records_fresh_buy_to_close_quote() -> None:

@@ -3,6 +3,7 @@
 from schurfer_journal.models import (
     Alert,
     AlertStatus,
+    EarlyMomentumEpisode,
     Exchange,
     FillResolutionIncident,
     MarketType,
@@ -159,6 +160,23 @@ class TestTradeModel:
         fks = {fk.target_fullname for fk in Trade.__table__.foreign_keys}
         assert "app.strategies.id" in fks
         assert "app.alerts.id" in fks
+        assert "app.early_momentum_episodes.episode_id" in fks
+
+    def test_episode_id_is_nullable_and_not_unique(self) -> None:
+        # Backward compat for rows that predate the episode lifecycle, and a
+        # future scale-in leg reusing the same episode_id for a second row.
+        columns = {c.name: c for c in Trade.__table__.columns}
+        assert columns["episode_id"].nullable is True
+        indexes = {idx.name: idx for idx in Trade.__table__.indexes}
+        assert indexes["ix_trades_episode_id"].unique is not True
+
+    def test_entry_idempotency_key_has_partial_unique_index(self) -> None:
+        indexes = {idx.name: idx for idx in Trade.__table__.indexes}
+        idx = indexes["ux_trades_entry_idempotency_key"]
+        assert idx.unique is True
+        assert "entry_idempotency_key IS NOT NULL" in str(
+            idx.dialect_kwargs.get("postgresql_where")
+        )
 
     def test_gin_index_on_setup_context(self) -> None:
         indexes = {idx.name: idx for idx in Trade.__table__.indexes}
@@ -213,6 +231,65 @@ class TestTradeExitLiquidityObservationModel:
             for foreign_key in TradeExitLiquidityObservation.__table__.foreign_keys
         }
         assert foreign_keys == {"app.trades.id"}
+
+
+class TestEarlyMomentumEpisodeModel:
+    def test_table_contract(self) -> None:
+        assert EarlyMomentumEpisode.__tablename__ == "early_momentum_episodes"
+        assert EarlyMomentumEpisode.__table__.schema == "app"
+        columns = {c.name: c for c in EarlyMomentumEpisode.__table__.columns}
+        assert {
+            "episode_id",
+            "strategy_id",
+            "contract_sha256",
+            "source_exchange",
+            "source_native_id",
+            "exchange",
+            "native_market_id",
+            "execution_symbol",
+            "execution_identity_key",
+            "source_identity_key",
+            "cluster_key",
+            "ceiling",
+            "features",
+            "armed_at",
+            "expires_at",
+            "status",
+            "terminal_reason",
+            "claim_token",
+            "claimed_at",
+            "claim_expires_at",
+            "claim_attempts",
+        }.issubset(columns)
+
+    def test_foreign_key_to_strategy_registry(self) -> None:
+        # No duplicate strategy/strategy_version string columns -- identity
+        # is only ever the FK to app.strategies (name, version).
+        fks = {fk.target_fullname for fk in EarlyMomentumEpisode.__table__.foreign_keys}
+        assert fks == {"app.strategies.id"}
+        columns = {c.name for c in EarlyMomentumEpisode.__table__.columns}
+        assert "strategy" not in columns
+        assert "strategy_version" not in columns
+
+    def test_no_trade_id_column(self) -> None:
+        # Deliberately no episodes.trade_id -- trades.episode_id is the only
+        # FK direction (avoids a circular FK and supports multi-leg episodes).
+        columns = {c.name for c in EarlyMomentumEpisode.__table__.columns}
+        assert "trade_id" not in columns
+
+    def test_live_instrument_partial_unique_index(self) -> None:
+        indexes = {idx.name: idx for idx in EarlyMomentumEpisode.__table__.indexes}
+        idx = indexes["ux_early_momentum_episodes_live_instrument"]
+        assert idx.unique is True
+        assert set(idx.columns.keys()) == {"exchange", "native_market_id"}
+        assert "status IN ('armed', 'claimed')" in str(idx.dialect_kwargs.get("postgresql_where"))
+
+    def test_armed_and_claim_expiry_partial_indexes(self) -> None:
+        indexes = {idx.name: idx for idx in EarlyMomentumEpisode.__table__.indexes}
+        armed = indexes["ix_early_momentum_episodes_armed_expiry"]
+        assert "status = 'armed'" in str(armed.dialect_kwargs.get("postgresql_where"))
+        claimed = indexes["ix_early_momentum_episodes_claim_expiry"]
+        assert "status = 'claimed'" in str(claimed.dialect_kwargs.get("postgresql_where"))
 
 
 class TestSourceLeadCaptureModels:

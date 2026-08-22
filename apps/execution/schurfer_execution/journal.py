@@ -8,6 +8,7 @@ from typing import Any
 
 import psycopg
 import structlog
+from psycopg.rows import dict_row
 from schurfer_performance import (
     LEGACY_ACCOUNTING_VERSION,
     PAPER_ACCOUNTING_VERSION,
@@ -55,6 +56,7 @@ SET exit_order_id = %s,
     fees_usd      = %s,
     funding_usd   = %s,
     slippage_usd  = %s,
+    exit_slippage_bps = %s,
     pnl_usd       = %s,
     pnl_pct       = %s,
     outcome_label = %s,
@@ -122,7 +124,15 @@ SELECT
     status,
     entry_at,
     entry_slippage_bps,
-    accounting_version
+    accounting_version,
+    gross_pnl_usd,
+    gross_pnl_pct,
+    net_pnl_usd,
+    net_pnl_pct,
+    fees_usd,
+    funding_usd,
+    slippage_usd,
+    accounting_status
 FROM app.trades
 WHERE id = %s
 """
@@ -243,6 +253,23 @@ def strategy_identity(setup_context: dict[str, Any]) -> tuple[str, str]:
     return strategy_name, strategy_version
 
 
+async def ensure_strategy(db_url: str, *, name: str, version: str) -> int | None:
+    """Idempotent upsert-by-natural-key into the strategy registry, exposed
+    standalone for callers (e.g. early_momentum.py's episode-lifecycle path)
+    that need a strategy_id before any trade row exists yet -- open_trade/
+    open_trade_for_episode do this same upsert inline for their own callers."""
+    try:
+        async with await psycopg.AsyncConnection.connect(db_url) as aconn, aconn.cursor() as cur:
+            await cur.execute(
+                _UPSERT_STRATEGY, (name, version, f"Auto-registered strategy: {name}")
+            )
+            row = await cur.fetchone()
+            return row[0] if row else None
+    except Exception as exc:
+        log.error("journal.ensure_strategy.failed", name=name, version=version, err=str(exc))
+        return None
+
+
 async def open_trade(
     db_url: str,
     *,
@@ -307,6 +334,224 @@ async def open_trade(
         return None
 
 
+_INSERT_TRADE_FOR_EPISODE = """
+INSERT INTO app.trades (
+    strategy_id, symbol, exchange, market_type, side,
+    entry_order_id, size_usd, leverage,
+    entry_price, entry_at, entry_slippage_bps, exit_slippage_bps,
+    accounting_version, accounting_status, status, setup_context,
+    episode_id, entry_idempotency_key
+) VALUES (
+    %s, %s, %s, 'perp', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'open', %s, %s, %s
+)
+ON CONFLICT (entry_idempotency_key) WHERE entry_idempotency_key IS NOT NULL
+DO NOTHING
+RETURNING id
+"""
+
+_SELECT_TRADE_BY_IDEMPOTENCY_KEY = """
+SELECT id, episode_id, strategy_id, symbol
+FROM app.trades
+WHERE entry_idempotency_key = %s
+"""
+
+# FOR UPDATE holds the row lock for the rest of this transaction, so nothing
+# else can change this episode's claim between here and the mark-opened
+# UPDATE below -- correct even under real concurrency, not just today's
+# single-worker deployment.
+#
+# lease_fresh/window_fresh are computed by the DB's own now(), not the app
+# server's clock (avoids clock skew), so a lease that expired *after* the
+# caller's claim_episode() succeeded but *before* this commit -- e.g. a slow
+# quote/liquidity check ate the whole lease window -- is still caught here,
+# not just at claim time. Without this, a stale claim could still open a
+# trade even though reap_overdue/list_actionable have already decided the
+# episode is up for reclaim by someone else.
+_SELECT_EPISODE_FOR_UPDATE = """
+SELECT status, (claim_expires_at > now()) AS lease_fresh, (expires_at > now()) AS window_fresh
+FROM app.early_momentum_episodes
+WHERE episode_id = %s AND claim_token = %s
+FOR UPDATE
+"""
+
+_MARK_EPISODE_OPENED = """
+UPDATE app.early_momentum_episodes
+SET status = 'opened'
+WHERE episode_id = %s AND claim_token = %s
+"""
+
+
+@dataclass(frozen=True)
+class OpenTradeOutcome:
+    """Result of open_trade_for_episode.
+
+    trade_id is None whenever nothing was durably opened -- either the claim
+    was no longer valid (claim_valid=False, e.g. reclaimed/expired under the
+    caller), or the idempotency-key row that already existed belongs to a
+    different episode/strategy/instrument than expected (a key collision,
+    never silently trusted -- see the mismatch check below).
+    """
+
+    trade_id: int | None
+    created: bool
+    recovered: bool
+    claim_valid: bool
+
+
+async def open_trade_for_episode(
+    db_url: str,
+    *,
+    episode_id: str,
+    claim_token: str,
+    symbol: str,
+    exchange: str,
+    side: str,
+    size_usd: float,
+    leverage: int,
+    entry_price: float,
+    entry_idempotency_key: str,
+    setup_context: dict[str, Any],
+) -> OpenTradeOutcome:
+    """Atomically: verify the claim is still valid, idempotently insert (or
+    recover) the trade row, and mark the episode 'opened' -- all in one
+    transaction, so a crash between any two of those steps is impossible
+    (either the whole thing commits, or none of it does). A failed/expired
+    claim aborts before any trade row is ever written.
+
+    Does not touch or replace journal.open_trade — that function's
+    `int | None` return type is relied on verbatim by every existing caller
+    (pump-short, liquidation_cascade); changing it would silently break them.
+    This is a separate, additive path used only by early_momentum_v3.
+    """
+    if side not in ("long", "short"):
+        raise ValueError(f"invalid side: {side}")
+    strategy_name, strategy_version = strategy_identity(setup_context)
+    try:
+        (
+            accounting_version,
+            accounting_status,
+            entry_slippage_bps,
+            exit_slippage_bps,
+        ) = accounting_contract(setup_context, side=side)
+        stored_context = {**setup_context, "accounting_version": accounting_version}
+
+        aconn = await psycopg.AsyncConnection.connect(db_url)
+        async with aconn, aconn.cursor() as cur:
+            await cur.execute(_SELECT_EPISODE_FOR_UPDATE, (episode_id, claim_token))
+            episode_row = await cur.fetchone()
+            # 'opened' is accepted alongside 'claimed': a retry after this
+            # exact claim's own attempt already committed (caller crashed or
+            # lost the ack before finding out) must still recover via the
+            # entry_idempotency_key path below, not be rejected as invalid --
+            # and an already-opened episode's lease is irrelevant by then, so
+            # it skips the freshness check entirely. A 'claimed' episode,
+            # though, must still have a live lease *and* a live episode
+            # window at this exact moment -- not just at claim time -- or a
+            # slow quote/liquidity check could open a trade against an
+            # episode someone else has already reclaimed or that reap_overdue
+            # has already decided to terminate. Any other status with this
+            # claim_token (expired/rejected/suppressed) means the lease
+            # genuinely lapsed and was reaped away -- correctly invalid.
+            status = episode_row[0] if episode_row is not None else None
+            claim_still_live = episode_row is not None and (
+                status == "opened" or (status == "claimed" and episode_row[1] and episode_row[2])
+            )
+            if not claim_still_live:
+                log.warning(
+                    "journal.open_trade_for_episode.claim_invalid",
+                    episode_id=episode_id,
+                    status=status,
+                )
+                return OpenTradeOutcome(
+                    trade_id=None, created=False, recovered=False, claim_valid=False
+                )
+
+            await cur.execute(
+                _UPSERT_STRATEGY,
+                (strategy_name, strategy_version, f"Auto-registered strategy: {strategy_name}"),
+            )
+            strategy_row = await cur.fetchone()
+            if strategy_row is None:
+                return OpenTradeOutcome(
+                    trade_id=None, created=False, recovered=False, claim_valid=True
+                )
+            strategy_id = strategy_row[0]
+
+            await cur.execute(
+                _INSERT_TRADE_FOR_EPISODE,
+                (
+                    strategy_id,
+                    symbol,
+                    exchange,
+                    side,
+                    None,
+                    size_usd,
+                    leverage,
+                    entry_price,
+                    datetime.now(tz=UTC),
+                    entry_slippage_bps,
+                    exit_slippage_bps,
+                    accounting_version,
+                    accounting_status,
+                    json.dumps(stored_context),
+                    episode_id,
+                    entry_idempotency_key,
+                ),
+            )
+            inserted = await cur.fetchone()
+            if inserted is not None:
+                trade_id = inserted[0]
+                created = True
+                recovered = False
+            else:
+                # Idempotent retry: a prior attempt already inserted this
+                # exact entry_idempotency_key. Recover its id -- but only
+                # after confirming it's genuinely the same episode/strategy/
+                # instrument, never trusting a key match alone (a collision
+                # must be a hard error, not a silently wrong trade_id).
+                await cur.execute(_SELECT_TRADE_BY_IDEMPOTENCY_KEY, (entry_idempotency_key,))
+                existing = await cur.fetchone()
+                if existing is None:
+                    log.error(
+                        "journal.open_trade_for_episode.idempotency_key_vanished",
+                        episode_id=episode_id,
+                    )
+                    return OpenTradeOutcome(
+                        trade_id=None, created=False, recovered=False, claim_valid=True
+                    )
+                existing_id, existing_episode_id, existing_strategy_id, existing_symbol = existing
+                if (
+                    str(existing_episode_id) != str(episode_id)
+                    or existing_strategy_id != strategy_id
+                    or existing_symbol != symbol
+                ):
+                    log.error(
+                        "journal.open_trade_for_episode.idempotency_key_collision",
+                        episode_id=episode_id,
+                        existing_episode_id=str(existing_episode_id),
+                    )
+                    return OpenTradeOutcome(
+                        trade_id=None, created=False, recovered=False, claim_valid=True
+                    )
+                trade_id = existing_id
+                created = False
+                recovered = True
+
+            await cur.execute(_MARK_EPISODE_OPENED, (episode_id, claim_token))
+            return OpenTradeOutcome(
+                trade_id=trade_id, created=created, recovered=recovered, claim_valid=True
+            )
+    except Exception as exc:
+        log.error(
+            "journal.open_trade_for_episode.failed",
+            episode_id=episode_id,
+            symbol=symbol,
+            exchange=exchange,
+            err=str(exc),
+        )
+        return OpenTradeOutcome(trade_id=None, created=False, recovered=False, claim_valid=False)
+
+
 @dataclass(frozen=True)
 class CloseOutcome:
     """Everything a caller needs to report a close, computed exactly once.
@@ -316,9 +561,19 @@ class CloseOutcome:
     accounting fields are the SAME numbers written to the DB row — a caller
     reporting to Telegram (or anywhere else) must read them from here rather
     than recomputing independently, so the two can never diverge.
+
+    `newly_closed` distinguishes a real first-time close (True) from a retry
+    of an already-closed trade (False, accounting fields are the row's own
+    previously-persisted values, read back verbatim -- not recomputed
+    against exit_price, which a retry may only know as a later, different
+    ticker read). This is NOT the same fact as "a notification was already
+    delivered" -- a caller must not use it to suppress a retry's Telegram
+    message, only to know whether to skip re-running side effects that
+    assume a fresh close (e.g. episode-lifecycle transitions).
     """
 
     committed: bool
+    newly_closed: bool = True
     gross_pnl_usd: float | None = None
     gross_pnl_pct: float | None = None
     net_pnl_usd: float | None = None
@@ -401,6 +656,14 @@ async def close_trade(
                 entry_at,
                 entry_slippage_raw,
                 accounting_version,
+                saved_gross_pnl_usd,
+                saved_gross_pnl_pct,
+                saved_net_pnl_usd,
+                saved_net_pnl_pct,
+                saved_fees_usd,
+                saved_funding_usd,
+                saved_slippage_usd,
+                saved_accounting_status,
             ) = row
             size_usd = float(size_usd_raw)
             entry_price = float(entry_price_raw)
@@ -410,11 +673,31 @@ async def close_trade(
                 # never got the ack. Treat as success without touching the
                 # row again — re-running the UPDATE would overwrite exit_at
                 # with this retry's timestamp and could shift the trade into
-                # a different UTC day for realized_pnl_today() purposes. The
-                # original close already reported its own accounting; this
-                # retry has nothing new to report.
+                # a different UTC day for realized_pnl_today() purposes.
+                # Return the row's own saved accounting verbatim (never
+                # recomputed against this retry's exit_price, which may be a
+                # later, different ticker read) so a caller can still report
+                # the close accurately — newly_closed=False only means "not
+                # freshly closed by this call," not "already notified."
                 log.info("journal.close_trade.already_closed", trade_id=trade_id)
-                return CloseOutcome(committed=True)
+                return CloseOutcome(
+                    committed=True,
+                    newly_closed=False,
+                    gross_pnl_usd=(
+                        float(saved_gross_pnl_usd) if saved_gross_pnl_usd is not None else None
+                    ),
+                    gross_pnl_pct=(
+                        float(saved_gross_pnl_pct) if saved_gross_pnl_pct is not None else None
+                    ),
+                    net_pnl_usd=float(saved_net_pnl_usd) if saved_net_pnl_usd is not None else None,
+                    net_pnl_pct=float(saved_net_pnl_pct) if saved_net_pnl_pct is not None else None,
+                    fees_usd=float(saved_fees_usd) if saved_fees_usd is not None else None,
+                    funding_usd=float(saved_funding_usd) if saved_funding_usd is not None else None,
+                    slippage_usd=(
+                        float(saved_slippage_usd) if saved_slippage_usd is not None else None
+                    ),
+                    accounting_status=saved_accounting_status,
+                )
 
             closed_at = datetime.now(tz=UTC)
             if accounting_version == PAPER_ACCOUNTING_VERSION:
@@ -485,6 +768,7 @@ async def close_trade(
                     fees_usd,
                     funding_usd,
                     slippage_usd,
+                    fresh_exit_slippage_bps,
                     pnl_usd,
                     pnl_pct,
                     outcome,
@@ -576,6 +860,75 @@ async def find_open_trade_id(db_url: str, *, exchange: str, symbol: str) -> int 
             "journal.find_open_trade_id.failed", exchange=exchange, symbol=symbol, err=str(exc)
         )
         return None
+
+
+_FIND_OPEN_EPISODE_TRADES = """
+SELECT id, symbol, exchange, side, entry_price, size_usd, leverage, entry_at,
+       entry_slippage_bps, exit_slippage_bps, accounting_version, setup_context, episode_id
+FROM app.trades
+WHERE status = 'open'
+  AND episode_id IS NOT NULL
+  AND setup_context ->> 'paper' = 'true'
+"""
+
+
+@dataclass(frozen=True)
+class OpenEpisodeTrade:
+    """An early_momentum_v3 paper trade that is durably 'open' in Postgres --
+    used to detect and repair a Redis position key that a crash between
+    open_trade_for_episode's commit and paper.py's rdb.set(...) left
+    missing (colleague review: without this, that trade is never picked up
+    by list_actionable either, since it's already 'opened' not 'armed'/
+    'claimed' -- it would silently never be monitored for TP/SL/max-hold)."""
+
+    trade_id: int
+    symbol: str
+    exchange: str
+    side: str
+    entry_price: float
+    size_usd: float
+    leverage: int
+    entry_at: datetime
+    entry_slippage_bps: float | None
+    exit_slippage_bps: float | None
+    accounting_version: str
+    setup_context: dict[str, Any]
+    episode_id: str
+
+
+async def find_open_episode_trades(db_url: str) -> list[OpenEpisodeTrade]:
+    try:
+        async with (
+            await psycopg.AsyncConnection.connect(db_url, row_factory=dict_row) as aconn,
+            aconn.cursor() as cur,
+        ):
+            await cur.execute(_FIND_OPEN_EPISODE_TRADES)
+            rows = await cur.fetchall()
+    except Exception as exc:
+        log.error("journal.find_open_episode_trades.failed", err=str(exc))
+        return []
+    return [
+        OpenEpisodeTrade(
+            trade_id=row["id"],
+            symbol=row["symbol"],
+            exchange=row["exchange"],
+            side=row["side"],
+            entry_price=float(row["entry_price"]),
+            size_usd=float(row["size_usd"]),
+            leverage=int(row["leverage"]),
+            entry_at=row["entry_at"],
+            entry_slippage_bps=(
+                float(row["entry_slippage_bps"]) if row["entry_slippage_bps"] is not None else None
+            ),
+            exit_slippage_bps=(
+                float(row["exit_slippage_bps"]) if row["exit_slippage_bps"] is not None else None
+            ),
+            accounting_version=row["accounting_version"],
+            setup_context=row["setup_context"],
+            episode_id=str(row["episode_id"]),
+        )
+        for row in rows
+    ]
 
 
 async def realized_pnl_today(db_url: str) -> float | None:

@@ -50,6 +50,26 @@ jobs:
     name: Test Python
     runs-on: ubuntu-latest
     needs: lint
+    # A real Postgres, not just the _connect_or_skip-based tests silently
+    # skipping: apps/analytics's own real-Postgres integration tests and
+    # apps/execution's test_episodes_integration.py (episode claim/reclaim
+    # concurrency, the live-instrument partial unique index,
+    # open_trade_for_episode atomicity) need this to actually run rather
+    # than pass by never executing. Mirrors the test-go job's service block.
+    services:
+      postgres:
+        image: timescale/timescaledb:latest-pg17
+        env:
+          POSTGRES_USER: schurfer
+          POSTGRES_PASSWORD: schurfer_dev
+          POSTGRES_DB: schurfer
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U schurfer"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -58,6 +78,13 @@ jobs:
           cache-dependency-glob: uv.lock
       - name: Install dependencies
         run: uv sync --frozen --extra dev --all-packages
+      - name: Initialize test database schema
+        run: PGPASSWORD=schurfer_dev psql -h localhost -U schurfer -d schurfer -f infra/docker/init-db.sql
+      - name: Run Alembic migrations against the test database
+        run: |
+          cd packages/journal && \
+            DATABASE_URL=postgresql://schurfer:schurfer_dev@localhost:5432/schurfer \
+            uv run --package schurfer-journal alembic upgrade head
       - name: Check for tests
         id: check
         run: |

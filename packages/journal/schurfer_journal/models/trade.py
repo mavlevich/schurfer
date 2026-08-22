@@ -1,6 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy import (
     BigInteger,
@@ -11,8 +12,10 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base, TimestampMixin
@@ -154,6 +157,19 @@ class Trade(Base, TimestampMixin):
     # Free-form notes
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # early_momentum_v3+: which durable episode (if any) opened this trade.
+    # Nullable for backward compat (pump-short, liquidation_cascade, and
+    # early_momentum v1/v2 rows predate the episode lifecycle) and
+    # deliberately NOT unique -- a future scale-in leg reuses the same
+    # episode_id for a second trade row. entry_idempotency_key is the actual
+    # idempotency guard (see migration 0032's partial unique index).
+    episode_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("app.early_momentum_episodes.episode_id"),
+        nullable=True,
+    )
+    entry_idempotency_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     strategy: Mapped["Strategy"] = relationship("Strategy", back_populates="trades")
     alert: Mapped["Alert | None"] = relationship("Alert", back_populates="trade")
     exit_liquidity_observation: Mapped["TradeExitLiquidityObservation | None"] = relationship(
@@ -168,6 +184,17 @@ class Trade(Base, TimestampMixin):
         Index("ix_trades_status", "status"),
         Index("ix_trades_entry_at", "entry_at"),
         Index("ix_trades_setup_context", "setup_context", postgresql_using="gin"),
+        Index(
+            "ix_trades_episode_id",
+            "episode_id",
+            postgresql_where=text("episode_id IS NOT NULL"),
+        ),
+        Index(
+            "ux_trades_entry_idempotency_key",
+            "entry_idempotency_key",
+            unique=True,
+            postgresql_where=text("entry_idempotency_key IS NOT NULL"),
+        ),
         {"schema": "app"},
     )
 
