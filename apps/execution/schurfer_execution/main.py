@@ -17,7 +17,7 @@ from .incident_worker import run_incident_worker
 from .liquidation_cascade import run_liquidation_cascade_scanner
 from .monitor import run_position_monitor
 from .paper import run_paper_monitor
-from .routers import account, control, orders
+from .routers import account, control, health, orders
 from .tracker import run_pnl_tracker
 from .trader import run_signal_trader
 
@@ -170,6 +170,7 @@ app = FastAPI(title="schurfer-execution", lifespan=lifespan)
 app.include_router(account.router)
 app.include_router(orders.router)
 app.include_router(control.router)
+app.include_router(health.router)
 
 
 def main() -> None:

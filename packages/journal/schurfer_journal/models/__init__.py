@@ -1,5 +1,6 @@
 from .base import Base
 from .decision import TradeDecision, TradeDecisionOutcome
+from .early_momentum_episode import EarlyMomentumEpisode
 from .enums import (
     AlertStatus,
     Exchange,
@@ -34,6 +35,7 @@ __all__ = [
     "Alert",
     "AlertStatus",
     "Base",
+    "EarlyMomentumEpisode",
     "Exchange",
     "FillResolutionIncident",
     "FundingRateSnapshot",

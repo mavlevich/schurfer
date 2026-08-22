@@ -10,8 +10,8 @@ from typing import TYPE_CHECKING, Any
 
 import structlog
 
+from . import episodes, journal, liquidity, notify, symbols
 from . import exit as exit_module
-from . import journal, liquidity, notify, symbols
 
 if TYPE_CHECKING:
     from .config import Config
@@ -22,9 +22,201 @@ _KEY_PREFIX = "position:paper:"
 _TRADE_ID_KEY = "trade:id:paper:{exchange}:{base}"
 _INTERVAL_SECONDS = 30
 
+# A separate namespace from the real position key, never a partial payload
+# written under position:paper:* itself -- _tick scans that exact prefix
+# every 30s and parses whatever it finds as a full position; a placeholder
+# there would either crash it or make it mis-evaluate exit conditions on
+# incomplete data. Acquire is a native atomic SET NX (no Lua needed for
+# that half); release/replace is CAS'd by token via Lua, same GET==token
+# idiom as journal._CAS_DELETE / order_lock._RELEASE_LOCK -- never a plain
+# unconditional DELETE, which could remove a different, newer reservation
+# that reused the same instrument key in the meantime.
+_RESERVATION_KEY_PREFIX = "position:paper:reservation:"
+_RESERVATION_TTL_SECONDS = 30
+
+_RELEASE_RESERVATION = """
+if redis.call("get", KEYS[1]) == ARGV[1] then
+    return redis.call("del", KEYS[1])
+else
+    return 0
+end
+"""
+
+# Checking "does the real position already exist" and "acquire the
+# reservation" must be one atomic step, not two separate round trips --
+# otherwise a legacy Redis-only position (from an older flow that never
+# used the reservation namespace at all, so this instrument's real key
+# already exists but nothing is holding a reservation) could still be
+# clobbered by a reservation acquired in the gap between the two calls
+# (colleague review).
+_RESERVE_POSITION = """
+if redis.call("exists", KEYS[1]) == 1 then
+    return 0
+end
+if redis.call("set", KEYS[2], ARGV[1], "NX", "EX", ARGV[2]) then
+    return 1
+else
+    return 0
+end
+"""
+
+# Scoped by episode_id (when the position carries one) rather than an
+# unconditional DELETE, so a stale/delayed close retry for an old episode
+# can never remove a newer position that has since opened on the same
+# exchange:base key. cjson is part of Redis's stock Lua environment.
+_DELETE_POSITION_IF_EPISODE_MATCHES = """
+local current = redis.call("get", KEYS[1])
+if current == false then
+    return 0
+end
+local ok, decoded = pcall(cjson.decode, current)
+if not ok or type(decoded) ~= "table" then
+    return 0
+end
+if decoded["episode_id"] == ARGV[1] then
+    return redis.call("del", KEYS[1])
+else
+    return 0
+end
+"""
+
 
 def paper_key(exchange: str, base: str) -> str:
     return f"{_KEY_PREFIX}{exchange}:{base.upper()}"
+
+
+def reservation_key(exchange: str, base: str) -> str:
+    return f"{_RESERVATION_KEY_PREFIX}{exchange}:{base.upper()}"
+
+
+async def reserve_position(
+    rdb: Any,
+    *,
+    exchange: str,
+    base: str,
+    token: str,
+    ttl_seconds: int = _RESERVATION_TTL_SECONDS,
+) -> bool:
+    """Fast, atomic fail-closed check for "is anything else already opening
+    a position on this instrument" -- called right after claiming an
+    episode, before spending an exchange round-trip on a quote. A conflict
+    here is a `position_exists`/`suppressed` terminal outcome for the
+    episode, not a wasted network call.
+
+    Also refuses to reserve when the real position:paper:* key already
+    exists, even if nothing currently holds a reservation for it -- guards
+    against clobbering a legacy Redis-only position from a different/older
+    flow that never used this reservation namespace at all."""
+    acquired = await rdb.eval(
+        _RESERVE_POSITION,
+        2,
+        paper_key(exchange, base),
+        reservation_key(exchange, base),
+        token,
+        ttl_seconds,
+    )
+    return int(acquired or 0) == 1
+
+
+async def release_reservation(rdb: Any, *, exchange: str, base: str, token: str) -> bool:
+    """CAS release -- only the holder of `token` can release its own
+    reservation. A stale/expired caller's release can never remove a
+    different (newer) reservation that has since taken the same key."""
+    released = await rdb.eval(_RELEASE_RESERVATION, 1, reservation_key(exchange, base), token)
+    return int(released or 0) == 1
+
+
+def _build_entry_payload(
+    *,
+    instrument: symbols.ExecutionInstrument,
+    price: float,
+    size_usd: float,
+    leverage: int,
+    score: int,
+    side: str,
+    strategy: str,
+    params: dict[str, float],
+    accounting_version: str,
+    entry_slippage_bps: float | None,
+    exit_slippage_bps: float | None,
+    episode_id: str | None = None,
+) -> dict[str, Any]:
+    entry: dict[str, Any] = {
+        "base": instrument.base,
+        "symbol": instrument.symbol,
+        "exchange": instrument.exchange,
+        "side": side,
+        "strategy": strategy,
+        "entry_price": price,
+        "size_usd": size_usd,
+        "leverage": leverage,
+        "opened_at": time.time(),
+        "score": score,
+        "exit_params": params,
+        "accounting_version": accounting_version,
+        "entry_slippage_bps": entry_slippage_bps,
+        "exit_slippage_bps": exit_slippage_bps,
+    }
+    if episode_id is not None:
+        # early_momentum_v3+: threaded through so close_paper can scope its
+        # CAS-delete of the position key by episode_id, not just trade_id.
+        entry["episode_id"] = episode_id
+    return entry
+
+
+async def _finish_open(
+    rdb: Any,
+    *,
+    instrument: symbols.ExecutionInstrument,
+    entry: dict[str, Any],
+    trade_id: int | None,
+    cfg: Config,
+    strategy: str,
+    price: float,
+    score: int,
+    side: str,
+) -> None:
+    # trade_id is embedded directly in the position payload (not only the
+    # separate trade:id:paper:* key) so close_paper doesn't depend on that
+    # second key surviving independently -- a crash between these two
+    # rdb.set calls used to be able to leave a position with no discoverable
+    # trade_id at all, since close_paper only ever read the separate key
+    # (colleague review). The separate key is still written too, for any
+    # other reader still relying on it and for reconcile's own repair.
+    if trade_id is not None:
+        entry = {**entry, "trade_id": trade_id}
+    # Written once, complete -- never a partial payload under this key (see
+    # reserve_position's docstring for why that matters for _tick).
+    await rdb.set(paper_key(instrument.exchange, instrument.base), json.dumps(entry), ex=86400 * 7)
+    if trade_id is not None:
+        await rdb.set(
+            _TRADE_ID_KEY.format(exchange=instrument.exchange, base=instrument.base.upper()),
+            str(trade_id),
+            ex=86400 * 7,
+        )
+
+    creds = notify.credentials(cfg)
+    if creds:
+        await notify.notify_open(
+            *creds,
+            strategy=strategy,
+            base=instrument.base,
+            exchange=instrument.exchange,
+            size_usd=entry["size_usd"],
+            leverage=entry["leverage"],
+            price=price,
+            score=score,
+            side=side,
+            paper=True,
+        )
+
+    log.info(
+        "paper.opened",
+        symbol=instrument.symbol,
+        exchange=instrument.exchange,
+        price=price,
+        score=score,
+    )
 
 
 async def open_paper(
@@ -53,24 +245,21 @@ async def open_paper(
         exit_slippage_bps,
     ) = journal.accounting_contract(paper_context, side=side)
     strategy = setup_context.get("strategy", "unknown")
-    entry = {
-        "base": instrument.base,
-        "symbol": instrument.symbol,
-        "exchange": instrument.exchange,
-        "side": side,
-        "strategy": strategy,
-        "entry_price": price,
-        "size_usd": size_usd,
-        "leverage": leverage,
-        "opened_at": time.time(),
-        "score": score,
-        "exit_params": params,
-        "accounting_version": accounting_version,
-        "entry_slippage_bps": entry_slippage_bps,
-        "exit_slippage_bps": exit_slippage_bps,
-    }
-    await rdb.set(paper_key(instrument.exchange, instrument.base), json.dumps(entry), ex=86400 * 7)
+    entry = _build_entry_payload(
+        instrument=instrument,
+        price=price,
+        size_usd=size_usd,
+        leverage=leverage,
+        score=score,
+        side=side,
+        strategy=strategy,
+        params=params,
+        accounting_version=accounting_version,
+        entry_slippage_bps=entry_slippage_bps,
+        exit_slippage_bps=exit_slippage_bps,
+    )
 
+    trade_id: int | None = None
     if cfg.db_url:
         trade_id = await journal.open_trade(
             cfg.db_url,
@@ -83,35 +272,193 @@ async def open_paper(
             entry_price=price,
             setup_context=paper_context,
         )
-        if trade_id:
-            await rdb.set(
-                _TRADE_ID_KEY.format(exchange=instrument.exchange, base=instrument.base.upper()),
-                str(trade_id),
-                ex=86400 * 7,
-            )
 
-    creds = notify.credentials(cfg)
-    if creds:
-        await notify.notify_open(
-            *creds,
-            strategy=strategy,
-            base=instrument.base,
-            exchange=instrument.exchange,
-            size_usd=size_usd,
-            leverage=leverage,
-            price=price,
-            score=score,
-            side=side,
-            paper=True,
-        )
-
-    log.info(
-        "paper.opened",
-        symbol=instrument.symbol,
-        exchange=instrument.exchange,
+    await _finish_open(
+        rdb,
+        instrument=instrument,
+        entry=entry,
+        trade_id=trade_id,
+        cfg=cfg,
+        strategy=strategy,
         price=price,
         score=score,
+        side=side,
     )
+
+
+async def open_paper_for_episode(
+    rdb: Any,
+    *,
+    instrument: symbols.ExecutionInstrument,
+    price: float,
+    size_usd: float,
+    leverage: int,
+    score: int,
+    setup_context: dict[str, Any],
+    cfg: Config,
+    side: str,
+    exit_params: dict[str, float],
+    episode_id: str,
+    claim_token: str,
+    entry_idempotency_key: str,
+) -> journal.OpenTradeOutcome:
+    """early_momentum_v3: the trade row and the episode's claimed->opened
+    transition are already committed atomically by
+    journal.open_trade_for_episode before this returns -- this only writes
+    the Redis position (once, complete, never partial under paper_key) and
+    sends the open notification. Returns the OpenTradeOutcome so the caller
+    can tell created vs recovered and bail out cleanly when trade_id is None
+    (claim invalid, or an idempotency-key collision journal already logged).
+    """
+    if not cfg.db_url:
+        raise ValueError("open_paper_for_episode requires cfg.db_url")
+    # exit_params is persisted into the durable setup_context (not just the
+    # Redis entry payload below) so reconcile_missing_positions can rebuild
+    # a crash-orphaned position using the SAME exit contract this trade was
+    # actually opened under -- not whatever the code's exit_params constant
+    # happens to be at reconcile time, which may have since changed
+    # (colleague review).
+    paper_context = {**setup_context, "paper": True, "exit_params": exit_params}
+    (
+        accounting_version,
+        _accounting_status,
+        entry_slippage_bps,
+        exit_slippage_bps,
+    ) = journal.accounting_contract(paper_context, side=side)
+    strategy = setup_context.get("strategy", "unknown")
+
+    outcome = await journal.open_trade_for_episode(
+        cfg.db_url,
+        episode_id=episode_id,
+        claim_token=claim_token,
+        symbol=instrument.symbol,
+        exchange=instrument.exchange,
+        side=side,
+        size_usd=size_usd,
+        leverage=leverage,
+        entry_price=price,
+        entry_idempotency_key=entry_idempotency_key,
+        setup_context=paper_context,
+    )
+    if outcome.trade_id is None:
+        return outcome
+
+    entry = _build_entry_payload(
+        instrument=instrument,
+        price=price,
+        size_usd=size_usd,
+        leverage=leverage,
+        score=score,
+        side=side,
+        strategy=strategy,
+        params=exit_params,
+        accounting_version=accounting_version,
+        entry_slippage_bps=entry_slippage_bps,
+        exit_slippage_bps=exit_slippage_bps,
+        episode_id=episode_id,
+    )
+    await _finish_open(
+        rdb,
+        instrument=instrument,
+        entry=entry,
+        trade_id=outcome.trade_id,
+        cfg=cfg,
+        strategy=strategy,
+        price=price,
+        score=score,
+        side=side,
+    )
+    return outcome
+
+
+def _rebuild_entry_payload_from_trade(trade: journal.OpenEpisodeTrade) -> dict[str, Any] | None:
+    # exit_params must come from THIS trade's own historical setup_context,
+    # never the code's current exit_params constant -- if that constant has
+    # since changed, silently using it here would rewrite a live position's
+    # actual exit contract out from under it (colleague review). A missing
+    # value means open_paper_for_episode never persisted it (a genuinely
+    # older/malformed row) -- a hard skip, not a silent fallback.
+    exit_params = trade.setup_context.get("exit_params")
+    if not exit_params:
+        log.error(
+            "paper.reconcile_missing_exit_params",
+            trade_id=trade.trade_id,
+            episode_id=trade.episode_id,
+            symbol=trade.symbol,
+        )
+        return None
+    # CCXT unified symbols are always "BASE/QUOTE:SETTLE" -- the same split
+    # every other caller here relies on to get from a stored symbol back to
+    # the base used in paper_key.
+    base = trade.symbol.split("/")[0]
+    return {
+        "base": base,
+        "symbol": trade.symbol,
+        "exchange": trade.exchange,
+        "side": trade.side,
+        "strategy": trade.setup_context.get("strategy", "unknown"),
+        "entry_price": trade.entry_price,
+        "size_usd": trade.size_usd,
+        "leverage": trade.leverage,
+        "opened_at": trade.entry_at.timestamp(),
+        "score": trade.setup_context.get("score", 100),
+        "exit_params": exit_params,
+        "accounting_version": trade.accounting_version,
+        "entry_slippage_bps": trade.entry_slippage_bps,
+        "exit_slippage_bps": trade.exit_slippage_bps,
+        "episode_id": trade.episode_id,
+        "trade_id": trade.trade_id,
+    }
+
+
+async def reconcile_missing_positions(rdb: Any, cfg: Config) -> int:
+    """Repair a Redis position key (and its trade-id key) that a crash
+    between open_trade_for_episode's DB commit and this module's own
+    rdb.set(...) left missing.
+
+    Without this, such a trade is a genuine orphan: durably 'open' in
+    Postgres and its episode already 'opened' (so list_actionable's own
+    armed/claimed reconciliation never surfaces it either), but with no
+    position:paper:* key for `_tick` to ever monitor for TP/SL/max-hold
+    (colleague review). Cheap and idempotent -- safe to call every trigger
+    tick alongside the episode-lifecycle reconciliation.
+    """
+    if not cfg.db_url:
+        return 0
+    trades = await journal.find_open_episode_trades(cfg.db_url)
+    repaired = 0
+    for trade in trades:
+        base = trade.symbol.split("/")[0]
+        key = paper_key(trade.exchange, base)
+        trade_id_key = _TRADE_ID_KEY.format(exchange=trade.exchange, base=base.upper())
+        position_missing = not await rdb.exists(key)
+        # The two keys are independent failure points -- a crash can take
+        # either one without the other, e.g. the position rdb.set succeeds
+        # but the process dies before the trade-id rdb.set runs. Repairing
+        # only when the position key is missing used to leave that second
+        # case unrepaired forever, even though close_paper's fallback path
+        # for legacy positions (without an embedded trade_id) still depends
+        # on this key existing (colleague review).
+        trade_id_missing = not await rdb.exists(trade_id_key)
+        if not position_missing and not trade_id_missing:
+            continue
+        if position_missing:
+            entry = _rebuild_entry_payload_from_trade(trade)
+            if entry is None:
+                continue
+            await rdb.set(key, json.dumps(entry), ex=86400 * 7)
+        if position_missing or trade_id_missing:
+            await rdb.set(trade_id_key, str(trade.trade_id), ex=86400 * 7)
+        log.warning(
+            "paper.reconciled_missing_position",
+            trade_id=trade.trade_id,
+            episode_id=trade.episode_id,
+            symbol=trade.symbol,
+            position_repaired=position_missing,
+            trade_id_key_repaired=True,
+        )
+        repaired += 1
+    return repaired
 
 
 async def close_paper(
@@ -164,7 +511,15 @@ async def close_paper(
     slippage_usd: float | None = None
 
     trade_id_key = _TRADE_ID_KEY.format(exchange=exchange, base=base.upper())
-    trade_id_raw = await rdb.get(trade_id_key)
+    # Prefer the trade_id embedded directly in the position payload -- it
+    # can't be separated from the position by a crash between two rdb.set
+    # calls the way the standalone key can. Fall back to the standalone key
+    # only for legacy positions opened before this field existed (colleague
+    # review).
+    trade_id_from_pos = pos.get("trade_id")
+    trade_id_raw: str | int | None = (
+        trade_id_from_pos if trade_id_from_pos is not None else await rdb.get(trade_id_key)
+    )
     exit_observation: dict[str, Any] | None = None
     exit_vwap: float | None = None
     fresh_exit_slippage_bps: float | None = None
@@ -254,7 +609,22 @@ async def close_paper(
     # order placement. Reaching here means either there was nothing to
     # commit (no DB/trade_id) or the commit above already succeeded -- safe
     # to stop tracking this position and report the close.
-    await rdb.delete(paper_key(exchange, base))
+    episode_id = pos.get("episode_id")
+    if episode_id is not None:
+        # early_momentum_v3+: CAS by episode_id -- a stale retry for an old
+        # episode must never delete a newer position that has since opened
+        # on the same exchange:base key. Reaching here at all means either
+        # there was nothing to commit or journal.close_trade already
+        # succeeded (a failed commit already returned above) -- safe to
+        # denormalize the episode's own status too (best effort; app.trades
+        # is what's actually authoritative).
+        await rdb.eval(
+            _DELETE_POSITION_IF_EPISODE_MATCHES, 1, paper_key(exchange, base), episode_id
+        )
+        if cfg.db_url:
+            await episodes.mark_closed(cfg.db_url, episode_id=episode_id)
+    else:
+        await rdb.delete(paper_key(exchange, base))
 
     creds = notify.credentials(cfg)
     if creds:

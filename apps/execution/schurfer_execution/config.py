@@ -107,6 +107,26 @@ class Config:
         default_factory=lambda: _float("LIQUIDITY_DEPTH_MULTIPLIER", 2.0)
     )
 
+    # early_momentum_v3 episode lifecycle. No true qualified->not-qualified
+    # edge detection exists yet (the scanner only ever emits positive
+    # candidate rows) -- this cooldown is the honest, explicit stand-in: no
+    # new episode arms for an instrument within this window of its last one.
+    early_momentum_rearm_cooldown_seconds: int = field(
+        default_factory=lambda: _int("EARLY_MOMENTUM_REARM_COOLDOWN_SECONDS", 1800)
+    )
+    # A stale identity catalog must not silently bias the cohort toward old,
+    # previously-known symbols -- past this age, new episodes refuse to arm.
+    # Default is deliberately permissive (30 days): the automatic
+    # identity-catalog refresh scheduler is a separate, not-yet-built PR
+    # (see ROADMAP), and momentum_universe_snapshots today is only written
+    # at startup/version-change, not on a periodic cadence -- a tight
+    # default here (e.g. a few hours) would make this gate reject every
+    # candidate in production and silently produce zero trades (colleague
+    # review). Tighten this once the refresher exists.
+    identity_snapshot_max_age_hours: float = field(
+        default_factory=lambda: _float("IDENTITY_SNAPSHOT_MAX_AGE_HOURS", 720.0)
+    )
+
     # Signal trader — set AUTO_TRADE=true and SIGNAL_POSITION_USD>0 to enable.
     # Scores are read from Redis (signals:{base}) — written by the api-gateway ticker.
     auto_trade: bool = field(default_factory=lambda: _bool("AUTO_TRADE", False))
@@ -181,4 +201,14 @@ class Config:
         if not 1.0 <= self.liquidity_depth_multiplier <= 10.0:
             raise ValueError(
                 f"LIQUIDITY_DEPTH_MULTIPLIER must be 1-10, got {self.liquidity_depth_multiplier}"
+            )
+        if self.early_momentum_rearm_cooldown_seconds < 0:
+            raise ValueError(
+                "EARLY_MOMENTUM_REARM_COOLDOWN_SECONDS must be >= 0, "
+                f"got {self.early_momentum_rearm_cooldown_seconds}"
+            )
+        if not 0.0 < self.identity_snapshot_max_age_hours <= 8760.0:
+            raise ValueError(
+                "IDENTITY_SNAPSHOT_MAX_AGE_HOURS must be > 0 and <= 8760, "
+                f"got {self.identity_snapshot_max_age_hours}"
             )
