@@ -8,16 +8,21 @@ episodes.* calls happen in what order, and with what arguments).
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, Any
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
-
-if TYPE_CHECKING:
-    from collections.abc import AsyncIterator
 
 import pytest
 from schurfer_execution import early_momentum, episodes
 from schurfer_execution.journal import OpenTradeOutcome
 from schurfer_execution.symbols import ExecutionInstrument
+
+
+async def _empty_scan_iter(_pattern: str) -> Any:
+    # A for-loop over an empty tuple, not a return-then-yield, so vulture's
+    # "unreachable code after return" check doesn't trip on this -- same
+    # idiom as test_monitor.py's _async_iter, specialized to zero items.
+    for item in ():
+        yield item
 
 
 def _cfg(**overrides: object) -> MagicMock:
@@ -314,12 +319,7 @@ async def test_process_candidate_writes_nothing_on_live_instrument_conflict() ->
 async def test_trigger_tick_reaps_and_lists_actionable_even_with_no_watch_keys() -> None:
     rdb = MagicMock()
     rdb.exists = AsyncMock(return_value=True)
-
-    async def _scan_iter(_pattern: str) -> AsyncIterator[bytes]:
-        return
-        yield  # pragma: no cover - makes this an async generator with 0 items
-
-    rdb.scan_iter = _scan_iter
+    rdb.scan_iter = _empty_scan_iter
 
     with (
         patch(
@@ -345,12 +345,7 @@ async def test_trigger_tick_repairs_missing_watch_cache_from_actionable() -> Non
     rdb = MagicMock()
     rdb.exists = AsyncMock(return_value=False)  # cache entry missing
     rdb.set = AsyncMock()
-
-    async def _scan_iter(_pattern: str) -> AsyncIterator[bytes]:
-        return
-        yield  # pragma: no cover
-
-    rdb.scan_iter = _scan_iter
+    rdb.scan_iter = _empty_scan_iter
     ep = _episode()
 
     with (
