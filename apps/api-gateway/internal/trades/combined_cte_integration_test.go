@@ -152,6 +152,60 @@ func TestCombinedTradesCTEReadsCanonicalStrategyIdentity(t *testing.T) {
 	}
 }
 
+// TestByStrategyGroupsRealTradesByNameAndVersion proves the GROUP BY
+// strategy_name, strategy_version actually separates two different
+// strategies' trades against a real Postgres instance, not just the
+// stub-based unit tests in handler_test.go.
+func TestByStrategyGroupsRealTradesByNameAndVersion(t *testing.T) {
+	pool := connectTestPool(t)
+	defer pool.Close()
+
+	nameA := "test_by_strategy_a_" + newTestUUID()[:8]
+	nameB := "test_by_strategy_b_" + newTestUUID()[:8]
+	defer cleanupByStrategyTestRows(pool, nameA, nameB)
+
+	strategyA := insertStrategy(t, pool, nameA, "1")
+	strategyB := insertStrategy(t, pool, nameB, "1")
+	insertClosedTrade(t, pool, strategyA)
+	insertClosedTrade(t, pool, strategyA)
+	insertClosedTrade(t, pool, strategyB)
+
+	h := &Handler{pool: &poolAdapter{inner: pool}}
+	req := httptest.NewRequest(http.MethodGet, "/api/trades/stats/by-strategy?exchange=test_by_strategy", nil)
+	w := httptest.NewRecorder()
+	h.ByStrategy(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp byStrategyResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v (%s)", err, w.Body.String())
+	}
+
+	var bucketA, bucketB *strategyStatsEntry
+	for i := range resp.Strategies {
+		switch resp.Strategies[i].StrategyName {
+		case nameA:
+			bucketA = &resp.Strategies[i]
+		case nameB:
+			bucketB = &resp.Strategies[i]
+		}
+	}
+	if bucketA == nil || bucketB == nil {
+		t.Fatalf("want both strategies present, got %+v", resp.Strategies)
+	}
+	if bucketA.Count != 2 {
+		t.Errorf("strategy A: want count=2, got %d", bucketA.Count)
+	}
+	if bucketB.Count != 1 {
+		t.Errorf("strategy B: want count=1, got %d", bucketB.Count)
+	}
+	if bucketA.GrossUSD != 10 { // two trades at +$5 each
+		t.Errorf("strategy A: want gross_usd=10, got %v", bucketA.GrossUSD)
+	}
+}
+
 func insertStrategy(t *testing.T, pool *pgxpool.Pool, name, version string) int64 {
 	t.Helper()
 	var id int64
@@ -200,6 +254,45 @@ func cleanupStrategyTestRows(pool *pgxpool.Pool, version string) {
 	ctx := context.Background()
 	_, _ = pool.Exec(ctx, `DELETE FROM app.trades WHERE exchange = 'test_strategy_join'`)                   //nolint:errcheck
 	_, _ = pool.Exec(ctx, `DELETE FROM app.strategies WHERE name = 'pump_short' AND version = $1`, version) //nolint:errcheck
+}
+
+// insertClosedTrade inserts a closed trade with a known gross_pnl_usd/pct
+// (5% of a $100 short move) under the given strategy, scoped to the
+// 'test_by_strategy' exchange tag so it's invisible to every other test.
+func insertClosedTrade(t *testing.T, pool *pgxpool.Pool, strategyID int64) {
+	t.Helper()
+	var id int64
+	err := pool.QueryRow(context.Background(), `
+		INSERT INTO app.trades (
+			strategy_id, symbol, exchange, market_type, side,
+			size_usd, leverage, entry_price, entry_at,
+			exit_price, exit_at,
+			gross_pnl_usd, gross_pnl_pct, pnl_usd, pnl_pct,
+			fees_usd, funding_usd,
+			accounting_version, accounting_status, status,
+			setup_context, notes
+		) VALUES (
+			$1, 'BYSTRATEGYTEST/USDT:USDT', 'test_by_strategy', 'perp', 'short',
+			100.0, 1.0, 1.0, now() - interval '1 hour',
+			0.95, now(),
+			5.0, 5.0, 5.0, 5.0,
+			0, 0,
+			'legacy_price_only_v1', 'legacy', 'closed',
+			'{}'::jsonb, NULL
+		) RETURNING id`,
+		strategyID,
+	).Scan(&id)
+	if err != nil {
+		t.Fatalf("insertClosedTrade: %v", err)
+	}
+}
+
+func cleanupByStrategyTestRows(pool *pgxpool.Pool, names ...string) {
+	ctx := context.Background()
+	_, _ = pool.Exec(ctx, `DELETE FROM app.trades WHERE exchange = 'test_by_strategy'`) //nolint:errcheck
+	for _, name := range names {
+		_, _ = pool.Exec(ctx, `DELETE FROM app.strategies WHERE name = $1`, name) //nolint:errcheck
+	}
 }
 
 func insertPaperRun(t *testing.T, pool *pgxpool.Pool, paperVersion string) {
