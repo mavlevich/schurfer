@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from schurfer_execution import journal
 from schurfer_execution.paper import (
+    _display_strategy,
     _tick,
     close_paper,
     open_paper,
@@ -46,6 +47,71 @@ def _instrument() -> ExecutionInstrument:
         settle="USDT",
         market_type="swap",
     )
+
+
+# --- _display_strategy (colleague review) ---
+#
+# Regression for a production bug: paper.py used to read setup_context.get(
+# "strategy", "unknown") directly, which only ever found a value for
+# early_momentum/liquidation_cascade (they set "strategy" themselves). Every
+# pump_short paper trade -- which only ever sets "strategy_version", never
+# "strategy" -- showed "Strategy: unknown" in every Telegram open/close
+# message (verified against production, 2026-08-23: 100% of ~200 pump_short
+# messages). journal.strategy_identity() already parses all three
+# conventions correctly; these lock in that _display_strategy actually uses
+# it instead of the single-key lookup it replaced.
+
+
+def test_display_strategy_resolves_pump_shorts_bare_strategy_version() -> None:
+    assert (
+        _display_strategy({"strategy_version": "1_market_quality"})
+        == "pump_short v1_market_quality"
+    )
+
+
+def test_display_strategy_resolves_combined_name_vn() -> None:
+    assert _display_strategy({"strategy": "early_momentum_v4"}) == "early_momentum v4"
+    assert _display_strategy({"strategy": "liquidation_cascade_v2"}) == "liquidation_cascade v2"
+
+
+def test_display_strategy_defaults_to_pump_short_v1_with_no_identity_at_all() -> None:
+    # journal.strategy_identity()'s own module-level default -- matches
+    # pump_short's own historical convention, not an arbitrary "unknown".
+    assert _display_strategy({"pump_pct": 45.0}) == "pump_short v1"
+
+
+def test_display_strategy_falls_back_to_unknown_on_malformed_identity() -> None:
+    # "strategy" present but missing the required "_vN" marker anywhere --
+    # strategy_identity() raises ValueError; must not crash notification,
+    # only this one row's display degrades.
+    assert _display_strategy({"strategy": "noversionmarkerhere"}) == "unknown"
+
+
+async def test_open_paper_telegram_shows_real_strategy_for_pump_short_context() -> None:
+    """End-to-end regression: a pump_short-shaped setup_context (bare
+    strategy_version, the real production shape) must reach notify_open with
+    a real strategy label, not "unknown"."""
+    rdb = _rdb()
+    cfg = _cfg()
+    cfg.telegram_bot_token = "tok"  # noqa: S105
+    cfg.telegram_chat_id = "123"
+
+    with patch(
+        "schurfer_execution.paper.notify.notify_open", new_callable=AsyncMock
+    ) as notify_open:
+        await open_paper(
+            rdb,
+            instrument=_instrument(),
+            price=0.0025,
+            size_usd=50.0,
+            leverage=3,
+            score=8,
+            setup_context={"pump_pct": 45.0, "strategy_version": "1_market_quality"},
+            cfg=cfg,
+        )
+
+    notify_open.assert_awaited_once()
+    assert notify_open.await_args.kwargs["strategy"] == "pump_short v1_market_quality"
 
 
 # --- paper_key ---

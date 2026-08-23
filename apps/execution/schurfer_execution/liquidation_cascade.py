@@ -1,16 +1,19 @@
 import asyncio
+from dataclasses import asdict
 from typing import Any
 
 import psycopg
 import structlog
 from psycopg.rows import dict_row
 
-from . import journal, paper
+from . import journal, liquidity, paper
 from .config import Config
 
 log = structlog.get_logger()
 
 _SCAN_INTERVAL = 60
+_SIZE_USD = 100.0
+_STRATEGY_VERSION = "2"
 
 # We look for a 5%+ price drop and 15%+ OI drop over a 15-minute window.
 _SQL_SCANNER = """
@@ -130,6 +133,35 @@ async def run_liquidation_cascade_scanner(exchanges: dict[str, Any], rdb: Any, c
                 if open_id:
                     continue
 
+                # v2: capture pre-trade order-book quality (colleague review) --
+                # v1 never measured this at all, so entry_slippage_bps was
+                # permanently None for every liquidation_cascade trade and net
+                # accounting could never reach "complete" no matter what else
+                # was fixed (verified against production: 0 of 26 v1 trades
+                # ever had a market_quality snapshot). depth_target is the
+                # gate's own safety margin (a multiple of the real size); the
+                # entry itself is still priced off the plain ticker last_price
+                # below, not a VWAP walk, so this is a genuine as-yet-unpaid
+                # impact cost -- entry_price_includes_impact is deliberately
+                # NOT set (unlike early_momentum's VWAP-priced entry).
+                depth_target = liquidity.depth_target_usd(_SIZE_USD, cfg.liquidity_depth_multiplier)
+                snap = await liquidity.snapshot(
+                    ex, instrument.symbol, required_depth_usd=depth_target
+                )
+                quality = liquidity.check_market_quality(
+                    snap,
+                    target_usd=depth_target,
+                    max_spread_bps=cfg.max_spread_bps,
+                    max_impact_bps=cfg.max_liquidity_impact_bps,
+                )
+                if cfg.require_market_quality and not quality.allowed:
+                    log.info(
+                        "liquidation_cascade.market_quality_gate_skip",
+                        symbol=instrument.symbol,
+                        reason=quality.reason,
+                    )
+                    continue
+
                 log.info(
                     "liquidation_cascade.trigger",
                     symbol=instrument.symbol,
@@ -153,15 +185,16 @@ async def run_liquidation_cascade_scanner(exchanges: dict[str, Any], rdb: Any, c
                     rdb,
                     instrument=instrument,
                     price=last_price,
-                    size_usd=100.0,
+                    size_usd=_SIZE_USD,
                     leverage=5,
                     score=100,
                     setup_context={
-                        "strategy": "liquidation_cascade_v1",
+                        "strategy": f"liquidation_cascade_v{_STRATEGY_VERSION}",
                         "price_drop_pct": round(price_drop * 100, 2),
                         "oi_drop_pct": round(oi_drop * 100, 2),
                         "signal_source": source_exchange,
                         "source_symbol": raw_symbol,
+                        "market_quality": asdict(quality),
                     },
                     cfg=cfg,
                     side="long",

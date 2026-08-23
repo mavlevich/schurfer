@@ -18,6 +18,30 @@ if TYPE_CHECKING:
 
 log = structlog.get_logger()
 
+
+def _display_strategy(setup_context: dict[str, Any]) -> str:
+    """Canonical strategy identity for Telegram display.
+
+    Reuses journal.strategy_identity() -- the single source of truth for
+    parsing name/version across every setup_context convention a caller
+    might use (explicit strategy_name, a combined "name_vN" in strategy, or
+    pump_short's bare strategy_version) -- instead of each call site
+    inventing its own single-key lookup. The naive `setup_context.get(
+    "strategy", "unknown")` this replaced only ever found a value for
+    early_momentum/liquidation_cascade (which happen to set "strategy"
+    directly); pump_short never has that key, only "strategy_version", so
+    every pump_short Telegram message showed "Strategy: unknown" (verified
+    against production, 2026-08-23). A malformed identity must still never
+    crash notification -- falls back to "unknown" only on that specific
+    failure, not for every strategy that doesn't set one particular key.
+    """
+    try:
+        name, version = journal.strategy_identity(setup_context)
+    except ValueError:
+        return "unknown"
+    return f"{name} v{version}"
+
+
 _KEY_PREFIX = "position:paper:"
 _TRADE_ID_KEY = "trade:id:paper:{exchange}:{base}"
 _INTERVAL_SECONDS = 30
@@ -244,7 +268,7 @@ async def open_paper(
         entry_slippage_bps,
         exit_slippage_bps,
     ) = journal.accounting_contract(paper_context, side=side)
-    strategy = setup_context.get("strategy", "unknown")
+    strategy = _display_strategy(setup_context)
     entry = _build_entry_payload(
         instrument=instrument,
         price=price,
@@ -325,7 +349,7 @@ async def open_paper_for_episode(
         entry_slippage_bps,
         exit_slippage_bps,
     ) = journal.accounting_contract(paper_context, side=side)
-    strategy = setup_context.get("strategy", "unknown")
+    strategy = _display_strategy(setup_context)
 
     outcome = await journal.open_trade_for_episode(
         cfg.db_url,
