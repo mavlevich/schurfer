@@ -19,6 +19,7 @@ from schurfer_execution.early_momentum_health import (
     REASON_SCANNER_TICK_FAILED,
     REASON_SOURCE_BARS_STALE,
     REASON_TRIGGER_HEARTBEAT_MISSING,
+    REASON_TRIGGER_HEARTBEAT_STALE,
     compute_status,
 )
 from schurfer_execution.worker_health import STATE_COMPLETED, STATE_FAILED, WorkerHeartbeat
@@ -41,6 +42,9 @@ def _heartbeat(
     )
 
 
+_LIFECYCLE_REAPER_GRACE_SECONDS = 120
+
+
 def _call(**overrides: object) -> tuple[str, tuple[str, ...]]:
     fields: dict[str, object] = {
         "now": NOW,
@@ -52,7 +56,10 @@ def _call(**overrides: object) -> tuple[str, tuple[str, ...]]:
         "source_max_lag_seconds": {"bybit": 65.0, "binance": 70.0},
         "source_lag_limit_seconds": 180,
         "overdue_armed": 0,
+        "oldest_overdue_armed_age_seconds": None,
         "expired_claims": 0,
+        "oldest_expired_claim_age_seconds": None,
+        "lifecycle_reaper_grace_seconds": _LIFECYCLE_REAPER_GRACE_SECONDS,
         "consecutive_zero_quality_ready_ticks": 0,
         "zero_quality_ready_error_threshold": 3,
         "identity_health": {
@@ -127,16 +134,105 @@ def test_lifecycle_metrics_unavailable_is_error() -> None:
     assert REASON_LIFECYCLE_METRICS_UNAVAILABLE in reasons
 
 
-def test_overdue_armed_episodes_is_degraded() -> None:
-    status, reasons = _call(overdue_armed=2)
+def test_overdue_armed_episodes_past_grace_is_degraded() -> None:
+    status, reasons = _call(overdue_armed=2, oldest_overdue_armed_age_seconds=200.0)
     assert status == "degraded"
     assert REASON_OVERDUE_ARMED in reasons
 
 
-def test_expired_claims_is_degraded() -> None:
-    status, reasons = _call(expired_claims=1)
+def test_expired_claims_past_grace_is_degraded() -> None:
+    status, reasons = _call(expired_claims=1, oldest_expired_claim_age_seconds=200.0)
     assert status == "degraded"
     assert REASON_EXPIRED_CLAIMS in reasons
+
+
+# ---- reaper-grace boundary behavior (this PR) ----
+
+
+def test_overdue_armed_at_age_zero_is_ok() -> None:
+    status, reasons = _call(overdue_armed=1, oldest_overdue_armed_age_seconds=0.0)
+    assert status == "ok"
+    assert REASON_OVERDUE_ARMED not in reasons
+
+
+def test_overdue_armed_just_under_grace_is_ok() -> None:
+    status, reasons = _call(overdue_armed=1, oldest_overdue_armed_age_seconds=119.999)
+    assert status == "ok"
+    assert REASON_OVERDUE_ARMED not in reasons
+
+
+def test_overdue_armed_at_grace_boundary_is_degraded() -> None:
+    status, reasons = _call(overdue_armed=1, oldest_overdue_armed_age_seconds=120.0)
+    assert status == "degraded"
+    assert REASON_OVERDUE_ARMED in reasons
+
+
+def test_overdue_armed_past_grace_boundary_is_degraded() -> None:
+    status, reasons = _call(overdue_armed=1, oldest_overdue_armed_age_seconds=121.0)
+    assert status == "degraded"
+    assert REASON_OVERDUE_ARMED in reasons
+
+
+def test_expired_claims_at_age_zero_is_ok() -> None:
+    status, reasons = _call(expired_claims=1, oldest_expired_claim_age_seconds=0.0)
+    assert status == "ok"
+    assert REASON_EXPIRED_CLAIMS not in reasons
+
+
+def test_expired_claims_just_under_grace_is_ok() -> None:
+    status, reasons = _call(expired_claims=1, oldest_expired_claim_age_seconds=119.999)
+    assert status == "ok"
+    assert REASON_EXPIRED_CLAIMS not in reasons
+
+
+def test_expired_claims_at_grace_boundary_is_degraded() -> None:
+    status, reasons = _call(expired_claims=1, oldest_expired_claim_age_seconds=120.0)
+    assert status == "degraded"
+    assert REASON_EXPIRED_CLAIMS in reasons
+
+
+def test_expired_claims_past_grace_boundary_is_degraded() -> None:
+    status, reasons = _call(expired_claims=1, oldest_expired_claim_age_seconds=121.0)
+    assert status == "degraded"
+    assert REASON_EXPIRED_CLAIMS in reasons
+
+
+def test_overdue_armed_zero_count_ignores_a_stale_looking_age() -> None:
+    """count == 0 means "nothing to measure" -- an age value must never be
+    consulted when its own count says there's nothing overdue."""
+    status, reasons = _call(overdue_armed=0, oldest_overdue_armed_age_seconds=999_999.0)
+    assert status == "ok"
+    assert REASON_OVERDUE_ARMED not in reasons
+
+
+def test_expired_claims_zero_count_ignores_a_stale_looking_age() -> None:
+    status, reasons = _call(expired_claims=0, oldest_expired_claim_age_seconds=999_999.0)
+    assert status == "ok"
+    assert REASON_EXPIRED_CLAIMS not in reasons
+
+
+def test_overdue_armed_positive_count_with_missing_age_fails_closed() -> None:
+    status, reasons = _call(overdue_armed=1, oldest_overdue_armed_age_seconds=None)
+    assert status == "error"
+    assert REASON_LIFECYCLE_METRICS_UNAVAILABLE in reasons
+
+
+def test_expired_claims_positive_count_with_missing_age_fails_closed() -> None:
+    status, reasons = _call(expired_claims=1, oldest_expired_claim_age_seconds=None)
+    assert status == "error"
+    assert REASON_LIFECYCLE_METRICS_UNAVAILABLE in reasons
+
+
+def test_stale_trigger_heartbeat_is_still_an_error_regardless_of_lifecycle_grace() -> None:
+    """The reaper grace period is scoped to overdue_armed/expired_claims
+    only -- a genuinely stale heartbeat must never be softened by it."""
+    status, reasons = _call(
+        trigger_heartbeat=_heartbeat(completed_at=NOW - timedelta(seconds=500)),
+        overdue_armed=1,
+        oldest_overdue_armed_age_seconds=0.0,
+    )
+    assert status == "error"
+    assert REASON_TRIGGER_HEARTBEAT_STALE in reasons
 
 
 def test_quality_ready_zero_below_threshold_is_degraded_not_error() -> None:
@@ -154,7 +250,13 @@ def test_quality_ready_zero_at_threshold_is_error() -> None:
 
 
 def test_multiple_reasons_are_all_reported_and_deduped() -> None:
-    status, reasons = _call(scanner_heartbeat=None, overdue_armed=3, expired_claims=1)
+    status, reasons = _call(
+        scanner_heartbeat=None,
+        overdue_armed=3,
+        oldest_overdue_armed_age_seconds=200.0,
+        expired_claims=1,
+        oldest_expired_claim_age_seconds=200.0,
+    )
     assert status == "error"
     assert REASON_SCANNER_HEARTBEAT_MISSING in reasons
     assert REASON_OVERDUE_ARMED in reasons
@@ -163,7 +265,9 @@ def test_multiple_reasons_are_all_reported_and_deduped() -> None:
 
 
 def test_error_reason_wins_over_a_simultaneous_degraded_reason() -> None:
-    status, _reasons = _call(scanner_heartbeat=None, overdue_armed=3)
+    status, _reasons = _call(
+        scanner_heartbeat=None, overdue_armed=3, oldest_overdue_armed_age_seconds=200.0
+    )
     assert status == "error"
 
 

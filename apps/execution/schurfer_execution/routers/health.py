@@ -73,6 +73,7 @@ async def get_early_momentum_health(request: Request) -> dict[str, Any]:
         "scanner_heartbeat": _heartbeat_to_json(raw["scanner_heartbeat"]),
         "trigger_heartbeat": _heartbeat_to_json(raw["trigger_heartbeat"]),
         "source_freshness": raw["source_freshness"],
+        "lifecycle_reaper_grace_seconds": raw["lifecycle_reaper_grace_seconds"],
         "last_successful_open_at": (
             raw["last_successful_open_at"].isoformat() if raw["last_successful_open_at"] else None
         ),

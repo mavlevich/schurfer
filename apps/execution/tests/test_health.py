@@ -46,8 +46,11 @@ def _raw_metrics(**overrides: object) -> dict[str, object]:
             "overdue_armed": 0,
             "expired_claims": 1,
             "identity_stale_rejections_last_hour": 0,
+            "oldest_overdue_armed_age_seconds": None,
+            "oldest_expired_claim_age_seconds": 12.5,
             "oldest_overdue_age_seconds": 12.5,
         },
+        "lifecycle_reaper_grace_seconds": 120,
         "last_successful_open_at": datetime(2026, 8, 22, 11, 0, 0, tzinfo=UTC),
         "consecutive_zero_quality_ready_ticks": 0,
     }
@@ -73,6 +76,9 @@ async def test_health_reports_episode_metrics_and_identity_health() -> None:
     assert result["reasons"] == []
     assert result["overdue_armed"] == 0
     assert result["expired_claims"] == 1
+    assert result["oldest_overdue_armed_age_seconds"] is None
+    assert result["oldest_expired_claim_age_seconds"] == 12.5
+    assert result["lifecycle_reaper_grace_seconds"] == 120
     assert result["identity_health"] == raw["identity_health"]
     assert result["scanner_heartbeat"]["state"] == "completed"
     assert result["scanner_heartbeat"]["counters"] == {"candidates_found": 1}
