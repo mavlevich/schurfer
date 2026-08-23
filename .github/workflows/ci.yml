@@ -96,7 +96,15 @@ jobs:
           fi
       - name: Run tests with coverage
         if: steps.check.outputs.has_tests == 'true'
+        # REQUIRE_INTEGRATION_DB=1 turns test_episodes_integration.py's and
+        # test_early_momentum_scanner_quality_integration.py's own
+        # _connect_or_skip into a hard failure (not a silent skip) when the
+        # Postgres service above is unreachable -- a misconfigured/broken
+        # service must fail this job loudly, not quietly pass with those
+        # tests never actually having run (colleague review).
         run: uv run pytest --cov --cov-report=xml --cov-report=term
+        env:
+          REQUIRE_INTEGRATION_DB: '1'
       - name: Upload coverage
         if: steps.check.outputs.has_tests == 'true'
         uses: actions/upload-artifact@v4

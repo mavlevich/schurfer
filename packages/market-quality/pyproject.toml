@@ -1,0 +1,13 @@
+[project]
+name = "schurfer-market-quality"
+version = "0.1.0"
+description = "Pure, versioned input-quality contracts for market data windows"
+requires-python = ">=3.13"
+dependencies = []
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["schurfer_market_quality*"]
+
+[tool.uv]
+package = true

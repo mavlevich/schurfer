@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 import redis.asyncio as aioredis
@@ -11,7 +12,11 @@ from fastapi import FastAPI
 
 from .config import Config
 from .decisions import _REDIS_SOCKET_TIMEOUT_SECONDS, run_decision_writer
-from .early_momentum import run_early_momentum_scanner, run_early_momentum_trigger
+from .early_momentum import (
+    run_early_momentum_health_monitor,
+    run_early_momentum_scanner,
+    run_early_momentum_trigger,
+)
 from .exchanges import build_exchange_clients, close_exchange_clients
 from .incident_worker import run_incident_worker
 from .liquidation_cascade import run_liquidation_cascade_scanner
@@ -71,6 +76,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     app.state.cfg = cfg
     app.state.rdb = rdb
     app.state.trading_exchanges = trading_exchanges
+    # Shared with the early_momentum health monitor task below, so the
+    # startup-grace-period clock and the HTTP health endpoint's read of it
+    # (routers/health.py) can never disagree about when the process
+    # actually started.
+    early_momentum_startup_at = datetime.now(tz=UTC)
+    app.state.early_momentum_startup_at = early_momentum_startup_at
 
     if market_exchanges:
         log.info("startup.preload_markets", count=len(market_exchanges))
@@ -91,6 +102,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     )
     early_momentum_trigger = (
         asyncio.create_task(run_early_momentum_trigger(market_exchanges, rdb, cfg))
+        if cfg.dry_run
+        else None
+    )
+    # Deliberately its own task, independent of the two above: if trigger
+    # deadlocks, this must keep ticking and still be able to report it.
+    early_momentum_health_monitor = (
+        asyncio.create_task(
+            run_early_momentum_health_monitor(rdb, cfg, startup_at=early_momentum_startup_at)
+        )
         if cfg.dry_run
         else None
     )
@@ -125,40 +145,37 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     )
     yield
 
-    tracker.cancel()
-    monitor.cancel()
-    if trader:
-        trader.cancel()
-    if paper:
-        paper.cancel()
-    if early_momentum_scanner:
-        early_momentum_scanner.cancel()
-    if early_momentum_trigger:
-        early_momentum_trigger.cancel()
-    if liquidation_cascade_scanner:
-        liquidation_cascade_scanner.cancel()
-    if dec_writer:
-        # Unacked entries stay in the Redis Stream and are reprocessed on restart,
-        # so there is no in-process queue to drain here.
-        dec_writer.cancel()
-    if incident_worker:
-        incident_worker.cancel()
-    with contextlib.suppress(asyncio.CancelledError):
-        await tracker
-    with contextlib.suppress(asyncio.CancelledError):
-        await monitor
-    if trader:
-        with contextlib.suppress(asyncio.CancelledError):
-            await trader
-    if paper:
-        with contextlib.suppress(asyncio.CancelledError):
-            await paper
-    if dec_writer:
-        with contextlib.suppress(asyncio.CancelledError):
-            await dec_writer
-    if incident_worker:
-        with contextlib.suppress(asyncio.CancelledError):
-            await incident_worker
+    # Cancel every background task first, then wait for all of them to
+    # actually finish unwinding before tearing down anything they might
+    # still touch mid-cancellation (exchange clients, rdb) -- cancel() only
+    # schedules a CancelledError at the task's next await point, it doesn't
+    # guarantee the task has stopped running yet. A task whose cleanup
+    # (e.g. a heartbeat's `finally` write) runs after clients/rdb are
+    # already closed would fail loudly instead of shutting down cleanly
+    # (colleague review). Unacked decision-writer stream entries are
+    # reprocessed on restart, so there's no in-process queue to drain for
+    # it specifically -- it's still collected here like every other task.
+    background_tasks = [
+        t
+        for t in (
+            tracker,
+            monitor,
+            trader,
+            paper,
+            early_momentum_scanner,
+            early_momentum_trigger,
+            early_momentum_health_monitor,
+            liquidation_cascade_scanner,
+            dec_writer,
+            incident_worker,
+        )
+        if t is not None
+    ]
+    for task in background_tasks:
+        task.cancel()
+    if background_tasks:
+        await asyncio.gather(*background_tasks, return_exceptions=True)
+
     await close_exchange_clients(clients)
     await rdb.aclose()
     if writer_rdb is not None:

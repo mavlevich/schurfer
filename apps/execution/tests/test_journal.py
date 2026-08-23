@@ -1167,3 +1167,39 @@ async def test_open_trade_untouched_return_type_still_int_or_none() -> None:
         )
     assert trade_id == 42
     assert isinstance(trade_id, int)
+
+
+# --- find_strategy_id ---
+
+
+async def test_find_strategy_id_returns_id_when_found() -> None:
+    conn, cur = _mock_conn([(7,)])
+    with patch("psycopg.AsyncConnection.connect", AsyncMock(return_value=conn)):
+        result = await journal.find_strategy_id(
+            "postgresql://x", name="early_momentum", version="4"
+        )
+    assert result == 7
+    query, params = cur.execute.call_args.args
+    assert "SELECT" in query
+    assert "INSERT" not in query
+    assert "UPDATE" not in query
+    assert params == ("early_momentum", "4")
+
+
+async def test_find_strategy_id_returns_none_when_not_registered_yet() -> None:
+    conn, _cur = _mock_conn([None])
+    with patch("psycopg.AsyncConnection.connect", AsyncMock(return_value=conn)):
+        result = await journal.find_strategy_id(
+            "postgresql://x", name="early_momentum", version="4"
+        )
+    assert result is None
+
+
+async def test_find_strategy_id_returns_none_on_db_error() -> None:
+    with patch(
+        "psycopg.AsyncConnection.connect", AsyncMock(side_effect=Exception("connection refused"))
+    ):
+        result = await journal.find_strategy_id(
+            "postgresql://x", name="early_momentum", version="4"
+        )
+    assert result is None

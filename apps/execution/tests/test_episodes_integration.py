@@ -9,15 +9,17 @@ real-Postgres tests -- adapted to psycopg directly here since
 apps/execution's production code (journal.py, episodes.py) talks to
 Postgres via raw psycopg, not SQLAlchemy.
 
-Skips (never fails) when no Postgres is reachable locally. CI must
-provision a real Postgres service for this file and treat an unexpected
-skip there as a failure, not a silent pass.
+Skips when no Postgres is reachable locally, unless REQUIRE_INTEGRATION_DB=1
+is set (CI sets this so a broken/unprovisioned Postgres service fails the
+build loudly instead of these tests silently skipping and the run still
+going green -- colleague review).
 """
 
 from __future__ import annotations
 
 import asyncio
 import hashlib
+import os
 import uuid
 
 import psycopg
@@ -34,8 +36,27 @@ async def _connect_or_skip() -> psycopg.AsyncConnection:
         async with conn.cursor() as cur:
             await cur.execute("SELECT 1")
     except Exception as exc:
+        if os.getenv("REQUIRE_INTEGRATION_DB") == "1":
+            raise RuntimeError(
+                f"REQUIRE_INTEGRATION_DB=1 but Postgres is unreachable: {exc}"
+            ) from exc
         pytest.skip(f"no local postgres reachable: {exc}")
     return conn
+
+
+async def test_connect_or_skip_raises_when_require_integration_db_is_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The CI-enforcement path itself: with REQUIRE_INTEGRATION_DB=1, an
+    unreachable Postgres must fail the test, never silently skip it."""
+
+    async def _failing_connect(*_args: object, **_kwargs: object) -> psycopg.AsyncConnection:
+        raise OSError("connection refused")
+
+    monkeypatch.setenv("REQUIRE_INTEGRATION_DB", "1")
+    monkeypatch.setattr(psycopg.AsyncConnection, "connect", _failing_connect)
+    with pytest.raises(RuntimeError, match="REQUIRE_INTEGRATION_DB"):
+        await _connect_or_skip()
 
 
 async def _ensure_strategy(conn: psycopg.AsyncConnection) -> int:

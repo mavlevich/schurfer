@@ -13,6 +13,7 @@ members = [
     "schurfer-analytics",
     "schurfer-execution",
     "schurfer-journal",
+    "schurfer-market-quality",
     "schurfer-performance",
     "schurfer-telegram-bot",
 ]
@@ -1809,6 +1810,7 @@ dependencies = [
     { name = "httpx" },
     { name = "psycopg", extra = ["binary"] },
     { name = "redis" },
+    { name = "schurfer-market-quality" },
     { name = "schurfer-performance" },
     { name = "structlog" },
     { name = "uvicorn", extra = ["standard"] },
@@ -1821,6 +1823,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
     { name = "redis", specifier = ">=5.2" },
+    { name = "schurfer-market-quality", editable = "packages/market-quality" },
     { name = "schurfer-performance", editable = "packages/performance" },
     { name = "structlog", specifier = ">=24.4" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32.0" },
@@ -1844,6 +1847,11 @@ requires-dist = [
     { name = "sqlalchemy", specifier = ">=2.0" },
     { name = "structlog", specifier = ">=24.4" },
 ]
+
+[[package]]
+name = "schurfer-market-quality"
+version = "0.1.0"
+source = { editable = "packages/market-quality" }
 
 [[package]]
 name = "schurfer-performance"

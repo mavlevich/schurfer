@@ -5,6 +5,13 @@ armed -> claimed -> opened/expired/rejected/suppressed, with Postgres as the
 source of truth and Redis's WATCH cache as a repairable, self-healing view
 of it -- never the only place a live episode can be found. See
 episodes.py's module docstring and migration 0032 for the full reasoning.
+
+v4 adds a frozen input-quality contract (EARLY_MOMENTUM_V4_QUALITY_POLICY,
+schurfer_market_quality) the scanner window must satisfy before a candidate
+is even signal-evaluated, full quality evidence persisted on every armed
+episode, worker heartbeats, and an independent health monitor. See
+fix/early-momentum-input-quality-v1's plan for the full reasoning and the
+real production calibration behind the quality thresholds below.
 """
 
 from __future__ import annotations
@@ -13,15 +20,33 @@ import asyncio
 import hashlib
 import json
 import uuid
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 import psycopg
 import structlog
 from psycopg.rows import dict_row
+from schurfer_market_quality import (
+    Capability,
+    SeriesIdentity,
+    WindowQualityEvidence,
+    WindowQualityPolicy,
+    WindowQualityReason,
+    WindowQualityResult,
+)
+from schurfer_market_quality import validate as validate_window_quality
 
-from . import episodes, journal, liquidity, paper, symbols
+from . import (
+    early_momentum_health,
+    episodes,
+    journal,
+    liquidity,
+    notify,
+    paper,
+    symbols,
+    worker_health,
+)
 
 if TYPE_CHECKING:
     from .config import Config
@@ -29,7 +54,8 @@ if TYPE_CHECKING:
 log = structlog.get_logger()
 
 _EXECUTION_EXCHANGE = "bybit"  # Hardcoded for now since momentum flow is Bybit only
-_WATCH_KEY_PREFIX = "market:early_momentum:v3:watch:"
+_SOURCE_EXCHANGES = ["bybit", "binance"]
+_WATCH_KEY_PREFIX = "market:early_momentum:v4:watch:"
 _SCAN_INTERVAL = 60
 _TRIGGER_INTERVAL = 60
 _LIST_ACTIONABLE_BATCH_SIZE = 200
@@ -43,11 +69,11 @@ _RESERVATION_TOKEN_TTL_SECONDS = 30
 _SIZE_USD = 100.0
 _LEVERAGE = 5
 _STRATEGY_NAME = "early_momentum"
-_STRATEGY_VERSION = "3"
+_STRATEGY_VERSION = "4"
 
-# Hardcoded best parameters from backtest -- unchanged from v1/v2. This PR
-# does not touch the signal, TP/SL, or max-hold; only the lifecycle around
-# deciding to open one.
+# Hardcoded best parameters from backtest -- unchanged from v1/v2/v3. This
+# PR does not touch the signal, TP/SL, max-hold, or these thresholds; only
+# the trustworthiness of the window the signal is computed over.
 _EXIT_PARAMS = {
     "initial_sl_pct": 10.0,
     "activation_pct": 10.0,  # Not used since TP hits first, but required
@@ -57,17 +83,58 @@ _EXIT_PARAMS = {
     "max_hold_min": 240.0,  # 4 hours
     "take_profit_pct": 4.0,  # The holy grail parameter
 }
+_SIGNAL_OI_GROWTH_MIN_PCT = 0.05
+_SIGNAL_PRICE_RANGE_MAX_PCT = 0.03
+
+# The frozen input-quality contract every scanner window must satisfy
+# before it's trusted enough to even evaluate the signal against. Values
+# calibrated against real production data -- see
+# docs/research/early-momentum-v4-oi-freshness-calibration.md for the full
+# calibration queries/results (a versioned record, not just a comment,
+# so a future threshold change has a traceable origin to update):
+#   - required_bucket_count=121 / max_bucket_lag_seconds=180: a 3-day
+#     historical measurement of collector write-lag showed ~65-70s
+#     p50=p95=p99=max for both exchanges, zero minutes over 180s in 3 full
+#     days -- wide margin, not an operational guess.
+#   - max_oi_age_seconds_by_exchange: binance re-polls OI on a fixed REST
+#     cadence (event_at always advances even when the value doesn't
+#     change), so 180s is tight and safe there. Bybit is delta-push --
+#     event_at only advances when the OI field is actually present in a
+#     message, so an old event_at does NOT by itself mean a broken feed.
+#     A live REST cross-check (ground truth) for the worst observed case
+#     confirmed a "stale" WS reading was simply unchanged, not wrong;
+#     ticker/price feeds stayed fresh on every such symbol. 600s is the
+#     conservative starting point pending a longer observation window --
+#     any future tightening changes this policy's hash and therefore the
+#     strategy cohort, never a silent runtime tweak.
+#   - allowed_capture_versions={"v1"}: the only value either exchange has
+#     ever written. An explicit allowlist, not just count(DISTINCT)==1 --
+#     a future v2 capture format must not silently pass as "uniform".
+EARLY_MOMENTUM_V4_QUALITY_POLICY = WindowQualityPolicy(
+    cadence_seconds=60,
+    required_bucket_count=121,
+    max_bucket_lag_seconds=180,
+    max_oi_age_seconds_by_exchange=(("binance", 180), ("bybit", 600)),
+    required_capabilities=(Capability.PRICE, Capability.TRADES, Capability.OPEN_INTEREST),
+    allowed_market_types=("linear",),
+    allowed_capture_versions=frozenset({"v1"}),
+    require_single_capture_version=True,
+    require_single_universe_version=True,
+    future_timestamp_tolerance_seconds=5,
+)
+_QUALITY_POLICY_HASH = hashlib.sha256(
+    json.dumps(EARLY_MOMENTUM_V4_QUALITY_POLICY.to_canonical_dict(), sort_keys=True).encode()
+).hexdigest()
 
 # Canonical serialization of everything an episode is armed under: the
-# scanner's own thresholds (fixed literals below, matching _SQL_SCANNER --
-# not env-configurable, so there is nothing to read back out of the SQL
-# text itself) plus the exit contract and sizing. Sorted keys and only
-# fixed literal values make this deterministic across runs and machines.
+# frozen quality policy plus the signal thresholds and exit contract.
+# Sorted keys and only fixed literal values make this deterministic across
+# runs and machines.
 _CONTRACT_PAYLOAD: dict[str, Any] = {
-    "scanner": {
-        "lookback_minutes": 125,
-        "oi_growth_min_pct": 0.05,
-        "price_range_max_pct": 0.03,
+    "scanner": {"quality": EARLY_MOMENTUM_V4_QUALITY_POLICY.to_canonical_dict()},
+    "signal": {
+        "oi_growth_min_pct": _SIGNAL_OI_GROWTH_MIN_PCT,
+        "price_range_max_pct": _SIGNAL_PRICE_RANGE_MAX_PCT,
     },
     "exit_params": _EXIT_PARAMS,
     "size_usd": _SIZE_USD,
@@ -75,54 +142,262 @@ _CONTRACT_PAYLOAD: dict[str, Any] = {
 }
 CONTRACT_SHA256 = hashlib.sha256(json.dumps(_CONTRACT_PAYLOAD, sort_keys=True).encode()).digest()
 
-# We need a robust CTE to find accumulation candidates for the last 120 minutes.
+# Worker heartbeats (see worker_health.py) -- TTL is deliberately generous
+# rather than optimistic: a single post-tick write with a short TTL can
+# expire mid-tick on a slow iteration (many episodes, a CCXT timeout) even
+# though the worker is alive. 360s needs its own observation period once
+# deployed; start conservative.
+_SCANNER_HEARTBEAT_KEY = "worker:early_momentum:v4:scanner:heartbeat"
+_TRIGGER_HEARTBEAT_KEY = "worker:early_momentum:v4:trigger:heartbeat"
+_HEARTBEAT_TTL_SECONDS = 360
+
+_HEALTH_MONITOR_INTERVAL_SECONDS = 30
+_HEALTH_MONITOR_STARTUP_GRACE_SECONDS = 180
+_HEALTH_ZERO_QUALITY_READY_ERROR_THRESHOLD = 3
+_HEALTH_ZERO_QUALITY_READY_COUNTER_KEY = "early_momentum:v4:health:consecutive_zero_quality_ready"
+_HEALTH_ALERT_STATUS_KEY = "early_momentum:v4:health:last_alerted_status"
+_HEALTH_ALERT_COOLDOWN_KEY_PREFIX = "early_momentum:v4:health:alert_cooldown:"
+
+# Only the scope this window is evaluated over -- exchange (implicit via
+# PARTITION), market_type, and time bounds -- is filtered in SQL. Every
+# per-row defect (completeness, gaps, staleness, duplicate buckets, future
+# timestamps, invalid price/OI, version mixing) is computed as a *column*
+# on the evidence row instead, so the pure validator can name the exact
+# reason -- hiding a bad row in a WHERE clause would make it
+# indistinguishable from a row that was simply never written (colleague
+# review).
 _SQL_SCANNER = """
-WITH recent_bars AS (
+WITH scoped_bars AS (
     SELECT
-        exchange,
-        symbol,
-        bucket_start,
-        close_price,
-        open_interest,
-        buy_total_notional_usd,
-        sell_total_notional_usd
+        exchange, market_type, symbol, bucket_start, close_price, open_interest,
+        capture_version, universe_version, price_complete, trades_complete,
+        open_interest_complete, open_interest_event_at, unbackfilled_gap_minutes,
+        buy_total_notional_usd, sell_total_notional_usd
     FROM timeseries.bybit_momentum_bars_1m
-    WHERE bucket_start >= NOW() - INTERVAL '125 minutes'
-      AND open_interest IS NOT NULL
+    WHERE bucket_start >= now() - make_interval(mins := %(fetch_lookback_minutes)s)
+      AND market_type = ANY(%(allowed_market_types)s)
 ),
-rolling AS (
-    SELECT
-        exchange,
-        symbol,
-        bucket_start,
-        close_price,
-        open_interest,
-        FIRST_VALUE(open_interest) OVER w AS oi_start_2h,
-        MAX(close_price) OVER w AS price_max_2h,
-        MIN(close_price) OVER w AS price_min_2h,
-        SUM(buy_total_notional_usd) OVER w AS buy_vol_2h,
-        SUM(sell_total_notional_usd) OVER w AS sell_vol_2h
-    FROM recent_bars
-    WINDOW w AS (
-        PARTITION BY exchange, symbol
-        ORDER BY bucket_start
-        ROWS BETWEEN 120 PRECEDING AND CURRENT ROW
-    )
+ranked AS (
+    SELECT *,
+        row_number() OVER (
+            PARTITION BY exchange, market_type, symbol ORDER BY bucket_start DESC
+        ) AS rn
+    FROM scoped_bars
 ),
-latest AS (
-    -- Only take the single most recent row for each exchange+symbol to evaluate current state
-    SELECT DISTINCT ON (exchange, symbol) *
-    FROM rolling
-    ORDER BY exchange, symbol, bucket_start DESC
+window_rows AS (
+    -- The most recent required_bucket_count rows per series -- may include
+    -- duplicate bucket_start entries from a capture-version seam; that's
+    -- intentional, has_duplicate_bucket below must see them.
+    SELECT * FROM ranked WHERE rn <= %(required_bucket_count)s
+),
+gapped AS (
+    SELECT *,
+        bucket_start - lag(bucket_start) OVER (
+            PARTITION BY exchange, market_type, symbol ORDER BY bucket_start
+        ) AS gap_to_prev
+    FROM window_rows
 )
-SELECT *
-FROM latest
-WHERE oi_start_2h > 0
-  AND price_min_2h > 0
-  AND (open_interest - oi_start_2h) / oi_start_2h > 0.05
-  AND (buy_vol_2h - sell_vol_2h) > 0
-  AND (price_max_2h - price_min_2h) / price_min_2h < 0.03;
+SELECT
+    exchange, market_type, symbol,
+    min(bucket_start) AS window_start,
+    max(bucket_start) AS window_end,
+    count(*) AS raw_row_count,
+    count(DISTINCT bucket_start) AS distinct_bucket_count,
+    COALESCE(EXTRACT(EPOCH FROM max(gap_to_prev)), 0) AS max_gap_seconds,
+    array_agg(DISTINCT capture_version ORDER BY capture_version) AS capture_versions,
+    array_agg(DISTINCT universe_version ORDER BY universe_version) AS universe_versions,
+    count(*) FILTER (WHERE price_complete) AS price_complete_count,
+    count(*) FILTER (WHERE trades_complete) AS trades_complete_count,
+    count(*) FILTER (WHERE open_interest_complete) AS oi_complete_count,
+    min(open_interest_event_at) AS first_oi_event_at,
+    max(open_interest_event_at) AS latest_oi_event_at,
+    COALESCE(sum(unbackfilled_gap_minutes), 0) AS unbackfilled_gap_minutes_sum,
+    bool_or(
+        bucket_start > now() + make_interval(secs := %(future_tolerance_seconds)s)
+    ) AS has_future_timestamp,
+    bool_or(close_price IS NULL) AS has_invalid_price,
+    bool_or(open_interest IS NULL OR open_interest <= 0) AS has_invalid_open_interest,
+    (count(*) > count(DISTINCT bucket_start)) AS has_duplicate_bucket,
+    (array_agg(open_interest ORDER BY bucket_start ASC))[1] AS oi_start,
+    (array_agg(open_interest ORDER BY bucket_start DESC))[1] AS oi_latest,
+    max(close_price) AS price_max,
+    min(close_price) AS price_min,
+    COALESCE(sum(buy_total_notional_usd), 0) AS buy_vol,
+    COALESCE(sum(sell_total_notional_usd), 0) AS sell_vol
+FROM gapped
+GROUP BY exchange, market_type, symbol;
 """
+
+
+def _scanner_sql_params(policy: WindowQualityPolicy) -> dict[str, Any]:
+    return {
+        # Comfortable slack over required_bucket_count so a genuinely
+        # gappy window still has enough raw history to prove the gap,
+        # rather than the fetch itself truncating the evidence.
+        "fetch_lookback_minutes": policy.required_bucket_count + 20,
+        "allowed_market_types": list(policy.allowed_market_types),
+        "required_bucket_count": policy.required_bucket_count,
+        "future_tolerance_seconds": policy.future_timestamp_tolerance_seconds,
+    }
+
+
+def _row_to_evidence(row: dict[str, Any]) -> WindowQualityEvidence:
+    return WindowQualityEvidence(
+        identity=SeriesIdentity(
+            exchange=row["exchange"], market_type=row["market_type"], symbol=row["symbol"]
+        ),
+        window_start=row["window_start"],
+        window_end=row["window_end"],
+        raw_row_count=row["raw_row_count"],
+        distinct_bucket_count=row["distinct_bucket_count"],
+        max_gap_seconds=float(row["max_gap_seconds"]),
+        latest_bucket_start=row["window_end"],
+        capture_versions=tuple(row["capture_versions"] or ()),
+        universe_versions=tuple(row["universe_versions"] or ()),
+        price_complete_count=row["price_complete_count"],
+        trades_complete_count=row["trades_complete_count"],
+        oi_complete_count=row["oi_complete_count"],
+        first_oi_event_at=row["first_oi_event_at"],
+        latest_oi_event_at=row["latest_oi_event_at"],
+        unbackfilled_gap_minutes_sum=int(row["unbackfilled_gap_minutes_sum"]),
+        has_future_timestamp=bool(row["has_future_timestamp"]),
+        has_invalid_price=bool(row["has_invalid_price"]),
+        has_invalid_open_interest=bool(row["has_invalid_open_interest"]),
+        has_duplicate_bucket=bool(row["has_duplicate_bucket"]),
+    )
+
+
+# --- strategy-owned signal features -- deliberately NOT in
+# schurfer_market_quality, which knows nothing about OI growth, price
+# range, or buy-dominance (colleague review: quality and signal are
+# different concerns, kept in different types). ---
+
+
+@dataclass(frozen=True)
+class EarlyMomentumSignalFeatures:
+    oi_growth_pct: float
+    price_range_pct: float
+    net_taker_flow_usd: float
+    ceiling: float
+    bucket_start: datetime
+
+
+@dataclass(frozen=True)
+class EarlyMomentumSignalResult:
+    features: EarlyMomentumSignalFeatures
+    qualified: bool
+
+
+def _compute_signal(row: dict[str, Any]) -> EarlyMomentumSignalResult:
+    oi_start = row["oi_start"] or 0.0
+    oi_latest = row["oi_latest"] or 0.0
+    price_min = row["price_min"] or 0.0
+    price_max = row["price_max"] or 0.0
+    buy_vol = float(row["buy_vol"] or 0.0)
+    sell_vol = float(row["sell_vol"] or 0.0)
+    net_taker_flow_usd = buy_vol - sell_vol
+
+    if oi_start <= 0 or price_min <= 0:
+        oi_growth_pct = 0.0
+        price_range_pct = 0.0
+        qualified = False
+    else:
+        oi_growth_pct = (oi_latest - oi_start) / oi_start
+        price_range_pct = (price_max - price_min) / price_min
+        qualified = (
+            oi_growth_pct > _SIGNAL_OI_GROWTH_MIN_PCT
+            and net_taker_flow_usd > 0
+            and price_range_pct < _SIGNAL_PRICE_RANGE_MAX_PCT
+        )
+
+    features = EarlyMomentumSignalFeatures(
+        oi_growth_pct=oi_growth_pct,
+        price_range_pct=price_range_pct,
+        net_taker_flow_usd=net_taker_flow_usd,
+        ceiling=price_max or 0.0,
+        bucket_start=row["window_end"],
+    )
+    return EarlyMomentumSignalResult(features=features, qualified=qualified)
+
+
+def _episode_features(
+    quality_result: WindowQualityResult, signal: EarlyMomentumSignalResult
+) -> dict[str, Any]:
+    """Full quality + signal evidence persisted on every armed (and every
+    rejected-past-quality-gate) episode -- so a later performance report
+    can prove the exact provenance of every trade, not just its outcome."""
+    evidence = quality_result.evidence
+    return {
+        "quality_policy_version": _QUALITY_POLICY_HASH,
+        "window_start": evidence.window_start.isoformat(),
+        "window_end": evidence.window_end.isoformat(),
+        "bucket_count": evidence.raw_row_count,
+        "distinct_bucket_count": evidence.distinct_bucket_count,
+        "max_gap_seconds": evidence.max_gap_seconds,
+        "market_type": evidence.identity.market_type,
+        "capture_version": evidence.capture_versions[0] if evidence.capture_versions else None,
+        "universe_version": evidence.universe_versions[0] if evidence.universe_versions else None,
+        "first_oi_age_seconds": (
+            (evidence.window_end - evidence.first_oi_event_at).total_seconds()
+            if evidence.first_oi_event_at
+            else None
+        ),
+        "last_oi_age_seconds": (
+            (evidence.window_end - evidence.latest_oi_event_at).total_seconds()
+            if evidence.latest_oi_event_at
+            else None
+        ),
+        "price_complete_count": evidence.price_complete_count,
+        "trades_complete_count": evidence.trades_complete_count,
+        "oi_complete_count": evidence.oi_complete_count,
+        "quality_reasons": [reason.value for reason in quality_result.reasons],
+        "oi_growth_pct": round(signal.features.oi_growth_pct * 100, 2),
+        "price_range_pct": round(signal.features.price_range_pct * 100, 2),
+        "net_taker_flow_usd": round(signal.features.net_taker_flow_usd, 2),
+        "bucket_start": signal.features.bucket_start.isoformat(),
+    }
+
+
+# One rollup counter per WindowQualityReason, plus the pipeline-stage
+# counters -- so "zero candidates_found" is always explainable (quality
+# gates rejecting everything vs. quality-clean windows just not
+# signal-qualifying vs. the scanner not running at all) instead of an
+# opaque zero (colleague review).
+_REASON_COUNTER_KEYS: dict[WindowQualityReason, str] = {
+    WindowQualityReason.INCOMPLETE_PRICE: "rejected_incomplete",
+    WindowQualityReason.INCOMPLETE_TRADES: "rejected_incomplete",
+    WindowQualityReason.INCOMPLETE_OI: "rejected_incomplete",
+    WindowQualityReason.GAP: "rejected_gap",
+    WindowQualityReason.STALE_BUCKET: "rejected_stale_bucket",
+    WindowQualityReason.STALE_OI: "rejected_stale_oi",
+    WindowQualityReason.CAPTURE_VERSION_NOT_ALLOWED: "rejected_capture_version_not_allowed",
+    WindowQualityReason.MULTIPLE_CAPTURE_VERSIONS: "rejected_multiple_capture_versions",
+    WindowQualityReason.MULTIPLE_UNIVERSE_VERSIONS: "rejected_multiple_universe_versions",
+    WindowQualityReason.DUPLICATE_BUCKET: "rejected_duplicate_bucket",
+    WindowQualityReason.WRONG_MARKET_TYPE: "rejected_wrong_market_type",
+    WindowQualityReason.FUTURE_TIMESTAMP: "rejected_future_timestamp",
+    WindowQualityReason.INVALID_PRICE: "rejected_invalid_price",
+    WindowQualityReason.INVALID_OPEN_INTEREST: "rejected_invalid_open_interest",
+    WindowQualityReason.INSUFFICIENT_ROWS: "rejected_insufficient_rows",
+}
+_SCANNER_COUNTER_KEYS = (
+    "symbols_total",
+    "quality_ready",
+    "rejected_signal",
+    "candidates_found",
+    *sorted(set(_REASON_COUNTER_KEYS.values())),
+)
+
+
+def _new_scanner_counters() -> dict[str, int]:
+    return dict.fromkeys(_SCANNER_COUNTER_KEYS, 0)
+
+
+def _tally_rejection_counters(
+    counters: dict[str, int], reasons: tuple[WindowQualityReason, ...]
+) -> None:
+    for reason in reasons:
+        counters[_REASON_COUNTER_KEYS[reason]] += 1
 
 
 def _watch_key(episode_id: str) -> str:
@@ -152,7 +427,14 @@ async def run_early_momentum_scanner(rdb: Any, cfg: Config) -> None:
 
     while True:
         try:
-            await _scan_once(rdb, cfg)
+            async with worker_health.track_tick(
+                rdb,
+                key=_SCANNER_HEARTBEAT_KEY,
+                worker_name="early_momentum_scanner",
+                worker_version=_STRATEGY_VERSION,
+                ttl_seconds=_HEARTBEAT_TTL_SECONDS,
+            ) as tick:
+                tick.counters.update(await _scan_once(rdb, cfg))
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -161,75 +443,106 @@ async def run_early_momentum_scanner(rdb: Any, cfg: Config) -> None:
         await asyncio.sleep(_SCAN_INTERVAL)
 
 
-async def _scan_once(rdb: Any, cfg: Config) -> None:
+async def _scan_once(rdb: Any, cfg: Config) -> dict[str, int]:
     assert cfg.db_url is not None
+    counters = _new_scanner_counters()
+
     async with (
         await psycopg.AsyncConnection.connect(cfg.db_url) as conn,
         conn.cursor(row_factory=dict_row) as cur,
     ):
-        await cur.execute(_SQL_SCANNER)
-        candidates = await cur.fetchall()
-    if not candidates:
-        return
+        await cur.execute(_SQL_SCANNER, _scanner_sql_params(EARLY_MOMENTUM_V4_QUALITY_POLICY))
+        rows = await cur.fetchall()
+        # bucket-lag/OI-staleness are judged against the DATABASE's own
+        # clock, not the execution app's -- the evidence timestamps
+        # (bucket_start, open_interest_event_at) are DB-written, so
+        # comparing them against the app host's local clock would make
+        # ordinary NTP drift between the two hosts show up as false
+        # staleness (or mask real staleness), even with both nominally on
+        # UTC (colleague review).
+        await cur.execute("SELECT now()")
+        now_row = await cur.fetchone()
+        now = now_row["now"] if now_row else datetime.now(tz=UTC)
+
+    qualified: list[tuple[dict[str, Any], WindowQualityResult, EarlyMomentumSignalResult]] = []
+    for row in rows:
+        evidence = _row_to_evidence(row)
+        result = validate_window_quality(
+            evidence, EARLY_MOMENTUM_V4_QUALITY_POLICY, evaluated_at=now
+        )
+        counters["symbols_total"] += 1
+        _tally_rejection_counters(counters, result.reasons)
+        if not result.qualified:
+            continue
+        counters["quality_ready"] += 1
+
+        signal = _compute_signal(row)
+        if not signal.qualified:
+            counters["rejected_signal"] += 1
+            continue
+        counters["candidates_found"] += 1
+        qualified.append((row, result, signal))
+
+    if not qualified:
+        return counters
 
     strategy_id = await journal.ensure_strategy(
         cfg.db_url, name=_STRATEGY_NAME, version=_STRATEGY_VERSION
     )
     if strategy_id is None:
         log.error("early_momentum.scanner_strategy_upsert_failed")
-        return
+        return counters
 
     # Batch by source exchange: one staleness check and one route-resolution
     # query per exchange present this tick, instead of N round trips.
-    by_source_exchange: dict[str, list[dict[str, Any]]] = {}
-    for c in candidates:
-        by_source_exchange.setdefault(c["exchange"], []).append(c)
+    by_source_exchange: dict[
+        str, list[tuple[dict[str, Any], WindowQualityResult, EarlyMomentumSignalResult]]
+    ] = {}
+    for item in qualified:
+        by_source_exchange.setdefault(item[0]["exchange"], []).append(item)
 
     max_age_seconds = cfg.identity_snapshot_max_age_hours * 3600
-    for source_exchange, rows in by_source_exchange.items():
+    for source_exchange, items in by_source_exchange.items():
         age = await episodes.identity_snapshot_age_seconds(cfg.db_url, exchange=source_exchange)
         catalog_stale = age is None or age > max_age_seconds
 
         routes = await episodes.resolve_routes_batch(
             cfg.db_url,
             source_exchange=source_exchange,
-            source_native_ids=[row["symbol"] for row in rows],
+            source_native_ids=[row["symbol"] for row, _, _ in items],
             execution_exchange=_EXECUTION_EXCHANGE,
         )
-        for c in rows:
+        for row, quality_result, signal in items:
             await _process_candidate(
                 rdb,
                 cfg,
-                candidate=c,
+                row=row,
+                quality_result=quality_result,
+                signal=signal,
                 strategy_id=strategy_id,
                 source_exchange=source_exchange,
-                route=routes.get(c["symbol"]),
+                route=routes.get(row["symbol"]),
                 catalog_stale=catalog_stale,
             )
+    return counters
 
 
 async def _process_candidate(
     rdb: Any,
     cfg: Config,
     *,
-    candidate: dict[str, Any],
+    row: dict[str, Any],
+    quality_result: WindowQualityResult,
+    signal: EarlyMomentumSignalResult,
     strategy_id: int,
     source_exchange: str,
     route: episodes.BatchRoute | None,
     catalog_stale: bool,
 ) -> None:
     assert cfg.db_url is not None
-    raw_symbol = candidate["symbol"]
-    ceiling = float(candidate["price_max_2h"])
-    features = {
-        "oi_growth_pct": round(
-            (candidate["open_interest"] - candidate["oi_start_2h"])
-            / candidate["oi_start_2h"]
-            * 100,
-            2,
-        ),
-        "bucket_start": str(candidate["bucket_start"]),
-    }
+    raw_symbol = row["symbol"]
+    ceiling = signal.features.ceiling
+    features = _episode_features(quality_result, signal)
 
     if catalog_stale:
         await episodes.create_rejected_episode(
@@ -327,7 +640,14 @@ async def run_early_momentum_trigger(exchanges: dict[str, Any], rdb: Any, cfg: C
 
     while True:
         try:
-            await _trigger_tick(exchanges, rdb, cfg)
+            async with worker_health.track_tick(
+                rdb,
+                key=_TRIGGER_HEARTBEAT_KEY,
+                worker_name="early_momentum_trigger",
+                worker_version=_STRATEGY_VERSION,
+                ttl_seconds=_HEARTBEAT_TTL_SECONDS,
+            ):
+                await _trigger_tick(exchanges, rdb, cfg)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -556,10 +876,10 @@ async def _quote_and_open(
         return
 
     setup_context = {
-        # v3: durable episode lifecycle (frozen route/identity, atomic
-        # claim, idempotent open/close). Same signal/exit_params as v1/v2
-        # -- this is a measurement/reliability change, not a trading rule
-        # change.
+        # v4: durable episode lifecycle + input-quality evidence (frozen
+        # route/identity, atomic claim, idempotent open/close, quality
+        # policy hash). Same signal/exit_params as v1/v2/v3 -- this is a
+        # measurement/reliability change, not a trading rule change.
         "strategy": f"{_STRATEGY_NAME}_v{_STRATEGY_VERSION}",
         "episode_id": episode_id,
         "breakout_price": ceiling,
@@ -621,3 +941,262 @@ def _market_quality_reason(reason: str) -> str:
         "market_quality_entry_impact_too_high": episodes.REASON_IMPACT_TOO_HIGH,
         "market_quality_exit_impact_too_high": episodes.REASON_IMPACT_TOO_HIGH,
     }.get(reason, episodes.REASON_INSUFFICIENT_DEPTH)
+
+
+# --- Independent health monitor -----------------------------------------
+#
+# Runs as its own asyncio task, deliberately separate from the scanner and
+# trigger loops it watches: if trigger deadlocks, this task keeps ticking
+# and can still report it (today nothing would notice a hung trigger loop
+# at all). Scope note: running in the same process/container, it detects a
+# hung scanner/trigger *task* -- it cannot detect a crashed container, an
+# event-loop deadlock, a dead host, or Redis/Telegram itself being
+# unreachable. This is not a full production monitoring system; an
+# external watchdog/Docker healthcheck is later, separate work.
+
+
+_HEALTH_LAST_COUNTED_HEARTBEAT_KEY = "early_momentum:v4:health:last_counted_scanner_heartbeat"
+
+# gather_health_status runs on every independent-monitor tick (~30s) AND
+# every HTTP GET /health/early-momentum -- a plain check-then-increment
+# would double-count the same completed scanner tick under concurrent or
+# just frequent reads (colleague review: polling the endpoint must never
+# inflate this counter). Dedupe by the tick's own completed_at, atomically
+# via Lua so two concurrent readers can't both win the "first to see this
+# tick" race. A 'started' (still mid-tick) heartbeat is never passed in
+# here at all -- see the caller below -- so it can neither reset nor
+# advance this.
+_COUNT_ZERO_QUALITY_READY_TICK_ONCE = """
+local last_counted = redis.call("get", KEYS[1])
+if last_counted == ARGV[1] then
+    local val = redis.call("get", KEYS[2])
+    if val then return tonumber(val) else return 0 end
+end
+redis.call("set", KEYS[1], ARGV[1])
+if ARGV[2] == "1" then
+    return redis.call("incr", KEYS[2])
+else
+    redis.call("del", KEYS[2])
+    return 0
+end
+"""
+
+
+async def _read_zero_quality_ready_counter(rdb: Any) -> int:
+    try:
+        raw = await rdb.get(_HEALTH_ZERO_QUALITY_READY_COUNTER_KEY)
+        return int(raw) if raw else 0
+    except Exception as exc:
+        log.error("early_momentum.zero_quality_ready_counter_read_failed", err=str(exc))
+        return 0
+
+
+async def _update_zero_quality_ready_counter(
+    rdb: Any, *, scanner_heartbeat: worker_health.WorkerHeartbeat | None
+) -> int:
+    """Tracks consecutive *completed* scanner ticks with symbols_total > 0
+    but quality_ready == 0 -- a single noisy tick must read as `degraded`,
+    not `error` (see early_momentum_health.compute_status's debounce). A
+    missing heartbeat, a still-running ('started') one, or one with no
+    completed_at yet just reports the current count unchanged -- only a
+    freshly-completed tick can advance or reset it."""
+    if scanner_heartbeat is None or scanner_heartbeat.state != worker_health.STATE_COMPLETED:
+        return await _read_zero_quality_ready_counter(rdb)
+    if scanner_heartbeat.completed_at is None:
+        return await _read_zero_quality_ready_counter(rdb)
+
+    marker = scanner_heartbeat.completed_at.isoformat()
+    counters = scanner_heartbeat.counters
+    symbols_total = counters.get("symbols_total", 0)
+    quality_ready = counters.get("quality_ready")
+    is_zero_bad_tick = symbols_total > 0 and quality_ready == 0
+    try:
+        result = await rdb.eval(
+            _COUNT_ZERO_QUALITY_READY_TICK_ONCE,
+            2,
+            _HEALTH_LAST_COUNTED_HEARTBEAT_KEY,
+            _HEALTH_ZERO_QUALITY_READY_COUNTER_KEY,
+            marker,
+            "1" if is_zero_bad_tick else "0",
+        )
+        return int(result or 0)
+    except Exception as exc:
+        log.error("early_momentum.zero_quality_ready_counter_failed", err=str(exc))
+        return 0
+
+
+async def gather_health_status(
+    rdb: Any, cfg: Config, *, startup_at: datetime
+) -> tuple[early_momentum_health.Status, tuple[str, ...], dict[str, Any]]:
+    """Gathers every input `early_momentum_health.compute_status` needs and
+    calls it -- the one function both the HTTP health endpoint and the
+    independent monitor task use, so the read path and the alerting path
+    can never disagree about what the status is. Returns (status, reasons,
+    raw_metrics) -- raw_metrics is everything the HTTP endpoint additionally
+    wants to display beyond the verdict itself."""
+    assert cfg.db_url is not None
+    now = datetime.now(tz=UTC)
+
+    scanner_heartbeat = await worker_health.read_heartbeat(rdb, key=_SCANNER_HEARTBEAT_KEY)
+    trigger_heartbeat = await worker_health.read_heartbeat(rdb, key=_TRIGGER_HEARTBEAT_KEY)
+
+    lifecycle_metrics = await episodes.health_metrics(cfg.db_url)
+    source_freshness_by_exchange = await episodes.source_freshness(
+        cfg.db_url,
+        exchanges=_SOURCE_EXCHANGES,
+        market_type=EARLY_MOMENTUM_V4_QUALITY_POLICY.allowed_market_types[0],
+        capture_versions=EARLY_MOMENTUM_V4_QUALITY_POLICY.allowed_capture_versions,
+    )
+    identity_health_by_exchange = await episodes.identity_health(
+        cfg.db_url, exchanges=_SOURCE_EXCHANGES, max_age_hours=cfg.identity_snapshot_max_age_hours
+    )
+
+    # Read-only lookup -- never journal.ensure_strategy here. This function
+    # runs on every health read (the monitor every ~30s, plus every HTTP
+    # GET), and ensure_strategy's ON CONFLICT DO UPDATE SET updated_at =
+    # now() would make a health check itself a write, silently destroying
+    # what updated_at means on app.strategies (colleague review). The
+    # strategy row is created by the scanner's own ensure_strategy call the
+    # first time it actually has a candidate to arm -- until then, None
+    # here correctly means "no v4 activity has ever happened yet".
+    v4_strategy_id = await journal.find_strategy_id(
+        cfg.db_url, name=_STRATEGY_NAME, version=_STRATEGY_VERSION
+    )
+    last_open_at = (
+        await episodes.last_successful_open_at(cfg.db_url, strategy_id=v4_strategy_id)
+        if v4_strategy_id is not None
+        else None
+    )
+
+    consecutive_zero = await _update_zero_quality_ready_counter(
+        rdb, scanner_heartbeat=scanner_heartbeat
+    )
+
+    status, reasons = early_momentum_health.compute_status(
+        now=now,
+        startup_at=startup_at,
+        grace_period_seconds=_HEALTH_MONITOR_STARTUP_GRACE_SECONDS,
+        scanner_heartbeat=scanner_heartbeat,
+        trigger_heartbeat=trigger_heartbeat,
+        heartbeat_ttl_seconds=_HEARTBEAT_TTL_SECONDS,
+        source_max_lag_seconds={
+            exchange: data.get("lag_seconds")
+            for exchange, data in source_freshness_by_exchange.items()
+        },
+        source_lag_limit_seconds=EARLY_MOMENTUM_V4_QUALITY_POLICY.max_bucket_lag_seconds,
+        overdue_armed=lifecycle_metrics.get("overdue_armed"),
+        expired_claims=lifecycle_metrics.get("expired_claims"),
+        consecutive_zero_quality_ready_ticks=consecutive_zero,
+        zero_quality_ready_error_threshold=_HEALTH_ZERO_QUALITY_READY_ERROR_THRESHOLD,
+        identity_health=identity_health_by_exchange,
+    )
+    raw_metrics: dict[str, Any] = {
+        "scanner_heartbeat": scanner_heartbeat,
+        "trigger_heartbeat": trigger_heartbeat,
+        "source_freshness": source_freshness_by_exchange,
+        "identity_health": identity_health_by_exchange,
+        "lifecycle_metrics": lifecycle_metrics,
+        "last_successful_open_at": last_open_at,
+        "consecutive_zero_quality_ready_ticks": consecutive_zero,
+    }
+    return status, reasons, raw_metrics
+
+
+def _format_health_alert(*, status: str, reasons: tuple[str, ...], recovered: bool) -> str:
+    if recovered:
+        return "early_momentum_v4 health recovered to ok"
+    reason_text = ", ".join(reasons) if reasons else "unknown"
+    return f"early_momentum_v4 health is {status}: {reason_text}"
+
+
+async def _maybe_alert(rdb: Any, cfg: Config, *, status: str, reasons: tuple[str, ...]) -> None:
+    """Immediate alert on any transition (including recovery to ok); a
+    reminder at most once per cooldown while a bad status persists
+    unchanged; never silent forever, never spammed every monitor tick.
+    Alert delivery failure must never kill the monitor loop -- but it also
+    must never be treated as delivered: `last_alerted_status` is only
+    written once notify_alert actually confirms Telegram accepted the
+    message, and a reminder's cooldown reservation is released again on
+    failure so the very next tick can retry instead of waiting out the
+    full window for a message that never went out (colleague review)."""
+    creds = notify.credentials(cfg)
+    if not creds:
+        return
+
+    try:
+        last_status_raw = await rdb.get(_HEALTH_ALERT_STATUS_KEY)
+        last_status = (
+            last_status_raw.decode() if isinstance(last_status_raw, bytes) else last_status_raw
+        )
+    except Exception as exc:
+        log.error("early_momentum.health_alert_state_read_failed", err=str(exc))
+        return
+
+    transitioned = last_status != status
+    # A never-recorded previous status (the very first health tick this
+    # process has ever run) is "no signal yet", not "we just recovered" --
+    # only a genuine prior non-ok reading turning into ok is a recovery.
+    recovered = transitioned and status == "ok" and last_status is not None
+
+    should_send = transitioned
+    cooldown_key = f"{_HEALTH_ALERT_COOLDOWN_KEY_PREFIX}{status}"
+    cooldown_reserved = False
+    if not transitioned and status != "ok":
+        try:
+            acquired = await rdb.set(
+                cooldown_key, "1", nx=True, ex=cfg.early_momentum_health_alert_cooldown_seconds
+            )
+            should_send = bool(acquired)
+            cooldown_reserved = should_send
+        except Exception as exc:
+            log.error("early_momentum.health_alert_cooldown_failed", err=str(exc))
+            return
+
+    if not should_send:
+        return
+
+    text = _format_health_alert(status=status, reasons=reasons, recovered=recovered)
+    delivered = False
+    try:
+        delivered = await notify.notify_alert(*creds, text=text)
+    except Exception as exc:
+        log.error("early_momentum.health_alert_delivery_failed", err=str(exc))
+
+    if not delivered:
+        log.error("early_momentum.health_alert_not_delivered", status=status)
+        if cooldown_reserved:
+            try:
+                await rdb.delete(cooldown_key)
+            except Exception as exc:
+                log.error("early_momentum.health_alert_cooldown_release_failed", err=str(exc))
+        return
+
+    try:
+        await rdb.set(_HEALTH_ALERT_STATUS_KEY, status)
+    except Exception as exc:
+        log.error("early_momentum.health_alert_state_write_failed", err=str(exc))
+
+
+async def _health_monitor_tick(rdb: Any, cfg: Config, *, startup_at: datetime) -> None:
+    status, reasons, _raw_metrics = await gather_health_status(rdb, cfg, startup_at=startup_at)
+    await _maybe_alert(rdb, cfg, status=status, reasons=reasons)
+
+
+async def run_early_momentum_health_monitor(rdb: Any, cfg: Config, *, startup_at: datetime) -> None:
+    """`startup_at` is passed in (not sampled internally) so the monitor's
+    grace-period clock and the HTTP health endpoint's (routers/health.py,
+    reading the same timestamp off app.state) can never disagree about
+    when the process actually started."""
+    if not cfg.db_url:
+        log.warning("early_momentum.health_monitor_disabled", reason="no db_url")
+        return
+
+    while True:
+        try:
+            await _health_monitor_tick(rdb, cfg, startup_at=startup_at)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            log.error("early_momentum.health_monitor_error", err=str(exc))
+
+        await asyncio.sleep(_HEALTH_MONITOR_INTERVAL_SECONDS)

@@ -775,3 +775,83 @@ async def identity_health(
             "stale": age is None or age > max_age_hours * 3600,
         }
     return result
+
+
+_SOURCE_FRESHNESS = """
+SELECT max(bucket_start) AS latest_bucket,
+       EXTRACT(EPOCH FROM (now() - max(bucket_start))) AS lag_seconds
+FROM timeseries.bybit_momentum_bars_1m
+WHERE exchange = %(exchange)s
+  AND market_type = %(market_type)s
+  AND capture_version = ANY(%(capture_versions)s)
+  AND bucket_start >= now() - interval '1 day'
+"""
+
+
+async def source_freshness(
+    db_url: str,
+    *,
+    exchanges: list[str],
+    market_type: str,
+    capture_versions: frozenset[str],
+) -> dict[str, dict[str, Any]]:
+    """Per-exchange latest-bucket age straight from the source timeseries
+    table -- a fully stalled collector for one exchange must be visible
+    here even while the other exchange keeps ticking fine (same reasoning
+    as identity_health's per-exchange split).
+
+    Scoped to the exact `market_type`/`capture_version`s the caller's
+    quality policy actually trusts -- an unfiltered scan would let a live
+    inverse-market or superseded-capture-version stream mask a genuine
+    stall in the linear/v1 data v4 actually reads (colleague review)."""
+    result: dict[str, dict[str, Any]] = {}
+    for exchange in exchanges:
+        try:
+            async with (
+                await psycopg.AsyncConnection.connect(db_url, row_factory=dict_row) as aconn,
+                aconn.cursor() as cur,
+            ):
+                await cur.execute(
+                    _SOURCE_FRESHNESS,
+                    {
+                        "exchange": exchange,
+                        "market_type": market_type,
+                        "capture_versions": list(capture_versions),
+                    },
+                )
+                row = await cur.fetchone()
+            result[exchange] = {
+                "latest_bucket": row["latest_bucket"] if row else None,
+                "lag_seconds": (
+                    float(row["lag_seconds"]) if row and row["lag_seconds"] is not None else None
+                ),
+            }
+        except Exception as exc:
+            log.error("episodes.source_freshness_failed", exchange=exchange, err=str(exc))
+            result[exchange] = {"latest_bucket": None, "lag_seconds": None}
+    return result
+
+
+_LAST_SUCCESSFUL_OPEN_AT = """
+SELECT max(t.entry_at) AS last_successful_open_at
+FROM app.trades t
+JOIN app.early_momentum_episodes e ON e.episode_id = t.episode_id
+WHERE e.strategy_id = %(strategy_id)s
+"""
+
+
+async def last_successful_open_at(db_url: str, *, strategy_id: int) -> datetime | None:
+    """Scoped by strategy_id (never a bare `episode_id IS NOT NULL`) so an
+    older cohort's trade can never mask a complete absence of activity for
+    the strategy version actually being asked about (colleague review)."""
+    try:
+        async with (
+            await psycopg.AsyncConnection.connect(db_url, row_factory=dict_row) as aconn,
+            aconn.cursor() as cur,
+        ):
+            await cur.execute(_LAST_SUCCESSFUL_OPEN_AT, {"strategy_id": strategy_id})
+            row = await cur.fetchone()
+        return row["last_successful_open_at"] if row else None
+    except Exception as exc:
+        log.error("episodes.last_successful_open_at_failed", strategy_id=strategy_id, err=str(exc))
+        return None

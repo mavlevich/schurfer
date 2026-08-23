@@ -26,7 +26,13 @@ def _fmt_usd(pnl_usd: float) -> str:
     return f"{sign}${abs(pnl_usd):.2f}"
 
 
-async def _send(token: str, chat_id: str, text: str) -> None:
+async def _send(token: str, chat_id: str, text: str) -> bool:
+    """Best-effort by design (never raises -- a Telegram outage can't be
+    allowed to break a trade open/close) but now reports whether delivery
+    actually succeeded, so a caller that needs to know (e.g. an alert that
+    must be retried, not silently marked delivered) can act on it. Callers
+    that are fully fire-and-forget (notify_open/notify_close) simply don't
+    look at the return value."""
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.post(
@@ -35,8 +41,11 @@ async def _send(token: str, chat_id: str, text: str) -> None:
             )
             if resp.status_code != 200:
                 log.warning("notify.send.failed", status=resp.status_code)
+                return False
+            return True
     except Exception as exc:
         log.warning("notify.send.error", err=str(exc))
+        return False
 
 
 async def notify_open(
@@ -133,8 +142,12 @@ async def notify_close(
     await _send(token, chat_id, "\n".join(lines))
 
 
-async def notify_alert(token: str, chat_id: str, *, text: str) -> None:
-    await _send(token, chat_id, f"*⚠️ ALERT*\n{_esc(text)}")
+async def notify_alert(token: str, chat_id: str, *, text: str) -> bool:
+    """Returns whether Telegram actually accepted the message -- callers
+    that must not silently drop a failed alert (see early_momentum.py's
+    _maybe_alert) check this instead of assuming delivery just because no
+    exception propagated."""
+    return await _send(token, chat_id, f"*⚠️ ALERT*\n{_esc(text)}")
 
 
 def credentials(cfg: Any) -> tuple[str, str] | None:

@@ -17,6 +17,11 @@ tomorrow.
 
 The parked idea catalog lives in [IDEAS.md](IDEAS.md). It is frozen until edge is
 proven. Post-MVP strategy and exit improvements live in the exit-strategy notes.
+Cross-cutting reliability and performance review claims are triaged in the
+[engineering findings register](docs/engineering/findings-register.md). A reported
+finding does not enter this delivery queue until code, tests, production metrics, or
+a bounded benchmark confirms it; rejected and measurement-only claims remain in the
+register so they are not repeatedly rediscovered or implemented by assertion.
 
 ## Delivery portfolio and WIP limits
 
