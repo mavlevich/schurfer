@@ -111,12 +111,35 @@ function PnlCell({ trade }: { trade: Trade }) {
   );
 }
 
-// OriginBadge is deliberately visually distinct from the pre-existing "paper"
-// text next to a pump_short token (isPaper below) -- that flag means "this
-// specific pump-short trade ran in dry-run mode", a different concept from
-// origin="momentum_flow_paper" (this row is not a pump-short trade at all, it
-// is momentum_flow's own discovery instrumentation). A momentum_flow_paper
-// row must never look like an already-vetted pump-short trade.
+// OriginBadge shows which table a row came from -- app.trades (the shared,
+// already-promoted live/paper execution ledger, used by every strategy) vs
+// momentum_flow_paper (momentum_flow's own WATCH->paper discovery
+// instrumentation, a separate table). It is deliberately visually distinct
+// from the "paper" text next to a token (isPaper below) -- that flag means
+// "this specific trade ran in dry-run mode", a different concept from origin.
+// A momentum_flow_paper row must never look like an already-vetted trade.
+function OriginBadge({ origin }: { origin: string }) {
+  if (origin === 'momentum_flow_paper') {
+    return (
+      <Badge
+        variant="outline"
+        title="momentum_flow WATCH->paper: research probe, not promotion evidence"
+        className="border-violet-400/20 bg-violet-400/10 text-violet-400"
+      >
+        🔭 research
+      </Badge>
+    );
+  }
+  return (
+    <Badge variant="outline" className="border-border bg-muted text-muted-foreground">
+      ledger
+    </Badge>
+  );
+}
+
+// StrategyBadge shows canonical strategy identity (trades.strategy_id ->
+// app.strategies via the API, not setup_context) -- distinct from origin
+// above: many strategies share the same app.trades origin.
 function StrategyBadge({ trade }: { trade: Trade }) {
   if (trade.strategy_name === 'momentum_flow') {
     return (
@@ -164,7 +187,12 @@ function StatusBadge({ status }: { status: string }) {
 
 // Stats come from /api/trades/stats — computed server-side over the whole closed-trade
 // set (not just the loaded page). Gross covers legacy and modeled rows; net includes
-// only rows whose versioned cost accounting completed.
+// only rows whose versioned cost accounting completed. gross_usd and net_usd are NOT
+// the same trades measured two ways -- gross_usd is summed over every closed trade,
+// net_usd only over the (usually much smaller) net_count subset with complete cost
+// accounting. Putting "Gross P&L (N=net_count)" next to "Net P&L" below makes that
+// subset comparable on equal footing, instead of gross_usd and net_usd looking like
+// two readings of the same number that mysteriously disagree.
 function StatRow({ stats }: { stats?: TradeStats }) {
   if (!stats || stats.count === 0) return null;
   const {
@@ -180,6 +208,7 @@ function StatRow({ stats }: { stats?: TradeStats }) {
     net_expectancy,
     net_profit_factor,
     net_usd,
+    net_subset_gross_usd,
     legacy_count,
     incomplete_count,
   } = stats;
@@ -223,12 +252,22 @@ function StatRow({ stats }: { stats?: TradeStats }) {
         cls:
           net_profit_factor !== null && net_profit_factor >= 1 ? 'text-green-500' : 'text-red-500',
       },
-      {
-        label: 'Net P&L',
-        value: fmtUsd(net_usd),
-        cls: net_usd >= 0 ? 'text-green-500' : 'text-red-500',
-      },
     );
+    // Same-subset gross, right next to net P&L below -- comparing this to the
+    // headline "Gross P&L" above (a different, larger population) is comparing
+    // two different sets of trades, not the same trades measured two ways.
+    if (net_subset_gross_usd !== null) {
+      items.push({
+        label: `Gross P&L (N=${net_count})`,
+        value: fmtUsd(net_subset_gross_usd),
+        cls: net_subset_gross_usd >= 0 ? 'text-green-500' : 'text-red-500',
+      });
+    }
+    items.push({
+      label: 'Net P&L',
+      value: fmtUsd(net_usd),
+      cls: net_usd >= 0 ? 'text-green-500' : 'text-red-500',
+    });
   }
 
   return (
@@ -445,7 +484,7 @@ export function TradesPage() {
                     return (
                       <TableRow key={t.id}>
                         <TableCell>
-                          <StrategyBadge trade={t} />
+                          <OriginBadge origin={t.origin} />
                         </TableCell>
                         <TableCell className="font-mono font-semibold">
                           {t.symbol.split('/')[0]}
@@ -482,8 +521,13 @@ export function TradesPage() {
                         <TableCell className="whitespace-nowrap text-right font-mono text-muted-foreground">
                           {held !== null ? fmtDuration(held) : '—'}
                         </TableCell>
-                        <TableCell className="font-mono text-xs text-muted-foreground">
-                          {strategyVersion(t)}
+                        <TableCell>
+                          <div className="flex items-center gap-1.5">
+                            <StrategyBadge trade={t} />
+                            <span className="font-mono text-xs text-muted-foreground">
+                              {strategyVersion(t)}
+                            </span>
+                          </div>
                         </TableCell>
                         <TableCell>
                           <StatusBadge status={t.status} />

@@ -370,15 +370,26 @@ type statsResponse struct {
 	NetAvgLoss      *float64 `json:"net_avg_loss"`
 	NetProfitFactor *float64 `json:"net_profit_factor"`
 	NetUSD          *float64 `json:"net_usd"`
-	LegacyCount     int      `json:"legacy_count"`
-	IncompleteCount int      `json:"incomplete_count"`
+	// NetSubsetGrossUSD/Pct are the gross figures for the exact same trades NetUSD/
+	// NetExpectancy cover (accounting_status='complete'), not the whole closed set --
+	// GrossUSD above is a different, usually much larger population (it also includes
+	// legacy/incomplete-accounting trades that NetUSD can never cover). Comparing
+	// GrossUSD to NetUSD directly is comparing two different sets of trades, not the
+	// same trades measured two ways; these fields let the UI show gross and net on an
+	// apples-to-apples subset so real cost erosion isn't confused with population mix.
+	NetSubsetGrossUSD *float64 `json:"net_subset_gross_usd"`
+	NetSubsetGrossPct *float64 `json:"net_subset_gross_pct"`
+	LegacyCount       int      `json:"legacy_count"`
+	IncompleteCount   int      `json:"incomplete_count"`
 }
 
 type statsAgg struct {
-	Gross           tradeAgg
-	Net             tradeAgg
-	LegacyCount     int
-	IncompleteCount int
+	Gross                tradeAgg
+	Net                  tradeAgg
+	NetSubsetGrossUSD    float64 // sum(gross_pnl_usd) over the same rows counted in Net
+	NetSubsetGrossSumPct float64 // sum(gross_pnl_pct) over the same rows counted in Net
+	LegacyCount          int
+	IncompleteCount      int
 }
 
 func profitFactor(a tradeAgg) *float64 {
@@ -424,6 +435,10 @@ func computeStats(a statsAgg) statsResponse {
 			avgLoss := a.Net.SumLossPct / float64(a.Net.Losses)
 			s.NetAvgLoss = &avgLoss
 		}
+		subsetGrossUSD := a.NetSubsetGrossUSD
+		subsetGrossPct := a.NetSubsetGrossSumPct / float64(a.Net.N)
+		s.NetSubsetGrossUSD = &subsetGrossUSD
+		s.NetSubsetGrossPct = &subsetGrossPct
 	}
 	return s
 }
@@ -483,7 +498,9 @@ func (h *Handler) Stats(w http.ResponseWriter, r *http.Request) {
 		       COALESCE(sum(net_pnl_usd) FILTER (WHERE net_pnl_usd > 0), 0)::float8,
 		       COALESCE(sum(net_pnl_usd) FILTER (WHERE net_pnl_usd < 0), 0)::float8,
 		       count(*) FILTER (WHERE accounting_status = 'legacy'),
-		       count(*) FILTER (WHERE accounting_status = 'incomplete')
+		       count(*) FILTER (WHERE accounting_status = 'incomplete'),
+		       COALESCE(sum(gross_pnl_usd) FILTER (WHERE net_pnl_pct IS NOT NULL), 0)::float8,
+		       COALESCE(sum(gross_pnl_pct) FILTER (WHERE net_pnl_pct IS NOT NULL), 0)::float8
 		FROM combined `+where, args...,
 	).Scan(
 		&a.Gross.N, &a.Gross.Wins, &a.Gross.Losses,
@@ -493,6 +510,7 @@ func (h *Handler) Stats(w http.ResponseWriter, r *http.Request) {
 		&a.Net.SumPct, &a.Net.SumWinPct, &a.Net.SumLossPct,
 		&a.Net.TotalUSD, &a.Net.WinningUSD, &a.Net.LosingUSD,
 		&a.LegacyCount, &a.IncompleteCount,
+		&a.NetSubsetGrossUSD, &a.NetSubsetGrossSumPct,
 	); err != nil {
 		slog.Error("trades.stats", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)

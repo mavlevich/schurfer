@@ -69,6 +69,13 @@ export interface TradeStats {
   net_avg_loss: number | null;
   net_profit_factor: number | null;
   net_usd: number | null;
+  // gross_usd above is summed over every closed trade with a gross figure, including
+  // legacy/incomplete-accounting rows net_usd can never cover -- it is a different,
+  // usually much larger population than net_usd's. net_subset_gross_usd/pct are the
+  // gross figures for the exact same trades net_usd covers, so gross and net can be
+  // compared on the same subset instead of looking like one number measured twice.
+  net_subset_gross_usd: number | null;
+  net_subset_gross_pct: number | null;
   legacy_count: number;
   incomplete_count: number;
 }
