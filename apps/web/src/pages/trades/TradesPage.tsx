@@ -12,8 +12,8 @@ import {
   TableHead,
   TableCell,
 } from '@/components/ui/table';
-import { useTrades, useTradeStats } from '@/hooks/useTradesData';
-import type { Trade, TradeStats } from '@/hooks/useTradesData';
+import { useTrades, useTradeStats, useTradesByStrategy } from '@/hooks/useTradesData';
+import type { StrategyStats, Trade, TradeStats } from '@/hooks/useTradesData';
 
 const PAGE_SIZE = 50;
 
@@ -137,38 +137,37 @@ function OriginBadge({ origin }: { origin: string }) {
   );
 }
 
+// strategyBadgeStyle is the single source of truth for per-strategy color/
+// icon/label -- shared by the table's StrategyBadge (below) and the
+// breakdown card's own strategy column, so the two never drift into
+// showing different colors for the same strategy.
+function strategyBadgeStyle(name: string): { icon: string; cls: string } {
+  switch (name) {
+    case 'momentum_flow':
+      return { icon: '🔭 ', cls: 'border-violet-400/20 bg-violet-400/10 text-violet-400' };
+    case 'early_momentum':
+      return { icon: '⚡ ', cls: 'border-blue-400/20 bg-blue-400/10 text-blue-400' };
+    case 'liquidation_cascade':
+      return { icon: '💥 ', cls: 'border-red-400/20 bg-red-400/10 text-red-400' };
+    default:
+      return { icon: '', cls: 'border-emerald-400/20 bg-emerald-400/10 text-emerald-400' };
+  }
+}
+
 // StrategyBadge shows canonical strategy identity (trades.strategy_id ->
 // app.strategies via the API, not setup_context) -- distinct from origin
 // above: many strategies share the same app.trades origin.
 function StrategyBadge({ trade }: { trade: Trade }) {
-  if (trade.strategy_name === 'momentum_flow') {
-    return (
-      <Badge
-        variant="outline"
-        title="Research probe"
-        className="border-violet-400/20 bg-violet-400/10 text-violet-400"
-      >
-        🔭 {trade.strategy_name}
-      </Badge>
-    );
-  }
-  if (trade.strategy_name === 'early_momentum') {
-    return (
-      <Badge variant="outline" className="border-blue-400/20 bg-blue-400/10 text-blue-400">
-        ⚡ {trade.strategy_name}
-      </Badge>
-    );
-  }
-  if (trade.strategy_name === 'liquidation_cascade') {
-    return (
-      <Badge variant="outline" className="border-red-400/20 bg-red-400/10 text-red-400">
-        💥 {trade.strategy_name}
-      </Badge>
-    );
-  }
+  const name = trade.strategy_name || 'pump_short';
+  const { icon, cls } = strategyBadgeStyle(name);
   return (
-    <Badge variant="outline" className="border-emerald-400/20 bg-emerald-400/10 text-emerald-400">
-      {trade.strategy_name || 'pump_short'}
+    <Badge
+      variant="outline"
+      title={name === 'momentum_flow' ? 'Research probe' : undefined}
+      className={cls}
+    >
+      {icon}
+      {name}
     </Badge>
   );
 }
@@ -182,6 +181,87 @@ function StatusBadge({ status }: { status: string }) {
     <Badge variant="outline" className={cls}>
       {status}
     </Badge>
+  );
+}
+
+// One row of the breakdown card below. N<30 gets an explicit "too small to
+// read" flag rather than silently rendering a green/red number that looks
+// just as confident as a mature strategy's -- 5-11 trade samples this early
+// are noise, not signal (see the whole-team discussion that led to this
+// table existing at all: blending every strategy/version into StatRow's one
+// number hid exactly this comparison).
+function StrategyBreakdownRow({ s }: { s: StrategyStats }) {
+  const { icon, cls } = strategyBadgeStyle(s.strategy_name);
+  const hasNet = s.net_count > 0 && s.net_usd !== null;
+  const smallSample = (hasNet ? s.net_count : s.count) < 30;
+  return (
+    <TableRow>
+      <TableCell>
+        <Badge variant="outline" className={cls}>
+          {icon}
+          {s.strategy_name}
+        </Badge>
+      </TableCell>
+      <TableCell className="font-mono text-xs text-muted-foreground">
+        {s.strategy_version}
+      </TableCell>
+      <TableCell className="text-right font-mono text-muted-foreground">{s.count}</TableCell>
+      <TableCell className="text-right font-mono">
+        <span className={s.gross_usd >= 0 ? 'text-green-500' : 'text-red-500'}>
+          {fmtUsd(s.gross_usd)}
+        </span>
+      </TableCell>
+      <TableCell className="text-right font-mono">
+        {hasNet ? (
+          <>
+            <span className={s.net_usd! >= 0 ? 'text-green-500' : 'text-red-500'}>
+              {fmtUsd(s.net_usd!)}
+            </span>
+            <span className="ml-1 text-xs text-muted-foreground">N={s.net_count}</span>
+          </>
+        ) : (
+          <span className="text-muted-foreground">
+            — {s.legacy_count + s.incomplete_count} without cost accounting
+          </span>
+        )}
+      </TableCell>
+      <TableCell className="text-xs text-amber-400/80">
+        {smallSample ? 'sample too small to read' : ''}
+      </TableCell>
+    </TableRow>
+  );
+}
+
+// Per-(strategy, version) breakdown -- GET /api/trades/stats/by-strategy.
+// Different versions are frequently different algorithms (e.g. early_
+// momentum v1's no input-quality gating vs v4's), so StatRow's one blended
+// number below hides exactly the comparison this card exists for.
+function StrategyBreakdown({ strategies }: { strategies: StrategyStats[] }) {
+  if (strategies.length === 0) return null;
+  return (
+    <Card>
+      <CardContent className="p-0">
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Strategy</TableHead>
+                <TableHead>Version</TableHead>
+                <TableHead className="text-right">Closed</TableHead>
+                <TableHead className="text-right">Gross P&L</TableHead>
+                <TableHead className="text-right">Net P&L</TableHead>
+                <TableHead></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {strategies.map((s) => (
+                <StrategyBreakdownRow key={`${s.strategy_name}:${s.strategy_version}`} s={s} />
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -321,6 +401,19 @@ export function TradesPage() {
     mode: modeFilter || undefined,
     side: sideFilter || undefined,
   });
+  // Deliberately NOT passing strategyFilter here -- this fuels both the
+  // breakdown card and the strategy filter's own option list below, so it
+  // must always show every strategy currently trading, not just whichever
+  // one the filter is narrowed to.
+  const { data: byStrategy } = useTradesByStrategy({
+    exchange: exchangeFilter || undefined,
+    origin: originFilter || undefined,
+    mode: modeFilter || undefined,
+    side: sideFilter || undefined,
+  });
+  const strategyOptions = Array.from(
+    new Set((byStrategy?.strategies ?? []).map((s) => s.strategy_name)),
+  ).sort();
 
   const trades = data?.trades ?? [];
   const total = data?.total ?? 0;
@@ -384,10 +477,16 @@ export function TradesPage() {
               className="rounded border border-input bg-background px-2 py-1 text-sm text-foreground"
             >
               <option value="">All strategies</option>
-              <option value="early_momentum">Early Momentum</option>
-              <option value="pump_short">Pump Short</option>
-              <option value="liquidation_cascade">Liquidation Cascade</option>
-              <option value="momentum_flow">Momentum Flow</option>
+              {/* Derived from /api/trades/stats/by-strategy -- a strategy only
+                  shows up here once it has actually traded, instead of a
+                  hardcoded list that silently drifts as strategies are added
+                  or renamed (exactly the class of bug the Source/Strategy
+                  column mix-up earlier was). */}
+              {strategyOptions.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
             </select>
             <select
               value={modeFilter}
@@ -448,6 +547,7 @@ export function TradesPage() {
       </div>
 
       {statusFilter !== 'open' && <StatRow stats={stats} />}
+      {statusFilter !== 'open' && <StrategyBreakdown strategies={byStrategy?.strategies ?? []} />}
 
       {showEmpty && (
         <Card>

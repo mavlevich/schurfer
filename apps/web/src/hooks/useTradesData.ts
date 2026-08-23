@@ -80,6 +80,19 @@ export interface TradeStats {
   incomplete_count: number;
 }
 
+// One (strategy_name, strategy_version) bucket's own TradeStats -- different
+// versions are frequently different algorithms (e.g. early_momentum v1's no
+// input-quality gating vs v4's), so blending them into one number the way
+// useTradeStats must hides exactly the comparison this exists for.
+export interface StrategyStats extends TradeStats {
+  strategy_name: string;
+  strategy_version: string;
+}
+
+export interface ByStrategyResponse {
+  strategies: StrategyStats[];
+}
+
 async function fetchJSON<T>(url: string): Promise<T> {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -140,6 +153,35 @@ export function useTradeStats(
   return useQuery({
     queryKey: ['trades-stats', params],
     queryFn: () => fetchJSON<TradeStats>(url),
+    refetchInterval: 30_000,
+    staleTime: 15_000,
+    placeholderData: (prev) => prev,
+  });
+}
+
+// Per-(strategy_name, strategy_version) breakdown of the same aggregate
+// useTradeStats computes for one blended bucket. Also doubles as the source
+// for the strategy filter's option list (see TradesPage.tsx) -- a strategy
+// only shows up as a filter choice once it has actually traded, instead of
+// a hardcoded list that silently drifts as strategies are added/renamed.
+export function useTradesByStrategy(
+  params: {
+    exchange?: string;
+    origin?: string;
+    mode?: string;
+    side?: string;
+  } = {},
+) {
+  const q = new URLSearchParams();
+  if (params.exchange) q.set('exchange', params.exchange);
+  if (params.origin) q.set('origin', params.origin);
+  if (params.mode) q.set('mode', params.mode);
+  if (params.side) q.set('side', params.side);
+  const url = `/api/trades/stats/by-strategy${q.size ? '?' + q.toString() : ''}`;
+
+  return useQuery({
+    queryKey: ['trades-stats-by-strategy', params],
+    queryFn: () => fetchJSON<ByStrategyResponse>(url),
     refetchInterval: 30_000,
     staleTime: 15_000,
     placeholderData: (prev) => prev,

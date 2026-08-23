@@ -103,6 +103,7 @@ func run() error {
 
 		r.Get("/api/trades", tradesHandler.List)
 		r.Get("/api/trades/stats", tradesHandler.Stats)
+		r.Get("/api/trades/stats/by-strategy", tradesHandler.ByStrategy)
 		r.Get("/api/decisions", decisionsHandler.List)
 		r.Get("/api/research/readiness", researchHandler.Readiness)
 

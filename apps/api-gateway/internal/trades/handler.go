@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -446,63 +447,74 @@ func computeStats(a statsAgg) statsResponse {
 // Stats handles GET /api/trades/stats: aggregate performance over the whole set of
 // closed trades (optionally filtered by exchange and/or origin), not just one page
 // of the list.
-func (h *Handler) Stats(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-	exchange := q.Get("exchange")
-	origin := q.Get("origin")
-	strategy := q.Get("strategy")
-	mode := q.Get("mode")
-	side := q.Get("side")
-
+// statsFilterWhere builds the shared WHERE clause + positional args for the
+// exchange/origin/strategy/mode/side filters both Stats and ByStrategy
+// accept -- kept in one place so the two endpoints can never silently drift
+// on which filters they honor or in what order args get bound.
+func statsFilterWhere(q url.Values) (string, []any) {
 	args := []any{}
 	where := "WHERE status = 'closed' AND gross_pnl_pct IS NOT NULL"
-	if exchange != "" {
-		args = append(args, exchange)
+	if v := q.Get("exchange"); v != "" {
+		args = append(args, v)
 		where += " AND exchange = $" + strconv.Itoa(len(args))
 	}
-	if origin != "" {
-		args = append(args, origin)
+	if v := q.Get("origin"); v != "" {
+		args = append(args, v)
 		where += " AND origin = $" + strconv.Itoa(len(args))
 	}
-	if strategy != "" {
-		args = append(args, strategy)
+	if v := q.Get("strategy"); v != "" {
+		args = append(args, v)
 		where += " AND strategy_name = $" + strconv.Itoa(len(args))
 	}
-	if mode != "" {
-		args = append(args, mode)
+	if v := q.Get("mode"); v != "" {
+		args = append(args, v)
 		where += " AND mode = $" + strconv.Itoa(len(args))
 	}
-	if side != "" {
-		args = append(args, side)
+	if v := q.Get("side"); v != "" {
+		args = append(args, v)
 		where += " AND side = $" + strconv.Itoa(len(args))
 	}
+	return where, args
+}
 
-	var a statsAgg
-	if err := h.pool.QueryRow(r.Context(), combinedTradesCTE+`
-		SELECT count(*) FILTER (WHERE gross_pnl_pct IS NOT NULL),
-		       count(*) FILTER (WHERE gross_pnl_pct > 0),
-		       count(*) FILTER (WHERE gross_pnl_pct < 0),
-		       COALESCE(sum(gross_pnl_pct), 0)::float8,
-		       COALESCE(sum(gross_pnl_pct) FILTER (WHERE gross_pnl_pct > 0), 0)::float8,
-		       COALESCE(sum(gross_pnl_pct) FILTER (WHERE gross_pnl_pct < 0), 0)::float8,
-		       COALESCE(sum(gross_pnl_usd), 0)::float8,
-		       COALESCE(sum(gross_pnl_usd) FILTER (WHERE gross_pnl_usd > 0), 0)::float8,
-		       COALESCE(sum(gross_pnl_usd) FILTER (WHERE gross_pnl_usd < 0), 0)::float8,
-		       count(*) FILTER (WHERE net_pnl_pct IS NOT NULL),
-		       count(*) FILTER (WHERE net_pnl_pct > 0),
-		       count(*) FILTER (WHERE net_pnl_pct < 0),
-		       COALESCE(sum(net_pnl_pct), 0)::float8,
-		       COALESCE(sum(net_pnl_pct) FILTER (WHERE net_pnl_pct > 0), 0)::float8,
-		       COALESCE(sum(net_pnl_pct) FILTER (WHERE net_pnl_pct < 0), 0)::float8,
-		       COALESCE(sum(net_pnl_usd), 0)::float8,
-		       COALESCE(sum(net_pnl_usd) FILTER (WHERE net_pnl_usd > 0), 0)::float8,
-		       COALESCE(sum(net_pnl_usd) FILTER (WHERE net_pnl_usd < 0), 0)::float8,
-		       count(*) FILTER (WHERE accounting_status = 'legacy'),
-		       count(*) FILTER (WHERE accounting_status = 'incomplete'),
-		       COALESCE(sum(gross_pnl_usd) FILTER (WHERE net_pnl_pct IS NOT NULL), 0)::float8,
-		       COALESCE(sum(gross_pnl_pct) FILTER (WHERE net_pnl_pct IS NOT NULL), 0)::float8
-		FROM combined `+where, args...,
-	).Scan(
+// statsAggColumns is the SELECT list computeStats' Scan target list (below)
+// depends on positionally -- shared by Stats (one row) and ByStrategy (one
+// row per strategy_name/strategy_version) so the two can never drift apart.
+const statsAggColumns = `
+	       count(*) FILTER (WHERE gross_pnl_pct IS NOT NULL),
+	       count(*) FILTER (WHERE gross_pnl_pct > 0),
+	       count(*) FILTER (WHERE gross_pnl_pct < 0),
+	       COALESCE(sum(gross_pnl_pct), 0)::float8,
+	       COALESCE(sum(gross_pnl_pct) FILTER (WHERE gross_pnl_pct > 0), 0)::float8,
+	       COALESCE(sum(gross_pnl_pct) FILTER (WHERE gross_pnl_pct < 0), 0)::float8,
+	       COALESCE(sum(gross_pnl_usd), 0)::float8,
+	       COALESCE(sum(gross_pnl_usd) FILTER (WHERE gross_pnl_usd > 0), 0)::float8,
+	       COALESCE(sum(gross_pnl_usd) FILTER (WHERE gross_pnl_usd < 0), 0)::float8,
+	       count(*) FILTER (WHERE net_pnl_pct IS NOT NULL),
+	       count(*) FILTER (WHERE net_pnl_pct > 0),
+	       count(*) FILTER (WHERE net_pnl_pct < 0),
+	       COALESCE(sum(net_pnl_pct), 0)::float8,
+	       COALESCE(sum(net_pnl_pct) FILTER (WHERE net_pnl_pct > 0), 0)::float8,
+	       COALESCE(sum(net_pnl_pct) FILTER (WHERE net_pnl_pct < 0), 0)::float8,
+	       COALESCE(sum(net_pnl_usd), 0)::float8,
+	       COALESCE(sum(net_pnl_usd) FILTER (WHERE net_pnl_usd > 0), 0)::float8,
+	       COALESCE(sum(net_pnl_usd) FILTER (WHERE net_pnl_usd < 0), 0)::float8,
+	       count(*) FILTER (WHERE accounting_status = 'legacy'),
+	       count(*) FILTER (WHERE accounting_status = 'incomplete'),
+	       COALESCE(sum(gross_pnl_usd) FILTER (WHERE net_pnl_pct IS NOT NULL), 0)::float8,
+	       COALESCE(sum(gross_pnl_pct) FILTER (WHERE net_pnl_pct IS NOT NULL), 0)::float8`
+
+// scanStatsAggRow scans exactly the columns statsAggColumns selects, in the
+// same order, into a. leading, when given, is scanned first -- ByStrategy's
+// GROUP BY prepends strategy_name/strategy_version columns that Stats'
+// single-row query doesn't have. pgx.Rows also satisfies the pgx.Row
+// interface (both are just Scan(dest ...any) error), so the same helper
+// covers Stats' QueryRow and ByStrategy's per-row Query loop -- one Scan
+// call site instead of two that could silently drift apart.
+func scanStatsAggRow(row pgx.Row, a *statsAgg, leading ...any) error {
+	dest := make([]any, 0, len(leading)+22)
+	dest = append(dest, leading...)
+	dest = append(dest,
 		&a.Gross.N, &a.Gross.Wins, &a.Gross.Losses,
 		&a.Gross.SumPct, &a.Gross.SumWinPct, &a.Gross.SumLossPct,
 		&a.Gross.TotalUSD, &a.Gross.WinningUSD, &a.Gross.LosingUSD,
@@ -511,7 +523,18 @@ func (h *Handler) Stats(w http.ResponseWriter, r *http.Request) {
 		&a.Net.TotalUSD, &a.Net.WinningUSD, &a.Net.LosingUSD,
 		&a.LegacyCount, &a.IncompleteCount,
 		&a.NetSubsetGrossUSD, &a.NetSubsetGrossSumPct,
-	); err != nil {
+	)
+	return row.Scan(dest...)
+}
+
+func (h *Handler) Stats(w http.ResponseWriter, r *http.Request) {
+	where, args := statsFilterWhere(r.URL.Query())
+
+	var a statsAgg
+	row := h.pool.QueryRow(r.Context(),
+		combinedTradesCTE+"SELECT"+statsAggColumns+"\nFROM combined "+where, args...,
+	)
+	if err := scanStatsAggRow(row, &a); err != nil {
 		slog.Error("trades.stats", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
@@ -520,5 +543,72 @@ func (h *Handler) Stats(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(computeStats(a)); err != nil {
 		slog.Error("trades.stats.encode", "err", err)
+	}
+}
+
+// strategyStatsEntry is one (strategy_name, strategy_version) bucket's full
+// statsResponse -- flattened by anonymous embedding so the JSON shape is
+// exactly Stats' own object shape plus the two identity fields, not a
+// nested duplicate of it.
+type strategyStatsEntry struct {
+	StrategyName    string `json:"strategy_name"`
+	StrategyVersion string `json:"strategy_version"`
+	statsResponse
+}
+
+type byStrategyResponse struct {
+	Strategies []strategyStatsEntry `json:"strategies"`
+}
+
+// ByStrategy handles GET /api/trades/stats/by-strategy: the same aggregate
+// Stats computes, broken down per (strategy_name, strategy_version) instead
+// of blended into one number. Different strategy versions are frequently
+// different algorithms (see early_momentum v1 vs v4's input-quality
+// gating) -- blending them the way the single-bucket Stats endpoint must
+// hides exactly the comparison this endpoint exists for. Accepts the same
+// exchange/origin/mode/side filters as Stats (and strategy, to narrow to
+// one strategy's own versions); the caller controls fan-out, not this
+// endpoint deciding what "all strategies" means.
+func (h *Handler) ByStrategy(w http.ResponseWriter, r *http.Request) {
+	where, args := statsFilterWhere(r.URL.Query())
+
+	rows, err := h.pool.Query(r.Context(), combinedTradesCTE+`
+		SELECT strategy_name, strategy_version,`+statsAggColumns+`
+		FROM combined `+where+`
+		GROUP BY strategy_name, strategy_version
+		ORDER BY strategy_name, strategy_version`,
+		args...,
+	)
+	if err != nil {
+		slog.Error("trades.by_strategy.query", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	result := make([]strategyStatsEntry, 0)
+	for rows.Next() {
+		var name, version string
+		var a statsAgg
+		if err := scanStatsAggRow(rows, &a, &name, &version); err != nil {
+			slog.Error("trades.by_strategy.scan", "err", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		result = append(result, strategyStatsEntry{
+			StrategyName:    name,
+			StrategyVersion: version,
+			statsResponse:   computeStats(a),
+		})
+	}
+	if err := rows.Err(); err != nil {
+		slog.Error("trades.by_strategy.rows", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(byStrategyResponse{Strategies: result}); err != nil {
+		slog.Error("trades.by_strategy.encode", "err", err)
 	}
 }

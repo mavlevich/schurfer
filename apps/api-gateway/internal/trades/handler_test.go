@@ -118,6 +118,14 @@ func serveStats(q pgxPool, target string) *httptest.ResponseRecorder {
 	return w
 }
 
+func serveByStrategy(q pgxPool, target string) *httptest.ResponseRecorder {
+	h := &Handler{pool: q}
+	req := httptest.NewRequest(http.MethodGet, target, nil)
+	w := httptest.NewRecorder()
+	h.ByStrategy(w, req)
+	return w
+}
+
 func TestComputeStatsBasic(t *testing.T) {
 	s := computeStats(statsAgg{
 		Gross: tradeAgg{
@@ -659,5 +667,87 @@ func TestListSetupContextIsRawJSON(t *testing.T) {
 	}
 	if ctx["score"] != float64(8) {
 		t.Errorf("want score=8, got %v", ctx["score"])
+	}
+}
+
+// ---- ByStrategy ----
+
+func statsAggRowVals(name, version string) []any {
+	return []any{
+		name, version,
+		int64(4), int64(2), int64(2),
+		float64(10), float64(30), float64(-20),
+		float64(50), float64(150), float64(-100),
+		int64(2), int64(1), int64(1),
+		float64(2), float64(5), float64(-3),
+		float64(10), float64(25), float64(-15),
+		int64(2), int64(0),
+		float64(18), float64(6),
+	}
+}
+
+func TestByStrategyGroupsByNameAndVersion(t *testing.T) {
+	q := &stubQuerier{
+		onQuery: func(_ context.Context, _ string, _ ...any) (pgx.Rows, error) {
+			return &stubRows{cols: [][]any{
+				statsAggRowVals("early_momentum", "3"),
+				statsAggRowVals("early_momentum", "4"),
+				statsAggRowVals("pump_short", "1"),
+			}}, nil
+		},
+	}
+	w := serveByStrategy(q, "/api/trades/stats/by-strategy")
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp byStrategyResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Strategies) != 3 {
+		t.Fatalf("want 3 strategy buckets, got %d", len(resp.Strategies))
+	}
+	if resp.Strategies[0].StrategyName != "early_momentum" || resp.Strategies[0].StrategyVersion != "3" {
+		t.Errorf("bucket 0 = %+v, want early_momentum/3", resp.Strategies[0])
+	}
+	if resp.Strategies[1].StrategyVersion != "4" {
+		t.Errorf("bucket 1 version = %q, want 4", resp.Strategies[1].StrategyVersion)
+	}
+	if resp.Strategies[2].StrategyName != "pump_short" {
+		t.Errorf("bucket 2 name = %q, want pump_short", resp.Strategies[2].StrategyName)
+	}
+	// Each bucket's own statsResponse is computed the same way Stats' single
+	// bucket is -- same computeStats(), same field shape, just embedded.
+	if resp.Strategies[0].Count != 4 || resp.Strategies[0].GrossUSD != 50 {
+		t.Errorf("bucket 0 stats = %+v, want count=4 gross_usd=50", resp.Strategies[0])
+	}
+	if resp.Strategies[0].NetSubsetGrossUSD == nil || *resp.Strategies[0].NetSubsetGrossUSD != 18 {
+		t.Errorf("bucket 0 net_subset_gross_usd = %v, want 18", resp.Strategies[0].NetSubsetGrossUSD)
+	}
+}
+
+func TestByStrategyEmptyResultIsEmptyArrayNotNull(t *testing.T) {
+	q := &stubQuerier{
+		onQuery: func(_ context.Context, _ string, _ ...any) (pgx.Rows, error) {
+			return &stubRows{cols: [][]any{}}, nil
+		},
+	}
+	w := serveByStrategy(q, "/api/trades/stats/by-strategy")
+	if !strings.Contains(w.Body.String(), `"strategies":[]`) {
+		t.Errorf("want strategies:[] (never null) when there are no rows, got %s", w.Body.String())
+	}
+}
+
+func TestByStrategyAppliesSameFiltersAsStats(t *testing.T) {
+	var capturedArgs []any
+	q := &stubQuerier{
+		onQuery: func(_ context.Context, _ string, args ...any) (pgx.Rows, error) {
+			capturedArgs = args
+			return &stubRows{cols: [][]any{}}, nil
+		},
+	}
+	serveByStrategy(q, "/api/trades/stats/by-strategy?exchange=bybit&mode=paper&side=long")
+	if len(capturedArgs) != 3 || capturedArgs[0] != "bybit" || capturedArgs[1] != "paper" || capturedArgs[2] != "long" {
+		t.Errorf("want args=[bybit paper long], got %v", capturedArgs)
 	}
 }
