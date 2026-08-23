@@ -1730,6 +1730,21 @@ depth, impact, or fills.
   minute grid, without a cost model. See
   `docs/research/momentum-flow-paper-v1.md`'s own "Hold-duration variant: hold12h"
   section.
+- Early Momentum net-evidence report (`analysis/early-momentum-net-evidence-v1`):
+  read-only, reproducible report answering whether `early_momentum_v4` has a
+  positive net edge after real costs and enough evidence to move toward
+  `LIVE_MICRO`. Cohort membership anchored on `episode.armed_at` (never
+  `trade.entry_at`), a 16-step evidence funnel with cohort-level vs. row-level
+  integrity severity (a single unexplained row-level anomaly blocks formal
+  `PASS` even though descriptive economics still runs on the clean subset),
+  economics/concurrency/robustness/capacity sections, a dataset fingerprint over
+  the full pre-funnel dataset, and a machine-readable verdict
+  (`invalid_integrity` / `insufficient_data` / `fail` /
+  `pass_live_micro_candidate`) gated on a 100-closed/30-cluster/4-week evidence
+  floor plus profit factor, block-bootstrap, and leave-one-out checks. v1/v2/v3
+  shown as descriptive context only, never mixed into the v4 number. See
+  `docs/research/early-momentum-net-evidence-v1.md` for the full contract,
+  promotion gates, and the 90%-vs-95%-confidence rationale.
 
 ---
 
