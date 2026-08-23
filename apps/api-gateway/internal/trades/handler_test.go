@@ -130,7 +130,9 @@ func TestComputeStatsBasic(t *testing.T) {
 			SumPct: 2, SumWinPct: 5, SumLossPct: -3,
 			TotalUSD: 10, WinningUSD: 25, LosingUSD: -15,
 		},
-		LegacyCount: 2,
+		NetSubsetGrossUSD:    18,
+		NetSubsetGrossSumPct: 6,
+		LegacyCount:          2,
 	})
 	if s.WinRate != 50 {
 		t.Errorf("win_rate: want 50, got %v", s.WinRate)
@@ -149,6 +151,15 @@ func TestComputeStatsBasic(t *testing.T) {
 	}
 	if s.NetCount != 2 || s.NetUSD == nil || *s.NetUSD != 10 {
 		t.Errorf("net stats: want count=2 usd=10, got %d/%v", s.NetCount, s.NetUSD)
+	}
+	// NetSubsetGrossUSD/Pct must be the gross figures for the same 2 trades NetUSD
+	// covers (18 / 2 = 3 pct avg), not GrossUSD's own 4-trade total (50) -- GrossUSD
+	// and NetUSD are never directly comparable, only NetSubsetGrossUSD and NetUSD are.
+	if s.NetSubsetGrossUSD == nil || *s.NetSubsetGrossUSD != 18 {
+		t.Errorf("net_subset_gross_usd: want 18, got %v", s.NetSubsetGrossUSD)
+	}
+	if s.NetSubsetGrossPct == nil || *s.NetSubsetGrossPct != 3 {
+		t.Errorf("net_subset_gross_pct: want 3 (6/2), got %v", s.NetSubsetGrossPct)
 	}
 }
 
@@ -189,6 +200,38 @@ func TestComputeStatsWithholdsNetWhenOnlyLegacyRowsExist(t *testing.T) {
 	if s.NetCount != 0 || s.NetUSD != nil || s.NetExpectancy != nil {
 		t.Errorf("legacy rows must not fabricate net stats: %+v", s)
 	}
+	if s.NetSubsetGrossUSD != nil || s.NetSubsetGrossPct != nil {
+		t.Errorf("net_subset_gross must stay nil alongside net stats when net_count=0: %+v", s)
+	}
+}
+
+// TestComputeStatsNetSubsetGrossIsolatesRealCostErosion is a regression for a real
+// production reading (2026-08-23, app.trades, all closed): GrossUSD (+$102.93 over
+// 385 trades) and NetUSD (-$30.22 over only 170 trades with complete accounting)
+// looked contradictory side by side purely because they cover different, differently
+// sized trade populations -- 215 of the 385 gross trades have no cost accounting at
+// all and cannot appear in Net. NetSubsetGrossUSD isolates the SAME 170 trades' own
+// gross figure (+$0.70) so the UI can show that the accounted-for subset was already
+// roughly flat gross, and real per-trade costs (~$0.18-0.23) are what pushed it to a
+// net loss -- not a mysterious mismatch between two unrelated numbers.
+func TestComputeStatsNetSubsetGrossIsolatesRealCostErosion(t *testing.T) {
+	s := computeStats(statsAgg{
+		Gross:                tradeAgg{N: 385, TotalUSD: 102.93},
+		Net:                  tradeAgg{N: 170, TotalUSD: -30.22},
+		NetSubsetGrossUSD:    0.70,
+		NetSubsetGrossSumPct: 119, // arbitrary pct sum for this test's N=170
+		LegacyCount:          32,
+		IncompleteCount:      183,
+	})
+	if s.GrossUSD != 102.93 {
+		t.Errorf("gross_usd: want the full-population 102.93, got %v", s.GrossUSD)
+	}
+	if s.NetUSD == nil || *s.NetUSD != -30.22 {
+		t.Errorf("net_usd: want -30.22, got %v", s.NetUSD)
+	}
+	if s.NetSubsetGrossUSD == nil || *s.NetSubsetGrossUSD != 0.70 {
+		t.Errorf("net_subset_gross_usd: want the same-170-trades figure 0.70, got %v", s.NetSubsetGrossUSD)
+	}
 }
 
 func TestStatsAppliesExchangeFilter(t *testing.T) {
@@ -204,6 +247,7 @@ func TestStatsAppliesExchangeFilter(t *testing.T) {
 				float64(0), float64(0), float64(0),
 				float64(0), float64(0), float64(0),
 				int64(0), int64(0),
+				float64(0), float64(0),
 			}}
 		},
 	}
@@ -224,6 +268,7 @@ func TestStatsHandlerReturnsAggregate(t *testing.T) {
 				float64(2), float64(5), float64(-3),
 				float64(10), float64(25), float64(-15),
 				int64(2), int64(0),
+				float64(18), float64(6),
 			}}
 		},
 	}
@@ -246,6 +291,9 @@ func TestStatsHandlerReturnsAggregate(t *testing.T) {
 	}
 	if resp.NetUSD == nil || *resp.NetUSD != 10 {
 		t.Errorf("want net_usd 10, got %v", resp.NetUSD)
+	}
+	if resp.NetSubsetGrossUSD == nil || *resp.NetSubsetGrossUSD != 18 {
+		t.Errorf("want net_subset_gross_usd 18, got %v", resp.NetSubsetGrossUSD)
 	}
 }
 
@@ -454,6 +502,7 @@ func TestStatsStrategyModeSideFiltersPassedToSQLExactlyOnce(t *testing.T) {
 				float64(0), float64(0), float64(0),
 				float64(0), float64(0), float64(0),
 				int64(0), int64(0),
+				float64(0), float64(0),
 			}}
 		},
 	}
