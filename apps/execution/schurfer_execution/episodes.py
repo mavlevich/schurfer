@@ -306,7 +306,8 @@ SET status = 'claimed',
     claim_token = %(token)s,
     claimed_at = now(),
     claim_expires_at = now() + make_interval(secs := %(lease_seconds)s),
-    claim_attempts = claim_attempts + 1
+    claim_attempts = claim_attempts + 1,
+    updated_at = now()
 WHERE episode_id = %(episode_id)s
   AND expires_at > now()
   AND (
@@ -343,13 +344,13 @@ async def claim_episode(db_url: str, *, episode_id: str, lease_seconds: int = 30
 
 _TERMINATE_CLAIMED = """
 UPDATE app.early_momentum_episodes
-SET status = %(status)s, terminal_reason = %(reason)s
+SET status = %(status)s, terminal_reason = %(reason)s, updated_at = now()
 WHERE episode_id = %(episode_id)s AND claim_token = %(claim_token)s
 """
 
 _TERMINATE_ARMED = """
 UPDATE app.early_momentum_episodes
-SET status = %(status)s, terminal_reason = %(reason)s
+SET status = %(status)s, terminal_reason = %(reason)s, updated_at = now()
 WHERE episode_id = %(episode_id)s AND status = 'armed'
 """
 
@@ -383,7 +384,7 @@ async def terminate_episode(
 
 _MARK_CLOSED = """
 UPDATE app.early_momentum_episodes
-SET status = 'closed'
+SET status = 'closed', updated_at = now()
 WHERE episode_id = %(episode_id)s AND status = 'opened'
 """
 
@@ -403,7 +404,7 @@ async def mark_closed(db_url: str, *, episode_id: str) -> bool:
 
 _SET_EXECUTION_SYMBOL = """
 UPDATE app.early_momentum_episodes
-SET execution_symbol = %(execution_symbol)s
+SET execution_symbol = %(execution_symbol)s, updated_at = now()
 WHERE episode_id = %(episode_id)s
 """
 
@@ -427,7 +428,7 @@ async def set_execution_symbol(db_url: str, *, episode_id: str, execution_symbol
 
 _REAP_EXPIRED_ARMED = """
 UPDATE app.early_momentum_episodes
-SET status = 'expired', terminal_reason = %(reason)s
+SET status = 'expired', terminal_reason = %(reason)s, updated_at = now()
 WHERE episode_id IN (
     SELECT episode_id FROM app.early_momentum_episodes
     WHERE status = 'armed' AND expires_at < now()
@@ -437,7 +438,7 @@ WHERE episode_id IN (
 
 _REAP_INFRASTRUCTURE_FAILED_CLAIMS = """
 UPDATE app.early_momentum_episodes
-SET status = 'rejected', terminal_reason = %(reason)s
+SET status = 'rejected', terminal_reason = %(reason)s, updated_at = now()
 WHERE episode_id IN (
     SELECT episode_id FROM app.early_momentum_episodes
     WHERE status = 'claimed'
@@ -458,7 +459,7 @@ WHERE episode_id IN (
 # either -- a permanent stuck loop (colleague review).
 _REAP_EXPIRED_WHILE_CLAIMED = """
 UPDATE app.early_momentum_episodes
-SET status = 'expired', terminal_reason = %(reason)s
+SET status = 'expired', terminal_reason = %(reason)s, updated_at = now()
 WHERE episode_id IN (
     SELECT episode_id FROM app.early_momentum_episodes
     WHERE status = 'claimed' AND expires_at < now()
@@ -719,6 +720,10 @@ SELECT
     (SELECT count(*) FROM app.early_momentum_episodes
       WHERE status = 'rejected' AND terminal_reason = 'identity_catalog_stale'
         AND created_at > now() - interval '1 hour') AS identity_stale_rejections_last_hour,
+    (SELECT EXTRACT(EPOCH FROM (now() - MIN(expires_at))) FROM app.early_momentum_episodes
+      WHERE status = 'armed' AND expires_at < now()) AS oldest_overdue_armed_age_seconds,
+    (SELECT EXTRACT(EPOCH FROM (now() - MIN(claim_expires_at))) FROM app.early_momentum_episodes
+      WHERE status = 'claimed' AND claim_expires_at < now()) AS oldest_expired_claim_age_seconds,
     (SELECT EXTRACT(EPOCH FROM (now() - MIN(t))) FROM (
         SELECT expires_at AS t FROM app.early_momentum_episodes
           WHERE status = 'armed' AND expires_at < now()
@@ -730,6 +735,13 @@ SELECT
 
 
 async def health_metrics(db_url: str) -> dict[str, Any]:
+    """overdue_armed/expired_claims stay the raw counts they always were --
+    always shown, never hidden by the reaper grace period (that judgment
+    belongs to early_momentum_health.compute_status, not here). The two
+    per-status ages are None whenever their own count is zero (nothing to
+    measure) -- compute_status only ever consults an age when its count is
+    positive, so that's never ambiguous with "couldn't measure"; a query
+    failure fails every field closed to None, same as before."""
     try:
         async with (
             await psycopg.AsyncConnection.connect(db_url, row_factory=dict_row) as aconn,
@@ -743,6 +755,19 @@ async def health_metrics(db_url: str) -> dict[str, Any]:
             "identity_stale_rejections_last_hour": (
                 row["identity_stale_rejections_last_hour"] if row else None
             ),
+            "oldest_overdue_armed_age_seconds": (
+                float(row["oldest_overdue_armed_age_seconds"])
+                if row and row["oldest_overdue_armed_age_seconds"] is not None
+                else None
+            ),
+            "oldest_expired_claim_age_seconds": (
+                float(row["oldest_expired_claim_age_seconds"])
+                if row and row["oldest_expired_claim_age_seconds"] is not None
+                else None
+            ),
+            # Kept for backward compatibility -- combined across both
+            # armed and claimed, defaults to 0.0 (not None) when nothing is
+            # overdue, exactly as before this PR.
             "oldest_overdue_age_seconds": (
                 float(row["oldest_overdue_age_seconds"])
                 if row and row["oldest_overdue_age_seconds"] is not None
@@ -755,6 +780,8 @@ async def health_metrics(db_url: str) -> dict[str, Any]:
             "overdue_armed": None,
             "expired_claims": None,
             "identity_stale_rejections_last_hour": None,
+            "oldest_overdue_armed_age_seconds": None,
+            "oldest_expired_claim_age_seconds": None,
             "oldest_overdue_age_seconds": None,
         }
 

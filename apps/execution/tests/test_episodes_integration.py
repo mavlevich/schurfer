@@ -474,3 +474,66 @@ async def test_open_trade_for_episode_rejects_lease_expired_between_claim_and_co
     finally:
         await _cleanup(conn, native_market_id=native_market_id)
         await conn.close()
+
+
+async def test_health_metrics_reports_real_overdue_armed_and_expired_claim_ages() -> None:
+    """health_metrics() is otherwise only exercised through mocked cursor
+    results (test_episodes.py) -- this is the one place its actual SQL runs
+    against a real table (colleague review). health_metrics has no
+    exchange/strategy scope (it's a global operational read), so this
+    can't assert exact counts against a shared table other tests/processes
+    may also be touching -- it asserts our own rows are correctly reflected
+    in a before/after delta instead, and that the returned ages are
+    positive and in the right ballpark for what we just backdated."""
+    conn = await _connect_or_skip()
+    armed_native_id = f"TSHMARM{uuid.uuid4().hex[:8]}"
+    claimed_native_id = f"TSHMCLM{uuid.uuid4().hex[:8]}"
+    try:
+        strategy_id = await _ensure_strategy(conn)
+        baseline = await episodes.health_metrics(TEST_DATABASE_URL)
+        assert baseline["overdue_armed"] is not None
+        assert baseline["expired_claims"] is not None
+        baseline_overdue_armed = baseline["overdue_armed"]
+        baseline_expired_claims = baseline["expired_claims"]
+
+        overdue_armed_ep = await _arm(
+            conn, strategy_id=strategy_id, native_market_id=armed_native_id
+        )
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "UPDATE app.early_momentum_episodes "
+                "SET expires_at = now() - interval '30 seconds' WHERE episode_id = %s",
+                (overdue_armed_ep.episode_id,),
+            )
+
+        expired_claim_ep = await _arm(
+            conn, strategy_id=strategy_id, native_market_id=claimed_native_id
+        )
+        claim = await episodes.claim_episode(
+            TEST_DATABASE_URL, episode_id=expired_claim_ep.episode_id
+        )
+        assert claim.claimed is True
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "UPDATE app.early_momentum_episodes "
+                "SET claim_expires_at = now() - interval '45 seconds' WHERE episode_id = %s",
+                (expired_claim_ep.episode_id,),
+            )
+
+        metrics = await episodes.health_metrics(TEST_DATABASE_URL)
+
+        assert metrics["overdue_armed"] == baseline_overdue_armed + 1
+        assert metrics["expired_claims"] == baseline_expired_claims + 1
+        assert metrics["oldest_overdue_armed_age_seconds"] is not None
+        assert metrics["oldest_expired_claim_age_seconds"] is not None
+        # Loose bounds, not exact equality -- other overdue rows (from a
+        # concurrent test run, or a genuinely older stray row) can only
+        # make the oldest age *larger* than what we just backdated, never
+        # smaller, so a lower bound is the only side that's actually safe
+        # to assert here.
+        assert metrics["oldest_overdue_armed_age_seconds"] >= 25.0
+        assert metrics["oldest_expired_claim_age_seconds"] >= 40.0
+    finally:
+        await _cleanup(conn, native_market_id=armed_native_id)
+        await _cleanup(conn, native_market_id=claimed_native_id)
+        await conn.close()

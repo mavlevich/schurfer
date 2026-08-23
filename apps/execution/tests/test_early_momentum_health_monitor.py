@@ -8,11 +8,14 @@ focus on what gathers its inputs and what happens with its verdict.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from schurfer_execution import early_momentum
+from fakeredis.aioredis import FakeRedis
+from schurfer_execution import early_momentum, worker_health
 from schurfer_execution.worker_health import STATE_COMPLETED, STATE_STARTED, WorkerHeartbeat
 
 NOW = datetime(2026, 8, 22, 12, 0, 0, tzinfo=UTC)
@@ -205,7 +208,14 @@ async def test_gather_health_status_wires_inputs_through_to_compute_status() -> 
         ),
         patch(
             "schurfer_execution.early_momentum.episodes.health_metrics",
-            AsyncMock(return_value={"overdue_armed": 0, "expired_claims": 0}),
+            AsyncMock(
+                return_value={
+                    "overdue_armed": 1,
+                    "oldest_overdue_armed_age_seconds": 20.0,
+                    "expired_claims": 0,
+                    "oldest_expired_claim_age_seconds": None,
+                }
+            ),
         ),
         patch(
             "schurfer_execution.early_momentum.episodes.source_freshness",
@@ -254,9 +264,13 @@ async def test_gather_health_status_wires_inputs_through_to_compute_status() -> 
     assert kw["scanner_heartbeat"] is scanner_hb
     assert kw["trigger_heartbeat"] is trigger_hb
     assert kw["source_max_lag_seconds"] == {"bybit": 65.0, "binance": 70.0}
-    assert kw["overdue_armed"] == 0
+    assert kw["overdue_armed"] == 1
+    assert kw["oldest_overdue_armed_age_seconds"] == 20.0
     assert kw["expired_claims"] == 0
+    assert kw["oldest_expired_claim_age_seconds"] is None
+    assert kw["lifecycle_reaper_grace_seconds"] == early_momentum._LIFECYCLE_REAPER_GRACE_SECONDS
     assert kw["identity_health"] == identity
+    assert raw["lifecycle_reaper_grace_seconds"] == early_momentum._LIFECYCLE_REAPER_GRACE_SECONDS
 
 
 async def test_gather_health_status_handles_strategy_lookup_failure() -> None:
@@ -475,6 +489,186 @@ async def test_maybe_alert_state_read_failure_aborts_without_sending() -> None:
         "schurfer_execution.early_momentum.notify.notify_alert", new_callable=AsyncMock
     ) as notify_alert:
         await early_momentum._maybe_alert(rdb, cfg, status="degraded", reasons=("x",))
+    notify_alert.assert_not_awaited()
+
+
+# --- end-to-end: lifecycle grace feeding real alerting (this PR) ---
+#
+# gather_health_status here runs its real compute_status (not mocked) and
+# _maybe_alert runs for real against FakeRedis -- only the Postgres-touching
+# episodes/journal calls are stubbed. This is the actual composition a
+# reaper tick produces in production: compute_status's grace-boundary logic
+# (unit-tested in test_early_momentum_health.py) feeding _maybe_alert's
+# send/dedup/recovery logic (unit-tested above) end to end.
+
+
+@contextlib.contextmanager
+def _lifecycle_health_context(
+    *, overdue_armed: int, oldest_overdue_armed_age_seconds: float | None
+):
+    with (
+        patch(
+            "schurfer_execution.early_momentum.episodes.health_metrics",
+            AsyncMock(
+                return_value={
+                    "overdue_armed": overdue_armed,
+                    "oldest_overdue_armed_age_seconds": oldest_overdue_armed_age_seconds,
+                    "expired_claims": 0,
+                    "oldest_expired_claim_age_seconds": None,
+                }
+            ),
+        ),
+        patch(
+            "schurfer_execution.early_momentum.episodes.source_freshness",
+            AsyncMock(return_value={"bybit": {"latest_bucket": None, "lag_seconds": 65.0}}),
+        ),
+        patch(
+            "schurfer_execution.early_momentum.episodes.identity_health",
+            AsyncMock(
+                return_value={"bybit": {"age_seconds": 60.0, "stale": False}},
+            ),
+        ),
+        patch(
+            "schurfer_execution.early_momentum.journal.find_strategy_id", AsyncMock(return_value=7)
+        ),
+        patch(
+            "schurfer_execution.early_momentum.episodes.last_successful_open_at",
+            AsyncMock(return_value=None),
+        ),
+    ):
+        yield
+
+
+async def _write_fresh_heartbeats(rdb: Any) -> None:
+    # gather_health_status samples the real wall clock internally (it isn't
+    # given `now`) -- these heartbeats must be fresh against *that*, not
+    # against this file's fixed NOW constant (used only by the other,
+    # compute_status-mocking tests above).
+    real_now = datetime.now(tz=UTC)
+    hb = WorkerHeartbeat(
+        worker_name="early_momentum_scanner",
+        worker_version="4",
+        state=STATE_COMPLETED,
+        started_at=real_now - timedelta(seconds=1),
+        completed_at=real_now,
+        duration_ms=1000.0,
+        counters={"symbols_total": 50, "quality_ready": 10},
+    )
+    await worker_health.write_heartbeat(
+        rdb, key=early_momentum._SCANNER_HEARTBEAT_KEY, heartbeat=hb, ttl_seconds=360
+    )
+    await worker_health.write_heartbeat(
+        rdb, key=early_momentum._TRIGGER_HEARTBEAT_KEY, heartbeat=hb, ttl_seconds=360
+    )
+
+
+async def test_overdue_within_grace_reports_ok_and_sends_no_alert() -> None:
+    rdb = FakeRedis()
+    await _write_fresh_heartbeats(rdb)
+    # An already-running system whose last known status was ok -- the case
+    # this test cares about (a routine tick must not alert), distinct from
+    # the very-first-tick-ever baseline case covered by
+    # test_maybe_alert_first_ever_tick_reporting_ok_is_not_a_recovery.
+    await rdb.set(early_momentum._HEALTH_ALERT_STATUS_KEY, "ok")
+    cfg = _cfg()
+
+    with (
+        _lifecycle_health_context(overdue_armed=1, oldest_overdue_armed_age_seconds=20.0),
+        patch(
+            "schurfer_execution.early_momentum.notify.notify_alert", new_callable=AsyncMock
+        ) as notify_alert,
+    ):
+        status, reasons, _raw = await early_momentum.gather_health_status(
+            rdb, cfg, startup_at=NOW - timedelta(hours=1)
+        )
+        await early_momentum._maybe_alert(rdb, cfg, status=status, reasons=reasons)
+
+    assert status == "ok"
+    notify_alert.assert_not_awaited()
+
+
+async def test_overdue_past_grace_reports_degraded_and_sends_one_alert() -> None:
+    rdb = FakeRedis()
+    await _write_fresh_heartbeats(rdb)
+    cfg = _cfg()
+
+    with (
+        _lifecycle_health_context(overdue_armed=1, oldest_overdue_armed_age_seconds=200.0),
+        patch(
+            "schurfer_execution.early_momentum.notify.notify_alert",
+            AsyncMock(return_value=True),
+        ) as notify_alert,
+    ):
+        status, reasons, _raw = await early_momentum.gather_health_status(
+            rdb, cfg, startup_at=NOW - timedelta(hours=1)
+        )
+        await early_momentum._maybe_alert(rdb, cfg, status=status, reasons=reasons)
+
+    assert status == "degraded"
+    assert "overdue_armed_episodes" in reasons
+    notify_alert.assert_awaited_once()
+
+
+async def test_recovery_after_a_real_degraded_phase_alerts_exactly_once() -> None:
+    rdb = FakeRedis()
+    await _write_fresh_heartbeats(rdb)
+    cfg = _cfg()
+
+    with patch(
+        "schurfer_execution.early_momentum.notify.notify_alert",
+        AsyncMock(return_value=True),
+    ) as notify_alert:
+        with _lifecycle_health_context(overdue_armed=1, oldest_overdue_armed_age_seconds=200.0):
+            status, reasons, _raw = await early_momentum.gather_health_status(
+                rdb, cfg, startup_at=NOW - timedelta(hours=1)
+            )
+            await early_momentum._maybe_alert(rdb, cfg, status=status, reasons=reasons)
+        assert status == "degraded"
+        assert notify_alert.await_count == 1
+
+        # The reaper has since caught up -- overdue count back to zero.
+        with _lifecycle_health_context(overdue_armed=0, oldest_overdue_armed_age_seconds=None):
+            status, reasons, _raw = await early_momentum.gather_health_status(
+                rdb, cfg, startup_at=NOW - timedelta(hours=1)
+            )
+            await early_momentum._maybe_alert(rdb, cfg, status=status, reasons=reasons)
+        assert status == "ok"
+        assert notify_alert.await_count == 2
+        recovery_text = notify_alert.call_args.kwargs["text"]
+        assert "recovered" in recovery_text
+
+        # A further ok tick must not resend the recovery message again.
+        with _lifecycle_health_context(overdue_armed=0, oldest_overdue_armed_age_seconds=None):
+            status, reasons, _raw = await early_momentum.gather_health_status(
+                rdb, cfg, startup_at=NOW - timedelta(hours=1)
+            )
+            await early_momentum._maybe_alert(rdb, cfg, status=status, reasons=reasons)
+        assert status == "ok"
+        assert notify_alert.await_count == 2
+
+
+async def test_ordinary_overdue_within_grace_ticks_never_pair_degraded_with_recovered() -> None:
+    """A normal reaper cadence (always within grace) must never itself
+    manufacture a degraded->recovered alert pair -- status stays ok every
+    tick, so _maybe_alert never even sees a transition."""
+    rdb = FakeRedis()
+    await _write_fresh_heartbeats(rdb)
+    await rdb.set(early_momentum._HEALTH_ALERT_STATUS_KEY, "ok")
+    cfg = _cfg()
+
+    with (
+        _lifecycle_health_context(overdue_armed=1, oldest_overdue_armed_age_seconds=20.0),
+        patch(
+            "schurfer_execution.early_momentum.notify.notify_alert", new_callable=AsyncMock
+        ) as notify_alert,
+    ):
+        for _ in range(3):
+            status, reasons, _raw = await early_momentum.gather_health_status(
+                rdb, cfg, startup_at=NOW - timedelta(hours=1)
+            )
+            await early_momentum._maybe_alert(rdb, cfg, status=status, reasons=reasons)
+            assert status == "ok"
+
     notify_alert.assert_not_awaited()
 
 

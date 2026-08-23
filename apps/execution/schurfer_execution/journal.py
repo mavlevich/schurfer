@@ -400,7 +400,7 @@ FOR UPDATE
 
 _MARK_EPISODE_OPENED = """
 UPDATE app.early_momentum_episodes
-SET status = 'opened'
+SET status = 'opened', updated_at = now()
 WHERE episode_id = %s AND claim_token = %s
 """
 

@@ -433,6 +433,8 @@ async def test_health_metrics_shape() -> None:
                 "overdue_armed": 2,
                 "expired_claims": 1,
                 "identity_stale_rejections_last_hour": 3,
+                "oldest_overdue_armed_age_seconds": 20.0,
+                "oldest_expired_claim_age_seconds": 45.5,
                 "oldest_overdue_age_seconds": 45.5,
             }
         ]
@@ -443,8 +445,34 @@ async def test_health_metrics_shape() -> None:
         "overdue_armed": 2,
         "expired_claims": 1,
         "identity_stale_rejections_last_hour": 3,
+        "oldest_overdue_armed_age_seconds": 20.0,
+        "oldest_expired_claim_age_seconds": 45.5,
         "oldest_overdue_age_seconds": 45.5,
     }
+
+
+async def test_health_metrics_empty_overdue_returns_none_ages_not_zero() -> None:
+    """The two per-status ages must be None (not 0.0) when their count is
+    zero -- distinct from a genuine 0-second-old reading, and distinct from
+    "couldn't measure". Only oldest_overdue_age_seconds (kept for backward
+    compatibility) still defaults to 0.0."""
+    conn, _cur = _mock_conn(
+        fetchone_results=[
+            {
+                "overdue_armed": 0,
+                "expired_claims": 0,
+                "identity_stale_rejections_last_hour": 0,
+                "oldest_overdue_armed_age_seconds": None,
+                "oldest_expired_claim_age_seconds": None,
+                "oldest_overdue_age_seconds": None,
+            }
+        ]
+    )
+    with patch("psycopg.AsyncConnection.connect", AsyncMock(return_value=conn)):
+        metrics = await episodes.health_metrics("postgresql://x")
+    assert metrics["oldest_overdue_armed_age_seconds"] is None
+    assert metrics["oldest_expired_claim_age_seconds"] is None
+    assert metrics["oldest_overdue_age_seconds"] == 0.0
 
 
 async def test_identity_health_flags_stale_and_unknown_ages() -> None:
@@ -466,3 +494,7 @@ async def test_health_metrics_db_error_returns_none_values_not_raises() -> None:
     ):
         metrics = await episodes.health_metrics("postgresql://x")
     assert metrics["overdue_armed"] is None
+    assert metrics["expired_claims"] is None
+    assert metrics["oldest_overdue_armed_age_seconds"] is None
+    assert metrics["oldest_expired_claim_age_seconds"] is None
+    assert metrics["oldest_overdue_age_seconds"] is None

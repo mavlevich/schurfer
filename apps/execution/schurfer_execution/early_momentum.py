@@ -58,6 +58,15 @@ _SOURCE_EXCHANGES = ["bybit", "binance"]
 _WATCH_KEY_PREFIX = "market:early_momentum:v4:watch:"
 _SCAN_INTERVAL = 60
 _TRIGGER_INTERVAL = 60
+# An armed/claimed episode past its own expires_at/claim_expires_at isn't
+# necessarily stuck -- reap_overdue only runs once per trigger tick, so a
+# row can sit "overdue" for up to one tick's worth of ordinary scheduling
+# delay before the reaper even gets a chance to look at it. Two tick
+# intervals is the SLO for "the reaper should have gotten to this by now";
+# past that, it's a real degradation, not scheduling noise. This describes
+# internal scheduling behavior, not the trading model -- deliberately not
+# an env var and not part of the strategy contract hash.
+_LIFECYCLE_REAPER_GRACE_SECONDS = 2 * _TRIGGER_INTERVAL
 _LIST_ACTIONABLE_BATCH_SIZE = 200
 _MAX_CLAIM_ATTEMPTS = 5
 _CLAIM_LEASE_SECONDS = 30
@@ -1085,7 +1094,10 @@ async def gather_health_status(
         },
         source_lag_limit_seconds=EARLY_MOMENTUM_V4_QUALITY_POLICY.max_bucket_lag_seconds,
         overdue_armed=lifecycle_metrics.get("overdue_armed"),
+        oldest_overdue_armed_age_seconds=lifecycle_metrics.get("oldest_overdue_armed_age_seconds"),
         expired_claims=lifecycle_metrics.get("expired_claims"),
+        oldest_expired_claim_age_seconds=lifecycle_metrics.get("oldest_expired_claim_age_seconds"),
+        lifecycle_reaper_grace_seconds=_LIFECYCLE_REAPER_GRACE_SECONDS,
         consecutive_zero_quality_ready_ticks=consecutive_zero,
         zero_quality_ready_error_threshold=_HEALTH_ZERO_QUALITY_READY_ERROR_THRESHOLD,
         identity_health=identity_health_by_exchange,
@@ -1096,6 +1108,7 @@ async def gather_health_status(
         "source_freshness": source_freshness_by_exchange,
         "identity_health": identity_health_by_exchange,
         "lifecycle_metrics": lifecycle_metrics,
+        "lifecycle_reaper_grace_seconds": _LIFECYCLE_REAPER_GRACE_SECONDS,
         "last_successful_open_at": last_open_at,
         "consecutive_zero_quality_ready_ticks": consecutive_zero,
     }

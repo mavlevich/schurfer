@@ -83,7 +83,10 @@ def compute_status(
     source_max_lag_seconds: dict[str, float | None],
     source_lag_limit_seconds: int,
     overdue_armed: int | None,
+    oldest_overdue_armed_age_seconds: float | None,
     expired_claims: int | None,
+    oldest_expired_claim_age_seconds: float | None,
+    lifecycle_reaper_grace_seconds: int,
     consecutive_zero_quality_ready_ticks: int,
     zero_quality_ready_error_threshold: int,
     identity_health: dict[str, dict[str, Any]],
@@ -99,7 +102,20 @@ def compute_status(
     exactly the "zero trades, no explanation" failure mode this whole PR
     exists to eliminate (colleague review). An empty/missing dict (the
     identity query itself unavailable) fails closed as an error, same
-    principle as REASON_LIFECYCLE_METRICS_UNAVAILABLE above."""
+    principle as REASON_LIFECYCLE_METRICS_UNAVAILABLE above.
+
+    overdue_armed/expired_claims becoming momentarily positive right after
+    their own expiry is expected scheduling noise, not degradation -- the
+    reaper only runs once per trigger tick (~60s), so a row can sit
+    "overdue" for up to a tick's worth of ordinary delay before the reaper
+    even gets a chance at it. Only once the OLDEST such row's age reaches
+    `lifecycle_reaper_grace_seconds` does this count as a real stall and
+    raise a reason; the raw count itself is still always returned to
+    callers for display (see gather_health_status/routers/health.py), it
+    just doesn't by itself flip status away from ok. A positive count with
+    no age reading (the age sub-select disagreeing with the count
+    sub-select -- should never happen, but this function trusts nothing)
+    fails closed exactly like a missing count does."""
     within_grace = (now - startup_at).total_seconds() < grace_period_seconds
     reasons: list[str] = []
 
@@ -134,9 +150,15 @@ def compute_status(
         reasons.append(REASON_LIFECYCLE_METRICS_UNAVAILABLE)
     else:
         if overdue_armed > 0:
-            reasons.append(REASON_OVERDUE_ARMED)
+            if oldest_overdue_armed_age_seconds is None:
+                reasons.append(REASON_LIFECYCLE_METRICS_UNAVAILABLE)
+            elif oldest_overdue_armed_age_seconds >= lifecycle_reaper_grace_seconds:
+                reasons.append(REASON_OVERDUE_ARMED)
         if expired_claims > 0:
-            reasons.append(REASON_EXPIRED_CLAIMS)
+            if oldest_expired_claim_age_seconds is None:
+                reasons.append(REASON_LIFECYCLE_METRICS_UNAVAILABLE)
+            elif oldest_expired_claim_age_seconds >= lifecycle_reaper_grace_seconds:
+                reasons.append(REASON_EXPIRED_CLAIMS)
 
     if consecutive_zero_quality_ready_ticks >= zero_quality_ready_error_threshold:
         reasons.append(REASON_QUALITY_READY_ZERO_SUSTAINED)
