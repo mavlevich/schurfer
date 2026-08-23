@@ -103,6 +103,105 @@ func TestCombinedTradesCTEAgainstRealPostgres(t *testing.T) {
 	}
 }
 
+// TestCombinedTradesCTEReadsCanonicalStrategyIdentity is a regression for
+// the colleague-review finding that strategy_name/strategy_version were
+// derived from setup_context->>'strategy', which pump_short's own
+// trader.py never sets (it stamps setup_context["strategy_version"]
+// instead -- see journal.strategy_identity's own docstring). Every
+// pump_short trade showed strategy_name="unknown" in this endpoint. The
+// canonical source is app.trades.strategy_id -> app.strategies, which
+// every trade already carries regardless of what setup_context happens to
+// contain.
+func TestCombinedTradesCTEReadsCanonicalStrategyIdentity(t *testing.T) {
+	pool := connectTestPool(t)
+	defer pool.Close()
+
+	version := "1t" + newTestUUID()[:8] // app.strategies.version is varchar(16)
+	defer cleanupStrategyTestRows(pool, version)
+
+	strategyID := insertStrategy(t, pool, "pump_short", version)
+	tradeID := insertTradeWithoutSetupContextStrategyKey(t, pool, strategyID)
+
+	h := &Handler{pool: &poolAdapter{inner: pool}}
+	req := httptest.NewRequest(http.MethodGet, "/api/trades?exchange=test_strategy_join", nil)
+	w := httptest.NewRecorder()
+	h.List(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp listResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v (%s)", err, w.Body.String())
+	}
+
+	var found *tradeRow
+	for i := range resp.Trades {
+		if resp.Trades[i].ID == fmt.Sprintf("pump_short:%d", tradeID) {
+			found = &resp.Trades[i]
+		}
+	}
+	if found == nil {
+		t.Fatalf("inserted trade missing from response: %+v", resp.Trades)
+	}
+	if found.StrategyName != "pump_short" {
+		t.Errorf("StrategyName: want pump_short (from app.strategies join), got %q", found.StrategyName)
+	}
+	if found.StrategyVersion != version {
+		t.Errorf("StrategyVersion: want %q (from app.strategies join), got %q", version, found.StrategyVersion)
+	}
+}
+
+func insertStrategy(t *testing.T, pool *pgxpool.Pool, name, version string) int64 {
+	t.Helper()
+	var id int64
+	err := pool.QueryRow(context.Background(), `
+		INSERT INTO app.strategies (name, version, description)
+		VALUES ($1, $2, 'integration test')
+		ON CONFLICT (name, version) DO UPDATE SET updated_at = now()
+		RETURNING id`,
+		name, version,
+	).Scan(&id)
+	if err != nil {
+		t.Fatalf("insertStrategy: %v", err)
+	}
+	return id
+}
+
+// insertTradeWithoutSetupContextStrategyKey mirrors the real pump_short
+// trader.py convention exactly: setup_context carries "strategy_version",
+// never "strategy" -- the only reliable strategy identity is the FK.
+func insertTradeWithoutSetupContextStrategyKey(t *testing.T, pool *pgxpool.Pool, strategyID int64) int64 {
+	t.Helper()
+	var id int64
+	err := pool.QueryRow(context.Background(), `
+		INSERT INTO app.trades (
+			strategy_id, symbol, exchange, market_type, side,
+			size_usd, leverage, entry_price, entry_at,
+			fees_usd, funding_usd,
+			accounting_version, accounting_status, status,
+			setup_context, notes
+		) VALUES (
+			$1, 'JOINTEST/USDT:USDT', 'test_strategy_join', 'perp', 'short',
+			50.0, 3.0, 1.0, now(),
+			0, 0,
+			'legacy_price_only_v1', 'legacy', 'open',
+			$2::jsonb, NULL
+		) RETURNING id`,
+		strategyID, `{"strategy_version": "irrelevant_legacy_value"}`,
+	).Scan(&id)
+	if err != nil {
+		t.Fatalf("insertTradeWithoutSetupContextStrategyKey: %v", err)
+	}
+	return id
+}
+
+func cleanupStrategyTestRows(pool *pgxpool.Pool, version string) {
+	ctx := context.Background()
+	_, _ = pool.Exec(ctx, `DELETE FROM app.trades WHERE exchange = 'test_strategy_join'`)                   //nolint:errcheck
+	_, _ = pool.Exec(ctx, `DELETE FROM app.strategies WHERE name = 'pump_short' AND version = $1`, version) //nolint:errcheck
+}
+
 func insertPaperRun(t *testing.T, pool *pgxpool.Pool, paperVersion string) {
 	t.Helper()
 	_, err := pool.Exec(context.Background(), `

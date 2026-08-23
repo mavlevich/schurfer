@@ -251,10 +251,12 @@ func TestStatsHandlerReturnsAggregate(t *testing.T) {
 
 var epoch = time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 
+func strPtr(s string) *string { return &s }
+
 // tradeRowVals returns a slice matching the Scan order in handler.go.
 func tradeRowVals(id int64, status, exchange string) []any {
 	return []any{
-		"pump_short:" + strconv.FormatInt(id, 10), "pump_short", "BEAT/USDT:USDT", exchange, "perp", "short",
+		"pump_short:" + strconv.FormatInt(id, 10), "app.trades", "pump_short_v1", "pump_short", "1", "live", strPtr("initial_sl"), "BEAT/USDT:USDT", exchange, "perp", "short",
 		float64(50), float64(3),
 		float64(0.0030), epoch,
 		(*float64)(nil), (*time.Time)(nil),
@@ -413,6 +415,91 @@ func TestListBothFiltersPassedToSQL(t *testing.T) {
 	}
 }
 
+// TestListStrategyModeSideFiltersPassedToSQLExactlyOnce is a regression for
+// the strategy/mode/side filter blocks having been accidentally duplicated
+// in List's own WHERE-building code: each filter matched (and its SQL
+// placeholder was allocated) twice, so a request combining all three ended
+// up with 6 args instead of 3 and a WHERE clause repeating each condition.
+// It happened to still filter correctly (a repeated `AND x = $n` is a
+// no-op), but every filter must be applied exactly once.
+func TestListStrategyModeSideFiltersPassedToSQLExactlyOnce(t *testing.T) {
+	var capturedArgs []any
+	q := &stubQuerier{
+		onQueryRow: func(_ context.Context, _ string, args ...any) pgxRow {
+			capturedArgs = args
+			return &stubRow{vals: []any{int64(0)}}
+		},
+	}
+	serveTrades(q, "/api/trades?strategy=early_momentum&mode=paper&side=long")
+	if len(capturedArgs) != 3 {
+		t.Fatalf("want 3 args (strategy+mode+side, each once), got %d: %v", len(capturedArgs), capturedArgs)
+	}
+	if capturedArgs[0] != "early_momentum" || capturedArgs[1] != "paper" || capturedArgs[2] != "long" {
+		t.Errorf("want args=[early_momentum paper long], got %v", capturedArgs)
+	}
+}
+
+// TestStatsStrategyModeSideFiltersPassedToSQLExactlyOnce mirrors the List
+// regression above for Stats, which had the identical duplication.
+func TestStatsStrategyModeSideFiltersPassedToSQLExactlyOnce(t *testing.T) {
+	var capturedArgs []any
+	q := &stubQuerier{
+		onQueryRow: func(_ context.Context, _ string, args ...any) pgxRow {
+			capturedArgs = args
+			return &stubRow{vals: []any{
+				int64(0), int64(0), int64(0),
+				float64(0), float64(0), float64(0),
+				float64(0), float64(0), float64(0),
+				int64(0), int64(0), int64(0),
+				float64(0), float64(0), float64(0),
+				float64(0), float64(0), float64(0),
+				int64(0), int64(0),
+			}}
+		},
+	}
+	serveStats(q, "/api/trades/stats?strategy=pump_short&mode=live&side=short")
+	if len(capturedArgs) != 3 {
+		t.Fatalf("want 3 args (strategy+mode+side, each once), got %d: %v", len(capturedArgs), capturedArgs)
+	}
+	if capturedArgs[0] != "pump_short" || capturedArgs[1] != "live" || capturedArgs[2] != "short" {
+		t.Errorf("want args=[pump_short live short], got %v", capturedArgs)
+	}
+}
+
+// TestListNullExitReasonDoesNotCrash is a regression for the colleague-
+// review finding that exit_reason was scanned into a non-pointer string:
+// an open trade (or a still-open momentum_flow_paper probe) has NULL
+// notes, and split_part(NULL, ' ', 1) is itself NULL, not ” -- scanning
+// that NULL crashed the whole /api/trades endpoint. Reproduced for real
+// against Postgres in TestCombinedTradesCTEAgainstRealPostgres; this is
+// the equivalent fast stub-level check.
+func TestListNullExitReasonDoesNotCrash(t *testing.T) {
+	q := &stubQuerier{
+		onQueryRow: func(_ context.Context, _ string, _ ...any) pgxRow {
+			return &stubRow{vals: []any{int64(1)}}
+		},
+		onQuery: func(_ context.Context, _ string, _ ...any) (pgx.Rows, error) {
+			row := tradeRowVals(1, "open", "bybit")
+			row[6] = (*string)(nil) // exit_reason: NULL, matching a still-open trade
+			return &stubRows{cols: [][]any{row}}, nil
+		},
+	}
+	w := serveTrades(q, "/api/trades")
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp listResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Trades) != 1 {
+		t.Fatalf("want 1 trade, got %d", len(resp.Trades))
+	}
+	if resp.Trades[0].ExitReason != nil {
+		t.Errorf("want ExitReason=nil for a NULL exit_reason, got %v", *resp.Trades[0].ExitReason)
+	}
+}
+
 // TestCombinedTradesCTECoalescesNullableMomentumFlowCosts is a regression
 // for a production incident (2026-08-16): app.momentum_flow_paper_probes'
 // own fees_usd/funding_usd are nullable (NULL until that probe's own cost
@@ -456,7 +543,7 @@ func TestListOriginFilterPassedToSQL(t *testing.T) {
 // those have no real equivalent on the paper side).
 func momentumFlowPaperRowVals(paperID, status, exchange string) []any {
 	return []any{
-		"momentum_flow_paper:" + paperID, "momentum_flow_paper", "ERAUSDT", exchange, "linear", "long",
+		"momentum_flow_paper:" + paperID, "momentum_flow_paper", "momentum_flow_v1", "momentum_flow", "1", "paper", (*string)(nil), "ERAUSDT", exchange, "linear", "long",
 		float64(50), float64(1),
 		float64(10.5), epoch,
 		(*float64)(nil), (*time.Time)(nil),
@@ -494,8 +581,8 @@ func TestListReturnsBothOriginsTaggedAndSortedTogether(t *testing.T) {
 	if len(resp.Trades) != 2 {
 		t.Fatalf("want 2 trades, got %d", len(resp.Trades))
 	}
-	if resp.Trades[0].Origin != "pump_short" || resp.Trades[0].ID != "pump_short:1" {
-		t.Errorf("trade 0 = %+v, want origin=pump_short id=pump_short:1", resp.Trades[0])
+	if resp.Trades[0].Origin != "app.trades" || resp.Trades[0].ID != "pump_short:1" {
+		t.Errorf("trade 0 = %+v, want origin=app.trades id=pump_short:1", resp.Trades[0])
 	}
 	if resp.Trades[1].Origin != "momentum_flow_paper" ||
 		resp.Trades[1].ID != "momentum_flow_paper:11111111-1111-1111-1111-111111111111" {

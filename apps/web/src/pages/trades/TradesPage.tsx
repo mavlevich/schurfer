@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { WifiOff, RefreshCw } from 'lucide-react';
 import { PageShell } from '@/components/shared/PageShell';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import {
   Table,
@@ -11,7 +13,7 @@ import {
   TableCell,
 } from '@/components/ui/table';
 import { useTrades, useTradeStats } from '@/hooks/useTradesData';
-import type { Trade, TradeOrigin, TradeStats } from '@/hooks/useTradesData';
+import type { Trade, TradeStats } from '@/hooks/useTradesData';
 
 const PAGE_SIZE = 50;
 
@@ -54,54 +56,55 @@ function holdMinutes(t: Trade): number | null {
 }
 
 function isPaper(t: Trade): boolean {
-  return t.setup_context?.paper === true;
+  return t.mode === 'paper';
 }
 
 function strategyVersion(t: Trade): string {
-  const v = t.setup_context?.strategy_version;
-  return typeof v === 'string' ? v : '—';
+  return t.strategy_version || '—';
 }
 
 // notes read like "initial_sl move=-9.1%" / "trailing_stop trail=20% profit=5.8%" /
 // "max_hold age=180min"; the first token is the exit reason, the rest are the details.
-const EXIT_STYLES: Record<string, string> = {
-  initial_sl: 'text-red-400 bg-red-400/10 border-red-400/20',
-  trailing_stop: 'text-sky-400 bg-sky-400/10 border-sky-400/20',
-  max_hold: 'text-amber-400 bg-amber-400/10 border-amber-400/20',
-};
 
-function ExitReason({ notes }: { notes: string | null }) {
-  if (!notes) return <span className="text-muted-foreground">—</span>;
-  const reason = notes.split(' ')[0];
-  const cls = EXIT_STYLES[reason] ?? 'text-muted-foreground bg-muted border-border';
+function ExitReason({ reason }: { reason: string | null }) {
+  if (!reason || reason === 'unknown') return <span className="text-muted-foreground">—</span>;
   return (
-    <span
-      title={notes}
-      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${cls}`}
-    >
-      {reason}
+    <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] font-medium text-foreground">
+      {reason.replace(/_/g, ' ')}
     </span>
   );
 }
 
+// net and gross are never mixed: display picks the net pair (pct + usd)
+// only when accounting_status is complete AND both net fields are present
+// together, otherwise it falls back to the gross pair as a whole. ROE is a
+// leveraged-return figure and is only meaningful once costs are actually
+// modeled, so it is shown for the net case only -- a gross-only ROE would
+// overstate real capital efficiency by ignoring fees/funding/slippage
+// while looking identically formatted next to a genuine net ROE.
 function PnlCell({ trade }: { trade: Trade }) {
-  if (trade.status === 'open' || trade.gross_pnl_pct === null) {
+  if (trade.status === 'open' || trade.gross_pnl_pct === null || trade.gross_pnl_usd === null) {
     return <span className="text-muted-foreground">—</span>;
   }
-  const displayPct = trade.net_pnl_pct ?? trade.gross_pnl_pct;
-  const displayUsd = trade.net_pnl_usd ?? trade.gross_pnl_usd;
+  const net =
+    trade.accounting_status === 'complete' &&
+    trade.net_pnl_pct !== null &&
+    trade.net_pnl_usd !== null
+      ? { pct: trade.net_pnl_pct, usd: trade.net_pnl_usd }
+      : null;
+  const displayPct = net ? net.pct : trade.gross_pnl_pct;
+  const displayUsd = net ? net.usd : trade.gross_pnl_usd;
   const color = displayPct >= 0 ? 'text-green-500' : 'text-red-500';
-  const roe = displayPct * trade.leverage;
-  const modeled = trade.accounting_status === 'complete';
   const costs =
     trade.slippage_usd === null ? null : trade.fees_usd + trade.funding_usd + trade.slippage_usd;
   return (
     <div className={`font-mono leading-tight ${color}`}>
-      <div>{displayUsd !== null ? fmtUsd(displayUsd) : fmtPct(displayPct)}</div>
+      <div>{fmtUsd(displayUsd)}</div>
       <div className="text-xs text-muted-foreground">
-        {modeled ? 'net' : 'gross only'} {fmtPct(displayPct)} · ROE {fmtPct(roe)}
+        {net ? 'net' : 'gross only'} {fmtPct(displayPct)}
+        {net && <> · ROE {fmtPct(net.pct * trade.leverage)}</>}
       </div>
-      {modeled && costs !== null && (
+      {net && costs !== null && (
         <div className="text-xs text-muted-foreground">costs {fmtUsd(-costs)}</div>
       )}
     </div>
@@ -114,21 +117,36 @@ function PnlCell({ trade }: { trade: Trade }) {
 // origin="momentum_flow_paper" (this row is not a pump-short trade at all, it
 // is momentum_flow's own discovery instrumentation). A momentum_flow_paper
 // row must never look like an already-vetted pump-short trade.
-function OriginBadge({ origin }: { origin: TradeOrigin }) {
-  if (origin === 'momentum_flow_paper') {
+function StrategyBadge({ trade }: { trade: Trade }) {
+  if (trade.strategy_name === 'momentum_flow') {
     return (
-      <span
-        title="momentum_flow WATCH->paper: research probe, not promotion evidence"
-        className="inline-flex items-center rounded-full border border-violet-400/20 bg-violet-400/10 px-2 py-0.5 text-xs font-medium text-violet-400"
+      <Badge
+        variant="outline"
+        title="Research probe"
+        className="border-violet-400/20 bg-violet-400/10 text-violet-400"
       >
-        🔭 research
-      </span>
+        🔭 {trade.strategy_name}
+      </Badge>
+    );
+  }
+  if (trade.strategy_name === 'early_momentum') {
+    return (
+      <Badge variant="outline" className="border-blue-400/20 bg-blue-400/10 text-blue-400">
+        ⚡ {trade.strategy_name}
+      </Badge>
+    );
+  }
+  if (trade.strategy_name === 'liquidation_cascade') {
+    return (
+      <Badge variant="outline" className="border-red-400/20 bg-red-400/10 text-red-400">
+        💥 {trade.strategy_name}
+      </Badge>
     );
   }
   return (
-    <span className="inline-flex items-center rounded-full border border-border bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
-      pump-short
-    </span>
+    <Badge variant="outline" className="border-emerald-400/20 bg-emerald-400/10 text-emerald-400">
+      {trade.strategy_name || 'pump_short'}
+    </Badge>
   );
 }
 
@@ -138,11 +156,9 @@ function StatusBadge({ status }: { status: string }) {
       ? 'text-sky-400 bg-sky-400/10 border-sky-400/20'
       : 'text-muted-foreground bg-muted border-border';
   return (
-    <span
-      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${cls}`}
-    >
+    <Badge variant="outline" className={cls}>
       {status}
-    </span>
+    </Badge>
   );
 }
 
@@ -243,19 +259,28 @@ function StatRow({ stats }: { stats?: TradeStats }) {
 export function TradesPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [exchangeFilter, setExchangeFilter] = useState('');
-  const [originFilter, setOriginFilter] = useState<TradeOrigin | ''>('');
+  const [originFilter, setOriginFilter] = useState<string | ''>('');
+  const [strategyFilter, setStrategyFilter] = useState<string | ''>('');
+  const [modeFilter, setModeFilter] = useState<string | ''>('');
+  const [sideFilter, setSideFilter] = useState<string | ''>('');
   const [offset, setOffset] = useState(0);
 
   const { data, isError, isFetching, dataUpdatedAt } = useTrades({
     status: statusFilter || undefined,
     exchange: exchangeFilter || undefined,
     origin: originFilter || undefined,
+    strategy: strategyFilter || undefined,
+    mode: modeFilter || undefined,
+    side: sideFilter || undefined,
     limit: PAGE_SIZE,
     offset,
   });
   const { data: stats } = useTradeStats({
     exchange: exchangeFilter || undefined,
     origin: originFilter || undefined,
+    strategy: strategyFilter || undefined,
+    mode: modeFilter || undefined,
+    side: sideFilter || undefined,
   });
 
   const trades = data?.trades ?? [];
@@ -273,7 +298,7 @@ export function TradesPage() {
   }
 
   function handleOriginFilterChange(e: React.ChangeEvent<HTMLSelectElement>) {
-    setOriginFilter(e.target.value as TradeOrigin | '');
+    setOriginFilter(e.target.value as string | '');
     setOffset(0);
   }
 
@@ -312,12 +337,53 @@ export function TradesPage() {
               <option value="kucoin">KuCoin</option>
             </select>
             <select
+              value={strategyFilter}
+              onChange={(e) => {
+                setStrategyFilter(e.target.value);
+                setOffset(0);
+              }}
+              className="rounded border border-input bg-background px-2 py-1 text-sm text-foreground"
+            >
+              <option value="">All strategies</option>
+              <option value="early_momentum">Early Momentum</option>
+              <option value="pump_short">Pump Short</option>
+              <option value="liquidation_cascade">Liquidation Cascade</option>
+              <option value="momentum_flow">Momentum Flow</option>
+            </select>
+            <select
+              value={modeFilter}
+              onChange={(e) => {
+                setModeFilter(e.target.value);
+                setOffset(0);
+              }}
+              className="rounded border border-input bg-background px-2 py-1 text-sm text-foreground"
+            >
+              <option value="">All modes</option>
+              <option value="live">Live</option>
+              <option value="paper">Paper</option>
+            </select>
+            <select
+              value={sideFilter}
+              onChange={(e) => {
+                setSideFilter(e.target.value);
+                setOffset(0);
+              }}
+              className="rounded border border-input bg-background px-2 py-1 text-sm text-foreground"
+            >
+              <option value="">All sides</option>
+              <option value="long">Long</option>
+              <option value="short">Short</option>
+            </select>
+            <select
               value={originFilter}
               onChange={handleOriginFilterChange}
               className="rounded border border-input bg-background px-2 py-1 text-sm text-foreground"
             >
               <option value="">All sources</option>
-              <option value="pump_short">Pump-short</option>
+              {/* origin is the combinedTradesCTE literal, not a strategy name --
+                  see api-gateway/internal/trades/handler.go's own 'app.trades'/
+                  'momentum_flow_paper' tags. */}
+              <option value="app.trades">Live/paper execution ledger</option>
               <option value="momentum_flow_paper">Research (momentum_flow)</option>
             </select>
           </div>
@@ -379,7 +445,7 @@ export function TradesPage() {
                     return (
                       <TableRow key={t.id}>
                         <TableCell>
-                          <OriginBadge origin={t.origin} />
+                          <StrategyBadge trade={t} />
                         </TableCell>
                         <TableCell className="font-mono font-semibold">
                           {t.symbol.split('/')[0]}
@@ -411,7 +477,7 @@ export function TradesPage() {
                           <PnlCell trade={t} />
                         </TableCell>
                         <TableCell>
-                          <ExitReason notes={t.notes} />
+                          <ExitReason reason={t.exit_reason} />
                         </TableCell>
                         <TableCell className="whitespace-nowrap text-right font-mono text-muted-foreground">
                           {held !== null ? fmtDuration(held) : '—'}
@@ -441,20 +507,24 @@ export function TradesPage() {
             Page {currentPage} of {totalPages}
           </span>
           <div className="flex gap-2">
-            <button
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => setOffset((p) => Math.max(0, p - PAGE_SIZE))}
               disabled={offset === 0}
-              className="rounded border px-3 py-1 hover:bg-muted/50 disabled:opacity-40"
+              className="border"
             >
               Prev
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => setOffset((p) => p + PAGE_SIZE)}
               disabled={offset + PAGE_SIZE >= total}
-              className="rounded border px-3 py-1 hover:bg-muted/50 disabled:opacity-40"
+              className="border"
             >
               Next
-            </button>
+            </Button>
           </div>
         </div>
       )}

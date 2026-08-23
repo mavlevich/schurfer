@@ -53,11 +53,38 @@ const (
 // only fees_usd/funding_usd are not. Coalescing here matches app.trades'
 // own implicit "always a real number, 0 means no cost yet" convention
 // rather than changing the shared JSON contract to nullable.
+//
+// exit_reason (colleague review) is genuinely nullable on both sides of
+// the union -- t.notes is NULL for any still-open app.trades row (it is
+// only ever written at close), and split_part(NULL, ' ', 1) is itself
+// NULL, not ”. tradeRow.ExitReason is *string precisely because of this;
+// scanning an open trade's NULL exit_reason into a non-pointer string
+// crashed the whole /api/trades endpoint (reproduced directly against
+// real Postgres, see TestCombinedTradesCTEAgainstRealPostgres). NULLIF
+// additionally normalizes a genuinely-empty notes string to NULL rather
+// than an empty-but-non-null exit_reason, so the API never has to
+// distinguish "no reason" from "empty-string reason".
+//
+// strategy_name/strategy_version/strategy_key (colleague review) come
+// from app.strategies via strategy_id -- the canonical identity every
+// trade already carries -- not from setup_context->>'strategy', which
+// only newer strategies populate. pump_short's own trader.py stamps
+// setup_context["strategy_version"] instead (a pre-existing convention,
+// see journal.strategy_identity's own docstring), so reading only
+// setup_context->>'strategy' silently showed every pump_short trade as
+// strategy_name="unknown". A LEFT JOIN (not INNER) so one hypothetically
+// missing app.strategies row degrades a single trade's identity to
+// "unknown" rather than dropping that trade from the page entirely.
 const combinedTradesCTE = `
 	WITH combined AS (
 		SELECT
-			'pump_short:' || t.id::text AS id,
-			'pump_short'::text AS origin,
+			COALESCE(t.setup_context->>'strategy', 'pump_short') || ':' || t.id::text AS id,
+			'app.trades'::text AS origin,
+			COALESCE(s.name || '_v' || s.version, 'unknown') AS strategy_key,
+			COALESCE(s.name, 'unknown') AS strategy_name,
+			COALESCE(s.version, 'unknown') AS strategy_version,
+			CASE WHEN t.setup_context->>'paper' = 'true' THEN 'paper' ELSE 'live' END AS mode,
+			NULLIF(split_part(t.notes, ' ', 1), '') AS exit_reason,
 			t.symbol, t.exchange, t.market_type, t.side,
 			t.size_usd::float8 AS size_usd, t.leverage::float8 AS leverage,
 			t.entry_price::float8 AS entry_price, t.entry_at,
@@ -67,16 +94,23 @@ const combinedTradesCTE = `
 			t.fees_usd::float8 AS fees_usd, t.funding_usd::float8 AS funding_usd,
 			t.slippage_usd::float8 AS slippage_usd,
 			t.gross_pnl_usd::float8 AS gross_pnl_usd, t.gross_pnl_pct::float8 AS gross_pnl_pct,
-			t.net_pnl_usd::float8 AS net_pnl_usd, t.net_pnl_pct::float8 AS net_pnl_pct,
+			CASE WHEN t.accounting_status = 'complete' THEN t.net_pnl_usd::float8 ELSE NULL END AS net_pnl_usd,
+			CASE WHEN t.accounting_status = 'complete' THEN t.net_pnl_pct::float8 ELSE NULL END AS net_pnl_pct,
 			t.pnl_usd::float8 AS pnl_usd, t.pnl_pct::float8 AS pnl_pct,
 			t.accounting_version, t.accounting_status, t.accounting_error,
 			t.status, t.outcome_label,
 			t.setup_context, t.notes, t.created_at
 		FROM app.trades t
+		LEFT JOIN app.strategies s ON s.id = t.strategy_id
 		UNION ALL
 		SELECT
 			'momentum_flow_paper:' || p.paper_id::text AS id,
 			'momentum_flow_paper'::text AS origin,
+			'momentum_flow_v1' AS strategy_key,
+			'momentum_flow' AS strategy_name,
+			'1' AS strategy_version,
+			'paper' AS mode,
+			p.exit_reason AS exit_reason,
 			p.symbol, p.exchange, p.market_type, 'long'::varchar AS side,
 			p.entry_filled_notional_usd::float8 AS size_usd, 1::float8 AS leverage,
 			p.entry_vwap::float8 AS entry_price, p.entry_at,
@@ -86,7 +120,8 @@ const combinedTradesCTE = `
 			coalesce(p.fees_usd, 0)::float8 AS fees_usd, coalesce(p.funding_usd, 0)::float8 AS funding_usd,
 			NULL::float8 AS slippage_usd,
 			p.gross_pnl_usd::float8 AS gross_pnl_usd, p.gross_return_pct::float8 AS gross_pnl_pct,
-			p.net_pnl_usd::float8 AS net_pnl_usd, p.net_return_pct::float8 AS net_pnl_pct,
+			CASE WHEN p.accounting_status = 'complete' THEN p.net_pnl_usd::float8 ELSE NULL END AS net_pnl_usd,
+			CASE WHEN p.accounting_status = 'complete' THEN p.net_return_pct::float8 ELSE NULL END AS net_pnl_pct,
 			NULL::float8 AS pnl_usd, NULL::float8 AS pnl_pct,
 			'momentum_flow_paper_v1'::varchar AS accounting_version,
 			coalesce(p.accounting_status, 'pending')::varchar AS accounting_status,
@@ -130,6 +165,11 @@ func NewHandler(pool *pgxpool.Pool) *Handler {
 type tradeRow struct {
 	ID                string          `json:"id"`
 	Origin            string          `json:"origin"`
+	StrategyKey       string          `json:"strategy_key"`
+	StrategyName      string          `json:"strategy_name"`
+	StrategyVersion   string          `json:"strategy_version"`
+	Mode              string          `json:"mode"`
+	ExitReason        *string         `json:"exit_reason"`
 	Symbol            string          `json:"symbol"`
 	Exchange          string          `json:"exchange"`
 	MarketType        string          `json:"market_type"`
@@ -176,6 +216,9 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	status := q.Get("status")
 	exchange := q.Get("exchange")
 	origin := q.Get("origin")
+	strategy := q.Get("strategy")
+	mode := q.Get("mode")
+	side := q.Get("side")
 
 	limit := defaultLimit
 	if v := q.Get("limit"); v != "" {
@@ -208,6 +251,18 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		args = append(args, origin)
 		where += " AND origin = $" + strconv.Itoa(len(args))
 	}
+	if strategy != "" {
+		args = append(args, strategy)
+		where += " AND strategy_name = $" + strconv.Itoa(len(args))
+	}
+	if mode != "" {
+		args = append(args, mode)
+		where += " AND mode = $" + strconv.Itoa(len(args))
+	}
+	if side != "" {
+		args = append(args, side)
+		where += " AND side = $" + strconv.Itoa(len(args))
+	}
 
 	var total int
 	if err := h.pool.QueryRow(r.Context(),
@@ -222,7 +277,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	dataArgs := append(args, limit, offset)
 	n := len(dataArgs)
 	rows, err := h.pool.Query(r.Context(), combinedTradesCTE+`
-		SELECT id, origin, symbol, exchange, market_type, side,
+		SELECT id, origin, strategy_key, strategy_name, strategy_version, mode, exit_reason, symbol, exchange, market_type, side,
 		       size_usd, leverage,
 		       entry_price, entry_at,
 		       exit_price, exit_at,
@@ -250,7 +305,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var t tradeRow
 		if err := rows.Scan(
-			&t.ID, &t.Origin, &t.Symbol, &t.Exchange, &t.MarketType, &t.Side,
+			&t.ID, &t.Origin, &t.StrategyKey, &t.StrategyName, &t.StrategyVersion, &t.Mode, &t.ExitReason, &t.Symbol, &t.Exchange, &t.MarketType, &t.Side,
 			&t.SizeUSD, &t.Leverage,
 			&t.EntryPrice, &t.EntryAt,
 			&t.ExitPrice, &t.ExitAt,
@@ -380,6 +435,9 @@ func (h *Handler) Stats(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	exchange := q.Get("exchange")
 	origin := q.Get("origin")
+	strategy := q.Get("strategy")
+	mode := q.Get("mode")
+	side := q.Get("side")
 
 	args := []any{}
 	where := "WHERE status = 'closed' AND gross_pnl_pct IS NOT NULL"
@@ -390,6 +448,18 @@ func (h *Handler) Stats(w http.ResponseWriter, r *http.Request) {
 	if origin != "" {
 		args = append(args, origin)
 		where += " AND origin = $" + strconv.Itoa(len(args))
+	}
+	if strategy != "" {
+		args = append(args, strategy)
+		where += " AND strategy_name = $" + strconv.Itoa(len(args))
+	}
+	if mode != "" {
+		args = append(args, mode)
+		where += " AND mode = $" + strconv.Itoa(len(args))
+	}
+	if side != "" {
+		args = append(args, side)
+		where += " AND side = $" + strconv.Itoa(len(args))
 	}
 
 	var a statsAgg
