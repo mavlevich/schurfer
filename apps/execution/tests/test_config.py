@@ -43,3 +43,24 @@ def test_measurement_strategy_version_must_not_be_empty(
 
     with pytest.raises(ValueError, match="MEASUREMENT_STRATEGY_VERSION"):
         Config()
+
+
+@pytest.mark.parametrize("value", ["0", "-1"])
+def test_health_alert_cooldown_must_be_strictly_positive(
+    monkeypatch: pytest.MonkeyPatch,
+    value: str,
+) -> None:
+    """0 would be passed straight to Redis as SET...EX 0, which Redis
+    rejects outright rather than treating as "no cooldown"."""
+    monkeypatch.setenv("DRY_RUN", "true")
+    monkeypatch.setenv("EARLY_MOMENTUM_HEALTH_ALERT_COOLDOWN_SECONDS", value)
+
+    with pytest.raises(ValueError, match="EARLY_MOMENTUM_HEALTH_ALERT_COOLDOWN_SECONDS"):
+        Config()
+
+
+def test_health_alert_cooldown_default_is_valid(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DRY_RUN", "true")
+    monkeypatch.delenv("EARLY_MOMENTUM_HEALTH_ALERT_COOLDOWN_SECONDS", raising=False)
+
+    assert Config().early_momentum_health_alert_cooldown_seconds == 1800

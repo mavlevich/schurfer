@@ -257,7 +257,11 @@ async def ensure_strategy(db_url: str, *, name: str, version: str) -> int | None
     """Idempotent upsert-by-natural-key into the strategy registry, exposed
     standalone for callers (e.g. early_momentum.py's episode-lifecycle path)
     that need a strategy_id before any trade row exists yet -- open_trade/
-    open_trade_for_episode do this same upsert inline for their own callers."""
+    open_trade_for_episode do this same upsert inline for their own callers.
+
+    Writes on every call (touches updated_at even when nothing changed) --
+    never call this from a read-only path (health checks, HTTP GETs). Use
+    `find_strategy_id` there instead."""
     try:
         async with await psycopg.AsyncConnection.connect(db_url) as aconn, aconn.cursor() as cur:
             await cur.execute(
@@ -267,6 +271,26 @@ async def ensure_strategy(db_url: str, *, name: str, version: str) -> int | None
             return row[0] if row else None
     except Exception as exc:
         log.error("journal.ensure_strategy.failed", name=name, version=version, err=str(exc))
+        return None
+
+
+_SELECT_STRATEGY_ID = "SELECT id FROM app.strategies WHERE name = %s AND version = %s"
+
+
+async def find_strategy_id(db_url: str, *, name: str, version: str) -> int | None:
+    """Read-only lookup -- unlike `ensure_strategy`, never writes (no
+    upsert, no `updated_at` touch). Returns None both when the strategy
+    hasn't been registered yet and on a DB error; a read-only health path
+    can't create the registry row itself, so "not found yet" and "DB
+    unreachable" are handled identically by callers (colleague review:
+    health checks must never perform a database write)."""
+    try:
+        async with await psycopg.AsyncConnection.connect(db_url) as aconn, aconn.cursor() as cur:
+            await cur.execute(_SELECT_STRATEGY_ID, (name, version))
+            row = await cur.fetchone()
+            return row[0] if row else None
+    except Exception as exc:
+        log.error("journal.find_strategy_id.failed", name=name, version=version, err=str(exc))
         return None
 
 

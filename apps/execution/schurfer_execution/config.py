@@ -126,6 +126,13 @@ class Config:
     identity_snapshot_max_age_hours: float = field(
         default_factory=lambda: _float("IDENTITY_SNAPSHOT_MAX_AGE_HOURS", 720.0)
     )
+    # The independent health monitor sends an immediate alert on any
+    # ok<->degraded<->error transition, then a reminder at most this often
+    # while a bad status persists unchanged -- never silence forever, never
+    # spam every monitor tick.
+    early_momentum_health_alert_cooldown_seconds: int = field(
+        default_factory=lambda: _int("EARLY_MOMENTUM_HEALTH_ALERT_COOLDOWN_SECONDS", 1800)
+    )
 
     # Signal trader — set AUTO_TRADE=true and SIGNAL_POSITION_USD>0 to enable.
     # Scores are read from Redis (signals:{base}) — written by the api-gateway ticker.
@@ -211,4 +218,13 @@ class Config:
             raise ValueError(
                 "IDENTITY_SNAPSHOT_MAX_AGE_HOURS must be > 0 and <= 8760, "
                 f"got {self.identity_snapshot_max_age_hours}"
+            )
+        # Must be strictly positive: it's used as a Redis SET...EX seconds
+        # value (`_maybe_alert`'s cooldown reservation) and `EX 0` is
+        # rejected by Redis outright, not treated as "no cooldown"
+        # (colleague review).
+        if self.early_momentum_health_alert_cooldown_seconds <= 0:
+            raise ValueError(
+                "EARLY_MOMENTUM_HEALTH_ALERT_COOLDOWN_SECONDS must be > 0, "
+                f"got {self.early_momentum_health_alert_cooldown_seconds}"
             )

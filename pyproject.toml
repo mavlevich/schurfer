@@ -28,6 +28,7 @@ members = [
     "apps/execution",
     "apps/telegram-bot",
     "packages/journal",
+    "packages/market-quality",
     "packages/performance",
 ]
 

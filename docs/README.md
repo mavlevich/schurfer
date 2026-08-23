@@ -19,6 +19,7 @@ is listed explicitly so historical plans cannot be mistaken for deployed behavio
 | Deploy, recover, inspect production            | [Runbooks](runbooks/README.md)                                     |
 | Understand an accepted design decision         | [ADR index](adr/README.md)                                         |
 | Review frozen research methods and results     | [Research](#research)                                              |
+| Review engineering findings and verification   | [Engineering findings register](engineering/findings-register.md)  |
 | Review strategy lifecycle and production rules | [Strategies](strategies/README.md)                                 |
 | Review interface and delivery contracts        | [Contracts](contracts/)                                            |
 | Understand the reviewed platform direction     | [Target platform architecture](architecture/target-platform-v1.md) |
@@ -39,6 +40,7 @@ The table identifies the maintained documentation authority for each kind of cla
 | Durable architecture decisions  | [ADRs](adr/README.md)                                              | accepted implementation                                  | Never rewrite decision history; supersede an ADR and link the replacement.            |
 | Frozen research methodology     | versioned files in [`research/`](research/)                        | report constants, manifests, cohort tables               | The registered contract and code must agree before a canonical read.                  |
 | Research-family status          | [Discovery ledger](research/discovery-ledger.md)                   | archived report manifest                                 | A descriptive number does not override the ledger verdict.                            |
+| Engineering finding intake      | [Engineering findings register](engineering/findings-register.md)  | code, tests, production metrics                          | Reported claims do not become roadmap work until reproduced or measured.              |
 | Strategy behavior               | versioned files in [`strategies/`](strategies/)                    | strategy version constants and execution code            | Code changes require an explicit strategy/contract version decision.                  |
 | Wire and delivery behavior      | versioned files in [`contracts/`](contracts/)                      | schemas, migrations, producer/consumer tests             | Consumers fail closed on unsupported versions.                                        |
 | UI information architecture     | [Web UI evolution plan](architecture/web-ui-evolution-v1.md)       | routes, API contracts, component tests                   | The plan is a target, not a claim that an unfinished route exists.                    |
@@ -82,6 +84,8 @@ Research documents have different roles and must not be blended:
   plans. Each document must say which one it is.
 - [`adr/`](adr/) preserves durable decisions and supersession history.
 - [`contracts/`](contracts/) contains versioned wire, persistence, and delivery rules.
+- [`engineering/`](engineering/) contains the evidence-backed findings register; it
+  is an intake and verification surface, not an implementation queue.
 - [`research/`](research/) contains frozen protocols, feasibility studies, and the
   discovery ledger.
 - [`runbooks/`](runbooks/) contains production procedures and recovery checks.
