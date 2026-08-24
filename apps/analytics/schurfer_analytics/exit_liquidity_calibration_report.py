@@ -1,4 +1,41 @@
-"""Calibrate decision-time exit impact against the quote observed at paper close."""
+"""Calibrate decision-time exit impact against the quote observed at paper close.
+
+`execution_cost_unreliable` (added 2026-08-24, PR fix/wide-spread-exit-
+cost-v1) is a diagnostic safety flag, not a trading rule. It marks episodes
+whose observed close-time spread was wide enough that the decision-time
+model's own known failure mode -- reusing an ENTRY-time liquidity snapshot
+(`decision_impact_bps` in virtual_strategy.py) as the exit-cost estimate,
+even though a book that has genuinely thinned out by exit time (most
+plausible exactly when `initial_sl` fires on a sharp adverse move) is not
+visible to that snapshot -- is most likely to have mattered. Do not cite a
+specific historical count/percentage/mean-delta for this pattern from this
+docstring: any such number belongs in a versioned, fingerprinted research
+artifact (cohort, code revision, exact run command), not asserted inline in
+code, and no such artifact has been archived for this finding yet -- re-run
+this report to see the current numbers, and register one before treating a
+specific figure as evidence rather than as a lead.
+
+`WIDE_SPREAD_UNRELIABLE_THRESHOLD_BPS` is that same discovery-derived
+threshold, deliberately not yet promoted to a production filter: it was
+read off where this report's own pre-existing `close_spread` bucket
+boundaries already sat, on a single backward-looking sample, not frozen
+before this finding the way every other registered contract in this
+codebase freezes its thresholds before looking. Using it to reject trades
+in production right now would repeat the exact p-hacking risk this
+project's own research discipline exists to avoid. What is safe today is
+narrower: mark, on each `ComparableExit` row and in this report's own
+aggregate/manifest output, which of *this report's own* modeled-vs-observed
+comparisons rest on a wide-close-spread exit, so a reader of this report can
+weight or exclude them explicitly instead of treating every comparison as
+equally reliable. This report does not itself compute or expose `net_return`
+anywhere -- that figure, when it exists, lives in a different consumer of
+`calculate_performance()`'s output (see packages/performance), and this flag
+is not wired to it. Extending the flag to mark net_return figures in that
+other consumer is explicitly out of scope here and would need its own
+change. Promoting this into an actual pre-trade filter needs its own
+forward-registered contract, exactly like every other actionable threshold
+in this codebase.
+"""
 
 from __future__ import annotations
 
@@ -33,6 +70,9 @@ DIRECTIONAL_SAMPLE_SIZE = 30
 DECISION_SAMPLE_SIZE = 100
 MAX_EXIT_QUOTE_SKEW_SECONDS = 120
 REPORT_CONTRACT = "exit_liquidity_calibration_v1"
+# Discovery-derived (2026-08-24), diagnostic only -- see this module's own
+# docstring. Never used to reject or defer a live/paper trade.
+WIDE_SPREAD_UNRELIABLE_THRESHOLD_BPS = 50.0
 
 
 @dataclass(frozen=True)
@@ -85,6 +125,9 @@ class ComparableExit:
     delta_bps: float
     observed_spread_bps: float
     latency_ms: int
+    # Diagnostic only -- see this module's own docstring and
+    # WIDE_SPREAD_UNRELIABLE_THRESHOLD_BPS. Never a trading decision.
+    execution_cost_unreliable: bool
 
 
 @dataclass(frozen=True)
@@ -106,6 +149,10 @@ class CalibrationMetrics:
     delta_above_25bps_pct: float
     mean_latency_ms: float
     p95_latency_ms: float
+    # Diagnostic only -- see this module's own docstring and
+    # WIDE_SPREAD_UNRELIABLE_THRESHOLD_BPS. Never a trading decision.
+    execution_cost_unreliable_count: int
+    execution_cost_unreliable_pct: float
 
 
 @dataclass(frozen=True)
@@ -240,6 +287,7 @@ def _comparable(row: ExitLiquidityRow) -> ComparableExit:
         delta_bps=observed - modeled,
         observed_spread_bps=spread,
         latency_ms=latency,
+        execution_cost_unreliable=spread >= WIDE_SPREAD_UNRELIABLE_THRESHOLD_BPS,
     )
 
 
@@ -269,6 +317,10 @@ def _metrics(rows: tuple[ComparableExit, ...]) -> CalibrationMetrics | None:
         delta_above_25bps_pct=sum(value > 25 for value in deltas) / len(deltas) * 100,
         mean_latency_ms=mean(latencies),
         p95_latency_ms=percentile(tuple(latencies), 0.95),
+        execution_cost_unreliable_count=sum(row.execution_cost_unreliable for row in rows),
+        execution_cost_unreliable_pct=sum(row.execution_cost_unreliable for row in rows)
+        / len(rows)
+        * 100,
     )
 
 
@@ -359,6 +411,13 @@ def build_exit_liquidity_calibration_report(
             "paper_quote_is_actual_fill": False,
             "delta_definition": "observed_close_quote_bps_minus_decision_time_modeled_bps",
             "interpretation": interpretation,
+            "execution_cost_unreliable_threshold_bps": WIDE_SPREAD_UNRELIABLE_THRESHOLD_BPS,
+            "execution_cost_unreliable_status": "discovery_diagnostic_not_forward_validated",
+            "execution_cost_unreliable_provenance": (
+                "threshold read from this report's own pre-existing close_spread bucket "
+                "boundaries, not frozen before being read off a finding -- diagnostic flag "
+                "only, never a production trading filter; see this module's own docstring"
+            ),
         },
         readiness={
             "state": state,
@@ -468,6 +527,16 @@ def render_markdown(report: ExitLiquidityCalibrationReport) -> str:
                     )
                 ],
             )
+        )
+        lines.extend(
+            [
+                "",
+                f"Execution cost unreliable (observed close spread "
+                f">= {WIDE_SPREAD_UNRELIABLE_THRESHOLD_BPS:g} bps -- diagnostic flag, "
+                "never a trading rule; see this report's own module docstring): "
+                f"{row.execution_cost_unreliable_count} of {row.observations} "
+                f"({format_percentage(row.execution_cost_unreliable_pct)}).",
+            ]
         )
     lines.extend(["", "## Segments", ""])
     lines.extend(

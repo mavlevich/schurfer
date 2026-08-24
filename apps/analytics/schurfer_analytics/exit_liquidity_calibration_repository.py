@@ -1,4 +1,26 @@
-"""Read-only query layer for paper exit-liquidity calibration."""
+"""Read-only query layer for paper exit-liquidity calibration.
+
+`modeled_exit_bps` is read from `Trade.setup_context->market_quality->
+ask_impact_bps`, never from `Trade.exit_slippage_bps` -- a colleague review
+(2026-08-24) of this report's own economics finding caught that the two are
+NOT the same value and mixing them silently corrupts the comparison this
+report exists to make. Confirmed directly against production data:
+`Trade.exit_slippage_bps` genuinely equals `setup_context`'s decision-time
+`ask_impact_bps` for OLDER paper trades (legacy accounting, closed before
+paper.py's exit-time VWAP capture existed), but for NEWER trades where that
+capture succeeded, `close_trade()` deliberately OVERWRITES the column to
+`0.0` (see journal.py's own `close_trade` docstring: "never a second charge
+on top of a price that already paid it" -- the captured VWAP fill price
+already embeds the real cost, so the bps-adjustment column is zeroed to
+avoid double-counting it in `calculate_performance`). That 0.0 means
+"no additional charge on top of this fill", not "the model predicted zero
+exit cost" -- reading it as the latter for this report's own comparison
+falsely inflates the delta for exactly the rows where a real close-time
+capture (the most trustworthy case) happened to succeed. `setup_context`'s
+`market_quality.ask_impact_bps` is the one source that holds the true
+decision-time model on every row regardless of which accounting path
+closed it, since it is written once at open time and never touched again.
+"""
 
 from __future__ import annotations
 
@@ -17,6 +39,14 @@ if TYPE_CHECKING:
 
 def exit_liquidity_statement(filters: ExitLiquidityFilters) -> Select[Any]:
     observation = TradeExitLiquidityObservation
+    # 'ask_impact_bps' is hardcoded, not side-derived, because this
+    # statement's own WHERE clause below is already hardcoded to
+    # `Trade.side == "short"` -- a short's exit leg is the ask side (see
+    # liquidity.book_side_for). If this report is ever extended to include
+    # longs, this must become side-aware (bid for long) at the same time.
+    modeled_exit_bps = func.jsonb_extract_path_text(
+        Trade.setup_context, "market_quality", "ask_impact_bps"
+    ).label("modeled_exit_bps")
     return (
         select(
             Trade.id.label("trade_id"),
@@ -26,7 +56,7 @@ def exit_liquidity_statement(filters: ExitLiquidityFilters) -> Select[Any]:
             Trade.entry_at,
             Trade.exit_at,
             Trade.notes.label("exit_reason"),
-            Trade.exit_slippage_bps.label("modeled_exit_bps"),
+            modeled_exit_bps,
             observation.id.label("observation_id"),
             observation.observed_at,
             observation.exchange.label("observation_exchange"),
@@ -52,6 +82,22 @@ def exit_liquidity_statement(filters: ExitLiquidityFilters) -> Select[Any]:
     )
 
 
+def _parse_modeled_exit_bps(raw: Any) -> float | None:
+    """`modeled_exit_bps` comes from `jsonb_extract_path_text`, i.e. raw JSON
+    text pulled out of `setup_context` -- not a schema-validated numeric
+    column like the other fields below. A malformed or non-numeric historical
+    `ask_impact_bps` (bad setup_context, stray string) must not crash the
+    whole report; it falls back to None, which `_finite_nonnegative` and the
+    existing `missing_or_invalid_modeled_impact` exclusion already handle
+    (colleague review, 2026-08-24)."""
+    if raw is None:
+        return None
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return None
+
+
 def map_exit_liquidity_row(row: dict[str, Any]) -> ExitLiquidityRow:
     return ExitLiquidityRow(
         trade_id=int(row["trade_id"]),
@@ -61,9 +107,7 @@ def map_exit_liquidity_row(row: dict[str, Any]) -> ExitLiquidityRow:
         entry_at=row["entry_at"],
         exit_at=row["exit_at"],
         exit_reason=row["exit_reason"],
-        modeled_exit_bps=(
-            float(row["modeled_exit_bps"]) if row["modeled_exit_bps"] is not None else None
-        ),
+        modeled_exit_bps=_parse_modeled_exit_bps(row["modeled_exit_bps"]),
         observation_id=(int(row["observation_id"]) if row["observation_id"] is not None else None),
         observed_at=row["observed_at"],
         observation_exchange=row["observation_exchange"],
