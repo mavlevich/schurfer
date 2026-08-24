@@ -7,7 +7,7 @@ BACKUP_DIR="${BACKUP_DIR:-/opt/schurfer/backups}"
 CONTAINER="${POSTGRES_CONTAINER:-schurfer-postgres}"
 DB_USER="${DB_USER:-schurfer}"
 DB_NAME="${DB_NAME:-schurfer}"
-RETENTION_COUNT="${RETENTION_COUNT:-5}"
+RETENTION_COUNT="${RETENTION_COUNT:-1}"
 
 DATE=$(date +%Y%m%d_%H%M%S)
 FILE="${BACKUP_DIR}/schurfer_${DATE}.dump"
