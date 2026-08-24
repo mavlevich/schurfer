@@ -11,9 +11,10 @@ from uuid import uuid4
 
 import structlog
 
-from . import decisions, journal, liquidity, notify, paper, risk, symbols
+from . import decisions, execution_intent, journal, liquidity, notify, risk, symbols
 from . import exit as exit_module
 from .account import fetch_margin_balance
+from .execution_intent import Broker, ExecutionIntent, StrategyIdentity
 from .order_lock import OrderLockLostError
 from .orders import place_order
 
@@ -54,18 +55,31 @@ async def run_signal_trader(
     exchanges: dict[str, Any],
     rdb: Any,
     cfg: Config,
+    broker: Broker | None = None,
 ) -> None:
     while True:
         await asyncio.sleep(_INTERVAL_SECONDS)
         try:
-            await _tick(exchanges, rdb, cfg)
+            await _tick(exchanges, rdb, cfg, broker)
         except asyncio.CancelledError:
             raise
         except Exception as e:
             log.error("trader.error", err=str(e))
 
 
-async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
+async def _tick(
+    exchanges: dict[str, Any], rdb: Any, cfg: Config, broker: Broker | None = None
+) -> None:
+    # Resolved here (not just once in run_signal_trader) so a direct _tick()
+    # call -- every existing test, plus any future caller -- gets the same
+    # safe default without having to build a broker itself. resolve_mode/
+    # build_broker are pure and cheap; re-resolving every tick when the
+    # caller didn't already pin a broker costs nothing that matters at
+    # _INTERVAL_SECONDS=60 cadence.
+    if broker is None:
+        mode = execution_intent.resolve_mode(cfg, execution_intent.STRATEGY_PUMP_SHORT)
+        broker = execution_intent.build_broker(mode, exchanges=exchanges)
+
     raw = await rdb.get(_MEASUREMENT_PUMPS_KEY)
     if not raw:
         # Rolling-deploy compatibility until analytics publishes the private feed.
@@ -570,16 +584,18 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 )
                 continue
 
-            await paper.open_paper(
-                rdb,
+            intent = ExecutionIntent(
+                strategy=StrategyIdentity(name="pump_short", version=cfg.strategy_version),
                 instrument=instrument,
-                price=entry_price,
+                side="short",
                 size_usd=size_usd,
                 leverage=cfg.signal_leverage,
                 score=score,
                 setup_context=setup_context,
-                cfg=cfg,
+                idempotency_key=decision_id,
+                price=entry_price,
             )
+            await broker.open(intent, cfg=cfg, rdb=rdb)
             await decisions.write_decision(
                 rdb,
                 base=base,

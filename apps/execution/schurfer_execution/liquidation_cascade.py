@@ -6,8 +6,13 @@ import psycopg
 import structlog
 from psycopg.rows import dict_row
 
-from . import journal, liquidity, paper
+from . import execution_intent, journal, liquidity
 from .config import Config
+from .execution_intent import (
+    Broker,
+    ExecutionIntent,
+    StrategyIdentity,
+)
 
 log = structlog.get_logger()
 
@@ -57,11 +62,17 @@ WHERE price_15m_ago > 0
 """
 
 
-async def run_liquidation_cascade_scanner(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
+async def run_liquidation_cascade_scanner(
+    exchanges: dict[str, Any], rdb: Any, cfg: Config, broker: Broker | None = None
+) -> None:
     """Scans for Liquidation Cascades and immediately opens trades."""
     if not cfg.db_url:
         log.warning("liquidation_cascade.scanner_disabled", reason="no db_url")
         return
+
+    if broker is None:
+        mode = execution_intent.resolve_mode(cfg, execution_intent.STRATEGY_LIQUIDATION_CASCADE)
+        broker = execution_intent.build_broker(mode, exchanges=exchanges)
 
     while True:
         try:
@@ -181,10 +192,21 @@ async def run_liquidation_cascade_scanner(exchanges: dict[str, Any], rdb: Any, c
                     "take_profit_pct": 5.0,  # 5% target
                 }
 
-                await paper.open_paper(
-                    rdb,
+                # Deterministic per-candidate key (bucket_start is this row's
+                # own decision timestamp) -- unused by PaperBroker today, but
+                # every ExecutionIntent requires one, and a future ShadowBroker
+                # needs it to dedupe the same cascade re-emitted every scan
+                # tick while the condition holds (colleague review).
+                idempotency_key = (
+                    f"liquidation_cascade:v{_STRATEGY_VERSION}:{instrument.exchange}:"
+                    f"{instrument.native_market_id}:{c['bucket_start'].isoformat()}"
+                )
+                intent = ExecutionIntent(
+                    strategy=StrategyIdentity(
+                        name="liquidation_cascade", version=_STRATEGY_VERSION
+                    ),
                     instrument=instrument,
-                    price=last_price,
+                    side="long",
                     size_usd=_SIZE_USD,
                     leverage=5,
                     score=100,
@@ -196,10 +218,11 @@ async def run_liquidation_cascade_scanner(exchanges: dict[str, Any], rdb: Any, c
                         "source_symbol": raw_symbol,
                         "market_quality": asdict(quality),
                     },
-                    cfg=cfg,
-                    side="long",
+                    idempotency_key=idempotency_key,
+                    price=last_price,
                     exit_params=exit_params,
                 )
+                await broker.open(intent, cfg=cfg, rdb=rdb)
 
         except asyncio.CancelledError:
             raise

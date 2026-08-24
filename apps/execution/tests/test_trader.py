@@ -82,6 +82,10 @@ def _cfg(
     cfg.require_red_candle = require_red_candle
     cfg.min_retrace_pct = min_retrace_pct
     cfg.dry_run = False
+    cfg.auto_trade = False
+    cfg.pump_short_mode = None
+    cfg.early_momentum_mode = None
+    cfg.liquidation_cascade_mode = None
     cfg.db_url = None
     cfg.telegram_bot_token = None
     cfg.telegram_chat_id = None
@@ -421,6 +425,9 @@ def _bare_validation_config() -> Config:
     cfg = object.__new__(Config)
     cfg.entry_min_pct = 30.0
     cfg.measurement_strategy_version = "pump_short_measurement_v1"
+    cfg.pump_short_mode = None
+    cfg.early_momentum_mode = None
+    cfg.liquidation_cascade_mode = None
     return cfg
 
 
@@ -894,7 +901,9 @@ async def test_tick_threads_decision_id_into_setup_context() -> None:
     ex = MagicMock()
     ex.fetch_ticker = AsyncMock(return_value={"last": "1.5"})
     with (
-        patch("schurfer_execution.trader.paper.open_paper", new_callable=AsyncMock) as mock_paper,
+        patch(
+            "schurfer_execution.execution_intent.paper.open_paper", new_callable=AsyncMock
+        ) as mock_paper,
         patch("schurfer_execution.trader.decisions.write_decision", new_callable=AsyncMock),
     ):
         await _tick({"bybit": ex}, rdb, cfg)
@@ -961,7 +970,9 @@ async def test_tick_dry_run_decision_price_is_scanner_not_ticker() -> None:
     ex = MagicMock()
     ex.fetch_ticker = AsyncMock(return_value={"last": "1.7"})
     with (
-        patch("schurfer_execution.trader.paper.open_paper", new_callable=AsyncMock) as mock_paper,
+        patch(
+            "schurfer_execution.execution_intent.paper.open_paper", new_callable=AsyncMock
+        ) as mock_paper,
         patch(
             "schurfer_execution.trader.decisions.write_decision", new_callable=AsyncMock
         ) as mock_write,
