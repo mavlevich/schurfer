@@ -4,6 +4,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from schurfer_execution import execution_intent
 from schurfer_execution.config import Config
 from schurfer_execution.order_lock import OrderLockLostError
 from schurfer_execution.symbols import ExecutionInstrument
@@ -81,7 +82,19 @@ def _cfg(
     cfg.risk_per_trade_pct = risk_per_trade_pct
     cfg.require_red_candle = require_red_candle
     cfg.min_retrace_pct = min_retrace_pct
+    # auto_trade=True (not dry_run) is the realistic precondition for the
+    # live/place_order branch this file mostly exercises -- main.py only
+    # ever runs _tick at all when cfg.auto_trade or cfg.dry_run is true, so
+    # "neither" (the old default here) resolves to TradingMode.DISABLED and
+    # _tick now correctly refuses to do anything, which broke nearly every
+    # test in this file that never cared about mode resolution in the first
+    # place. Tests that specifically want the dry-run/paper branch flip
+    # both flags explicitly (see below).
     cfg.dry_run = False
+    cfg.auto_trade = True
+    cfg.pump_short_mode = None
+    cfg.early_momentum_mode = None
+    cfg.liquidation_cascade_mode = None
     cfg.db_url = None
     cfg.telegram_bot_token = None
     cfg.telegram_chat_id = None
@@ -421,6 +434,9 @@ def _bare_validation_config() -> Config:
     cfg = object.__new__(Config)
     cfg.entry_min_pct = 30.0
     cfg.measurement_strategy_version = "pump_short_measurement_v1"
+    cfg.pump_short_mode = None
+    cfg.early_momentum_mode = None
+    cfg.liquidation_cascade_mode = None
     return cfg
 
 
@@ -891,10 +907,13 @@ async def test_tick_threads_decision_id_into_setup_context() -> None:
     rdb = _rdb(pumps_raw=_pumps("BEAT"), signal_score=7)
     cfg = _cfg(score_threshold=6)
     cfg.dry_run = True
+    cfg.auto_trade = False
     ex = MagicMock()
     ex.fetch_ticker = AsyncMock(return_value={"last": "1.5"})
     with (
-        patch("schurfer_execution.trader.paper.open_paper", new_callable=AsyncMock) as mock_paper,
+        patch(
+            "schurfer_execution.execution_intent.paper.open_paper", new_callable=AsyncMock
+        ) as mock_paper,
         patch("schurfer_execution.trader.decisions.write_decision", new_callable=AsyncMock),
     ):
         await _tick({"bybit": ex}, rdb, cfg)
@@ -922,6 +941,7 @@ async def test_tick_writes_decision_when_dry_run_price_unavailable() -> None:
     rdb = _rdb(pumps_raw=_pumps("BEAT"), signal_score=7)
     cfg = _cfg(score_threshold=6)
     cfg.dry_run = True
+    cfg.auto_trade = False
     with patch(
         "schurfer_execution.trader.decisions.write_decision", new_callable=AsyncMock
     ) as mock_write:
@@ -958,10 +978,13 @@ async def test_tick_dry_run_decision_price_is_scanner_not_ticker() -> None:
     rdb = _rdb(pumps_raw=pumps_raw, signal_score=7)
     cfg = _cfg(score_threshold=6)
     cfg.dry_run = True
+    cfg.auto_trade = False
     ex = MagicMock()
     ex.fetch_ticker = AsyncMock(return_value={"last": "1.7"})
     with (
-        patch("schurfer_execution.trader.paper.open_paper", new_callable=AsyncMock) as mock_paper,
+        patch(
+            "schurfer_execution.execution_intent.paper.open_paper", new_callable=AsyncMock
+        ) as mock_paper,
         patch(
             "schurfer_execution.trader.decisions.write_decision", new_callable=AsyncMock
         ) as mock_write,
@@ -989,6 +1012,94 @@ async def test_tick_places_short_when_score_sufficient() -> None:
     assert kw["side"] == "short"
     assert kw["size_usd"] == 50.0
     assert kw["leverage"] == 3
+
+
+# ---- resolved TradingMode vs. actually-executed branch (colleague review, P0) ----
+#
+# trader.py's live branch (place_order) is selected purely by cfg.dry_run,
+# completely independent of whatever execution_intent.resolve_mode computes
+# for pump_short -- these lock in that the two can never silently disagree:
+# either the resolved mode is provably irrelevant (AUTO_TRADE=true, checked
+# here) or it's the actual gate (DRY_RUN=true, checked below).
+
+
+async def test_tick_auto_trade_calls_place_order_regardless_of_resolved_mode() -> None:
+    """The exact P0 regression: AUTO_TRADE=true resolves pump_short to
+    TradingMode.PAPER (an unset override never exceeds PAPER -- see
+    execution_intent.resolve_mode), but that resolution has zero effect on
+    which branch _tick actually takes. place_order must still be called;
+    schurfer_execution.execution_intent.paper.open_paper must not be."""
+    cfg = _cfg(score_threshold=6)
+    assert cfg.auto_trade is True
+    resolved = execution_intent.resolve_mode(cfg, execution_intent.STRATEGY_PUMP_SHORT)
+    assert resolved == execution_intent.TradingMode.PAPER  # the misleading part, by itself
+
+    rdb = _rdb(pumps_raw=_pumps("BEAT"), signal_score=7)
+    with (
+        patch(
+            "schurfer_execution.trader.place_order",
+            new_callable=AsyncMock,
+            return_value={"allowed": True, "order_id": "ord-123", "price": 1.0},
+        ) as mock_order,
+        patch(
+            "schurfer_execution.execution_intent.paper.open_paper", new_callable=AsyncMock
+        ) as mock_paper,
+    ):
+        # No broker passed -- _tick resolves its own, exactly as production does.
+        await _tick({"bybit": MagicMock()}, rdb, cfg)
+
+    mock_order.assert_called_once()
+    mock_paper.assert_not_awaited()
+
+
+async def test_config_forbids_pump_short_mode_override_under_auto_trade() -> None:
+    cfg = _bare_validation_config()
+    cfg.auto_trade = True
+    cfg.dry_run = False
+    cfg.db_url = "postgresql://test"
+    cfg.require_market_quality = True
+    cfg.signal_position_usd = 50.0
+    cfg.signal_leverage = 3
+    cfg.liquidation_buffer_pct = 20.0
+    cfg.risk_per_trade_pct = 0.0
+    cfg.min_retrace_pct = 0.0
+    cfg.max_spread_bps = 50.0
+    cfg.max_liquidity_impact_bps = 50.0
+    cfg.liquidity_depth_multiplier = 2.0
+    cfg.early_momentum_rearm_cooldown_seconds = 1800
+    cfg.identity_snapshot_max_age_hours = 720.0
+    cfg.early_momentum_health_alert_cooldown_seconds = 1800
+    cfg.pump_short_mode = "paper"  # any override, not just a dangerous one
+    with pytest.raises(ValueError, match="PUMP_SHORT_MODE"):
+        cfg.__post_init__()
+
+
+async def test_tick_disabled_pump_short_does_not_write_opened_dry_run() -> None:
+    """PUMP_SHORT_MODE=disabled under DRY_RUN=true must actually stop the
+    strategy -- not just make broker.open() reject while decisions.
+    write_decision(action="opened_dry_run") fires unconditionally right
+    after it regardless (colleague review, P1)."""
+    cfg = _cfg(score_threshold=6)
+    cfg.dry_run = True
+    cfg.auto_trade = False
+    cfg.pump_short_mode = "disabled"
+    rdb = _rdb(pumps_raw=_pumps("BEAT"), signal_score=7)
+    ex = MagicMock()
+    ex.fetch_ticker = AsyncMock(return_value={"last": "1.5"})
+
+    with (
+        patch(
+            "schurfer_execution.execution_intent.paper.open_paper", new_callable=AsyncMock
+        ) as mock_paper,
+        patch(
+            "schurfer_execution.trader.decisions.write_decision", new_callable=AsyncMock
+        ) as mock_write,
+    ):
+        await _tick({"bybit": ex}, rdb, cfg)
+
+    mock_paper.assert_not_awaited()
+    actions = [c.kwargs.get("action") for c in mock_write.call_args_list]
+    assert "opened_dry_run" not in actions
 
 
 async def test_tick_sets_long_ttl_after_successful_trade() -> None:

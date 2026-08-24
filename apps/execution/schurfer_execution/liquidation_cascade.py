@@ -6,8 +6,13 @@ import psycopg
 import structlog
 from psycopg.rows import dict_row
 
-from . import journal, liquidity, paper
+from . import execution_intent, journal, liquidity
 from .config import Config
+from .execution_intent import (
+    Broker,
+    ExecutionIntent,
+    StrategyIdentity,
+)
 
 log = structlog.get_logger()
 
@@ -57,10 +62,26 @@ WHERE price_15m_ago > 0
 """
 
 
-async def run_liquidation_cascade_scanner(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
+async def run_liquidation_cascade_scanner(
+    exchanges: dict[str, Any], rdb: Any, cfg: Config, broker: Broker | None = None
+) -> None:
     """Scans for Liquidation Cascades and immediately opens trades."""
     if not cfg.db_url:
         log.warning("liquidation_cascade.scanner_disabled", reason="no db_url")
+        return
+
+    if broker is None:
+        mode = execution_intent.resolve_mode(cfg, execution_intent.STRATEGY_LIQUIDATION_CASCADE)
+        broker = execution_intent.build_broker(mode, exchanges=exchanges)
+
+    # LIQUIDATION_CASCADE_MODE=disabled must stop the scanner outright, not
+    # just make the eventual broker.open() call reject after a full tick's
+    # worth of DB/liquidity work already ran for nothing (colleague review,
+    # P1). broker.mode is fixed for the process lifetime (resolved once,
+    # above or by the caller), so this only needs checking once, before the
+    # loop even starts.
+    if broker.mode is execution_intent.TradingMode.DISABLED:
+        log.info("liquidation_cascade.disabled")
         return
 
     while True:
@@ -181,25 +202,52 @@ async def run_liquidation_cascade_scanner(exchanges: dict[str, Any], rdb: Any, c
                     "take_profit_pct": 5.0,  # 5% target
                 }
 
-                await paper.open_paper(
-                    rdb,
+                # Deterministic per-candidate key (bucket_start is this row's
+                # own decision timestamp) -- unused by PaperBroker today, but
+                # every ExecutionIntent requires one, and a future ShadowBroker
+                # needs it to dedupe the same cascade re-emitted every scan
+                # tick while the condition holds (colleague review).
+                idempotency_key = (
+                    f"liquidation_cascade:v{_STRATEGY_VERSION}:{instrument.exchange}:"
+                    f"{instrument.native_market_id}:{c['bucket_start'].isoformat()}"
+                )
+                setup_context = {
+                    "strategy": f"liquidation_cascade_v{_STRATEGY_VERSION}",
+                    "price_drop_pct": round(price_drop * 100, 2),
+                    "oi_drop_pct": round(oi_drop * 100, 2),
+                    "signal_source": source_exchange,
+                    "source_symbol": raw_symbol,
+                    "market_quality": asdict(quality),
+                }
+                # journal.strategy_identity(setup_context) is the SAME pure
+                # parser journal.open_trade will use to register this
+                # trade's app.strategies row -- deriving StrategyIdentity
+                # from it directly (rather than hand-building name/version
+                # from _STRATEGY_VERSION) is what keeps the two from
+                # silently disagreeing (colleague review; this file's own
+                # values happened to already match, but duplicating the
+                # rsplit("_v", 1) convention in two places is exactly what
+                # let pump_short's copy drift out of sync).
+                strategy_name, strategy_version = journal.strategy_identity(setup_context)
+                intent = ExecutionIntent(
+                    strategy=StrategyIdentity(name=strategy_name, version=strategy_version),
                     instrument=instrument,
-                    price=last_price,
+                    side="long",
                     size_usd=_SIZE_USD,
                     leverage=5,
                     score=100,
-                    setup_context={
-                        "strategy": f"liquidation_cascade_v{_STRATEGY_VERSION}",
-                        "price_drop_pct": round(price_drop * 100, 2),
-                        "oi_drop_pct": round(oi_drop * 100, 2),
-                        "signal_source": source_exchange,
-                        "source_symbol": raw_symbol,
-                        "market_quality": asdict(quality),
-                    },
-                    cfg=cfg,
-                    side="long",
+                    setup_context=setup_context,
+                    idempotency_key=idempotency_key,
+                    price=last_price,
                     exit_params=exit_params,
                 )
+                result = await broker.open(intent, cfg=cfg, rdb=rdb)
+                if result.status is not execution_intent.ExecutionStatus.PAPER_OPENED:
+                    log.info(
+                        "liquidation_cascade.broker_rejected",
+                        symbol=instrument.symbol,
+                        reason=result.reason,
+                    )
 
         except asyncio.CancelledError:
             raise

@@ -18,6 +18,14 @@ from .early_momentum import (
     run_early_momentum_trigger,
 )
 from .exchanges import build_exchange_clients, close_exchange_clients
+from .execution_intent import (
+    STRATEGY_EARLY_MOMENTUM,
+    STRATEGY_LIQUIDATION_CASCADE,
+    STRATEGY_PUMP_SHORT,
+    Broker,
+    build_broker,
+    resolve_mode,
+)
 from .incident_worker import run_incident_worker
 from .liquidation_cascade import run_liquidation_cascade_scanner
 from .monitor import run_position_monitor
@@ -73,6 +81,24 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     trading_exchanges: dict[str, Any] = clients.trading
     strategy_exchanges = clients.strategy_clients(dry_run=cfg.dry_run)
 
+    # One Broker per strategy, resolved once at startup from the same
+    # cfg.dry_run/cfg.auto_trade + per-strategy mode override
+    # execution_intent.Config.__post_init__ already validated -- this can
+    # never raise here (a bad config already failed Config() construction
+    # above). Task-creation conditions below (cfg.dry_run / cfg.auto_trade)
+    # are unchanged by this -- a broker existing does not mean its task
+    # runs; resolve_mode only decides what an already-started task's own
+    # entry call does.
+    pump_short_broker: Broker = build_broker(
+        resolve_mode(cfg, STRATEGY_PUMP_SHORT), exchanges=strategy_exchanges
+    )
+    early_momentum_broker: Broker = build_broker(
+        resolve_mode(cfg, STRATEGY_EARLY_MOMENTUM), exchanges=market_exchanges
+    )
+    liquidation_cascade_broker: Broker = build_broker(
+        resolve_mode(cfg, STRATEGY_LIQUIDATION_CASCADE), exchanges=market_exchanges
+    )
+
     app.state.cfg = cfg
     app.state.rdb = rdb
     app.state.trading_exchanges = trading_exchanges
@@ -90,7 +116,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     tracker = asyncio.create_task(run_pnl_tracker(trading_exchanges, rdb, cfg.db_url))
     monitor = asyncio.create_task(run_position_monitor(trading_exchanges, rdb, cfg))
     trader = (
-        asyncio.create_task(run_signal_trader(strategy_exchanges, rdb, cfg))
+        asyncio.create_task(run_signal_trader(strategy_exchanges, rdb, cfg, pump_short_broker))
         if cfg.auto_trade or cfg.dry_run
         else None
     )
@@ -101,7 +127,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         asyncio.create_task(run_early_momentum_scanner(rdb, cfg)) if cfg.dry_run else None
     )
     early_momentum_trigger = (
-        asyncio.create_task(run_early_momentum_trigger(market_exchanges, rdb, cfg))
+        asyncio.create_task(
+            run_early_momentum_trigger(market_exchanges, rdb, cfg, early_momentum_broker)
+        )
         if cfg.dry_run
         else None
     )
@@ -115,7 +143,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         else None
     )
     liquidation_cascade_scanner = (
-        asyncio.create_task(run_liquidation_cascade_scanner(market_exchanges, rdb, cfg))
+        asyncio.create_task(
+            run_liquidation_cascade_scanner(market_exchanges, rdb, cfg, liquidation_cascade_broker)
+        )
         if cfg.dry_run
         else None
     )
@@ -136,12 +166,25 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         if cfg.db_url
         else None
     )
+    # pump_short's own broker/mode is only ever reached inside trader.py's
+    # cfg.dry_run branch -- under AUTO_TRADE=true that branch never runs
+    # (real orders go through the untouched place_order path instead), so
+    # logging pump_short_broker.mode there would claim a mode that governs
+    # nothing. "legacy_live" names what actually executes instead
+    # (colleague review, P0 -- Config already refuses PUMP_SHORT_MODE
+    # whenever AUTO_TRADE=true, so this is never a config override hiding
+    # behind a misleading log line, just an accurate description of the
+    # untouched pre-existing path).
+    pump_short_execution_path = "legacy_live" if cfg.auto_trade else pump_short_broker.mode.value
     log.info(
         "execution.start",
         market_exchanges=list(market_exchanges),
         trading_exchanges=list(trading_exchanges),
         auto_trade=cfg.auto_trade,
         dry_run=cfg.dry_run,
+        pump_short_execution_path=pump_short_execution_path,
+        early_momentum_mode=early_momentum_broker.mode.value,
+        liquidation_cascade_mode=liquidation_cascade_broker.mode.value,
     )
     yield
 

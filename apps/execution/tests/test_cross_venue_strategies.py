@@ -1,9 +1,19 @@
 import asyncio
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from schurfer_execution.execution_intent import DisabledBroker, PaperBroker
 from schurfer_execution.liquidation_cascade import run_liquidation_cascade_scanner
 from schurfer_execution.symbols import ResolvedRoute
+
+# broker=PaperBroker() is passed explicitly to every run_liquidation_cascade_scanner
+# call below -- these tests exercise the scanner's own candidate-processing logic,
+# not execution_intent.resolve_mode's cfg.auto_trade/dry_run/*_mode ceiling (that
+# has its own dedicated tests in test_execution_intent.py). A real PaperBroker still
+# calls the real schurfer_execution.execution_intent.paper.open_paper, which is what
+# gets patched below -- only the patch TARGET moved from liquidation_cascade.paper to
+# execution_intent.paper, every asserted kwarg is unchanged.
 
 # early_momentum's own trigger/scanner tests live in test_early_momentum.py
 # (the v3 episode-lifecycle rewrite needs a much larger, dedicated mocking
@@ -58,6 +68,7 @@ async def test_liquidation_cascade_uses_target_ticker_and_exact_symbol() -> None
     candidate = {
         "exchange": "binance",
         "symbol": "BTCUSDT",
+        "bucket_start": datetime(2026, 8, 24, 7, 0, tzinfo=UTC),
         "close_price": 94.0,
         "price_15m_ago": 100.0,
         "open_interest": 80.0,
@@ -94,7 +105,7 @@ async def test_liquidation_cascade_uses_target_ticker_and_exact_symbol() -> None
             AsyncMock(return_value=None),
         ),
         patch(
-            "schurfer_execution.liquidation_cascade.paper.open_paper",
+            "schurfer_execution.execution_intent.paper.open_paper",
             AsyncMock(),
         ) as open_paper,
         patch(
@@ -103,7 +114,9 @@ async def test_liquidation_cascade_uses_target_ticker_and_exact_symbol() -> None
         ),
         pytest.raises(asyncio.CancelledError),
     ):
-        await run_liquidation_cascade_scanner({"bybit": exchange}, MagicMock(), cfg)
+        await run_liquidation_cascade_scanner(
+            {"bybit": exchange}, MagicMock(), cfg, broker=PaperBroker()
+        )
 
     exchange.fetch_ticker.assert_awaited_once_with("BTC/USDT:USDT")
     instrument = open_paper.await_args.kwargs["instrument"]
@@ -115,6 +128,7 @@ def _candidate() -> dict[str, object]:
     return {
         "exchange": "binance",
         "symbol": "BTCUSDT",
+        "bucket_start": datetime(2026, 8, 24, 7, 0, tzinfo=UTC),
         "close_price": 94.0,
         "price_15m_ago": 100.0,
         "open_interest": 80.0,
@@ -143,7 +157,7 @@ async def _run_scanner_once(
             AsyncMock(return_value=open_id),
         ),
         patch(
-            "schurfer_execution.liquidation_cascade.paper.open_paper",
+            "schurfer_execution.execution_intent.paper.open_paper",
             AsyncMock(),
         ) as open_paper,
         patch(
@@ -152,7 +166,9 @@ async def _run_scanner_once(
         ),
         pytest.raises(asyncio.CancelledError),
     ):
-        await run_liquidation_cascade_scanner({"bybit": exchange}, MagicMock(), cfg)
+        await run_liquidation_cascade_scanner(
+            {"bybit": exchange}, MagicMock(), cfg, broker=PaperBroker()
+        )
     return open_paper
 
 
@@ -224,3 +240,32 @@ async def test_liquidation_cascade_gate_disabled_still_captures_quality() -> Non
     open_paper.assert_awaited_once()
     setup_context = open_paper.await_args.kwargs["setup_context"]
     assert setup_context["market_quality"]["allowed"] is False
+
+
+# ---- TradingMode.DISABLED (colleague review, P1) ----
+
+
+async def test_liquidation_cascade_disabled_never_scans_or_queries_db() -> None:
+    """LIQUIDATION_CASCADE_MODE=disabled must stop the scanner outright --
+    not just make the eventual broker.open() call reject after a full
+    tick's worth of DB/liquidity work already ran for nothing."""
+    exchange = _market_exchange()
+    cfg = _quality_cfg(require_market_quality=True)
+
+    with (
+        patch(
+            "schurfer_execution.liquidation_cascade.psycopg.AsyncConnection.connect",
+            new_callable=AsyncMock,
+        ) as connect,
+        patch(
+            "schurfer_execution.liquidation_cascade.asyncio.sleep",
+            AsyncMock(side_effect=asyncio.CancelledError),
+        ),
+    ):
+        # No CancelledError expected -- the disabled branch returns before
+        # ever reaching the while/sleep loop at all.
+        await run_liquidation_cascade_scanner(
+            {"bybit": exchange}, MagicMock(), cfg, broker=DisabledBroker()
+        )
+
+    connect.assert_not_called()

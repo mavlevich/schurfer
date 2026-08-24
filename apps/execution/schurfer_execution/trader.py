@@ -11,9 +11,10 @@ from uuid import uuid4
 
 import structlog
 
-from . import decisions, journal, liquidity, notify, paper, risk, symbols
+from . import decisions, execution_intent, journal, liquidity, notify, risk, symbols
 from . import exit as exit_module
 from .account import fetch_margin_balance
+from .execution_intent import Broker, ExecutionIntent, StrategyIdentity
 from .order_lock import OrderLockLostError
 from .orders import place_order
 
@@ -54,18 +55,42 @@ async def run_signal_trader(
     exchanges: dict[str, Any],
     rdb: Any,
     cfg: Config,
+    broker: Broker | None = None,
 ) -> None:
     while True:
         await asyncio.sleep(_INTERVAL_SECONDS)
         try:
-            await _tick(exchanges, rdb, cfg)
+            await _tick(exchanges, rdb, cfg, broker)
         except asyncio.CancelledError:
             raise
         except Exception as e:
             log.error("trader.error", err=str(e))
 
 
-async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
+async def _tick(
+    exchanges: dict[str, Any], rdb: Any, cfg: Config, broker: Broker | None = None
+) -> None:
+    # Resolved here (not just once in run_signal_trader) so a direct _tick()
+    # call -- every existing test, plus any future caller -- gets the same
+    # safe default without having to build a broker itself. resolve_mode/
+    # build_broker are pure and cheap; re-resolving every tick when the
+    # caller didn't already pin a broker costs nothing that matters at
+    # _INTERVAL_SECONDS=60 cadence.
+    if broker is None:
+        mode = execution_intent.resolve_mode(cfg, execution_intent.STRATEGY_PUMP_SHORT)
+        broker = execution_intent.build_broker(mode, exchanges=exchanges)
+
+    # PUMP_SHORT_MODE=disabled must actually stop the strategy, not just
+    # make the eventual broker.open() call reject while everything around
+    # it (signal readiness, decision writes) proceeds as if nothing
+    # happened (colleague review, P1). Only reachable when cfg.dry_run=True
+    # -- Config already refuses this override under AUTO_TRADE=true, where
+    # broker.mode is always PAPER (see resolve_mode) and this branch is a
+    # harmless no-op check.
+    if broker.mode is execution_intent.TradingMode.DISABLED:
+        log.info("trader.disabled")
+        return
+
     raw = await rdb.get(_MEASUREMENT_PUMPS_KEY)
     if not raw:
         # Rolling-deploy compatibility until analytics publishes the private feed.
@@ -570,16 +595,57 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
                 )
                 continue
 
-            await paper.open_paper(
-                rdb,
+            # journal.strategy_identity(setup_context) is the SAME pure
+            # parser journal.open_trade will use to register this trade's
+            # app.strategies row -- deriving StrategyIdentity from it
+            # directly (rather than hand-building name/version here) is
+            # what keeps the two from silently disagreeing. Hand-building
+            # the identity from cfg.strategy_version directly was wrong: it
+            # is the whole raw string (e.g. "pump_short_v1_market_quality"),
+            # while journal.strategy_identity parses it down to the correct
+            # ("pump_short", "1_market_quality") pair (colleague review).
+            strategy_name, strategy_version = journal.strategy_identity(setup_context)
+            intent = ExecutionIntent(
+                strategy=StrategyIdentity(name=strategy_name, version=strategy_version),
                 instrument=instrument,
-                price=entry_price,
+                side="short",
                 size_usd=size_usd,
                 leverage=cfg.signal_leverage,
                 score=score,
                 setup_context=setup_context,
-                cfg=cfg,
+                idempotency_key=decision_id,
+                price=entry_price,
             )
+            # Named distinctly from `result` below (the live place_order()
+            # dict) -- same function scope, different type; mypy correctly
+            # flags a name collision between the two.
+            open_result = await broker.open(intent, cfg=cfg, rdb=rdb)
+            # Never claim "opened_dry_run" unless the broker actually
+            # opened something -- checked against the specific expected
+            # status, not the coarser `committed` bool, so a future status
+            # this call site was never written to expect (e.g. a live
+            # broker's EMERGENCY_CLOSED, which is also "committed") can't
+            # silently be reported as a normal paper open (colleague
+            # review).
+            if open_result.status is not execution_intent.ExecutionStatus.PAPER_OPENED:
+                await decisions.write_decision(
+                    rdb,
+                    base=base,
+                    exchange=exchange,
+                    action="skipped",
+                    reason=f"broker_rejected:{open_result.reason}",
+                    score=score,
+                    pump_pct=pump_pct,
+                    decision_id=decision_id,
+                    strategy_version=cfg.strategy_version,
+                    features=features,
+                    liquidity=liq,
+                    price=decision_price,
+                    pump_event_id=pump_event_id,
+                    seen_key=seen_key,
+                    seen_ttl=_SEEN_TTL_SKIP,
+                )
+                continue
             await decisions.write_decision(
                 rdb,
                 base=base,

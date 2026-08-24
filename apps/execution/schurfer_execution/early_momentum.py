@@ -40,12 +40,19 @@ from schurfer_market_quality import validate as validate_window_quality
 from . import (
     early_momentum_health,
     episodes,
+    execution_intent,
     journal,
     liquidity,
     notify,
     paper,
     symbols,
     worker_health,
+)
+from .execution_intent import (
+    Broker,
+    EpisodeClaim,
+    ExecutionIntent,
+    StrategyIdentity,
 )
 
 if TYPE_CHECKING:
@@ -639,13 +646,19 @@ async def _process_candidate(
     await _write_watch_cache(rdb, ep)
 
 
-async def run_early_momentum_trigger(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
+async def run_early_momentum_trigger(
+    exchanges: dict[str, Any], rdb: Any, cfg: Config, broker: Broker | None = None
+) -> None:
     """Reaps overdue episodes, repairs the Redis WATCH cache from Postgres
     (the source of truth), then polls the cache for breakouts to claim and
     open."""
     if not cfg.db_url:
         log.warning("early_momentum.trigger_disabled", reason="no db_url")
         return
+
+    if broker is None:
+        mode = execution_intent.resolve_mode(cfg, execution_intent.STRATEGY_EARLY_MOMENTUM)
+        broker = execution_intent.build_broker(mode, exchanges=exchanges)
 
     while True:
         try:
@@ -656,7 +669,7 @@ async def run_early_momentum_trigger(exchanges: dict[str, Any], rdb: Any, cfg: C
                 worker_version=_STRATEGY_VERSION,
                 ttl_seconds=_HEARTBEAT_TTL_SECONDS,
             ):
-                await _trigger_tick(exchanges, rdb, cfg)
+                await _trigger_tick(exchanges, rdb, cfg, broker)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -665,7 +678,7 @@ async def run_early_momentum_trigger(exchanges: dict[str, Any], rdb: Any, cfg: C
         await asyncio.sleep(_TRIGGER_INTERVAL)
 
 
-async def _trigger_tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
+async def _trigger_tick(exchanges: dict[str, Any], rdb: Any, cfg: Config, broker: Broker) -> None:
     assert cfg.db_url is not None
 
     # 1. Reap only the truly-dead cases (see episodes.reap_overdue) --
@@ -706,13 +719,33 @@ async def _trigger_tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> Non
         if not raw:
             continue
         cached = json.loads(raw)
-        await _check_breakout(ex, rdb, cfg, cached=cached, tickers=tickers)
+        await _check_breakout(ex, rdb, cfg, broker, cached=cached, tickers=tickers)
 
 
 async def _check_breakout(
-    ex: Any, rdb: Any, cfg: Config, *, cached: dict[str, Any], tickers: dict[str, Any]
+    ex: Any,
+    rdb: Any,
+    cfg: Config,
+    broker: Broker,
+    *,
+    cached: dict[str, Any],
+    tickers: dict[str, Any],
 ) -> None:
     assert cfg.db_url is not None
+
+    # EARLY_MOMENTUM_MODE=disabled must stop before any episode is ever
+    # claimed -- claiming and then immediately mis-terminating it as
+    # "infrastructure_failure" (the only reason PaperBroker's REJECTED
+    # result maps to) would misrepresent a deliberate operator choice as a
+    # real production incident, and would burn the episode's own claim
+    # lease for nothing (colleague review, P1). _trigger_tick's own
+    # reap_overdue/list_actionable/watch-cache-repair calls run before this
+    # function either way, so already-armed/claimed episode maintenance is
+    # unaffected by early_momentum being disabled -- only claiming NEW ones
+    # stops.
+    if broker.mode is execution_intent.TradingMode.DISABLED:
+        return
+
     episode_id = cached["episode_id"]
     ceiling = float(cached["ceiling"])
     native_market_id = cached["native_market_id"]
@@ -811,6 +844,7 @@ async def _check_breakout(
             ex,
             rdb,
             cfg,
+            broker,
             instrument=instrument,
             episode_id=episode_id,
             claim_token=claim_token,
@@ -828,6 +862,7 @@ async def _quote_and_open(
     ex: Any,
     rdb: Any,
     cfg: Config,
+    broker: Broker,
     *,
     instrument: symbols.ExecutionInstrument,
     episode_id: str,
@@ -907,28 +942,41 @@ async def _quote_and_open(
         "entry_price_includes_impact": True,
     }
 
-    outcome = await paper.open_paper_for_episode(
-        rdb,
+    # journal.strategy_identity(setup_context) is the SAME pure parser
+    # journal.open_trade_for_episode will use to register this trade's
+    # app.strategies row -- deriving StrategyIdentity from it directly
+    # (rather than hand-building it from _STRATEGY_NAME/_STRATEGY_VERSION)
+    # is what keeps the two from silently disagreeing (colleague review;
+    # this file's own values happened to already match, but duplicating
+    # the parsing convention in two places is exactly what let pump_short's
+    # copy drift out of sync).
+    strategy_name, strategy_version = journal.strategy_identity(setup_context)
+    intent = ExecutionIntent(
+        strategy=StrategyIdentity(name=strategy_name, version=strategy_version),
         instrument=instrument,
-        price=entry_vwap,
+        side="long",
         size_usd=_SIZE_USD,
         leverage=_LEVERAGE,
         score=100,  # Synthetic score
         setup_context=setup_context,
-        cfg=cfg,
-        side="long",
+        idempotency_key=f"{episode_id}:entry:base",
+        price=entry_vwap,
         exit_params=_EXIT_PARAMS,
-        episode_id=episode_id,
-        claim_token=claim_token,
-        entry_idempotency_key=f"{episode_id}:entry:base",
+        claim=EpisodeClaim(episode_id=episode_id, claim_token=claim_token),
     )
-    if outcome.trade_id is None:
+    result = await broker.open(intent, cfg=cfg, rdb=rdb)
+    # Checked against the specific expected status, not the coarser
+    # `committed` bool -- a future live-broker status that is also
+    # "committed" (e.g. EMERGENCY_CLOSED) must not be silently read here as
+    # a normal successful paper open (colleague review).
+    if result.status is not execution_intent.ExecutionStatus.PAPER_OPENED:
         log.error(
             "early_momentum.open_trade_for_episode_failed",
             episode_id=episode_id,
-            claim_valid=outcome.claim_valid,
+            claim_valid=result.claim_valid,
+            reason=result.reason,
         )
-        if outcome.claim_valid:
+        if result.claim_valid:
             await episodes.terminate_episode(
                 cfg.db_url,
                 episode_id=episode_id,

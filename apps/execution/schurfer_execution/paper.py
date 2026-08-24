@@ -255,7 +255,11 @@ async def open_paper(
     cfg: Config,
     side: str = "short",
     exit_params: dict[str, float] | None = None,
-) -> None:
+) -> int | None:
+    """Returns the journaled trade_id (None if cfg.db_url is unset or the
+    journal write failed) -- the caller already computes this value via
+    journal.open_trade below; it used to be discarded (execution_intent.py's
+    PaperBroker needs an honest trade_id, not a routing-only bool)."""
     params = (
         exit_params
         if exit_params is not None
@@ -308,6 +312,7 @@ async def open_paper(
         score=score,
         side=side,
     )
+    return trade_id
 
 
 async def open_paper_for_episode(

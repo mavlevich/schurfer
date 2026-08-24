@@ -167,6 +167,18 @@ class Config:
     # Trade journal — required when AUTO_TRADE is on (see below), optional otherwise.
     db_url: str | None = field(default_factory=lambda: _env("DATABASE_URL"))
 
+    # Per-strategy TradingMode override (execution_intent.py) — optional, unset
+    # by default. AUTO_TRADE/DRY_RUN remain the ceiling: an unset override
+    # never exceeds PAPER regardless of AUTO_TRADE, and no live/shadow mode
+    # is reachable except by an explicit, correctly-spelled override that
+    # also fits under the ceiling. See execution_intent.resolve_mode's own
+    # docstring for the full rule.
+    pump_short_mode: str | None = field(default_factory=lambda: _env("PUMP_SHORT_MODE"))
+    early_momentum_mode: str | None = field(default_factory=lambda: _env("EARLY_MOMENTUM_MODE"))
+    liquidation_cascade_mode: str | None = field(
+        default_factory=lambda: _env("LIQUIDATION_CASCADE_MODE")
+    )
+
     def __post_init__(self) -> None:
         if self.auto_trade and self.dry_run:
             raise ValueError("AUTO_TRADE and DRY_RUN are mutually exclusive")
@@ -178,12 +190,32 @@ class Config:
             raise ValueError("DATABASE_URL is required when AUTO_TRADE=true")
         if self.auto_trade and not self.require_market_quality:
             raise ValueError("REQUIRE_MARKET_QUALITY must be true when AUTO_TRADE=true")
+        if self.auto_trade and self.pump_short_mode is not None:
+            # trader.py's live branch (real orders via orders.place_order) is
+            # untouched by execution_intent.py -- it is still selected purely
+            # by cfg.dry_run being False, completely independent of whatever
+            # TradingMode PUMP_SHORT_MODE resolves to. Allowing an override
+            # here would let PUMP_SHORT_MODE=disabled (or =paper) sit in
+            # config and in the startup log claiming to govern execution
+            # while real orders keep being placed regardless -- a false
+            # safety lever is worse than no lever (colleague review, P0).
+            # Refuse it outright until a real LiveBroker exists to honor it.
+            raise ValueError(
+                "PUMP_SHORT_MODE cannot be set while AUTO_TRADE=true -- pump_short's live "
+                "path is not governed by TradingMode yet (see feat/live-order-lifecycle-v1); "
+                "an override here would be silently ignored by the actual order path"
+            )
         if not 0.0 < self.entry_min_pct <= 5_000.0:
             raise ValueError(
                 f"PUMP_ENTRY_MIN_PCT must be > 0 and <= 5000, got {self.entry_min_pct}"
             )
         if not self.measurement_strategy_version.strip():
             raise ValueError("MEASUREMENT_STRATEGY_VERSION must not be empty")
+        # Validated unconditionally, before the auto_trade/dry_run early
+        # return below -- a mode override must fail startup even when
+        # neither flag is set (ceiling DISABLED), not just when trading is
+        # otherwise active.
+        self._validate_trading_modes()
         if not self.auto_trade and not self.dry_run:
             return
         if self.signal_position_usd <= 0:
@@ -228,3 +260,23 @@ class Config:
                 "EARLY_MOMENTUM_HEALTH_ALERT_COOLDOWN_SECONDS must be > 0, "
                 f"got {self.early_momentum_health_alert_cooldown_seconds}"
             )
+
+    def _validate_trading_modes(self) -> None:
+        # Local import: execution_intent.py only imports Config under
+        # TYPE_CHECKING (no runtime cycle either way), but importing it here
+        # rather than at module level keeps that guarantee obviously true
+        # without having to reason about paper.py/symbols.py's own import
+        # graphs every time either module changes.
+        from . import execution_intent
+
+        for strategy in (
+            execution_intent.STRATEGY_PUMP_SHORT,
+            execution_intent.STRATEGY_EARLY_MOMENTUM,
+            execution_intent.STRATEGY_LIQUIDATION_CASCADE,
+        ):
+            # Raises ValueError on an unparseable override, an override above
+            # the AUTO_TRADE/DRY_RUN ceiling, or an override selecting a mode
+            # with no implemented broker (SHADOW/LIVE_PROBE/LIVE_MICRO in this
+            # build) -- startup must fail loud on any of these, never fall
+            # back to a silently different mode at first use.
+            execution_intent.resolve_mode(self, strategy)
