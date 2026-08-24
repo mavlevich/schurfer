@@ -1,10 +1,18 @@
 from datetime import UTC, datetime
+from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
+from schurfer_analytics.market_path_cache import (
+    MarketPathCacheCorruptError,
+    MarketPathCacheWriteError,
+    write_cached_candles,
+)
 from schurfer_analytics.ohlcv import (
     ONE_MINUTE_MS,
+    TIMEFRAME,
     TIMEFRAME_MS,
+    Candle,
     IncompleteFetchError,
     PageFetchObservation,
     closed_candles,
@@ -515,6 +523,311 @@ async def test_fetch_symbol_candles_on_page_callback_exception_propagates() -> N
             timeframe_ms=DAY_MS,
             on_page=broken_observer,
         )
+
+
+async def test_fetch_symbol_candles_serves_a_repeat_call_from_cache_with_no_api_call(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The reproducibility fix (2026-08-24): a second call with the exact
+    same (exchange, symbol, timeframe, start_ms, end_ms) and use_cache=True
+    must be served from the immutable cache, with zero further calls to
+    fetch_ohlcv -- so a token being delisted between the two calls can never
+    turn a previously-resolved episode into fetch_failed."""
+    monkeypatch.setenv("SCHURFER_MARKET_PATH_CACHE_DIR", str(tmp_path))
+    start = int(datetime(2026, 7, 22, 12, 0, tzinfo=UTC).timestamp() * 1000)
+    exchange = AsyncMock()
+    exchange.id = "binance"
+    exchange.fetch_ohlcv = AsyncMock(return_value=[_bar(start, offset) for offset in range(4)])
+
+    first = await fetch_symbol_candles(
+        exchange, "DAM/USDT:USDT", start, start + 4 * TIMEFRAME_MS, use_cache=True
+    )
+    assert exchange.fetch_ohlcv.await_count == 1
+
+    # Simulate the symbol being delisted: any further real call would now
+    # fail. The second call must never reach it.
+    exchange.fetch_ohlcv.side_effect = Exception(
+        "binance does not have market symbol DAM/USDT:USDT"
+    )
+
+    second = await fetch_symbol_candles(
+        exchange, "DAM/USDT:USDT", start, start + 4 * TIMEFRAME_MS, use_cache=True
+    )
+
+    assert second == first
+    assert exchange.fetch_ohlcv.await_count == 1
+
+
+async def test_fetch_symbol_candles_defaults_to_no_caching(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """use_cache defaults to False: a coverage/latency-diagnostic report
+    that wants real API telemetry on every run (via on_page) must not be
+    silently affected just because a valid exchange.id happens to be
+    present. Only a caller that explicitly opts in gets caching."""
+    monkeypatch.setenv("SCHURFER_MARKET_PATH_CACHE_DIR", str(tmp_path))
+    start = int(datetime(2026, 7, 22, 12, 0, tzinfo=UTC).timestamp() * 1000)
+    exchange = AsyncMock()
+    exchange.id = "binance"
+    exchange.fetch_ohlcv = AsyncMock(return_value=[_bar(start, 0)])
+
+    await fetch_symbol_candles(exchange, "DAM/USDT:USDT", start, start + TIMEFRAME_MS)
+    await fetch_symbol_candles(exchange, "DAM/USDT:USDT", start, start + TIMEFRAME_MS)
+
+    assert exchange.fetch_ohlcv.await_count == 2
+    assert list(tmp_path.rglob("*.json")) == []
+
+
+async def test_fetch_symbol_candles_cache_is_keyed_per_exchange_symbol_and_window(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("SCHURFER_MARKET_PATH_CACHE_DIR", str(tmp_path))
+    start = int(datetime(2026, 7, 22, 12, 0, tzinfo=UTC).timestamp() * 1000)
+    exchange = AsyncMock()
+    exchange.id = "binance"
+    exchange.fetch_ohlcv = AsyncMock(return_value=[_bar(start, 0)])
+
+    await fetch_symbol_candles(
+        exchange, "DAM/USDT:USDT", start, start + TIMEFRAME_MS, use_cache=True
+    )
+    # A different symbol on the same exchange/window is a cache miss and
+    # must still call the exchange.
+    await fetch_symbol_candles(
+        exchange, "OTHER/USDT:USDT", start, start + TIMEFRAME_MS, use_cache=True
+    )
+
+    assert exchange.fetch_ohlcv.await_count == 2
+
+
+async def test_fetch_symbol_candles_without_a_real_exchange_id_never_caches(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An unconfigured test double's `.id` is itself a mock object, not a
+    string -- this must be treated as "no cache identity", not accidentally
+    cached under the mock's repr, even with use_cache=True. Every
+    pre-existing test in this file relies on exactly this to keep behaving
+    unchanged."""
+    monkeypatch.setenv("SCHURFER_MARKET_PATH_CACHE_DIR", str(tmp_path))
+    start = int(datetime(2026, 7, 22, 12, 0, tzinfo=UTC).timestamp() * 1000)
+    exchange = AsyncMock()  # exchange.id is an auto-generated Mock, not a str
+    exchange.fetch_ohlcv = AsyncMock(return_value=[_bar(start, 0)])
+
+    await fetch_symbol_candles(
+        exchange, "DAM/USDT:USDT", start, start + TIMEFRAME_MS, use_cache=True
+    )
+    await fetch_symbol_candles(
+        exchange, "DAM/USDT:USDT", start, start + TIMEFRAME_MS, use_cache=True
+    )
+
+    assert exchange.fetch_ohlcv.await_count == 2
+    assert list(tmp_path.rglob("*.json")) == []
+
+
+async def test_fetch_symbol_candles_never_caches_a_raised_exception(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A transient failure (timeout, connectivity error, IncompleteFetchError)
+    must never be memorized as a permanent answer -- the next call has to be
+    allowed to actually retry against the exchange."""
+    monkeypatch.setattr("schurfer_analytics.ohlcv._EMPTY_PAGE_RETRY_DELAY_SECONDS", 0)
+    monkeypatch.setenv("SCHURFER_MARKET_PATH_CACHE_DIR", str(tmp_path))
+    start = int(datetime(2026, 7, 22, 12, 0, tzinfo=UTC).timestamp() * 1000)
+    exchange = AsyncMock()
+    exchange.id = "binance"
+    exchange.fetch_ohlcv = AsyncMock(side_effect=TimeoutError("slow venue"))
+
+    with pytest.raises(TimeoutError):
+        await fetch_symbol_candles(
+            exchange, "DAM/USDT:USDT", start, start + TIMEFRAME_MS, use_cache=True
+        )
+
+    assert list(tmp_path.rglob("*.json")) == []
+
+    # A later, successful call must not be blocked by the earlier failure.
+    exchange.fetch_ohlcv.side_effect = None
+    exchange.fetch_ohlcv.return_value = [_bar(start, 0)]
+    result = await fetch_symbol_candles(
+        exchange, "DAM/USDT:USDT", start, start + TIMEFRAME_MS, use_cache=True
+    )
+    assert [c.ts_ms for c in result] == [start]
+
+
+async def test_fetch_symbol_candles_never_caches_an_ambiguous_empty_page_result(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An empty-page-after-retries result is, by this function's own
+    docstring, not distinguishable here from a transient hiccup versus a
+    real retention limit/delisted instrument -- it must never be cached,
+    even with use_cache=True, or a single bad response could freeze a wrong
+    `no_data` result in place forever."""
+    monkeypatch.setattr("schurfer_analytics.ohlcv._EMPTY_PAGE_RETRY_DELAY_SECONDS", 0)
+    monkeypatch.setenv("SCHURFER_MARKET_PATH_CACHE_DIR", str(tmp_path))
+    start = int(datetime(2026, 7, 22, 12, 0, tzinfo=UTC).timestamp() * 1000)
+    exchange = AsyncMock()
+    exchange.id = "binance"
+    exchange.fetch_ohlcv = AsyncMock(return_value=[])  # exhausts retries, returns partial (empty)
+
+    first = await fetch_symbol_candles(
+        exchange, "DAM/USDT:USDT", start, start + 3 * TIMEFRAME_MS, use_cache=True
+    )
+    assert first == []
+    calls_before = exchange.fetch_ohlcv.await_count
+    assert calls_before > 0
+    assert list(tmp_path.rglob("*.json")) == []
+
+    second = await fetch_symbol_candles(
+        exchange, "DAM/USDT:USDT", start, start + 3 * TIMEFRAME_MS, use_cache=True
+    )
+    assert second == []
+    # A real, un-cached retry -- more calls, not served from a frozen cache.
+    assert exchange.fetch_ohlcv.await_count > calls_before
+
+
+async def test_fetch_symbol_candles_never_caches_a_cursor_stall_result(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Same reasoning as the empty-page case, for the other ambiguous
+    partial-result path."""
+    monkeypatch.setenv("SCHURFER_MARKET_PATH_CACHE_DIR", str(tmp_path))
+    start = int(datetime(2026, 7, 22, 12, 0, tzinfo=UTC).timestamp() * 1000)
+    exchange = AsyncMock()
+    exchange.id = "binance"
+    exchange.fetch_ohlcv = AsyncMock(return_value=[_bar(start, 0)])  # never advances the cursor
+
+    result = await fetch_symbol_candles(
+        exchange, "DAM/USDT:USDT", start, start + 3 * TIMEFRAME_MS, use_cache=True
+    )
+
+    assert [c.ts_ms for c in result] == [start]
+    assert list(tmp_path.rglob("*.json")) == []
+
+
+async def test_fetch_symbol_candles_propagates_cache_corruption_instead_of_masking_it(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A corrupt cache entry must be a hard failure for a formal report, not
+    a silent fall-through to a live re-fetch -- silently masking it would
+    reintroduce exactly the "same manifest, different result" hazard this
+    cache exists to close."""
+    monkeypatch.setenv("SCHURFER_MARKET_PATH_CACHE_DIR", str(tmp_path))
+    start = int(datetime(2026, 7, 22, 12, 0, tzinfo=UTC).timestamp() * 1000)
+    exchange = AsyncMock()
+    exchange.id = "binance"
+    exchange.fetch_ohlcv = AsyncMock(return_value=[_bar(start, offset) for offset in range(4)])
+
+    await fetch_symbol_candles(
+        exchange, "DAM/USDT:USDT", start, start + 4 * TIMEFRAME_MS, use_cache=True
+    )
+    cache_files = list(tmp_path.rglob("*.json"))
+    assert len(cache_files) == 1
+    cache_files[0].write_text("{not valid json")
+
+    with pytest.raises(MarketPathCacheCorruptError):
+        await fetch_symbol_candles(
+            exchange, "DAM/USDT:USDT", start, start + 4 * TIMEFRAME_MS, use_cache=True
+        )
+
+
+async def test_fetch_symbol_candles_never_caches_a_result_with_a_leading_gap(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """cursor >= end_ms alone does not prove the window's FIRST bar arrived
+    -- an exchange can start its first page later than start_ms while still
+    reaching end_ms by the last page. This must never be cached."""
+    monkeypatch.setenv("SCHURFER_MARKET_PATH_CACHE_DIR", str(tmp_path))
+    start = int(datetime(2026, 7, 22, 12, 0, tzinfo=UTC).timestamp() * 1000)
+    exchange = AsyncMock()
+    exchange.id = "binance"
+    # Window is [start, start+3*TF); bar at offset 0 (start) never arrives.
+    exchange.fetch_ohlcv = AsyncMock(return_value=[_bar(start, offset) for offset in (1, 2)])
+
+    result = await fetch_symbol_candles(
+        exchange, "DAM/USDT:USDT", start, start + 3 * TIMEFRAME_MS, use_cache=True
+    )
+
+    assert [c.ts_ms for c in result] == [start + TIMEFRAME_MS, start + 2 * TIMEFRAME_MS]
+    assert list(tmp_path.rglob("*.json")) == []
+
+
+async def test_fetch_symbol_candles_never_caches_a_result_with_an_internal_gap(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Same reasoning for a gap in the middle of the window rather than at
+    the edge -- cursor >= end_ms cannot see it either."""
+    monkeypatch.setenv("SCHURFER_MARKET_PATH_CACHE_DIR", str(tmp_path))
+    start = int(datetime(2026, 7, 22, 12, 0, tzinfo=UTC).timestamp() * 1000)
+    exchange = AsyncMock()
+    exchange.id = "binance"
+    # Window is [start, start+4*TF); bar at offset 2 never arrives.
+    exchange.fetch_ohlcv = AsyncMock(return_value=[_bar(start, offset) for offset in (0, 1, 3)])
+
+    result = await fetch_symbol_candles(
+        exchange, "DAM/USDT:USDT", start, start + 4 * TIMEFRAME_MS, use_cache=True
+    )
+
+    assert [c.ts_ms for c in result] == [start, start + TIMEFRAME_MS, start + 3 * TIMEFRAME_MS]
+    assert list(tmp_path.rglob("*.json")) == []
+
+
+async def test_fetch_symbol_candles_returns_the_winners_candles_after_losing_a_write_race(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """If persisting loses the first-writer-wins race, the already-durable
+    winner's candles must be returned instead of this call's own -- two
+    callers racing on the same window must never end up disagreeing about
+    what the "reproducible" answer is."""
+    monkeypatch.setenv("SCHURFER_MARKET_PATH_CACHE_DIR", str(tmp_path))
+    start = int(datetime(2026, 7, 22, 12, 0, tzinfo=UTC).timestamp() * 1000)
+    winner_candles = [Candle(ts_ms=start, open=1.0, high=1.1, low=0.9, close=1.05, volume=10.0)]
+    # A concurrent writer already durably won this exact key before this
+    # call ever runs.
+    write_cached_candles(
+        exchange_id="binance",
+        symbol="DAM/USDT:USDT",
+        timeframe=TIMEFRAME,
+        start_ms=start,
+        end_ms=start + TIMEFRAME_MS,
+        candles=winner_candles,
+    )
+
+    exchange = AsyncMock()
+    exchange.id = "binance"
+    # This call's own fetch would produce DIFFERENT candles if it were used.
+    exchange.fetch_ohlcv = AsyncMock(return_value=[_bar(start, 0)])
+
+    result = await fetch_symbol_candles(
+        exchange, "DAM/USDT:USDT", start, start + TIMEFRAME_MS, use_cache=True
+    )
+
+    assert result == winner_candles
+
+
+async def test_fetch_symbol_candles_raises_when_the_write_itself_fails(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """use_cache=True is a durability contract, not a best-effort hint: if a
+    formal report finishes without actually persisting anything, it would
+    silently believe it is protected against a future delisting when it is
+    not. This must fail loudly instead."""
+    # r-x, not read-only: the cache-check read at the top of
+    # fetch_symbol_candles must see a clean miss (it can traverse and stat),
+    # so the failure this test exercises is specifically the write, not an
+    # earlier read blowing up for an unrelated reason.
+    unwritable = tmp_path / "read-only-cache-root"
+    unwritable.mkdir(mode=0o500)
+    try:
+        monkeypatch.setenv("SCHURFER_MARKET_PATH_CACHE_DIR", str(unwritable / "cache"))
+        start = int(datetime(2026, 7, 22, 12, 0, tzinfo=UTC).timestamp() * 1000)
+        exchange = AsyncMock()
+        exchange.id = "binance"
+        exchange.fetch_ohlcv = AsyncMock(return_value=[_bar(start, 0)])
+
+        with pytest.raises(MarketPathCacheWriteError):
+            await fetch_symbol_candles(
+                exchange, "DAM/USDT:USDT", start, start + TIMEFRAME_MS, use_cache=True
+            )
+    finally:
+        unwritable.chmod(0o700)
 
 
 def test_one_minute_normalization_and_strict_next_bar_are_explicit() -> None:
