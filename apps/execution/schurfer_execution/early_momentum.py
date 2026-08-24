@@ -969,22 +969,38 @@ async def _quote_and_open(
     # `committed` bool -- a future live-broker status that is also
     # "committed" (e.g. EMERGENCY_CLOSED) must not be silently read here as
     # a normal successful paper open (colleague review).
-    if result.status is not execution_intent.ExecutionStatus.PAPER_OPENED:
-        log.error(
-            "early_momentum.open_trade_for_episode_failed",
-            episode_id=episode_id,
-            claim_valid=result.claim_valid,
-            reason=result.reason,
-        )
+    if result.status is execution_intent.ExecutionStatus.PAPER_OPENED:
+        return
+    if result.status is execution_intent.ExecutionStatus.SHADOW_RECORDED:
+        # EARLY_MOMENTUM_MODE=shadow: evidence was written, on purpose, no
+        # position was ever going to be opened -- STATUS_SUPPRESSED (not
+        # STATUS_REJECTED/REASON_INFRASTRUCTURE_FAILURE below), same bucket
+        # as REASON_ALREADY_OPEN's deliberate-skip above.
+        log.info("early_momentum.shadow_recorded", episode_id=episode_id)
         if result.claim_valid:
             await episodes.terminate_episode(
                 cfg.db_url,
                 episode_id=episode_id,
                 claim_token=claim_token,
-                reason=episodes.REASON_INFRASTRUCTURE_FAILURE,
+                reason=episodes.REASON_SHADOW_RECORDED,
+                status=episodes.STATUS_SUPPRESSED,
             )
-        # else: the claim was already invalid (reclaimed/expired under us)
-        # -- nothing left to terminate with our own stale token.
+        return
+    log.error(
+        "early_momentum.open_trade_for_episode_failed",
+        episode_id=episode_id,
+        claim_valid=result.claim_valid,
+        reason=result.reason,
+    )
+    if result.claim_valid:
+        await episodes.terminate_episode(
+            cfg.db_url,
+            episode_id=episode_id,
+            claim_token=claim_token,
+            reason=episodes.REASON_INFRASTRUCTURE_FAILURE,
+        )
+    # else: the claim was already invalid (reclaimed/expired under us) --
+    # nothing left to terminate with our own stale token.
 
 
 def _market_quality_reason(reason: str) -> str:

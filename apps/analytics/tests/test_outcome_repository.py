@@ -131,6 +131,50 @@ def test_due_statement_scopes_extended_paths_to_the_registered_strategy() -> Non
     assert "trade_decisions.strategy_version IN ('pump_short_v1_market_quality')" in sql
 
 
+def test_due_statement_excludes_shadow_decisions() -> None:
+    """compute_outcome's return/MFE/MAE math is short-only -- a LONG shadow
+    decision must never reach the resolver until a directional version
+    exists (colleague review)."""
+    statement = due_decisions_statement(
+        horizons=(15, 60),
+        resolver_version="forward_v1",
+        retryable_statuses=("partial",),
+        max_attempts=8,
+        retry_after_seconds=900,
+        batch_size=50,
+    )
+
+    sql = str(
+        statement.compile(
+            dialect=postgresql.dialect(),  # type: ignore[no-untyped-call]
+            compile_kwargs={"literal_binds": True},
+        )
+    )
+
+    assert "trade_decisions.trading_mode IS DISTINCT FROM 'shadow'" in sql
+
+
+def test_due_statement_shadow_exclusion_is_null_safe() -> None:
+    """Every pump_short row has trading_mode=NULL, never 'shadow' -- the
+    exclusion must use IS DISTINCT FROM, not != (SQL's != against NULL is
+    NULL/falsy, which would have silently excluded every pump_short row
+    too, not just shadow ones)."""
+    statement = due_decisions_statement(
+        horizons=(15,),
+        resolver_version="forward_v1",
+        retryable_statuses=("partial",),
+        max_attempts=8,
+        retry_after_seconds=900,
+        batch_size=50,
+    )
+
+    sql = str(statement.compile(dialect=postgresql.dialect()))  # type: ignore[no-untyped-call]
+
+    assert "trading_mode !=" not in sql
+    assert "trading_mode <>" not in sql
+    assert "IS DISTINCT FROM" in sql
+
+
 def test_due_statement_rejects_unscoped_extended_paths() -> None:
     with pytest.raises(ValueError, match="strategy scope"):
         due_decisions_statement(

@@ -135,19 +135,42 @@ def test_mode_override_with_neither_flag_set_raises(monkeypatch: pytest.MonkeyPa
         Config()
 
 
-@pytest.mark.parametrize("mode", ["shadow", "live_probe", "live_micro"])
+@pytest.mark.parametrize("mode", ["live_probe", "live_micro"])
 def test_mode_override_selecting_an_unimplemented_broker_raises(
     monkeypatch: pytest.MonkeyPatch, mode: str
 ) -> None:
-    """SHADOW/LIVE_PROBE/LIVE_MICRO have no broker implementation in this
-    build -- an explicit override must fail loud at startup even when it
-    fits under the AUTO_TRADE ceiling, never silently fall back to PAPER."""
+    """LIVE_PROBE/LIVE_MICRO have no broker implementation in this build --
+    an explicit override must fail loud at startup even when it fits under
+    the AUTO_TRADE ceiling, never silently fall back to PAPER."""
     _clear_mode_env(monkeypatch)
     monkeypatch.setenv("AUTO_TRADE", "true")
     monkeypatch.setenv("DATABASE_URL", "postgresql://test")
     monkeypatch.setenv("LIQUIDATION_CASCADE_MODE", mode)
 
     with pytest.raises(ValueError, match="no implemented broker"):
+        Config()
+
+
+def test_shadow_override_under_dry_run_does_not_raise(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Unlike LIVE_PROBE/LIVE_MICRO, SHADOW has a working broker (ShadowBroker)
+    and is legal for early_momentum/liquidation_cascade under a DRY_RUN
+    ceiling."""
+    _clear_mode_env(monkeypatch)
+    monkeypatch.setenv("DRY_RUN", "true")
+    monkeypatch.setenv("LIQUIDATION_CASCADE_MODE", "shadow")
+
+    Config()  # must not raise
+
+
+def test_pump_short_mode_shadow_raises_even_under_dry_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    """pump_short already writes its own decision evidence unconditionally
+    in trader.py -- SHADOW must stay off-limits to it specifically, even
+    though it is otherwise a legal mode now."""
+    _clear_mode_env(monkeypatch)
+    monkeypatch.setenv("DRY_RUN", "true")
+    monkeypatch.setenv("PUMP_SHORT_MODE", "shadow")
+
+    with pytest.raises(ValueError, match="not usable by this strategy"):
         Config()
 
 

@@ -4,6 +4,7 @@ from typing import Any
 
 from sqlalchemy import (
     BigInteger,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -42,6 +43,27 @@ class TradeDecision(Base):
         ForeignKey("app.pump_events.id", ondelete="SET NULL"),
         nullable=True,
     )
+    # strategy_id/trading_mode/side: added for feat/execution-shadow-evidence-v1's
+    # ShadowBroker. Nullable and NULL on every pump_short row (past and
+    # future) -- pump_short identifies itself via strategy_version alone,
+    # unchanged, and never sets these. strategy_id mirrors trades.strategy_id
+    # (same app.strategies registry, same no-ondelete FK -- canonical
+    # identity must block a delete, never be silently severed to NULL like
+    # pump_event_id above) rather than overloading strategy_version with a
+    # name-carrying convention pump_short's own rows don't follow.
+    strategy_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("app.strategies.id"),
+        nullable=True,
+    )
+    trading_mode: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # Direction of the intent this decision came from -- outcome_repository's
+    # due_decisions_statement excludes trading_mode='shadow' rows from
+    # resolution entirely for now, since compute_outcome's return/MFE/MAE
+    # math is short-only and would silently invert a LONG decision's
+    # evidence (colleague review). Exists now so a future directional
+    # resolver doesn't need another migration.
+    side: Mapped[str | None] = mapped_column(String(8), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     outcomes: Mapped[list["TradeDecisionOutcome"]] = relationship(
@@ -52,7 +74,23 @@ class TradeDecision(Base):
         Index("ix_trade_decisions_ts", "ts"),
         Index("ix_trade_decisions_base_ts", "base", "ts"),
         Index("ix_trade_decisions_pump_event_id", "pump_event_id"),
+        Index("ix_trade_decisions_strategy_id", "strategy_id"),
         Index("uq_trade_decisions_decision_id", "decision_id", unique=True),
+        # today's only writer of a non-NULL trading_mode is ShadowBroker --
+        # extend this set, in its own migration, when a future broker
+        # actually starts writing a new value here.
+        CheckConstraint(
+            "trading_mode IS NULL OR trading_mode IN ('shadow')",
+            name="ck_trade_decisions_trading_mode",
+        ),
+        # A partial write (e.g. strategy_id=NULL after a failed identity
+        # lookup, with trading_mode still set) must never reach this table --
+        # see ShadowBroker.open's own strategy_id is None guard.
+        CheckConstraint(
+            "(strategy_id IS NULL AND trading_mode IS NULL) OR "
+            "(strategy_id IS NOT NULL AND trading_mode IS NOT NULL)",
+            name="ck_trade_decisions_strategy_identity_pair",
+        ),
         {"schema": "app"},
     )
 

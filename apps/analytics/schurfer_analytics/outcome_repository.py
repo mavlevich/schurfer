@@ -102,6 +102,15 @@ def due_decisions_statement(
         .select_from(decisions.join(horizon_values, true()).outerjoin(outcomes, outcome_match))
         .where(
             decisions.c.decision_id.is_not(None),
+            # compute_outcome's return/MFE/MAE math is short-only (favorable
+            # move = price falling) -- a LONG shadow decision (early_momentum,
+            # liquidation_cascade under trading_mode='shadow') would be
+            # resolved with silently inverted evidence if it reached here
+            # unchanged (colleague review). Excluded entirely until a
+            # directional resolver exists; trade_decisions.side already
+            # carries what a future version needs, so this is a one-line
+            # fix at that point, not another migration.
+            decisions.c.trading_mode.is_distinct_from("shadow"),
             extended_scope,
             due_at <= func.now(),
             or_(

@@ -16,7 +16,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from schurfer_execution import early_momentum, episodes
-from schurfer_execution.execution_intent import DisabledBroker, PaperBroker
+from schurfer_execution.execution_intent import (
+    DisabledBroker,
+    ExecutionResult,
+    ExecutionStatus,
+    PaperBroker,
+    TradingMode,
+)
 from schurfer_execution.journal import OpenTradeOutcome
 from schurfer_execution.symbols import ExecutionInstrument
 from schurfer_execution.worker_health import WorkerHeartbeat
@@ -1116,6 +1122,48 @@ async def test_quote_and_open_terminates_infra_failure_when_open_fails_but_claim
 
     terminate.assert_awaited_once()
     assert terminate.call_args.kwargs["reason"] == episodes.REASON_INFRASTRUCTURE_FAILURE
+
+
+class _FakeShadowBroker:
+    """A broker stub returning SHADOW_RECORDED without going through the real
+    ShadowBroker (that write path has its own dedicated tests in
+    test_execution_intent.py) -- this file only needs to check that
+    _quote_and_open reads the status correctly."""
+
+    mode = TradingMode.SHADOW
+
+    async def open(self, intent: Any, *, cfg: Any, rdb: Any) -> ExecutionResult:
+        return ExecutionResult(mode=self.mode, status=ExecutionStatus.SHADOW_RECORDED)
+
+
+async def test_quote_and_open_shadow_recorded_suppresses_not_infra_failure() -> None:
+    """EARLY_MOMENTUM_MODE=shadow: evidence was written on purpose -- must
+    terminate STATUS_SUPPRESSED/REASON_SHADOW_RECORDED, never
+    STATUS_REJECTED/REASON_INFRASTRUCTURE_FAILURE (that reason is reserved
+    for an actual broker failure)."""
+    rdb = AsyncMock()
+    ex = _exchange()
+    ex.fetch_order_book = AsyncMock(return_value=_healthy_book())
+    with patch(
+        "schurfer_execution.early_momentum.episodes.terminate_episode",
+        new_callable=AsyncMock,
+    ) as terminate:
+        await early_momentum._quote_and_open(
+            ex,
+            rdb,
+            _cfg(),
+            _FakeShadowBroker(),
+            instrument=_instrument(),
+            episode_id="e1",
+            claim_token="tok-1",  # noqa: S106
+            source_exchange="binance",
+            source_native_id="BEATUSDT",
+            ceiling=100.0,
+        )
+
+    terminate.assert_awaited_once()
+    assert terminate.call_args.kwargs["reason"] == episodes.REASON_SHADOW_RECORDED
+    assert terminate.call_args.kwargs["status"] == episodes.STATUS_SUPPRESSED
 
 
 async def test_quote_and_open_does_not_terminate_when_claim_already_invalid() -> None:

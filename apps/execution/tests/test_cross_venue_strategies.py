@@ -3,7 +3,13 @@ from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from schurfer_execution.execution_intent import DisabledBroker, PaperBroker
+from schurfer_execution.execution_intent import (
+    DisabledBroker,
+    ExecutionResult,
+    ExecutionStatus,
+    PaperBroker,
+    TradingMode,
+)
 from schurfer_execution.liquidation_cascade import run_liquidation_cascade_scanner
 from schurfer_execution.symbols import ResolvedRoute
 
@@ -243,6 +249,58 @@ async def test_liquidation_cascade_gate_disabled_still_captures_quality() -> Non
 
 
 # ---- TradingMode.DISABLED (colleague review, P1) ----
+
+
+class _FakeShadowBroker:
+    """A broker stub returning SHADOW_RECORDED without going through the real
+    ShadowBroker (that write path has its own dedicated tests in
+    test_execution_intent.py) -- this file only needs to check the scanner
+    reads the status correctly, not as a rejection."""
+
+    mode = TradingMode.SHADOW
+
+    async def open(self, intent: object, *, cfg: object, rdb: object) -> ExecutionResult:
+        return ExecutionResult(mode=self.mode, status=ExecutionStatus.SHADOW_RECORDED)
+
+
+async def test_liquidation_cascade_shadow_recorded_logs_shadow_not_rejected() -> None:
+    exchange = _market_exchange()
+    exchange.fetch_ticker = AsyncMock(return_value={"last": 95.0})
+    exchange.fetch_order_book = AsyncMock(
+        return_value={"bids": [[94.9, 1000.0]], "asks": [[95.1, 1000.0]]}
+    )
+    cfg = _quality_cfg(require_market_quality=True)
+    connection = _scanner_db(_candidate())
+
+    with (
+        patch(
+            "schurfer_execution.liquidation_cascade.psycopg.AsyncConnection.connect",
+            AsyncMock(return_value=connection),
+        ),
+        patch(
+            "schurfer_execution.symbols.resolve_route",
+            AsyncMock(return_value=_route()),
+        ),
+        patch(
+            "schurfer_execution.liquidation_cascade.journal.find_open_trade_id",
+            AsyncMock(return_value=None),
+        ),
+        patch(
+            "schurfer_execution.liquidation_cascade.asyncio.sleep",
+            AsyncMock(side_effect=asyncio.CancelledError),
+        ),
+        patch("schurfer_execution.liquidation_cascade.log") as log,
+        pytest.raises(asyncio.CancelledError),
+    ):
+        await run_liquidation_cascade_scanner(
+            {"bybit": exchange}, MagicMock(), cfg, broker=_FakeShadowBroker()
+        )
+
+    log.info.assert_any_call("liquidation_cascade.shadow_recorded", symbol="BTC/USDT:USDT")
+    assert not any(
+        call.args and call.args[0] == "liquidation_cascade.broker_rejected"
+        for call in log.info.call_args_list
+    )
 
 
 async def test_liquidation_cascade_disabled_never_scans_or_queries_db() -> None:

@@ -1,7 +1,7 @@
 """Tests for execution_intent.py: TradingMode/resolve_mode's safety ladder,
-ExecutionIntent/ExecutionResult validation, and PaperBroker's pass-through
-dispatch to paper.py. LiveBroker/ShadowBroker do not exist in this build --
-see the module docstring for why."""
+ExecutionIntent/ExecutionResult validation, PaperBroker's pass-through
+dispatch to paper.py, and ShadowBroker's decision-evidence writes. LiveBroker
+does not exist in this build -- see the module docstring for why."""
 
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ from schurfer_execution.execution_intent import (
     ExecutionResult,
     ExecutionStatus,
     PaperBroker,
+    ShadowBroker,
     StrategyIdentity,
     TradingMode,
     build_broker,
@@ -138,14 +139,33 @@ def test_resolve_mode_override_above_disabled_ceiling_raises() -> None:
         resolve_mode(cfg, STRATEGY_PUMP_SHORT)
 
 
-@pytest.mark.parametrize("mode", ["shadow", "live_probe", "live_micro"])
+@pytest.mark.parametrize("mode", ["live_probe", "live_micro"])
 def test_resolve_mode_unimplemented_modes_always_raise(mode: str) -> None:
     """Even when the mode fits under the ceiling (AUTO_TRADE's ceiling is
-    LIVE_MICRO, which covers all three), no broker implements them in this
+    LIVE_MICRO, which covers both), no broker implements them in this
     build -- must fail loud, never silently fall back to PAPER."""
     cfg = _cfg(auto_trade=True, liquidation_cascade_mode=mode)
     with pytest.raises(ValueError, match="no implemented broker"):
         resolve_mode(cfg, STRATEGY_LIQUIDATION_CASCADE)
+
+
+def test_resolve_mode_shadow_override_is_legal_for_liquidation_cascade() -> None:
+    cfg = _cfg(dry_run=True, liquidation_cascade_mode="shadow")
+    assert resolve_mode(cfg, STRATEGY_LIQUIDATION_CASCADE) == TradingMode.SHADOW
+
+
+def test_resolve_mode_shadow_override_is_legal_for_early_momentum() -> None:
+    cfg = _cfg(auto_trade=True, early_momentum_mode="shadow")
+    assert resolve_mode(cfg, STRATEGY_EARLY_MOMENTUM) == TradingMode.SHADOW
+
+
+def test_resolve_mode_shadow_override_always_raises_for_pump_short() -> None:
+    """pump_short already writes its own decision evidence unconditionally
+    in trader.py -- SHADOW must stay forbidden for it specifically, even
+    though the ceiling would otherwise allow it."""
+    cfg = _cfg(auto_trade=True, pump_short_mode="shadow")
+    with pytest.raises(ValueError, match="not usable by this strategy"):
+        resolve_mode(cfg, STRATEGY_PUMP_SHORT)
 
 
 def test_resolve_mode_unknown_strategy_raises() -> None:
@@ -258,12 +278,14 @@ def test_build_broker_returns_disabled_broker() -> None:
     assert isinstance(build_broker(TradingMode.DISABLED, exchanges={}), DisabledBroker)
 
 
-@pytest.mark.parametrize(
-    "mode", [TradingMode.SHADOW, TradingMode.LIVE_PROBE, TradingMode.LIVE_MICRO]
-)
+@pytest.mark.parametrize("mode", [TradingMode.LIVE_PROBE, TradingMode.LIVE_MICRO])
 def test_build_broker_raises_for_unimplemented_modes(mode: TradingMode) -> None:
     with pytest.raises(NotImplementedError):
         build_broker(mode, exchanges={})
+
+
+def test_build_broker_shadow_returns_shadow_broker() -> None:
+    assert isinstance(build_broker(TradingMode.SHADOW, exchanges={}), ShadowBroker)
 
 
 # ---- PaperBroker: non-episode path (pump_short / liquidation_cascade shape) ----
@@ -423,6 +445,167 @@ async def test_paper_broker_episode_invalid_claim_sets_claim_valid_false() -> No
 
     assert result.status == ExecutionStatus.REJECTED
     assert result.claim_valid is False
+
+
+# ---- ShadowBroker ----
+
+
+def _shadow_intent(**overrides: Any) -> ExecutionIntent:
+    fields: dict[str, Any] = {
+        "strategy": StrategyIdentity(name="liquidation_cascade", version="2"),
+        "instrument": _instrument(),
+        "side": "long",
+        "size_usd": 100.0,
+        "leverage": 5,
+        "score": 100,
+        "setup_context": {"strategy": "liquidation_cascade_v2"},
+        "idempotency_key": "liquidation_cascade:v2:bybit:BEATUSDT:2026-08-24T00:00:00",
+        "price": 1.5,
+    }
+    fields.update(overrides)
+    return ExecutionIntent(**fields)
+
+
+async def test_shadow_broker_writes_decision_with_full_kwargs() -> None:
+    intent = _shadow_intent()
+    with (
+        patch(
+            "schurfer_execution.execution_intent.journal.ensure_strategy",
+            AsyncMock(return_value=7),
+        ) as ensure_strategy,
+        patch(
+            "schurfer_execution.execution_intent.decisions.write_decision",
+            new_callable=AsyncMock,
+        ) as write_decision,
+    ):
+        result = await ShadowBroker().open(intent, cfg=_cfg(), rdb=MagicMock())
+
+    ensure_strategy.assert_awaited_once_with(_cfg().db_url, name="liquidation_cascade", version="2")
+    write_decision.assert_awaited_once()
+    kw = write_decision.call_args.kwargs
+    assert kw["base"] == intent.instrument.base
+    assert kw["exchange"] == intent.instrument.exchange
+    assert kw["score"] == intent.score
+    assert kw["strategy_version"] == "2"
+    assert kw["strategy_id"] == 7
+    assert kw["trading_mode"] == "shadow"
+    assert kw["side"] == intent.side
+    assert kw["features"] is intent.setup_context
+    assert kw["price"] == intent.price
+    assert result.status == ExecutionStatus.SHADOW_RECORDED
+    assert result.trade_id is None
+    assert result.committed is True
+
+
+async def test_shadow_broker_decision_id_is_deterministic_from_idempotency_key() -> None:
+    """A strategy that re-emits the same intent every tick (see
+    liquidation_cascade.py's own comment on this) must collapse to one
+    decision row via ON CONFLICT (decision_id) DO NOTHING -- which only
+    works if the same idempotency_key always derives the same decision_id."""
+    intent_a = _shadow_intent()
+    intent_b = _shadow_intent()  # same idempotency_key, fresh object
+    with (
+        patch(
+            "schurfer_execution.execution_intent.journal.ensure_strategy",
+            AsyncMock(return_value=7),
+        ),
+        patch(
+            "schurfer_execution.execution_intent.decisions.write_decision",
+            new_callable=AsyncMock,
+        ) as write_decision,
+    ):
+        await ShadowBroker().open(intent_a, cfg=_cfg(), rdb=MagicMock())
+        await ShadowBroker().open(intent_b, cfg=_cfg(), rdb=MagicMock())
+
+    first_id = write_decision.call_args_list[0].kwargs["decision_id"]
+    second_id = write_decision.call_args_list[1].kwargs["decision_id"]
+    assert first_id == second_id
+
+    other_id_intent = _shadow_intent(idempotency_key="a-different-key")
+    with (
+        patch(
+            "schurfer_execution.execution_intent.journal.ensure_strategy",
+            AsyncMock(return_value=7),
+        ),
+        patch(
+            "schurfer_execution.execution_intent.decisions.write_decision",
+            new_callable=AsyncMock,
+        ) as write_decision_other,
+    ):
+        await ShadowBroker().open(other_id_intent, cfg=_cfg(), rdb=MagicMock())
+    assert write_decision_other.call_args.kwargs["decision_id"] != first_id
+
+
+async def test_shadow_broker_decision_id_differs_across_strategies_for_same_key() -> None:
+    """The uuid5 input is namespaced with strategy name+version, not
+    idempotency_key alone -- two different strategies that happened to
+    produce the same literal idempotency_key string must never collapse
+    into one ON CONFLICT-deduped row (colleague review)."""
+    intent_a = _shadow_intent(
+        strategy=StrategyIdentity(name="liquidation_cascade", version="2"),
+        idempotency_key="shared-key",
+    )
+    intent_b = _shadow_intent(
+        strategy=StrategyIdentity(name="early_momentum", version="4"),
+        idempotency_key="shared-key",
+    )
+    with (
+        patch(
+            "schurfer_execution.execution_intent.journal.ensure_strategy",
+            AsyncMock(return_value=7),
+        ),
+        patch(
+            "schurfer_execution.execution_intent.decisions.write_decision",
+            new_callable=AsyncMock,
+        ) as write_decision,
+    ):
+        await ShadowBroker().open(intent_a, cfg=_cfg(), rdb=MagicMock())
+        await ShadowBroker().open(intent_b, cfg=_cfg(), rdb=MagicMock())
+
+    ids = [call.kwargs["decision_id"] for call in write_decision.call_args_list]
+    assert ids[0] != ids[1]
+
+
+async def test_shadow_broker_rejects_and_does_not_write_when_strategy_id_is_none() -> None:
+    """journal.ensure_strategy returns None only on a DB failure (its
+    RETURNING clause always yields a row on success) -- writing the decision
+    anyway with strategy_id=NULL would be fail-open: the caller reads
+    SHADOW_RECORDED as success while the evidence has no normalized identity
+    at all (colleague review)."""
+    with (
+        patch(
+            "schurfer_execution.execution_intent.journal.ensure_strategy",
+            AsyncMock(return_value=None),
+        ),
+        patch(
+            "schurfer_execution.execution_intent.decisions.write_decision",
+            new_callable=AsyncMock,
+        ) as write_decision,
+    ):
+        result = await ShadowBroker().open(_shadow_intent(), cfg=_cfg(), rdb=MagicMock())
+
+    write_decision.assert_not_awaited()
+    assert result.status == ExecutionStatus.REJECTED
+
+
+async def test_shadow_broker_rejects_when_price_is_none() -> None:
+    with patch(
+        "schurfer_execution.execution_intent.decisions.write_decision", new_callable=AsyncMock
+    ) as write_decision:
+        result = await ShadowBroker().open(_shadow_intent(price=None), cfg=_cfg(), rdb=MagicMock())
+
+    write_decision.assert_not_awaited()
+    assert result.status == ExecutionStatus.REJECTED
+
+
+async def test_shadow_broker_rejects_when_db_url_missing() -> None:
+    with patch(
+        "schurfer_execution.execution_intent.decisions.write_decision", new_callable=AsyncMock
+    ) as write_decision:
+        result = await ShadowBroker().open(_shadow_intent(), cfg=_cfg(db_url=None), rdb=MagicMock())
+
+    write_decision.assert_not_awaited()
+    assert result.status == ExecutionStatus.REJECTED
 
 
 # ---- canonical strategy identity matches journal's own registry parser ----
