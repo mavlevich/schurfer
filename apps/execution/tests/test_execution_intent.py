@@ -489,6 +489,7 @@ async def test_shadow_broker_writes_decision_with_full_kwargs() -> None:
     assert kw["strategy_version"] == "2"
     assert kw["strategy_id"] == 7
     assert kw["trading_mode"] == "shadow"
+    assert kw["side"] == intent.side
     assert kw["features"] is intent.setup_context
     assert kw["price"] == intent.price
     assert result.status == ExecutionStatus.SHADOW_RECORDED
@@ -533,6 +534,58 @@ async def test_shadow_broker_decision_id_is_deterministic_from_idempotency_key()
     ):
         await ShadowBroker().open(other_id_intent, cfg=_cfg(), rdb=MagicMock())
     assert write_decision_other.call_args.kwargs["decision_id"] != first_id
+
+
+async def test_shadow_broker_decision_id_differs_across_strategies_for_same_key() -> None:
+    """The uuid5 input is namespaced with strategy name+version, not
+    idempotency_key alone -- two different strategies that happened to
+    produce the same literal idempotency_key string must never collapse
+    into one ON CONFLICT-deduped row (colleague review)."""
+    intent_a = _shadow_intent(
+        strategy=StrategyIdentity(name="liquidation_cascade", version="2"),
+        idempotency_key="shared-key",
+    )
+    intent_b = _shadow_intent(
+        strategy=StrategyIdentity(name="early_momentum", version="4"),
+        idempotency_key="shared-key",
+    )
+    with (
+        patch(
+            "schurfer_execution.execution_intent.journal.ensure_strategy",
+            AsyncMock(return_value=7),
+        ),
+        patch(
+            "schurfer_execution.execution_intent.decisions.write_decision",
+            new_callable=AsyncMock,
+        ) as write_decision,
+    ):
+        await ShadowBroker().open(intent_a, cfg=_cfg(), rdb=MagicMock())
+        await ShadowBroker().open(intent_b, cfg=_cfg(), rdb=MagicMock())
+
+    ids = [call.kwargs["decision_id"] for call in write_decision.call_args_list]
+    assert ids[0] != ids[1]
+
+
+async def test_shadow_broker_rejects_and_does_not_write_when_strategy_id_is_none() -> None:
+    """journal.ensure_strategy returns None only on a DB failure (its
+    RETURNING clause always yields a row on success) -- writing the decision
+    anyway with strategy_id=NULL would be fail-open: the caller reads
+    SHADOW_RECORDED as success while the evidence has no normalized identity
+    at all (colleague review)."""
+    with (
+        patch(
+            "schurfer_execution.execution_intent.journal.ensure_strategy",
+            AsyncMock(return_value=None),
+        ),
+        patch(
+            "schurfer_execution.execution_intent.decisions.write_decision",
+            new_callable=AsyncMock,
+        ) as write_decision,
+    ):
+        result = await ShadowBroker().open(_shadow_intent(), cfg=_cfg(), rdb=MagicMock())
+
+    write_decision.assert_not_awaited()
+    assert result.status == ExecutionStatus.REJECTED
 
 
 async def test_shadow_broker_rejects_when_price_is_none() -> None:

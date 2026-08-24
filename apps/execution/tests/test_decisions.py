@@ -41,6 +41,7 @@ def _valid_payload(**over: object) -> dict[str, object]:
         "pump_event_id": 42,
         "strategy_id": None,
         "trading_mode": None,
+        "side": None,
     }
     p.update(over)
     return p
@@ -131,11 +132,14 @@ async def test_write_decision_carries_strategy_id_and_trading_mode() -> None:
         decision_id="d1",
         strategy_id=7,
         trading_mode="shadow",
+        side="long",
     )
     entry = (await rdb.xrange(_STREAM))[0][1]
     body = json.loads(entry[b"data"])
     assert body["strategy_id"] == 7
     assert body["trading_mode"] == "shadow"
+    assert body["side"] == "long"
+    assert body["schema_version"] == 2
     await rdb.aclose()
 
 
@@ -214,13 +218,16 @@ async def test_write_decision_wrongtype_xadd_does_not_set_seen() -> None:
 
 def test_row_from_payload_maps_all_fields() -> None:
     row = _row_from_payload(
-        json.dumps(_valid_payload(base="ACT", price=2.5, strategy_id=7, trading_mode="shadow"))
+        json.dumps(
+            _valid_payload(base="ACT", price=2.5, strategy_id=7, trading_mode="shadow", side="long")
+        )
     )
     assert row[1] == "ACT"
     assert row[11] == 2.5
     assert row[12] == 42
     assert row[13] == 7
     assert row[14] == "shadow"
+    assert row[15] == "long"
 
 
 def test_row_from_payload_accepts_old_message_without_pump_event_id() -> None:
@@ -238,11 +245,39 @@ def test_row_from_payload_accepts_message_without_strategy_id_or_trading_mode() 
     payload = _valid_payload()
     del payload["strategy_id"]
     del payload["trading_mode"]
+    del payload["side"]
 
     row = _row_from_payload(json.dumps(payload))
 
     assert row[13] is None
     assert row[14] is None
+    assert row[15] is None
+
+
+def test_row_from_payload_accepts_a_v1_backlog_message() -> None:
+    """A message enqueued by pre-this-deploy code (schema_version=1, no
+    strategy_id/trading_mode/side keys at all) must still parse -- the
+    stream can carry a v1 backlog across a deploy."""
+    payload = _valid_payload(schema_version=1)
+    del payload["strategy_id"]
+    del payload["trading_mode"]
+    del payload["side"]
+
+    row = _row_from_payload(json.dumps(payload))
+
+    assert row[13] is None
+    assert row[14] is None
+    assert row[15] is None
+
+
+def test_schema_version_is_2_and_accepts_v1_and_v2() -> None:
+    """Locks in the contract the version bump exists for: new writes are
+    stamped v2, but v1 (pre-this-deploy) messages still in the stream must
+    not be DLQ'd. See _SCHEMA_VERSION's own comment for why the bump itself
+    matters (an old writer after a rollback must DLQ a v2 message loudly,
+    not silently drop its new fields)."""
+    assert decisions._SCHEMA_VERSION == 2
+    assert {1, 2} == decisions._SUPPORTED_SCHEMA_VERSIONS
 
 
 @pytest.mark.parametrize("pump_event_id", [0, -1, True, 1.5, "42"])
@@ -287,6 +322,7 @@ def test_insert_has_on_conflict_do_nothing() -> None:
 def test_insert_includes_strategy_id_and_trading_mode() -> None:
     assert "strategy_id" in decisions._INSERT
     assert "trading_mode" in decisions._INSERT
+    assert "side" in decisions._INSERT
 
 
 # ---- consumer: _handle ----

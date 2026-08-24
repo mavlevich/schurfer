@@ -411,11 +411,34 @@ class ShadowBroker:
         # ensure_strategy upserts (writes updated_at on every call) -- fine
         # here, this only runs when a decision is actually being recorded,
         # never on a read/health path (see its own docstring for why that
-        # distinction matters).
+        # distinction matters). Its RETURNING clause always yields exactly
+        # one row on success (an upsert always affects one), so None means
+        # the upsert itself failed (DB unreachable, query error) -- never a
+        # legitimate "no strategy" state. Recording the decision anyway with
+        # strategy_id=NULL would be fail-open: the caller reads
+        # SHADOW_RECORDED as success while the evidence has no normalized
+        # identity at all (colleague review) -- and
+        # ck_trade_decisions_strategy_identity_pair would reject the insert
+        # outright regardless, since trading_mode would be set without it.
         strategy_id = await journal.ensure_strategy(
             cfg.db_url, name=intent.strategy.name, version=intent.strategy.version
         )
-        decision_id = str(uuid.uuid5(_SHADOW_DECISION_NAMESPACE, intent.idempotency_key))
+        if strategy_id is None:
+            return _rejected(self.mode, "shadow broker: failed to register strategy identity")
+
+        # Namespaced with strategy name+version, not idempotency_key alone --
+        # each strategy picks its own idempotency_key convention (a UUID, an
+        # episode id, a composite string), and nothing here guarantees two
+        # different strategies' keyspaces stay disjoint. Without the prefix,
+        # an accidental collision would silently merge two unrelated
+        # strategies' evidence into one ON CONFLICT-deduped row (colleague
+        # review).
+        decision_id = str(
+            uuid.uuid5(
+                _SHADOW_DECISION_NAMESPACE,
+                f"{intent.strategy.name}:{intent.strategy.version}:{intent.idempotency_key}",
+            )
+        )
         await decisions.write_decision(
             rdb,
             base=intent.instrument.base,
@@ -427,6 +450,7 @@ class ShadowBroker:
             strategy_version=intent.strategy.version,
             strategy_id=strategy_id,
             trading_mode=self.mode.value,
+            side=intent.side,
             features=intent.setup_context,
             price=intent.price,
         )

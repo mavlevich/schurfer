@@ -20,7 +20,19 @@ _STREAM = "execution:decisions"
 _DLQ = "execution:decisions:dlq"
 _GROUP = "decision-db-writers"
 _CONSUMER = "writer"
-_SCHEMA_VERSION = 1
+# v2 adds strategy_id/trading_mode/side (feat/execution-shadow-evidence-v1).
+# _row_from_payload accepts both v1 and v2 on read (a v1 backlog message
+# still in the stream from before this deploy must not be DLQ'd), but every
+# NEW message this process writes is stamped v2. The bump itself matters for
+# the *other* direction: if this deploy is ever rolled back while a v2
+# message is still pending, the old (rolled-back) writer's strict `== 1`
+# check DLQs it loudly instead of silently building an INSERT that omits
+# strategy_id/trading_mode/side -- colleague review (pump_event_id, added
+# earlier, was NOT worth a bump: losing it after a rollback loses a nice-to-
+# have episode link, not core evidence identity; these three are the
+# evidence this PR exists to add).
+_SCHEMA_VERSION = 2
+_SUPPORTED_SCHEMA_VERSIONS = frozenset({1, 2})
 
 _CONNECT_TIMEOUT = 5
 _RECONNECT_DELAY = 5
@@ -56,8 +68,8 @@ _INSERT = """
 INSERT INTO app.trade_decisions
   (ts, base, exchange, action, reason, score, pump_pct,
    decision_id, strategy_version, features, liquidity, price, pump_event_id,
-   strategy_id, trading_mode)
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s::uuid, %s, %s::jsonb, %s::jsonb, %s, %s, %s, %s)
+   strategy_id, trading_mode, side)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s::uuid, %s, %s::jsonb, %s::jsonb, %s, %s, %s, %s, %s)
 ON CONFLICT (decision_id) DO NOTHING
 """
 
@@ -105,6 +117,7 @@ async def write_decision(
     pump_event_id: int | None = None,
     strategy_id: int | None = None,
     trading_mode: str | None = None,
+    side: str | None = None,
     seen_key: str | None = None,
     seen_ttl: int | None = None,
 ) -> None:
@@ -119,9 +132,10 @@ async def write_decision(
     decision_id is required and must be non-empty: idempotency on redelivery relies
     entirely on it via ON CONFLICT (decision_id), and a NULL would not dedupe.
 
-    strategy_id/trading_mode are for execution_intent.ShadowBroker (and any future
-    non-pump_short caller) -- pump_short's own call sites never pass them, and both
-    columns stay NULL on every row it writes, same as before these existed.
+    strategy_id/trading_mode/side are for execution_intent.ShadowBroker (and any
+    future non-pump_short caller) -- pump_short's own call sites never pass them,
+    and all three columns stay NULL on every row it writes, same as before these
+    existed.
 
     No MAXLEN trim: it could silently drop an entry the writer has not committed yet.
     The writer XDELs each entry after its Postgres commit instead.
@@ -148,6 +162,7 @@ async def write_decision(
             "pump_event_id": pump_event_id,
             "strategy_id": strategy_id,
             "trading_mode": trading_mode,
+            "side": side,
         }
     )
     if seen_key is not None:
@@ -161,7 +176,7 @@ def _row_from_payload(data: str | bytes) -> tuple[object, ...]:
     unknown schema_version, or a missing required field, which routes the message to
     the DLQ rather than looping on it."""
     d = json.loads(data)
-    if d.get("schema_version") != _SCHEMA_VERSION:
+    if d.get("schema_version") not in _SUPPORTED_SCHEMA_VERSIONS:
         raise ValueError(f"unsupported schema_version {d.get('schema_version')!r}")
     # Idempotency on redelivery is entirely via ON CONFLICT (decision_id); a NULL would
     # not dedupe (distinct NULLs in Postgres), so a message without one is poison -> DLQ.
@@ -188,6 +203,7 @@ def _row_from_payload(data: str | bytes) -> tuple[object, ...]:
         pump_event_id,
         strategy_id,
         d.get("trading_mode"),
+        d.get("side"),
     )
 
 

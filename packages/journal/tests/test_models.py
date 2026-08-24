@@ -383,13 +383,25 @@ class TestTradeDecisionModels:
     def test_decision_strategy_id_foreign_key(self) -> None:
         """Added for ShadowBroker (feat/execution-shadow-evidence-v1): nullable
         so every pump_short row (which never sets it) stays NULL, same registry
-        trades.strategy_id already points at."""
+        trades.strategy_id already points at. No ondelete (unlike
+        pump_event_id's SET NULL) -- canonical identity must block a delete,
+        not be silently severed."""
         strategy_id = TradeDecision.__table__.columns["strategy_id"]
         assert strategy_id.nullable is True
-        assert {fk.target_fullname for fk in strategy_id.foreign_keys} == {"app.strategies.id"}
+        fks = list(strategy_id.foreign_keys)
+        assert {fk.target_fullname for fk in fks} == {"app.strategies.id"}
+        assert fks[0].ondelete is None
 
     def test_decision_trading_mode_column(self) -> None:
         assert TradeDecision.__table__.columns["trading_mode"].nullable is True
+
+    def test_decision_side_column(self) -> None:
+        assert TradeDecision.__table__.columns["side"].nullable is True
+
+    def test_decision_check_constraints(self) -> None:
+        constraints = {c.name for c in TradeDecision.__table__.constraints}
+        assert "ck_trade_decisions_trading_mode" in constraints
+        assert "ck_trade_decisions_strategy_identity_pair" in constraints
 
     def test_outcome_table_and_key(self) -> None:
         assert TradeDecisionOutcome.__tablename__ == "trade_decision_outcomes"
