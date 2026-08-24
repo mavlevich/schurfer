@@ -430,6 +430,9 @@ services:
       # not the /runtime mount below -- same disposable-container problem as
       # the cohort-state paths above, so it needs the same explicit override.
       SCHURFER_MARKET_PATH_CACHE_DIR: /runtime/market-path-cache
+      # Same reasoning, same fix, for research_dataset_artifact.py's frozen
+      # dataset store.
+      SCHURFER_RESEARCH_DATASET_ARTIFACT_DIR: /runtime/research-dataset-artifacts
     volumes:
       - orderflow_data:/data/orderflow:ro
       - ../../runtime:/runtime

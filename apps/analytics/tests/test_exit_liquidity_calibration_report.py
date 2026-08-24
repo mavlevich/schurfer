@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 import pytest
+from schurfer_analytics.exit_liquidity_calibration_dataset_artifact import freeze as freeze_artifact
 from schurfer_analytics.exit_liquidity_calibration_report import (
     DECISION_SAMPLE_SIZE,
     DIRECTIONAL_SAMPLE_SIZE,
@@ -14,6 +15,7 @@ from schurfer_analytics.exit_liquidity_calibration_report import (
     ExitLiquidityCalibrationReport,
     ExitLiquidityFilters,
     ExitLiquidityRow,
+    _run,
     build_exit_liquidity_calibration_report,
     build_parser,
     render_json,
@@ -23,6 +25,7 @@ from schurfer_analytics.exit_liquidity_calibration_repository import (
     exit_liquidity_statement,
     map_exit_liquidity_row,
 )
+from schurfer_analytics.research_dataset_artifact import iter_artifact_fingerprints
 from sqlalchemy.dialects import postgresql
 
 
@@ -311,3 +314,191 @@ def test_malformed_modeled_exit_bps_falls_back_to_none_not_a_crash() -> None:
 def test_duplicate_trade_rows_are_rejected() -> None:
     with pytest.raises(ValueError, match="duplicate trade"):
         _report((_row(1), _row(1)))
+
+
+async def test_run_from_artifact_reads_frozen_rows_without_touching_the_database(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """--from-artifact must work with DATABASE_URL entirely unset -- proving
+    this path never touches the live database at all."""
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    rows = (_row(1), _row(2))
+    _outcome, manifest = freeze_artifact(
+        rows,
+        _filters(),
+        code_revision="abc123",
+        working_tree_dirty=False,
+        directory=str(tmp_path),
+    )
+    assert manifest is not None
+
+    args = build_parser().parse_args(
+        [
+            "--code-revision",
+            "abc123",
+            "--no-working-tree-dirty",
+            "--from-artifact",
+            manifest.fingerprint,
+            "--artifact-directory",
+            str(tmp_path),
+            "--format",
+            "json",
+        ]
+    )
+    output = await _run(args)
+    payload = json.loads(output)
+
+    assert payload["readiness"]["closed_paper_shorts"] == 2
+    assert payload["manifest"]["input_fingerprint"] == _report(rows).manifest["input_fingerprint"]
+
+
+async def test_run_freeze_artifact_persists_the_exact_rows_fetched_and_reports_to_stderr(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    rows = (_row(1),)
+
+    class _FakeRepository:
+        @classmethod
+        def from_url(cls, db_url: str) -> _FakeRepository:
+            return cls()
+
+        async def load(self, filters: ExitLiquidityFilters) -> tuple[ExitLiquidityRow, ...]:
+            return rows
+
+        async def close(self) -> None:
+            return None
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql://fake")
+    monkeypatch.setattr(
+        "schurfer_analytics.exit_liquidity_calibration_repository.ExitLiquidityCalibrationRepository",
+        _FakeRepository,
+    )
+    args = build_parser().parse_args(
+        [
+            "--code-revision",
+            "abc123",
+            "--no-working-tree-dirty",
+            "--freeze-artifact",
+            "--artifact-directory",
+            str(tmp_path),
+        ]
+    )
+    await _run(args)
+
+    captured = capsys.readouterr()
+    assert "[research-dataset-artifact] created fingerprint=" in captured.err
+    assert "row_count=1" in captured.err
+    assert len(iter_artifact_fingerprints(directory=str(tmp_path))) == 1
+
+
+def test_from_artifact_and_freeze_artifact_are_mutually_exclusive() -> None:
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(
+            [
+                "--no-working-tree-dirty",
+                "--from-artifact",
+                "deadbeef",
+                "--freeze-artifact",
+            ]
+        )
+
+
+async def test_run_freeze_artifact_raises_and_does_not_exit_clean_on_failure(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression: a failed/rejected freeze used to only print to stderr and
+    let the run finish and return its report as normal (exit code 0) --
+    automation checking the exit code alone would believe a formal artifact
+    now exists when it does not (colleague review, 2026-08-25)."""
+    from schurfer_analytics.research_dataset_artifact import ResearchDatasetArtifactWriteError
+
+    class _EmptyRepository:
+        @classmethod
+        def from_url(cls, db_url: str) -> _EmptyRepository:
+            return cls()
+
+        async def load(self, filters: ExitLiquidityFilters) -> tuple[ExitLiquidityRow, ...]:
+            return ()  # empty -- freeze() rejects this as REJECTED_EMPTY_OR_AMBIGUOUS
+
+        async def close(self) -> None:
+            return None
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql://fake")
+    monkeypatch.setattr(
+        "schurfer_analytics.exit_liquidity_calibration_repository.ExitLiquidityCalibrationRepository",
+        _EmptyRepository,
+    )
+    args = build_parser().parse_args(
+        [
+            "--code-revision",
+            "abc123",
+            "--no-working-tree-dirty",
+            "--freeze-artifact",
+            "--artifact-directory",
+            str(tmp_path),
+        ]
+    )
+    with pytest.raises(ResearchDatasetArtifactWriteError):
+        await _run(args)
+
+
+async def test_run_from_artifact_embeds_source_artifact_provenance_in_the_report(
+    tmp_path: Any,
+) -> None:
+    """Regression: --from-artifact used to read the manifest and discard it
+    immediately -- the rendered report had no way to prove which frozen
+    artifact its numbers came from (colleague review, 2026-08-25)."""
+    rows = (_row(1),)
+    _outcome, manifest = freeze_artifact(
+        rows,
+        _filters(),
+        code_revision="freeze-revision",
+        working_tree_dirty=True,
+        directory=str(tmp_path),
+    )
+    assert manifest is not None
+
+    args = build_parser().parse_args(
+        [
+            "--code-revision",
+            "render-revision",
+            "--no-working-tree-dirty",
+            "--from-artifact",
+            manifest.fingerprint,
+            "--artifact-directory",
+            str(tmp_path),
+            "--format",
+            "json",
+        ]
+    )
+    output = await _run(args)
+    payload = json.loads(output)
+    source = payload["manifest"]["source_artifact"]
+
+    assert source is not None
+    assert source["fingerprint"] == manifest.fingerprint
+    assert source["dataset_name"] == "exit_liquidity_calibration"
+    assert source["data_sha256"] == manifest.data_sha256
+    assert source["code_revision"] == "freeze-revision"
+    assert source["working_tree_dirty"] is True
+    # The render's own code_revision (this run's, not the freeze's) is
+    # unaffected -- the two must stay distinguishable.
+    assert payload["manifest"]["code_revision"] == "render-revision"
+
+    markdown = render_markdown(_report(rows))
+    assert "Source artifact" not in markdown  # a live/DB-sourced report has none
+
+    from_artifact_markdown_output = await _run(
+        build_parser().parse_args(
+            [
+                "--code-revision",
+                "render-revision",
+                "--no-working-tree-dirty",
+                "--from-artifact",
+                manifest.fingerprint,
+                "--artifact-directory",
+                str(tmp_path),
+            ]
+        )
+    )
+    assert f"Source artifact: `{manifest.fingerprint}`" in from_artifact_markdown_output
