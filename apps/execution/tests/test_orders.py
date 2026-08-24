@@ -1,10 +1,12 @@
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from pydantic import ValidationError
+from schurfer_execution import exit as exit_module
 from schurfer_execution.orders import close_position, place_order
 from schurfer_execution.risk import PNL_READY_KEY, TRADING_ENABLED_KEY
-from schurfer_execution.routers.orders import OrderRequest
+from schurfer_execution.routers.orders import OrderRequest, post_order
 
 
 async def _default_get(key: str) -> bytes | None:
@@ -74,6 +76,44 @@ class TestOrderRequestValidation:
     def test_valid_alphanumeric(self) -> None:
         req = OrderRequest(base="1INCH", exchange="bingx", side="short", size_usd=100.0)
         assert req.base == "1INCH"
+
+
+class TestManualOrderEndpointJournalsToo:
+    """Regression: a manually-triggered order via POST /order used to place
+    a real exchange order but never journal it at all -- cfg simply wasn't
+    threaded through to place_order, even though it was already sitting on
+    request.app.state. Now that place_order's own journal.complete_open
+    does the write, this endpoint must actually pass cfg through, and must
+    give the write an honest, non-pump_short identity."""
+
+    async def test_post_order_passes_cfg_and_manual_setup_context(self) -> None:
+        cfg = MagicMock(
+            max_positions=5,
+            max_position_usd=500.0,
+            daily_loss_limit_usd=200.0,
+            liquidation_buffer_pct=20.0,
+            db_url="postgresql://x",
+        )
+        ex = MagicMock()
+        request = SimpleNamespace(
+            app=SimpleNamespace(
+                state=SimpleNamespace(cfg=cfg, trading_exchanges={"bingx": ex}, rdb=MagicMock())
+            )
+        )
+        req = OrderRequest(base="BEAT", exchange="bingx", side="short", size_usd=100.0)
+
+        with (
+            patch("schurfer_execution.routers.orders.symbols.resolve_execution_instrument"),
+            patch(
+                "schurfer_execution.routers.orders.place_order",
+                AsyncMock(return_value={"allowed": True}),
+            ) as mock_place,
+        ):
+            await post_order(req, request)  # type: ignore[arg-type]
+
+        kw = mock_place.call_args.kwargs
+        assert kw["cfg"] is cfg
+        assert kw["setup_context"] == {"strategy_name": "manual", "strategy_version": "1"}
 
 
 class TestLockBehavior:
@@ -205,7 +245,11 @@ async def test_place_order_uses_contract_size_and_precision(
 
     # 100 USD / 1.0 price / 10.0 contractSize = 10.0 contracts
     ex.amount_to_precision.assert_called_once_with("BEAT/USDT:USDT", 10.0)
-    ex.create_market_order.assert_called_once_with("BEAT/USDT:USDT", "sell", 10.0)
+    ex.create_market_order.assert_called_once()
+    call = ex.create_market_order.call_args
+    assert call.args == ("BEAT/USDT:USDT", "sell", 10.0)
+    assert isinstance(call.kwargs["params"]["clientOrderId"], str)
+    assert call.kwargs["params"]["clientOrderId"]
     assert result["allowed"]
     assert result["order_id"] == "ord123"
 
@@ -438,7 +482,12 @@ class TestExchangeStopLoss:
         rdb.eval = AsyncMock(return_value=1)
 
         result = await place_order(
-            **_kwargs(side="short", initial_sl_pct=8.0, exchanges={"bingx": ex}, rdb=rdb)
+            **_kwargs(
+                side="short",
+                exit_params={**exit_module.exit_params(None), "initial_sl_pct": 8.0},
+                exchanges={"bingx": ex},
+                rdb=rdb,
+            )
         )
 
         assert result["allowed"]
@@ -448,7 +497,8 @@ class TestExchangeStopLoss:
         assert call_args.args[1] == "buy"  # closing side for a short is buy
         trigger_price = call_args.args[3]
         assert trigger_price > 1.0  # short SL triggers above entry price
-        assert call_args.kwargs["params"] == {"reduceOnly": True}
+        assert call_args.kwargs["params"]["reduceOnly"] is True
+        assert isinstance(call_args.kwargs["params"]["clientOrderId"], str)
         # SL order id persisted for later cancellation on close.
         rdb.set.assert_any_call("position:sl_order_id:bingx:BEAT", "sl-1", ex=86400)
 
@@ -504,6 +554,112 @@ class TestExchangeStopLoss:
         assert not result["allowed"]
         assert result["force_closed"] is False
         assert "UNPROTECTED" in result["reason"]
+
+
+class TestCompletesJournalOnFill:
+    """place_order's happy path now completes journal.complete_open itself
+    (see journal.py's own docstring on why), instead of leaving it to
+    trader.py a few awaits later -- these lock that in independently of
+    trader.py's own tests."""
+
+    def _confirmed_exchange(self) -> MagicMock:
+        ex = MagicMock()
+        ex.markets = {"BEAT/USDT:USDT": {"contractSize": 1.0}}
+        ex.set_leverage = AsyncMock()
+        ex.fetch_ticker = AsyncMock(return_value={"last": 1.0})
+        ex.amount_to_precision = MagicMock(return_value="100.0")
+        ex.price_to_precision = MagicMock(return_value="1.1")
+        ex.create_market_order = AsyncMock(
+            return_value={"id": "entry-1", "status": "closed", "average": 1.5}
+        )
+        ex.create_stop_market_order = AsyncMock(return_value={"id": "sl-1"})
+        return ex
+
+    @patch("schurfer_execution.orders.fetch_positions", return_value=([], set()))
+    @patch(
+        "schurfer_execution.orders.fetch_margin_balance",
+        return_value=[{"exchange": "bingx", "free": 1000.0, "used": 0.0, "total": 1000.0}],
+    )
+    async def test_completes_journal_and_returns_trade_id(
+        self, _mock_bal: MagicMock, _mock_pos: MagicMock
+    ) -> None:
+        cfg = MagicMock(db_url="postgresql://x")
+        with patch(
+            "schurfer_execution.orders.journal.complete_open",
+            AsyncMock(return_value=77),
+        ) as mock_complete:
+            result = await place_order(
+                **_kwargs(exchanges={"bingx": self._confirmed_exchange()}, cfg=cfg)
+            )
+
+        assert result["allowed"]
+        assert result["trade_id"] == 77
+        mock_complete.assert_awaited_once()
+        kw = mock_complete.call_args.kwargs
+        assert kw["symbol"] == "BEAT/USDT:USDT"
+        assert kw["exchange"] == "bingx"
+        assert kw["base"] == "BEAT"
+        assert kw["side"] == "short"
+        assert kw["entry_price"] == 1.5
+        assert kw["size_usd"] == 100.0
+        assert mock_complete.call_args.args[0] == "postgresql://x"
+
+    @patch("schurfer_execution.orders.fetch_positions", return_value=([], set()))
+    @patch(
+        "schurfer_execution.orders.fetch_margin_balance",
+        return_value=[{"exchange": "bingx", "free": 1000.0, "used": 0.0, "total": 1000.0}],
+    )
+    async def test_creates_incident_when_journal_write_fails(
+        self, _mock_bal: MagicMock, _mock_pos: MagicMock
+    ) -> None:
+        cfg = MagicMock(db_url="postgresql://x")
+        with (
+            patch(
+                "schurfer_execution.orders.journal.complete_open",
+                AsyncMock(return_value=None),
+            ),
+            patch(
+                "schurfer_execution.orders.incidents.create_incident",
+                AsyncMock(return_value=99),
+            ) as mock_incident,
+        ):
+            result = await place_order(
+                **_kwargs(exchanges={"bingx": self._confirmed_exchange()}, cfg=cfg)
+            )
+
+        # The exchange fill is real and protected -- a failed journal write
+        # must never turn that into "not allowed".
+        assert result["allowed"]
+        assert result["trade_id"] is None
+        mock_incident.assert_awaited_once()
+        assert mock_incident.call_args.kwargs["operation"] == "open"
+
+    @patch("schurfer_execution.orders.fetch_positions", return_value=([], set()))
+    @patch(
+        "schurfer_execution.orders.fetch_margin_balance",
+        return_value=[{"exchange": "bingx", "free": 1000.0, "used": 0.0, "total": 1000.0}],
+    )
+    async def test_no_incident_when_no_db_url_configured(
+        self, _mock_bal: MagicMock, _mock_pos: MagicMock
+    ) -> None:
+        """No cfg at all (e.g. an operator posting via /order with no journal
+        configured) must not try to create an incident it has no db_url to
+        write to -- journal.complete_open itself already treats db_url=None
+        as "operational Redis keys only, no journal row", not a failure."""
+        with (
+            patch(
+                "schurfer_execution.orders.journal.complete_open",
+                AsyncMock(return_value=None),
+            ) as mock_complete,
+            patch(
+                "schurfer_execution.orders.incidents.create_incident", AsyncMock()
+            ) as mock_incident,
+        ):
+            result = await place_order(**_kwargs(exchanges={"bingx": self._confirmed_exchange()}))
+
+        assert result["allowed"]
+        assert mock_complete.call_args.args[0] is None
+        mock_incident.assert_not_awaited()
 
 
 class TestClosePositionCancelsStopLoss:

@@ -32,7 +32,6 @@ _SIGNALS_KEY = "signals:{base}"
 _SIGNAL_READINESS_KEY = "execution:signal_readiness"
 _SIGNAL_READINESS_TTL = 180  # 3 trader ticks; absence means telemetry is stale
 _SEEN_KEY = "trader:seen:{base}"
-_TRADE_ID_KEY = "trade:id:{exchange}:{base}"
 _SEEN_TTL_TRADED = 86400  # 24h — don't re-enter the same token after a trade
 _SEEN_TTL_SKIP = 1800  # 30min — recheck sooner when skipped
 _SEEN_TTL_ENTRY_WAIT = 300  # 5min — recheck after one 5m candle when entry quality fails
@@ -679,7 +678,7 @@ async def _tick(
                 max_position_usd=cfg.max_position_usd,
                 daily_loss_limit_usd=cfg.daily_loss_limit_usd,
                 liquidity_checked_usd=depth_target,
-                initial_sl_pct=exit_params["initial_sl_pct"],
+                exit_params=exit_params,
                 liquidation_buffer_pct=cfg.liquidation_buffer_pct,
                 cfg=cfg,
                 setup_context=setup_context,
@@ -719,10 +718,10 @@ async def _tick(
             # place_order already created a durable incident and revoked PnL
             # readiness (fill_price.py / incidents.py). Recording a trade here
             # would need a price we don't have — the incident worker completes
-            # journal.open_trade and exit tracking once resolve_fill_price
-            # confirms a real one for this same order id. seen_key is still
-            # marked "traded": a real position exists, so this token must not
-            # be re-entered.
+            # journal.complete_open (journal write + exit tracking) once
+            # resolve_fill_price confirms a real price for this same order id.
+            # seen_key is still marked "traded": a real position exists, so
+            # this token must not be re-entered.
             log.warning(
                 "trader.open_fill_unresolved",
                 base=base,
@@ -772,51 +771,17 @@ async def _tick(
                 seen_ttl=_SEEN_TTL_TRADED,
             )
 
+            # place_order already completed the journal write and every
+            # Redis exit-tracking key (exit_params/entry/side/size_usd,
+            # plus the trade:id pointer) via journal.complete_open, inside
+            # the same lock and the same function call as the exchange
+            # order itself -- doing that here instead, a few awaits after
+            # place_order returned, used to be exactly the crash window
+            # that could leave a real, SL-protected position with no
+            # app.trades row (colleague review candidate on an earlier
+            # draft). Nothing left for this branch but decision logging and
+            # the notification.
             entry_price = result["price"]
-            await rdb.set(
-                exit_module.params_key(exchange, base),
-                json.dumps(exit_params),
-                ex=_SEEN_TTL_TRADED,
-            )
-            await rdb.set(
-                exit_module.entry_key(exchange, base),
-                str(entry_price),
-                ex=_SEEN_TTL_TRADED,
-            )
-            await rdb.set(
-                exit_module.side_key(exchange, base),
-                "short",
-                ex=_SEEN_TTL_TRADED,
-            )
-            # Cached alongside entry/side so the close notification can show a
-            # real dollar PnL without a DB round-trip — the journal row also
-            # has size_usd, but that lookup requires trade_id, which is not
-            # always resolvable at close time (see monitor.py's own comments
-            # on trade-id pointer loss).
-            await rdb.set(
-                exit_module.size_usd_key(exchange, base),
-                str(size_usd),
-                ex=_SEEN_TTL_TRADED,
-            )
-
-            if cfg.db_url:
-                trade_id = await journal.open_trade(
-                    cfg.db_url,
-                    symbol=symbol,
-                    exchange=exchange,
-                    side="short",
-                    order_id=result.get("order_id"),
-                    size_usd=size_usd,
-                    leverage=cfg.signal_leverage,
-                    entry_price=entry_price,
-                    setup_context=setup_context,
-                )
-                if trade_id:
-                    await rdb.set(
-                        _TRADE_ID_KEY.format(exchange=exchange, base=base.upper()),
-                        str(trade_id),
-                        ex=_SEEN_TTL_TRADED,
-                    )
 
             creds = notify.credentials(cfg)
             if creds:

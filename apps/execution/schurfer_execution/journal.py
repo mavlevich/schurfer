@@ -15,10 +15,17 @@ from schurfer_performance import (
     calculate_performance,
 )
 
+from . import exit as exit_module
 from . import liquidity
 from .risk import PNL_READY_KEY
 
 log = structlog.get_logger()
+
+# Shared by complete_open and every reader of the pointer it sets
+# (monitor.py, incident_worker.py) -- one canonical format, not three
+# independently-typed copies of the same string template.
+_TRADE_ID_KEY = "trade:id:{exchange}:{base}"
+_POSITION_KEY_TTL = 86400
 
 _STRATEGY_NAME = "pump_short"
 _STRATEGY_VERSION = "1"
@@ -356,6 +363,84 @@ async def open_trade(
     except Exception as exc:
         log.error("journal.open_trade.failed", symbol=symbol, exchange=exchange, err=str(exc))
         return None
+
+
+async def complete_open(
+    db_url: str | None,
+    rdb: Any,
+    *,
+    symbol: str,
+    exchange: str,
+    base: str,
+    side: str,
+    order_id: str | None,
+    size_usd: float,
+    leverage: int,
+    entry_price: float,
+    exit_params: dict[str, float],
+    setup_context: dict[str, Any],
+) -> int | None:
+    """Journal a confirmed live open and set every Redis key position
+    monitoring (monitor.py's _check_exit) depends on, in one place.
+
+    Called from two sites that must never silently diverge on this: orders.
+    place_order's happy path, immediately once resolve_fill_price confirms a
+    price (closing the crash window that used to exist between "exchange
+    order accepted" and "trader.py finishes its own bookkeeping a few awaits
+    later" -- a crash there previously left a real, SL-protected position
+    with no app.trades row at all, ever); and incident_worker._complete_open,
+    once a previously FILL_UNRESOLVED price is confirmed later. A single
+    shared implementation is what guarantees the two paths write the same
+    Redis keys (an earlier draft had trader.py and incident_worker.py each
+    carrying their own hand-copied version of this, which is exactly how the
+    two could have silently drifted apart).
+
+    exit_params is taken as-is from the caller, not recomputed here from
+    setup_context -- place_order already computed its own exit_params to
+    size the exchange-side stop-loss trigger a few lines above this call;
+    recomputing a second time from setup_context.get("pump_pct") would risk
+    this function caching a different initial_sl_pct in Redis than what the
+    exchange SL was actually placed at (an earlier draft did exactly that).
+
+    db_url may be None (no journal configured) -- the Redis exit-tracking
+    keys are still written unconditionally in that case, matching this
+    codebase's existing convention that operational position monitoring
+    must not depend on the journal being configured at all; only the
+    app.trades row itself is skipped.
+
+    Never raises: open_trade already catches and logs its own failures,
+    returning None. The caller (orders.py) decides what a None trade_id
+    means for its own flow (e.g. creating a durable incident so the write
+    can be retried) -- this function's job is purely the write, not the
+    failure policy around it.
+    """
+    trade_id = None
+    if db_url:
+        trade_id = await open_trade(
+            db_url,
+            symbol=symbol,
+            exchange=exchange,
+            side=side,
+            order_id=order_id,
+            size_usd=size_usd,
+            leverage=leverage,
+            entry_price=entry_price,
+            setup_context=setup_context,
+        )
+        if trade_id:
+            await rdb.set(
+                _TRADE_ID_KEY.format(exchange=exchange, base=base.upper()),
+                str(trade_id),
+                ex=_POSITION_KEY_TTL,
+            )
+
+    await rdb.set(
+        exit_module.params_key(exchange, base), json.dumps(exit_params), ex=_POSITION_KEY_TTL
+    )
+    await rdb.set(exit_module.entry_key(exchange, base), str(entry_price), ex=_POSITION_KEY_TTL)
+    await rdb.set(exit_module.side_key(exchange, base), side, ex=_POSITION_KEY_TTL)
+    await rdb.set(exit_module.size_usd_key(exchange, base), str(size_usd), ex=_POSITION_KEY_TTL)
+    return trade_id
 
 
 _INSERT_TRADE_FOR_EPISODE = """

@@ -1169,6 +1169,137 @@ async def test_open_trade_untouched_return_type_still_int_or_none() -> None:
     assert isinstance(trade_id, int)
 
 
+# --- complete_open ---
+#
+# Shared by orders.place_order's happy path (immediately once
+# resolve_fill_price confirms a price -- closing the crash window that used
+# to exist between "exchange order accepted" and trader.py's own
+# bookkeeping a few awaits later) and incident_worker._complete_open (the
+# FILL_UNRESOLVED recovery path). One implementation so the two can never
+# silently write different Redis keys for the same kind of confirmed open.
+
+
+def _exit_params(**over: float) -> dict[str, float]:
+    from schurfer_execution import exit as exit_module
+
+    params = exit_module.exit_params(None)
+    params.update(over)
+    return params
+
+
+async def test_complete_open_writes_journal_and_every_redis_key() -> None:
+    rdb = AsyncMock()
+    with patch(
+        "schurfer_execution.journal.open_trade", AsyncMock(return_value=55)
+    ) as mock_open_trade:
+        trade_id = await journal.complete_open(
+            "postgresql://x",
+            rdb,
+            symbol="BEAT/USDT:USDT",
+            exchange="bybit",
+            base="BEAT",
+            side="short",
+            order_id="ord-1",
+            size_usd=100.0,
+            leverage=3,
+            entry_price=1.5,
+            exit_params=_exit_params(initial_sl_pct=9.0),
+            setup_context={"pump_pct": 50.0},
+        )
+
+    assert trade_id == 55
+    mock_open_trade.assert_awaited_once()
+    assert mock_open_trade.call_args.kwargs["entry_price"] == 1.5
+    assert mock_open_trade.call_args.kwargs["order_id"] == "ord-1"
+    rdb.set.assert_any_call("trade:id:bybit:BEAT", "55", ex=86400)
+    rdb.set.assert_any_call("position:entry:bybit:BEAT", "1.5", ex=86400)
+    rdb.set.assert_any_call("position:side:bybit:BEAT", "short", ex=86400)
+    rdb.set.assert_any_call("position:size_usd:bybit:BEAT", "100.0", ex=86400)
+    params_call = next(c for c in rdb.set.call_args_list if c.args[0] == "exit:params:bybit:BEAT")
+    assert json.loads(params_call.args[1])["initial_sl_pct"] == 9.0
+
+
+async def test_complete_open_uses_passed_exit_params_not_recomputed_from_context() -> None:
+    """Regression: an earlier draft recomputed exit_params from
+    setup_context.get("pump_pct") inside this function instead of taking
+    the caller's already-resolved dict -- that could cache a different
+    initial_sl_pct in Redis than what the exchange stop-loss was actually
+    placed at. pump_pct=200 would independently compute a much wider
+    initial_sl_pct than the one explicitly passed here; the passed value
+    must win."""
+    rdb = AsyncMock()
+    with patch("schurfer_execution.journal.open_trade", AsyncMock(return_value=1)):
+        await journal.complete_open(
+            "postgresql://x",
+            rdb,
+            symbol="BEAT/USDT:USDT",
+            exchange="bybit",
+            base="BEAT",
+            side="short",
+            order_id="ord-1",
+            size_usd=100.0,
+            leverage=3,
+            entry_price=1.5,
+            exit_params=_exit_params(initial_sl_pct=1.23),
+            setup_context={"pump_pct": 200.0},
+        )
+
+    params_call = next(c for c in rdb.set.call_args_list if c.args[0] == "exit:params:bybit:BEAT")
+    assert json.loads(params_call.args[1])["initial_sl_pct"] == 1.23
+
+
+async def test_complete_open_skips_journal_but_still_sets_redis_when_db_url_none() -> None:
+    rdb = AsyncMock()
+    with patch("schurfer_execution.journal.open_trade", AsyncMock()) as mock_open_trade:
+        trade_id = await journal.complete_open(
+            None,
+            rdb,
+            symbol="BEAT/USDT:USDT",
+            exchange="bybit",
+            base="BEAT",
+            side="long",
+            order_id="ord-1",
+            size_usd=100.0,
+            leverage=3,
+            entry_price=1.5,
+            exit_params=_exit_params(),
+            setup_context={},
+        )
+
+    assert trade_id is None
+    mock_open_trade.assert_not_awaited()
+    rdb.set.assert_any_call("position:entry:bybit:BEAT", "1.5", ex=86400)
+    rdb.set.assert_any_call("position:side:bybit:BEAT", "long", ex=86400)
+    assert not any(c.args[0] == "trade:id:bybit:BEAT" for c in rdb.set.call_args_list)
+
+
+async def test_complete_open_still_sets_exit_keys_when_journal_write_fails() -> None:
+    """open_trade returning None (a DB error, already caught and logged
+    internally) must not stop the exit-tracking keys from being written --
+    operational position monitoring must not depend on the journal write
+    succeeding."""
+    rdb = AsyncMock()
+    with patch("schurfer_execution.journal.open_trade", AsyncMock(return_value=None)):
+        trade_id = await journal.complete_open(
+            "postgresql://x",
+            rdb,
+            symbol="BEAT/USDT:USDT",
+            exchange="bybit",
+            base="BEAT",
+            side="short",
+            order_id="ord-1",
+            size_usd=100.0,
+            leverage=3,
+            entry_price=1.5,
+            exit_params=_exit_params(),
+            setup_context={},
+        )
+
+    assert trade_id is None
+    assert not any(c.args[0] == "trade:id:bybit:BEAT" for c in rdb.set.call_args_list)
+    rdb.set.assert_any_call("position:entry:bybit:BEAT", "1.5", ex=86400)
+
+
 # --- find_strategy_id ---
 
 

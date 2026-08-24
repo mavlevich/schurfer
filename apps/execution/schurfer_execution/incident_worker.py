@@ -9,7 +9,6 @@ never retries forever, never fabricates a price to force a resolution.
 from __future__ import annotations
 
 import asyncio
-import json
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -249,43 +248,29 @@ async def _complete_open(
     size_usd = float(incident.context.get("size_usd") or 0)
     leverage = int(incident.context.get("leverage") or 1)
     side = str(incident.context.get("side") or "short")
+    # place_order itself has no equivalent recomputation to worry about
+    # diverging from here (unlike this recovery path, it always has its own
+    # already-resolved exit_params in hand) -- this is the ONE place
+    # exit_params legitimately gets derived from setup_context, since a
+    # FILL_UNRESOLVED incident's context is all that survives from the
+    # original attempt.
+    exit_params = exit_module.exit_params(setup_context.get("pump_pct"))
 
-    trade_id = await journal.open_trade(
+    # Same helper orders.place_order's own happy path calls -- one shared
+    # implementation is what guarantees this recovery path and the normal
+    # path can never silently write different Redis keys for the same kind
+    # of confirmed open.
+    await journal.complete_open(
         cfg.db_url,
+        rdb,
         symbol=symbol,
         exchange=incident.exchange,
+        base=incident.base,
         side=side,
         order_id=incident.order_id,
         size_usd=size_usd,
         leverage=leverage,
         entry_price=price,
+        exit_params=exit_params,
         setup_context=setup_context,
-    )
-    if trade_id:
-        await rdb.set(
-            _TRADE_ID_KEY.format(exchange=incident.exchange, base=incident.base.upper()),
-            str(trade_id),
-            ex=86400,
-        )
-
-    exit_params = exit_module.exit_params(setup_context.get("pump_pct"))
-    await rdb.set(
-        exit_module.params_key(incident.exchange, incident.base),
-        json.dumps(exit_params),
-        ex=86400,
-    )
-    await rdb.set(
-        exit_module.entry_key(incident.exchange, incident.base),
-        str(price),
-        ex=86400,
-    )
-    await rdb.set(
-        exit_module.side_key(incident.exchange, incident.base),
-        side,
-        ex=86400,
-    )
-    await rdb.set(
-        exit_module.size_usd_key(incident.exchange, incident.base),
-        str(size_usd),
-        ex=86400,
     )

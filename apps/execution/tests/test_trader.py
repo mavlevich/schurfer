@@ -1307,23 +1307,22 @@ async def test_tick_proceeds_when_funding_rate_fetch_fails() -> None:
 
 
 async def test_tick_includes_funding_rate_in_setup_context() -> None:
-    # funding_rate_pct stored in setup_context → journal.open_trade receives it
+    # funding_rate_pct stored in setup_context -> passed through to
+    # place_order, which now does its own journal.complete_open internally
+    # (see test_orders.py for that call's own coverage) -- trader.py's job
+    # here is only to have put the right value in setup_context in the
+    # first place.
     rdb = _rdb(pumps_raw=_pumps("BEAT"), signal_score=8)
-    with (
-        patch(
-            "schurfer_execution.trader.place_order",
-            new_callable=AsyncMock,
-            return_value={"allowed": True, "order_id": "ord-3", "price": 1.0},
-        ),
-        patch(
-            "schurfer_execution.trader.journal.open_trade", new_callable=AsyncMock
-        ) as mock_journal,
-    ):
+    with patch(
+        "schurfer_execution.trader.place_order",
+        new_callable=AsyncMock,
+        return_value={"allowed": True, "order_id": "ord-3", "price": 1.0},
+    ) as mock_order:
         cfg = _cfg()
         cfg.db_url = "postgres://fake"
         await _tick({"bybit": _exchange_mock(0.0001)}, rdb, cfg)
 
-    ctx = mock_journal.call_args.kwargs["setup_context"]
+    ctx = mock_order.call_args.kwargs["setup_context"]
     assert ctx["funding_rate_pct"] == pytest.approx(0.01)
 
 

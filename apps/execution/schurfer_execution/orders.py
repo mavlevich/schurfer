@@ -4,7 +4,8 @@ from typing import Any
 
 import structlog
 
-from . import incidents, notify
+from . import exit as exit_module
+from . import incidents, journal, notify
 from .account import fetch_margin_balance, fetch_positions
 from .fill_price import FILL_UNRESOLVED, resolve_fill_price
 from .journal import revoke_pnl_readiness
@@ -176,11 +177,22 @@ async def place_order(
     max_position_usd: float,
     daily_loss_limit_usd: float,
     liquidity_checked_usd: float | None = None,
-    initial_sl_pct: float = 10.0,
+    # Full dict (not just initial_sl_pct alone) so the SAME values used for
+    # the SL trigger price below are also what complete_open (further down)
+    # writes to Redis for position monitoring -- a caller passing these two
+    # independently is exactly what let trader.py and incident_worker.py
+    # drift into their own hand-copied exit_params before this PR. None
+    # falls back to exit_module.exit_params(None) -- the same default
+    # bracket the old initial_sl_pct=10.0 default resolved to, so the manual
+    # /order HTTP endpoint (routers/orders.py, no signal/pump_pct to derive
+    # this from) needs no change.
+    exit_params: dict[str, float] | None = None,
     liquidation_buffer_pct: float = 20.0,
     cfg: Any = None,
     setup_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    exit_params = exit_params or exit_module.exit_params(None)
+    initial_sl_pct = exit_params["initial_sl_pct"]
     lock_key = f"lock:order:{exchange}:{base.upper()}"
     lease = await OrderLockLease.acquire(rdb=rdb, key=lock_key, operation="open")
     if lease is None:
@@ -280,7 +292,19 @@ async def place_order(
             if not margin_recheck.allowed:
                 return {"allowed": False, "reason": margin_recheck.reason}
 
-        order = await ex.create_market_order(symbol, ccxt_side, amount)
+        # clientOrderId (bybit: mapped to orderLinkId by ccxt) is generated
+        # locally, before the call -- it round-trips through the exchange
+        # and back on every subsequent fetch of this order, so it survives
+        # even a total local crash that loses order_id itself (never
+        # captured, or captured but never persisted). Defense in depth, not
+        # a retry mechanism: Broker.open()'s at-most-once contract still
+        # applies unchanged, this only makes a crashed attempt identifiable
+        # after the fact rather than giving the exchange two calls with the
+        # same id to reconcile if this were ever retried by accident.
+        entry_client_order_id = str(uuid.uuid4())
+        order = await ex.create_market_order(
+            symbol, ccxt_side, amount, params={"clientOrderId": entry_client_order_id}
+        )
         await rdb.set(
             f"position:opened_at:{exchange}:{base.upper()}",
             str(int(time.time())),
@@ -314,8 +338,13 @@ async def place_order(
         trigger_price = float(ex.price_to_precision(symbol, trigger_price))
 
         try:
+            sl_client_order_id = str(uuid.uuid4())
             sl_order = await ex.create_stop_market_order(
-                symbol, stop_side, amount, trigger_price, params={"reduceOnly": True}
+                symbol,
+                stop_side,
+                amount,
+                trigger_price,
+                params={"reduceOnly": True, "clientOrderId": sl_client_order_id},
             )
             await rdb.set(
                 SL_ORDER_ID_KEY.format(exchange=exchange, base=base.upper()),
@@ -399,6 +428,68 @@ async def place_order(
                 setup_context=setup_context,
             )
 
+        # A price is confirmed at this point (the FILL_UNRESOLVED branch
+        # above already returned otherwise) -- complete the journal write
+        # and the Redis exit-tracking keys right here, inside the same lock
+        # and the same function call as the exchange order itself, instead
+        # of leaving that to the caller a few awaits (write_decision,
+        # notify) later. That gap used to mean a crash between this
+        # function returning and the caller's own bookkeeping left a real,
+        # SL-protected position with no app.trades row, ever -- operational
+        # safety (the SL, monitor.py's exit checks reading straight off the
+        # exchange position) was never at risk, only the ledger was
+        # (colleague review candidate on an earlier draft).
+        assert resolution.price is not None
+        trade_id = await journal.complete_open(
+            getattr(cfg, "db_url", None) if cfg is not None else None,
+            rdb,
+            symbol=symbol,
+            exchange=exchange,
+            base=base,
+            side=side,
+            order_id=str(order_id) if order_id is not None else None,
+            size_usd=actual_usd,
+            leverage=leverage,
+            entry_price=resolution.price,
+            exit_params=exit_params,
+            setup_context=setup_context or {},
+        )
+        if cfg is not None and getattr(cfg, "db_url", None) and trade_id is None:
+            # The exchange fill is confirmed and protected, but the journal
+            # write itself failed (DB outage at exactly this moment) --
+            # durably record it the same way an unresolved fill price
+            # already is, so incident_worker can retry journal.complete_open
+            # via its own _complete_open once the DB is reachable again,
+            # instead of this position silently never getting a ledger
+            # entry (the exact gap this function otherwise now closes).
+            # incident_worker re-resolves the fill price itself rather than
+            # trusting a cached one here -- one redundant exchange call on
+            # this rare path (DB down at exactly this moment) is a small
+            # price for reusing the exact same, already-tested recovery
+            # machinery instead of a second, parallel one.
+            incident_order_id = str(order_id) if order_id is not None else f"unknown:{uuid.uuid4()}"
+            incident_id = await incidents.create_incident(
+                cfg.db_url,
+                exchange=exchange,
+                base=base,
+                operation="open",
+                order_id=incident_order_id,
+                trade_id=None,
+                context={
+                    "side": side,
+                    "size_usd": actual_usd,
+                    "leverage": leverage,
+                    "setup_context": setup_context,
+                },
+            )
+            log.error(
+                "execution.order.journal_write_failed",
+                base=base,
+                exchange=exchange,
+                order_id=order_id,
+                incident_id=incident_id,
+            )
+
         return {
             "allowed": True,
             "fill_status": resolution.status,
@@ -412,6 +503,7 @@ async def place_order(
             "price": resolution.price,
             "status": order.get("status"),
             "rounded_up": rounded_up,
+            "trade_id": trade_id,
         }
     raise RuntimeError("open order lease exited without an operation result")
 
