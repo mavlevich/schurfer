@@ -9,7 +9,6 @@ never retries forever, never fabricates a price to force a resolution.
 from __future__ import annotations
 
 import asyncio
-import json
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -149,12 +148,32 @@ async def _process_one(
         return
 
     assert resolution.price is not None
+
+    # Complete the write FIRST, mark_resolved only once that actually
+    # succeeded -- marking resolved first (an earlier draft did exactly
+    # that) meant a failure inside _complete_open/_complete_close after the
+    # price was confirmed left the incident permanently terminal
+    # (load_open_incidents only loads pending/resolving) with the write
+    # never having happened and nothing left to retry it (colleague
+    # review). A price that resolves but never gets written is not
+    # "resolved" from this worker's own point of view.
+    completed = (
+        await _complete_close(incident, symbol, resolution.price, rdb, cfg)
+        if incident.operation == "close"
+        else await _complete_open(incident, symbol, resolution.price, rdb, cfg)
+    )
+    if not completed:
+        await _bump_attempt_or_escalate(
+            incident, db_url, cfg, error=f"{incident.operation} completion failed after resolution"
+        )
+        return
+
     committed = await incidents.mark_resolved(
         db_url, incident.id, price=resolution.price, source=resolution.source
     )
     if not committed:
         # Someone else already resolved/claimed this incident (or it no longer
-        # exists) — nothing left to complete.
+        # exists) -- the write above already landed either way, nothing lost.
         return
 
     log.info(
@@ -166,11 +185,6 @@ async def _process_one(
         price=resolution.price,
         source=resolution.source,
     )
-
-    if incident.operation == "close":
-        await _complete_close(incident, symbol, resolution.price, rdb, cfg)
-    else:
-        await _complete_open(incident, symbol, resolution.price, rdb, cfg)
 
     if await incidents.claim_recovery_notification(db_url, incident.id):
         creds = notify.credentials(cfg)
@@ -187,9 +201,16 @@ async def _process_one(
 
 async def _complete_close(
     incident: Incident, symbol: str, price: float, rdb: Any, cfg: Config
-) -> None:
+) -> bool:
+    """Returns True only once this close is durably accounted for -- either
+    committed straight to the journal, or handed off to write_pending_close's
+    own separate retry loop (monitor.py's _retry_pending_closes), which is
+    independent of this incident's own status. False (no durable trace at
+    all yet) only for the missing-trade-id case, so _process_one retries
+    this incident instead of marking it resolved with nothing to show for
+    it (colleague review)."""
     if not cfg.db_url:
-        return
+        return False
     trade_id = incident.trade_id
     if trade_id is None:
         # Wasn't captured at creation time (see incidents.has_pending_open) —
@@ -216,7 +237,7 @@ async def _complete_close(
                     "journal to close against. Manual reconciliation required."
                 ),
             )
-        return
+        return False
     trade_id_key = _TRADE_ID_KEY.format(exchange=incident.exchange, base=incident.base.upper())
     reason = str(incident.context.get("reason", "reconciled"))
     committed = await journal.try_commit_close(
@@ -232,60 +253,55 @@ async def _complete_close(
     if committed:
         await journal.delete_trade_id_if_matches(rdb, trade_id_key, trade_id)
     else:
+        # try_commit_close already wrote a durable journal:pending_close
+        # marker on this path -- monitor.py's own _retry_pending_closes
+        # owns getting it committed from here, independent of this
+        # incident's status, so this still counts as handled.
         log.error(
             "incident_worker.close_journal_failed_pending_retry",
             incident_id=incident.id,
             trade_id=trade_id,
         )
+    return True
 
 
 async def _complete_open(
     incident: Incident, symbol: str, price: float, rdb: Any, cfg: Config
-) -> None:
+) -> bool:
+    """Returns True only once journal.complete_open actually produced a
+    trade_id -- see _process_one's own comment on why this must gate
+    mark_resolved."""
     if not cfg.db_url:
-        return
+        return False
     setup_context = incident.context.get("setup_context")
     setup_context = setup_context if isinstance(setup_context, dict) else {}
     size_usd = float(incident.context.get("size_usd") or 0)
     leverage = int(incident.context.get("leverage") or 1)
     side = str(incident.context.get("side") or "short")
+    # place_order itself has no equivalent recomputation to worry about
+    # diverging from here (unlike this recovery path, it always has its own
+    # already-resolved exit_params in hand) -- this is the ONE place
+    # exit_params legitimately gets derived from setup_context, since a
+    # FILL_UNRESOLVED incident's context is all that survives from the
+    # original attempt.
+    exit_params = exit_module.exit_params(setup_context.get("pump_pct"))
 
-    trade_id = await journal.open_trade(
+    # Same helper orders.place_order's own happy path calls -- one shared
+    # implementation is what guarantees this recovery path and the normal
+    # path can never silently write different Redis keys for the same kind
+    # of confirmed open.
+    trade_id = await journal.complete_open(
         cfg.db_url,
+        rdb,
         symbol=symbol,
         exchange=incident.exchange,
+        base=incident.base,
         side=side,
         order_id=incident.order_id,
         size_usd=size_usd,
         leverage=leverage,
         entry_price=price,
+        exit_params=exit_params,
         setup_context=setup_context,
     )
-    if trade_id:
-        await rdb.set(
-            _TRADE_ID_KEY.format(exchange=incident.exchange, base=incident.base.upper()),
-            str(trade_id),
-            ex=86400,
-        )
-
-    exit_params = exit_module.exit_params(setup_context.get("pump_pct"))
-    await rdb.set(
-        exit_module.params_key(incident.exchange, incident.base),
-        json.dumps(exit_params),
-        ex=86400,
-    )
-    await rdb.set(
-        exit_module.entry_key(incident.exchange, incident.base),
-        str(price),
-        ex=86400,
-    )
-    await rdb.set(
-        exit_module.side_key(incident.exchange, incident.base),
-        side,
-        ex=86400,
-    )
-    await rdb.set(
-        exit_module.size_usd_key(incident.exchange, incident.base),
-        str(size_usd),
-        ex=86400,
-    )
+    return trade_id is not None

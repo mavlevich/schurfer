@@ -13,6 +13,7 @@ from .enums import (
 )
 from .fill_incident import FillResolutionIncident
 from .funding_rate_snapshot import FundingRateSnapshot
+from .live_order_attempt import LiveOrderAttempt
 from .notification_delivery import NotificationDelivery
 from .oi_snapshot import OiSnapshot
 from .pump_alert_delivery import PumpAlertDelivery
@@ -39,6 +40,7 @@ __all__ = [
     "Exchange",
     "FillResolutionIncident",
     "FundingRateSnapshot",
+    "LiveOrderAttempt",
     "MarketType",
     "NotificationDelivery",
     "OiSnapshot",

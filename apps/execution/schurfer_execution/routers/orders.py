@@ -54,6 +54,16 @@ async def post_order(req: OrderRequest, request: Request) -> dict[str, Any]:
             max_position_usd=cfg.max_position_usd,
             daily_loss_limit_usd=cfg.daily_loss_limit_usd,
             liquidation_buffer_pct=cfg.liquidation_buffer_pct,
+            # cfg (not passed before this) is what lets place_order's own
+            # journal.complete_open give this order a real app.trades row --
+            # previously a manually-triggered order was placed for real but
+            # never journaled at all, since journal.open_trade used to live
+            # only in trader.py's automated path. An explicit strategy
+            # identity, not the pump_short default journal.strategy_identity
+            # falls back to, so a manual order is never misattributed to the
+            # automated strategy in the ledger.
+            cfg=cfg,
+            setup_context={"strategy_name": "manual", "strategy_version": "1"},
         )
     except (RuntimeError, ValueError) as e:
         raise HTTPException(status_code=400, detail=str(e)) from e

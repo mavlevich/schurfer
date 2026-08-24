@@ -6,6 +6,7 @@ from schurfer_journal.models import (
     EarlyMomentumEpisode,
     Exchange,
     FillResolutionIncident,
+    LiveOrderAttempt,
     MarketType,
     NotificationDelivery,
     OutcomeLabel,
@@ -161,6 +162,10 @@ class TestTradeModel:
         assert "app.strategies.id" in fks
         assert "app.alerts.id" in fks
         assert "app.early_momentum_episodes.episode_id" in fks
+
+    def test_entry_order_id_is_unique_per_exchange(self) -> None:
+        indexes = {index.name: index for index in Trade.__table__.indexes}
+        assert indexes["ux_trades_exchange_entry_order_id"].unique
 
     def test_episode_id_is_nullable_and_not_unique(self) -> None:
         # Backward compat for rows that predate the episode lifecycle, and a
@@ -571,4 +576,28 @@ class TestFillResolutionIncidentModel:
         assert "ck_fill_resolution_incidents_operation" in constraints
         assert "ck_fill_resolution_incidents_status" in constraints
         assert "ck_fill_resolution_incidents_resolution" in constraints
+        assert fks == {"app.trades.id"}
+
+
+class TestLiveOrderAttemptModel:
+    def test_table_shape(self) -> None:
+        assert LiveOrderAttempt.__tablename__ == "live_order_attempts"
+        assert LiveOrderAttempt.__table__.schema == "app"
+        columns = LiveOrderAttempt.__table__.columns
+        assert columns["client_order_id"].nullable is False
+        assert columns["exchange"].nullable is False
+        assert columns["side"].nullable is False
+        assert columns["status"].nullable is False
+        assert columns["order_id"].nullable is True
+        assert columns["contract_size"].nullable is True
+        assert columns["filled_amount"].nullable is True
+        assert columns["trade_id"].nullable is True
+
+    def test_client_order_id_unique_and_constraints(self) -> None:
+        indexes = {index.name: index for index in LiveOrderAttempt.__table__.indexes}
+        constraints = {constraint.name for constraint in LiveOrderAttempt.__table__.constraints}
+        fks = {fk.target_fullname for fk in LiveOrderAttempt.__table__.foreign_keys}
+
+        assert indexes["ux_live_order_attempts_client_order_id"].unique
+        assert "ck_live_order_attempts_status" in constraints
         assert fks == {"app.trades.id"}
