@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Schurfer production deploy'
+  short_description: 'Plan and verify scoped deployments'
+  default_prompt: 'Use $schurfer-production-deploy to prepare and verify this production deployment.'

@@ -1,0 +1,18 @@
+# AI instruction control plane. These files are loaded automatically by any
+# AI coding assistant working in this repository (Claude, Codex/AGENTS.md,
+# GitHub Copilot, Gemini, Cursor, Windsurf) and directly change what those
+# assistants believe they are allowed to do. Treat changes here as
+# security-sensitive, not documentation-only -- see AI_RULES.md's own
+# "Never expose credentials..." and "Rules and skills describe safe
+# workflows; they never grant permission to mutate production" lines for
+# why this matters.
+/AI_RULES.md @mavlevich
+/AGENTS.md @mavlevich
+/CLAUDE.md @mavlevich
+/GEMINI.md @mavlevich
+/.cursorrules @mavlevich
+/.windsurfrules @mavlevich
+/.github/copilot-instructions.md @mavlevich
+/.agents/skills/ @mavlevich
+/infra/scripts/check_ai_rules.py @mavlevich
+/.pre-commit-config.yaml @mavlevich

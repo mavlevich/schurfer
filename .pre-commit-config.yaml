@@ -70,6 +70,12 @@ repos:
   # from a directory that is not listed in go.work.
   - repo: local
     hooks:
+      - id: ai-rules-check
+        name: AI rules and repo-local skills
+        language: system
+        entry: python3 infra/scripts/check_ai_rules.py
+        pass_filenames: false
+        files: '(^AI_RULES\.md$|^AGENTS\.md$|^CLAUDE\.md$|^GEMINI\.md$|^\.cursor|^\.windsurf|^\.agents/skills/|^\.github/copilot-instructions\.md$|^infra/scripts/check_ai_rules\.py$)'
       - id: golangci-lint
         name: golangci-lint
         language: system

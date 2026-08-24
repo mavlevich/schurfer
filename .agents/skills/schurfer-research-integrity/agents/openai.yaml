@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Schurfer research integrity'
+  short_description: 'Build reproducible trading research'
+  default_prompt: 'Use $schurfer-research-integrity to design or review this strategy research report.'
