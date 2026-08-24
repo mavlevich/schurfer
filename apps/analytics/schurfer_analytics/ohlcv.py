@@ -8,6 +8,13 @@ import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from .market_path_cache import (
+    CacheWriteOutcome,
+    MarketPathCacheWriteError,
+    read_cached_candles,
+    write_cached_candles,
+)
+
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
     from datetime import datetime
@@ -141,6 +148,41 @@ def closed_candles(
     ]
 
 
+def _covers_window_without_gaps(
+    candles: list[Candle],
+    start_ms: int,
+    end_ms: int,
+    timeframe_ms: int,
+) -> bool:
+    """True only if `candles` is the EXACT, gapless bar sequence
+    `[first_expected_bar, ..., last_expected_bar]` for `[start_ms, end_ms)`.
+
+    `fetch_symbol_candles` reaching `cursor >= end_ms` proves the loop asked
+    for and received pages spanning the whole window, but not that every
+    bar inside it actually arrived: an exchange can hand back a window's
+    first and last bar while silently skipping one in the middle (an
+    internal gap), or start its first page later than `start_ms` while
+    still reporting a bar at the very end (a leading gap) -- the cursor
+    check alone cannot see either. All candles here are already grid-
+    aligned to `timeframe_ms` (normalize_candles rejects anything else), so
+    checking the first timestamp, the count, and that every subsequent
+    timestamp is exactly one bar after the last is sufficient to prove
+    there is no gap anywhere, without needing to see the raw exchange
+    response."""
+    first_expected = ceil_to_timeframe(start_ms, timeframe_ms)
+    last_expected = end_ms - timeframe_ms
+    if first_expected > last_expected:
+        return len(candles) == 0
+    expected_count = (last_expected - first_expected) // timeframe_ms + 1
+    if len(candles) != expected_count:
+        return False
+    if candles[0].ts_ms != first_expected:
+        return False
+    return all(
+        candles[i].ts_ms == candles[i - 1].ts_ms + timeframe_ms for i in range(1, len(candles))
+    )
+
+
 class IncompleteFetchError(RuntimeError):
     """Raised when `fetch_symbol_candles` could not reach `end_ms` within its
     page budget, even though every page it received was non-empty and kept
@@ -242,8 +284,12 @@ async def fetch_candles(
     *,
     timeframe: str = TIMEFRAME,
     timeframe_ms: int = TIMEFRAME_MS,
+    use_cache: bool = False,
 ) -> list[Candle]:
-    """Page through ccxt OHLCV and return only fully closed bars in the window."""
+    """Page through ccxt OHLCV and return only fully closed bars in the window.
+
+    `use_cache` is off by default and passed straight through to
+    `fetch_symbol_candles` -- see that function's own docstring."""
     symbol = f"{base.upper()}/USDT:USDT"
     return await fetch_symbol_candles(
         exchange,
@@ -252,6 +298,7 @@ async def fetch_candles(
         end_ms,
         timeframe=timeframe,
         timeframe_ms=timeframe_ms,
+        use_cache=use_cache,
     )
 
 
@@ -264,6 +311,7 @@ async def fetch_symbol_candles(
     timeframe: str = TIMEFRAME,
     timeframe_ms: int = TIMEFRAME_MS,
     on_page: Callable[[PageFetchObservation], None] | None = None,
+    use_cache: bool = False,
 ) -> list[Candle]:
     """Fetch candles for an already identity-validated exact unified symbol.
 
@@ -288,9 +336,49 @@ async def fetch_symbol_candles(
     same as any other unexpected error here; the callback is not wrapped in
     its own try/except, so a broken observer is a hard failure, not a
     silently swallowed one.
+
+    `use_cache` (default False -- every existing caller is unaffected unless
+    it opts in) routes through the immutable local cache
+    (market_path_cache.py): a cache hit returns with zero API calls and
+    `on_page` never invoked, which is exactly why this is opt-in rather than
+    automatic -- a coverage/latency-diagnostic report that passes `on_page`
+    wants real API telemetry on every run, and unconditional caching would
+    silently corrupt that into "0 API calls". Only a call that reached
+    `cursor >= end_ms` by genuinely paging all the way through, AND whose
+    resulting candles are then proven gapless by `_covers_window_without_
+    gaps` (reaching `cursor >= end_ms` alone does not rule out a leading or
+    internal gap -- see that helper's own docstring), is written to the
+    cache: the empty-page and cursor-stall partial-result cases just above
+    are, by this function's own admission, not distinguishable here from a
+    transient hiccup, so caching them could freeze a wrong result in place
+    forever. A `MarketPathCacheCorruptError` from a corrupt cache entry is
+    never caught here -- it propagates, on purpose: see that module's
+    docstring for why silently falling back to a live re-fetch would be its
+    own reproducibility hazard. If persisting a proven-gapless result loses
+    a race against a concurrent writer, the winner's candles are read back
+    and returned instead of this call's own, so two callers racing on the
+    same window can never disagree; if persisting fails outright,
+    `MarketPathCacheWriteError` is raised rather than silently returning an
+    un-protected result under a `use_cache=True` contract.
     """
     if not symbol.strip():
         raise ValueError("symbol must not be empty")
+    # isinstance-checked, not just truthy: an unconfigured test double (e.g.
+    # AsyncMock()) exposes `.id` as another mock object, never a real
+    # string, so this correctly treats it as "no cache identity" rather
+    # than accidentally caching against a mock's repr.
+    raw_exchange_id = getattr(exchange, "id", None)
+    exchange_id = raw_exchange_id if isinstance(raw_exchange_id, str) and raw_exchange_id else None
+    if use_cache and exchange_id:
+        cached = read_cached_candles(
+            exchange_id=exchange_id,
+            symbol=symbol,
+            timeframe=timeframe,
+            start_ms=start_ms,
+            end_ms=end_ms,
+        )
+        if cached is not None:
+            return cached
     cursor = start_ms
     collected: list[Candle] = []
     if timeframe_ms <= 0:
@@ -301,9 +389,15 @@ async def fetch_symbol_candles(
     successful_pages = 0
     api_calls = 0
     exhausted_page_budget = True
+    # True only when the loop below reaches `cursor >= end_ms` by genuinely
+    # paging all the way through -- the one case proven complete enough to
+    # cache. The empty-page-after-retries and cursor-stall breaks further
+    # down leave this False on purpose (see this function's own docstring).
+    reached_full_window = False
     for _ in range(max_pages):
         if cursor >= end_ms:
             exhausted_page_budget = False
+            reached_full_window = True
             break
         remaining = math.ceil((end_ms - cursor) / timeframe_ms)
         limit = max(1, min(_FETCH_LIMIT, remaining + 1 + _SINCE_LOOKBACK_BARS))
@@ -397,7 +491,7 @@ async def fetch_symbol_candles(
             api_calls=api_calls,
         )
 
-    return closed_candles(
+    result = closed_candles(
         normalize_candles(
             [[c.ts_ms, c.open, c.high, c.low, c.close, c.volume] for c in collected],
             timeframe_ms=timeframe_ms,
@@ -406,3 +500,56 @@ async def fetch_symbol_candles(
         end_ms,
         timeframe_ms=timeframe_ms,
     )
+    if (
+        use_cache
+        and exchange_id
+        and reached_full_window
+        and _covers_window_without_gaps(result, start_ms, end_ms, timeframe_ms)
+    ):
+        # Only a window proven gapless (reached_full_window AND no leading/
+        # internal gap -- see _covers_window_without_gaps's own docstring)
+        # is cached. An empty-page-after-retries or cursor-stall partial
+        # result is deliberately never cached: this function's own
+        # docstring already admits that case is not distinguishable from
+        # here as "a real retention limit" versus "one transient API
+        # hiccup", so persisting it could freeze a wrong result in place
+        # forever. A raised exception (IncompleteFetchError, a timeout, any
+        # other exchange.fetch_ohlcv failure) is likewise never cached --
+        # see the early-return cache-hit path above and
+        # market_path_cache.py's own docstring.
+        outcome = write_cached_candles(
+            exchange_id=exchange_id,
+            symbol=symbol,
+            timeframe=timeframe,
+            start_ms=start_ms,
+            end_ms=end_ms,
+            candles=result,
+        )
+        if outcome is CacheWriteOutcome.ALREADY_EXISTS:
+            # A concurrent writer's candles are the durable record now, not
+            # this call's own -- read them back and use those instead, so
+            # two reports racing on the same window can never each return a
+            # different "reproducible" answer. If that read itself hits a
+            # corrupt file, MarketPathCacheCorruptError propagates, same as
+            # the early cache-hit path above -- never silently fall back to
+            # this call's own (now not the durable) result instead.
+            winner = read_cached_candles(
+                exchange_id=exchange_id,
+                symbol=symbol,
+                timeframe=timeframe,
+                start_ms=start_ms,
+                end_ms=end_ms,
+            )
+            if winner is not None:
+                result = winner
+        elif outcome is CacheWriteOutcome.WRITE_FAILED:
+            # use_cache=True means this caller is relying on the result
+            # being durably protected going forward -- completing silently
+            # without actually persisting anything would leave a formal
+            # report believing it is protected against the next delisting
+            # when it is not. Fail loudly now instead.
+            raise MarketPathCacheWriteError(
+                f"failed to persist cache entry for {exchange_id}:{symbol} "
+                f"[{start_ms}, {end_ms}) -- see market_path_cache.py's own docstring"
+            )
+    return result

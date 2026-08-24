@@ -425,6 +425,11 @@ services:
       # disposable `docker compose run --rm` container that wrote it.
       MOMENTUM_FLOW_EPISODE_STUDY_COHORT_STATE_PATH: /runtime/momentum-flow-episode-study-cohort.json
       MOMENTUM_FLOW_DISCOVERY_COHORT_STATE_PATH: /runtime/momentum-flow-discovery-cohort.json
+      # market_path_cache.py's default (runtime/market-path-cache, relative
+      # to the container's own /app WORKDIR) would resolve to /app/runtime,
+      # not the /runtime mount below -- same disposable-container problem as
+      # the cohort-state paths above, so it needs the same explicit override.
+      SCHURFER_MARKET_PATH_CACHE_DIR: /runtime/market-path-cache
     volumes:
       - orderflow_data:/data/orderflow:ro
       - ../../runtime:/runtime

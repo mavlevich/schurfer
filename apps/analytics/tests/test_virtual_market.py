@@ -4,10 +4,15 @@ import hashlib
 import json
 from dataclasses import asdict, replace
 from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, Mock, call, patch
 
 import pytest
 from schurfer_analytics.candle_anomaly_features import candle_anomaly_path_bounds
+from schurfer_analytics.market_path_cache import (
+    MarketPathCacheCorruptError,
+    MarketPathCacheWriteError,
+)
 from schurfer_analytics.ohlcv import Candle
 from schurfer_analytics.replay import ReplayDecision, ReplayEpisode
 from schurfer_analytics.virtual_entry_challengers import challenger_path_bounds
@@ -24,6 +29,9 @@ from schurfer_analytics.virtual_market import (
     maker_path_bounds,
 )
 from schurfer_analytics.virtual_strategy import MarketPath
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _episode(
@@ -188,7 +196,7 @@ async def test_fetch_entry_challenger_paths_uses_registered_broad_bounds() -> No
         )
 
     start_ms, end_ms = challenger_path_bounds(episode.decisions[0])
-    fetch.assert_awaited_once_with(exchange, "ERA", start_ms, end_ms)
+    fetch.assert_awaited_once_with(exchange, "ERA", start_ms, end_ms, use_cache=True)
     assert paths[0].candles == (candle,)
     exchange.close.assert_awaited_once()
 
@@ -208,7 +216,7 @@ async def test_fetch_candle_anomaly_paths_combines_context_and_exit_bounds() -> 
         )
 
     start_ms, end_ms = candle_anomaly_path_bounds(episode.decisions[0])
-    fetch.assert_awaited_once_with(exchange, "ERA", start_ms, end_ms)
+    fetch.assert_awaited_once_with(exchange, "ERA", start_ms, end_ms, use_cache=True)
     assert paths[0].candles == (candle,)
     exchange.close.assert_awaited_once()
 
@@ -424,3 +432,72 @@ def test_decision_path_requires_nonempty_key() -> None:
 
     with pytest.raises(ValueError, match="requires a decision id"):
         DecisionMarketPath("", path)
+
+
+def _synthetic_fetch_ohlcv(
+    _symbol: str, timeframe: str, since: int, limit: int
+) -> list[list[float]]:
+    """A fake exchange that always returns a full, gapless run of `limit`
+    bars starting at `since` rounded down to the nearest grid boundary --
+    good enough to satisfy fetch_symbol_candles's cursor loop in one page
+    regardless of the exact window a caller's own bounds function asks for,
+    without this test needing to hand-compute those bounds itself."""
+    timeframe_ms = 60_000 if timeframe == "1m" else 300_000
+    aligned_since = (since // timeframe_ms) * timeframe_ms
+    return [[aligned_since + i * timeframe_ms, 100, 101, 99, 100, 1] for i in range(limit)]
+
+
+async def test_fetch_market_paths_propagates_cache_corruption_and_stops_the_report(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The colleague-review regression case: a corrupt cache entry must
+    stop the whole report through the real fetch_market_paths call path,
+    not just when calling fetch_symbol_candles directly."""
+    monkeypatch.setenv("SCHURFER_MARKET_PATH_CACHE_DIR", str(tmp_path))
+    exchange = AsyncMock(id="binance")
+    exchange.fetch_ohlcv = AsyncMock(side_effect=_synthetic_fetch_ohlcv)
+
+    # First run populates the cache cleanly.
+    await fetch_market_paths((_episode(),), {"binance": lambda: exchange})
+    cache_files = list(tmp_path.rglob("*.json"))
+    assert len(cache_files) == 1
+    cache_files[0].write_text("{not valid json")
+
+    with pytest.raises(MarketPathCacheCorruptError):
+        await fetch_market_paths((_episode(),), {"binance": lambda: exchange})
+
+
+async def test_fetch_market_paths_raises_on_a_cache_write_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    unwritable = tmp_path / "read-only-cache-root"
+    unwritable.mkdir(mode=0o500)
+    try:
+        monkeypatch.setenv("SCHURFER_MARKET_PATH_CACHE_DIR", str(unwritable / "cache"))
+        exchange = AsyncMock(id="binance")
+        exchange.fetch_ohlcv = AsyncMock(side_effect=_synthetic_fetch_ohlcv)
+
+        with pytest.raises(MarketPathCacheWriteError):
+            await fetch_market_paths((_episode(),), {"binance": lambda: exchange})
+    finally:
+        unwritable.chmod(0o700)
+
+
+async def test_fetch_maker_paths_propagates_cache_corruption_and_stops_the_report(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Same pattern, for the maker-entry path (fetch_maker_decision_paths),
+    which wires the cache through a structurally different function than
+    fetch_market_paths/fetch_decision_market_paths."""
+    monkeypatch.setenv("SCHURFER_MARKET_PATH_CACHE_DIR", str(tmp_path))
+    exchange = AsyncMock(id="binance")
+    exchange.fetch_ohlcv = AsyncMock(side_effect=_synthetic_fetch_ohlcv)
+
+    decision = _episode().decisions[0]
+    await fetch_maker_decision_paths((decision,), {"binance": lambda: exchange})
+    cache_files = list(tmp_path.rglob("*.json"))
+    assert len(cache_files) == 2  # one_minute + five_minute
+    cache_files[0].write_text("{not valid json")
+
+    with pytest.raises(MarketPathCacheCorruptError):
+        await fetch_maker_decision_paths((decision,), {"binance": lambda: exchange})

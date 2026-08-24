@@ -10,6 +10,7 @@ from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING, Any, cast
 
 from .candle_anomaly_features import candle_anomaly_path_bounds
+from .market_path_cache import MarketPathCacheCorruptError, MarketPathCacheWriteError
 from .ohlcv import (
     ONE_MINUTE_MS,
     ONE_MINUTE_TIMEFRAME,
@@ -231,7 +232,19 @@ async def fetch_maker_decision_paths(
                     end_ms,
                     timeframe=timeframe,
                     timeframe_ms=timeframe_ms,
+                    # This is the formal replay path (maker-entry-report):
+                    # reproducibility must not depend on a token still being
+                    # listed on the exchange the second time the report
+                    # runs -- see market_path_cache.py's own docstring.
+                    use_cache=True,
                 )
+        except (MarketPathCacheCorruptError, MarketPathCacheWriteError):
+            # A corrupt or unpersisted cache entry must stop this report,
+            # not silently degrade to one more "fetch_failed" episode in a
+            # shrinking cohort -- exactly the 99->94 failure mode this cache
+            # exists to close, just with a different root cause. Let it
+            # propagate past this function entirely.
+            raise
         except Exception as exc:
             return missing_path(decision, "fetch_failed", str(exc)[:1000])
         if not candles:
@@ -305,7 +318,17 @@ async def _fetch_market_paths(
                     decision.base,
                     start_ms,
                     end_ms,
+                    # Formal replay path (baseline/entry-challenger/candle-
+                    # anomaly/exit-policy reports) -- see
+                    # market_path_cache.py's own docstring for why
+                    # reproducibility needs this opt-in.
+                    use_cache=True,
                 )
+        except (MarketPathCacheCorruptError, MarketPathCacheWriteError):
+            # See fetch_maker_decision_paths's own comment on this same
+            # pattern: must stop this report, not silently degrade to one
+            # more "fetch_failed" episode.
+            raise
         except Exception as exc:
             return MarketPath(
                 pump_event_id=episode.pump_event_id,
@@ -408,7 +431,18 @@ async def fetch_decision_market_paths(
         start_ms, end_ms = bounds(decision)
         try:
             async with semaphore:
-                candles = await fetch_candles(exchange, decision.base, start_ms, end_ms)
+                # Formal replay path (exit-discovery/wider-stop-shadow/oi-
+                # growth-filter and other decision-keyed reports) -- see
+                # market_path_cache.py's own docstring for why
+                # reproducibility needs this opt-in.
+                candles = await fetch_candles(
+                    exchange, decision.base, start_ms, end_ms, use_cache=True
+                )
+        except (MarketPathCacheCorruptError, MarketPathCacheWriteError):
+            # See fetch_maker_decision_paths's own comment on this same
+            # pattern: must stop this report, not silently degrade to one
+            # more "fetch_failed" episode.
+            raise
         except Exception as exc:
             path = MarketPath(
                 pump_event_id=decision.pump_event_id or 0,
