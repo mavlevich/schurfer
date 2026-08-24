@@ -376,7 +376,14 @@ def build_exit_liquidity_calibration_report(
     generated_at: datetime,
     code_revision: str,
     working_tree_dirty: bool,
+    source_artifact: dict[str, Any] | None = None,
 ) -> ExitLiquidityCalibrationReport:
+    """`source_artifact`, when this run's rows came from `--from-artifact`
+    rather than a live database query, is the frozen artifact's own
+    provenance (fingerprint, dataset/schema version, data SHA-256, and the
+    freeze run's own code revision/dirty state/timestamp) -- without this,
+    a saved report has no way to prove which frozen dataset actually backs
+    its numbers (colleague review, 2026-08-25)."""
     if len({row.trade_id for row in rows}) != len(rows):
         raise ValueError("duplicate trade rows in exit-liquidity calibration input")
     statuses = Counter(row.observation_status or "missing_observation" for row in rows)
@@ -418,6 +425,7 @@ def build_exit_liquidity_calibration_report(
                 "boundaries, not frozen before being read off a finding -- diagnostic flag "
                 "only, never a production trading filter; see this module's own docstring"
             ),
+            "source_artifact": source_artifact,
         },
         readiness={
             "state": state,
@@ -458,6 +466,17 @@ def render_markdown(report: ExitLiquidityCalibrationReport) -> str:
         f"Contract: `{manifest['contract']}`",
         f"Dataset: {manifest['since'].isoformat()} <= exit < {manifest['until'].isoformat()}",
         f"Input fingerprint: `{manifest['input_fingerprint']}`",
+    ]
+    source_artifact = manifest["source_artifact"]
+    if source_artifact is not None:
+        lines.append(
+            f"Source artifact: `{source_artifact['fingerprint']}` "
+            f"({source_artifact['dataset_name']}@{source_artifact['dataset_version']}, "
+            f"frozen at {source_artifact['generated_at']} from "
+            f"revision `{source_artifact['code_revision']}`"
+            f"{', dirty' if source_artifact['working_tree_dirty'] else ''})"
+        )
+    lines += [
         "",
         "> The observed value is an executable paper quote at close time, not an actual fill.",
         "> Positive delta means the decision-time model underestimated close quote impact.",
@@ -584,33 +603,98 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
     )
     parser.add_argument("--format", choices=("markdown", "json"), default="markdown")
+    source = parser.add_mutually_exclusive_group()
+    source.add_argument(
+        "--from-artifact",
+        metavar="FINGERPRINT",
+        help=(
+            "Read a previously frozen research_dataset_artifact (see "
+            "exit_liquidity_calibration_dataset_artifact.py) instead of querying the live "
+            "database. --since/--until/DATABASE_URL are ignored; the cohort is whatever the "
+            "artifact's own manifest recorded."
+        ),
+    )
+    source.add_argument(
+        "--freeze-artifact",
+        action="store_true",
+        help=(
+            "After querying the database as normal, also freeze the exact rows this run saw "
+            "into an immutable artifact (printed to stderr) for a later --from-artifact run to "
+            "read back verbatim."
+        ),
+    )
+    parser.add_argument(
+        "--artifact-directory",
+        help="Override the research-dataset-artifact store directory (mainly for tests).",
+    )
     return parser
 
 
 async def _run(args: argparse.Namespace) -> str:
+    from .exit_liquidity_calibration_dataset_artifact import freeze, read
     from .exit_liquidity_calibration_repository import ExitLiquidityCalibrationRepository
+    from .research_dataset_artifact import ArtifactWriteOutcome, ResearchDatasetArtifactWriteError
 
-    db_url = os.getenv("DATABASE_URL")
-    if not db_url:
-        raise ValueError("DATABASE_URL is required for exit-liquidity-calibration-report")
     if not args.code_revision:
         raise ValueError("--code-revision or SCHURFER_GIT_SHA is required")
     generated_at = datetime.now(UTC)
-    filters = ExitLiquidityFilters(
-        since=args.since,
-        until=args.until or generated_at,
-    )
-    repository = ExitLiquidityCalibrationRepository.from_url(db_url)
-    try:
-        rows = await repository.load(filters)
-    finally:
-        await repository.close()
+    source_artifact: dict[str, Any] | None = None
+
+    if args.from_artifact:
+        manifest, filters, rows = read(args.from_artifact, directory=args.artifact_directory)
+        # The frozen artifact's own provenance travels into the RENDERED
+        # report -- without this, a saved report has no way to prove which
+        # frozen dataset actually backs its numbers (colleague review,
+        # 2026-08-25: `_manifest` used to be read and immediately discarded).
+        source_artifact = {
+            "fingerprint": manifest.fingerprint,
+            "dataset_name": manifest.dataset_name,
+            "dataset_version": manifest.dataset_version,
+            "schema_version": manifest.schema_version,
+            "data_sha256": manifest.data_sha256,
+            "code_revision": manifest.code_revision,
+            "working_tree_dirty": manifest.working_tree_dirty,
+            "generated_at": manifest.generated_at,
+        }
+    else:
+        db_url = os.getenv("DATABASE_URL")
+        if not db_url:
+            raise ValueError("DATABASE_URL is required for exit-liquidity-calibration-report")
+        filters = ExitLiquidityFilters(since=args.since, until=args.until or generated_at)
+        repository = ExitLiquidityCalibrationRepository.from_url(db_url)
+        try:
+            rows = await repository.load(filters)
+        finally:
+            await repository.close()
+        if args.freeze_artifact:
+            outcome, freeze_manifest = freeze(
+                rows,
+                filters,
+                code_revision=args.code_revision,
+                working_tree_dirty=args.working_tree_dirty,
+                directory=args.artifact_directory,
+            )
+            if outcome not in (ArtifactWriteOutcome.CREATED, ArtifactWriteOutcome.ALREADY_EXISTS):
+                # Must fail the whole run (non-zero exit), not just log to
+                # stderr and continue -- an automated pipeline checking exit
+                # code alone must never conclude a formal artifact now
+                # exists when it does not (colleague review, 2026-08-25).
+                raise ResearchDatasetArtifactWriteError(
+                    f"--freeze-artifact failed: {outcome.value}"
+                )
+            assert freeze_manifest is not None
+            sys.stderr.write(
+                f"[research-dataset-artifact] {outcome.value} "
+                f"fingerprint={freeze_manifest.fingerprint} row_count={freeze_manifest.row_count}\n"
+            )
+
     report = build_exit_liquidity_calibration_report(
         rows,
         filters,
         generated_at=generated_at,
         code_revision=args.code_revision,
         working_tree_dirty=args.working_tree_dirty,
+        source_artifact=source_artifact,
     )
     return render_json(report) if args.format == "json" else render_markdown(report)
 
