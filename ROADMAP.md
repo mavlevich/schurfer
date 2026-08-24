@@ -2822,6 +2822,12 @@ net performance suitable for tax or risk accounting.
   the chart, auto-refresh the active OHLCV candle, pump-episode markers on the chart
   (`setMarkers`), and a position-origin badge (paper, bot, manual) on the account
   page plus an entry-price line on the chart.
+- Trades/Decisions UI: real shadcn/Radix `Select`/`Tabs`/`Collapsible`
+  (currently zero `@radix-ui/*` deps; `<select>` and dense un-collapsible
+  tables are duplicated across both pages), Live/Paper/Research tabs, and a
+  shared strategy-badge color/icon module. Audit and direction:
+  [trades-ui-audit-v1.md](docs/design/trades-ui-audit-v1.md). Lands no
+  earlier than `feat/trade-events-and-unified-presentation-v1`.
 - Pump scanner: make each per-exchange tag a deep link to that exchange's trade page
   for the pair (open in a new tab), so a token can be inspected on the venue in one
   click. Needs a small per-exchange URL-template map (symbol formats differ, spot vs
