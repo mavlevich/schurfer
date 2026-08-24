@@ -10,6 +10,7 @@ from schurfer_analytics.exit_liquidity_calibration_report import (
     DECISION_SAMPLE_SIZE,
     DIRECTIONAL_SAMPLE_SIZE,
     EXIT_LIQUIDITY_COHORT_START,
+    WIDE_SPREAD_UNRELIABLE_THRESHOLD_BPS,
     ExitLiquidityCalibrationReport,
     ExitLiquidityFilters,
     ExitLiquidityRow,
@@ -34,6 +35,7 @@ def _row(
     observed: float | None = 8,
     status: str | None = "sampled",
     observation: bool = True,
+    observed_spread_bps: float = 4,
 ) -> ExitLiquidityRow:
     exit_at = EXIT_LIQUIDITY_COHORT_START + timedelta(hours=trade_id)
     return ExitLiquidityRow(
@@ -52,7 +54,7 @@ def _row(
         observation_status=status if observation else None,
         requested_notional_usd=50 if observation else None,
         filled_notional_usd=50 if observation else None,
-        observed_spread_bps=4 if observation else None,
+        observed_spread_bps=observed_spread_bps if observation else None,
         observed_exit_bps=observed if observation else None,
         latency_ms=120 if observation else None,
         error=None,
@@ -123,6 +125,45 @@ def test_paired_delta_and_segments_use_only_complete_quotes() -> None:
     }
 
 
+def test_execution_cost_unreliable_flags_wide_close_spread_only() -> None:
+    """Diagnostic only -- see the module's own docstring. A trade whose
+    observed close spread was already at/above the discovery threshold is
+    flagged; one comfortably below it is not."""
+    report = _report(
+        (
+            _row(1, observed_spread_bps=WIDE_SPREAD_UNRELIABLE_THRESHOLD_BPS),
+            _row(2, observed_spread_bps=WIDE_SPREAD_UNRELIABLE_THRESHOLD_BPS + 10),
+            _row(3, observed_spread_bps=WIDE_SPREAD_UNRELIABLE_THRESHOLD_BPS - 1),
+        )
+    )
+
+    flagged = {row.trade_id: row.execution_cost_unreliable for row in report.comparable_exits}
+    assert flagged == {1: True, 2: True, 3: False}
+    assert report.metrics is not None
+    assert report.metrics.execution_cost_unreliable_count == 2
+    assert report.metrics.execution_cost_unreliable_pct == pytest.approx(200 / 3)
+
+
+def test_execution_cost_unreliable_never_excludes_a_row_from_calibration() -> None:
+    """The flag is informational, not a filter -- a wide-spread trade must
+    still count toward readiness/metrics/segments like any other
+    comparable exit."""
+    report = _report((_row(1, observed_spread_bps=WIDE_SPREAD_UNRELIABLE_THRESHOLD_BPS + 5),))
+
+    assert report.readiness["comparable_observations"] == 1
+    assert report.metrics is not None
+    assert report.metrics.observations == 1
+
+
+def test_execution_cost_unreliable_appears_in_markdown() -> None:
+    report = _report((_row(1, observed_spread_bps=WIDE_SPREAD_UNRELIABLE_THRESHOLD_BPS),))
+    markdown = render_markdown(report)
+
+    assert "Execution cost unreliable" in markdown
+    assert "never a trading rule" in markdown
+    assert "1 of 1" in markdown
+
+
 @pytest.mark.parametrize(
     ("changed", "reason"),
     [
@@ -163,6 +204,26 @@ def test_manifest_and_renderers_state_quote_limit() -> None:
     assert len(payload["manifest"]["input_fingerprint"]) == 64
     assert "not an actual fill" in markdown
     assert "Positive delta" in markdown
+
+
+def test_manifest_records_execution_cost_unreliable_provenance() -> None:
+    """A reader looking only at the JSON output (not markdown) must still be
+    able to see that this diagnostic flag exists, what threshold it used,
+    and that it is not a validated production filter."""
+    report = _report((_row(1),))
+    payload = json.loads(render_json(report))
+
+    assert payload["manifest"]["execution_cost_unreliable_threshold_bps"] == pytest.approx(
+        WIDE_SPREAD_UNRELIABLE_THRESHOLD_BPS
+    )
+    assert (
+        payload["manifest"]["execution_cost_unreliable_status"]
+        == "discovery_diagnostic_not_forward_validated"
+    )
+    assert (
+        "never a production trading filter"
+        in payload["manifest"]["execution_cost_unreliable_provenance"]
+    )
 
 
 def test_filter_contract_and_parser_fail_closed() -> None:
@@ -215,6 +276,36 @@ def test_repository_statement_keeps_missing_observations_and_maps_row() -> None:
         "error": None,
     }
     assert map_exit_liquidity_row(source).observation_id is None
+
+
+def test_malformed_modeled_exit_bps_falls_back_to_none_not_a_crash() -> None:
+    """`modeled_exit_bps` comes from jsonb_extract_path_text -- raw JSON
+    text, not a schema-validated numeric column. A malformed historical
+    ask_impact_bps must not crash the whole report; it becomes None, which
+    the report's own missing_or_invalid_modeled_impact exclusion already
+    handles (colleague review, 2026-08-24)."""
+    source = {
+        "trade_id": 1,
+        "symbol": "COTI/USDT:USDT",
+        "exchange": "binance",
+        "size_usd": 50,
+        "entry_at": EXIT_LIQUIDITY_COHORT_START,
+        "exit_at": EXIT_LIQUIDITY_COHORT_START + timedelta(hours=3),
+        "exit_reason": "max_hold",
+        "modeled_exit_bps": "not-a-number",
+        "observation_id": None,
+        "observed_at": None,
+        "observation_exchange": None,
+        "observation_symbol": None,
+        "observation_status": None,
+        "requested_notional_usd": None,
+        "filled_notional_usd": None,
+        "observed_spread_bps": None,
+        "observed_exit_bps": None,
+        "latency_ms": None,
+        "error": None,
+    }
+    assert map_exit_liquidity_row(source).modeled_exit_bps is None
 
 
 def test_duplicate_trade_rows_are_rejected() -> None:
