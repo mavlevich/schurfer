@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from schurfer_execution import early_momentum, episodes
-from schurfer_execution.execution_intent import PaperBroker
+from schurfer_execution.execution_intent import DisabledBroker, PaperBroker
 from schurfer_execution.journal import OpenTradeOutcome
 from schurfer_execution.symbols import ExecutionInstrument
 from schurfer_execution.worker_health import WorkerHeartbeat
@@ -765,6 +765,45 @@ async def test_trigger_tick_repairs_missing_watch_cache_from_actionable() -> Non
 
 
 # --- breakout handling ---
+
+
+async def test_check_breakout_disabled_never_claims_or_terminates_an_episode() -> None:
+    """EARLY_MOMENTUM_MODE=disabled must stop before any episode is ever
+    claimed -- claiming and then mis-terminating it as
+    "infrastructure_failure" would misrepresent a deliberate operator
+    choice as a real production incident and burn the claim lease for
+    nothing (colleague review, P1)."""
+    rdb = AsyncMock()
+    ex = _exchange()
+    tickers = {"BEAT/USDT:USDT": {"last": 101.0}}
+    cached = {
+        "episode_id": "e1",
+        "ceiling": 100.0,
+        "native_market_id": "BEATUSDT",
+        "source_exchange": "binance",
+        "source_native_id": "BEATUSDT",
+    }
+
+    with (
+        patch(
+            "schurfer_execution.early_momentum.journal.find_open_trade_id",
+            new_callable=AsyncMock,
+        ) as find_open,
+        patch(
+            "schurfer_execution.early_momentum.episodes.claim_episode", new_callable=AsyncMock
+        ) as claim,
+        patch(
+            "schurfer_execution.early_momentum.episodes.terminate_episode",
+            new_callable=AsyncMock,
+        ) as terminate,
+    ):
+        await early_momentum._check_breakout(
+            ex, rdb, _cfg(), DisabledBroker(), cached=cached, tickers=tickers
+        )
+
+    find_open.assert_not_awaited()
+    claim.assert_not_awaited()
+    terminate.assert_not_awaited()
 
 
 async def test_check_breakout_terminates_suppressed_when_already_open() -> None:

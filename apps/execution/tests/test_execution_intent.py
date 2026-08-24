@@ -184,6 +184,20 @@ def test_execution_intent_rejects_non_positive_size(size_usd: float) -> None:
         _intent(size_usd=size_usd)
 
 
+@pytest.mark.parametrize("size_usd", [float("nan"), float("inf"), float("-inf")])
+def test_execution_intent_rejects_non_finite_size(size_usd: float) -> None:
+    """nan <= 0 and inf <= 0 are both False in Python -- a plain positivity
+    check alone silently lets both straight through (colleague review)."""
+    with pytest.raises(ValueError, match="size_usd"):
+        _intent(size_usd=size_usd)
+
+
+@pytest.mark.parametrize("price", [float("nan"), float("inf"), float("-inf")])
+def test_execution_intent_rejects_non_finite_price(price: float) -> None:
+    with pytest.raises(ValueError, match="price"):
+        _intent(price=price)
+
+
 @pytest.mark.parametrize("leverage", [0, -1])
 def test_execution_intent_rejects_non_positive_leverage(leverage: int) -> None:
     with pytest.raises(ValueError, match="leverage"):
@@ -409,3 +423,40 @@ async def test_paper_broker_episode_invalid_claim_sets_claim_valid_false() -> No
 
     assert result.status == ExecutionStatus.REJECTED
     assert result.claim_valid is False
+
+
+# ---- canonical strategy identity matches journal's own registry parser ----
+#
+# Each of trader.py/early_momentum.py/liquidation_cascade.py now derives its
+# intent's StrategyIdentity via journal.strategy_identity(setup_context) --
+# the SAME function journal.open_trade(_for_episode) uses to register the
+# app.strategies row -- instead of hand-building name/version separately.
+# These pin the exact real setup_context shape each strategy builds today,
+# so a future edit to any of them that silently reintroduces a second,
+# independent identity source fails here (colleague review: this is
+# precisely how pump_short's StrategyIdentity(name="pump_short",
+# version=cfg.strategy_version) drifted from the registered
+# ("pump_short", "1_market_quality") -- cfg.strategy_version is the whole
+# raw "pump_short_v1_market_quality" string, never parsed).
+
+
+@pytest.mark.parametrize(
+    ("setup_context", "expected"),
+    [
+        # pump_short: trader.py never sets "strategy", only a possibly-
+        # combined "strategy_version" (journal.strategy_identity's own
+        # historical convention default name is "pump_short").
+        ({"strategy_version": "pump_short_v1_market_quality"}, ("pump_short", "1_market_quality")),
+        ({"strategy_version": "1"}, ("pump_short", "1")),
+        # early_momentum: sets a combined "strategy" key directly.
+        ({"strategy": "early_momentum_v4"}, ("early_momentum", "4")),
+        # liquidation_cascade: same combined-"strategy" convention.
+        ({"strategy": "liquidation_cascade_v2"}, ("liquidation_cascade", "2")),
+    ],
+)
+def test_journal_strategy_identity_matches_each_strategys_real_setup_context(
+    setup_context: dict[str, Any], expected: tuple[str, str]
+) -> None:
+    from schurfer_execution.journal import strategy_identity
+
+    assert strategy_identity(setup_context) == expected

@@ -166,13 +166,23 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         if cfg.db_url
         else None
     )
+    # pump_short's own broker/mode is only ever reached inside trader.py's
+    # cfg.dry_run branch -- under AUTO_TRADE=true that branch never runs
+    # (real orders go through the untouched place_order path instead), so
+    # logging pump_short_broker.mode there would claim a mode that governs
+    # nothing. "legacy_live" names what actually executes instead
+    # (colleague review, P0 -- Config already refuses PUMP_SHORT_MODE
+    # whenever AUTO_TRADE=true, so this is never a config override hiding
+    # behind a misleading log line, just an accurate description of the
+    # untouched pre-existing path).
+    pump_short_execution_path = "legacy_live" if cfg.auto_trade else pump_short_broker.mode.value
     log.info(
         "execution.start",
         market_exchanges=list(market_exchanges),
         trading_exchanges=list(trading_exchanges),
         auto_trade=cfg.auto_trade,
         dry_run=cfg.dry_run,
-        pump_short_mode=pump_short_broker.mode.value,
+        pump_short_execution_path=pump_short_execution_path,
         early_momentum_mode=early_momentum_broker.mode.value,
         liquidation_cascade_mode=liquidation_cascade_broker.mode.value,
     )

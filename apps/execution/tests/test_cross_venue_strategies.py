@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from schurfer_execution.execution_intent import PaperBroker
+from schurfer_execution.execution_intent import DisabledBroker, PaperBroker
 from schurfer_execution.liquidation_cascade import run_liquidation_cascade_scanner
 from schurfer_execution.symbols import ResolvedRoute
 
@@ -240,3 +240,32 @@ async def test_liquidation_cascade_gate_disabled_still_captures_quality() -> Non
     open_paper.assert_awaited_once()
     setup_context = open_paper.await_args.kwargs["setup_context"]
     assert setup_context["market_quality"]["allowed"] is False
+
+
+# ---- TradingMode.DISABLED (colleague review, P1) ----
+
+
+async def test_liquidation_cascade_disabled_never_scans_or_queries_db() -> None:
+    """LIQUIDATION_CASCADE_MODE=disabled must stop the scanner outright --
+    not just make the eventual broker.open() call reject after a full
+    tick's worth of DB/liquidity work already ran for nothing."""
+    exchange = _market_exchange()
+    cfg = _quality_cfg(require_market_quality=True)
+
+    with (
+        patch(
+            "schurfer_execution.liquidation_cascade.psycopg.AsyncConnection.connect",
+            new_callable=AsyncMock,
+        ) as connect,
+        patch(
+            "schurfer_execution.liquidation_cascade.asyncio.sleep",
+            AsyncMock(side_effect=asyncio.CancelledError),
+        ),
+    ):
+        # No CancelledError expected -- the disabled branch returns before
+        # ever reaching the while/sleep loop at all.
+        await run_liquidation_cascade_scanner(
+            {"bybit": exchange}, MagicMock(), cfg, broker=DisabledBroker()
+        )
+
+    connect.assert_not_called()

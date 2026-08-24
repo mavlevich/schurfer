@@ -732,6 +732,20 @@ async def _check_breakout(
     tickers: dict[str, Any],
 ) -> None:
     assert cfg.db_url is not None
+
+    # EARLY_MOMENTUM_MODE=disabled must stop before any episode is ever
+    # claimed -- claiming and then immediately mis-terminating it as
+    # "infrastructure_failure" (the only reason PaperBroker's REJECTED
+    # result maps to) would misrepresent a deliberate operator choice as a
+    # real production incident, and would burn the episode's own claim
+    # lease for nothing (colleague review, P1). _trigger_tick's own
+    # reap_overdue/list_actionable/watch-cache-repair calls run before this
+    # function either way, so already-armed/claimed episode maintenance is
+    # unaffected by early_momentum being disabled -- only claiming NEW ones
+    # stops.
+    if broker.mode is execution_intent.TradingMode.DISABLED:
+        return
+
     episode_id = cached["episode_id"]
     ceiling = float(cached["ceiling"])
     native_market_id = cached["native_market_id"]
@@ -928,8 +942,17 @@ async def _quote_and_open(
         "entry_price_includes_impact": True,
     }
 
+    # journal.strategy_identity(setup_context) is the SAME pure parser
+    # journal.open_trade_for_episode will use to register this trade's
+    # app.strategies row -- deriving StrategyIdentity from it directly
+    # (rather than hand-building it from _STRATEGY_NAME/_STRATEGY_VERSION)
+    # is what keeps the two from silently disagreeing (colleague review;
+    # this file's own values happened to already match, but duplicating
+    # the parsing convention in two places is exactly what let pump_short's
+    # copy drift out of sync).
+    strategy_name, strategy_version = journal.strategy_identity(setup_context)
     intent = ExecutionIntent(
-        strategy=StrategyIdentity(name=_STRATEGY_NAME, version=_STRATEGY_VERSION),
+        strategy=StrategyIdentity(name=strategy_name, version=strategy_version),
         instrument=instrument,
         side="long",
         size_usd=_SIZE_USD,
@@ -942,7 +965,11 @@ async def _quote_and_open(
         claim=EpisodeClaim(episode_id=episode_id, claim_token=claim_token),
     )
     result = await broker.open(intent, cfg=cfg, rdb=rdb)
-    if not result.committed:
+    # Checked against the specific expected status, not the coarser
+    # `committed` bool -- a future live-broker status that is also
+    # "committed" (e.g. EMERGENCY_CLOSED) must not be silently read here as
+    # a normal successful paper open (colleague review).
+    if result.status is not execution_intent.ExecutionStatus.PAPER_OPENED:
         log.error(
             "early_momentum.open_trade_for_episode_failed",
             episode_id=episode_id,

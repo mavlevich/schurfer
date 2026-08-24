@@ -26,6 +26,7 @@ status set.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Final, Protocol
@@ -205,12 +206,16 @@ class ExecutionIntent:
         # on a genuine bug in the caller, not on live market/config state.
         if self.side not in ("long", "short"):
             raise ValueError(f"side must be 'long' or 'short', got {self.side!r}")
-        if self.size_usd <= 0:
-            raise ValueError(f"size_usd must be positive, got {self.size_usd}")
+        # math.isfinite() first: NaN/inf compare False against every `<= 0`
+        # (nan <= 0 is False, inf <= 0 is False), so a plain positivity
+        # check alone silently lets both straight through (colleague
+        # review).
+        if not math.isfinite(self.size_usd) or self.size_usd <= 0:
+            raise ValueError(f"size_usd must be finite and positive, got {self.size_usd}")
         if self.leverage < 1:
             raise ValueError(f"leverage must be >= 1, got {self.leverage}")
-        if self.price is not None and self.price <= 0:
-            raise ValueError(f"price must be positive when given, got {self.price}")
+        if self.price is not None and (not math.isfinite(self.price) or self.price <= 0):
+            raise ValueError(f"price must be finite and positive when given, got {self.price}")
         if not self.idempotency_key:
             raise ValueError("idempotency_key must not be empty")
         if not self.strategy.name or not self.strategy.version:

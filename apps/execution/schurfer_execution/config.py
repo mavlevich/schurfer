@@ -190,6 +190,21 @@ class Config:
             raise ValueError("DATABASE_URL is required when AUTO_TRADE=true")
         if self.auto_trade and not self.require_market_quality:
             raise ValueError("REQUIRE_MARKET_QUALITY must be true when AUTO_TRADE=true")
+        if self.auto_trade and self.pump_short_mode is not None:
+            # trader.py's live branch (real orders via orders.place_order) is
+            # untouched by execution_intent.py -- it is still selected purely
+            # by cfg.dry_run being False, completely independent of whatever
+            # TradingMode PUMP_SHORT_MODE resolves to. Allowing an override
+            # here would let PUMP_SHORT_MODE=disabled (or =paper) sit in
+            # config and in the startup log claiming to govern execution
+            # while real orders keep being placed regardless -- a false
+            # safety lever is worse than no lever (colleague review, P0).
+            # Refuse it outright until a real LiveBroker exists to honor it.
+            raise ValueError(
+                "PUMP_SHORT_MODE cannot be set while AUTO_TRADE=true -- pump_short's live "
+                "path is not governed by TradingMode yet (see feat/live-order-lifecycle-v1); "
+                "an override here would be silently ignored by the actual order path"
+            )
         if not 0.0 < self.entry_min_pct <= 5_000.0:
             raise ValueError(
                 f"PUMP_ENTRY_MIN_PCT must be > 0 and <= 5000, got {self.entry_min_pct}"
