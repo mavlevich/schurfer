@@ -1597,6 +1597,24 @@ filter-report` (`confirmed_oi_growth_baseline_filter_v1`) tests this as a
     low. The allowed outcomes are a registered exit-v2 shadow, maker-v2 shadow, a
     narrow liquid taker segment, or parking pump-short and moving the platform to the
     next pre-registered signal.
+11. **[Registered 2026-08-24, matures ~2026-09-21] Maker-entry prospective
+    confirmation.** Pre-empts item 10's checkpoint by choosing its "maker-v2
+    shadow" outcome now, ahead of the 2026-08-31 date, on evidence already in
+    hand rather than waiting on the calendar: the discovery cohort's
+    conservative sensitivity (`activation_marketable_as_cash`) read +0.22%
+    mean episode net as of 2026-08-24, but split chronologically in half it
+    is entirely concentrated in the most recent two weeks (~+0.63% implied
+    vs ~-0.15% in the first half) -- temporally unstable within its own
+    discovery window, the exact pattern p-hacking produces. Registers
+    `prospective_confirmation_v1` (`MAKER_ENTRY_PROSPECTIVE_COHORT_START`,
+    frozen `2026-08-24T11:10:00Z`, strictly after the discovery report's own
+    last-inspected decision) against the same, unmodified
+    `maker-entry-report` -- no new execution code, no shadow order
+    placement exists yet. Evidence floor: 100 fillable episodes / 30 asset
+    clusters / 4 distinct UTC weeks, same as this codebase's other
+    registered contracts. Confirmed only if the floor is met and the
+    primary sensitivity's 95% cluster CI excludes zero on the lower bound.
+    See [the frozen contract](docs/research/pump-short-maker-entry-prospective-v1.md).
 
 Reporting duplication is reduced incrementally while implementing items 1, 3, 4, and
 5 through the shared `reporting`, replay, and challenger-inference modules. A separate
