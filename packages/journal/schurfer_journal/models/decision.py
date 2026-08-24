@@ -42,6 +42,18 @@ class TradeDecision(Base):
         ForeignKey("app.pump_events.id", ondelete="SET NULL"),
         nullable=True,
     )
+    # strategy_id/trading_mode: added for feat/execution-shadow-evidence-v1's
+    # ShadowBroker. Nullable and NULL on every pump_short row (past and
+    # future) -- pump_short identifies itself via strategy_version alone,
+    # unchanged, and never sets these. strategy_id mirrors trades.strategy_id
+    # (same app.strategies registry) rather than overloading strategy_version
+    # with a name-carrying convention pump_short's own rows don't follow.
+    strategy_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("app.strategies.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    trading_mode: Mapped[str | None] = mapped_column(String(16), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     outcomes: Mapped[list["TradeDecisionOutcome"]] = relationship(
@@ -52,6 +64,7 @@ class TradeDecision(Base):
         Index("ix_trade_decisions_ts", "ts"),
         Index("ix_trade_decisions_base_ts", "base", "ts"),
         Index("ix_trade_decisions_pump_event_id", "pump_event_id"),
+        Index("ix_trade_decisions_strategy_id", "strategy_id"),
         Index("uq_trade_decisions_decision_id", "decision_id", unique=True),
         {"schema": "app"},
     )

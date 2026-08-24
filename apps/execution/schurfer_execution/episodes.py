@@ -45,6 +45,12 @@ REASON_REARM_COOLDOWN = "rearm_cooldown"
 REASON_EXPIRED_WITHOUT_BREAKOUT = "expired_without_breakout"
 REASON_EXPIRED_WHILE_CLAIMED = "expired_while_claimed"
 REASON_POSITION_EXISTS = "position_exists"
+# EARLY_MOMENTUM_MODE=shadow: the breakout was real and ExecutionIntent was
+# recorded as evidence (execution_intent.ShadowBroker), but no position (real
+# or paper) was ever going to be opened for it -- an operator choice, not a
+# failure, so this pairs with STATUS_SUPPRESSED like REASON_ALREADY_OPEN
+# above, never STATUS_REJECTED/REASON_INFRASTRUCTURE_FAILURE.
+REASON_SHADOW_RECORDED = "shadow_recorded"
 
 STATUS_ARMED = "armed"
 STATUS_CLAIMED = "claimed"

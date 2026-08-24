@@ -242,7 +242,17 @@ async def run_liquidation_cascade_scanner(
                     exit_params=exit_params,
                 )
                 result = await broker.open(intent, cfg=cfg, rdb=rdb)
-                if result.status is not execution_intent.ExecutionStatus.PAPER_OPENED:
+                if result.status is execution_intent.ExecutionStatus.SHADOW_RECORDED:
+                    # LIQUIDATION_CASCADE_MODE=shadow: evidence recorded, no
+                    # position opened -- not a rejection. The same candidate
+                    # can re-quote every scan tick while the condition holds
+                    # (bounded by _SQL_SCANNER's 25-minute window); the
+                    # deterministic decision_id ShadowBroker derives from
+                    # idempotency_key collapses every repeat to one row via
+                    # ON CONFLICT DO NOTHING, so this loop does not need its
+                    # own dedup for that.
+                    log.info("liquidation_cascade.shadow_recorded", symbol=instrument.symbol)
+                elif result.status is not execution_intent.ExecutionStatus.PAPER_OPENED:
                     log.info(
                         "liquidation_cascade.broker_rejected",
                         symbol=instrument.symbol,

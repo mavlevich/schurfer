@@ -55,10 +55,21 @@ return 1
 _INSERT = """
 INSERT INTO app.trade_decisions
   (ts, base, exchange, action, reason, score, pump_pct,
-   decision_id, strategy_version, features, liquidity, price, pump_event_id)
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s::uuid, %s, %s::jsonb, %s::jsonb, %s, %s)
+   decision_id, strategy_version, features, liquidity, price, pump_event_id,
+   strategy_id, trading_mode)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s::uuid, %s, %s::jsonb, %s::jsonb, %s, %s, %s, %s)
 ON CONFLICT (decision_id) DO NOTHING
 """
+
+
+def _validate_positive_id(value: object, field: str) -> None:
+    """Shared shape check for the two FK-backed integer fields (pump_event_id,
+    strategy_id): both are populated internally (journal upserts), never from
+    raw user input, so a bad value here is a caller bug -- raising immediately
+    (producer side) or before insert (consumer side) surfaces it as a loud
+    failure/DLQ entry instead of a silent FK violation deep in Postgres."""
+    if value is not None and (isinstance(value, bool) or not isinstance(value, int) or value <= 0):
+        raise ValueError(f"{field} must be a positive integer or None")
 
 
 def _to_jsonb(value: dict[str, Any] | None, base: str, field: str) -> str | None:
@@ -92,6 +103,8 @@ async def write_decision(
     liquidity: dict[str, Any] | None = None,
     price: float | None = None,
     pump_event_id: int | None = None,
+    strategy_id: int | None = None,
+    trading_mode: str | None = None,
     seen_key: str | None = None,
     seen_ttl: int | None = None,
 ) -> None:
@@ -106,15 +119,17 @@ async def write_decision(
     decision_id is required and must be non-empty: idempotency on redelivery relies
     entirely on it via ON CONFLICT (decision_id), and a NULL would not dedupe.
 
+    strategy_id/trading_mode are for execution_intent.ShadowBroker (and any future
+    non-pump_short caller) -- pump_short's own call sites never pass them, and both
+    columns stay NULL on every row it writes, same as before these existed.
+
     No MAXLEN trim: it could silently drop an entry the writer has not committed yet.
     The writer XDELs each entry after its Postgres commit instead.
     """
     if not decision_id:
         raise ValueError("write_decision requires a non-empty decision_id for idempotency")
-    if pump_event_id is not None and (
-        isinstance(pump_event_id, bool) or not isinstance(pump_event_id, int) or pump_event_id <= 0
-    ):
-        raise ValueError("pump_event_id must be a positive integer or None")
+    _validate_positive_id(pump_event_id, "pump_event_id")
+    _validate_positive_id(strategy_id, "strategy_id")
     payload = json.dumps(
         {
             "schema_version": _SCHEMA_VERSION,
@@ -131,6 +146,8 @@ async def write_decision(
             "liquidity": _to_jsonb(liquidity, base, "liquidity"),
             "price": price,
             "pump_event_id": pump_event_id,
+            "strategy_id": strategy_id,
+            "trading_mode": trading_mode,
         }
     )
     if seen_key is not None:
@@ -152,10 +169,9 @@ def _row_from_payload(data: str | bytes) -> tuple[object, ...]:
     if not decision_id:
         raise ValueError("missing decision_id")
     pump_event_id = d.get("pump_event_id")
-    if pump_event_id is not None and (
-        isinstance(pump_event_id, bool) or not isinstance(pump_event_id, int) or pump_event_id <= 0
-    ):
-        raise ValueError("invalid pump_event_id")
+    _validate_positive_id(pump_event_id, "pump_event_id")
+    strategy_id = d.get("strategy_id")
+    _validate_positive_id(strategy_id, "strategy_id")
     return (
         datetime.fromisoformat(d["ts"]),
         d["base"],
@@ -170,6 +186,8 @@ def _row_from_payload(data: str | bytes) -> tuple[object, ...]:
         d.get("liquidity"),
         d.get("price"),
         pump_event_id,
+        strategy_id,
+        d.get("trading_mode"),
     )
 
 

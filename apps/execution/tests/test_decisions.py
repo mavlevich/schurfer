@@ -39,6 +39,8 @@ def _valid_payload(**over: object) -> dict[str, object]:
         "liquidity": None,
         "price": 1.5,
         "pump_event_id": 42,
+        "strategy_id": None,
+        "trading_mode": None,
     }
     p.update(over)
     return p
@@ -118,6 +120,41 @@ async def test_write_decision_rejects_invalid_pump_event_id_before_xadd() -> Non
     await rdb.aclose()
 
 
+async def test_write_decision_carries_strategy_id_and_trading_mode() -> None:
+    rdb = FakeRedis()
+    await write_decision(
+        rdb,
+        base="BEAT",
+        exchange="bybit",
+        action="shadow_recorded",
+        reason="x",
+        decision_id="d1",
+        strategy_id=7,
+        trading_mode="shadow",
+    )
+    entry = (await rdb.xrange(_STREAM))[0][1]
+    body = json.loads(entry[b"data"])
+    assert body["strategy_id"] == 7
+    assert body["trading_mode"] == "shadow"
+    await rdb.aclose()
+
+
+async def test_write_decision_rejects_invalid_strategy_id_before_xadd() -> None:
+    rdb = FakeRedis()
+    with pytest.raises(ValueError, match="strategy_id"):
+        await write_decision(
+            rdb,
+            base="BEAT",
+            exchange="bybit",
+            action="skipped",
+            reason="x",
+            decision_id="d1",
+            strategy_id=0,
+        )
+    assert await rdb.xlen(_STREAM) == 0
+    await rdb.aclose()
+
+
 async def test_write_decision_without_seen_key_only_xadds() -> None:
     rdb = FakeRedis()
     await write_decision(
@@ -176,10 +213,14 @@ async def test_write_decision_wrongtype_xadd_does_not_set_seen() -> None:
 
 
 def test_row_from_payload_maps_all_fields() -> None:
-    row = _row_from_payload(json.dumps(_valid_payload(base="ACT", price=2.5)))
+    row = _row_from_payload(
+        json.dumps(_valid_payload(base="ACT", price=2.5, strategy_id=7, trading_mode="shadow"))
+    )
     assert row[1] == "ACT"
     assert row[11] == 2.5
     assert row[12] == 42
+    assert row[13] == 7
+    assert row[14] == "shadow"
 
 
 def test_row_from_payload_accepts_old_message_without_pump_event_id() -> None:
@@ -191,10 +232,29 @@ def test_row_from_payload_accepts_old_message_without_pump_event_id() -> None:
     assert row[12] is None
 
 
+def test_row_from_payload_accepts_message_without_strategy_id_or_trading_mode() -> None:
+    """pump_short's own writes never set these -- a message that predates
+    (or simply never uses) them must still parse, with both columns NULL."""
+    payload = _valid_payload()
+    del payload["strategy_id"]
+    del payload["trading_mode"]
+
+    row = _row_from_payload(json.dumps(payload))
+
+    assert row[13] is None
+    assert row[14] is None
+
+
 @pytest.mark.parametrize("pump_event_id", [0, -1, True, 1.5, "42"])
 def test_row_from_payload_rejects_invalid_pump_event_id(pump_event_id: object) -> None:
     with pytest.raises(ValueError, match="pump_event_id"):
         _row_from_payload(json.dumps(_valid_payload(pump_event_id=pump_event_id)))
+
+
+@pytest.mark.parametrize("strategy_id", [0, -1, True, 1.5, "7"])
+def test_row_from_payload_rejects_invalid_strategy_id(strategy_id: object) -> None:
+    with pytest.raises(ValueError, match="strategy_id"):
+        _row_from_payload(json.dumps(_valid_payload(strategy_id=strategy_id)))
 
 
 def test_row_from_payload_rejects_unknown_schema() -> None:
@@ -222,6 +282,11 @@ def test_row_from_payload_rejects_empty_decision_id() -> None:
 def test_insert_has_on_conflict_do_nothing() -> None:
     # Idempotency on redelivery depends on this clause; lock it in place.
     assert "on conflict (decision_id) do nothing" in decisions._INSERT.lower()
+
+
+def test_insert_includes_strategy_id_and_trading_mode() -> None:
+    assert "strategy_id" in decisions._INSERT
+    assert "trading_mode" in decisions._INSERT
 
 
 # ---- consumer: _handle ----

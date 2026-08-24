@@ -5,16 +5,21 @@ paper.py/orders.py directly for its entry -- that per-strategy branching is
 exactly the pattern this module replaces (see early_momentum.py's own
 comment on why live code must not live inside a strategy file).
 
-Scope of this module today: only PAPER and DISABLED have a working broker.
-SHADOW needs app.trade_decisions' schema generalized first (it is
-pump_short-shaped -- strategy_version but no strategy_name, pump_pct/
-pump_event_id columns) -- see feat/execution-shadow-evidence-v1. LIVE_PROBE
-and LIVE_MICRO need durable intent persistence, clientOrderId, and
-reconciliation before any code may call orders.place_order through this
-interface -- see feat/live-order-lifecycle-v1. Both are declared here as
-TradingMode/ExecutionStatus values so the type doesn't need to change shape
-again when those PRs land, but build_broker raises NotImplementedError for
-them; nothing in this codebase can currently select them (see resolve_mode).
+Scope of this module today: PAPER, DISABLED, and SHADOW have a working
+broker. SHADOW records ExecutionIntent evidence into app.trade_decisions
+(generalized in feat/execution-shadow-evidence-v1 with a nullable strategy_id
+FK, alongside pump_short's pre-existing strategy_version/pump_pct/
+pump_event_id columns) without opening any position, real or paper -- see
+ShadowBroker. pump_short may never select it (see resolve_mode): it already
+writes its own richer decision evidence unconditionally in trader.py's
+_tick, and a second write through ShadowBroker would double that row and
+desync the two idempotency schemes. LIVE_PROBE and LIVE_MICRO need durable
+intent persistence, clientOrderId, and reconciliation before any code may
+call orders.place_order through this interface -- see
+feat/live-order-lifecycle-v1. Both are declared here as TradingMode/
+ExecutionStatus values so the type doesn't need to change shape again when
+that PR lands, but build_broker raises NotImplementedError for them; nothing
+in this codebase can currently select them (see resolve_mode).
 
 TradingMode/ExecutionStatus are StrEnum here (episodes.py's STATUS_* module
 constants are plain strings, by contrast) because this module's whole job is
@@ -27,13 +32,14 @@ status set.
 from __future__ import annotations
 
 import math
+import uuid
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Final, Protocol
 
 import structlog
 
-from . import paper, symbols
+from . import decisions, journal, paper, symbols
 
 if TYPE_CHECKING:
     from .config import Config
@@ -62,7 +68,7 @@ _LADDER: Final[dict[TradingMode, int]] = {
 # defense against a config typo silently reaching a code path that was never
 # built or tested.
 _UNIMPLEMENTED_MODES: Final[frozenset[TradingMode]] = frozenset(
-    {TradingMode.SHADOW, TradingMode.LIVE_PROBE, TradingMode.LIVE_MICRO}
+    {TradingMode.LIVE_PROBE, TradingMode.LIVE_MICRO}
 )
 
 # Every strategy name resolve_mode/build_broker are ever called with -- kept
@@ -74,6 +80,15 @@ STRATEGY_LIQUIDATION_CASCADE: Final = "liquidation_cascade"
 _KNOWN_STRATEGIES: Final = frozenset(
     {STRATEGY_PUMP_SHORT, STRATEGY_EARLY_MOMENTUM, STRATEGY_LIQUIDATION_CASCADE}
 )
+
+# pump_short already writes its own richer decision evidence (pump_pct,
+# pump_event_id, features, liquidity) unconditionally in trader.py's _tick,
+# on every tick, independent of TradingMode -- routing it through
+# ShadowBroker too would double-write a second, poorer-shaped row for the
+# same decision and desync the two idempotency schemes (ShadowBroker derives
+# decision_id from ExecutionIntent.idempotency_key; trader.py's own decision_id
+# is a fresh id per tick). See ShadowBroker's own docstring.
+_SHADOW_FORBIDDEN: Final[frozenset[str]] = frozenset({STRATEGY_PUMP_SHORT})
 
 _MODE_ENV_VAR: Final[dict[str, str]] = {
     STRATEGY_PUMP_SHORT: "pump_short_mode",
@@ -134,17 +149,24 @@ def resolve_mode(cfg: Config, strategy: str) -> TradingMode:
         raise ValueError(
             f"{strategy}: mode {override.value!r} has no implemented broker in this build"
         )
+    if override is TradingMode.SHADOW and strategy in _SHADOW_FORBIDDEN:
+        raise ValueError(
+            f"{strategy}: mode 'shadow' is not usable by this strategy -- it already "
+            "records its own decision evidence unconditionally (see "
+            "execution_intent.ShadowBroker's docstring)"
+        )
     return override
 
 
 class ExecutionStatus(StrEnum):
     REJECTED = "rejected"  # business rejection, no side effect -- reason must be set
-    SHADOW_RECORDED = "shadow_recorded"  # declared for forward compat; unreachable, no ShadowBroker
+    SHADOW_RECORDED = "shadow_recorded"  # ShadowBroker: evidence written, no position opened
     PAPER_OPENED = "paper_opened"
     # LIVE_ACCEPTED / FILL_UNRESOLVED / LIVE_FILLED_JOURNAL_PENDING /
     # JOURNAL_COMMITTED / EMERGENCY_CLOSED: declared for the future live
-    # broker's shape, unreachable in this build -- only PaperBroker exists,
-    # so only REJECTED and PAPER_OPENED are ever actually produced today.
+    # broker's shape, unreachable in this build -- only PaperBroker and
+    # ShadowBroker exist, so only REJECTED, SHADOW_RECORDED, and PAPER_OPENED
+    # are ever actually produced today.
     LIVE_ACCEPTED = "live_accepted"
     FILL_UNRESOLVED = "fill_unresolved"
     LIVE_FILLED_JOURNAL_PENDING = "live_filled_journal_pending"
@@ -349,14 +371,78 @@ class PaperBroker:
         )
 
 
+# Fixed namespace for ShadowBroker's decision_id derivation -- any constant
+# UUID works (uuid5 only needs it to be stable across calls/processes), this
+# one is simply generated once and frozen here.
+_SHADOW_DECISION_NAMESPACE: Final = uuid.UUID("6f1b3f8e-6c1a-4b0a-9e34-9a2f6e6a7c9d")
+
+
+class ShadowBroker:
+    """Records ExecutionIntent evidence into app.trade_decisions (the same
+    durable Redis-Stream-outbox pump_short's own decisions already use) and
+    returns SHADOW_RECORDED -- it never opens a position, real or paper, and
+    never touches paper.py. This is "what would this strategy have done",
+    not a simulated fill.
+
+    decision_id is derived deterministically (uuid5 of idempotency_key), not
+    randomly, so a strategy that re-emits the same intent every tick while
+    its condition holds (see liquidation_cascade.py's own comment on this)
+    collapses to exactly one row via the existing ON CONFLICT (decision_id)
+    DO NOTHING, the same way early_momentum's entry_idempotency_key and
+    pump_short's decision_id already dedupe their own writes. A random uuid4
+    per call would defeat that entirely.
+
+    pump_short must never reach this broker -- resolve_mode refuses a
+    'shadow' override for it (see _SHADOW_FORBIDDEN) because pump_short
+    already writes its own richer decision evidence (pump_pct, pump_event_id,
+    features, liquidity) unconditionally in trader.py's _tick; a second write
+    here would double that row's evidence and desync the two idempotency
+    schemes (this broker's uuid5 scheme vs. trader.py's per-tick fresh id).
+    """
+
+    mode = TradingMode.SHADOW
+
+    async def open(self, intent: ExecutionIntent, *, cfg: Config, rdb: Any) -> ExecutionResult:
+        if intent.price is None:
+            return _rejected(self.mode, "shadow broker requires a resolved price")
+        if not cfg.db_url:
+            return _rejected(self.mode, "shadow broker requires cfg.db_url")
+
+        # ensure_strategy upserts (writes updated_at on every call) -- fine
+        # here, this only runs when a decision is actually being recorded,
+        # never on a read/health path (see its own docstring for why that
+        # distinction matters).
+        strategy_id = await journal.ensure_strategy(
+            cfg.db_url, name=intent.strategy.name, version=intent.strategy.version
+        )
+        decision_id = str(uuid.uuid5(_SHADOW_DECISION_NAMESPACE, intent.idempotency_key))
+        await decisions.write_decision(
+            rdb,
+            base=intent.instrument.base,
+            exchange=intent.instrument.exchange,
+            action="shadow_recorded",
+            reason="shadow mode: evidence recorded, no position opened",
+            decision_id=decision_id,
+            score=intent.score,
+            strategy_version=intent.strategy.version,
+            strategy_id=strategy_id,
+            trading_mode=self.mode.value,
+            features=intent.setup_context,
+            price=intent.price,
+        )
+        return ExecutionResult(mode=self.mode, status=ExecutionStatus.SHADOW_RECORDED)
+
+
 def build_broker(mode: TradingMode, *, exchanges: dict[str, Any]) -> Broker:
-    """exchanges is accepted now (unused by PAPER/DISABLED) so the call
-    signature at every main.py call site doesn't need to change again once
-    a live broker needs it."""
+    """exchanges is accepted now (unused by PAPER/DISABLED/SHADOW) so the
+    call signature at every main.py call site doesn't need to change again
+    once a live broker needs it."""
     if mode is TradingMode.PAPER:
         return PaperBroker()
     if mode is TradingMode.DISABLED:
         return DisabledBroker()
+    if mode is TradingMode.SHADOW:
+        return ShadowBroker()
     raise NotImplementedError(
         f"TradingMode.{mode.name} has no broker implementation yet -- "
         "see execution_intent.py's module docstring for the PR that adds it"
@@ -374,6 +460,7 @@ __all__ = [
     "ExecutionResult",
     "ExecutionStatus",
     "PaperBroker",
+    "ShadowBroker",
     "StrategyIdentity",
     "TradingMode",
     "build_broker",
