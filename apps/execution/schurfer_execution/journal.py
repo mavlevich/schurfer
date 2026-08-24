@@ -48,7 +48,14 @@ INSERT INTO app.trades (
 ) VALUES (
     %s, %s, %s, 'perp', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'open', %s
 )
+ON CONFLICT (exchange, entry_order_id) WHERE entry_order_id IS NOT NULL DO NOTHING
 RETURNING id
+"""
+
+_SELECT_TRADE_BY_ORDER = """
+SELECT id, symbol, side, strategy_id
+FROM app.trades
+WHERE exchange = %s AND entry_order_id = %s
 """
 
 _CLOSE_TRADE = """
@@ -359,7 +366,55 @@ async def open_trade(
                 ),
             )
             row = await cur.fetchone()
-            return row[0] if row else None
+            if row is not None:
+                return int(row[0])
+            if order_id is None:
+                # DO NOTHING only fires via the partial unique index, which
+                # never matches a NULL entry_order_id -- a NULL row getting
+                # no RETURNING row back is some other, unexpected failure.
+                return None
+            # ON CONFLICT (exchange, entry_order_id) DO NOTHING fired: this
+            # exact exchange order was already journaled by a previous call
+            # (a crash-recovery retry, incident_worker re-processing) --
+            # idempotent by design, so look the existing row up instead of
+            # creating a second one for the same real position (colleague
+            # review).
+            await cur.execute(_SELECT_TRADE_BY_ORDER, (exchange, order_id))
+            existing = await cur.fetchone()
+            if existing is None:
+                # The conflicting row must exist (that's what DO NOTHING
+                # just fired against) -- a concurrent transaction inserted
+                # then rolled back between our INSERT and this SELECT is
+                # the only way this branch is reachable, vanishingly rare.
+                log.error(
+                    "journal.open_trade.conflict_row_vanished",
+                    symbol=symbol,
+                    exchange=exchange,
+                    order_id=order_id,
+                )
+                return None
+            existing_id, existing_symbol, existing_side, existing_strategy_id = existing
+            mismatched = (
+                existing_symbol != symbol
+                or existing_side != side
+                or existing_strategy_id != strategy_id
+            )
+            if mismatched:
+                # A genuine (exchange, order_id) collision that is NOT the
+                # same attempt at the same trade -- returning it anyway
+                # would silently attach this open to the wrong row. Fail
+                # loud instead; this needs a human, not a guess.
+                log.critical(
+                    "journal.open_trade.conflict_mismatch",
+                    symbol=symbol,
+                    exchange=exchange,
+                    order_id=order_id,
+                    existing_trade_id=existing_id,
+                    existing_symbol=existing_symbol,
+                    existing_side=existing_side,
+                )
+                return None
+            return int(existing_id)
     except Exception as exc:
         log.error("journal.open_trade.failed", symbol=symbol, exchange=exchange, err=str(exc))
         return None
@@ -408,11 +463,16 @@ async def complete_open(
     must not depend on the journal being configured at all; only the
     app.trades row itself is skipped.
 
-    Never raises: open_trade already catches and logs its own failures,
-    returning None. The caller (orders.py) decides what a None trade_id
-    means for its own flow (e.g. creating a durable incident so the write
-    can be retried) -- this function's job is purely the write, not the
-    failure policy around it.
+    Never raises, including from the Redis writes below (an earlier draft
+    left them unguarded -- any one of the four could raise and turn a
+    successful journal commit into an exception out of place_order's lock,
+    with no incident created, colleague review). Every key written here is
+    a reconstructable projection of the app.trades row (entry_price/side/
+    size_usd are literal columns; exit_params is exit_module.exit_params of
+    setup_context's own stored pump_pct) -- a partial failure here is a
+    degraded position-monitoring cache, not lost evidence, so this logs
+    critical and moves on rather than raising or rolling back the journal
+    write that already committed.
     """
     trade_id = None
     if db_url:
@@ -428,19 +488,51 @@ async def complete_open(
             setup_context=setup_context,
         )
         if trade_id:
-            await rdb.set(
+            await _safe_rdb_set(
+                rdb,
                 _TRADE_ID_KEY.format(exchange=exchange, base=base.upper()),
                 str(trade_id),
-                ex=_POSITION_KEY_TTL,
+                exchange=exchange,
+                base=base,
             )
 
-    await rdb.set(
-        exit_module.params_key(exchange, base), json.dumps(exit_params), ex=_POSITION_KEY_TTL
+    await _safe_rdb_set(
+        rdb,
+        exit_module.params_key(exchange, base),
+        json.dumps(exit_params),
+        exchange=exchange,
+        base=base,
     )
-    await rdb.set(exit_module.entry_key(exchange, base), str(entry_price), ex=_POSITION_KEY_TTL)
-    await rdb.set(exit_module.side_key(exchange, base), side, ex=_POSITION_KEY_TTL)
-    await rdb.set(exit_module.size_usd_key(exchange, base), str(size_usd), ex=_POSITION_KEY_TTL)
+    await _safe_rdb_set(
+        rdb, exit_module.entry_key(exchange, base), str(entry_price), exchange=exchange, base=base
+    )
+    await _safe_rdb_set(
+        rdb, exit_module.side_key(exchange, base), side, exchange=exchange, base=base
+    )
+    await _safe_rdb_set(
+        rdb,
+        exit_module.size_usd_key(exchange, base),
+        str(size_usd),
+        exchange=exchange,
+        base=base,
+    )
     return trade_id
+
+
+async def _safe_rdb_set(rdb: Any, key: str, value: str, *, exchange: str, base: str) -> None:
+    """Each position-monitoring key is written independently -- one failing
+    must not prevent the others from being attempted, and none of them may
+    ever propagate out of complete_open (see its own docstring)."""
+    try:
+        await rdb.set(key, value, ex=_POSITION_KEY_TTL)
+    except Exception as exc:
+        log.critical(
+            "journal.complete_open.redis_write_failed",
+            key=key,
+            exchange=exchange,
+            base=base,
+            err=str(exc),
+        )
 
 
 _INSERT_TRADE_FOR_EPISODE = """

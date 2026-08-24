@@ -195,6 +195,17 @@ class Trade(Base, TimestampMixin):
             unique=True,
             postgresql_where=text("entry_idempotency_key IS NOT NULL"),
         ),
+        # A retried/duplicated open_trade() call for the same real exchange
+        # order (crash-recovery replay, a bug in a retry path) must return
+        # the already-journaled row, never create a second one for the same
+        # real position -- see journal.open_trade's own ON CONFLICT handling.
+        Index(
+            "ux_trades_exchange_entry_order_id",
+            "exchange",
+            "entry_order_id",
+            unique=True,
+            postgresql_where=text("entry_order_id IS NOT NULL"),
+        ),
         {"schema": "app"},
     )
 

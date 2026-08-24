@@ -5,7 +5,7 @@ from typing import Any
 import structlog
 
 from . import exit as exit_module
-from . import incidents, journal, notify
+from . import incidents, journal, notify, order_attempts
 from .account import fetch_margin_balance, fetch_positions
 from .fill_price import FILL_UNRESOLVED, resolve_fill_price
 from .journal import revoke_pnl_readiness
@@ -296,15 +296,55 @@ async def place_order(
         # locally, before the call -- it round-trips through the exchange
         # and back on every subsequent fetch of this order, so it survives
         # even a total local crash that loses order_id itself (never
-        # captured, or captured but never persisted). Defense in depth, not
-        # a retry mechanism: Broker.open()'s at-most-once contract still
-        # applies unchanged, this only makes a crashed attempt identifiable
-        # after the fact rather than giving the exchange two calls with the
-        # same id to reconcile if this were ever retried by accident.
+        # captured, or captured but never persisted).
         entry_client_order_id = str(uuid.uuid4())
-        order = await ex.create_market_order(
-            symbol, ccxt_side, amount, params={"clientOrderId": entry_client_order_id}
-        )
+        db_url = getattr(cfg, "db_url", None) if cfg is not None else None
+
+        # Durable record written BEFORE the exchange is ever called (see
+        # order_attempts.py's own docstring) -- if this fails while a
+        # database IS configured, refuse to place the order at all rather
+        # than risk a real position with zero durable trace anywhere,
+        # including during a total DB outage the later journal write (and
+        # its own incident-creation fallback) would equally be unable to
+        # survive (colleague review, P0). cfg=None entirely (no database
+        # configured for this call at all -- some test harnesses, and any
+        # future caller that genuinely never wants tracking) skips this
+        # gate, matching journal.complete_open's own "db_url may be None"
+        # convention one step earlier.
+        attempt_id: int | None = None
+        if db_url:
+            attempt_id = await order_attempts.create_attempt(
+                db_url,
+                client_order_id=entry_client_order_id,
+                exchange=exchange,
+                base=base,
+                symbol=symbol,
+                side=side,
+                size_usd=actual_usd,
+                leverage=leverage,
+                contract_size=contract_size,
+                exit_params=exit_params,
+                setup_context=setup_context or {},
+            )
+            if attempt_id is None:
+                return {
+                    "allowed": False,
+                    "reason": "cannot durably record order intent (db unavailable) -- "
+                    "refusing to place a live order that could not be tracked",
+                }
+
+        try:
+            order = await ex.create_market_order(
+                symbol, ccxt_side, amount, params={"clientOrderId": entry_client_order_id}
+            )
+        except Exception as exc:
+            if db_url and attempt_id is not None:
+                await order_attempts.mark_failed(db_url, attempt_id, error=str(exc))
+            raise
+
+        if db_url and attempt_id is not None:
+            await order_attempts.mark_accepted(db_url, attempt_id, order_id=str(order.get("id")))
+
         await rdb.set(
             f"position:opened_at:{exchange}:{base.upper()}",
             str(int(time.time())),
@@ -415,8 +455,8 @@ async def place_order(
             # fall back to a synthetic one only so an id-less response can never
             # collide with another incident under the (exchange, order_id) key.
             incident_order_id = str(order_id) if order_id is not None else f"unknown:{uuid.uuid4()}"
-            return await _handle_unresolved_open(
-                db_url=getattr(cfg, "db_url", None) if cfg is not None else None,
+            result = await _handle_unresolved_open(
+                db_url=db_url,
                 rdb=rdb,
                 cfg=cfg,
                 exchange=exchange,
@@ -427,6 +467,9 @@ async def place_order(
                 leverage=leverage,
                 setup_context=setup_context,
             )
+            if db_url and attempt_id is not None:
+                await order_attempts.mark_completed(db_url, attempt_id, trade_id=None)
+            return result
 
         # A price is confirmed at this point (the FILL_UNRESOLVED branch
         # above already returned otherwise) -- complete the journal write
@@ -441,7 +484,7 @@ async def place_order(
         # (colleague review candidate on an earlier draft).
         assert resolution.price is not None
         trade_id = await journal.complete_open(
-            getattr(cfg, "db_url", None) if cfg is not None else None,
+            db_url,
             rdb,
             symbol=symbol,
             exchange=exchange,
@@ -454,14 +497,24 @@ async def place_order(
             exit_params=exit_params,
             setup_context=setup_context or {},
         )
-        if cfg is not None and getattr(cfg, "db_url", None) and trade_id is None:
+        if db_url and attempt_id is not None:
+            await order_attempts.mark_completed(
+                db_url, attempt_id, trade_id=trade_id, filled_amount=resolution.filled_amount
+            )
+        if db_url and trade_id is None:
             # The exchange fill is confirmed and protected, but the journal
             # write itself failed (DB outage at exactly this moment) --
             # durably record it the same way an unresolved fill price
             # already is, so incident_worker can retry journal.complete_open
             # via its own _complete_open once the DB is reachable again,
             # instead of this position silently never getting a ledger
-            # entry (the exact gap this function otherwise now closes).
+            # entry. Context includes exit_params/contract_size/
+            # client_order_id/filled_amount too, not just the bare fields
+            # the original FILL_UNRESOLVED incident context carried -- a
+            # human reconciling this by hand (or a future recovery path)
+            # needs the exact SL sizing and fill this attempt actually saw,
+            # not a value re-derived from setup_context.get("pump_pct")
+            # that may not match (colleague review).
             # incident_worker re-resolves the fill price itself rather than
             # trusting a cached one here -- one redundant exchange call on
             # this rare path (DB down at exactly this moment) is a small
@@ -469,7 +522,7 @@ async def place_order(
             # machinery instead of a second, parallel one.
             incident_order_id = str(order_id) if order_id is not None else f"unknown:{uuid.uuid4()}"
             incident_id = await incidents.create_incident(
-                cfg.db_url,
+                db_url,
                 exchange=exchange,
                 base=base,
                 operation="open",
@@ -480,15 +533,41 @@ async def place_order(
                     "size_usd": actual_usd,
                     "leverage": leverage,
                     "setup_context": setup_context,
+                    "exit_params": exit_params,
+                    "contract_size": contract_size,
+                    "client_order_id": entry_client_order_id,
+                    "filled_amount": resolution.filled_amount,
                 },
             )
-            log.error(
+            await revoke_pnl_readiness(rdb)
+            log.critical(
                 "execution.order.journal_write_failed",
                 base=base,
                 exchange=exchange,
                 order_id=order_id,
                 incident_id=incident_id,
             )
+            creds = notify.credentials(cfg) if cfg is not None else None
+            if creds:
+                # Best-effort and independent of Postgres -- fires even if
+                # incident_id is None because create_incident itself also
+                # hit the same outage that took down the journal write, the
+                # one scenario where nothing else durable exists for this
+                # position at all yet (colleague review, P0).
+                incident_note = (
+                    f"incident {incident_id}"
+                    if incident_id is not None
+                    else "incident ALSO FAILED TO CREATE -- reconcile via "
+                    "app.live_order_attempts.client_order_id"
+                )
+                await notify.notify_alert(
+                    *creds,
+                    text=(
+                        f"Journal write FAILED for a live OPEN on {base}/{exchange} "
+                        f"(order {order_id}, client_order_id {entry_client_order_id}). "
+                        f"Position is real and SL-protected on the exchange. {incident_note}."
+                    ),
+                )
 
         return {
             "allowed": True,

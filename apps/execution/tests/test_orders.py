@@ -584,10 +584,18 @@ class TestCompletesJournalOnFill:
         self, _mock_bal: MagicMock, _mock_pos: MagicMock
     ) -> None:
         cfg = MagicMock(db_url="postgresql://x")
-        with patch(
-            "schurfer_execution.orders.journal.complete_open",
-            AsyncMock(return_value=77),
-        ) as mock_complete:
+        with (
+            patch(
+                "schurfer_execution.orders.journal.complete_open",
+                AsyncMock(return_value=77),
+            ) as mock_complete,
+            patch(
+                "schurfer_execution.orders.order_attempts.create_attempt",
+                AsyncMock(return_value=1),
+            ),
+            patch("schurfer_execution.orders.order_attempts.mark_accepted", AsyncMock()),
+            patch("schurfer_execution.orders.order_attempts.mark_completed", AsyncMock()),
+        ):
             result = await place_order(
                 **_kwargs(exchanges={"bingx": self._confirmed_exchange()}, cfg=cfg)
             )
@@ -622,6 +630,12 @@ class TestCompletesJournalOnFill:
                 "schurfer_execution.orders.incidents.create_incident",
                 AsyncMock(return_value=99),
             ) as mock_incident,
+            patch(
+                "schurfer_execution.orders.order_attempts.create_attempt",
+                AsyncMock(return_value=1),
+            ),
+            patch("schurfer_execution.orders.order_attempts.mark_accepted", AsyncMock()),
+            patch("schurfer_execution.orders.order_attempts.mark_completed", AsyncMock()),
         ):
             result = await place_order(
                 **_kwargs(exchanges={"bingx": self._confirmed_exchange()}, cfg=cfg)
@@ -660,6 +674,146 @@ class TestCompletesJournalOnFill:
         assert result["allowed"]
         assert mock_complete.call_args.args[0] is None
         mock_incident.assert_not_awaited()
+
+
+class TestPreFlightDurability:
+    """order_attempts.create_attempt is written BEFORE the exchange is ever
+    called -- if that write itself fails while a database IS configured,
+    place_order must refuse the order outright rather than risk a real
+    position with zero durable trace anywhere (colleague review, P0)."""
+
+    def _confirmed_exchange(self) -> MagicMock:
+        ex = MagicMock()
+        ex.markets = {"BEAT/USDT:USDT": {"contractSize": 1.0}}
+        ex.set_leverage = AsyncMock()
+        ex.fetch_ticker = AsyncMock(return_value={"last": 1.0})
+        ex.amount_to_precision = MagicMock(return_value="100.0")
+        ex.price_to_precision = MagicMock(return_value="1.1")
+        ex.create_market_order = AsyncMock(
+            return_value={"id": "entry-1", "status": "closed", "average": 1.5}
+        )
+        ex.create_stop_market_order = AsyncMock(return_value={"id": "sl-1"})
+        return ex
+
+    @patch("schurfer_execution.orders.fetch_positions", return_value=([], set()))
+    @patch(
+        "schurfer_execution.orders.fetch_margin_balance",
+        return_value=[{"exchange": "bingx", "free": 1000.0, "used": 0.0, "total": 1000.0}],
+    )
+    async def test_refuses_order_when_preflight_record_cannot_be_written(
+        self, _mock_bal: MagicMock, _mock_pos: MagicMock
+    ) -> None:
+        cfg = MagicMock(db_url="postgresql://x")
+        ex = self._confirmed_exchange()
+        with patch(
+            "schurfer_execution.orders.order_attempts.create_attempt",
+            AsyncMock(return_value=None),
+        ):
+            result = await place_order(**_kwargs(exchanges={"bingx": ex}, cfg=cfg))
+
+        assert not result["allowed"]
+        assert "durably record" in result["reason"]
+        ex.create_market_order.assert_not_called()
+
+    @patch("schurfer_execution.orders.fetch_positions", return_value=([], set()))
+    @patch(
+        "schurfer_execution.orders.fetch_margin_balance",
+        return_value=[{"exchange": "bingx", "free": 1000.0, "used": 0.0, "total": 1000.0}],
+    )
+    async def test_no_preflight_gate_when_no_db_configured(
+        self, _mock_bal: MagicMock, _mock_pos: MagicMock
+    ) -> None:
+        """cfg=None entirely (no database configured for this call at all)
+        must behave exactly as before this PR -- the gate only applies when
+        a database IS configured but unreachable."""
+        ex = self._confirmed_exchange()
+        with patch(
+            "schurfer_execution.orders.order_attempts.create_attempt", AsyncMock()
+        ) as mock_create:
+            result = await place_order(**_kwargs(exchanges={"bingx": ex}))
+
+        assert result["allowed"]
+        mock_create.assert_not_awaited()
+        ex.create_market_order.assert_called_once()
+
+    @patch("schurfer_execution.orders.fetch_positions", return_value=([], set()))
+    @patch(
+        "schurfer_execution.orders.fetch_margin_balance",
+        return_value=[{"exchange": "bingx", "free": 1000.0, "used": 0.0, "total": 1000.0}],
+    )
+    async def test_marks_attempt_accepted_with_real_order_id(
+        self, _mock_bal: MagicMock, _mock_pos: MagicMock
+    ) -> None:
+        cfg = MagicMock(db_url="postgresql://x")
+        ex = self._confirmed_exchange()
+        with (
+            patch(
+                "schurfer_execution.orders.order_attempts.create_attempt",
+                AsyncMock(return_value=5),
+            ),
+            patch(
+                "schurfer_execution.orders.order_attempts.mark_accepted", AsyncMock()
+            ) as mock_accepted,
+            patch("schurfer_execution.orders.order_attempts.mark_completed", AsyncMock()),
+            patch("schurfer_execution.orders.journal.complete_open", AsyncMock(return_value=1)),
+        ):
+            result = await place_order(**_kwargs(exchanges={"bingx": ex}, cfg=cfg))
+
+        assert result["allowed"]
+        mock_accepted.assert_awaited_once_with("postgresql://x", 5, order_id="entry-1")
+
+    @patch("schurfer_execution.orders.fetch_positions", return_value=([], set()))
+    @patch(
+        "schurfer_execution.orders.fetch_margin_balance",
+        return_value=[{"exchange": "bingx", "free": 1000.0, "used": 0.0, "total": 1000.0}],
+    )
+    async def test_marks_attempt_failed_and_reraises_when_exchange_call_errors(
+        self, _mock_bal: MagicMock, _mock_pos: MagicMock
+    ) -> None:
+        cfg = MagicMock(db_url="postgresql://x")
+        ex = self._confirmed_exchange()
+        ex.create_market_order = AsyncMock(side_effect=RuntimeError("exchange down"))
+        with (
+            patch(
+                "schurfer_execution.orders.order_attempts.create_attempt",
+                AsyncMock(return_value=5),
+            ),
+            patch(
+                "schurfer_execution.orders.order_attempts.mark_failed", AsyncMock()
+            ) as mock_failed,
+            pytest.raises(RuntimeError, match="exchange down"),
+        ):
+            await place_order(**_kwargs(exchanges={"bingx": ex}, cfg=cfg))
+
+        mock_failed.assert_awaited_once_with("postgresql://x", 5, error="exchange down")
+
+    @patch("schurfer_execution.orders.fetch_positions", return_value=([], set()))
+    @patch(
+        "schurfer_execution.orders.fetch_margin_balance",
+        return_value=[{"exchange": "bingx", "free": 1000.0, "used": 0.0, "total": 1000.0}],
+    )
+    async def test_marks_attempt_completed_with_trade_id_and_filled_amount(
+        self, _mock_bal: MagicMock, _mock_pos: MagicMock
+    ) -> None:
+        cfg = MagicMock(db_url="postgresql://x")
+        ex = self._confirmed_exchange()
+        with (
+            patch(
+                "schurfer_execution.orders.order_attempts.create_attempt",
+                AsyncMock(return_value=5),
+            ),
+            patch("schurfer_execution.orders.order_attempts.mark_accepted", AsyncMock()),
+            patch(
+                "schurfer_execution.orders.order_attempts.mark_completed", AsyncMock()
+            ) as mock_completed,
+            patch("schurfer_execution.orders.journal.complete_open", AsyncMock(return_value=77)),
+        ):
+            result = await place_order(**_kwargs(exchanges={"bingx": ex}, cfg=cfg))
+
+        assert result["allowed"]
+        mock_completed.assert_awaited_once()
+        kw = mock_completed.call_args.kwargs
+        assert kw["trade_id"] == 77
 
 
 class TestClosePositionCancelsStopLoss:

@@ -2,6 +2,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from schurfer_execution import incidents
 from schurfer_execution.incident_worker import MAX_RESOLUTION_ATTEMPTS, _process_one, _tick
 from schurfer_execution.incidents import Incident
 from schurfer_execution.symbols import ExecutionInstrument
@@ -116,6 +117,39 @@ async def test_process_one_completes_a_resolved_open() -> None:
     mock_alert.assert_awaited_once()
 
 
+async def test_process_one_open_not_marked_resolved_when_journal_write_fails() -> None:
+    """Regression (colleague review, P0): an earlier draft called
+    mark_resolved BEFORE attempting the journal write, so a DB hiccup
+    inside open_trade right after the price was confirmed left the
+    incident permanently terminal (load_open_incidents only loads pending/
+    resolving) with the write never having happened and nothing left to
+    retry it. mark_resolved must only fire once the write actually
+    succeeded; otherwise this incident must stay retryable."""
+    incident = _open_incident()
+    rdb = MagicMock()
+    rdb.set = AsyncMock()
+
+    with (
+        patch(
+            "schurfer_execution.incident_worker.incidents.mark_resolved",
+            AsyncMock(return_value=True),
+        ) as mock_resolved,
+        patch(
+            "schurfer_execution.incident_worker.incidents.mark_attempt", AsyncMock()
+        ) as mock_attempt,
+        patch("schurfer_execution.incident_worker.notify.notify_alert", AsyncMock()),
+        patch(
+            "schurfer_execution.incident_worker.journal.open_trade",
+            AsyncMock(return_value=None),
+        ),
+    ):
+        await _process_one(incident, {"bybit": _exchange_confirming(1.5)}, rdb, _cfg())
+
+    mock_resolved.assert_not_called()
+    mock_attempt.assert_awaited_once()
+    assert mock_attempt.call_args.kwargs["status"] == incidents.STATUS_RESOLVING
+
+
 async def test_process_one_completes_a_resolved_close() -> None:
     incident = _close_incident()
     rdb = MagicMock()
@@ -226,7 +260,7 @@ async def test_process_one_close_alerts_when_trade_truly_not_found() -> None:
         patch(
             "schurfer_execution.incident_worker.incidents.mark_resolved",
             AsyncMock(return_value=True),
-        ),
+        ) as mock_resolved,
         patch(
             "schurfer_execution.incident_worker.incidents.claim_recovery_notification",
             AsyncMock(return_value=False),
@@ -239,11 +273,22 @@ async def test_process_one_close_alerts_when_trade_truly_not_found() -> None:
             "schurfer_execution.incident_worker.journal.try_commit_close", AsyncMock()
         ) as mock_commit,
         patch("schurfer_execution.incident_worker.notify.notify_alert", AsyncMock()) as mock_alert,
+        patch(
+            "schurfer_execution.incident_worker.incidents.mark_attempt", AsyncMock()
+        ) as mock_attempt,
     ):
         await _process_one(incident, {"bybit": _exchange_confirming(2.0)}, rdb, _cfg())
 
     mock_commit.assert_not_called()
     mock_alert.assert_awaited_once()
+    # _complete_close's own "trade truly not found" branch returns False --
+    # mark_resolved must not fire for this incident, and _process_one must
+    # instead bump the retry count so a later tick can try again once the
+    # matching trade is findable (colleague review: an earlier draft marked
+    # every incident resolved as soon as a price was confirmed, regardless
+    # of whether the completion that followed actually succeeded).
+    mock_attempt.assert_awaited_once()
+    mock_resolved.assert_not_called()
 
 
 async def test_process_one_still_unresolved_marks_resolving_without_alert() -> None:

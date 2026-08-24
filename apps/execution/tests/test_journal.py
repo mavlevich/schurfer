@@ -1169,6 +1169,85 @@ async def test_open_trade_untouched_return_type_still_int_or_none() -> None:
     assert isinstance(trade_id, int)
 
 
+# --- open_trade: idempotent on (exchange, entry_order_id) ---
+#
+# Migration 0034 adds a partial unique index on app.trades (exchange,
+# entry_order_id) WHERE entry_order_id IS NOT NULL -- open_trade's INSERT
+# now targets it with ON CONFLICT DO NOTHING, so a retried/duplicated call
+# for the same real exchange order (crash-recovery replay, a bug in a
+# retry path) returns the already-journaled row instead of creating a
+# second one for the same real position (colleague review, P0).
+
+
+async def test_open_trade_conflict_returns_existing_row_when_it_matches() -> None:
+    conn, _cur = _mock_conn(
+        [
+            (7,),  # strategy upsert
+            None,  # INSERT ... ON CONFLICT DO NOTHING fired, no row back
+            (42, "BEAT/USDT:USDT", "short", 7),  # fallback SELECT: matches
+        ]
+    )
+    with patch("psycopg.AsyncConnection.connect", AsyncMock(return_value=conn)):
+        trade_id = await journal.open_trade(
+            "postgresql://x",
+            symbol="BEAT/USDT:USDT",
+            exchange="bybit",
+            side="short",
+            order_id="ord-1",
+            size_usd=100.0,
+            leverage=5,
+            entry_price=1.0,
+            setup_context={},
+        )
+    assert trade_id == 42
+
+
+async def test_open_trade_conflict_mismatch_fails_loud_instead_of_guessing() -> None:
+    """A genuine (exchange, order_id) collision that is NOT the same
+    attempt at the same trade must never be silently attached to the
+    caller's intent -- this needs a human, not a guess."""
+    conn, _cur = _mock_conn(
+        [
+            (7,),  # strategy upsert
+            None,  # INSERT ... ON CONFLICT DO NOTHING fired, no row back
+            (42, "OTHER/USDT:USDT", "short", 7),  # fallback SELECT: symbol differs
+        ]
+    )
+    with patch("psycopg.AsyncConnection.connect", AsyncMock(return_value=conn)):
+        trade_id = await journal.open_trade(
+            "postgresql://x",
+            symbol="BEAT/USDT:USDT",
+            exchange="bybit",
+            side="short",
+            order_id="ord-1",
+            size_usd=100.0,
+            leverage=5,
+            entry_price=1.0,
+            setup_context={},
+        )
+    assert trade_id is None
+
+
+async def test_open_trade_no_conflict_row_and_no_order_id_returns_none() -> None:
+    """Paper trades (order_id=None) never touch the partial unique index --
+    a NULL-order_id insert returning no row is some other, unexpected
+    failure, not a real conflict to resolve."""
+    conn, _cur = _mock_conn([(7,), None])
+    with patch("psycopg.AsyncConnection.connect", AsyncMock(return_value=conn)):
+        trade_id = await journal.open_trade(
+            "postgresql://x",
+            symbol="BEAT/USDT:USDT",
+            exchange="bybit",
+            side="short",
+            order_id=None,
+            size_usd=100.0,
+            leverage=5,
+            entry_price=1.0,
+            setup_context={},
+        )
+    assert trade_id is None
+
+
 # --- complete_open ---
 #
 # Shared by orders.place_order's happy path (immediately once
