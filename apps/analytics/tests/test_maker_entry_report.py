@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from schurfer_analytics.maker_entry_report import (
     MAKER_ENTRY_COHORT_START,
+    MAKER_ENTRY_PROSPECTIVE_COHORT_START,
     MAKER_ENTRY_STRATEGY_VERSIONS,
     build_maker_entry_report,
     build_parser,
@@ -25,8 +26,10 @@ from schurfer_analytics.virtual_market import MakerDecisionPaths, maker_path_bou
 from schurfer_analytics.virtual_strategy import MarketPath
 
 
-def _inputs() -> tuple[ReplayDataset, ReplayFilters, MakerDecisionPaths]:
-    decision_at = MAKER_ENTRY_COHORT_START + timedelta(hours=2, minutes=1)
+def _inputs(
+    cohort_start: datetime = MAKER_ENTRY_COHORT_START,
+) -> tuple[ReplayDataset, ReplayFilters, MakerDecisionPaths]:
+    decision_at = cohort_start + timedelta(hours=2, minutes=1)
     decision = ReplayDecision(
         row_id=1,
         decision_id="00000000-0000-0000-0000-000000000001",
@@ -71,8 +74,8 @@ def _inputs() -> tuple[ReplayDataset, ReplayFilters, MakerDecisionPaths]:
         ),
     )
     filters = ReplayFilters(
-        since=MAKER_ENTRY_COHORT_START,
-        until=MAKER_ENTRY_COHORT_START + timedelta(days=2),
+        since=cohort_start,
+        until=cohort_start + timedelta(days=2),
         strategy_versions=MAKER_ENTRY_STRATEGY_VERSIONS,
         required_horizons=(480,),
     )
@@ -145,7 +148,7 @@ def test_report_rejects_scope_drift_and_duplicate_paths() -> None:
         required_horizons=filters.required_horizons,
     )
 
-    with pytest.raises(ValueError, match="locked discovery cohort"):
+    with pytest.raises(ValueError, match="registered cohort start"):
         build_maker_entry_report(
             dataset,
             wrong,
@@ -165,6 +168,40 @@ def test_report_rejects_scope_drift_and_duplicate_paths() -> None:
             working_tree_dirty=False,
             bootstrap_iterations=100,
         )
+
+
+def test_prospective_cohort_is_accepted_and_labeled() -> None:
+    """The prospective confirmation cohort (frozen 2026-08-24, see
+    docs/research/pump-short-maker-entry-prospective-v1.md) must be
+    accepted alongside the original discovery cohort, and the report must
+    label which one it read -- these must never be silently conflated."""
+    dataset, filters, paths = _inputs(cohort_start=MAKER_ENTRY_PROSPECTIVE_COHORT_START)
+    report = build_maker_entry_report(
+        dataset,
+        filters,
+        (paths,),
+        generated_at=MAKER_ENTRY_PROSPECTIVE_COHORT_START + timedelta(days=3),
+        code_revision="abc123",
+        working_tree_dirty=False,
+        bootstrap_iterations=100,
+    )
+    assert report.manifest.scope == "prospective_confirmation_v1"
+    assert "Cohort: prospective_confirmation_v1" in render_markdown(report)
+
+
+def test_discovery_cohort_is_labeled_distinctly_from_prospective() -> None:
+    dataset, filters, paths = _inputs()
+    report = build_maker_entry_report(
+        dataset,
+        filters,
+        (paths,),
+        generated_at=datetime(2026, 7, 29, tzinfo=UTC),
+        code_revision="abc123",
+        working_tree_dirty=False,
+        bootstrap_iterations=100,
+    )
+    assert report.manifest.scope == "discovery_upper_bound_only"
+    assert "Cohort: discovery_upper_bound_only" in render_markdown(report)
 
 
 def test_activation_marketable_sensitivity_turns_fill_into_cash() -> None:

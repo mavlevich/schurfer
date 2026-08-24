@@ -75,6 +75,34 @@ MAKER_ENTRY_COHORT_START = datetime(2026, 7, 22, tzinfo=UTC)
 MAKER_ENTRY_STRATEGY_VERSIONS = ("pump_short_v1_market_quality",)
 MAKER_SENSITIVITY_VERSION = "activation_and_touch_cash_sensitivity_v1"
 
+# Prospective confirmation cohort for the same maker-entry model, frozen
+# 2026-08-24 -- see docs/research/pump-short-maker-entry-prospective-v1.md.
+# The already-inspected discovery cohort above (MAKER_ENTRY_COHORT_START)
+# showed a temporally unstable, non-significant lean (95% CI crossing zero,
+# and concentrated in the most recent ~2 weeks of that window rather than
+# spread evenly) -- this cohort exists to answer, on decisions never seen
+# in that discovery read, whether the lean persists. Frozen strictly after
+# the discovery report's own last inspected decision timestamp (10:21:44 UTC
+# that day) so there is zero overlap between what was already looked at and
+# what this cohort will read.
+MAKER_ENTRY_PROSPECTIVE_COHORT_START = datetime(2026, 8, 24, 11, 10, tzinfo=UTC)
+# Primary sensitivity for the prospective read, chosen before seeing any
+# prospective data: activation-marketable fills are excluded as cash (a
+# resting post-only order would very likely be rejected by the exchange if
+# it was already marketable on the activation bar, so counting it as a fill
+# is the more optimistic, less defensible assumption) -- see
+# MAKER_SENSITIVITY_VERSION's own three variants in the sensitivity table.
+MAKER_ENTRY_PROSPECTIVE_PRIMARY_SENSITIVITY = "activation_marketable_as_cash"
+MAKER_ENTRY_PROSPECTIVE_EVIDENCE_FLOOR = {
+    "min_fillable_episodes": 100,
+    "min_distinct_clusters": 30,
+    "min_distinct_utc_weeks": 4,
+}
+_REGISTERED_COHORT_SCOPES: dict[datetime, str] = {
+    MAKER_ENTRY_COHORT_START: "discovery_upper_bound_only",
+    MAKER_ENTRY_PROSPECTIVE_COHORT_START: "prospective_confirmation_v1",
+}
+
 
 @dataclass(frozen=True)
 class CountRow:
@@ -698,8 +726,12 @@ def build_maker_entry_report(
     bootstrap_seed: int = DEFAULT_BOOTSTRAP_SEED,
 ) -> MakerEntryReport:
     revision = normalize_code_revision(code_revision)
-    if filters.since != MAKER_ENTRY_COHORT_START:
-        raise ValueError("maker-entry report requires the locked discovery cohort start")
+    if filters.since not in _REGISTERED_COHORT_SCOPES:
+        raise ValueError(
+            "maker-entry report requires a registered cohort start "
+            f"(one of {sorted(d.isoformat() for d in _REGISTERED_COHORT_SCOPES)})"
+        )
+    cohort_scope = _REGISTERED_COHORT_SCOPES[filters.since]
     if filters.strategy_versions != MAKER_ENTRY_STRATEGY_VERSIONS:
         raise ValueError("maker-entry report requires the locked strategy cohort")
     if filters.allow_fallback:
@@ -768,6 +800,7 @@ def build_maker_entry_report(
             bootstrap_version=CLUSTER_BOOTSTRAP_VERSION,
             bootstrap_iterations=bootstrap_iterations,
             bootstrap_seed=bootstrap_seed,
+            scope=cohort_scope,
         ),
         dataset_episodes=len(dataset.episodes),
         eligible_episodes=len(dataset.eligible_episodes),
@@ -815,6 +848,7 @@ def render_markdown(report: MakerEntryReport) -> str:
             f"Scope: {manifest.dataset_since.isoformat()} <= decision "
             f"< {manifest.dataset_until_exclusive.isoformat()}"
         ),
+        f"Cohort: {manifest.scope}",
         "",
         (
             "> Discovery-only optimistic upper bound. A candle crossing the limit does "
