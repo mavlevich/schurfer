@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Review Schurfer PRs'
+  short_description: 'Review Schurfer diffs and regression risks'
+  default_prompt: 'Use $schurfer-pr-review to review the current branch against main and report blockers with evidence.'

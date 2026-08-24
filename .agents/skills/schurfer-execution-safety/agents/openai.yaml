@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Schurfer execution safety'
+  short_description: 'Design safe strategy execution changes'
+  default_prompt: 'Use $schurfer-execution-safety to implement or review this trading execution change.'
