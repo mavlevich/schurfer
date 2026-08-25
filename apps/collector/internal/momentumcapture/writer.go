@@ -22,6 +22,13 @@ import (
 // rows never collide on the same primary key.
 const CaptureVersion = "v1"
 
+// DerivativesContextVersion versions the additive mark/index/funding
+// contract independently from CaptureVersion. Existing price/OI/flow
+// consumers can keep reading capture v1 across this addition, while a
+// context consumer must require this explicit version and
+// derivatives_complete=true. Historical rows remain NULL, never fake zero.
+const DerivativesContextVersion = "derivatives_context_v1"
+
 const (
 	// MaxPendingBars bounds the writer's own queue independently of
 	// whatever produced the backlog (a slow database, a network blip).
@@ -322,6 +329,12 @@ INSERT INTO timeseries.bybit_momentum_bars_1m (
 	price_source, first_price_event_at, last_price_event_at,
 	first_price_received_at, last_price_received_at, price_observed_this_minute,
 	open_interest_complete, price_complete,
+	derivatives_context_version,
+	mark_price, mark_price_event_at, mark_price_observed_at,
+	index_price, index_price_event_at, index_price_observed_at,
+	funding_rate, funding_rate_event_at, funding_rate_observed_at,
+	next_funding_at, next_funding_event_at, next_funding_observed_at,
+	derivatives_observed_this_minute, derivatives_complete,
 	payload_hash
 )
 VALUES (
@@ -346,7 +359,13 @@ VALUES (
 	$68, $69, $70,
 	$71, $72, $73,
 	$74, $75,
-	$76
+	$76,
+	$77, $78, $79,
+	$80, $81, $82,
+	$83, $84, $85,
+	$86, $87, $88,
+	$89, $90,
+	$91
 )
 ON CONFLICT (exchange, market_type, symbol, capture_version, bucket_start)
 DO UPDATE SET created_at = bybit_momentum_bars_1m.created_at
@@ -431,6 +450,22 @@ type canonicalRow struct {
 	FirstPriceReceivedAt, LastPriceReceivedAt *time.Time
 	PriceObservedThisMinute                   bool
 	OpenInterestComplete, PriceComplete       bool
+
+	DerivativesContextVersion string
+	MarkPrice                 *float64
+	MarkPriceEventAt          *time.Time
+	MarkPriceObservedAt       *time.Time
+	IndexPrice                *float64
+	IndexPriceEventAt         *time.Time
+	IndexPriceObservedAt      *time.Time
+	FundingRate               *float64
+	FundingRateEventAt        *time.Time
+	FundingRateObservedAt     *time.Time
+	NextFundingAt             *time.Time
+	NextFundingEventAt        *time.Time
+	NextFundingObservedAt     *time.Time
+	DerivativesObserved       bool
+	DerivativesComplete       bool
 }
 
 // rowArgs builds the positional args for insertRowSQL and the payload_hash
@@ -489,6 +524,18 @@ func (w *Writer) rowArgs(bar momentum.Bar) ([]any, [32]byte) {
 		FirstPriceReceivedAt: bar.FirstPriceReceivedAt, LastPriceReceivedAt: bar.LastPriceReceivedAt,
 		PriceObservedThisMinute: bar.PriceObservedThisMinute,
 		OpenInterestComplete:    bar.OpenInterestComplete, PriceComplete: bar.PriceComplete,
+
+		DerivativesContextVersion: DerivativesContextVersion,
+		MarkPrice:                 bar.MarkPrice, MarkPriceEventAt: bar.MarkPriceEventAt,
+		MarkPriceObservedAt: bar.MarkPriceObservedAt,
+		IndexPrice:          bar.IndexPrice, IndexPriceEventAt: bar.IndexPriceEventAt,
+		IndexPriceObservedAt: bar.IndexPriceObservedAt,
+		FundingRate:          bar.FundingRate, FundingRateEventAt: bar.FundingRateEventAt,
+		FundingRateObservedAt: bar.FundingRateObservedAt,
+		NextFundingAt:         bar.NextFundingAt, NextFundingEventAt: bar.NextFundingEventAt,
+		NextFundingObservedAt: bar.NextFundingObservedAt,
+		DerivativesObserved:   bar.DerivativesObservedThisMinute,
+		DerivativesComplete:   bar.DerivativesComplete,
 	}
 
 	hash := hashRow(row)
@@ -514,6 +561,12 @@ func (w *Writer) rowArgs(bar momentum.Bar) ([]any, [32]byte) {
 		row.PriceSource, row.FirstPriceEventAt, row.LastPriceEventAt,
 		row.FirstPriceReceivedAt, row.LastPriceReceivedAt, row.PriceObservedThisMinute,
 		row.OpenInterestComplete, row.PriceComplete,
+		row.DerivativesContextVersion,
+		row.MarkPrice, row.MarkPriceEventAt, row.MarkPriceObservedAt,
+		row.IndexPrice, row.IndexPriceEventAt, row.IndexPriceObservedAt,
+		row.FundingRate, row.FundingRateEventAt, row.FundingRateObservedAt,
+		row.NextFundingAt, row.NextFundingEventAt, row.NextFundingObservedAt,
+		row.DerivativesObserved, row.DerivativesComplete,
 		hash[:],
 	}
 	return args, hash

@@ -22,10 +22,151 @@ func newTestApplication(symbols []string) *application {
 		readiness:                momentumcapture.NewReadinessTracker(universe),
 		source:                   binance.NewSource(), // never started: no goroutine touches it in these tests
 		writerInbox:              make(chan []momentum.Bar, writerInboxBuffer),
+		markPriceEvents:          make(chan binance.MarkPriceMessage, markPriceEventBuffer),
+		markPriceLifecycleEvents: make(chan binance.MarkPriceLifecycleEvent, lifecycleEventBuffer),
 		openInterestLastSeenAt:   make(map[string]time.Time),
 		openInterestGapMarked:    make(map[string]bool),
+		markPriceLastSeenAt:      make(map[string]time.Time),
+		markPriceGapMarked:       make(map[string]bool),
 		openInterestGapThreshold: computeOpenInterestGapThreshold(len(symbols), binance.DefaultOpenInterestSchedulerConfig()),
 		lastDrift:                universe.CheckDrift(universe.Symbols, time.Unix(0, 0)),
+	}
+}
+
+func validMarkPriceMessage(update binance.PublicMarkPrice) binance.MarkPriceMessage {
+	return binance.MarkPriceMessage{Update: &update}
+}
+
+func TestApplicationHandleMarkPriceCapturesIndependentDerivativesFeed(t *testing.T) {
+	t.Parallel()
+	app := newTestApplication([]string{"BTCUSDT"})
+	now := time.Unix(60, 0).UTC()
+	app.handleMarkPrice(validMarkPriceMessage(binance.PublicMarkPrice{
+		Symbol: "BTCUSDT", EventAt: now, ReceivedAt: now,
+		MarkPrice: 100, IndexPrice: 99.5, FundingRate: -0.0001,
+		NextFundingAt: now.Add(8 * time.Hour),
+	}))
+	if app.stats.markPriceAcceptedTotal != 1 || !app.stats.lastDerivativesAt.Equal(now) {
+		t.Fatalf("stats = %+v", app.stats)
+	}
+	if !app.markPriceLastSeenAt["BTCUSDT"].Equal(now) || app.markPriceGapMarked["BTCUSDT"] {
+		t.Fatal("valid update must advance and recover the per-symbol gap detector")
+	}
+	app.handleMarkPrice(validMarkPriceMessage(binance.PublicMarkPrice{Symbol: "OUTSIDE", EventAt: now, ReceivedAt: now}))
+	if app.stats.markPriceOutOfScopeTotal != 1 {
+		t.Fatal("out-of-scope derivative update was not counted")
+	}
+}
+
+func TestApplicationInvalidMarkPriceIsCountedAndInterruptsCurrentBar(t *testing.T) {
+	t.Parallel()
+	app := newTestApplication([]string{"BTCUSDT"})
+	first := time.Unix(60, 0).UTC()
+	second := first.Add(time.Minute)
+	for _, at := range []time.Time{first, second} {
+		app.handleMarkPrice(validMarkPriceMessage(binance.PublicMarkPrice{
+			Symbol: "BTCUSDT", EventAt: at, ReceivedAt: at,
+			MarkPrice: 100, IndexPrice: 99.5, FundingRate: -0.0001,
+			NextFundingAt: at.Add(8 * time.Hour),
+		}))
+	}
+
+	invalidAt := second.Add(10 * time.Second)
+	app.handleMarkPrice(binance.MarkPriceMessage{Invalid: &binance.InvalidMarkPrice{
+		Symbol: "BTCUSDT", EventAt: invalidAt, ReceivedAt: invalidAt,
+		Reason: "invalid_market_values_or_provenance",
+	}})
+	if app.stats.markPriceInvalidTotal != 1 || app.stats.markPriceAcceptedTotal != 2 {
+		t.Fatalf("invalid/accepted = %d/%d, want 1/2", app.stats.markPriceInvalidTotal, app.stats.markPriceAcceptedTotal)
+	}
+	if got := app.markPriceLastSeenAt["BTCUSDT"]; !got.Equal(second) {
+		t.Fatalf("invalid update advanced freshness to %v, want %v", got, second)
+	}
+
+	bars := app.engine.Flush(second.Add(time.Minute))
+	if len(bars) != 1 || bars[0].BucketStart != second || bars[0].DerivativesComplete {
+		t.Fatalf("invalid input must make the current derivatives bar incomplete, got %+v", bars)
+	}
+}
+
+func TestApplicationInvalidMarkPriceWithoutSymbolInterruptsWholeUniverse(t *testing.T) {
+	t.Parallel()
+	app := newTestApplication([]string{"BTCUSDT", "ETHUSDT"})
+	first := time.Unix(60, 0).UTC()
+	second := first.Add(time.Minute)
+	for _, symbol := range app.universe.Symbols {
+		for _, at := range []time.Time{first, second} {
+			app.handleMarkPrice(validMarkPriceMessage(binance.PublicMarkPrice{
+				Symbol: symbol, EventAt: at, ReceivedAt: at,
+				MarkPrice: 100, IndexPrice: 99.5, FundingRate: -0.0001,
+				NextFundingAt: at.Add(8 * time.Hour),
+			}))
+		}
+	}
+
+	invalidAt := second.Add(10 * time.Second)
+	app.handleMarkPrice(binance.MarkPriceMessage{Invalid: &binance.InvalidMarkPrice{
+		ReceivedAt: invalidAt,
+		Reason:     "invalid_market_values_or_provenance",
+	}})
+	bars := app.engine.Flush(second.Add(time.Minute))
+	if len(bars) != 2 {
+		t.Fatalf("got %d bars, want one per subscribed symbol", len(bars))
+	}
+	for _, bar := range bars {
+		if bar.DerivativesComplete {
+			t.Fatalf("symbol-less invalid message must interrupt every subscribed symbol, got %+v", bar)
+		}
+	}
+}
+
+func TestCheckMarkPriceGapsMarksOnlySilentSymbolsAndRecoversOnValidUpdate(t *testing.T) {
+	t.Parallel()
+	app := newTestApplication([]string{"BTCUSDT", "ETHUSDT"})
+	start := time.Unix(1000, 0).UTC()
+	app.markPriceLastSeenAt["BTCUSDT"] = start
+	app.markPriceLastSeenAt["ETHUSDT"] = start.Add(25 * time.Second)
+
+	app.checkMarkPriceGaps(start.Add(markPriceGapThreshold + time.Second))
+	if app.stats.markPriceGapTotal != 1 || !app.markPriceGapMarked["BTCUSDT"] || app.markPriceGapMarked["ETHUSDT"] {
+		t.Fatalf("unexpected gap state: total=%d marked=%v", app.stats.markPriceGapTotal, app.markPriceGapMarked)
+	}
+	app.checkMarkPriceGaps(start.Add(markPriceGapThreshold + 2*time.Second))
+	if app.stats.markPriceGapTotal != 1 {
+		t.Fatal("one continuous silence period must be counted only once")
+	}
+
+	recoveredAt := start.Add(markPriceGapThreshold + 3*time.Second)
+	app.handleMarkPrice(validMarkPriceMessage(binance.PublicMarkPrice{
+		Symbol: "BTCUSDT", EventAt: recoveredAt, ReceivedAt: recoveredAt,
+		MarkPrice: 100, IndexPrice: 99.5, FundingRate: 0.0001,
+		NextFundingAt: recoveredAt.Add(8 * time.Hour),
+	}))
+	if app.markPriceGapMarked["BTCUSDT"] || !app.markPriceLastSeenAt["BTCUSDT"].Equal(recoveredAt) {
+		t.Fatal("a valid observation must recover the symbol gap state")
+	}
+}
+
+func TestMarkPriceLifecycleAppliesReconnectGraceAndStickyDiscontinuity(t *testing.T) {
+	t.Parallel()
+	app := newTestApplication([]string{"BTCUSDT"})
+	connectedAt := time.Unix(1000, 0).UTC()
+	app.handleMarkPriceLifecycle(binance.MarkPriceLifecycleEvent{
+		Symbols: []string{"BTCUSDT"}, ConnectedAt: connectedAt,
+	})
+	app.checkMarkPriceGaps(connectedAt.Add(markPriceGapThreshold - time.Second))
+	if app.stats.markPriceGapTotal != 0 {
+		t.Fatal("a new connection must receive one full silence threshold of grace")
+	}
+
+	disconnectedAt := connectedAt.Add(5 * time.Second)
+	app.handleMarkPriceLifecycle(binance.MarkPriceLifecycleEvent{
+		Symbols: []string{"BTCUSDT"}, ConnectedAt: connectedAt,
+		DisconnectedAt: disconnectedAt, ReadTimeout: true,
+	})
+	if !app.markPriceGapMarked["BTCUSDT"] || app.stats.markPriceReconnectTotal != 1 || app.stats.markPriceReadTimeoutTotal != 1 {
+		t.Fatalf("disconnect state not recorded: marked=%v reconnects=%d timeouts=%d",
+			app.markPriceGapMarked["BTCUSDT"], app.stats.markPriceReconnectTotal, app.stats.markPriceReadTimeoutTotal)
 	}
 }
 
@@ -561,6 +702,10 @@ func TestDeriveHealthStatusPriority(t *testing.T) {
 	if got := deriveHealthStatus(momentumcapture.Health{}); got != "ok" {
 		t.Fatalf("status = %q, want ok for a clean snapshot", got)
 	}
+	derivativesStale := momentumcapture.Health{StartedAt: time.Unix(0, 0), UpdatedAt: time.Unix(181, 0)}
+	if got := deriveHealthStatus(derivativesStale); got != "degraded_derivatives_stale" {
+		t.Fatalf("derivatives stale status = %q", got)
+	}
 
 	stale := momentumcapture.Health{UniverseStale: true}
 	if got := deriveHealthStatus(stale); got != "degraded_universe_stale" {
@@ -607,6 +752,7 @@ func TestApplicationLogHealthPublishesToRedisWithExchangeAndExclusionCounts(t *t
 	}
 
 	app := newTestApplication([]string{"BTCUSDT", "ETHUSDT"})
+	app.universe.CapturedAt = time.Now()
 	app.healthStore = store
 	app.catalog = binance.SymbolCatalogCounts{
 		CatalogItemsTotal:             10,
@@ -666,7 +812,7 @@ func TestApplicationShutdownReturnsWriterFlushError(t *testing.T) {
 	writerDone := make(chan error, 1)
 	go drainWriterInbox(app.writerInbox, writerDone, errors.New("db unavailable"))
 
-	if err := app.shutdown(closedChan(), closedChan(), closedChan(), writerDone); err == nil {
+	if err := app.shutdown(closedChan(), closedChan(), closedChan(), closedChan(), writerDone); err == nil {
 		t.Fatal("shutdown must propagate a failed final writer flush, not report success")
 	}
 }
@@ -690,11 +836,16 @@ func TestApplicationShutdownDrainsBufferedTradeAndOpenInterestBeforeFinalFlush(t
 		Symbol: "BTCUSDT", BidPrice: 99, AskPrice: 101,
 		EventAt: time.Unix(60, 0).UTC(), ReceivedAt: time.Unix(60, 0).UTC(),
 	}
+	app.markPriceEvents <- validMarkPriceMessage(binance.PublicMarkPrice{
+		Symbol: "BTCUSDT", MarkPrice: 100, IndexPrice: 99, FundingRate: 0.0001,
+		EventAt: time.Unix(60, 0).UTC(), ReceivedAt: time.Unix(60, 0).UTC(),
+		NextFundingAt: time.Unix(3600, 0).UTC(),
+	})
 
 	writerDone := make(chan error, 1)
 	go drainWriterInbox(app.writerInbox, writerDone, nil)
 
-	if err := app.shutdown(closedChan(), closedChan(), closedChan(), writerDone); err != nil {
+	if err := app.shutdown(closedChan(), closedChan(), closedChan(), closedChan(), writerDone); err != nil {
 		t.Fatalf("shutdown: %v", err)
 	}
 	if app.stats.tradesAcceptedTotal != 1 {
@@ -705,6 +856,9 @@ func TestApplicationShutdownDrainsBufferedTradeAndOpenInterestBeforeFinalFlush(t
 	}
 	if app.stats.bookTickerAcceptedTotal != 1 {
 		t.Fatal("shutdown must drain a book ticker update already buffered before its final flush")
+	}
+	if app.stats.markPriceAcceptedTotal != 1 {
+		t.Fatal("shutdown must drain a mark-price update already buffered before its final flush")
 	}
 }
 
@@ -721,7 +875,7 @@ func TestApplicationShutdownWaitsForTradesOpenInterestAndBookTickerToStop(t *tes
 	}()
 
 	started := time.Now()
-	if err := app.shutdown(closedChan(), oiDone, closedChan(), writerDone); err != nil {
+	if err := app.shutdown(closedChan(), oiDone, closedChan(), closedChan(), writerDone); err != nil {
 		t.Fatalf("shutdown: %v", err)
 	}
 	if time.Since(started) < 20*time.Millisecond {
@@ -742,7 +896,7 @@ func TestApplicationShutdownWaitsForBookTickerToStop(t *testing.T) {
 	}()
 
 	started := time.Now()
-	if err := app.shutdown(closedChan(), closedChan(), bookTickerDone, writerDone); err != nil {
+	if err := app.shutdown(closedChan(), closedChan(), bookTickerDone, closedChan(), writerDone); err != nil {
 		t.Fatalf("shutdown: %v", err)
 	}
 	if time.Since(started) < 20*time.Millisecond {
@@ -758,7 +912,7 @@ func TestApplicationShutdownAppliesPendingLossLatchesBeforeFinalFlush(t *testing
 	writerDone := make(chan error, 1)
 	go drainWriterInbox(app.writerInbox, writerDone, nil)
 
-	if err := app.shutdown(closedChan(), closedChan(), closedChan(), writerDone); err != nil {
+	if err := app.shutdown(closedChan(), closedChan(), closedChan(), closedChan(), writerDone); err != nil {
 		t.Fatalf("shutdown: %v", err)
 	}
 	if app.stats.lastDiscontinuityFor != "*" {

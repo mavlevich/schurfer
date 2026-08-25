@@ -103,6 +103,7 @@ const (
 	// is comparable in arrival rate to an OI reading, nothing like the
 	// trade firehose.
 	bookTickerEventBuffer = 512
+	markPriceEventBuffer  = 4096
 	writerInboxBuffer     = 64
 	driftResultBuffer     = 2
 
@@ -143,15 +144,18 @@ const (
 	// variance, not a genuine interruption.
 	openInterestGapThresholdFloor = 30 * time.Second
 
-	// estimatedHotBytesPerRow reuses cmd/momentumcapture's own measured
-	// figure: both venues write the identical row shape to the identical
-	// table, so a real Bybit measurement is the right estimate here too,
-	// not a guess. Revisit once Binance's own row width is independently
-	// measured: OHLC and bid/ask are no longer permanently hollow here
-	// (feat/momentum-trade-price-source-v1 filled OHLC; this bookTicker
-	// feed fills LastBidPrice/LastAskPrice), which trades bytes for
-	// compressibility in a way the estimate does not distinguish.
-	estimatedHotBytesPerRow   = 1143.6
+	// Binance documents the selected mark-price stream at a three-second
+	// cadence. A 30-second threshold tolerates ordinary scheduling/network
+	// jitter while still preventing a single silent symbol from carrying
+	// stale derivatives state into a minute bar merely because other symbols
+	// on the same combined-stream shard remain active.
+	markPriceGapThreshold = 30 * time.Second
+
+	// Same conservative planning estimate as cmd/momentumcapture: the old
+	// measured row plus a structural allowance for this PR's new context.
+	// Replace it with an observed post-deploy delta; it is intentionally not
+	// presented as a benchmark result.
+	estimatedHotBytesPerRow   = 1280.0
 	queuePressureWarnFraction = 0.5
 )
 
@@ -194,6 +198,12 @@ type counters struct {
 	bookTickerAcceptedTotal   uint64
 	bookTickerInvalidTotal    uint64
 	bookTickerOutOfScopeTotal uint64
+	markPriceAcceptedTotal    uint64
+	markPriceInvalidTotal     uint64
+	markPriceOutOfScopeTotal  uint64
+	markPriceReconnectTotal   uint64
+	markPriceReadTimeoutTotal uint64
+	markPriceGapTotal         uint64
 	tradeLifecycleTotal       uint64
 	// tradeReconnectTotal/tradeReadTimeoutTotal are tallied directly from
 	// TradeLifecycleEvent here, unlike cmd/momentumcapture which reads
@@ -212,6 +222,7 @@ type counters struct {
 	lastDiscontinuityAt   time.Time
 	lastDiscontinuityFor  string
 	lastBarAt             time.Time
+	lastDerivativesAt     time.Time
 	tradeLagMaxMs         int64
 	tickerLagMaxMs        int64
 	tradeReceiveToHandle  latencyHistogram
@@ -242,17 +253,21 @@ type application struct {
 	source      *binance.Source
 	healthStore *momentumcapture.RedisStore
 
-	tradeEvents        chan binance.PublicTrade
-	tradeDrops         chan binance.PublicTrade
-	lifecycleEvents    chan binance.TradeLifecycleEvent
-	openInterestEvents chan binance.OpenInterestReading
-	bookTickerEvents   chan binance.PublicBookTicker
+	tradeEvents              chan binance.PublicTrade
+	tradeDrops               chan binance.PublicTrade
+	lifecycleEvents          chan binance.TradeLifecycleEvent
+	openInterestEvents       chan binance.OpenInterestReading
+	bookTickerEvents         chan binance.PublicBookTicker
+	markPriceEvents          chan binance.MarkPriceMessage
+	markPriceLifecycleEvents chan binance.MarkPriceLifecycleEvent
 
 	writerInbox  chan []momentum.Bar
 	driftResults chan momentumcapture.DriftReport
 
 	openInterestLastSeenAt map[string]time.Time
 	openInterestGapMarked  map[string]bool
+	markPriceLastSeenAt    map[string]time.Time
+	markPriceGapMarked     map[string]bool
 	// openInterestGapThreshold is openInterestGapThresholdMultiple times
 	// the real expected full-cycle duration for this run's own universe
 	// size and configured scheduler rate -- computed once at startup (see
@@ -279,9 +294,11 @@ type application struct {
 	// non-blocking-drop-and-count contract, same atomic reasoning
 	// (incremented from a book-ticker shard's own read goroutine).
 	bookTickerDropsLost atomic.Uint64
+	markPriceDropsLost  atomic.Uint64
 
 	tradeVisibilityLost     lossLatch
 	lifecycleVisibilityLost lossLatch
+	markPriceVisibilityLost lossLatch
 
 	stats counters
 }
@@ -393,12 +410,14 @@ func run() error {
 
 	now := time.Now()
 	oiLastSeenAt := make(map[string]time.Time, universe.Count())
+	markPriceLastSeenAt := make(map[string]time.Time, universe.Count())
 	for _, symbol := range universe.Symbols {
 		// Same "clock starts now" baseline as cmd/momentumcapture's own
 		// tickerLastSeenAt: without this, checkOpenInterestGaps would flag
 		// the entire universe interrupted before the first poll cycle
 		// even has a chance to reach every symbol once.
 		oiLastSeenAt[symbol] = now
+		markPriceLastSeenAt[symbol] = now
 	}
 
 	app := &application{
@@ -418,10 +437,14 @@ func run() error {
 		lifecycleEvents:          make(chan binance.TradeLifecycleEvent, lifecycleEventBuffer),
 		openInterestEvents:       make(chan binance.OpenInterestReading, openInterestEventBuffer),
 		bookTickerEvents:         make(chan binance.PublicBookTicker, bookTickerEventBuffer),
+		markPriceEvents:          make(chan binance.MarkPriceMessage, markPriceEventBuffer),
+		markPriceLifecycleEvents: make(chan binance.MarkPriceLifecycleEvent, lifecycleEventBuffer),
 		writerInbox:              make(chan []momentum.Bar, writerInboxBuffer),
 		driftResults:             make(chan momentumcapture.DriftReport, driftResultBuffer),
 		openInterestLastSeenAt:   oiLastSeenAt,
 		openInterestGapMarked:    make(map[string]bool, universe.Count()),
+		markPriceLastSeenAt:      markPriceLastSeenAt,
+		markPriceGapMarked:       make(map[string]bool, universe.Count()),
 		openInterestGapThreshold: computeOpenInterestGapThreshold(universe.Count(), cfg.OpenInterestScheduler),
 		lastDrift:                universe.CheckDrift(universe.Symbols, now),
 		catalog:                  catalog.Counts,
@@ -462,8 +485,16 @@ func run() error {
 		}
 	}()
 
+	markPriceDone := make(chan struct{})
+	go func() {
+		defer close(markPriceDone)
+		if err := source.RunMarkPriceWithLifecycle(ctx, universe.Symbols, app.consumeMarkPrice, app.consumeMarkPriceLifecycle); err != nil {
+			slog.Error("momentumcapturebinance.markprice.stopped", "err", err)
+		}
+	}()
+
 	slog.Info("momentumcapturebinance.starting", "symbols", universe.Count())
-	return app.loop(ctx, tradesDone, oiDone, bookTickerDone, writerDone)
+	return app.loop(ctx, tradesDone, oiDone, bookTickerDone, markPriceDone, writerDone)
 }
 
 // runWriter is copied verbatim from cmd/momentumcapture: identical
@@ -602,9 +633,35 @@ func (app *application) consumeBookTicker(_ context.Context, update binance.Publ
 	return nil
 }
 
+func (app *application) consumeMarkPrice(_ context.Context, message binance.MarkPriceMessage) error {
+	select {
+	case app.markPriceEvents <- message:
+	default:
+		app.markPriceDropsLost.Add(1)
+		app.markPriceVisibilityLost.markOnce(time.Now())
+		symbol := ""
+		if message.Update != nil {
+			symbol = message.Update.Symbol
+		} else if message.Invalid != nil {
+			symbol = message.Invalid.Symbol
+		}
+		slog.Warn("momentumcapturebinance.markprice_queue_full", "symbol", symbol)
+	}
+	return nil
+}
+
+func (app *application) consumeMarkPriceLifecycle(event binance.MarkPriceLifecycleEvent) {
+	select {
+	case app.markPriceLifecycleEvents <- event:
+	default:
+		app.markPriceVisibilityLost.markOnce(time.Now())
+		slog.Warn("momentumcapturebinance.markprice_lifecycle_queue_full", "shard", event.ShardSessionID)
+	}
+}
+
 func (app *application) loop(
 	ctx context.Context,
-	tradesDone, oiDone, bookTickerDone <-chan struct{},
+	tradesDone, oiDone, bookTickerDone, markPriceDone <-chan struct{},
 	writerDone <-chan error,
 ) error {
 	flushTicker := time.NewTicker(flushInterval)
@@ -615,7 +672,7 @@ func (app *application) loop(
 	for {
 		select {
 		case <-ctx.Done():
-			return app.shutdown(tradesDone, oiDone, bookTickerDone, writerDone)
+			return app.shutdown(tradesDone, oiDone, bookTickerDone, markPriceDone, writerDone)
 
 		case trade := <-app.tradeEvents:
 			app.observeInputQueueDepth()
@@ -637,10 +694,19 @@ func (app *application) loop(
 			app.observeInputQueueDepth()
 			app.handleBookTicker(update)
 
+		case message := <-app.markPriceEvents:
+			app.observeInputQueueDepth()
+			app.handleMarkPrice(message)
+
+		case event := <-app.markPriceLifecycleEvents:
+			app.observeInputQueueDepth()
+			app.handleMarkPriceLifecycle(event)
+
 		case now := <-flushTicker.C:
 			started := time.Now()
 			app.consumeLossLatches()
 			app.checkOpenInterestGaps(now)
+			app.checkMarkPriceGaps(now)
 			app.enqueue(app.engine.Flush(now))
 			app.stats.flush.observe(time.Since(started))
 
@@ -664,11 +730,12 @@ func (app *application) loop(
 // the same shutdown-signal reason), so waiting for both costs virtually
 // nothing and keeps this function's own "every producer confirmed stopped
 // before draining is final" invariant exact, not approximate.
-func (app *application) shutdown(tradesDone, oiDone, bookTickerDone <-chan struct{}, writerDone <-chan error) error {
+func (app *application) shutdown(tradesDone, oiDone, bookTickerDone, markPriceDone <-chan struct{}, writerDone <-chan error) error {
 	deadline := time.Now().Add(shutdownTimeout)
 	tradesStopped := false
 	oiStopped := false
 	bookTickerStopped := false
+	markPriceStopped := false
 
 drain:
 	for {
@@ -688,6 +755,12 @@ drain:
 		case update := <-app.bookTickerEvents:
 			app.observeInputQueueDepth()
 			app.handleBookTicker(update)
+		case message := <-app.markPriceEvents:
+			app.observeInputQueueDepth()
+			app.handleMarkPrice(message)
+		case event := <-app.markPriceLifecycleEvents:
+			app.observeInputQueueDepth()
+			app.handleMarkPriceLifecycle(event)
 		case <-tradesDone:
 			tradesStopped = true
 			tradesDone = nil
@@ -697,12 +770,15 @@ drain:
 		case <-bookTickerDone:
 			bookTickerStopped = true
 			bookTickerDone = nil
+		case <-markPriceDone:
+			markPriceStopped = true
+			markPriceDone = nil
 		default:
-			if tradesStopped && oiStopped && bookTickerStopped {
+			if tradesStopped && oiStopped && bookTickerStopped && markPriceStopped {
 				break drain
 			}
 			if time.Now().After(deadline) {
-				slog.Warn("momentumcapturebinance.shutdown_drain_timed_out", "trades_stopped", tradesStopped, "oi_stopped", oiStopped, "bookticker_stopped", bookTickerStopped)
+				slog.Warn("momentumcapturebinance.shutdown_drain_timed_out", "trades_stopped", tradesStopped, "oi_stopped", oiStopped, "bookticker_stopped", bookTickerStopped, "markprice_stopped", markPriceStopped)
 				break drain
 			}
 			time.Sleep(5 * time.Millisecond)
@@ -742,6 +818,9 @@ func (app *application) consumeLossLatches() {
 	}
 	if at, ok := app.lifecycleVisibilityLost.consume(); ok {
 		app.markTradesFeedInterrupted(at, "lifecycle_queue_full")
+	}
+	if at, ok := app.markPriceVisibilityLost.consume(); ok {
+		app.markDerivativesFeedInterrupted(at, "markprice_queue_or_lifecycle_full")
 	}
 }
 
@@ -969,6 +1048,97 @@ func (app *application) handleBookTicker(update binance.PublicBookTicker) {
 	app.enqueue(bars)
 }
 
+func (app *application) handleMarkPrice(message binance.MarkPriceMessage) {
+	if message.Invalid != nil {
+		app.handleInvalidMarkPrice(*message.Invalid)
+		return
+	}
+	if message.Update == nil {
+		app.handleInvalidMarkPrice(binance.InvalidMarkPrice{
+			ReceivedAt: time.Now(),
+			Reason:     "invalid_internal_message_shape",
+		})
+		return
+	}
+	update := *message.Update
+	if !app.universe.Contains(update.Symbol) {
+		app.stats.markPriceOutOfScopeTotal++
+		return
+	}
+	mark, index, funding := update.MarkPrice, update.IndexPrice, update.FundingRate
+	eventAt, observedAt, nextFunding := update.EventAt, update.ReceivedAt, update.NextFundingAt
+	bars, err := app.engine.AddDerivativesObservation(momentum.DerivativesObservation{
+		Symbol:    update.Symbol,
+		MarkPrice: &mark, MarkPriceEventAt: &eventAt, MarkPriceObservedAt: &observedAt,
+		IndexPrice: &index, IndexPriceEventAt: &eventAt, IndexPriceObservedAt: &observedAt,
+		FundingRate: &funding, FundingRateEventAt: &eventAt, FundingRateObservedAt: &observedAt,
+		NextFundingAt: &nextFunding, NextFundingEventAt: &eventAt, NextFundingObservedAt: &observedAt,
+		EventAt: eventAt, ObservedAt: observedAt,
+	})
+	if err != nil {
+		app.handleInvalidMarkPrice(binance.InvalidMarkPrice{
+			Symbol: update.Symbol, EventAt: update.EventAt, ReceivedAt: update.ReceivedAt,
+			Reason: "engine_rejected_derivatives_observation",
+		})
+		return
+	}
+	app.stats.markPriceAcceptedTotal++
+	app.stats.lastDerivativesAt = update.ReceivedAt
+	app.markPriceLastSeenAt[update.Symbol] = update.ReceivedAt
+	app.markPriceGapMarked[update.Symbol] = false
+	app.enqueue(bars)
+}
+
+func (app *application) handleInvalidMarkPrice(invalid binance.InvalidMarkPrice) {
+	if invalid.Symbol != "" && !app.universe.Contains(invalid.Symbol) {
+		app.stats.markPriceOutOfScopeTotal++
+		return
+	}
+	app.stats.markPriceInvalidTotal++
+	at := invalid.EventAt
+	if at.IsZero() {
+		at = invalid.ReceivedAt
+	}
+	if at.IsZero() {
+		at = time.Now()
+	}
+	if invalid.Symbol == "" {
+		app.markDerivativesFeedInterrupted(at, "invalid_mark_price_without_symbol")
+	} else {
+		app.enqueue(app.engine.MarkDerivativesDiscontinuity(invalid.Symbol, at))
+	}
+	slog.Warn(
+		"momentumcapturebinance.markprice_invalid",
+		"symbol", invalid.Symbol,
+		"reason", invalid.Reason,
+	)
+}
+
+func (app *application) handleMarkPriceLifecycle(event binance.MarkPriceLifecycleEvent) {
+	if event.DisconnectedAt.IsZero() {
+		for _, symbol := range event.Symbols {
+			app.markPriceLastSeenAt[symbol] = event.ConnectedAt
+			app.markPriceGapMarked[symbol] = false
+		}
+		return
+	}
+	app.stats.markPriceReconnectTotal++
+	if event.ReadTimeout {
+		app.stats.markPriceReadTimeoutTotal++
+	}
+	for _, symbol := range event.Symbols {
+		app.enqueue(app.engine.MarkDerivativesDiscontinuity(symbol, event.DisconnectedAt))
+		app.markPriceGapMarked[symbol] = true
+	}
+}
+
+func (app *application) markDerivativesFeedInterrupted(at time.Time, reason string) {
+	for _, symbol := range app.universe.Symbols {
+		app.enqueue(app.engine.MarkDerivativesDiscontinuity(symbol, at))
+	}
+	slog.Warn("momentumcapturebinance.derivatives_feed_interrupted", "reason", reason)
+}
+
 // computeOpenInterestGapThreshold combines openInterestExpectedCycleDuration
 // with openInterestGapThresholdMultiple and openInterestGapThresholdFloor
 // into the actual threshold checkOpenInterestGaps uses -- the one place
@@ -1015,6 +1185,24 @@ func (app *application) checkOpenInterestGaps(now time.Time) {
 	}
 }
 
+// checkMarkPriceGaps closes the residual hole lifecycle events cannot see:
+// one symbol can stop producing while other symbols keep the shared shard's
+// socket busy. The mark is sticky until a genuinely valid update arrives.
+func (app *application) checkMarkPriceGaps(now time.Time) {
+	for _, symbol := range app.universe.Symbols {
+		if app.markPriceGapMarked[symbol] {
+			continue
+		}
+		lastSeen, ok := app.markPriceLastSeenAt[symbol]
+		if !ok || now.Sub(lastSeen) < markPriceGapThreshold {
+			continue
+		}
+		app.stats.markPriceGapTotal++
+		app.markPriceGapMarked[symbol] = true
+		app.enqueue(app.engine.MarkDerivativesDiscontinuity(symbol, now))
+	}
+}
+
 func (app *application) logHealth(ctx context.Context) {
 	now := time.Now()
 	inputDepth := app.observeInputQueueDepth()
@@ -1048,6 +1236,13 @@ func (app *application) logHealth(ctx context.Context) {
 	// underlying concept (a per-symbol feed silence detection), see
 	// checkOpenInterestGaps.
 	health.TickerGapTotal = app.stats.openInterestGapTotal
+	health.DerivativesAcceptedTotal = app.stats.markPriceAcceptedTotal
+	health.DerivativesInvalidTotal = app.stats.markPriceInvalidTotal
+	health.DerivativesOutOfScopeTotal = app.stats.markPriceOutOfScopeTotal
+	health.DerivativesReconnectTotal = app.stats.markPriceReconnectTotal
+	health.DerivativesReadTimeoutTotal = app.stats.markPriceReadTimeoutTotal
+	health.DerivativesGapTotal = app.stats.markPriceGapTotal
+	health.LastDerivativesAt = app.stats.lastDerivativesAt
 	health.LastDiscontinuityAt = app.stats.lastDiscontinuityAt
 	health.LastDiscontinuityFor = app.stats.lastDiscontinuityFor
 	health.TradeReconnectTotal = app.stats.tradeReconnectTotal
@@ -1058,7 +1253,7 @@ func (app *application) logHealth(ctx context.Context) {
 	health.InputQueueDepth = inputDepth
 	health.InputQueuePeak = app.stats.inputQueuePeak
 	health.InputQueueDropsTotal = app.stats.tradeDropsTotal + app.stats.writerInboxDropsTotal +
-		app.tradeDropsLost.Load() + app.openInterestDropsLost.Load() + app.bookTickerDropsLost.Load()
+		app.tradeDropsLost.Load() + app.openInterestDropsLost.Load() + app.bookTickerDropsLost.Load() + app.markPriceDropsLost.Load()
 	health.TradeLagMaxMs = app.stats.tradeLagMaxMs
 	health.TickerLagMaxMs = app.stats.tickerLagMaxMs
 	applyLatencyHealth(&health, &app.stats)
@@ -1086,12 +1281,16 @@ func (app *application) logHealth(ctx context.Context) {
 		"book_ticker_accepted_total", app.stats.bookTickerAcceptedTotal,
 		"book_ticker_invalid_total", app.stats.bookTickerInvalidTotal,
 		"book_ticker_out_of_scope_total", app.stats.bookTickerOutOfScopeTotal,
+		"mark_price_accepted_total", app.stats.markPriceAcceptedTotal,
+		"mark_price_invalid_total", app.stats.markPriceInvalidTotal,
+		"mark_price_reconnect_total", app.stats.markPriceReconnectTotal,
+		"mark_price_gap_total", app.stats.markPriceGapTotal,
 	)
 }
 
 func (app *application) observeInputQueueDepth() int {
 	depth := len(app.tradeEvents) + len(app.tradeDrops) + len(app.lifecycleEvents) +
-		len(app.openInterestEvents) + len(app.bookTickerEvents)
+		len(app.openInterestEvents) + len(app.bookTickerEvents) + len(app.markPriceEvents) + len(app.markPriceLifecycleEvents)
 	if depth > app.stats.inputQueuePeak {
 		app.stats.inputQueuePeak = depth
 	}
@@ -1156,8 +1355,11 @@ func deriveHealthStatus(health momentumcapture.Health) string {
 		float64(health.WriterQueueDepth) > float64(momentumcapture.MaxPendingBars)*queuePressureWarnFraction:
 		return "degraded_queue_pressure"
 	case health.NATSDisconnectTotal > 0 || health.NATSSlowConsumerTotal > 0 ||
-		health.NATSDroppedTotal > 0 || health.TickerGapTotal > 0:
+		health.NATSDroppedTotal > 0 || health.TickerGapTotal > 0 || health.DerivativesGapTotal > 0:
 		return "degraded_feed_interrupted"
+	case (health.DerivativesAcceptedTotal == 0 && health.UpdatedAt.Sub(health.StartedAt) > 3*time.Minute) ||
+		(!health.LastDerivativesAt.IsZero() && health.UpdatedAt.Sub(health.LastDerivativesAt) > 3*time.Minute):
+		return "degraded_derivatives_stale"
 	case health.UniverseStale:
 		return "degraded_universe_stale"
 	default:

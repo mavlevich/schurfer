@@ -85,8 +85,18 @@ type Health struct {
 	BarsCompletedTotal   uint64
 	LateEventsTotal      uint64
 	TickerGapTotal       uint64 // proactive per-symbol silence detections
-	LastDiscontinuityAt  time.Time
-	LastDiscontinuityFor string // symbol or "*" for a feed-wide event
+
+	// Additive mark/index/funding feed. These counters stay separate from
+	// ticker/OI because Binance transports this state on its own stream.
+	DerivativesAcceptedTotal    uint64
+	DerivativesInvalidTotal     uint64
+	DerivativesOutOfScopeTotal  uint64
+	DerivativesReconnectTotal   uint64
+	DerivativesReadTimeoutTotal uint64
+	DerivativesGapTotal         uint64 // proactive per-symbol silence detections
+	LastDerivativesAt           time.Time
+	LastDiscontinuityAt         time.Time
+	LastDiscontinuityFor        string // symbol or "*" for a feed-wide event
 
 	// Trade WebSocket, per Source.StreamStats() plus per-shard lifecycle
 	// (see trades.go's TradeLifecycleEvent).
