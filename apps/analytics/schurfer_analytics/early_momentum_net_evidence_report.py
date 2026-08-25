@@ -113,18 +113,52 @@ async def generate_report(
     cohort_end: datetime,
     code_revision: str,
     working_tree_dirty: bool,
+    cohort_start: datetime = FORMAL_COHORT_START,
 ) -> NetEvidenceReport:
+    """`cohort_start` defaults to the formal v4 cohort
+    (`FORMAL_COHORT_START`) -- every existing caller keeps its current
+    behavior unchanged. `early_momentum_prospective_cohort_report.py`
+    passes its later, durably registered database-clock boundary here to get
+    a genuinely separate cohort (not just a different label on the same
+    data) built from this exact same, already-tested funnel/economics/
+    concurrency/robustness/capacity pipeline -- see that module's own
+    docstring for why it deliberately does not reimplement any of this."""
+    dataset, legacy_context = await fetch_report_inputs(
+        db_url=db_url, cohort_start=cohort_start, cohort_end=cohort_end
+    )
+    return build_report(
+        dataset=dataset,
+        legacy_context=legacy_context,
+        code_revision=code_revision,
+        working_tree_dirty=working_tree_dirty,
+    )
+
+
+async def fetch_report_inputs(
+    *, db_url: str, cohort_start: datetime, cohort_end: datetime
+) -> tuple[RawDataset, tuple[LegacyContextRow, ...]]:
+    """Fetch one repeatable-read evidence input for DB and artifact callers."""
     from .early_momentum_net_evidence_repository import EarlyMomentumNetEvidenceRepository
 
     repository = EarlyMomentumNetEvidenceRepository.from_url(db_url)
     try:
-        dataset: RawDataset = await repository.fetch(
-            cohort_start=FORMAL_COHORT_START, cohort_end=cohort_end
-        )
+        dataset = await repository.fetch(cohort_start=cohort_start, cohort_end=cohort_end)
         legacy_context = await repository.fetch_legacy_context(cohort_end=cohort_end)
+        return dataset, legacy_context
     finally:
         await repository.close()
 
+
+def build_report(
+    *,
+    dataset: RawDataset,
+    legacy_context: tuple[LegacyContextRow, ...],
+    code_revision: str,
+    working_tree_dirty: bool,
+) -> NetEvidenceReport:
+    """Build the same report from either a DB snapshot or an immutable artifact."""
+
+    cohort_end = dataset.cohort_end
     maturity_deadline = cohort_end + timedelta(seconds=COHORT_MATURITY_BUFFER_SECONDS)
     if dataset.db_snapshot_at < maturity_deadline:
         raise CohortNotMatureError(
