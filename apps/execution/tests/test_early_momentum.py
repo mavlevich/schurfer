@@ -10,6 +10,7 @@ worker-heartbeat wiring around both loops.
 from __future__ import annotations
 
 import asyncio
+import inspect
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -212,6 +213,106 @@ def test_contract_payload_includes_the_quality_policy() -> None:
 def test_strategy_version_and_watch_prefix_are_v4() -> None:
     assert early_momentum._STRATEGY_VERSION == "4"
     assert early_momentum._WATCH_KEY_PREFIX == "market:early_momentum:v4:watch:"
+
+
+def test_contract_hash_matches_the_pinned_checked_literal() -> None:
+    """The whole point of pinning a literal: a silent edit to any of
+    _CONTRACT_PAYLOAD's inputs must fail the import, not mint a new hash
+    that every subsequently-armed episode starts using unnoticed
+    (feat/early-momentum-prospective-cohort-v1, colleague review,
+    2026-08-25)."""
+    assert early_momentum.CONTRACT_SHA256_HEX == early_momentum._EXPECTED_CONTRACT_SHA256_HEX
+
+
+def test_verify_contract_hash_pinned_passes_on_a_match() -> None:
+    early_momentum._verify_contract_hash_pinned("abc", "abc", strategy_version="4")
+
+
+def test_verify_contract_hash_pinned_raises_on_any_mismatch() -> None:
+    with pytest.raises(RuntimeError, match="contract changed without an explicit version"):
+        early_momentum._verify_contract_hash_pinned("abc", "def", strategy_version="4")
+
+
+def test_changing_any_contract_input_changes_the_hash() -> None:
+    """One parameter at a time: exit_params, size_usd, leverage, signal
+    thresholds, and the quality policy each independently change
+    CONTRACT_SHA256 -- required regression coverage
+    (feat/early-momentum-prospective-cohort-v1)."""
+    import copy
+    import hashlib
+    import json
+
+    base_hash = hashlib.sha256(
+        json.dumps(early_momentum._CONTRACT_PAYLOAD, sort_keys=True).encode()
+    ).digest()
+
+    mutations: list[dict[str, Any]] = []
+    exit_params_changed = copy.deepcopy(early_momentum._CONTRACT_PAYLOAD)
+    exit_params_changed["exit_params"] = {
+        **exit_params_changed["exit_params"],
+        "take_profit_pct": 5.0,
+    }
+    mutations.append(exit_params_changed)
+
+    size_changed = copy.deepcopy(early_momentum._CONTRACT_PAYLOAD)
+    size_changed["size_usd"] = 200.0
+    mutations.append(size_changed)
+
+    leverage_changed = copy.deepcopy(early_momentum._CONTRACT_PAYLOAD)
+    leverage_changed["leverage"] = 10
+    mutations.append(leverage_changed)
+
+    signal_changed = copy.deepcopy(early_momentum._CONTRACT_PAYLOAD)
+    signal_changed["signal"] = {**signal_changed["signal"], "oi_growth_min_pct": 0.10}
+    mutations.append(signal_changed)
+
+    quality_changed = copy.deepcopy(early_momentum._CONTRACT_PAYLOAD)
+    quality_changed["scanner"] = {
+        "quality": {**quality_changed["scanner"]["quality"], "required_bucket_count": 999}
+    }
+    mutations.append(quality_changed)
+
+    for mutated_payload in mutations:
+        mutated_hash = hashlib.sha256(json.dumps(mutated_payload, sort_keys=True).encode()).digest()
+        assert mutated_hash != base_hash
+
+
+def test_contract_id_is_a_short_readable_prefix_of_the_full_hash() -> None:
+    expected_prefix = f"early_momentum_v{early_momentum._STRATEGY_VERSION}_"
+    assert early_momentum.CONTRACT_ID.startswith(expected_prefix)
+    assert early_momentum.CONTRACT_ID.endswith(early_momentum.CONTRACT_SHA256_HEX[:12])
+
+
+def test_prospective_runtime_policy_accepts_only_the_frozen_effective_config() -> None:
+    cfg = _cfg(identity_snapshot_max_age_hours=720.0)
+    early_momentum.validate_prospective_runtime_policy(cfg, trading_mode="paper")
+    assert (
+        early_momentum.PROSPECTIVE_RUNTIME_POLICY_SHA256_HEX
+        == "720888b733bc097d53071b26edd5b85b4bb6dcc295a386fc1dc6590f9a2888d8"
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("early_momentum_rearm_cooldown_seconds", 1),
+        ("identity_snapshot_max_age_hours", 6.0),
+        ("liquidity_depth_multiplier", 3.0),
+        ("max_spread_bps", 25.0),
+        ("max_liquidity_impact_bps", 25.0),
+    ),
+)
+def test_prospective_runtime_policy_rejects_any_selection_drift(field: str, value: object) -> None:
+    overrides: dict[str, object] = {"identity_snapshot_max_age_hours": 720.0, field: value}
+    cfg = _cfg(**overrides)
+    with pytest.raises(RuntimeError, match="runtime policy drifted"):
+        early_momentum.validate_prospective_runtime_policy(cfg, trading_mode="paper")
+
+
+def test_prospective_runtime_policy_rejects_non_paper_mode() -> None:
+    cfg = _cfg(identity_snapshot_max_age_hours=720.0)
+    with pytest.raises(RuntimeError, match="runtime policy drifted"):
+        early_momentum.validate_prospective_runtime_policy(cfg, trading_mode="shadow")
 
 
 # --- input-quality evidence and signal ---
@@ -1253,6 +1354,28 @@ async def test_check_breakout_releases_reservation_even_when_quote_and_open_rais
         )
 
     release.assert_awaited_once()
+
+
+def test_no_update_statement_anywhere_ever_touches_contract_sha256() -> None:
+    """One episode cannot change contract (feat/early-momentum-prospective-
+    cohort-v1, colleague-required regression): `contract_sha256` is written
+    exactly once, at arm time (INSERT), and never again -- a static source
+    scan over every raw SQL UPDATE statement in episodes.py and journal.py,
+    the only two modules that ever touch app.early_momentum_episodes, is a
+    stronger regression guard here than a single behavioral test could be:
+    it catches ANY future UPDATE that mentions the column, not just the
+    specific code paths one test happens to exercise."""
+    import re
+
+    from schurfer_execution import journal
+
+    for module in (episodes, journal):
+        source = inspect.getsource(module)
+        for match in re.finditer(r"UPDATE\s+[\w.]+\s+SET\s+(.*?)WHERE", source, re.DOTALL):
+            set_clause = match.group(1)
+            assert (
+                "contract_sha256" not in set_clause
+            ), f"{module.__name__} has an UPDATE that touches contract_sha256: {set_clause!r}"
 
 
 def _instrument() -> ExecutionInstrument:

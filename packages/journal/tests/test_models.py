@@ -16,6 +16,7 @@ from schurfer_journal.models import (
     PumpDerivativesContextSample,
     PumpEvent,
     PumpEventSource,
+    ResearchCohortRegistration,
     ResearchReportRun,
     Side,
     SourceLeadCapture,
@@ -236,6 +237,23 @@ class TestTradeExitLiquidityObservationModel:
             for foreign_key in TradeExitLiquidityObservation.__table__.foreign_keys
         }
         assert foreign_keys == {"app.trades.id"}
+
+
+class TestResearchCohortRegistrationModel:
+    def test_table_contract(self) -> None:
+        assert ResearchCohortRegistration.__tablename__ == "research_cohort_registrations"
+        assert ResearchCohortRegistration.__table__.schema == "app"
+        columns = {column.name: column for column in ResearchCohortRegistration.__table__.columns}
+        assert {
+            "cohort_key",
+            "strategy_name",
+            "strategy_version",
+            "contract_sha256",
+            "runtime_policy_sha256",
+            "cohort_started_at",
+            "created_at",
+        } == set(columns)
+        assert columns["cohort_key"].primary_key
 
 
 class TestEarlyMomentumEpisodeModel:

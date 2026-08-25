@@ -24,6 +24,7 @@ from .pump_derivatives_context import (
 from .pump_event import PumpEvent
 from .pump_event_snapshot import PumpEventSnapshot
 from .pump_event_source import PumpEventSource
+from .research_cohort_registration import ResearchCohortRegistration
 from .research_report import ResearchReportRun
 from .source_lead_capture import (
     SourceLeadCapture,
@@ -52,6 +53,7 @@ __all__ = [
     "PumpEvent",
     "PumpEventSnapshot",
     "PumpEventSource",
+    "ResearchCohortRegistration",
     "ResearchReportRun",
     "Side",
     "SignalSource",

@@ -13,16 +13,23 @@ from fastapi import FastAPI
 from .config import Config
 from .decisions import _REDIS_SOCKET_TIMEOUT_SECONDS, run_decision_writer
 from .early_momentum import (
+    CONTRACT_SHA256 as EARLY_MOMENTUM_CONTRACT_SHA256,
+)
+from .early_momentum import (
+    PROSPECTIVE_RUNTIME_POLICY_SHA256,
     run_early_momentum_health_monitor,
     run_early_momentum_scanner,
     run_early_momentum_trigger,
+    validate_prospective_runtime_policy,
 )
+from .early_momentum_prospective_cohort import register_prospective_cohort
 from .exchanges import build_exchange_clients, close_exchange_clients
 from .execution_intent import (
     STRATEGY_EARLY_MOMENTUM,
     STRATEGY_LIQUIDATION_CASCADE,
     STRATEGY_PUMP_SHORT,
     Broker,
+    TradingMode,
     build_broker,
     resolve_mode,
 )
@@ -99,6 +106,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         resolve_mode(cfg, STRATEGY_LIQUIDATION_CASCADE), exchanges=market_exchanges
     )
 
+    early_momentum_cohort_started_at = None
+    early_momentum_enabled = early_momentum_broker.mode is not TradingMode.DISABLED
+    if cfg.dry_run and cfg.db_url and early_momentum_enabled:
+        validate_prospective_runtime_policy(cfg, trading_mode=early_momentum_broker.mode.value)
+        early_momentum_cohort_started_at = await register_prospective_cohort(
+            cfg.db_url,
+            contract_sha256=EARLY_MOMENTUM_CONTRACT_SHA256,
+            runtime_policy_sha256=PROSPECTIVE_RUNTIME_POLICY_SHA256,
+        )
+
     app.state.cfg = cfg
     app.state.rdb = rdb
     app.state.trading_exchanges = trading_exchanges
@@ -124,13 +141,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         asyncio.create_task(run_paper_monitor(market_exchanges, rdb, cfg)) if cfg.dry_run else None
     )
     early_momentum_scanner = (
-        asyncio.create_task(run_early_momentum_scanner(rdb, cfg)) if cfg.dry_run else None
+        asyncio.create_task(run_early_momentum_scanner(rdb, cfg))
+        if cfg.dry_run and early_momentum_enabled
+        else None
     )
     early_momentum_trigger = (
         asyncio.create_task(
             run_early_momentum_trigger(market_exchanges, rdb, cfg, early_momentum_broker)
         )
-        if cfg.dry_run
+        if cfg.dry_run and early_momentum_enabled
         else None
     )
     # Deliberately its own task, independent of the two above: if trigger
@@ -139,7 +158,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         asyncio.create_task(
             run_early_momentum_health_monitor(rdb, cfg, startup_at=early_momentum_startup_at)
         )
-        if cfg.dry_run
+        if cfg.dry_run and early_momentum_enabled
         else None
     )
     liquidation_cascade_scanner = (
@@ -184,6 +203,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         dry_run=cfg.dry_run,
         pump_short_execution_path=pump_short_execution_path,
         early_momentum_mode=early_momentum_broker.mode.value,
+        early_momentum_prospective_cohort_started_at=(
+            early_momentum_cohort_started_at.isoformat()
+            if early_momentum_cohort_started_at is not None
+            else None
+        ),
         liquidation_cascade_mode=liquidation_cascade_broker.mode.value,
     )
     yield

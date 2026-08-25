@@ -86,6 +86,7 @@ _SIZE_USD = 100.0
 _LEVERAGE = 5
 _STRATEGY_NAME = "early_momentum"
 _STRATEGY_VERSION = "4"
+_EPISODE_TTL_SECONDS = 3600
 
 # Hardcoded best parameters from backtest -- unchanged from v1/v2/v3. This
 # PR does not touch the signal, TP/SL, max-hold, or these thresholds; only
@@ -157,6 +158,97 @@ _CONTRACT_PAYLOAD: dict[str, Any] = {
     "leverage": _LEVERAGE,
 }
 CONTRACT_SHA256 = hashlib.sha256(json.dumps(_CONTRACT_PAYLOAD, sort_keys=True).encode()).digest()
+CONTRACT_SHA256_HEX = CONTRACT_SHA256.hex()
+# Short, human-referenceable identifier for logs/manifests/dashboards --
+# never used as the actual identity check (that's always the full 32-byte
+# CONTRACT_SHA256), just a shorter thing to say out loud or grep for.
+CONTRACT_ID = f"{_STRATEGY_NAME}_v{_STRATEGY_VERSION}_{CONTRACT_SHA256_HEX[:12]}"
+
+# Checked literal, filled in after this contract was reviewed and already
+# armed real episodes under it (see docs/research/early-momentum-net-
+# evidence-v1.md's own frozen `expected contract SHA256`, which already
+# recorded this exact value). Never recompute this line as part of normal
+# runtime, a refactor, or a formatting pass -- it exists so that ANY change
+# to _CONTRACT_PAYLOAD's inputs (quality policy, signal thresholds, exit
+# params, size, leverage) fails the import loudly instead of silently
+# minting a new CONTRACT_SHA256 that every subsequently-armed episode
+# starts using without a human ever deciding "this is now a new contract
+# version" (feat/early-momentum-prospective-cohort-v1, colleague review,
+# 2026-08-25: "forbid silent parameter changes under the same contract/
+# version" was an explicit, load-bearing requirement -- a live-probe
+# eligibility decision must never be computed over a cohort that silently
+# mixed two different real contracts under one nominal version number). A
+# deliberate contract change bumps _STRATEGY_VERSION and updates this
+# literal in the same commit, on purpose, with the new hash visible in the
+# diff.
+_EXPECTED_CONTRACT_SHA256_HEX = "bdda6c6423b0cc69d8b6266269cda07c31e20f4d256b1793229ab47beb5cb1ac"
+
+
+def _verify_contract_hash_pinned(
+    computed_hex: str, expected_hex: str, *, strategy_version: str
+) -> None:
+    """Split out from a bare module-level `if` so this guard itself is
+    unit-testable without needing to reload the whole module under a
+    monkeypatched contract payload."""
+    if computed_hex != expected_hex:
+        raise RuntimeError(
+            f"early_momentum {strategy_version} contract changed without an explicit version "
+            f"decision: expected {expected_hex}, computed {computed_hex}"
+        )
+
+
+_verify_contract_hash_pinned(
+    CONTRACT_SHA256_HEX, _EXPECTED_CONTRACT_SHA256_HEX, strategy_version=_STRATEGY_VERSION
+)
+
+# These values also change which otherwise-identical signals can become
+# trades, but historically were not included in CONTRACT_SHA256. Changing
+# that already-persisted v4 hash would invalidate the existing formal
+# cohort, so the prospective cohort freezes them as a separately hashed
+# runtime policy and validates the effective Config before any scanner task
+# starts. A future v5 contract should fold this policy into its primary
+# contract payload from day one.
+_PROSPECTIVE_RUNTIME_POLICY: dict[str, Any] = {
+    "execution_exchange": _EXECUTION_EXCHANGE,
+    "source_exchanges": sorted(_SOURCE_EXCHANGES),
+    "trading_mode": "paper",
+    "episode_ttl_seconds": _EPISODE_TTL_SECONDS,
+    "rearm_cooldown_seconds": 1800,
+    "identity_snapshot_max_age_hours": 720.0,
+    "liquidity_depth_multiplier": 2.0,
+    "max_spread_bps": 50.0,
+    "max_liquidity_impact_bps": 50.0,
+}
+PROSPECTIVE_RUNTIME_POLICY_SHA256 = hashlib.sha256(
+    json.dumps(_PROSPECTIVE_RUNTIME_POLICY, sort_keys=True).encode()
+).digest()
+PROSPECTIVE_RUNTIME_POLICY_SHA256_HEX = PROSPECTIVE_RUNTIME_POLICY_SHA256.hex()
+
+
+def validate_prospective_runtime_policy(cfg: Config, *, trading_mode: str) -> None:
+    """Fail startup before arming an episode under a drifted policy."""
+    actual: dict[str, Any] = {
+        "execution_exchange": _EXECUTION_EXCHANGE,
+        "source_exchanges": sorted(_SOURCE_EXCHANGES),
+        "trading_mode": trading_mode,
+        "episode_ttl_seconds": _EPISODE_TTL_SECONDS,
+        "rearm_cooldown_seconds": cfg.early_momentum_rearm_cooldown_seconds,
+        "identity_snapshot_max_age_hours": cfg.identity_snapshot_max_age_hours,
+        "liquidity_depth_multiplier": cfg.liquidity_depth_multiplier,
+        "max_spread_bps": cfg.max_spread_bps,
+        "max_liquidity_impact_bps": cfg.max_liquidity_impact_bps,
+    }
+    if actual != _PROSPECTIVE_RUNTIME_POLICY:
+        mismatches = {
+            key: {"expected": _PROSPECTIVE_RUNTIME_POLICY[key], "actual": actual[key]}
+            for key in _PROSPECTIVE_RUNTIME_POLICY
+            if actual[key] != _PROSPECTIVE_RUNTIME_POLICY[key]
+        }
+        raise RuntimeError(
+            "early_momentum prospective runtime policy drifted; bump the strategy/"
+            f"cohort contract deliberately instead of mixing evidence: {mismatches}"
+        )
+
 
 # Worker heartbeats (see worker_health.py) -- TTL is deliberately generous
 # rather than optimistic: a single post-tick write with a short TTL can
@@ -627,7 +719,7 @@ async def _process_candidate(
         cluster_key=route.cluster_key,
         ceiling=ceiling,
         features=features,
-        ttl_seconds=3600,
+        ttl_seconds=_EPISODE_TTL_SECONDS,
     )
     if ep is None:
         # Already watching this instrument (armed or claimed) -- the
