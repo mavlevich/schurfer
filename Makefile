@@ -2,6 +2,7 @@
 		prod-deploy prod-runtime-metrics-install prod-runtime-metrics-health prod-disk-usage-install prod-disk-usage-health prod-docker-prune-install prod-docker-prune-run prod-docker-prune-health prod-research-checkpoints-install prod-research-checkpoints-run prod-research-checkpoints-health prod-measurement-report prod-exchange-coverage-report prod-exchange-source-economics-report prod-source-lead-report prod-source-lead-identity-report prod-gate-identity-candidate-tooling prod-source-lead-capture-health prod-episode-replay prod-virtual-strategy-report prod-virtual-entry-challenger-report prod-virtual-threshold-challenger-report prod-virtual-exit-policy-report prod-virtual-exit-discovery-report prod-virtual-score-challenger-report prod-virtual-banded-price-extent-report prod-candle-anomaly-report prod-derivatives-context-report prod-decision-quality-report prod-derivatives-regime-feasibility-report prod-long-short-ratio-regime-report prod-liquid-taker-report prod-long-horizon-report prod-open-ended-margin-report prod-open-ended-margin-health prod-maker-entry-report prod-pump-magnitude-report prod-orderflow-pilot-report prod-orderflow-endpoint-sensitivity-report prod-exit-liquidity-calibration-report prod-research-dataset-artifact-validate prod-exit-liquidity-adjusted-net-economics-report prod-pump-short-failure-attribution-report prod-pump-short-reentry-audit-report prod-oi-growth-filter-report prod-token-history-identity-preflight-report prod-token-history-ohlcv-sample-report prod-token-history-parquet-dataset prod-token-behavior-discovery-report prod-momentum-universe-identity-match prod-liquidation-cascade-validation-report prod-early-momentum-net-evidence-report prod-early-momentum-prospective-cohort-report prod-orderflow-start prod-orderflow-stop prod-orderflow-health prod-momentum-capture-start prod-momentum-capture-stop prod-momentum-capture-health prod-momentum-capture-binance-start prod-momentum-capture-binance-stop prod-momentum-capture-binance-health prod-momentum-watch-start prod-momentum-watch-stop prod-momentum-watch-health prod-momentum-watch-binance-start prod-momentum-watch-binance-stop prod-momentum-watch-binance-health prod-momentum-paper-start prod-momentum-paper-stop prod-momentum-paper-health prod-momentum-paper-binance-start prod-momentum-paper-binance-stop prod-momentum-paper-binance-health prod-momentum-paper-lev3-start prod-momentum-paper-lev3-stop prod-momentum-paper-lev3-health prod-momentum-paper-hold12h-start prod-momentum-paper-hold12h-stop prod-momentum-paper-hold12h-health prod-momentum-canary-checkpoints-install prod-momentum-canary-checkpoints-run prod-momentum-canary-checkpoints-health prod-momentum-flow-episode-study-report prod-binance-watch-input-coverage-report prod-bidirectional-burst-study-report prod-logs prod-backup prod-restore-local prod-health
 .PHONY: momentum-flow-discovery-report prod-momentum-flow-discovery-report
 .PHONY: ai-rules-check
+.PHONY: early-momentum-unused-flow-features-report prod-early-momentum-unused-flow-features-report
 
 GOLANGCI_LINT_VERSION = v2.1.6
 DEADCODE_VERSION = v0.48.0
@@ -107,6 +108,7 @@ help:
 	@echo "  make liquidation-cascade-validation-report  Episode-level discovery/validation/test read (ARGS must include --since --discovery-end --validation-end --until)"
 	@echo "  make early-momentum-net-evidence-report  Read-only early_momentum_v4 net-edge evidence read (ARGS must include --cohort-end)"
 	@echo "  make early-momentum-prospective-cohort-report  Read-only prospective-cohort live-probe-eligibility status (ARGS must include --cohort-end)"
+	@echo "  make early-momentum-unused-flow-features-report  Discovery-only v4 flow-feature challenger read"
 	@echo "  make orderflow-start  Start the bounded local Bybit order-flow pilot"
 	@echo "  make orderflow-health  Show local order-flow pilot health"
 	@echo "  make orderflow-stop  Stop the local order-flow pilot"
@@ -197,6 +199,7 @@ help:
 	@echo "  make prod-liquidation-cascade-validation-report  Production episode-level discovery/validation/test read"
 	@echo "  make prod-early-momentum-net-evidence-report  Production early_momentum_v4 net-edge evidence read"
 	@echo "  make prod-early-momentum-prospective-cohort-report  Production prospective-cohort live-probe-eligibility status"
+	@echo "  make prod-early-momentum-unused-flow-features-report  Production discovery-only v4 flow-feature read"
 	@echo "  make prod-orderflow-start  Explicitly start the bounded order-flow trial"
 	@echo "  make prod-orderflow-health  Show order-flow trial health and resource use"
 	@echo "  make prod-orderflow-stop  Stop the order-flow trial"
@@ -698,6 +701,14 @@ early-momentum-net-evidence-report:
 early-momentum-prospective-cohort-report:
 	@DATABASE_URL="$${DATABASE_URL:-postgresql://schurfer:schurfer_dev@localhost:5432/schurfer}" \
 		uv run --package schurfer-analytics early-momentum-prospective-cohort-report \
+		--code-revision="$$(git rev-parse HEAD)" \
+		$$(test -z "$$(git status --porcelain)" \
+			&& printf '%s' '--no-working-tree-dirty' \
+			|| printf '%s' '--working-tree-dirty') $(ARGS)
+
+early-momentum-unused-flow-features-report:
+	@DATABASE_URL="$${DATABASE_URL:-postgresql://schurfer:schurfer_dev@localhost:5432/schurfer}" \
+		uv run --package schurfer-analytics early-momentum-unused-flow-features-report \
 		--code-revision="$$(git rev-parse HEAD)" \
 		$$(test -z "$$(git status --porcelain)" \
 			&& printf '%s' '--no-working-tree-dirty' \
@@ -1359,6 +1370,14 @@ prod-early-momentum-net-evidence-report:
 prod-early-momentum-prospective-cohort-report:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
 	@$(_PROD) run --rm --no-deps --entrypoint early-momentum-prospective-cohort-report analytics \
+		--code-revision="$$(git rev-parse HEAD)" \
+		$$(test -z "$$(git status --porcelain)" \
+			&& printf '%s' '--no-working-tree-dirty' \
+			|| printf '%s' '--working-tree-dirty') $(ARGS)
+
+prod-early-momentum-unused-flow-features-report:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
+	@$(_PROD) run --rm --no-deps --entrypoint early-momentum-unused-flow-features-report analytics \
 		--code-revision="$$(git rev-parse HEAD)" \
 		$$(test -z "$$(git status --porcelain)" \
 			&& printf '%s' '--no-working-tree-dirty' \

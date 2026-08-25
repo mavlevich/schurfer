@@ -1763,6 +1763,19 @@ depth, impact, or fills.
   shown as descriptive context only, never mixed into the v4 number. See
   `docs/research/early-momentum-net-evidence-v1.md` for the full contract,
   promotion gates, and the 90%-vs-95%-confidence rationale.
+- Early Momentum unused-flow discovery
+  (`analysis/early-momentum-unused-flow-features-v1`): use the exact persisted
+  source exchange/native id and capture/universe versions to reconstruct 121
+  point-in-time bars for complete v4 paper episodes. Report normalized 15-minute
+  taker flow, flow acceleration, 10-second burst imbalance, and turnover/OI with
+  fail-closed coverage; do not interpret absent block/RPI fields as zero. The only
+  viewed-data candidate is the frozen moderate taker-imbalance band
+  `0.20 <= imbalance_15m < 0.50`, as a filter-to-cash challenger. This discovery
+  cannot change v4 or authorize live trading. Its next step, if the mature read is
+  operationally valid, is a separately registered prospective cohort that records
+  every selected and rejected baseline opportunity while the existing v4 baseline
+  continues unchanged. See
+  `docs/research/early-momentum-unused-flow-features-v1.md`.
 
 ---
 

@@ -70,6 +70,7 @@ momentum-universe-identity-match = "schurfer_analytics.momentum_universe_identit
 liquidation-cascade-validation-report = "schurfer_analytics.liquidation_cascade_validation_report:main"
 early-momentum-net-evidence-report = "schurfer_analytics.early_momentum_net_evidence_report:main"
 early-momentum-prospective-cohort-report = "schurfer_analytics.early_momentum_prospective_cohort_report:main"
+early-momentum-unused-flow-features-report = "schurfer_analytics.early_momentum_unused_flow_features_report:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
