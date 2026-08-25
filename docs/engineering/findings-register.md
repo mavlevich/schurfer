@@ -377,6 +377,74 @@ smallest fix at the owning boundary and add a regression test for the exact fail
   keeping ingest CPU/latency and storage growth inside declared canary gates. Network
   and API overhead remain part of the user-visible SLA.
 
+### ENG-017 — Separate MEXC contract creation from trading-open time
+
+- **Status / priority:** `confirmed`, `P1` before listing-age, cross-venue identity,
+  or listing-model evidence uses MEXC instruments.
+- **Evidence:** on 2026-08-25 the official MEXC `contract/detail` response for
+  `CATE_USDT` reported `createTime=1726410428000` (2024-09-15) and
+  `openingTime=1785132000000` (2026-07-27 06:00 UTC). The official futures listing
+  announcement and the first public kline agree with `openingTime`. The broad scanner
+  currently maps MEXC `createTime` to `onboarded_at`, so the new futures listing is
+  represented as an established 2024 instrument.
+- **Impact:** listing age, relisting/reuse detection, derivative identity versioning,
+  cross-venue matching, control selection, and ML features can be wrong even though
+  the ticker and prices are valid.
+- **Bounded remediation:** retain native creation and trading-open timestamps as
+  separate versioned lifecycle fields; prefer verified `openingTime` for MEXC trading
+  availability; preserve the original raw value and do not rewrite historical
+  identity rows in place. Publish a new catalog/classifier version and audit changed
+  identities before consumers adopt it.
+- **Regression gates:** a static CATE contract-detail fixture, timestamp-unit tests,
+  create-versus-open divergence, absent/invalid `openingTime`, symbol reuse/relisting,
+  immutable prior snapshots, and a real PostgreSQL catalog-version integration test.
+
+### ENG-018 — Apply asset class and listing-baseline semantics to the broad scanner
+
+- **Status / priority:** `confirmed`, `P1` before LBank-first alerts become a crypto
+  strategy or ML training universe.
+- **Evidence:** the Bybit and Binance momentum collectors already classify and
+  fail-closed on tokenized equities, commodities, indices, dated futures, and unknown
+  classes. The broad multi-exchange scanner admits any active ticker ending in
+  `/USDT:USDT`; its durable instrument metadata records `market_type=swap` but no
+  normalized asset class. LBank 24H stock futures such as DJT, LYTE, and PURR therefore
+  appeared as extreme crypto pumps when their fresh 24-hour baseline initialized.
+- **Impact:** heterogeneous instruments and listing-baseline resets contaminate pump
+  cohorts, Telegram interpretation, thresholds, cross-venue matching, and prospective
+  model labels.
+- **Bounded remediation:** reuse one versioned classification contract across real
+  consumers, with `crypto`, `tokenized_equity`, `commodity`, `index`,
+  `leveraged_product`, and `unknown`; persist raw evidence and classifier version.
+  Unknown/non-crypto instruments remain observable in separate research universes but
+  fail closed for crypto strategies. Model listing/open age separately from price
+  change instead of discarding all new instruments.
+- **Regression gates:** LBank stock-future and crypto fixtures, unknown classification,
+  a listing-baseline reset, same ticker across asset classes, notifier categorization,
+  and repository integration coverage proving class/version survive persistence.
+
+### ENG-019 — Restore exact market paths for LBank-first evidence
+
+- **Status / priority:** `confirmed`, `P1` for an LBank-first trading thesis; not a
+  blocker for existing Bybit/Binance strategies.
+- **Evidence:** the 2026-08-25 production audit found 1,251 sole-LBank pump events
+  across 83 assets. Of these, 1,224/850/114 were mature for 1d/7d/28d respectively,
+  while exact complete outcome counts at all three horizons were zero. LBank current
+  perpetual tickers are available, but no supported native historical perpetual OHLCV
+  path exists in the current resolver; event snapshots end when the pump episode stops
+  and are missing-not-at-random.
+- **Impact:** the system can alert on LBank-first events but cannot determine their
+  unbiased continuation/reversal economics, train a trustworthy model, or promote a
+  strategy from native execution evidence.
+- **Bounded remediation:** define one canonical market-path envelope and an immutable
+  coverage artifact; classify every path as exact native, same-asset proxy,
+  third-party, or unrecoverable. Backfill official venue paths where supported and
+  begin forward LBank perpetual capture now. Keep proxy cohorts separate from exact
+  native evidence.
+- **Decision gate:** one frozen all-event report must compare long and short outcomes
+  at registered entry delays and 15m/1h/4h/1d/7d/28d horizons with MFE/MAE, gaps,
+  costs, liquidity, asset/time concentration, listing status, and unresolved rows.
+  Only a pre-registered surviving segment may start prospective shadow capture.
+
 ## Promotion summary
 
 The reviewed findings currently imply this bounded support sequence. It does not
@@ -393,7 +461,9 @@ replace the profit/evidence lane or expand the active early-momentum PR:
 `ENG-001`, `ENG-002`, and `ENG-013` are capital-safety gates. `ENG-003` becomes a
 capital-safety gate when concurrency grows beyond the bounded current paper cohort.
 The parser/event-loop/region ideas remain experiments unless measurements promote
-them. The rejected `waitOutPause` claim must not consume an implementation PR.
+them. `ENG-017` through `ENG-019` are a bounded research-quality sequence tied to the
+LBank-first money hypothesis, not general refactoring permission. The rejected
+`waitOutPause` claim must not consume an implementation PR.
 
 ## Deferred performance verification queue
 

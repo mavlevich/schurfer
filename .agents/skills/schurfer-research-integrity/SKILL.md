@@ -14,6 +14,12 @@ the report is allowed to support.
 - State venue, canonical instrument, market type, capture/data version,
   event-time semantics, bar interval, observation window, feature availability,
   deduplication key, missing-data policy, and purge/embargo rules.
+- Use a common provenance envelope plus typed dataset contracts. A normalized
+  field name must not erase venue-specific publication cadence, censoring,
+  units, or coverage; unsupported capabilities remain explicit missingness.
+- Keep instrument-created, announced, trading-open, first-observed, suspended,
+  resumed, and delisted timestamps separate. Verify the meaning of each native
+  venue field against its endpoint before using it for identity or listing age.
 - Partition windows by every identity dimension that prevents interleaving.
   Align event time separately from receive and persistence time. Enforce exact
   lookback/horizon continuity or classify gaps explicitly.
@@ -48,6 +54,9 @@ the report is allowed to support.
   external data into durable, integrity-checked storage. Fail closed on corrupt
   or unpersisted formal inputs; do not turn integrity errors into ordinary
   unresolved rows.
+- Label each recovered market path `exact_native`, `same_asset_proxy`,
+  `third_party`, or `unrecoverable`. Never silently substitute spot for a
+  perpetual or combine proxy and native outcomes in one evidence denominator.
 - First-writer-wins storage must make concurrent readers use the same winner.
   Never cache ambiguous empty, truncated, or internally gapped data as complete.
 
