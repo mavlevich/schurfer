@@ -69,6 +69,17 @@ they should point here instead of copying and drifting from these rules.
 - Build features point-in-time. Partition market windows by exchange,
   instrument, market type, and data/capture version as applicable. Never
   interleave venues or use future-known identity, listing, or outcome data.
+- Normalize venue data through a shared provenance envelope, not by pretending
+  every venue has identical semantics. Preserve the native payload or immutable
+  source artifact, declare unsupported capabilities and coverage explicitly,
+  and keep venue-specific typed fields out of fabricated zero/default values.
+- Treat instrument creation, announced listing, trading-open, first-observed,
+  suspension, resumption, and delisting as distinct lifecycle timestamps. Map
+  exchange fields from verified endpoint semantics; a conveniently named field
+  such as `createTime` is not evidence that trading opened at that time.
+- Classify external market paths as exact native, same-asset cross-venue proxy,
+  third-party, or unrecoverable. Persist provenance and checksums, and never mix
+  proxy outcomes with native execution evidence in one denominator.
 - Separate discovery, validation, test, and prospective cohorts. Do not tune
   on validation/test results. Register parameter changes before reading the
   prospective cohort. Use the registered evidence floor (100 resolved

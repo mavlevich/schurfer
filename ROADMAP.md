@@ -1635,17 +1635,47 @@ pre-registered family for forward confirmation. The optimization target is net
 risk-adjusted expectancy after fees, funding, slippage, and drawdown, not trade count
 or win rate in isolation.
 
+**[Registered plan, discovery not started] Money-first LBank-first market paths.** A
+2026-08-25 production audit found 1,251 sole-LBank events across 83 assets, including
+1,224/850/114 events already mature for 1d/7d/28d, but zero exact complete native
+LBank outcomes at those horizons. This justifies one bounded data-to-decision lane,
+not an open-ended platform rewrite. The CATE case also exposed a confirmed MEXC
+lifecycle bug: `createTime` points to 2024 while the contract's actual `openingTime`
+and official listing are 2026-07-27, yet the broad scanner currently treats
+`createTime` as `onboarded_at`. The same scanner records swaps without the normalized
+asset-class exclusions already enforced by the Bybit/Binance momentum collectors, so
+LBank tokenized equities and fresh listing baselines can contaminate crypto pumps.
+
+The fixed sequence is lifecycle semantics, shared asset-class/listing-baseline
+classification, one canonical immutable market-path contract with MEXC backfill plus
+forward LBank capture, then an all-event LBank-first long/short event study. Every data
+PR must unlock the next named report; unrelated platform work is parked. Only a
+validation/test segment that remains positive after costs, MFE/MAE, liquidity,
+drawdown, asset/week sensitivity, and exact-versus-proxy separation may register a
+prospective shadow contract. See
+[the study contract](docs/research/lbank-first-market-path-study-v1.md) and findings
+`ENG-017` through `ENG-019`.
+
 **[Implemented, collecting after deployment] Forward derivatives context
 (`feat/derivatives-context-capture-v1`).** Preserve point-in-time mark price,
 index price, advertised funding rate, and next funding boundary for both Bybit
 and Binance in the existing one-minute momentum row under an independent
 `derivatives_context_v1` contract. Historical rows remain NULL; consumers must
 require the version, full context completeness, and value-specific freshness.
-This is capture infrastructure only and cannot promote a strategy. Liquidation
-events remain the next separate capture PR because Bybit's complete stream and
-Binance's censored force-order stream require an append-only event identity,
-deduplication, and venue-specific coverage contract rather than bar columns.
-See [the capture contract](docs/research/derivatives-context-capture-v1.md).
+This is capture infrastructure only and cannot promote a strategy. See
+[the capture contract](docs/research/derivatives-context-capture-v1.md).
+
+**[Implemented, disabled until bounded probe] Public liquidation events
+(`feat/liquidation-event-capture-v1`).** Capture Bybit `allLiquidation` and
+Binance `!forceOrder@arr` into an append-only, deduplicated event dataset with
+event/publish/receive/persist timestamps and durable minute coverage
+heartbeats. The contracts stay deliberately different: Bybit is labelled
+`complete_stream`; Binance is always labelled
+`latest_per_symbol_1000ms` and may never be interpreted as a complete tape.
+The two venue services are disabled by default and process-isolated. This PR
+collects research inputs only; it does not change `liquidation_cascade` or
+authorize a paper/live entry rule. See
+[the event contract](docs/research/liquidation-event-capture-v1.md).
 
 **[Queued after post-deploy capture integrity hotfix] Independent quote
 completeness.** Binance `bookTicker` and REST open interest are independent
