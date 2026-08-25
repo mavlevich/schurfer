@@ -53,6 +53,7 @@ def _raw_metrics(**overrides: object) -> dict[str, object]:
         "lifecycle_reaper_grace_seconds": 120,
         "last_successful_open_at": datetime(2026, 8, 22, 11, 0, 0, tzinfo=UTC),
         "consecutive_zero_quality_ready_ticks": 0,
+        "quality_window_rewarming": False,
     }
     fields.update(overrides)
     return fields

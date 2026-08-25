@@ -78,4 +78,5 @@ async def get_early_momentum_health(request: Request) -> dict[str, Any]:
             raw["last_successful_open_at"].isoformat() if raw["last_successful_open_at"] else None
         ),
         "consecutive_zero_quality_ready_ticks": raw["consecutive_zero_quality_ready_ticks"],
+        "quality_window_rewarming": raw["quality_window_rewarming"],
     }

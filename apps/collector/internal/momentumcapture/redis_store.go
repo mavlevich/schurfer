@@ -62,7 +62,7 @@ func (store *RedisStore) StoreHealth(ctx context.Context, health Health) error {
 		return errors.New("store momentum-capture health: Exchange is required")
 	}
 	values := map[string]any{
-		"schema_version": 3,
+		"schema_version": 4,
 		"exchange":       health.Exchange,
 		"status":         health.Status,
 		"started_at_ms":  unixMilliOrZero(health.StartedAt),
@@ -107,6 +107,10 @@ func (store *RedisStore) StoreHealth(ctx context.Context, health Health) error {
 		"input_queue_depth":              health.InputQueueDepth,
 		"input_queue_peak":               health.InputQueuePeak,
 		"input_queue_drops_total":        health.InputQueueDropsTotal,
+		"book_ticker_queue_depth":        health.BookTickerQueueDepth,
+		"book_ticker_queue_peak":         health.BookTickerQueuePeak,
+		"book_ticker_coalesced_total":    health.BookTickerCoalescedTotal,
+		"book_ticker_drops_total":        health.BookTickerDropsTotal,
 		"bars_completed_total":           health.BarsCompletedTotal,
 		"late_events_total":              health.LateEventsTotal,
 		"ticker_gap_total":               health.TickerGapTotal,

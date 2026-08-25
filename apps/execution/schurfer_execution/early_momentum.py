@@ -262,7 +262,11 @@ _HEARTBEAT_TTL_SECONDS = 360
 _HEALTH_MONITOR_INTERVAL_SECONDS = 30
 _HEALTH_MONITOR_STARTUP_GRACE_SECONDS = 180
 _HEALTH_ZERO_QUALITY_READY_ERROR_THRESHOLD = 3
+_HEALTH_QUALITY_WINDOW_REWARMING_MAX_TICKS = (
+    EARLY_MOMENTUM_V4_QUALITY_POLICY.required_bucket_count + 20
+)
 _HEALTH_ZERO_QUALITY_READY_COUNTER_KEY = "early_momentum:v4:health:consecutive_zero_quality_ready"
+_HEALTH_QUALITY_WINDOW_REWARMING_KEY = "early_momentum:v4:health:quality_window_rewarming"
 _HEALTH_ALERT_STATUS_KEY = "early_momentum:v4:health:last_alerted_status"
 _HEALTH_ALERT_COOLDOWN_KEY_PREFIX = "early_momentum:v4:health:alert_cooldown:"
 
@@ -1139,9 +1143,11 @@ if last_counted == ARGV[1] then
 end
 redis.call("set", KEYS[1], ARGV[1])
 if ARGV[2] == "1" then
+    redis.call("set", KEYS[3], ARGV[3])
     return redis.call("incr", KEYS[2])
 else
     redis.call("del", KEYS[2])
+    redis.call("del", KEYS[3])
     return 0
 end
 """
@@ -1154,6 +1160,17 @@ async def _read_zero_quality_ready_counter(rdb: Any) -> int:
     except Exception as exc:
         log.error("early_momentum.zero_quality_ready_counter_read_failed", err=str(exc))
         return 0
+
+
+async def _read_quality_window_rewarming(rdb: Any) -> bool:
+    try:
+        raw = await rdb.get(_HEALTH_QUALITY_WINDOW_REWARMING_KEY)
+        if isinstance(raw, bytes):
+            raw = raw.decode()
+        return bool(raw == "1")
+    except Exception as exc:
+        log.error("early_momentum.quality_window_rewarming_read_failed", err=str(exc))
+        return False
 
 
 async def _update_zero_quality_ready_counter(
@@ -1175,14 +1192,18 @@ async def _update_zero_quality_ready_counter(
     symbols_total = counters.get("symbols_total", 0)
     quality_ready = counters.get("quality_ready")
     is_zero_bad_tick = symbols_total > 0 and quality_ready == 0
+    rejected_mixed_universe = counters.get("rejected_multiple_universe_versions", 0)
+    is_window_rewarming = is_zero_bad_tick and rejected_mixed_universe == symbols_total
     try:
         result = await rdb.eval(
             _COUNT_ZERO_QUALITY_READY_TICK_ONCE,
-            2,
+            3,
             _HEALTH_LAST_COUNTED_HEARTBEAT_KEY,
             _HEALTH_ZERO_QUALITY_READY_COUNTER_KEY,
+            _HEALTH_QUALITY_WINDOW_REWARMING_KEY,
             marker,
             "1" if is_zero_bad_tick else "0",
+            "1" if is_window_rewarming else "0",
         )
         return int(result or 0)
     except Exception as exc:
@@ -1236,6 +1257,7 @@ async def gather_health_status(
     consecutive_zero = await _update_zero_quality_ready_counter(
         rdb, scanner_heartbeat=scanner_heartbeat
     )
+    quality_window_rewarming = await _read_quality_window_rewarming(rdb)
 
     status, reasons = early_momentum_health.compute_status(
         now=now,
@@ -1256,6 +1278,8 @@ async def gather_health_status(
         lifecycle_reaper_grace_seconds=_LIFECYCLE_REAPER_GRACE_SECONDS,
         consecutive_zero_quality_ready_ticks=consecutive_zero,
         zero_quality_ready_error_threshold=_HEALTH_ZERO_QUALITY_READY_ERROR_THRESHOLD,
+        quality_window_rewarming=quality_window_rewarming,
+        quality_window_rewarming_max_ticks=_HEALTH_QUALITY_WINDOW_REWARMING_MAX_TICKS,
         identity_health=identity_health_by_exchange,
     )
     raw_metrics: dict[str, Any] = {
@@ -1267,6 +1291,7 @@ async def gather_health_status(
         "lifecycle_reaper_grace_seconds": _LIFECYCLE_REAPER_GRACE_SECONDS,
         "last_successful_open_at": last_open_at,
         "consecutive_zero_quality_ready_ticks": consecutive_zero,
+        "quality_window_rewarming": quality_window_rewarming,
     }
     return status, reasons, raw_metrics
 
@@ -1342,6 +1367,12 @@ async def _maybe_alert(rdb: Any, cfg: Config, *, status: str, reasons: tuple[str
 
     try:
         await rdb.set(_HEALTH_ALERT_STATUS_KEY, status)
+        if status != "ok" and transitioned:
+            await rdb.set(
+                cooldown_key,
+                "1",
+                ex=cfg.early_momentum_health_alert_cooldown_seconds,
+            )
     except Exception as exc:
         log.error("early_momentum.health_alert_state_write_failed", err=str(exc))
 

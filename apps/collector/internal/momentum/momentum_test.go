@@ -106,6 +106,45 @@ func TestAddTickerObservationRejectsInvalidInput(t *testing.T) {
 	}
 }
 
+func TestAddQuoteObservationDoesNotHealTickerOICompleteness(t *testing.T) {
+	t.Parallel()
+	e := NewWithPriceSource(PriceSourceAggregateTrade)
+	if _, err := e.AddQuoteObservation(QuoteObservation{
+		Symbol: "AKEUSDT", BidPrice: 99, AskPrice: 101,
+		EventAt: at(0), ObservedAt: at(0),
+	}); err != nil {
+		t.Fatalf("add quote: %v", err)
+	}
+	closed := e.Flush(at(60))
+	if len(closed) != 1 {
+		t.Fatalf("closed bars = %d, want 1", len(closed))
+	}
+	bar := closed[0]
+	if bar.LastBidPrice == nil || *bar.LastBidPrice != 99 || bar.LastAskPrice == nil || *bar.LastAskPrice != 101 {
+		t.Fatalf("quote state was not preserved: %+v", bar)
+	}
+	if bar.TickerObservedThisMinute || bar.TickerComplete || bar.OpenInterestComplete {
+		t.Fatalf("quote-only traffic must not heal ticker/OI health: %+v", bar)
+	}
+}
+
+func TestAddQuoteObservationRejectsInvalidInput(t *testing.T) {
+	t.Parallel()
+	cases := map[string]QuoteObservation{
+		"empty symbol": {EventAt: at(0), ObservedAt: at(0), BidPrice: 1, AskPrice: 2},
+		"zero bid":     {Symbol: "AKEUSDT", EventAt: at(0), ObservedAt: at(0), BidPrice: 0, AskPrice: 2},
+		"crossed book": {Symbol: "AKEUSDT", EventAt: at(0), ObservedAt: at(0), BidPrice: 2, AskPrice: 1},
+	}
+	for name, observation := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			if _, err := New().AddQuoteObservation(observation); err != ErrInvalidQuoteObservation {
+				t.Fatalf("err = %v, want ErrInvalidQuoteObservation", err)
+			}
+		})
+	}
+}
+
 func TestAddDerivativesObservationRejectsInvalidInput(t *testing.T) {
 	t.Parallel()
 	eventAt, observedAt := at(0), at(1)

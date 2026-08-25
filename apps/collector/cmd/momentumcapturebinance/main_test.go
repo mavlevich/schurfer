@@ -21,6 +21,7 @@ func newTestApplication(symbols []string) *application {
 		universe:                 universe,
 		readiness:                momentumcapture.NewReadinessTracker(universe),
 		source:                   binance.NewSource(), // never started: no goroutine touches it in these tests
+		bookTickerMailbox:        newBookTickerMailbox(len(symbols)),
 		writerInbox:              make(chan []momentum.Bar, writerInboxBuffer),
 		markPriceEvents:          make(chan binance.MarkPriceMessage, markPriceEventBuffer),
 		markPriceLifecycleEvents: make(chan binance.MarkPriceLifecycleEvent, lifecycleEventBuffer),
@@ -464,12 +465,7 @@ func TestHandleBookTickerRecordsReceiveToHandleLatency(t *testing.T) {
 	}
 }
 
-// TestApplicationHandleBookTickerAcceptsValidUpdateAndMarksReadiness is the
-// bookTicker-side mirror of TestApplicationHandleOpenInterestAcceptsValid
-// ReadingAndMarksReadiness: same shape, opposite field group (BidPrice/
-// AskPrice populated, everything else -- OHLC, OpenInterest -- must stay
-// nil, since this call carries neither a trade price nor an OI reading).
-func TestApplicationHandleBookTickerAcceptsValidUpdateAndMarksReadiness(t *testing.T) {
+func TestApplicationHandleBookTickerAcceptsQuoteWithoutMaskingOIReadiness(t *testing.T) {
 	t.Parallel()
 	app := newTestApplication([]string{"BTCUSDT"})
 	app.handleBookTicker(binance.PublicBookTicker{
@@ -479,10 +475,14 @@ func TestApplicationHandleBookTickerAcceptsValidUpdateAndMarksReadiness(t *testi
 	if app.stats.bookTickerAcceptedTotal != 1 {
 		t.Fatalf("bookTickerAcceptedTotal = %d, want 1", app.stats.bookTickerAcceptedTotal)
 	}
+	missingOI := false
 	for _, symbol := range app.readiness.MissingTicker() {
 		if symbol == "BTCUSDT" {
-			t.Fatal("BTCUSDT should no longer be missing a ticker/OI observation")
+			missingOI = true
 		}
+	}
+	if !missingOI {
+		t.Fatal("a quote-only update must not mark the independent OI feed ready")
 	}
 	bars := app.engine.Flush(time.Unix(120, 0).UTC())
 	if len(bars) != 1 {
@@ -523,15 +523,15 @@ func TestApplicationHandleBookTickerRejectsOutOfScopeSymbol(t *testing.T) {
 	}
 }
 
-func TestConsumeBookTickerRoutesOverflowToADropLogRatherThanBlocking(t *testing.T) {
+func TestConsumeBookTickerCoalescesWithoutBlockingProducer(t *testing.T) {
 	t.Parallel()
 	app := newTestApplication([]string{"BTCUSDT"})
-	app.bookTickerEvents = make(chan binance.PublicBookTicker, 1)
-	app.bookTickerEvents <- binance.PublicBookTicker{Symbol: "BTCUSDT"}
+	first := time.Unix(60, 0).UTC()
+	app.bookTickerMailbox.Offer(binance.PublicBookTicker{Symbol: "BTCUSDT", EventAt: first, ReceivedAt: first, BidPrice: 99, AskPrice: 101})
 
 	done := make(chan error, 1)
 	go func() {
-		done <- app.consumeBookTicker(context.Background(), binance.PublicBookTicker{Symbol: "ETHUSDT"})
+		done <- app.consumeBookTicker(context.Background(), binance.PublicBookTicker{Symbol: "BTCUSDT", EventAt: first.Add(time.Second), ReceivedAt: first.Add(time.Second), BidPrice: 100, AskPrice: 102})
 	}()
 	select {
 	case err := <-done:
@@ -541,21 +541,25 @@ func TestConsumeBookTickerRoutesOverflowToADropLogRatherThanBlocking(t *testing.
 	case <-time.After(time.Second):
 		t.Fatal("consumeBookTicker must never block RunBookTicker's own goroutine on a full channel")
 	}
-	if got := app.bookTickerDropsLost.Load(); got != 1 {
-		t.Fatalf("bookTickerDropsLost = %d, want 1", got)
+	stats := app.bookTickerMailbox.Stats()
+	if stats.Depth != 1 || stats.CoalescedTotal != 1 || stats.DropsTotal != 0 {
+		t.Fatalf("mailbox stats = %+v", stats)
+	}
+	items := app.bookTickerMailbox.Take(1)
+	if len(items) != 1 || items[0].BidPrice != 100 {
+		t.Fatalf("mailbox items = %+v, want latest quote", items)
 	}
 }
 
 func TestObserveInputQueueDepthIncludesBookTickerBuffer(t *testing.T) {
 	t.Parallel()
 	app := newTestApplication([]string{"BTCUSDT"})
+	app.bookTickerMailbox = newBookTickerMailbox(3)
 	tradeEvents := make(chan binance.PublicTrade, 2)
 	tradeEvents <- binance.PublicTrade{}
-	bookTickerEvents := make(chan binance.PublicBookTicker, 3)
-	bookTickerEvents <- binance.PublicBookTicker{}
-	bookTickerEvents <- binance.PublicBookTicker{}
 	app.tradeEvents = tradeEvents
-	app.bookTickerEvents = bookTickerEvents
+	app.bookTickerMailbox.Offer(binance.PublicBookTicker{Symbol: "BTCUSDT"})
+	app.bookTickerMailbox.Offer(binance.PublicBookTicker{Symbol: "ETHUSDT"})
 
 	if got := app.observeInputQueueDepth(); got != 3 {
 		t.Fatalf("input queue depth = %d, want 3 including book ticker updates", got)
@@ -831,11 +835,10 @@ func TestApplicationShutdownDrainsBufferedTradeAndOpenInterestBeforeFinalFlush(t
 		Symbol: "BTCUSDT", Amount: "1000",
 		EventAt: time.Unix(60, 0).UTC(), ObservedAt: time.Unix(60, 0).UTC(),
 	}
-	app.bookTickerEvents = make(chan binance.PublicBookTicker, 1)
-	app.bookTickerEvents <- binance.PublicBookTicker{
+	app.bookTickerMailbox.Offer(binance.PublicBookTicker{
 		Symbol: "BTCUSDT", BidPrice: 99, AskPrice: 101,
 		EventAt: time.Unix(60, 0).UTC(), ReceivedAt: time.Unix(60, 0).UTC(),
-	}
+	})
 	app.markPriceEvents <- validMarkPriceMessage(binance.PublicMarkPrice{
 		Symbol: "BTCUSDT", MarkPrice: 100, IndexPrice: 99, FundingRate: 0.0001,
 		EventAt: time.Unix(60, 0).UTC(), ReceivedAt: time.Unix(60, 0).UTC(),

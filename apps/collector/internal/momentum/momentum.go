@@ -112,6 +112,26 @@ type TickerObservation struct {
 	ObservedAt time.Time
 }
 
+// QuoteObservation is one best-bid/ask update from a feed whose health is
+// independent of the ticker/OI feed. Binance transports quotes over
+// bookTicker websocket shards and open interest through a REST scheduler;
+// folding both through TickerObservation would let quote traffic falsely
+// heal OI completeness and readiness.
+//
+// Quote values still carry forward as state. This first separation is
+// intentionally schema-neutral: a later additive dataset migration can
+// persist quote provenance/completeness without changing the meaning of the
+// already-published ticker/OI contract.
+type QuoteObservation struct {
+	Symbol string
+
+	BidPrice float64
+	AskPrice float64
+
+	EventAt    time.Time
+	ObservedAt time.Time
+}
+
 // DerivativesObservation is one point-in-time reading of derivative-only
 // state. It is intentionally separate from TickerObservation: Bybit happens
 // to transport these fields in its ticker stream, while Binance transports
@@ -425,6 +445,10 @@ var (
 	// LastPrice/BidPrice/AskPrice, a negative/non-finite OI reading, or an
 	// OI value/timestamp pair that is only partially present.
 	ErrInvalidTickerObservation = errors.New("invalid ticker observation")
+	// ErrInvalidQuoteObservation is returned for a quote missing identity or
+	// timestamps, containing non-positive/non-finite prices, or crossing its
+	// own best bid above its best ask.
+	ErrInvalidQuoteObservation = errors.New("invalid quote observation")
 	// ErrInvalidDerivativesObservation is returned when derivative state is
 	// missing identity/envelope timestamps, contains a non-finite/invalid
 	// value, or only half of a value/provenance tuple is present.
@@ -705,6 +729,25 @@ func (e *Engine) AddTickerObservation(o TickerObservation) ([]Bar, error) {
 		state.bar.OpenInterestValueEventAt = cloneTimePtr(o.OpenInterestValueEventAt)
 		state.bar.OpenInterestValueObservedAt = cloneTimePtr(o.OpenInterestValueObservedAt)
 	}
+	return closed, nil
+}
+
+// AddQuoteObservation folds bid/ask state into the current bar without
+// touching ticker/OI health. This distinction is safety-critical for venues
+// where quotes and OI have independent transports.
+func (e *Engine) AddQuoteObservation(o QuoteObservation) ([]Bar, error) {
+	if o.Symbol == "" || o.EventAt.IsZero() || o.ObservedAt.IsZero() ||
+		!finitePositive(o.BidPrice) || !finitePositive(o.AskPrice) ||
+		o.BidPrice > o.AskPrice {
+		return nil, ErrInvalidQuoteObservation
+	}
+
+	state, closed := e.advance(o.Symbol, o.EventAt)
+	if o.EventAt.Before(state.bucketStart) {
+		return closed, nil
+	}
+	state.bar.LastBidPrice = clonePtr(o.BidPrice)
+	state.bar.LastAskPrice = clonePtr(o.AskPrice)
 	return closed, nil
 }
 
