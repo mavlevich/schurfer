@@ -333,6 +333,66 @@ services:
         max-size: '10m'
         max-file: '3'
 
+  # Disabled by default. These are two isolated processes even though they
+  # share one binary: a venue outage cannot stop the other capture line.
+  liquidation-capture-bybit:
+    profiles: ['liquidation-capture-bybit']
+    build:
+      context: ../../
+      dockerfile: apps/collector/Dockerfile
+    container_name: schurfer-liquidation-capture-bybit
+    entrypoint: ['/liquidation-capture']
+    environment:
+      LIQUIDATION_CAPTURE_EXCHANGE: bybit
+      DATABASE_URL: postgresql://schurfer:${POSTGRES_PASSWORD}@postgres:5432/schurfer
+      REDIS_ADDR: redis:6379
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: 'no'
+    mem_limit: 128m
+    memswap_limit: 128m
+    cpus: 0.35
+    pids_limit: 128
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+  liquidation-capture-binance:
+    profiles: ['liquidation-capture-binance']
+    build:
+      context: ../../
+      dockerfile: apps/collector/Dockerfile
+    container_name: schurfer-liquidation-capture-binance
+    entrypoint: ['/liquidation-capture']
+    environment:
+      LIQUIDATION_CAPTURE_EXCHANGE: binance
+      DATABASE_URL: postgresql://schurfer:${POSTGRES_PASSWORD}@postgres:5432/schurfer
+      REDIS_ADDR: redis:6379
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: 'no'
+    mem_limit: 128m
+    memswap_limit: 128m
+    cpus: 0.35
+    pids_limit: 128
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
   momentum-watch:
     profiles: ['momentum-watch']
     build:

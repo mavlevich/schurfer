@@ -1,8 +1,9 @@
 # Momentum venue capability matrix v1
 
-Status: pre-expansion contract; no venue is enabled by this document.
+Status: living capability contract; an `implemented` status still does not
+enable a disabled-by-default Compose profile.
 
-As-of: 2026-08-13 UTC.
+As-of: 2026-08-25 UTC.
 
 This matrix is the fail-closed boundary between venue-specific public APIs and the
 future canonical momentum capture. It does not treat an endpoint mentioned in
@@ -43,6 +44,7 @@ reason.
 flowchart LR
     B["Bybit adapter"] --> T["TradeSource"]
     B --> K["TickerSource"]
+    B --> L["LiquidationSource"]
     N["Binance adapter"] --> T
     N --> O["OpenInterestSource"]
     N --> L["LiquidationSource"]
@@ -67,15 +69,15 @@ edge, since its OI genuinely is a separate REST poll.
 
 ## Reviewed matrix
 
-| Venue              | Intended role          | Universe                               | Trades                                            | OI amount                       | OI value                                                  | Liquidations                                                             | Lifecycle                                    |
-| ------------------ | ---------------------- | -------------------------------------- | ------------------------------------------------- | ------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------ | -------------------------------------------- |
-| Bybit linear USDT  | confirmation/execution | implemented crypto-perpetual allowlist | implemented individual taker-side trades          | implemented native WS           | implemented native WS                                     | officially documented, not implemented                                   | implemented session IDs and per-shard events |
-| Binance USD-M      | confirmation/execution | officially documented                  | officially documented `aggTrade`, not implemented | officially documented REST poll | probe required (coarse native value found, see preflight) | officially documented but censored to the latest event per symbol/second | probe required                               |
-| OKX linear USDT    | confirmation/execution | not audited                            | not audited                                       | not audited                     | not audited                                               | not audited                                                              | not audited                                  |
-| Bitget linear USDT | confirmation/execution | not audited                            | not audited                                       | not audited                     | not audited                                               | not audited                                                              | not audited                                  |
-| Gate linear USDT   | discovery source       | not audited                            | not audited                                       | not audited                     | not audited                                               | not audited                                                              | not audited                                  |
-| MEXC linear USDT   | discovery source       | not audited                            | not audited                                       | not audited                     | not audited                                               | not audited                                                              | not audited                                  |
-| XT linear USDT     | discovery source       | not audited                            | not audited                                       | not audited                     | not audited                                               | not audited                                                              | not audited                                  |
+| Venue              | Intended role          | Universe                               | Trades                                            | OI amount                       | OI value                                                  | Liquidations                                                               | Lifecycle                                    |
+| ------------------ | ---------------------- | -------------------------------------- | ------------------------------------------------- | ------------------------------- | --------------------------------------------------------- | -------------------------------------------------------------------------- | -------------------------------------------- |
+| Bybit linear USDT  | confirmation/execution | implemented crypto-perpetual allowlist | implemented individual taker-side trades          | implemented native WS           | implemented native WS                                     | implemented complete-stream adapter; bounded production probe pending      | implemented session IDs and per-shard events |
+| Binance USD-M      | confirmation/execution | officially documented                  | officially documented `aggTrade`, not implemented | officially documented REST poll | probe required (coarse native value found, see preflight) | implemented censored latest-event-per-symbol/second adapter; probe pending | probe required                               |
+| OKX linear USDT    | confirmation/execution | not audited                            | not audited                                       | not audited                     | not audited                                               | not audited                                                                | not audited                                  |
+| Bitget linear USDT | confirmation/execution | not audited                            | not audited                                       | not audited                     | not audited                                               | not audited                                                                | not audited                                  |
+| Gate linear USDT   | discovery source       | not audited                            | not audited                                       | not audited                     | not audited                                               | not audited                                                                | not audited                                  |
+| MEXC linear USDT   | discovery source       | not audited                            | not audited                                       | not audited                     | not audited                                               | not audited                                                                | not audited                                  |
+| XT linear USDT     | discovery source       | not audited                            | not audited                                       | not audited                     | not audited                                               | not audited                                                                | not audited                                  |
 
 ## Findings that constrain the Binance adapter
 
@@ -97,9 +99,10 @@ edge, since its OI genuinely is a separate REST poll.
    resolving the point-in-time gap.
 3. Binance's all-market force-order stream emits at most the latest liquidation per
    symbol per 1000 ms. It is a censored signal, not a complete liquidation tape.
-4. Official documentation is necessary but insufficient. Before capture, the adapter
-   needs static payload fixtures, a bounded live probe, rate-limit accounting,
-   reconnect/session semantics, gap injection tests, and a separate canary.
+4. Official documentation is necessary but insufficient. The v1 liquidation
+   adapters now have static payload fixtures, reconnect/session semantics, bounded
+   queues, durable coverage, and isolated processes. A bounded live probe remains
+   mandatory before the feeds become admissible research inputs.
 
 ## Bybit universe remediation after the first canary
 

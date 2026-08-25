@@ -176,10 +176,15 @@ type Source struct {
 	restURL      string
 	httpClient   *http.Client
 
-	tickerReconnectTotal   atomic.Uint64
-	tickerReadTimeoutTotal atomic.Uint64
-	tradeReconnectTotal    atomic.Uint64
-	tradeReadTimeoutTotal  atomic.Uint64
+	tickerReconnectTotal        atomic.Uint64
+	tickerReadTimeoutTotal      atomic.Uint64
+	tradeReconnectTotal         atomic.Uint64
+	tradeReadTimeoutTotal       atomic.Uint64
+	liquidationAcceptedTotal    atomic.Uint64
+	liquidationInvalidTotal     atomic.Uint64
+	liquidationReconnectTotal   atomic.Uint64
+	liquidationReadTimeoutTotal atomic.Uint64
+	lastLiquidationAtUnixMilli  atomic.Int64
 }
 
 func NewSource() *Source {

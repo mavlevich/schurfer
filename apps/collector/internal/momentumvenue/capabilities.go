@@ -76,7 +76,7 @@ func V1() Matrix {
 
 	return Matrix{
 		SchemaVersion: MatrixVersion,
-		AsOf:          time.Date(2026, time.August, 13, 0, 0, 0, 0, time.UTC),
+		AsOf:          time.Date(2026, time.August, 25, 0, 0, 0, 0, time.UTC),
 		Venues: []Venue{
 			{
 				Exchange:      "bybit",
@@ -122,12 +122,13 @@ func V1() Matrix {
 					ImplementationRefs: []string{"apps/collector/internal/bybit/ws.go", "apps/collector/internal/bybit/bybit.go:TickerEvent"},
 				},
 				Liquidations: Capability{
-					Status:            StatusDocumented,
-					Transport:         TransportWebSocket,
-					Semantics:         "allLiquidation per symbol, position side, executed size, and bankruptcy price",
-					ExchangeTimestamp: "data.T update timestamp in milliseconds",
-					EvidenceURLs:      []string{bybitLiquidations},
-					Constraints:       []string{"not implemented or live-probed in Schurfer"},
+					Status:             StatusImplemented,
+					Transport:          TransportWebSocket,
+					Semantics:          "allLiquidation per symbol, position side, executed size, and bankruptcy price",
+					ExchangeTimestamp:  "data.T update timestamp in milliseconds",
+					EvidenceURLs:       []string{bybitLiquidations},
+					ImplementationRefs: []string{"apps/collector/internal/bybit/liquidations.go", "apps/collector/cmd/liquidationcapture"},
+					Constraints:        []string{"requires a bounded production probe before research consumers may treat heartbeats as operationally validated"},
 				},
 				Lifecycle: Capability{
 					Status:             StatusImplemented,
@@ -195,14 +196,15 @@ func V1() Matrix {
 					},
 				},
 				Liquidations: Capability{
-					Status:            StatusDocumented,
-					Transport:         TransportWebSocket,
-					Semantics:         "force-order snapshots; at most the latest liquidation per symbol in each 1000ms interval",
-					ExchangeTimestamp: "T order trade time and E event time in milliseconds",
-					EvidenceURLs:      []string{binanceMarketStreams},
+					Status:             StatusImplemented,
+					Transport:          TransportWebSocket,
+					Semantics:          "force-order snapshots; at most the latest liquidation per symbol in each 1000ms interval",
+					ExchangeTimestamp:  "T order trade time and E event time in milliseconds",
+					EvidenceURLs:       []string{binanceMarketStreams},
+					ImplementationRefs: []string{"apps/collector/internal/binance/liquidations.go", "apps/collector/cmd/liquidationcapture"},
 					Constraints: []string{
 						"documented stream is censored and must not be labelled a complete liquidation tape",
-						"not implemented or live-probed in Schurfer",
+						"requires a bounded production probe before research consumers may treat heartbeats as operationally validated",
 					},
 				},
 				Lifecycle: Capability{
