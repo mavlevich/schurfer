@@ -18,6 +18,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"sync/atomic"
 	"time"
 
 	"github.com/mavlevich/schurfer/collector/internal/momentumsource"
@@ -65,10 +66,17 @@ type SymbolCatalog struct {
 
 // Source streams Binance USD-M futures market data.
 type Source struct {
-	restURL         string
-	wsMarketBaseURL string
-	wsPublicBaseURL string
-	httpClient      *http.Client
+	restURL                                 string
+	wsMarketBaseURL                         string
+	wsPublicBaseURL                         string
+	httpClient                              *http.Client
+	liquidationAcceptedTotal                atomic.Uint64
+	liquidationInvalidTotal                 atomic.Uint64
+	liquidationOutOfScopeTotal              atomic.Uint64
+	liquidationScopeTagMissingAcceptedTotal atomic.Uint64
+	liquidationReconnectTotal               atomic.Uint64
+	liquidationReadTimeoutTotal             atomic.Uint64
+	lastLiquidationAtUnixMilli              atomic.Int64
 }
 
 func NewSource() *Source {

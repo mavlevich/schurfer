@@ -3,6 +3,8 @@
 .PHONY: momentum-flow-discovery-report prod-momentum-flow-discovery-report
 .PHONY: ai-rules-check
 .PHONY: early-momentum-unused-flow-features-report prod-early-momentum-unused-flow-features-report
+.PHONY: liquidation-capture-bybit-start liquidation-capture-bybit-stop liquidation-capture-bybit-health liquidation-capture-binance-start liquidation-capture-binance-stop liquidation-capture-binance-health
+.PHONY: prod-liquidation-capture-bybit-start prod-liquidation-capture-bybit-stop prod-liquidation-capture-bybit-health prod-liquidation-capture-binance-start prod-liquidation-capture-binance-stop prod-liquidation-capture-binance-health
 
 GOLANGCI_LINT_VERSION = v2.1.6
 DEADCODE_VERSION = v0.48.0
@@ -118,6 +120,8 @@ help:
 	@echo "  make momentum-capture-binance-start  Start the bounded local Binance momentum-capture line"
 	@echo "  make momentum-capture-binance-health  Show local Binance momentum-capture health"
 	@echo "  make momentum-capture-binance-stop  Stop the local Binance momentum-capture line"
+	@echo "  make liquidation-capture-bybit-start  Start append-only Bybit public-liquidation capture"
+	@echo "  make liquidation-capture-binance-start  Start censored Binance force-order capture"
 	@echo "  make momentum-watch-start  Start the prospective momentum WATCH worker"
 	@echo "  make momentum-watch-health  Show prospective momentum WATCH health"
 	@echo "  make momentum-watch-stop  Stop the prospective momentum WATCH worker"
@@ -209,6 +213,8 @@ help:
 	@echo "  make prod-momentum-capture-binance-start  Explicitly start the bounded Binance momentum-capture canary"
 	@echo "  make prod-momentum-capture-binance-health  Show Binance momentum-capture canary health and resource use"
 	@echo "  make prod-momentum-capture-binance-stop  Stop the Binance momentum-capture canary"
+	@echo "  make prod-liquidation-capture-bybit-start  Start Bybit public-liquidation capture"
+	@echo "  make prod-liquidation-capture-binance-start  Start Binance force-order capture"
 	@echo "  make prod-momentum-watch-start  Start the prospective momentum WATCH worker"
 	@echo "  make prod-momentum-watch-health  Show prospective momentum WATCH health"
 	@echo "  make prod-momentum-watch-stop  Stop the prospective momentum WATCH worker"
@@ -336,6 +342,38 @@ momentum-capture-binance-health:
 		--profile momentum-capture-binance ps momentum-capture-binance
 	@docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
 		exec -T redis redis-cli --raw HGETALL market:momentumcapture:health:binance
+
+liquidation-capture-bybit-start:
+	@test -f .env || (echo "ERROR: .env not found. Run make dev-init first." && exit 1)
+	@$(MAKE) migrate
+	docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		--profile liquidation-capture-bybit up -d --build liquidation-capture-bybit
+
+liquidation-capture-bybit-stop:
+	docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		--profile liquidation-capture-bybit stop liquidation-capture-bybit
+
+liquidation-capture-bybit-health:
+	@docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		--profile liquidation-capture-bybit ps liquidation-capture-bybit
+	@docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		exec -T redis redis-cli --raw HGETALL market:liquidationcapture:health:bybit
+
+liquidation-capture-binance-start:
+	@test -f .env || (echo "ERROR: .env not found. Run make dev-init first." && exit 1)
+	@$(MAKE) migrate
+	docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		--profile liquidation-capture-binance up -d --build liquidation-capture-binance
+
+liquidation-capture-binance-stop:
+	docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		--profile liquidation-capture-binance stop liquidation-capture-binance
+
+liquidation-capture-binance-health:
+	@docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		--profile liquidation-capture-binance ps liquidation-capture-binance
+	@docker compose --env-file .env -f infra/docker/docker-compose.dev.yml \
+		exec -T redis redis-cli --raw HGETALL market:liquidationcapture:health:binance
 
 momentum-watch-start:
 	@test -f .env || (echo "ERROR: .env not found. Run make dev-init first." && exit 1)
@@ -1679,6 +1717,40 @@ prod-momentum-capture-binance-health:
 	@$(_PROD) --profile momentum-capture-binance ps momentum-capture-binance
 	@$(_PROD) exec -T redis redis-cli --raw HGETALL market:momentumcapture:health:binance
 	@docker stats --no-stream schurfer-momentum-capture-binance
+
+prod-liquidation-capture-bybit-start:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	@test "$$(git branch --show-current)" = "main" || (echo "ERROR: deploy only from main." && exit 1)
+	@test -z "$$(git status --porcelain)" || (echo "ERROR: working tree not clean." && exit 1)
+	$(_PROD) --profile liquidation-capture-bybit up -d --build liquidation-capture-bybit
+	@$(_PROD) --profile liquidation-capture-bybit ps liquidation-capture-bybit
+
+prod-liquidation-capture-bybit-stop:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	$(_PROD) --profile liquidation-capture-bybit stop liquidation-capture-bybit
+
+prod-liquidation-capture-bybit-health:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	@$(_PROD) --profile liquidation-capture-bybit ps liquidation-capture-bybit
+	@$(_PROD) exec -T redis redis-cli --raw HGETALL market:liquidationcapture:health:bybit
+	@docker stats --no-stream schurfer-liquidation-capture-bybit
+
+prod-liquidation-capture-binance-start:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	@test "$$(git branch --show-current)" = "main" || (echo "ERROR: deploy only from main." && exit 1)
+	@test -z "$$(git status --porcelain)" || (echo "ERROR: working tree not clean." && exit 1)
+	$(_PROD) --profile liquidation-capture-binance up -d --build liquidation-capture-binance
+	@$(_PROD) --profile liquidation-capture-binance ps liquidation-capture-binance
+
+prod-liquidation-capture-binance-stop:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	$(_PROD) --profile liquidation-capture-binance stop liquidation-capture-binance
+
+prod-liquidation-capture-binance-health:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	@$(_PROD) --profile liquidation-capture-binance ps liquidation-capture-binance
+	@$(_PROD) exec -T redis redis-cli --raw HGETALL market:liquidationcapture:health:binance
+	@docker stats --no-stream schurfer-liquidation-capture-binance
 
 prod-momentum-watch-start:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)

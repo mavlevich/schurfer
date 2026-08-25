@@ -1,0 +1,270 @@
+// Command liquidationcapture records public liquidation observations for one
+// venue. Compose runs one isolated process per venue; the shared binary only
+// prevents two copies of lifecycle/writer logic from drifting.
+package main
+
+import (
+	"context"
+	"crypto/rand"
+	"fmt"
+	"log/slog"
+	"os"
+	"os/signal"
+	"strings"
+	"syscall"
+	"time"
+
+	"github.com/mavlevich/schurfer/collector/internal/binance"
+	"github.com/mavlevich/schurfer/collector/internal/bybit"
+	"github.com/mavlevich/schurfer/collector/internal/liquidationcapture"
+	"github.com/mavlevich/schurfer/collector/internal/wsstream"
+	"github.com/redis/go-redis/v9"
+)
+
+const (
+	marketType      = "linear"
+	flushInterval   = time.Second
+	healthInterval  = 5 * time.Second
+	shutdownTimeout = 20 * time.Second
+)
+
+type config struct {
+	Exchange    string
+	DatabaseURL string
+	RedisAddr   string
+}
+
+func main() {
+	if err := run(); err != nil {
+		slog.Error("liquidationcapture.fatal", "err", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
+	configureLogging()
+	cfg, err := loadConfig()
+	if err != nil {
+		return err
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	source, symbols, err := buildSource(ctx, cfg.Exchange)
+	if err != nil {
+		return err
+	}
+	expected := source.ExpectedConnections(len(symbols))
+	tracker, err := liquidationcapture.NewCoverageTracker(expected)
+	if err != nil {
+		return err
+	}
+	processSessionID, err := wsstream.NewSessionID(rand.Reader)
+	if err != nil {
+		return fmt.Errorf("process session id: %w", err)
+	}
+
+	writer, err := liquidationcapture.NewWriter(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return err
+	}
+	defer writer.Close()
+	rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr})
+	defer func() { _ = rdb.Close() }()
+	if err := rdb.Ping(ctx).Err(); err != nil {
+		return fmt.Errorf("ping redis: %w", err)
+	}
+	healthStore, err := liquidationcapture.NewRedisStore(rdb)
+	if err != nil {
+		return err
+	}
+
+	startedAt := time.Now()
+	universeVersion := liquidationcapture.UniverseVersion(symbols)
+	slog.Info("liquidationcapture.start",
+		"exchange", cfg.Exchange, "coverage_kind", source.CoverageKind(),
+		"symbols", len(symbols), "expected_connections", expected,
+		"process_session_id", processSessionID, "universe_version", universeVersion,
+	)
+	sourceDone := make(chan error, 1)
+	go func() {
+		sourceDone <- source.RunLiquidations(ctx, symbols, universeVersion,
+			func(_ context.Context, event liquidationcapture.Event) error {
+				if !writer.Enqueue(event) {
+					tracker.MarkDataLoss()
+					slog.Error("liquidationcapture.writer_queue_full", "exchange", cfg.Exchange)
+				}
+				return nil
+			},
+			tracker.ObserveLifecycle,
+		)
+	}()
+
+	flushTicker := time.NewTicker(flushInterval)
+	healthTicker := time.NewTicker(healthInterval)
+	defer flushTicker.Stop()
+	defer healthTicker.Stop()
+	nextHeartbeatBucket := startedAt.UTC().Truncate(time.Minute)
+
+	for {
+		select {
+		case <-ctx.Done():
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+			defer cancel()
+			select {
+			case err := <-sourceDone:
+				if err != nil && err != context.Canceled {
+					slog.Warn("liquidationcapture.source_stopped", "err", err)
+				}
+			case <-shutdownCtx.Done():
+				return fmt.Errorf("source shutdown: %w", shutdownCtx.Err())
+			}
+			if err := writer.Flush(shutdownCtx); err != nil {
+				return err
+			}
+			return nil
+
+		case err := <-sourceDone:
+			if ctx.Err() != nil {
+				shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+				defer cancel()
+				if flushErr := writer.Flush(shutdownCtx); flushErr != nil {
+					return flushErr
+				}
+				return nil
+			}
+			if err == nil {
+				return fmt.Errorf("liquidation source stopped unexpectedly")
+			}
+			return fmt.Errorf("liquidation source: %w", err)
+
+		case <-flushTicker.C:
+			if err := writer.Flush(ctx); err != nil {
+				slog.Error("liquidationcapture.flush_failed", "err", err)
+			}
+			nextHeartbeatBucket = writeDueHeartbeats(
+				ctx, time.Now().UTC(), nextHeartbeatBucket, cfg.Exchange,
+				universeVersion, processSessionID, source, tracker, writer,
+			)
+
+		case <-healthTicker.C:
+			connected, expectedConnections, loss := tracker.Connected()
+			writerStats := writer.Stats()
+			sourceStats := source.Stats()
+			status := "ok"
+			if connected != expectedConnections {
+				status = "degraded_connectivity"
+			} else if loss || sourceStats.EventsInvalidTotal > 0 || writerStats.QueueDropsTotal > 0 || writerStats.PayloadHashMismatchTotal > 0 {
+				status = "degraded_data_loss"
+			} else if writerStats.PersistErrorsTotal > 0 && writerStats.QueueDepth > 0 {
+				status = "degraded_persistence"
+			}
+			health := liquidationcapture.Health{
+				Exchange: cfg.Exchange, Status: status, CoverageKind: source.CoverageKind(),
+				ProcessSessionID: processSessionID, UniverseVersion: universeVersion,
+				StartedAt: startedAt, UpdatedAt: time.Now(),
+				LastEventAt: sourceStats.LastEventAt, LastPersistAt: writerStats.LastPersistAt,
+				SubscribedSymbols: len(symbols), ConnectedConnections: connected,
+				ExpectedConnections: expectedConnections, DataLossDetected: loss,
+				Source: sourceStats, Writer: writerStats,
+			}
+			if err := healthStore.StoreHealth(ctx, health); err != nil {
+				slog.Error("liquidationcapture.health_failed", "err", err)
+			}
+		}
+	}
+}
+
+const heartbeatLatenessTolerance = 10 * time.Second
+
+func writeDueHeartbeats(
+	ctx context.Context,
+	now time.Time,
+	nextBucket time.Time,
+	exchange string,
+	universeVersion string,
+	processSessionID string,
+	source liquidationcapture.Source,
+	tracker *liquidationcapture.CoverageTracker,
+	writer *liquidationcapture.Writer,
+) time.Time {
+	for _, due := range heartbeatBucketsDue(nextBucket, now) {
+		// If the scheduler is this late, it cannot honestly reconstruct the
+		// exact connection/loss state of the old minute. Persist it as
+		// incomplete instead of backfilling a false healthy interval.
+		if due.Late {
+			tracker.MarkDataLoss()
+		}
+		heartbeat := tracker.SnapshotAndReset(
+			due.Bucket, exchange, marketType, source.CoverageKind(),
+			processSessionID, universeVersion, source.Stats(), writer.Stats(),
+		)
+		if err := writer.WriteHeartbeat(ctx, heartbeat); err != nil {
+			tracker.MarkDataLoss()
+			slog.Error("liquidationcapture.heartbeat_failed", "bucket_start", due.Bucket, "err", err)
+		}
+		nextBucket = due.Bucket.Add(time.Minute)
+	}
+	return nextBucket
+}
+
+type dueHeartbeat struct {
+	Bucket time.Time
+	Late   bool
+}
+
+func heartbeatBucketsDue(nextBucket time.Time, now time.Time) []dueHeartbeat {
+	completedBefore := now.UTC().Truncate(time.Minute)
+	var due []dueHeartbeat
+	for bucket := nextBucket.UTC().Truncate(time.Minute); bucket.Before(completedBefore); bucket = bucket.Add(time.Minute) {
+		due = append(due, dueHeartbeat{
+			Bucket: bucket,
+			Late:   now.Sub(bucket.Add(time.Minute)) > heartbeatLatenessTolerance,
+		})
+	}
+	return due
+}
+
+func buildSource(ctx context.Context, exchange string) (liquidationcapture.Source, []string, error) {
+	switch exchange {
+	case "bybit":
+		source := bybit.NewSource()
+		catalog, err := source.FetchSymbolCatalog(ctx)
+		if err != nil {
+			return nil, nil, err
+		}
+		return source, catalog.CryptoPerpetualSymbols, nil
+	case "binance":
+		source := binance.NewSource()
+		catalog, err := source.FetchSymbolCatalog(ctx)
+		if err != nil {
+			return nil, nil, err
+		}
+		return source, catalog.CryptoPerpetualSymbols, nil
+	default:
+		return nil, nil, fmt.Errorf("unsupported LIQUIDATION_CAPTURE_EXCHANGE %q", exchange)
+	}
+}
+
+func loadConfig() (config, error) {
+	cfg := config{
+		Exchange:    strings.ToLower(strings.TrimSpace(os.Getenv("LIQUIDATION_CAPTURE_EXCHANGE"))),
+		DatabaseURL: strings.TrimSpace(os.Getenv("DATABASE_URL")),
+		RedisAddr:   strings.TrimSpace(os.Getenv("REDIS_ADDR")),
+	}
+	if cfg.Exchange != "bybit" && cfg.Exchange != "binance" {
+		return config{}, fmt.Errorf("LIQUIDATION_CAPTURE_EXCHANGE must be bybit or binance")
+	}
+	if cfg.DatabaseURL == "" || cfg.RedisAddr == "" {
+		return config{}, fmt.Errorf("DATABASE_URL and REDIS_ADDR are required")
+	}
+	return cfg, nil
+}
+
+func configureLogging() {
+	level := slog.LevelInfo
+	if strings.EqualFold(os.Getenv("LOG_LEVEL"), "debug") {
+		level = slog.LevelDebug
+	}
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})))
+}
