@@ -1647,6 +1647,17 @@ Binance's censored force-order stream require an append-only event identity,
 deduplication, and venue-specific coverage contract rather than bar columns.
 See [the capture contract](docs/research/derivatives-context-capture-v1.md).
 
+**[Queued after post-deploy capture integrity hotfix] Independent quote
+completeness.** Binance `bookTicker` and REST open interest are independent
+feeds and must never share one health transition. The hotfix separates their
+engine entry points and replaces the burst-prone quote FIFO with a bounded
+latest-value mailbox, exposing coalescing separately from genuine distinct-
+symbol drops. A follow-up additive dataset contract must persist quote event/
+receive timestamps, `quote_observed_this_minute`, and `quote_complete`, wire
+bookTicker lifecycle discontinuities, and leave historical rows NULL. Until
+that contract exists, bid/ask values are useful state but cannot by themselves
+prove that the quote feed was continuously healthy for an entire bar.
+
 Use these sources in provenance order:
 
 1. **Schurfer forward data is the execution authority.** Decisions, immutable

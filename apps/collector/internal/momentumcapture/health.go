@@ -82,9 +82,16 @@ type Health struct {
 	InputQueueDepth      int
 	InputQueuePeak       int
 	InputQueueDropsTotal uint64
-	BarsCompletedTotal   uint64
-	LateEventsTotal      uint64
-	TickerGapTotal       uint64 // proactive per-symbol silence detections
+	// Binance bookTicker is a latest-value state stream. Coalesced updates
+	// are expected superseded values, while DropsTotal means a distinct
+	// symbol could not fit and is genuine observability/data loss.
+	BookTickerQueueDepth     int
+	BookTickerQueuePeak      int
+	BookTickerCoalescedTotal uint64
+	BookTickerDropsTotal     uint64
+	BarsCompletedTotal       uint64
+	LateEventsTotal          uint64
+	TickerGapTotal           uint64 // proactive per-symbol silence detections
 
 	// Additive mark/index/funding feed. These counters stay separate from
 	// ticker/OI because Binance transports this state on its own stream.

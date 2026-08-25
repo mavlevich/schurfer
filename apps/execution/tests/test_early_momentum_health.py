@@ -14,6 +14,7 @@ from schurfer_execution.early_momentum_health import (
     REASON_OVERDUE_ARMED,
     REASON_QUALITY_READY_ZERO,
     REASON_QUALITY_READY_ZERO_SUSTAINED,
+    REASON_QUALITY_WINDOW_REWARMING,
     REASON_SCANNER_HEARTBEAT_MISSING,
     REASON_SCANNER_HEARTBEAT_STALE,
     REASON_SCANNER_TICK_FAILED,
@@ -62,6 +63,8 @@ def _call(**overrides: object) -> tuple[str, tuple[str, ...]]:
         "lifecycle_reaper_grace_seconds": _LIFECYCLE_REAPER_GRACE_SECONDS,
         "consecutive_zero_quality_ready_ticks": 0,
         "zero_quality_ready_error_threshold": 3,
+        "quality_window_rewarming": False,
+        "quality_window_rewarming_max_ticks": 141,
         "identity_health": {
             "binance": {"age_seconds": 60.0, "stale": False},
             "bybit": {"age_seconds": 60.0, "stale": False},
@@ -247,6 +250,25 @@ def test_quality_ready_zero_at_threshold_is_error() -> None:
     assert status == "error"
     assert REASON_QUALITY_READY_ZERO_SUSTAINED in reasons
     assert REASON_QUALITY_READY_ZERO not in reasons
+
+
+def test_mixed_universe_window_rewarming_is_degraded_not_error() -> None:
+    status, reasons = _call(
+        consecutive_zero_quality_ready_ticks=9,
+        quality_window_rewarming=True,
+    )
+    assert status == "degraded"
+    assert REASON_QUALITY_WINDOW_REWARMING in reasons
+    assert REASON_QUALITY_READY_ZERO_SUSTAINED not in reasons
+
+
+def test_window_rewarming_cannot_mask_zero_quality_forever() -> None:
+    status, reasons = _call(
+        consecutive_zero_quality_ready_ticks=142,
+        quality_window_rewarming=True,
+    )
+    assert status == "error"
+    assert REASON_QUALITY_READY_ZERO_SUSTAINED in reasons
 
 
 def test_multiple_reasons_are_all_reported_and_deduped() -> None:

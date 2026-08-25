@@ -66,9 +66,10 @@ async def test_zero_quality_ready_counter_increments_on_a_new_completed_bad_tick
     rdb.eval.assert_awaited_once()
     args = rdb.eval.call_args.args
     assert args[0] == early_momentum._COUNT_ZERO_QUALITY_READY_TICK_ONCE
-    assert args[1] == 2
-    assert args[4] == NOW.isoformat()
-    assert args[5] == "1"
+    assert args[1] == 3
+    assert args[5] == NOW.isoformat()
+    assert args[6] == "1"
+    assert args[7] == "0"
 
 
 async def test_zero_quality_ready_counter_resets_on_a_new_completed_good_tick() -> None:
@@ -82,7 +83,43 @@ async def test_zero_quality_ready_counter_resets_on_a_new_completed_good_tick() 
 
     assert result == 0
     args = rdb.eval.call_args.args
-    assert args[5] == "0"  # not a bad tick
+    assert args[6] == "0"  # not a bad tick
+
+
+async def test_zero_quality_ready_counter_marks_mixed_universe_rewarming() -> None:
+    rdb = MagicMock()
+    rdb.eval = AsyncMock(return_value=1)
+    heartbeat = _heartbeat(
+        counters={
+            "symbols_total": 100,
+            "quality_ready": 0,
+            "rejected_multiple_universe_versions": 100,
+        }
+    )
+
+    await early_momentum._update_zero_quality_ready_counter(rdb, scanner_heartbeat=heartbeat)
+
+    args = rdb.eval.call_args.args
+    assert args[6] == "1"
+    assert args[7] == "1"
+
+
+async def test_zero_quality_ready_rewarming_state_round_trips_through_redis() -> None:
+    rdb = FakeRedis()
+    heartbeat = _heartbeat(
+        counters={
+            "symbols_total": 100,
+            "quality_ready": 0,
+            "rejected_multiple_universe_versions": 100,
+        }
+    )
+
+    count = await early_momentum._update_zero_quality_ready_counter(
+        rdb, scanner_heartbeat=heartbeat
+    )
+
+    assert count == 1
+    assert await early_momentum._read_quality_window_rewarming(rdb) is True
 
 
 async def test_zero_quality_ready_counter_treats_zero_symbols_total_as_not_bad() -> None:
@@ -95,7 +132,7 @@ async def test_zero_quality_ready_counter_treats_zero_symbols_total_as_not_bad()
     await early_momentum._update_zero_quality_ready_counter(rdb, scanner_heartbeat=heartbeat)
 
     args = rdb.eval.call_args.args
-    assert args[5] == "0"
+    assert args[6] == "0"
 
 
 async def test_zero_quality_ready_counter_repeated_read_does_not_double_count() -> None:
@@ -106,7 +143,7 @@ async def test_zero_quality_ready_counter_repeated_read_does_not_double_count() 
     last_marker: dict[str, str] = {}
 
     async def _fake_eval(_script: str, _numkeys: int, *args: object) -> int:
-        _marker_key, _counter_key, marker, is_bad = args
+        _marker_key, _counter_key, _rewarming_key, marker, is_bad, _rewarming = args
         if last_marker.get("value") == marker:
             return counter["n"]
         last_marker["value"] = marker  # type: ignore[assignment]
@@ -149,7 +186,7 @@ async def test_zero_quality_ready_counter_a_new_completed_heartbeat_advances_it_
 
     assert first == 1
     assert second == 2
-    markers = [call.args[4] for call in rdb.eval.call_args_list]
+    markers = [call.args[5] for call in rdb.eval.call_args_list]
     assert markers[0] != markers[1]
 
 
@@ -242,6 +279,10 @@ async def test_gather_health_status_wires_inputs_through_to_compute_status() -> 
             AsyncMock(return_value=0),
         ),
         patch(
+            "schurfer_execution.early_momentum._read_quality_window_rewarming",
+            AsyncMock(return_value=False),
+        ),
+        patch(
             "schurfer_execution.early_momentum.early_momentum_health.compute_status",
             MagicMock(return_value=("ok", ())),
         ) as compute_status,
@@ -269,6 +310,7 @@ async def test_gather_health_status_wires_inputs_through_to_compute_status() -> 
     assert kw["expired_claims"] == 0
     assert kw["oldest_expired_claim_age_seconds"] is None
     assert kw["lifecycle_reaper_grace_seconds"] == early_momentum._LIFECYCLE_REAPER_GRACE_SECONDS
+    assert kw["quality_window_rewarming"] is False
     assert kw["identity_health"] == identity
     assert raw["lifecycle_reaper_grace_seconds"] == early_momentum._LIFECYCLE_REAPER_GRACE_SECONDS
 
@@ -308,6 +350,10 @@ async def test_gather_health_status_handles_strategy_lookup_failure() -> None:
         patch(
             "schurfer_execution.early_momentum._update_zero_quality_ready_counter",
             AsyncMock(return_value=0),
+        ),
+        patch(
+            "schurfer_execution.early_momentum._read_quality_window_rewarming",
+            AsyncMock(return_value=False),
         ),
     ):
         _status, _reasons, raw = await early_momentum.gather_health_status(
@@ -359,6 +405,25 @@ async def test_maybe_alert_sends_on_transition_into_degraded() -> None:
         await early_momentum._maybe_alert(rdb, cfg, status="degraded", reasons=("x",))
     notify_alert.assert_awaited_once()
     rdb.set.assert_any_call(early_momentum._HEALTH_ALERT_STATUS_KEY, "degraded")
+    rdb.set.assert_any_call(
+        f"{early_momentum._HEALTH_ALERT_COOLDOWN_KEY_PREFIX}degraded",
+        "1",
+        ex=cfg.early_momentum_health_alert_cooldown_seconds,
+    )
+
+
+async def test_maybe_alert_transition_arms_cooldown_before_next_monitor_tick() -> None:
+    rdb = FakeRedis()
+    await rdb.set(early_momentum._HEALTH_ALERT_STATUS_KEY, "ok")
+    cfg = _cfg()
+    with patch(
+        "schurfer_execution.early_momentum.notify.notify_alert",
+        AsyncMock(return_value=True),
+    ) as notify_alert:
+        await early_momentum._maybe_alert(rdb, cfg, status="degraded", reasons=("x",))
+        await early_momentum._maybe_alert(rdb, cfg, status="degraded", reasons=("x",))
+
+    assert notify_alert.await_count == 1
 
 
 async def test_maybe_alert_sends_recovery_message_on_transition_to_ok() -> None:

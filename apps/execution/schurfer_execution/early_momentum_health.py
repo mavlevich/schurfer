@@ -33,6 +33,7 @@ REASON_OVERDUE_ARMED = "overdue_armed_episodes"
 REASON_EXPIRED_CLAIMS = "expired_claims"
 REASON_QUALITY_READY_ZERO = "quality_ready_zero"
 REASON_QUALITY_READY_ZERO_SUSTAINED = "quality_ready_zero_sustained"
+REASON_QUALITY_WINDOW_REWARMING = "quality_window_rewarming"
 REASON_IDENTITY_CATALOG_STALE = "identity_catalog_stale"
 REASON_IDENTITY_HEALTH_UNAVAILABLE = "identity_health_unavailable"
 
@@ -89,6 +90,8 @@ def compute_status(
     lifecycle_reaper_grace_seconds: int,
     consecutive_zero_quality_ready_ticks: int,
     zero_quality_ready_error_threshold: int,
+    quality_window_rewarming: bool,
+    quality_window_rewarming_max_ticks: int,
     identity_health: dict[str, dict[str, Any]],
 ) -> tuple[Status, tuple[str, ...]]:
     """Pure: every input is passed in, nothing is read from a clock, Redis,
@@ -160,7 +163,12 @@ def compute_status(
             elif oldest_expired_claim_age_seconds >= lifecycle_reaper_grace_seconds:
                 reasons.append(REASON_EXPIRED_CLAIMS)
 
-    if consecutive_zero_quality_ready_ticks >= zero_quality_ready_error_threshold:
+    if (
+        quality_window_rewarming
+        and 0 < consecutive_zero_quality_ready_ticks <= quality_window_rewarming_max_ticks
+    ):
+        reasons.append(REASON_QUALITY_WINDOW_REWARMING)
+    elif consecutive_zero_quality_ready_ticks >= zero_quality_ready_error_threshold:
         reasons.append(REASON_QUALITY_READY_ZERO_SUSTAINED)
     elif consecutive_zero_quality_ready_ticks > 0:
         reasons.append(REASON_QUALITY_READY_ZERO)
@@ -187,6 +195,7 @@ __all__ = [
     "REASON_OVERDUE_ARMED",
     "REASON_QUALITY_READY_ZERO",
     "REASON_QUALITY_READY_ZERO_SUSTAINED",
+    "REASON_QUALITY_WINDOW_REWARMING",
     "REASON_SCANNER_HEARTBEAT_MISSING",
     "REASON_SCANNER_HEARTBEAT_STALE",
     "REASON_SCANNER_TICK_FAILED",
