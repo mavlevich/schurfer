@@ -47,6 +47,7 @@ func TestRedisStoreStoresHealthWithTTLAndSampledSymbolLists(t *testing.T) {
 		BarsPersistedTotal:       727,
 		WriterQueueDepth:         3,
 		PayloadHashMismatchTotal: 1,
+		DerivativesGapTotal:      2,
 		TradeHandlerCount:        100,
 		TradeHandlerP95Us:        250,
 		TradeHandlerP99Us:        500,
@@ -74,8 +75,8 @@ func TestRedisStoreStoresHealthWithTTLAndSampledSymbolLists(t *testing.T) {
 	if fields["status"] != "ok" {
 		t.Fatalf("status = %q, want ok", fields["status"])
 	}
-	if fields["schema_version"] != "2" {
-		t.Fatalf("schema_version = %q, want 2", fields["schema_version"])
+	if fields["schema_version"] != "3" {
+		t.Fatalf("schema_version = %q, want 3", fields["schema_version"])
 	}
 	if fields["subscribed_symbols"] != "735" || fields["ready_symbols"] != "400" {
 		t.Fatalf("universe fields wrong: %+v", fields)
@@ -91,6 +92,9 @@ func TestRedisStoreStoresHealthWithTTLAndSampledSymbolLists(t *testing.T) {
 	}
 	if fields["payload_hash_mismatch_total"] != "1" {
 		t.Fatalf("payload_hash_mismatch_total = %q, want 1", fields["payload_hash_mismatch_total"])
+	}
+	if fields["derivatives_gap_total"] != "2" {
+		t.Fatalf("derivatives_gap_total = %q, want 2", fields["derivatives_gap_total"])
 	}
 	if fields["trade_handler_count"] != "100" || fields["trade_handler_p99_us"] != "500" {
 		t.Fatalf("trade handler latency fields wrong: %+v", fields)

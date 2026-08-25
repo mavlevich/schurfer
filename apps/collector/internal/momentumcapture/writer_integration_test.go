@@ -41,6 +41,8 @@ func TestWriterFlushAgainstRealPostgres(t *testing.T) {
 	price := 100.0
 	bid, ask := 99.9, 100.1
 	oi := 12345.6
+	mark, index, funding := 100.05, 99.95, -0.0001
+	nextFunding := bucket.Add(8 * time.Hour)
 
 	bar := momentum.Bar{
 		Symbol:       symbol,
@@ -81,6 +83,13 @@ func TestWriterFlushAgainstRealPostgres(t *testing.T) {
 		PriceObservedThisMinute: true,
 		OpenInterestComplete:    true,
 		PriceComplete:           true,
+
+		MarkPrice: &mark, MarkPriceEventAt: &bucket, MarkPriceObservedAt: &bucket,
+		IndexPrice: &index, IndexPriceEventAt: &bucket, IndexPriceObservedAt: &bucket,
+		FundingRate: &funding, FundingRateEventAt: &bucket, FundingRateObservedAt: &bucket,
+		NextFundingAt: &nextFunding, NextFundingEventAt: &bucket, NextFundingObservedAt: &bucket,
+		DerivativesObservedThisMinute: true,
+		DerivativesComplete:           true,
 	}
 
 	// First insert: must succeed as a fresh row.
@@ -97,14 +106,19 @@ func TestWriterFlushAgainstRealPostgres(t *testing.T) {
 	var storedPriceSource string
 	var storedPriceObservedThisMinute, storedOpenInterestComplete, storedPriceComplete bool
 	var storedLastPriceEventAt time.Time
+	var storedDerivativesVersion string
+	var storedMark, storedFunding float64
+	var storedDerivativesComplete bool
 	if err := pool.QueryRow(ctx,
 		`SELECT sell_top_notional, complete, price_source, price_observed_this_minute,
-		        open_interest_complete, price_complete, last_price_event_at
+		        open_interest_complete, price_complete, last_price_event_at,
+		        derivatives_context_version, mark_price, funding_rate, derivatives_complete
 		 FROM timeseries.bybit_momentum_bars_1m WHERE symbol = $1`,
 		symbol,
 	).Scan(
 		&storedTopNotional, &storedComplete, &storedPriceSource, &storedPriceObservedThisMinute,
 		&storedOpenInterestComplete, &storedPriceComplete, &storedLastPriceEventAt,
+		&storedDerivativesVersion, &storedMark, &storedFunding, &storedDerivativesComplete,
 	); err != nil {
 		t.Fatalf("read back: %v", err)
 	}
@@ -123,6 +137,10 @@ func TestWriterFlushAgainstRealPostgres(t *testing.T) {
 	}
 	if !storedLastPriceEventAt.Equal(bucket) {
 		t.Fatalf("last_price_event_at round-tripped as %v, want %v", storedLastPriceEventAt, bucket)
+	}
+	if storedDerivativesVersion != DerivativesContextVersion || storedMark != mark ||
+		storedFunding != funding || !storedDerivativesComplete {
+		t.Fatalf("derivatives context = %q/%v/%v/%v", storedDerivativesVersion, storedMark, storedFunding, storedDerivativesComplete)
 	}
 
 	// Second insert of the identical bar: a harmless retry, same PK, same

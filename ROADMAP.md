@@ -1635,6 +1635,18 @@ pre-registered family for forward confirmation. The optimization target is net
 risk-adjusted expectancy after fees, funding, slippage, and drawdown, not trade count
 or win rate in isolation.
 
+**[Implemented, collecting after deployment] Forward derivatives context
+(`feat/derivatives-context-capture-v1`).** Preserve point-in-time mark price,
+index price, advertised funding rate, and next funding boundary for both Bybit
+and Binance in the existing one-minute momentum row under an independent
+`derivatives_context_v1` contract. Historical rows remain NULL; consumers must
+require the version, full context completeness, and value-specific freshness.
+This is capture infrastructure only and cannot promote a strategy. Liquidation
+events remain the next separate capture PR because Bybit's complete stream and
+Binance's censored force-order stream require an append-only event identity,
+deduplication, and venue-specific coverage contract rather than bar columns.
+See [the capture contract](docs/research/derivatives-context-capture-v1.md).
+
 Use these sources in provenance order:
 
 1. **Schurfer forward data is the execution authority.** Decisions, immutable

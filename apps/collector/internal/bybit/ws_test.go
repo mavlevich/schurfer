@@ -172,6 +172,10 @@ func TestHandleTickerFrameDecodesRealSnapshotPayload(t *testing.T) {
 			"lastPrice": "0.01234",
 			"openInterest": "1000000",
 			"openInterestValue": "12345.67",
+			"markPrice": "0.01233",
+			"indexPrice": "0.01231",
+			"fundingRate": "-0.0001",
+			"nextFundingTime": "1700006400000",
 			"bid1Price": "0.01230",
 			"ask1Price": "0.01235"
 		}
@@ -213,6 +217,16 @@ func TestHandleTickerFrameDecodesRealSnapshotPayload(t *testing.T) {
 	}
 	if event.OpenInterestObservedAtMs == nil || *event.OpenInterestObservedAtMs != receivedAt.UnixMilli() {
 		t.Fatalf("open interest observed at = %v, want %d", event.OpenInterestObservedAtMs, receivedAt.UnixMilli())
+	}
+	if event.MarkPrice == nil || *event.MarkPrice != "0.01233" ||
+		event.IndexPrice == nil || *event.IndexPrice != "0.01231" ||
+		event.FundingRate == nil || *event.FundingRate != "-0.0001" ||
+		event.NextFundingTime == nil || *event.NextFundingTime != "1700006400000" {
+		t.Fatalf("derivatives fields not preserved: %+v", event)
+	}
+	if event.MarkPriceEventAtMs == nil || *event.MarkPriceEventAtMs != 1_700_000_000_000 ||
+		event.MarkPriceObservedAtMs == nil || *event.MarkPriceObservedAtMs != receivedAt.UnixMilli() {
+		t.Fatalf("mark-price provenance not preserved: %+v", event)
 	}
 	if event.StreamSessionID != "session-a" {
 		t.Fatalf("stream session id = %q, want session-a", event.StreamSessionID)
@@ -308,7 +322,7 @@ func TestHandleTickerFrameIgnoresNonTickerTopics(t *testing.T) {
 
 // --- reconnect episode resets OI state, not price/bid/ask ---
 
-func TestResetOpenInterestStateClearsOnlyOIFields(t *testing.T) {
+func TestResetOpenInterestStateClearsOIAndDerivativesStateOnly(t *testing.T) {
 	t.Parallel()
 	state := map[string]tickerState{
 		"AKEUSDT": {
@@ -318,6 +332,9 @@ func TestResetOpenInterestStateClearsOnlyOIFields(t *testing.T) {
 			OpenInterest:             "1000000",
 			OpenInterestEventAtMs:    4_000,
 			OpenInterestObservedAtMs: 5_000,
+			MarkPrice:                "0.01",
+			MarkPriceEventAtMs:       4_000,
+			MarkPriceObservedAtMs:    5_000,
 		},
 	}
 	resetOpenInterestState(state)
@@ -327,5 +344,8 @@ func TestResetOpenInterestStateClearsOnlyOIFields(t *testing.T) {
 	}
 	if st.OpenInterest != "" || st.OpenInterestEventAtMs != 0 || st.OpenInterestObservedAtMs != 0 {
 		t.Fatalf("OI state must be fully cleared on reconnect: %+v", st)
+	}
+	if st.MarkPrice != "" || st.MarkPriceEventAtMs != 0 || st.MarkPriceObservedAtMs != 0 {
+		t.Fatalf("derivatives state must be fully cleared on reconnect: %+v", st)
 	}
 }

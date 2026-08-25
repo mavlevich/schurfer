@@ -62,7 +62,7 @@ func (store *RedisStore) StoreHealth(ctx context.Context, health Health) error {
 		return errors.New("store momentum-capture health: Exchange is required")
 	}
 	values := map[string]any{
-		"schema_version": 2,
+		"schema_version": 3,
 		"exchange":       health.Exchange,
 		"status":         health.Status,
 		"started_at_ms":  unixMilliOrZero(health.StartedAt),
@@ -104,14 +104,21 @@ func (store *RedisStore) StoreHealth(ctx context.Context, health Health) error {
 		"non_trading_excluded":          health.NonTradingExcluded,
 		"exclusion_counts_json":         exclusionCountsJSON(health.ExclusionCounts),
 
-		"input_queue_depth":        health.InputQueueDepth,
-		"input_queue_peak":         health.InputQueuePeak,
-		"input_queue_drops_total":  health.InputQueueDropsTotal,
-		"bars_completed_total":     health.BarsCompletedTotal,
-		"late_events_total":        health.LateEventsTotal,
-		"ticker_gap_total":         health.TickerGapTotal,
-		"last_discontinuity_at_ms": unixMilliOrZero(health.LastDiscontinuityAt),
-		"last_discontinuity_for":   health.LastDiscontinuityFor,
+		"input_queue_depth":              health.InputQueueDepth,
+		"input_queue_peak":               health.InputQueuePeak,
+		"input_queue_drops_total":        health.InputQueueDropsTotal,
+		"bars_completed_total":           health.BarsCompletedTotal,
+		"late_events_total":              health.LateEventsTotal,
+		"ticker_gap_total":               health.TickerGapTotal,
+		"derivatives_accepted_total":     health.DerivativesAcceptedTotal,
+		"derivatives_invalid_total":      health.DerivativesInvalidTotal,
+		"derivatives_out_of_scope_total": health.DerivativesOutOfScopeTotal,
+		"derivatives_reconnect_total":    health.DerivativesReconnectTotal,
+		"derivatives_read_timeout_total": health.DerivativesReadTimeoutTotal,
+		"derivatives_gap_total":          health.DerivativesGapTotal,
+		"last_derivatives_at_ms":         unixMilliOrZero(health.LastDerivativesAt),
+		"last_discontinuity_at_ms":       unixMilliOrZero(health.LastDiscontinuityAt),
+		"last_discontinuity_for":         health.LastDiscontinuityFor,
 
 		"trade_reconnect_total":    health.TradeReconnectTotal,
 		"trade_read_timeout_total": health.TradeReadTimeoutTotal,

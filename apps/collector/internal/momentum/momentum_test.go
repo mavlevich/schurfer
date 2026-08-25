@@ -106,6 +106,117 @@ func TestAddTickerObservationRejectsInvalidInput(t *testing.T) {
 	}
 }
 
+func TestAddDerivativesObservationRejectsInvalidInput(t *testing.T) {
+	t.Parallel()
+	eventAt, observedAt := at(0), at(1)
+	nextFunding := at(3600)
+	valid := DerivativesObservation{
+		Symbol: "AKEUSDT", MarkPrice: f(1), MarkPriceEventAt: &eventAt,
+		MarkPriceObservedAt: &observedAt, EventAt: eventAt, ObservedAt: observedAt,
+	}
+	cases := map[string]DerivativesObservation{
+		"empty symbol":                 func() DerivativesObservation { v := valid; v.Symbol = ""; return v }(),
+		"zero mark":                    func() DerivativesObservation { v := valid; v.MarkPrice = f(0); return v }(),
+		"NaN funding":                  {Symbol: "AKEUSDT", FundingRate: f(math.NaN()), FundingRateEventAt: &eventAt, FundingRateObservedAt: &observedAt, EventAt: eventAt, ObservedAt: observedAt},
+		"mark without provenance":      {Symbol: "AKEUSDT", MarkPrice: f(1), EventAt: eventAt, ObservedAt: observedAt},
+		"next funding without receipt": {Symbol: "AKEUSDT", NextFundingAt: &nextFunding, NextFundingEventAt: &eventAt, EventAt: eventAt, ObservedAt: observedAt},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			if _, err := New().AddDerivativesObservation(tc); err != ErrInvalidDerivativesObservation {
+				t.Fatalf("err = %v, want ErrInvalidDerivativesObservation", err)
+			}
+		})
+	}
+}
+
+func TestDerivativesStateCarriesForwardWithIndependentCompleteness(t *testing.T) {
+	t.Parallel()
+	e := New()
+	mark, index, funding := 100.0, 99.5, -0.0002
+	nextFunding := at(3600)
+	firstAt := at(5)
+	if _, err := e.AddDerivativesObservation(DerivativesObservation{
+		Symbol:    "AKEUSDT",
+		MarkPrice: &mark, MarkPriceEventAt: &firstAt, MarkPriceObservedAt: &firstAt,
+		IndexPrice: &index, IndexPriceEventAt: &firstAt, IndexPriceObservedAt: &firstAt,
+		FundingRate: &funding, FundingRateEventAt: &firstAt, FundingRateObservedAt: &firstAt,
+		NextFundingAt: &nextFunding, NextFundingEventAt: &firstAt, NextFundingObservedAt: &firstAt,
+		EventAt: firstAt, ObservedAt: firstAt,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	closed := e.MarkTradesDiscontinuity("AKEUSDT", at(65))
+	if len(closed) != 1 || closed[0].DerivativesComplete {
+		t.Fatalf("first bar = %+v, want initial derivatives completeness false", closed)
+	}
+	if closed[0].Complete {
+		t.Fatal("legacy Complete must remain independent of additive derivatives state")
+	}
+
+	closed = e.MarkTradesDiscontinuity("AKEUSDT", at(125))
+	if len(closed) != 1 || !closed[0].DerivativesComplete {
+		t.Fatalf("second bar derivatives completeness = %+v, want true", closed)
+	}
+	bar := closed[0]
+	if bar.MarkPrice == nil || *bar.MarkPrice != mark || bar.IndexPrice == nil || *bar.IndexPrice != index ||
+		bar.FundingRate == nil || *bar.FundingRate != funding || bar.NextFundingAt == nil || !bar.NextFundingAt.Equal(nextFunding) {
+		t.Fatalf("carried derivative state = %+v", bar)
+	}
+	if bar.DerivativesObservedThisMinute {
+		t.Fatal("carry-forward state must not claim it was observed in the new minute")
+	}
+}
+
+func TestDerivativesDiscontinuityIsStickyForCurrentBarOnly(t *testing.T) {
+	t.Parallel()
+	e := New()
+	add := func(when time.Time) {
+		mark, index, funding := 1.0, 0.99, 0.0001
+		nextFunding := when.Add(8 * time.Hour)
+		if _, err := e.AddDerivativesObservation(DerivativesObservation{
+			Symbol: "AKEUSDT", MarkPrice: &mark, MarkPriceEventAt: &when,
+			MarkPriceObservedAt: &when, IndexPrice: &index, IndexPriceEventAt: &when,
+			IndexPriceObservedAt: &when, FundingRate: &funding, FundingRateEventAt: &when,
+			FundingRateObservedAt: &when, NextFundingAt: &nextFunding,
+			NextFundingEventAt: &when, NextFundingObservedAt: &when,
+			EventAt: when, ObservedAt: when,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	add(at(1))
+	add(at(61))
+	e.MarkDerivativesDiscontinuity("AKEUSDT", at(70))
+	add(at(80))
+	closed := e.MarkTradesDiscontinuity("AKEUSDT", at(121))
+	if len(closed) != 1 || closed[0].DerivativesComplete {
+		t.Fatalf("interrupted bar = %+v, want derivatives incomplete", closed)
+	}
+	closed = e.MarkTradesDiscontinuity("AKEUSDT", at(181))
+	if len(closed) != 1 || !closed[0].DerivativesComplete {
+		t.Fatalf("following bar = %+v, want recovered derivatives complete", closed)
+	}
+}
+
+func TestDerivativesCompleteRequiresEveryVersionedValue(t *testing.T) {
+	t.Parallel()
+	e := New()
+	when := at(1)
+	mark := 1.0
+	if _, err := e.AddDerivativesObservation(DerivativesObservation{
+		Symbol: "AKEUSDT", MarkPrice: &mark, MarkPriceEventAt: &when,
+		MarkPriceObservedAt: &when, EventAt: when, ObservedAt: when,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	closed := e.MarkTradesDiscontinuity("AKEUSDT", at(121))
+	if len(closed) != 2 || closed[1].DerivativesComplete {
+		t.Fatalf("partial context must remain incomplete after startup bar: %+v", closed)
+	}
+}
+
 // --- histogram ---
 
 func TestHistogramBucketsAreNonCumulativeAndBoundaryCorrect(t *testing.T) {

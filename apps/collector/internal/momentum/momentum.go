@@ -1,8 +1,9 @@
 // Package momentum is a pure, in-memory aggregation engine for the Bybit
 // early-momentum capture line (ROADMAP "Active course" item 5). It has no
 // dependency on any specific exchange's wire format, NATS, a database, or
-// Docker: it consumes two small, decoupled domain types (Trade,
-// TickerObservation) and produces per-symbol, per-minute Bars. Wiring real
+// Docker: it consumes three small, decoupled domain types (Trade,
+// TickerObservation, DerivativesObservation) and produces per-symbol,
+// per-minute Bars. Wiring real
 // Bybit WebSocket streams into these inputs, and persisting the resulting
 // Bars, is deliberately left to the capture service (a separate PR), so
 // this package's logic is testable as ordinary Go values with no network
@@ -106,6 +107,41 @@ type TickerObservation struct {
 	OpenInterestValue           *float64
 	OpenInterestValueEventAt    *time.Time
 	OpenInterestValueObservedAt *time.Time
+
+	EventAt    time.Time
+	ObservedAt time.Time
+}
+
+// DerivativesObservation is one point-in-time reading of derivative-only
+// state. It is intentionally separate from TickerObservation: Bybit happens
+// to transport these fields in its ticker stream, while Binance transports
+// them in a dedicated mark-price stream. Keeping a separate engine feed gives
+// the resulting bar an honest, independent completeness bit instead of
+// pretending that a healthy trade/OI/book-ticker feed proves funding and
+// mark/index state were also observed.
+//
+// Every value carries the timestamps of the message that last changed that
+// value. Delta feeds may republish older state in a newer envelope, so using
+// the envelope timestamp for all fields would silently make stale values look
+// fresh. A value and its timestamp pair must be either all present or all nil.
+type DerivativesObservation struct {
+	Symbol string
+
+	MarkPrice           *float64
+	MarkPriceEventAt    *time.Time
+	MarkPriceObservedAt *time.Time
+
+	IndexPrice           *float64
+	IndexPriceEventAt    *time.Time
+	IndexPriceObservedAt *time.Time
+
+	FundingRate           *float64
+	FundingRateEventAt    *time.Time
+	FundingRateObservedAt *time.Time
+
+	NextFundingAt         *time.Time
+	NextFundingEventAt    *time.Time
+	NextFundingObservedAt *time.Time
 
 	EventAt    time.Time
 	ObservedAt time.Time
@@ -227,6 +263,24 @@ type Bar struct {
 	OpenInterestValueEventAt    *time.Time
 	OpenInterestValueObservedAt *time.Time
 
+	MarkPrice           *float64
+	MarkPriceEventAt    *time.Time
+	MarkPriceObservedAt *time.Time
+
+	IndexPrice           *float64
+	IndexPriceEventAt    *time.Time
+	IndexPriceObservedAt *time.Time
+
+	FundingRate           *float64
+	FundingRateEventAt    *time.Time
+	FundingRateObservedAt *time.Time
+
+	NextFundingAt         *time.Time
+	NextFundingEventAt    *time.Time
+	NextFundingObservedAt *time.Time
+
+	DerivativesObservedThisMinute bool
+
 	// TickerObservedThisMinute is informational only, and must never be
 	// used to derive completeness: Bybit's push frequency is not a
 	// per-symbol heartbeat guarantee, and a quiet minute on a healthy
@@ -293,6 +347,7 @@ type Bar struct {
 	TickerComplete       bool
 	TradesComplete       bool
 	OpenInterestComplete bool
+	DerivativesComplete  bool
 	PriceComplete        bool
 	Complete             bool
 }
@@ -315,9 +370,9 @@ type burstTracker struct {
 // carryForward bundles everything that survives a bar rotation: it is
 // neither reset to zero-value nor scoped to one minute.
 type carryForward struct {
-	tickerHealthy, tradesHealthy bool
-	lastSeq                      int64
-	buyBurst, sellBurst          burstTracker
+	tickerHealthy, tradesHealthy, derivativesHealthy bool
+	lastSeq                                          int64
+	buyBurst, sellBurst                              burstTracker
 
 	lastBidPrice, lastAskPrice *float64
 
@@ -327,6 +382,19 @@ type carryForward struct {
 	lastOpenInterestValue        *float64
 	lastOpenInterestValueEventAt *time.Time
 	lastOpenInterestValueObserve *time.Time
+
+	lastMarkPrice             *float64
+	lastMarkPriceEventAt      *time.Time
+	lastMarkPriceObservedAt   *time.Time
+	lastIndexPrice            *float64
+	lastIndexPriceEventAt     *time.Time
+	lastIndexPriceObservedAt  *time.Time
+	lastFundingRate           *float64
+	lastFundingRateEventAt    *time.Time
+	lastFundingRateObservedAt *time.Time
+	lastNextFundingAt         *time.Time
+	lastNextFundingEventAt    *time.Time
+	lastNextFundingObservedAt *time.Time
 }
 
 type symbolState struct {
@@ -335,9 +403,9 @@ type symbolState struct {
 	bar         Bar
 	lateDropped int
 
-	tickerHealthy, tradesHealthy               bool
-	barTickerInterrupted, barTradesInterrupted bool
-	lastSeq                                    int64
+	tickerHealthy, tradesHealthy, derivativesHealthy                      bool
+	barTickerInterrupted, barTradesInterrupted, barDerivativesInterrupted bool
+	lastSeq                                                               int64
 
 	buyBurst, sellBurst burstTracker
 }
@@ -357,6 +425,10 @@ var (
 	// LastPrice/BidPrice/AskPrice, a negative/non-finite OI reading, or an
 	// OI value/timestamp pair that is only partially present.
 	ErrInvalidTickerObservation = errors.New("invalid ticker observation")
+	// ErrInvalidDerivativesObservation is returned when derivative state is
+	// missing identity/envelope timestamps, contains a non-finite/invalid
+	// value, or only half of a value/provenance tuple is present.
+	ErrInvalidDerivativesObservation = errors.New("invalid derivatives observation")
 )
 
 // PriceSource identifies which observation type an Engine derives its own
@@ -651,6 +723,60 @@ func recordTickerDiagnostics(bar *Bar, o TickerObservation) {
 	bar.TickerLagCount++
 }
 
+// AddDerivativesObservation folds derivative-only state into the current
+// bar. It follows the same feed-health rule as AddTickerObservation: the
+// first accepted reading restores health for future bars but never repairs
+// the current bar retroactively after a known interruption.
+func (e *Engine) AddDerivativesObservation(o DerivativesObservation) ([]Bar, error) {
+	if o.Symbol == "" || o.EventAt.IsZero() || o.ObservedAt.IsZero() ||
+		invalidOptionalPositive(o.MarkPrice) || invalidOptionalPositive(o.IndexPrice) ||
+		invalidOptionalFinite(o.FundingRate) ||
+		!pairComplete(o.MarkPrice, o.MarkPriceEventAt, o.MarkPriceObservedAt) ||
+		!pairComplete(o.IndexPrice, o.IndexPriceEventAt, o.IndexPriceObservedAt) ||
+		!pairComplete(o.FundingRate, o.FundingRateEventAt, o.FundingRateObservedAt) ||
+		!timePairComplete(o.NextFundingAt, o.NextFundingEventAt, o.NextFundingObservedAt) {
+		return nil, ErrInvalidDerivativesObservation
+	}
+
+	state, closed := e.advance(o.Symbol, o.EventAt)
+	if o.EventAt.Before(state.bucketStart) {
+		return closed, nil
+	}
+	state.derivativesHealthy = true
+	state.bar.DerivativesObservedThisMinute = true
+	if o.MarkPrice != nil {
+		state.bar.MarkPrice = clonePtr(*o.MarkPrice)
+		state.bar.MarkPriceEventAt = cloneTimePtr(o.MarkPriceEventAt)
+		state.bar.MarkPriceObservedAt = cloneTimePtr(o.MarkPriceObservedAt)
+	}
+	if o.IndexPrice != nil {
+		state.bar.IndexPrice = clonePtr(*o.IndexPrice)
+		state.bar.IndexPriceEventAt = cloneTimePtr(o.IndexPriceEventAt)
+		state.bar.IndexPriceObservedAt = cloneTimePtr(o.IndexPriceObservedAt)
+	}
+	if o.FundingRate != nil {
+		state.bar.FundingRate = clonePtr(*o.FundingRate)
+		state.bar.FundingRateEventAt = cloneTimePtr(o.FundingRateEventAt)
+		state.bar.FundingRateObservedAt = cloneTimePtr(o.FundingRateObservedAt)
+	}
+	if o.NextFundingAt != nil {
+		state.bar.NextFundingAt = cloneTimePtr(o.NextFundingAt)
+		state.bar.NextFundingEventAt = cloneTimePtr(o.NextFundingEventAt)
+		state.bar.NextFundingObservedAt = cloneTimePtr(o.NextFundingObservedAt)
+	}
+	return closed, nil
+}
+
+func invalidOptionalFinite(value *float64) bool {
+	return value != nil && (math.IsNaN(*value) || math.IsInf(*value, 0))
+}
+
+func timePairComplete(value, eventAt, observedAt *time.Time) bool {
+	present := value != nil
+	return present == (eventAt != nil) && present == (observedAt != nil) &&
+		(!present || (!value.IsZero() && !eventAt.IsZero() && !observedAt.IsZero()))
+}
+
 // MarkTickerDiscontinuity tells the engine the ticker/OI feed for symbol
 // had a gap starting at at. The current bar (whether pre-existing or
 // created by this call's own advance) is immediately marked
@@ -661,6 +787,17 @@ func (e *Engine) MarkTickerDiscontinuity(symbol string, at time.Time) []Bar {
 	state, closed := e.advance(symbol, at)
 	state.tickerHealthy = false
 	state.barTickerInterrupted = true
+	return closed
+}
+
+// MarkDerivativesDiscontinuity is the derivative-state feed equivalent of
+// MarkTickerDiscontinuity. It does not change Bar.Complete, which remains
+// the legacy price/OI/trades contract; consumers of the additive context
+// must filter on DerivativesComplete explicitly.
+func (e *Engine) MarkDerivativesDiscontinuity(symbol string, at time.Time) []Bar {
+	state, closed := e.advance(symbol, at)
+	state.derivativesHealthy = false
+	state.barDerivativesInterrupted = true
 	return closed
 }
 
@@ -712,11 +849,12 @@ func (e *Engine) advance(symbol string, at time.Time) (*symbolState, []Bar) {
 	}
 
 	cf := carryForward{
-		tickerHealthy: state.tickerHealthy,
-		tradesHealthy: state.tradesHealthy,
-		lastSeq:       state.lastSeq,
-		buyBurst:      state.buyBurst,
-		sellBurst:     state.sellBurst,
+		tickerHealthy:      state.tickerHealthy,
+		tradesHealthy:      state.tradesHealthy,
+		derivativesHealthy: state.derivativesHealthy,
+		lastSeq:            state.lastSeq,
+		buyBurst:           state.buyBurst,
+		sellBurst:          state.sellBurst,
 
 		lastBidPrice: state.bar.LastBidPrice,
 		lastAskPrice: state.bar.LastAskPrice,
@@ -727,6 +865,15 @@ func (e *Engine) advance(symbol string, at time.Time) (*symbolState, []Bar) {
 		lastOpenInterestValue:        state.bar.OpenInterestValue,
 		lastOpenInterestValueEventAt: state.bar.OpenInterestValueEventAt,
 		lastOpenInterestValueObserve: state.bar.OpenInterestValueObservedAt,
+
+		lastMarkPrice: state.bar.MarkPrice, lastMarkPriceEventAt: state.bar.MarkPriceEventAt,
+		lastMarkPriceObservedAt: state.bar.MarkPriceObservedAt,
+		lastIndexPrice:          state.bar.IndexPrice, lastIndexPriceEventAt: state.bar.IndexPriceEventAt,
+		lastIndexPriceObservedAt: state.bar.IndexPriceObservedAt,
+		lastFundingRate:          state.bar.FundingRate, lastFundingRateEventAt: state.bar.FundingRateEventAt,
+		lastFundingRateObservedAt: state.bar.FundingRateObservedAt,
+		lastNextFundingAt:         state.bar.NextFundingAt, lastNextFundingEventAt: state.bar.NextFundingEventAt,
+		lastNextFundingObservedAt: state.bar.NextFundingObservedAt,
 	}
 
 	totalGapMinutes := int(bucketStart.Sub(state.bucketStart)/time.Minute) - 1
@@ -738,6 +885,7 @@ func (e *Engine) advance(symbol string, at time.Time) (*symbolState, []Bar) {
 		gap := newSymbolState(symbol, next, cf)
 		gap.barTickerInterrupted = true
 		gap.barTradesInterrupted = true
+		gap.barDerivativesInterrupted = true
 		closed = append(closed, finalizeBar(gap, e.priceSource))
 		next = next.Add(time.Minute)
 	}
@@ -754,15 +902,17 @@ func (e *Engine) advance(symbol string, at time.Time) (*symbolState, []Bar) {
 
 func newSymbolState(symbol string, bucketStart time.Time, cf carryForward) *symbolState {
 	return &symbolState{
-		bucketStart:          bucketStart,
-		dedup:                make(map[string]struct{}),
-		tickerHealthy:        cf.tickerHealthy,
-		tradesHealthy:        cf.tradesHealthy,
-		barTickerInterrupted: !cf.tickerHealthy,
-		barTradesInterrupted: !cf.tradesHealthy,
-		lastSeq:              cf.lastSeq,
-		buyBurst:             cf.buyBurst,
-		sellBurst:            cf.sellBurst,
+		bucketStart:               bucketStart,
+		dedup:                     make(map[string]struct{}),
+		tickerHealthy:             cf.tickerHealthy,
+		tradesHealthy:             cf.tradesHealthy,
+		derivativesHealthy:        cf.derivativesHealthy,
+		barTickerInterrupted:      !cf.tickerHealthy,
+		barTradesInterrupted:      !cf.tradesHealthy,
+		barDerivativesInterrupted: !cf.derivativesHealthy,
+		lastSeq:                   cf.lastSeq,
+		buyBurst:                  cf.buyBurst,
+		sellBurst:                 cf.sellBurst,
 		bar: Bar{
 			Symbol:      symbol,
 			BucketStart: bucketStart,
@@ -778,6 +928,15 @@ func newSymbolState(symbol string, bucketStart time.Time, cf carryForward) *symb
 			OpenInterestValue:           cf.lastOpenInterestValue,
 			OpenInterestValueEventAt:    cf.lastOpenInterestValueEventAt,
 			OpenInterestValueObservedAt: cf.lastOpenInterestValueObserve,
+
+			MarkPrice: cf.lastMarkPrice, MarkPriceEventAt: cf.lastMarkPriceEventAt,
+			MarkPriceObservedAt: cf.lastMarkPriceObservedAt,
+			IndexPrice:          cf.lastIndexPrice, IndexPriceEventAt: cf.lastIndexPriceEventAt,
+			IndexPriceObservedAt: cf.lastIndexPriceObservedAt,
+			FundingRate:          cf.lastFundingRate, FundingRateEventAt: cf.lastFundingRateEventAt,
+			FundingRateObservedAt: cf.lastFundingRateObservedAt,
+			NextFundingAt:         cf.lastNextFundingAt, NextFundingEventAt: cf.lastNextFundingEventAt,
+			NextFundingObservedAt: cf.lastNextFundingObservedAt,
 		},
 	}
 }
@@ -793,6 +952,8 @@ func finalizeBar(state *symbolState, priceSource PriceSource) Bar {
 	// -- see Bar.TickerComplete's own doc comment for why those originals
 	// are not renamed here.
 	state.bar.OpenInterestComplete = state.bar.TickerComplete
+	state.bar.DerivativesComplete = !state.barDerivativesInterrupted &&
+		hasCompleteDerivativesContext(state.bar)
 	//nolint:exhaustive
 	switch priceSource {
 	case PriceSourceTickerLast:
@@ -805,6 +966,13 @@ func finalizeBar(state *symbolState, priceSource PriceSource) Bar {
 		// exists to mirror, so this stays false rather than guessing.
 	}
 	return state.bar
+}
+
+func hasCompleteDerivativesContext(bar Bar) bool {
+	return pairComplete(bar.MarkPrice, bar.MarkPriceEventAt, bar.MarkPriceObservedAt) && bar.MarkPrice != nil &&
+		pairComplete(bar.IndexPrice, bar.IndexPriceEventAt, bar.IndexPriceObservedAt) && bar.IndexPrice != nil &&
+		pairComplete(bar.FundingRate, bar.FundingRateEventAt, bar.FundingRateObservedAt) && bar.FundingRate != nil &&
+		timePairComplete(bar.NextFundingAt, bar.NextFundingEventAt, bar.NextFundingObservedAt) && bar.NextFundingAt != nil
 }
 
 func (tracker *burstTracker) add(eventAt time.Time, notionalUSD float64) (float64, float64) {

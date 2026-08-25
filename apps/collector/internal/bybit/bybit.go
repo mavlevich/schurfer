@@ -104,6 +104,22 @@ type TickerEvent struct {
 	OpenInterestValue             *string `json:"open_interest_value"`
 	OpenInterestValueEventAtMs    *int64  `json:"open_interest_value_event_at_ms"`
 	OpenInterestValueObservedAtMs *int64  `json:"open_interest_value_observed_at_ms"`
+	// Derivatives-only state is an additive schema-v1 extension sourced
+	// from the same native ticker delta. Each value retains the timestamps
+	// of the message that actually changed it; a later price-only delta must
+	// not make carried-forward funding or mark/index state look fresh.
+	MarkPrice               *string `json:"mark_price"`
+	MarkPriceEventAtMs      *int64  `json:"mark_price_event_at_ms"`
+	MarkPriceObservedAtMs   *int64  `json:"mark_price_observed_at_ms"`
+	IndexPrice              *string `json:"index_price"`
+	IndexPriceEventAtMs     *int64  `json:"index_price_event_at_ms"`
+	IndexPriceObservedAtMs  *int64  `json:"index_price_observed_at_ms"`
+	FundingRate             *string `json:"funding_rate"`
+	FundingRateEventAtMs    *int64  `json:"funding_rate_event_at_ms"`
+	FundingRateObservedAtMs *int64  `json:"funding_rate_observed_at_ms"`
+	NextFundingTime         *string `json:"next_funding_time"`
+	NextFundingEventAtMs    *int64  `json:"next_funding_event_at_ms"`
+	NextFundingObservedAtMs *int64  `json:"next_funding_observed_at_ms"`
 	// ReceivedAtMs is the collector's own wall-clock receive time for this
 	// message, independent of Bybit's TS, for event/receive lag diagnostics.
 	ReceivedAtMs int64 `json:"received_at_ms"`

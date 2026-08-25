@@ -104,11 +104,12 @@ const (
 	// after the canary has real per-symbol inter-arrival data.
 	tickerGapThreshold = 180 * time.Second
 
-	// estimatedHotBytesPerRow is packages/journal/migrations/versions/
-	// 0024_bybit_momentum_bars_1m.py's own measured hot (uncompressed)
-	// bytes/row, from a real capture against the live universe, not a
-	// guess. Backs ProjectedBytesPerDay; revisit both together.
-	estimatedHotBytesPerRow = 1143.6
+	// estimatedHotBytesPerRow starts from migration 0024's measured 1143.6
+	// bytes/row and adds a conservative structural allowance for the new
+	// context values, version text, booleans, alignment and null map. It is
+	// a deployment-planning estimate, not a new measurement: observed
+	// 24h/72h relation-size deltas remain the real storage gate.
+	estimatedHotBytesPerRow = 1280.0
 	// queuePressureWarnFraction flags degraded_queue_pressure once the
 	// writer's own backlog crosses this fraction of its bound
 	// (momentumcapture.MaxPendingBars): comfortably before Enqueue itself
@@ -128,32 +129,35 @@ type counters struct {
 	// tradeDropsTotal counts trades routed through tradeDrops and turned
 	// into a real MarkTradesDiscontinuity call, not just tallied: see
 	// consumeTrade and handleTradeDrop.
-	tradeDropsTotal        uint64
-	tickersAcceptedTotal   uint64
-	tickersInvalidTotal    uint64
-	tickersOutOfScopeTotal uint64 // symbols on the NATS wildcard outside this process's own frozen universe
-	natsDroppedTotal       uint64
-	tickerReconnectTotal   uint64
-	tickerGapTotal         uint64 // proactive per-symbol silence detections, see tickerGapThreshold
-	tradeLifecycleTotal    uint64
-	natsDisconnectTotal    uint64
-	natsReconnectTotal     uint64
-	natsSlowConsumerTotal  uint64
-	barsCompletedTotal     uint64
-	lateEventsTotal        uint64
-	writerInboxDropsTotal  uint64
-	inputQueuePeak         int
-	lastDiscontinuityAt    time.Time
-	lastDiscontinuityFor   string
-	lastBarAt              time.Time
-	tradeLagMaxMs          int64
-	tickerLagMaxMs         int64
-	tradeReceiveToHandle   latencyHistogram
-	tradeHandler           latencyHistogram
-	tickerReceiveToHandle  latencyHistogram
-	tickerHandler          latencyHistogram
-	flush                  latencyHistogram
-	healthPublish          latencyHistogram
+	tradeDropsTotal          uint64
+	tickersAcceptedTotal     uint64
+	tickersInvalidTotal      uint64
+	tickersOutOfScopeTotal   uint64 // symbols on the NATS wildcard outside this process's own frozen universe
+	derivativesAcceptedTotal uint64
+	derivativesInvalidTotal  uint64
+	natsDroppedTotal         uint64
+	tickerReconnectTotal     uint64
+	tickerGapTotal           uint64 // proactive per-symbol silence detections, see tickerGapThreshold
+	tradeLifecycleTotal      uint64
+	natsDisconnectTotal      uint64
+	natsReconnectTotal       uint64
+	natsSlowConsumerTotal    uint64
+	barsCompletedTotal       uint64
+	lateEventsTotal          uint64
+	writerInboxDropsTotal    uint64
+	inputQueuePeak           int
+	lastDiscontinuityAt      time.Time
+	lastDiscontinuityFor     string
+	lastBarAt                time.Time
+	lastDerivativesAt        time.Time
+	tradeLagMaxMs            int64
+	tickerLagMaxMs           int64
+	tradeReceiveToHandle     latencyHistogram
+	tradeHandler             latencyHistogram
+	tickerReceiveToHandle    latencyHistogram
+	tickerHandler            latencyHistogram
+	flush                    latencyHistogram
+	healthPublish            latencyHistogram
 }
 
 type application struct {
@@ -857,6 +861,7 @@ func (app *application) handleNATSFault(fault natsFault) {
 func (app *application) markTickerFeedInterrupted(at time.Time, reason string) {
 	for _, symbol := range app.universe.Symbols {
 		app.enqueue(app.engine.MarkTickerDiscontinuity(symbol, at))
+		app.enqueue(app.engine.MarkDerivativesDiscontinuity(symbol, at))
 	}
 	app.stats.lastDiscontinuityAt = at
 	app.stats.lastDiscontinuityFor = "*"
@@ -901,6 +906,7 @@ func (app *application) handleTickerMessage(msg *nats.Msg, receivedAt time.Time)
 	if lastSession, seen := app.tickerSessionBySymbol[observation.Symbol]; seen && lastSession != sessionID {
 		app.stats.tickerReconnectTotal++
 		app.enqueue(app.engine.MarkTickerDiscontinuity(observation.Symbol, observation.EventAt))
+		app.enqueue(app.engine.MarkDerivativesDiscontinuity(observation.Symbol, observation.EventAt))
 	}
 	app.tickerSessionBySymbol[observation.Symbol] = sessionID
 	app.tickerLastSeenAt[observation.Symbol] = receivedAt
@@ -914,6 +920,22 @@ func (app *application) handleTickerMessage(msg *nats.Msg, receivedAt time.Time)
 	app.stats.tickersAcceptedTotal++
 	app.readiness.ObserveTicker(observation.Symbol)
 	app.enqueue(bars)
+
+	derivatives, present, derivativesErr := parseDerivativesObservation(msg.Data, receivedAt)
+	if derivativesErr != nil {
+		app.stats.derivativesInvalidTotal++
+		return
+	}
+	if present {
+		derivativeBars, addErr := app.engine.AddDerivativesObservation(derivatives)
+		if addErr != nil {
+			app.stats.derivativesInvalidTotal++
+			return
+		}
+		app.stats.derivativesAcceptedTotal++
+		app.stats.lastDerivativesAt = derivatives.ObservedAt
+		app.enqueue(derivativeBars)
+	}
 }
 
 // checkTickerGaps proactively marks a symbol's ticker feed interrupted
@@ -934,6 +956,7 @@ func (app *application) checkTickerGaps(now time.Time) {
 		app.stats.tickerGapTotal++
 		app.tickerGapMarked[symbol] = true
 		app.enqueue(app.engine.MarkTickerDiscontinuity(symbol, now))
+		app.enqueue(app.engine.MarkDerivativesDiscontinuity(symbol, now))
 	}
 }
 
@@ -975,6 +998,11 @@ func (app *application) logHealth(ctx context.Context) {
 	health.BarsCompletedTotal = app.stats.barsCompletedTotal
 	health.LateEventsTotal = app.stats.lateEventsTotal
 	health.TickerGapTotal = app.stats.tickerGapTotal
+	health.DerivativesAcceptedTotal = app.stats.derivativesAcceptedTotal
+	health.DerivativesInvalidTotal = app.stats.derivativesInvalidTotal
+	health.DerivativesReconnectTotal = app.stats.tickerReconnectTotal
+	health.DerivativesGapTotal = app.stats.tickerGapTotal
+	health.LastDerivativesAt = app.stats.lastDerivativesAt
 	health.LastDiscontinuityAt = app.stats.lastDiscontinuityAt
 	health.LastDiscontinuityFor = app.stats.lastDiscontinuityFor
 	health.TradeReconnectTotal = app.source.StreamStats().TradeReconnectTotal
@@ -1010,6 +1038,8 @@ func (app *application) logHealth(ctx context.Context) {
 		"persist_errors_total", health.PersistErrorsTotal,
 		"payload_hash_mismatch_total", health.PayloadHashMismatchTotal,
 		"tickers_out_of_scope_total", app.stats.tickersOutOfScopeTotal,
+		"derivatives_accepted_total", app.stats.derivativesAcceptedTotal,
+		"derivatives_invalid_total", app.stats.derivativesInvalidTotal,
 	)
 }
 
@@ -1078,6 +1108,9 @@ func deriveHealthStatus(health momentumcapture.Health) string {
 	case health.NATSDisconnectTotal > 0 || health.NATSSlowConsumerTotal > 0 ||
 		health.NATSDroppedTotal > 0 || health.TickerGapTotal > 0:
 		return "degraded_feed_interrupted"
+	case (health.DerivativesAcceptedTotal == 0 && health.UpdatedAt.Sub(health.StartedAt) > 3*time.Minute) ||
+		(!health.LastDerivativesAt.IsZero() && health.UpdatedAt.Sub(health.LastDerivativesAt) > 3*time.Minute):
+		return "degraded_derivatives_stale"
 	case health.UniverseStale:
 		return "degraded_universe_stale"
 	default:
@@ -1147,6 +1180,82 @@ func parseTickerObservation(data []byte, receivedAt time.Time) (momentum.TickerO
 		EventAt:    eventAt,
 		ObservedAt: observedAt,
 	}, event.StreamSessionID, nil
+}
+
+// parseDerivativesObservation decodes the additive Bybit ticker fields
+// without changing parseTickerObservation's established contract. present
+// is false during a rolling deploy where the older publisher legitimately
+// omits every new field; that absence must not mark the derivatives feed
+// healthy or fabricate a complete context row.
+func parseDerivativesObservation(data []byte, receivedAt time.Time) (momentum.DerivativesObservation, bool, error) {
+	var event bybit.TickerEvent
+	if err := json.Unmarshal(data, &event); err != nil {
+		return momentum.DerivativesObservation{}, false, fmt.Errorf("decode derivatives ticker: %w", err)
+	}
+	if event.SchemaVersion != 0 && event.SchemaVersion != 1 {
+		return momentum.DerivativesObservation{}, false, fmt.Errorf("unsupported ticker schema version %d", event.SchemaVersion)
+	}
+	if event.Source != "bybit" || event.TS <= 0 {
+		return momentum.DerivativesObservation{}, false, errors.New("invalid derivatives ticker envelope")
+	}
+	present := event.MarkPrice != nil || event.IndexPrice != nil || event.FundingRate != nil || event.NextFundingTime != nil
+	if !present {
+		return momentum.DerivativesObservation{}, false, nil
+	}
+
+	observedAt := receivedAt
+	if event.ReceivedAtMs > 0 {
+		observedAt = time.UnixMilli(event.ReceivedAtMs)
+	}
+	eventAt := time.UnixMilli(event.TS)
+	if eventAt.After(observedAt.Add(maxTickerFutureSkew)) {
+		return momentum.DerivativesObservation{}, false, errors.New("derivatives timestamp is too far in the future")
+	}
+
+	mark, markEventAt, markObservedAt := optionalNumberTriple(event.MarkPrice, event.MarkPriceEventAtMs, event.MarkPriceObservedAtMs, true)
+	index, indexEventAt, indexObservedAt := optionalNumberTriple(event.IndexPrice, event.IndexPriceEventAtMs, event.IndexPriceObservedAtMs, true)
+	funding, fundingEventAt, fundingObservedAt := optionalNumberTriple(event.FundingRate, event.FundingRateEventAtMs, event.FundingRateObservedAtMs, false)
+	nextFunding, nextEventAt, nextObservedAt := optionalTimestampTriple(event.NextFundingTime, event.NextFundingEventAtMs, event.NextFundingObservedAtMs)
+	if (event.MarkPrice != nil && mark == nil) || (event.IndexPrice != nil && index == nil) ||
+		(event.FundingRate != nil && funding == nil) || (event.NextFundingTime != nil && nextFunding == nil) {
+		return momentum.DerivativesObservation{}, false, errors.New("invalid derivatives value/provenance tuple")
+	}
+
+	return momentum.DerivativesObservation{
+		Symbol:    event.Symbol,
+		MarkPrice: mark, MarkPriceEventAt: markEventAt, MarkPriceObservedAt: markObservedAt,
+		IndexPrice: index, IndexPriceEventAt: indexEventAt, IndexPriceObservedAt: indexObservedAt,
+		FundingRate: funding, FundingRateEventAt: fundingEventAt, FundingRateObservedAt: fundingObservedAt,
+		NextFundingAt: nextFunding, NextFundingEventAt: nextEventAt, NextFundingObservedAt: nextObservedAt,
+		EventAt: eventAt, ObservedAt: observedAt,
+	}, true, nil
+}
+
+func optionalNumberTriple(value *string, eventAtMs, observedAtMs *int64, positive bool) (*float64, *time.Time, *time.Time) {
+	if value == nil || eventAtMs == nil || observedAtMs == nil {
+		return nil, nil, nil
+	}
+	parsed, err := strconv.ParseFloat(*value, 64)
+	if err != nil || math.IsNaN(parsed) || math.IsInf(parsed, 0) || (positive && parsed <= 0) {
+		return nil, nil, nil
+	}
+	eventAt := time.UnixMilli(*eventAtMs)
+	observedAt := time.UnixMilli(*observedAtMs)
+	return &parsed, &eventAt, &observedAt
+}
+
+func optionalTimestampTriple(value *string, eventAtMs, observedAtMs *int64) (*time.Time, *time.Time, *time.Time) {
+	if value == nil || eventAtMs == nil || observedAtMs == nil {
+		return nil, nil, nil
+	}
+	parsed, err := strconv.ParseInt(*value, 10, 64)
+	if err != nil || parsed <= 0 {
+		return nil, nil, nil
+	}
+	next := time.UnixMilli(parsed)
+	eventAt := time.UnixMilli(*eventAtMs)
+	observedAt := time.UnixMilli(*observedAtMs)
+	return &next, &eventAt, &observedAt
 }
 
 // optionalTriple keeps value+eventAtMs+observedAtMs together or drops them

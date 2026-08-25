@@ -97,6 +97,18 @@ func resetOpenInterestState(state map[string]tickerState) {
 		st.OpenInterestValue = ""
 		st.OpenInterestValueEventAtMs = 0
 		st.OpenInterestValueObservedAtMs = 0
+		st.MarkPrice = ""
+		st.MarkPriceEventAtMs = 0
+		st.MarkPriceObservedAtMs = 0
+		st.IndexPrice = ""
+		st.IndexPriceEventAtMs = 0
+		st.IndexPriceObservedAtMs = 0
+		st.FundingRate = ""
+		st.FundingRateEventAtMs = 0
+		st.FundingRateObservedAtMs = 0
+		st.NextFundingTime = ""
+		st.NextFundingEventAtMs = 0
+		st.NextFundingObservedAtMs = 0
 		state[symbol] = st
 	}
 }
@@ -325,6 +337,10 @@ type tickerFields struct {
 	Ask               string `json:"ask1Price"`
 	OpenInterest      string `json:"openInterest"`
 	OpenInterestValue string `json:"openInterestValue"`
+	MarkPrice         string `json:"markPrice"`
+	IndexPrice        string `json:"indexPrice"`
+	FundingRate       string `json:"fundingRate"`
+	NextFundingTime   string `json:"nextFundingTime"`
 }
 
 // tickerState holds the merged snapshot+delta state for one symbol.
@@ -353,6 +369,18 @@ type tickerState struct {
 	OpenInterestValue             string
 	OpenInterestValueEventAtMs    int64
 	OpenInterestValueObservedAtMs int64
+	MarkPrice                     string
+	MarkPriceEventAtMs            int64
+	MarkPriceObservedAtMs         int64
+	IndexPrice                    string
+	IndexPriceEventAtMs           int64
+	IndexPriceObservedAtMs        int64
+	FundingRate                   string
+	FundingRateEventAtMs          int64
+	FundingRateObservedAtMs       int64
+	NextFundingTime               string
+	NextFundingEventAtMs          int64
+	NextFundingObservedAtMs       int64
 }
 
 func (st *tickerState) merge(f tickerFields, eventAtMs int64, receivedAtMs int64) {
@@ -393,6 +421,26 @@ func (st *tickerState) merge(f tickerFields, eventAtMs int64, receivedAtMs int64
 		st.OpenInterestValueEventAtMs = eventAtMs
 		st.OpenInterestValueObservedAtMs = receivedAtMs
 	}
+	if f.MarkPrice != "" {
+		st.MarkPrice = f.MarkPrice
+		st.MarkPriceEventAtMs = eventAtMs
+		st.MarkPriceObservedAtMs = receivedAtMs
+	}
+	if f.IndexPrice != "" {
+		st.IndexPrice = f.IndexPrice
+		st.IndexPriceEventAtMs = eventAtMs
+		st.IndexPriceObservedAtMs = receivedAtMs
+	}
+	if f.FundingRate != "" {
+		st.FundingRate = f.FundingRate
+		st.FundingRateEventAtMs = eventAtMs
+		st.FundingRateObservedAtMs = receivedAtMs
+	}
+	if f.NextFundingTime != "" {
+		st.NextFundingTime = f.NextFundingTime
+		st.NextFundingEventAtMs = eventAtMs
+		st.NextFundingObservedAtMs = receivedAtMs
+	}
 }
 
 func (st tickerState) toEvent(
@@ -422,6 +470,18 @@ func (st tickerState) toEvent(
 		OpenInterestValue:             nonEmpty(st.OpenInterestValue),
 		OpenInterestValueEventAtMs:    nonZero(st.OpenInterestValueEventAtMs),
 		OpenInterestValueObservedAtMs: nonZero(st.OpenInterestValueObservedAtMs),
+		MarkPrice:                     nonEmpty(st.MarkPrice),
+		MarkPriceEventAtMs:            nonZero(st.MarkPriceEventAtMs),
+		MarkPriceObservedAtMs:         nonZero(st.MarkPriceObservedAtMs),
+		IndexPrice:                    nonEmpty(st.IndexPrice),
+		IndexPriceEventAtMs:           nonZero(st.IndexPriceEventAtMs),
+		IndexPriceObservedAtMs:        nonZero(st.IndexPriceObservedAtMs),
+		FundingRate:                   nonEmpty(st.FundingRate),
+		FundingRateEventAtMs:          nonZero(st.FundingRateEventAtMs),
+		FundingRateObservedAtMs:       nonZero(st.FundingRateObservedAtMs),
+		NextFundingTime:               nonEmpty(st.NextFundingTime),
+		NextFundingEventAtMs:          nonZero(st.NextFundingEventAtMs),
+		NextFundingObservedAtMs:       nonZero(st.NextFundingObservedAtMs),
 		ReceivedAtMs:                  receivedAtMs,
 		MessageType:                   messageType,
 		CrossSequence:                 crossSeq,

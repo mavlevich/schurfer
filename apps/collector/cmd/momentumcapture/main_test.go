@@ -75,6 +75,53 @@ func TestParseTickerObservationDecodesAllFields(t *testing.T) {
 	}
 }
 
+func TestParseDerivativesObservationPreservesSignedFundingAndFieldTimestamps(t *testing.T) {
+	t.Parallel()
+	mark, index, funding, next := "100.5", "100.0", "-0.00025", "7200000"
+	eventMs, observedMs := int64(1_000), int64(1_010)
+	raw, err := json.Marshal(bybit.TickerEvent{
+		SchemaVersion: 1, Source: "bybit", Symbol: "BTCUSDT", TS: 1_000, ReceivedAtMs: observedMs,
+		MarkPrice: &mark, MarkPriceEventAtMs: &eventMs, MarkPriceObservedAtMs: &observedMs,
+		IndexPrice: &index, IndexPriceEventAtMs: &eventMs, IndexPriceObservedAtMs: &observedMs,
+		FundingRate: &funding, FundingRateEventAtMs: &eventMs, FundingRateObservedAtMs: &observedMs,
+		NextFundingTime: &next, NextFundingEventAtMs: &eventMs, NextFundingObservedAtMs: &observedMs,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	obs, present, err := parseDerivativesObservation(raw, time.UnixMilli(1_020))
+	if err != nil || !present {
+		t.Fatalf("parse = %+v, %v, %v", obs, present, err)
+	}
+	if obs.FundingRate == nil || *obs.FundingRate != -0.00025 || obs.MarkPrice == nil || *obs.MarkPrice != 100.5 {
+		t.Fatalf("unexpected values: %+v", obs)
+	}
+	if obs.NextFundingAt == nil || obs.NextFundingAt.UnixMilli() != 7_200_000 ||
+		obs.MarkPriceEventAt == nil || obs.MarkPriceEventAt.UnixMilli() != 1_000 {
+		t.Fatalf("unexpected provenance: %+v", obs)
+	}
+}
+
+func TestParseDerivativesObservationDistinguishesRollingDeployAbsenceFromInvalidTuple(t *testing.T) {
+	t.Parallel()
+	legacy, err := json.Marshal(bybit.TickerEvent{SchemaVersion: 1, Source: "bybit", Symbol: "BTCUSDT", TS: 1_000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, present, err := parseDerivativesObservation(legacy, time.UnixMilli(1_010)); err != nil || present {
+		t.Fatalf("legacy event = present %v err %v, want clean absence", present, err)
+	}
+
+	mark := "100"
+	invalid, err := json.Marshal(bybit.TickerEvent{SchemaVersion: 1, Source: "bybit", Symbol: "BTCUSDT", TS: 1_000, MarkPrice: &mark})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := parseDerivativesObservation(invalid, time.UnixMilli(1_010)); err == nil {
+		t.Fatal("a present value without provenance must fail closed")
+	}
+}
+
 func TestParseTickerObservationDropsIncompleteOIGroupTogether(t *testing.T) {
 	t.Parallel()
 	last := "100"
@@ -279,6 +326,7 @@ func TestApplicationLogHealthPublishesToRedis(t *testing.T) {
 	}
 
 	app := newTestApplication([]string{"BTCUSDT", "ETHUSDT"})
+	app.universe.CapturedAt = time.Now()
 	app.healthStore = store
 	app.stats.barsCompletedTotal = 42
 	app.stats.tradeHandler.observe(200 * time.Microsecond)
@@ -550,6 +598,10 @@ func TestDeriveHealthStatusPriority(t *testing.T) {
 	t.Parallel()
 	if got := deriveHealthStatus(momentumcapture.Health{}); got != "ok" {
 		t.Fatalf("status = %q, want ok for a clean snapshot", got)
+	}
+	derivativesStale := momentumcapture.Health{StartedAt: time.Unix(0, 0), UpdatedAt: time.Unix(181, 0)}
+	if got := deriveHealthStatus(derivativesStale); got != "degraded_derivatives_stale" {
+		t.Fatalf("derivatives stale status = %q", got)
 	}
 
 	stale := momentumcapture.Health{UniverseStale: true}

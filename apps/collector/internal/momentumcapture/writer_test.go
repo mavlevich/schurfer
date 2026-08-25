@@ -150,8 +150,8 @@ func TestWriterFlushQueuesOneStatementPerPendingBarAndClearsPendingOnSuccess(t *
 		t.Fatalf("batch len = %v, want 2", db.lastBatch)
 	}
 	for _, qq := range db.lastBatch.QueuedQueries {
-		if len(qq.Arguments) != 76 {
-			t.Fatalf("args per row = %d, want 76 (matches insertRowSQL's column list)", len(qq.Arguments))
+		if len(qq.Arguments) != 91 {
+			t.Fatalf("args per row = %d, want 91 (matches insertRowSQL's column list)", len(qq.Arguments))
 		}
 	}
 	if len(w.pending) != 0 {
@@ -340,6 +340,16 @@ func TestHashRowIsDeterministicAndContentSensitive(t *testing.T) {
 	_, hashC := w.rowArgs(barC)
 	if hashC == hashA1 {
 		t.Fatal("changing bar content must change the hash")
+	}
+	barD := testBar("BTCUSDT", 0)
+	funding := 0.001
+	eventAt, observedAt := time.Unix(1, 0).UTC(), time.Unix(2, 0).UTC()
+	barD.FundingRate = &funding
+	barD.FundingRateEventAt = &eventAt
+	barD.FundingRateObservedAt = &observedAt
+	_, hashD := w.rowArgs(barD)
+	if hashD == hashA1 {
+		t.Fatal("changing additive derivatives context must change the hash")
 	}
 }
 
