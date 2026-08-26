@@ -86,7 +86,25 @@ One binary is deployed as two isolated, opt-in Compose services:
 Each freezes its venue's strict USDT linear-perpetual universe at startup. The
 event writer is bounded and never evicts an older ledger row: a full queue
 rejects the new event and marks the minute incomplete. Health is published at
-`market:liquidationcapture:health:{exchange}` with a TTL.
+`market:liquidationcapture:health:{exchange}` with a TTL. Health schema v2
+separates the current status from its transition time and exposes the latest
+heartbeat, latest complete heartbeat, consecutive incomplete minutes,
+connection counts, queue utilization, and counter deltas.
+
+The process exits on a payload-hash mismatch, a queue drop, a sustained
+persistence failure with a nearly full queue, or more than ten minutes without
+a complete durable heartbeat. Compose restarts an unexpectedly exited capture
+process with `unless-stopped`; an operator `stop` remains intentional and does
+not restart it. Before a fatal exit the process records a session-scoped Redis
+incident independently from the mutable health hash, so a fast restart cannot
+erase the failure before notifier observes it.
+
+Notifier monitors only the comma-separated venues explicitly configured in
+`LIQUIDATION_CAPTURE_MONITORED_EXCHANGES`. Blank means both optional profiles
+are intentionally disabled. Missing health has a configurable cold-start grace
+(`LIQUIDATION_CAPTURE_MONITOR_START_GRACE_SECONDS`, default 90 seconds), and
+transition/incident claims live in Redis so notifier restarts cannot duplicate
+or forget alerts.
 
 Before enabling either production profile:
 
@@ -96,6 +114,10 @@ Before enabling either production profile:
    mismatches, expected connection count, and at least two complete heartbeats;
 4. compare a bounded sample with the venue's raw frames;
 5. only then start the second isolated venue.
+
+Once a venue becomes an expected production service, add it to
+`LIQUIDATION_CAPTURE_MONITORED_EXCHANGES` and recreate `notifier`; do not monitor
+an intentionally stopped optional profile.
 
 No profitability claim is allowed until an immutable event-study dataset joins
 these events to point-in-time price/OI/funding/flow context, uses only admissible

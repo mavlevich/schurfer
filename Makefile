@@ -1731,9 +1731,7 @@ prod-liquidation-capture-bybit-stop:
 
 prod-liquidation-capture-bybit-health:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
-	@$(_PROD) --profile liquidation-capture-bybit ps liquidation-capture-bybit
-	@$(_PROD) exec -T redis redis-cli --raw HGETALL market:liquidationcapture:health:bybit
-	@docker stats --no-stream schurfer-liquidation-capture-bybit
+	@./scripts/liquidation_health.sh bybit
 
 prod-liquidation-capture-binance-start:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
@@ -1748,9 +1746,7 @@ prod-liquidation-capture-binance-stop:
 
 prod-liquidation-capture-binance-health:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
-	@$(_PROD) --profile liquidation-capture-binance ps liquidation-capture-binance
-	@$(_PROD) exec -T redis redis-cli --raw HGETALL market:liquidationcapture:health:binance
-	@docker stats --no-stream schurfer-liquidation-capture-binance
+	@./scripts/liquidation_health.sh binance
 
 prod-momentum-watch-start:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)

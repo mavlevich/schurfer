@@ -109,6 +109,8 @@ func (n *Notifier) Run(ctx context.Context) error {
 		go n.consumer.Run(ctx)
 	}
 
+	go newLiquidationCaptureMonitor(n).Run(ctx)
+
 	if err := n.tick(ctx); err != nil {
 		slog.Warn("notifier.tick.failed", "err", err)
 	}
