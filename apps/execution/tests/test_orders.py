@@ -7,6 +7,7 @@ from schurfer_execution import exit as exit_module
 from schurfer_execution.orders import close_position, place_order
 from schurfer_execution.risk import PNL_READY_KEY, TRADING_ENABLED_KEY
 from schurfer_execution.routers.orders import OrderRequest, post_order
+from schurfer_execution.supervisor import WorkerReadinessGate
 
 
 async def _default_get(key: str) -> bytes | None:
@@ -17,6 +18,22 @@ async def _default_get(key: str) -> bytes | None:
     if key == PNL_READY_KEY:
         return b"1"
     return None  # daily pnl = 0, etc.
+
+
+def _open_gate() -> WorkerReadinessGate:
+    return WorkerReadinessGate(set())
+
+
+class _GenerationChangingGate:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def is_open(self) -> tuple[bool, int]:
+        self.calls += 1
+        return (True, 1) if self.calls == 1 else (False, 2)
+
+    def get_reasons(self) -> list[str]:
+        return ["critical worker failed"]
 
 
 def _kwargs(**overrides: object) -> dict:  # type: ignore[type-arg]
@@ -38,6 +55,7 @@ def _kwargs(**overrides: object) -> dict:  # type: ignore[type-arg]
         "max_positions": 5,
         "max_position_usd": 500.0,
         "daily_loss_limit_usd": 200.0,
+        "worker_gate": _open_gate(),
     }
     base.update(overrides)
     return base
@@ -97,7 +115,12 @@ class TestManualOrderEndpointJournalsToo:
         ex = MagicMock()
         request = SimpleNamespace(
             app=SimpleNamespace(
-                state=SimpleNamespace(cfg=cfg, trading_exchanges={"bingx": ex}, rdb=MagicMock())
+                state=SimpleNamespace(
+                    cfg=cfg,
+                    trading_exchanges={"bingx": ex},
+                    rdb=MagicMock(),
+                    worker_gate=_open_gate(),
+                )
             )
         )
         req = OrderRequest(base="BEAT", exchange="bingx", side="short", size_usd=100.0)
@@ -117,6 +140,17 @@ class TestManualOrderEndpointJournalsToo:
 
 
 class TestLockBehavior:
+    async def test_closed_worker_gate_rejects_before_redis_lock(self) -> None:
+        rdb = MagicMock()
+        rdb.set = AsyncMock(return_value=True)
+        gate = WorkerReadinessGate({"critical"})
+
+        result = await place_order(**_kwargs(rdb=rdb, worker_gate=gate))
+
+        assert not result["allowed"]
+        assert "readiness gate closed" in result["reason"]
+        rdb.set.assert_not_awaited()
+
     async def test_denied_when_lock_not_acquired(self) -> None:
         rdb = MagicMock()
         rdb.set = AsyncMock(return_value=None)
@@ -252,6 +286,31 @@ async def test_place_order_uses_contract_size_and_precision(
     assert call.kwargs["params"]["clientOrderId"]
     assert result["allowed"]
     assert result["order_id"] == "ord123"
+
+
+@patch("schurfer_execution.orders.fetch_positions", return_value=([], set()))
+@patch(
+    "schurfer_execution.orders.fetch_margin_balance",
+    return_value=[{"exchange": "bingx", "free": 1000.0, "used": 0.0, "total": 1000.0}],
+)
+async def test_gate_generation_change_rejects_before_exchange_order(
+    _mock_bal: MagicMock, _mock_pos: MagicMock
+) -> None:
+    ex = MagicMock()
+    ex.markets = {"BEAT/USDT:USDT": {"contractSize": 1.0}}
+    ex.set_leverage = AsyncMock()
+    ex.fetch_ticker = AsyncMock(return_value={"last": 1.0})
+    ex.amount_to_precision = MagicMock(return_value="100.0")
+    ex.price_to_precision = MagicMock(return_value="1.1")
+    ex.create_market_order = AsyncMock()
+
+    result = await place_order(
+        **_kwargs(exchanges={"bingx": ex}, worker_gate=_GenerationChangingGate())
+    )
+
+    assert not result["allowed"]
+    assert "generation changed" in result["reason"]
+    ex.create_market_order.assert_not_awaited()
 
 
 @patch("schurfer_execution.orders.fetch_positions", return_value=([], set()))

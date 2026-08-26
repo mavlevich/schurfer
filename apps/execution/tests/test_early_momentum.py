@@ -25,9 +25,14 @@ from schurfer_execution.execution_intent import (
     TradingMode,
 )
 from schurfer_execution.journal import OpenTradeOutcome
+from schurfer_execution.supervisor import WorkerReadinessGate
 from schurfer_execution.symbols import ExecutionInstrument
 from schurfer_execution.worker_health import WorkerHeartbeat
 from schurfer_market_quality import SeriesIdentity, WindowQualityEvidence, WindowQualityResult
+
+
+def _open_gate() -> WorkerReadinessGate:
+    return WorkerReadinessGate(set())
 
 
 async def _empty_scan_iter(_pattern: str) -> Any:
@@ -506,7 +511,7 @@ async def test_run_early_momentum_trigger_writes_heartbeat_via_track_tick() -> N
         ),
         pytest.raises(asyncio.CancelledError),
     ):
-        await early_momentum.run_early_momentum_trigger({}, rdb, _cfg(), PaperBroker())
+        await early_momentum.run_early_momentum_trigger({}, rdb, _cfg(), PaperBroker(_open_gate()))
 
     assert rdb.set.await_count == 2
     for call in rdb.set.await_args_list:
@@ -840,7 +845,9 @@ async def test_trigger_tick_reaps_and_lists_actionable_even_with_no_watch_keys()
             new_callable=AsyncMock,
         ) as reconcile,
     ):
-        await early_momentum._trigger_tick({"bybit": _exchange()}, rdb, _cfg(), PaperBroker())
+        await early_momentum._trigger_tick(
+            {"bybit": _exchange()}, rdb, _cfg(), PaperBroker(_open_gate())
+        )
 
     reap.assert_awaited_once()
     listed.assert_awaited_once()
@@ -865,7 +872,9 @@ async def test_trigger_tick_repairs_missing_watch_cache_from_actionable() -> Non
             new_callable=AsyncMock,
         ),
     ):
-        await early_momentum._trigger_tick({"bybit": _exchange()}, rdb, _cfg(), PaperBroker())
+        await early_momentum._trigger_tick(
+            {"bybit": _exchange()}, rdb, _cfg(), PaperBroker(_open_gate())
+        )
 
     rdb.set.assert_awaited_once()
     assert rdb.set.call_args.args[0] == "market:early_momentum:v4:watch:e1"
@@ -940,7 +949,7 @@ async def test_check_breakout_terminates_suppressed_when_already_open() -> None:
         ) as claim,
     ):
         await early_momentum._check_breakout(
-            ex, rdb, _cfg(), PaperBroker(), cached=cached, tickers=tickers
+            ex, rdb, _cfg(), PaperBroker(_open_gate()), cached=cached, tickers=tickers
         )
 
     terminate.assert_awaited_once()
@@ -964,7 +973,7 @@ async def test_check_breakout_below_ceiling_does_nothing() -> None:
     }
 
     await early_momentum._check_breakout(
-        ex, rdb, _cfg(), PaperBroker(), cached=cached, tickers=tickers
+        ex, rdb, _cfg(), PaperBroker(_open_gate()), cached=cached, tickers=tickers
     )
 
     rdb.delete.assert_not_awaited()
@@ -998,7 +1007,7 @@ async def test_check_breakout_noop_when_claim_fails() -> None:
         ) as reserve,
     ):
         await early_momentum._check_breakout(
-            ex, rdb, _cfg(), PaperBroker(), cached=cached, tickers=tickers
+            ex, rdb, _cfg(), PaperBroker(_open_gate()), cached=cached, tickers=tickers
         )
 
     reserve.assert_not_awaited()
@@ -1045,7 +1054,7 @@ async def test_check_breakout_terminates_route_invalidated() -> None:
         ) as reserve,
     ):
         await early_momentum._check_breakout(
-            ex, rdb, _cfg(), PaperBroker(), cached=cached, tickers=tickers
+            ex, rdb, _cfg(), PaperBroker(_open_gate()), cached=cached, tickers=tickers
         )
 
     terminate.assert_awaited_once()
@@ -1099,7 +1108,7 @@ async def test_check_breakout_terminates_suppressed_on_reservation_conflict() ->
         ) as terminate,
     ):
         await early_momentum._check_breakout(
-            ex, rdb, _cfg(), PaperBroker(), cached=cached, tickers=tickers
+            ex, rdb, _cfg(), PaperBroker(_open_gate()), cached=cached, tickers=tickers
         )
 
     terminate.assert_awaited_once()
@@ -1138,7 +1147,7 @@ async def test_quote_and_open_terminates_on_market_quality_gate_failure() -> Non
             ex,
             rdb,
             _cfg(),
-            PaperBroker(),
+            PaperBroker(_open_gate()),
             instrument=_instrument(),
             episode_id="e1",
             claim_token="tok-1",  # noqa: S106
@@ -1169,7 +1178,7 @@ async def test_quote_and_open_calls_open_paper_for_episode_with_full_context() -
             ex,
             rdb,
             _cfg(),
-            PaperBroker(),
+            PaperBroker(_open_gate()),
             instrument=_instrument(),
             episode_id="e1",
             claim_token="tok-1",  # noqa: S106
@@ -1212,7 +1221,7 @@ async def test_quote_and_open_terminates_infra_failure_when_open_fails_but_claim
             ex,
             rdb,
             _cfg(),
-            PaperBroker(),
+            PaperBroker(_open_gate()),
             instrument=_instrument(),
             episode_id="e1",
             claim_token="tok-1",  # noqa: S106
@@ -1291,7 +1300,7 @@ async def test_quote_and_open_does_not_terminate_when_claim_already_invalid() ->
             ex,
             rdb,
             _cfg(),
-            PaperBroker(),
+            PaperBroker(_open_gate()),
             instrument=_instrument(),
             episode_id="e1",
             claim_token="tok-1",  # noqa: S106
@@ -1350,7 +1359,7 @@ async def test_check_breakout_releases_reservation_even_when_quote_and_open_rais
         pytest.raises(RuntimeError, match="boom"),
     ):
         await early_momentum._check_breakout(
-            ex, rdb, _cfg(), PaperBroker(), cached=cached, tickers=tickers
+            ex, rdb, _cfg(), PaperBroker(_open_gate()), cached=cached, tickers=tickers
         )
 
     release.assert_awaited_once()

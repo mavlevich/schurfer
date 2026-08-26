@@ -41,7 +41,9 @@ async def post_order(req: OrderRequest, request: Request) -> dict[str, Any]:
 
     try:
         instrument = symbols.resolve_execution_instrument(exchanges[req.exchange], req.base)
+        worker_gate = request.app.state.worker_gate
         result: dict[str, Any] = await place_order(
+            worker_gate=worker_gate,
             base=req.base,
             symbol=instrument.symbol,
             exchange=req.exchange,

@@ -22,6 +22,7 @@ _FUNDING_FETCH_TIMEOUT = 5  # seconds
 
 if TYPE_CHECKING:
     from .config import Config
+    from .supervisor import WorkerReadinessGate
 
 log = structlog.get_logger()
 
@@ -55,19 +56,33 @@ async def run_signal_trader(
     rdb: Any,
     cfg: Config,
     broker: Broker | None = None,
+    tracker: Any = None,
+    *,
+    worker_gate: WorkerReadinessGate,
 ) -> None:
     while True:
+        if tracker:
+            tracker.tick_started()
         await asyncio.sleep(_INTERVAL_SECONDS)
         try:
-            await _tick(exchanges, rdb, cfg, broker)
+            await _tick(exchanges, rdb, cfg, broker, worker_gate=worker_gate)
+            if tracker:
+                tracker.tick_succeeded()
         except asyncio.CancelledError:
             raise
         except Exception as e:
+            if tracker:
+                tracker.tick_failed(e)
             log.error("trader.error", err=str(e))
 
 
 async def _tick(
-    exchanges: dict[str, Any], rdb: Any, cfg: Config, broker: Broker | None = None
+    exchanges: dict[str, Any],
+    rdb: Any,
+    cfg: Config,
+    broker: Broker | None = None,
+    *,
+    worker_gate: WorkerReadinessGate,
 ) -> None:
     # Resolved here (not just once in run_signal_trader) so a direct _tick()
     # call -- every existing test, plus any future caller -- gets the same
@@ -77,7 +92,7 @@ async def _tick(
     # _INTERVAL_SECONDS=60 cadence.
     if broker is None:
         mode = execution_intent.resolve_mode(cfg, execution_intent.STRATEGY_PUMP_SHORT)
-        broker = execution_intent.build_broker(mode, exchanges=exchanges)
+        broker = execution_intent.build_broker(mode, exchanges=exchanges, gate=worker_gate)
 
     # PUMP_SHORT_MODE=disabled must actually stop the strategy, not just
     # make the eventual broker.open() call reject while everything around
@@ -682,6 +697,7 @@ async def _tick(
                 liquidation_buffer_pct=cfg.liquidation_buffer_pct,
                 cfg=cfg,
                 setup_context=setup_context,
+                worker_gate=worker_gate,
             )
         except OrderLockLostError as exc:
             # Exclusivity became uncertain mid-operation (see order_lock.py). The

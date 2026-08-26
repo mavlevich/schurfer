@@ -78,12 +78,20 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, db_url: str | None) -> None
     )
 
 
-async def run_pnl_tracker(exchanges: dict[str, Any], rdb: Any, db_url: str | None) -> None:
+async def run_pnl_tracker(
+    exchanges: dict[str, Any], rdb: Any, db_url: str | None, tracker: Any = None
+) -> None:
     while True:
+        if tracker:
+            tracker.tick_started()
         try:
             await _tick(exchanges, rdb, db_url)
+            if tracker:
+                tracker.tick_succeeded()
         except asyncio.CancelledError:
             raise
         except Exception as e:
+            if tracker:
+                tracker.tick_failed(e)
             log.error("pnl_tracker.error", err=str(e))
         await asyncio.sleep(_POLL_INTERVAL)

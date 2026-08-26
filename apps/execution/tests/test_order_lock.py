@@ -7,6 +7,7 @@ from schurfer_execution import order_lock as order_lock_module
 from schurfer_execution.order_lock import OrderLockLease, OrderLockLostError
 from schurfer_execution.orders import place_order
 from schurfer_execution.risk import PNL_READY_KEY, TRADING_ENABLED_KEY
+from schurfer_execution.supervisor import WorkerReadinessGate
 
 
 class _LeaseRedis:
@@ -189,6 +190,7 @@ async def test_slow_exchange_open_keeps_the_real_place_order_lock_renewed() -> N
             max_positions=5,
             max_position_usd=500.0,
             daily_loss_limit_usd=200.0,
+            worker_gate=WorkerReadinessGate(set()),
         )
 
     assert result["allowed"] is True

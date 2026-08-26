@@ -19,6 +19,7 @@ from .risk import (
     check_sufficient_margin,
     run_all_checks,
 )
+from .supervisor import WorkerReadinessGate
 
 log = structlog.get_logger()
 
@@ -190,9 +191,21 @@ async def place_order(
     liquidation_buffer_pct: float = 20.0,
     cfg: Any = None,
     setup_context: dict[str, Any] | None = None,
+    worker_gate: WorkerReadinessGate,
 ) -> dict[str, Any]:
     exit_params = exit_params or exit_module.exit_params(None)
     initial_sl_pct = exit_params["initial_sl_pct"]
+
+    # Admission is checked before even taking the Redis order lock. The
+    # generation token is checked again immediately before the exchange call,
+    # closing the race where a critical worker fails during pre-flight checks.
+    is_open, gate_token = worker_gate.is_open()
+    if not is_open:
+        return {
+            "allowed": False,
+            "reason": f"worker readiness gate closed: {worker_gate.get_reasons()}",
+        }
+
     lock_key = f"lock:order:{exchange}:{base.upper()}"
     lease = await OrderLockLease.acquire(rdb=rdb, key=lock_key, operation="open")
     if lease is None:
@@ -332,6 +345,13 @@ async def place_order(
                     "reason": "cannot durably record order intent (db unavailable) -- "
                     "refusing to place a live order that could not be tracked",
                 }
+
+        is_open, current_token = worker_gate.is_open()
+        if not is_open or current_token != gate_token:
+            reason = "worker readiness gate closed or generation changed during checks"
+            if db_url and attempt_id is not None:
+                await order_attempts.mark_failed(db_url, attempt_id, error=reason)
+            return {"allowed": False, "reason": reason}
 
         try:
             order = await ex.create_market_order(

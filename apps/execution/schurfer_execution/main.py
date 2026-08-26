@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import typing
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -38,6 +39,11 @@ from .liquidation_cascade import run_liquidation_cascade_scanner
 from .monitor import run_position_monitor
 from .paper import run_paper_monitor
 from .routers import account, control, health, orders
+from .supervisor import (
+    WorkerRestartPolicy,
+    WorkerSpec,
+    WorkerSupervisor,
+)
 from .tracker import run_pnl_tracker
 from .trader import run_signal_trader
 
@@ -88,28 +94,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     trading_exchanges: dict[str, Any] = clients.trading
     strategy_exchanges = clients.strategy_clients(dry_run=cfg.dry_run)
 
-    # One Broker per strategy, resolved once at startup from the same
-    # cfg.dry_run/cfg.auto_trade + per-strategy mode override
-    # execution_intent.Config.__post_init__ already validated -- this can
-    # never raise here (a bad config already failed Config() construction
-    # above). Task-creation conditions below (cfg.dry_run / cfg.auto_trade)
-    # are unchanged by this -- a broker existing does not mean its task
-    # runs; resolve_mode only decides what an already-started task's own
-    # entry call does.
-    pump_short_broker: Broker = build_broker(
-        resolve_mode(cfg, STRATEGY_PUMP_SHORT), exchanges=strategy_exchanges
-    )
-    early_momentum_broker: Broker = build_broker(
-        resolve_mode(cfg, STRATEGY_EARLY_MOMENTUM), exchanges=market_exchanges
-    )
-    liquidation_cascade_broker: Broker = build_broker(
-        resolve_mode(cfg, STRATEGY_LIQUIDATION_CASCADE), exchanges=market_exchanges
-    )
+    # Resolve modes once. The same values decide whether a worker is enabled
+    # and which Broker its eventual factory receives; mode and control flow
+    # cannot drift through independent computations.
+    pump_short_mode = resolve_mode(cfg, STRATEGY_PUMP_SHORT)
+    early_momentum_mode = resolve_mode(cfg, STRATEGY_EARLY_MOMENTUM)
+    liquidation_cascade_mode = resolve_mode(cfg, STRATEGY_LIQUIDATION_CASCADE)
 
     early_momentum_cohort_started_at = None
-    early_momentum_enabled = early_momentum_broker.mode is not TradingMode.DISABLED
+    early_momentum_enabled = early_momentum_mode is not TradingMode.DISABLED
     if cfg.dry_run and cfg.db_url and early_momentum_enabled:
-        validate_prospective_runtime_policy(cfg, trading_mode=early_momentum_broker.mode.value)
+        validate_prospective_runtime_policy(cfg, trading_mode=early_momentum_mode.value)
         early_momentum_cohort_started_at = await register_prospective_cohort(
             cfg.db_url,
             contract_sha256=EARLY_MOMENTUM_CONTRACT_SHA256,
@@ -130,70 +125,156 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         log.info("startup.preload_markets", count=len(market_exchanges))
         await _preload_markets(market_exchanges)
 
-    tracker = asyncio.create_task(run_pnl_tracker(trading_exchanges, rdb, cfg.db_url))
-    monitor = asyncio.create_task(run_position_monitor(trading_exchanges, rdb, cfg))
-    trader = (
-        asyncio.create_task(run_signal_trader(strategy_exchanges, rdb, cfg, pump_short_broker))
-        if cfg.auto_trade or cfg.dry_run
-        else None
-    )
-    paper = (
-        asyncio.create_task(run_paper_monitor(market_exchanges, rdb, cfg)) if cfg.dry_run else None
-    )
-    early_momentum_scanner = (
-        asyncio.create_task(run_early_momentum_scanner(rdb, cfg))
-        if cfg.dry_run and early_momentum_enabled
-        else None
-    )
-    early_momentum_trigger = (
-        asyncio.create_task(
-            run_early_momentum_trigger(market_exchanges, rdb, cfg, early_momentum_broker)
-        )
-        if cfg.dry_run and early_momentum_enabled
-        else None
-    )
-    # Deliberately its own task, independent of the two above: if trigger
-    # deadlocks, this must keep ticking and still be able to report it.
-    early_momentum_health_monitor = (
-        asyncio.create_task(
-            run_early_momentum_health_monitor(rdb, cfg, startup_at=early_momentum_startup_at)
-        )
-        if cfg.dry_run and early_momentum_enabled
-        else None
-    )
-    liquidation_cascade_scanner = (
-        asyncio.create_task(
-            run_liquidation_cascade_scanner(market_exchanges, rdb, cfg, liquidation_cascade_broker)
-        )
-        if cfg.dry_run
-        else None
-    )
-    # The decision writer does long blocking XREADGROUP reads, so it gets its own client
-    # with a socket timeout above the BLOCK window. Keeping it separate leaves the trading
-    # hot path fail-fast instead of inheriting the writer's longer timeout.
-    writer_rdb = None
-    dec_writer = None
-    if cfg.db_url:
-        writer_rdb = aioredis.from_url(
+    writer_rdb = (
+        aioredis.from_url(
             f"redis://{host}:{port}",
             socket_timeout=_REDIS_SOCKET_TIMEOUT_SECONDS,
             socket_connect_timeout=5.0,
         )
-        dec_writer = asyncio.create_task(run_decision_writer(writer_rdb, cfg.db_url))
-    incident_worker = (
-        asyncio.create_task(run_incident_worker(trading_exchanges, rdb, cfg))
         if cfg.db_url
         else None
     )
-    # pump_short's own broker/mode is only ever reached inside trader.py's
-    # cfg.dry_run branch -- under AUTO_TRADE=true that branch never runs
-    # (real orders go through the untouched place_order path instead), so
-    # logging pump_short_broker.mode there would claim a mode that governs
-    # nothing. "legacy_live" names what actually executes instead
-    # (colleague review, P0 -- Config already refuses PUMP_SHORT_MODE
-    # whenever AUTO_TRADE=true, so this is never a config override hiding
-    # behind a misleading log line, just an accurate description of the
-    # untouched pre-existing path).
+
+    # These names are deliberately bound after WorkerSupervisor derives its
+    # gate from the specs. Python closures resolve them only when start()
+    # creates the tasks, after all brokers have received that exact gate.
+    pump_short_broker: Broker
+    early_momentum_broker: Broker
+    liquidation_cascade_broker: Broker
+
+    specs = [
+        WorkerSpec(
+            name="position_monitor",
+            factory=lambda tr: run_position_monitor(trading_exchanges, rdb, cfg, tr),
+            policy=WorkerRestartPolicy.BOUNDED_FATAL,
+            is_critical=True,
+            restart_budget=3,
+            restart_window_seconds=60.0,
+            stale_timeout_seconds=120.0,
+        ),
+        WorkerSpec(
+            name="pnl_tracker",
+            factory=lambda tr: run_pnl_tracker(trading_exchanges, rdb, cfg.db_url, tr),
+            policy=WorkerRestartPolicy.BOUNDED_FATAL
+            if cfg.auto_trade
+            else WorkerRestartPolicy.BOUNDED_DEGRADED,
+            is_critical=True,
+            restart_budget=3,
+            restart_window_seconds=60.0,
+            stale_timeout_seconds=120.0,
+        ),
+        WorkerSpec(
+            name="incident_worker",
+            factory=lambda tr: run_incident_worker(trading_exchanges, rdb, cfg, tr),
+            policy=(
+                WorkerRestartPolicy.BOUNDED_FATAL
+                if cfg.auto_trade
+                else WorkerRestartPolicy.BOUNDED_DEGRADED
+            ),
+            is_critical=True,
+            restart_budget=5,
+            restart_window_seconds=120.0,
+            stale_timeout_seconds=120.0,
+            enabled=bool(cfg.db_url),
+        ),
+        WorkerSpec(
+            name="decision_writer",
+            factory=lambda tr: run_decision_writer(
+                typing.cast("Any", writer_rdb), typing.cast("str", cfg.db_url), tr
+            ),
+            policy=WorkerRestartPolicy.ALWAYS,
+            is_critical=False,
+            stale_timeout_seconds=180.0,
+            enabled=bool(cfg.db_url),
+        ),
+        WorkerSpec(
+            name="signal_trader",
+            factory=lambda tr: run_signal_trader(
+                strategy_exchanges,
+                rdb,
+                cfg,
+                pump_short_broker,
+                tr,
+                worker_gate=supervisor.gate,
+            ),
+            policy=WorkerRestartPolicy.NEVER,
+            is_critical=True,
+            stale_timeout_seconds=120.0,
+            enabled=cfg.auto_trade or cfg.dry_run,
+        ),
+        WorkerSpec(
+            name="paper_monitor",
+            factory=lambda tr: run_paper_monitor(market_exchanges, rdb, cfg, tr),
+            policy=WorkerRestartPolicy.BOUNDED_DEGRADED,
+            is_critical=True,
+            restart_budget=3,
+            stale_timeout_seconds=120.0,
+            enabled=cfg.dry_run,
+        ),
+        WorkerSpec(
+            name="liquidation_cascade_scanner",
+            factory=lambda tr: run_liquidation_cascade_scanner(
+                market_exchanges, rdb, cfg, liquidation_cascade_broker, tr
+            ),
+            policy=WorkerRestartPolicy.BOUNDED_DEGRADED,
+            is_critical=False,
+            restart_budget=3,
+            stale_timeout_seconds=120.0,
+            enabled=(
+                cfg.dry_run
+                and bool(cfg.db_url)
+                and liquidation_cascade_mode is not TradingMode.DISABLED
+            ),
+        ),
+        WorkerSpec(
+            name="early_momentum_scanner",
+            factory=lambda tr: run_early_momentum_scanner(rdb, cfg, tr),
+            policy=WorkerRestartPolicy.BOUNDED_DEGRADED,
+            is_critical=False,
+            restart_budget=3,
+            stale_timeout_seconds=120.0,
+            enabled=cfg.dry_run and bool(cfg.db_url) and early_momentum_enabled,
+        ),
+        WorkerSpec(
+            name="early_momentum_trigger",
+            factory=lambda tr: run_early_momentum_trigger(
+                market_exchanges, rdb, cfg, early_momentum_broker, tr
+            ),
+            policy=WorkerRestartPolicy.BOUNDED_DEGRADED,
+            is_critical=False,
+            restart_budget=3,
+            stale_timeout_seconds=120.0,
+            enabled=cfg.dry_run and bool(cfg.db_url) and early_momentum_enabled,
+        ),
+        WorkerSpec(
+            name="early_momentum_health_monitor",
+            factory=lambda tr: run_early_momentum_health_monitor(
+                rdb, cfg, startup_at=early_momentum_startup_at, tracker=tr
+            ),
+            policy=WorkerRestartPolicy.ALWAYS,
+            is_critical=False,
+            stale_timeout_seconds=120.0,
+            enabled=cfg.dry_run and bool(cfg.db_url) and early_momentum_enabled,
+        ),
+    ]
+
+    supervisor = WorkerSupervisor(specs)
+    worker_gate = supervisor.gate
+    pump_short_broker = build_broker(
+        pump_short_mode, exchanges=strategy_exchanges, gate=worker_gate
+    )
+    early_momentum_broker = build_broker(
+        early_momentum_mode, exchanges=market_exchanges, gate=worker_gate
+    )
+    liquidation_cascade_broker = build_broker(
+        liquidation_cascade_mode, exchanges=market_exchanges, gate=worker_gate
+    )
+
+    app.state.supervisor = supervisor
+    app.state.worker_gate = supervisor.gate
+
+    await supervisor.start()
+
     pump_short_execution_path = "legacy_live" if cfg.auto_trade else pump_short_broker.mode.value
     log.info(
         "execution.start",
@@ -222,26 +303,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     # (colleague review). Unacked decision-writer stream entries are
     # reprocessed on restart, so there's no in-process queue to drain for
     # it specifically -- it's still collected here like every other task.
-    background_tasks = [
-        t
-        for t in (
-            tracker,
-            monitor,
-            trader,
-            paper,
-            early_momentum_scanner,
-            early_momentum_trigger,
-            early_momentum_health_monitor,
-            liquidation_cascade_scanner,
-            dec_writer,
-            incident_worker,
-        )
-        if t is not None
-    ]
-    for task in background_tasks:
-        task.cancel()
-    if background_tasks:
-        await asyncio.gather(*background_tasks, return_exceptions=True)
+    supervisor.stop()
+    await supervisor.wait_stopped()
 
     await close_exchange_clients(clients)
     await rdb.aclose()

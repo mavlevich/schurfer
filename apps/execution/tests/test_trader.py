@@ -7,6 +7,7 @@ import pytest
 from schurfer_execution import execution_intent
 from schurfer_execution.config import Config
 from schurfer_execution.order_lock import OrderLockLostError
+from schurfer_execution.supervisor import WorkerReadinessGate
 from schurfer_execution.symbols import ExecutionInstrument
 from schurfer_execution.trader import (
     _SEEN_TTL_ENTRY_WAIT,
@@ -27,8 +28,25 @@ from schurfer_execution.trader import (
     _fetch_signal,
     _pick_exchange,
     _pump_event_id,
-    _tick,
 )
+from schurfer_execution.trader import (
+    _tick as _production_tick,
+)
+
+
+async def _tick(
+    exchanges: dict[str, Any],
+    rdb: Any,
+    cfg: Config,
+    broker: Any = None,
+    worker_gate: WorkerReadinessGate | None = None,
+) -> None:
+    """Run a trader tick with an explicit always-open test admission gate."""
+    gate = worker_gate or WorkerReadinessGate(set())
+    if broker is None:
+        mode = execution_intent.resolve_mode(cfg, execution_intent.STRATEGY_PUMP_SHORT)
+        broker = execution_intent.build_broker(mode, exchanges=exchanges, gate=gate)
+    await _production_tick(exchanges, rdb, cfg, broker=broker, worker_gate=gate)
 
 
 @pytest.fixture(autouse=True)

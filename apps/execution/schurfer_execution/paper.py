@@ -769,14 +769,21 @@ async def run_paper_monitor(
     exchanges: dict[str, Any],
     rdb: Any,
     cfg: Config,
+    tracker: Any = None,
 ) -> None:
     while True:
+        if tracker:
+            tracker.tick_started()
         await asyncio.sleep(_INTERVAL_SECONDS)
         try:
             await _tick(exchanges, rdb, cfg)
+            if tracker:
+                tracker.tick_succeeded()
         except asyncio.CancelledError:
             raise
         except Exception as exc:
+            if tracker:
+                tracker.tick_failed(exc)
             log.error("paper_monitor.error", err=str(exc))
 
 
