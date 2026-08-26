@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any
 import structlog
 
 from . import exit as exit_module
-from . import incidents, journal, notify
+from . import incidents, journal, notify, order_attempts
 from .fill_price import FILL_UNRESOLVED, resolve_fill_price
 
 if TYPE_CHECKING:
@@ -167,7 +167,14 @@ async def _process_one(
     completed = (
         await _complete_close(incident, symbol, resolution.price, rdb, cfg)
         if incident.operation == "close"
-        else await _complete_open(incident, symbol, resolution.price, rdb, cfg)
+        else await _complete_open(
+            incident,
+            symbol,
+            resolution.price,
+            resolution.filled_amount,
+            rdb,
+            cfg,
+        )
     )
     if not completed:
         await _bump_attempt_or_escalate(
@@ -273,7 +280,12 @@ async def _complete_close(
 
 
 async def _complete_open(
-    incident: Incident, symbol: str, price: float, rdb: Any, cfg: Config
+    incident: Incident,
+    symbol: str,
+    price: float,
+    filled_amount: float | None,
+    rdb: Any,
+    cfg: Config,
 ) -> bool:
     """Returns True only once journal.complete_open actually produced a
     trade_id -- see _process_one's own comment on why this must gate
@@ -311,4 +323,12 @@ async def _complete_open(
         exit_params=exit_params,
         setup_context=setup_context,
     )
-    return trade_id is not None
+    if trade_id is None:
+        return False
+    return await order_attempts.link_completed_trade(
+        cfg.db_url,
+        exchange=incident.exchange,
+        order_id=incident.order_id,
+        trade_id=trade_id,
+        filled_amount=filled_amount,
+    )

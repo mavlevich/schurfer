@@ -2,6 +2,7 @@ import time
 import uuid
 from typing import Any
 
+import ccxt
 import structlog
 
 from . import exit as exit_module
@@ -19,7 +20,7 @@ from .risk import (
     check_sufficient_margin,
     run_all_checks,
 )
-from .supervisor import WorkerReadinessGate
+from .supervisor import SUBMISSION_UNKNOWN_BLOCKER, WorkerReadinessGate
 
 log = structlog.get_logger()
 
@@ -332,8 +333,11 @@ async def place_order(
                 exchange=exchange,
                 base=base,
                 symbol=symbol,
+                native_market_id=market.get("id"),
+                market_type=market.get("type"),
                 side=side,
                 size_usd=actual_usd,
+                requested_amount=amount,
                 leverage=leverage,
                 contract_size=contract_size,
                 exit_params=exit_params,
@@ -357,10 +361,24 @@ async def place_order(
             order = await ex.create_market_order(
                 symbol, ccxt_side, amount, params={"clientOrderId": entry_client_order_id}
             )
-        except Exception as exc:
+        except ccxt.NetworkError as exc:
+            if db_url and attempt_id is not None:
+                await order_attempts.mark_submission_unknown(db_url, attempt_id, error=str(exc))
+            worker_gate.set_safety_blocker(SUBMISSION_UNKNOWN_BLOCKER)
+            return {
+                "allowed": False,
+                "reason": f"submission_unknown: network timeout or error {exc}",
+            }
+        except ccxt.ExchangeError as exc:
+            # Explicit exchange rejection (e.g. InsufficientFunds, InvalidOrder)
             if db_url and attempt_id is not None:
                 await order_attempts.mark_failed(db_url, attempt_id, error=str(exc))
-            raise
+            return {"allowed": False, "reason": f"exchange_rejection: {exc}"}
+        except Exception as exc:
+            if db_url and attempt_id is not None:
+                await order_attempts.mark_submission_unknown(db_url, attempt_id, error=str(exc))
+            worker_gate.set_safety_blocker(SUBMISSION_UNKNOWN_BLOCKER)
+            return {"allowed": False, "reason": f"submission_unknown: unexpected error {exc}"}
 
         if db_url and attempt_id is not None:
             await order_attempts.mark_accepted(db_url, attempt_id, order_id=str(order.get("id")))

@@ -101,6 +101,10 @@ async def test_process_one_completes_a_resolved_open() -> None:
             "schurfer_execution.incident_worker.journal.open_trade",
             AsyncMock(return_value=101),
         ) as mock_open_trade,
+        patch(
+            "schurfer_execution.incident_worker.order_attempts.link_completed_trade",
+            AsyncMock(return_value=True),
+        ) as mock_link_attempt,
     ):
         await _process_one(incident, {"bybit": _exchange_confirming(1.5)}, rdb, _cfg())
 
@@ -111,6 +115,13 @@ async def test_process_one_completes_a_resolved_open() -> None:
     assert mock_open_trade.call_args.kwargs["entry_price"] == 1.5
     assert mock_open_trade.call_args.kwargs["size_usd"] == 50.0
     assert mock_open_trade.call_args.kwargs["leverage"] == 3
+    mock_link_attempt.assert_awaited_once_with(
+        "postgresql://x",
+        exchange="bybit",
+        order_id="ord-1",
+        trade_id=101,
+        filled_amount=None,
+    )
     rdb.set.assert_any_call("trade:id:bybit:BEAT", "101", ex=86400)
     rdb.set.assert_any_call("position:entry:bybit:BEAT", "1.5", ex=86400)
     rdb.set.assert_any_call("position:side:bybit:BEAT", "short", ex=86400)

@@ -38,6 +38,8 @@ from .incident_worker import run_incident_worker
 from .liquidation_cascade import run_liquidation_cascade_scanner
 from .monitor import run_position_monitor
 from .paper import run_paper_monitor
+from .reconciliation import STARTUP_BLOCKER
+from .reconciliation_worker import ReconciliationWorker
 from .routers import account, control, health, orders
 from .supervisor import (
     WorkerRestartPolicy,
@@ -141,6 +143,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     pump_short_broker: Broker
     early_momentum_broker: Broker
     liquidation_cascade_broker: Broker
+    reconciliation_worker: ReconciliationWorker
+
+    reconciliation_enabled = bool(cfg.db_url and trading_exchanges)
 
     specs = [
         WorkerSpec(
@@ -176,6 +181,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
             restart_window_seconds=120.0,
             stale_timeout_seconds=120.0,
             enabled=bool(cfg.db_url),
+        ),
+        WorkerSpec(
+            name="position_reconciler",
+            factory=lambda tr: reconciliation_worker(tr),
+            policy=WorkerRestartPolicy.BOUNDED_FATAL,
+            is_critical=True,
+            restart_budget=5,
+            restart_window_seconds=120.0,
+            stale_timeout_seconds=120.0,
+            enabled=reconciliation_enabled,
         ),
         WorkerSpec(
             name="decision_writer",
@@ -260,6 +275,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     supervisor = WorkerSupervisor(specs)
     worker_gate = supervisor.gate
+    if reconciliation_enabled:
+        worker_gate.set_safety_blocker(STARTUP_BLOCKER)
+        reconciliation_worker = ReconciliationWorker(
+            trading_exchanges,
+            typing.cast("str", cfg.db_url),
+            rdb,
+            worker_gate,
+        )
     pump_short_broker = build_broker(
         pump_short_mode, exchanges=strategy_exchanges, gate=worker_gate
     )

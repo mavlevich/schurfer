@@ -7,6 +7,7 @@ from schurfer_journal.models import (
     Exchange,
     FillResolutionIncident,
     LiveOrderAttempt,
+    LiveReconciliationIncident,
     MarketType,
     NotificationDelivery,
     OutcomeLabel,
@@ -619,3 +620,17 @@ class TestLiveOrderAttemptModel:
         assert indexes["ux_live_order_attempts_client_order_id"].unique
         assert "ck_live_order_attempts_status" in constraints
         assert fks == {"app.trades.id"}
+
+
+class TestLiveReconciliationIncidentModel:
+    def test_table_shape_and_stable_key(self) -> None:
+        assert LiveReconciliationIncident.__tablename__ == "live_reconciliation_incidents"
+        assert LiveReconciliationIncident.__table__.schema == "app"
+        columns = LiveReconciliationIncident.__table__.columns
+        assert columns["incident_key"].nullable is False
+        assert columns["evidence_json"].nullable is False
+        assert columns["last_seen_at"].nullable is False
+
+        indexes = {index.name: index for index in LiveReconciliationIncident.__table__.indexes}
+        assert indexes["ux_live_reconciliation_incidents_key"].unique
+        assert "ix_live_reconciliation_incidents_status" in indexes

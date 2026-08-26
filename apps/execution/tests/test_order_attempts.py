@@ -146,3 +146,27 @@ async def test_mark_failed_truncates_long_errors() -> None:
 
     row = cur.execute.call_args.args[1]
     assert len(row[1]) == 1000
+
+
+async def test_link_completed_trade_uses_exact_exchange_order_identity() -> None:
+    conn, cur = _mock_conn(fetchone_results=[(5,)])
+    with patch(
+        "schurfer_execution.order_attempts.psycopg.AsyncConnection.connect",
+        AsyncMock(return_value=conn),
+    ):
+        linked = await order_attempts.link_completed_trade(
+            "postgresql://test",
+            exchange="bybit",
+            order_id="ord-1",
+            trade_id=42,
+            filled_amount=1.25,
+        )
+
+    assert linked
+    assert cur.execute.call_args.args[1] == (
+        order_attempts.STATUS_COMPLETED,
+        42,
+        1.25,
+        "bybit",
+        "ord-1",
+    )
