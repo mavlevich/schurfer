@@ -302,7 +302,7 @@ async def _handle(
     attempts.pop(key, None)
 
 
-async def run_decision_writer(rdb: Any, db_url: str) -> None:
+async def run_decision_writer(rdb: Any, db_url: str, tracker: Any = None) -> None:
     """Long-running task: drain the decision outbox into Postgres, at-least-once.
 
     New entries via XREADGROUP, entries a crashed writer left pending via XAUTOCLAIM.
@@ -324,6 +324,8 @@ async def run_decision_writer(rdb: Any, db_url: str) -> None:
         except asyncio.CancelledError:
             raise
         except Exception as exc:
+            if tracker:
+                tracker.tick_failed(exc)
             log.error("decisions.connect_failed", err=str(exc))
             await asyncio.sleep(_RECONNECT_DELAY)
             continue
@@ -333,10 +335,20 @@ async def run_decision_writer(rdb: Any, db_url: str) -> None:
             await _ensure_group(rdb)
             async with aconn, aconn.cursor() as cur:
                 while True:
-                    for msg_id, fields in await _read_batch(rdb):
+                    if tracker:
+                        tracker.tick_started()
+                    batch = await _read_batch(rdb)
+                    for msg_id, fields in batch:
                         await _handle(cur, rdb, msg_id, fields, attempts)
+                    if tracker:
+                        if not batch:
+                            tracker.tick_idle()
+                        else:
+                            tracker.tick_succeeded()
         except asyncio.CancelledError:
             raise
         except Exception as exc:
+            if tracker:
+                tracker.tick_failed(exc)
             log.error("decisions.writer_error", err=str(exc))
             await asyncio.sleep(_RECONNECT_DELAY)

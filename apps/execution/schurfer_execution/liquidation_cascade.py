@@ -63,7 +63,11 @@ WHERE price_15m_ago > 0
 
 
 async def run_liquidation_cascade_scanner(
-    exchanges: dict[str, Any], rdb: Any, cfg: Config, broker: Broker | None = None
+    exchanges: dict[str, Any],
+    rdb: Any,
+    cfg: Config,
+    broker: Broker | None = None,
+    tracker: Any = None,
 ) -> None:
     """Scans for Liquidation Cascades and immediately opens trades."""
     if not cfg.db_url:
@@ -85,6 +89,8 @@ async def run_liquidation_cascade_scanner(
         return
 
     while True:
+        if tracker:
+            tracker.tick_started()
         try:
             async with (
                 await psycopg.AsyncConnection.connect(cfg.db_url) as conn,
@@ -262,6 +268,11 @@ async def run_liquidation_cascade_scanner(
         except asyncio.CancelledError:
             raise
         except Exception as exc:
+            if tracker:
+                tracker.tick_failed(exc)
             log.error("liquidation_cascade.scanner_error", err=str(exc))
+        else:
+            if tracker:
+                tracker.tick_succeeded()
 
         await asyncio.sleep(_SCAN_INTERVAL)

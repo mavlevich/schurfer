@@ -531,13 +531,15 @@ async def _write_watch_cache(rdb: Any, ep: episodes.Episode) -> None:
     await rdb.set(_watch_key(ep.episode_id), json.dumps(_watch_payload(ep)), ex=ttl)
 
 
-async def run_early_momentum_scanner(rdb: Any, cfg: Config) -> None:
+async def run_early_momentum_scanner(rdb: Any, cfg: Config, tracker: Any = None) -> None:
     """Scans for accumulation candidates and arms a durable episode for each."""
     if not cfg.db_url:
         log.warning("early_momentum.scanner_disabled", reason="no db_url")
         return
 
     while True:
+        if tracker:
+            tracker.tick_started()
         try:
             async with worker_health.track_tick(
                 rdb,
@@ -547,9 +549,13 @@ async def run_early_momentum_scanner(rdb: Any, cfg: Config) -> None:
                 ttl_seconds=_HEARTBEAT_TTL_SECONDS,
             ) as tick:
                 tick.counters.update(await _scan_once(rdb, cfg))
+            if tracker:
+                tracker.tick_succeeded()
         except asyncio.CancelledError:
             raise
         except Exception as exc:
+            if tracker:
+                tracker.tick_failed(exc)
             log.error("early_momentum.scanner_error", err=str(exc))
 
         await asyncio.sleep(_SCAN_INTERVAL)
@@ -743,7 +749,11 @@ async def _process_candidate(
 
 
 async def run_early_momentum_trigger(
-    exchanges: dict[str, Any], rdb: Any, cfg: Config, broker: Broker | None = None
+    exchanges: dict[str, Any],
+    rdb: Any,
+    cfg: Config,
+    broker: Broker | None = None,
+    tracker: Any = None,
 ) -> None:
     """Reaps overdue episodes, repairs the Redis WATCH cache from Postgres
     (the source of truth), then polls the cache for breakouts to claim and
@@ -757,6 +767,8 @@ async def run_early_momentum_trigger(
         broker = execution_intent.build_broker(mode, exchanges=exchanges)
 
     while True:
+        if tracker:
+            tracker.tick_started()
         try:
             async with worker_health.track_tick(
                 rdb,
@@ -766,9 +778,13 @@ async def run_early_momentum_trigger(
                 ttl_seconds=_HEARTBEAT_TTL_SECONDS,
             ):
                 await _trigger_tick(exchanges, rdb, cfg, broker)
+            if tracker:
+                tracker.tick_succeeded()
         except asyncio.CancelledError:
             raise
         except Exception as exc:
+            if tracker:
+                tracker.tick_failed(exc)
             log.error("early_momentum.trigger_error", err=str(exc))
 
         await asyncio.sleep(_TRIGGER_INTERVAL)
@@ -1382,7 +1398,9 @@ async def _health_monitor_tick(rdb: Any, cfg: Config, *, startup_at: datetime) -
     await _maybe_alert(rdb, cfg, status=status, reasons=reasons)
 
 
-async def run_early_momentum_health_monitor(rdb: Any, cfg: Config, *, startup_at: datetime) -> None:
+async def run_early_momentum_health_monitor(
+    rdb: Any, cfg: Config, *, startup_at: datetime, tracker: Any = None
+) -> None:
     """`startup_at` is passed in (not sampled internally) so the monitor's
     grace-period clock and the HTTP health endpoint's (routers/health.py,
     reading the same timestamp off app.state) can never disagree about
@@ -1392,11 +1410,17 @@ async def run_early_momentum_health_monitor(rdb: Any, cfg: Config, *, startup_at
         return
 
     while True:
+        if tracker:
+            tracker.tick_started()
         try:
             await _health_monitor_tick(rdb, cfg, startup_at=startup_at)
+            if tracker:
+                tracker.tick_succeeded()
         except asyncio.CancelledError:
             raise
         except Exception as exc:
+            if tracker:
+                tracker.tick_failed(exc)
             log.error("early_momentum.health_monitor_error", err=str(exc))
 
         await asyncio.sleep(_HEALTH_MONITOR_INTERVAL_SECONDS)

@@ -43,6 +43,7 @@ from . import decisions, journal, paper, symbols
 
 if TYPE_CHECKING:
     from .config import Config
+    from .supervisor import WorkerReadinessGate
 
 log = structlog.get_logger()
 
@@ -302,6 +303,9 @@ class DisabledBroker:
 
 
 class PaperBroker:
+    def __init__(self, gate: WorkerReadinessGate) -> None:
+        self.gate = gate
+
     """Pure pass-through to the existing paper.py functions -- zero new
     trading logic. Dispatches on intent.claim, never on the presence of
     idempotency_key (which every intent carries, episode or not) -- the
@@ -310,6 +314,10 @@ class PaperBroker:
     mode = TradingMode.PAPER
 
     async def open(self, intent: ExecutionIntent, *, cfg: Config, rdb: Any) -> ExecutionResult:
+        is_open, _ = self.gate.is_open()
+        if not is_open:
+            return _rejected(self.mode, f"worker readiness gate closed: {self.gate.get_reasons()}")
+
         if intent.price is None:
             return _rejected(self.mode, "paper broker requires a resolved price")
 
@@ -378,6 +386,9 @@ _SHADOW_DECISION_NAMESPACE: Final = uuid.UUID("6f1b3f8e-6c1a-4b0a-9e34-9a2f6e6a7
 
 
 class ShadowBroker:
+    def __init__(self, gate: WorkerReadinessGate) -> None:
+        self.gate = gate
+
     """Records ExecutionIntent evidence into app.trade_decisions (the same
     durable Redis-Stream-outbox pump_short's own decisions already use) and
     returns SHADOW_RECORDED -- it never opens a position, real or paper, and
@@ -403,6 +414,10 @@ class ShadowBroker:
     mode = TradingMode.SHADOW
 
     async def open(self, intent: ExecutionIntent, *, cfg: Config, rdb: Any) -> ExecutionResult:
+        is_open, _ = self.gate.is_open()
+        if not is_open:
+            return _rejected(self.mode, f"worker readiness gate closed: {self.gate.get_reasons()}")
+
         if intent.price is None:
             return _rejected(self.mode, "shadow broker requires a resolved price")
         if not cfg.db_url:
@@ -457,16 +472,25 @@ class ShadowBroker:
         return ExecutionResult(mode=self.mode, status=ExecutionStatus.SHADOW_RECORDED)
 
 
-def build_broker(mode: TradingMode, *, exchanges: dict[str, Any]) -> Broker:
+def build_broker(
+    mode: TradingMode,
+    *,
+    exchanges: dict[str, Any],
+    gate: WorkerReadinessGate | None = None,
+) -> Broker:
     """exchanges is accepted now (unused by PAPER/DISABLED/SHADOW) so the
     call signature at every main.py call site doesn't need to change again
     once a live broker needs it."""
     if mode is TradingMode.PAPER:
-        return PaperBroker()
+        if gate is None:
+            raise ValueError("TradingMode.PAPER requires a worker readiness gate")
+        return PaperBroker(gate=gate)
     if mode is TradingMode.DISABLED:
         return DisabledBroker()
     if mode is TradingMode.SHADOW:
-        return ShadowBroker()
+        if gate is None:
+            raise ValueError("TradingMode.SHADOW requires a worker readiness gate")
+        return ShadowBroker(gate=gate)
     raise NotImplementedError(
         f"TradingMode.{mode.name} has no broker implementation yet -- "
         "see execution_intent.py's module docstring for the PR that adds it"

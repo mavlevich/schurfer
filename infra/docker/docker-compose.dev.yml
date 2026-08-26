@@ -602,6 +602,18 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'python3',
+          '-c',
+          "import urllib.request; urllib.request.urlopen('http://localhost:8001/health/workers')",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
   notifier:
     build:
       context: ../../

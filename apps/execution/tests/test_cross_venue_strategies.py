@@ -11,9 +11,10 @@ from schurfer_execution.execution_intent import (
     TradingMode,
 )
 from schurfer_execution.liquidation_cascade import run_liquidation_cascade_scanner
+from schurfer_execution.supervisor import WorkerReadinessGate
 from schurfer_execution.symbols import ResolvedRoute
 
-# broker=PaperBroker() is passed explicitly to every run_liquidation_cascade_scanner
+# broker=PaperBroker(_open_gate()) is passed explicitly to each scanner
 # call below -- these tests exercise the scanner's own candidate-processing logic,
 # not execution_intent.resolve_mode's cfg.auto_trade/dry_run/*_mode ceiling (that
 # has its own dedicated tests in test_execution_intent.py). A real PaperBroker still
@@ -25,6 +26,10 @@ from schurfer_execution.symbols import ResolvedRoute
 # (the v3 episode-lifecycle rewrite needs a much larger, dedicated mocking
 # surface -- episodes.py's create/claim/reap/list_actionable/etc -- that
 # doesn't belong mixed into this file's cross-venue routing focus).
+
+
+def _open_gate() -> WorkerReadinessGate:
+    return WorkerReadinessGate(set())
 
 
 def _market_exchange() -> MagicMock:
@@ -121,7 +126,7 @@ async def test_liquidation_cascade_uses_target_ticker_and_exact_symbol() -> None
         pytest.raises(asyncio.CancelledError),
     ):
         await run_liquidation_cascade_scanner(
-            {"bybit": exchange}, MagicMock(), cfg, broker=PaperBroker()
+            {"bybit": exchange}, MagicMock(), cfg, broker=PaperBroker(_open_gate())
         )
 
     exchange.fetch_ticker.assert_awaited_once_with("BTC/USDT:USDT")
@@ -173,7 +178,7 @@ async def _run_scanner_once(
         pytest.raises(asyncio.CancelledError),
     ):
         await run_liquidation_cascade_scanner(
-            {"bybit": exchange}, MagicMock(), cfg, broker=PaperBroker()
+            {"bybit": exchange}, MagicMock(), cfg, broker=PaperBroker(_open_gate())
         )
     return open_paper
 

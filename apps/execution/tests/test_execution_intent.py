@@ -29,6 +29,7 @@ from schurfer_execution.execution_intent import (
     resolve_mode,
 )
 from schurfer_execution.journal import OpenTradeOutcome
+from schurfer_execution.supervisor import WorkerReadinessGate
 from schurfer_execution.symbols import ExecutionInstrument
 
 
@@ -61,6 +62,10 @@ def _instrument() -> ExecutionInstrument:
         settle="USDT",
         market_type="swap",
     )
+
+
+def _open_gate() -> WorkerReadinessGate:
+    return WorkerReadinessGate(set())
 
 
 def _intent(**overrides: Any) -> ExecutionIntent:
@@ -271,7 +276,13 @@ async def test_disabled_broker_always_rejects_without_touching_rdb() -> None:
 
 
 def test_build_broker_returns_paper_broker() -> None:
-    assert isinstance(build_broker(TradingMode.PAPER, exchanges={}), PaperBroker)
+    assert isinstance(build_broker(TradingMode.PAPER, exchanges={}, gate=_open_gate()), PaperBroker)
+
+
+@pytest.mark.parametrize("mode", [TradingMode.PAPER, TradingMode.SHADOW])
+def test_build_broker_rejects_entry_capable_mode_without_gate(mode: TradingMode) -> None:
+    with pytest.raises(ValueError, match="readiness gate"):
+        build_broker(mode, exchanges={})
 
 
 def test_build_broker_returns_disabled_broker() -> None:
@@ -285,7 +296,9 @@ def test_build_broker_raises_for_unimplemented_modes(mode: TradingMode) -> None:
 
 
 def test_build_broker_shadow_returns_shadow_broker() -> None:
-    assert isinstance(build_broker(TradingMode.SHADOW, exchanges={}), ShadowBroker)
+    assert isinstance(
+        build_broker(TradingMode.SHADOW, exchanges={}, gate=_open_gate()), ShadowBroker
+    )
 
 
 # ---- PaperBroker: non-episode path (pump_short / liquidation_cascade shape) ----
@@ -297,7 +310,7 @@ async def test_paper_broker_dispatches_to_open_paper_with_full_kwargs() -> None:
         "schurfer_execution.execution_intent.paper.open_paper",
         AsyncMock(return_value=42),
     ) as open_paper:
-        result = await PaperBroker().open(intent, cfg=_cfg(), rdb=MagicMock())
+        result = await PaperBroker(_open_gate()).open(intent, cfg=_cfg(), rdb=MagicMock())
 
     open_paper.assert_awaited_once()
     kw = open_paper.call_args.kwargs
@@ -314,11 +327,23 @@ async def test_paper_broker_dispatches_to_open_paper_with_full_kwargs() -> None:
     assert result.committed is True
 
 
+async def test_paper_broker_rejects_before_side_effect_when_gate_is_closed() -> None:
+    gate = WorkerReadinessGate({"critical"})
+    with patch("schurfer_execution.execution_intent.paper.open_paper", AsyncMock()) as open_paper:
+        result = await PaperBroker(gate).open(_intent(), cfg=_cfg(), rdb=MagicMock())
+
+    assert result.status == ExecutionStatus.REJECTED
+    assert "readiness gate closed" in (result.reason or "")
+    open_paper.assert_not_awaited()
+
+
 async def test_paper_broker_rejects_when_price_is_none() -> None:
     with patch(
         "schurfer_execution.execution_intent.paper.open_paper", new_callable=AsyncMock
     ) as open_paper:
-        result = await PaperBroker().open(_intent(price=None), cfg=_cfg(), rdb=MagicMock())
+        result = await PaperBroker(_open_gate()).open(
+            _intent(price=None), cfg=_cfg(), rdb=MagicMock()
+        )
 
     open_paper.assert_not_awaited()
     assert result.status == ExecutionStatus.REJECTED
@@ -335,7 +360,7 @@ async def test_paper_broker_redis_write_matches_direct_open_paper_call(
     rdb.set = AsyncMock()
     cfg = _cfg(db_url=None)
 
-    result = await PaperBroker().open(_intent(), cfg=cfg, rdb=rdb)
+    result = await PaperBroker(_open_gate()).open(_intent(), cfg=cfg, rdb=rdb)
 
     rdb.set.assert_called_once()
     key, payload_json = rdb.set.call_args.args
@@ -376,7 +401,9 @@ async def test_paper_broker_episode_dispatches_to_open_paper_for_episode() -> No
         "schurfer_execution.execution_intent.paper.open_paper_for_episode",
         AsyncMock(return_value=outcome),
     ) as open_paper_for_episode:
-        result = await PaperBroker().open(intent, cfg=_cfg(dry_run=True), rdb=MagicMock())
+        result = await PaperBroker(_open_gate()).open(
+            intent, cfg=_cfg(dry_run=True), rdb=MagicMock()
+        )
 
     open_paper_for_episode.assert_awaited_once()
     kw = open_paper_for_episode.call_args.kwargs
@@ -393,7 +420,7 @@ async def test_paper_broker_episode_rejects_when_exit_params_missing() -> None:
     with patch(
         "schurfer_execution.execution_intent.paper.open_paper_for_episode", new_callable=AsyncMock
     ) as open_paper_for_episode:
-        result = await PaperBroker().open(
+        result = await PaperBroker(_open_gate()).open(
             _episode_intent(exit_params=None), cfg=_cfg(dry_run=True), rdb=MagicMock()
         )
 
@@ -405,7 +432,7 @@ async def test_paper_broker_episode_rejects_when_db_url_missing() -> None:
     with patch(
         "schurfer_execution.execution_intent.paper.open_paper_for_episode", new_callable=AsyncMock
     ) as open_paper_for_episode:
-        result = await PaperBroker().open(
+        result = await PaperBroker(_open_gate()).open(
             _episode_intent(), cfg=_cfg(dry_run=True, db_url=None), rdb=MagicMock()
         )
 
@@ -423,7 +450,7 @@ async def test_paper_broker_episode_idempotency_collision_keeps_claim_valid() ->
         "schurfer_execution.execution_intent.paper.open_paper_for_episode",
         AsyncMock(return_value=outcome),
     ):
-        result = await PaperBroker().open(
+        result = await PaperBroker(_open_gate()).open(
             _episode_intent(), cfg=_cfg(dry_run=True), rdb=MagicMock()
         )
 
@@ -439,7 +466,7 @@ async def test_paper_broker_episode_invalid_claim_sets_claim_valid_false() -> No
         "schurfer_execution.execution_intent.paper.open_paper_for_episode",
         AsyncMock(return_value=outcome),
     ):
-        result = await PaperBroker().open(
+        result = await PaperBroker(_open_gate()).open(
             _episode_intent(), cfg=_cfg(dry_run=True), rdb=MagicMock()
         )
 
@@ -478,7 +505,7 @@ async def test_shadow_broker_writes_decision_with_full_kwargs() -> None:
             new_callable=AsyncMock,
         ) as write_decision,
     ):
-        result = await ShadowBroker().open(intent, cfg=_cfg(), rdb=MagicMock())
+        result = await ShadowBroker(_open_gate()).open(intent, cfg=_cfg(), rdb=MagicMock())
 
     ensure_strategy.assert_awaited_once_with(_cfg().db_url, name="liquidation_cascade", version="2")
     write_decision.assert_awaited_once()
@@ -514,8 +541,8 @@ async def test_shadow_broker_decision_id_is_deterministic_from_idempotency_key()
             new_callable=AsyncMock,
         ) as write_decision,
     ):
-        await ShadowBroker().open(intent_a, cfg=_cfg(), rdb=MagicMock())
-        await ShadowBroker().open(intent_b, cfg=_cfg(), rdb=MagicMock())
+        await ShadowBroker(_open_gate()).open(intent_a, cfg=_cfg(), rdb=MagicMock())
+        await ShadowBroker(_open_gate()).open(intent_b, cfg=_cfg(), rdb=MagicMock())
 
     first_id = write_decision.call_args_list[0].kwargs["decision_id"]
     second_id = write_decision.call_args_list[1].kwargs["decision_id"]
@@ -532,7 +559,7 @@ async def test_shadow_broker_decision_id_is_deterministic_from_idempotency_key()
             new_callable=AsyncMock,
         ) as write_decision_other,
     ):
-        await ShadowBroker().open(other_id_intent, cfg=_cfg(), rdb=MagicMock())
+        await ShadowBroker(_open_gate()).open(other_id_intent, cfg=_cfg(), rdb=MagicMock())
     assert write_decision_other.call_args.kwargs["decision_id"] != first_id
 
 
@@ -559,8 +586,8 @@ async def test_shadow_broker_decision_id_differs_across_strategies_for_same_key(
             new_callable=AsyncMock,
         ) as write_decision,
     ):
-        await ShadowBroker().open(intent_a, cfg=_cfg(), rdb=MagicMock())
-        await ShadowBroker().open(intent_b, cfg=_cfg(), rdb=MagicMock())
+        await ShadowBroker(_open_gate()).open(intent_a, cfg=_cfg(), rdb=MagicMock())
+        await ShadowBroker(_open_gate()).open(intent_b, cfg=_cfg(), rdb=MagicMock())
 
     ids = [call.kwargs["decision_id"] for call in write_decision.call_args_list]
     assert ids[0] != ids[1]
@@ -582,7 +609,9 @@ async def test_shadow_broker_rejects_and_does_not_write_when_strategy_id_is_none
             new_callable=AsyncMock,
         ) as write_decision,
     ):
-        result = await ShadowBroker().open(_shadow_intent(), cfg=_cfg(), rdb=MagicMock())
+        result = await ShadowBroker(_open_gate()).open(
+            _shadow_intent(), cfg=_cfg(), rdb=MagicMock()
+        )
 
     write_decision.assert_not_awaited()
     assert result.status == ExecutionStatus.REJECTED
@@ -592,7 +621,9 @@ async def test_shadow_broker_rejects_when_price_is_none() -> None:
     with patch(
         "schurfer_execution.execution_intent.decisions.write_decision", new_callable=AsyncMock
     ) as write_decision:
-        result = await ShadowBroker().open(_shadow_intent(price=None), cfg=_cfg(), rdb=MagicMock())
+        result = await ShadowBroker(_open_gate()).open(
+            _shadow_intent(price=None), cfg=_cfg(), rdb=MagicMock()
+        )
 
     write_decision.assert_not_awaited()
     assert result.status == ExecutionStatus.REJECTED
@@ -602,7 +633,9 @@ async def test_shadow_broker_rejects_when_db_url_missing() -> None:
     with patch(
         "schurfer_execution.execution_intent.decisions.write_decision", new_callable=AsyncMock
     ) as write_decision:
-        result = await ShadowBroker().open(_shadow_intent(), cfg=_cfg(db_url=None), rdb=MagicMock())
+        result = await ShadowBroker(_open_gate()).open(
+            _shadow_intent(), cfg=_cfg(db_url=None), rdb=MagicMock()
+        )
 
     write_decision.assert_not_awaited()
     assert result.status == ExecutionStatus.REJECTED
