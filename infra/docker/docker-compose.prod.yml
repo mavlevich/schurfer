@@ -352,7 +352,13 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    restart: 'no'
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', '/liquidation-capture', 'healthcheck']
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 90s
     mem_limit: 128m
     memswap_limit: 128m
     cpus: 0.35
@@ -381,7 +387,13 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    restart: 'no'
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', '/liquidation-capture', 'healthcheck']
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 90s
     mem_limit: 128m
     memswap_limit: 128m
     cpus: 0.35
