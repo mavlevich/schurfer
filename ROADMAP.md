@@ -2894,6 +2894,10 @@ net performance suitable for tax or risk accounting.
 
 ## Tech debt and DX (opportunistic)
 
+- **Orphan trade quarantine:** Detect open journal trades that lack exact exchange
+  ownership or complete monitoring state. Close entry admission and require verified
+  exchange/order evidence before changing the ledger; age or missing Redis keys alone
+  must never synthesize a close.
 - **Execution Engine Resilience**: Add a `try...except` "bulletproof vest" inside the individual trade loop for `monitor.py` and `paper.py`. This ensures that if one legacy or malformed position raises an exception (like missing keys), it doesn't crash the entire monitoring cycle and block other healthy trades from closing.
 
 - Pre-push hook: run `make verify` as a pre-push stage so broken code does not reach

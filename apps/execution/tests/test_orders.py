@@ -826,25 +826,32 @@ class TestPreFlightDurability:
         "schurfer_execution.orders.fetch_margin_balance",
         return_value=[{"exchange": "bingx", "free": 1000.0, "used": 0.0, "total": 1000.0}],
     )
-    async def test_marks_attempt_failed_and_reraises_when_exchange_call_errors(
+    async def test_ambiguous_exchange_error_marks_unknown_and_closes_gate(
         self, _mock_bal: MagicMock, _mock_pos: MagicMock
     ) -> None:
         cfg = MagicMock(db_url="postgresql://x")
         ex = self._confirmed_exchange()
         ex.create_market_order = AsyncMock(side_effect=RuntimeError("exchange down"))
+        gate = _open_gate()
         with (
             patch(
                 "schurfer_execution.orders.order_attempts.create_attempt",
                 AsyncMock(return_value=5),
             ),
             patch(
-                "schurfer_execution.orders.order_attempts.mark_failed", AsyncMock()
-            ) as mock_failed,
-            pytest.raises(RuntimeError, match="exchange down"),
+                "schurfer_execution.orders.order_attempts.mark_submission_unknown",
+                AsyncMock(),
+            ) as mock_unknown,
         ):
-            await place_order(**_kwargs(exchanges={"bingx": ex}, cfg=cfg))
+            result = await place_order(
+                **_kwargs(exchanges={"bingx": ex}, cfg=cfg, worker_gate=gate)
+            )
 
-        mock_failed.assert_awaited_once_with("postgresql://x", 5, error="exchange down")
+        assert not result["allowed"]
+        assert "submission_unknown" in result["reason"]
+        mock_unknown.assert_awaited_once_with("postgresql://x", 5, error="exchange down")
+        assert not gate.is_open()[0]
+        assert gate.get_reasons() == ["submission_unknown"]
 
     @patch("schurfer_execution.orders.fetch_positions", return_value=([], set()))
     @patch(

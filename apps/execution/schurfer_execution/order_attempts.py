@@ -31,13 +31,16 @@ STATUS_PENDING = "pending"
 STATUS_ACCEPTED = "accepted"
 STATUS_COMPLETED = "completed"
 STATUS_FAILED = "failed"
+STATUS_SUBMISSION_UNKNOWN = "submission_unknown"
+STATUS_NO_FILL = "no_fill"
+STATUS_MANUAL_REQUIRED = "manual_required"
 
 _INSERT = """
 INSERT INTO app.live_order_attempts (
-    client_order_id, exchange, base, symbol, side, size_usd, leverage,
-    contract_size, exit_params, setup_context, status
+    client_order_id, exchange, base, symbol, native_market_id, market_type,
+    side, size_usd, requested_amount, leverage, contract_size, exit_params, setup_context, status
 ) VALUES (
-    %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s
+    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s
 )
 RETURNING id
 """
@@ -60,6 +63,26 @@ SET status = %s, last_error = %s, updated_at = now()
 WHERE id = %s
 """
 
+_MARK_SUBMISSION_UNKNOWN = """
+UPDATE app.live_order_attempts
+SET status = %s, last_error = %s, updated_at = now()
+WHERE id = %s
+"""
+
+_LINK_COMPLETED_TRADE = """
+UPDATE app.live_order_attempts
+SET status = %s,
+    trade_id = %s,
+    filled_amount = COALESCE(%s, filled_amount),
+    reconciliation_timestamp = now(),
+    reconciliation_error = NULL,
+    updated_at = now()
+WHERE exchange = %s
+  AND order_id = %s
+  AND status IN ('accepted', 'completed', 'submission_unknown')
+RETURNING id
+"""
+
 
 async def create_attempt(
     db_url: str,
@@ -68,8 +91,11 @@ async def create_attempt(
     exchange: str,
     base: str,
     symbol: str,
+    native_market_id: str | None = None,
+    market_type: str | None = None,
     side: str,
     size_usd: float,
+    requested_amount: float | None = None,
     leverage: int,
     contract_size: float | None,
     exit_params: dict[str, float],
@@ -89,8 +115,11 @@ async def create_attempt(
                     exchange,
                     base.upper(),
                     symbol,
+                    native_market_id,
+                    market_type,
                     side,
                     size_usd,
+                    requested_amount,
                     leverage,
                     contract_size,
                     json.dumps(exit_params),
@@ -143,11 +172,72 @@ async def mark_completed(
 
 
 async def mark_failed(db_url: str, attempt_id: int, *, error: str) -> None:
-    """The exchange call itself never succeeded (rejected, timed out,
-    raised) -- no real position exists, nothing to reconcile."""
+    """Record an explicit exchange rejection or a pre-submission failure.
+
+    Ambiguous network errors must use :func:`mark_submission_unknown`; they
+    cannot safely be treated as proof that no real order exists.
+    """
     try:
         aconn = await psycopg.AsyncConnection.connect(db_url)
         async with aconn, aconn.cursor() as cur:
             await cur.execute(_MARK_FAILED, (STATUS_FAILED, error[:1000], attempt_id))
     except Exception as exc:
         log.error("order_attempts.mark_failed_failed", attempt_id=attempt_id, err=str(exc))
+
+
+async def mark_submission_unknown(db_url: str, attempt_id: int, *, error: str) -> None:
+    """The exchange call timed out or failed to return a determinable result.
+    The order might exist on the exchange, must be reconciled later."""
+    try:
+        aconn = await psycopg.AsyncConnection.connect(db_url)
+        async with aconn, aconn.cursor() as cur:
+            await cur.execute(
+                _MARK_SUBMISSION_UNKNOWN,
+                (STATUS_SUBMISSION_UNKNOWN, error[:1000], attempt_id),
+            )
+    except Exception as exc:
+        log.error(
+            "order_attempts.mark_submission_unknown_failed", attempt_id=attempt_id, err=str(exc)
+        )
+
+
+async def link_completed_trade(
+    db_url: str,
+    *,
+    exchange: str,
+    order_id: str,
+    trade_id: int,
+    filled_amount: float | None,
+) -> bool:
+    """Durably link an incident-recovered open to its exact pre-flight attempt."""
+    try:
+        aconn = await psycopg.AsyncConnection.connect(db_url)
+        async with aconn, aconn.cursor() as cur:
+            await cur.execute(
+                _LINK_COMPLETED_TRADE,
+                (
+                    STATUS_COMPLETED,
+                    trade_id,
+                    filled_amount,
+                    exchange,
+                    order_id,
+                ),
+            )
+            row = await cur.fetchone()
+            if row is None:
+                log.warning(
+                    "order_attempts.link_completed_trade_missing",
+                    exchange=exchange,
+                    order_id=order_id,
+                    trade_id=trade_id,
+                )
+            return True
+    except Exception as exc:
+        log.error(
+            "order_attempts.link_completed_trade_failed",
+            exchange=exchange,
+            order_id=order_id,
+            trade_id=trade_id,
+            err=str(exc),
+        )
+        return False
