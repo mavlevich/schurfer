@@ -14,19 +14,20 @@ async def run():
     engine = create_async_engine(url)
     try:
         async with engine.connect() as conn:
-            print("Analyzing Pump Seasonality (Time-of-Day / Day-of-Week)...")
+            print("Analyzing Pump Seasonality using robust statistics (Medians)...")
             q = """
             SELECT
                 EXTRACT(HOUR FROM first_seen_at) as hour_utc,
                 EXTRACT(DOW FROM first_seen_at) as dow,
-                peak_pct
+                peak_pct,
+                base
             FROM app.pump_events
             WHERE first_seen_at IS NOT NULL
             """
             res = await conn.execute(text(q))
             rows = res.fetchall()
 
-            df = pd.DataFrame(rows, columns=["hour_utc", "dow", "peak_pct"])
+            df = pd.DataFrame(rows, columns=["hour_utc", "dow", "peak_pct", "base"])
             if df.empty:
                 return print("No pump data found.")
 
@@ -46,39 +47,47 @@ async def run():
             print("\n=== Most Profitable Hours (UTC) ===")
             hourly = (
                 df.groupby("hour_utc")
-                .agg(count=("peak_pct", "count"), avg_peak=("peak_pct", "mean"))
+                .agg(
+                    count=("peak_pct", "count"),
+                    unique_assets=("base", "nunique"),
+                    median_peak=("peak_pct", "median"),
+                )
                 .reset_index()
             )
 
             best_hours = (
-                hourly[hourly["count"] > 10].sort_values("avg_peak", ascending=False).head(5)
+                hourly[hourly["count"] > 10].sort_values("median_peak", ascending=False).head(5)
             )
             print("🕒 TOP-5 BEST hours:")
             for _, r in best_hours.iterrows():
                 print(
-                    f"  {int(r['hour_utc']):02d}:00 UTC -> Avg Peak: {r['avg_peak']:.1f}% (Count: {int(r['count'])})"
+                    f"  {int(r['hour_utc']):02d}:00 UTC -> Median Peak: {r['median_peak']:.1f}% (Assets: {int(r['unique_assets'])})"
                 )
 
             worst_hours = (
-                hourly[hourly["count"] > 10].sort_values("avg_peak", ascending=True).head(3)
+                hourly[hourly["count"] > 10].sort_values("median_peak", ascending=True).head(3)
             )
             print("\n🕒 TOP-3 WORST hours (Avoid trading):")
             for _, r in worst_hours.iterrows():
                 print(
-                    f"  {int(r['hour_utc']):02d}:00 UTC -> Avg Peak: {r['avg_peak']:.1f}% (Count: {int(r['count'])})"
+                    f"  {int(r['hour_utc']):02d}:00 UTC -> Median Peak: {r['median_peak']:.1f}% (Assets: {int(r['unique_assets'])})"
                 )
 
             print("\n=== Most Profitable Days of the Week ===")
             daily = (
                 df.groupby("day_name")
-                .agg(count=("peak_pct", "count"), avg_peak=("peak_pct", "mean"))
+                .agg(
+                    count=("peak_pct", "count"),
+                    unique_assets=("base", "nunique"),
+                    median_peak=("peak_pct", "median"),
+                )
                 .reset_index()
-                .sort_values("avg_peak", ascending=False)
+                .sort_values("median_peak", ascending=False)
             )
 
             for _, r in daily.iterrows():
                 print(
-                    f"📅 {r['day_name']:<12} -> Avg Peak: {r['avg_peak']:.1f}% (Count: {int(r['count'])})"
+                    f"📅 {r['day_name']:<12} -> Median Peak: {r['median_peak']:.1f}% (Assets: {int(r['unique_assets'])})"
                 )
 
     finally:

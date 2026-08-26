@@ -1,5 +1,4 @@
 # ruff: noqa
-# ruff: noqa
 import json
 from datetime import datetime
 from pathlib import Path

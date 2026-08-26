@@ -14,18 +14,22 @@ async def run():
     engine = create_async_engine(url)
     try:
         async with engine.connect() as conn:
-            print("Analyzing mean reversion after major liquidation cascades...")
+            print(
+                "Analyzing mean reversion without join multiplication and adding trading costs..."
+            )
+            # Filter linear only, Bybit only, use strict grouping
             q = """
             WITH cascade_minutes AS (
                 SELECT
                     date_trunc('minute', event_at) as bucket,
-                    exchange,
                     native_market_id as symbol,
                     position_side,
                     SUM(estimated_liquidation_notional) as cascade_vol
                 FROM timeseries.liquidation_events
-                WHERE position_side IN ('LONG', 'SHORT') AND exchange = 'bybit'
-                GROUP BY 1, 2, 3, 4
+                WHERE position_side IN ('long', 'short')
+                  AND exchange = 'bybit'
+                  AND market_type = 'linear'
+                GROUP BY 1, 2, 3
                 HAVING SUM(estimated_liquidation_notional) > 1000
             ),
             top_cascades AS (
@@ -35,49 +39,82 @@ async def run():
             )
             SELECT
                 c.bucket, c.symbol, c.position_side, c.cascade_vol,
-                b0.close_price as price_T0,
-                b1.close_price as price_T1,
-                b3.close_price as price_T3,
-                b5.close_price as price_T5
+                b1.open_price as entry_T1,
+                b2.close_price as close_T2,
+                b4.close_price as close_T4,
+                b6.close_price as close_T6
             FROM top_cascades c
-            JOIN timeseries.bybit_momentum_bars_1m b0
-                ON b0.symbol = c.symbol AND b0.bucket_start = c.bucket
-            LEFT JOIN timeseries.bybit_momentum_bars_1m b1
-                ON b1.symbol = c.symbol AND b1.bucket_start = c.bucket + INTERVAL '1 minute'
-            LEFT JOIN timeseries.bybit_momentum_bars_1m b3
-                ON b3.symbol = c.symbol AND b3.bucket_start = c.bucket + INTERVAL '3 minutes'
-            LEFT JOIN timeseries.bybit_momentum_bars_1m b5
-                ON b5.symbol = c.symbol AND b5.bucket_start = c.bucket + INTERVAL '5 minutes';
+            JOIN timeseries.bybit_momentum_bars_1m b1
+                ON b1.symbol = c.symbol AND b1.market_type = 'linear' AND b1.bucket_start = c.bucket + INTERVAL '1 minute'
+            LEFT JOIN timeseries.bybit_momentum_bars_1m b2
+                ON b2.symbol = c.symbol AND b2.market_type = 'linear' AND b2.bucket_start = c.bucket + INTERVAL '2 minutes'
+            LEFT JOIN timeseries.bybit_momentum_bars_1m b4
+                ON b4.symbol = c.symbol AND b4.market_type = 'linear' AND b4.bucket_start = c.bucket + INTERVAL '4 minutes'
+            LEFT JOIN timeseries.bybit_momentum_bars_1m b6
+                ON b6.symbol = c.symbol AND b6.market_type = 'linear' AND b6.bucket_start = c.bucket + INTERVAL '6 minutes';
             """
             res = await conn.execute(text(q))
             rows = res.fetchall()
 
             df = pd.DataFrame(
-                rows, columns=["bucket", "symbol", "side", "vol", "T0", "T1", "T3", "T5"]
+                rows,
+                columns=[
+                    "bucket",
+                    "symbol",
+                    "side",
+                    "vol",
+                    "entry_T1",
+                    "close_T2",
+                    "close_T4",
+                    "close_T6",
+                ],
             )
             if df.empty:
-                return print("No data. Cascades > $1000 likely not present yet.")
+                return print("No data.")
 
-            df["ret_1m"] = (df["T1"] - df["T0"]) / df["T0"] * 100
-            df["ret_3m"] = (df["T3"] - df["T0"]) / df["T0"] * 100
-            df["ret_5m"] = (df["T5"] - df["T0"]) / df["T0"] * 100
+            df = df.drop_duplicates(subset=["bucket", "symbol", "side"])
 
-            df_shorts = df[df["side"] == "SHORT"]
-            df_longs = df[df["side"] == "LONG"]
+            # Add trading costs: ~10 bps total for taker-in taker-out + slippage
+            TAKER_FEE_PCT = 0.10
 
-            print(f"\nFound large cascades on Bybit (>$1000): {len(df)}")
+            df["ret_1m"] = (
+                (df["close_T2"] - df["entry_T1"]) / df["entry_T1"] * 100
+            ) - TAKER_FEE_PCT
+            df["ret_3m"] = (
+                (df["close_T4"] - df["entry_T1"]) / df["entry_T1"] * 100
+            ) - TAKER_FEE_PCT
+            df["ret_5m"] = (
+                (df["close_T6"] - df["entry_T1"]) / df["entry_T1"] * 100
+            ) - TAKER_FEE_PCT
+
+            # For SHORT cascades (Sells), we go LONG, expecting positive return
+            # For LONG cascades (Buys), we go SHORT, expecting negative return -> we invert it to positive PnL
+            df.loc[df["side"] == "long", "ret_1m"] *= -1
+            df.loc[df["side"] == "long", "ret_3m"] *= -1
+            df.loc[df["side"] == "long", "ret_5m"] *= -1
+
+            df_shorts = df[df["side"] == "short"]
+            df_longs = df[df["side"] == "long"]
+
+            print(f"\nFound large unique cascades on Bybit (>$1000): {len(df)}")
 
             if not df_shorts.empty:
-                print("\n=== SHORT Liquidations (Buys) -> Expecting price retrace DOWN (-%) ===")
-                print(f"Avg change after 1m: {df_shorts['ret_1m'].mean():.3f}%")
-                print(f"Avg change after 3m: {df_shorts['ret_3m'].mean():.3f}%")
-                print(f"Avg change after 5m: {df_shorts['ret_5m'].mean():.3f}%")
+                print("\n=== SHORT Liquidations -> Reversion LONG Trade ===")
+                print(
+                    f"Net Executable Median Return (after {TAKER_FEE_PCT}% fees) 1m: {df_shorts['ret_1m'].median():.3f}%"
+                )
+                print(
+                    f"Net Executable Median Return (after {TAKER_FEE_PCT}% fees) 3m: {df_shorts['ret_3m'].median():.3f}%"
+                )
 
             if not df_longs.empty:
-                print("\n=== LONG Liquidations (Sells) -> Expecting price retrace UP (+%) ===")
-                print(f"Avg change after 1m: {df_longs['ret_1m'].mean():.3f}%")
-                print(f"Avg change after 3m: {df_longs['ret_3m'].mean():.3f}%")
-                print(f"Avg change after 5m: {df_longs['ret_5m'].mean():.3f}%")
+                print("\n=== LONG Liquidations -> Reversion SHORT Trade ===")
+                print(
+                    f"Net Executable Median Return (after {TAKER_FEE_PCT}% fees) 1m: {df_longs['ret_1m'].median():.3f}%"
+                )
+                print(
+                    f"Net Executable Median Return (after {TAKER_FEE_PCT}% fees) 3m: {df_longs['ret_3m'].median():.3f}%"
+                )
 
     finally:
         await engine.dispose()

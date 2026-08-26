@@ -14,63 +14,56 @@ async def run():
     engine = create_async_engine(url)
     try:
         async with engine.connect() as conn:
-            print("Extracting pumps...")
-            q = "SELECT id, base, peak_pct, exchanges FROM app.pump_events WHERE exchanges IS NOT NULL;"
+            print("Extracting independent pump detections from event sources...")
+            q = """
+            SELECT
+                event_id,
+                MIN(first_seen_at) FILTER (WHERE exchange = 'binance') as binance_ts,
+                MIN(first_seen_at) FILTER (WHERE exchange = 'bybit') as bybit_ts
+            FROM app.pump_event_sources
+            GROUP BY event_id
+            HAVING MIN(first_seen_at) FILTER (WHERE exchange = 'binance') IS NOT NULL
+               AND MIN(first_seen_at) FILTER (WHERE exchange = 'bybit') IS NOT NULL;
+            """
             res = await conn.execute(text(q))
             rows = res.fetchall()
 
             data = []
             for r in rows:
-                exchanges = r[3]
-                if not isinstance(exchanges, list):
-                    continue
-
-                binance_ts = None
-                bybit_ts = None
-
-                for ex in exchanges:
-                    name = ex.get("exchange")
-                    ts = ex.get("ticker_timestamp_ms") or ex.get("observed_at_ms")
-                    if not ts:
-                        continue
-
-                    if name == "binance":
-                        binance_ts = ts
-                    elif name == "bybit":
-                        bybit_ts = ts
-
-                if binance_ts and bybit_ts:
-                    data.append(
-                        {
-                            "base": r[1],
-                            "peak_pct": r[2],
-                            "binance_ts": binance_ts,
-                            "bybit_ts": bybit_ts,
-                            "lag_ms": bybit_ts - binance_ts,
-                        }
-                    )
+                event_id, binance_ts, bybit_ts = r
+                lag_ms = (bybit_ts - binance_ts).total_seconds() * 1000
+                data.append(
+                    {
+                        "event_id": event_id,
+                        "binance_ts": binance_ts,
+                        "bybit_ts": bybit_ts,
+                        "lag_ms": lag_ms,
+                    }
+                )
 
             df = pd.DataFrame(data)
             if df.empty:
-                return print("No joint Binance + Bybit pumps found.")
+                return print("No joint Binance + Bybit pumps found in sources.")
 
             print(f"Found {len(df)} joint pumps.")
 
             df_lead_binance = df[df["lag_ms"] > 0]
             df_lead_bybit = df[df["lag_ms"] < 0]
 
-            print("\n=== Lead-Lag Statistics (Binance vs Bybit) ===")
+            print("\n=== Scanner Lead-Lag Statistics (Binance vs Bybit) ===")
             print(
-                f"Binance led Bybit in {len(df_lead_binance)} cases ({len(df_lead_binance)/len(df)*100:.1f}%)"
+                f"Binance detected first in {len(df_lead_binance)} cases ({len(df_lead_binance)/len(df)*100:.1f}%)"
             )
             print(
-                f"Bybit led Binance in {len(df_lead_bybit)} cases ({len(df_lead_bybit)/len(df)*100:.1f}%)"
+                f"Bybit detected first in {len(df_lead_bybit)} cases ({len(df_lead_bybit)/len(df)*100:.1f}%)"
             )
 
             if not df_lead_binance.empty:
                 print(f"Average Binance lead: {df_lead_binance['lag_ms'].mean():.0f} ms")
+                print(f"Median Binance lead: {df_lead_binance['lag_ms'].median():.0f} ms")
             if not df_lead_bybit.empty:
                 print(f"Average Bybit lead: {abs(df_lead_bybit['lag_ms'].mean()):.0f} ms")
+                print(f"Median Bybit lead: {abs(df_lead_bybit['lag_ms'].median()):.0f} ms")
 
     finally:
         await engine.dispose()

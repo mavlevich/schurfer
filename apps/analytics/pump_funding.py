@@ -14,41 +14,53 @@ async def run():
     engine = create_async_engine(url)
     try:
         async with engine.connect() as conn:
-            print("Analyzing Funding Rates (Short Squeezes)...")
+            print("Analyzing Funding Rates using STRICT PRIOR snapshots (Quant v2.1)...")
             q = """
-            SELECT
-                p.id,
-                p.base,
-                p.peak_pct,
-                f.rate as funding_rate,
-                f.exchange as funding_exchange
-            FROM app.pump_events p
-            JOIN app.funding_rate_snapshots f ON f.event_id = p.id
-            WHERE f.rate IS NOT NULL
+            WITH ranked_funding AS (
+                SELECT
+                    p.id,
+                    p.base,
+                    p.peak_pct,
+                    f.rate as funding_rate,
+                    f.exchange as funding_exchange,
+                    f.recorded_at,
+                    ROW_NUMBER() OVER (PARTITION BY p.id, f.exchange ORDER BY f.recorded_at DESC) as rn
+                FROM app.pump_events p
+                JOIN app.funding_rate_snapshots f
+                    ON f.event_id = p.id
+                    AND f.recorded_at <= p.first_seen_at
+                    AND f.recorded_at >= p.first_seen_at - INTERVAL '4 hours'
+                WHERE f.rate IS NOT NULL
+            )
+            SELECT id, base, peak_pct, funding_rate, funding_exchange
+            FROM ranked_funding
+            WHERE rn = 1;
             """
             res = await conn.execute(text(q))
             rows = res.fetchall()
 
             df = pd.DataFrame(rows, columns=["id", "base", "peak_pct", "funding_rate", "exchange"])
             if df.empty:
-                return print("No funding data linked to pumps.")
+                return print(
+                    "No valid prior funding data found (all snapshots were recorded too late or missing)."
+                )
 
             df_grouped = df.groupby(["id", "base", "peak_pct"])["funding_rate"].mean().reset_index()
 
-            print(f"\nFound pumps with funding snapshots: {len(df_grouped)}")
+            print(f"\nFound pumps with strictly valid prior funding snapshots: {len(df_grouped)}")
 
             df_negative = df_grouped[df_grouped["funding_rate"] < 0]
             df_positive = df_grouped[df_grouped["funding_rate"] >= 0]
 
-            print("\n=== Profitability by Funding Context ===")
+            print("\n=== Profitability by Prior Funding Context ===")
 
             if not df_negative.empty:
                 print(f"🔴 Negative Funding (Short Squeezes): {len(df_negative)} cases")
-                print(f"   -> Avg Peak: {df_negative['peak_pct'].mean():.2f}%")
+                print(f"   -> Median Peak: {df_negative['peak_pct'].median():.2f}%")
 
             if not df_positive.empty:
                 print(f"🟢 Positive/Neutral Funding: {len(df_positive)} cases")
-                print(f"   -> Avg Peak: {df_positive['peak_pct'].mean():.2f}%")
+                print(f"   -> Median Peak: {df_positive['peak_pct'].median():.2f}%")
 
             target = 40.0
             print(f"\n=== Chance of a Mega-Pump (> {target}%) ===")
