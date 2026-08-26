@@ -9,10 +9,28 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-const healthTTL = 30 * time.Second
+const (
+	healthTTL         = 30 * time.Second
+	incidentRetention = 30 * 24 * time.Hour
+)
 
 func HealthKey(exchange string) string {
 	return "market:liquidationcapture:health:" + exchange
+}
+
+func IncidentIndexKey(exchange string) string {
+	return "market:liquidationcapture:incidents:" + exchange
+}
+
+func IncidentKey(exchange, processSessionID string) string {
+	return "market:liquidationcapture:incident:" + exchange + ":" + processSessionID
+}
+
+type Incident struct {
+	Exchange         string
+	ProcessSessionID string
+	OccurredAt       time.Time
+	ReasonCodes      string
 }
 
 type Health struct {
@@ -73,7 +91,7 @@ func (store *RedisStore) StoreHealth(ctx context.Context, health Health) error {
 		"writer_queue_drops_delta":          health.Evaluated.WriterQueueDropsDelta,
 		"persist_errors_delta":              health.Evaluated.PersistErrorsDelta,
 		"payload_hash_mismatch_total":       health.Writer.PayloadHashMismatchTotal,
-		"status_changed_at_ms":              unixMilliOrZero(health.UpdatedAt), // Ideally from state
+		"status_changed_at_ms":              health.Evaluated.StatusChangedAtMs,
 
 		"data_loss_detected":               health.DataLossDetected,
 		"events_accepted_total":            health.Source.EventsAcceptedTotal,
@@ -93,6 +111,40 @@ func (store *RedisStore) StoreHealth(ctx context.Context, health Health) error {
 	pipe.Expire(ctx, HealthKey(health.Exchange), healthTTL)
 	if _, err := pipe.Exec(ctx); err != nil {
 		return fmt.Errorf("store liquidation capture health: %w", err)
+	}
+	return nil
+}
+
+// StoreIncident preserves a fatal process-local transition independently from
+// the mutable current-health hash. A fast Docker restart may replace current
+// health within seconds, but the notifier can still discover this session's
+// fatal incident from the bounded index.
+func (store *RedisStore) StoreIncident(ctx context.Context, incident Incident) error {
+	if incident.Exchange == "" || incident.ProcessSessionID == "" {
+		return errors.New("liquidation incident exchange and process session are required")
+	}
+	if incident.OccurredAt.IsZero() {
+		return errors.New("liquidation incident occurred_at is required")
+	}
+
+	key := IncidentKey(incident.Exchange, incident.ProcessSessionID)
+	indexKey := IncidentIndexKey(incident.Exchange)
+	oldest := incident.OccurredAt.Add(-incidentRetention).UnixMilli()
+	pipe := store.client.TxPipeline()
+	pipe.HSet(ctx, key, map[string]any{
+		"exchange":           incident.Exchange,
+		"process_session_id": incident.ProcessSessionID,
+		"occurred_at_ms":     incident.OccurredAt.UnixMilli(),
+		"reason_codes":       incident.ReasonCodes,
+	})
+	pipe.Expire(ctx, key, incidentRetention)
+	pipe.ZAdd(ctx, indexKey, redis.Z{
+		Score:  float64(incident.OccurredAt.UnixMilli()),
+		Member: incident.ProcessSessionID,
+	})
+	pipe.ZRemRangeByScore(ctx, indexKey, "-inf", fmt.Sprintf("%d", oldest))
+	if _, err := pipe.Exec(ctx); err != nil {
+		return fmt.Errorf("store liquidation capture incident: %w", err)
 	}
 	return nil
 }

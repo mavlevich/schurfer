@@ -117,6 +117,7 @@ func run() error {
 	nextHeartbeatBucket := startedAt.UTC().Truncate(time.Minute)
 
 	evaluatorState := &liquidationcapture.EvaluatorState{
+		StartedAt: startedAt,
 		LastSnapshot: liquidationcapture.Snapshot{
 			Source: source.Stats(),
 			Writer: writer.Stats(),
@@ -179,8 +180,8 @@ func run() error {
 				writerStats,
 				connected,
 				expectedConnections,
-				loss,  // if loss=true, means incomplete
-				10000, // example max queue capacity, adjust if needed
+				loss,
+				liquidationcapture.MaxPendingEvents,
 			)
 
 			// Update state snapshot
@@ -195,13 +196,21 @@ func run() error {
 				ProcessSessionID: processSessionID, UniverseVersion: universeVersion,
 				StartedAt: startedAt, UpdatedAt: time.Now(),
 				LastEventAt: sourceStats.LastEventAt, LastPersistAt: writerStats.LastPersistAt,
-				SubscribedSymbols: len(symbols), DataLossDetected: loss,
+				SubscribedSymbols: len(symbols), ConnectedConnections: connected,
+				ExpectedConnections: expectedConnections, DataLossDetected: loss,
 				Source: sourceStats, Writer: writerStats, Evaluated: evaluated,
 			}
 			if err := healthStore.StoreHealth(ctx, health); err != nil {
 				slog.Error("liquidationcapture.health_failed", "err", err)
 			}
 			if evaluated.ShouldExit {
+				incident := liquidationcapture.Incident{
+					Exchange: cfg.Exchange, ProcessSessionID: processSessionID,
+					OccurredAt: time.Now(), ReasonCodes: evaluated.ReasonCodes,
+				}
+				if err := healthStore.StoreIncident(ctx, incident); err != nil {
+					slog.Error("liquidationcapture.incident_store_failed", "err", err)
+				}
 				return fmt.Errorf("fatal health evaluation: %s", evaluated.ReasonCodes)
 			}
 		}
@@ -236,16 +245,9 @@ func writeDueHeartbeats(
 		if err := writer.WriteHeartbeat(ctx, heartbeat); err != nil {
 			tracker.MarkDataLoss()
 			slog.Error("liquidationcapture.heartbeat_failed", "bucket_start", due.Bucket, "err", err)
-			state.ConsecutiveIncomplete++
-			state.LastHeartbeatBucket = due.Bucket
+			state.ObserveHeartbeat(due.Bucket, false)
 		} else {
-			if due.Late {
-				state.ConsecutiveIncomplete++
-			} else {
-				state.ConsecutiveIncomplete = 0
-				state.LastCompleteBucket = due.Bucket
-			}
-			state.LastHeartbeatBucket = due.Bucket
+			state.ObserveHeartbeat(due.Bucket, heartbeat.Complete)
 		}
 		nextBucket = due.Bucket.Add(time.Minute)
 	}
@@ -332,18 +334,30 @@ func runHealthcheck() error {
 	if len(res) == 0 {
 		return fmt.Errorf("health key missing for %s", cfg.Exchange)
 	}
-	if res["status"] == liquidationcapture.StatusFailed {
+	switch res["status"] {
+	case liquidationcapture.StatusFailed:
 		return fmt.Errorf("status is failed: %s", res["reason_codes"])
+	case liquidationcapture.StatusStarting, liquidationcapture.StatusOk, liquidationcapture.StatusDegraded:
+		// These states are live. Degraded data quality is surfaced separately and
+		// may recover without a process restart.
+	default:
+		return fmt.Errorf("health status is unknown: %q", res["status"])
 	}
 
-	// Check staleness explicitly (e.g. if TTL is large or not expiring fast enough)
-	if updatedStr, ok := res["updated_at_ms"]; ok {
-		updatedMs, err := strconv.ParseInt(updatedStr, 10, 64)
-		if err == nil && updatedMs > 0 {
-			if time.Since(time.UnixMilli(updatedMs)) > 30*time.Second {
-				return fmt.Errorf("health key is stale")
-			}
-		}
+	updatedStr, ok := res["updated_at_ms"]
+	if !ok {
+		return fmt.Errorf("health updated_at_ms is missing")
+	}
+	updatedMs, err := strconv.ParseInt(updatedStr, 10, 64)
+	if err != nil || updatedMs <= 0 {
+		return fmt.Errorf("health updated_at_ms is invalid")
+	}
+	age := time.Since(time.UnixMilli(updatedMs))
+	if age > 30*time.Second {
+		return fmt.Errorf("health key is stale")
+	}
+	if age < -5*time.Second {
+		return fmt.Errorf("health updated_at_ms is in the future")
 	}
 	return nil
 }

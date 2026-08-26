@@ -10,6 +10,8 @@ const (
 	StatusOk       = "ok"
 	StatusDegraded = "degraded"
 	StatusFailed   = "failed"
+
+	ProlongedIncompleteAfter = 10 * time.Minute
 )
 
 type Snapshot struct {
@@ -18,7 +20,9 @@ type Snapshot struct {
 }
 
 type EvaluatorState struct {
+	StartedAt             time.Time
 	CurrentStatus         string
+	CurrentReasonCodes    string
 	StatusChangedAt       time.Time
 	LastHeartbeatBucket   time.Time
 	LastCompleteBucket    time.Time
@@ -28,10 +32,10 @@ type EvaluatorState struct {
 }
 
 type EvaluatedHealth struct {
-	Status      string
-	ReasonCodes string
-	ShouldExit  bool
-	ShouldAlert bool // Maybe not directly needed since Notifier handles alerting, but we can compute it
+	Status            string
+	ReasonCodes       string
+	ShouldExit        bool
+	StatusChangedAtMs int64
 
 	LastHeartbeatBucketMs         int64
 	LastCompleteHeartbeatBucketMs int64
@@ -52,6 +56,19 @@ type EvaluatedHealth struct {
 	LastEventAtMs int64
 }
 
+// ObserveHeartbeat updates the durable coverage window only after the
+// heartbeat write has completed. A timely write is not sufficient: the
+// heartbeat itself must also declare the minute complete.
+func (state *EvaluatorState) ObserveHeartbeat(bucket time.Time, complete bool) {
+	state.LastHeartbeatBucket = bucket
+	if complete {
+		state.LastCompleteBucket = bucket
+		state.ConsecutiveIncomplete = 0
+		return
+	}
+	state.ConsecutiveIncomplete++
+}
+
 // Evaluate evaluates health based on V2 contract
 func EvaluateHealth(
 	state *EvaluatorState,
@@ -66,7 +83,8 @@ func EvaluateHealth(
 	var reasons []string
 	shouldExit := false
 
-	// Calculate deltas
+	// Calculate deltas. These counters are process-local and monotonic for the
+	// lifetime of one EvaluatorState.
 	dropsDelta := writerStats.QueueDropsTotal - state.LastSnapshot.Writer.QueueDropsTotal
 	persistDelta := writerStats.PersistErrorsTotal - state.LastSnapshot.Writer.PersistErrorsTotal
 	reconnectsDelta := sourceStats.ReconnectTotal - state.LastSnapshot.Source.ReconnectTotal
@@ -84,15 +102,27 @@ func EvaluateHealth(
 		reasons = append(reasons, "queue_drop_critical")
 		shouldExit = true
 	} else if state.LastCompleteBucket.IsZero() {
-		status = StatusStarting
-		reasons = append(reasons, "awaiting_first_complete_minute")
-	} else if time.Since(state.LastCompleteBucket) > 10*time.Minute {
+		if !state.StartedAt.IsZero() && now.Sub(state.StartedAt) > ProlongedIncompleteAfter {
+			status = StatusFailed
+			reasons = append(reasons, "startup_never_complete")
+			shouldExit = true
+		} else {
+			status = StatusStarting
+			reasons = append(reasons, "awaiting_first_complete_minute")
+		}
+	} else if now.Sub(state.LastCompleteBucket) > ProlongedIncompleteAfter {
 		status = StatusFailed
 		reasons = append(reasons, "prolonged_incomplete")
 		shouldExit = true
 	} else if state.ConsecutiveIncomplete > 0 {
 		status = StatusDegraded
 		reasons = append(reasons, "incomplete_minute")
+	}
+	if incompleteMinute {
+		if status == StatusOk {
+			status = StatusDegraded
+		}
+		reasons = append(reasons, "current_minute_incomplete")
 	}
 
 	if connected < expected {
@@ -122,7 +152,10 @@ func EvaluateHealth(
 		}
 	}
 
-	queueUtil := float64(writerStats.QueueDepth) / float64(queueCapacity)
+	queueUtil := 0.0
+	if queueCapacity > 0 {
+		queueUtil = float64(writerStats.QueueDepth) / float64(queueCapacity)
+	}
 	if queueUtil > 0.8 {
 		if status == StatusOk {
 			status = StatusDegraded
@@ -131,11 +164,17 @@ func EvaluateHealth(
 	}
 
 	reasonStr := strings.Join(reasons, ",")
+	if state.CurrentStatus != status || state.CurrentReasonCodes != reasonStr {
+		state.CurrentStatus = status
+		state.CurrentReasonCodes = reasonStr
+		state.StatusChangedAt = now
+	}
 
 	return EvaluatedHealth{
 		Status:                        status,
 		ReasonCodes:                   reasonStr,
 		ShouldExit:                    shouldExit,
+		StatusChangedAtMs:             unixMilliOrZero(state.StatusChangedAt),
 		LastHeartbeatBucketMs:         unixMilliOrZero(state.LastHeartbeatBucket),
 		LastCompleteHeartbeatBucketMs: unixMilliOrZero(state.LastCompleteBucket),
 		ConsecutiveIncompleteMinutes:  state.ConsecutiveIncomplete,

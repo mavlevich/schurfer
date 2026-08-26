@@ -1729,6 +1729,9 @@ prod-liquidation-capture-bybit-stop:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
 	$(_PROD) --profile liquidation-capture-bybit stop liquidation-capture-bybit
 
+prod-liquidation-capture-bybit-health:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	@./scripts/liquidation_health.sh bybit
 
 prod-liquidation-capture-binance-start:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
@@ -1741,6 +1744,9 @@ prod-liquidation-capture-binance-stop:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
 	$(_PROD) --profile liquidation-capture-binance stop liquidation-capture-binance
 
+prod-liquidation-capture-binance-health:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	@./scripts/liquidation_health.sh binance
 
 prod-momentum-watch-start:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
@@ -1986,12 +1992,3 @@ prod-long-short-ratio-regime-report:
 		$$(test -z "$$(git status --porcelain)" \
 			&& printf '%s' '--no-working-tree-dirty' \
 			|| printf '%s' '--working-tree-dirty') $(ARGS)
-
-
-
-prod-liquidation-capture-bybit-health:
-	@./scripts/liquidation_health.sh bybit
-
-
-prod-liquidation-capture-binance-health:
-	@./scripts/liquidation_health.sh binance
