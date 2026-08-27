@@ -70,8 +70,9 @@ Rules:
   reuse its dedup key, even if it creates a new notification ID.
 - `producer` and `kind` use stable lower-case names. Examples are `execution`,
   `scanner`, `research-checkpoints`, `trade.closed`, and `scanner.stale`.
-- `severity` is one of `critical`, `trade`, `research`, or `info`. The next delivery
-  change will use that order when selecting work from a bounded batch.
+- `severity` is one of `critical`, `warning`, `trade`, `research`, or `info`. Delivery
+  selects work from a bounded batch in that order (see `severityWeight` in
+  `stream_consumer.go`).
 - `created_at` is the UTC time at which the producer constructed the envelope.
 - `payload.text` is final plain text for Telegram and is limited to 4096 characters.
   Producers may attach non-secret structured context in `payload.metadata`.

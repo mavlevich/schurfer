@@ -586,6 +586,57 @@ func addFatalIncident(
 	}
 }
 
+// A coverage incident that later escalates all the way to a fatal incident
+// (via the separate checkFatalIncidents path, not the health-hash "failed"
+// status) must not leave stale coverage state behind: the eventual
+// recovery-from-critical message already announces "is now OK" once, and
+// the still-open coverage incident must not also fire its own delayed
+// recovery once it later observes 60s of ok. Colleague review regression:
+// this previously produced 4 messages (warning, fatal, and two recoveries)
+// instead of 3.
+func TestLiquidationCaptureMonitorFatalDuringOpenCoverageIncidentDoesNotDoubleRecover(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	ctx := context.Background()
+	now := time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
+	monitor := newTestLiquidationMonitor(t, rdb, now)
+
+	setLiquidationHealthFull(t, rdb, "degraded", "persist_error", "session-1", now.UnixMilli(), 0)
+	monitor.checkExchange(ctx, "bybit")
+	if got := outboxMessages(t, rdb); len(got) != 1 {
+		t.Fatalf("setup: coverage warning = %d messages, want 1", len(got))
+	}
+
+	fatalAt := now.Add(time.Minute)
+	addFatalIncident(t, rdb, "bybit", "session-1", fatalAt, "queue_drop_critical")
+	fatalMonitor := newTestLiquidationMonitor(t, rdb, fatalAt)
+	fatalMonitor.checkFatalIncidents(ctx, "bybit")
+	if got := outboxMessages(t, rdb); len(got) != 2 {
+		t.Fatalf("setup: warning+fatal = %d messages, want 2", len(got))
+	}
+
+	okAt := fatalAt.Add(time.Minute)
+	setLiquidationHealth(t, rdb, "ok", "", "session-1", okAt.UnixMilli())
+	okMonitor := newTestLiquidationMonitor(t, rdb, okAt)
+	okMonitor.checkExchange(ctx, "bybit")
+
+	messages := outboxMessages(t, rdb)
+	if len(messages) != 3 {
+		t.Fatalf("warning+fatal+recovery = %d messages, want exactly 3", len(messages))
+	}
+	if env := decodeEnvelope(t, messages[2]); env.Severity != "info" {
+		t.Fatalf("recovery severity = %s, want info", env.Severity)
+	}
+
+	// Well past the 60s coverage-recovery hold: must not produce a stray
+	// fourth (delayed coverage) recovery.
+	later := newTestLiquidationMonitor(t, rdb, okAt.Add(90*time.Second))
+	later.checkExchange(ctx, "bybit")
+	if got := outboxMessages(t, rdb); len(got) != 3 {
+		t.Fatalf("late poll produced %d messages, want still 3", len(got))
+	}
+}
+
 func outboxMessages(t *testing.T, rdb *redis.Client) []redis.XMessage {
 	t.Helper()
 	messages, err := rdb.XRange(context.Background(), StreamOutboxV1, "-", "+").Result()

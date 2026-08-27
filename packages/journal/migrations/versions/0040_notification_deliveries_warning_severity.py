@@ -36,6 +36,15 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # Re-adding the narrower constraint validates every existing row; any
+    # 'warning' row would fail that validation outright. Fold 'warning' back
+    # into 'info' first -- the exact severity these rows carried before this
+    # migration existed -- so the downgrade is safe to run against a
+    # database that has actually seen live 'warning' deliveries, not just
+    # an empty table.
+    op.execute(
+        "UPDATE app.notification_deliveries SET severity = 'info' WHERE severity = 'warning'"
+    )
     op.drop_constraint(
         "ck_notification_deliveries_severity",
         "notification_deliveries",

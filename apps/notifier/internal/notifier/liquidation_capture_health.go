@@ -152,14 +152,24 @@ func (m *liquidationCaptureMonitor) checkFatalIncidents(ctx context.Context, exc
 			ctx, exchange, sessionID, incident["reason_codes"],
 		)
 		if published && newlyPublished {
-			m.storeMonitorState(
-				ctx,
-				liquidationMonitorStateKey(exchange),
-				"critical",
-				"fatal:"+sessionID,
-			)
+			m.escalateToCritical(ctx, liquidationMonitorStateKey(exchange), "fatal:"+sessionID)
 		}
 	}
+}
+
+// escalateToCritical records the monitor's coarse state as critical and
+// clears any open coverage/operational incident tracking. This is the only
+// place either happens for a critical transition -- checkFatalIncidents and
+// handleCritical both go through it, specifically so a future third path
+// that sets state=critical cannot forget the clear. Entering critical
+// supersedes coverage tracking: the eventual recovery-from-critical message
+// (sendImmediateOkRecovery) already announces "is now OK" once, so a stale
+// coverage incident must never also fire its own delayed recovery later.
+func (m *liquidationCaptureMonitor) escalateToCritical(
+	ctx context.Context, stateKey string, transitionID string,
+) {
+	m.storeMonitorState(ctx, stateKey, "critical", transitionID)
+	m.storeCoverageState(ctx, stateKey, liquidationCoverageState{})
 }
 
 func (m *liquidationCaptureMonitor) publishFatalIncident(
@@ -341,18 +351,12 @@ func (m *liquidationCaptureMonitor) handleCritical(
 		return
 	}
 
-	// Escalating straight into a fatal or missing-health incident supersedes
-	// any coverage/operational tracking in flight: the eventual recovery
-	// from critical already announces "is now OK" once, so any open
-	// coverage incident must not also fire its own recovery later.
-	m.storeCoverageState(ctx, stateKey, liquidationCoverageState{})
-
 	if strings.HasPrefix(transitionID, "fatal:") {
 		published, _ := m.publishFatalIncident(ctx, exchange, sessionID, reason)
 		if !published {
 			return
 		}
-		m.storeMonitorState(ctx, stateKey, state, transitionID)
+		m.escalateToCritical(ctx, stateKey, transitionID)
 		return
 	}
 
@@ -383,7 +387,7 @@ func (m *liquidationCaptureMonitor) handleCritical(
 			return
 		}
 	}
-	m.storeMonitorState(ctx, stateKey, state, transitionID)
+	m.escalateToCritical(ctx, stateKey, transitionID)
 }
 
 func (m *liquidationCaptureMonitor) classifyHealth(
