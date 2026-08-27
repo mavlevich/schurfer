@@ -114,13 +114,16 @@ export function TokenChart({ base }: { base: string }) {
 
       const markers: SeriesMarker<UTCTimestamp>[] = episodes
         .filter((e) => e.first_seen_at)
-        .map((e) => ({
-          time: getNearestCandleTime(e.first_seen_at),
-          position: 'aboveBar',
-          color: getPeakColor(e.observed_peak_pct),
-          shape: 'circle',
-          size: 1,
-        }))
+        .map(
+          (e) =>
+            ({
+              time: getNearestCandleTime(e.first_seen_at),
+              position: 'aboveBar',
+              color: getPeakColor(e.observed_peak_pct),
+              shape: 'circle',
+              size: 1,
+            }) as any,
+        )
         .sort((a, b) => (a.time as number) - (b.time as number));
 
       // Deduplicate by time (lightweight-charts crashes on duplicate times)

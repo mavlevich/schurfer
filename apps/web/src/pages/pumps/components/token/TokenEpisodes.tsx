@@ -21,9 +21,9 @@ import { DataTableColumnHeader } from '@/components/ui/data-table-column-header'
 import { useTokenEpisodes } from '@/hooks/useTokenData';
 import { Percent } from '@/components/ui/domain/Percent';
 import { TimeFormatted } from '@/components/ui/domain/TimeFormatted';
-import type { PumpHistoryEntry } from '../../types';
+import type { TokenEpisode } from '../../types';
 
-const columnHelper = createColumnHelper<PumpHistoryEntry>();
+const columnHelper = createColumnHelper<TokenEpisode>();
 
 const columns = [
   columnHelper.accessor('episode', {

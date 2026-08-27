@@ -23,7 +23,7 @@ import { DataTableColumnHeader } from '@/components/ui/data-table-column-header'
 import { usePumps, usePumpsHistory } from '@/hooks/usePumpsData';
 import { formatVolume, summarizeVolume, volumeRank } from '../volume';
 import type { ExchangeEntry } from '../types';
-import { fmtPct, pctColor, timeAgo, fmtPrice } from '@/lib/formatters';
+import { fmtPct } from '@/lib/formatters';
 import { Percent } from '@/components/ui/domain/Percent';
 import { Price } from '@/components/ui/domain/Price';
 import { TimeFormatted } from '@/components/ui/domain/TimeFormatted';
@@ -65,7 +65,7 @@ type UnifiedPumpRow = {
   nowPct: number;
   price: number;
   exchanges: ExchangeEntry[];
-  volume: { value: number; partial: boolean };
+  volume: { value: number | null; partial: boolean };
   firstSeenAt?: number;
   lastSeenAt?: number;
 };
@@ -179,7 +179,7 @@ export function PumpTable() {
     for (const p of pumps) {
       const hist = history.find((h) => h.base === p.base && h.is_live);
       rows.push({
-        id: p.pump_event_id,
+        id: String(p.pump_event_id),
         base: p.base,
         isLive: true,
         observedPeakPct: Math.max(hist?.observed_peak_pct ?? 0, p.max_change_pct),
