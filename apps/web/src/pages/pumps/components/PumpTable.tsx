@@ -121,7 +121,7 @@ export function PumpTable() {
                     const volume = summarizeVolume(p.exchanges);
                     return (
                       <tr
-                        key={p.base}
+                        key={p.pump_event_id}
                         className="border-b last:border-0 hover:bg-accent/30 transition-colors"
                       >
                         <td className="px-4 py-3 font-mono font-semibold">
@@ -174,7 +174,7 @@ export function PumpTable() {
                     const volume = summarizeVolume(h.exchanges);
                     return (
                       <tr
-                        key={h.base}
+                        key={`${h.base}-${h.first_seen_at}`}
                         className="border-b last:border-0 opacity-50 hover:opacity-80 transition-opacity"
                       >
                         <td className="px-4 py-3 font-mono font-semibold">

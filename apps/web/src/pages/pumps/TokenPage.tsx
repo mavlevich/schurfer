@@ -1,8 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router';
-import { ArrowLeft } from 'lucide-react';
-import { CandlestickSeries, ColorType, createChart } from 'lightweight-charts';
-import type { UTCTimestamp } from 'lightweight-charts';
+import { ArrowLeft, Loader2 } from 'lucide-react';
+import {
+  CandlestickSeries,
+  ColorType,
+  createChart,
+  createSeriesMarkers,
+  type SeriesMarker,
+  type UTCTimestamp,
+} from 'lightweight-charts';
 import { PageShell } from '@/components/shared/PageShell';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToken, useTokenEpisodes, useTokenSignals, useTokenStats } from '@/hooks/useTokenData';
@@ -311,11 +317,13 @@ function PriceChart({
   isFetching,
   chartInterval,
   onIntervalChange,
+  episodes,
 }: {
   ohlcv: OHLCVResponse | undefined;
   isFetching: boolean;
   chartInterval: number;
   onIntervalChange: (minutes: number) => void;
+  episodes: TokenEpisode[];
 }) {
   type ChartApi = ReturnType<typeof createChart>;
   type SeriesApi = ReturnType<ChartApi['addSeries']>;
@@ -323,6 +331,7 @@ function PriceChart({
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<ChartApi | null>(null);
   const seriesRef = useRef<SeriesApi | null>(null);
+  const markersRef = useRef<any>(null);
   const selectedInterval = getInterval(chartInterval);
 
   // Create chart and series once on mount; destroy on unmount.
@@ -355,6 +364,7 @@ function PriceChart({
 
     chartRef.current = chart;
     seriesRef.current = series;
+    markersRef.current = createSeriesMarkers(series);
 
     return () => {
       chart.remove();
@@ -387,6 +397,50 @@ function PriceChart({
         close: c.close,
       })),
     );
+
+    if (episodes && episodes.length > 0) {
+      const getPeakColor = (pct: number) => {
+        if (pct >= 100) return '#f87171';
+        if (pct >= 50) return '#fb923c';
+        return '#facc15';
+      };
+
+      const candleTimes = ohlcv.candles.map((c) => c.time);
+      const getNearestCandleTime = (ts: number) => {
+        if (!candleTimes.length) return ts as UTCTimestamp;
+        let closest = candleTimes[0];
+        for (const ct of candleTimes) {
+          if (ct <= ts) closest = ct;
+          else break;
+        }
+        return closest as UTCTimestamp;
+      };
+
+      const markers: SeriesMarker<UTCTimestamp>[] = episodes
+        .filter((e) => e.first_seen_at)
+        .map((e) => ({
+          time: getNearestCandleTime(e.first_seen_at),
+          position: 'aboveBar',
+          color: getPeakColor(e.observed_peak_pct),
+          shape: 'circle',
+
+          size: 1,
+        }))
+        .sort((a, b) => (a.time as number) - (b.time as number));
+
+      // Deduplicate by time (lightweight-charts crashes on duplicate times)
+      const seenTimes = new Set<number>();
+      const uniqueMarkers: SeriesMarker<UTCTimestamp>[] = [];
+      for (const m of markers) {
+        if (!seenTimes.has(m.time as number)) {
+          seenTimes.add(m.time as number);
+          uniqueMarkers.push(m);
+        }
+      }
+
+      if (markersRef.current) markersRef.current.setMarkers(uniqueMarkers);
+    }
+
     chartRef.current?.timeScale().fitContent();
   }, [ohlcv]);
 
@@ -423,9 +477,10 @@ function PriceChart({
         <div className="relative h-[380px] w-full">
           <div ref={chartContainerRef} className="absolute inset-0" />
           {isFetching && !ohlcv && (
-            <p className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground animate-pulse">
-              Loading chart...
-            </p>
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-muted/20 animate-pulse rounded-md z-10">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground mb-2" />
+              <p className="text-sm text-muted-foreground">Loading chart...</p>
+            </div>
           )}
           {!isFetching && !ohlcv?.candles.length && (
             <p className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
@@ -502,6 +557,7 @@ export function TokenPage() {
           isFetching={chartFetching}
           chartInterval={chartInterval}
           onIntervalChange={setChartInterval}
+          episodes={episodes}
         />
       )}
 
