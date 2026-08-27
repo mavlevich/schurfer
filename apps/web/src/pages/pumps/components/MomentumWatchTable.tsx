@@ -2,7 +2,9 @@ import { RefreshCw, WifiOff } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useMomentumWatch } from '@/hooks/usePumpsData';
-import { timeAgo, fmtSignedPct, fmtUsdCompact, signedColor } from '@/lib/formatters';
+import { timeAgo, fmtUsdCompact } from '@/lib/formatters';
+import { Percent } from '@/components/ui/domain/Percent';
+import { TimeFormatted } from '@/components/ui/domain/TimeFormatted';
 
 export function MomentumWatchTable() {
   const { data, isError, isFetching, dataUpdatedAt } = useMomentumWatch();
@@ -75,31 +77,29 @@ export function MomentumWatchTable() {
                           {e.exchange}
                         </Badge>
                       </td>
-                      <td className="px-4 py-3 text-right font-mono text-muted-foreground">
-                        {timeAgo(e.first_watch_at)}
+                      <td className="px-4 py-3 text-right">
+                        <TimeFormatted value={e.first_watch_at} format="relative" />
                       </td>
-                      <td className="px-4 py-3 text-right font-mono text-muted-foreground">
+                      <td className="px-4 py-3 text-right font-mono text-muted-foreground tabular-nums">
                         {e.clear_streak}
                       </td>
-                      <td
-                        className={`px-4 py-3 text-right font-mono font-bold ${signedColor(e.price_return_60m_pct)}`}
-                      >
-                        {fmtSignedPct(e.price_return_60m_pct)}
+                      <td className="px-4 py-3 text-right">
+                        <Percent
+                          value={e.price_return_60m_pct}
+                          theme="signed"
+                          className="font-bold"
+                        />
                       </td>
-                      <td
-                        className={`px-4 py-3 text-right font-mono ${signedColor(e.price_return_15m_pct)}`}
-                      >
-                        {fmtSignedPct(e.price_return_15m_pct)}
+                      <td className="px-4 py-3 text-right">
+                        <Percent value={e.price_return_15m_pct} theme="signed" />
                       </td>
-                      <td
-                        className={`px-4 py-3 text-right font-mono ${signedColor(e.oi_growth_60m_pct)}`}
-                      >
-                        {fmtSignedPct(e.oi_growth_60m_pct)}
+                      <td className="px-4 py-3 text-right">
+                        <Percent value={e.oi_growth_60m_pct} theme="signed" />
                       </td>
-                      <td className="px-4 py-3 text-right font-mono text-muted-foreground">
+                      <td className="px-4 py-3 text-right font-mono text-muted-foreground tabular-nums">
                         {e.buy_imbalance_15m === null ? '—' : e.buy_imbalance_15m.toFixed(2)}
                       </td>
-                      <td className="px-4 py-3 text-right font-mono text-muted-foreground">
+                      <td className="px-4 py-3 text-right font-mono text-muted-foreground tabular-nums">
                         {fmtUsdCompact(e.flow_notional_15m_usd)}
                       </td>
                     </tr>

@@ -1,16 +1,8 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useTokenEpisodes } from '@/hooks/useTokenData';
-import { fmtPct, pctColor } from '@/lib/formatters';
-
-function fmtTs(unix: number) {
-  return new Date(unix * 1000).toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
+import { Percent } from '@/components/ui/domain/Percent';
+import { TimeFormatted } from '@/components/ui/domain/TimeFormatted';
 
 export function TokenEpisodes({ base }: { base: string }) {
   const { data: episodes, isPending, isError } = useTokenEpisodes(base);
@@ -47,22 +39,20 @@ export function TokenEpisodes({ base }: { base: string }) {
               {episodes.map((ep) => (
                 <tr key={ep.episode} className="border-b last:border-0">
                   <td className="px-4 py-3 font-mono text-muted-foreground">{ep.episode}</td>
-                  <td className="px-4 py-3 text-muted-foreground">{fmtTs(ep.first_seen_at)}</td>
-                  <td className="px-4 py-3 text-muted-foreground">
-                    {ep.closed_at ? fmtTs(ep.closed_at) : '—'}
+                  <td className="px-4 py-3 text-left">
+                    <TimeFormatted value={ep.first_seen_at} />
                   </td>
-                  <td
-                    className={`px-4 py-3 text-right font-mono font-bold ${pctColor(ep.observed_peak_pct)}`}
-                  >
-                    {fmtPct(ep.observed_peak_pct)}
+                  <td className="px-4 py-3 text-left">
+                    <TimeFormatted value={ep.closed_at} />
                   </td>
-                  <td
-                    className={`px-4 py-3 text-right font-mono ${pctColor(ep.exchange_24h_high_pct)}`}
-                  >
-                    {fmtPct(ep.exchange_24h_high_pct)}
+                  <td className="px-4 py-3 text-right">
+                    <Percent value={ep.observed_peak_pct} className="font-bold" />
                   </td>
-                  <td className="px-4 py-3 text-right font-mono text-muted-foreground">
-                    {ep.retrace_pct != null ? fmtPct(ep.retrace_pct) : '—'}
+                  <td className="px-4 py-3 text-right">
+                    <Percent value={ep.exchange_24h_high_pct} />
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <Percent value={ep.retrace_pct} colorize={false} />
                   </td>
                   <td className="px-4 py-3 text-center">
                     {ep.is_live ? (

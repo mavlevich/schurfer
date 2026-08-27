@@ -1,8 +1,9 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToken } from '@/hooks/useTokenData';
-import { fmtPct, pctColor, fmtPrice } from '@/lib/formatters';
 import { formatVolume } from '../../volume';
+import { Percent } from '@/components/ui/domain/Percent';
+import { Price } from '@/components/ui/domain/Price';
 
 export function ExchangeBreakdown({ base }: { base: string }) {
   const { data: pump, isPending, isError } = useToken(base);
@@ -37,18 +38,16 @@ export function ExchangeBreakdown({ base }: { base: string }) {
               {pump.exchanges.map((e) => (
                 <tr key={e.exchange} className="border-b last:border-0">
                   <td className="px-4 py-3 font-medium capitalize">{e.exchange}</td>
-                  <td
-                    className={`px-4 py-3 text-right font-mono font-bold ${pctColor(e.change_pct)}`}
-                  >
-                    {fmtPct(e.change_pct)}
+                  <td className="px-4 py-3 text-right">
+                    <Percent value={e.change_pct} className="font-bold" />
                   </td>
-                  <td className="px-4 py-3 text-right font-mono text-muted-foreground">
-                    {fmtPrice(Number(e.price) || 0)}
+                  <td className="px-4 py-3 text-right">
+                    <Price value={e.price} />
                   </td>
-                  <td className="px-4 py-3 text-right font-mono text-muted-foreground">
-                    {fmtPrice(Number(e.high_24h) || 0)}
+                  <td className="px-4 py-3 text-right">
+                    <Price value={e.high_24h} />
                   </td>
-                  <td className="px-4 py-3 text-right font-mono text-muted-foreground">
+                  <td className="px-4 py-3 text-right font-mono text-muted-foreground tabular-nums">
                     {formatVolume({
                       value: e.volume_24h_usd,
                       partial: false,

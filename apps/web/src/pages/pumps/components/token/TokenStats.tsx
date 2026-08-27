@@ -1,7 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useTokenStats } from '@/hooks/useTokenData';
-import { fmtPct, pctColor } from '@/lib/formatters';
+import { Percent } from '@/components/ui/domain/Percent';
 
 const CONFIDENCE_STYLES: Record<string, string> = {
   low: 'text-muted-foreground bg-muted border border-border',
@@ -46,11 +46,11 @@ export function TokenStats({ base }: { base: string }) {
         <div className="grid grid-cols-2 gap-6 sm:grid-cols-4">
           <div>
             <p className="text-xs text-muted-foreground mb-1">Avg 24h high</p>
-            <p className={`text-lg font-mono font-bold ${pctColor(stats.avg_peak_pct)}`}>
-              {fmtPct(stats.avg_peak_pct)}
-            </p>
+            <div className="text-lg font-bold">
+              <Percent value={stats.avg_peak_pct} />
+            </div>
             <p className="text-xs text-muted-foreground mt-0.5">
-              med {fmtPct(stats.median_peak_pct)}
+              med <Percent value={stats.median_peak_pct} />
             </p>
           </div>
           <div>
@@ -62,37 +62,21 @@ export function TokenStats({ base }: { base: string }) {
                 </span>
               )}
             </p>
-            {stats.avg_retrace_pct != null ? (
-              <>
-                <p className={`text-lg font-mono font-bold ${pctColor(stats.avg_retrace_pct)}`}>
-                  {fmtPct(stats.avg_retrace_pct)}
-                </p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  med {stats.median_retrace_pct != null ? fmtPct(stats.median_retrace_pct) : '—'}
-                </p>
-              </>
-            ) : (
-              <p className="text-lg font-mono text-muted-foreground">—</p>
-            )}
+            <div className="text-lg font-bold">
+              <Percent value={stats.avg_retrace_pct} />
+            </div>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              med <Percent value={stats.median_retrace_pct} />
+            </p>
           </div>
           <div>
             <p className="text-xs text-muted-foreground mb-1">24h retrace range</p>
-            {stats.min_retrace_pct != null && stats.max_retrace_pct != null ? (
-              <>
-                <p className="text-sm font-mono">
-                  <span className={pctColor(stats.max_retrace_pct)}>
-                    {fmtPct(stats.max_retrace_pct)}
-                  </span>
-                  {' → '}
-                  <span className={pctColor(stats.min_retrace_pct)}>
-                    {fmtPct(stats.min_retrace_pct)}
-                  </span>
-                </p>
-                <p className="text-xs text-muted-foreground mt-0.5">best → worst</p>
-              </>
-            ) : (
-              <p className="text-lg font-mono text-muted-foreground">—</p>
-            )}
+            <p className="text-sm">
+              <Percent value={stats.max_retrace_pct} />
+              <span className="font-mono text-muted-foreground"> → </span>
+              <Percent value={stats.min_retrace_pct} />
+            </p>
+            <p className="text-xs text-muted-foreground mt-0.5">best → worst</p>
           </div>
           <div>
             <p className="text-xs text-muted-foreground mb-1">Avg duration</p>

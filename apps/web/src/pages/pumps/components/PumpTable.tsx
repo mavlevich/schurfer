@@ -6,6 +6,9 @@ import { usePumps, usePumpsHistory } from '@/hooks/usePumpsData';
 import { formatVolume, summarizeVolume, volumeRank } from '../volume';
 import type { ExchangeEntry } from '../types';
 import { fmtPct, pctColor, timeAgo, fmtPrice } from '@/lib/formatters';
+import { Percent } from '@/components/ui/domain/Percent';
+import { Price } from '@/components/ui/domain/Price';
+import { TimeFormatted } from '@/components/ui/domain/TimeFormatted';
 
 function topPrice(exchanges: ExchangeEntry[]): number {
   let best = 0;
@@ -132,23 +135,17 @@ export function PumpTable() {
                             {p.base}
                           </Link>
                         </td>
-                        <td
-                          className={`px-4 py-3 text-right font-mono font-bold ${pctColor(observedPeakPct)}`}
-                        >
-                          {fmtPct(observedPeakPct)}
+                        <td className="px-4 py-3 text-right">
+                          <Percent value={observedPeakPct} className="font-bold" />
                         </td>
-                        <td
-                          className={`px-4 py-3 text-right font-mono ${pctColor(rollingHighPct)}`}
-                        >
-                          {fmtPct(rollingHighPct)}
+                        <td className="px-4 py-3 text-right">
+                          <Percent value={rollingHighPct} />
                         </td>
-                        <td
-                          className={`px-4 py-3 text-right font-mono ${pctColor(p.max_change_pct)}`}
-                        >
-                          {fmtPct(p.max_change_pct)}
+                        <td className="px-4 py-3 text-right">
+                          <Percent value={p.max_change_pct} />
                         </td>
-                        <td className="px-4 py-3 text-right font-mono text-sm">
-                          {fmtPrice(topPrice(p.exchanges))}
+                        <td className="px-4 py-3 text-right text-sm">
+                          <Price value={topPrice(p.exchanges)} />
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex flex-wrap gap-1">
@@ -163,7 +160,7 @@ export function PumpTable() {
                             ))}
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-right font-mono text-muted-foreground">
+                        <td className="px-4 py-3 text-right font-mono text-muted-foreground tabular-nums">
                           {formatVolume(volume)}
                         </td>
                       </tr>
@@ -189,21 +186,17 @@ export function PumpTable() {
                             {timeAgo(h.last_seen_at)}
                           </div>
                         </td>
-                        <td
-                          className={`px-4 py-3 text-right font-mono font-bold ${pctColor(h.observed_peak_pct)}`}
-                        >
-                          {fmtPct(h.observed_peak_pct)}
+                        <td className="px-4 py-3 text-right">
+                          <Percent value={h.observed_peak_pct} className="font-bold" />
                         </td>
-                        <td
-                          className={`px-4 py-3 text-right font-mono ${pctColor(h.exchange_24h_high_pct)}`}
-                        >
-                          {fmtPct(h.exchange_24h_high_pct)}
+                        <td className="px-4 py-3 text-right">
+                          <Percent value={h.exchange_24h_high_pct} />
                         </td>
-                        <td className="px-4 py-3 text-right font-mono text-muted-foreground">
-                          {fmtPct(h.last_pct)}
+                        <td className="px-4 py-3 text-right">
+                          <Percent value={h.last_pct} colorize={false} />
                         </td>
-                        <td className="px-4 py-3 text-right font-mono text-sm text-muted-foreground">
-                          {fmtPrice(topPrice(h.exchanges))}
+                        <td className="px-4 py-3 text-right text-sm">
+                          <Price value={topPrice(h.exchanges)} />
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex flex-wrap gap-1">
@@ -218,7 +211,7 @@ export function PumpTable() {
                             ))}
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-right font-mono text-muted-foreground">
+                        <td className="px-4 py-3 text-right font-mono text-muted-foreground tabular-nums">
                           {formatVolume(volume)}
                         </td>
                       </tr>
