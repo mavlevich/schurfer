@@ -1,11 +1,12 @@
 export function fmtPct(n: number) {
-  return `+${n.toFixed(1)}%`;
+  return `${n >= 0 ? '+' : ''}${n.toFixed(1)}%`;
 }
 
 export function pctColor(pct: number) {
   if (pct >= 100) return 'text-red-400';
   if (pct >= 50) return 'text-orange-400';
-  return 'text-yellow-400';
+  if (pct > 0) return 'text-yellow-400';
+  return 'text-muted-foreground';
 }
 
 export function timeAgo(sec: number) {

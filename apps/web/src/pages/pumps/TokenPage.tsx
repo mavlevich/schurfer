@@ -2,7 +2,7 @@ import { Link, useParams } from 'react-router';
 import { ArrowLeft } from 'lucide-react';
 import { PageShell } from '@/components/shared/PageShell';
 import { useToken } from '@/hooks/useTokenData';
-import { fmtPct, pctColor } from '@/lib/formatters';
+import { Percent } from '@/components/ui/domain/Percent';
 
 import { TokenChart } from './components/token/TokenChart';
 import { TokenSignals } from './components/token/TokenSignals';
@@ -39,8 +39,8 @@ export function TokenPage() {
         <div>
           <h1 className="text-2xl font-bold font-mono tracking-tight">
             {base}
-            <span className={`ml-3 text-xl ${pctColor(pump.max_change_pct)}`}>
-              {fmtPct(pump.max_change_pct)}
+            <span className="ml-3 text-xl">
+              <Percent value={pump.max_change_pct} />
             </span>
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
