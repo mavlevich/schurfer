@@ -23,6 +23,7 @@ export function TokenChart({ base }: { base: string }) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<ChartApi | null>(null);
   const seriesRef = useRef<SeriesApi | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const markersRef = useRef<any>(null);
   const selectedInterval = getInterval(chartInterval);
 
@@ -114,13 +115,17 @@ export function TokenChart({ base }: { base: string }) {
 
       const markers: SeriesMarker<UTCTimestamp>[] = episodes
         .filter((e) => e.first_seen_at)
-        .map((e) => ({
-          time: getNearestCandleTime(e.first_seen_at),
-          position: 'aboveBar',
-          color: getPeakColor(e.observed_peak_pct),
-          shape: 'circle',
-          size: 1,
-        }))
+        .map(
+          (e) =>
+            ({
+              time: getNearestCandleTime(e.first_seen_at),
+              position: 'aboveBar',
+              color: getPeakColor(e.observed_peak_pct),
+              shape: 'circle',
+              size: 1,
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            }) as any,
+        )
         .sort((a, b) => (a.time as number) - (b.time as number));
 
       // Deduplicate by time (lightweight-charts crashes on duplicate times)

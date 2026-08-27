@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { RefreshCw, WifiOff } from 'lucide-react';
 import {
   createColumnHelper,
