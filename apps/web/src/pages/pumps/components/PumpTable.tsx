@@ -1,7 +1,25 @@
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import { RefreshCw, WifiOff } from 'lucide-react';
+import {
+  createColumnHelper,
+  flexRender,
+  getCoreRowModel,
+  getSortedRowModel,
+  useReactTable,
+  SortingState,
+} from '@tanstack/react-table';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { DataTableColumnHeader } from '@/components/ui/data-table-column-header';
 import { usePumps, usePumpsHistory } from '@/hooks/usePumpsData';
 import { formatVolume, summarizeVolume, volumeRank } from '../volume';
 import type { ExchangeEntry } from '../types';
@@ -38,17 +56,179 @@ function high24hPct(exchanges: ExchangeEntry[]): number {
   return max;
 }
 
+type UnifiedPumpRow = {
+  id: string;
+  base: string;
+  isLive: boolean;
+  observedPeakPct: number;
+  rollingHighPct: number;
+  nowPct: number;
+  price: number;
+  exchanges: ExchangeEntry[];
+  volume: { value: number; partial: boolean };
+  firstSeenAt?: number;
+  lastSeenAt?: number;
+};
+
+const columnHelper = createColumnHelper<UnifiedPumpRow>();
+
+const columns = [
+  columnHelper.accessor('base', {
+    header: ({ column }) => <DataTableColumnHeader column={column} title="Token" />,
+    cell: ({ row }) => (
+      <div>
+        <Link
+          to={`/pumps/${row.original.base}`}
+          className="font-mono font-semibold hover:text-primary transition-colors"
+        >
+          {row.original.base}
+        </Link>
+        {!row.original.isLive && row.original.firstSeenAt && row.original.lastSeenAt && (
+          <div className="text-xs text-muted-foreground font-normal leading-tight mt-0.5">
+            on radar{' '}
+            <TimeFormatted value={row.original.firstSeenAt} format="relative" tabular={false} /> ·
+            last seen{' '}
+            <TimeFormatted value={row.original.lastSeenAt} format="relative" tabular={false} />
+          </div>
+        )}
+      </div>
+    ),
+  }),
+  columnHelper.accessor('observedPeakPct', {
+    header: ({ column }) => (
+      <DataTableColumnHeader column={column} title="Observed Peak" className="justify-end" />
+    ),
+    cell: ({ getValue, row }) => (
+      <div className="text-right">
+        <Percent value={getValue()} className={row.original.isLive ? 'font-bold' : ''} />
+      </div>
+    ),
+  }),
+  columnHelper.accessor('rollingHighPct', {
+    header: ({ column }) => (
+      <DataTableColumnHeader column={column} title="24h High" className="justify-end" />
+    ),
+    cell: ({ getValue }) => (
+      <div className="text-right">
+        <Percent value={getValue()} />
+      </div>
+    ),
+  }),
+  columnHelper.accessor('nowPct', {
+    header: ({ column }) => (
+      <DataTableColumnHeader column={column} title="Now" className="justify-end" />
+    ),
+    cell: ({ getValue, row }) => (
+      <div className="text-right">
+        <Percent value={getValue()} theme={row.original.isLive ? 'pump' : 'none'} />
+      </div>
+    ),
+  }),
+  columnHelper.accessor('price', {
+    header: ({ column }) => (
+      <DataTableColumnHeader column={column} title="Price" className="justify-end" />
+    ),
+    cell: ({ getValue }) => (
+      <div className="text-right text-sm">
+        <Price value={getValue()} />
+      </div>
+    ),
+  }),
+  columnHelper.accessor('exchanges', {
+    header: ({ column }) => <DataTableColumnHeader column={column} title="Exchanges" />,
+    enableSorting: false,
+    cell: ({ getValue, row }) => (
+      <div className="flex flex-wrap gap-1">
+        {getValue().map((e) => (
+          <Badge
+            key={e.exchange}
+            variant={row.original.isLive ? 'secondary' : 'outline'}
+            className={`text-xs font-normal ${!row.original.isLive ? 'opacity-60' : ''}`}
+          >
+            {e.exchange} {row.original.isLive && fmtPct(e.change_pct)}
+          </Badge>
+        ))}
+      </div>
+    ),
+  }),
+  columnHelper.accessor('volume.value', {
+    id: 'volume',
+    header: ({ column }) => (
+      <DataTableColumnHeader column={column} title="Volume" className="justify-end" />
+    ),
+    cell: ({ row }) => (
+      <div className="text-right font-mono text-muted-foreground tabular-nums">
+        {formatVolume(row.original.volume)}
+      </div>
+    ),
+  }),
+];
+
 export function PumpTable() {
   const { data, isError, isFetching, dataUpdatedAt } = usePumps();
   const { data: history = [] } = usePumpsHistory();
+  const [sorting, setSorting] = useState<SortingState>([{ id: 'observedPeakPct', desc: true }]);
 
-  const pumps = data?.pumps ?? [];
-  const liveSet = new Set(pumps.map((p) => p.base));
-  const historical = history.filter((h) => !liveSet.has(h.base));
-  const hasAny = pumps.length > 0 || historical.length > 0;
+  const unifiedData = useMemo(() => {
+    const pumps = data?.pumps ?? [];
+    const liveSet = new Set(pumps.map((p) => p.base));
+    const historical = history.filter((h) => !liveSet.has(h.base));
+
+    const rows: UnifiedPumpRow[] = [];
+
+    for (const p of pumps) {
+      const hist = history.find((h) => h.base === p.base && h.is_live);
+      rows.push({
+        id: p.pump_event_id,
+        base: p.base,
+        isLive: true,
+        observedPeakPct: Math.max(hist?.observed_peak_pct ?? 0, p.max_change_pct),
+        rollingHighPct: Math.max(hist?.exchange_24h_high_pct ?? 0, high24hPct(p.exchanges)),
+        nowPct: p.max_change_pct,
+        price: topPrice(p.exchanges),
+        exchanges: p.exchanges,
+        volume: summarizeVolume(p.exchanges),
+      });
+    }
+
+    for (const h of historical) {
+      rows.push({
+        id: `${h.base}-${h.first_seen_at}`,
+        base: h.base,
+        isLive: false,
+        observedPeakPct: h.observed_peak_pct,
+        rollingHighPct: h.exchange_24h_high_pct,
+        nowPct: h.last_pct,
+        price: topPrice(h.exchanges),
+        exchanges: h.exchanges,
+        volume: summarizeVolume(h.exchanges),
+        firstSeenAt: h.first_seen_at,
+        lastSeenAt: h.last_seen_at,
+      });
+    }
+
+    // Sort manually by isLive first, then by observedPeakPct
+    return rows.sort((a, b) => {
+      if (a.isLive !== b.isLive) return a.isLive ? -1 : 1;
+      return b.observedPeakPct - a.observedPeakPct;
+    });
+  }, [data, history]);
+
+  const table = useReactTable({
+    data: unifiedData,
+    columns,
+    getCoreRowModel: getCoreRowModel(),
+    onSortingChange: setSorting,
+    getSortedRowModel: getSortedRowModel(),
+    state: { sorting },
+  });
+
+  const pumpsCount = data?.pumps?.length ?? 0;
+  const historyCount = history.filter(
+    (h) => !new Set((data?.pumps ?? []).map((p) => p.base)).has(h.base),
+  ).length;
+  const hasAny = pumpsCount > 0 || historyCount > 0;
   const lastUpdated = dataUpdatedAt ? new Date(dataUpdatedAt) : null;
-
-  // Show empty only after first successful response with empty data, never alongside error banner
   const showEmpty = !isFetching && !isError && data !== undefined && !hasAny;
 
   return (
@@ -91,134 +271,59 @@ export function PumpTable() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-              {pumps.length > 0
-                ? `${pumps.length} active · ${historical.length} in 24h history`
-                : `${historical.length} in 24h history`}
+              {pumpsCount > 0
+                ? `${pumpsCount} active · ${historyCount} in 24h history`
+                : `${historyCount} in 24h history`}
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[760px] text-sm">
-                <thead>
-                  <tr className="border-b text-xs text-muted-foreground">
-                    <th className="px-4 py-2 text-left">Token</th>
-                    <th className="px-4 py-2 text-right">Observed peak</th>
-                    <th className="px-4 py-2 text-right">24h high</th>
-                    <th className="px-4 py-2 text-right">Now</th>
-                    <th className="px-4 py-2 text-right">Price</th>
-                    <th className="px-4 py-2 text-left">Exchanges</th>
-                    <th className="px-4 py-2 text-right">Volume</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pumps.map((p) => {
-                    const hist = history.find((h) => h.base === p.base && h.is_live);
-                    const observedPeakPct = Math.max(
-                      hist?.observed_peak_pct ?? 0,
-                      p.max_change_pct,
-                    );
-                    const rollingHighPct = Math.max(
-                      hist?.exchange_24h_high_pct ?? 0,
-                      high24hPct(p.exchanges),
-                    );
-                    const volume = summarizeVolume(p.exchanges);
-                    return (
-                      <tr
-                        key={p.pump_event_id}
-                        className="border-b last:border-0 hover:bg-accent/30 transition-colors"
+              <Table className="min-w-[760px]">
+                <TableHeader>
+                  {table.getHeaderGroups().map((headerGroup) => (
+                    <TableRow
+                      key={headerGroup.id}
+                      className="border-b text-xs text-muted-foreground hover:bg-transparent"
+                    >
+                      {headerGroup.headers.map((header) => (
+                        <TableHead key={header.id} className="px-4 py-2">
+                          {header.isPlaceholder
+                            ? null
+                            : flexRender(header.column.columnDef.header, header.getContext())}
+                        </TableHead>
+                      ))}
+                    </TableRow>
+                  ))}
+                </TableHeader>
+                <TableBody>
+                  {table.getRowModel().rows?.length ? (
+                    table.getRowModel().rows.map((row) => (
+                      <TableRow
+                        key={row.id}
+                        data-state={row.getIsSelected() && 'selected'}
+                        className={`border-b last:border-0 hover:bg-accent/30 transition-colors ${
+                          !row.original.isLive ? 'opacity-50 hover:opacity-80' : ''
+                        }`}
                       >
-                        <td className="px-4 py-3 font-mono font-semibold">
-                          <Link
-                            to={`/pumps/${p.base}`}
-                            className="hover:text-primary transition-colors"
-                          >
-                            {p.base}
-                          </Link>
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <Percent value={observedPeakPct} className="font-bold" />
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <Percent value={rollingHighPct} />
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <Percent value={p.max_change_pct} />
-                        </td>
-                        <td className="px-4 py-3 text-right text-sm">
-                          <Price value={topPrice(p.exchanges)} />
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex flex-wrap gap-1">
-                            {p.exchanges.map((e) => (
-                              <Badge
-                                key={e.exchange}
-                                variant="secondary"
-                                className="text-xs font-normal"
-                              >
-                                {e.exchange} {fmtPct(e.change_pct)}
-                              </Badge>
-                            ))}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-right font-mono text-muted-foreground tabular-nums">
-                          {formatVolume(volume)}
-                        </td>
-                      </tr>
-                    );
-                  })}
-
-                  {historical.map((h) => {
-                    const volume = summarizeVolume(h.exchanges);
-                    return (
-                      <tr
-                        key={`${h.base}-${h.first_seen_at}`}
-                        className="border-b last:border-0 opacity-50 hover:opacity-80 transition-opacity"
+                        {row.getVisibleCells().map((cell) => (
+                          <TableCell key={cell.id} className="px-4 py-3">
+                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell
+                        colSpan={columns.length}
+                        className="h-24 text-center text-muted-foreground"
                       >
-                        <td className="px-4 py-3 font-mono font-semibold">
-                          <Link
-                            to={`/pumps/${h.base}`}
-                            className="hover:text-primary transition-colors"
-                          >
-                            {h.base}
-                          </Link>
-                          <div className="text-xs text-muted-foreground font-normal leading-tight">
-                            on radar {timeAgo(h.first_seen_at)} · last seen{' '}
-                            {timeAgo(h.last_seen_at)}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <Percent value={h.observed_peak_pct} className="font-bold" />
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <Percent value={h.exchange_24h_high_pct} />
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <Percent value={h.last_pct} colorize={false} />
-                        </td>
-                        <td className="px-4 py-3 text-right text-sm">
-                          <Price value={topPrice(h.exchanges)} />
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex flex-wrap gap-1">
-                            {h.exchanges.map((e) => (
-                              <Badge
-                                key={e.exchange}
-                                variant="outline"
-                                className="text-xs font-normal opacity-60"
-                              >
-                                {e.exchange}
-                              </Badge>
-                            ))}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-right font-mono text-muted-foreground tabular-nums">
-                          {formatVolume(volume)}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                        No results.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
             </div>
           </CardContent>
         </Card>
