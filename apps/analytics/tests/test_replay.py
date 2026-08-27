@@ -1,14 +1,18 @@
 from __future__ import annotations
 
-from dataclasses import replace
+import hashlib
+import json
+from dataclasses import asdict, replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
+import schurfer_analytics.replay as replay_module
 from schurfer_analytics.replay import (
     ReplayDecision,
     ReplayFilters,
     ReplayOutcome,
+    _fingerprint,
     build_replay_dataset,
     decision_exclusion_reasons,
 )
@@ -313,3 +317,41 @@ def test_input_fingerprint_is_order_independent_but_content_sensitive() -> None:
 
     assert forward.input_fingerprint == reverse.input_fingerprint
     assert forward.input_fingerprint != changed.input_fingerprint
+
+
+def test_streaming_fingerprint_matches_legacy_canonical_bytes() -> None:
+    decisions = (
+        replace(_decision(1), reason="измерение 🚀"),
+        _decision(2, event_id=2, minutes=10, base="BANK"),
+    )
+    legacy_payload = []
+    for decision in decisions:
+        row = asdict(decision)
+        row["ts"] = decision.ts.isoformat()
+        legacy_payload.append(row)
+    legacy_bytes = json.dumps(
+        legacy_payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        default=str,
+    ).encode()
+
+    assert _fingerprint(decisions) == hashlib.sha256(legacy_bytes).hexdigest()
+
+
+def test_fingerprint_serializes_only_one_decision_at_a_time(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    serialized_row_ids: list[int] = []
+    real_serialize = replay_module._canonical_fingerprint_row
+
+    def tracked_serialize(decision: ReplayDecision) -> dict[str, Any]:
+        serialized_row_ids.append(decision.row_id)
+        return real_serialize(decision)
+
+    monkeypatch.setattr(replay_module, "_canonical_fingerprint_row", tracked_serialize)
+
+    _fingerprint(tuple(_decision(index, event_id=index) for index in range(1, 101)))
+
+    assert serialized_row_ids == list(range(1, 101))

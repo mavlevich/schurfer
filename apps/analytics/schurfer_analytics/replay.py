@@ -6,8 +6,6 @@ decisions into deterministic episode paths and fails closed when a path is incom
 
 from __future__ import annotations
 
-import hashlib
-import json
 import math
 from collections import Counter
 from dataclasses import asdict, dataclass
@@ -18,6 +16,7 @@ from .outcomes import (
     FALLBACK_OUTCOME_STATUSES,
     RESOLVER_VERSION,
 )
+from .reporting import canonical_json_array_fingerprint
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -249,20 +248,24 @@ def is_ignored_measurement_decision(
     )
 
 
+def _canonical_fingerprint_row(decision: ReplayDecision) -> dict[str, Any]:
+    row = asdict(decision)
+    row["ts"] = decision.ts.isoformat()
+    return row
+
+
 def _fingerprint(decisions: tuple[ReplayDecision, ...]) -> str:
-    payload = []
-    for decision in decisions:
-        row = asdict(decision)
-        row["ts"] = decision.ts.isoformat()
-        payload.append(row)
-    encoded = json.dumps(
-        payload,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-        default=str,
-    ).encode()
-    return hashlib.sha256(encoded).hexdigest()
+    """Hash the legacy canonical JSON representation with bounded extra memory.
+
+    The previous implementation materialized a deep-copied list of every decision,
+    then a complete JSON string and a bytes copy of that string.  Large prospective
+    cohorts could therefore exceed the analytics container limit even though the
+    repository itself streams rows.  Emitting the exact same JSON array one decision
+    at a time preserves existing fingerprints while bounding temporary allocations to
+    the largest individual decision.
+    """
+    rows = (_canonical_fingerprint_row(decision) for decision in decisions)
+    return canonical_json_array_fingerprint(rows, default=str)
 
 
 def build_replay_dataset(
