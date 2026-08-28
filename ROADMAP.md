@@ -1383,15 +1383,27 @@ remains `DRY_RUN=true`, `AUTO_TRADE=false`.
    overwriting it. This is an observed exit quote, not an actual fill. Failure to
    fetch it must never block or erase the paper close. Ship the schema and collector
    early so observations accrue.
-3. **[In progress] Prospective liquid taker candidate.** Register
-   `liquid_taker_candidate_v1` from `2026-07-30T00:00:00Z`: keep the existing entry,
-   score, taker execution, and full-v1 exit rules, but require the recorded
+3. **[Completed 2026-08-29, do_not_promote] Prospective liquid taker candidate.**
+   `liquid_taker_candidate_v1` (registered `2026-07-30T00:00:00Z`): the existing
+   entry, score, taker execution, and full-v1 exit rules, requiring the recorded
    market-quality gate and decision-time round-trip impact at the configured notional
-   to be at most 20 bps. Treat Binance as a pre-declared sensitivity slice, not an
-   eligibility rule. Report trade flow, capacity, net expectancy, drawdown, venue and
-   weekly concentration. Promotion needs at least 100 eligible episodes, 30 asset
+   to be at most 20 bps. Binance was treated as a pre-declared sensitivity slice, not
+   an eligibility rule. Promotion needed at least 100 eligible episodes, 30 asset
    clusters, four calendar weeks, complete pairing, and a positive conservative
-   cluster interval. This remains shadow-only and does not change production.
+   cluster interval.
+
+   **2026-08-29, formal, `do_not_promote`.** Reached full maturity at the 4-week
+   checkpoint: 494 eligible episodes, 207 asset clusters, 4 calendar weeks. Point
+   estimate **-0.22%** net return per episode, 95% cluster-bootstrap CI
+   **[-0.45%, -0.01%]** — the entire interval is negative, holding under the
+   busiest-week exclusion (-0.34%) and minimum top-asset exclusion (-0.23%). Per
+   this repo's own rule, a negative mature test EV is `FAIL`, not a promotion.
+   Archived: `backups/reports/liquid-taker-2026-08-29.{json,md}`
+   (sha256 `be1e55ce8115f1f534562e5b7c65763d4cf8d568e4b9bceda57de63fb2e065a7`),
+   `decision_input_fingerprint` `052eaa2efa7cd474ba70f3c4e5697cfc0cdd5b722f956f372f27b26a0fa4781c`.
+   `pump_short_v1_market_quality`'s liquid-taker slice is closed; no further
+   promotion decision is pending on this candidate.
+
 4. **[Completed, collecting] Long-horizon and signed-funding research.** The resolver already stores 24-hour,
    72-hour, and 7-day outcomes. Add them as separate research rows with mature N,
    exact-venue coverage, MFE, MAE, baseline-stop survival, funding settlement count,
@@ -1451,7 +1463,7 @@ remains `DRY_RUN=true`, `AUTO_TRADE=false`.
    exact touches also became cash. Every cluster interval crossed zero and the
    defensive result was single-cluster fragile. OBS-009 is parked. Do not tune the
    limit or timeout on this cohort and do not build the paper post-only simulator.
-7. **[Registered, starts 2026-08-01] Prospective liquid-taker wider-stop shadow.**
+7. **[Completed 2026-08-29, do_not_promote] Prospective liquid-taker wider-stop shadow.**
    `liquid_taker_wider_stop_shadow_v1` reproduces the complete HYP-008 selector and
    compares the unchanged liquid-taker baseline with exactly one challenger on the
    same exact-venue path. The challenger widens only the initial stop to 1.5x and
@@ -1462,6 +1474,23 @@ remains `DRY_RUN=true`, `AUTO_TRADE=false`.
    challenger's absolute 95% lower bound and its paired-delta lower bound must be
    positive, including busiest-week and top-five-asset exclusions. A pass creates
    only a shadow candidate and cannot change production.
+
+   **2026-08-29, formal, `do_not_promote`.** Reached full maturity: 429 eligible
+   episodes, 183 asset clusters, 4 calendar weeks, complete pairing. Baseline point
+   estimate **-0.222%** net return per episode, 95% cluster-bootstrap CI
+   **[-0.464%, +0.018%]** — already not reliably negative on its own, but the gate
+   here is the challenger and the paired delta, not the baseline in isolation.
+   Challenger point estimate **-0.138%**, CI **[-0.328%, +0.038%]**. Paired delta
+   (challenger minus baseline) **+0.084%**, CI **[-0.045%, +0.228%]** — the interval
+   straddles zero, so the wider stop is not shown to help by a margin distinguishable
+   from noise; the promotion rule required both the challenger's absolute lower bound
+   and the paired-delta lower bound to be positive, and neither is. Busiest week
+   `2026-W32` exclusion does not change the conclusion. No shadow candidate is
+   promoted. Archived: `backups/reports/liquid-taker-wider-stop-2026-08-29.{json,md}`
+   (sha256 `d069f4a75f7a90ec9b10196499016ec04bc37fe1ee12a525e9c0cee61fa83208`). This
+   closes the wider-stop shadow track; no further promotion decision is pending on
+   this candidate.
+
 8. **[Implemented, collecting] Exit quote calibration.** The read-only
    `exit-liquidity-calibration-report` keeps every closed paper short in the coverage
    denominator and compares decision-time modeled impact with a complete executable
