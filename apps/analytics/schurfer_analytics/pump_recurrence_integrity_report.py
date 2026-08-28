@@ -136,9 +136,14 @@ from .reporting import (
 PUMP_RECURRENCE_INTEGRITY_REPORT_VERSION = "pump_recurrence_integrity_report_v2"
 
 # Named in the discussion that motivated this report. Case studies only --
-# never a source of population statistics or thresholds. 牛来 and NIULAI are
-# both included deliberately: the report's own collision/cross-venue checks
-# are what decide whether they are comparable, not this list.
+# never a source of population statistics or thresholds. 牛来/NIULAI and
+# 龙虾/LONGXIA are both included as pairs deliberately: the report's own
+# collision/cross-venue checks are what decide whether they are comparable,
+# not this list. 龙虾/LONGXIA (2026-08-28) is a second, independently found
+# instance of the exact same shape as 牛来/NIULAI -- 龙虾 (binance, bitget,
+# gate, htx, xt) and LONGXIA (bingx, lbank, mexc) share zero exchanges in
+# `pump_event_sources` across every one of their ~27-31 episodes each,
+# confirmed directly against production before adding here.
 CASE_STUDY_BASES: tuple[str, ...] = (
     "BTR",
     "CATE",
@@ -148,6 +153,8 @@ CASE_STUDY_BASES: tuple[str, ...] = (
     "JIMOTHY",
     "牛来",
     "NIULAI",
+    "龙虾",
+    "LONGXIA",
 )
 
 REGIME_COOLDOWNS: tuple[tuple[str, timedelta], ...] = (
