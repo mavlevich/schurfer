@@ -1,0 +1,244 @@
+{
+  "base": "CYS",
+  "bundle_sha256": "941f428cbaf79247e10ad54c2fb55e6938319cc5c07c7e765026285b2043fc40",
+  "captured_at": "2026-08-28T13:00:49.009436+00:00",
+  "code_revision": "f51fa67e14a07f5754d1934f308a1b9fbe6b0e05",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/cysic?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-08-28T13:00:48.540120+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "binance-smart-chain",
+      "block_time_in_minutes": 0,
+      "categories": [
+        "Infrastructure",
+        "Smart Contract Platform",
+        "BNB Chain Ecosystem",
+        "Zero Knowledge (ZK)",
+        "Base Ecosystem",
+        "OKX Ventures Portfolio",
+        "Polychain Capital Portfolio",
+        "Binance Alpha Spotlight",
+        "Base Native"
+      ],
+      "contract_address": "0x0c69199c1562233640e0db5ce2c399a88eb507c7",
+      "country_origin": "",
+      "description": {
+        "en": "The first full-stack compute network. Cysic turns GPUs, ASICs, and compute into liquid, yield-bearing assets.\n\n"
+      },
+      "detail_platforms": {
+        "base": {
+          "contract_address": "0x19e8d59ff3d7a31289e0dc04db48d43b02c7ffa6",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/base/tokens/0x19e8d59ff3d7a31289e0dc04db48d43b02c7ffa6"
+        },
+        "binance-smart-chain": {
+          "contract_address": "0x0c69199c1562233640e0db5ce2c399a88eb507c7",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/bsc/tokens/0x0c69199c1562233640e0db5ce2c399a88eb507c7"
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": false,
+      "hashing_algorithm": null,
+      "id": "cysic",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/71025/large/cysic.png?1765330348",
+        "small": "https://coin-images.coingecko.com/coins/images/71025/small/cysic.png?1765330348",
+        "thumb": "https://coin-images.coingecko.com/coins/images/71025/thumb/cysic.png?1765330348"
+      },
+      "last_updated": "2026-08-28T12:58:50.000Z",
+      "links": {
+        "announcement_url": [],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://explorer.cysic.xyz/",
+          "https://intel.arkm.com/explorer/token/cysic",
+          "https://bscscan.com/token/0x0C69199C1562233640e0Db5Ce2c399A88eB507C7",
+          "https://binplorer.com/address/0x0C69199C1562233640e0Db5Ce2c399A88eB507C7",
+          "https://basescan.org/token/0x19e8d59ff3D7A31289e0Dc04Db48d43b02c7ffa6"
+        ],
+        "chat_url": ["https://discord.com/invite/cysic"],
+        "facebook_username": "",
+        "homepage": ["https://cysic.xyz/"],
+        "official_forum_url": ["https://medium.com/@cysic"],
+        "repos_url": {
+          "bitbucket": [],
+          "github": ["https://github.com/cysic-labs"]
+        },
+        "snapshot_url": null,
+        "subreddit_url": null,
+        "telegram_channel_identifier": "CysicHQ",
+        "twitter_screen_name": "cysic_xyz",
+        "whitepaper": "https://hackmd.io/@Cysic"
+      },
+      "listing_currency": null,
+      "listing_price": null,
+      "listing_source": null,
+      "listing_source_url": null,
+      "listing_timestamp": null,
+      "market_cap_rank": 242,
+      "market_cap_rank_with_rehypothecated": 347,
+      "name": "Cysic",
+      "platforms": {
+        "base": "0x19e8d59ff3d7a31289e0dc04db48d43b02c7ffa6",
+        "binance-smart-chain": "0x0c69199c1562233640e0db5ce2c399a88eb507c7"
+      },
+      "preview_listing": false,
+      "public_notice": null,
+      "sentiment_votes_down_percentage": 50.0,
+      "sentiment_votes_up_percentage": 50.0,
+      "status_updates": [],
+      "symbol": "cys",
+      "watchlist_portfolio_users": 1935,
+      "web_slug": "cysic"
+    },
+    "raw_sha256": "25e6f2cf229fa02a66167c659de663f82454a6473955a6d5705e70c95ae4656c",
+    "source": "https://api.coingecko.com/api/v3/coins/cysic",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v2",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-08-28T13:00:48.214903+00:00",
+    "payload": {
+      "active": true,
+      "code": "CYS",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "CYS",
+      "info": {
+        "category": [],
+        "chain": "BSC",
+        "chains": [
+          {
+            "addr": "0x0c69199c1562233640e0db5ce2c399a88eb507c7",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "CYS",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "124394880.0",
+        "name": "Cysic",
+        "total_supply": "1000000000",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "Cysic",
+      "networks": {
+        "BEP20": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "BSC",
+          "info": {
+            "addr": "0x0c69199c1562233640e0db5ce2c399a88eb507c7",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "BEP20",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "c87972926f7c53426fa5e2e88d4f467dc89519bdfae457991ead31d2f6eb1feb",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "exact_contract",
+  "source_contract": {
+    "block_hash": "0x0682ea47e55621f65932dfa99e46cb05dd9c5e3a1aae387e6e7cd1d5335917f9",
+    "block_number": 118579919,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0x0c69199c1562233640e0db5ce2c399a88eb507c7",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-08-28T13:00:48.859336+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "8e73d72cca28014c8646f2033e87ec712fc9eb6dbc2664092e1cf446ce4e6937",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "target_catalog_evidence": {
+    "endpoint": "https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list",
+    "observed_at": "2026-08-28T13:00:10.911381+00:00",
+    "payload": {
+      "chainId": "56",
+      "chainName": "BSC",
+      "contractAddress": "0x0c69199c1562233640e0db5ce2c399a88eb507c7",
+      "decimals": 18,
+      "fullyDelisted": false,
+      "listingCex": false,
+      "name": "Cysic",
+      "offline": false,
+      "symbol": "CYS"
+    },
+    "raw_sha256": "cdf958244eff351f237c1735c13ba2bf2bd3a798bb6dad4e81a0e7d02a2d45e2",
+    "source": "binance:alpha_catalog_entry",
+    "wire_exact": false
+  },
+  "target_contract": {
+    "block_hash": "0x0682ea47e55621f65932dfa99e46cb05dd9c5e3a1aae387e6e7cd1d5335917f9",
+    "block_number": 118579919,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0x0c69199c1562233640e0db5ce2c399a88eb507c7",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-08-28T13:00:49.008778+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "8e73d72cca28014c8646f2033e87ec712fc9eb6dbc2664092e1cf446ce4e6937",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "target_exchange": "binance",
+  "working_tree_dirty": true
+}

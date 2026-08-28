@@ -1,0 +1,288 @@
+{
+  "base": "HOME",
+  "bundle_sha256": "4ef2faa0cb41d34b607aad550085b89c95b6c8b2bc8373b5ab6d7ca6d86371d9",
+  "captured_at": "2026-08-28T13:00:59.902904+00:00",
+  "code_revision": "f51fa67e14a07f5754d1934f308a1b9fbe6b0e05",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/home?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-08-28T13:00:59.411022+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "base",
+      "block_time_in_minutes": 0,
+      "categories": [
+        "Decentralized Finance (DeFi)",
+        "BNB Chain Ecosystem",
+        "Solana Ecosystem",
+        "Base Ecosystem",
+        "Account Abstraction",
+        "Dex Aggregator",
+        "Base Native"
+      ],
+      "contract_address": "0x4bfaa776991e85e5f8b1255461cbbd216cfc714f",
+      "country_origin": "",
+      "description": {
+        "en": "Crypto's \"Everything App\" that makes DeFi as easy as using an iPhone, combining instant cross-chain swaps, yield farming, and perps trading with zero gas fees, zero bridging and full self-custody.\n\nDecentralized finance has massive potential, but several challenges have consistently held it back from broader adoption:\n-Complex User Experience: The steep learning curve, confusing interfaces, and technical barriers make DeFi intimidating for newcomers.\n-Fragmented Ecosystem: Managing assets across multiple blockchains can feel disjointed and labor-intensive, with users needing to navigate different platforms and tools.\n-Risk of User Errors: DeFi can be unforgiving—losing a seed phrase or making a small mistake can lead to significant financial losses.\n-Issues with Centralized Exchanges: Centralized exchanges compromise control and security by holding custody of users' assets, which goes against the core principles of decentralization.\n\nDefi App directly addresses these issues to make DeFi simple, safe, and accessible:\n-Unified Platform: Defi App provides native account abstraction, allowing you to connect your wallets and manage all your assets without dealing with technical intricacies. There’s no need to navigate multiple tools or migrate assets across chains—everything you need is in one place.\n-Cross-Chain Capabilities: Our platform supports seamless engagement across different blockchain networks. Swap tokens, leverage assets, or yield farm—Defi App breaks down chain boundaries, so you can take advantage of opportunities anywhere in DeFi.\n-Gasless Transactions: Defi App sponsors gas fees, meaning you don’t need to hold specific gas tokens for every chain. This makes transactions easy and eliminates a common barrier that frustrates both new and experienced users.\n-Intuitive Design: Defi App’s user-friendly interface ensures that anyone, from beginners to experts, can navigate DeFi confidently.\n"
+      },
+      "detail_platforms": {
+        "base": {
+          "contract_address": "0x4bfaa776991e85e5f8b1255461cbbd216cfc714f",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/base/tokens/0x4bfaa776991e85e5f8b1255461cbbd216cfc714f"
+        },
+        "binance-smart-chain": {
+          "contract_address": "0x4bfaa776991e85e5f8b1255461cbbd216cfc714f",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/bsc/tokens/0x4bfaa776991e85e5f8b1255461cbbd216cfc714f"
+        },
+        "solana": {
+          "contract_address": "J3umBWqhSjd13sag1E1aUojViWvPYA5dFNyqpKuX3WXj",
+          "decimal_place": 9,
+          "geckoterminal_url": "https://www.geckoterminal.com/solana/tokens/J3umBWqhSjd13sag1E1aUojViWvPYA5dFNyqpKuX3WXj"
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": false,
+      "hashing_algorithm": null,
+      "id": "home",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/54873/large/defi-app.png?1742235743",
+        "small": "https://coin-images.coingecko.com/coins/images/54873/small/defi-app.png?1742235743",
+        "thumb": "https://coin-images.coingecko.com/coins/images/54873/thumb/defi-app.png?1742235743"
+      },
+      "last_updated": "2026-08-28T12:58:50.000Z",
+      "links": {
+        "announcement_url": [],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://basescan.org/token/0x4bfaa776991e85e5f8b1255461cbbd216cfc714f",
+          "https://intel.arkm.com/explorer/token/home",
+          "https://bscscan.com/token/0x4bfaa776991e85e5f8b1255461cbbd216cfc714f",
+          "https://binplorer.com/address/0x4bfaa776991e85e5f8b1255461cbbd216cfc714f",
+          "https://solscan.io/token/J3umBWqhSjd13sag1E1aUojViWvPYA5dFNyqpKuX3WXj"
+        ],
+        "chat_url": [
+          "https://discord.com/invite/defiapp",
+          "https://blog.defi.app/",
+          "https://www.youtube.com/@defidotapp"
+        ],
+        "facebook_username": "",
+        "homepage": ["https://defi.app"],
+        "official_forum_url": [
+          "https://www.tiktok.com/@defiapp",
+          "https://www.linkedin.com/company/defiapp"
+        ],
+        "repos_url": {
+          "bitbucket": [],
+          "github": ["https://github.com/defi-app"]
+        },
+        "snapshot_url": null,
+        "subreddit_url": null,
+        "telegram_channel_identifier": "OfficialDefiApp",
+        "twitter_screen_name": "defiapp",
+        "whitepaper": "https://docs.defi.app/knowledge-base"
+      },
+      "listing_currency": null,
+      "listing_price": null,
+      "listing_source": null,
+      "listing_source_url": null,
+      "listing_timestamp": null,
+      "market_cap_rank": 700,
+      "market_cap_rank_with_rehypothecated": 891,
+      "name": "HOME",
+      "platforms": {
+        "base": "0x4bfaa776991e85e5f8b1255461cbbd216cfc714f",
+        "binance-smart-chain": "0x4bfaa776991e85e5f8b1255461cbbd216cfc714f",
+        "solana": "J3umBWqhSjd13sag1E1aUojViWvPYA5dFNyqpKuX3WXj"
+      },
+      "preview_listing": false,
+      "public_notice": null,
+      "sentiment_votes_down_percentage": 0.0,
+      "sentiment_votes_up_percentage": 100.0,
+      "status_updates": [],
+      "symbol": "home",
+      "watchlist_portfolio_users": 3723,
+      "web_slug": "home"
+    },
+    "raw_sha256": "153952ee5503a9713ea56c00c201aa60fa5376ea3b102fed93f44471d43b87f9",
+    "source": "https://api.coingecko.com/api/v3/coins/home",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v2",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-08-28T13:00:59.085892+00:00",
+    "payload": {
+      "active": true,
+      "code": "HOME",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "HOME",
+      "info": {
+        "category": [],
+        "chain": "BASEEVM",
+        "chains": [
+          {
+            "addr": "0x4bfaa776991e85e5f8b1255461cbbd216cfc714f",
+            "deposit_disabled": false,
+            "name": "BASEEVM",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          {
+            "addr": "0x4bfaa776991e85e5f8b1255461cbbd216cfc714f",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "HOME",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "16738880.0",
+        "name": "DeFi App",
+        "total_supply": "10000000000",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "DeFi App",
+      "networks": {
+        "BASE": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "BASEEVM",
+          "info": {
+            "addr": "0x4bfaa776991e85e5f8b1255461cbbd216cfc714f",
+            "deposit_disabled": false,
+            "name": "BASEEVM",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "BASE",
+          "precision": 0.0001,
+          "withdraw": true
+        },
+        "BEP20": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "BSC",
+          "info": {
+            "addr": "0x4bfaa776991e85e5f8b1255461cbbd216cfc714f",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "BEP20",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "3d6bbc017551cf7792d19d9d5c3e280554252d4bc1fdec0458fc9818c1c7c0a8",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "exact_contract",
+  "source_contract": {
+    "block_hash": "0x35651efc6676605b0379ae2527a467b351c1c771fef5dc15eb635362a5a5ce99",
+    "block_number": 118579943,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0x4bfaa776991e85e5f8b1255461cbbd216cfc714f",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-08-28T13:00:59.733047+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "8e73d72cca28014c8646f2033e87ec712fc9eb6dbc2664092e1cf446ce4e6937",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "target_catalog_evidence": {
+    "endpoint": "https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list",
+    "observed_at": "2026-08-28T13:00:10.911381+00:00",
+    "payload": {
+      "chainId": "56",
+      "chainName": "BSC",
+      "contractAddress": "0x4bfaa776991e85e5f8b1255461cbbd216cfc714f",
+      "decimals": 18,
+      "fullyDelisted": true,
+      "listingCex": true,
+      "name": "Defi App",
+      "offline": true,
+      "symbol": "HOME"
+    },
+    "raw_sha256": "93b462c12b67b9f12d659d4b4e25f787bce818946f83fce3734fe63e4f1e75a5",
+    "source": "binance:alpha_catalog_entry",
+    "wire_exact": false
+  },
+  "target_contract": {
+    "block_hash": "0x35651efc6676605b0379ae2527a467b351c1c771fef5dc15eb635362a5a5ce99",
+    "block_number": 118579943,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0x4bfaa776991e85e5f8b1255461cbbd216cfc714f",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-08-28T13:00:59.900961+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "8e73d72cca28014c8646f2033e87ec712fc9eb6dbc2664092e1cf446ce4e6937",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "target_exchange": "binance",
+  "working_tree_dirty": true
+}
