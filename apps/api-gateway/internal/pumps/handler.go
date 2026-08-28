@@ -64,6 +64,16 @@ type pumpEntry struct {
 	PumpEventID  int64           `json:"pump_event_id"`
 	MaxChangePct float64         `json:"max_change_pct"`
 	Exchanges    []exchangeEntry `json:"exchanges"`
+	// IsLive is true only for an entry actually present in pumps:latest right
+	// now. Never set by anything that writes pumps:latest itself (Redis JSON
+	// has no such field) -- Token explicitly sets it true on the live-match
+	// path and dbTokenFallback explicitly sets it false, so it is never left
+	// to a JSON-unmarshal zero value. Consumers (TokenPage, ExchangeBreakdown)
+	// use this to avoid presenting a historical snapshot -- possibly days
+	// stale -- as current activity (colleague review, 2026-08-28: the DB
+	// fallback below this type made "Active on N exchanges" and the header's
+	// change_pct read as live for a token that had not pumped in days).
+	IsLive bool `json:"is_live"`
 }
 
 type pumpsPayload struct {
@@ -242,6 +252,7 @@ func (h *Handler) Token(w http.ResponseWriter, r *http.Request) {
 	if payload != nil {
 		for _, p := range payload.Pumps {
 			if p.Base == base {
+				p.IsLive = true
 				w.Header().Set("Content-Type", "application/json")
 				_ = json.NewEncoder(w).Encode(p)
 				return
@@ -298,6 +309,7 @@ func (h *Handler) dbTokenFallback(ctx context.Context, base string) (*pumpEntry,
 		PumpEventID:  eventID,
 		MaxChangePct: maxChangePct,
 		Exchanges:    exchanges,
+		IsLive:       false,
 	}, nil
 }
 

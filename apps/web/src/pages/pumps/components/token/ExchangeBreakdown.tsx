@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   createColumnHelper,
   flexRender,
@@ -26,58 +26,83 @@ import type { ExchangeEntry } from '../../types';
 
 const columnHelper = createColumnHelper<ExchangeEntry>();
 
-const columns = [
-  columnHelper.accessor('exchange', {
-    header: ({ column }) => <DataTableColumnHeader column={column} title="Exchange" />,
-    cell: ({ getValue }) => <div className="font-medium capitalize">{getValue()}</div>,
-  }),
-  columnHelper.accessor('change_pct', {
-    header: ({ column }) => (
-      <DataTableColumnHeader column={column} title="24h %" className="justify-end" />
-    ),
-    cell: ({ getValue }) => (
-      <div className="text-right">
-        <Percent value={getValue()} className="font-bold" />
-      </div>
-    ),
-  }),
-  columnHelper.accessor((row) => parseFloat(row.price) || 0, {
-    id: 'price',
-    header: ({ column }) => (
-      <DataTableColumnHeader column={column} title="Price" className="justify-end" />
-    ),
-    cell: ({ getValue }) => (
-      <div className="text-right">
-        <Price value={getValue()} />
-      </div>
-    ),
-  }),
-  columnHelper.accessor((row) => parseFloat(row.high_24h) || 0, {
-    id: 'high_24h',
-    header: ({ column }) => (
-      <DataTableColumnHeader column={column} title="24h High" className="justify-end" />
-    ),
-    cell: ({ getValue }) => (
-      <div className="text-right">
-        <Price value={getValue()} />
-      </div>
-    ),
-  }),
-  columnHelper.accessor('volume_24h_usd', {
-    header: ({ column }) => (
-      <DataTableColumnHeader column={column} title="Volume" className="justify-end" />
-    ),
-    cell: ({ getValue }) => (
-      <div className="text-right font-mono text-muted-foreground tabular-nums">
-        {formatVolume({ value: getValue(), partial: false })}
-      </div>
-    ),
-  }),
-];
+// Column titles depend on liveness: "24h %"/"24h High"/"Volume" would read
+// as current for a historical (is_live=false) entry, whose values are
+// actually a last-observed snapshot, possibly days stale (colleague review,
+// 2026-08-28 — the DB fallback that made this table render at all for a
+// non-live token also made it silently misleading).
+function buildColumns(isLive: boolean) {
+  return [
+    columnHelper.accessor('exchange', {
+      header: ({ column }) => <DataTableColumnHeader column={column} title="Exchange" />,
+      cell: ({ getValue }) => <div className="font-medium capitalize">{getValue()}</div>,
+    }),
+    columnHelper.accessor('change_pct', {
+      header: ({ column }) => (
+        <DataTableColumnHeader
+          column={column}
+          title={isLive ? '24h %' : 'Last %'}
+          className="justify-end"
+        />
+      ),
+      cell: ({ getValue }) => (
+        <div className="text-right">
+          <Percent value={getValue()} className="font-bold" />
+        </div>
+      ),
+    }),
+    columnHelper.accessor((row) => parseFloat(row.price) || 0, {
+      id: 'price',
+      header: ({ column }) => (
+        <DataTableColumnHeader
+          column={column}
+          title={isLive ? 'Price' : 'Last price'}
+          className="justify-end"
+        />
+      ),
+      cell: ({ getValue }) => (
+        <div className="text-right">
+          <Price value={getValue()} />
+        </div>
+      ),
+    }),
+    columnHelper.accessor((row) => parseFloat(row.high_24h) || 0, {
+      id: 'high_24h',
+      header: ({ column }) => (
+        <DataTableColumnHeader
+          column={column}
+          title={isLive ? '24h High' : 'Peak high'}
+          className="justify-end"
+        />
+      ),
+      cell: ({ getValue }) => (
+        <div className="text-right">
+          <Price value={getValue()} />
+        </div>
+      ),
+    }),
+    columnHelper.accessor('volume_24h_usd', {
+      header: ({ column }) => (
+        <DataTableColumnHeader
+          column={column}
+          title={isLive ? 'Volume' : 'Last volume'}
+          className="justify-end"
+        />
+      ),
+      cell: ({ getValue }) => (
+        <div className="text-right font-mono text-muted-foreground tabular-nums">
+          {formatVolume({ value: getValue(), partial: false })}
+        </div>
+      ),
+    }),
+  ];
+}
 
 export function ExchangeBreakdown({ base }: { base: string }) {
   const { data: pump, isPending, isError } = useToken(base);
   const [sorting, setSorting] = useState<SortingState>([{ id: 'volume_24h_usd', desc: true }]);
+  const isLive = pump?.is_live ?? true;
+  const columns = useMemo(() => buildColumns(isLive), [isLive]);
 
   const table = useReactTable({
     data: pump?.exchanges ?? [],
@@ -101,6 +126,11 @@ export function ExchangeBreakdown({ base }: { base: string }) {
         <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
           Exchange breakdown
         </CardTitle>
+        {!pump.is_live && (
+          <p className="text-xs text-muted-foreground">
+            Historical snapshot — this token is not currently live.
+          </p>
+        )}
       </CardHeader>
       <CardContent className="p-0">
         <div className="overflow-x-auto">

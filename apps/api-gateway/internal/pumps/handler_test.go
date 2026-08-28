@@ -92,6 +92,9 @@ func TestTokenHandlerSupportsUnicodeBase(t *testing.T) {
 	if response.Base != base {
 		t.Errorf("base = %q, want %q", response.Base, base)
 	}
+	if !response.IsLive {
+		t.Errorf("is_live = false, want true for a base actually present in pumps:latest")
+	}
 }
 
 // TestTokenHandlerFallsBackToDBWhenNotInLiveSnapshot regression-tests the
@@ -144,6 +147,57 @@ func TestTokenHandlerFallsBackToDBWhenNotInLiveSnapshot(t *testing.T) {
 	}
 	if len(response.Exchanges) != 1 || response.Exchanges[0].Symbol != "TRUMPSOL-USDT" {
 		t.Errorf("exchanges = %+v, want the DB-sourced TRUMPSOL-USDT entry", response.Exchanges)
+	}
+	// Colleague review (2026-08-28): the DB-sourced entry is historical, not
+	// live -- TokenPage's "Active on N exchanges" and its header change_pct
+	// must not read as current for a token that fell out of pumps:latest.
+	if response.IsLive {
+		t.Errorf("is_live = true, want false for a DB-fallback (historical) entry")
+	}
+}
+
+// TestTokenHandlerLiveEntryTakesPrecedenceOverDBFallback confirms IsLive is
+// exactly the discriminator TokenPage/ExchangeBreakdown need: true only when
+// the base is actually present in pumps:latest right now, false whenever the
+// response came from dbTokenFallback, regardless of what the DB itself holds
+// for the same base.
+func TestTokenHandlerLiveEntryTakesPrecedenceOverDBFallback(t *testing.T) {
+	t.Parallel()
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+	payload, err := json.Marshal(pumpsPayload{
+		Count: 1,
+		Pumps: []pumpEntry{{Base: "ACTIVE", MaxChangePct: 55}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := rdb.Set(context.Background(), "pumps:latest", payload, 0).Err(); err != nil {
+		t.Fatal(err)
+	}
+	// A pool that would panic if queried -- the live match must return
+	// before ever falling through to the DB.
+	pool := &stubQuerier{
+		onQueryRow: func(_ context.Context, _ string, _ ...any) pgxRow {
+			t.Fatal("dbTokenFallback must not be queried when the live snapshot has a match")
+			return nil
+		},
+	}
+
+	h := &Handler{rdb: rdb, pool: pool}
+	router := chi.NewRouter()
+	router.Get("/api/pumps/{base}", h.Token)
+	req := httptest.NewRequest(http.MethodGet, "/api/pumps/ACTIVE", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	var response pumpEntry
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.IsLive {
+		t.Errorf("is_live = false, want true for a live-snapshot match")
 	}
 }
 
