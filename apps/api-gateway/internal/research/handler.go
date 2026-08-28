@@ -265,101 +265,22 @@ type cohortCounts struct {
 	missingExactOutcomeEpisodes int
 }
 
-const cohortProgressSQL = `
-WITH candidate_events AS (
-	SELECT DISTINCT d.pump_event_id
-	FROM app.trade_decisions AS d
-	WHERE d.ts >= $1
-	  AND d.ts < $2
-	  AND d.strategy_version = 'pump_short_v1_market_quality'
-	  AND d.pump_event_id IS NOT NULL
-),
-episode_inputs AS (
-	SELECT
-		d.pump_event_id,
-		upper(e.base) AS base,
-		date_trunc('week', min(d.ts) AT TIME ZONE 'UTC') AS episode_week,
-		count(*) FILTER (
-			WHERE d.strategy_version = 'pump_short_measurement_v1'
-			  AND coalesce(d.features @> '{"measurement_only": true}'::jsonb, false)
-		) AS ignored_measurement_decisions,
-		bool_and(
-			d.strategy_version = 'pump_short_v1_market_quality'
-		) FILTER (
-			WHERE NOT (
-				d.strategy_version = 'pump_short_measurement_v1'
-				AND coalesce(d.features @> '{"measurement_only": true}'::jsonb, false)
-			)
-		) AS strategy_scope_valid,
-		bool_and(
-			d.decision_id IS NOT NULL
-			AND upper(d.base) = upper(e.base)
-			AND d.price IS NOT NULL
-			AND d.price > 0
-			AND d.features IS NOT NULL
-			AND d.features ? 'config'
-			AND d.features ? 'signal'
-			AND d.liquidity IS NOT NULL
-		) FILTER (
-			WHERE NOT (
-				d.strategy_version = 'pump_short_measurement_v1'
-				AND coalesce(d.features @> '{"measurement_only": true}'::jsonb, false)
-			)
-		) AS valid_input,
-		bool_and(o.id IS NOT NULL) FILTER (
-			WHERE NOT (
-				d.strategy_version = 'pump_short_measurement_v1'
-				AND coalesce(d.features @> '{"measurement_only": true}'::jsonb, false)
-			)
-		) AS exact_outcome_complete
-	FROM candidate_events AS candidates
-	JOIN app.trade_decisions AS d
-	  ON d.pump_event_id = candidates.pump_event_id
-	 AND d.ts >= $1
-	 AND d.ts < $2
-	JOIN app.pump_events AS e
-	  ON e.id = d.pump_event_id
-	LEFT JOIN app.trade_decision_outcomes AS o
-	  ON o.decision_id = d.decision_id
-	 AND o.resolver_version = 'forward_v1'
-	 AND o.horizon_minutes = 480
-	 AND o.status = 'complete'
-	WHERE coalesce(e.entry_qualified_at, e.first_seen_at) >= $1
-	  AND e.closed_at IS NOT NULL
-	  AND e.closed_at < $2
-	GROUP BY d.pump_event_id, e.base
+// liquidTakerClosedCounts and liquidTakerWiderClosedCounts freeze the formal
+// checkpoint counts each cohort matured at (see ROADMAP.md, 2026-08-29
+// closeout: both do_not_promote). A promotion decision is locked forever at
+// the earliest maturity checkpoint by design -- it does not move as more
+// data accumulates -- so these numbers never change again. Serving them as
+// constants instead of re-running the historical cohortProgressSQL query on
+// every request removes that query's only two call sites, which is what
+// produced the 2026-08-29 Readiness timeout incident (18.6s query against
+// production data volume). Diagnostic sub-counts (candidates, ignored
+// measurement decisions, invalid input episodes) are not preserved from the
+// frozen checkpoint and are intentionally left at zero; the frontend hides
+// that breakdown for closed cohorts rather than show fabricated numbers.
+var (
+	liquidTakerClosedCounts      = cohortCounts{episodes: 494, clusters: 207, weeks: 4}
+	liquidTakerWiderClosedCounts = cohortCounts{episodes: 429, clusters: 183, weeks: 4}
 )
-SELECT
-	count(*),
-	count(*) FILTER (
-		WHERE strategy_scope_valid AND valid_input AND exact_outcome_complete
-	),
-	count(DISTINCT base) FILTER (
-		WHERE strategy_scope_valid AND valid_input AND exact_outcome_complete
-	),
-	count(DISTINCT episode_week) FILTER (
-		WHERE strategy_scope_valid AND valid_input AND exact_outcome_complete
-	),
-	coalesce(sum(ignored_measurement_decisions), 0),
-	count(*) FILTER (WHERE NOT strategy_scope_valid),
-	count(*) FILTER (WHERE NOT valid_input),
-	count(*) FILTER (WHERE NOT exact_outcome_complete)
-FROM episode_inputs`
-
-func (h *Handler) cohortProgress(ctx context.Context, since, until time.Time) (cohortCounts, error) {
-	var counts cohortCounts
-	err := h.db.QueryRow(ctx, cohortProgressSQL, since, until).Scan(
-		&counts.candidates,
-		&counts.episodes,
-		&counts.clusters,
-		&counts.weeks,
-		&counts.ignoredMeasurementDecisions,
-		&counts.unexpectedStrategyEpisodes,
-		&counts.invalidInputEpisodes,
-		&counts.missingExactOutcomeEpisodes,
-	)
-	return counts, err
-}
 
 const latestReportSQL = `
 SELECT
@@ -1030,33 +951,20 @@ func (h *Handler) Readiness(w http.ResponseWriter, r *http.Request) {
 	if checkpointRunner != nil {
 		checkpointRunner.Stale = checkpointSnapshotIsStale(now, checkpointRunner.GeneratedAt)
 	}
-	liquidCounts, err := h.cohortProgress(r.Context(), liquidTakerStart, now)
-	if err != nil {
-		slog.Error("research.liquid_taker_progress", "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
+	// hyp_008 and hyp_010 are permanently closed (do_not_promote, 2026-08-29 --
+	// see ROADMAP.md). Their live cohortProgressSQL query was removed; only
+	// the cheap, contract-indexed latest-report lookup still runs.
 	liquidReport, err := h.latestReport(r.Context(), liquidTakerContract)
 	if err != nil {
 		slog.Error("research.liquid_taker_latest_report", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	widerCounts := cohortCounts{}
-	var widerReport *RegisteredReportRun
-	if !now.Before(liquidTakerWiderStart) {
-		widerCounts, err = h.cohortProgress(r.Context(), liquidTakerWiderStart, now)
-		if err != nil {
-			slog.Error("research.liquid_taker_wider_progress", "err", err)
-			http.Error(w, "internal error", http.StatusInternalServerError)
-			return
-		}
-		widerReport, err = h.latestReport(r.Context(), liquidTakerWiderContract)
-		if err != nil {
-			slog.Error("research.liquid_taker_wider_latest_report", "err", err)
-			http.Error(w, "internal error", http.StatusInternalServerError)
-			return
-		}
+	widerReport, err := h.latestReport(r.Context(), liquidTakerWiderContract)
+	if err != nil {
+		slog.Error("research.liquid_taker_wider_latest_report", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
 	}
 	exitProgress, err := h.exitLiquidityProgress(r.Context(), now)
 	if err != nil {
@@ -1071,33 +979,35 @@ func (h *Handler) Readiness(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	liquidCohort := cohort(
+		"hyp_008",
+		"Liquid taker shelf",
+		liquidTakerContract,
+		liquidTakerStart,
+		now,
+		liquidTakerClosedCounts,
+		liquidReport,
+	)
+	liquidCohort.Status = "closed"
+	widerCohort := cohort(
+		"hyp_010",
+		"Liquid taker + wider stop",
+		liquidTakerWiderContract,
+		liquidTakerWiderStart,
+		now,
+		liquidTakerWiderClosedCounts,
+		widerReport,
+	)
+	widerCohort.Status = "closed"
+
 	response := Response{
-		GeneratedAt:    now,
-		Interpretation: "collection_progress_only_no_strategy_change",
-		ProspectiveCohorts: []CohortProgress{
-			cohort(
-				"hyp_008",
-				"Liquid taker shelf",
-				liquidTakerContract,
-				liquidTakerStart,
-				now,
-				liquidCounts,
-				liquidReport,
-			),
-			cohort(
-				"hyp_010",
-				"Liquid taker + wider stop",
-				liquidTakerWiderContract,
-				liquidTakerWiderStart,
-				now,
-				widerCounts,
-				widerReport,
-			),
-		},
-		ExitLiquidity:    exitProgress,
-		Orderflow:        h.orderflowProgress(r.Context(), now),
-		SourceLead:       sourceLeadProgress,
-		CheckpointRunner: checkpointRunner,
+		GeneratedAt:        now,
+		Interpretation:     "collection_progress_only_no_strategy_change",
+		ProspectiveCohorts: []CohortProgress{liquidCohort, widerCohort},
+		ExitLiquidity:      exitProgress,
+		Orderflow:          h.orderflowProgress(r.Context(), now),
+		SourceLead:         sourceLeadProgress,
+		CheckpointRunner:   checkpointRunner,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
