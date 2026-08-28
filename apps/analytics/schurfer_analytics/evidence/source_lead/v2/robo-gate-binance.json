@@ -1,0 +1,247 @@
+{
+  "base": "ROBO",
+  "bundle_sha256": "9baefb0c74f57e86908fe5ee679ab117e01191bf04537e15c23f2d7057c976aa",
+  "captured_at": "2026-08-28T12:33:39.478843+00:00",
+  "code_revision": "95775873defc52777796434474b5be9556d47f5a",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/robo-token-2?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-08-28T12:33:39.015263+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "ethereum",
+      "block_time_in_minutes": 0,
+      "categories": [
+        "Artificial Intelligence (AI)",
+        "BNB Chain Ecosystem",
+        "Ethereum Ecosystem",
+        "Base Ecosystem",
+        "Virtuals Protocol Ecosystem",
+        "Binance Alpha Spotlight",
+        "Robotics"
+      ],
+      "contract_address": "0x32b4d049fe4c888d2b92eecaf729f44df6b1f36e",
+      "country_origin": "",
+      "description": {
+        "en": "Fabric Protocol is a global open network supported by the non-profit Fabric Foundation, enabling the construction, governance, and collaborative evolution of general-purpose robots through verifiable computing and agent-native infrastructure. The protocol coordinates data, computation, and regulation via a public ledger, combining modular infrastructure to facilitate safe human-machine collaboration."
+      },
+      "detail_platforms": {
+        "base": {
+          "contract_address": "0x407a5fb66cb1b3d50004f7091c08a27b42ba6d6f",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/base/tokens/0x407a5fb66cb1b3d50004f7091c08a27b42ba6d6f"
+        },
+        "binance-smart-chain": {
+          "contract_address": "0x475cbf5919608e0c6af00e7bf87fab83bf3ef6e2",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/bsc/tokens/0x475cbf5919608e0c6af00e7bf87fab83bf3ef6e2"
+        },
+        "ethereum": {
+          "contract_address": "0x32b4d049fe4c888d2b92eecaf729f44df6b1f36e",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/eth/tokens/0x32b4d049fe4c888d2b92eecaf729f44df6b1f36e"
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": false,
+      "hashing_algorithm": null,
+      "id": "robo-token-2",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/102172005/large/fab.png?1772080701",
+        "small": "https://coin-images.coingecko.com/coins/images/102172005/small/fab.png?1772080701",
+        "thumb": "https://coin-images.coingecko.com/coins/images/102172005/thumb/fab.png?1772080701"
+      },
+      "last_updated": "2026-08-28T12:31:50.000Z",
+      "links": {
+        "announcement_url": [],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://etherscan.io/token/0x32b4d049fe4c888d2b92eecaf729f44df6b1f36e",
+          "https://intel.arkm.com/explorer/token/robo-token-2",
+          "https://ethplorer.io/address/0x32b4d049fE4c888D2b92eEcaf729F44DF6B1F36E",
+          "https://bscscan.com/token/0x475cbf5919608e0c6af00e7bf87fab83bf3ef6e2",
+          "https://binplorer.com/address/0x475cbf5919608e0c6af00e7bf87fab83bf3ef6e2",
+          "https://basescan.org/token/0x407A5fb66CB1b3d50004f7091c08A27B42ba6d6F"
+        ],
+        "chat_url": ["https://discord.com/invite/fabricfnd"],
+        "facebook_username": "",
+        "homepage": ["https://fabric.foundation/"],
+        "official_forum_url": [],
+        "repos_url": {
+          "bitbucket": [],
+          "github": []
+        },
+        "snapshot_url": null,
+        "subreddit_url": null,
+        "telegram_channel_identifier": "",
+        "twitter_screen_name": "FabricFND",
+        "whitepaper": ""
+      },
+      "listing_currency": null,
+      "listing_price": null,
+      "listing_source": null,
+      "listing_source_url": null,
+      "listing_timestamp": null,
+      "market_cap_rank": 649,
+      "market_cap_rank_with_rehypothecated": 829,
+      "name": "Fabric Protocol",
+      "platforms": {
+        "base": "0x407a5fb66cb1b3d50004f7091c08a27b42ba6d6f",
+        "binance-smart-chain": "0x475cbf5919608e0c6af00e7bf87fab83bf3ef6e2",
+        "ethereum": "0x32b4d049fe4c888d2b92eecaf729f44df6b1f36e"
+      },
+      "preview_listing": false,
+      "public_notice": null,
+      "sentiment_votes_down_percentage": null,
+      "sentiment_votes_up_percentage": null,
+      "status_updates": [],
+      "symbol": "robo",
+      "watchlist_portfolio_users": 2397,
+      "web_slug": "fabric-protocol"
+    },
+    "raw_sha256": "5887040a49a4706962ab0690e23fd0ed9d55e72eacbd1f8661e4f77c1ede58a9",
+    "source": "https://api.coingecko.com/api/v3/coins/robo-token-2",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v2",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-08-28T12:33:38.702768+00:00",
+    "payload": {
+      "active": true,
+      "code": "ROBO",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "ROBO",
+      "info": {
+        "category": [],
+        "chain": "ETH",
+        "chains": [
+          {
+            "addr": "0x32b4d049fe4c888d2b92eecaf729f44df6b1f36e",
+            "deposit_disabled": false,
+            "name": "ETH",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "ROBO",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "29200900.0",
+        "name": "Fabric Protocol",
+        "total_supply": "10000000000",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "Fabric Protocol",
+      "networks": {
+        "ERC20": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "ETH",
+          "info": {
+            "addr": "0x32b4d049fe4c888d2b92eecaf729f44df6b1f36e",
+            "deposit_disabled": false,
+            "name": "ETH",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "ERC20",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "6ad5cb0201d51230cc4ce0870591d47b5c765bb49474084090bd17f507d9c2b3",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "same_asset_multichain_candidate",
+  "source_contract": {
+    "block_number": 25853766,
+    "chain": "ethereum",
+    "chain_id": 1,
+    "contract_address": "0x32b4d049fe4c888d2b92eecaf729f44df6b1f36e",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://ethereum-rpc.publicnode.com",
+      "observed_at": "2026-08-28T12:33:39.170576+00:00",
+      "payload": {
+        "id": 1,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "eb1491e7ee73b8c00c20f6c14cc08ba880f85b8ac95a685f3f6acf426f743d8b",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "target_catalog_evidence": {
+    "endpoint": "https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list",
+    "observed_at": "2026-08-28T12:31:45.813313+00:00",
+    "payload": {
+      "chainId": "56",
+      "chainName": "BSC",
+      "contractAddress": "0x475cbf5919608e0c6af00e7bf87fab83bf3ef6e2",
+      "decimals": 18,
+      "fullyDelisted": true,
+      "listingCex": true,
+      "name": "Fabric Protocol",
+      "offline": true,
+      "symbol": "ROBO"
+    },
+    "raw_sha256": "683022add478834d3a9a30210371d1da675f4dfd122906e0a6b82a02c1270d17",
+    "source": "binance:alpha_catalog_entry",
+    "wire_exact": false
+  },
+  "target_contract": {
+    "block_number": 118576300,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0x475cbf5919608e0c6af00e7bf87fab83bf3ef6e2",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-08-28T12:33:39.426293+00:00",
+      "payload": {
+        "id": 1,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "942eb00e02101dd8673395e77f951530862ae177255e90bbbb71a3c42dd6fba6",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "target_exchange": "binance",
+  "working_tree_dirty": false
+}

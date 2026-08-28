@@ -1,0 +1,231 @@
+{
+  "base": "ARIA",
+  "bundle_sha256": "dcbcddb1444441a194d37bc7608cdd3974ddd86e82934cc7350600adc59c04b8",
+  "captured_at": "2026-08-28T12:32:16.698874+00:00",
+  "code_revision": "95775873defc52777796434474b5be9556d47f5a",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/aria-ai?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-08-28T12:32:16.471371+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "binance-smart-chain",
+      "block_time_in_minutes": 0,
+      "categories": [
+        "Gaming (GameFi)",
+        "BNB Chain Ecosystem",
+        "Adventure Games",
+        "Binance Alpha Spotlight"
+      ],
+      "contract_address": "0x5d3a12c42e5372b2cc3264ab3cdcf660a1555238",
+      "country_origin": "",
+      "description": {
+        "en": "AriaAI is a next-generation game development and publishing experiment inspired by Disney-style immersive worlds and AI technology, designed with its own IP related gameplay at its core. It represents a major leap forward in bringing Web2-quality game design and publishing standards into the Web3 era.\n\n With the integration of AI, ARIA is evolving into a living, adaptive game world — featuring intelligent NPCs, personalized storytelling, AI-generated content, and dynamic gameplay that grows with its players."
+      },
+      "detail_platforms": {
+        "binance-smart-chain": {
+          "contract_address": "0x5d3a12c42e5372b2cc3264ab3cdcf660a1555238",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/bsc/tokens/0x5d3a12c42e5372b2cc3264ab3cdcf660a1555238"
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": false,
+      "hashing_algorithm": null,
+      "id": "aria-ai",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/68392/large/aria.png?1755601564",
+        "small": "https://coin-images.coingecko.com/coins/images/68392/small/aria.png?1755601564",
+        "thumb": "https://coin-images.coingecko.com/coins/images/68392/thumb/aria.png?1755601564"
+      },
+      "last_updated": "2026-08-28T12:29:50.000Z",
+      "links": {
+        "announcement_url": [],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://bscscan.com/token/0x5d3A12c42E5372B2CC3264AB3cdcF660a1555238",
+          "https://binplorer.com/address/0x5d3A12c42E5372B2CC3264AB3cdcF660a1555238"
+        ],
+        "chat_url": [],
+        "facebook_username": "",
+        "homepage": ["https://playariagame.com/"],
+        "official_forum_url": [
+          "https://discord.com/invite/playariagame",
+          "https://www.youtube.com/@ARIAGame-yz9nd"
+        ],
+        "repos_url": {
+          "bitbucket": [],
+          "github": []
+        },
+        "snapshot_url": null,
+        "subreddit_url": null,
+        "telegram_channel_identifier": "",
+        "twitter_screen_name": "PlayAriaGame",
+        "whitepaper": "https://docs.playariagame.com/"
+      },
+      "listing_currency": null,
+      "listing_price": null,
+      "listing_source": null,
+      "listing_source_url": null,
+      "listing_timestamp": null,
+      "market_cap_rank": 1465,
+      "market_cap_rank_with_rehypothecated": 1772,
+      "name": "Aria.AI",
+      "platforms": {
+        "binance-smart-chain": "0x5d3a12c42e5372b2cc3264ab3cdcf660a1555238"
+      },
+      "preview_listing": false,
+      "public_notice": null,
+      "sentiment_votes_down_percentage": 100.0,
+      "sentiment_votes_up_percentage": 0.0,
+      "status_updates": [],
+      "symbol": "aria",
+      "watchlist_portfolio_users": 1426,
+      "web_slug": "aria-ai"
+    },
+    "raw_sha256": "add91a874be906878e76d123d75589a7130540d84036839a766bcb69c1a8f88c",
+    "source": "https://api.coingecko.com/api/v3/coins/aria-ai",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v2",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-08-28T12:32:16.097843+00:00",
+    "payload": {
+      "active": true,
+      "code": "ARIA",
+      "deposit": false,
+      "fee": null,
+      "fees": {},
+      "id": "ARIA",
+      "info": {
+        "category": [],
+        "chain": "BSC",
+        "chains": [
+          {
+            "addr": "0x5d3a12c42e5372b2cc3264ab3cdcf660a1555238",
+            "deposit_disabled": true,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "ARIA",
+        "delisted": false,
+        "deposit_disabled": true,
+        "fixed_rate": "",
+        "market_cap": "6364740.0",
+        "name": "AriaAI",
+        "total_supply": "1000000000",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "AriaAI",
+      "networks": {
+        "BEP20": {
+          "active": null,
+          "deposit": false,
+          "fee": null,
+          "id": "BSC",
+          "info": {
+            "addr": "0x5d3a12c42e5372b2cc3264ab3cdcf660a1555238",
+            "deposit_disabled": true,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "BEP20",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "e4002b0ccb7b94247ce6ee38f547354f65d2430413ce08feeb4714e39e979c4f",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "exact_contract",
+  "source_contract": {
+    "block_number": 118576116,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0x5d3a12c42e5372b2cc3264ab3cdcf660a1555238",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-08-28T12:32:16.530895+00:00",
+      "payload": {
+        "id": 1,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "942eb00e02101dd8673395e77f951530862ae177255e90bbbb71a3c42dd6fba6",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "target_catalog_evidence": {
+    "endpoint": "https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list",
+    "observed_at": "2026-08-28T12:31:45.813313+00:00",
+    "payload": {
+      "chainId": "56",
+      "chainName": "BSC",
+      "contractAddress": "0x5d3a12c42e5372b2cc3264ab3cdcf660a1555238",
+      "decimals": 18,
+      "fullyDelisted": false,
+      "listingCex": false,
+      "name": "AriaAI",
+      "offline": false,
+      "symbol": "ARIA"
+    },
+    "raw_sha256": "b4cabb9f32422d8237c321aae1ae74d98f0d684466fa06d5560b8c9583ce7c31",
+    "source": "binance:alpha_catalog_entry",
+    "wire_exact": false
+  },
+  "target_contract": {
+    "block_number": 118576116,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0x5d3a12c42e5372b2cc3264ab3cdcf660a1555238",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-08-28T12:32:16.644587+00:00",
+      "payload": {
+        "id": 1,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "942eb00e02101dd8673395e77f951530862ae177255e90bbbb71a3c42dd6fba6",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "target_exchange": "binance",
+  "working_tree_dirty": false
+}

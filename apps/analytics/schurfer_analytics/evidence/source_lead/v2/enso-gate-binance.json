@@ -1,0 +1,241 @@
+{
+  "base": "ENSO",
+  "bundle_sha256": "4b277008f4953c89f658997fc653d9a1b53012d9fd18be9760730cd9e7501a02",
+  "captured_at": "2026-08-28T12:33:27.753279+00:00",
+  "code_revision": "95775873defc52777796434474b5be9556d47f5a",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/enso?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-08-28T12:33:27.343896+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "ethereum",
+      "block_time_in_minutes": 0,
+      "categories": [
+        "Infrastructure",
+        "BNB Chain Ecosystem",
+        "Ethereum Ecosystem",
+        "Multicoin Capital Portfolio",
+        "Intent",
+        "Polychain Capital Portfolio",
+        "Binance Alpha Spotlight",
+        "CoinList Launchpad"
+      ],
+      "contract_address": "0x699f088b5dddcafb7c4824db5b10b57b37cb0c66",
+      "country_origin": "",
+      "description": {
+        "en": "Enso brings every blockchain together in a single, unified network. The single point of access for all blockchain development, where developers can read, write, and interact with any Smart Contract on any chain from a single integration. Empowering developers to build seamless consumer-facing applications, used by hundreds of thousands of users."
+      },
+      "detail_platforms": {
+        "binance-smart-chain": {
+          "contract_address": "0xfeb339236d25d3e415f280189bc7c2fbab6ae9ef",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/bsc/tokens/0xfeb339236d25d3e415f280189bc7c2fbab6ae9ef"
+        },
+        "ethereum": {
+          "contract_address": "0x699f088b5dddcafb7c4824db5b10b57b37cb0c66",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/eth/tokens/0x699f088b5dddcafb7c4824db5b10b57b37cb0c66"
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": false,
+      "hashing_algorithm": null,
+      "id": "enso",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/66537/large/enso.jpg?1749697301",
+        "small": "https://coin-images.coingecko.com/coins/images/66537/small/enso.jpg?1749697301",
+        "thumb": "https://coin-images.coingecko.com/coins/images/66537/thumb/enso.jpg?1749697301"
+      },
+      "last_updated": "2026-08-28T12:31:50.000Z",
+      "links": {
+        "announcement_url": [],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://etherscan.io/token/0x699F088b5DddcAFB7c4824db5B10B57B37cB0C66",
+          "https://intel.arkm.com/explorer/token/enso",
+          "https://ethplorer.io/address/0x699F088b5DddcAFB7c4824db5B10B57B37cB0C66",
+          "https://bscscan.com/token/0xfeB339236d25D3E415F280189bC7C2FBAb6ae9ef",
+          "https://binplorer.com/address/0xfeB339236d25D3E415F280189bC7C2FBAb6ae9ef"
+        ],
+        "chat_url": [],
+        "facebook_username": "",
+        "homepage": ["https://www.enso.build/", "https://blog.enso.build/"],
+        "official_forum_url": ["https://discord.com/invite/enso-build"],
+        "repos_url": {
+          "bitbucket": [],
+          "github": ["https://github.com/EnsoBuild"]
+        },
+        "snapshot_url": null,
+        "subreddit_url": null,
+        "telegram_channel_identifier": "",
+        "twitter_screen_name": "EnsoBuild",
+        "whitepaper": "https://www.enso.build/whitepaper"
+      },
+      "listing_currency": null,
+      "listing_price": null,
+      "listing_source": null,
+      "listing_source_url": null,
+      "listing_timestamp": null,
+      "market_cap_rank": 895,
+      "market_cap_rank_with_rehypothecated": 1119,
+      "name": "Enso",
+      "platforms": {
+        "binance-smart-chain": "0xfeb339236d25d3e415f280189bc7c2fbab6ae9ef",
+        "ethereum": "0x699f088b5dddcafb7c4824db5b10b57b37cb0c66"
+      },
+      "preview_listing": false,
+      "public_notice": null,
+      "sentiment_votes_down_percentage": 0.0,
+      "sentiment_votes_up_percentage": 100.0,
+      "status_updates": [],
+      "symbol": "enso",
+      "watchlist_portfolio_users": 2600,
+      "web_slug": "enso"
+    },
+    "raw_sha256": "be8722bdc83ca350b9636dc137b2a1343c3e736faab8c80f177e3d37ed5a3c80",
+    "source": "https://api.coingecko.com/api/v3/coins/enso",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v2",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-08-28T12:33:27.035227+00:00",
+    "payload": {
+      "active": true,
+      "code": "ENSO",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "ENSO",
+      "info": {
+        "category": [],
+        "chain": "ETH",
+        "chains": [
+          {
+            "addr": "0x699f088b5dddcafb7c4824db5b10b57b37cb0c66",
+            "deposit_disabled": false,
+            "name": "ETH",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "ENSO",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "16679959.0",
+        "name": "Enso",
+        "total_supply": "100000000",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "Enso",
+      "networks": {
+        "ERC20": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "ETH",
+          "info": {
+            "addr": "0x699f088b5dddcafb7c4824db5b10b57b37cb0c66",
+            "deposit_disabled": false,
+            "name": "ETH",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "ERC20",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "6501cda4f8579b4efb5e96dee63c549a7b0211e8a8ec5517b3ce81fc202c915d",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "same_asset_multichain_candidate",
+  "source_contract": {
+    "block_number": 25853765,
+    "chain": "ethereum",
+    "chain_id": 1,
+    "contract_address": "0x699f088b5dddcafb7c4824db5b10b57b37cb0c66",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://ethereum-rpc.publicnode.com",
+      "observed_at": "2026-08-28T12:33:27.432144+00:00",
+      "payload": {
+        "id": 1,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "eb1491e7ee73b8c00c20f6c14cc08ba880f85b8ac95a685f3f6acf426f743d8b",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "target_catalog_evidence": {
+    "endpoint": "https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list",
+    "observed_at": "2026-08-28T12:31:45.813313+00:00",
+    "payload": {
+      "chainId": "56",
+      "chainName": "BSC",
+      "contractAddress": "0xfeb339236d25d3e415f280189bc7c2fbab6ae9ef",
+      "decimals": 18,
+      "fullyDelisted": true,
+      "listingCex": true,
+      "name": "Enso",
+      "offline": true,
+      "symbol": "ENSO"
+    },
+    "raw_sha256": "4089d88f639d93a8dc713b5c166d5be1e45186a686d641a8cc646625da8f7ddb",
+    "source": "binance:alpha_catalog_entry",
+    "wire_exact": false
+  },
+  "target_contract": {
+    "block_number": 118576274,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0xfeb339236d25d3e415f280189bc7c2fbab6ae9ef",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-08-28T12:33:27.697669+00:00",
+      "payload": {
+        "id": 1,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "942eb00e02101dd8673395e77f951530862ae177255e90bbbb71a3c42dd6fba6",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "target_exchange": "binance",
+  "working_tree_dirty": false
+}

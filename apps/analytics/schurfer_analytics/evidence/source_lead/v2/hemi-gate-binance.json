@@ -1,0 +1,253 @@
+{
+  "base": "HEMI",
+  "bundle_sha256": "bc531056812c5521e72aaa23261867331b16304c1bb61432d94880dfc36c018f",
+  "captured_at": "2026-08-28T12:33:15.981616+00:00",
+  "code_revision": "95775873defc52777796434474b5be9556d47f5a",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/hemi?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-08-28T12:33:15.773668+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "ethereum",
+      "block_time_in_minutes": 0,
+      "categories": [
+        "Smart Contract Platform",
+        "BNB Chain Ecosystem",
+        "Modular Blockchain",
+        "Binance HODLer Airdrops",
+        "BTCfi Protocol",
+        "Binance Wallet IDO",
+        "Hemi Ecosystem"
+      ],
+      "contract_address": "0xeb964a1a6fab73b8c72a0d15c7337fa4804f484d",
+      "country_origin": "",
+      "description": {
+        "en": "The Hemi Network represents a different way of thinking about Layer-2 scaling, by approaching Bitcoin and Ethereum as components of a supernetwork.\n\nThis modular protocol aims to scale these networks and maximize their utility, creating a more connected and efficient blockchain ecosystem.\n\nThrough features such as the hVM, Hemi equips developers with robust tools for building next-generation dApps with Bitcoin and Ethereum interoperability."
+      },
+      "detail_platforms": {
+        "binance-smart-chain": {
+          "contract_address": "0x5ffd0eadc186af9512542d0d5e5eafc65d5afc5b",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/bsc/tokens/0x5ffd0eadc186af9512542d0d5e5eafc65d5afc5b"
+        },
+        "ethereum": {
+          "contract_address": "0xeb964a1a6fab73b8c72a0d15c7337fa4804f484d",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/eth/tokens/0xeb964a1a6fab73b8c72a0d15c7337fa4804f484d"
+        },
+        "hemi": {
+          "contract_address": "0x99e3de3817f6081b2568208337ef83295b7f591d",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/hemi/tokens/0x99e3de3817f6081b2568208337ef83295b7f591d"
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": false,
+      "hashing_algorithm": null,
+      "id": "hemi",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/68469/large/hemi.png?1755838145",
+        "small": "https://coin-images.coingecko.com/coins/images/68469/small/hemi.png?1755838145",
+        "thumb": "https://coin-images.coingecko.com/coins/images/68469/thumb/hemi.png?1755838145"
+      },
+      "last_updated": "2026-08-28T12:30:50.000Z",
+      "links": {
+        "announcement_url": [],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://explorer.hemi.xyz/",
+          "https://intel.arkm.com/explorer/token/hemi ",
+          "https://etherscan.io/token/0xEb964A1A6fAB73b8c72A0D15c7337fA4804F484d",
+          "https://ethplorer.io/address/0xEb964A1A6fAB73b8c72A0D15c7337fA4804F484d",
+          "https://bscscan.com/token/0x5fFD0EAdc186AF9512542d0d5e5eAFC65d5aFc5B",
+          "https://binplorer.com/address/0x5fFD0EAdc186AF9512542d0d5e5eAFC65d5aFc5B",
+          "https://explorer.hemi.xyz/token/0x99e3dE3817F6081B2568208337ef83295b7f591D",
+          "https://intel.arkm.com/explorer/token/hemi"
+        ],
+        "chat_url": ["https://www.youtube.com/@HemiLabs"],
+        "facebook_username": "",
+        "homepage": ["https://hemi.xyz/"],
+        "official_forum_url": [
+          "https://discord.com/invite/hemixyz",
+          "https://www.linkedin.com/company/hemi-labs",
+          "https://www.tiktok.com/@hemi_xyz"
+        ],
+        "repos_url": {
+          "bitbucket": [],
+          "github": ["https://github.com/hemilabs"]
+        },
+        "snapshot_url": null,
+        "subreddit_url": null,
+        "telegram_channel_identifier": "hemi_news",
+        "twitter_screen_name": "hemi_xyz",
+        "whitepaper": "https://docs.hemi.xyz/"
+      },
+      "listing_currency": null,
+      "listing_price": null,
+      "listing_source": null,
+      "listing_source_url": null,
+      "listing_timestamp": null,
+      "market_cap_rank": 1112,
+      "market_cap_rank_with_rehypothecated": 1365,
+      "name": "Hemi",
+      "platforms": {
+        "binance-smart-chain": "0x5ffd0eadc186af9512542d0d5e5eafc65d5afc5b",
+        "ethereum": "0xeb964a1a6fab73b8c72a0d15c7337fa4804f484d",
+        "hemi": "0x99e3de3817f6081b2568208337ef83295b7f591d"
+      },
+      "preview_listing": false,
+      "public_notice": null,
+      "sentiment_votes_down_percentage": 28.57,
+      "sentiment_votes_up_percentage": 71.43,
+      "status_updates": [],
+      "symbol": "hemi",
+      "watchlist_portfolio_users": 4689,
+      "web_slug": "hemi"
+    },
+    "raw_sha256": "1b22d6a1c028c9b481bf00bef03df8968b21fd433946c5bd969c54812ebe77d7",
+    "source": "https://api.coingecko.com/api/v3/coins/hemi",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v2",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-08-28T12:33:15.571182+00:00",
+    "payload": {
+      "active": true,
+      "code": "HEMI",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "HEMI",
+      "info": {
+        "category": [],
+        "chain": "BSC",
+        "chains": [
+          {
+            "addr": "0x5ffd0eadc186af9512542d0d5e5eafc65d5afc5b",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "HEMI",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "5894100.0",
+        "name": "Hemi",
+        "total_supply": "10000000000",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "Hemi",
+      "networks": {
+        "BEP20": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "BSC",
+          "info": {
+            "addr": "0x5ffd0eadc186af9512542d0d5e5eafc65d5afc5b",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "BEP20",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "f40d927eac2f3b7f07292ba6febffa4f957ae87a6936f3515facfc4eea17be65",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "exact_contract",
+  "source_contract": {
+    "block_number": 118576248,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0x5ffd0eadc186af9512542d0d5e5eafc65d5afc5b",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-08-28T12:33:15.832534+00:00",
+      "payload": {
+        "id": 1,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "942eb00e02101dd8673395e77f951530862ae177255e90bbbb71a3c42dd6fba6",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "target_catalog_evidence": {
+    "endpoint": "https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list",
+    "observed_at": "2026-08-28T12:31:45.813313+00:00",
+    "payload": {
+      "chainId": "56",
+      "chainName": "BSC",
+      "contractAddress": "0x5ffd0eadc186af9512542d0d5e5eafc65d5afc5b",
+      "decimals": 18,
+      "fullyDelisted": true,
+      "listingCex": true,
+      "name": "Hemi",
+      "offline": true,
+      "symbol": "HEMI"
+    },
+    "raw_sha256": "219be16d5ad4b8d9cf81d9f42dbaa02b4f54429f4f13782a2e1e801c7cfeb04e",
+    "source": "binance:alpha_catalog_entry",
+    "wire_exact": false
+  },
+  "target_contract": {
+    "block_number": 118576248,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0x5ffd0eadc186af9512542d0d5e5eafc65d5afc5b",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-08-28T12:33:15.931104+00:00",
+      "payload": {
+        "id": 1,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "942eb00e02101dd8673395e77f951530862ae177255e90bbbb71a3c42dd6fba6",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "target_exchange": "binance",
+  "working_tree_dirty": false
+}

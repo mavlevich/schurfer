@@ -36,6 +36,7 @@ exchange-source-economics-report = "schurfer_analytics.exchange_source_economics
 source-lead-report = "schurfer_analytics.source_lead_report:main"
 source-lead-identity-report = "schurfer_analytics.source_lead_identity_report:main"
 gate-identity-candidate-tooling = "schurfer_analytics.gate_identity_candidate_tooling:main"
+source-lead-identity-evidence = "schurfer_analytics.source_lead_identity_evidence:main"
 episode-replay = "schurfer_analytics.episode_replay:main"
 virtual-strategy-report = "schurfer_analytics.virtual_strategy_report:main"
 virtual-entry-challenger-report = "schurfer_analytics.virtual_entry_challenger_report:main"
@@ -78,7 +79,7 @@ where = ["."]
 include = ["schurfer_analytics*"]
 
 [tool.setuptools.package-data]
-schurfer_analytics = ["registry/*.json"]
+schurfer_analytics = ["registry/*.json", "evidence/source_lead/v2/*.json"]
 
 [tool.uv]
 package = true

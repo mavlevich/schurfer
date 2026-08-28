@@ -1,0 +1,208 @@
+{
+  "base": "BICO",
+  "bundle_sha256": "a13dd30a5d838a69d815e94c6517252f8cb65ab412bcefad9d7c43e3f58fcfcf",
+  "captured_at": "2026-08-28T12:33:55.915507+00:00",
+  "code_revision": "95775873defc52777796434474b5be9556d47f5a",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/biconomy?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-08-28T12:33:55.776299+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "ethereum",
+      "block_time_in_minutes": 0,
+      "categories": [
+        "Infrastructure",
+        "Arbitrum Ecosystem",
+        "Ethereum Ecosystem",
+        "Account Abstraction",
+        "Coinbase Ventures Portfolio",
+        "YZi Labs (Prev. Binance Labs) Portfolio",
+        "Consensys Portfolio",
+        "Outlier Ventures Portfolio",
+        "CoinList Launchpad"
+      ],
+      "contract_address": "0xf17e65822b568b3903685a7c9f496cf7656cc6c2",
+      "country_origin": "",
+      "description": {
+        "en": "Biconomy provides plug-n-play APIs to make web3.0 user-friendly &amp; frictionless. \n\nBiconomy is on a mission to make the decentralized web accessible to everyone. We are the missing piece to crypto adoption for onboarding the next billion. Our APIs &amp; SDKs transform any dAapp to become usable for anyone regardless of their crypto knowledge and experience. Our multi-chain relayer infrastructure processes almost 50K daily transactions for 40+ DApps to ensure all the benefits of web3.0 come with the intuitiveness of web2.0.\n\nBiconomy provides a simple &amp; quick way for Dapps to abstract away web3 complexities for their users.\n\nWith Biconomy, users get a simple multi-chain experience where they connect their wallet to any dApp, instantly access their funds on any chain or L2/rollup, and enjoy a completely gasless experience. We enable this superior experience though powerful features:\n\n1) Free gasless transactions\n2) Instant cross-chain transfers\n3) Flexible options to pay gas\n4) Assured successful transactions\n5) Simple instant onboarding to scaling solutions\n6) Automatically connect to any L2 &amp; EVM compatible chains\n7) Cheap and instant cross-chain contract calls\n\nThe future of the internet is decentralized, and Biconomy is a critical infrastructure on which it will stand. We make web3.0 more usable, interoperable &amp; composable."
+      },
+      "detail_platforms": {
+        "arbitrum-one": {
+          "contract_address": "0xa68ec98d7ca870cf1dd0b00ebbb7c4bf60a8e74d",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/arbitrum/tokens/0xa68ec98d7ca870cf1dd0b00ebbb7c4bf60a8e74d"
+        },
+        "ethereum": {
+          "contract_address": "0xf17e65822b568b3903685a7c9f496cf7656cc6c2",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/eth/tokens/0xf17e65822b568b3903685a7c9f496cf7656cc6c2"
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": true,
+      "hashing_algorithm": null,
+      "id": "biconomy",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/21061/large/biconomy_logo.jpg?1696520444",
+        "small": "https://coin-images.coingecko.com/coins/images/21061/small/biconomy_logo.jpg?1696520444",
+        "thumb": "https://coin-images.coingecko.com/coins/images/21061/thumb/biconomy_logo.jpg?1696520444"
+      },
+      "last_updated": "2026-08-28T12:31:50.000Z",
+      "links": {
+        "announcement_url": ["https://medium.com/biconomy"],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://etherscan.io/token/0xf17e65822b568b3903685a7c9f496cf7656cc6c2",
+          "https://intel.arkm.com/explorer/token/biconomy",
+          "https://ethplorer.io/address/0xf17e65822b568b3903685a7c9f496cf7656cc6c2",
+          "https://arbiscan.io/token/0xa68ec98d7ca870cf1dd0b00ebbb7c4bf60a8e74d",
+          "https://optimism.dex.guru/token/0xd6909e9e702024eb93312b989ee46794c0fb1c9d",
+          "https://intel.arkm.com/explorer/token/<api_symbol>"
+        ],
+        "chat_url": [],
+        "facebook_username": "",
+        "homepage": ["https://www.biconomy.io/"],
+        "official_forum_url": [],
+        "repos_url": {
+          "bitbucket": [],
+          "github": ["https://github.com/bcnmy"]
+        },
+        "snapshot_url": null,
+        "subreddit_url": null,
+        "telegram_channel_identifier": "biconomy",
+        "twitter_screen_name": "biconomy",
+        "whitepaper": ""
+      },
+      "listing_currency": null,
+      "listing_price": null,
+      "listing_source": null,
+      "listing_source_url": null,
+      "listing_timestamp": null,
+      "market_cap_rank": 742,
+      "market_cap_rank_with_rehypothecated": 943,
+      "name": "Biconomy",
+      "platforms": {
+        "arbitrum-one": "0xa68ec98d7ca870cf1dd0b00ebbb7c4bf60a8e74d",
+        "ethereum": "0xf17e65822b568b3903685a7c9f496cf7656cc6c2"
+      },
+      "preview_listing": false,
+      "public_notice": null,
+      "sentiment_votes_down_percentage": 14.29,
+      "sentiment_votes_up_percentage": 85.71,
+      "status_updates": [],
+      "symbol": "bico",
+      "watchlist_portfolio_users": 30860,
+      "web_slug": "biconomy"
+    },
+    "raw_sha256": "c55e2742d434f04ee7c34976a8763873c7f77774a9d6e770a7b897061c3d2688",
+    "source": "https://api.coingecko.com/api/v3/coins/biconomy",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v2",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-08-28T12:33:55.489463+00:00",
+    "payload": {
+      "active": true,
+      "code": "BICO",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "BICO",
+      "info": {
+        "category": [],
+        "chain": "ETH",
+        "chains": [
+          {
+            "addr": "0xf17e65822b568b3903685a7c9f496cf7656cc6c2",
+            "deposit_disabled": false,
+            "name": "ETH",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "BICO",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "25459999.997454",
+        "name": "Biconomy",
+        "total_supply": "1000000000",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "Biconomy",
+      "networks": {
+        "ERC20": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "ETH",
+          "info": {
+            "addr": "0xf17e65822b568b3903685a7c9f496cf7656cc6c2",
+            "deposit_disabled": false,
+            "name": "ETH",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "ERC20",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "b34be84065e805c7c9167a3e47c4e88c4e31b949d5c199924fd4d0a7e213b910",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "third_party_bridge_only",
+  "source_contract": {
+    "block_number": 25853767,
+    "chain": "ethereum",
+    "chain_id": 1,
+    "contract_address": "0xf17e65822b568b3903685a7c9f496cf7656cc6c2",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://ethereum-rpc.publicnode.com",
+      "observed_at": "2026-08-28T12:33:55.867691+00:00",
+      "payload": {
+        "id": 1,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "5703d4b6224aca5e99ca0f83a1c6498a6c24a5c77a675c16d0d47af8ac3feee8",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "target_catalog_evidence": null,
+  "target_contract": null,
+  "target_exchange": "binance",
+  "working_tree_dirty": false
+}

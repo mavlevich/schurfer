@@ -1,0 +1,230 @@
+{
+  "base": "BEAT",
+  "bundle_sha256": "255f79b70b176e0aedd8b50af33933b49df42813901aeba818f825dda2ed0f58",
+  "captured_at": "2026-08-28T12:32:49.479628+00:00",
+  "code_revision": "95775873defc52777796434474b5be9556d47f5a",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/audiera?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-08-28T12:32:49.084441+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "binance-smart-chain",
+      "block_time_in_minutes": 0,
+      "categories": [
+        "Gaming (GameFi)",
+        "NFT",
+        "BNB Chain Ecosystem",
+        "Telegram Apps",
+        "Binance Alpha Spotlight",
+        "Arcade Games"
+      ],
+      "contract_address": "0xcf3232b85b43bca90e51d38cc06cc8bb8c8a3e36",
+      "country_origin": "",
+      "description": {
+        "en": "Audiera (BEAT) pioneers the agent-native participation economy, where humans and autonomous AI agents act as equal economic participants. For the first time, Audiera introduces structured agent roles and participation rules — enabling agents to perform tasks, interact with users, create music, compete in rhythm battles, and engage directly in on-chain economic activity. No more treating agents as tools: they hold wallets, earn, spend, and settle value natively. Powered by $BEAT on BNB Chain — fueling incentives, coordination, governance, and shared prosperity in the machine-native future."
+      },
+      "detail_platforms": {
+        "binance-smart-chain": {
+          "contract_address": "0xcf3232b85b43bca90e51d38cc06cc8bb8c8a3e36",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/bsc/tokens/0xcf3232b85b43bca90e51d38cc06cc8bb8c8a3e36"
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": true,
+      "hashing_algorithm": null,
+      "id": "audiera",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/70428/large/audiera.png?1761964064",
+        "small": "https://coin-images.coingecko.com/coins/images/70428/small/audiera.png?1761964064",
+        "thumb": "https://coin-images.coingecko.com/coins/images/70428/thumb/audiera.png?1761964064"
+      },
+      "last_updated": "2026-08-28T12:30:50.000Z",
+      "links": {
+        "announcement_url": [],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://bscscan.com/token/0xcf3232B85b43BCa90E51D38cc06Cc8bB8C8A3E36",
+          "https://binplorer.com/address/0xcf3232B85b43BCa90E51D38cc06Cc8bB8C8A3E36"
+        ],
+        "chat_url": [],
+        "facebook_username": "",
+        "homepage": ["https://audiera.fi/"],
+        "official_forum_url": ["https://www.youtube.com/@AudieraWeb3"],
+        "repos_url": {
+          "bitbucket": [],
+          "github": ["https://github.com/Audition2049"]
+        },
+        "snapshot_url": null,
+        "subreddit_url": null,
+        "telegram_channel_identifier": "Audiera_web3",
+        "twitter_screen_name": "Audiera_web3",
+        "whitepaper": "https://docs.audiera.fi/"
+      },
+      "listing_currency": null,
+      "listing_price": null,
+      "listing_source": null,
+      "listing_source_url": null,
+      "listing_timestamp": null,
+      "market_cap_rank": 513,
+      "market_cap_rank_with_rehypothecated": 672,
+      "name": "Audiera",
+      "platforms": {
+        "binance-smart-chain": "0xcf3232b85b43bca90e51d38cc06cc8bb8c8a3e36"
+      },
+      "preview_listing": false,
+      "public_notice": null,
+      "sentiment_votes_down_percentage": 8.33,
+      "sentiment_votes_up_percentage": 91.67,
+      "status_updates": [],
+      "symbol": "beat",
+      "watchlist_portfolio_users": 5354,
+      "web_slug": "audiera"
+    },
+    "raw_sha256": "cba327c4e33c240b6e3e9e930e7e35f380d33062c19bf1d83fd6c2f73e7625c7",
+    "source": "https://api.coingecko.com/api/v3/coins/audiera",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v2",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-08-28T12:32:48.737130+00:00",
+    "payload": {
+      "active": true,
+      "code": "BEAT",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "BEAT",
+      "info": {
+        "category": [],
+        "chain": "BSC",
+        "chains": [
+          {
+            "addr": "0xcf3232b85b43bca90e51d38cc06cc8bb8c8a3e36",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "BEAT",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "17500259.0",
+        "name": "Audiera",
+        "total_supply": "1000000000",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "Audiera",
+      "networks": {
+        "BEP20": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "BSC",
+          "info": {
+            "addr": "0xcf3232b85b43bca90e51d38cc06cc8bb8c8a3e36",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "BEP20",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "85ff017ed524f5f41d94886c43c43b279fe925fff912cf23ddbfca2042ce7dc5",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "exact_contract",
+  "source_contract": {
+    "block_number": 118576189,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0xcf3232b85b43bca90e51d38cc06cc8bb8c8a3e36",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-08-28T12:32:49.321970+00:00",
+      "payload": {
+        "id": 1,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "942eb00e02101dd8673395e77f951530862ae177255e90bbbb71a3c42dd6fba6",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "target_catalog_evidence": {
+    "endpoint": "https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list",
+    "observed_at": "2026-08-28T12:31:45.813313+00:00",
+    "payload": {
+      "chainId": "56",
+      "chainName": "BSC",
+      "contractAddress": "0xcf3232b85b43bca90e51d38cc06cc8bb8c8a3e36",
+      "decimals": 18,
+      "fullyDelisted": false,
+      "listingCex": false,
+      "name": "Audiera",
+      "offline": false,
+      "symbol": "BEAT"
+    },
+    "raw_sha256": "d00cc7724711099e293cac06c4e0be1dfcae5ce59a4937cce958811a6f2aee37",
+    "source": "binance:alpha_catalog_entry",
+    "wire_exact": false
+  },
+  "target_contract": {
+    "block_number": 118576189,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0xcf3232b85b43bca90e51d38cc06cc8bb8c8a3e36",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-08-28T12:32:49.428709+00:00",
+      "payload": {
+        "id": 1,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "942eb00e02101dd8673395e77f951530862ae177255e90bbbb71a3c42dd6fba6",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "target_exchange": "binance",
+  "working_tree_dirty": false
+}

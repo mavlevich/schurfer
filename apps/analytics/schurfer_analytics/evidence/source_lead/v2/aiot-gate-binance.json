@@ -1,0 +1,228 @@
+{
+  "base": "AIOT",
+  "bundle_sha256": "82345a486a585ea917e0262ffdc162c54c8216c84a5504b4c6b014c93aa7bd53",
+  "captured_at": "2026-08-28T12:33:05.805908+00:00",
+  "code_revision": "95775873defc52777796434474b5be9556d47f5a",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/okzoo?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-08-28T12:33:05.421406+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "binance-smart-chain",
+      "block_time_in_minutes": 0,
+      "categories": [
+        "Artificial Intelligence (AI)",
+        "BNB Chain Ecosystem",
+        "Binance Alpha Spotlight",
+        "Binance Wallet IDO"
+      ],
+      "contract_address": "0x55ad16bd573b3365f43a9daeb0cc66a73821b4a5",
+      "country_origin": "",
+      "description": {
+        "en": ""
+      },
+      "detail_platforms": {
+        "binance-smart-chain": {
+          "contract_address": "0x55ad16bd573b3365f43a9daeb0cc66a73821b4a5",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/bsc/tokens/0x55ad16bd573b3365f43a9daeb0cc66a73821b4a5"
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": true,
+      "hashing_algorithm": null,
+      "id": "okzoo",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/55349/large/okzoo.jpg?1745566014",
+        "small": "https://coin-images.coingecko.com/coins/images/55349/small/okzoo.jpg?1745566014",
+        "thumb": "https://coin-images.coingecko.com/coins/images/55349/thumb/okzoo.jpg?1745566014"
+      },
+      "last_updated": "2026-08-28T12:30:50.000Z",
+      "links": {
+        "announcement_url": [],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://bscscan.com/token/0x55ad16bd573b3365f43a9daeb0cc66a73821b4a5",
+          "https://binplorer.com/address/0x55ad16bd573b3365f43a9daeb0cc66a73821b4a5"
+        ],
+        "chat_url": ["https://discord.com/invite/okzooapp"],
+        "facebook_username": "",
+        "homepage": ["https://okzoo.app/en/docs"],
+        "official_forum_url": [],
+        "repos_url": {
+          "bitbucket": [],
+          "github": []
+        },
+        "snapshot_url": null,
+        "subreddit_url": null,
+        "telegram_channel_identifier": "",
+        "twitter_screen_name": "okzoo_app",
+        "whitepaper": ""
+      },
+      "listing_currency": null,
+      "listing_price": null,
+      "listing_source": null,
+      "listing_source_url": null,
+      "listing_timestamp": null,
+      "market_cap_rank": 798,
+      "market_cap_rank_with_rehypothecated": 1010,
+      "name": "OKZOO",
+      "platforms": {
+        "binance-smart-chain": "0x55ad16bd573b3365f43a9daeb0cc66a73821b4a5"
+      },
+      "preview_listing": false,
+      "public_notice": null,
+      "sentiment_votes_down_percentage": null,
+      "sentiment_votes_up_percentage": null,
+      "status_updates": [],
+      "symbol": "aiot",
+      "watchlist_portfolio_users": 1246,
+      "web_slug": "okzoo"
+    },
+    "raw_sha256": "fa52c993f752ffe120280d13136ce31d3aafac7ae766eb09d917717d42c951cd",
+    "source": "https://api.coingecko.com/api/v3/coins/okzoo",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v2",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-08-28T12:33:05.090046+00:00",
+    "payload": {
+      "active": true,
+      "code": "AIOT",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "AIOT",
+      "info": {
+        "category": [],
+        "chain": "BSC",
+        "chains": [
+          {
+            "addr": "0x55ad16bd573b3365f43a9daeb0cc66a73821b4a5",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "AIOT",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "4367936.0",
+        "name": "OKZOO",
+        "total_supply": "1000000000",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "OKZOO",
+      "networks": {
+        "BEP20": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "BSC",
+          "info": {
+            "addr": "0x55ad16bd573b3365f43a9daeb0cc66a73821b4a5",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "BEP20",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "45278efbca2633c786722a6ca975cc58ee1e0bf886242ee7a6f912eb4e763896",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "exact_contract",
+  "source_contract": {
+    "block_number": 118576225,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0x55ad16bd573b3365f43a9daeb0cc66a73821b4a5",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-08-28T12:33:05.645128+00:00",
+      "payload": {
+        "id": 1,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "942eb00e02101dd8673395e77f951530862ae177255e90bbbb71a3c42dd6fba6",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "target_catalog_evidence": {
+    "endpoint": "https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list",
+    "observed_at": "2026-08-28T12:31:45.813313+00:00",
+    "payload": {
+      "chainId": "56",
+      "chainName": "BSC",
+      "contractAddress": "0x55ad16bd573b3365f43a9daeb0cc66a73821b4a5",
+      "decimals": 18,
+      "fullyDelisted": false,
+      "listingCex": false,
+      "name": "OKZOO",
+      "offline": false,
+      "symbol": "AIOT"
+    },
+    "raw_sha256": "0c11813d6e9eefa2ffd259322251acba1067d04e27f1d2c5e0c42323030dd5a0",
+    "source": "binance:alpha_catalog_entry",
+    "wire_exact": false
+  },
+  "target_contract": {
+    "block_number": 118576225,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0x55ad16bd573b3365f43a9daeb0cc66a73821b4a5",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-08-28T12:33:05.751174+00:00",
+      "payload": {
+        "id": 1,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "942eb00e02101dd8673395e77f951530862ae177255e90bbbb71a3c42dd6fba6",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "target_exchange": "binance",
+  "working_tree_dirty": false
+}

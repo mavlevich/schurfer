@@ -1,0 +1,256 @@
+{
+  "base": "CTSI",
+  "bundle_sha256": "71dfbdd14c40da6e10db1d0ec38a957ec763e825e6c3bf1e829c0c77dc805afc",
+  "captured_at": "2026-08-28T12:34:00.988534+00:00",
+  "code_revision": "95775873defc52777796434474b5be9556d47f5a",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/cartesi?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-08-28T12:34:00.885243+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "ethereum",
+      "block_time_in_minutes": 0,
+      "categories": [
+        "Infrastructure",
+        "Smart Contract Platform",
+        "BNB Chain Ecosystem",
+        "Avalanche Ecosystem",
+        "Polygon Ecosystem",
+        "Arbitrum Ecosystem",
+        "Ethereum Ecosystem",
+        "Optimism Ecosystem",
+        "Layer 2 (L2)",
+        "Base Ecosystem",
+        "Binance Launchpad",
+        "Modular Blockchain",
+        "Layer 3 (L3)",
+        "Rollup",
+        "Proof of Stake (PoS)",
+        "Appchains",
+        "YZi Labs (Prev. Binance Labs) Portfolio"
+      ],
+      "contract_address": "0x491604c0fdf08347dd1fa4ee062a822a5dd06b5d",
+      "country_origin": "SG",
+      "description": {
+        "en": "About Cartesi (CTSI)\n\nCartesi enables developers to build appchain rollups with any code, while benefiting from the security of Ethereum. It bridges the gap between traditional software and blockchain by bringing decades of mature operating systems, programming languages, libraries, and tools to decentralized applications.\n\nCartesi aims to provide the technological foundation from which builders, entrepreneurs, and projects will develop decentralized applications. The Cartesi technology suite is currently comprised of:\n\nCartesi Rollups: Cartesi Rollups is an app-specific execution environment that can be deployed as a L2, L3, or as sovereign rollups. The combination of an Optimistic Rollups framework and the Cartesi Machine Emulator enables the development of smart contracts and dApps using any package or library that is available for Linux. This allows developers to break free from the scalability limitations of the Ethereum Virtual Machine (EVM), and brings the rise of a new blockchain era to handle real-life and complex use cases.\n\nCartesi Machine: A RISC-V-based virtual machine (altVM) running Linux OS, enabling complex computations and seamless dApp development by expanding the design space and leveraging 40 years of software programming advancements.\n\nCartesiScan: Cartesiscan is the explorer used for viewing blockchain transactions on Cartesi appchain rollups.\n\nCartesi Explorer: The Cartesi Explorer is a product that allows CTSI users to interact with the governance system and stake CTSI.\n\nFraud Proof System - DAVE (following PRT): Dave is a permissionless, interactive fraud-proof system. Cartesi’s algorithm further optimizes the fraud proof mechanism to achieve the best balance between security, decentralization, and activity.\n\nWhat Makes Cartesi Unique\n\nThe infrastructure of the internet took 40 years, billions of hours of work, and trillions of dollars to build. With Cartesi, developers gain access to these decades of meticulously refined operating systems, programming languages, software libraries, and tools, paving the way for the next generation of blockchain applications.\n\nCartesi empowers Ethereum rollups with real-world software and strong guarantees.\n\nCartesi designed its own Optimistic Rollups framework embedding its own non-EVM virtual machine based on RISC-V.\n\nLeverage decades‑proven software ecosystems: The Cartesi Machine enables full Linux and RISC‑V stack execution in a composable, verifiable rollup environment.\n\nCartesi’s architecture is optimized for app‑specific rollups, providing scalable and secure chains tailored to each dApp’s needs, backed by a state-of-the-art fraud proof system, properly categorized as Stage-2 according to L2BEAT.\n\nToken Utility\n\nGovernance: CTSI holders can currently stake their tokens to earn rewards and participate in ecosystem governance. \n\nValidator Marketplace: Applications built on Cartesi need validators to monitor and ensure the trustworthiness of transactions. The Validator Marketplace is a decentralized matchmaking service that connects applications with validation service providers. The Validator Marketplace will leverage the CTSI token as a primary means of incentivization in three important ways:\n\n1. Validators will be required to stake CTSI in order to participate, ensuring performance and honest behavior.\n\n2. CTSI holders will be able to delegate their CTSI to experienced validators, allowing tokenholders to share in validation fees without running their own nodes.\n\n3. Token holders can use their CTSI to “buy” a stake in a dApp’s future growth, signaling support for dApps they believe will succeed. The earlier a backer “gets in” on a dApp, the more they are rewarded as that dApp gains traction.\n\nThe Validator Marketplace creates a direct link between Cartesi dApp usage and CTSI token demand, enabling token holders to share in the growth and success of the ecosystem."
+      },
+      "detail_platforms": {
+        "arbitrum-one": {
+          "contract_address": "0x319f865b287fcc10b30d8ce6144e8b6d1b476999",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/arbitrum/tokens/0x319f865b287fcc10b30d8ce6144e8b6d1b476999"
+        },
+        "avalanche": {
+          "contract_address": "0x6b289cceaa8639e3831095d75a3e43520fabf552",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/avax/tokens/0x6b289cceaa8639e3831095d75a3e43520fabf552"
+        },
+        "base": {
+          "contract_address": "0x259fac10c5cbfefe3e710e1d9467f70a76138d45",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/base/tokens/0x259fac10c5cbfefe3e710e1d9467f70a76138d45"
+        },
+        "binance-smart-chain": {
+          "contract_address": "0x8da443f84fea710266c8eb6bc34b71702d033ef2",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/bsc/tokens/0x8da443f84fea710266c8eb6bc34b71702d033ef2"
+        },
+        "ethereum": {
+          "contract_address": "0x491604c0fdf08347dd1fa4ee062a822a5dd06b5d",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/eth/tokens/0x491604c0fdf08347dd1fa4ee062a822a5dd06b5d"
+        },
+        "optimistic-ethereum": {
+          "contract_address": "0xec6adef5e1006bb305bb1975333e8fc4071295bf",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/optimism/tokens/0xec6adef5e1006bb305bb1975333e8fc4071295bf"
+        },
+        "polygon-pos": {
+          "contract_address": "0x2727ab1c2d22170abc9b595177b2d5c6e1ab7b7b",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/polygon_pos/tokens/0x2727ab1c2d22170abc9b595177b2d5c6e1ab7b7b"
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": true,
+      "hashing_algorithm": null,
+      "id": "cartesi",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/11038/large/Cartesi_Logo.png?1696510982",
+        "small": "https://coin-images.coingecko.com/coins/images/11038/small/Cartesi_Logo.png?1696510982",
+        "thumb": "https://coin-images.coingecko.com/coins/images/11038/thumb/Cartesi_Logo.png?1696510982"
+      },
+      "last_updated": "2026-08-28T12:31:50.000Z",
+      "links": {
+        "announcement_url": ["https://medium.com/cartesi"],
+        "bitcointalk_thread_identifier": 5211981,
+        "blockchain_site": [
+          "https://etherscan.io/token/0x491604c0fdf08347dd1fa4ee062a822a5dd06b5d",
+          "https://ethplorer.io/address/0x491604c0fdf08347dd1fa4ee062a822a5dd06b5d",
+          "https://explorer.cartesi.io",
+          "https://bscscan.com/token/0x8da443f84fea710266c8eb6bc34b71702d033ef2",
+          "https://polygonscan.com/token/0x2727ab1c2d22170abc9b595177b2d5c6e1ab7b7b",
+          "https://snowtrace.io/token/0x6b289cceaa8639e3831095d75a3e43520fabf552",
+          "https://arbiscan.io/token/0x319f865b287fcc10b30d8ce6144e8b6d1b476999",
+          "https://optimistic.etherscan.io/token/0xec6adef5e1006bb305bb1975333e8fc4071295bf",
+          "https://binplorer.com/address/0x8da443f84fea710266c8eb6bc34b71702d033ef2"
+        ],
+        "chat_url": [
+          "https://discord.com/invite/Y6qXzM9DeJ",
+          "https://www.linkedin.com/company/cartesiproject/"
+        ],
+        "facebook_username": "cartesiproject",
+        "homepage": ["https://cartesi.io/"],
+        "official_forum_url": [],
+        "repos_url": {
+          "bitbucket": [],
+          "github": [
+            "https://github.com/cartesi/machine-emulator",
+            "https://github.com/cartesi/arbitration-dlib",
+            "https://github.com/cartesi/machine-solidity-step"
+          ]
+        },
+        "snapshot_url": null,
+        "subreddit_url": "https://www.reddit.com/r/cartesi/",
+        "telegram_channel_identifier": "cartesiproject",
+        "twitter_screen_name": "cartesiproject",
+        "whitepaper": ""
+      },
+      "listing_currency": null,
+      "listing_price": null,
+      "listing_source": null,
+      "listing_source_url": null,
+      "listing_timestamp": null,
+      "market_cap_rank": 734,
+      "market_cap_rank_with_rehypothecated": 934,
+      "name": "Cartesi",
+      "platforms": {
+        "arbitrum-one": "0x319f865b287fcc10b30d8ce6144e8b6d1b476999",
+        "avalanche": "0x6b289cceaa8639e3831095d75a3e43520fabf552",
+        "base": "0x259fac10c5cbfefe3e710e1d9467f70a76138d45",
+        "binance-smart-chain": "0x8da443f84fea710266c8eb6bc34b71702d033ef2",
+        "ethereum": "0x491604c0fdf08347dd1fa4ee062a822a5dd06b5d",
+        "optimistic-ethereum": "0xec6adef5e1006bb305bb1975333e8fc4071295bf",
+        "polygon-pos": "0x2727ab1c2d22170abc9b595177b2d5c6e1ab7b7b"
+      },
+      "preview_listing": false,
+      "public_notice": null,
+      "sentiment_votes_down_percentage": null,
+      "sentiment_votes_up_percentage": null,
+      "status_updates": [],
+      "symbol": "ctsi",
+      "watchlist_portfolio_users": 45868,
+      "web_slug": "cartesi"
+    },
+    "raw_sha256": "90d1cf76b516012443d47704242500e23a3a3a7fdd923367ce699b48a32795ea",
+    "source": "https://api.coingecko.com/api/v3/coins/cartesi",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v2",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-08-28T12:34:00.703144+00:00",
+    "payload": {
+      "active": true,
+      "code": "CTSI",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "CTSI",
+      "info": {
+        "category": [],
+        "chain": "ETH",
+        "chains": [
+          {
+            "addr": "0x491604c0FDF08347Dd1fa4Ee062a822A5DD06B5D",
+            "deposit_disabled": false,
+            "name": "ETH",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "CTSI",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "24499041.606632955",
+        "name": "Cartesi",
+        "total_supply": "1000000000",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "Cartesi",
+      "networks": {
+        "ERC20": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "ETH",
+          "info": {
+            "addr": "0x491604c0FDF08347Dd1fa4Ee062a822A5DD06B5D",
+            "deposit_disabled": false,
+            "name": "ETH",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "ERC20",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "1d95be600fa6e6fb62533b550e8c8f8b3c3f2b6f151ba85a02d36d783b2e9bac",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "third_party_bridge_only",
+  "source_contract": {
+    "block_number": 25853768,
+    "chain": "ethereum",
+    "chain_id": 1,
+    "contract_address": "0x491604c0fdf08347dd1fa4ee062a822a5dd06b5d",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://ethereum-rpc.publicnode.com",
+      "observed_at": "2026-08-28T12:34:00.937372+00:00",
+      "payload": {
+        "id": 1,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "eb1491e7ee73b8c00c20f6c14cc08ba880f85b8ac95a685f3f6acf426f743d8b",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "target_catalog_evidence": null,
+  "target_contract": null,
+  "target_exchange": "binance",
+  "working_tree_dirty": false
+}

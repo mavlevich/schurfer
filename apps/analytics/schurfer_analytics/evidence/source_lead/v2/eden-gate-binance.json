@@ -1,0 +1,270 @@
+{
+  "base": "EDEN",
+  "bundle_sha256": "fe060e3f3b709bc7f40a08e829006ab7d8fc5f9f4afba2fa48fd47e93304024f",
+  "captured_at": "2026-08-28T12:33:00.333484+00:00",
+  "code_revision": "95775873defc52777796434474b5be9556d47f5a",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/openeden?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-08-28T12:32:59.848749+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "binance-smart-chain",
+      "block_time_in_minutes": 0,
+      "categories": [
+        "BNB Chain Ecosystem",
+        "Ethereum Ecosystem",
+        "Real World Assets (RWA)",
+        "RWA Protocol"
+      ],
+      "contract_address": "0x235b6fe22b4642ada16d311855c49ce7de260841",
+      "country_origin": "",
+      "description": {
+        "en": "OpenEden offers 24/7, on-chain access to tokenized US Treasury securities for Web3 CFOs, DAO treasury managers, and buy-side institutional investors seeking low-risk, highly liquid crypto cash management solutions.\n\nWe are the first tokenized real-world asset (RWA) issuer to receive a Moody's \"A-bf\" bond fund rating. Since launching in early 2023, OpenEden has already become the largest issuer of tokenied US Treasuries in Asia and Europe.\n\nAs part of our end-to-end tokenization stack, OpenEden is directly involved through its licensed investment management entity which manages its BVI-registered professional fund, which issues the $TBILL tokens and custodises the underlying assets with licensed third party custodians.  "
+      },
+      "detail_platforms": {
+        "binance-smart-chain": {
+          "contract_address": "0x235b6fe22b4642ada16d311855c49ce7de260841",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/bsc/tokens/0x235b6fe22b4642ada16d311855c49ce7de260841"
+        },
+        "ethereum": {
+          "contract_address": "0x24a3d725c37a8d1a66eb87f0e5d07fe67c120035",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/eth/tokens/0x24a3d725c37a8d1a66eb87f0e5d07fe67c120035"
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": false,
+      "hashing_algorithm": null,
+      "id": "openeden",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/68283/large/eden.png?1755242478",
+        "small": "https://coin-images.coingecko.com/coins/images/68283/small/eden.png?1755242478",
+        "thumb": "https://coin-images.coingecko.com/coins/images/68283/thumb/eden.png?1755242478"
+      },
+      "last_updated": "2026-08-28T12:30:50.000Z",
+      "links": {
+        "announcement_url": [],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://bscscan.com/token/0x235B6fe22B4642aDa16D311855c49Ce7DE260841",
+          "https://intel.arkm.com/explorer/token/openeden",
+          "https://binplorer.com/address/0x235B6fe22B4642aDa16D311855c49Ce7DE260841",
+          "https://etherscan.io/token/0x24a3d725c37a8d1a66eb87f0e5d07fe67c120035",
+          "https://ethplorer.io/address/0x24a3d725c37a8d1a66eb87f0e5d07fe67c120035"
+        ],
+        "chat_url": [],
+        "facebook_username": "",
+        "homepage": ["https://openeden.com/"],
+        "official_forum_url": ["https://www.linkedin.com/company/openeden/"],
+        "repos_url": {
+          "bitbucket": [],
+          "github": []
+        },
+        "snapshot_url": null,
+        "subreddit_url": null,
+        "telegram_channel_identifier": "openeden",
+        "twitter_screen_name": "OpenEden_X",
+        "whitepaper": "https://docs.openeden.com/"
+      },
+      "listing_currency": null,
+      "listing_price": null,
+      "listing_source": null,
+      "listing_source_url": null,
+      "listing_timestamp": null,
+      "market_cap_rank": 663,
+      "market_cap_rank_with_rehypothecated": 847,
+      "name": "OpenEden",
+      "platforms": {
+        "binance-smart-chain": "0x235b6fe22b4642ada16d311855c49ce7de260841",
+        "ethereum": "0x24a3d725c37a8d1a66eb87f0e5d07fe67c120035"
+      },
+      "preview_listing": false,
+      "public_notice": null,
+      "sentiment_votes_down_percentage": 66.67,
+      "sentiment_votes_up_percentage": 33.33,
+      "status_updates": [],
+      "symbol": "eden",
+      "watchlist_portfolio_users": 2151,
+      "web_slug": "openeden"
+    },
+    "raw_sha256": "45f04d273228e4ac99381dc5d84b323ff7b36fb71cd4c88be9bcd93f231c61f6",
+    "source": "https://api.coingecko.com/api/v3/coins/openeden",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v2",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-08-28T12:32:59.568619+00:00",
+    "payload": {
+      "active": true,
+      "code": "EDEN",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "EDEN",
+      "info": {
+        "category": [],
+        "chain": "ETH",
+        "chains": [
+          {
+            "addr": "0x24a3d725c37a8d1a66eb87f0e5d07fe67c120035",
+            "deposit_disabled": false,
+            "name": "ETH",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          {
+            "addr": "0x235b6fe22b4642ada16d311855c49ce7de260841",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "EDEN",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "12760578.0",
+        "name": "OpenEden",
+        "total_supply": "1000000000",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "OpenEden",
+      "networks": {
+        "BEP20": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "BSC",
+          "info": {
+            "addr": "0x235b6fe22b4642ada16d311855c49ce7de260841",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "BEP20",
+          "precision": 0.0001,
+          "withdraw": true
+        },
+        "ERC20": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "ETH",
+          "info": {
+            "addr": "0x24a3d725c37a8d1a66eb87f0e5d07fe67c120035",
+            "deposit_disabled": false,
+            "name": "ETH",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "ERC20",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "6662006119ae59b28e2ae98336f36535dead7647b85eb6b8f5aa9cfcd1675399",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "exact_contract",
+  "source_contract": {
+    "block_number": 25853762,
+    "chain": "ethereum",
+    "chain_id": 1,
+    "contract_address": "0x24a3d725c37a8d1a66eb87f0e5d07fe67c120035",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://ethereum-rpc.publicnode.com",
+      "observed_at": "2026-08-28T12:32:59.969925+00:00",
+      "payload": {
+        "id": 1,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "eb1491e7ee73b8c00c20f6c14cc08ba880f85b8ac95a685f3f6acf426f743d8b",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "target_catalog_evidence": {
+    "endpoint": "https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list",
+    "observed_at": "2026-08-28T12:31:45.813313+00:00",
+    "payload": {
+      "chainId": "56",
+      "chainName": "BSC",
+      "contractAddress": "0x235b6fe22b4642ada16d311855c49ce7de260841",
+      "decimals": 18,
+      "fullyDelisted": true,
+      "listingCex": true,
+      "name": "OpenEden",
+      "offline": true,
+      "symbol": "EDEN"
+    },
+    "raw_sha256": "9deec4b2d09abc15a10d35d0680f28aa61bb7af777346f3c1f83513000777447",
+    "source": "binance:alpha_catalog_entry",
+    "wire_exact": false
+  },
+  "target_contract": {
+    "block_number": 118576213,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0x235b6fe22b4642ada16d311855c49ce7de260841",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-08-28T12:33:00.264631+00:00",
+      "payload": {
+        "id": 1,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "942eb00e02101dd8673395e77f951530862ae177255e90bbbb71a3c42dd6fba6",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "target_exchange": "binance",
+  "working_tree_dirty": false
+}

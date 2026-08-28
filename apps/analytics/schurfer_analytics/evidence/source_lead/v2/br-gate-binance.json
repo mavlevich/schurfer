@@ -1,0 +1,258 @@
+{
+  "base": "BR",
+  "bundle_sha256": "378fcca650e4b306a117b087ec0cdc38b3e985c509f5da43e8cf14b791e5580a",
+  "captured_at": "2026-08-28T12:32:11.604005+00:00",
+  "code_revision": "95775873defc52777796434474b5be9556d47f5a",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/bedrock-token?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-08-28T12:32:11.299559+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "binance-smart-chain",
+      "block_time_in_minutes": 0,
+      "categories": [
+        "Decentralized Finance (DeFi)",
+        "BNB Chain Ecosystem",
+        "Ethereum Ecosystem",
+        "Liquid Staking Governance Tokens",
+        "Base Ecosystem",
+        "Berachain Ecosystem",
+        "BTCfi Protocol",
+        "Binance Alpha Spotlight",
+        "Binance Wallet IDO"
+      ],
+      "contract_address": "0xff7d6a96ae471bbcd7713af9cb1feeb16cf56b41",
+      "country_origin": "",
+      "description": {
+        "en": "Bedrock DAO is a governance framework for managing decisions within the Bedrock ecosystem. It enables BR token holders to participate in governance by converting BR into veBR, a voting escrow token. Governance decisions include protocol parameters, incentive structures, and liquidity allocation.\nThe governance system is based on veBR, which is obtained by locking BR tokens at a 1:1 ratio. The longer the lock duration, the greater the voting power. veBR holders vote on governance proposals, including gauge allocations that determine incentive distribution across liquidity pools."
+      },
+      "detail_platforms": {
+        "base": {
+          "contract_address": "0xd6122ddada244913521f3d62006eaf756c157660",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/base/tokens/0xd6122ddada244913521f3d62006eaf756c157660"
+        },
+        "berachain": {
+          "contract_address": "0xd352dc6e5f0c45e2f2b38eb5565eb286a1ea4087",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/berachain/tokens/0xd352dc6e5f0c45e2f2b38eb5565eb286a1ea4087"
+        },
+        "binance-smart-chain": {
+          "contract_address": "0xff7d6a96ae471bbcd7713af9cb1feeb16cf56b41",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/bsc/tokens/0xff7d6a96ae471bbcd7713af9cb1feeb16cf56b41"
+        },
+        "ethereum": {
+          "contract_address": "0x9b61879e91a0b1322f3d61c23aaf936231882096",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/eth/tokens/0x9b61879e91a0b1322f3d61c23aaf936231882096"
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": true,
+      "hashing_algorithm": null,
+      "id": "bedrock-token",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/54908/large/BR_200px.png?1742453499",
+        "small": "https://coin-images.coingecko.com/coins/images/54908/small/BR_200px.png?1742453499",
+        "thumb": "https://coin-images.coingecko.com/coins/images/54908/thumb/BR_200px.png?1742453499"
+      },
+      "last_updated": "2026-08-28T12:29:50.000Z",
+      "links": {
+        "announcement_url": [],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://bscscan.com/token/0xff7d6a96ae471bbcd7713af9cb1feeb16cf56b41",
+          "https://intel.arkm.com/explorer/token/bedrock-token ",
+          "https://binplorer.com/address/0xff7d6a96ae471bbcd7713af9cb1feeb16cf56b41",
+          "https://berascan.com/token/0xd352dc6e5f0c45e2f2b38eb5565eb286a1ea4087",
+          "https://etherscan.io/token/0x9B61879e91a0b1322F3d61c23Aaf936231882096",
+          "https://ethplorer.io/address/0x9B61879e91a0b1322F3d61c23Aaf936231882096",
+          "https://basescan.org/token/0xd6122ddADa244913521F3d62006eaF756c157660",
+          "https://intel.arkm.com/explorer/token/bedrock-token",
+          "https://intel.arkm.com/explorer/token/<api_symbol>"
+        ],
+        "chat_url": [],
+        "facebook_username": "",
+        "homepage": ["https://bedrockdao.com/"],
+        "official_forum_url": [],
+        "repos_url": {
+          "bitbucket": [],
+          "github": ["https://github.com/Bedrock-Technology"]
+        },
+        "snapshot_url": null,
+        "subreddit_url": null,
+        "telegram_channel_identifier": "Bedrock_Official",
+        "twitter_screen_name": "Bedrock_DeFi",
+        "whitepaper": ""
+      },
+      "listing_currency": null,
+      "listing_price": null,
+      "listing_source": null,
+      "listing_source_url": null,
+      "listing_timestamp": null,
+      "market_cap_rank": 345,
+      "market_cap_rank_with_rehypothecated": 471,
+      "name": "Bedrock",
+      "platforms": {
+        "base": "0xd6122ddada244913521f3d62006eaf756c157660",
+        "berachain": "0xd352dc6e5f0c45e2f2b38eb5565eb286a1ea4087",
+        "binance-smart-chain": "0xff7d6a96ae471bbcd7713af9cb1feeb16cf56b41",
+        "ethereum": "0x9b61879e91a0b1322f3d61c23aaf936231882096"
+      },
+      "preview_listing": false,
+      "public_notice": null,
+      "sentiment_votes_down_percentage": 100.0,
+      "sentiment_votes_up_percentage": 0.0,
+      "status_updates": [],
+      "symbol": "br",
+      "watchlist_portfolio_users": 1569,
+      "web_slug": "bedrock"
+    },
+    "raw_sha256": "ae48070e169a44a2cd282f7d2e1558b432b77f0a2b1d505baff772c6e4e93e2b",
+    "source": "https://api.coingecko.com/api/v3/coins/bedrock-token",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v2",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-08-28T12:32:11.006999+00:00",
+    "payload": {
+      "active": true,
+      "code": "BR",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "BR",
+      "info": {
+        "category": [],
+        "chain": "BSC",
+        "chains": [
+          {
+            "addr": "0xff7d6a96ae471bbcd7713af9cb1feeb16cf56b41",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "BR",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "73851016.50346",
+        "name": "Bedrock",
+        "total_supply": "1000000000",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "Bedrock",
+      "networks": {
+        "BEP20": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "BSC",
+          "info": {
+            "addr": "0xff7d6a96ae471bbcd7713af9cb1feeb16cf56b41",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "BEP20",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "0764642a640833c313a2487bcecb43d59830676191ce85fdf6ad97eac80ba9a5",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "exact_contract",
+  "source_contract": {
+    "block_number": 118576104,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0xff7d6a96ae471bbcd7713af9cb1feeb16cf56b41",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-08-28T12:32:11.357716+00:00",
+      "payload": {
+        "id": 1,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "942eb00e02101dd8673395e77f951530862ae177255e90bbbb71a3c42dd6fba6",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "target_catalog_evidence": {
+    "endpoint": "https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list",
+    "observed_at": "2026-08-28T12:31:45.813313+00:00",
+    "payload": {
+      "chainId": "56",
+      "chainName": "BSC",
+      "contractAddress": "0xff7d6a96ae471bbcd7713af9cb1feeb16cf56b41",
+      "decimals": 18,
+      "fullyDelisted": false,
+      "listingCex": true,
+      "name": "Bedrock",
+      "offline": false,
+      "symbol": "BR"
+    },
+    "raw_sha256": "d9826d9acc0c1619bbc9b2a7af3d8ff386cc49c8b46dddf0c3ee54795fa3f2ff",
+    "source": "binance:alpha_catalog_entry",
+    "wire_exact": false
+  },
+  "target_contract": {
+    "block_number": 118576105,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0xff7d6a96ae471bbcd7713af9cb1feeb16cf56b41",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-08-28T12:32:11.524979+00:00",
+      "payload": {
+        "id": 1,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "942eb00e02101dd8673395e77f951530862ae177255e90bbbb71a3c42dd6fba6",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "target_exchange": "binance",
+  "working_tree_dirty": false
+}

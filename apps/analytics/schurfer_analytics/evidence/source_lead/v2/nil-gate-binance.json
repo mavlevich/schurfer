@@ -1,0 +1,204 @@
+{
+  "base": "NIL",
+  "bundle_sha256": "b847058600d4a0bbead1ee4e659a64df990f9abeac8bc202593e834e6bb24d80",
+  "captured_at": "2026-08-28T12:33:44.932857+00:00",
+  "code_revision": "95775873defc52777796434474b5be9556d47f5a",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/nillion?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-08-28T12:33:44.799302+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": null,
+      "block_time_in_minutes": 0,
+      "categories": [
+        "Artificial Intelligence (AI)",
+        "Infrastructure",
+        "Binance Launchpool",
+        "Ethereum Ecosystem",
+        "CoinList Launchpad",
+        "Privacy Infrastructure",
+        "Privacy"
+      ],
+      "country_origin": "",
+      "description": {
+        "en": "Nillion is a decentralized network for Encrypted Markets. Instead of broadcasting an instruction before it executes, a user seals it to a condition and posts it onchain, where it stays unreadable, to other traders, to agents, and to the network itself, until that condition is met. At that moment a threshold of independent nodes unlocks it and it executes automatically. Covenants is the primitive that makes this possible, bringing privacy to the parts of a market that have always run in the open: the order, the strategy, and the logic behind them.\n\n$NIL is the native utility token of the network that is used for:\n\n* Protocol fees for creating and resolving Covenants\n* Staking to operate a node and secure the network\n* Rewards paid to nodes that monitor conditions and settle results\n\n\nCovenants is the protocol powering Encrypted Markets:\n\n* Condition-gated instructions sealed onchain, revealed and executed only when live data feeds meet the condition\n\n\n$NIL also enables access to Nillion's established privacy infrastructure:\n\n* nilDB: an encrypted database with data split across multiple nodes, where calculations can still be performed on data while in encrypted form\n* nilAI: AI-focused privacy technologies including AI Virtual Machine (AIVM), nada-AI, and nilTEE"
+      },
+      "detail_platforms": {
+        "": {
+          "contract_address": "",
+          "decimal_place": null
+        },
+        "ethereum": {
+          "contract_address": "0x7cf9a80db3b29ee8efe3710aadb7b95270572d47",
+          "decimal_place": 6,
+          "geckoterminal_url": "https://www.geckoterminal.com/eth/tokens/0x7cf9a80db3b29ee8efe3710aadb7b95270572d47"
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": false,
+      "hashing_algorithm": null,
+      "id": "nillion",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/39082/large/nillion.jpg?1723033507",
+        "small": "https://coin-images.coingecko.com/coins/images/39082/small/nillion.jpg?1723033507",
+        "thumb": "https://coin-images.coingecko.com/coins/images/39082/thumb/nillion.jpg?1723033507"
+      },
+      "last_updated": "2026-08-28T12:31:50.000Z",
+      "links": {
+        "announcement_url": [],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://etherscan.io/token/0x7cf9a80db3b29ee8efe3710aadb7b95270572d47",
+          "https://ethplorer.io/address/0x7cf9a80db3b29ee8efe3710aadb7b95270572d47"
+        ],
+        "chat_url": [
+          "https://discord.gg/nillionnetwork",
+          "https://medium.com/@Nillion_Network",
+          "https://www.youtube.com/channel/UCKyQIOGz5dyIQXxQMS1Ok5g"
+        ],
+        "facebook_username": "",
+        "homepage": ["https://nillion.com/"],
+        "official_forum_url": [],
+        "repos_url": {
+          "bitbucket": [],
+          "github": ["https://github.com/NillionNetwork"]
+        },
+        "snapshot_url": null,
+        "subreddit_url": null,
+        "telegram_channel_identifier": "nillionnetwork",
+        "twitter_screen_name": "nillion",
+        "whitepaper": ""
+      },
+      "listing_currency": null,
+      "listing_price": null,
+      "listing_source": null,
+      "listing_source_url": null,
+      "listing_timestamp": null,
+      "market_cap_rank": 772,
+      "market_cap_rank_with_rehypothecated": 982,
+      "name": "Nillion",
+      "platforms": {
+        "": "",
+        "ethereum": "0x7cf9a80db3b29ee8efe3710aadb7b95270572d47"
+      },
+      "preview_listing": false,
+      "public_notice": null,
+      "sentiment_votes_down_percentage": 0.0,
+      "sentiment_votes_up_percentage": 100.0,
+      "status_updates": [],
+      "symbol": "nil",
+      "watchlist_portfolio_users": 7534,
+      "web_slug": "nillion"
+    },
+    "raw_sha256": "ff6228acc5f72ba453e9e720ca257cbe0e3145eb538ea23f945aa5708905ebde",
+    "source": "https://api.coingecko.com/api/v3/coins/nillion",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v2",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-08-28T12:33:44.461989+00:00",
+    "payload": {
+      "active": true,
+      "code": "NIL",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "NIL",
+      "info": {
+        "category": [],
+        "chain": "ETH",
+        "chains": [
+          {
+            "addr": "0x7cf9a80db3b29ee8efe3710aadb7b95270572d47",
+            "deposit_disabled": false,
+            "name": "ETH",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "NIL",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "21937330.117163494",
+        "name": "Nillion",
+        "total_supply": "∞",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "Nillion",
+      "networks": {
+        "ERC20": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "ETH",
+          "info": {
+            "addr": "0x7cf9a80db3b29ee8efe3710aadb7b95270572d47",
+            "deposit_disabled": false,
+            "name": "ETH",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "ERC20",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "8866ec045a24af9273a7b59b245acc403c2926ce4f4ac89e8add4201a5178e51",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "third_party_bridge_only",
+  "source_contract": {
+    "block_number": 25853766,
+    "chain": "ethereum",
+    "chain_id": 1,
+    "contract_address": "0x7cf9a80db3b29ee8efe3710aadb7b95270572d47",
+    "decimals": 6,
+    "decimals_evidence": {
+      "endpoint": "https://ethereum-rpc.publicnode.com",
+      "observed_at": "2026-08-28T12:33:44.883093+00:00",
+      "payload": {
+        "id": 1,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000006"
+      },
+      "raw_sha256": "f470abc1e2ed21fbb5f74ae7897a7b902ed5e7b134d7f0cd5a5731ebff2690da",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "target_catalog_evidence": null,
+  "target_contract": null,
+  "target_exchange": "binance",
+  "working_tree_dirty": false
+}

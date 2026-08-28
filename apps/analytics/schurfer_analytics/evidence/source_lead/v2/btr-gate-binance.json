@@ -1,0 +1,291 @@
+{
+  "base": "BTR",
+  "bundle_sha256": "3c584ab476fdb66a9f6bbab43fe9269417df86d017824e5216780b6fc2402ec9",
+  "captured_at": "2026-08-28T12:32:21.676958+00:00",
+  "code_revision": "95775873defc52777796434474b5be9556d47f5a",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/bitlayer-bitvm?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-08-28T12:32:21.454847+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "bitlayer",
+      "block_time_in_minutes": 0,
+      "categories": [
+        "Smart Contract Platform",
+        "BNB Chain Ecosystem",
+        "Ethereum Ecosystem",
+        "Bitcoin Sidechains",
+        "SideChain",
+        "Bitlayer Ecosystem",
+        "BTCfi Protocol",
+        "Binance Alpha Spotlight",
+        "Binance Wallet IDO",
+        "CoinList Launchpad"
+      ],
+      "contract_address": "0x0e4cf4affdb72b39ea91fa726d291781cbd020bf",
+      "country_origin": "",
+      "description": {
+        "en": "Bitlayer is pioneering the first BitVM implementation. By merging unparalleled security with a lightning-fast smart contract engine, Bitlayer unlocks the full potential of Bitcoin DeFi.\n\nBitlayer is committed to an open and collaborative Bitcoin DeFi ecosystem, working with partners to advance BTC Bridge, Bitcoin Layer 2 and BitVM stack, driving the future of secure, scalable, and programmable Bitcoin finance."
+      },
+      "detail_platforms": {
+        "binance-smart-chain": {
+          "contract_address": "0xfed13d0c40790220fbde712987079eda1ed75c51",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/bsc/tokens/0xfed13d0c40790220fbde712987079eda1ed75c51"
+        },
+        "bitlayer": {
+          "contract_address": "0x0e4cf4affdb72b39ea91fa726d291781cbd020bf",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/bitlayer/tokens/0x0e4cf4affdb72b39ea91fa726d291781cbd020bf"
+        },
+        "ethereum": {
+          "contract_address": "0x6c76de483f1752ac8473e2b4983a873991e70da7",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/eth/tokens/0x6c76de483f1752ac8473e2b4983a873991e70da7"
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": false,
+      "hashing_algorithm": null,
+      "id": "bitlayer-bitvm",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/55177/large/App_Logo.png?1744368194",
+        "small": "https://coin-images.coingecko.com/coins/images/55177/small/App_Logo.png?1744368194",
+        "thumb": "https://coin-images.coingecko.com/coins/images/55177/thumb/App_Logo.png?1744368194"
+      },
+      "last_updated": "2026-08-28T12:29:50.000Z",
+      "links": {
+        "announcement_url": [],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://www.btrscan.com/token/0x0e4cf4affdb72b39ea91fa726d291781cbd020bf",
+          "https://intel.arkm.com/explorer/token/bitlayer-bitvm ",
+          "https://etherscan.io/token/0x6c76de483f1752ac8473e2b4983a873991e70da7",
+          "https://ethplorer.io/address/0x6c76de483f1752ac8473e2b4983a873991e70da7",
+          "https://bscscan.com/token/0xfed13D0c40790220fbdE712987079Eda1Ed75C51",
+          "https://binplorer.com/address/0xfed13D0c40790220fbdE712987079Eda1Ed75C51",
+          "https://intel.arkm.com/explorer/token/bitlayer-bitvm"
+        ],
+        "chat_url": [
+          "https://discord.com/invite/bitlayer",
+          "https://medium.com/@Bitlayer",
+          "https://www.youtube.com/@Bitlayer_Official"
+        ],
+        "facebook_username": "",
+        "homepage": ["https://www.bitlayer.org/"],
+        "official_forum_url": [
+          "https://blog.bitlayer.org/",
+          "https://www.linkedin.com/company/bitlayerlabs/"
+        ],
+        "repos_url": {
+          "bitbucket": [],
+          "github": ["https://github.com/bitlayer-org"]
+        },
+        "snapshot_url": null,
+        "subreddit_url": null,
+        "telegram_channel_identifier": "bitlayerofficial",
+        "twitter_screen_name": "BitlayerLabs",
+        "whitepaper": "https://github.com/bitlayer-org/whitepaper"
+      },
+      "listing_currency": null,
+      "listing_price": null,
+      "listing_source": null,
+      "listing_source_url": null,
+      "listing_timestamp": null,
+      "market_cap_rank": 502,
+      "market_cap_rank_with_rehypothecated": 660,
+      "name": "Bitlayer",
+      "platforms": {
+        "binance-smart-chain": "0xfed13d0c40790220fbde712987079eda1ed75c51",
+        "bitlayer": "0x0e4cf4affdb72b39ea91fa726d291781cbd020bf",
+        "ethereum": "0x6c76de483f1752ac8473e2b4983a873991e70da7"
+      },
+      "preview_listing": false,
+      "public_notice": null,
+      "sentiment_votes_down_percentage": 75.0,
+      "sentiment_votes_up_percentage": 25.0,
+      "status_updates": [],
+      "symbol": "btr",
+      "watchlist_portfolio_users": 2593,
+      "web_slug": "bitlayer"
+    },
+    "raw_sha256": "bbfd05162b1d250715f1622e7f30d0c0ae52e6a2110e3cf23e838c73b3df9df2",
+    "source": "https://api.coingecko.com/api/v3/coins/bitlayer-bitvm",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v2",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-08-28T12:32:21.267706+00:00",
+    "payload": {
+      "active": true,
+      "code": "BTR",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "BTR",
+      "info": {
+        "category": [],
+        "chain": "BTRBTC",
+        "chains": [
+          {
+            "addr": "0x0e4cf4affdb72b39ea91fa726d291781cbd020bf",
+            "deposit_disabled": false,
+            "name": "BTRBTC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          {
+            "addr": "0xfed13d0c40790220fbde712987079eda1ed75c51",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "BTR",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "42918096.0",
+        "name": "Bitlayer",
+        "total_supply": "1000000000",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "Bitlayer",
+      "networks": {
+        "BEP20": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "BSC",
+          "info": {
+            "addr": "0xfed13d0c40790220fbde712987079eda1ed75c51",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "BEP20",
+          "precision": 0.0001,
+          "withdraw": true
+        },
+        "BTRBTC": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "BTRBTC",
+          "info": {
+            "addr": "0x0e4cf4affdb72b39ea91fa726d291781cbd020bf",
+            "deposit_disabled": false,
+            "name": "BTRBTC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "BTRBTC",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "425497b388260609fcc913336515e19a0df522179755213fcf347b349fde049c",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "exact_contract",
+  "source_contract": {
+    "block_number": 118576127,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0xfed13d0c40790220fbde712987079eda1ed75c51",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-08-28T12:32:21.522738+00:00",
+      "payload": {
+        "id": 1,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "942eb00e02101dd8673395e77f951530862ae177255e90bbbb71a3c42dd6fba6",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "target_catalog_evidence": {
+    "endpoint": "https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list",
+    "observed_at": "2026-08-28T12:31:45.813313+00:00",
+    "payload": {
+      "chainId": "56",
+      "chainName": "BSC",
+      "contractAddress": "0xfed13d0c40790220fbde712987079eda1ed75c51",
+      "decimals": 18,
+      "fullyDelisted": false,
+      "listingCex": false,
+      "name": "BTR token",
+      "offline": false,
+      "symbol": "BTR"
+    },
+    "raw_sha256": "f2f55f47318e5cb0c6cbd63571977a4592c26df63fc76ace8386d075bce62afd",
+    "source": "binance:alpha_catalog_entry",
+    "wire_exact": false
+  },
+  "target_contract": {
+    "block_number": 118576127,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0xfed13d0c40790220fbde712987079eda1ed75c51",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-08-28T12:32:21.625513+00:00",
+      "payload": {
+        "id": 1,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "942eb00e02101dd8673395e77f951530862ae177255e90bbbb71a3c42dd6fba6",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "target_exchange": "binance",
+  "working_tree_dirty": false
+}
