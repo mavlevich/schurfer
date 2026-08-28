@@ -278,13 +278,33 @@ def _sample_chain_evidence() -> ChainContractEvidence:
 def _sample_bundle(
     *, base: str, identity_class: IdentityClass = "exact_contract"
 ) -> EvidenceBundle:
-    raw = RawFetch(
+    # Real payload shapes (not just {"ok": True}) so a "good" sample bundle
+    # actually passes _validate_identity_class -- needed once
+    # verify_registry_against_evidence started re-running that check
+    # (colleague review, 2026-08-28).
+    gate_evidence = RawFetch(
+        source="gate:fetch_currencies",
+        endpoint="https://fake/",
+        observed_at=datetime(2026, 8, 28, tzinfo=UTC),
+        raw_sha256="b" * 64,
+        wire_exact=False,
+        payload={"networks": {"BEP20": {"info": {"addr": "0xaaaa"}}}},
+    )
+    coingecko_evidence = RawFetch(
         source="test",
         endpoint="https://fake/",
         observed_at=datetime(2026, 8, 28, tzinfo=UTC),
         raw_sha256="b" * 64,
         wire_exact=True,
-        payload={"ok": True},
+        payload={"platforms": {"binance-smart-chain": "0xaaaa"}},
+    )
+    target_catalog_evidence = RawFetch(
+        source="binance:alpha_catalog_entry",
+        endpoint="https://fake/",
+        observed_at=datetime(2026, 8, 28, tzinfo=UTC),
+        raw_sha256="b" * 64,
+        wire_exact=False,
+        payload={"contractAddress": "0xaaaa", "decimals": 18},
     )
     bundle = EvidenceBundle(
         evidence_version="source_lead_identity_evidence_v2",
@@ -294,9 +314,9 @@ def _sample_bundle(
         identity_class=identity_class,
         source_contract=_sample_chain_evidence(),
         target_contract=_sample_chain_evidence(),
-        gate_evidence=raw,
-        target_catalog_evidence=raw,
-        coingecko_evidence=raw,
+        gate_evidence=gate_evidence,
+        target_catalog_evidence=target_catalog_evidence,
+        coingecko_evidence=coingecko_evidence,
         code_revision="abc123",
         working_tree_dirty=False,
         captured_at=datetime(2026, 8, 28, tzinfo=UTC),
@@ -306,18 +326,19 @@ def _sample_bundle(
 
 
 def _links_for(base: str, sha256: str) -> dict[tuple[str, str], CanonicalInstrumentLink]:
+    evidence_url = f"https://example.com/{base.lower()}-gate-binance.json"
     gate = CanonicalInstrumentLink(
         canonical_asset_id=f"asset:{base.lower()}",
         exchange="gate",
         instrument_identity_key=f"gate:swap:{base}_USDT:1",
-        evidence_url=f"https://example.com/{base.lower()}",
+        evidence_url=evidence_url,
         evidence_sha256=sha256,
     )
     binance = CanonicalInstrumentLink(
         canonical_asset_id=f"asset:{base.lower()}",
         exchange="binance",
         instrument_identity_key=f"binance:swap:{base}USDT:1",
-        evidence_url=f"https://example.com/{base.lower()}",
+        evidence_url=evidence_url,
         evidence_sha256=sha256,
     )
     return {
@@ -364,4 +385,47 @@ def test_registry_load_rejects_link_with_no_matching_evidence_bundle_at_all(
     with pytest.raises(ValueError, match="no matching evidence bundle"):
         verify_registry_against_evidence(
             _links_for("OTHER", bundle.bundle_sha256), evidence_dir=tmp_path
+        )
+
+
+def test_registry_load_rejects_link_whose_evidence_url_names_a_different_bundle(
+    tmp_path: Path,
+) -> None:
+    """A copy-pasted link row whose evidence_url still points at a
+    different asset's file must fail even when its evidence_sha256 was
+    (mistakenly) updated to match the actual bundle being used."""
+    bundle = _sample_bundle(base="ZED")
+    save_evidence_bundle(bundle, tmp_path / "zed-gate-binance.json")
+    links = _links_for("ZED", bundle.bundle_sha256)
+    stale_url_link = replace(
+        links[("gate", "gate:swap:ZED_USDT:1")],
+        evidence_url="https://example.com/some-other-asset-gate-binance.json",
+    )
+    links[("gate", "gate:swap:ZED_USDT:1")] = stale_url_link
+
+    with pytest.raises(ValueError, match="does not name its own evidence bundle"):
+        verify_registry_against_evidence(links, evidence_dir=tmp_path)
+
+
+def test_registry_load_rejects_bundle_that_never_actually_passed_semantic_validation(
+    tmp_path: Path,
+) -> None:
+    """The sha256 check alone only proves a bundle's content matches its own
+    claimed hash, not that the content was ever semantically valid. A
+    hand-crafted bundle claiming exact_contract with source and target on
+    different chains/addresses -- exactly the EDEN-class mistake
+    _validate_identity_class exists to catch -- computes a perfectly
+    consistent hash over its own (wrong) content."""
+    bundle = _sample_bundle(base="ZED")
+    assert bundle.target_contract is not None
+    mismatched = replace(
+        bundle,
+        target_contract=replace(bundle.target_contract, contract_address="0xbbbb"),
+    )
+    mismatched = replace(mismatched, bundle_sha256=compute_bundle_sha256(mismatched))
+    save_evidence_bundle(mismatched, tmp_path / "zed-gate-binance.json")
+
+    with pytest.raises(ValueError, match="failed semantic revalidation"):
+        verify_registry_against_evidence(
+            _links_for("ZED", mismatched.bundle_sha256), evidence_dir=tmp_path
         )

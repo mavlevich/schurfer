@@ -494,7 +494,19 @@ WITH captures AS (
 		-- could come from the old naive-symbol guess and carry
 		-- identity_verified=false -- counting it toward target_eligible would
 		-- let a wrong-market observation satisfy the maturity/readiness gate.
-		coalesce(bool_or(t.status = 'sampled' AND t.identity_verified), false) AS target_eligible
+		-- source_first_observed_at >= $3 is redundant with the capture-side
+		-- gate in capture_claimed_source_leads (which never writes a
+		-- 'sampled'+identity_verified row for a pre-cutover capture at all)
+		-- but kept as an independent second check -- same defense-in-depth
+		-- as QualifiedProspective below, in case any future capture path
+		-- ever bypasses that gate.
+		coalesce(
+			bool_or(
+				t.status = 'sampled' AND t.identity_verified
+					AND c.source_first_observed_at >= $3
+			),
+			false
+		) AS target_eligible
 	FROM app.source_lead_captures AS c
 	LEFT JOIN app.source_lead_target_observations AS t
 	  ON t.capture_id = c.id
@@ -625,30 +637,47 @@ SELECT
 	count(*) FILTER (WHERE status = 'sampled'),
 	count(*) FILTER (WHERE status = 'excluded'),
 	count(*) FILTER (WHERE status = 'fetch_failed'),
-	-- Latency/spread/impact percentiles require identity_verified alongside
+	-- Latency/spread/impact percentiles require identity_verified AND
+	-- source_first_observed_at >= $4 (identityRegistryV2Start) alongside
 	-- status='sampled' (colleague review, 2026-08-28): these numbers feed
-	-- venue-quality analysis directly, so a pre-activation, wrong-market
-	-- 'sampled' row must not be able to pollute them. Sampled/excluded/
-	-- fetch_failed counts above stay unfiltered -- they are the raw
-	-- operational funnel, a different (and still honest) metric.
+	-- venue-quality analysis directly, so neither a pre-activation
+	-- wrong-market row nor a pre-cutover row (redundant with the
+	-- capture-side gate, kept as an independent second check) can pollute
+	-- them. Sampled/excluded/fetch_failed counts above stay unfiltered --
+	-- they are the raw operational funnel, a different (and still honest)
+	-- metric.
 	percentile_cont(0.5) WITHIN GROUP (
 		ORDER BY extract(epoch FROM (observed_at - source_first_observed_at)) * 1000
 	) FILTER (
-		WHERE status = 'sampled' AND identity_verified AND observed_at >= source_first_observed_at
+		WHERE status = 'sampled' AND identity_verified
+		  AND source_first_observed_at >= $4 AND observed_at >= source_first_observed_at
 	),
 	percentile_cont(0.9) WITHIN GROUP (
 		ORDER BY extract(epoch FROM (observed_at - source_first_observed_at)) * 1000
 	) FILTER (
-		WHERE status = 'sampled' AND identity_verified AND observed_at >= source_first_observed_at
+		WHERE status = 'sampled' AND identity_verified
+		  AND source_first_observed_at >= $4 AND observed_at >= source_first_observed_at
 	),
 	percentile_cont(0.5) WITHIN GROUP (ORDER BY spread_bps)
-		FILTER (WHERE status = 'sampled' AND identity_verified AND spread_bps >= 0),
+		FILTER (
+			WHERE status = 'sampled' AND identity_verified
+			  AND source_first_observed_at >= $4 AND spread_bps >= 0
+		),
 	percentile_cont(0.9) WITHIN GROUP (ORDER BY spread_bps)
-		FILTER (WHERE status = 'sampled' AND identity_verified AND spread_bps >= 0),
+		FILTER (
+			WHERE status = 'sampled' AND identity_verified
+			  AND source_first_observed_at >= $4 AND spread_bps >= 0
+		),
 	percentile_cont(0.5) WITHIN GROUP (ORDER BY entry_impact_bps)
-		FILTER (WHERE status = 'sampled' AND identity_verified AND entry_impact_bps >= 0),
+		FILTER (
+			WHERE status = 'sampled' AND identity_verified
+			  AND source_first_observed_at >= $4 AND entry_impact_bps >= 0
+		),
 	percentile_cont(0.9) WITHIN GROUP (ORDER BY entry_impact_bps)
-		FILTER (WHERE status = 'sampled' AND identity_verified AND entry_impact_bps >= 0)
+		FILTER (
+			WHERE status = 'sampled' AND identity_verified
+			  AND source_first_observed_at >= $4 AND entry_impact_bps >= 0
+		)
 FROM observations`
 
 const sourceLeadIdentityReviewSQL = `
@@ -795,6 +824,7 @@ func (h *Handler) sourceLeadProgress(
 			sourceLeadStart,
 			now,
 			exchange,
+			identityRegistryV2Start,
 		).Scan(
 			&target.Observations,
 			&target.Sampled,

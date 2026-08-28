@@ -20,7 +20,7 @@ import structlog
 
 from .exchange_registry import EXCHANGE_FACTORIES, ExchangeFactory
 from .instruments import instrument_metadata
-from .source_lead_contract import CAPTURE_VERSION
+from .source_lead_contract import CAPTURE_VERSION, IDENTITY_REGISTRY_V2_START
 from .source_lead_qualification import (
     IDENTITY_MATCH_METHOD_REGISTRY_EXACT_V2,
     IDENTITY_MATCH_METHOD_REGISTRY_LOOKUP_V2,
@@ -580,6 +580,42 @@ def _resolve_registered_target_market(
     return None
 
 
+def _resolve_source_and_target_links(
+    candidate: SourceLeadCandidate, exchange_name: str, registry: IdentityRegistry
+) -> tuple[CanonicalInstrumentLink | None, CanonicalInstrumentLink | None]:
+    """Pure registry lookup, no network -- shared by capture_target_observation
+    (per-candidate pre-network check) and _exchange_has_registered_route
+    (per-exchange batch gate, colleague review 2026-08-28) so the two can
+    never silently disagree about which claims have a possible route.
+    Returns (None, None) when the source identity itself is unregistered,
+    (source_link, None) when the source is registered but this exchange has
+    no registered target link for its canonical asset."""
+    source_link = registry.links_by_identity.get(
+        (SOURCE_EXCHANGE, candidate.source.identity_key or "")
+    )
+    if source_link is None:
+        return None, None
+    target_link = registry.links_by_asset_exchange.get(
+        (source_link.canonical_asset_id, exchange_name)
+    )
+    return source_link, target_link
+
+
+def _exchange_has_registered_route(
+    claimed: tuple[ClaimedCapture, ...], exchange_name: str, registry: IdentityRegistry
+) -> bool:
+    """True iff at least one claim in this batch has a registered route to
+    exchange_name. Used to skip creating the exchange client and calling
+    load_markets() entirely for a batch where nothing could possibly
+    resolve (colleague review, 2026-08-28: AI_RULES.md requires gating
+    before expensive work starts, not only at the final per-candidate
+    check) -- e.g. bybit, which currently has zero registry links at all."""
+    return any(
+        _resolve_source_and_target_links(item.candidate, exchange_name, registry)[1] is not None
+        for item in claimed
+    )
+
+
 async def capture_target_observation(
     exchange_name: str,
     exchange: Any,
@@ -610,14 +646,9 @@ async def capture_target_observation(
     network call at all -- no ticker/order-book fetch, no row written from
     an unconfirmed market."""
     started = time.monotonic()
-    source_link = registry.links_by_identity.get(
-        (SOURCE_EXCHANGE, candidate.source.identity_key or "")
-    )
+    source_link, target_link = _resolve_source_and_target_links(candidate, exchange_name, registry)
     if source_link is None:
         return _target_failure(exchange_name, "source_identity_unregistered", started, target_usd)
-    target_link = registry.links_by_asset_exchange.get(
-        (source_link.canonical_asset_id, exchange_name)
-    )
     if target_link is None:
         return _target_failure(exchange_name, "no_registered_target", started, target_usd)
 
@@ -801,7 +832,58 @@ async def capture_claimed_source_leads(
     exchange_factories = factories or EXCHANGE_FACTORIES
     registry = identity_registry or load_identity_registry()
     results: dict[int, list[TargetObservation]] = {item.capture_id: [] for item in claimed}
+
+    # A capture from before the v2 registry existed must never be treated as
+    # v2-qualified prospective evidence (see IDENTITY_REGISTRY_V2_START's own
+    # docstring). qualify_source_lead already enforces this at the
+    # qualification layer; checked here too, before any network call, so a
+    # pre-cutover candidate never gets a 'sampled'+identity_verified=True
+    # target row written at all (colleague review, 2026-08-28: AI_RULES.md
+    # requires gating before expensive work starts, and a dashboard reading
+    # target_eligible without also checking the cutover would otherwise
+    # still see these rows).
+    pre_cutover = tuple(
+        item for item in claimed if item.candidate.source.first_seen_at < IDENTITY_REGISTRY_V2_START
+    )
+    network_eligible = tuple(
+        item
+        for item in claimed
+        if item.candidate.source.first_seen_at >= IDENTITY_REGISTRY_V2_START
+    )
+    for item in pre_cutover:
+        skip_started = time.monotonic()
+        for exchange_name in target_exchanges:
+            results[item.capture_id].append(
+                _target_failure(
+                    exchange_name,
+                    "before_identity_registry_v2_activation",
+                    skip_started,
+                    target_usd,
+                )
+            )
+
     for exchange_name in target_exchanges:
+        if not _exchange_has_registered_route(network_eligible, exchange_name, registry):
+            # No claim in this batch has any registered route to this
+            # exchange (e.g. bybit, which currently has zero registry
+            # links) -- never create the client or load its full market
+            # catalog for nothing (colleague review, 2026-08-28). Each
+            # claim still gets its own honest per-candidate reason via
+            # capture_target_observation's own pre-network check logic.
+            skip_started = time.monotonic()
+            for item in network_eligible:
+                source_link, _target_link = _resolve_source_and_target_links(
+                    item.candidate, exchange_name, registry
+                )
+                reason = (
+                    "source_identity_unregistered"
+                    if source_link is None
+                    else "no_registered_target"
+                )
+                results[item.capture_id].append(
+                    _target_failure(exchange_name, reason, skip_started, target_usd)
+                )
+            continue
         factory = exchange_factories.get(exchange_name)
         if factory is None:
             raise ValueError(f"unknown source-lead target exchange: {exchange_name}")
@@ -809,7 +891,7 @@ async def capture_claimed_source_leads(
         exchange_started = time.monotonic()
         try:
             await asyncio.wait_for(exchange.load_markets(), timeout=timeout_seconds)
-            for item in claimed:
+            for item in network_eligible:
                 observation = await capture_target_observation(
                     exchange_name,
                     exchange,
@@ -820,7 +902,7 @@ async def capture_claimed_source_leads(
                 )
                 results[item.capture_id].append(observation)
         except Exception as exc:
-            for item in claimed:
+            for item in network_eligible:
                 results[item.capture_id].append(
                     _target_failure(
                         exchange_name,

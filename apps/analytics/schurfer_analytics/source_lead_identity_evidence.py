@@ -613,6 +613,27 @@ def _validate_identity_class(
         raise ValueError(f"{base}: unknown identity_class {identity_class!r}")
 
 
+def revalidate_bundle_identity_class(bundle: EvidenceBundle) -> None:
+    """Re-runs _validate_identity_class over a bundle already loaded from
+    disk. load_evidence_bundle only re-checks bundle_sha256 (the content
+    was not tampered with after being written) -- that alone does not prove
+    the content was ever semantically valid in the first place, only that
+    it is internally self-consistent. A hand-crafted file can compute a
+    correct hash over content that never actually passed this check.
+    Colleague review, 2026-08-28: any registry-activation consumer that
+    treats a bundle as authoritative must call this too, not just the
+    hash check."""
+    _validate_identity_class(
+        identity_class=bundle.identity_class,
+        base=bundle.base,
+        gate_evidence=bundle.gate_evidence,
+        coingecko_evidence=bundle.coingecko_evidence,
+        target_catalog_evidence=bundle.target_catalog_evidence,
+        source_contract=bundle.source_contract,
+        target_contract=bundle.target_contract,
+    )
+
+
 async def capture_bundle(
     *,
     http_client: Any,

@@ -13,7 +13,9 @@ from .source_lead_contract import IDENTITY_REGISTRY_V2_START
 from .source_lead_identity_evidence import (
     EVIDENCE_DIR,
     EvidenceIntegrityError,
+    evidence_bundle_path,
     load_all_evidence_bundles,
+    revalidate_bundle_identity_class,
 )
 
 if TYPE_CHECKING:
@@ -204,13 +206,19 @@ def verify_registry_against_evidence(
 
     Deliberately narrower than full route verification: this confirms the
     *asset* identity a bundle vouches for (on-chain contract match across
-    Gate/Binance/CoinGecko, identity_class == exact_contract), not the
-    specific derivative market's native id/type/quote-settle/onboard time --
-    those aren't independently evidenced by anything this tool captures
-    today. _resolve_registered_target_market's own live re-verification
-    against the exchange at capture time is what stands in for that
-    (colleague review, 2026-08-28): a wrong/stale instrument_identity_key
-    simply fails to resolve, it can never silently misroute."""
+    Gate/Binance/CoinGecko, identity_class == exact_contract), not that the
+    specific registered derivative market (native id/type/quote-settle/
+    onboard time) is really the same project's perpetual, rather than a
+    different, ticker-colliding one that happens to share a symbol.
+    _resolve_registered_target_market's live re-verification at capture
+    time only proves the registered market genuinely *exists* with that
+    exact id/type/onboarded_at combination -- a wrong-but-real
+    instrument_identity_key would still resolve and be marked
+    identity_verified=true (colleague review, 2026-08-28: this is a
+    materially weaker guarantee than "can never misroute", corrected from
+    this function's earlier framing). Independent evidence for the
+    derivative markets themselves is tracked as separate follow-up work,
+    not yet built."""
     try:
         bundles = load_all_evidence_bundles(evidence_dir)
     except EvidenceIntegrityError as exc:
@@ -241,6 +249,31 @@ def verify_registry_against_evidence(
                 f"identity registry link {link.canonical_asset_id}/{link.exchange} is backed by a "
                 f"{bundle.identity_class!r} bundle, not exact_contract -- never activatable"
             )
+        # evidence_url must actually name the bundle this link was verified
+        # against, not merely resolve as a well-formed https string
+        # (colleague review, 2026-08-28) -- catches a copy-pasted link row
+        # whose evidence_url still points at a different asset's file.
+        expected_name = evidence_bundle_path(
+            bundle.base, bundle.source_exchange, bundle.target_exchange
+        ).name
+        if not link.evidence_url.endswith(f"/{expected_name}"):
+            raise ValueError(
+                f"identity registry link {link.canonical_asset_id}/{link.exchange} evidence_url "
+                f"{link.evidence_url!r} does not name its own evidence bundle "
+                f"({expected_name!r})"
+            )
+        # The sha256 check above only proves this bundle's content matches
+        # what it claims to hash to (untampered since written) -- not that
+        # it was ever semantically valid in the first place. Re-running the
+        # same check capture_bundle applies before ever saving a bundle
+        # closes that gap (colleague review, 2026-08-28).
+        try:
+            revalidate_bundle_identity_class(bundle)
+        except ValueError as exc:
+            raise ValueError(
+                f"identity registry link {link.canonical_asset_id}/{link.exchange} evidence bundle "
+                f"failed semantic revalidation: {exc}"
+            ) from exc
 
 
 def load_identity_registry() -> IdentityRegistry:

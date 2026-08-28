@@ -58,6 +58,36 @@ def _abc_registry(*, target_exchange: str = "binance") -> IdentityRegistry:
     )
 
 
+def _abc_registry_both() -> IdentityRegistry:
+    """Like _abc_registry, but registers both binance and bybit as targets
+    -- for tests that exercise more than one target exchange client."""
+    return parse_identity_registry(
+        {
+            "schema_version": 1,
+            "registry_version": "test_registry_v1",
+            "links": [
+                {
+                    "canonical_asset_id": "asset:abc",
+                    "exchange": "gate",
+                    "instrument_identity_key": "gate:swap:ABC_USDT:1",
+                    "evidence_url": _EVIDENCE_URL,
+                    "evidence_sha256": _EVIDENCE_SHA256,
+                },
+                *(
+                    {
+                        "canonical_asset_id": "asset:abc",
+                        "exchange": exchange,
+                        "instrument_identity_key": f"{exchange}:swap:ABCUSDT:1700000000000",
+                        "evidence_url": _EVIDENCE_URL,
+                        "evidence_sha256": _EVIDENCE_SHA256,
+                    }
+                    for exchange in ("binance", "bybit")
+                ),
+            ],
+        }
+    )
+
+
 _EMPTY_REGISTRY = parse_identity_registry(
     {"schema_version": 1, "registry_version": "test_empty_registry_v1", "links": []}
 )
@@ -473,6 +503,7 @@ async def test_capture_processes_target_clients_sequentially(monkeypatch: Any) -
         def __init__(self) -> None:
             template = _Exchange()
             self.markets = template.markets
+            self.markets_by_id = template.markets_by_id
 
         async def load_markets(self) -> dict[str, Any]:
             nonlocal active, maximum_active
@@ -530,19 +561,86 @@ async def test_capture_processes_target_clients_sequentially(monkeypatch: Any) -
         timeout_seconds=1.0,
         batch_size=8,
         factories={"binance": TrackedExchange, "bybit": TrackedExchange},
-        identity_registry=parse_identity_registry(
-            {
-                "schema_version": 1,
-                "registry_version": "test_empty_registry_v1",
-                "links": [],
-            }
-        ),
+        # Both exchanges need a registered route -- otherwise
+        # _exchange_has_registered_route (colleague review, 2026-08-28)
+        # skips creating the client entirely, and there is nothing left for
+        # this test to prove is sequential.
+        identity_registry=_abc_registry_both(),
     )
 
     assert maximum_active == 1
     assert active == 0
     assert [row.target_exchange for row in persisted[11]] == ["binance", "bybit"]
-    assert qualifications[11].reason == "source_identity_unapproved"
+    assert qualifications[11].status == "qualified"
+
+
+async def test_capture_skips_exchange_client_entirely_when_no_route_is_registered(
+    monkeypatch: Any,
+) -> None:
+    """Batch-level counterpart to _exchange_has_registered_route's own unit
+    tests: with an empty registry, capture_new_source_leads must never
+    create an exchange client or call load_markets at all (colleague
+    review, 2026-08-28 -- AI_RULES.md requires gating before expensive work
+    starts, not only at the final per-candidate check)."""
+    candidate = _candidate(first_seen_at=IDENTITY_REGISTRY_V2_START + timedelta(hours=1))
+    claimed = (ClaimedCapture(capture_id=21, candidate=candidate),)
+    created = 0
+
+    class CountingExchange:
+        def __init__(self) -> None:
+            nonlocal created
+            created += 1
+
+        async def load_markets(self) -> dict[str, Any]:
+            raise AssertionError("load_markets must not be called with no registered route")
+
+        async def close(self, **_kwargs: Any) -> None:
+            pass
+
+    persisted: dict[int, list[TargetObservation]] = {}
+    qualifications: dict[int, QualificationResult] = {}
+
+    async def persist(
+        _db_url: str,
+        results: dict[int, list[TargetObservation]],
+        captured_qualifications: dict[int, QualificationResult],
+        _registry_version: str,
+        _registry_fingerprint: str,
+    ) -> None:
+        persisted.update(results)
+        qualifications.update(captured_qualifications)
+
+    monkeypatch.setattr(
+        "schurfer_analytics.source_lead_capture.load_source_lead_candidates",
+        AsyncMock(return_value=(candidate,)),
+    )
+    monkeypatch.setattr(
+        "schurfer_analytics.source_lead_capture.claim_source_lead_captures",
+        AsyncMock(return_value=claimed),
+    )
+    monkeypatch.setattr(
+        "schurfer_analytics.source_lead_capture._persist_target_observations",
+        persist,
+    )
+
+    await capture_new_source_leads(
+        "postgresql://test",
+        {7},
+        datetime(2026, 8, 2, tzinfo=UTC),
+        target_exchanges=("binance", "bybit"),
+        target_usd=50.0,
+        timeout_seconds=1.0,
+        batch_size=8,
+        factories={"binance": CountingExchange, "bybit": CountingExchange},
+        identity_registry=_EMPTY_REGISTRY,
+    )
+
+    assert created == 0
+    assert [row.eligibility_reason for row in persisted[21]] == [
+        "source_identity_unregistered",
+        "source_identity_unregistered",
+    ]
+    assert qualifications[21].reason == "source_identity_unapproved"
 
 
 def test_capture_contract_is_versioned_and_identity_method_is_explicit() -> None:
