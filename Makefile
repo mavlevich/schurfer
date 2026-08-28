@@ -3,7 +3,7 @@
 .PHONY: momentum-flow-discovery-report prod-momentum-flow-discovery-report
 .PHONY: ai-rules-check
 .PHONY: early-momentum-unused-flow-features-report prod-early-momentum-unused-flow-features-report
-.PHONY: cex-activity-discovery-report prod-cex-activity-discovery-report radar-outcome-discovery-report prod-radar-outcome-discovery-report
+.PHONY: cex-activity-discovery-report radar-outcome-discovery-report prod-radar-outcome-discovery-report
 .PHONY: liquidation-capture-bybit-start liquidation-capture-bybit-stop liquidation-capture-bybit-health liquidation-capture-binance-start liquidation-capture-binance-stop liquidation-capture-binance-health
 .PHONY: prod-liquidation-capture-bybit-start prod-liquidation-capture-bybit-stop prod-liquidation-capture-bybit-health prod-liquidation-capture-binance-start prod-liquidation-capture-binance-stop prod-liquidation-capture-binance-health
 
@@ -245,7 +245,6 @@ help:
 	@echo "  make prod-momentum-flow-discovery-report  Production frozen WATCH/paper discovery read (ARGS must include --since --until --capture-epoch-started-at)"
 	@echo "  make prod-binance-watch-input-coverage-report  Production Binance WATCH quality-gate coverage (ARGS must include --since)"
 	@echo "  make prod-bidirectional-burst-study-report  Production discovery-level buy/sell volume-burst study (ARGS must include --since --until)"
-	@echo "  make prod-cex-activity-discovery-report  Production CEX activity -> exact 25% move discovery"
 	@echo "  make prod-radar-outcome-discovery-report  Production WATCH radar -> exact 25% move discovery"
 
 install:
@@ -1112,25 +1111,6 @@ prod-binance-watch-input-coverage-report:
 prod-bidirectional-burst-study-report:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
 	$(_PROD) run --rm --no-deps --entrypoint bidirectional-burst-study-report analytics $(ARGS)
-
-prod-cex-activity-discovery-report:
-	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
-	@if test -r /proc/meminfo; then \
-		available_kb=$$(awk '/^MemAvailable:/ {print $$2}' /proc/meminfo); \
-		swap_kb=$$(awk '/^SwapFree:/ {print $$2}' /proc/meminfo); \
-		headroom_kb=$$((available_kb + swap_kb)); \
-		required_kb=$$(( $(PROD_REPORT_MIN_HEADROOM_MB) * 1024 )); \
-		if test "$$headroom_kb" -lt "$$required_kb"; then \
-			echo "ERROR: CEX activity discovery requires at least $(PROD_REPORT_MIN_HEADROOM_MB) MiB of available RAM + free swap."; \
-			echo "Current headroom: $$((headroom_kb / 1024)) MiB. Refusing to risk a host OOM."; \
-			exit 1; \
-		fi; \
-	fi
-	@$(_PROD) run --rm --no-deps --entrypoint cex-activity-discovery-report analytics \
-		--code-revision="$$(git rev-parse HEAD)" \
-		$$(test -z "$$(git status --porcelain)" \
-			&& printf '%s' '--no-working-tree-dirty' \
-			|| printf '%s' '--working-tree-dirty') $(ARGS)
 
 prod-radar-outcome-discovery-report:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)

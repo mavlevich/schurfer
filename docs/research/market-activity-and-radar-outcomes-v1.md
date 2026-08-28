@@ -90,14 +90,18 @@ inherit their +20% selection rule. Median time-to-hit, favorable excursion and
 adverse excursion are diagnostics; the only primary metric is the paired
 25%-within-24h hit-rate difference.
 
-## Commands after merge and analytics deploy
+## Commands after merge
 
 ```bash
-make prod-cex-activity-discovery-report ARGS='--since 2026-08-18T00:00:00Z --until 2026-08-27T00:00:00Z --format json'
+# Offline replica or frozen extract only; do not point this full-universe scan
+# at the production primary.
+DATABASE_URL='<offline-postgres-url>' make cex-activity-discovery-report ARGS='--since 2026-08-18T00:00:00Z --until 2026-08-27T00:00:00Z --format json'
 
 make prod-radar-outcome-discovery-report ARGS='--since 2026-08-18T00:00:00Z --until 2026-08-27T00:00:00Z --format json'
 ```
 
-Both production targets refuse to start without the normal report memory
+The WATCH production target refuses to start without the normal report memory
 headroom. Each SQL transaction is read-only and has a five-minute statement
-timeout so a research query cannot remain an unbounded production workload.
+timeout. The CEX scan deliberately has no production target after its first
+frozen run proved too I/O-heavy for the primary database; HYP-016 remains parked
+until the denominator is materialized or an offline replica is available.

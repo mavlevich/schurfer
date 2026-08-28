@@ -16,8 +16,28 @@ from schurfer_analytics.cex_activity_discovery import (
     select_matched_pairs,
     signal_request,
 )
+from schurfer_analytics.cex_activity_discovery_report import build_parser
+from schurfer_analytics.momentum_flow_bidirectional_burst_report import (
+    DEFAULT_EXTREME_THRESHOLD_PCT,
+)
 
 BASE = datetime(2026, 8, 17, 12, 0, tzinfo=UTC)
+
+
+def test_cex_v1_primary_threshold_cannot_be_overridden_from_the_cli() -> None:
+    base_args = [
+        "--since",
+        "2026-08-18T00:00:00Z",
+        "--until",
+        "2026-08-27T00:00:00Z",
+        "--code-revision",
+        "84d9388",
+        "--no-working-tree-dirty",
+    ]
+    parsed = build_parser().parse_args(base_args)
+    assert parsed.extreme_threshold_pct == DEFAULT_EXTREME_THRESHOLD_PCT
+    with pytest.raises(SystemExit):
+        build_parser().parse_args([*base_args, "--extreme-threshold-pct", "9"])
 
 
 def _episode(

@@ -122,20 +122,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--since", type=parse_utc_datetime, required=True)
     parser.add_argument("--until", type=parse_utc_datetime, required=True)
-    parser.add_argument("--exchange", default=BYBIT_MOMENTUM_EXCHANGE)
-    parser.add_argument("--market-type", default=BYBIT_MOMENTUM_MARKET_TYPE)
-    parser.add_argument("--capture-version", default=BYBIT_MOMENTUM_CAPTURE_VERSION)
-    parser.add_argument(
-        "--extreme-threshold-pct", type=float, default=DEFAULT_EXTREME_THRESHOLD_PCT
-    )
-    parser.add_argument("--refractory-minutes", type=int, default=DEFAULT_REFRACTORY_MINUTES)
-    parser.add_argument("--min-volume-24h-usd", type=float, default=DEFAULT_MIN_VOLUME_24H_USD)
     parser.add_argument("--max-candidate-minutes", type=int, default=DEFAULT_MAX_CANDIDATE_MINUTES)
     parser.add_argument("--code-revision", required=True)
     dirty = parser.add_mutually_exclusive_group(required=True)
     dirty.add_argument("--working-tree-dirty", action="store_true")
     dirty.add_argument("--no-working-tree-dirty", action="store_true")
     parser.add_argument("--format", choices=("markdown", "json"), default="markdown")
+    parser.set_defaults(
+        exchange=BYBIT_MOMENTUM_EXCHANGE,
+        market_type=BYBIT_MOMENTUM_MARKET_TYPE,
+        capture_version=BYBIT_MOMENTUM_CAPTURE_VERSION,
+        extreme_threshold_pct=DEFAULT_EXTREME_THRESHOLD_PCT,
+        refractory_minutes=DEFAULT_REFRACTORY_MINUTES,
+        min_volume_24h_usd=DEFAULT_MIN_VOLUME_24H_USD,
+    )
     return parser
 
 
