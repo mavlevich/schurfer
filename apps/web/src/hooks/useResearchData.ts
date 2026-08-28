@@ -12,7 +12,7 @@ export interface ProspectiveCohort {
   contract: string;
   cohort_start: string;
   four_week_checkpoint: string;
-  status: 'scheduled' | 'collecting' | 'report_required';
+  status: 'scheduled' | 'collecting' | 'report_required' | 'closed';
   mature_input_episodes: ResearchMilestone;
   asset_clusters: ResearchMilestone;
   calendar_weeks: ResearchMilestone;

@@ -62,6 +62,9 @@ function statusBadge(status: string) {
   if (status === 'report_required') {
     return <Badge variant="warning">run formal report</Badge>;
   }
+  if (status === 'closed') {
+    return <Badge variant="secondary">closed</Badge>;
+  }
   if (status === 'unhealthy' || status === 'error' || status === 'no_go' || status === 'stale') {
     return <Badge variant="destructive">{label}</Badge>;
   }
@@ -174,6 +177,7 @@ function MilestoneRow({ label, milestone }: { label: string; milestone: Research
 
 function CohortCard({ cohort }: { cohort: ProspectiveCohort }) {
   const diagnostics = cohort.input_diagnostics;
+  const closed = cohort.status === 'closed';
   return (
     <Card>
       <CardHeader className="space-y-3">
@@ -193,27 +197,31 @@ function CohortCard({ cohort }: { cohort: ProspectiveCohort }) {
         <MilestoneRow label="Mature database inputs" milestone={cohort.mature_input_episodes} />
         <MilestoneRow label="Asset clusters" milestone={cohort.asset_clusters} />
         <MilestoneRow label="UTC weeks" milestone={cohort.calendar_weeks} />
-        <div className="grid grid-cols-2 gap-3 text-sm">
-          <div className="rounded-md border p-3">
-            <p className="text-xs text-muted-foreground">Closed candidates</p>
-            <p className="mt-1 font-mono">{diagnostics.closed_candidate_episodes}</p>
-          </div>
-          <div className="rounded-md border p-3">
-            <p className="text-xs text-muted-foreground">Measurement rows ignored</p>
-            <p className="mt-1 font-mono">{diagnostics.ignored_measurement_decisions}</p>
-          </div>
-        </div>
-        {(diagnostics.unexpected_strategy_episodes > 0 ||
-          diagnostics.invalid_input_episodes > 0 ||
-          diagnostics.missing_exact_outcome_episodes > 0) && (
-          <div className="space-y-1 rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs">
-            <p className="font-medium text-amber-300">Input flags</p>
-            <p className="text-muted-foreground">
-              unexpected strategy {diagnostics.unexpected_strategy_episodes} · invalid input{' '}
-              {diagnostics.invalid_input_episodes} · missing exact 8h outcome{' '}
-              {diagnostics.missing_exact_outcome_episodes}
-            </p>
-          </div>
+        {!closed && (
+          <>
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="rounded-md border p-3">
+                <p className="text-xs text-muted-foreground">Closed candidates</p>
+                <p className="mt-1 font-mono">{diagnostics.closed_candidate_episodes}</p>
+              </div>
+              <div className="rounded-md border p-3">
+                <p className="text-xs text-muted-foreground">Measurement rows ignored</p>
+                <p className="mt-1 font-mono">{diagnostics.ignored_measurement_decisions}</p>
+              </div>
+            </div>
+            {(diagnostics.unexpected_strategy_episodes > 0 ||
+              diagnostics.invalid_input_episodes > 0 ||
+              diagnostics.missing_exact_outcome_episodes > 0) && (
+              <div className="space-y-1 rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs">
+                <p className="font-medium text-amber-300">Input flags</p>
+                <p className="text-muted-foreground">
+                  unexpected strategy {diagnostics.unexpected_strategy_episodes} · invalid input{' '}
+                  {diagnostics.invalid_input_episodes} · missing exact 8h outcome{' '}
+                  {diagnostics.missing_exact_outcome_episodes}
+                </p>
+              </div>
+            )}
+          </>
         )}
         <div className="rounded-md border p-3 text-xs">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -247,9 +255,9 @@ function CohortCard({ cohort }: { cohort: ProspectiveCohort }) {
           )}
         </div>
         <p className="text-xs leading-relaxed text-muted-foreground">
-          Measurement-only observations are ignored only when both their known strategy version and
-          persisted marker match. Unexpected strategy rows still fail closed. The registered CCXT
-          replay can additionally exclude unavailable exact-venue paths.
+          {closed
+            ? 'This cohort reached formal maturity and its promotion decision is final -- see ROADMAP.md for the full writeup.'
+            : 'Measurement-only observations are ignored only when both their known strategy version and persisted marker match. Unexpected strategy rows still fail closed. The registered CCXT replay can additionally exclude unavailable exact-venue paths.'}
         </p>
       </CardContent>
     </Card>
