@@ -4,7 +4,6 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 from schurfer_analytics.source_lead_capture import (
-    IDENTITY_MATCH_METHOD,
     ClaimedCapture,
     SourceLeadCandidate,
     SourceLeadCaptureWorker,
@@ -16,10 +15,81 @@ from schurfer_analytics.source_lead_capture import (
     prepare_source_lead_captures,
     summarize_order_book,
 )
-from schurfer_analytics.source_lead_contract import CAPTURE_VERSION
+from schurfer_analytics.source_lead_contract import CAPTURE_VERSION, IDENTITY_REGISTRY_V2_START
 from schurfer_analytics.source_lead_qualification import (
+    IDENTITY_MATCH_METHOD_BASE_SYMBOL_V1,
+    IDENTITY_MATCH_METHOD_REGISTRY_EXACT_V2,
+    IDENTITY_MATCH_METHOD_REGISTRY_LOOKUP_V2,
+    IdentityRegistry,
     QualificationResult,
     parse_identity_registry,
+)
+
+_EVIDENCE_URL = "https://example.test/evidence"
+_EVIDENCE_SHA256 = "a" * 64
+
+
+def _abc_registry(*, target_exchange: str = "binance") -> IdentityRegistry:
+    """Registers _candidate()'s source ("gate:swap:ABC_USDT:1") against
+    _Exchange()'s target market (id "ABCUSDT", default onboarded_at_ms
+    1_700_000_000_000 -> identity_key "{target_exchange}:swap:ABCUSDT:
+    1700000000000") under one canonical_asset_id."""
+    return parse_identity_registry(
+        {
+            "schema_version": 1,
+            "registry_version": "test_registry_v1",
+            "links": [
+                {
+                    "canonical_asset_id": "asset:abc",
+                    "exchange": "gate",
+                    "instrument_identity_key": "gate:swap:ABC_USDT:1",
+                    "evidence_url": _EVIDENCE_URL,
+                    "evidence_sha256": _EVIDENCE_SHA256,
+                },
+                {
+                    "canonical_asset_id": "asset:abc",
+                    "exchange": target_exchange,
+                    "instrument_identity_key": f"{target_exchange}:swap:ABCUSDT:1700000000000",
+                    "evidence_url": _EVIDENCE_URL,
+                    "evidence_sha256": _EVIDENCE_SHA256,
+                },
+            ],
+        }
+    )
+
+
+def _abc_registry_both() -> IdentityRegistry:
+    """Like _abc_registry, but registers both binance and bybit as targets
+    -- for tests that exercise more than one target exchange client."""
+    return parse_identity_registry(
+        {
+            "schema_version": 1,
+            "registry_version": "test_registry_v1",
+            "links": [
+                {
+                    "canonical_asset_id": "asset:abc",
+                    "exchange": "gate",
+                    "instrument_identity_key": "gate:swap:ABC_USDT:1",
+                    "evidence_url": _EVIDENCE_URL,
+                    "evidence_sha256": _EVIDENCE_SHA256,
+                },
+                *(
+                    {
+                        "canonical_asset_id": "asset:abc",
+                        "exchange": exchange,
+                        "instrument_identity_key": f"{exchange}:swap:ABCUSDT:1700000000000",
+                        "evidence_url": _EVIDENCE_URL,
+                        "evidence_sha256": _EVIDENCE_SHA256,
+                    }
+                    for exchange in ("binance", "bybit")
+                ),
+            ],
+        }
+    )
+
+
+_EMPTY_REGISTRY = parse_identity_registry(
+    {"schema_version": 1, "registry_version": "test_empty_registry_v1", "links": []}
 )
 
 
@@ -50,8 +120,8 @@ def _source(
     )
 
 
-def _candidate() -> SourceLeadCandidate:
-    source = _source("gate")
+def _candidate(*, first_seen_at: datetime | None = None) -> SourceLeadCandidate:
+    source = _source("gate", first_seen_at=first_seen_at)
     return SourceLeadCandidate(
         event_id=source.event_id,
         base=source.base,
@@ -139,22 +209,26 @@ def test_order_book_summary_uses_executable_vwap_on_both_sides() -> None:
 
 class _Exchange:
     def __init__(self, *, onboarded_at_ms: int = 1_700_000_000_000) -> None:
-        self.markets = {
-            "ABC/USDT:USDT": {
-                "id": "ABCUSDT",
-                "symbol": "ABC/USDT:USDT",
-                "active": True,
-                "swap": True,
-                "linear": True,
-                "contract": True,
-                "contractSize": 1.0,
-                "base": "ABC",
-                "quote": "USDT",
-                "settle": "USDT",
-                "type": "swap",
-                "info": {"onboardDate": onboarded_at_ms},
-            }
+        market = {
+            "id": "ABCUSDT",
+            "symbol": "ABC/USDT:USDT",
+            "active": True,
+            "swap": True,
+            "linear": True,
+            "contract": True,
+            "contractSize": 1.0,
+            "base": "ABC",
+            "quote": "USDT",
+            "settle": "USDT",
+            "type": "swap",
+            "info": {"onboardDate": onboarded_at_ms},
         }
+        self.markets = {"ABC/USDT:USDT": market}
+        # ccxt's own native-id index, built by load_markets() -- see
+        # _resolve_registered_target_market's docstring for why this is
+        # what target-market resolution now uses, not exchange.markets
+        # keyed by a guessed unified symbol.
+        self.markets_by_id: dict[str, Any] = {"ABCUSDT": market}
         self.fetch_ticker = AsyncMock(
             return_value={
                 "last": 2.0,
@@ -170,25 +244,33 @@ class _Exchange:
         self.close = AsyncMock()
 
 
-async def test_target_capture_records_quote_but_keeps_symbol_identity_unverified() -> None:
+async def test_target_capture_resolves_via_registry_and_marks_identity_verified() -> None:
+    """The exact behavior colleague review (2026-08-28) required: target
+    market resolution goes through the identity registry's own
+    instrument_identity_key, never a guessed symbol, and a successful
+    resolution is recorded as genuinely identity_verified."""
     result = await capture_target_observation(
         "binance",
         _Exchange(),
         _candidate(),
         target_usd=50.0,
         timeout_seconds=1.0,
+        registry=_abc_registry(),
     )
 
     assert result.status == "sampled"
-    assert result.eligibility_reason == "identity_unverified"
-    assert result.identity_verified is False
+    assert result.eligibility_reason == "identity_verified"
+    assert result.identity_verified is True
+    assert result.identity_match_method == IDENTITY_MATCH_METHOD_REGISTRY_EXACT_V2
     assert result.instrument["market_id"] == "ABCUSDT"
     assert result.ticker["last"] == 2.0
     assert result.liquidity["ask_filled_notional_usd"] == 50.0
 
 
-async def test_target_listed_after_source_is_excluded_before_fetch() -> None:
-    exchange = _Exchange(onboarded_at_ms=1_900_000_000_000)
+async def test_target_capture_excluded_when_source_identity_unregistered() -> None:
+    """A candidate whose own source identity has no registry link at all is
+    excluded before any network call -- no guessed-symbol fallback."""
+    exchange = _Exchange()
 
     result = await capture_target_observation(
         "binance",
@@ -196,16 +278,223 @@ async def test_target_listed_after_source_is_excluded_before_fetch() -> None:
         _candidate(),
         target_usd=50.0,
         timeout_seconds=1.0,
+        registry=_EMPTY_REGISTRY,
     )
 
     assert result.status == "excluded"
-    assert result.eligibility_reason == "target_listed_after_source"
+    assert result.eligibility_reason == "source_identity_unregistered"
+    assert result.identity_verified is False
+    assert result.identity_match_method == IDENTITY_MATCH_METHOD_REGISTRY_LOOKUP_V2
     exchange.fetch_ticker.assert_not_awaited()
     exchange.fetch_order_book.assert_not_awaited()
 
 
+async def test_target_capture_excluded_when_no_registered_target() -> None:
+    """Source is registered, but this specific exchange has no registered
+    link for that canonical asset -- excluded before any network call."""
+    exchange = _Exchange()
+    registry = _abc_registry(target_exchange="bybit")  # registered for bybit, not binance
+
+    result = await capture_target_observation(
+        "binance",
+        exchange,
+        _candidate(),
+        target_usd=50.0,
+        timeout_seconds=1.0,
+        registry=registry,
+    )
+
+    assert result.status == "excluded"
+    assert result.eligibility_reason == "no_registered_target"
+    assert result.identity_verified is False
+    assert result.identity_match_method == IDENTITY_MATCH_METHOD_REGISTRY_LOOKUP_V2
+    exchange.fetch_ticker.assert_not_awaited()
+    exchange.fetch_order_book.assert_not_awaited()
+
+
+async def test_target_capture_excluded_when_registered_identity_not_found_in_markets() -> None:
+    """The registry names an instrument_identity_key that this run's loaded
+    markets do not actually contain (e.g. delisted since the link was
+    registered, or a market_id genuinely absent) -- excluded, not guessed."""
+    exchange = _Exchange()
+    registry = parse_identity_registry(
+        {
+            "schema_version": 1,
+            "registry_version": "test_registry_v1",
+            "links": [
+                {
+                    "canonical_asset_id": "asset:abc",
+                    "exchange": "gate",
+                    "instrument_identity_key": "gate:swap:ABC_USDT:1",
+                    "evidence_url": _EVIDENCE_URL,
+                    "evidence_sha256": _EVIDENCE_SHA256,
+                },
+                {
+                    "canonical_asset_id": "asset:abc",
+                    "exchange": "binance",
+                    "instrument_identity_key": "binance:swap:NONEXISTENT:1",
+                    "evidence_url": _EVIDENCE_URL,
+                    "evidence_sha256": _EVIDENCE_SHA256,
+                },
+            ],
+        }
+    )
+
+    result = await capture_target_observation(
+        "binance",
+        exchange,
+        _candidate(),
+        target_usd=50.0,
+        timeout_seconds=1.0,
+        registry=registry,
+    )
+
+    assert result.status == "excluded"
+    assert result.eligibility_reason == "target_registry_identity_not_found"
+    assert result.identity_verified is False
+    assert result.identity_match_method == IDENTITY_MATCH_METHOD_REGISTRY_LOOKUP_V2
+    exchange.fetch_ticker.assert_not_awaited()
+    exchange.fetch_order_book.assert_not_awaited()
+
+
+async def test_target_capture_picks_the_matching_market_among_id_collisions() -> None:
+    """The realistic collision shape confirmed this session (TUT/agentT):
+    the same native market_id key can map to more than one market in
+    markets_by_id (ccxt returns a list when several market types share an
+    id). Only the one whose recomputed identity_key matches the registered
+    link exactly may be selected."""
+    colliding_market = {
+        "id": "ABCUSDT",
+        "symbol": "ABC/USDT:USDT",
+        "active": True,
+        "swap": True,
+        "linear": True,
+        "contractSize": 1.0,
+        "base": "ABC",
+        "quote": "USDT",
+        "settle": "USDT",
+        "type": "swap",
+        # A different onboarded_at -- a different identity_key, and
+        # therefore a different, non-matching instrument.
+        "info": {"onboardDate": 1_650_000_000_000},
+    }
+    exchange = _Exchange()
+    real_market = exchange.markets["ABC/USDT:USDT"]
+    exchange.markets_by_id = {"ABCUSDT": [colliding_market, real_market]}
+
+    result = await capture_target_observation(
+        "binance",
+        exchange,
+        _candidate(),
+        target_usd=50.0,
+        timeout_seconds=1.0,
+        registry=_abc_registry(),
+    )
+
+    assert result.status == "sampled"
+    assert result.identity_verified is True
+    assert result.instrument["onboarded_at_ms"] == 1_700_000_000_000
+
+
+async def test_target_listed_after_source_is_excluded_before_fetch() -> None:
+    exchange = _Exchange(onboarded_at_ms=1_900_000_000_000)
+    registry = parse_identity_registry(
+        {
+            "schema_version": 1,
+            "registry_version": "test_registry_v1",
+            "links": [
+                {
+                    "canonical_asset_id": "asset:abc",
+                    "exchange": "gate",
+                    "instrument_identity_key": "gate:swap:ABC_USDT:1",
+                    "evidence_url": _EVIDENCE_URL,
+                    "evidence_sha256": _EVIDENCE_SHA256,
+                },
+                {
+                    "canonical_asset_id": "asset:abc",
+                    "exchange": "binance",
+                    "instrument_identity_key": "binance:swap:ABCUSDT:1900000000000",
+                    "evidence_url": _EVIDENCE_URL,
+                    "evidence_sha256": _EVIDENCE_SHA256,
+                },
+            ],
+        }
+    )
+
+    result = await capture_target_observation(
+        "binance",
+        exchange,
+        _candidate(),
+        target_usd=50.0,
+        timeout_seconds=1.0,
+        registry=registry,
+    )
+
+    assert result.status == "excluded"
+    assert result.eligibility_reason == "target_listed_after_source"
+    # Identity WAS confirmed -- _resolve_registered_target_market already
+    # matched this exact market before the onboarding-time check ran
+    # (colleague review, 2026-08-28: a post-resolution eligibility failure
+    # must not be tagged as if the route was never resolved at all).
+    assert result.identity_verified is True
+    assert result.identity_match_method == IDENTITY_MATCH_METHOD_REGISTRY_EXACT_V2
+    exchange.fetch_ticker.assert_not_awaited()
+    exchange.fetch_order_book.assert_not_awaited()
+
+
+async def test_target_capture_marks_identity_verified_even_when_market_is_inactive() -> None:
+    """target_inactive is a post-resolution eligibility failure, same class
+    as target_listed_after_source: the market WAS matched exactly against
+    the registry before this check ran, so identity is confirmed even
+    though the row is excluded (colleague review, 2026-08-28)."""
+    exchange = _Exchange()
+    exchange.markets["ABC/USDT:USDT"]["active"] = False
+
+    result = await capture_target_observation(
+        "binance",
+        exchange,
+        _candidate(),
+        target_usd=50.0,
+        timeout_seconds=1.0,
+        registry=_abc_registry(),
+    )
+
+    assert result.status == "excluded"
+    assert result.eligibility_reason == "target_inactive"
+    assert result.identity_verified is True
+    assert result.identity_match_method == IDENTITY_MATCH_METHOD_REGISTRY_EXACT_V2
+
+
+async def test_target_capture_marks_identity_verified_even_when_fetch_fails() -> None:
+    """target_fetch_failed is reached only after _resolve_registered_target
+    _market already matched the exact market -- the network call itself is
+    what failed. identity_verified must stay True: the previous behavior
+    (always False on any failure) claimed a confirmed route had never been
+    resolved at all (colleague review, 2026-08-28)."""
+    exchange = _Exchange()
+    exchange.fetch_ticker = AsyncMock(side_effect=TimeoutError("no response"))
+
+    result = await capture_target_observation(
+        "binance",
+        exchange,
+        _candidate(),
+        target_usd=50.0,
+        timeout_seconds=1.0,
+        registry=_abc_registry(),
+    )
+
+    assert result.status == "fetch_failed"
+    assert result.eligibility_reason == "target_fetch_failed"
+    assert result.identity_verified is True
+    assert result.identity_match_method == IDENTITY_MATCH_METHOD_REGISTRY_EXACT_V2
+
+
 async def test_capture_processes_target_clients_sequentially(monkeypatch: Any) -> None:
-    candidate = _candidate()
+    # After IDENTITY_REGISTRY_V2_START so the "source_identity_unapproved"
+    # assertion below actually exercises the empty-registry lookup this
+    # test is about, rather than being short-circuited by the (unrelated)
+    # pre-activation exclusion qualify_source_lead checks first.
+    candidate = _candidate(first_seen_at=IDENTITY_REGISTRY_V2_START + timedelta(hours=1))
     claimed = (ClaimedCapture(capture_id=11, candidate=candidate),)
     active = 0
     maximum_active = 0
@@ -214,6 +503,7 @@ async def test_capture_processes_target_clients_sequentially(monkeypatch: Any) -
         def __init__(self) -> None:
             template = _Exchange()
             self.markets = template.markets
+            self.markets_by_id = template.markets_by_id
 
         async def load_markets(self) -> dict[str, Any]:
             nonlocal active, maximum_active
@@ -271,24 +561,96 @@ async def test_capture_processes_target_clients_sequentially(monkeypatch: Any) -
         timeout_seconds=1.0,
         batch_size=8,
         factories={"binance": TrackedExchange, "bybit": TrackedExchange},
-        identity_registry=parse_identity_registry(
-            {
-                "schema_version": 1,
-                "registry_version": "test_empty_registry_v1",
-                "links": [],
-            }
-        ),
+        # Both exchanges need a registered route -- otherwise
+        # _exchange_has_registered_route (colleague review, 2026-08-28)
+        # skips creating the client entirely, and there is nothing left for
+        # this test to prove is sequential.
+        identity_registry=_abc_registry_both(),
     )
 
     assert maximum_active == 1
     assert active == 0
     assert [row.target_exchange for row in persisted[11]] == ["binance", "bybit"]
-    assert qualifications[11].reason == "source_identity_unapproved"
+    # ROUTE_EVIDENCE_INDEPENDENTLY_VERIFIED=False (colleague review,
+    # 2026-08-28, second round): the pipeline still runs identity and
+    # liquidity checks to completion, but never actually returns
+    # status='qualified' yet.
+    assert qualifications[11].reason == "route_evidence_not_yet_independent"
+
+
+async def test_capture_skips_exchange_client_entirely_when_no_route_is_registered(
+    monkeypatch: Any,
+) -> None:
+    """Batch-level counterpart to _exchange_has_registered_route's own unit
+    tests: with an empty registry, capture_new_source_leads must never
+    create an exchange client or call load_markets at all (colleague
+    review, 2026-08-28 -- AI_RULES.md requires gating before expensive work
+    starts, not only at the final per-candidate check)."""
+    candidate = _candidate(first_seen_at=IDENTITY_REGISTRY_V2_START + timedelta(hours=1))
+    claimed = (ClaimedCapture(capture_id=21, candidate=candidate),)
+    created = 0
+
+    class CountingExchange:
+        def __init__(self) -> None:
+            nonlocal created
+            created += 1
+
+        async def load_markets(self) -> dict[str, Any]:
+            raise AssertionError("load_markets must not be called with no registered route")
+
+        async def close(self, **_kwargs: Any) -> None:
+            pass
+
+    persisted: dict[int, list[TargetObservation]] = {}
+    qualifications: dict[int, QualificationResult] = {}
+
+    async def persist(
+        _db_url: str,
+        results: dict[int, list[TargetObservation]],
+        captured_qualifications: dict[int, QualificationResult],
+        _registry_version: str,
+        _registry_fingerprint: str,
+    ) -> None:
+        persisted.update(results)
+        qualifications.update(captured_qualifications)
+
+    monkeypatch.setattr(
+        "schurfer_analytics.source_lead_capture.load_source_lead_candidates",
+        AsyncMock(return_value=(candidate,)),
+    )
+    monkeypatch.setattr(
+        "schurfer_analytics.source_lead_capture.claim_source_lead_captures",
+        AsyncMock(return_value=claimed),
+    )
+    monkeypatch.setattr(
+        "schurfer_analytics.source_lead_capture._persist_target_observations",
+        persist,
+    )
+
+    await capture_new_source_leads(
+        "postgresql://test",
+        {7},
+        datetime(2026, 8, 2, tzinfo=UTC),
+        target_exchanges=("binance", "bybit"),
+        target_usd=50.0,
+        timeout_seconds=1.0,
+        batch_size=8,
+        factories={"binance": CountingExchange, "bybit": CountingExchange},
+        identity_registry=_EMPTY_REGISTRY,
+    )
+
+    assert created == 0
+    assert [row.eligibility_reason for row in persisted[21]] == [
+        "source_identity_unregistered",
+        "source_identity_unregistered",
+    ]
+    assert qualifications[21].reason == "source_identity_unapproved"
 
 
 def test_capture_contract_is_versioned_and_identity_method_is_explicit() -> None:
     assert CAPTURE_VERSION == "source_lead_prospective_capture_v1"
-    assert IDENTITY_MATCH_METHOD == "base_symbol_v1"
+    assert IDENTITY_MATCH_METHOD_BASE_SYMBOL_V1 == "base_symbol_v1"
+    assert IDENTITY_MATCH_METHOD_REGISTRY_EXACT_V2 == "registry_exact_v2"
 
 
 async def test_worker_keeps_slow_network_capture_single_and_off_caller_path(

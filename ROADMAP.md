@@ -1256,6 +1256,70 @@ ARGS='--base <TICKER> --target-exchange binance'`.
    source resolves at 100%, so the pipeline itself is reliable once that one
    precondition is met.
 
+   **Evidence-capture tooling, PR #310, merged 2026-08-28.**
+   `source_lead_identity_evidence.py` fetches Gate currency data, the public
+   Binance Alpha token catalog, CoinGecko, and on-chain `decimals()` for both
+   sides via keyless public RPC, block-pinned before the call (not
+   `"latest"`), and classifies each candidate as `exact_contract` /
+   `same_asset_multichain_candidate` / `third_party_bridge_only` via
+   `_validate_identity_class` — computed from the fetched evidence itself,
+   never trusted from the caller's own classification (caught a real
+   misclassification this way: EDEN was hand-entered as `exact_contract`
+   with source on ethereum and target on bsc — different chains, different
+   addresses — before this check existed). Bundles are content-hashed,
+   written atomically (staged, then moved into place only on full success),
+   and re-integrity-checked on every load. 23 bundles captured and committed
+   under `evidence/source_lead/v2/`.
+
+   **Registry v2 activation, `research/gate-source-lead-registry-
+   activation-v2`, not yet merged.** `source_lead_capture.py`'s target
+   resolution now goes through the identity registry's own
+   `instrument_identity_key` (matched by native `market_id` via ccxt's
+   `markets_by_id`, then confirmed by an exact recomputed-identity match)
+   instead of guessing a unified symbol from the base ticker — the
+   `f"{base}/USDT:USDT"`-style reconstruction `AI_RULES.md` forbids
+   outright. `qualification_version` bumped to
+   `source_lead_qualified_capture_v2`, registry v2 (14 assets, 28
+   gate↔binance links) pinned by a fingerprint CHECK CONSTRAINT (migration
+   0041). `IDENTITY_REGISTRY_V2_START` (2026-08-28) stops any capture from
+   before the registry existed from ever being treated as v2-qualified
+   prospective evidence, checked before any network call, not only at
+   qualification time.
+
+   Two colleague-review rounds after the first activation commit
+   (`d8c194d`) found and fixed real gaps: `qualify_source_lead` inferring
+   identity confirmation from `status=='sampled'` instead of checking
+   `identity_verified`/`identity_match_method` explicitly; every capture
+   failure mode tagged `registry_exact_v2` regardless of whether a market
+   was ever actually resolved (split into `registry_lookup_v2` vs
+   `registry_exact_v2`, pinned by a second CHECK CONSTRAINT, migration
+   0042); the dashboard's `target_eligible`/spread/impact metrics counting
+   `status='sampled'` rows with no `identity_verified` filter; the registry
+   loader checking `evidence_sha256`'s string format but never opening the
+   bundle it names to confirm the content, `identity_class`, or
+   `evidence_url` actually back that link; and an exchange client being
+   created and its full market catalog loaded even for a target with zero
+   registered routes in the batch (bybit currently has none).
+
+   **Resolved: registry v2 stays asset-identity-only for now.** The live
+   re-verification against ccxt's own markets at capture time proves a
+   registered `instrument_identity_key` genuinely _exists_ on the exchange,
+   not that it names the _right_ project's perpetual rather than a
+   different, ticker-colliding one that happens to share a symbol — the
+   evidence bundles vouch for asset identity (on-chain contract match
+   across Gate/Binance Alpha/CoinGecko), never for the derivative market
+   itself (no native id/type/quote-settle/onboard-time evidence exists for
+   any exchange's futures listings today). Rather than build independent
+   futures-market evidence now (`exchangeInfo`-equivalent per exchange —
+   real scope, tracked as future work, not started), `qualify_source_lead`
+   keeps computing identity/liquidity/venue-selection to completion but
+   (`ROUTE_EVIDENCE_INDEPENDENTLY_VERIFIED = False`) never returns
+   `status='qualified'` — the would-be selection is recorded in full under
+   `details['would_select']` on an excluded row instead of discarded. Ships
+   activation and starts collecting/measuring immediately; only the
+   `qualified` claim and the money-first net-EV tracking wait on real route
+   evidence.
+
 7. **[Completed] Fix duplicate-alert spam from premature episode closure on
    thin/flaky venues.** `app.pump_events`
    closes an episode once `miss_count` reaches its threshold and opens a new

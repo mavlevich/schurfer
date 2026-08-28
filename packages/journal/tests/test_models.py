@@ -362,6 +362,7 @@ class TestSourceLeadCaptureModels:
             constraint.name for constraint in SourceLeadTargetObservation.__table__.constraints
         }
         assert "ck_source_lead_target_provisional_identity" in constraints
+        assert "ck_source_lead_target_v2_identity_pairing" in constraints
 
     def test_qualification_is_versioned_and_append_only_per_capture(self) -> None:
         assert SourceLeadQualification.__tablename__ == "source_lead_qualifications"
@@ -387,6 +388,7 @@ class TestSourceLeadCaptureModels:
         assert "ck_source_lead_qualification_selection" in constraints
         assert "ck_source_lead_qualification_registry_fingerprint" in constraints
         assert "ck_source_lead_qualification_v1_registry_contract" in constraints
+        assert "ck_source_lead_qualification_v2_registry_contract" in constraints
 
 
 class TestTradeDecisionModels:

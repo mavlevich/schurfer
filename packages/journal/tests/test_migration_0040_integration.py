@@ -128,7 +128,11 @@ def test_downgrade_folds_existing_warning_rows_to_info_then_upgrade_restores() -
                 severity="warning",
             )
 
-        command.downgrade(config, "-1")
+        # Target migration 0040's own downgrade() explicitly by revision id,
+        # not "-1" -- "-1" means "one below current head", which silently
+        # stopped exercising 0040's fold-to-info logic once 0041 was added
+        # on top of it and became the new head.
+        command.downgrade(config, "0039")
         with connection.transaction(), connection.cursor() as cursor:
             cursor.execute(
                 "SELECT severity FROM app.notification_deliveries WHERE dedup_key = %s",
