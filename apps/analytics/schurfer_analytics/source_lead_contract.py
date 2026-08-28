@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 CAPTURE_VERSION = "source_lead_prospective_capture_v1"
 OPERATIONAL_COHORT_START = datetime(2026, 8, 2, tzinfo=UTC)
 
-# The date identity registry v2 (source_lead_qualification.py) was frozen and
+# The date identity registry v2 (source_lead_qualification.py) is frozen and
 # populated with real, evidenced links -- research/gate-source-lead-
 # registry-activation-v2. A capture whose source_first_observed_at is before
 # this must never be treated as a v2-qualified prospective result even if its
@@ -15,4 +15,11 @@ OPERATIONAL_COHORT_START = datetime(2026, 8, 2, tzinfo=UTC)
 # каталоги ретроактивно"). Same day-level precision as
 # OPERATIONAL_COHORT_START, not deploy-second precision -- this repo's other
 # cohort boundaries use the same convention.
-IDENTITY_REGISTRY_V2_START = datetime(2026, 8, 28, tzinfo=UTC)
+#
+# Deliberately set a few days past this line's own authoring date (colleague
+# review, 2026-08-28, second round): the original value was today at
+# midnight UTC, which is *before* this PR could realistically merge and
+# deploy -- a capture in the gap between midnight and actual deploy would
+# satisfy ">=" while the v2 code was not even running yet. Bump this to the
+# actual deploy date if it lands after this value; never move it earlier.
+IDENTITY_REGISTRY_V2_START = datetime(2026, 8, 30, tzinfo=UTC)

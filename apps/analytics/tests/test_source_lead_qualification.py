@@ -188,6 +188,13 @@ def test_target_not_registry_confirmed_is_excluded_despite_matching_identity_key
 
 
 def test_selector_uses_lowest_round_trip_impact_with_stable_tie_break() -> None:
+    """Venue selection still runs the same lowest-round-trip-impact logic
+    with a stable tie-break, but ROUTE_EVIDENCE_INDEPENDENTLY_VERIFIED=False
+    means the result is recorded as excluded/route_evidence_not_yet_
+    independent, with the selection preserved under details['would_select']
+    rather than ever actually returning status='qualified' (colleague
+    review, 2026-08-28, second round: the registry's evidence bundles
+    vouch for asset identity, not the specific derivative markets)."""
     result = qualify_source_lead(
         source_exchange="gate",
         source_identity_key="gate:swap:ABC_USDT:1",
@@ -196,10 +203,15 @@ def test_selector_uses_lowest_round_trip_impact_with_stable_tie_break() -> None:
         registry=_registry(),
     )
 
-    assert result.status == "qualified"
+    assert result.status == "excluded"
+    assert result.reason == "route_evidence_not_yet_independent"
     assert result.canonical_asset_id == "asset:abc"
-    assert result.selected_target_exchange == "binance"
-    assert result.selected_round_trip_impact_bps == 2.0
+    assert result.selected_target_exchange is None
+    assert result.selected_round_trip_impact_bps is None
+    assert result.details["would_select"] == {
+        "target_exchange": "binance",
+        "round_trip_impact_bps": 2.0,
+    }
 
     tied = qualify_source_lead(
         source_exchange="gate",
@@ -208,7 +220,7 @@ def test_selector_uses_lowest_round_trip_impact_with_stable_tie_break() -> None:
         target_observations=(_target("bybit", 1.0), _target("binance", 1.0)),
         registry=_registry(),
     )
-    assert tied.selected_target_exchange == "binance"
+    assert tied.details["would_select"]["target_exchange"] == "binance"
 
 
 def test_selector_requires_full_two_sided_notional() -> None:

@@ -211,7 +211,7 @@ func TestReadinessQueriesStartedWiderCohort(t *testing.T) {
 		{values: []any{30, 29, 28, 20, nil}},
 		{values: []any{
 			120, 115, 110, 5, 0, 0, 0, 0, 0, 0, 105, 100, 31, 4, 80,
-			20, 15, 0, 80, 20, 12, 8, "source_lead_identity_registry_v1",
+			20, 15, 0, 80, 20, 5, 12, 8, "source_lead_identity_registry_v1",
 			strings.Repeat("a", 64), false, now.Add(-time.Hour),
 		}},
 		{values: []any{105, 100, 3, 2, 900.0, 1_500.0, 4.0, 8.0, 2.0, 5.0}},
@@ -256,7 +256,7 @@ func TestSourceLeadProgressExposesOperationalFailures(t *testing.T) {
 	db := &stubDB{rows: []stubRow{
 		{values: []any{
 			12, 11, 9, 1, 2, 1, 1, 0, 1, 1, 8, 4, 6, 1, 3,
-			2, 1, 1, 5, 1, 1, 1, "source_lead_identity_registry_v1",
+			2, 1, 1, 5, 1, 4, 1, 1, "source_lead_identity_registry_v1",
 			strings.Repeat("a", 64), false, now.Add(-time.Hour),
 		}},
 		{values: []any{8, 7, 0, 1, 800.0, 1_400.0, 3.0, 7.0, 1.5, 4.0}},
@@ -281,6 +281,9 @@ func TestSourceLeadProgressExposesOperationalFailures(t *testing.T) {
 	}
 	if progress.Qualified != 2 || progress.QualifiedProspective != 1 || progress.QualificationMissing != 1 {
 		t.Fatalf("qualification counts: got %#v", progress)
+	}
+	if progress.RouteEvidencePending != 4 {
+		t.Fatalf("route evidence pending: got %d", progress.RouteEvidencePending)
 	}
 	if !reflect.DeepEqual(
 		progress.HealthFlags,
@@ -372,6 +375,7 @@ func TestQueriesPreserveResearchBoundaries(t *testing.T) {
 		"AND source_first_observed_at >= $4 AND observed_at >= source_first_observed_at",
 		"AND source_first_observed_at >= $4 AND spread_bps >= 0",
 		"AND source_first_observed_at >= $4 AND entry_impact_bps >= 0",
+		"qualification_reason = 'route_evidence_not_yet_independent'",
 	}
 	sourceLeadQueries := sourceLeadProgressSQL + sourceLeadTargetProgressSQL +
 		sourceLeadIdentityReviewSQL

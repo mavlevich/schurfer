@@ -571,7 +571,11 @@ async def test_capture_processes_target_clients_sequentially(monkeypatch: Any) -
     assert maximum_active == 1
     assert active == 0
     assert [row.target_exchange for row in persisted[11]] == ["binance", "bybit"]
-    assert qualifications[11].status == "qualified"
+    # ROUTE_EVIDENCE_INDEPENDENTLY_VERIFIED=False (colleague review,
+    # 2026-08-28, second round): the pipeline still runs identity and
+    # liquidity checks to completion, but never actually returns
+    # status='qualified' yet.
+    assert qualifications[11].reason == "route_evidence_not_yet_independent"
 
 
 async def test_capture_skips_exchange_client_entirely_when_no_route_is_registered(

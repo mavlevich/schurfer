@@ -42,8 +42,12 @@ var (
 	// source_first_observed_at is before this must never count toward
 	// SourceLeadProgress.QualifiedProspective even if its own qualification
 	// row says 'qualified': identity was not confirmed at the time that
-	// capture occurred, only retroactively.
-	identityRegistryV2Start = time.Date(2026, time.August, 28, 0, 0, 0, 0, time.UTC)
+	// capture occurred, only retroactively. Set a few days past this line's
+	// own authoring date, not at midnight today, so it cannot fall before
+	// this PR actually merges and deploys (colleague review, 2026-08-28,
+	// second round). Bump to the actual deploy date if it lands later;
+	// never move it earlier.
+	identityRegistryV2Start = time.Date(2026, time.August, 30, 0, 0, 0, 0, time.UTC)
 )
 
 type pgxRow interface {
@@ -211,12 +215,22 @@ type SourceLeadProgress struct {
 	// number that actually matters for the money-first net-EV decision:
 	// the same qualified count, restricted to captures whose
 	// source_first_observed_at is at or after IdentityRegistryV2Start.
-	Qualified                   int                                 `json:"qualified"`
-	IdentityRegistryV2Start     time.Time                           `json:"identity_registry_v2_start"`
-	QualifiedProspective        int                                 `json:"qualified_prospective"`
-	QualificationMissing        int                                 `json:"qualification_missing"`
-	IdentityUnapproved          int                                 `json:"identity_unapproved"`
-	NoExecutableTarget          int                                 `json:"no_approved_executable_target"`
+	Qualified               int       `json:"qualified"`
+	IdentityRegistryV2Start time.Time `json:"identity_registry_v2_start"`
+	QualifiedProspective    int       `json:"qualified_prospective"`
+	QualificationMissing    int       `json:"qualification_missing"`
+	IdentityUnapproved      int       `json:"identity_unapproved"`
+	NoExecutableTarget      int       `json:"no_approved_executable_target"`
+	// RouteEvidencePending counts qualification_reason=
+	// 'route_evidence_not_yet_independent' -- identity and liquidity both
+	// checked out and a venue was selected, but ROUTE_EVIDENCE_
+	// INDEPENDENTLY_VERIFIED=False (source_lead_qualification.py) means
+	// registry v2's evidence only vouches for asset identity, not the
+	// specific derivative markets, so nothing can reach status='qualified'
+	// yet (colleague review, 2026-08-28, second round). Every one of these
+	// rows carries its full would-have-selected venue/impact under its own
+	// details['would_select'] in the database, not summarized here.
+	RouteEvidencePending        int                                 `json:"route_evidence_pending"`
 	SelectedBinance             int                                 `json:"selected_binance"`
 	SelectedBybit               int                                 `json:"selected_bybit"`
 	IdentityRegistry            *string                             `json:"identity_registry_version"`
@@ -586,6 +600,7 @@ SELECT
 	count(*) FILTER (WHERE status = 'complete' AND qualification_status IS NULL),
 	count(*) FILTER (WHERE qualification_reason = 'source_identity_unapproved'),
 	count(*) FILTER (WHERE qualification_reason = 'no_approved_executable_target'),
+	count(*) FILTER (WHERE qualification_reason = 'route_evidence_not_yet_independent'),
 	count(*) FILTER (WHERE selected_target_exchange = 'binance'),
 	count(*) FILTER (WHERE selected_target_exchange = 'bybit'),
 	CASE
@@ -801,6 +816,7 @@ func (h *Handler) sourceLeadProgress(
 		&progress.QualificationMissing,
 		&progress.IdentityUnapproved,
 		&progress.NoExecutableTarget,
+		&progress.RouteEvidencePending,
 		&progress.SelectedBinance,
 		&progress.SelectedBybit,
 		&progress.IdentityRegistry,

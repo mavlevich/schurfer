@@ -43,6 +43,23 @@ DEFAULT_REGISTRY_RESOURCE = "registry/source_lead_identity_registry_v2.json"
 EXPECTED_REGISTRY_VERSION = "source_lead_identity_registry_v2"
 EXPECTED_REGISTRY_FINGERPRINT = "757fd1327593d07ca27efe17a031ae0eab95bf6998aecc1ec26f0df38667dca0"
 
+# Registry v2's evidence bundles (verify_registry_against_evidence) vouch
+# for *asset* identity only -- an on-chain contract match across Gate,
+# Binance Alpha, and CoinGecko. Nothing evidences the specific derivative
+# markets themselves (native market id, market type, quote/settle asset,
+# onboard time): no exchange's futures/perpetual catalog is captured today.
+# _resolve_registered_target_market's live re-verification at capture time
+# only proves a registered instrument_identity_key genuinely *exists* on
+# the exchange, not that it names the *right* project's perpetual rather
+# than a different, ticker-colliding one sharing a symbol (colleague
+# review, 2026-08-28, second round -- corrected from an earlier, weaker
+# framing of this same gap). Until independent route evidence exists,
+# qualify_source_lead below computes and records everything it would have
+# selected, but never actually returns status='qualified' -- see its
+# route_evidence_not_yet_independent branch. Flip this once real
+# derivative-market evidence backs the registry.
+ROUTE_EVIDENCE_INDEPENDENTLY_VERIFIED = False
+
 # Shared vocabulary for TargetObservation.identity_match_method -- defined
 # here (not in source_lead_capture.py, which imports these) because
 # qualify_source_lead needs REGISTRY_EXACT_V2 to enforce its own fail-closed
@@ -409,6 +426,28 @@ def qualify_source_lead(
         )
 
     selected_impact, selected_exchange = min(eligible, key=lambda item: (item[0], item[1]))
+    if not ROUTE_EVIDENCE_INDEPENDENTLY_VERIFIED:
+        # Everything needed to select a venue was computed above -- asset
+        # identity and executable liquidity both check out -- but the
+        # specific derivative markets themselves are not yet independently
+        # evidenced (see ROUTE_EVIDENCE_INDEPENDENTLY_VERIFIED's own
+        # docstring). Recorded in full under details for visibility, never
+        # discarded, but this can never become status='qualified' yet.
+        return QualificationResult(
+            status="excluded",
+            reason="route_evidence_not_yet_independent",
+            canonical_asset_id=source_link.canonical_asset_id,
+            selected_target_exchange=None,
+            selected_round_trip_impact_bps=None,
+            requested_notional_usd=requested_notional,
+            details={
+                "targets": diagnostics,
+                "would_select": {
+                    "target_exchange": selected_exchange,
+                    "round_trip_impact_bps": selected_impact,
+                },
+            },
+        )
     return QualificationResult(
         status="qualified",
         reason="lowest_round_trip_impact",
