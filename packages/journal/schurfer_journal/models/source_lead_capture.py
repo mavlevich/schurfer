@@ -214,6 +214,13 @@ class SourceLeadQualification(Base, TimestampMixin):
             name="ck_source_lead_qualification_v1_registry_contract",
         ),
         CheckConstraint(
+            "qualification_version != 'source_lead_qualified_capture_v2' OR "
+            "(identity_registry_version = 'source_lead_identity_registry_v2' AND "
+            "identity_registry_fingerprint = "
+            "'757fd1327593d07ca27efe17a031ae0eab95bf6998aecc1ec26f0df38667dca0')",
+            name="ck_source_lead_qualification_v2_registry_contract",
+        ),
+        CheckConstraint(
             "(status = 'qualified' AND canonical_asset_id IS NOT NULL "
             "AND selected_target_exchange IS NOT NULL "
             "AND selected_round_trip_impact_bps IS NOT NULL) OR "

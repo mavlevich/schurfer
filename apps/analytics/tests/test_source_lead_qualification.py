@@ -50,8 +50,9 @@ def _target(exchange: str, impact: float) -> TargetObservation:
     return TargetObservation(
         target_exchange=exchange,
         status="sampled",
-        eligibility_reason="identity_unverified",
-        identity_verified=False,
+        eligibility_reason="identity_verified",
+        identity_verified=True,
+        identity_match_method="registry_exact_v2",
         observed_at=datetime(2026, 8, 2, tzinfo=UTC),
         occurred_at=None,
         latency_ms=10,

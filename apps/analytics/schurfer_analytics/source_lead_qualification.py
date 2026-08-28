@@ -9,11 +9,27 @@ from dataclasses import dataclass
 from importlib.resources import files
 from typing import Any
 
-QUALIFICATION_VERSION = "source_lead_qualified_capture_v1"
+# v1 stays defined (never mutated -- its registry file, its DB rows, and
+# migration 0022's CHECK CONSTRAINT pinning EXPECTED_REGISTRY_FINGERPRINT_V1
+# are all frozen history) so any code that still needs to reference the old
+# contract explicitly can, but nothing in this module uses these below
+# QUALIFICATION_VERSION's v2 bump.
+QUALIFICATION_VERSION_V1 = "source_lead_qualified_capture_v1"
+REGISTRY_VERSION_V1 = "source_lead_identity_registry_v1"
+REGISTRY_FINGERPRINT_V1 = "31604214fa148d3f86562a212fdc935029c82a7a4959a7b5001b6bd5637ff7f8"
+
+# research/gate-source-lead-registry-activation-v2: 14 gate<->binance routes
+# with real, evidenced exact_contract identity (see
+# source_lead_identity_evidence.py and evidence/source_lead/v2/) -- the
+# first non-empty identity registry this system has ever qualified against.
+# Only captures at or after source_lead_contract.IDENTITY_REGISTRY_V2_START
+# may be treated as prospective evidence under this version; see that
+# constant's own docstring.
+QUALIFICATION_VERSION = "source_lead_qualified_capture_v2"
 VENUE_SELECTOR_VERSION = "lowest_round_trip_impact_v1"
-DEFAULT_REGISTRY_RESOURCE = "registry/source_lead_identity_registry_v1.json"
-EXPECTED_REGISTRY_VERSION = "source_lead_identity_registry_v1"
-EXPECTED_REGISTRY_FINGERPRINT = "31604214fa148d3f86562a212fdc935029c82a7a4959a7b5001b6bd5637ff7f8"
+DEFAULT_REGISTRY_RESOURCE = "registry/source_lead_identity_registry_v2.json"
+EXPECTED_REGISTRY_VERSION = "source_lead_identity_registry_v2"
+EXPECTED_REGISTRY_FINGERPRINT = "757fd1327593d07ca27efe17a031ae0eab95bf6998aecc1ec26f0df38667dca0"
 
 
 @dataclass(frozen=True)
@@ -30,6 +46,16 @@ class IdentityRegistry:
     version: str
     fingerprint: str
     links_by_identity: dict[tuple[str, str], CanonicalInstrumentLink]
+    # (canonical_asset_id, exchange) -> the one link registered for that
+    # asset on that exchange -- parse_identity_registry's own uniqueness
+    # check (at most one instrument version per asset/exchange) is what
+    # makes this a safe 1:1 index, not just a convenience view of
+    # links_by_identity. Added for source_lead_capture.py's
+    # registry-first target resolution (colleague review, 2026-08-28):
+    # given a source link's canonical_asset_id, find the one target link
+    # for a given exchange directly, instead of guessing a market symbol
+    # from the base ticker and only checking the registry afterward.
+    links_by_asset_exchange: dict[tuple[str, str], CanonicalInstrumentLink]
 
 
 @dataclass(frozen=True)
@@ -108,10 +134,14 @@ def parse_identity_registry(
             )
         links[key] = link
         asset_exchanges.add(asset_exchange)
+    links_by_asset_exchange = {
+        (link.canonical_asset_id, link.exchange): link for link in links.values()
+    }
     return IdentityRegistry(
         version=version,
         fingerprint=fingerprint,
         links_by_identity=links,
+        links_by_asset_exchange=links_by_asset_exchange,
     )
 
 

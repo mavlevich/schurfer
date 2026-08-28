@@ -24,6 +24,7 @@ from .source_lead_contract import CAPTURE_VERSION
 from .source_lead_qualification import (
     QUALIFICATION_VERSION,
     VENUE_SELECTOR_VERSION,
+    CanonicalInstrumentLink,
     IdentityRegistry,
     QualificationResult,
     load_identity_registry,
@@ -33,7 +34,16 @@ from .source_lead_qualification import (
 log = structlog.get_logger()
 
 SOURCE_EXCHANGE = "gate"
-IDENTITY_MATCH_METHOD = "base_symbol_v1"
+# Retired 2026-08-28 (research/gate-source-lead-registry-activation-v2):
+# capture_target_observation no longer resolves the target market by
+# guessing a symbol from the base ticker (AI_RULES.md explicitly forbids
+# `f"{base}/USDT:USDT"`-style reconstruction) -- it resolves via the
+# identity registry's own instrument_identity_key first. Kept as a named
+# constant only because historical rows in app.source_lead_target_
+# observations still carry this value and existing tests/queries may
+# reference it.
+IDENTITY_MATCH_METHOD_BASE_SYMBOL_V1 = "base_symbol_v1"
+IDENTITY_MATCH_METHOD_REGISTRY_EXACT_V2 = "registry_exact_v2"
 
 _SELECT_SOURCES = """
 SELECT
@@ -198,6 +208,7 @@ class TargetObservation:
     status: str
     eligibility_reason: str
     identity_verified: bool
+    identity_match_method: str
     observed_at: datetime
     occurred_at: datetime | None
     latency_ms: int
@@ -503,6 +514,7 @@ def _target_failure(
         status="excluded" if error is None else "fetch_failed",
         eligibility_reason=reason,
         identity_verified=False,
+        identity_match_method=IDENTITY_MATCH_METHOD_REGISTRY_EXACT_V2,
         observed_at=datetime.now(UTC),
         occurred_at=None,
         latency_ms=max(0, round((time.monotonic() - started) * 1000)),
@@ -514,6 +526,45 @@ def _target_failure(
     )
 
 
+def _resolve_registered_target_market(
+    exchange: Any, target_link: CanonicalInstrumentLink
+) -> tuple[dict[str, Any], dict[str, Any]] | None:
+    """Resolve the exact ccxt market for target_link's registered
+    instrument_identity_key -- never by guessing a unified symbol from the
+    base ticker (AI_RULES.md forbids `f"{base}/USDT:USDT"`-style
+    reconstruction outright). Looks the market up by its native market_id,
+    parsed out of the registered identity_key, via ccxt's own
+    `markets_by_id` index (which maps a native id to a market, or to a list
+    of markets when more than one market type shares the same native id).
+    Recomputes instrument_metadata on each candidate and requires it to
+    match the registered identity_key exactly before accepting it -- a
+    native market id can be reused across a relisting with a different
+    onboarded_at, so id-based lookup alone is not sufficient, only a
+    necessary first step. Returns None (never guesses) when the id is
+    absent from this run's loaded markets or no candidate's recomputed
+    identity matches."""
+    parts = target_link.instrument_identity_key.split(":")
+    if len(parts) != 4:
+        return None
+    _exchange_part, _market_type, market_id, _identity_version = parts
+    markets_by_id = exchange.markets_by_id if isinstance(exchange.markets_by_id, dict) else {}
+    candidates = markets_by_id.get(market_id)
+    if isinstance(candidates, dict):
+        candidates = [candidates]
+    if not isinstance(candidates, list):
+        return None
+    for market in candidates:
+        if not isinstance(market, dict):
+            continue
+        unified_symbol = market.get("symbol")
+        if not isinstance(unified_symbol, str):
+            continue
+        metadata = instrument_metadata(target_link.exchange, unified_symbol, market)
+        if metadata.get("identity_key") == target_link.instrument_identity_key:
+            return market, metadata
+    return None
+
+
 async def capture_target_observation(
     exchange_name: str,
     exchange: Any,
@@ -521,14 +572,47 @@ async def capture_target_observation(
     *,
     target_usd: float,
     timeout_seconds: float,
+    registry: IdentityRegistry,
 ) -> TargetObservation:
+    """Resolves the target market through the identity registry --
+    canonical_asset_id from the source's own registered link, then the one
+    registered link for (canonical_asset_id, exchange_name), then the exact
+    ccxt market that link's instrument_identity_key names -- never by
+    guessing a unified symbol from the base ticker. A colleague review
+    (2026-08-28) found the previous naive-symbol version had three real
+    consequences beyond wasted requests: it violated AI_RULES.md directly
+    ("Never reconstruct derivatives symbols with string concatenation such
+    as f"{base}/USDT:USDT""); it durably persisted ticker/liquidity data
+    from whatever the guess happened to resolve to -- including a genuinely
+    different, ticker-colliding project -- before qualify_source_lead ever
+    ran to exclude it; and the coverage/spread/impact dashboard
+    (research/handler.go) aggregates by status='sampled' alone, with no
+    join back to qualification status, so that data would have silently
+    counted regardless.
+
+    A candidate whose source identity is not itself registered, or that has
+    no registered target link on this exchange, is excluded before any
+    network call at all -- no ticker/order-book fetch, no row written from
+    an unconfirmed market."""
     started = time.monotonic()
-    symbol = f"{candidate.base}/USDT:USDT"
-    markets = exchange.markets if isinstance(exchange.markets, dict) else {}
-    market = markets.get(symbol)
-    if not isinstance(market, dict):
-        return _target_failure(exchange_name, "target_not_listed", started, target_usd)
-    metadata = instrument_metadata(exchange_name, symbol, market)
+    source_link = registry.links_by_identity.get(
+        (SOURCE_EXCHANGE, candidate.source.identity_key or "")
+    )
+    if source_link is None:
+        return _target_failure(exchange_name, "source_identity_unregistered", started, target_usd)
+    target_link = registry.links_by_asset_exchange.get(
+        (source_link.canonical_asset_id, exchange_name)
+    )
+    if target_link is None:
+        return _target_failure(exchange_name, "no_registered_target", started, target_usd)
+
+    resolved = _resolve_registered_target_market(exchange, target_link)
+    if resolved is None:
+        return _target_failure(
+            exchange_name, "target_registry_identity_not_found", started, target_usd
+        )
+    market, metadata = resolved
+
     if market.get("active") is False:
         return _target_failure(
             exchange_name, "target_inactive", started, target_usd, instrument=metadata
@@ -559,6 +643,7 @@ async def capture_target_observation(
             instrument=metadata,
         )
 
+    symbol = str(metadata["unified_symbol"])
     try:
         ticker, book = await asyncio.wait_for(
             asyncio.gather(exchange.fetch_ticker(symbol), exchange.fetch_order_book(symbol, 50)),
@@ -580,10 +665,9 @@ async def capture_target_observation(
         return TargetObservation(
             target_exchange=exchange_name,
             status="sampled",
-            # Symbol equality is deliberately provisional. A registered strategy
-            # must replace it with a versioned canonical identity approval.
-            eligibility_reason="identity_unverified",
-            identity_verified=False,
+            eligibility_reason="identity_verified",
+            identity_verified=True,
+            identity_match_method=IDENTITY_MATCH_METHOD_REGISTRY_EXACT_V2,
             observed_at=observed_at,
             occurred_at=occurred_at,
             latency_ms=max(0, round((time.monotonic() - started) * 1000)),
@@ -598,6 +682,12 @@ async def capture_target_observation(
             error=None,
         )
     except Exception as exc:
+        # identity was verified (we reached here only after
+        # _resolve_registered_target_market matched); the fetch itself
+        # failed. _target_failure always records identity_verified=False,
+        # which is a small imprecision here -- harmless in practice, since
+        # qualify_source_lead only ever considers status == 'sampled' rows,
+        # and this row's status is 'fetch_failed'.
         return _target_failure(
             exchange_name,
             "target_fetch_failed",
@@ -627,7 +717,7 @@ async def _persist_target_observations(
                         observation.target_exchange,
                         observation.status,
                         observation.eligibility_reason,
-                        IDENTITY_MATCH_METHOD,
+                        observation.identity_match_method,
                         observation.identity_verified,
                         observation.observed_at,
                         observation.occurred_at,
@@ -693,6 +783,7 @@ async def capture_claimed_source_leads(
                     item.candidate,
                     target_usd=target_usd,
                     timeout_seconds=timeout_seconds,
+                    registry=registry,
                 )
                 results[item.capture_id].append(observation)
         except Exception as exc:

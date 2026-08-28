@@ -35,6 +35,15 @@ var (
 	orderflowStart        = time.Date(2026, time.July, 30, 18, 15, 0, 0, time.UTC)
 	exitLiquidityStart    = time.Date(2026, time.July, 29, 15, 45, 34, 0, time.UTC)
 	sourceLeadStart       = time.Date(2026, time.August, 2, 0, 0, 0, 0, time.UTC)
+	// The date identity registry v2 was frozen and populated with real,
+	// evidenced links (research/gate-source-lead-registry-activation-v2;
+	// mirrors source_lead_contract.IDENTITY_REGISTRY_V2_START on the
+	// analytics side -- keep both in sync). A capture whose
+	// source_first_observed_at is before this must never count toward
+	// SourceLeadProgress.QualifiedProspective even if its own qualification
+	// row says 'qualified': identity was not confirmed at the time that
+	// capture occurred, only retroactively.
+	identityRegistryV2Start = time.Date(2026, time.August, 28, 0, 0, 0, 0, time.UTC)
 )
 
 type pgxRow interface {
@@ -173,25 +182,38 @@ type SourceLeadIdentityReviewCandidate struct {
 }
 
 type SourceLeadProgress struct {
-	Contract                    string                              `json:"contract"`
-	CohortStart                 time.Time                           `json:"cohort_start"`
-	Status                      string                              `json:"status"`
-	Captures                    int                                 `json:"captures"`
-	SourceEligible              int                                 `json:"source_eligible"`
-	Complete                    int                                 `json:"complete"`
-	Excluded                    int                                 `json:"excluded"`
-	Abandoned                   int                                 `json:"abandoned"`
-	RecentAbandoned             int                                 `json:"recent_abandoned"`
-	RecentCriticalAbandoned     int                                 `json:"recent_critical_abandoned"`
-	RecentRoutineAbandoned      int                                 `json:"recent_routine_abandoned"`
-	Collecting                  int                                 `json:"collecting"`
-	StaleCollecting             int                                 `json:"stale_collecting"`
-	TargetEligible              Milestone                           `json:"target_eligible"`
-	MatureFourHourWindows       Milestone                           `json:"mature_four_hour_windows"`
-	AssetClusters               Milestone                           `json:"asset_clusters"`
-	CalendarWeeks               Milestone                           `json:"calendar_weeks"`
-	ConfirmedWithinHour         int                                 `json:"confirmed_within_hour"`
+	Contract                string    `json:"contract"`
+	CohortStart             time.Time `json:"cohort_start"`
+	Status                  string    `json:"status"`
+	Captures                int       `json:"captures"`
+	SourceEligible          int       `json:"source_eligible"`
+	Complete                int       `json:"complete"`
+	Excluded                int       `json:"excluded"`
+	Abandoned               int       `json:"abandoned"`
+	RecentAbandoned         int       `json:"recent_abandoned"`
+	RecentCriticalAbandoned int       `json:"recent_critical_abandoned"`
+	RecentRoutineAbandoned  int       `json:"recent_routine_abandoned"`
+	Collecting              int       `json:"collecting"`
+	StaleCollecting         int       `json:"stale_collecting"`
+	TargetEligible          Milestone `json:"target_eligible"`
+	MatureFourHourWindows   Milestone `json:"mature_four_hour_windows"`
+	AssetClusters           Milestone `json:"asset_clusters"`
+	CalendarWeeks           Milestone `json:"calendar_weeks"`
+	ConfirmedWithinHour     int       `json:"confirmed_within_hour"`
+	// Qualified counts every source_lead_qualifications row with
+	// status='qualified' under the current qualification_version -- it is
+	// NOT itself prospective-clean, because identity_registry_v2 was empty
+	// before IdentityRegistryV2Start and a capture's own qualification is
+	// only ever computed once, at capture time (colleague review,
+	// 2026-08-28: "не применять текущие каталоги ретроактивно" -- identity
+	// confirmed today does not make a historical capture's own qualified
+	// verdict retroactively trustworthy). QualifiedProspective is the
+	// number that actually matters for the money-first net-EV decision:
+	// the same qualified count, restricted to captures whose
+	// source_first_observed_at is at or after IdentityRegistryV2Start.
 	Qualified                   int                                 `json:"qualified"`
+	IdentityRegistryV2Start     time.Time                           `json:"identity_registry_v2_start"`
+	QualifiedProspective        int                                 `json:"qualified_prospective"`
 	QualificationMissing        int                                 `json:"qualification_missing"`
 	IdentityUnapproved          int                                 `json:"identity_unapproved"`
 	NoExecutableTarget          int                                 `json:"no_approved_executable_target"`
@@ -498,7 +520,7 @@ WITH captures AS (
 	FROM captures
 	LEFT JOIN app.source_lead_qualifications AS qualification
 	  ON qualification.capture_id = captures.id
-	 AND qualification.qualification_version = 'source_lead_qualified_capture_v1'
+	 AND qualification.qualification_version = 'source_lead_qualified_capture_v2'
 )
 SELECT
 	count(*),
@@ -540,6 +562,10 @@ SELECT
 		FILTER (WHERE mature_four_hour),
 	count(*) FILTER (WHERE target_eligible AND status = 'complete' AND confirmed_within_hour),
 	count(*) FILTER (WHERE qualification_status = 'qualified'),
+	count(*) FILTER (
+		WHERE qualification_status = 'qualified'
+		  AND source_first_observed_at >= $3
+	),
 	count(*) FILTER (WHERE status = 'complete' AND qualification_status IS NULL),
 	count(*) FILTER (WHERE qualification_reason = 'source_identity_unapproved'),
 	count(*) FILTER (WHERE qualification_reason = 'no_approved_executable_target'),
@@ -689,8 +715,9 @@ func (h *Handler) sourceLeadProgress(
 	now time.Time,
 ) (SourceLeadProgress, error) {
 	progress := SourceLeadProgress{
-		Contract:    sourceLeadContract,
-		CohortStart: sourceLeadStart,
+		Contract:                sourceLeadContract,
+		CohortStart:             sourceLeadStart,
+		IdentityRegistryV2Start: identityRegistryV2Start,
 		Targets: []SourceLeadTargetProgress{
 			{Exchange: "binance"},
 			{Exchange: "bybit"},
@@ -710,7 +737,9 @@ func (h *Handler) sourceLeadProgress(
 	}
 
 	var targetEligible, mature, clusters, weeks int
-	err := h.db.QueryRow(ctx, sourceLeadProgressSQL, sourceLeadStart, now).Scan(
+	err := h.db.QueryRow(
+		ctx, sourceLeadProgressSQL, sourceLeadStart, now, identityRegistryV2Start,
+	).Scan(
 		&progress.Captures,
 		&progress.SourceEligible,
 		&progress.Complete,
@@ -727,6 +756,7 @@ func (h *Handler) sourceLeadProgress(
 		&weeks,
 		&progress.ConfirmedWithinHour,
 		&progress.Qualified,
+		&progress.QualifiedProspective,
 		&progress.QualificationMissing,
 		&progress.IdentityUnapproved,
 		&progress.NoExecutableTarget,
