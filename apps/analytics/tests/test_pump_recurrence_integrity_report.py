@@ -4,13 +4,16 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from schurfer_analytics.pump_recurrence_integrity_report import (
+    CASE_STUDY_BASES,
     Episode,
     PumpRecurrenceIntegrityFilters,
     SourceIdentityObservation,
     build_report,
     classify_interval,
     compute_base_fragmentation,
+    compute_input_fingerprint,
     detect_identity_collisions,
+    find_cross_venue_unresolved_pairs,
     identity_reason,
     interval_histogram,
     merge_episodes_into_regimes,
@@ -92,6 +95,28 @@ def test_merge_episodes_into_regimes_rejects_mixed_bases() -> None:
 
 def test_merge_episodes_into_regimes_empty_input() -> None:
     assert merge_episodes_into_regimes((), timedelta(hours=24)) == ()
+
+
+def test_merge_episodes_into_regimes_uses_running_extent_not_previous_episode() -> None:
+    # Colleague review (2026-08-28): a long first episode, a short episode
+    # nested entirely inside it, then a third episode close to the FIRST
+    # episode's true end but more than `cooldown` after the nested (shorter)
+    # second episode's own last_seen_at. Comparing against the immediately
+    # preceding raw episode's last_seen_at alone would measure the gap from
+    # episode 2's early end and incorrectly split episode 3 into its own
+    # regime; comparing against the regime's running maximum (episode 1's
+    # true, later end) correctly keeps all three merged.
+    long_first = _episode(1, minutes_after_t0=0, duration_minutes=120)  # ends at t+120
+    nested_second = _episode(2, minutes_after_t0=10, duration_minutes=5)  # ends at t+15
+    # 60min cooldown; third episode starts at t+140: 20min after episode 1's
+    # true end (t+120, within 60min cooldown), but 125min after episode 2's
+    # own end (t+15, outside a 60min cooldown) -- exposes the bug directly.
+    third = _episode(3, minutes_after_t0=140, duration_minutes=1)
+
+    regimes = merge_episodes_into_regimes((long_first, nested_second, third), timedelta(minutes=60))
+
+    assert len(regimes) == 1
+    assert regimes[0].episode_ids == (1, 2, 3)
 
 
 @pytest.mark.parametrize(
@@ -247,6 +272,100 @@ def test_detect_identity_collisions_no_false_positive_on_clean_population() -> N
     assert detect_identity_collisions(observations) == ()
 
 
+def test_detect_identity_collisions_finds_alias_via_base_mismatch() -> None:
+    # Colleague review (2026-08-28): the realistic 牛来/NIULAI shape is that
+    # the event's own `base` label disagrees with the exchange's reported
+    # `base_asset` -- exactly `identity_reason() == "base_mismatch"`. The
+    # first version of this report excluded base_mismatch observations from
+    # collision detection entirely, making it structurally blind to this
+    # exact scenario while still reporting a reassuring "0 collisions".
+    observations = (
+        _observation(1, "牛来", "gate", identity_key="gate:NIULAI/USDT:USDT", base_asset="NIULAI"),
+        _observation(
+            2, "NIULAI", "gate", identity_key="gate:NIULAI/USDT:USDT", base_asset="NIULAI"
+        ),
+    )
+
+    # The 牛来 observation reports base_mismatch (its own `base` column
+    # disagrees with the shared base_asset "NIULAI"); the NIULAI observation
+    # resolves cleanly on its own. Despite one side being a base_mismatch,
+    # the pair must still be caught as a collision, not silently dropped.
+    assert identity_reason(observations[0]) == "base_mismatch"
+    assert identity_reason(observations[1]) is None
+    collisions = detect_identity_collisions(observations)
+    kinds = {collision.kind for collision in collisions}
+    assert "shared_identity_key_across_bases" in kinds
+    assert "shared_base_asset_across_bases" in kinds
+
+
+def test_detect_identity_collisions_finds_shared_base_asset_when_identity_key_drifts() -> None:
+    # identity_key formatting differs (e.g. a market_id timestamp suffix that
+    # has not stabilized) but the exchange-reported base_asset agrees -- the
+    # shared_base_asset_across_bases check catches this even when the exact
+    # identity_key strings do not match.
+    observations = (
+        _observation(
+            1, "牛来", "gate", identity_key="gate:NIULAI/USDT:USDT:v1", base_asset="NIULAI"
+        ),
+        _observation(
+            2, "NIULAI", "gate", identity_key="gate:NIULAI/USDT:USDT:v2", base_asset="NIULAI"
+        ),
+    )
+
+    collisions = detect_identity_collisions(observations)
+
+    shared_asset = [c for c in collisions if c.kind == "shared_base_asset_across_bases"]
+    assert len(shared_asset) == 1
+    assert shared_asset[0].bases == ("NIULAI", "牛来")
+    assert shared_asset[0].exchanges == ("gate",)
+    # identity_key itself did not match, so shared_identity_key_across_bases
+    # must not also fire for this pair.
+    assert all(c.kind != "shared_identity_key_across_bases" for c in collisions)
+
+
+def test_find_cross_venue_unresolved_pairs_flags_non_overlapping_exchanges() -> None:
+    # The actual 牛来/NIULAI situation confirmed against production: 牛来 only
+    # ever observed on 'gate', NIULAI only ever observed on 'bingx'/'lbank'/
+    # 'mexc' -- zero exchange overlap, so neither collision check could ever
+    # compare them. This must be surfaced explicitly rather than read as
+    # "0 collisions found" implying they were compared and found different.
+    observations = (
+        _observation(1, "牛来", "gate", identity_key="gate:NIULAI/USDT:USDT", base_asset="NIULAI"),
+        _observation(
+            2, "NIULAI", "bingx", identity_key="bingx:NIULAI/USDT:USDT", base_asset="NIULAI"
+        ),
+        _observation(
+            3, "NIULAI", "lbank", identity_key="lbank:NIULAI/USDT:spot", base_asset="NIULAI"
+        ),
+    )
+
+    pairs = find_cross_venue_unresolved_pairs(CASE_STUDY_BASES, observations)
+
+    assert len(pairs) == 1
+    assert pairs[0].bases == ("牛来", "NIULAI")
+    assert pairs[0].first_exchanges == ("gate",)
+    assert pairs[0].second_exchanges == ("bingx", "lbank")
+
+
+def test_find_cross_venue_unresolved_pairs_empty_when_exchanges_overlap() -> None:
+    observations = (
+        _observation(1, "牛来", "gate", identity_key="gate:NIULAI/USDT:USDT", base_asset="NIULAI"),
+        _observation(
+            2, "NIULAI", "gate", identity_key="gate:NIULAI/USDT:USDT", base_asset="NIULAI"
+        ),
+    )
+
+    assert find_cross_venue_unresolved_pairs(CASE_STUDY_BASES, observations) == ()
+
+
+def test_find_cross_venue_unresolved_pairs_skips_bases_with_no_coverage_at_all() -> None:
+    # A base with zero usable observations anywhere is a coverage gap, not a
+    # cross-venue-unresolved pair -- the two failure modes must stay distinct.
+    observations = (_observation(1, "牛来", "gate", identity_key="gate:NIULAI/USDT:USDT"),)
+
+    assert find_cross_venue_unresolved_pairs(CASE_STUDY_BASES, observations) == ()
+
+
 def test_build_report_population_stats_cover_every_base_not_just_case_studies() -> None:
     # One case-study base (JIMOTHY) heavily fragmented, one non-case-study
     # base (RANDOMCOIN) with a single clean episode -- population statistics
@@ -273,3 +392,108 @@ def test_build_report_population_stats_cover_every_base_not_just_case_studies() 
     # JIMOTHY: 10 raw episodes -> 1 regime -> ratio 10.0; RANDOMCOIN: 1/1 -> 1.0
     assert report.population.max_fragmentation_ratio_24h == 10.0
     assert report.population.median_fragmentation_ratio_24h == 5.5
+
+
+def test_build_report_counts_events_without_source_observations() -> None:
+    # Colleague review (2026-08-28): `identity_observations_statement` inner-
+    # joins from pump_event_sources, so an event with zero source rows is
+    # invisible to that query outright -- not resolved, not unresolved, just
+    # absent. A report with "0 unresolved, 0 collisions" must not read as
+    # full coverage when events are silently missing from the denominator.
+    episodes = (
+        _episode(1, base="JIMOTHY", minutes_after_t0=0),
+        _episode(2, base="GME1", minutes_after_t0=0),
+    )
+    # Only event 1 has an identity observation; event 2 has none.
+    identity_observations = (_observation(1, "JIMOTHY", "gate", identity_key="k"),)
+
+    report = build_report(
+        PumpRecurrenceIntegrityFilters(),
+        episodes,
+        identity_observations,
+        code_revision="abc123",
+        working_tree_dirty=False,
+        generated_at=_T0,
+    )
+
+    assert report.population.events_without_source_observations == 1
+    assert report.population.identity_audit_incomplete is True
+
+
+def test_build_report_identity_audit_complete_when_every_event_has_a_source_row() -> None:
+    episodes = (_episode(1, base="JIMOTHY", minutes_after_t0=0),)
+    identity_observations = (_observation(1, "JIMOTHY", "gate", identity_key="k"),)
+
+    report = build_report(
+        PumpRecurrenceIntegrityFilters(),
+        episodes,
+        identity_observations,
+        code_revision="abc123",
+        working_tree_dirty=False,
+        generated_at=_T0,
+    )
+
+    assert report.population.events_without_source_observations == 0
+    assert report.population.identity_audit_incomplete is False
+
+
+def test_build_report_counts_episodes_open_at_cutoff() -> None:
+    until = _T0 + timedelta(minutes=30)
+    # Episode 1 closes well before the cutoff; episode 2's last_seen_at is
+    # past the cutoff -- it was still open as of the nominal --until boundary.
+    episodes = (
+        _episode(1, base="JIMOTHY", minutes_after_t0=0, duration_minutes=1),
+        _episode(2, base="GME1", minutes_after_t0=0, duration_minutes=60),
+    )
+
+    report = build_report(
+        PumpRecurrenceIntegrityFilters(until=until),
+        episodes,
+        (),
+        code_revision="abc123",
+        working_tree_dirty=False,
+        generated_at=_T0,
+    )
+
+    assert report.population.episodes_open_at_cutoff == 1
+
+
+def test_build_report_episodes_open_at_cutoff_is_zero_when_until_unset() -> None:
+    episodes = (_episode(1, base="JIMOTHY", minutes_after_t0=0, duration_minutes=60),)
+
+    report = build_report(
+        PumpRecurrenceIntegrityFilters(),
+        episodes,
+        (),
+        code_revision="abc123",
+        working_tree_dirty=False,
+        generated_at=_T0,
+    )
+
+    assert report.population.episodes_open_at_cutoff == 0
+
+
+def test_compute_input_fingerprint_is_stable_and_sensitive_to_changes() -> None:
+    episodes = (_episode(1, base="JIMOTHY", minutes_after_t0=0),)
+    observations = (_observation(1, "JIMOTHY", "gate", identity_key="k"),)
+
+    first = compute_input_fingerprint(episodes, observations)
+    second = compute_input_fingerprint(episodes, observations)
+    assert first == second
+
+    mutated_episodes = (_episode(1, base="JIMOTHY", minutes_after_t0=0, peak_pct=99.0),)
+    assert compute_input_fingerprint(mutated_episodes, observations) != first
+
+
+def test_build_report_fingerprint_is_populated() -> None:
+    episodes = (_episode(1, base="JIMOTHY", minutes_after_t0=0),)
+    report = build_report(
+        PumpRecurrenceIntegrityFilters(),
+        episodes,
+        (),
+        code_revision="abc123",
+        working_tree_dirty=False,
+        generated_at=_T0,
+    )
+
+    assert len(report.input_fingerprint) == 64  # hex-encoded SHA-256

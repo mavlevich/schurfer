@@ -52,6 +52,17 @@ def episodes_statement(filters: PumpRecurrenceIntegrityFilters) -> Select[Any]:
 
 
 def identity_observations_statement(filters: PumpRecurrenceIntegrityFilters) -> Select[Any]:
+    """Inner join, deliberately: an event with zero `pump_event_sources` rows
+    produces no row here at all, rather than a row with NULL exchange/identity
+    columns. `build_report` (pump_recurrence_integrity_report.py) is the
+    place that turns that absence into a counted, reported gap -- it takes
+    the independently-fetched, join-free `episodes_statement` result as the
+    full set of event ids and diffs it against the event ids seen here, so
+    `population.events_without_source_observations` is correct regardless of
+    this query's join type. Keeping this an inner join (vs. outdoing it with
+    a LEFT JOIN + NULL-filtering in Python) keeps this query's row shape
+    simple: every row here is a real, populated observation.
+    """
     clauses = _event_filters(filters)
     return (
         select(
