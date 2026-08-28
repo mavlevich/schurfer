@@ -366,6 +366,10 @@ func TestQueriesPreserveResearchBoundaries(t *testing.T) {
 		"exact_target_identities",
 		"qualification.qualification_version = 'source_lead_qualified_capture_v2'",
 		"AND source_first_observed_at >= $3",
+		"bool_or(t.status = 'sampled' AND t.identity_verified)",
+		"status = 'sampled' AND identity_verified AND observed_at >= source_first_observed_at",
+		"status = 'sampled' AND identity_verified AND spread_bps >= 0",
+		"status = 'sampled' AND identity_verified AND entry_impact_bps >= 0",
 	}
 	sourceLeadQueries := sourceLeadProgressSQL + sourceLeadTargetProgressSQL +
 		sourceLeadIdentityReviewSQL

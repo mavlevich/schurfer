@@ -152,6 +152,20 @@ class SourceLeadTargetObservation(Base, TimestampMixin):
             "NOT (identity_match_method = 'base_symbol_v1' AND identity_verified)",
             name="ck_source_lead_target_provisional_identity",
         ),
+        # registry_exact_v2 means _resolve_registered_target_market matched
+        # the exact registered market -- identity_verified must be true even
+        # when a later eligibility check or the network fetch itself then
+        # failed. registry_lookup_v2 means no market was ever resolved --
+        # identity_verified must be false. Added research/gate-source-lead-
+        # registry-activation-v2 (colleague review, 2026-08-28): previously
+        # every failure was tagged registry_exact_v2 with identity_verified
+        # always false, which claimed a route was confirmed for captures
+        # that never resolved one at all.
+        CheckConstraint(
+            "identity_match_method NOT IN ('registry_exact_v2', 'registry_lookup_v2') OR "
+            "identity_verified = (identity_match_method = 'registry_exact_v2')",
+            name="ck_source_lead_target_v2_identity_pairing",
+        ),
         {"schema": "app"},
     )
 

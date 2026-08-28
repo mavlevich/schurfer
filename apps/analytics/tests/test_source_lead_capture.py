@@ -4,8 +4,6 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 from schurfer_analytics.source_lead_capture import (
-    IDENTITY_MATCH_METHOD_BASE_SYMBOL_V1,
-    IDENTITY_MATCH_METHOD_REGISTRY_EXACT_V2,
     ClaimedCapture,
     SourceLeadCandidate,
     SourceLeadCaptureWorker,
@@ -17,8 +15,11 @@ from schurfer_analytics.source_lead_capture import (
     prepare_source_lead_captures,
     summarize_order_book,
 )
-from schurfer_analytics.source_lead_contract import CAPTURE_VERSION
+from schurfer_analytics.source_lead_contract import CAPTURE_VERSION, IDENTITY_REGISTRY_V2_START
 from schurfer_analytics.source_lead_qualification import (
+    IDENTITY_MATCH_METHOD_BASE_SYMBOL_V1,
+    IDENTITY_MATCH_METHOD_REGISTRY_EXACT_V2,
+    IDENTITY_MATCH_METHOD_REGISTRY_LOOKUP_V2,
     IdentityRegistry,
     QualificationResult,
     parse_identity_registry,
@@ -89,8 +90,8 @@ def _source(
     )
 
 
-def _candidate() -> SourceLeadCandidate:
-    source = _source("gate")
+def _candidate(*, first_seen_at: datetime | None = None) -> SourceLeadCandidate:
+    source = _source("gate", first_seen_at=first_seen_at)
     return SourceLeadCandidate(
         event_id=source.event_id,
         base=source.base,
@@ -253,6 +254,7 @@ async def test_target_capture_excluded_when_source_identity_unregistered() -> No
     assert result.status == "excluded"
     assert result.eligibility_reason == "source_identity_unregistered"
     assert result.identity_verified is False
+    assert result.identity_match_method == IDENTITY_MATCH_METHOD_REGISTRY_LOOKUP_V2
     exchange.fetch_ticker.assert_not_awaited()
     exchange.fetch_order_book.assert_not_awaited()
 
@@ -274,6 +276,8 @@ async def test_target_capture_excluded_when_no_registered_target() -> None:
 
     assert result.status == "excluded"
     assert result.eligibility_reason == "no_registered_target"
+    assert result.identity_verified is False
+    assert result.identity_match_method == IDENTITY_MATCH_METHOD_REGISTRY_LOOKUP_V2
     exchange.fetch_ticker.assert_not_awaited()
     exchange.fetch_order_book.assert_not_awaited()
 
@@ -317,6 +321,8 @@ async def test_target_capture_excluded_when_registered_identity_not_found_in_mar
 
     assert result.status == "excluded"
     assert result.eligibility_reason == "target_registry_identity_not_found"
+    assert result.identity_verified is False
+    assert result.identity_match_method == IDENTITY_MATCH_METHOD_REGISTRY_LOOKUP_V2
     exchange.fetch_ticker.assert_not_awaited()
     exchange.fetch_order_book.assert_not_awaited()
 
@@ -396,12 +402,69 @@ async def test_target_listed_after_source_is_excluded_before_fetch() -> None:
 
     assert result.status == "excluded"
     assert result.eligibility_reason == "target_listed_after_source"
+    # Identity WAS confirmed -- _resolve_registered_target_market already
+    # matched this exact market before the onboarding-time check ran
+    # (colleague review, 2026-08-28: a post-resolution eligibility failure
+    # must not be tagged as if the route was never resolved at all).
+    assert result.identity_verified is True
+    assert result.identity_match_method == IDENTITY_MATCH_METHOD_REGISTRY_EXACT_V2
     exchange.fetch_ticker.assert_not_awaited()
     exchange.fetch_order_book.assert_not_awaited()
 
 
+async def test_target_capture_marks_identity_verified_even_when_market_is_inactive() -> None:
+    """target_inactive is a post-resolution eligibility failure, same class
+    as target_listed_after_source: the market WAS matched exactly against
+    the registry before this check ran, so identity is confirmed even
+    though the row is excluded (colleague review, 2026-08-28)."""
+    exchange = _Exchange()
+    exchange.markets["ABC/USDT:USDT"]["active"] = False
+
+    result = await capture_target_observation(
+        "binance",
+        exchange,
+        _candidate(),
+        target_usd=50.0,
+        timeout_seconds=1.0,
+        registry=_abc_registry(),
+    )
+
+    assert result.status == "excluded"
+    assert result.eligibility_reason == "target_inactive"
+    assert result.identity_verified is True
+    assert result.identity_match_method == IDENTITY_MATCH_METHOD_REGISTRY_EXACT_V2
+
+
+async def test_target_capture_marks_identity_verified_even_when_fetch_fails() -> None:
+    """target_fetch_failed is reached only after _resolve_registered_target
+    _market already matched the exact market -- the network call itself is
+    what failed. identity_verified must stay True: the previous behavior
+    (always False on any failure) claimed a confirmed route had never been
+    resolved at all (colleague review, 2026-08-28)."""
+    exchange = _Exchange()
+    exchange.fetch_ticker = AsyncMock(side_effect=TimeoutError("no response"))
+
+    result = await capture_target_observation(
+        "binance",
+        exchange,
+        _candidate(),
+        target_usd=50.0,
+        timeout_seconds=1.0,
+        registry=_abc_registry(),
+    )
+
+    assert result.status == "fetch_failed"
+    assert result.eligibility_reason == "target_fetch_failed"
+    assert result.identity_verified is True
+    assert result.identity_match_method == IDENTITY_MATCH_METHOD_REGISTRY_EXACT_V2
+
+
 async def test_capture_processes_target_clients_sequentially(monkeypatch: Any) -> None:
-    candidate = _candidate()
+    # After IDENTITY_REGISTRY_V2_START so the "source_identity_unapproved"
+    # assertion below actually exercises the empty-registry lookup this
+    # test is about, rather than being short-circuited by the (unrelated)
+    # pre-activation exclusion qualify_source_lead checks first.
+    candidate = _candidate(first_seen_at=IDENTITY_REGISTRY_V2_START + timedelta(hours=1))
     claimed = (ClaimedCapture(capture_id=11, candidate=candidate),)
     active = 0
     maximum_active = 0

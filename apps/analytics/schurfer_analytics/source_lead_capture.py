@@ -22,6 +22,8 @@ from .exchange_registry import EXCHANGE_FACTORIES, ExchangeFactory
 from .instruments import instrument_metadata
 from .source_lead_contract import CAPTURE_VERSION
 from .source_lead_qualification import (
+    IDENTITY_MATCH_METHOD_REGISTRY_EXACT_V2,
+    IDENTITY_MATCH_METHOD_REGISTRY_LOOKUP_V2,
     QUALIFICATION_VERSION,
     VENUE_SELECTOR_VERSION,
     CanonicalInstrumentLink,
@@ -34,16 +36,13 @@ from .source_lead_qualification import (
 log = structlog.get_logger()
 
 SOURCE_EXCHANGE = "gate"
-# Retired 2026-08-28 (research/gate-source-lead-registry-activation-v2):
-# capture_target_observation no longer resolves the target market by
-# guessing a symbol from the base ticker (AI_RULES.md explicitly forbids
-# `f"{base}/USDT:USDT"`-style reconstruction) -- it resolves via the
-# identity registry's own instrument_identity_key first. Kept as a named
-# constant only because historical rows in app.source_lead_target_
-# observations still carry this value and existing tests/queries may
-# reference it.
-IDENTITY_MATCH_METHOD_BASE_SYMBOL_V1 = "base_symbol_v1"
-IDENTITY_MATCH_METHOD_REGISTRY_EXACT_V2 = "registry_exact_v2"
+# IDENTITY_MATCH_METHOD_REGISTRY_EXACT_V2/REGISTRY_LOOKUP_V2 now live in
+# source_lead_qualification.py -- qualify_source_lead needs
+# REGISTRY_EXACT_V2 to enforce its own fail-closed check, and this module
+# must not become the module that module imports from (it already imports
+# the other way). IDENTITY_MATCH_METHOD_BASE_SYMBOL_V1 lives there too, for
+# any caller that still needs to reference the retired historical value --
+# import it from schurfer_analytics.source_lead_qualification directly.
 
 _SELECT_SOURCES = """
 SELECT
@@ -508,13 +507,29 @@ def _target_failure(
     *,
     instrument: dict[str, Any] | None = None,
     error: str | None = None,
+    registry_resolved: bool = False,
 ) -> TargetObservation:
+    """registry_resolved distinguishes two different kinds of failure
+    (colleague review, 2026-08-28): False means no live market was ever
+    matched to a registry link at all (identity was never confirmed) --
+    tagged identity_match_method=registry_lookup_v2, identity_verified=False.
+    True means _resolve_registered_target_market already found and confirmed
+    the exact market before a later eligibility check or the network fetch
+    itself failed -- identity IS confirmed, so this is tagged
+    identity_match_method=registry_exact_v2, identity_verified=True, exactly
+    like the success path. Previously every failure was tagged
+    registry_exact_v2 regardless, which claimed a route was confirmed even
+    for captures that never got a market resolved at all."""
     return TargetObservation(
         target_exchange=exchange,
         status="excluded" if error is None else "fetch_failed",
         eligibility_reason=reason,
-        identity_verified=False,
-        identity_match_method=IDENTITY_MATCH_METHOD_REGISTRY_EXACT_V2,
+        identity_verified=registry_resolved,
+        identity_match_method=(
+            IDENTITY_MATCH_METHOD_REGISTRY_EXACT_V2
+            if registry_resolved
+            else IDENTITY_MATCH_METHOD_REGISTRY_LOOKUP_V2
+        ),
         observed_at=datetime.now(UTC),
         occurred_at=None,
         latency_ms=max(0, round((time.monotonic() - started) * 1000)),
@@ -615,15 +630,30 @@ async def capture_target_observation(
 
     if market.get("active") is False:
         return _target_failure(
-            exchange_name, "target_inactive", started, target_usd, instrument=metadata
+            exchange_name,
+            "target_inactive",
+            started,
+            target_usd,
+            instrument=metadata,
+            registry_resolved=True,
         )
     if market.get("swap") is not True or market.get("linear") is not True:
         return _target_failure(
-            exchange_name, "target_not_linear_swap", started, target_usd, instrument=metadata
+            exchange_name,
+            "target_not_linear_swap",
+            started,
+            target_usd,
+            instrument=metadata,
+            registry_resolved=True,
         )
     if metadata.get("quote_asset") != "USDT" or metadata.get("settle_asset") != "USDT":
         return _target_failure(
-            exchange_name, "target_not_linear_usdt", started, target_usd, instrument=metadata
+            exchange_name,
+            "target_not_linear_usdt",
+            started,
+            target_usd,
+            instrument=metadata,
+            registry_resolved=True,
         )
     onboarded_at = _timestamp(metadata.get("onboarded_at_ms"))
     if onboarded_at is None:
@@ -633,6 +663,7 @@ async def capture_target_observation(
             started,
             target_usd,
             instrument=metadata,
+            registry_resolved=True,
         )
     if onboarded_at > candidate.source.first_seen_at:
         return _target_failure(
@@ -641,6 +672,7 @@ async def capture_target_observation(
             started,
             target_usd,
             instrument=metadata,
+            registry_resolved=True,
         )
 
     symbol = str(metadata["unified_symbol"])
@@ -682,12 +714,12 @@ async def capture_target_observation(
             error=None,
         )
     except Exception as exc:
-        # identity was verified (we reached here only after
-        # _resolve_registered_target_market matched); the fetch itself
-        # failed. _target_failure always records identity_verified=False,
-        # which is a small imprecision here -- harmless in practice, since
-        # qualify_source_lead only ever considers status == 'sampled' rows,
-        # and this row's status is 'fetch_failed'.
+        # Identity was already confirmed -- we only reach here after
+        # _resolve_registered_target_market matched -- the network fetch
+        # itself is what failed. registry_resolved=True records that
+        # honestly (identity_verified=True, identity_match_method=
+        # registry_exact_v2), distinct from the pre-resolution failures
+        # above that never confirmed a market at all.
         return _target_failure(
             exchange_name,
             "target_fetch_failed",
@@ -695,6 +727,7 @@ async def capture_target_observation(
             target_usd,
             instrument=metadata,
             error=f"{type(exc).__name__}: {exc}",
+            registry_resolved=True,
         )
 
 
@@ -807,6 +840,7 @@ async def capture_claimed_source_leads(
         item.capture_id: qualify_source_lead(
             source_exchange=SOURCE_EXCHANGE,
             source_identity_key=item.candidate.source.identity_key,
+            source_first_observed_at=item.candidate.source.first_seen_at,
             target_observations=tuple(results[item.capture_id]),
             registry=registry,
         )

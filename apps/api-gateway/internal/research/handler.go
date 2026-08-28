@@ -489,7 +489,12 @@ WITH captures AS (
 		c.status,
 		c.eligibility_reason,
 		c.error,
-		coalesce(bool_or(t.status = 'sampled'), false) AS target_eligible
+		-- identity_verified is required alongside status='sampled' (colleague
+		-- review, 2026-08-28): before registry-activation, a 'sampled' row
+		-- could come from the old naive-symbol guess and carry
+		-- identity_verified=false -- counting it toward target_eligible would
+		-- let a wrong-market observation satisfy the maturity/readiness gate.
+		coalesce(bool_or(t.status = 'sampled' AND t.identity_verified), false) AS target_eligible
 	FROM app.source_lead_captures AS c
 	LEFT JOIN app.source_lead_target_observations AS t
 	  ON t.capture_id = c.id
@@ -597,6 +602,7 @@ WITH observations AS (
 	SELECT
 		t.status,
 		t.observed_at,
+		t.identity_verified,
 		c.source_first_observed_at,
 		CASE
 			WHEN jsonb_typeof(t.liquidity->'spread_bps') = 'number'
@@ -619,24 +625,30 @@ SELECT
 	count(*) FILTER (WHERE status = 'sampled'),
 	count(*) FILTER (WHERE status = 'excluded'),
 	count(*) FILTER (WHERE status = 'fetch_failed'),
+	-- Latency/spread/impact percentiles require identity_verified alongside
+	-- status='sampled' (colleague review, 2026-08-28): these numbers feed
+	-- venue-quality analysis directly, so a pre-activation, wrong-market
+	-- 'sampled' row must not be able to pollute them. Sampled/excluded/
+	-- fetch_failed counts above stay unfiltered -- they are the raw
+	-- operational funnel, a different (and still honest) metric.
 	percentile_cont(0.5) WITHIN GROUP (
 		ORDER BY extract(epoch FROM (observed_at - source_first_observed_at)) * 1000
 	) FILTER (
-		WHERE status = 'sampled' AND observed_at >= source_first_observed_at
+		WHERE status = 'sampled' AND identity_verified AND observed_at >= source_first_observed_at
 	),
 	percentile_cont(0.9) WITHIN GROUP (
 		ORDER BY extract(epoch FROM (observed_at - source_first_observed_at)) * 1000
 	) FILTER (
-		WHERE status = 'sampled' AND observed_at >= source_first_observed_at
+		WHERE status = 'sampled' AND identity_verified AND observed_at >= source_first_observed_at
 	),
 	percentile_cont(0.5) WITHIN GROUP (ORDER BY spread_bps)
-		FILTER (WHERE status = 'sampled' AND spread_bps >= 0),
+		FILTER (WHERE status = 'sampled' AND identity_verified AND spread_bps >= 0),
 	percentile_cont(0.9) WITHIN GROUP (ORDER BY spread_bps)
-		FILTER (WHERE status = 'sampled' AND spread_bps >= 0),
+		FILTER (WHERE status = 'sampled' AND identity_verified AND spread_bps >= 0),
 	percentile_cont(0.5) WITHIN GROUP (ORDER BY entry_impact_bps)
-		FILTER (WHERE status = 'sampled' AND entry_impact_bps >= 0),
+		FILTER (WHERE status = 'sampled' AND identity_verified AND entry_impact_bps >= 0),
 	percentile_cont(0.9) WITHIN GROUP (ORDER BY entry_impact_bps)
-		FILTER (WHERE status = 'sampled' AND entry_impact_bps >= 0)
+		FILTER (WHERE status = 'sampled' AND identity_verified AND entry_impact_bps >= 0)
 FROM observations`
 
 const sourceLeadIdentityReviewSQL = `

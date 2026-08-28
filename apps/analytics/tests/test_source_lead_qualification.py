@@ -1,16 +1,32 @@
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 from schurfer_analytics.source_lead_capture import TargetObservation
+from schurfer_analytics.source_lead_contract import IDENTITY_REGISTRY_V2_START
+from schurfer_analytics.source_lead_identity_evidence import (
+    ChainContractEvidence,
+    EvidenceBundle,
+    IdentityClass,
+    RawFetch,
+    compute_bundle_sha256,
+    save_evidence_bundle,
+)
 from schurfer_analytics.source_lead_qualification import (
     EXPECTED_REGISTRY_FINGERPRINT,
     EXPECTED_REGISTRY_VERSION,
+    IDENTITY_MATCH_METHOD_REGISTRY_LOOKUP_V2,
+    CanonicalInstrumentLink,
     IdentityRegistry,
     load_identity_registry,
     parse_identity_registry,
     qualify_source_lead,
+    verify_registry_against_evidence,
 )
+
+_AFTER_CUTOVER = IDENTITY_REGISTRY_V2_START + timedelta(hours=1)
+_BEFORE_CUTOVER = IDENTITY_REGISTRY_V2_START - timedelta(hours=1)
 
 
 def _registry() -> IdentityRegistry:
@@ -116,6 +132,7 @@ def test_unapproved_source_fails_closed_before_ticker_matching() -> None:
     result = qualify_source_lead(
         source_exchange="gate",
         source_identity_key="gate:swap:UNKNOWN_USDT:1",
+        source_first_observed_at=_AFTER_CUTOVER,
         target_observations=(_target("binance", 1.0),),
         registry=_registry(),
     )
@@ -125,10 +142,56 @@ def test_unapproved_source_fails_closed_before_ticker_matching() -> None:
     assert result.canonical_asset_id is None
 
 
+def test_capture_before_registry_v2_activation_is_excluded_even_with_valid_identity() -> None:
+    """A capture whose source_first_observed_at predates
+    IDENTITY_REGISTRY_V2_START must never be treated as v2-qualified
+    prospective evidence, even when its identity and targets would
+    otherwise fully qualify -- identity was confirmed retroactively, not in
+    real time (colleague review, 2026-08-28)."""
+    result = qualify_source_lead(
+        source_exchange="gate",
+        source_identity_key="gate:swap:ABC_USDT:1",
+        source_first_observed_at=_BEFORE_CUTOVER,
+        target_observations=(_target("binance", 1.0),),
+        registry=_registry(),
+    )
+
+    assert result.status == "excluded"
+    assert result.reason == "before_identity_registry_v2_activation"
+    assert result.canonical_asset_id is None
+
+
+def test_target_not_registry_confirmed_is_excluded_despite_matching_identity_key() -> None:
+    """A target observation whose status is 'sampled' and whose instrument
+    identity_key matches a registered link must still be excluded when the
+    observation itself never carries registry-confirmed identity -- qualify
+    _source_lead must check identity_verified/identity_match_method
+    explicitly, not merely infer them from status=='sampled' (colleague
+    review, 2026-08-28)."""
+    unconfirmed = replace(
+        _target("binance", 1.0),
+        identity_verified=False,
+        identity_match_method=IDENTITY_MATCH_METHOD_REGISTRY_LOOKUP_V2,
+    )
+
+    result = qualify_source_lead(
+        source_exchange="gate",
+        source_identity_key="gate:swap:ABC_USDT:1",
+        source_first_observed_at=_AFTER_CUTOVER,
+        target_observations=(unconfirmed,),
+        registry=_registry(),
+    )
+
+    assert result.status == "excluded"
+    assert result.reason == "no_approved_executable_target"
+    assert result.details["targets"][0]["registry_confirmed"] is False
+
+
 def test_selector_uses_lowest_round_trip_impact_with_stable_tie_break() -> None:
     result = qualify_source_lead(
         source_exchange="gate",
         source_identity_key="gate:swap:ABC_USDT:1",
+        source_first_observed_at=_AFTER_CUTOVER,
         target_observations=(_target("bybit", 2.0), _target("binance", 1.0)),
         registry=_registry(),
     )
@@ -141,6 +204,7 @@ def test_selector_uses_lowest_round_trip_impact_with_stable_tie_break() -> None:
     tied = qualify_source_lead(
         source_exchange="gate",
         source_identity_key="gate:swap:ABC_USDT:1",
+        source_first_observed_at=_AFTER_CUTOVER,
         target_observations=(_target("bybit", 1.0), _target("binance", 1.0)),
         registry=_registry(),
     )
@@ -157,6 +221,7 @@ def test_selector_requires_full_two_sided_notional() -> None:
     result = qualify_source_lead(
         source_exchange="gate",
         source_identity_key="gate:swap:ABC_USDT:1",
+        source_first_observed_at=_AFTER_CUTOVER,
         target_observations=(incomplete,),
         registry=_registry(),
     )
@@ -182,4 +247,121 @@ def test_registry_rejects_non_https_or_invalid_digest() -> None:
                     }
                 ],
             }
+        )
+
+
+# --- evidence-backed registry verification (colleague review, 2026-08-28) ----
+# load_identity_registry previously only checked evidence_sha256's *format*,
+# never opened the bundle it names -- these exercise the fix directly,
+# without needing the real packaged evidence directory.
+
+
+def _sample_chain_evidence() -> ChainContractEvidence:
+    return ChainContractEvidence(
+        chain="bsc",
+        chain_id=56,
+        contract_address="0xaaaa",
+        decimals=18,
+        decimals_evidence=RawFetch(
+            source="rpc:eth_call",
+            endpoint="https://fake/",
+            observed_at=datetime(2026, 8, 28, tzinfo=UTC),
+            raw_sha256="a" * 64,
+            wire_exact=True,
+            payload={"result": "0x12"},
+        ),
+        block_number=100,
+        block_hash="0x" + "a" * 64,
+    )
+
+
+def _sample_bundle(
+    *, base: str, identity_class: IdentityClass = "exact_contract"
+) -> EvidenceBundle:
+    raw = RawFetch(
+        source="test",
+        endpoint="https://fake/",
+        observed_at=datetime(2026, 8, 28, tzinfo=UTC),
+        raw_sha256="b" * 64,
+        wire_exact=True,
+        payload={"ok": True},
+    )
+    bundle = EvidenceBundle(
+        evidence_version="source_lead_identity_evidence_v2",
+        base=base,
+        source_exchange="gate",
+        target_exchange="binance",
+        identity_class=identity_class,
+        source_contract=_sample_chain_evidence(),
+        target_contract=_sample_chain_evidence(),
+        gate_evidence=raw,
+        target_catalog_evidence=raw,
+        coingecko_evidence=raw,
+        code_revision="abc123",
+        working_tree_dirty=False,
+        captured_at=datetime(2026, 8, 28, tzinfo=UTC),
+        bundle_sha256="",
+    )
+    return replace(bundle, bundle_sha256=compute_bundle_sha256(bundle))
+
+
+def _links_for(base: str, sha256: str) -> dict[tuple[str, str], CanonicalInstrumentLink]:
+    gate = CanonicalInstrumentLink(
+        canonical_asset_id=f"asset:{base.lower()}",
+        exchange="gate",
+        instrument_identity_key=f"gate:swap:{base}_USDT:1",
+        evidence_url=f"https://example.com/{base.lower()}",
+        evidence_sha256=sha256,
+    )
+    binance = CanonicalInstrumentLink(
+        canonical_asset_id=f"asset:{base.lower()}",
+        exchange="binance",
+        instrument_identity_key=f"binance:swap:{base}USDT:1",
+        evidence_url=f"https://example.com/{base.lower()}",
+        evidence_sha256=sha256,
+    )
+    return {
+        (gate.exchange, gate.instrument_identity_key): gate,
+        (binance.exchange, binance.instrument_identity_key): binance,
+    }
+
+
+def test_registry_load_verifies_link_content_against_its_own_evidence_bundle(
+    tmp_path: Path,
+) -> None:
+    bundle = _sample_bundle(base="ZED")
+    save_evidence_bundle(bundle, tmp_path / "zed-gate-binance.json")
+
+    verify_registry_against_evidence(_links_for("ZED", bundle.bundle_sha256), evidence_dir=tmp_path)
+
+
+def test_registry_load_rejects_link_whose_sha256_does_not_match_bundle_content(
+    tmp_path: Path,
+) -> None:
+    bundle = _sample_bundle(base="ZED")
+    save_evidence_bundle(bundle, tmp_path / "zed-gate-binance.json")
+
+    with pytest.raises(ValueError, match="does not match its evidence bundle"):
+        verify_registry_against_evidence(_links_for("ZED", "f" * 64), evidence_dir=tmp_path)
+
+
+def test_registry_load_rejects_link_backed_by_non_exact_contract_bundle(tmp_path: Path) -> None:
+    bundle = _sample_bundle(base="ZED", identity_class="same_asset_multichain_candidate")
+    save_evidence_bundle(bundle, tmp_path / "zed-gate-binance.json")
+
+    with pytest.raises(ValueError, match="not exact_contract"):
+        verify_registry_against_evidence(
+            _links_for("ZED", bundle.bundle_sha256), evidence_dir=tmp_path
+        )
+
+
+def test_registry_load_rejects_link_with_no_matching_evidence_bundle_at_all(
+    tmp_path: Path,
+) -> None:
+    bundle = _sample_bundle(base="ZED")
+    save_evidence_bundle(bundle, tmp_path / "zed-gate-binance.json")
+
+    with pytest.raises(ValueError, match="no matching evidence bundle"):
+        verify_registry_against_evidence(
+            _links_for("OTHER", bundle.bundle_sha256), evidence_dir=tmp_path
         )
