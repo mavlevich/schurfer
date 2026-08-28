@@ -104,7 +104,6 @@ func TestReadinessSeparatesExactAndOperationalProgress(t *testing.T) {
 	now := time.Date(2026, time.July, 31, 12, 0, 0, 0, time.UTC)
 	meanDelta := 0.17
 	db := &stubDB{rows: []stubRow{
-		{values: []any{16, 12, 8, 2, 41, 0, 1, 3}},
 		{values: []any{
 			liquidTakerContract,
 			"liquid_taker_forward_report_v1",
@@ -114,12 +113,13 @@ func TestReadinessSeparatesExactAndOperationalProgress(t *testing.T) {
 			"abc123",
 			false,
 			strings.Repeat("a", 64),
-			"collecting",
-			"withheld",
-			12,
-			8,
-			2,
+			"ready",
+			"do_not_promote",
+			802,
+			296,
+			5,
 		}},
+		{err: pgx.ErrNoRows},
 		{values: []any{6, 6, 6, 6, meanDelta}},
 	}}
 	rdb, closeRedis := testRedis(t, map[string]string{
@@ -154,32 +154,33 @@ func TestReadinessSeparatesExactAndOperationalProgress(t *testing.T) {
 	if payload.Interpretation != "collection_progress_only_no_strategy_change" {
 		t.Fatalf("unexpected interpretation: %s", payload.Interpretation)
 	}
-	if got := payload.ProspectiveCohorts[0].MatureInputEpisodes.Current; got != 12 {
+	// hyp_008 and hyp_010 are permanently closed (do_not_promote, 2026-08-29):
+	// their milestone counts come from the frozen formal-checkpoint constants,
+	// not a live query, regardless of the handler's clock.
+	if got := payload.ProspectiveCohorts[0].MatureInputEpisodes.Current; got != 494 {
 		t.Fatalf("HYP-008 episodes: got %d", got)
 	}
-	if payload.ProspectiveCohorts[0].MatureInputEpisodes.Exact {
-		t.Fatal("mature input count must not claim formal-report exactness")
+	if got := payload.ProspectiveCohorts[0].Status; got != "closed" {
+		t.Fatalf("HYP-008 status: got %s", got)
 	}
 	if payload.Orderflow == nil || payload.Orderflow.TradeReconnectTotal != 3 ||
 		payload.Orderflow.TradeReadTimeoutTotal != 2 {
 		t.Fatalf("unexpected order-flow recovery telemetry: %+v", payload.Orderflow)
 	}
 	diagnostics := payload.ProspectiveCohorts[0].InputDiagnostics
-	if diagnostics.ClosedCandidateEpisodes != 16 {
-		t.Fatalf("closed candidate episodes: got %d", diagnostics.ClosedCandidateEpisodes)
-	}
-	if diagnostics.IgnoredMeasurementDecisions != 41 {
-		t.Fatalf("ignored measurement decisions: got %d", diagnostics.IgnoredMeasurementDecisions)
-	}
-	if diagnostics.UnexpectedStrategyEpisodes != 0 {
-		t.Fatalf("unexpected strategy episodes: got %d", diagnostics.UnexpectedStrategyEpisodes)
+	if diagnostics != (CohortInputDiagnostics{}) {
+		t.Fatalf("closed cohort must not fabricate a diagnostics breakdown: got %+v", diagnostics)
 	}
 	latest := payload.ProspectiveCohorts[0].LatestReport
-	if latest == nil || latest.EligibleEpisodes != 12 || latest.Verdict != "withheld" {
+	if latest == nil || latest.EligibleEpisodes != 802 || latest.Verdict != "do_not_promote" {
 		t.Fatalf("latest registered report: got %#v", latest)
 	}
-	if got := payload.ProspectiveCohorts[1].Status; got != "scheduled" {
+	if got := payload.ProspectiveCohorts[1].Status; got != "closed" {
 		t.Fatalf("HYP-010 status: got %s", got)
+	}
+	if payload.ProspectiveCohorts[1].LatestReport != nil {
+		t.Fatalf("HYP-010 latest report: expected none registered in this fixture, got %#v",
+			payload.ProspectiveCohorts[1].LatestReport)
 	}
 	if got := payload.ExitLiquidity.ComparableObservations.Current; got != 6 {
 		t.Fatalf("exit comparable count: got %d", got)
@@ -201,12 +202,10 @@ func TestReadinessSeparatesExactAndOperationalProgress(t *testing.T) {
 	}
 }
 
-func TestReadinessQueriesStartedWiderCohort(t *testing.T) {
+func TestReadinessClosedCohortsSkipLiveQuery(t *testing.T) {
 	now := time.Date(2026, time.August, 30, 12, 0, 0, 0, time.UTC)
 	db := &stubDB{rows: []stubRow{
-		{values: []any{105, 101, 31, 5, 120, 0, 1, 3}},
 		{err: pgx.ErrNoRows},
-		{values: []any{102, 100, 30, 4, 110, 0, 0, 2}},
 		{err: pgx.ErrNoRows},
 		{values: []any{30, 29, 28, 20, nil}},
 		{values: []any{
@@ -233,7 +232,7 @@ func TestReadinessQueriesStartedWiderCohort(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, item := range payload.ProspectiveCohorts {
-		if item.Status != "report_required" {
+		if item.Status != "closed" {
 			t.Fatalf("%s status: got %s", item.Key, item.Status)
 		}
 	}
@@ -246,8 +245,11 @@ func TestReadinessQueriesStartedWiderCohort(t *testing.T) {
 	if !payload.SourceLead.MatureFourHourWindows.Exact {
 		t.Fatal("source-lead database progress must be exact")
 	}
-	if len(db.calls) != 10 {
-		t.Fatalf("started wider cohort should query database, got %d calls", len(db.calls))
+	// Only latestReport(hyp_008), latestReport(hyp_010), exitLiquidityProgress,
+	// and source-lead's own queries run -- cohortProgressSQL has no call sites
+	// left at all (both cohorts are permanently closed).
+	if len(db.calls) != 8 {
+		t.Fatalf("closed cohorts must not query cohortProgressSQL, got %d calls", len(db.calls))
 	}
 }
 
@@ -330,20 +332,14 @@ func TestReadinessFailsClosedOnDatabaseError(t *testing.T) {
 }
 
 func TestQueriesPreserveResearchBoundaries(t *testing.T) {
-	requiredCohortFragments := []string{
-		"app.trade_decisions",
-		"app.pump_events",
-		"app.trade_decision_outcomes",
-		"horizon_minutes = 480",
-		"o.status = 'complete'",
-		"d.strategy_version = 'pump_short_measurement_v1'",
-		"coalesce(d.features @> '{\"measurement_only\": true}'::jsonb, false)",
-		"WHERE NOT (",
+	// hyp_008/hyp_010 are permanently closed (do_not_promote, 2026-08-29) and
+	// no longer run a live cohortProgressSQL query -- see
+	// liquidTakerClosedCounts/liquidTakerWiderClosedCounts in handler.go.
+	if liquidTakerClosedCounts != (cohortCounts{episodes: 494, clusters: 207, weeks: 4}) {
+		t.Fatalf("liquid taker closed counts drifted from the frozen ROADMAP verdict: %+v", liquidTakerClosedCounts)
 	}
-	for _, fragment := range requiredCohortFragments {
-		if !strings.Contains(cohortProgressSQL, fragment) {
-			t.Fatalf("cohort query missing %q", fragment)
-		}
+	if liquidTakerWiderClosedCounts != (cohortCounts{episodes: 429, clusters: 183, weeks: 4}) {
+		t.Fatalf("liquid taker wider closed counts drifted from the frozen ROADMAP verdict: %+v", liquidTakerWiderClosedCounts)
 	}
 	if !strings.Contains(exitLiquidityProgressSQL, "LEFT JOIN app.trade_exit_liquidity_observations") {
 		t.Fatal("exit progress must retain missing observations in its denominator")
