@@ -1,11 +1,11 @@
 {
   "base": "BAS",
-  "bundle_sha256": "b23bf9a308a3214eb0354c0c7c60307ffd715526783c24489764ee1f9419bb50",
-  "captured_at": "2026-08-28T12:32:54.983324+00:00",
-  "code_revision": "95775873defc52777796434474b5be9556d47f5a",
+  "bundle_sha256": "e08f7a601da34018bfec30916d236e4d5b48efba8e1bff0f8866f404fee7560f",
+  "captured_at": "2026-08-28T13:01:11.120850+00:00",
+  "code_revision": "f51fa67e14a07f5754d1934f308a1b9fbe6b0e05",
   "coingecko_evidence": {
     "endpoint": "https://api.coingecko.com/api/v3/coins/bas?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
-    "observed_at": "2026-08-28T12:32:54.605403+00:00",
+    "observed_at": "2026-08-28T13:01:10.632424+00:00",
     "payload": {
       "additional_notices": [],
       "asset_platform_id": "binance-smart-chain",
@@ -37,7 +37,7 @@
         "small": "https://coin-images.coingecko.com/coins/images/67419/small/bas.jpg?1752736026",
         "thumb": "https://coin-images.coingecko.com/coins/images/67419/thumb/bas.jpg?1752736026"
       },
-      "last_updated": "2026-08-28T12:30:50.000Z",
+      "last_updated": "2026-08-28T12:58:50.000Z",
       "links": {
         "announcement_url": [],
         "bitcointalk_thread_identifier": null,
@@ -64,29 +64,29 @@
       "listing_source": null,
       "listing_source_url": null,
       "listing_timestamp": null,
-      "market_cap_rank": 323,
-      "market_cap_rank_with_rehypothecated": 447,
+      "market_cap_rank": 340,
+      "market_cap_rank_with_rehypothecated": 465,
       "name": "BNB Attestation Service",
       "platforms": {
         "binance-smart-chain": "0x0f0df6cb17ee5e883eddfef9153fc6036bdb4e37"
       },
       "preview_listing": false,
       "public_notice": null,
-      "sentiment_votes_down_percentage": 60.0,
-      "sentiment_votes_up_percentage": 40.0,
+      "sentiment_votes_down_percentage": 50.0,
+      "sentiment_votes_up_percentage": 50.0,
       "status_updates": [],
       "symbol": "bas",
-      "watchlist_portfolio_users": 2201,
+      "watchlist_portfolio_users": 2202,
       "web_slug": "bnb-attestation-service"
     },
-    "raw_sha256": "292f1bedc3960c32009f99327732231cc35ba0ee33fa4ca8abffb34881c4e9a2",
+    "raw_sha256": "c218232e9dbec9df3a71c1f7b062dd202cf493d79f5bf0092b7d34ae0e0bb408",
     "source": "https://api.coingecko.com/api/v3/coins/bas",
     "wire_exact": true
   },
   "evidence_version": "source_lead_identity_evidence_v2",
   "gate_evidence": {
     "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
-    "observed_at": "2026-08-28T12:32:54.286766+00:00",
+    "observed_at": "2026-08-28T13:01:10.437576+00:00",
     "payload": {
       "active": true,
       "code": "BAS",
@@ -167,20 +167,21 @@
   },
   "identity_class": "exact_contract",
   "source_contract": {
-    "block_number": 118576201,
+    "block_hash": "0x523f45ac791a62b40ee3e877318625fa33ad25f3b532cec274ac5328a493a29d",
+    "block_number": 118579968,
     "chain": "bsc",
     "chain_id": 56,
     "contract_address": "0x0f0df6cb17ee5e883eddfef9153fc6036bdb4e37",
     "decimals": 18,
     "decimals_evidence": {
       "endpoint": "https://bsc-dataseed.binance.org/",
-      "observed_at": "2026-08-28T12:32:54.824830+00:00",
+      "observed_at": "2026-08-28T13:01:10.955212+00:00",
       "payload": {
-        "id": 1,
+        "id": 3,
         "jsonrpc": "2.0",
         "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
       },
-      "raw_sha256": "942eb00e02101dd8673395e77f951530862ae177255e90bbbb71a3c42dd6fba6",
+      "raw_sha256": "8e73d72cca28014c8646f2033e87ec712fc9eb6dbc2664092e1cf446ce4e6937",
       "source": "rpc:eth_call",
       "wire_exact": true
     }
@@ -188,7 +189,7 @@
   "source_exchange": "gate",
   "target_catalog_evidence": {
     "endpoint": "https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list",
-    "observed_at": "2026-08-28T12:31:45.813313+00:00",
+    "observed_at": "2026-08-28T13:00:10.911381+00:00",
     "payload": {
       "chainId": "56",
       "chainName": "BSC",
@@ -205,24 +206,25 @@
     "wire_exact": false
   },
   "target_contract": {
-    "block_number": 118576201,
+    "block_hash": "0x523f45ac791a62b40ee3e877318625fa33ad25f3b532cec274ac5328a493a29d",
+    "block_number": 118579968,
     "chain": "bsc",
     "chain_id": 56,
     "contract_address": "0x0f0df6cb17ee5e883eddfef9153fc6036bdb4e37",
     "decimals": 18,
     "decimals_evidence": {
       "endpoint": "https://bsc-dataseed.binance.org/",
-      "observed_at": "2026-08-28T12:32:54.932844+00:00",
+      "observed_at": "2026-08-28T13:01:11.120364+00:00",
       "payload": {
-        "id": 1,
+        "id": 3,
         "jsonrpc": "2.0",
         "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
       },
-      "raw_sha256": "942eb00e02101dd8673395e77f951530862ae177255e90bbbb71a3c42dd6fba6",
+      "raw_sha256": "8e73d72cca28014c8646f2033e87ec712fc9eb6dbc2664092e1cf446ce4e6937",
       "source": "rpc:eth_call",
       "wire_exact": true
     }
   },
   "target_exchange": "binance",
-  "working_tree_dirty": false
+  "working_tree_dirty": true
 }

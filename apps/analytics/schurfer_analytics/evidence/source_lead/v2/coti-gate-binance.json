@@ -1,11 +1,11 @@
 {
   "base": "COTI",
-  "bundle_sha256": "abca3d7709255631305a907f7d35271d4051ecf490dc7e9b79adf2a6109fbfce",
-  "captured_at": "2026-08-28T12:33:50.426460+00:00",
-  "code_revision": "95775873defc52777796434474b5be9556d47f5a",
+  "bundle_sha256": "3fceaf62c3068a4138a724ffde6f1641d1363496d3dc0a5507cc856491e4db29",
+  "captured_at": "2026-08-28T13:01:57.033798+00:00",
+  "code_revision": "f51fa67e14a07f5754d1934f308a1b9fbe6b0e05",
   "coingecko_evidence": {
     "endpoint": "https://api.coingecko.com/api/v3/coins/coti?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
-    "observed_at": "2026-08-28T12:33:50.279805+00:00",
+    "observed_at": "2026-08-28T13:01:56.892473+00:00",
     "payload": {
       "additional_notices": [],
       "asset_platform_id": "ethereum",
@@ -73,7 +73,7 @@
         "small": "https://coin-images.coingecko.com/coins/images/2962/small/Coti.png?1696503705",
         "thumb": "https://coin-images.coingecko.com/coins/images/2962/thumb/Coti.png?1696503705"
       },
-      "last_updated": "2026-08-28T12:31:50.000Z",
+      "last_updated": "2026-08-28T12:59:50.000Z",
       "links": {
         "announcement_url": ["https://medium.com/cotinetwork", "https://steemit.com/@cotinetwork"],
         "bitcointalk_thread_identifier": 1364597,
@@ -120,14 +120,14 @@
       "watchlist_portfolio_users": 97416,
       "web_slug": "coti"
     },
-    "raw_sha256": "db2471e3466563a0a83e72587429830848867355075d56d712d6e0bd4e21a15b",
+    "raw_sha256": "a1b6324c6c9ee43d8c3edb644a0f2e23d8dd02f49255a75b971574d4bdb7e586",
     "source": "https://api.coingecko.com/api/v3/coins/coti",
     "wire_exact": true
   },
   "evidence_version": "source_lead_identity_evidence_v2",
   "gate_evidence": {
     "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
-    "observed_at": "2026-08-28T12:33:49.974740+00:00",
+    "observed_at": "2026-08-28T13:01:56.511512+00:00",
     "payload": {
       "active": true,
       "code": "COTI",
@@ -241,20 +241,21 @@
   },
   "identity_class": "third_party_bridge_only",
   "source_contract": {
-    "block_number": 25853767,
+    "block_hash": "0xff3767127183f4b4fc37ece4bf2df55acf334263f1bb6acaec3987d206935cb5",
+    "block_number": 25853905,
     "chain": "ethereum",
     "chain_id": 1,
     "contract_address": "0xddb3422497e61e13543bea06989c0789117555c5",
     "decimals": 18,
     "decimals_evidence": {
       "endpoint": "https://ethereum-rpc.publicnode.com",
-      "observed_at": "2026-08-28T12:33:50.380359+00:00",
+      "observed_at": "2026-08-28T13:01:57.033726+00:00",
       "payload": {
-        "id": 1,
+        "id": 3,
         "jsonrpc": "2.0",
         "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
       },
-      "raw_sha256": "eb1491e7ee73b8c00c20f6c14cc08ba880f85b8ac95a685f3f6acf426f743d8b",
+      "raw_sha256": "a0cfb5a1c696cf1b33c6808f77538ba8fbf89fc8515499513d43ce204d7a457a",
       "source": "rpc:eth_call",
       "wire_exact": true
     }
@@ -263,5 +264,5 @@
   "target_catalog_evidence": null,
   "target_contract": null,
   "target_exchange": "binance",
-  "working_tree_dirty": false
+  "working_tree_dirty": true
 }

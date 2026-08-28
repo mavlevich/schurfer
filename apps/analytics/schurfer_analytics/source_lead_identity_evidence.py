@@ -61,6 +61,41 @@ fresh hashes, but which candidates to capture and what tier they landed in
 was human-reviewed synchronously, immediately before this tool existed. A
 later, separate change decides whether/how the registry consumes any of
 this.
+
+## A second colleague review round (2026-08-28) found real defects in the
+## first implementation, all fixed
+
+- **`identity_class` was never checked against the evidence just fetched.**
+  The first version trusted the candidate table's classification outright;
+  EDEN was recorded as `exact_contract` with a source contract on ethereum
+  and a target contract on bsc -- different chains, different addresses,
+  the opposite of what exact_contract means. `_validate_identity_class` now
+  recomputes the relationship from `gate_evidence`/`coingecko_evidence`/
+  `target_catalog_evidence` themselves before a bundle is allowed to save,
+  and `capture_bundle` calls it unconditionally.
+- **Provenance was taken from CLI arguments, not determined by the tool.**
+  Every bundle the first version produced recorded a `code_revision` from
+  before its own commit (a caller cannot know, in advance, the hash of the
+  commit that will contain the evidence) and `working_tree_dirty=False`
+  despite the tool's own new files being uncommitted at capture time.
+  `_current_git_state` now asks git directly; `code_revision`/
+  `working_tree_dirty` are no longer CLI flags at all.
+- **`decimals()` was read against `"latest"`, with the block number recorded
+  from a separate, later call** -- not provably the same block.
+  `fetch_onchain_decimals` now reads the block number and hash first, then
+  pins `eth_call` to that exact block.
+- **A partially failed run could leave a mixed-vintage evidence
+  directory** (some files fresh, some stale from a prior run). `_run` now
+  captures into a temporary staging directory and only replaces
+  `EVIDENCE_DIR` -- one atomic directory swap -- when every candidate
+  succeeds; any failure discards the whole staged run. A `manifest.json`
+  (run id, candidate list, an overall bundle fingerprint) is published
+  alongside the bundles.
+- **`load_all_evidence_bundles` returned `()` for a missing or empty
+  directory**, which reads identically to "nothing captured yet" for a
+  future registry consumer. It now raises `EvidenceIntegrityError` in both
+  cases unless the caller passes `allow_empty=True` (used by tests that
+  intentionally exercise an empty directory).
 """
 
 from __future__ import annotations
@@ -70,13 +105,17 @@ import asyncio
 import hashlib
 import json
 import os
+import shutil
+import subprocess
 import sys
+import tempfile
+import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
-from .reporting import json_ready, normalize_code_revision
+from .reporting import json_ready
 
 EVIDENCE_VERSION = "source_lead_identity_evidence_v2"
 
@@ -115,6 +154,37 @@ def _coingecko_headers() -> dict[str, str]:
     return {"x-cg-demo-api-key": api_key} if api_key else {}
 
 
+def _current_git_state() -> tuple[str, bool]:
+    """Determine (HEAD commit, working-tree-is-dirty) by asking git directly
+    -- never trust an externally supplied value for this. A colleague review
+    (2026-08-28) found every evidence file this tool first produced recorded
+    a code_revision from BEFORE the tool's own commit (the caller cannot
+    know, in advance, the hash of the very commit that will contain the
+    evidence) and working_tree_dirty=False even though the tool's own new
+    files were uncommitted at capture time. Raises if git itself is
+    unavailable or this is not a git checkout -- fail closed rather than
+    recording an unknown/fabricated provenance."""
+    git_executable = shutil.which("git")
+    if git_executable is None:
+        raise RuntimeError("git executable not found on PATH")
+    repo_dir = Path(__file__).resolve().parent
+    head = subprocess.run(  # noqa: S603 -- fixed argv, resolved executable, no shell, no user input
+        [git_executable, "rev-parse", "HEAD"],
+        cwd=repo_dir,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    status = subprocess.run(  # noqa: S603 -- fixed argv, resolved executable, no shell, no user input
+        [git_executable, "status", "--porcelain"],
+        cwd=repo_dir,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    return head, bool(status.strip())
+
+
 @dataclass(frozen=True)
 class RawFetch:
     """One captured response. `raw_sha256` is over the exact bytes received
@@ -139,6 +209,7 @@ class ChainContractEvidence:
     decimals: int
     decimals_evidence: RawFetch
     block_number: int
+    block_hash: str
 
 
 @dataclass(frozen=True)
@@ -315,8 +386,21 @@ async def fetch_coingecko_coin(client: Any, coingecko_id: str) -> RawFetch:
 async def fetch_onchain_decimals(
     client: Any, chain: str, contract_address: str
 ) -> ChainContractEvidence:
-    """decimals() plus the block number it was read at, via a public keyless
-    RPC. Fails closed: any RPC error, or a response with no numeric result,
+    """decimals() at a specific, recorded block, via a public keyless RPC.
+
+    Pins the block BEFORE calling eth_call (block number and hash first, then
+    eth_call against that exact block, never "latest") -- an earlier version
+    of this function called eth_call against "latest" and only recorded the
+    block number afterward with a separate eth_blockNumber call, so the
+    recorded block_number was not provably the block eth_call actually ran
+    against (colleague review, 2026-08-28: a verifier re-running eth_call
+    pinned to the recorded block_number could get a different result than
+    what this tool captured, if a new block landed between the two calls).
+    decimals() is for all practical purposes immutable per ERC-20 contract,
+    so this was not a live correctness bug, but it made reproducibility a
+    claim this function could not actually back up.
+
+    Fails closed: any RPC error, or a response with no numeric result,
     raises rather than defaulting decimals to 18 -- colleague review,
     2026-08-28: NIL's real decimals is 6; a silent default would corrupt any
     future raw-amount conversion by a factor of 10**12."""
@@ -324,14 +408,50 @@ async def fetch_onchain_decimals(
         raise ValueError(f"no RPC endpoint registered for chain {chain!r}")
     chain_id, rpc_endpoint = CHAIN_RPC[chain]
 
+    block_number_call = await _rpc_post(
+        client, rpc_endpoint, {"jsonrpc": "2.0", "method": "eth_blockNumber", "params": [], "id": 1}
+    )
+    block_hex = (
+        block_number_call.payload.get("result")
+        if isinstance(block_number_call.payload, dict)
+        else None
+    )
+    if not isinstance(block_hex, str) or not block_hex.startswith("0x"):
+        raise ValueError(
+            f"eth_blockNumber on {chain} returned no usable result: {block_number_call.payload!r}"
+        )
+    block_number = int(block_hex, 16)
+
+    block_detail_call = await _rpc_post(
+        client,
+        rpc_endpoint,
+        {
+            "jsonrpc": "2.0",
+            "method": "eth_getBlockByNumber",
+            "params": [block_hex, False],
+            "id": 2,
+        },
+    )
+    block_detail = (
+        block_detail_call.payload.get("result")
+        if isinstance(block_detail_call.payload, dict)
+        else None
+    )
+    block_hash = block_detail.get("hash") if isinstance(block_detail, dict) else None
+    if not isinstance(block_hash, str):
+        raise ValueError(
+            f"eth_getBlockByNumber({block_hex}) on {chain} returned no usable hash: "
+            f"{block_detail_call.payload!r}"
+        )
+
     decimals_call = await _rpc_post(
         client,
         rpc_endpoint,
         {
             "jsonrpc": "2.0",
             "method": "eth_call",
-            "params": [{"to": contract_address, "data": _DECIMALS_SELECTOR}, "latest"],
-            "id": 1,
+            "params": [{"to": contract_address, "data": _DECIMALS_SELECTOR}, block_hex],
+            "id": 3,
         },
     )
     result = (
@@ -339,22 +459,10 @@ async def fetch_onchain_decimals(
     )
     if not isinstance(result, str) or result in ("0x", ""):
         raise ValueError(
-            f"decimals() call for {contract_address} on {chain} returned no usable result: "
-            f"{decimals_call.payload!r}"
+            f"decimals() call for {contract_address} on {chain} at block {block_hex} "
+            f"returned no usable result: {decimals_call.payload!r}"
         )
     decimals = int(result, 16)
-
-    block_call = await _rpc_post(
-        client, rpc_endpoint, {"jsonrpc": "2.0", "method": "eth_blockNumber", "params": [], "id": 2}
-    )
-    block_result = (
-        block_call.payload.get("result") if isinstance(block_call.payload, dict) else None
-    )
-    if not isinstance(block_result, str):
-        raise ValueError(
-            f"eth_blockNumber on {chain} returned no usable result: {block_call.payload!r}"
-        )
-    block_number = int(block_result, 16)
 
     return ChainContractEvidence(
         chain=chain,
@@ -363,7 +471,146 @@ async def fetch_onchain_decimals(
         decimals=decimals,
         decimals_evidence=decimals_call,
         block_number=block_number,
+        block_hash=block_hash,
     )
+
+
+# Gate network code -> canonical chain id, and CoinGecko `platforms` key ->
+# canonical chain id -- both reused verbatim from
+# gate_identity_candidate_tooling.py rather than redefined, so a chain this
+# tool can validate against is exactly a chain that module's own fail-closed
+# classifier already recognizes.
+def _chain_maps() -> tuple[dict[str, str], dict[str, str]]:
+    from .gate_identity_candidate_tooling import COINGECKO_PLATFORM_TO_CHAIN, NETWORK_TO_CHAIN
+
+    return NETWORK_TO_CHAIN, COINGECKO_PLATFORM_TO_CHAIN
+
+
+def _gate_reports_contract(gate_evidence: RawFetch, chain: str, contract_address: str) -> bool:
+    """True only if gate_evidence's own payload -- not the caller-supplied
+    source_contract_address parameter -- actually names this exact
+    (chain, address) pair under one of its reported networks. Guards against
+    a candidate table entry whose address was never actually confirmed by
+    Gate itself (colleague review, 2026-08-28: EDEN's table entry named an
+    address/chain pair that did not match what capture_bundle went on to
+    treat as the source of truth)."""
+    network_to_chain, _ = _chain_maps()
+    networks = (
+        gate_evidence.payload.get("networks") if isinstance(gate_evidence.payload, dict) else None
+    )
+    if not isinstance(networks, dict):
+        return False
+    for network_code, network_data in networks.items():
+        if network_to_chain.get(str(network_code).upper()) != chain:
+            continue
+        info = network_data.get("info") if isinstance(network_data, dict) else None
+        addr = (
+            (info or {}).get("addr")
+            or (info or {}).get("contractAddress")
+            or (info or {}).get("contract")
+        )
+        if isinstance(addr, str) and addr.lower() == contract_address.lower():
+            return True
+    return False
+
+
+def _coingecko_reports_contract(
+    coingecko_evidence: RawFetch, chain: str, contract_address: str
+) -> bool:
+    _, platform_to_chain = _chain_maps()
+    platforms = (
+        coingecko_evidence.payload.get("platforms")
+        if isinstance(coingecko_evidence.payload, dict)
+        else None
+    )
+    if not isinstance(platforms, dict):
+        return False
+    for platform_key, address in platforms.items():
+        if platform_to_chain.get(platform_key) != chain:
+            continue
+        if isinstance(address, str) and address.lower() == contract_address.lower():
+            return True
+    return False
+
+
+def _validate_identity_class(
+    *,
+    identity_class: IdentityClass,
+    base: str,
+    gate_evidence: RawFetch,
+    coingecko_evidence: RawFetch,
+    target_catalog_evidence: RawFetch | None,
+    source_contract: ChainContractEvidence,
+    target_contract: ChainContractEvidence | None,
+) -> None:
+    """Reject a bundle whose evidence does not actually support the
+    identity_class it claims -- computed from the same evidence just
+    fetched, never trusted from the caller's classification alone. Colleague
+    review, 2026-08-28: EDEN was recorded as exact_contract with a source on
+    ethereum and a target on bsc (different chains, different addresses) --
+    the classification and the underlying evidence had silently diverged,
+    and nothing before this caught it. Raises on any mismatch; a bundle that
+    fails this is not saved."""
+    if not _gate_reports_contract(
+        gate_evidence, source_contract.chain, source_contract.contract_address
+    ):
+        raise ValueError(
+            f"{base}: gate's own currency evidence does not report "
+            f"{source_contract.contract_address} on {source_contract.chain}"
+        )
+
+    if identity_class == "third_party_bridge_only":
+        if target_contract is not None or target_catalog_evidence is not None:
+            raise ValueError(
+                f"{base}: third_party_bridge_only must not carry target chain evidence"
+            )
+        return
+
+    if target_contract is None or target_catalog_evidence is None:
+        raise ValueError(f"{base}: {identity_class} requires target chain evidence")
+
+    catalog_address = target_catalog_evidence.payload.get("contractAddress")
+    if (
+        not isinstance(catalog_address, str)
+        or catalog_address.lower() != target_contract.contract_address
+    ):
+        raise ValueError(
+            f"{base}: target_catalog_evidence contract {catalog_address!r} does not match "
+            f"target_contract {target_contract.contract_address!r}"
+        )
+    catalog_decimals = target_catalog_evidence.payload.get("decimals")
+    if catalog_decimals is not None and catalog_decimals != target_contract.decimals:
+        raise ValueError(
+            f"{base}: catalog claims decimals={catalog_decimals!r}, "
+            f"on-chain decimals()={target_contract.decimals!r}"
+        )
+
+    same_chain = source_contract.chain == target_contract.chain
+    same_address = source_contract.contract_address == target_contract.contract_address
+
+    if identity_class == "exact_contract":
+        if not (same_chain and same_address):
+            raise ValueError(
+                f"{base}: exact_contract requires identical chain and address; got "
+                f"source={source_contract.chain}:{source_contract.contract_address}, "
+                f"target={target_contract.chain}:{target_contract.contract_address}"
+            )
+    elif identity_class == "same_asset_multichain_candidate":
+        if same_chain and same_address:
+            raise ValueError(
+                f"{base}: same_asset_multichain_candidate but source and target are "
+                "identical -- this is exact_contract, reclassify"
+            )
+        if not _coingecko_reports_contract(
+            coingecko_evidence, source_contract.chain, source_contract.contract_address
+        ):
+            raise ValueError(f"{base}: coingecko does not corroborate the source-side contract")
+        if not _coingecko_reports_contract(
+            coingecko_evidence, target_contract.chain, target_contract.contract_address
+        ):
+            raise ValueError(f"{base}: coingecko does not corroborate the target-side contract")
+    else:  # pragma: no cover - IdentityClass is a closed Literal
+        raise ValueError(f"{base}: unknown identity_class {identity_class!r}")
 
 
 async def capture_bundle(
@@ -385,7 +632,11 @@ async def capture_bundle(
 ) -> EvidenceBundle:
     """Capture one candidate's full evidence bundle. `alpha_catalog` is
     fetched once per run by the caller and passed in, not refetched per
-    candidate -- see fetch_binance_alpha_catalog's docstring."""
+    candidate -- see fetch_binance_alpha_catalog's docstring. Validates the
+    claimed identity_class against the evidence it just fetched
+    (_validate_identity_class) before returning -- a bundle whose evidence
+    does not actually support its classification raises rather than being
+    saved."""
     if (target_chain is None) != (target_contract_address is None):
         raise ValueError("target_chain and target_contract_address must both be set, or both None")
     if identity_class == "third_party_bridge_only" and target_chain is not None:
@@ -417,6 +668,16 @@ async def capture_bundle(
             wire_exact=False,  # extracted from the shared catalog response, see find_alpha_entry
             payload=identity_fields,
         )
+
+    _validate_identity_class(
+        identity_class=identity_class,
+        base=base,
+        gate_evidence=gate_evidence,
+        coingecko_evidence=coingecko_evidence,
+        target_catalog_evidence=target_catalog_evidence,
+        source_contract=source_contract,
+        target_contract=target_contract,
+    )
 
     bundle = EvidenceBundle(
         evidence_version=EVIDENCE_VERSION,
@@ -466,6 +727,7 @@ def _chain_evidence_from_dict(payload: dict[str, Any]) -> ChainContractEvidence:
         decimals=payload["decimals"],
         decimals_evidence=_rawfetch_from_dict(payload["decimals_evidence"]),
         block_number=payload["block_number"],
+        block_hash=payload["block_hash"],
     )
 
 
@@ -508,9 +770,15 @@ def render_bundle_json(bundle: EvidenceBundle) -> str:
     )
 
 
+MANIFEST_FILENAME = "manifest.json"
+
+
+def _bundle_filename(base: str, source_exchange: str, target_exchange: str) -> str:
+    return f"{base.lower()}-{source_exchange.lower()}-{target_exchange.lower()}.json"
+
+
 def evidence_bundle_path(base: str, source_exchange: str, target_exchange: str) -> Path:
-    filename = f"{base.lower()}-{source_exchange.lower()}-{target_exchange.lower()}.json"
-    return EVIDENCE_DIR / filename
+    return EVIDENCE_DIR / _bundle_filename(base, source_exchange, target_exchange)
 
 
 def save_evidence_bundle(bundle: EvidenceBundle, path: Path | None = None) -> Path:
@@ -550,15 +818,30 @@ def load_evidence_bundle(path: Path) -> EvidenceBundle:
     return bundle
 
 
-def load_all_evidence_bundles(directory: Path | None = None) -> tuple[EvidenceBundle, ...]:
+def load_all_evidence_bundles(
+    directory: Path | None = None, *, allow_empty: bool = False
+) -> tuple[EvidenceBundle, ...]:
     """Load and integrity-check every evidence bundle in directory (default
-    EVIDENCE_DIR), sorted by filename for a deterministic order. Raises on
-    the first bundle that fails its integrity check -- fail closed, never
-    silently skip a corrupted file."""
+    EVIDENCE_DIR), sorted by filename for a deterministic order (excludes
+    MANIFEST_FILENAME, which is not a bundle). Raises on the first bundle
+    that fails its integrity check -- fail closed, never silently skip a
+    corrupted file.
+
+    Also fails closed (raises EvidenceIntegrityError) when the directory is
+    missing or contains zero bundle files, unless allow_empty=True --
+    colleague review, 2026-08-28: silently returning () for a missing
+    directory reads identically to "genuinely nothing captured yet" to a
+    future registry-activation consumer, hiding an accidentally deleted or
+    renamed evidence directory. Tests that intentionally exercise an empty
+    directory must pass allow_empty=True explicitly."""
     target_dir = directory or EVIDENCE_DIR
     if not target_dir.is_dir():
-        return ()
-    paths = sorted(target_dir.glob("*.json"))
+        if allow_empty:
+            return ()
+        raise EvidenceIntegrityError(f"evidence directory not found: {target_dir}")
+    paths = sorted(path for path in target_dir.glob("*.json") if path.name != MANIFEST_FILENAME)
+    if not paths and not allow_empty:
+        raise EvidenceIntegrityError(f"no evidence bundles found in {target_dir}")
     return tuple(load_evidence_bundle(path) for path in paths)
 
 
@@ -681,10 +964,18 @@ CANDIDATES: tuple[tuple[str, str, str, str, str | None, str | None, str, Identit
         "exact_contract",
     ),
     (
+        # Gate reports EDEN on BOTH ethereum and bsc; the bsc contract is the
+        # one that matches Binance Alpha exactly (confirmed 2026-08-28), so
+        # that is the correct source_contract for exact_contract -- an
+        # earlier version of this table used Gate's ethereum contract here
+        # instead, which a colleague review caught: the classification said
+        # exact_contract while the recorded source/target chains and
+        # addresses actually differed (see _validate_identity_class, added
+        # in response, which would now reject that combination outright).
         "EDEN",
         "binance",
-        "ethereum",
-        "0x24a3d725c37a8d1a66eb87f0e5d07fe67c120035",
+        "bsc",
+        "0x235b6fe22b4642ada16d311855c49ce7de260841",
         "bsc",
         "0x235b6fe22b4642ada16d311855c49ce7de260841",
         "openeden",
@@ -803,15 +1094,25 @@ CANDIDATES: tuple[tuple[str, str, str, str, str | None, str | None, str, Identit
 )
 
 
-async def _run(args: argparse.Namespace) -> None:
+async def _run(_args: argparse.Namespace) -> None:
+    """Capture every candidate into a staging directory first, and only
+    publish to EVIDENCE_DIR (a single atomic directory swap) if every single
+    candidate succeeds. A colleague review (2026-08-28) found the previous
+    version wrote each bundle straight into EVIDENCE_DIR as it completed --
+    a run that captured 22 fresh candidates and failed on the 23rd would
+    leave that last file at its stale value from a previous run, silently
+    mixing two runs' worth of evidence in one directory with no way to tell
+    which files were actually refreshed together. code_revision and
+    working_tree_dirty are never taken from args -- see _current_git_state."""
     import httpx
 
     from .exchange_registry import EXCHANGE_FACTORIES
 
-    code_revision = normalize_code_revision(args.code_revision) if args.code_revision else "unknown"
+    code_revision, working_tree_dirty = _current_git_state()
     gate = EXCHANGE_FACTORIES["gate"]()
-    saved: list[Path] = []
+    bundles: list[EvidenceBundle] = []
     failed: list[tuple[str, str]] = []
+    staging_dir = Path(tempfile.mkdtemp(prefix="source_lead_identity_evidence_"))
     try:
         async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
             alpha_catalog = await fetch_binance_alpha_catalog(client)
@@ -842,9 +1143,16 @@ async def _run(args: argparse.Namespace) -> None:
                         target_contract_address=target_contract,
                         alpha_catalog=alpha_catalog,
                         code_revision=code_revision,
-                        working_tree_dirty=args.working_tree_dirty,
+                        working_tree_dirty=working_tree_dirty,
                     )
-                    saved.append(save_evidence_bundle(bundle))
+                    save_evidence_bundle(
+                        bundle,
+                        staging_dir
+                        / _bundle_filename(
+                            bundle.base, bundle.source_exchange, bundle.target_exchange
+                        ),
+                    )
+                    bundles.append(bundle)
                     sys.stderr.write(f"captured {base} -> {target_exchange} ({identity_class})\n")
                 except Exception as exc:  # a single candidate's failure must not abort the run
                     failed.append((base, f"{type(exc).__name__}: {exc}"))
@@ -852,20 +1160,39 @@ async def _run(args: argparse.Namespace) -> None:
     finally:
         await gate.close()
 
-    sys.stderr.write(f"\n{len(saved)} bundles captured, {len(failed)} failed.\n")
     if failed:
+        shutil.rmtree(staging_dir, ignore_errors=True)
+        sys.stderr.write(
+            f"\n{len(bundles)} captured, {len(failed)} failed -- "
+            "nothing published (all-or-nothing run).\n"
+        )
         for base, error in failed:
             sys.stderr.write(f"  {base}: {error}\n")
         sys.exit(1)
 
+    manifest = {
+        "run_id": str(uuid.uuid4()),
+        "evidence_version": EVIDENCE_VERSION,
+        "captured_at": datetime.now(UTC).isoformat(),
+        "code_revision": code_revision,
+        "working_tree_dirty": working_tree_dirty,
+        "candidate_count": len(bundles),
+        "candidates": sorted(bundle.base for bundle in bundles),
+        "bundle_fingerprint": _sha256_canonical(sorted(bundle.bundle_sha256 for bundle in bundles)),
+    }
+    (staging_dir / MANIFEST_FILENAME).write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+
+    if EVIDENCE_DIR.exists():
+        shutil.rmtree(EVIDENCE_DIR)
+    EVIDENCE_DIR.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(staging_dir), str(EVIDENCE_DIR))
+    sys.stderr.write(f"\npublished {len(bundles)} bundles atomically to {EVIDENCE_DIR}\n")
+
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--code-revision", default=os.getenv("SCHURFER_GIT_SHA"))
-    parser.add_argument(
-        "--working-tree-dirty", action=argparse.BooleanOptionalAction, required=True
-    )
-    return parser
+    return argparse.ArgumentParser(description=__doc__)
 
 
 def main() -> None:

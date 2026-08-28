@@ -1,11 +1,11 @@
 {
   "base": "CTSI",
-  "bundle_sha256": "71dfbdd14c40da6e10db1d0ec38a957ec763e825e6c3bf1e829c0c77dc805afc",
-  "captured_at": "2026-08-28T12:34:00.988534+00:00",
-  "code_revision": "95775873defc52777796434474b5be9556d47f5a",
+  "bundle_sha256": "618baf696408ddfdd15d5f0d33027dd594e4c5c8b7463b2f64ad93cca9207bfa",
+  "captured_at": "2026-08-28T13:02:05.560819+00:00",
+  "code_revision": "f51fa67e14a07f5754d1934f308a1b9fbe6b0e05",
   "coingecko_evidence": {
     "endpoint": "https://api.coingecko.com/api/v3/coins/cartesi?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
-    "observed_at": "2026-08-28T12:34:00.885243+00:00",
+    "observed_at": "2026-08-28T13:02:05.407644+00:00",
     "payload": {
       "additional_notices": [],
       "asset_platform_id": "ethereum",
@@ -80,7 +80,7 @@
         "small": "https://coin-images.coingecko.com/coins/images/11038/small/Cartesi_Logo.png?1696510982",
         "thumb": "https://coin-images.coingecko.com/coins/images/11038/thumb/Cartesi_Logo.png?1696510982"
       },
-      "last_updated": "2026-08-28T12:31:50.000Z",
+      "last_updated": "2026-08-28T12:59:50.000Z",
       "links": {
         "announcement_url": ["https://medium.com/cartesi"],
         "bitcointalk_thread_identifier": 5211981,
@@ -139,17 +139,17 @@
       "sentiment_votes_up_percentage": null,
       "status_updates": [],
       "symbol": "ctsi",
-      "watchlist_portfolio_users": 45868,
+      "watchlist_portfolio_users": 45867,
       "web_slug": "cartesi"
     },
-    "raw_sha256": "90d1cf76b516012443d47704242500e23a3a3a7fdd923367ce699b48a32795ea",
+    "raw_sha256": "fe9d062eb9b160433713e3d5941356fa940517d324b99d4666c48feb0ff06ef9",
     "source": "https://api.coingecko.com/api/v3/coins/cartesi",
     "wire_exact": true
   },
   "evidence_version": "source_lead_identity_evidence_v2",
   "gate_evidence": {
     "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
-    "observed_at": "2026-08-28T12:34:00.703144+00:00",
+    "observed_at": "2026-08-28T13:02:05.229924+00:00",
     "payload": {
       "active": true,
       "code": "CTSI",
@@ -173,7 +173,7 @@
         "delisted": false,
         "deposit_disabled": false,
         "fixed_rate": "",
-        "market_cap": "24499041.606632955",
+        "market_cap": "24499568.188632958",
         "name": "Cartesi",
         "total_supply": "1000000000",
         "trade_disabled": false,
@@ -224,26 +224,27 @@
       "type": "crypto",
       "withdraw": true
     },
-    "raw_sha256": "1d95be600fa6e6fb62533b550e8c8f8b3c3f2b6f151ba85a02d36d783b2e9bac",
+    "raw_sha256": "04fac1d9bc7c75e1641c3631b8e0b1a687a9159adecfb7f8b3f64d517bf060d9",
     "source": "gate:fetch_currencies",
     "wire_exact": false
   },
   "identity_class": "third_party_bridge_only",
   "source_contract": {
-    "block_number": 25853768,
+    "block_hash": "0xe9511d2b071159aad4fb0c2557db9df3fbb2241fcdeab46f2801cecf5599d5ba",
+    "block_number": 25853906,
     "chain": "ethereum",
     "chain_id": 1,
     "contract_address": "0x491604c0fdf08347dd1fa4ee062a822a5dd06b5d",
     "decimals": 18,
     "decimals_evidence": {
       "endpoint": "https://ethereum-rpc.publicnode.com",
-      "observed_at": "2026-08-28T12:34:00.937372+00:00",
+      "observed_at": "2026-08-28T13:02:05.560676+00:00",
       "payload": {
-        "id": 1,
+        "id": 3,
         "jsonrpc": "2.0",
         "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
       },
-      "raw_sha256": "eb1491e7ee73b8c00c20f6c14cc08ba880f85b8ac95a685f3f6acf426f743d8b",
+      "raw_sha256": "a0cfb5a1c696cf1b33c6808f77538ba8fbf89fc8515499513d43ce204d7a457a",
       "source": "rpc:eth_call",
       "wire_exact": true
     }
@@ -252,5 +253,5 @@
   "target_catalog_evidence": null,
   "target_contract": null,
   "target_exchange": "binance",
-  "working_tree_dirty": false
+  "working_tree_dirty": true
 }

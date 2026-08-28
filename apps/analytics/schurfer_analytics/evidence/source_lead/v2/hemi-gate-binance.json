@@ -1,11 +1,11 @@
 {
   "base": "HEMI",
-  "bundle_sha256": "bc531056812c5521e72aaa23261867331b16304c1bb61432d94880dfc36c018f",
-  "captured_at": "2026-08-28T12:33:15.981616+00:00",
-  "code_revision": "95775873defc52777796434474b5be9556d47f5a",
+  "bundle_sha256": "99ab0e7ebd2189a53448e2bb7513770497f8420b905c98bb8ce2fca4b37f95dd",
+  "captured_at": "2026-08-28T13:01:32.655644+00:00",
+  "code_revision": "f51fa67e14a07f5754d1934f308a1b9fbe6b0e05",
   "coingecko_evidence": {
     "endpoint": "https://api.coingecko.com/api/v3/coins/hemi?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
-    "observed_at": "2026-08-28T12:33:15.773668+00:00",
+    "observed_at": "2026-08-28T13:01:32.326336+00:00",
     "payload": {
       "additional_notices": [],
       "asset_platform_id": "ethereum",
@@ -50,7 +50,7 @@
         "small": "https://coin-images.coingecko.com/coins/images/68469/small/hemi.png?1755838145",
         "thumb": "https://coin-images.coingecko.com/coins/images/68469/thumb/hemi.png?1755838145"
       },
-      "last_updated": "2026-08-28T12:30:50.000Z",
+      "last_updated": "2026-08-28T12:59:50.000Z",
       "links": {
         "announcement_url": [],
         "bitcointalk_thread_identifier": null,
@@ -87,8 +87,8 @@
       "listing_source": null,
       "listing_source_url": null,
       "listing_timestamp": null,
-      "market_cap_rank": 1112,
-      "market_cap_rank_with_rehypothecated": 1365,
+      "market_cap_rank": 1104,
+      "market_cap_rank_with_rehypothecated": 1356,
       "name": "Hemi",
       "platforms": {
         "binance-smart-chain": "0x5ffd0eadc186af9512542d0d5e5eafc65d5afc5b",
@@ -104,14 +104,14 @@
       "watchlist_portfolio_users": 4689,
       "web_slug": "hemi"
     },
-    "raw_sha256": "1b22d6a1c028c9b481bf00bef03df8968b21fd433946c5bd969c54812ebe77d7",
+    "raw_sha256": "743c1e36389d44284897566c5c757d9c1a550f8235271a63c4ba0e5d3362f896",
     "source": "https://api.coingecko.com/api/v3/coins/hemi",
     "wire_exact": true
   },
   "evidence_version": "source_lead_identity_evidence_v2",
   "gate_evidence": {
     "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
-    "observed_at": "2026-08-28T12:33:15.571182+00:00",
+    "observed_at": "2026-08-28T13:01:32.067101+00:00",
     "payload": {
       "active": true,
       "code": "HEMI",
@@ -192,20 +192,21 @@
   },
   "identity_class": "exact_contract",
   "source_contract": {
-    "block_number": 118576248,
+    "block_hash": "0x12878ac087088d1b595cc8e088973d511bcd9543eb1d530b9f18d0796099db31",
+    "block_number": 118580016,
     "chain": "bsc",
     "chain_id": 56,
     "contract_address": "0x5ffd0eadc186af9512542d0d5e5eafc65d5afc5b",
     "decimals": 18,
     "decimals_evidence": {
       "endpoint": "https://bsc-dataseed.binance.org/",
-      "observed_at": "2026-08-28T12:33:15.832534+00:00",
+      "observed_at": "2026-08-28T13:01:32.498989+00:00",
       "payload": {
-        "id": 1,
+        "id": 3,
         "jsonrpc": "2.0",
         "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
       },
-      "raw_sha256": "942eb00e02101dd8673395e77f951530862ae177255e90bbbb71a3c42dd6fba6",
+      "raw_sha256": "8e73d72cca28014c8646f2033e87ec712fc9eb6dbc2664092e1cf446ce4e6937",
       "source": "rpc:eth_call",
       "wire_exact": true
     }
@@ -213,7 +214,7 @@
   "source_exchange": "gate",
   "target_catalog_evidence": {
     "endpoint": "https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list",
-    "observed_at": "2026-08-28T12:31:45.813313+00:00",
+    "observed_at": "2026-08-28T13:00:10.911381+00:00",
     "payload": {
       "chainId": "56",
       "chainName": "BSC",
@@ -230,24 +231,25 @@
     "wire_exact": false
   },
   "target_contract": {
-    "block_number": 118576248,
+    "block_hash": "0x12878ac087088d1b595cc8e088973d511bcd9543eb1d530b9f18d0796099db31",
+    "block_number": 118580016,
     "chain": "bsc",
     "chain_id": 56,
     "contract_address": "0x5ffd0eadc186af9512542d0d5e5eafc65d5afc5b",
     "decimals": 18,
     "decimals_evidence": {
       "endpoint": "https://bsc-dataseed.binance.org/",
-      "observed_at": "2026-08-28T12:33:15.931104+00:00",
+      "observed_at": "2026-08-28T13:01:32.655402+00:00",
       "payload": {
-        "id": 1,
+        "id": 3,
         "jsonrpc": "2.0",
         "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
       },
-      "raw_sha256": "942eb00e02101dd8673395e77f951530862ae177255e90bbbb71a3c42dd6fba6",
+      "raw_sha256": "8e73d72cca28014c8646f2033e87ec712fc9eb6dbc2664092e1cf446ce4e6937",
       "source": "rpc:eth_call",
       "wire_exact": true
     }
   },
   "target_exchange": "binance",
-  "working_tree_dirty": false
+  "working_tree_dirty": true
 }

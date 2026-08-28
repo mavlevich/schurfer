@@ -1,11 +1,11 @@
 {
   "base": "BICO",
-  "bundle_sha256": "a13dd30a5d838a69d815e94c6517252f8cb65ab412bcefad9d7c43e3f58fcfcf",
-  "captured_at": "2026-08-28T12:33:55.915507+00:00",
-  "code_revision": "95775873defc52777796434474b5be9556d47f5a",
+  "bundle_sha256": "5bd47d2e6d19003635107174d66cb28128a497b6b41d3457e8ec3a254c51d257",
+  "captured_at": "2026-08-28T13:02:01.204075+00:00",
+  "code_revision": "f51fa67e14a07f5754d1934f308a1b9fbe6b0e05",
   "coingecko_evidence": {
     "endpoint": "https://api.coingecko.com/api/v3/coins/biconomy?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
-    "observed_at": "2026-08-28T12:33:55.776299+00:00",
+    "observed_at": "2026-08-28T13:02:01.010900+00:00",
     "payload": {
       "additional_notices": [],
       "asset_platform_id": "ethereum",
@@ -47,7 +47,7 @@
         "small": "https://coin-images.coingecko.com/coins/images/21061/small/biconomy_logo.jpg?1696520444",
         "thumb": "https://coin-images.coingecko.com/coins/images/21061/thumb/biconomy_logo.jpg?1696520444"
       },
-      "last_updated": "2026-08-28T12:31:50.000Z",
+      "last_updated": "2026-08-28T12:59:50.000Z",
       "links": {
         "announcement_url": ["https://medium.com/biconomy"],
         "bitcointalk_thread_identifier": null,
@@ -78,8 +78,8 @@
       "listing_source": null,
       "listing_source_url": null,
       "listing_timestamp": null,
-      "market_cap_rank": 742,
-      "market_cap_rank_with_rehypothecated": 943,
+      "market_cap_rank": 750,
+      "market_cap_rank_with_rehypothecated": 951,
       "name": "Biconomy",
       "platforms": {
         "arbitrum-one": "0xa68ec98d7ca870cf1dd0b00ebbb7c4bf60a8e74d",
@@ -94,14 +94,14 @@
       "watchlist_portfolio_users": 30860,
       "web_slug": "biconomy"
     },
-    "raw_sha256": "c55e2742d434f04ee7c34976a8763873c7f77774a9d6e770a7b897061c3d2688",
+    "raw_sha256": "210a19ef6b642dfcf7954117e8fd9347dcd1a64e5da56d1fbffaf2bfd4d562d4",
     "source": "https://api.coingecko.com/api/v3/coins/biconomy",
     "wire_exact": true
   },
   "evidence_version": "source_lead_identity_evidence_v2",
   "gate_evidence": {
     "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
-    "observed_at": "2026-08-28T12:33:55.489463+00:00",
+    "observed_at": "2026-08-28T13:02:00.779708+00:00",
     "payload": {
       "active": true,
       "code": "BICO",
@@ -182,20 +182,21 @@
   },
   "identity_class": "third_party_bridge_only",
   "source_contract": {
-    "block_number": 25853767,
+    "block_hash": "0xe9511d2b071159aad4fb0c2557db9df3fbb2241fcdeab46f2801cecf5599d5ba",
+    "block_number": 25853906,
     "chain": "ethereum",
     "chain_id": 1,
     "contract_address": "0xf17e65822b568b3903685a7c9f496cf7656cc6c2",
     "decimals": 18,
     "decimals_evidence": {
       "endpoint": "https://ethereum-rpc.publicnode.com",
-      "observed_at": "2026-08-28T12:33:55.867691+00:00",
+      "observed_at": "2026-08-28T13:02:01.203997+00:00",
       "payload": {
-        "id": 1,
+        "id": 3,
         "jsonrpc": "2.0",
         "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
       },
-      "raw_sha256": "5703d4b6224aca5e99ca0f83a1c6498a6c24a5c77a675c16d0d47af8ac3feee8",
+      "raw_sha256": "a0cfb5a1c696cf1b33c6808f77538ba8fbf89fc8515499513d43ce204d7a457a",
       "source": "rpc:eth_call",
       "wire_exact": true
     }
@@ -204,5 +205,5 @@
   "target_catalog_evidence": null,
   "target_contract": null,
   "target_exchange": "binance",
-  "working_tree_dirty": false
+  "working_tree_dirty": true
 }

@@ -1,11 +1,11 @@
 {
   "base": "BTR",
-  "bundle_sha256": "3c584ab476fdb66a9f6bbab43fe9269417df86d017824e5216780b6fc2402ec9",
-  "captured_at": "2026-08-28T12:32:21.676958+00:00",
-  "code_revision": "95775873defc52777796434474b5be9556d47f5a",
+  "bundle_sha256": "688213becedf5a0a21ce618e428ee97bce94ac8e871d345ea5bd2c9cfb394499",
+  "captured_at": "2026-08-28T13:00:37.537111+00:00",
+  "code_revision": "f51fa67e14a07f5754d1934f308a1b9fbe6b0e05",
   "coingecko_evidence": {
     "endpoint": "https://api.coingecko.com/api/v3/coins/bitlayer-bitvm?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
-    "observed_at": "2026-08-28T12:32:21.454847+00:00",
+    "observed_at": "2026-08-28T13:00:37.059373+00:00",
     "payload": {
       "additional_notices": [],
       "asset_platform_id": "bitlayer",
@@ -53,7 +53,7 @@
         "small": "https://coin-images.coingecko.com/coins/images/55177/small/App_Logo.png?1744368194",
         "thumb": "https://coin-images.coingecko.com/coins/images/55177/thumb/App_Logo.png?1744368194"
       },
-      "last_updated": "2026-08-28T12:29:50.000Z",
+      "last_updated": "2026-08-28T12:58:50.000Z",
       "links": {
         "announcement_url": [],
         "bitcointalk_thread_identifier": null,
@@ -92,8 +92,8 @@
       "listing_source": null,
       "listing_source_url": null,
       "listing_timestamp": null,
-      "market_cap_rank": 502,
-      "market_cap_rank_with_rehypothecated": 660,
+      "market_cap_rank": 501,
+      "market_cap_rank_with_rehypothecated": 659,
       "name": "Bitlayer",
       "platforms": {
         "binance-smart-chain": "0xfed13d0c40790220fbde712987079eda1ed75c51",
@@ -109,14 +109,14 @@
       "watchlist_portfolio_users": 2593,
       "web_slug": "bitlayer"
     },
-    "raw_sha256": "bbfd05162b1d250715f1622e7f30d0c0ae52e6a2110e3cf23e838c73b3df9df2",
+    "raw_sha256": "e4018e54f73c4fe761696968ed2a438c0561d8323b17bee0c65ba9523a6573cc",
     "source": "https://api.coingecko.com/api/v3/coins/bitlayer-bitvm",
     "wire_exact": true
   },
   "evidence_version": "source_lead_identity_evidence_v2",
   "gate_evidence": {
     "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
-    "observed_at": "2026-08-28T12:32:21.267706+00:00",
+    "observed_at": "2026-08-28T13:00:36.762328+00:00",
     "payload": {
       "active": true,
       "code": "BTR",
@@ -230,20 +230,21 @@
   },
   "identity_class": "exact_contract",
   "source_contract": {
-    "block_number": 118576127,
+    "block_hash": "0xa9113201063155fd3d89672c7be8468aff794af66ba45044cdd296742b5f91dc",
+    "block_number": 118579893,
     "chain": "bsc",
     "chain_id": 56,
     "contract_address": "0xfed13d0c40790220fbde712987079eda1ed75c51",
     "decimals": 18,
     "decimals_evidence": {
       "endpoint": "https://bsc-dataseed.binance.org/",
-      "observed_at": "2026-08-28T12:32:21.522738+00:00",
+      "observed_at": "2026-08-28T13:00:37.380907+00:00",
       "payload": {
-        "id": 1,
+        "id": 3,
         "jsonrpc": "2.0",
         "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
       },
-      "raw_sha256": "942eb00e02101dd8673395e77f951530862ae177255e90bbbb71a3c42dd6fba6",
+      "raw_sha256": "8e73d72cca28014c8646f2033e87ec712fc9eb6dbc2664092e1cf446ce4e6937",
       "source": "rpc:eth_call",
       "wire_exact": true
     }
@@ -251,7 +252,7 @@
   "source_exchange": "gate",
   "target_catalog_evidence": {
     "endpoint": "https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list",
-    "observed_at": "2026-08-28T12:31:45.813313+00:00",
+    "observed_at": "2026-08-28T13:00:10.911381+00:00",
     "payload": {
       "chainId": "56",
       "chainName": "BSC",
@@ -268,24 +269,25 @@
     "wire_exact": false
   },
   "target_contract": {
-    "block_number": 118576127,
+    "block_hash": "0x174eab2b40756f5b574eb495049cccedb4b4f32470e9cf2bfb85d88563c156bf",
+    "block_number": 118579894,
     "chain": "bsc",
     "chain_id": 56,
     "contract_address": "0xfed13d0c40790220fbde712987079eda1ed75c51",
     "decimals": 18,
     "decimals_evidence": {
       "endpoint": "https://bsc-dataseed.binance.org/",
-      "observed_at": "2026-08-28T12:32:21.625513+00:00",
+      "observed_at": "2026-08-28T13:00:37.536845+00:00",
       "payload": {
-        "id": 1,
+        "id": 3,
         "jsonrpc": "2.0",
         "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
       },
-      "raw_sha256": "942eb00e02101dd8673395e77f951530862ae177255e90bbbb71a3c42dd6fba6",
+      "raw_sha256": "8e73d72cca28014c8646f2033e87ec712fc9eb6dbc2664092e1cf446ce4e6937",
       "source": "rpc:eth_call",
       "wire_exact": true
     }
   },
   "target_exchange": "binance",
-  "working_tree_dirty": false
+  "working_tree_dirty": true
 }

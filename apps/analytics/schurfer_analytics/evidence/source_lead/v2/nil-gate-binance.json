@@ -1,11 +1,11 @@
 {
   "base": "NIL",
-  "bundle_sha256": "b847058600d4a0bbead1ee4e659a64df990f9abeac8bc202593e834e6bb24d80",
-  "captured_at": "2026-08-28T12:33:44.932857+00:00",
-  "code_revision": "95775873defc52777796434474b5be9556d47f5a",
+  "bundle_sha256": "396fabccc4f5232d1c09f71c8a4278b1404948d7b50a0694db73b157927cdc49",
+  "captured_at": "2026-08-28T13:01:52.936584+00:00",
+  "code_revision": "f51fa67e14a07f5754d1934f308a1b9fbe6b0e05",
   "coingecko_evidence": {
     "endpoint": "https://api.coingecko.com/api/v3/coins/nillion?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
-    "observed_at": "2026-08-28T12:33:44.799302+00:00",
+    "observed_at": "2026-08-28T13:01:52.796749+00:00",
     "payload": {
       "additional_notices": [],
       "asset_platform_id": null,
@@ -43,7 +43,7 @@
         "small": "https://coin-images.coingecko.com/coins/images/39082/small/nillion.jpg?1723033507",
         "thumb": "https://coin-images.coingecko.com/coins/images/39082/thumb/nillion.jpg?1723033507"
       },
-      "last_updated": "2026-08-28T12:31:50.000Z",
+      "last_updated": "2026-08-28T12:59:50.000Z",
       "links": {
         "announcement_url": [],
         "bitcointalk_thread_identifier": null,
@@ -74,8 +74,8 @@
       "listing_source": null,
       "listing_source_url": null,
       "listing_timestamp": null,
-      "market_cap_rank": 772,
-      "market_cap_rank_with_rehypothecated": 982,
+      "market_cap_rank": 773,
+      "market_cap_rank_with_rehypothecated": 983,
       "name": "Nillion",
       "platforms": {
         "": "",
@@ -90,14 +90,14 @@
       "watchlist_portfolio_users": 7534,
       "web_slug": "nillion"
     },
-    "raw_sha256": "ff6228acc5f72ba453e9e720ca257cbe0e3145eb538ea23f945aa5708905ebde",
+    "raw_sha256": "732047d0acb92064a05b539e9fd0f2cedbbf59c278621f66b7fe892a5ead915d",
     "source": "https://api.coingecko.com/api/v3/coins/nillion",
     "wire_exact": true
   },
   "evidence_version": "source_lead_identity_evidence_v2",
   "gate_evidence": {
     "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
-    "observed_at": "2026-08-28T12:33:44.461989+00:00",
+    "observed_at": "2026-08-28T13:01:52.508356+00:00",
     "payload": {
       "active": true,
       "code": "NIL",
@@ -178,20 +178,21 @@
   },
   "identity_class": "third_party_bridge_only",
   "source_contract": {
-    "block_number": 25853766,
+    "block_hash": "0xff3767127183f4b4fc37ece4bf2df55acf334263f1bb6acaec3987d206935cb5",
+    "block_number": 25853905,
     "chain": "ethereum",
     "chain_id": 1,
     "contract_address": "0x7cf9a80db3b29ee8efe3710aadb7b95270572d47",
     "decimals": 6,
     "decimals_evidence": {
       "endpoint": "https://ethereum-rpc.publicnode.com",
-      "observed_at": "2026-08-28T12:33:44.883093+00:00",
+      "observed_at": "2026-08-28T13:01:52.936518+00:00",
       "payload": {
-        "id": 1,
+        "id": 3,
         "jsonrpc": "2.0",
         "result": "0x0000000000000000000000000000000000000000000000000000000000000006"
       },
-      "raw_sha256": "f470abc1e2ed21fbb5f74ae7897a7b902ed5e7b134d7f0cd5a5731ebff2690da",
+      "raw_sha256": "5b163fe33f0da0f901ab06221e763c4a25696bd6c0ac8f1ca2c28eb17a534dc8",
       "source": "rpc:eth_call",
       "wire_exact": true
     }
@@ -200,5 +201,5 @@
   "target_catalog_evidence": null,
   "target_contract": null,
   "target_exchange": "binance",
-  "working_tree_dirty": false
+  "working_tree_dirty": true
 }
