@@ -90,7 +90,7 @@ async def _cleanup(engine: AsyncEngine) -> None:
         )
 
 
-async def test_fetch_candidate_extreme_minutes_uses_a_real_5_minute_range_not_5_rows() -> None:
+async def test_fetch_candidate_extreme_minutes_rejects_a_gap_in_the_strict_windows() -> None:
     # 24h of flat baseline volume, then a gap (bucket_start + 4..6 missing),
     # then a burst minute at +7. If the window were ROWS-based, the 5
     # "rows" preceding the burst minute would actually span several real
@@ -163,26 +163,10 @@ async def test_fetch_candidate_extreme_minutes_uses_a_real_5_minute_range_not_5_
             min_volume_24h_usd=1.0,
             extreme_threshold_pct=1.0,
         )
-        assert len(minutes) == 1
-        (burst,) = minutes
-        assert burst.bucket_start == _START + timedelta(minutes=7)
-
-        # 5m numerator: RANGE 5min preceding the burst row (_START+2 ..
-        # _START+7) sees only the bars that actually exist in that real
-        # 5-minute span -- _START+2, _START+3, and the burst bar itself
-        # (_START+4..6 are the seeded gap). A ROWS-based window would
-        # instead pull in whatever the 5 preceding physical ROWS are
-        # regardless of real elapsed time, reaching back to _START+0 and
-        # spanning 7 real minutes, not 5.
-        expected_buy_notional_5m = 100.0 + 100.0 + 50_000.0
-
-        # 24h denominator: RANGE 24h preceding the burst row starts at
-        # (_START+7 - 24h) = day_start + 7min, which excludes the first 7
-        # of the 1440 seeded baseline bars (i=0..6, each i=1min after
-        # day_start) -- 1433 baseline bars remain in-window.
-        expected_24h_volume = (1433 * 200.0) + (4 * 200.0) + 50_000.0
-        expected_buy_burst_pct = 100.0 * expected_buy_notional_5m / expected_24h_volume
-        assert burst.buy_burst_pct_5m == pytest.approx(expected_buy_burst_pct, rel=1e-9)
+        # A RANGE frame prevents old physical rows from being pulled across
+        # the wall-clock gap. The stricter v2 contract additionally rejects
+        # the row because neither the 5m nor 24h window is continuous.
+        assert minutes == ()
     finally:
         await _cleanup(engine)
         await engine.dispose()
