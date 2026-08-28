@@ -1301,19 +1301,24 @@ ARGS='--base <TICKER> --target-exchange binance'`.
    created and its full market catalog loaded even for a target with zero
    registered routes in the batch (bybit currently has none).
 
-   **Open, not yet resolved:** the live re-verification against ccxt's own
-   markets at capture time proves a registered `instrument_identity_key`
-   genuinely _exists_ on the exchange, not that it names the _right_
-   project's perpetual rather than a different, ticker-colliding one that
-   happens to share a symbol — the evidence bundles vouch for asset
-   identity (on-chain contract match across Gate/Binance Alpha/CoinGecko),
-   never for the derivative market itself (no native id/type/quote-settle/
-   onboard-time evidence exists for any exchange's futures listings today).
-   Closing this needs either independent futures-market evidence
-   (`exchangeInfo`-equivalent per exchange) or keeping registry v2
-   asset-identity-only and withholding `qualified` status until that
-   evidence exists — undecided, tracked as the reason this PR has not yet
-   merged.
+   **Resolved: registry v2 stays asset-identity-only for now.** The live
+   re-verification against ccxt's own markets at capture time proves a
+   registered `instrument_identity_key` genuinely _exists_ on the exchange,
+   not that it names the _right_ project's perpetual rather than a
+   different, ticker-colliding one that happens to share a symbol — the
+   evidence bundles vouch for asset identity (on-chain contract match
+   across Gate/Binance Alpha/CoinGecko), never for the derivative market
+   itself (no native id/type/quote-settle/onboard-time evidence exists for
+   any exchange's futures listings today). Rather than build independent
+   futures-market evidence now (`exchangeInfo`-equivalent per exchange —
+   real scope, tracked as future work, not started), `qualify_source_lead`
+   keeps computing identity/liquidity/venue-selection to completion but
+   (`ROUTE_EVIDENCE_INDEPENDENTLY_VERIFIED = False`) never returns
+   `status='qualified'` — the would-be selection is recorded in full under
+   `details['would_select']` on an excluded row instead of discarded. Ships
+   activation and starts collecting/measuring immediately; only the
+   `qualified` claim and the money-first net-EV tracking wait on real route
+   evidence.
 
 7. **[Completed] Fix duplicate-alert spam from premature episode closure on
    thin/flaky venues.** `app.pump_events`
