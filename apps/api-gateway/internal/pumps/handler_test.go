@@ -94,6 +94,118 @@ func TestTokenHandlerSupportsUnicodeBase(t *testing.T) {
 	}
 }
 
+// TestTokenHandlerFallsBackToDBWhenNotInLiveSnapshot regression-tests the
+// 2026-08-28 production report: TRUMP/TAC/AURASOL/ARIA/LONGXIA/龙虾/AIINU all
+// showed "Token not found" on TokenPage purely because none of them happened
+// to be in pumps:latest at request time, despite having real DB history.
+func TestTokenHandlerFallsBackToDBWhenNotInLiveSnapshot(t *testing.T) {
+	t.Parallel()
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+	// Live snapshot exists but does not contain TRUMP.
+	payload, err := json.Marshal(pumpsPayload{
+		Count: 1,
+		Pumps: []pumpEntry{{Base: "OTHERTOKEN", MaxChangePct: 10}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := rdb.Set(context.Background(), "pumps:latest", payload, 0).Err(); err != nil {
+		t.Fatal(err)
+	}
+
+	exchangesJSON, err := json.Marshal([]exchangeEntry{{Exchange: "bingx", Symbol: "TRUMPSOL-USDT"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool := &stubQuerier{
+		onQueryRow: func(_ context.Context, _ string, _ ...any) pgxRow {
+			return &stubRow{vals: []any{int64(9399), 88.01, exchangesJSON}}
+		},
+	}
+
+	h := &Handler{rdb: rdb, pool: pool}
+	router := chi.NewRouter()
+	router.Get("/api/pumps/{base}", h.Token)
+	req := httptest.NewRequest(http.MethodGet, "/api/pumps/TRUMP", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	var response pumpEntry
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Base != "TRUMP" || response.PumpEventID != 9399 {
+		t.Errorf("response = %+v, want base=TRUMP pump_event_id=9399", response)
+	}
+	if len(response.Exchanges) != 1 || response.Exchanges[0].Symbol != "TRUMPSOL-USDT" {
+		t.Errorf("exchanges = %+v, want the DB-sourced TRUMPSOL-USDT entry", response.Exchanges)
+	}
+}
+
+// TestTokenHandlerFallsBackToDBWhenRedisKeyMissing covers the previously
+// hard-404 branch: pumps:latest itself absent from Redis (redis.Nil) must
+// also fall through to the DB, not stop at "not found" immediately.
+func TestTokenHandlerFallsBackToDBWhenRedisKeyMissing(t *testing.T) {
+	t.Parallel()
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+	// No pumps:latest key set at all.
+
+	exchangesJSON, err := json.Marshal([]exchangeEntry{{Exchange: "gate"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool := &stubQuerier{
+		onQueryRow: func(_ context.Context, _ string, _ ...any) pgxRow {
+			return &stubRow{vals: []any{int64(1), 20.0, exchangesJSON}}
+		},
+	}
+
+	h := &Handler{rdb: rdb, pool: pool}
+	router := chi.NewRouter()
+	router.Get("/api/pumps/{base}", h.Token)
+	req := httptest.NewRequest(http.MethodGet, "/api/pumps/OLDCOIN", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestTokenHandlerReturnsNotFoundWhenNeitherLiveNorDBHasIt confirms the
+// fallback stays fail-closed: a base absent from both the live snapshot and
+// app.pump_events is still a genuine 404, not silently defaulted.
+func TestTokenHandlerReturnsNotFoundWhenNeitherLiveNorDBHasIt(t *testing.T) {
+	t.Parallel()
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+
+	pool := &stubQuerier{
+		onQueryRow: func(_ context.Context, _ string, _ ...any) pgxRow {
+			return &stubRow{err: pgx.ErrNoRows}
+		},
+	}
+
+	h := &Handler{rdb: rdb, pool: pool}
+	router := chi.NewRouter()
+	router.Get("/api/pumps/{base}", h.Token)
+	req := httptest.NewRequest(http.MethodGet, "/api/pumps/NEVERSEEN", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404; body: %s", w.Code, w.Body.String())
+	}
+}
+
 // ---- stub DB infrastructure ----
 
 // stubRow implements pgxRow with a fixed set of values.

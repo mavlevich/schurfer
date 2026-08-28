@@ -216,6 +216,15 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(data)
 }
 
+// Token returns pump metadata for one base: its most recent live snapshot
+// entry from pumps:latest when the token is currently active, falling back
+// to its most recent app.pump_events row otherwise. Without the DB fallback,
+// a token that has real history but simply isn't pumping right now (or aged
+// out of the live snapshot between polls) reads as "not found" -- a real
+// production report (2026-08-28: TRUMP, TAC, AURASOL, ARIA, LONGXIA, 龙虾,
+// AIINU) showed "Token not found" on TokenPage's header for tokens with
+// dozens of DB-recorded episodes, purely because none of them happened to be
+// live in pumps:latest at request time.
 func (h *Handler) Token(w http.ResponseWriter, r *http.Request) {
 	base := strings.ToUpper(chi.URLParam(r, "base"))
 	if !isValidBase(base) {
@@ -224,24 +233,71 @@ func (h *Handler) Token(w http.ResponseWriter, r *http.Request) {
 	}
 
 	payload, err := h.loadPumps(r.Context())
-	if errors.Is(err, redis.Nil) {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-	if err != nil {
+	if err != nil && !errors.Is(err, redis.Nil) {
 		slog.Error("pumps.token.redis_get", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-
-	for _, p := range payload.Pumps {
-		if p.Base == base {
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(p)
-			return
+	if payload != nil {
+		for _, p := range payload.Pumps {
+			if p.Base == base {
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(p)
+				return
+			}
 		}
 	}
-	http.Error(w, "not found", http.StatusNotFound)
+
+	entry, err := h.dbTokenFallback(r.Context(), base)
+	if err != nil {
+		slog.Error("pumps.token.db_fallback", "base", base, "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if entry == nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(entry)
+}
+
+// dbTokenFallback loads the most recent app.pump_events row for base and
+// maps it into the same pumpEntry shape the live Redis snapshot uses --
+// exchanges is already stored in that exact JSON shape (persistence.py
+// writes it, and it round-trips through pumps:latest unchanged), so no
+// separate mapping is needed. Returns (nil, nil) -- not an error -- when
+// there is genuinely no history for base, or when h.pool is nil (unit
+// tests that only exercise the live-snapshot path construct a Handler
+// without a pool; mirrors the same guard in rankedExchanges).
+func (h *Handler) dbTokenFallback(ctx context.Context, base string) (*pumpEntry, error) {
+	if h.pool == nil {
+		return nil, nil
+	}
+	var eventID int64
+	var maxChangePct float64
+	var exJSON []byte
+	err := h.pool.QueryRow(ctx,
+		`SELECT id, peak_pct, exchanges FROM app.pump_events
+		 WHERE base = $1 ORDER BY last_seen_at DESC LIMIT 1`,
+		base,
+	).Scan(&eventID, &maxChangePct, &exJSON)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var exchanges []exchangeEntry
+	if err := json.Unmarshal(exJSON, &exchanges); err != nil {
+		return nil, err
+	}
+	return &pumpEntry{
+		Base:         base,
+		PumpEventID:  eventID,
+		MaxChangePct: maxChangePct,
+		Exchanges:    exchanges,
+	}, nil
 }
 
 func (h *Handler) OHLCV(w http.ResponseWriter, r *http.Request) {
