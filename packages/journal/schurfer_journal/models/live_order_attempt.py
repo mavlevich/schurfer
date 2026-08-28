@@ -1,9 +1,11 @@
+from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import (
     BigInteger,
     CheckConstraint,
+    DateTime,
     ForeignKey,
     Index,
     Numeric,
@@ -35,15 +37,22 @@ class LiveOrderAttempt(Base, TimestampMixin):
     exchange: Mapped[str] = mapped_column(String(32), nullable=False)
     base: Mapped[str] = mapped_column(String(64), nullable=False)
     symbol: Mapped[str] = mapped_column(String(32), nullable=False)
+    native_market_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    market_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
     side: Mapped[str] = mapped_column(String(8), nullable=False)
     size_usd: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    requested_amount: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
     leverage: Mapped[Decimal] = mapped_column(Numeric(6, 2), nullable=False)
     contract_size: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
     exit_params: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     setup_context: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
-    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
     order_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     filled_amount: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    reconciliation_timestamp: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    reconciliation_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     trade_id: Mapped[int | None] = mapped_column(
         BigInteger,
         ForeignKey("app.trades.id", ondelete="SET NULL"),
@@ -61,7 +70,8 @@ class LiveOrderAttempt(Base, TimestampMixin):
         ),
         Index("ix_live_order_attempts_status", "status"),
         CheckConstraint(
-            "status IN ('pending', 'accepted', 'completed', 'failed')",
+            "status IN ('pending', 'accepted', 'completed', 'failed', "
+            "'submission_unknown', 'no_fill', 'manual_required')",
             name="ck_live_order_attempts_status",
         ),
         {"schema": "app"},

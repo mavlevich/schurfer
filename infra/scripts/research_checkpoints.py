@@ -13,13 +13,18 @@ import os
 import shutil
 import signal
 import subprocess
+import sys
 import tempfile
+import threading
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 SNAPSHOT_VERSION = "research_checkpoints_v1"
 TERMINAL_STATES = {
@@ -50,11 +55,21 @@ class CheckpointSpec:
     timeout_minutes: int
     min_headroom_mb: int
     min_disk_gb: int = 5
+    max_consecutive_error_attempts: int = 3
+    error_retry_hours: int = 1
     # Set only when a research line has been closed out-of-band (a human decision
     # recorded in ROADMAP.md, not something the checkpoint's own report can infer).
     # When set, the runner never invokes make_target again — it stamps this verdict
     # once, notifies, and the checkpoint stays terminal forever after that.
     retired_verdict: str | None = None
+
+
+class ReportExecutionError(Exception):
+    """A sanitized report-process failure safe for snapshots and notifications."""
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
 
 
 CHECKPOINTS = (
@@ -124,6 +139,10 @@ def _validate_checkpoints(specs: tuple[CheckpointSpec, ...]) -> None:
             raise ValueError(
                 f"{spec.key} retired_verdict {spec.retired_verdict!r} is not a terminal state"
             )
+        if spec.max_consecutive_error_attempts < 1:
+            raise ValueError(f"{spec.key} max_consecutive_error_attempts must be positive")
+        if spec.error_retry_hours < 1:
+            raise ValueError(f"{spec.key} error_retry_hours must be positive")
 
 
 _validate_checkpoints(CHECKPOINTS)
@@ -176,12 +195,16 @@ def _default_row(spec: CheckpointSpec) -> dict[str, Any]:
         "state": "scheduled",
         "next_attempt_at": _utc(spec.due_at),
         "last_attempt_at": None,
+        "report_cutoff_at": None,
         "last_success_at": None,
         "report_status": None,
         "verdict": None,
         "report_file": None,
         "report_sha256": None,
         "error": None,
+        "error_code": None,
+        "consecutive_errors": 0,
+        "error_retry_exhausted": False,
         "notified_state": None,
     }
 
@@ -260,7 +283,8 @@ def _notify(message: str) -> str | None:
 
 def _notification(row: dict[str, Any], previous_state: str | None) -> str | None:
     state = str(row["state"])
-    if state not in NOTIFIABLE_STATES or state == previous_state:
+    notification_state = _notification_state(row)
+    if state not in NOTIFIABLE_STATES or notification_state == previous_state:
         return None
     if state in {"decision_ready", "shadow_candidate"}:
         prefix = "✅"
@@ -272,10 +296,166 @@ def _notification(row: dict[str, Any], previous_state: str | None) -> str | None
         prefix = "⚠️"
     else:
         prefix = "⏳"
+    reason = row.get("error_code") if state in {"blocked_resources", "error"} else None
+    reason_line = f"\nReason: {reason}" if reason else ""
+    retry_line = ""
+    if state == "error" and row.get("error_retry_exhausted") is True:
+        retry_line = (
+            "\nRetries: short retry budget exhausted; next scheduled attempt: "
+            f"{row.get('next_attempt_at') or 'unknown'}"
+        )
     return (
         f"{prefix} Research checkpoint: {row['title']}\n"
         f"State: {state}\nVerdict: {row.get('verdict') or 'n/a'}\n"
-        f"Report: {row.get('report_file') or 'not produced'}"
+        f"Report: {row.get('report_file') or 'not produced'}{reason_line}{retry_line}"
+    )
+
+
+def _notification_state(row: dict[str, Any]) -> str:
+    state = str(row["state"])
+    if state in {"blocked_resources", "error"}:
+        identity = f"{state}:{row.get('error_code') or 'unknown'}"
+        if state == "error" and row.get("error_retry_exhausted") is True:
+            return f"{identity}:exhausted:{row.get('last_attempt_at') or 'unknown'}"
+        return identity
+    return state
+
+
+def _upgrade_checkpoint_row(
+    spec: CheckpointSpec,
+    old_row: dict[str, Any],
+) -> dict[str, Any]:
+    """Upgrade legacy snapshot fields once without perturbing steady-state schedules."""
+    inherited_error_without_counter = old_row.get("state") == "error" and (
+        "consecutive_errors" not in old_row
+    )
+    row = {**_default_row(spec), **old_row}
+    row.update({"title": spec.title, "contract": spec.contract, "due_at": _utc(spec.due_at)})
+
+    if inherited_error_without_counter:
+        row["consecutive_errors"] = 1
+
+    if row["state"] in {"blocked_resources", "error"}:
+        last_attempt = _parse_utc(row.get("last_attempt_at"))
+        if "report_cutoff_at" not in old_row and last_attempt is not None:
+            # v1 used the attempt timestamp as the report cutoff. Preserve that
+            # exact cohort when upgrading an already-failed checkpoint.
+            row["report_cutoff_at"] = _utc(last_attempt)
+        if inherited_error_without_counter and last_attempt is not None:
+            retry_at = last_attempt + timedelta(hours=spec.error_retry_hours)
+            current_next = _parse_utc(row.get("next_attempt_at"))
+            if current_next is None or retry_at < current_next:
+                row["next_attempt_at"] = _utc(retry_at)
+
+    if "error_retry_exhausted" not in old_row:
+        row["error_retry_exhausted"] = (
+            row["state"] == "error"
+            and int(row.get("consecutive_errors") or 0) >= spec.max_consecutive_error_attempts
+        )
+
+    # v1 persisted only the bare state. Upgrade the dedupe identity silently so
+    # deploying the richer error taxonomy does not itself create an alert.
+    if row.get("notified_state") == row["state"] and row["state"] in {
+        "blocked_resources",
+        "error",
+    }:
+        row["notified_state"] = _notification_state(row)
+    return row
+
+
+def _record_error(
+    row: dict[str, Any],
+    spec: CheckpointSpec,
+    *,
+    now: datetime,
+    code: str,
+    message: str,
+) -> None:
+    consecutive_errors = min(
+        int(row.get("consecutive_errors") or 0) + 1,
+        spec.max_consecutive_error_attempts,
+    )
+    exhausted = consecutive_errors >= spec.max_consecutive_error_attempts
+    retry_hours = spec.cadence_hours if exhausted else spec.error_retry_hours
+    row.update(
+        state="error",
+        error=message,
+        error_code=code,
+        consecutive_errors=consecutive_errors,
+        error_retry_exhausted=exhausted,
+        next_attempt_at=_utc(now + timedelta(hours=retry_hours)),
+    )
+
+
+_OOM_MARKERS = (
+    "error 137",
+    "exit code 137",
+    "exited with code 137",
+    "oomkilled",
+    "out of memory",
+    "memory cgroup out of memory",
+)
+
+
+class _StderrCapture:
+    """Relay complete diagnostics while retaining only a bounded classification tail."""
+
+    def __init__(self, *, limit_bytes: int = 64 * 1024) -> None:
+        self._limit_bytes = limit_bytes
+        self._tail = bytearray()
+        self._marker_carry = ""
+        self.oom_observed = False
+
+    def append(self, value: str) -> None:
+        encoded = value.encode("utf-8", errors="replace")
+        self._tail.extend(encoded)
+        overflow = len(self._tail) - self._limit_bytes
+        if overflow > 0:
+            del self._tail[:overflow]
+
+        marker_window = (self._marker_carry + value).casefold()
+        self.oom_observed = self.oom_observed or any(
+            marker in marker_window for marker in _OOM_MARKERS
+        )
+        carry_length = max(map(len, _OOM_MARKERS)) - 1
+        self._marker_carry = marker_window[-carry_length:]
+
+    def text(self) -> str:
+        return bytes(self._tail).decode("utf-8", errors="replace")
+
+
+def _stream_stderr(stream: Iterable[str], capture: _StderrCapture) -> None:
+    """Drain child stderr continuously so systemd receives live progress."""
+    for line in stream:
+        capture.append(line)
+        try:
+            sys.stderr.write(line)
+            sys.stderr.flush()
+        except (OSError, ValueError):
+            # Journal delivery failure must not stop draining the child pipe.
+            pass
+
+
+def _process_failure(
+    spec: CheckpointSpec,
+    returncode: int,
+    stderr_tail: str,
+    *,
+    oom_observed: bool = False,
+) -> ReportExecutionError:
+    normalized = stderr_tail.casefold()
+    if (
+        returncode in {-9, 137}
+        or oom_observed
+        or any(marker in normalized for marker in _OOM_MARKERS)
+    ):
+        return ReportExecutionError(
+            "report_oom",
+            f"{spec.make_target} exceeded its container memory limit",
+        )
+    return ReportExecutionError(
+        "report_failed",
+        f"{spec.make_target} exited {returncode}; inspect systemd journal",
     )
 
 
@@ -283,51 +463,78 @@ def _run_report(
     spec: CheckpointSpec,
     *,
     now: datetime,
+    cutoff: datetime,
     root: Path,
     report_dir: Path,
 ) -> tuple[dict[str, Any], Path, str]:
-    cutoff = _utc(now)
+    cutoff_value = _utc(cutoff)
     command = [
         "make",
         spec.make_target,
-        f"ARGS=--until {cutoff} --format json",
+        f"ARGS=--until {cutoff_value} --format json",
     ]
     docker_config = root / "runtime" / "checkpoint-docker-config"
     docker_config.mkdir(parents=True, exist_ok=True)
     docker_config.chmod(0o700)
-    logger.info("running %s with cutoff %s", spec.make_target, cutoff)
-    process = subprocess.Popen(  # noqa: S603 -- fixed registered make targets
-        command,
-        cwd=root,
-        text=True,
-        stdout=subprocess.PIPE,
-        env={**os.environ, "DOCKER_CONFIG": str(docker_config)},
-        start_new_session=True,
-    )
-    try:
-        stdout, _ = process.communicate(timeout=spec.timeout_minutes * 60)
-    except subprocess.TimeoutExpired as exc:
-        with contextlib.suppress(ProcessLookupError):
-            os.killpg(process.pid, signal.SIGTERM)
-        try:
-            process.communicate(timeout=10)
-        except subprocess.TimeoutExpired:
-            with contextlib.suppress(ProcessLookupError):
-                os.killpg(process.pid, signal.SIGKILL)
-            process.communicate()
-        raise RuntimeError(
-            f"{spec.make_target} exceeded {spec.timeout_minutes} minute limit"
-        ) from exc
-    if process.returncode != 0:
-        raise RuntimeError(
-            f"{spec.make_target} exited {process.returncode}; inspect systemd journal"
+    logger.info("running %s with cutoff %s", spec.make_target, cutoff_value)
+    with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as stdout_file:
+        process = subprocess.Popen(  # noqa: S603 -- fixed registered make targets
+            command,
+            cwd=root,
+            text=True,
+            stdout=stdout_file,
+            stderr=subprocess.PIPE,
+            env={**os.environ, "DOCKER_CONFIG": str(docker_config)},
+            start_new_session=True,
         )
+        if process.stderr is None:
+            raise RuntimeError("checkpoint report stderr pipe was not created")
+        stderr_capture = _StderrCapture()
+        stderr_thread = threading.Thread(
+            target=_stream_stderr,
+            args=(process.stderr, stderr_capture),
+            name=f"{spec.key}-stderr",
+        )
+        stderr_thread.start()
+        try:
+            process.wait(timeout=spec.timeout_minutes * 60)
+        except subprocess.TimeoutExpired as exc:
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(process.pid, signal.SIGTERM)
+            try:
+                process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                with contextlib.suppress(ProcessLookupError):
+                    os.killpg(process.pid, signal.SIGKILL)
+                process.wait()
+            stderr_thread.join()
+            raise ReportExecutionError(
+                "report_timeout",
+                f"{spec.make_target} exceeded {spec.timeout_minutes} minute limit",
+            ) from exc
+        stderr_thread.join()
+        stderr_tail = stderr_capture.text()
+        if process.returncode != 0:
+            raise _process_failure(
+                spec,
+                process.returncode,
+                stderr_tail,
+                oom_observed=stderr_capture.oom_observed,
+            )
+        stdout_file.seek(0)
+        stdout = stdout_file.read()
     try:
         report = json.loads(stdout)
     except json.JSONDecodeError as exc:
-        raise RuntimeError(f"{spec.make_target} did not produce JSON: {exc}") from exc
+        raise ReportExecutionError(
+            "invalid_report_output",
+            f"{spec.make_target} did not produce valid JSON",
+        ) from exc
     if not isinstance(report, dict):
-        raise RuntimeError(f"{spec.make_target} produced a non-object JSON report")
+        raise ReportExecutionError(
+            "invalid_report_output",
+            f"{spec.make_target} produced a non-object JSON report",
+        )
     report_dir.mkdir(parents=True, exist_ok=True)
     report_dir.chmod(0o700)
     stamp = now.strftime("%Y%m%dT%H%M%SZ")
@@ -359,12 +566,23 @@ def run_once(
         old_row = old_rows.get(spec.key, {})
         if old_row.get("contract") != spec.contract:
             old_row = {}
-        row = {**_default_row(spec), **old_row}
-        row.update({"title": spec.title, "contract": spec.contract, "due_at": _utc(spec.due_at)})
+        row = _upgrade_checkpoint_row(spec, old_row)
         if now < spec.due_at and row["state"] not in TERMINAL_STATES:
-            row.update(state="scheduled", next_attempt_at=_utc(spec.due_at), error=None)
+            row.update(
+                state="scheduled",
+                next_attempt_at=_utc(spec.due_at),
+                error=None,
+                error_code=None,
+                error_retry_exhausted=False,
+            )
         elif row["state"] == "scheduled":
-            row.update(state="due", next_attempt_at=_utc(now), error=None)
+            row.update(
+                state="due",
+                next_attempt_at=_utc(now),
+                error=None,
+                error_code=None,
+                error_retry_exhausted=False,
+            )
         rows.append(row)
 
     selected: tuple[CheckpointSpec, dict[str, Any]] | None = None
@@ -381,7 +599,14 @@ def run_once(
 
     if selected is not None:
         spec, row = selected
+        retry_cutoff = (
+            _parse_utc(row.get("report_cutoff_at"))
+            if row["state"] in {"blocked_resources", "error"}
+            else None
+        )
+        report_cutoff = retry_cutoff or now
         row["last_attempt_at"] = _utc(now)
+        row["report_cutoff_at"] = _utc(report_cutoff)
         row["next_attempt_at"] = _utc(now + timedelta(hours=spec.cadence_hours))
         if spec.retired_verdict is not None:
             row.update(
@@ -392,6 +617,9 @@ def run_once(
                 report_sha256=None,
                 last_success_at=_utc(now),
                 error=None,
+                error_code=None,
+                consecutive_errors=0,
+                error_retry_exhausted=False,
             )
         else:
             try:
@@ -400,17 +628,20 @@ def run_once(
                 if headroom_mb < spec.min_headroom_mb or disk_free_gb < spec.min_disk_gb:
                     row.update(
                         state="blocked_resources",
+                        error_code="insufficient_resources",
                         error=(
                             f"requires {spec.min_headroom_mb} MiB headroom and "
                             f"{spec.min_disk_gb} GiB disk; observed {headroom_mb} MiB and "
                             f"{disk_free_gb} GiB"
                         ),
                         next_attempt_at=_utc(now + timedelta(hours=1)),
+                        error_retry_exhausted=False,
                     )
                 else:
                     report, report_path, digest = _run_report(
                         spec,
                         now=now,
+                        cutoff=report_cutoff,
                         root=root,
                         report_dir=report_dir,
                     )
@@ -423,9 +654,26 @@ def run_once(
                         report_sha256=digest,
                         last_success_at=_utc(now),
                         error=None,
+                        error_code=None,
+                        consecutive_errors=0,
+                        error_retry_exhausted=False,
                     )
+            except ReportExecutionError as exc:
+                _record_error(
+                    row,
+                    spec,
+                    now=now,
+                    code=exc.code,
+                    message=str(exc),
+                )
             except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as exc:
-                row.update(state="error", error=str(exc))
+                _record_error(
+                    row,
+                    spec,
+                    now=now,
+                    code="runner_error",
+                    message=str(exc),
+                )
 
     for row in rows:
         previous_state = str(row.get("notified_state") or "") or None
@@ -433,7 +681,7 @@ def run_once(
         if message is not None:
             alert_error = _notify(message)
             if alert_error is None:
-                row["notified_state"] = row["state"]
+                row["notified_state"] = _notification_state(row)
                 row.pop("alert_error", None)
             else:
                 row["alert_error"] = alert_error

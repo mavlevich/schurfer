@@ -352,7 +352,13 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    restart: 'no'
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', '/liquidation-capture', 'healthcheck']
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 90s
     mem_limit: 128m
     memswap_limit: 128m
     cpus: 0.35
@@ -381,7 +387,13 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    restart: 'no'
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', '/liquidation-capture', 'healthcheck']
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 90s
     mem_limit: 128m
     memswap_limit: 128m
     cpus: 0.35
@@ -822,6 +834,8 @@ services:
       SCAN_INTERVAL: ${SCAN_INTERVAL:-60}
       STALE_AFTER_SECONDS: ${STALE_AFTER_SECONDS:-240}
       NOTIFY_MIN_PCT: ${NOTIFY_MIN_PCT:-60}
+      LIQUIDATION_CAPTURE_MONITORED_EXCHANGES: ${LIQUIDATION_CAPTURE_MONITORED_EXCHANGES:-}
+      LIQUIDATION_CAPTURE_MONITOR_START_GRACE_SECONDS: ${LIQUIDATION_CAPTURE_MONITOR_START_GRACE_SECONDS:-90}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
     depends_on:

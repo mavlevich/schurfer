@@ -1,0 +1,202 @@
+{
+  "schema_version": 1,
+  "registry_version": "source_lead_identity_registry_v2",
+  "links": [
+    {
+      "canonical_asset_id": "asset:ake",
+      "exchange": "gate",
+      "instrument_identity_key": "gate:swap:AKE_USDT:1758881410000",
+      "evidence_url": "https://raw.githubusercontent.com/mavlevich/schurfer/8ce65172ec2f7c7911da7819fef22fc6749f5a44/apps/analytics/schurfer_analytics/evidence/source_lead/v2/ake-gate-binance.json",
+      "evidence_sha256": "e5a4ec0a79ff8f29e5a02531f654caea517f9235e9ce40347730229ced19700f"
+    },
+    {
+      "canonical_asset_id": "asset:ake",
+      "exchange": "binance",
+      "instrument_identity_key": "binance:swap:AKEUSDT:1758889800000",
+      "evidence_url": "https://raw.githubusercontent.com/mavlevich/schurfer/8ce65172ec2f7c7911da7819fef22fc6749f5a44/apps/analytics/schurfer_analytics/evidence/source_lead/v2/ake-gate-binance.json",
+      "evidence_sha256": "e5a4ec0a79ff8f29e5a02531f654caea517f9235e9ce40347730229ced19700f"
+    },
+    {
+      "canonical_asset_id": "asset:aria",
+      "exchange": "gate",
+      "instrument_identity_key": "gate:swap:ARIA_USDT:1755781800000",
+      "evidence_url": "https://raw.githubusercontent.com/mavlevich/schurfer/8ce65172ec2f7c7911da7819fef22fc6749f5a44/apps/analytics/schurfer_analytics/evidence/source_lead/v2/aria-gate-binance.json",
+      "evidence_sha256": "c8b0b52f7ceedc03669a70099d7025bd9612ad316490f6473ef4c22b88674bd3"
+    },
+    {
+      "canonical_asset_id": "asset:aria",
+      "exchange": "binance",
+      "instrument_identity_key": "binance:swap:ARIAUSDT:1756897200000",
+      "evidence_url": "https://raw.githubusercontent.com/mavlevich/schurfer/8ce65172ec2f7c7911da7819fef22fc6749f5a44/apps/analytics/schurfer_analytics/evidence/source_lead/v2/aria-gate-binance.json",
+      "evidence_sha256": "c8b0b52f7ceedc03669a70099d7025bd9612ad316490f6473ef4c22b88674bd3"
+    },
+    {
+      "canonical_asset_id": "asset:bas",
+      "exchange": "gate",
+      "instrument_identity_key": "gate:swap:BAS_USDT:1756210848000",
+      "evidence_url": "https://raw.githubusercontent.com/mavlevich/schurfer/8ce65172ec2f7c7911da7819fef22fc6749f5a44/apps/analytics/schurfer_analytics/evidence/source_lead/v2/bas-gate-binance.json",
+      "evidence_sha256": "e08f7a601da34018bfec30916d236e4d5b48efba8e1bff0f8866f404fee7560f"
+    },
+    {
+      "canonical_asset_id": "asset:bas",
+      "exchange": "binance",
+      "instrument_identity_key": "binance:swap:BASUSDT:1756215000000",
+      "evidence_url": "https://raw.githubusercontent.com/mavlevich/schurfer/8ce65172ec2f7c7911da7819fef22fc6749f5a44/apps/analytics/schurfer_analytics/evidence/source_lead/v2/bas-gate-binance.json",
+      "evidence_sha256": "e08f7a601da34018bfec30916d236e4d5b48efba8e1bff0f8866f404fee7560f"
+    },
+    {
+      "canonical_asset_id": "asset:beat",
+      "exchange": "gate",
+      "instrument_identity_key": "gate:swap:BEAT_USDT:1762947959000",
+      "evidence_url": "https://raw.githubusercontent.com/mavlevich/schurfer/8ce65172ec2f7c7911da7819fef22fc6749f5a44/apps/analytics/schurfer_analytics/evidence/source_lead/v2/beat-gate-binance.json",
+      "evidence_sha256": "f7565a092d7c49dfbf05f4ac02e559eed362eba09e08024505751b30a4250188"
+    },
+    {
+      "canonical_asset_id": "asset:beat",
+      "exchange": "binance",
+      "instrument_identity_key": "binance:swap:BEATUSDT:1762949700000",
+      "evidence_url": "https://raw.githubusercontent.com/mavlevich/schurfer/8ce65172ec2f7c7911da7819fef22fc6749f5a44/apps/analytics/schurfer_analytics/evidence/source_lead/v2/beat-gate-binance.json",
+      "evidence_sha256": "f7565a092d7c49dfbf05f4ac02e559eed362eba09e08024505751b30a4250188"
+    },
+    {
+      "canonical_asset_id": "asset:br",
+      "exchange": "gate",
+      "instrument_identity_key": "gate:swap:BR_USDT:1742475642000",
+      "evidence_url": "https://raw.githubusercontent.com/mavlevich/schurfer/8ce65172ec2f7c7911da7819fef22fc6749f5a44/apps/analytics/schurfer_analytics/evidence/source_lead/v2/br-gate-binance.json",
+      "evidence_sha256": "9700df0ddbc20be5206dfb8b1ed26695d3e33b59c2f9daf48daee102c87bff15"
+    },
+    {
+      "canonical_asset_id": "asset:br",
+      "exchange": "binance",
+      "instrument_identity_key": "binance:swap:BRUSDT:1742561100000",
+      "evidence_url": "https://raw.githubusercontent.com/mavlevich/schurfer/8ce65172ec2f7c7911da7819fef22fc6749f5a44/apps/analytics/schurfer_analytics/evidence/source_lead/v2/br-gate-binance.json",
+      "evidence_sha256": "9700df0ddbc20be5206dfb8b1ed26695d3e33b59c2f9daf48daee102c87bff15"
+    },
+    {
+      "canonical_asset_id": "asset:btr",
+      "exchange": "gate",
+      "instrument_identity_key": "gate:swap:BTR_USDT:1756290600000",
+      "evidence_url": "https://raw.githubusercontent.com/mavlevich/schurfer/8ce65172ec2f7c7911da7819fef22fc6749f5a44/apps/analytics/schurfer_analytics/evidence/source_lead/v2/btr-gate-binance.json",
+      "evidence_sha256": "688213becedf5a0a21ce618e428ee97bce94ac8e871d345ea5bd2c9cfb394499"
+    },
+    {
+      "canonical_asset_id": "asset:btr",
+      "exchange": "binance",
+      "instrument_identity_key": "binance:swap:BTRUSDT:1756290600000",
+      "evidence_url": "https://raw.githubusercontent.com/mavlevich/schurfer/8ce65172ec2f7c7911da7819fef22fc6749f5a44/apps/analytics/schurfer_analytics/evidence/source_lead/v2/btr-gate-binance.json",
+      "evidence_sha256": "688213becedf5a0a21ce618e428ee97bce94ac8e871d345ea5bd2c9cfb394499"
+    },
+    {
+      "canonical_asset_id": "asset:cys",
+      "exchange": "gate",
+      "instrument_identity_key": "gate:swap:CYS_USDT:1765447800000",
+      "evidence_url": "https://raw.githubusercontent.com/mavlevich/schurfer/8ce65172ec2f7c7911da7819fef22fc6749f5a44/apps/analytics/schurfer_analytics/evidence/source_lead/v2/cys-gate-binance.json",
+      "evidence_sha256": "941f428cbaf79247e10ad54c2fb55e6938319cc5c07c7e765026285b2043fc40"
+    },
+    {
+      "canonical_asset_id": "asset:cys",
+      "exchange": "binance",
+      "instrument_identity_key": "binance:swap:CYSUSDT:1765537200000",
+      "evidence_url": "https://raw.githubusercontent.com/mavlevich/schurfer/8ce65172ec2f7c7911da7819fef22fc6749f5a44/apps/analytics/schurfer_analytics/evidence/source_lead/v2/cys-gate-binance.json",
+      "evidence_sha256": "941f428cbaf79247e10ad54c2fb55e6938319cc5c07c7e765026285b2043fc40"
+    },
+    {
+      "canonical_asset_id": "asset:eden",
+      "exchange": "gate",
+      "instrument_identity_key": "gate:swap:EDEN_USDT:1759230600000",
+      "evidence_url": "https://raw.githubusercontent.com/mavlevich/schurfer/8ce65172ec2f7c7911da7819fef22fc6749f5a44/apps/analytics/schurfer_analytics/evidence/source_lead/v2/eden-gate-binance.json",
+      "evidence_sha256": "ca7c2eb2ea4fdc9a8a85a1225fe567a4ffef8650079f3c3ce3ca9f88a10670c7"
+    },
+    {
+      "canonical_asset_id": "asset:eden",
+      "exchange": "binance",
+      "instrument_identity_key": "binance:swap:EDENUSDT:1759230000000",
+      "evidence_url": "https://raw.githubusercontent.com/mavlevich/schurfer/8ce65172ec2f7c7911da7819fef22fc6749f5a44/apps/analytics/schurfer_analytics/evidence/source_lead/v2/eden-gate-binance.json",
+      "evidence_sha256": "ca7c2eb2ea4fdc9a8a85a1225fe567a4ffef8650079f3c3ce3ca9f88a10670c7"
+    },
+    {
+      "canonical_asset_id": "asset:hemi",
+      "exchange": "gate",
+      "instrument_identity_key": "gate:swap:HEMI_USDT:1756695612000",
+      "evidence_url": "https://raw.githubusercontent.com/mavlevich/schurfer/8ce65172ec2f7c7911da7819fef22fc6749f5a44/apps/analytics/schurfer_analytics/evidence/source_lead/v2/hemi-gate-binance.json",
+      "evidence_sha256": "99ab0e7ebd2189a53448e2bb7513770497f8420b905c98bb8ce2fca4b37f95dd"
+    },
+    {
+      "canonical_asset_id": "asset:hemi",
+      "exchange": "binance",
+      "instrument_identity_key": "binance:swap:HEMIUSDT:1756441800000",
+      "evidence_url": "https://raw.githubusercontent.com/mavlevich/schurfer/8ce65172ec2f7c7911da7819fef22fc6749f5a44/apps/analytics/schurfer_analytics/evidence/source_lead/v2/hemi-gate-binance.json",
+      "evidence_sha256": "99ab0e7ebd2189a53448e2bb7513770497f8420b905c98bb8ce2fca4b37f95dd"
+    },
+    {
+      "canonical_asset_id": "asset:home",
+      "exchange": "gate",
+      "instrument_identity_key": "gate:swap:HOME_USDT:1749553505000",
+      "evidence_url": "https://raw.githubusercontent.com/mavlevich/schurfer/8ce65172ec2f7c7911da7819fef22fc6749f5a44/apps/analytics/schurfer_analytics/evidence/source_lead/v2/home-gate-binance.json",
+      "evidence_sha256": "4ef2faa0cb41d34b607aad550085b89c95b6c8b2bc8373b5ab6d7ca6d86371d9"
+    },
+    {
+      "canonical_asset_id": "asset:home",
+      "exchange": "binance",
+      "instrument_identity_key": "binance:swap:HOMEUSDT:1749555000000",
+      "evidence_url": "https://raw.githubusercontent.com/mavlevich/schurfer/8ce65172ec2f7c7911da7819fef22fc6749f5a44/apps/analytics/schurfer_analytics/evidence/source_lead/v2/home-gate-binance.json",
+      "evidence_sha256": "4ef2faa0cb41d34b607aad550085b89c95b6c8b2bc8373b5ab6d7ca6d86371d9"
+    },
+    {
+      "canonical_asset_id": "asset:skyai",
+      "exchange": "gate",
+      "instrument_identity_key": "gate:swap:SKYAI_USDT:1747184611000",
+      "evidence_url": "https://raw.githubusercontent.com/mavlevich/schurfer/8ce65172ec2f7c7911da7819fef22fc6749f5a44/apps/analytics/schurfer_analytics/evidence/source_lead/v2/skyai-gate-binance.json",
+      "evidence_sha256": "6bf30f9955c404c409a1503fa0aee9cca78704eb826c5fba42d8b08c13a4935d"
+    },
+    {
+      "canonical_asset_id": "asset:skyai",
+      "exchange": "binance",
+      "instrument_identity_key": "binance:swap:SKYAIUSDT:1747129500000",
+      "evidence_url": "https://raw.githubusercontent.com/mavlevich/schurfer/8ce65172ec2f7c7911da7819fef22fc6749f5a44/apps/analytics/schurfer_analytics/evidence/source_lead/v2/skyai-gate-binance.json",
+      "evidence_sha256": "6bf30f9955c404c409a1503fa0aee9cca78704eb826c5fba42d8b08c13a4935d"
+    },
+    {
+      "canonical_asset_id": "asset:tut",
+      "exchange": "gate",
+      "instrument_identity_key": "gate:swap:TUT_USDT:1742353181000",
+      "evidence_url": "https://raw.githubusercontent.com/mavlevich/schurfer/8ce65172ec2f7c7911da7819fef22fc6749f5a44/apps/analytics/schurfer_analytics/evidence/source_lead/v2/tut-gate-binance.json",
+      "evidence_sha256": "193a9ccc72e0775e6d4297b08b7ea2949d39344597452125a8f25a6c07813a2d"
+    },
+    {
+      "canonical_asset_id": "asset:tut",
+      "exchange": "binance",
+      "instrument_identity_key": "binance:swap:TUTUSDT:1742461200000",
+      "evidence_url": "https://raw.githubusercontent.com/mavlevich/schurfer/8ce65172ec2f7c7911da7819fef22fc6749f5a44/apps/analytics/schurfer_analytics/evidence/source_lead/v2/tut-gate-binance.json",
+      "evidence_sha256": "193a9ccc72e0775e6d4297b08b7ea2949d39344597452125a8f25a6c07813a2d"
+    },
+    {
+      "canonical_asset_id": "asset:ub",
+      "exchange": "gate",
+      "instrument_identity_key": "gate:swap:UB_USDT:1757668200000",
+      "evidence_url": "https://raw.githubusercontent.com/mavlevich/schurfer/8ce65172ec2f7c7911da7819fef22fc6749f5a44/apps/analytics/schurfer_analytics/evidence/source_lead/v2/ub-gate-binance.json",
+      "evidence_sha256": "7459888948a691efaf66d1ca795ea935399197164320e3438f6b2d922bfd0e31"
+    },
+    {
+      "canonical_asset_id": "asset:ub",
+      "exchange": "binance",
+      "instrument_identity_key": "binance:swap:UBUSDT:1757673000000",
+      "evidence_url": "https://raw.githubusercontent.com/mavlevich/schurfer/8ce65172ec2f7c7911da7819fef22fc6749f5a44/apps/analytics/schurfer_analytics/evidence/source_lead/v2/ub-gate-binance.json",
+      "evidence_sha256": "7459888948a691efaf66d1ca795ea935399197164320e3438f6b2d922bfd0e31"
+    },
+    {
+      "canonical_asset_id": "asset:velvet",
+      "exchange": "gate",
+      "instrument_identity_key": "gate:swap:VELVET_USDT:1752562711000",
+      "evidence_url": "https://raw.githubusercontent.com/mavlevich/schurfer/8ce65172ec2f7c7911da7819fef22fc6749f5a44/apps/analytics/schurfer_analytics/evidence/source_lead/v2/velvet-gate-binance.json",
+      "evidence_sha256": "8452288f0661df50239b3767050cc1730a4b87d1ba41214d3c4421aaedf11b1a"
+    },
+    {
+      "canonical_asset_id": "asset:velvet",
+      "exchange": "binance",
+      "instrument_identity_key": "binance:swap:VELVETUSDT:1752570900000",
+      "evidence_url": "https://raw.githubusercontent.com/mavlevich/schurfer/8ce65172ec2f7c7911da7819fef22fc6749f5a44/apps/analytics/schurfer_analytics/evidence/source_lead/v2/velvet-gate-binance.json",
+      "evidence_sha256": "8452288f0661df50239b3767050cc1730a4b87d1ba41214d3c4421aaedf11b1a"
+    }
+  ]
+}

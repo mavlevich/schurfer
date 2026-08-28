@@ -20,10 +20,13 @@ import structlog
 
 from .exchange_registry import EXCHANGE_FACTORIES, ExchangeFactory
 from .instruments import instrument_metadata
-from .source_lead_contract import CAPTURE_VERSION
+from .source_lead_contract import CAPTURE_VERSION, IDENTITY_REGISTRY_V2_START
 from .source_lead_qualification import (
+    IDENTITY_MATCH_METHOD_REGISTRY_EXACT_V2,
+    IDENTITY_MATCH_METHOD_REGISTRY_LOOKUP_V2,
     QUALIFICATION_VERSION,
     VENUE_SELECTOR_VERSION,
+    CanonicalInstrumentLink,
     IdentityRegistry,
     QualificationResult,
     load_identity_registry,
@@ -33,7 +36,13 @@ from .source_lead_qualification import (
 log = structlog.get_logger()
 
 SOURCE_EXCHANGE = "gate"
-IDENTITY_MATCH_METHOD = "base_symbol_v1"
+# IDENTITY_MATCH_METHOD_REGISTRY_EXACT_V2/REGISTRY_LOOKUP_V2 now live in
+# source_lead_qualification.py -- qualify_source_lead needs
+# REGISTRY_EXACT_V2 to enforce its own fail-closed check, and this module
+# must not become the module that module imports from (it already imports
+# the other way). IDENTITY_MATCH_METHOD_BASE_SYMBOL_V1 lives there too, for
+# any caller that still needs to reference the retired historical value --
+# import it from schurfer_analytics.source_lead_qualification directly.
 
 _SELECT_SOURCES = """
 SELECT
@@ -198,6 +207,7 @@ class TargetObservation:
     status: str
     eligibility_reason: str
     identity_verified: bool
+    identity_match_method: str
     observed_at: datetime
     occurred_at: datetime | None
     latency_ms: int
@@ -497,12 +507,29 @@ def _target_failure(
     *,
     instrument: dict[str, Any] | None = None,
     error: str | None = None,
+    registry_resolved: bool = False,
 ) -> TargetObservation:
+    """registry_resolved distinguishes two different kinds of failure
+    (colleague review, 2026-08-28): False means no live market was ever
+    matched to a registry link at all (identity was never confirmed) --
+    tagged identity_match_method=registry_lookup_v2, identity_verified=False.
+    True means _resolve_registered_target_market already found and confirmed
+    the exact market before a later eligibility check or the network fetch
+    itself failed -- identity IS confirmed, so this is tagged
+    identity_match_method=registry_exact_v2, identity_verified=True, exactly
+    like the success path. Previously every failure was tagged
+    registry_exact_v2 regardless, which claimed a route was confirmed even
+    for captures that never got a market resolved at all."""
     return TargetObservation(
         target_exchange=exchange,
         status="excluded" if error is None else "fetch_failed",
         eligibility_reason=reason,
-        identity_verified=False,
+        identity_verified=registry_resolved,
+        identity_match_method=(
+            IDENTITY_MATCH_METHOD_REGISTRY_EXACT_V2
+            if registry_resolved
+            else IDENTITY_MATCH_METHOD_REGISTRY_LOOKUP_V2
+        ),
         observed_at=datetime.now(UTC),
         occurred_at=None,
         latency_ms=max(0, round((time.monotonic() - started) * 1000)),
@@ -514,6 +541,81 @@ def _target_failure(
     )
 
 
+def _resolve_registered_target_market(
+    exchange: Any, target_link: CanonicalInstrumentLink
+) -> tuple[dict[str, Any], dict[str, Any]] | None:
+    """Resolve the exact ccxt market for target_link's registered
+    instrument_identity_key -- never by guessing a unified symbol from the
+    base ticker (AI_RULES.md forbids `f"{base}/USDT:USDT"`-style
+    reconstruction outright). Looks the market up by its native market_id,
+    parsed out of the registered identity_key, via ccxt's own
+    `markets_by_id` index (which maps a native id to a market, or to a list
+    of markets when more than one market type shares the same native id).
+    Recomputes instrument_metadata on each candidate and requires it to
+    match the registered identity_key exactly before accepting it -- a
+    native market id can be reused across a relisting with a different
+    onboarded_at, so id-based lookup alone is not sufficient, only a
+    necessary first step. Returns None (never guesses) when the id is
+    absent from this run's loaded markets or no candidate's recomputed
+    identity matches."""
+    parts = target_link.instrument_identity_key.split(":")
+    if len(parts) != 4:
+        return None
+    _exchange_part, _market_type, market_id, _identity_version = parts
+    markets_by_id = exchange.markets_by_id if isinstance(exchange.markets_by_id, dict) else {}
+    candidates = markets_by_id.get(market_id)
+    if isinstance(candidates, dict):
+        candidates = [candidates]
+    if not isinstance(candidates, list):
+        return None
+    for market in candidates:
+        if not isinstance(market, dict):
+            continue
+        unified_symbol = market.get("symbol")
+        if not isinstance(unified_symbol, str):
+            continue
+        metadata = instrument_metadata(target_link.exchange, unified_symbol, market)
+        if metadata.get("identity_key") == target_link.instrument_identity_key:
+            return market, metadata
+    return None
+
+
+def _resolve_source_and_target_links(
+    candidate: SourceLeadCandidate, exchange_name: str, registry: IdentityRegistry
+) -> tuple[CanonicalInstrumentLink | None, CanonicalInstrumentLink | None]:
+    """Pure registry lookup, no network -- shared by capture_target_observation
+    (per-candidate pre-network check) and _exchange_has_registered_route
+    (per-exchange batch gate, colleague review 2026-08-28) so the two can
+    never silently disagree about which claims have a possible route.
+    Returns (None, None) when the source identity itself is unregistered,
+    (source_link, None) when the source is registered but this exchange has
+    no registered target link for its canonical asset."""
+    source_link = registry.links_by_identity.get(
+        (SOURCE_EXCHANGE, candidate.source.identity_key or "")
+    )
+    if source_link is None:
+        return None, None
+    target_link = registry.links_by_asset_exchange.get(
+        (source_link.canonical_asset_id, exchange_name)
+    )
+    return source_link, target_link
+
+
+def _exchange_has_registered_route(
+    claimed: tuple[ClaimedCapture, ...], exchange_name: str, registry: IdentityRegistry
+) -> bool:
+    """True iff at least one claim in this batch has a registered route to
+    exchange_name. Used to skip creating the exchange client and calling
+    load_markets() entirely for a batch where nothing could possibly
+    resolve (colleague review, 2026-08-28: AI_RULES.md requires gating
+    before expensive work starts, not only at the final per-candidate
+    check) -- e.g. bybit, which currently has zero registry links at all."""
+    return any(
+        _resolve_source_and_target_links(item.candidate, exchange_name, registry)[1] is not None
+        for item in claimed
+    )
+
+
 async def capture_target_observation(
     exchange_name: str,
     exchange: Any,
@@ -521,25 +623,68 @@ async def capture_target_observation(
     *,
     target_usd: float,
     timeout_seconds: float,
+    registry: IdentityRegistry,
 ) -> TargetObservation:
+    """Resolves the target market through the identity registry --
+    canonical_asset_id from the source's own registered link, then the one
+    registered link for (canonical_asset_id, exchange_name), then the exact
+    ccxt market that link's instrument_identity_key names -- never by
+    guessing a unified symbol from the base ticker. A colleague review
+    (2026-08-28) found the previous naive-symbol version had three real
+    consequences beyond wasted requests: it violated AI_RULES.md directly
+    ("Never reconstruct derivatives symbols with string concatenation such
+    as f"{base}/USDT:USDT""); it durably persisted ticker/liquidity data
+    from whatever the guess happened to resolve to -- including a genuinely
+    different, ticker-colliding project -- before qualify_source_lead ever
+    ran to exclude it; and the coverage/spread/impact dashboard
+    (research/handler.go) aggregates by status='sampled' alone, with no
+    join back to qualification status, so that data would have silently
+    counted regardless.
+
+    A candidate whose source identity is not itself registered, or that has
+    no registered target link on this exchange, is excluded before any
+    network call at all -- no ticker/order-book fetch, no row written from
+    an unconfirmed market."""
     started = time.monotonic()
-    symbol = f"{candidate.base}/USDT:USDT"
-    markets = exchange.markets if isinstance(exchange.markets, dict) else {}
-    market = markets.get(symbol)
-    if not isinstance(market, dict):
-        return _target_failure(exchange_name, "target_not_listed", started, target_usd)
-    metadata = instrument_metadata(exchange_name, symbol, market)
+    source_link, target_link = _resolve_source_and_target_links(candidate, exchange_name, registry)
+    if source_link is None:
+        return _target_failure(exchange_name, "source_identity_unregistered", started, target_usd)
+    if target_link is None:
+        return _target_failure(exchange_name, "no_registered_target", started, target_usd)
+
+    resolved = _resolve_registered_target_market(exchange, target_link)
+    if resolved is None:
+        return _target_failure(
+            exchange_name, "target_registry_identity_not_found", started, target_usd
+        )
+    market, metadata = resolved
+
     if market.get("active") is False:
         return _target_failure(
-            exchange_name, "target_inactive", started, target_usd, instrument=metadata
+            exchange_name,
+            "target_inactive",
+            started,
+            target_usd,
+            instrument=metadata,
+            registry_resolved=True,
         )
     if market.get("swap") is not True or market.get("linear") is not True:
         return _target_failure(
-            exchange_name, "target_not_linear_swap", started, target_usd, instrument=metadata
+            exchange_name,
+            "target_not_linear_swap",
+            started,
+            target_usd,
+            instrument=metadata,
+            registry_resolved=True,
         )
     if metadata.get("quote_asset") != "USDT" or metadata.get("settle_asset") != "USDT":
         return _target_failure(
-            exchange_name, "target_not_linear_usdt", started, target_usd, instrument=metadata
+            exchange_name,
+            "target_not_linear_usdt",
+            started,
+            target_usd,
+            instrument=metadata,
+            registry_resolved=True,
         )
     onboarded_at = _timestamp(metadata.get("onboarded_at_ms"))
     if onboarded_at is None:
@@ -549,6 +694,7 @@ async def capture_target_observation(
             started,
             target_usd,
             instrument=metadata,
+            registry_resolved=True,
         )
     if onboarded_at > candidate.source.first_seen_at:
         return _target_failure(
@@ -557,8 +703,10 @@ async def capture_target_observation(
             started,
             target_usd,
             instrument=metadata,
+            registry_resolved=True,
         )
 
+    symbol = str(metadata["unified_symbol"])
     try:
         ticker, book = await asyncio.wait_for(
             asyncio.gather(exchange.fetch_ticker(symbol), exchange.fetch_order_book(symbol, 50)),
@@ -580,10 +728,9 @@ async def capture_target_observation(
         return TargetObservation(
             target_exchange=exchange_name,
             status="sampled",
-            # Symbol equality is deliberately provisional. A registered strategy
-            # must replace it with a versioned canonical identity approval.
-            eligibility_reason="identity_unverified",
-            identity_verified=False,
+            eligibility_reason="identity_verified",
+            identity_verified=True,
+            identity_match_method=IDENTITY_MATCH_METHOD_REGISTRY_EXACT_V2,
             observed_at=observed_at,
             occurred_at=occurred_at,
             latency_ms=max(0, round((time.monotonic() - started) * 1000)),
@@ -598,6 +745,12 @@ async def capture_target_observation(
             error=None,
         )
     except Exception as exc:
+        # Identity was already confirmed -- we only reach here after
+        # _resolve_registered_target_market matched -- the network fetch
+        # itself is what failed. registry_resolved=True records that
+        # honestly (identity_verified=True, identity_match_method=
+        # registry_exact_v2), distinct from the pre-resolution failures
+        # above that never confirmed a market at all.
         return _target_failure(
             exchange_name,
             "target_fetch_failed",
@@ -605,6 +758,7 @@ async def capture_target_observation(
             target_usd,
             instrument=metadata,
             error=f"{type(exc).__name__}: {exc}",
+            registry_resolved=True,
         )
 
 
@@ -627,7 +781,7 @@ async def _persist_target_observations(
                         observation.target_exchange,
                         observation.status,
                         observation.eligibility_reason,
-                        IDENTITY_MATCH_METHOD,
+                        observation.identity_match_method,
                         observation.identity_verified,
                         observation.observed_at,
                         observation.occurred_at,
@@ -678,7 +832,58 @@ async def capture_claimed_source_leads(
     exchange_factories = factories or EXCHANGE_FACTORIES
     registry = identity_registry or load_identity_registry()
     results: dict[int, list[TargetObservation]] = {item.capture_id: [] for item in claimed}
+
+    # A capture from before the v2 registry existed must never be treated as
+    # v2-qualified prospective evidence (see IDENTITY_REGISTRY_V2_START's own
+    # docstring). qualify_source_lead already enforces this at the
+    # qualification layer; checked here too, before any network call, so a
+    # pre-cutover candidate never gets a 'sampled'+identity_verified=True
+    # target row written at all (colleague review, 2026-08-28: AI_RULES.md
+    # requires gating before expensive work starts, and a dashboard reading
+    # target_eligible without also checking the cutover would otherwise
+    # still see these rows).
+    pre_cutover = tuple(
+        item for item in claimed if item.candidate.source.first_seen_at < IDENTITY_REGISTRY_V2_START
+    )
+    network_eligible = tuple(
+        item
+        for item in claimed
+        if item.candidate.source.first_seen_at >= IDENTITY_REGISTRY_V2_START
+    )
+    for item in pre_cutover:
+        skip_started = time.monotonic()
+        for exchange_name in target_exchanges:
+            results[item.capture_id].append(
+                _target_failure(
+                    exchange_name,
+                    "before_identity_registry_v2_activation",
+                    skip_started,
+                    target_usd,
+                )
+            )
+
     for exchange_name in target_exchanges:
+        if not _exchange_has_registered_route(network_eligible, exchange_name, registry):
+            # No claim in this batch has any registered route to this
+            # exchange (e.g. bybit, which currently has zero registry
+            # links) -- never create the client or load its full market
+            # catalog for nothing (colleague review, 2026-08-28). Each
+            # claim still gets its own honest per-candidate reason via
+            # capture_target_observation's own pre-network check logic.
+            skip_started = time.monotonic()
+            for item in network_eligible:
+                source_link, _target_link = _resolve_source_and_target_links(
+                    item.candidate, exchange_name, registry
+                )
+                reason = (
+                    "source_identity_unregistered"
+                    if source_link is None
+                    else "no_registered_target"
+                )
+                results[item.capture_id].append(
+                    _target_failure(exchange_name, reason, skip_started, target_usd)
+                )
+            continue
         factory = exchange_factories.get(exchange_name)
         if factory is None:
             raise ValueError(f"unknown source-lead target exchange: {exchange_name}")
@@ -686,17 +891,18 @@ async def capture_claimed_source_leads(
         exchange_started = time.monotonic()
         try:
             await asyncio.wait_for(exchange.load_markets(), timeout=timeout_seconds)
-            for item in claimed:
+            for item in network_eligible:
                 observation = await capture_target_observation(
                     exchange_name,
                     exchange,
                     item.candidate,
                     target_usd=target_usd,
                     timeout_seconds=timeout_seconds,
+                    registry=registry,
                 )
                 results[item.capture_id].append(observation)
         except Exception as exc:
-            for item in claimed:
+            for item in network_eligible:
                 results[item.capture_id].append(
                     _target_failure(
                         exchange_name,
@@ -716,6 +922,7 @@ async def capture_claimed_source_leads(
         item.capture_id: qualify_source_lead(
             source_exchange=SOURCE_EXCHANGE,
             source_identity_key=item.candidate.source.identity_key,
+            source_first_observed_at=item.candidate.source.first_seen_at,
             target_observations=tuple(results[item.capture_id]),
             registry=registry,
         )

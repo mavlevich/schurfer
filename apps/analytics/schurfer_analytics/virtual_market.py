@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
-import json
-from collections.abc import Awaitable, Callable, Iterable
+from collections.abc import Awaitable, Callable
 from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING, Any, cast
 
@@ -20,6 +18,7 @@ from .ohlcv import (
     fetch_candles,
     next_timeframe_after,
 )
+from .reporting import canonical_json_array_fingerprint
 from .virtual_entry_challengers import challenger_path_bounds
 from .virtual_strategy import (
     EpisodeSelection,
@@ -60,25 +59,6 @@ class MakerDecisionPaths:
     def __post_init__(self) -> None:
         if not self.decision_id.strip():
             raise ValueError("maker decision paths require a decision id")
-
-
-def _fingerprint_payloads(payloads: Iterable[dict[str, Any]]) -> str:
-    """Hash a canonical JSON array without materializing the full payload twice."""
-    digest = hashlib.sha256()
-    digest.update(b"[")
-    for index, payload in enumerate(payloads):
-        if index:
-            digest.update(b",")
-        digest.update(
-            json.dumps(
-                payload,
-                sort_keys=True,
-                separators=(",", ":"),
-                ensure_ascii=False,
-            ).encode()
-        )
-    digest.update(b"]")
-    return digest.hexdigest()
 
 
 async def _process_by_exchange[InputT, OutputT](
@@ -145,7 +125,7 @@ def decision_market_path_fingerprint(paths: tuple[DecisionMarketPath, ...]) -> s
         }
         for item in sorted(paths, key=lambda item: item.decision_id)
     )
-    return _fingerprint_payloads(payloads)
+    return canonical_json_array_fingerprint(payloads)
 
 
 def maker_market_path_fingerprint(paths: tuple[MakerDecisionPaths, ...]) -> str:
@@ -171,7 +151,7 @@ def maker_market_path_fingerprint(paths: tuple[MakerDecisionPaths, ...]) -> str:
         }
         for item in sorted(paths, key=lambda item: item.decision_id)
     )
-    return _fingerprint_payloads(payloads)
+    return canonical_json_array_fingerprint(payloads)
 
 
 def maker_path_bounds(

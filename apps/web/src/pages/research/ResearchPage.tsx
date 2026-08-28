@@ -328,10 +328,21 @@ function SourceLeadCard({ progress }: { progress: SourceLeadProgress }) {
               {progress.identity_registry_mixed && ' · mixed contract'}
             </span>
           </div>
-          <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-5">
             <div>
               <p className="text-muted-foreground">Qualified</p>
               <p className="mt-1 font-mono text-foreground">{progress.qualified}</p>
+            </div>
+            <div>
+              <p className="text-muted-foreground">Route evidence pending</p>
+              <p
+                className={cn(
+                  'mt-1 font-mono text-foreground',
+                  progress.route_evidence_pending > 0 && 'text-amber-300',
+                )}
+              >
+                {progress.route_evidence_pending}
+              </p>
             </div>
             <div>
               <p className="text-muted-foreground">Identity unapproved</p>
@@ -355,6 +366,15 @@ function SourceLeadCard({ progress }: { progress: SourceLeadProgress }) {
               </p>
             </div>
           </div>
+          {progress.route_evidence_pending > 0 && (
+            <p className="mt-3 text-muted-foreground">
+              Identity and liquidity confirmed for {progress.route_evidence_pending} capture
+              {progress.route_evidence_pending === 1 ? '' : 's'}, but the specific derivative
+              markets are not yet independently evidenced — see each capture's own
+              <code className="mx-1 rounded bg-muted px-1">would_select</code>
+              detail. None of these count as qualified until that evidence exists.
+            </p>
+          )}
           <p className="mt-3 text-muted-foreground">
             selected Binance <span className="font-mono">{progress.selected_binance}</span> · Bybit{' '}
             <span className="font-mono">{progress.selected_bybit}</span>

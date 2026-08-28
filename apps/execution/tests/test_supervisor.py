@@ -68,6 +68,18 @@ def test_gate_with_no_critical_workers_starts_open() -> None:
     assert WorkerReadinessGate(set()).is_open()[0]
 
 
+def test_safety_blocker_is_independent_from_worker_readiness() -> None:
+    gate = WorkerReadinessGate({"critical"})
+    gate.set_safety_blocker("reconciliation_pending")
+    gate.mark_ready("critical")
+
+    assert not gate.is_open()[0]
+    assert gate.get_reasons() == ["reconciliation_pending"]
+
+    gate.clear_safety_blocker("reconciliation_pending")
+    assert gate.is_open()[0]
+
+
 def test_worker_spec_rejects_zero_failure_threshold() -> None:
     async def worker(_tracker: object) -> None:
         return

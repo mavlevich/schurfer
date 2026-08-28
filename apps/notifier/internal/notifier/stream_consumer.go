@@ -52,6 +52,8 @@ func payloadHash(p Payload) []byte {
 func severityWeight(s string) int {
 	switch s {
 	case "critical":
+		return 5
+	case "warning":
 		return 4
 	case "trade":
 		return 3
@@ -125,7 +127,7 @@ func (c *StreamConsumer) Run(ctx context.Context) {
 
 		for _, stream := range streams {
 			msgs := stream.Messages
-			// Priority sorting: critical > trade > research > info
+			// Priority sorting: critical > warning > trade > research > info
 			sort.SliceStable(msgs, func(i, j int) bool {
 				envI := c.parseEnvelope(msgs[i])
 				envJ := c.parseEnvelope(msgs[j])

@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
+from dataclasses import fields, is_dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Callable, Iterable
 
 
 class ReportWindowNotStartedError(ValueError):
@@ -74,6 +77,50 @@ def json_ready(value: Any) -> Any:
     if isinstance(value, list | tuple):
         return [json_ready(item) for item in value]
     return value
+
+
+def json_dataclass_default(value: Any) -> Any:
+    """Expose dataclass fields to ``json.dumps`` without a recursive deep copy."""
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if is_dataclass(value) and not isinstance(value, type):
+        return {field.name: getattr(value, field.name) for field in fields(value)}
+    raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
+
+
+def render_dataclass_json(value: Any) -> str:
+    """Render the stable indented JSON contract without a recursive ``asdict`` copy."""
+    return json.dumps(
+        value,
+        default=json_dataclass_default,
+        indent=2,
+        sort_keys=True,
+        allow_nan=False,
+    )
+
+
+def canonical_json_array_fingerprint(
+    values: Iterable[Any],
+    *,
+    default: Callable[[Any], Any] | None = None,
+) -> str:
+    """Hash canonical JSON-array bytes while serializing one value at a time."""
+    digest = hashlib.sha256()
+    digest.update(b"[")
+    for index, value in enumerate(values):
+        if index:
+            digest.update(b",")
+        digest.update(
+            json.dumps(
+                value,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+                default=default,
+            ).encode()
+        )
+    digest.update(b"]")
+    return digest.hexdigest()
 
 
 def markdown_table(headers: tuple[str, ...], rows: list[tuple[Any, ...]]) -> list[str]:

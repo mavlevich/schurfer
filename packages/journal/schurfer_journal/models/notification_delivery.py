@@ -55,7 +55,7 @@ class NotificationDelivery(Base):
             name="ck_notification_deliveries_envelope_version",
         ),
         CheckConstraint(
-            "severity IN ('critical', 'trade', 'research', 'info')",
+            "severity IN ('critical', 'warning', 'trade', 'research', 'info')",
             name="ck_notification_deliveries_severity",
         ),
         CheckConstraint(

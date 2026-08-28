@@ -92,6 +92,172 @@ func TestTokenHandlerSupportsUnicodeBase(t *testing.T) {
 	if response.Base != base {
 		t.Errorf("base = %q, want %q", response.Base, base)
 	}
+	if !response.IsLive {
+		t.Errorf("is_live = false, want true for a base actually present in pumps:latest")
+	}
+}
+
+// TestTokenHandlerFallsBackToDBWhenNotInLiveSnapshot regression-tests the
+// 2026-08-28 production report: TRUMP/TAC/AURASOL/ARIA/LONGXIA/龙虾/AIINU all
+// showed "Token not found" on TokenPage purely because none of them happened
+// to be in pumps:latest at request time, despite having real DB history.
+func TestTokenHandlerFallsBackToDBWhenNotInLiveSnapshot(t *testing.T) {
+	t.Parallel()
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+	// Live snapshot exists but does not contain TRUMP.
+	payload, err := json.Marshal(pumpsPayload{
+		Count: 1,
+		Pumps: []pumpEntry{{Base: "OTHERTOKEN", MaxChangePct: 10}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := rdb.Set(context.Background(), "pumps:latest", payload, 0).Err(); err != nil {
+		t.Fatal(err)
+	}
+
+	exchangesJSON, err := json.Marshal([]exchangeEntry{{Exchange: "bingx", Symbol: "TRUMPSOL-USDT"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool := &stubQuerier{
+		onQueryRow: func(_ context.Context, _ string, _ ...any) pgxRow {
+			return &stubRow{vals: []any{int64(9399), 88.01, exchangesJSON}}
+		},
+	}
+
+	h := &Handler{rdb: rdb, pool: pool}
+	router := chi.NewRouter()
+	router.Get("/api/pumps/{base}", h.Token)
+	req := httptest.NewRequest(http.MethodGet, "/api/pumps/TRUMP", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	var response pumpEntry
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Base != "TRUMP" || response.PumpEventID != 9399 {
+		t.Errorf("response = %+v, want base=TRUMP pump_event_id=9399", response)
+	}
+	if len(response.Exchanges) != 1 || response.Exchanges[0].Symbol != "TRUMPSOL-USDT" {
+		t.Errorf("exchanges = %+v, want the DB-sourced TRUMPSOL-USDT entry", response.Exchanges)
+	}
+	// Colleague review (2026-08-28): the DB-sourced entry is historical, not
+	// live -- TokenPage's "Active on N exchanges" and its header change_pct
+	// must not read as current for a token that fell out of pumps:latest.
+	if response.IsLive {
+		t.Errorf("is_live = true, want false for a DB-fallback (historical) entry")
+	}
+}
+
+// TestTokenHandlerLiveEntryTakesPrecedenceOverDBFallback confirms IsLive is
+// exactly the discriminator TokenPage/ExchangeBreakdown need: true only when
+// the base is actually present in pumps:latest right now, false whenever the
+// response came from dbTokenFallback, regardless of what the DB itself holds
+// for the same base.
+func TestTokenHandlerLiveEntryTakesPrecedenceOverDBFallback(t *testing.T) {
+	t.Parallel()
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+	payload, err := json.Marshal(pumpsPayload{
+		Count: 1,
+		Pumps: []pumpEntry{{Base: "ACTIVE", MaxChangePct: 55}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := rdb.Set(context.Background(), "pumps:latest", payload, 0).Err(); err != nil {
+		t.Fatal(err)
+	}
+	// A pool that would panic if queried -- the live match must return
+	// before ever falling through to the DB.
+	pool := &stubQuerier{
+		onQueryRow: func(_ context.Context, _ string, _ ...any) pgxRow {
+			t.Fatal("dbTokenFallback must not be queried when the live snapshot has a match")
+			return nil
+		},
+	}
+
+	h := &Handler{rdb: rdb, pool: pool}
+	router := chi.NewRouter()
+	router.Get("/api/pumps/{base}", h.Token)
+	req := httptest.NewRequest(http.MethodGet, "/api/pumps/ACTIVE", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	var response pumpEntry
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.IsLive {
+		t.Errorf("is_live = false, want true for a live-snapshot match")
+	}
+}
+
+// TestTokenHandlerFallsBackToDBWhenRedisKeyMissing covers the previously
+// hard-404 branch: pumps:latest itself absent from Redis (redis.Nil) must
+// also fall through to the DB, not stop at "not found" immediately.
+func TestTokenHandlerFallsBackToDBWhenRedisKeyMissing(t *testing.T) {
+	t.Parallel()
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+	// No pumps:latest key set at all.
+
+	exchangesJSON, err := json.Marshal([]exchangeEntry{{Exchange: "gate"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool := &stubQuerier{
+		onQueryRow: func(_ context.Context, _ string, _ ...any) pgxRow {
+			return &stubRow{vals: []any{int64(1), 20.0, exchangesJSON}}
+		},
+	}
+
+	h := &Handler{rdb: rdb, pool: pool}
+	router := chi.NewRouter()
+	router.Get("/api/pumps/{base}", h.Token)
+	req := httptest.NewRequest(http.MethodGet, "/api/pumps/OLDCOIN", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestTokenHandlerReturnsNotFoundWhenNeitherLiveNorDBHasIt confirms the
+// fallback stays fail-closed: a base absent from both the live snapshot and
+// app.pump_events is still a genuine 404, not silently defaulted.
+func TestTokenHandlerReturnsNotFoundWhenNeitherLiveNorDBHasIt(t *testing.T) {
+	t.Parallel()
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+
+	pool := &stubQuerier{
+		onQueryRow: func(_ context.Context, _ string, _ ...any) pgxRow {
+			return &stubRow{err: pgx.ErrNoRows}
+		},
+	}
+
+	h := &Handler{rdb: rdb, pool: pool}
+	router := chi.NewRouter()
+	router.Get("/api/pumps/{base}", h.Token)
+	req := httptest.NewRequest(http.MethodGet, "/api/pumps/NEVERSEEN", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404; body: %s", w.Code, w.Body.String())
+	}
 }
 
 // ---- stub DB infrastructure ----
@@ -1358,6 +1524,64 @@ func TestRankExchangeEntries(t *testing.T) {
 			t.Errorf("want %v, got %v", want, got)
 		}
 	})
+}
+
+// TestRankedExchangesCarriesMarketIDFromLiveSnapshot confirms the live-
+// snapshot path threads each exchange's captured market_id through to
+// exchangeCandidate -- this is what lets fetchOHLCV request the exact
+// instrument instead of guessing a symbol from base (2026-08-28 production
+// report: guessing broke bingx OHLCV for TRUMP).
+func TestRankedExchangesCarriesMarketIDFromLiveSnapshot(t *testing.T) {
+	t.Parallel()
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+	payload, err := json.Marshal(pumpsPayload{
+		Count: 1,
+		Pumps: []pumpEntry{{
+			Base: "TRUMP",
+			Exchanges: []exchangeEntry{
+				{Exchange: "bingx", MarketID: "TRUMPSOL-USDT", Volume24hUSD: fptr(1_000_000)},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := rdb.Set(context.Background(), "pumps:latest", payload, 0).Err(); err != nil {
+		t.Fatal(err)
+	}
+
+	h := &Handler{rdb: rdb}
+	got := h.rankedExchanges(context.Background(), "TRUMP")
+	want := []exchangeCandidate{{Exchange: "bingx", MarketID: "TRUMPSOL-USDT"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("rankedExchanges = %+v, want %+v", got, want)
+	}
+}
+
+// TestRankedExchangesCarriesMarketIDFromDBFallback covers the same wiring
+// through the DB fallback path (base not in the live snapshot).
+func TestRankedExchangesCarriesMarketIDFromDBFallback(t *testing.T) {
+	t.Parallel()
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+	// No pumps:latest key -- forces the DB fallback path.
+
+	exchangesJSON := []byte(`[{"exchange":"gate","market_id":"HFT_USDT"}]`)
+	pool := &stubQuerier{
+		onQueryRow: func(_ context.Context, _ string, _ ...any) pgxRow {
+			return &stubRow{vals: []any{exchangesJSON}}
+		},
+	}
+
+	h := &Handler{rdb: rdb, pool: pool}
+	got := h.rankedExchanges(context.Background(), "HFT")
+	want := []exchangeCandidate{{Exchange: "gate", MarketID: "HFT_USDT"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("rankedExchanges = %+v, want %+v", got, want)
+	}
 }
 
 func TestExchangeEntryPreservesUnavailableVolumeMetadata(t *testing.T) {

@@ -7,6 +7,7 @@ from schurfer_journal.models import (
     Exchange,
     FillResolutionIncident,
     LiveOrderAttempt,
+    LiveReconciliationIncident,
     MarketType,
     NotificationDelivery,
     OutcomeLabel,
@@ -361,6 +362,7 @@ class TestSourceLeadCaptureModels:
             constraint.name for constraint in SourceLeadTargetObservation.__table__.constraints
         }
         assert "ck_source_lead_target_provisional_identity" in constraints
+        assert "ck_source_lead_target_v2_identity_pairing" in constraints
 
     def test_qualification_is_versioned_and_append_only_per_capture(self) -> None:
         assert SourceLeadQualification.__tablename__ == "source_lead_qualifications"
@@ -386,6 +388,7 @@ class TestSourceLeadCaptureModels:
         assert "ck_source_lead_qualification_selection" in constraints
         assert "ck_source_lead_qualification_registry_fingerprint" in constraints
         assert "ck_source_lead_qualification_v1_registry_contract" in constraints
+        assert "ck_source_lead_qualification_v2_registry_contract" in constraints
 
 
 class TestTradeDecisionModels:
@@ -619,3 +622,17 @@ class TestLiveOrderAttemptModel:
         assert indexes["ux_live_order_attempts_client_order_id"].unique
         assert "ck_live_order_attempts_status" in constraints
         assert fks == {"app.trades.id"}
+
+
+class TestLiveReconciliationIncidentModel:
+    def test_table_shape_and_stable_key(self) -> None:
+        assert LiveReconciliationIncident.__tablename__ == "live_reconciliation_incidents"
+        assert LiveReconciliationIncident.__table__.schema == "app"
+        columns = LiveReconciliationIncident.__table__.columns
+        assert columns["incident_key"].nullable is False
+        assert columns["evidence_json"].nullable is False
+        assert columns["last_seen_at"].nullable is False
+
+        indexes = {index.name: index for index in LiveReconciliationIncident.__table__.indexes}
+        assert indexes["ux_live_reconciliation_incidents_key"].unique
+        assert "ix_live_reconciliation_incidents_status" in indexes
