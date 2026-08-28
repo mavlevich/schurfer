@@ -12,7 +12,8 @@ exactly what corrupted the first-pass screen's own top burst bucket.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from datetime import timedelta
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
@@ -87,6 +88,22 @@ _CANDIDATE_EXTREME_MINUTES_SQL = text("""
 """)
 
 _REPORT_STATEMENT_TIMEOUT = "300s"
+_REPORT_QUERY_CHUNK = timedelta(days=1)
+
+
+def candidate_query_windows(
+    since: datetime, until: datetime
+) -> tuple[tuple[datetime, datetime], ...]:
+    """Split output time only; each SQL chunk still loads its own 24h lookback."""
+    if since >= until:
+        raise ValueError("since must be earlier than until")
+    windows: list[tuple[datetime, datetime]] = []
+    cursor = since
+    while cursor < until:
+        chunk_until = min(cursor + _REPORT_QUERY_CHUNK, until)
+        windows.append((cursor, chunk_until))
+        cursor = chunk_until
+    return tuple(windows)
 
 
 class MomentumFlowBidirectionalBurstRepository:
@@ -117,25 +134,28 @@ class MomentumFlowBidirectionalBurstRepository:
     ) -> tuple[BurstMinute, ...]:
         if since >= until:
             raise ValueError("since must be earlier than until")
-        async with self._engine.connect() as connection, connection.begin():
-            await connection.execute(text("SET TRANSACTION READ ONLY"))
-            await connection.execute(
-                text("SELECT set_config('statement_timeout', :timeout, true)"),
-                {"timeout": _REPORT_STATEMENT_TIMEOUT},
-            )
-            result = await connection.execute(
-                _CANDIDATE_EXTREME_MINUTES_SQL,
-                {
-                    "exchange": exchange,
-                    "market_type": market_type,
-                    "capture_version": capture_version,
-                    "since": since,
-                    "until": until,
-                    "min_volume_24h_usd": min_volume_24h_usd,
-                    "extreme_threshold_pct": extreme_threshold_pct,
-                },
-            )
-            rows = result.all()
+        rows: list[Any] = []
+        for chunk_since, chunk_until in candidate_query_windows(since, until):
+            async with self._engine.connect() as connection, connection.begin():
+                await connection.execute(text("SET TRANSACTION READ ONLY"))
+                await connection.execute(
+                    text("SELECT set_config('statement_timeout', :timeout, true)"),
+                    {"timeout": _REPORT_STATEMENT_TIMEOUT},
+                )
+                result = await connection.execute(
+                    _CANDIDATE_EXTREME_MINUTES_SQL,
+                    {
+                        "exchange": exchange,
+                        "market_type": market_type,
+                        "capture_version": capture_version,
+                        "since": chunk_since,
+                        "until": chunk_until,
+                        "min_volume_24h_usd": min_volume_24h_usd,
+                        "extreme_threshold_pct": extreme_threshold_pct,
+                    },
+                )
+                rows.extend(result.all())
+        rows.sort(key=lambda row: (str(row.symbol), row.bucket_start))
         return tuple(
             BurstMinute(
                 exchange=exchange,

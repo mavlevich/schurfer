@@ -20,6 +20,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from schurfer_analytics.momentum_flow_bidirectional_burst_repository import (
     MomentumFlowBidirectionalBurstRepository,
+    candidate_query_windows,
 )
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
@@ -44,6 +45,15 @@ _INSERT_BAR_SQL = text("""
          true, true, true, decode(repeat('ef', 32), 'hex'))
     ON CONFLICT DO NOTHING
 """)
+
+
+def test_candidate_query_windows_are_half_open_daily_chunks() -> None:
+    until = _START + timedelta(days=2, hours=3)
+    assert candidate_query_windows(_START, until) == (
+        (_START, _START + timedelta(days=1)),
+        (_START + timedelta(days=1), _START + timedelta(days=2)),
+        (_START + timedelta(days=2), until),
+    )
 
 
 async def _connect_or_skip() -> AsyncEngine:
