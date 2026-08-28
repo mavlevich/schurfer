@@ -49,6 +49,7 @@ func isValidBase(base string) bool {
 type exchangeEntry struct {
 	Exchange          string   `json:"exchange"`
 	Symbol            string   `json:"symbol"`
+	MarketID          string   `json:"market_id"`
 	Price             string   `json:"price"`
 	ChangePct         float64  `json:"change_pct"`
 	High24h           string   `json:"high_24h"`
@@ -342,14 +343,15 @@ func (h *Handler) OHLCV(w http.ResponseWriter, r *http.Request) {
 	var bestCandles []Candle
 	var bestExchange string
 	for _, ex := range exchanges {
-		candles, err := fetchOHLCV(r.Context(), ex, base, interval, limit)
+		candles, err := fetchOHLCV(r.Context(), ex.Exchange, ex.MarketID, base, interval, limit)
 		if err != nil {
-			slog.Warn("pumps.ohlcv.fetch", "exchange", ex, "base", base, "err", err)
+			slog.Warn("pumps.ohlcv.fetch",
+				"exchange", ex.Exchange, "market_id", ex.MarketID, "base", base, "err", err)
 			continue
 		}
 		if len(candles) > len(bestCandles) {
 			bestCandles = candles
-			bestExchange = ex
+			bestExchange = ex.Exchange
 		}
 		if len(candles) >= goodEnough {
 			break
@@ -1356,15 +1358,44 @@ func rankExchangeEntries(entries []exchangeEntry) []string {
 	return out
 }
 
+// exchangeCandidate pairs a supported OHLCV exchange with the exact
+// exchange-native market id captured for it (app.pump_event_sources.
+// market_id, round-tripped through both pumps:latest and app.pump_events.
+// exchanges unchanged). MarketID may be empty for a source that predates
+// this field or a genuinely unmapped identity -- callers fall back to a
+// base-derived guess in that case, same as before this field existed.
+type exchangeCandidate struct {
+	Exchange string
+	MarketID string
+}
+
+// zipCandidates pairs a rankExchangeEntries-ordered exchange-name list with
+// each exchange's market id, preserving the ranked order.
+func zipCandidates(ranked []string, marketIDs map[string]string) []exchangeCandidate {
+	out := make([]exchangeCandidate, len(ranked))
+	for i, exchange := range ranked {
+		out[i] = exchangeCandidate{Exchange: exchange, MarketID: marketIDs[exchange]}
+	}
+	return out
+}
+
 // rankedExchanges returns exchanges available for base sorted by 24h volume
-// descending, filtered to those supported for OHLCV. Live Redis snapshot is
+// descending, filtered to those supported for OHLCV, each paired with its
+// captured market id (see exchangeCandidate) so fetchOHLCV can request the
+// exact instrument instead of guessing a symbol from base -- guessing broke
+// OHLCV for TRUMP on bingx (real market id TRUMPSOL-USDT; base + "-USDT"
+// does not exist), a 2026-08-28 production report. Live Redis snapshot is
 // checked first (has volume); falls back to DB (no volume, order arbitrary).
-func (h *Handler) rankedExchanges(ctx context.Context, base string) []string {
+func (h *Handler) rankedExchanges(ctx context.Context, base string) []exchangeCandidate {
 	if payload, err := h.loadPumps(ctx); err == nil {
 		for _, p := range payload.Pumps {
 			if p.Base == base {
 				if ranked := rankExchangeEntries(p.Exchanges); len(ranked) > 0 {
-					return ranked
+					marketIDs := make(map[string]string, len(p.Exchanges))
+					for _, ex := range p.Exchanges {
+						marketIDs[ex.Exchange] = ex.MarketID
+					}
+					return zipCandidates(ranked, marketIDs)
 				}
 				break
 			}
@@ -1372,21 +1403,25 @@ func (h *Handler) rankedExchanges(ctx context.Context, base string) []string {
 	}
 
 	if h.pool != nil {
+		marketIDs := h.dbExchanges(ctx, base)
 		var dbEntries []exchangeEntry
-		for ex := range h.dbExchanges(ctx, base) {
+		for ex := range marketIDs {
 			dbEntries = append(dbEntries, exchangeEntry{Exchange: ex})
 		}
-		return rankExchangeEntries(dbEntries)
+		return zipCandidates(rankExchangeEntries(dbEntries), marketIDs)
 	}
 
 	return nil
 }
 
-func (h *Handler) dbExchanges(ctx context.Context, base string) map[string]bool {
+// dbExchanges returns, for base's most recent app.pump_events row, each
+// captured exchange mapped to its market id (empty string if that source
+// row predates market_id capture). No time window: a token's episode
+// history (and its chart) stays visible on TokenPage indefinitely, so the
+// exchange list used to fetch that chart shouldn't expire after 24h either
+// — pick the most recent episode.
+func (h *Handler) dbExchanges(ctx context.Context, base string) map[string]string {
 	var raw []byte
-	// No time window: a token's episode history (and its chart) stays visible
-	// on TokenPage indefinitely, so the exchange list used to fetch that
-	// chart shouldn't expire after 24h either — pick the most recent episode.
 	err := h.pool.QueryRow(ctx,
 		`SELECT exchanges FROM app.pump_events WHERE base = $1 ORDER BY last_seen_at DESC LIMIT 1`,
 		base,
@@ -1396,13 +1431,14 @@ func (h *Handler) dbExchanges(ctx context.Context, base string) map[string]bool 
 	}
 	var entries []struct {
 		Exchange string `json:"exchange"`
+		MarketID string `json:"market_id"`
 	}
 	if err := json.Unmarshal(raw, &entries); err != nil {
 		return nil
 	}
-	out := make(map[string]bool, len(entries))
+	out := make(map[string]string, len(entries))
 	for _, e := range entries {
-		out[e.Exchange] = true
+		out[e.Exchange] = e.MarketID
 	}
 	return out
 }

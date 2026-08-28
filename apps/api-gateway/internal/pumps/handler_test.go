@@ -1472,6 +1472,64 @@ func TestRankExchangeEntries(t *testing.T) {
 	})
 }
 
+// TestRankedExchangesCarriesMarketIDFromLiveSnapshot confirms the live-
+// snapshot path threads each exchange's captured market_id through to
+// exchangeCandidate -- this is what lets fetchOHLCV request the exact
+// instrument instead of guessing a symbol from base (2026-08-28 production
+// report: guessing broke bingx OHLCV for TRUMP).
+func TestRankedExchangesCarriesMarketIDFromLiveSnapshot(t *testing.T) {
+	t.Parallel()
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+	payload, err := json.Marshal(pumpsPayload{
+		Count: 1,
+		Pumps: []pumpEntry{{
+			Base: "TRUMP",
+			Exchanges: []exchangeEntry{
+				{Exchange: "bingx", MarketID: "TRUMPSOL-USDT", Volume24hUSD: fptr(1_000_000)},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := rdb.Set(context.Background(), "pumps:latest", payload, 0).Err(); err != nil {
+		t.Fatal(err)
+	}
+
+	h := &Handler{rdb: rdb}
+	got := h.rankedExchanges(context.Background(), "TRUMP")
+	want := []exchangeCandidate{{Exchange: "bingx", MarketID: "TRUMPSOL-USDT"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("rankedExchanges = %+v, want %+v", got, want)
+	}
+}
+
+// TestRankedExchangesCarriesMarketIDFromDBFallback covers the same wiring
+// through the DB fallback path (base not in the live snapshot).
+func TestRankedExchangesCarriesMarketIDFromDBFallback(t *testing.T) {
+	t.Parallel()
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+	// No pumps:latest key -- forces the DB fallback path.
+
+	exchangesJSON := []byte(`[{"exchange":"gate","market_id":"HFT_USDT"}]`)
+	pool := &stubQuerier{
+		onQueryRow: func(_ context.Context, _ string, _ ...any) pgxRow {
+			return &stubRow{vals: []any{exchangesJSON}}
+		},
+	}
+
+	h := &Handler{rdb: rdb, pool: pool}
+	got := h.rankedExchanges(context.Background(), "HFT")
+	want := []exchangeCandidate{{Exchange: "gate", MarketID: "HFT_USDT"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("rankedExchanges = %+v, want %+v", got, want)
+	}
+}
+
 func TestExchangeEntryPreservesUnavailableVolumeMetadata(t *testing.T) {
 	raw := []byte(`{
 		"exchange": "lbank",

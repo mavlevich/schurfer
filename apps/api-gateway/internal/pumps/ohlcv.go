@@ -24,23 +24,38 @@ type Candle struct {
 	Volume float64 `json:"volume"`
 }
 
-// fetchOHLCV dispatches to the exchange-specific implementation.
-func fetchOHLCV(ctx context.Context, exchange, base string, interval, limit int) ([]Candle, error) {
+// fetchOHLCV dispatches to the exchange-specific implementation. marketID is
+// the exact exchange-native symbol captured in app.pump_event_sources
+// (exchangeCandidate.MarketID) -- used verbatim where available instead of
+// guessing a symbol from base, since the guess (base + a hardcoded suffix)
+// is wrong whenever the exchange's real listing diverges from base (e.g.
+// bingx's real market id for TRUMP is TRUMPSOL-USDT, not TRUMP-USDT -- a
+// 2026-08-28 production report). marketID may be empty (a source captured
+// before this field existed, or a genuinely unmapped identity); every
+// fetcher below except fetchLBank falls back to the base-derived guess in
+// that case. fetchLBank deliberately never uses marketID: LBank's captured
+// market_id is its perpetual-swap id (e.g. "BASUSDT"), but this fetcher
+// calls LBank's v2 SPOT kline endpoint as a proxy (perpetual OHLCV history
+// is unavailable there -- see ROADMAP.md's LBank perpetual-history
+// limitation, CCXT-003) which requires the spot-style "base_usdt" form
+// instead; confirmed directly against the live endpoint before this change
+// (a real BTC/USDT request succeeds with "btc_usdt", 404s with "BTCUSDT").
+func fetchOHLCV(ctx context.Context, exchange, marketID, base string, interval, limit int) ([]Candle, error) {
 	switch exchange {
 	case "binance":
-		return fetchBinance(ctx, base, interval, limit)
+		return fetchBinance(ctx, marketID, base, interval, limit)
 	case "bybit":
-		return fetchBybit(ctx, base, interval, limit)
+		return fetchBybit(ctx, marketID, base, interval, limit)
 	case "okx":
-		return fetchOKX(ctx, base, interval, limit)
+		return fetchOKX(ctx, marketID, base, interval, limit)
 	case "gate":
-		return fetchGate(ctx, base, interval, limit)
+		return fetchGate(ctx, marketID, base, interval, limit)
 	case "bingx":
-		return fetchBingX(ctx, base, interval, limit)
+		return fetchBingX(ctx, marketID, base, interval, limit)
 	case "mexc":
-		return fetchMEXC(ctx, base, interval, limit)
+		return fetchMEXC(ctx, marketID, base, interval, limit)
 	case "xt":
-		return fetchXT(ctx, base, interval, limit)
+		return fetchXT(ctx, marketID, base, interval, limit)
 	case "lbank":
 		return fetchLBank(ctx, base, interval, limit)
 	default:
@@ -48,10 +63,14 @@ func fetchOHLCV(ctx context.Context, exchange, base string, interval, limit int)
 	}
 }
 
-func fetchBybit(ctx context.Context, base string, interval, limit int) ([]Candle, error) {
+func fetchBybit(ctx context.Context, marketID, base string, interval, limit int) ([]Candle, error) {
+	symbol := marketID
+	if symbol == "" {
+		symbol = base + "USDT"
+	}
 	url := fmt.Sprintf(
-		"https://api.bybit.com/v5/market/kline?category=linear&symbol=%sUSDT&interval=%d&limit=%d",
-		base, interval, limit,
+		"https://api.bybit.com/v5/market/kline?category=linear&symbol=%s&interval=%d&limit=%d",
+		symbol, interval, limit,
 	)
 	raw, err := httpGet(ctx, url)
 	if err != nil {
@@ -110,11 +129,15 @@ func binanceInterval(minutes int) string {
 	}
 }
 
-func fetchBinance(ctx context.Context, base string, interval, limit int) ([]Candle, error) {
+func fetchBinance(ctx context.Context, marketID, base string, interval, limit int) ([]Candle, error) {
+	symbol := marketID
+	if symbol == "" {
+		symbol = base + "USDT"
+	}
 	ivStr := binanceInterval(interval)
 	url := fmt.Sprintf(
-		"https://fapi.binance.com/fapi/v1/klines?symbol=%sUSDT&interval=%s&limit=%d",
-		base, ivStr, limit,
+		"https://fapi.binance.com/fapi/v1/klines?symbol=%s&interval=%s&limit=%d",
+		symbol, ivStr, limit,
 	)
 	raw, err := httpGet(ctx, url)
 	if err != nil {
@@ -204,11 +227,15 @@ func okxInterval(minutes int) string {
 	}
 }
 
-func fetchOKX(ctx context.Context, base string, interval, limit int) ([]Candle, error) {
+func fetchOKX(ctx context.Context, marketID, base string, interval, limit int) ([]Candle, error) {
+	instID := marketID
+	if instID == "" {
+		instID = base + "-USDT-SWAP"
+	}
 	bar := okxInterval(interval)
 	url := fmt.Sprintf(
-		"https://www.okx.com/api/v5/market/candles?instId=%s-USDT-SWAP&bar=%s&limit=%d",
-		base, bar, limit,
+		"https://www.okx.com/api/v5/market/candles?instId=%s&bar=%s&limit=%d",
+		instID, bar, limit,
 	)
 	raw, err := httpGet(ctx, url)
 	if err != nil {
@@ -263,8 +290,8 @@ func gateInterval(minutes int) string {
 	}
 }
 
-func fetchGate(ctx context.Context, base string, interval, limit int) ([]Candle, error) {
-	raw, err := httpGet(ctx, gateOHLCVURL(base, interval, limit))
+func fetchGate(ctx context.Context, marketID, base string, interval, limit int) ([]Candle, error) {
+	raw, err := httpGet(ctx, gateOHLCVURL(marketID, base, interval, limit))
 	if err != nil {
 		return nil, err
 	}
@@ -275,9 +302,13 @@ func fetchGate(ctx context.Context, base string, interval, limit int) ([]Candle,
 	return candles, nil
 }
 
-func gateOHLCVURL(base string, interval, limit int) string {
+func gateOHLCVURL(marketID, base string, interval, limit int) string {
+	contract := marketID
+	if contract == "" {
+		contract = base + "_USDT"
+	}
 	query := url.Values{}
-	query.Set("contract", base+"_USDT")
+	query.Set("contract", contract)
 	query.Set("interval", gateInterval(interval))
 	query.Set("limit", strconv.Itoa(limit))
 	return "https://fx-api.gateio.ws/api/v4/futures/usdt/candlesticks?" + query.Encode()
@@ -395,12 +426,19 @@ func bingxInterval(minutes int) string {
 	}
 }
 
-func fetchBingX(ctx context.Context, base string, interval, limit int) ([]Candle, error) {
-	url := fmt.Sprintf(
-		"https://open-api.bingx.com/openApi/swap/v2/quote/klines?symbol=%s-USDT&interval=%s&limit=%d",
-		base, bingxInterval(interval), limit,
+func bingxOHLCVURL(marketID, base string, interval, limit int) string {
+	symbol := marketID
+	if symbol == "" {
+		symbol = base + "-USDT"
+	}
+	return fmt.Sprintf(
+		"https://open-api.bingx.com/openApi/swap/v2/quote/klines?symbol=%s&interval=%s&limit=%d",
+		symbol, bingxInterval(interval), limit,
 	)
-	raw, err := httpGet(ctx, url)
+}
+
+func fetchBingX(ctx context.Context, marketID, base string, interval, limit int) ([]Candle, error) {
+	raw, err := httpGet(ctx, bingxOHLCVURL(marketID, base, interval, limit))
 	if err != nil {
 		return nil, err
 	}
@@ -487,13 +525,17 @@ func mexcInterval(minutes int) string {
 	}
 }
 
-func fetchMEXC(ctx context.Context, base string, interval, limit int) ([]Candle, error) {
+func fetchMEXC(ctx context.Context, marketID, base string, interval, limit int) ([]Candle, error) {
+	symbol := marketID
+	if symbol == "" {
+		symbol = base + "_USDT"
+	}
 	// MEXC futures contract API — matches the perp market where pumps are detected.
 	// start= anchors the window; without it the API returns only the latest ~100 candles.
 	start := time.Now().Unix() - int64(interval*limit*60)
 	url := fmt.Sprintf(
-		"https://contract.mexc.com/api/v1/contract/kline/%s_USDT?interval=%s&start=%d",
-		base, mexcInterval(interval), start,
+		"https://contract.mexc.com/api/v1/contract/kline/%s?interval=%s&start=%d",
+		symbol, mexcInterval(interval), start,
 	)
 	raw, err := httpGet(ctx, url)
 	if err != nil {
@@ -608,20 +650,24 @@ func xtInterval(minutes int) (string, bool) {
 	}
 }
 
-func xtOHLCVURL(base string, interval, limit int) (string, error) {
+func xtOHLCVURL(marketID, base string, interval, limit int) (string, error) {
 	iv, ok := xtInterval(interval)
 	if !ok {
 		return "", fmt.Errorf("unsupported XT interval %d minutes", interval)
 	}
+	symbol := marketID
+	if symbol == "" {
+		symbol = strings.ToLower(base) + "_usdt"
+	}
 	query := url.Values{}
-	query.Set("symbol", strings.ToLower(base)+"_usdt")
+	query.Set("symbol", symbol)
 	query.Set("interval", iv)
 	query.Set("limit", strconv.Itoa(limit))
 	return "https://fapi.xt.com/future/market/v1/public/q/kline?" + query.Encode(), nil
 }
 
-func fetchXT(ctx context.Context, base string, interval, limit int) ([]Candle, error) {
-	endpoint, err := xtOHLCVURL(base, interval, limit)
+func fetchXT(ctx context.Context, marketID, base string, interval, limit int) ([]Candle, error) {
+	endpoint, err := xtOHLCVURL(marketID, base, interval, limit)
 	if err != nil {
 		return nil, err
 	}
