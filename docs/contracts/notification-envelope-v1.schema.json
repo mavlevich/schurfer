@@ -37,7 +37,7 @@
       "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
     },
     "severity": {
-      "enum": ["critical", "trade", "research", "info"]
+      "enum": ["critical", "warning", "trade", "research", "info"]
     },
     "created_at": {
       "type": "string",

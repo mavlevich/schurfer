@@ -17,6 +17,8 @@ if TYPE_CHECKING:
 
 log = structlog.get_logger()
 
+SUBMISSION_UNKNOWN_BLOCKER = "submission_unknown"
+
 
 class WorkerRestartPolicy(Enum):
     NEVER = "never"
@@ -109,33 +111,65 @@ class WorkerReadinessGate:
     def __init__(self, critical_worker_names: set[str]) -> None:
         self._critical_worker_names = critical_worker_names
         self._ready_workers: set[str] = set()
+        self._safety_blockers: set[str] = set()
+        self._operational_reasons: set[str] = set()
+        self._operationally_closed = bool(critical_worker_names)
         self._is_open = not critical_worker_names
         self._generation = 0
-        self._reasons: list[str] = [] if self._is_open else ["startup_pending"]
 
     def is_open(self) -> tuple[bool, int]:
         return self._is_open, self._generation
 
     def get_reasons(self) -> list[str]:
-        return list(self._reasons)
+        reasons = set(self._safety_blockers) | set(self._operational_reasons)
+        if self._operationally_closed and not self._operational_reasons:
+            reasons.add("startup_pending")
+        return sorted(reasons)
+
+    def _evaluate_state(self) -> None:
+        should_be_open = (
+            not self._operationally_closed
+            and self._ready_workers == self._critical_worker_names
+            and not self._safety_blockers
+        )
+
+        if should_be_open and not self._is_open:
+            self._is_open = True
+            self._generation += 1
+            log.info("gate.opened", generation=self._generation)
+        elif not should_be_open and self._is_open:
+            self._is_open = False
+            self._generation += 1
+            log.warning(
+                "gate.closed",
+                blockers=sorted(self._safety_blockers),
+                missing_workers=sorted(self._critical_worker_names - self._ready_workers),
+                reasons=sorted(self._operational_reasons),
+            )
+
+    def set_safety_blocker(self, blocker_name: str) -> None:
+        if blocker_name not in self._safety_blockers:
+            self._safety_blockers.add(blocker_name)
+            self._evaluate_state()
+
+    def clear_safety_blocker(self, blocker_name: str) -> None:
+        if blocker_name in self._safety_blockers:
+            self._safety_blockers.remove(blocker_name)
+            self._evaluate_state()
 
     def mark_ready(self, worker_name: str) -> None:
         if worker_name in self._critical_worker_names:
             self._ready_workers.add(worker_name)
-            if not self._is_open and self._ready_workers == self._critical_worker_names:
-                self._is_open = True
-                self._generation += 1
-                self._reasons.clear()
-                log.info("gate.opened", generation=self._generation)
+            if self._ready_workers == self._critical_worker_names:
+                self._operationally_closed = False
+                self._operational_reasons.clear()
+            self._evaluate_state()
 
     def close(self, reason: str) -> None:
-        if self._is_open:
-            self._is_open = False
-            self._generation += 1
-            log.warning("gate.closed", reason=reason, generation=self._generation)
-        if reason not in self._reasons:
-            self._reasons.append(reason)
+        self._operationally_closed = True
+        self._operational_reasons.add(reason)
         self._ready_workers.clear()
+        self._evaluate_state()
 
     def force_close_all(self, reason: str) -> None:
         self.close(reason)

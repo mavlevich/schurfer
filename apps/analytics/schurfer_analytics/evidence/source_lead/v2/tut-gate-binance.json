@@ -1,0 +1,231 @@
+{
+  "base": "TUT",
+  "bundle_sha256": "193a9ccc72e0775e6d4297b08b7ea2949d39344597452125a8f25a6c07813a2d",
+  "captured_at": "2026-08-28T13:00:20.902926+00:00",
+  "code_revision": "f51fa67e14a07f5754d1934f308a1b9fbe6b0e05",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/tutorial?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-08-28T13:00:20.577825+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "binance-smart-chain",
+      "block_time_in_minutes": 0,
+      "categories": [
+        "BNB Chain Ecosystem",
+        "Meme",
+        "AI Meme",
+        "AI Agents",
+        "Four.meme Ecosystem (BNB Memes)"
+      ],
+      "contract_address": "0xcaae2a2f939f51d97cdfa9a86e79e3f085b799f3",
+      "country_origin": "",
+      "description": {
+        "en": "Tutorial is a token from a dev who made a tutorial on how to launch token on BNB chain 10 month ago, the OG Tutorial token was on testnet, so he decided to launch it on mainnet as a meme. \n\nThe purpose of the project is to promote building on bsc and making useful education content. \nThe project was originally created on four.meme and liquidity was transferred to pancakeswap as bonding curve criteria was met.\n\n"
+      },
+      "detail_platforms": {
+        "binance-smart-chain": {
+          "contract_address": "0xcaae2a2f939f51d97cdfa9a86e79e3f085b799f3",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/bsc/tokens/0xcaae2a2f939f51d97cdfa9a86e79e3f085b799f3"
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": false,
+      "hashing_algorithm": null,
+      "id": "tutorial",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/54299/large/image_2025-02-08_18-56-13.png?1739165439",
+        "small": "https://coin-images.coingecko.com/coins/images/54299/small/image_2025-02-08_18-56-13.png?1739165439",
+        "thumb": "https://coin-images.coingecko.com/coins/images/54299/thumb/image_2025-02-08_18-56-13.png?1739165439"
+      },
+      "last_updated": "2026-08-28T12:57:40.000Z",
+      "links": {
+        "announcement_url": [],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://bscscan.com/token/0xcaae2a2f939f51d97cdfa9a86e79e3f085b799f3",
+          "https://binplorer.com/address/0xcaae2a2f939f51d97cdfa9a86e79e3f085b799f3"
+        ],
+        "chat_url": [],
+        "facebook_username": "",
+        "homepage": ["https://tutorialtoken.com"],
+        "official_forum_url": [],
+        "repos_url": {
+          "bitbucket": [],
+          "github": []
+        },
+        "snapshot_url": null,
+        "subreddit_url": null,
+        "telegram_channel_identifier": "",
+        "twitter_screen_name": "tutorialtoken",
+        "whitepaper": ""
+      },
+      "listing_currency": null,
+      "listing_price": null,
+      "listing_source": null,
+      "listing_source_url": null,
+      "listing_timestamp": null,
+      "market_cap_rank": 556,
+      "market_cap_rank_with_rehypothecated": 723,
+      "name": "Tutorial",
+      "platforms": {
+        "binance-smart-chain": "0xcaae2a2f939f51d97cdfa9a86e79e3f085b799f3"
+      },
+      "preview_listing": false,
+      "public_notice": null,
+      "sentiment_votes_down_percentage": 35.71,
+      "sentiment_votes_up_percentage": 64.29,
+      "status_updates": [],
+      "symbol": "tut",
+      "watchlist_portfolio_users": 3370,
+      "web_slug": "tutorial"
+    },
+    "raw_sha256": "da6b3c2e1ccb58e84732393ed35e1a48542473062ce70d2a6c204b1146ac23b5",
+    "source": "https://api.coingecko.com/api/v3/coins/tutorial",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v2",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-08-28T13:00:20.111832+00:00",
+    "payload": {
+      "active": true,
+      "code": "TUT",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "TUT",
+      "info": {
+        "category": [],
+        "chain": "BSC",
+        "chains": [
+          {
+            "addr": "0xcaae2a2f939f51d97cdfa9a86e79e3f085b799f3",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "TUT",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "45300000.0",
+        "name": "Tutorial",
+        "total_supply": "1000000000",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "Tutorial",
+      "networks": {
+        "BEP20": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "BSC",
+          "info": {
+            "addr": "0xcaae2a2f939f51d97cdfa9a86e79e3f085b799f3",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "BEP20",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "87f934df8fc44a9e56a6f72dd0f115fc4ce4c520754da4e775049f5fe85e0bdd",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "exact_contract",
+  "source_contract": {
+    "block_hash": "0x21dab25c0ab6855872b09d8b51eb5570a9ba08520963a6c99a233679460de415",
+    "block_number": 118579856,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0xcaae2a2f939f51d97cdfa9a86e79e3f085b799f3",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-08-28T13:00:20.737788+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "8e73d72cca28014c8646f2033e87ec712fc9eb6dbc2664092e1cf446ce4e6937",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "target_catalog_evidence": {
+    "endpoint": "https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list",
+    "observed_at": "2026-08-28T13:00:10.911381+00:00",
+    "payload": {
+      "chainId": "56",
+      "chainName": "BSC",
+      "contractAddress": "0xcaae2a2f939f51d97cdfa9a86e79e3f085b799f3",
+      "decimals": 18,
+      "fullyDelisted": true,
+      "listingCex": true,
+      "name": "Tutorial",
+      "offline": true,
+      "symbol": "TUT"
+    },
+    "raw_sha256": "79992ae9584b534795552b6b5cfb53aa05509c09d0137df997db8bf08b412082",
+    "source": "binance:alpha_catalog_entry",
+    "wire_exact": false
+  },
+  "target_contract": {
+    "block_hash": "0x21dab25c0ab6855872b09d8b51eb5570a9ba08520963a6c99a233679460de415",
+    "block_number": 118579856,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0xcaae2a2f939f51d97cdfa9a86e79e3f085b799f3",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-08-28T13:00:20.901047+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "8e73d72cca28014c8646f2033e87ec712fc9eb6dbc2664092e1cf446ce4e6937",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "target_exchange": "binance",
+  "working_tree_dirty": true
+}

@@ -35,6 +35,19 @@ var (
 	orderflowStart        = time.Date(2026, time.July, 30, 18, 15, 0, 0, time.UTC)
 	exitLiquidityStart    = time.Date(2026, time.July, 29, 15, 45, 34, 0, time.UTC)
 	sourceLeadStart       = time.Date(2026, time.August, 2, 0, 0, 0, 0, time.UTC)
+	// The date identity registry v2 was frozen and populated with real,
+	// evidenced links (research/gate-source-lead-registry-activation-v2;
+	// mirrors source_lead_contract.IDENTITY_REGISTRY_V2_START on the
+	// analytics side -- keep both in sync). A capture whose
+	// source_first_observed_at is before this must never count toward
+	// SourceLeadProgress.QualifiedProspective even if its own qualification
+	// row says 'qualified': identity was not confirmed at the time that
+	// capture occurred, only retroactively. Set a few days past this line's
+	// own authoring date, not at midnight today, so it cannot fall before
+	// this PR actually merges and deploys (colleague review, 2026-08-28,
+	// second round). Bump to the actual deploy date if it lands later;
+	// never move it earlier.
+	identityRegistryV2Start = time.Date(2026, time.August, 30, 0, 0, 0, 0, time.UTC)
 )
 
 type pgxRow interface {
@@ -173,28 +186,51 @@ type SourceLeadIdentityReviewCandidate struct {
 }
 
 type SourceLeadProgress struct {
-	Contract                    string                              `json:"contract"`
-	CohortStart                 time.Time                           `json:"cohort_start"`
-	Status                      string                              `json:"status"`
-	Captures                    int                                 `json:"captures"`
-	SourceEligible              int                                 `json:"source_eligible"`
-	Complete                    int                                 `json:"complete"`
-	Excluded                    int                                 `json:"excluded"`
-	Abandoned                   int                                 `json:"abandoned"`
-	RecentAbandoned             int                                 `json:"recent_abandoned"`
-	RecentCriticalAbandoned     int                                 `json:"recent_critical_abandoned"`
-	RecentRoutineAbandoned      int                                 `json:"recent_routine_abandoned"`
-	Collecting                  int                                 `json:"collecting"`
-	StaleCollecting             int                                 `json:"stale_collecting"`
-	TargetEligible              Milestone                           `json:"target_eligible"`
-	MatureFourHourWindows       Milestone                           `json:"mature_four_hour_windows"`
-	AssetClusters               Milestone                           `json:"asset_clusters"`
-	CalendarWeeks               Milestone                           `json:"calendar_weeks"`
-	ConfirmedWithinHour         int                                 `json:"confirmed_within_hour"`
-	Qualified                   int                                 `json:"qualified"`
-	QualificationMissing        int                                 `json:"qualification_missing"`
-	IdentityUnapproved          int                                 `json:"identity_unapproved"`
-	NoExecutableTarget          int                                 `json:"no_approved_executable_target"`
+	Contract                string    `json:"contract"`
+	CohortStart             time.Time `json:"cohort_start"`
+	Status                  string    `json:"status"`
+	Captures                int       `json:"captures"`
+	SourceEligible          int       `json:"source_eligible"`
+	Complete                int       `json:"complete"`
+	Excluded                int       `json:"excluded"`
+	Abandoned               int       `json:"abandoned"`
+	RecentAbandoned         int       `json:"recent_abandoned"`
+	RecentCriticalAbandoned int       `json:"recent_critical_abandoned"`
+	RecentRoutineAbandoned  int       `json:"recent_routine_abandoned"`
+	Collecting              int       `json:"collecting"`
+	StaleCollecting         int       `json:"stale_collecting"`
+	TargetEligible          Milestone `json:"target_eligible"`
+	MatureFourHourWindows   Milestone `json:"mature_four_hour_windows"`
+	AssetClusters           Milestone `json:"asset_clusters"`
+	CalendarWeeks           Milestone `json:"calendar_weeks"`
+	ConfirmedWithinHour     int       `json:"confirmed_within_hour"`
+	// Qualified counts every source_lead_qualifications row with
+	// status='qualified' under the current qualification_version -- it is
+	// NOT itself prospective-clean, because identity_registry_v2 was empty
+	// before IdentityRegistryV2Start and a capture's own qualification is
+	// only ever computed once, at capture time (colleague review,
+	// 2026-08-28: "не применять текущие каталоги ретроактивно" -- identity
+	// confirmed today does not make a historical capture's own qualified
+	// verdict retroactively trustworthy). QualifiedProspective is the
+	// number that actually matters for the money-first net-EV decision:
+	// the same qualified count, restricted to captures whose
+	// source_first_observed_at is at or after IdentityRegistryV2Start.
+	Qualified               int       `json:"qualified"`
+	IdentityRegistryV2Start time.Time `json:"identity_registry_v2_start"`
+	QualifiedProspective    int       `json:"qualified_prospective"`
+	QualificationMissing    int       `json:"qualification_missing"`
+	IdentityUnapproved      int       `json:"identity_unapproved"`
+	NoExecutableTarget      int       `json:"no_approved_executable_target"`
+	// RouteEvidencePending counts qualification_reason=
+	// 'route_evidence_not_yet_independent' -- identity and liquidity both
+	// checked out and a venue was selected, but ROUTE_EVIDENCE_
+	// INDEPENDENTLY_VERIFIED=False (source_lead_qualification.py) means
+	// registry v2's evidence only vouches for asset identity, not the
+	// specific derivative markets, so nothing can reach status='qualified'
+	// yet (colleague review, 2026-08-28, second round). Every one of these
+	// rows carries its full would-have-selected venue/impact under its own
+	// details['would_select'] in the database, not summarized here.
+	RouteEvidencePending        int                                 `json:"route_evidence_pending"`
 	SelectedBinance             int                                 `json:"selected_binance"`
 	SelectedBybit               int                                 `json:"selected_bybit"`
 	IdentityRegistry            *string                             `json:"identity_registry_version"`
@@ -467,7 +503,24 @@ WITH captures AS (
 		c.status,
 		c.eligibility_reason,
 		c.error,
-		coalesce(bool_or(t.status = 'sampled'), false) AS target_eligible
+		-- identity_verified is required alongside status='sampled' (colleague
+		-- review, 2026-08-28): before registry-activation, a 'sampled' row
+		-- could come from the old naive-symbol guess and carry
+		-- identity_verified=false -- counting it toward target_eligible would
+		-- let a wrong-market observation satisfy the maturity/readiness gate.
+		-- source_first_observed_at >= $3 is redundant with the capture-side
+		-- gate in capture_claimed_source_leads (which never writes a
+		-- 'sampled'+identity_verified row for a pre-cutover capture at all)
+		-- but kept as an independent second check -- same defense-in-depth
+		-- as QualifiedProspective below, in case any future capture path
+		-- ever bypasses that gate.
+		coalesce(
+			bool_or(
+				t.status = 'sampled' AND t.identity_verified
+					AND c.source_first_observed_at >= $3
+			),
+			false
+		) AS target_eligible
 	FROM app.source_lead_captures AS c
 	LEFT JOIN app.source_lead_target_observations AS t
 	  ON t.capture_id = c.id
@@ -498,7 +551,7 @@ WITH captures AS (
 	FROM captures
 	LEFT JOIN app.source_lead_qualifications AS qualification
 	  ON qualification.capture_id = captures.id
-	 AND qualification.qualification_version = 'source_lead_qualified_capture_v1'
+	 AND qualification.qualification_version = 'source_lead_qualified_capture_v2'
 )
 SELECT
 	count(*),
@@ -540,9 +593,14 @@ SELECT
 		FILTER (WHERE mature_four_hour),
 	count(*) FILTER (WHERE target_eligible AND status = 'complete' AND confirmed_within_hour),
 	count(*) FILTER (WHERE qualification_status = 'qualified'),
+	count(*) FILTER (
+		WHERE qualification_status = 'qualified'
+		  AND source_first_observed_at >= $3
+	),
 	count(*) FILTER (WHERE status = 'complete' AND qualification_status IS NULL),
 	count(*) FILTER (WHERE qualification_reason = 'source_identity_unapproved'),
 	count(*) FILTER (WHERE qualification_reason = 'no_approved_executable_target'),
+	count(*) FILTER (WHERE qualification_reason = 'route_evidence_not_yet_independent'),
 	count(*) FILTER (WHERE selected_target_exchange = 'binance'),
 	count(*) FILTER (WHERE selected_target_exchange = 'bybit'),
 	CASE
@@ -571,6 +629,7 @@ WITH observations AS (
 	SELECT
 		t.status,
 		t.observed_at,
+		t.identity_verified,
 		c.source_first_observed_at,
 		CASE
 			WHEN jsonb_typeof(t.liquidity->'spread_bps') = 'number'
@@ -593,24 +652,47 @@ SELECT
 	count(*) FILTER (WHERE status = 'sampled'),
 	count(*) FILTER (WHERE status = 'excluded'),
 	count(*) FILTER (WHERE status = 'fetch_failed'),
+	-- Latency/spread/impact percentiles require identity_verified AND
+	-- source_first_observed_at >= $4 (identityRegistryV2Start) alongside
+	-- status='sampled' (colleague review, 2026-08-28): these numbers feed
+	-- venue-quality analysis directly, so neither a pre-activation
+	-- wrong-market row nor a pre-cutover row (redundant with the
+	-- capture-side gate, kept as an independent second check) can pollute
+	-- them. Sampled/excluded/fetch_failed counts above stay unfiltered --
+	-- they are the raw operational funnel, a different (and still honest)
+	-- metric.
 	percentile_cont(0.5) WITHIN GROUP (
 		ORDER BY extract(epoch FROM (observed_at - source_first_observed_at)) * 1000
 	) FILTER (
-		WHERE status = 'sampled' AND observed_at >= source_first_observed_at
+		WHERE status = 'sampled' AND identity_verified
+		  AND source_first_observed_at >= $4 AND observed_at >= source_first_observed_at
 	),
 	percentile_cont(0.9) WITHIN GROUP (
 		ORDER BY extract(epoch FROM (observed_at - source_first_observed_at)) * 1000
 	) FILTER (
-		WHERE status = 'sampled' AND observed_at >= source_first_observed_at
+		WHERE status = 'sampled' AND identity_verified
+		  AND source_first_observed_at >= $4 AND observed_at >= source_first_observed_at
 	),
 	percentile_cont(0.5) WITHIN GROUP (ORDER BY spread_bps)
-		FILTER (WHERE status = 'sampled' AND spread_bps >= 0),
+		FILTER (
+			WHERE status = 'sampled' AND identity_verified
+			  AND source_first_observed_at >= $4 AND spread_bps >= 0
+		),
 	percentile_cont(0.9) WITHIN GROUP (ORDER BY spread_bps)
-		FILTER (WHERE status = 'sampled' AND spread_bps >= 0),
+		FILTER (
+			WHERE status = 'sampled' AND identity_verified
+			  AND source_first_observed_at >= $4 AND spread_bps >= 0
+		),
 	percentile_cont(0.5) WITHIN GROUP (ORDER BY entry_impact_bps)
-		FILTER (WHERE status = 'sampled' AND entry_impact_bps >= 0),
+		FILTER (
+			WHERE status = 'sampled' AND identity_verified
+			  AND source_first_observed_at >= $4 AND entry_impact_bps >= 0
+		),
 	percentile_cont(0.9) WITHIN GROUP (ORDER BY entry_impact_bps)
-		FILTER (WHERE status = 'sampled' AND entry_impact_bps >= 0)
+		FILTER (
+			WHERE status = 'sampled' AND identity_verified
+			  AND source_first_observed_at >= $4 AND entry_impact_bps >= 0
+		)
 FROM observations`
 
 const sourceLeadIdentityReviewSQL = `
@@ -689,8 +771,9 @@ func (h *Handler) sourceLeadProgress(
 	now time.Time,
 ) (SourceLeadProgress, error) {
 	progress := SourceLeadProgress{
-		Contract:    sourceLeadContract,
-		CohortStart: sourceLeadStart,
+		Contract:                sourceLeadContract,
+		CohortStart:             sourceLeadStart,
+		IdentityRegistryV2Start: identityRegistryV2Start,
 		Targets: []SourceLeadTargetProgress{
 			{Exchange: "binance"},
 			{Exchange: "bybit"},
@@ -710,7 +793,9 @@ func (h *Handler) sourceLeadProgress(
 	}
 
 	var targetEligible, mature, clusters, weeks int
-	err := h.db.QueryRow(ctx, sourceLeadProgressSQL, sourceLeadStart, now).Scan(
+	err := h.db.QueryRow(
+		ctx, sourceLeadProgressSQL, sourceLeadStart, now, identityRegistryV2Start,
+	).Scan(
 		&progress.Captures,
 		&progress.SourceEligible,
 		&progress.Complete,
@@ -727,9 +812,11 @@ func (h *Handler) sourceLeadProgress(
 		&weeks,
 		&progress.ConfirmedWithinHour,
 		&progress.Qualified,
+		&progress.QualifiedProspective,
 		&progress.QualificationMissing,
 		&progress.IdentityUnapproved,
 		&progress.NoExecutableTarget,
+		&progress.RouteEvidencePending,
 		&progress.SelectedBinance,
 		&progress.SelectedBybit,
 		&progress.IdentityRegistry,
@@ -753,6 +840,7 @@ func (h *Handler) sourceLeadProgress(
 			sourceLeadStart,
 			now,
 			exchange,
+			identityRegistryV2Start,
 		).Scan(
 			&target.Observations,
 			&target.Sampled,

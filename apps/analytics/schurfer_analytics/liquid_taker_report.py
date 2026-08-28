@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import json
 import math
 import os
 import sys
 from collections import Counter
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from statistics import fmean, median
 from typing import Any, Literal
@@ -33,19 +32,19 @@ from .replay import (
     ReplayDecision,
     ReplayEpisode,
     ReplayFilters,
-    build_replay_dataset,
 )
 from .reporting import (
     ReportWindowNotStartedError,
     format_number,
     format_percentage,
-    json_ready,
     markdown_table,
     normalize_code_revision,
     parse_utc_datetime,
     profit_factor,
+    render_dataclass_json,
     resolve_report_until,
 )
+from .runtime_observability import log_report_phase
 from .virtual_market import (
     DECISION_MARKET_PATH_VERSION,
     DecisionMarketPath,
@@ -802,7 +801,7 @@ def build_liquid_taker_report(
 
 
 def render_json(report: LiquidTakerReport) -> str:
-    return json.dumps(json_ready(asdict(report)), indent=2, sort_keys=True, allow_nan=False)
+    return render_dataclass_json(report)
 
 
 def _render_slices(rows: tuple[SliceMetrics, ...]) -> list[str]:
@@ -1145,9 +1144,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 async def _run(args: argparse.Namespace) -> str:
-    from .exchange_registry import EXCHANGE_FACTORIES
-    from .replay_repository import ReplayRepository
-    from .virtual_market import fetch_decision_market_paths
+    from .liquid_taker_runtime import load_liquid_taker_runtime_inputs
 
     generated_at = datetime.now(UTC)
     until = resolve_report_until(
@@ -1173,18 +1170,16 @@ async def _run(args: argparse.Namespace) -> str:
         taker_fee_bps_per_side=args.taker_fee_bps_per_side,
         funding_cost_bps_per_8h=args.funding_cost_bps_per_8h,
     )
-    repository = ReplayRepository.from_url(db_url)
-    try:
-        decisions = await repository.load(filters)
-    finally:
-        await repository.close()
-    dataset = build_replay_dataset(decisions, filters)
-    selected = selected_liquid_taker_decisions(dataset.eligible_episodes)
-    paths = await fetch_decision_market_paths(selected, EXCHANGE_FACTORIES)
-    report = build_liquid_taker_report(
-        dataset,
+    runtime_inputs = await load_liquid_taker_runtime_inputs(
+        db_url,
         filters,
-        paths,
+        report_name="liquid_taker",
+        select_decisions=selected_liquid_taker_decisions,
+    )
+    report = build_liquid_taker_report(
+        runtime_inputs.dataset,
+        filters,
+        runtime_inputs.market_paths,
         generated_at=generated_at,
         code_revision=args.code_revision,
         working_tree_dirty=args.working_tree_dirty,
@@ -1192,6 +1187,13 @@ async def _run(args: argparse.Namespace) -> str:
         bootstrap_iterations=args.bootstrap_iterations,
         bootstrap_seed=args.bootstrap_seed,
     )
+    log_report_phase(
+        "liquid_taker",
+        "report_built",
+        episode_results=len(report.episode_results),
+    )
+    # The report retains formal market-path provenance; release the replay graph.
+    del runtime_inputs
     if args.record_run:
         from sqlalchemy.exc import SQLAlchemyError
 
@@ -1228,7 +1230,9 @@ async def _run(args: argparse.Namespace) -> str:
             await record_report_run(db_url, record)
         except SQLAlchemyError as exc:
             sys.stderr.write(f"WARNING: research report registry write failed: {exc}\n")
-    return render_json(report) if args.format == "json" else render_markdown(report)
+    output = render_json(report) if args.format == "json" else render_markdown(report)
+    log_report_phase("liquid_taker", "report_rendered", output_characters=len(output))
+    return output
 
 
 def main() -> None:

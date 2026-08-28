@@ -1,0 +1,243 @@
+{
+  "base": "VELVET",
+  "bundle_sha256": "8452288f0661df50239b3767050cc1730a4b87d1ba41214d3c4421aaedf11b1a",
+  "captured_at": "2026-08-28T13:00:54.233422+00:00",
+  "code_revision": "f51fa67e14a07f5754d1934f308a1b9fbe6b0e05",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/velvet?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-08-28T13:00:53.913396+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "binance-smart-chain",
+      "block_time_in_minutes": 0,
+      "categories": [
+        "Artificial Intelligence (AI)",
+        "Decentralized Finance (DeFi)",
+        "BNB Chain Ecosystem",
+        "Base Ecosystem",
+        "YZi Labs (Prev. Binance Labs) Portfolio",
+        "AI Applications",
+        "DeFAI",
+        "Binance Wallet IDO",
+        "Base Native"
+      ],
+      "contract_address": "0x8b194370825e37b33373e74a41009161808c1488",
+      "country_origin": "",
+      "description": {
+        "en": ""
+      },
+      "detail_platforms": {
+        "base": {
+          "contract_address": "0xbf927b841994731c573bdf09ceb0c6b0aa887cdd",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/base/tokens/0xbf927b841994731c573bdf09ceb0c6b0aa887cdd"
+        },
+        "binance-smart-chain": {
+          "contract_address": "0x8b194370825e37b33373e74a41009161808c1488",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/bsc/tokens/0x8b194370825e37b33373e74a41009161808c1488"
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": false,
+      "hashing_algorithm": null,
+      "id": "velvet",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/67194/large/velvet.jpg?1752054592",
+        "small": "https://coin-images.coingecko.com/coins/images/67194/small/velvet.jpg?1752054592",
+        "thumb": "https://coin-images.coingecko.com/coins/images/67194/thumb/velvet.jpg?1752054592"
+      },
+      "last_updated": "2026-08-28T12:58:50.000Z",
+      "links": {
+        "announcement_url": [],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://bscscan.com/token/0x8b194370825E37b33373e74A41009161808C1488",
+          "https://intel.arkm.com/explorer/token/velvet",
+          "https://binplorer.com/address/0x8b194370825E37b33373e74A41009161808C1488",
+          "https://basescan.org/token/0xbf927b841994731c573bdf09ceb0c6b0aa887cdd"
+        ],
+        "chat_url": [],
+        "facebook_username": "",
+        "homepage": ["https://www.velvet.capital/"],
+        "official_forum_url": ["https://www.linkedin.com/company/velvetcapital/"],
+        "repos_url": {
+          "bitbucket": [],
+          "github": []
+        },
+        "snapshot_url": null,
+        "subreddit_url": null,
+        "telegram_channel_identifier": "velvetcapital",
+        "twitter_screen_name": "velvet_capital",
+        "whitepaper": "https://docs.velvet.capital/"
+      },
+      "listing_currency": null,
+      "listing_price": null,
+      "listing_source": null,
+      "listing_source_url": null,
+      "listing_timestamp": null,
+      "market_cap_rank": 456,
+      "market_cap_rank_with_rehypothecated": 602,
+      "name": "Velvet",
+      "platforms": {
+        "base": "0xbf927b841994731c573bdf09ceb0c6b0aa887cdd",
+        "binance-smart-chain": "0x8b194370825e37b33373e74a41009161808c1488"
+      },
+      "preview_listing": false,
+      "public_notice": null,
+      "sentiment_votes_down_percentage": 40.0,
+      "sentiment_votes_up_percentage": 60.0,
+      "status_updates": [],
+      "symbol": "velvet",
+      "watchlist_portfolio_users": 4640,
+      "web_slug": "velvet"
+    },
+    "raw_sha256": "33da9daea87d7e7e75de8275e0b05fdaf65320261d44e2b9a98696e7782857e8",
+    "source": "https://api.coingecko.com/api/v3/coins/velvet",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v2",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-08-28T13:00:53.587076+00:00",
+    "payload": {
+      "active": true,
+      "code": "VELVET",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "VELVET",
+      "info": {
+        "category": [],
+        "chain": "BSC",
+        "chains": [
+          {
+            "addr": "0x8b194370825e37b33373e74a41009161808c1488",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "VELVET",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "26579429.36902",
+        "name": "Velvet",
+        "total_supply": "1000000000",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "Velvet",
+      "networks": {
+        "BEP20": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "BSC",
+          "info": {
+            "addr": "0x8b194370825e37b33373e74a41009161808c1488",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "BEP20",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "ceef33e0d3c739459f3da7c5860fbd28727290de71065508b31286c1e9cd956d",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "exact_contract",
+  "source_contract": {
+    "block_hash": "0xc5d337937f90790665acd12d8a186b998db10d0e202479c1dc1d1d41f964246d",
+    "block_number": 118579930,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0x8b194370825e37b33373e74a41009161808c1488",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-08-28T13:00:54.075062+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "8e73d72cca28014c8646f2033e87ec712fc9eb6dbc2664092e1cf446ce4e6937",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "target_catalog_evidence": {
+    "endpoint": "https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list",
+    "observed_at": "2026-08-28T13:00:10.911381+00:00",
+    "payload": {
+      "chainId": "56",
+      "chainName": "BSC",
+      "contractAddress": "0x8b194370825e37b33373e74a41009161808c1488",
+      "decimals": 18,
+      "fullyDelisted": false,
+      "listingCex": false,
+      "name": "Velvet",
+      "offline": false,
+      "symbol": "VELVET"
+    },
+    "raw_sha256": "faf88e3101c307e79b71ef3ea8d6b490ef727eca7dc0fa1826df2f6e5365b361",
+    "source": "binance:alpha_catalog_entry",
+    "wire_exact": false
+  },
+  "target_contract": {
+    "block_hash": "0xc5d337937f90790665acd12d8a186b998db10d0e202479c1dc1d1d41f964246d",
+    "block_number": 118579930,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0x8b194370825e37b33373e74a41009161808c1488",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-08-28T13:00:54.232460+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "8e73d72cca28014c8646f2033e87ec712fc9eb6dbc2664092e1cf446ce4e6937",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "target_exchange": "binance",
+  "working_tree_dirty": true
+}

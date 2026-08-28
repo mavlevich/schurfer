@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import timedelta
 
 import pytest
@@ -31,6 +31,7 @@ from schurfer_analytics.replay import (
     ReplayOutcome,
     build_replay_dataset,
 )
+from schurfer_analytics.reporting import json_ready
 from schurfer_analytics.virtual_market import DecisionMarketPath
 from schurfer_analytics.virtual_strategy import MarketPath, expected_path_bounds
 
@@ -272,9 +273,17 @@ def test_manifest_rendering_and_scope_guards_are_locked() -> None:
         working_tree_dirty=False,
         bootstrap_iterations=100,
     )
-    payload = json.loads(render_json(report))
+    rendered_json = render_json(report)
+    legacy_json = json.dumps(
+        json_ready(asdict(report)),
+        indent=2,
+        sort_keys=True,
+        allow_nan=False,
+    )
+    payload = json.loads(rendered_json)
     markdown = render_markdown(report)
 
+    assert rendered_json == legacy_json
     assert payload["manifest"]["contract_version"] == LIQUID_TAKER_WIDER_CONTRACT_VERSION
     assert payload["manifest"]["maximum_round_trip_impact_bps"] == 20
     assert payload["manifest"]["exact_venue_only"] is True

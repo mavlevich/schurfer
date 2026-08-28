@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -35,6 +36,14 @@ type config struct {
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
+		if err := runHealthcheck(); err != nil {
+			fmt.Fprintf(os.Stderr, "healthcheck failed: %v\n", err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+
 	if err := run(); err != nil {
 		slog.Error("liquidationcapture.fatal", "err", err)
 		os.Exit(1)
@@ -104,7 +113,18 @@ func run() error {
 	healthTicker := time.NewTicker(healthInterval)
 	defer flushTicker.Stop()
 	defer healthTicker.Stop()
+
 	nextHeartbeatBucket := startedAt.UTC().Truncate(time.Minute)
+
+	evaluatorState := &liquidationcapture.EvaluatorState{
+		StartedAt: startedAt,
+		LastSnapshot: liquidationcapture.Snapshot{
+			Source: source.Stats(),
+			Writer: writer.Stats(),
+		},
+		LastSnapshotTime:    startedAt,
+		LastHeartbeatBucket: nextHeartbeatBucket,
+	}
 
 	for {
 		select {
@@ -144,32 +164,54 @@ func run() error {
 			}
 			nextHeartbeatBucket = writeDueHeartbeats(
 				ctx, time.Now().UTC(), nextHeartbeatBucket, cfg.Exchange,
-				universeVersion, processSessionID, source, tracker, writer,
+				universeVersion, processSessionID, source, tracker, writer, evaluatorState,
 			)
 
 		case <-healthTicker.C:
 			connected, expectedConnections, loss := tracker.Connected()
 			writerStats := writer.Stats()
 			sourceStats := source.Stats()
-			status := "ok"
-			if connected != expectedConnections {
-				status = "degraded_connectivity"
-			} else if loss || sourceStats.EventsInvalidTotal > 0 || writerStats.QueueDropsTotal > 0 || writerStats.PayloadHashMismatchTotal > 0 {
-				status = "degraded_data_loss"
-			} else if writerStats.PersistErrorsTotal > 0 && writerStats.QueueDepth > 0 {
-				status = "degraded_persistence"
+
+			// Compute evaluated health
+			evaluated := liquidationcapture.EvaluateHealth(
+				evaluatorState,
+				time.Now(),
+				sourceStats,
+				writerStats,
+				connected,
+				expectedConnections,
+				loss,
+				liquidationcapture.MaxPendingEvents,
+			)
+
+			// Update state snapshot
+			evaluatorState.LastSnapshot = liquidationcapture.Snapshot{
+				Source: sourceStats,
+				Writer: writerStats,
 			}
+			evaluatorState.LastSnapshotTime = time.Now()
+
 			health := liquidationcapture.Health{
-				Exchange: cfg.Exchange, Status: status, CoverageKind: source.CoverageKind(),
+				Exchange: cfg.Exchange, CoverageKind: source.CoverageKind(),
 				ProcessSessionID: processSessionID, UniverseVersion: universeVersion,
 				StartedAt: startedAt, UpdatedAt: time.Now(),
 				LastEventAt: sourceStats.LastEventAt, LastPersistAt: writerStats.LastPersistAt,
 				SubscribedSymbols: len(symbols), ConnectedConnections: connected,
 				ExpectedConnections: expectedConnections, DataLossDetected: loss,
-				Source: sourceStats, Writer: writerStats,
+				Source: sourceStats, Writer: writerStats, Evaluated: evaluated,
 			}
 			if err := healthStore.StoreHealth(ctx, health); err != nil {
 				slog.Error("liquidationcapture.health_failed", "err", err)
+			}
+			if evaluated.ShouldExit {
+				incident := liquidationcapture.Incident{
+					Exchange: cfg.Exchange, ProcessSessionID: processSessionID,
+					OccurredAt: time.Now(), ReasonCodes: evaluated.ReasonCodes,
+				}
+				if err := healthStore.StoreIncident(ctx, incident); err != nil {
+					slog.Error("liquidationcapture.incident_store_failed", "err", err)
+				}
+				return fmt.Errorf("fatal health evaluation: %s", evaluated.ReasonCodes)
 			}
 		}
 	}
@@ -187,6 +229,7 @@ func writeDueHeartbeats(
 	source liquidationcapture.Source,
 	tracker *liquidationcapture.CoverageTracker,
 	writer *liquidationcapture.Writer,
+	state *liquidationcapture.EvaluatorState,
 ) time.Time {
 	for _, due := range heartbeatBucketsDue(nextBucket, now) {
 		// If the scheduler is this late, it cannot honestly reconstruct the
@@ -202,6 +245,9 @@ func writeDueHeartbeats(
 		if err := writer.WriteHeartbeat(ctx, heartbeat); err != nil {
 			tracker.MarkDataLoss()
 			slog.Error("liquidationcapture.heartbeat_failed", "bucket_start", due.Bucket, "err", err)
+			state.ObserveHeartbeat(due.Bucket, false)
+		} else {
+			state.ObserveHeartbeat(due.Bucket, heartbeat.Complete)
 		}
 		nextBucket = due.Bucket.Add(time.Minute)
 	}
@@ -267,4 +313,51 @@ func configureLogging() {
 		level = slog.LevelDebug
 	}
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})))
+}
+
+func runHealthcheck() error {
+	cfg, err := loadConfig()
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr})
+	defer rdb.Close()
+
+	key := liquidationcapture.HealthKey(cfg.Exchange)
+	res, err := rdb.HGetAll(ctx, key).Result()
+	if err != nil {
+		return err
+	}
+	if len(res) == 0 {
+		return fmt.Errorf("health key missing for %s", cfg.Exchange)
+	}
+	switch res["status"] {
+	case liquidationcapture.StatusFailed:
+		return fmt.Errorf("status is failed: %s", res["reason_codes"])
+	case liquidationcapture.StatusStarting, liquidationcapture.StatusOk, liquidationcapture.StatusDegraded:
+		// These states are live. Degraded data quality is surfaced separately and
+		// may recover without a process restart.
+	default:
+		return fmt.Errorf("health status is unknown: %q", res["status"])
+	}
+
+	updatedStr, ok := res["updated_at_ms"]
+	if !ok {
+		return fmt.Errorf("health updated_at_ms is missing")
+	}
+	updatedMs, err := strconv.ParseInt(updatedStr, 10, 64)
+	if err != nil || updatedMs <= 0 {
+		return fmt.Errorf("health updated_at_ms is invalid")
+	}
+	age := time.Since(time.UnixMilli(updatedMs))
+	if age > 30*time.Second {
+		return fmt.Errorf("health key is stale")
+	}
+	if age < -5*time.Second {
+		return fmt.Errorf("health updated_at_ms is in the future")
+	}
+	return nil
 }

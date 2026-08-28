@@ -13,7 +13,7 @@ import (
 
 func TestFetchOHLCVRejectsUnsupportedExchange(t *testing.T) {
 	t.Parallel()
-	_, err := fetchOHLCV(context.Background(), "unknown", "BTC", 60, 10)
+	_, err := fetchOHLCV(context.Background(), "unknown", "", "BTC", 60, 10)
 	if err == nil || !strings.Contains(err.Error(), "unsupported OHLCV exchange") {
 		t.Fatalf("expected unsupported exchange error, got %v", err)
 	}
@@ -28,7 +28,7 @@ func TestEverySupportedOHLCVExchangeHasDispatcherRoute(t *testing.T) {
 		exchange := exchange
 		t.Run(exchange, func(t *testing.T) {
 			t.Parallel()
-			_, err := fetchOHLCV(ctx, exchange, "BTC", 60, 10)
+			_, err := fetchOHLCV(ctx, exchange, "", "BTC", 60, 10)
 			if err == nil {
 				t.Fatal("expected canceled request error")
 			}
@@ -44,7 +44,9 @@ func TestEverySupportedOHLCVExchangeHasDispatcherRoute(t *testing.T) {
 
 func TestXTOHLCVURL(t *testing.T) {
 	t.Parallel()
-	rawURL, err := xtOHLCVURL("ALPACA", 60, 200)
+	// Empty marketID exercises the base-derived fallback (a source captured
+	// before market_id existed, or a genuinely unmapped identity).
+	rawURL, err := xtOHLCVURL("", "ALPACA", 60, 200)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,10 +66,56 @@ func TestXTOHLCVURL(t *testing.T) {
 	}
 }
 
+func TestXTOHLCVURLPrefersMarketIDOverBaseGuess(t *testing.T) {
+	t.Parallel()
+	rawURL, err := xtOHLCVURL("bas_usdt", "BAS", 60, 200)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := parsed.Query().Get("symbol"); got != "bas_usdt" {
+		t.Errorf("symbol = %q, want bas_usdt (the captured market id)", got)
+	}
+}
+
 func TestXTOHLCVURLRejectsUnsupportedInterval(t *testing.T) {
 	t.Parallel()
-	if _, err := xtOHLCVURL("ZEUS", 120, 200); err == nil {
+	if _, err := xtOHLCVURL("", "ZEUS", 120, 200); err == nil {
 		t.Fatal("expected unsupported interval error")
+	}
+}
+
+// TestBingXOHLCVURLPrefersMarketIDOverBaseGuess is the exact production
+// bug this change fixes (2026-08-28): TRUMP's real bingx market id is
+// TRUMPSOL-USDT, captured in app.pump_event_sources.market_id -- the
+// base-derived guess TRUMP-USDT does not exist on bingx (confirmed live:
+// bingx returns "109425 TRUMP-USDT not exist" for the guess, real candles
+// for the captured id). This is what caused TokenPage's chart to be empty
+// for TRUMP even though the token had real recent history.
+func TestBingXOHLCVURLPrefersMarketIDOverBaseGuess(t *testing.T) {
+	t.Parallel()
+	rawURL := bingxOHLCVURL("TRUMPSOL-USDT", "TRUMP", 60, 200)
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := parsed.Query().Get("symbol"); got != "TRUMPSOL-USDT" {
+		t.Errorf("symbol = %q, want TRUMPSOL-USDT (the captured market id)", got)
+	}
+}
+
+func TestBingXOHLCVURLFallsBackToBaseGuessWhenMarketIDMissing(t *testing.T) {
+	t.Parallel()
+	rawURL := bingxOHLCVURL("", "ETH", 60, 200)
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := parsed.Query().Get("symbol"); got != "ETH-USDT" {
+		t.Errorf("symbol = %q, want ETH-USDT (base-derived fallback)", got)
 	}
 }
 
@@ -193,7 +241,9 @@ func TestParseXTErrors(t *testing.T) {
 
 func TestGateOHLCVURLPercentEncodesUnicodeContract(t *testing.T) {
 	t.Parallel()
-	rawURL := gateOHLCVURL("草根文化", 15, 192)
+	// Empty marketID exercises the base-derived fallback (a source captured
+	// before market_id existed, or a genuinely unmapped identity).
+	rawURL := gateOHLCVURL("", "草根文化", 15, 192)
 	if strings.Contains(rawURL, "草根文化") {
 		t.Fatalf("URL contains unescaped Unicode: %s", rawURL)
 	}
@@ -210,6 +260,24 @@ func TestGateOHLCVURLPercentEncodesUnicodeContract(t *testing.T) {
 	}
 	if got := query.Get("limit"); got != "192" {
 		t.Errorf("limit = %q, want 192", got)
+	}
+}
+
+// TestGateOHLCVURLPrefersMarketIDOverBaseGuess regression-tests the
+// 2026-08-28 production report: a captured market_id must be used verbatim
+// instead of the base-derived guess whenever it is present, since the guess
+// is wrong for any token whose real exchange listing diverges from base
+// (confirmed for bingx/TRUMP: real market id TRUMPSOL-USDT, guess
+// TRUMP-USDT does not exist).
+func TestGateOHLCVURLPrefersMarketIDOverBaseGuess(t *testing.T) {
+	t.Parallel()
+	rawURL := gateOHLCVURL("HFT_USDT", "HFT", 60, 100)
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := parsed.Query().Get("contract"); got != "HFT_USDT" {
+		t.Errorf("contract = %q, want HFT_USDT (the captured market id)", got)
 	}
 }
 

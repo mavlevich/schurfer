@@ -15,6 +15,14 @@ export interface PumpEntry {
   pump_event_id: number;
   max_change_pct: number;
   exchanges: ExchangeEntry[];
+  // True only when the token is actually present in the live pumps:latest
+  // snapshot right now. False means this is a DB fallback (the token has
+  // history but is not currently pumping) -- max_change_pct is then the
+  // episode's historical peak, and each ExchangeEntry's price/change_pct/
+  // volume_24h_usd are last-observed values, not current ones. Consumers
+  // must not present either as live when this is false (colleague review,
+  // 2026-08-28).
+  is_live: boolean;
 }
 
 export interface PumpsResponse {

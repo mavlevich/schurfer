@@ -208,9 +208,15 @@ jobs:
             echo "has_ts=false" >> "$GITHUB_OUTPUT"
             echo "No TypeScript projects found, skipping"
           fi
-      - name: Type check
+      - name: Lint web
         if: steps.check.outputs.has_ts == 'true'
-        run: pnpm -r run typecheck
+        run: pnpm --filter @schurfer/web lint
+      - name: Type check web
+        if: steps.check.outputs.has_ts == 'true'
+        run: pnpm --filter @schurfer/web typecheck
+      - name: Build web
+        if: steps.check.outputs.has_ts == 'true'
+        run: pnpm --filter @schurfer/web build
       - name: Run tests
         if: steps.check.outputs.has_ts == 'true'
         run: pnpm -r run test
