@@ -49,6 +49,7 @@ func isValidBase(base string) bool {
 type exchangeEntry struct {
 	Exchange          string   `json:"exchange"`
 	Symbol            string   `json:"symbol"`
+	MarketID          string   `json:"market_id"`
 	Price             string   `json:"price"`
 	ChangePct         float64  `json:"change_pct"`
 	High24h           string   `json:"high_24h"`
@@ -63,6 +64,16 @@ type pumpEntry struct {
 	PumpEventID  int64           `json:"pump_event_id"`
 	MaxChangePct float64         `json:"max_change_pct"`
 	Exchanges    []exchangeEntry `json:"exchanges"`
+	// IsLive is true only for an entry actually present in pumps:latest right
+	// now. Never set by anything that writes pumps:latest itself (Redis JSON
+	// has no such field) -- Token explicitly sets it true on the live-match
+	// path and dbTokenFallback explicitly sets it false, so it is never left
+	// to a JSON-unmarshal zero value. Consumers (TokenPage, ExchangeBreakdown)
+	// use this to avoid presenting a historical snapshot -- possibly days
+	// stale -- as current activity (colleague review, 2026-08-28: the DB
+	// fallback below this type made "Active on N exchanges" and the header's
+	// change_pct read as live for a token that had not pumped in days).
+	IsLive bool `json:"is_live"`
 }
 
 type pumpsPayload struct {
@@ -216,6 +227,15 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(data)
 }
 
+// Token returns pump metadata for one base: its most recent live snapshot
+// entry from pumps:latest when the token is currently active, falling back
+// to its most recent app.pump_events row otherwise. Without the DB fallback,
+// a token that has real history but simply isn't pumping right now (or aged
+// out of the live snapshot between polls) reads as "not found" -- a real
+// production report (2026-08-28: TRUMP, TAC, AURASOL, ARIA, LONGXIA, 龙虾,
+// AIINU) showed "Token not found" on TokenPage's header for tokens with
+// dozens of DB-recorded episodes, purely because none of them happened to be
+// live in pumps:latest at request time.
 func (h *Handler) Token(w http.ResponseWriter, r *http.Request) {
 	base := strings.ToUpper(chi.URLParam(r, "base"))
 	if !isValidBase(base) {
@@ -224,24 +244,73 @@ func (h *Handler) Token(w http.ResponseWriter, r *http.Request) {
 	}
 
 	payload, err := h.loadPumps(r.Context())
-	if errors.Is(err, redis.Nil) {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-	if err != nil {
+	if err != nil && !errors.Is(err, redis.Nil) {
 		slog.Error("pumps.token.redis_get", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-
-	for _, p := range payload.Pumps {
-		if p.Base == base {
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(p)
-			return
+	if payload != nil {
+		for _, p := range payload.Pumps {
+			if p.Base == base {
+				p.IsLive = true
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(p)
+				return
+			}
 		}
 	}
-	http.Error(w, "not found", http.StatusNotFound)
+
+	entry, err := h.dbTokenFallback(r.Context(), base)
+	if err != nil {
+		slog.Error("pumps.token.db_fallback", "base", base, "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if entry == nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(entry)
+}
+
+// dbTokenFallback loads the most recent app.pump_events row for base and
+// maps it into the same pumpEntry shape the live Redis snapshot uses --
+// exchanges is already stored in that exact JSON shape (persistence.py
+// writes it, and it round-trips through pumps:latest unchanged), so no
+// separate mapping is needed. Returns (nil, nil) -- not an error -- when
+// there is genuinely no history for base, or when h.pool is nil (unit
+// tests that only exercise the live-snapshot path construct a Handler
+// without a pool; mirrors the same guard in rankedExchanges).
+func (h *Handler) dbTokenFallback(ctx context.Context, base string) (*pumpEntry, error) {
+	if h.pool == nil {
+		return nil, nil
+	}
+	var eventID int64
+	var maxChangePct float64
+	var exJSON []byte
+	err := h.pool.QueryRow(ctx,
+		`SELECT id, peak_pct, exchanges FROM app.pump_events
+		 WHERE base = $1 ORDER BY last_seen_at DESC LIMIT 1`,
+		base,
+	).Scan(&eventID, &maxChangePct, &exJSON)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var exchanges []exchangeEntry
+	if err := json.Unmarshal(exJSON, &exchanges); err != nil {
+		return nil, err
+	}
+	return &pumpEntry{
+		Base:         base,
+		PumpEventID:  eventID,
+		MaxChangePct: maxChangePct,
+		Exchanges:    exchanges,
+		IsLive:       false,
+	}, nil
 }
 
 func (h *Handler) OHLCV(w http.ResponseWriter, r *http.Request) {
@@ -286,14 +355,15 @@ func (h *Handler) OHLCV(w http.ResponseWriter, r *http.Request) {
 	var bestCandles []Candle
 	var bestExchange string
 	for _, ex := range exchanges {
-		candles, err := fetchOHLCV(r.Context(), ex, base, interval, limit)
+		candles, err := fetchOHLCV(r.Context(), ex.Exchange, ex.MarketID, base, interval, limit)
 		if err != nil {
-			slog.Warn("pumps.ohlcv.fetch", "exchange", ex, "base", base, "err", err)
+			slog.Warn("pumps.ohlcv.fetch",
+				"exchange", ex.Exchange, "market_id", ex.MarketID, "base", base, "err", err)
 			continue
 		}
 		if len(candles) > len(bestCandles) {
 			bestCandles = candles
-			bestExchange = ex
+			bestExchange = ex.Exchange
 		}
 		if len(candles) >= goodEnough {
 			break
@@ -1300,15 +1370,44 @@ func rankExchangeEntries(entries []exchangeEntry) []string {
 	return out
 }
 
+// exchangeCandidate pairs a supported OHLCV exchange with the exact
+// exchange-native market id captured for it (app.pump_event_sources.
+// market_id, round-tripped through both pumps:latest and app.pump_events.
+// exchanges unchanged). MarketID may be empty for a source that predates
+// this field or a genuinely unmapped identity -- callers fall back to a
+// base-derived guess in that case, same as before this field existed.
+type exchangeCandidate struct {
+	Exchange string
+	MarketID string
+}
+
+// zipCandidates pairs a rankExchangeEntries-ordered exchange-name list with
+// each exchange's market id, preserving the ranked order.
+func zipCandidates(ranked []string, marketIDs map[string]string) []exchangeCandidate {
+	out := make([]exchangeCandidate, len(ranked))
+	for i, exchange := range ranked {
+		out[i] = exchangeCandidate{Exchange: exchange, MarketID: marketIDs[exchange]}
+	}
+	return out
+}
+
 // rankedExchanges returns exchanges available for base sorted by 24h volume
-// descending, filtered to those supported for OHLCV. Live Redis snapshot is
+// descending, filtered to those supported for OHLCV, each paired with its
+// captured market id (see exchangeCandidate) so fetchOHLCV can request the
+// exact instrument instead of guessing a symbol from base -- guessing broke
+// OHLCV for TRUMP on bingx (real market id TRUMPSOL-USDT; base + "-USDT"
+// does not exist), a 2026-08-28 production report. Live Redis snapshot is
 // checked first (has volume); falls back to DB (no volume, order arbitrary).
-func (h *Handler) rankedExchanges(ctx context.Context, base string) []string {
+func (h *Handler) rankedExchanges(ctx context.Context, base string) []exchangeCandidate {
 	if payload, err := h.loadPumps(ctx); err == nil {
 		for _, p := range payload.Pumps {
 			if p.Base == base {
 				if ranked := rankExchangeEntries(p.Exchanges); len(ranked) > 0 {
-					return ranked
+					marketIDs := make(map[string]string, len(p.Exchanges))
+					for _, ex := range p.Exchanges {
+						marketIDs[ex.Exchange] = ex.MarketID
+					}
+					return zipCandidates(ranked, marketIDs)
 				}
 				break
 			}
@@ -1316,21 +1415,25 @@ func (h *Handler) rankedExchanges(ctx context.Context, base string) []string {
 	}
 
 	if h.pool != nil {
+		marketIDs := h.dbExchanges(ctx, base)
 		var dbEntries []exchangeEntry
-		for ex := range h.dbExchanges(ctx, base) {
+		for ex := range marketIDs {
 			dbEntries = append(dbEntries, exchangeEntry{Exchange: ex})
 		}
-		return rankExchangeEntries(dbEntries)
+		return zipCandidates(rankExchangeEntries(dbEntries), marketIDs)
 	}
 
 	return nil
 }
 
-func (h *Handler) dbExchanges(ctx context.Context, base string) map[string]bool {
+// dbExchanges returns, for base's most recent app.pump_events row, each
+// captured exchange mapped to its market id (empty string if that source
+// row predates market_id capture). No time window: a token's episode
+// history (and its chart) stays visible on TokenPage indefinitely, so the
+// exchange list used to fetch that chart shouldn't expire after 24h either
+// — pick the most recent episode.
+func (h *Handler) dbExchanges(ctx context.Context, base string) map[string]string {
 	var raw []byte
-	// No time window: a token's episode history (and its chart) stays visible
-	// on TokenPage indefinitely, so the exchange list used to fetch that
-	// chart shouldn't expire after 24h either — pick the most recent episode.
 	err := h.pool.QueryRow(ctx,
 		`SELECT exchanges FROM app.pump_events WHERE base = $1 ORDER BY last_seen_at DESC LIMIT 1`,
 		base,
@@ -1340,13 +1443,14 @@ func (h *Handler) dbExchanges(ctx context.Context, base string) map[string]bool 
 	}
 	var entries []struct {
 		Exchange string `json:"exchange"`
+		MarketID string `json:"market_id"`
 	}
 	if err := json.Unmarshal(raw, &entries); err != nil {
 		return nil
 	}
-	out := make(map[string]bool, len(entries))
+	out := make(map[string]string, len(entries))
 	for _, e := range entries {
-		out[e.Exchange] = true
+		out[e.Exchange] = e.MarketID
 	}
 	return out
 }

@@ -42,9 +42,15 @@ export function TokenPage() {
             <span className="ml-3 text-xl">
               <Percent value={pump.max_change_pct} />
             </span>
+            {!pump.is_live && (
+              <span className="ml-2 align-middle text-xs font-sans font-normal text-muted-foreground">
+                (peak, not live)
+              </span>
+            )}
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Active on {pump.exchanges.length} exchange{pump.exchanges.length !== 1 ? 's' : ''}
+            {pump.is_live ? 'Active on' : 'Last seen on'} {pump.exchanges.length} exchange
+            {pump.exchanges.length !== 1 ? 's' : ''}
           </p>
         </div>
       )}
