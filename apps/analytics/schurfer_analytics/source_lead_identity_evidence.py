@@ -86,8 +86,8 @@ this.
   pins `eth_call` to that exact block.
 - **A partially failed run could leave a mixed-vintage evidence
   directory** (some files fresh, some stale from a prior run). `_run` now
-  captures into a temporary staging directory and only replaces
-  `EVIDENCE_DIR` -- one atomic directory swap -- when every candidate
+  captures into a temporary staging directory and only replaces the target
+  publish directory -- one atomic directory swap -- when every candidate
   succeeds; any failure discards the whole staged run. A `manifest.json`
   (run id, candidate list, an overall bundle fingerprint) is published
   alongside the bundles.
@@ -96,6 +96,43 @@ this.
   future registry consumer. It now raises `EvidenceIntegrityError` in both
   cases unless the caller passes `allow_empty=True` (used by tests that
   intentionally exercise an empty directory).
+
+## A colleague review of this PR's own first commit (2026-08-28) found three
+## more defects, all fixed here
+
+- **The evidence this PR shipped was not reproducible.** Every v3 bundle
+  recorded `code_revision` from before this PR's own commit and
+  `working_tree_dirty=True` -- `_current_git_state` was working correctly
+  (it asked git directly, as designed), but capture was run against an
+  uncommitted working tree, so no commit anyone could check out actually
+  contained the code that produced the evidence. Fixed procedurally, not in
+  code: the code+tests commit landed first (clean tree), evidence was
+  re-captured for real against that exact commit, and the bundles were
+  committed separately afterward, without amending the code commit.
+- **Part of the Gate evidence was labeled as reported when it was
+  self-constructed.** `fetch_gate_futures_contract` wrote
+  `base_asset=base.upper()`, `quote_asset="USDT"`, `settle_asset="USDT"`
+  itself -- Gate's futures-contract payload has no such fields, only
+  `name` -- and `_validate_route_evidence` then checked those
+  self-written values against themselves, which cannot fail regardless of
+  what Gate actually returned. `DerivativeMarketEvidence` now separates
+  `reported_*` (populated only when the exchange's response genuinely
+  carries the field as a distinct value -- true for Binance, always `None`
+  for Gate) from `inferred_*` (this tool's own parse, always populated,
+  with `inference_basis` documenting how). `_validate_route_evidence` now
+  checks Gate's real `native_market_id` and Binance's real
+  `reported_base_asset` against the candidate, not Gate's inferred values
+  against themselves, and its docstring now names both remaining
+  ticker-symbol bridges this cannot close (Gate currency -> Gate futures,
+  Binance Alpha -> Binance futures), not only the second.
+- **Publishing to `EVIDENCE_DIR_V3` was not atomic.** The previous version
+  did `shutil.rmtree(target)` then `shutil.move(staging, target)` -- an
+  interrupted process between those two steps left the directory empty, and
+  `shutil.move` silently degrades to copy-then-delete (not atomic) across
+  filesystems. `_atomic_publish` now stages next to the target (same
+  filesystem, guaranteed) and swaps with two back-to-back `os.rename` calls,
+  keeping the previous contents as a same-directory backup restored on
+  failure.
 """
 
 from __future__ import annotations
@@ -108,18 +145,28 @@ import os
 import shutil
 import subprocess
 import sys
-import tempfile
 import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
+from .instruments import onboarded_at_ms
 from .reporting import json_ready
 
-EVIDENCE_VERSION = "source_lead_identity_evidence_v2"
+EVIDENCE_VERSION = "source_lead_identity_evidence_v3"
 
+# Deliberately NOT bumped to "v3" in this PR: EVIDENCE_DIR is also the
+# default `evidence_dir` verify_registry_against_evidence uses (via
+# load_identity_registry), and the currently-deployed registry is still v2
+# -- pointing this at a v3 directory before the registry itself moves would
+# break every production capture run at startup the moment this PR
+# deploys, regardless of when PR 2 (registry v3) merges after it. v2's
+# evidence bundles stay committed, untouched, and this constant stays
+# pointed at them until PR 2 moves both together, atomically. Fresh v3
+# bundles are captured into EVIDENCE_DIR_V3 below instead.
 EVIDENCE_DIR = Path(__file__).parent / "evidence" / "source_lead" / "v2"
+EVIDENCE_DIR_V3 = Path(__file__).parent / "evidence" / "source_lead" / "v3"
 
 IdentityClass = Literal[
     "exact_contract",
@@ -213,6 +260,47 @@ class ChainContractEvidence:
 
 
 @dataclass(frozen=True)
+class DerivativeMarketEvidence:
+    """Independent evidence for the derivative market itself -- native
+    market id, base/quote/settle asset, onboard time, trading status --
+    fetched directly from each exchange's own public futures listing
+    endpoint. Distinct from ChainContractEvidence (which evidences the
+    on-chain *asset*): this evidences the specific *perpetual market*, which
+    nothing in this tool captured before (colleague review, 2026-08-28,
+    second round on research/gate-source-lead-registry-activation-v2).
+
+    reported_* vs inferred_* (colleague review, 2026-08-28, PR1 fix round):
+    the first version of this dataclass had a single base_asset/quote_asset/
+    settle_asset trio that _validate_route_evidence then checked -- for
+    Gate, those three values were never actually read from Gate's response
+    (its futures-contract payload has no such fields at all, only `name`,
+    e.g. "TUT_USDT"); this tool wrote base_asset=base.upper() itself and
+    then "validated" that value against the input it was computed from,
+    which proves nothing. reported_* is populated only when the exchange's
+    response genuinely carries that field as a distinct value (true for
+    Binance's baseAsset/quoteAsset/marginAsset; always None for Gate).
+    inferred_* is this tool's own parse -- for Gate, split from
+    native_market_id plus the /futures/usdt/ endpoint-family choice; for
+    Binance, identical to reported_* since there is nothing to infer.
+    inference_basis records how inferred_* was derived, so a reviewer never
+    has to guess whether a value came from the exchange or from this tool.
+    """
+
+    exchange: str
+    native_market_id: str
+    reported_base_asset: str | None
+    reported_quote_asset: str | None
+    reported_settle_asset: str | None
+    inferred_base_asset: str
+    inferred_quote_asset: str
+    inferred_settle_asset: str
+    inference_basis: str
+    onboarded_at_ms: int
+    status: str
+    raw_evidence: RawFetch
+
+
+@dataclass(frozen=True)
 class EvidenceBundle:
     evidence_version: str
     base: str
@@ -227,6 +315,17 @@ class EvidenceBundle:
     # None only for third_party_bridge_only.
     target_catalog_evidence: RawFetch | None
     coingecko_evidence: RawFetch
+    # Derivative-market evidence. capture_bundle always populates both for
+    # every fresh candidate it captures -- None only appears when
+    # deserializing a bundle captured before this field existed
+    # (evidence_version < v3), so old files on disk stay loadable by this
+    # same code without a version-branched parser (colleague review,
+    # 2026-08-28, third round: EVIDENCE_DIR still points at the
+    # currently-deployed v2 evidence, and load_identity_registry must keep
+    # working against it after this PR ships, before the registry itself
+    # moves to v3 in a later PR).
+    source_market_evidence: DerivativeMarketEvidence | None
+    target_market_evidence: DerivativeMarketEvidence | None
     code_revision: str
     working_tree_dirty: bool
     captured_at: datetime
@@ -250,9 +349,25 @@ def compute_bundle_sha256(bundle: EvidenceBundle) -> str:
     """Hash every field of `bundle` except `bundle_sha256` itself -- both
     `capture_bundle` (computing it) and `load_evidence_bundle` (reverifying
     it) call this the same way, so a bundle that was hand-edited after
-    capture fails to load rather than silently being trusted."""
+    capture fails to load rather than silently being trusted.
+
+    source_market_evidence/target_market_evidence are popped from the
+    hashed payload when absent (None): they did not exist in
+    evidence_version < v3, and a v2 bundle's stored bundle_sha256 was
+    computed before these fields existed at all. Including two extra
+    None-valued keys in the hash would change every v2 bundle's digest
+    without their content actually changing, breaking the currently-
+    committed, currently-deployed evidence directory's integrity check the
+    moment this code ships (colleague review, 2026-08-28, third round).
+    capture_bundle always populates both for every bundle it produces, so
+    this only ever excludes them for genuinely old files being read back,
+    never for a freshly captured one."""
     payload = asdict(bundle)
     payload.pop("bundle_sha256", None)
+    if bundle.source_market_evidence is None:
+        payload.pop("source_market_evidence", None)
+    if bundle.target_market_evidence is None:
+        payload.pop("target_market_evidence", None)
     return _sha256_canonical(payload)
 
 
@@ -333,6 +448,239 @@ def find_alpha_entry(catalog: RawFetch, symbol: str) -> dict[str, Any] | None:
     if len(matches) > 1:
         raise ValueError(f"binance alpha catalog has {len(matches)} entries for symbol {symbol!r}")
     return matches[0] if matches else None
+
+
+async def fetch_gate_futures_contract(client: Any, base: str) -> DerivativeMarketEvidence:
+    """Independent evidence for the specific Gate USDT-margined perpetual
+    market -- native id, onboard time, trading status -- fetched from
+    Gate's own public futures contract endpoint, never derived from ccxt's
+    unified market cache (which is what _resolve_registered_target_market
+    already checks live at capture time; this is a separate, independently
+    fetched source). Fails closed (raises) on any non-2xx response --
+    unlike find_alpha_entry, a missing Gate futures contract is never a
+    meaningful "not applicable" result for a candidate this tool was asked
+    to capture: every candidate here has a real Gate perpetual market."""
+    market_id = f"{base.upper()}_USDT"
+    raw = await _http_get_json(
+        client, f"https://api.gateio.ws/api/v4/futures/usdt/contracts/{market_id}"
+    )
+    payload = raw.payload
+    if not isinstance(payload, dict) or payload.get("name") != market_id:
+        raise ValueError(f"gate futures contract response for {market_id!r} is malformed")
+    onboarded_ms = onboarded_at_ms("gate", payload)
+    if onboarded_ms is None:
+        raise ValueError(f"gate futures contract {market_id!r} has no usable onboard timestamp")
+    # Gate's own `name` field is the only real evidence of the base/quote
+    # split -- the payload carries no separate base_asset/quote_asset/
+    # settle_asset fields at all (confirmed live, 2026-08-28). Parsed here,
+    # recorded as inferred_*, never as reported_*.
+    inferred_base, separator, inferred_quote = str(payload["name"]).partition("_")
+    if not separator:
+        raise ValueError(f"gate futures native_market_id {payload['name']!r} has no '_' separator")
+    return DerivativeMarketEvidence(
+        exchange="gate",
+        native_market_id=str(payload["name"]),
+        reported_base_asset=None,
+        reported_quote_asset=None,
+        reported_settle_asset=None,
+        inferred_base_asset=inferred_base.upper(),
+        inferred_quote_asset=inferred_quote.upper(),
+        # Settle == quote by construction of the /futures/usdt/ endpoint
+        # family (that path segment is itself the evidence for this, not a
+        # distinct response field) -- every contract this endpoint can
+        # return is USDT-settled.
+        inferred_settle_asset=inferred_quote.upper(),
+        inference_basis=(
+            "gate futures contract payload has no base_asset/quote_asset/settle_asset "
+            "fields; base/quote split parsed from the reported native_market_id "
+            f"({payload['name']!r}) on its '_' separator, settle asset inferred from "
+            "the /futures/usdt/ endpoint family"
+        ),
+        onboarded_at_ms=onboarded_ms,
+        status=str(payload.get("status", "")),
+        raw_evidence=raw,
+    )
+
+
+async def fetch_binance_futures_exchange_info(client: Any) -> RawFetch:
+    """USDⓈ-M futures exchangeInfo -- every symbol in one call, fetched once
+    per run and shared across every candidate (find_binance_futures_market
+    extracts one symbol from it), exactly like fetch_binance_alpha_catalog."""
+    return await _http_get_json(client, "https://fapi.binance.com/fapi/v1/exchangeInfo")
+
+
+def find_binance_futures_market(
+    exchange_info: RawFetch, symbol: str
+) -> DerivativeMarketEvidence | None:
+    """Mirrors find_alpha_entry's extraction-from-shared-response pattern,
+    including its multiple-match fail-closed check. Returns None when the
+    symbol is absent -- not expected for any of this tool's candidates
+    (every one has a real Binance perpetual market) but handled explicitly
+    rather than raised, so a genuinely missing listing surfaces as a clear
+    capture_bundle-level error naming the candidate, not an opaque KeyError."""
+    symbols = (
+        exchange_info.payload.get("symbols") if isinstance(exchange_info.payload, dict) else None
+    )
+    if not isinstance(symbols, list):
+        raise ValueError("binance futures exchangeInfo payload has no symbols array")
+    matches = [
+        s
+        for s in symbols
+        if isinstance(s, dict) and str(s.get("symbol", "")).upper() == symbol.upper()
+    ]
+    if len(matches) > 1:
+        raise ValueError(f"binance futures exchangeInfo has {len(matches)} entries for {symbol!r}")
+    if not matches:
+        return None
+    entry = matches[0]
+    onboarded_ms = onboarded_at_ms("binance", entry)
+    if onboarded_ms is None:
+        raise ValueError(f"binance futures market {symbol!r} has no usable onboard timestamp")
+    raw = RawFetch(
+        source="binance:futures_exchange_info_entry",
+        endpoint=exchange_info.endpoint,
+        observed_at=exchange_info.observed_at,
+        raw_sha256=_sha256_canonical(entry),
+        wire_exact=False,  # extracted from the shared response, see find_alpha_entry
+        payload=entry,
+    )
+    # Unlike Gate, Binance's exchangeInfo genuinely reports baseAsset/
+    # quoteAsset/marginAsset as distinct fields -- reported_* and inferred_*
+    # are the same values here because there is nothing to infer.
+    base_asset = str(entry.get("baseAsset", ""))
+    quote_asset = str(entry.get("quoteAsset", ""))
+    settle_asset = str(entry.get("marginAsset", ""))
+    return DerivativeMarketEvidence(
+        exchange="binance",
+        native_market_id=str(entry.get("symbol", "")),
+        reported_base_asset=base_asset,
+        reported_quote_asset=quote_asset,
+        reported_settle_asset=settle_asset,
+        inferred_base_asset=base_asset,
+        inferred_quote_asset=quote_asset,
+        inferred_settle_asset=settle_asset,
+        inference_basis=(
+            "copied verbatim from binance futures exchangeInfo's own "
+            "baseAsset/quoteAsset/marginAsset fields -- genuinely reported, not parsed"
+        ),
+        onboarded_at_ms=onboarded_ms,
+        status=str(entry.get("status", "")),
+        raw_evidence=raw,
+    )
+
+
+def _validate_route_evidence(
+    *, base: str, source_market: DerivativeMarketEvidence, target_market: DerivativeMarketEvidence
+) -> None:
+    """Sanity-checks the two derivative-market evidence fetches against
+    each other and the candidate's own base ticker before a bundle may be
+    saved -- mirrors _validate_identity_class's role for the on-chain side.
+
+    Colleague review, 2026-08-28, PR1 fix round: the first version checked
+    source_market.base_asset/quote_asset/settle_asset against expectations,
+    but for Gate those values were this tool's own inferred_* written and
+    then read back -- a tautological check that could never fail regardless
+    of what Gate actually returned. This version checks Gate's
+    native_market_id (real: it is Gate's own `name` field, and Gate could
+    have returned a 404/different name for a market that does not exist)
+    and inferred_quote_asset/inferred_settle_asset (a format check on that
+    same real string, not independent corroboration). Binance is different:
+    reported_base_asset is a genuinely distinct field from the symbol string
+    already used to look the market up, so checking it against the
+    candidate's base ticker is real, independent corroboration -- the one
+    piece this function actually adds beyond "a market with this symbol
+    exists".
+
+    Deliberately narrower than a full route-identity proof. Two residual
+    ticker-symbol bridges remain unproven by either public API used here
+    (the first version of this comment named only the second):
+      1. Gate currency (fetch_gate_currency, the on-chain identity evidence
+         checked by _validate_identity_class) -> Gate futures market
+         (fetch_gate_futures_contract): both are looked up by the same
+         ticker string; nothing in Gate's public API cross-references its
+         spot/currency catalog against its futures contract list by
+         anything other than that shared ticker.
+      2. Binance Alpha catalog entry (find_alpha_entry) -> Binance futures
+         market (find_binance_futures_market): same limitation, one ticker
+         string used to look up two otherwise-unlinked Binance product
+         surfaces.
+    This function narrows, but does not close, either bridge."""
+    if source_market.native_market_id != f"{base.upper()}_USDT":
+        raise ValueError(
+            f"{base}: gate futures native_market_id {source_market.native_market_id!r} "
+            f"does not match the expected {base.upper()}_USDT"
+        )
+    if (
+        source_market.inferred_quote_asset != "USDT"
+        or source_market.inferred_settle_asset != "USDT"
+    ):
+        raise ValueError(
+            f"{base}: gate futures native_market_id {source_market.native_market_id!r} "
+            "does not parse to a USDT-quoted/settled market "
+            f"(inferred quote={source_market.inferred_quote_asset!r}, "
+            f"settle={source_market.inferred_settle_asset!r})"
+        )
+    in_delisting = source_market.raw_evidence.payload.get("in_delisting")
+    if in_delisting is not False:
+        raise ValueError(
+            f"{base}: gate futures contract in_delisting={in_delisting!r}, expected false"
+        )
+
+    if target_market.native_market_id != f"{base.upper()}USDT":
+        raise ValueError(
+            f"{base}: binance futures native_market_id {target_market.native_market_id!r} "
+            f"does not match the expected {base.upper()}USDT"
+        )
+    reported_base = target_market.reported_base_asset
+    if reported_base is None or reported_base.upper() != base.upper():
+        raise ValueError(
+            f"{base}: binance futures reported baseAsset {reported_base!r} does not match "
+            f"the candidate base {base!r}"
+        )
+    if (
+        target_market.reported_quote_asset != "USDT"
+        or target_market.reported_settle_asset != "USDT"
+    ):
+        raise ValueError(
+            f"{base}: binance futures market is not USDT-quoted/settled "
+            f"(quote={target_market.reported_quote_asset!r}, "
+            f"settle={target_market.reported_settle_asset!r})"
+        )
+    contract_type = target_market.raw_evidence.payload.get("contractType")
+    if contract_type != "PERPETUAL":
+        raise ValueError(
+            f"{base}: binance futures contractType is {contract_type!r}, not PERPETUAL"
+        )
+    source_status = source_market.status.lower()
+    if source_status != "trading":
+        raise ValueError(
+            f"{base}: gate futures market status is {source_market.status!r}, not trading"
+        )
+    if target_market.status.upper() != "TRADING":
+        raise ValueError(
+            f"{base}: binance futures market status is {target_market.status!r}, not TRADING"
+        )
+
+
+def revalidate_bundle_route_evidence(bundle: EvidenceBundle) -> None:
+    """Re-runs _validate_route_evidence over a bundle already loaded from
+    disk -- mirrors revalidate_bundle_identity_class's role for the on-chain
+    side. load_evidence_bundle only re-checks bundle_sha256 (the content was
+    not tampered with after being written), which alone does not prove the
+    derivative-market evidence was ever semantically valid, only internally
+    self-consistent. A no-op for a pre-v3 bundle (source_market_evidence/
+    target_market_evidence are None) -- there is nothing to revalidate.
+    Colleague review, 2026-08-28, PR1 fix round: this check existed at
+    capture time only; any future registry-activation consumer that treats
+    a bundle as authoritative must call this too, not just the hash
+    check."""
+    if bundle.source_market_evidence is None or bundle.target_market_evidence is None:
+        return
+    _validate_route_evidence(
+        base=bundle.base,
+        source_market=bundle.source_market_evidence,
+        target_market=bundle.target_market_evidence,
+    )
 
 
 # The Binance Alpha catalog's full entry includes fields with no identity
@@ -648,27 +996,47 @@ async def capture_bundle(
     target_chain: str | None,
     target_contract_address: str | None,
     alpha_catalog: RawFetch,
+    binance_futures_exchange_info: RawFetch,
     code_revision: str,
     working_tree_dirty: bool,
 ) -> EvidenceBundle:
-    """Capture one candidate's full evidence bundle. `alpha_catalog` is
-    fetched once per run by the caller and passed in, not refetched per
-    candidate -- see fetch_binance_alpha_catalog's docstring. Validates the
-    claimed identity_class against the evidence it just fetched
-    (_validate_identity_class) before returning -- a bundle whose evidence
-    does not actually support its classification raises rather than being
-    saved."""
+    """Capture one candidate's full evidence bundle. `alpha_catalog` and
+    `binance_futures_exchange_info` are each fetched once per run by the
+    caller and passed in, not refetched per candidate -- see
+    fetch_binance_alpha_catalog's docstring. Validates the claimed
+    identity_class against the on-chain evidence it just fetched
+    (_validate_identity_class) and the derivative-market evidence against
+    itself and the candidate's base (_validate_route_evidence) before
+    returning -- a bundle whose evidence does not actually support its
+    classification, or whose market evidence doesn't check out, raises
+    rather than being saved."""
     if (target_chain is None) != (target_contract_address is None):
         raise ValueError("target_chain and target_contract_address must both be set, or both None")
     if identity_class == "third_party_bridge_only" and target_chain is not None:
         raise ValueError("third_party_bridge_only must not carry target chain evidence")
     if identity_class != "third_party_bridge_only" and target_chain is None:
         raise ValueError(f"identity_class {identity_class!r} requires target chain evidence")
+    if source_exchange != "gate":
+        raise NotImplementedError(f"source_exchange {source_exchange!r}: only gate is implemented")
+    if target_exchange != "binance":
+        raise NotImplementedError(
+            f"target_exchange {target_exchange!r}: only binance is implemented"
+        )
 
     gate_evidence = await fetch_gate_currency(gate_exchange, base)
     coingecko_evidence = await fetch_coingecko_coin(http_client, coingecko_id)
     source_contract = await fetch_onchain_decimals(
         http_client, source_chain, source_contract_address
+    )
+
+    source_market_evidence = await fetch_gate_futures_contract(http_client, base)
+    target_market_evidence = find_binance_futures_market(
+        binance_futures_exchange_info, f"{base}USDT"
+    )
+    if target_market_evidence is None:
+        raise ValueError(f"expected a binance futures market for {base!r}USDT, found none")
+    _validate_route_evidence(
+        base=base, source_market=source_market_evidence, target_market=target_market_evidence
     )
 
     target_contract: ChainContractEvidence | None = None
@@ -711,6 +1079,8 @@ async def capture_bundle(
         gate_evidence=gate_evidence,
         target_catalog_evidence=target_catalog_evidence,
         coingecko_evidence=coingecko_evidence,
+        source_market_evidence=source_market_evidence,
+        target_market_evidence=target_market_evidence,
         code_revision=code_revision,
         working_tree_dirty=working_tree_dirty,
         captured_at=datetime.now(UTC),
@@ -752,6 +1122,23 @@ def _chain_evidence_from_dict(payload: dict[str, Any]) -> ChainContractEvidence:
     )
 
 
+def _derivative_market_evidence_from_dict(payload: dict[str, Any]) -> DerivativeMarketEvidence:
+    return DerivativeMarketEvidence(
+        exchange=payload["exchange"],
+        native_market_id=payload["native_market_id"],
+        reported_base_asset=payload["reported_base_asset"],
+        reported_quote_asset=payload["reported_quote_asset"],
+        reported_settle_asset=payload["reported_settle_asset"],
+        inferred_base_asset=payload["inferred_base_asset"],
+        inferred_quote_asset=payload["inferred_quote_asset"],
+        inferred_settle_asset=payload["inferred_settle_asset"],
+        inference_basis=payload["inference_basis"],
+        onboarded_at_ms=payload["onboarded_at_ms"],
+        status=payload["status"],
+        raw_evidence=_rawfetch_from_dict(payload["raw_evidence"]),
+    )
+
+
 def _parse_dt(value: Any) -> datetime:
     if isinstance(value, datetime):
         return value
@@ -778,6 +1165,16 @@ def _bundle_from_dict(payload: dict[str, Any]) -> EvidenceBundle:
             else None
         ),
         coingecko_evidence=_rawfetch_from_dict(payload["coingecko_evidence"]),
+        source_market_evidence=(
+            _derivative_market_evidence_from_dict(payload["source_market_evidence"])
+            if payload.get("source_market_evidence") is not None
+            else None
+        ),
+        target_market_evidence=(
+            _derivative_market_evidence_from_dict(payload["target_market_evidence"])
+            if payload.get("target_market_evidence") is not None
+            else None
+        ),
         code_revision=payload["code_revision"],
         working_tree_dirty=payload["working_tree_dirty"],
         captured_at=_parse_dt(payload["captured_at"]),
@@ -839,6 +1236,36 @@ def load_evidence_bundle(path: Path) -> EvidenceBundle:
     return bundle
 
 
+def _verify_manifest(
+    manifest: dict[str, Any], bundles: tuple[EvidenceBundle, ...], target_dir: Path
+) -> None:
+    """Cross-checks manifest.json against the bundles _run() actually wrote
+    it alongside -- a colleague review (2026-08-28, PR1 fix round) found the
+    manifest was written by _run but never read back by anything: a bundle
+    file added, removed, or replaced by hand without regenerating the
+    manifest passed silently. Only checks the keys that are present, so a
+    manifest predating a given field (or a test's minimal fixture) does not
+    spuriously fail -- but a present, mismatched value always raises."""
+    expected_candidates = manifest.get("candidates")
+    if expected_candidates is not None:
+        actual_candidates = sorted(bundle.base for bundle in bundles)
+        if sorted(expected_candidates) != actual_candidates:
+            raise EvidenceIntegrityError(
+                f"{target_dir}: manifest candidate set {sorted(expected_candidates)!r} "
+                f"does not match the {len(actual_candidates)} bundle(s) actually loaded: "
+                f"{actual_candidates!r}"
+            )
+    expected_fingerprint = manifest.get("bundle_fingerprint")
+    if expected_fingerprint is not None:
+        recomputed = _sha256_canonical(sorted(bundle.bundle_sha256 for bundle in bundles))
+        if recomputed != expected_fingerprint:
+            raise EvidenceIntegrityError(
+                f"{target_dir}: manifest bundle_fingerprint {expected_fingerprint!r} does not "
+                f"match the fingerprint recomputed over the bundles actually loaded "
+                f"({recomputed!r})"
+            )
+
+
 def load_all_evidence_bundles(
     directory: Path | None = None, *, allow_empty: bool = False
 ) -> tuple[EvidenceBundle, ...]:
@@ -854,7 +1281,12 @@ def load_all_evidence_bundles(
     directory reads identically to "genuinely nothing captured yet" to a
     future registry-activation consumer, hiding an accidentally deleted or
     renamed evidence directory. Tests that intentionally exercise an empty
-    directory must pass allow_empty=True explicitly."""
+    directory must pass allow_empty=True explicitly.
+
+    When a manifest.json is present, its candidate set and bundle_fingerprint
+    are cross-checked against the bundles actually loaded (_verify_manifest)
+    -- previously written but never read back by anything (colleague review,
+    2026-08-28, PR1 fix round)."""
     target_dir = directory or EVIDENCE_DIR
     if not target_dir.is_dir():
         if allow_empty:
@@ -863,7 +1295,12 @@ def load_all_evidence_bundles(
     paths = sorted(path for path in target_dir.glob("*.json") if path.name != MANIFEST_FILENAME)
     if not paths and not allow_empty:
         raise EvidenceIntegrityError(f"no evidence bundles found in {target_dir}")
-    return tuple(load_evidence_bundle(path) for path in paths)
+    bundles = tuple(load_evidence_bundle(path) for path in paths)
+    manifest_path = target_dir / MANIFEST_FILENAME
+    if manifest_path.is_file():
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        _verify_manifest(manifest, bundles, target_dir)
+    return bundles
 
 
 # --- CLI -----------------------------------------------------------------------
@@ -1115,6 +1552,37 @@ CANDIDATES: tuple[tuple[str, str, str, str, str | None, str | None, str, Identit
 )
 
 
+def _atomic_publish(new_dir: Path, target_dir: Path) -> None:
+    """Swaps target_dir for new_dir using two back-to-back os.rename calls
+    instead of delete-then-move.
+
+    Colleague review, 2026-08-28, PR1 fix round: the previous version did
+    `shutil.rmtree(target_dir)` then `shutil.move(new_dir, target_dir)` --
+    a process killed between those two steps left target_dir entirely
+    empty, and shutil.move silently degrades to copy-then-delete (not
+    atomic at all) if new_dir and target_dir ever end up on different
+    filesystems. new_dir must be a sibling of target_dir (same parent, see
+    _run) so both renames are same-filesystem and each is atomic on POSIX.
+    target_dir's previous contents are kept as a same-directory backup
+    until the swap succeeds, and restored if the final rename fails --
+    narrows, but (like any rename-based swap) cannot fully eliminate, the
+    window between the two renames."""
+    backup_dir = target_dir.parent / f".{target_dir.name}.backup"
+    if backup_dir.exists():
+        shutil.rmtree(backup_dir)
+    had_previous = target_dir.exists()
+    if had_previous:
+        target_dir.rename(backup_dir)
+    try:
+        new_dir.rename(target_dir)
+    except BaseException:
+        if had_previous and not target_dir.exists():
+            backup_dir.rename(target_dir)
+        raise
+    if had_previous:
+        shutil.rmtree(backup_dir)
+
+
 async def _run(_args: argparse.Namespace) -> None:
     """Capture every candidate into a staging directory first, and only
     publish to EVIDENCE_DIR (a single atomic directory swap) if every single
@@ -1133,10 +1601,18 @@ async def _run(_args: argparse.Namespace) -> None:
     gate = EXCHANGE_FACTORIES["gate"]()
     bundles: list[EvidenceBundle] = []
     failed: list[tuple[str, str]] = []
-    staging_dir = Path(tempfile.mkdtemp(prefix="source_lead_identity_evidence_"))
+    run_id = str(uuid.uuid4())
+    # A sibling of EVIDENCE_DIR_V3 (same parent directory), not
+    # tempfile.mkdtemp()'s system temp dir -- so _atomic_publish's final
+    # swap is a same-filesystem os.rename, not a cross-filesystem copy (see
+    # _atomic_publish's docstring for why that matters).
+    EVIDENCE_DIR_V3.parent.mkdir(parents=True, exist_ok=True)
+    staging_dir = EVIDENCE_DIR_V3.parent / f".v3.staging.{run_id}"
+    staging_dir.mkdir(parents=True, exist_ok=False)
     try:
         async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
             alpha_catalog = await fetch_binance_alpha_catalog(client)
+            binance_futures_exchange_info = await fetch_binance_futures_exchange_info(client)
             for index, (
                 base,
                 target_exchange,
@@ -1163,6 +1639,7 @@ async def _run(_args: argparse.Namespace) -> None:
                         target_chain=target_chain,
                         target_contract_address=target_contract,
                         alpha_catalog=alpha_catalog,
+                        binance_futures_exchange_info=binance_futures_exchange_info,
                         code_revision=code_revision,
                         working_tree_dirty=working_tree_dirty,
                     )
@@ -1192,7 +1669,7 @@ async def _run(_args: argparse.Namespace) -> None:
         sys.exit(1)
 
     manifest = {
-        "run_id": str(uuid.uuid4()),
+        "run_id": run_id,
         "evidence_version": EVIDENCE_VERSION,
         "captured_at": datetime.now(UTC).isoformat(),
         "code_revision": code_revision,
@@ -1205,11 +1682,11 @@ async def _run(_args: argparse.Namespace) -> None:
         json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
 
-    if EVIDENCE_DIR.exists():
-        shutil.rmtree(EVIDENCE_DIR)
-    EVIDENCE_DIR.parent.mkdir(parents=True, exist_ok=True)
-    shutil.move(str(staging_dir), str(EVIDENCE_DIR))
-    sys.stderr.write(f"\npublished {len(bundles)} bundles atomically to {EVIDENCE_DIR}\n")
+    # Publishes to EVIDENCE_DIR_V3, not EVIDENCE_DIR: the currently-deployed
+    # registry is still v2 and reads EVIDENCE_DIR by default (via
+    # verify_registry_against_evidence) -- see EVIDENCE_DIR's own comment.
+    _atomic_publish(staging_dir, EVIDENCE_DIR_V3)
+    sys.stderr.write(f"\npublished {len(bundles)} bundles atomically to {EVIDENCE_DIR_V3}\n")
 
 
 def build_parser() -> argparse.ArgumentParser:

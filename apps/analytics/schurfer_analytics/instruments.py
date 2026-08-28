@@ -66,7 +66,15 @@ def _display_name(info: dict[str, Any]) -> str | None:
     return None
 
 
-def _onboarded_at_ms(exchange: str, info: dict[str, Any]) -> int | None:
+def onboarded_at_ms(exchange: str, info: dict[str, Any]) -> int | None:
+    """Public (not `_`-prefixed) so other modules that need this exact
+    field-priority logic -- e.g. source_lead_identity_evidence.py's
+    independent derivative-market evidence capture -- import it instead of
+    reimplementing it. Gate's `launch_time` and `create_time` can differ by
+    hours (confirmed live: ARIA_USDT's launch_time is ~6.4h after its
+    create_time), so getting this priority order wrong silently produces a
+    different onboarded_at_ms than what identity_key resolution actually
+    uses."""
     for field in _ONBOARD_FIELDS.get(exchange, ()):
         timestamp = _timestamp_ms(info.get(field))
         if timestamp is not None:
@@ -85,8 +93,8 @@ def instrument_metadata(
     info = info if isinstance(info, dict) else {}
     market_id = str(market.get("id") or unified_symbol)
     market_type = _market_type(market)
-    onboarded_at_ms = _onboarded_at_ms(exchange, info)
-    identity_version = str(onboarded_at_ms) if onboarded_at_ms is not None else "unknown"
+    onboarded_ms = onboarded_at_ms(exchange, info)
+    identity_version = str(onboarded_ms) if onboarded_ms is not None else "unknown"
     return {
         "identity_key": f"{exchange}:{market_type}:{market_id}:{identity_version}",
         "market_id": market_id,
@@ -97,7 +105,7 @@ def instrument_metadata(
         "quote_asset": str(market.get("quote") or "") or None,
         "settle_asset": str(market.get("settle") or "") or None,
         "contract_size": _positive_float(market.get("contractSize")),
-        "onboarded_at_ms": onboarded_at_ms,
+        "onboarded_at_ms": onboarded_ms,
     }
 
 

@@ -79,7 +79,11 @@ where = ["."]
 include = ["schurfer_analytics*"]
 
 [tool.setuptools.package-data]
-schurfer_analytics = ["registry/*.json", "evidence/source_lead/v2/*.json"]
+schurfer_analytics = [
+    "registry/*.json",
+    "evidence/source_lead/v2/*.json",
+    "evidence/source_lead/v3/*.json",
+]
 
 [tool.uv]
 package = true
