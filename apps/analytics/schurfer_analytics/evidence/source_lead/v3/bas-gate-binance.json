@@ -1,0 +1,397 @@
+{
+  "base": "BAS",
+  "bundle_sha256": "e044281b0e3835adff61680419c8fec66379c35922ddd3a569487ade7fbacc98",
+  "captured_at": "2026-08-28T23:29:46.183113+00:00",
+  "code_revision": "aacf83c38b046990461e9142ddf82154e6ced91e",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/bas?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-08-28T23:29:44.777032+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "binance-smart-chain",
+      "block_time_in_minutes": 0,
+      "categories": [
+        "Analytics",
+        "BNB Chain Ecosystem",
+        "Decentralized Identifier (DID)",
+        "Binance Wallet IDO"
+      ],
+      "contract_address": "0x0f0df6cb17ee5e883eddfef9153fc6036bdb4e37",
+      "country_origin": "",
+      "description": {
+        "en": ""
+      },
+      "detail_platforms": {
+        "binance-smart-chain": {
+          "contract_address": "0x0f0df6cb17ee5e883eddfef9153fc6036bdb4e37",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/bsc/tokens/0x0f0df6cb17ee5e883eddfef9153fc6036bdb4e37"
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": false,
+      "hashing_algorithm": null,
+      "id": "bas",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/67419/large/bas.jpg?1752736026",
+        "small": "https://coin-images.coingecko.com/coins/images/67419/small/bas.jpg?1752736026",
+        "thumb": "https://coin-images.coingecko.com/coins/images/67419/thumb/bas.jpg?1752736026"
+      },
+      "last_updated": "2026-08-28T23:27:40.000Z",
+      "links": {
+        "announcement_url": [],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://bscscan.com/token/0x0f0df6cb17ee5e883eddfef9153fc6036bdb4e37",
+          "https://binplorer.com/address/0x0f0df6cb17ee5e883eddfef9153fc6036bdb4e37"
+        ],
+        "chat_url": [],
+        "facebook_username": "",
+        "homepage": ["https://www.bnbattest.io/"],
+        "official_forum_url": [],
+        "repos_url": {
+          "bitbucket": [],
+          "github": ["https://github.com/bnb-attestation-service"]
+        },
+        "snapshot_url": null,
+        "subreddit_url": null,
+        "telegram_channel_identifier": "+On8eyMFa__JjNWY1",
+        "twitter_screen_name": "BASCAN_io",
+        "whitepaper": "https://doc.bascan.io/"
+      },
+      "listing_currency": null,
+      "listing_price": null,
+      "listing_source": null,
+      "listing_source_url": null,
+      "listing_timestamp": null,
+      "market_cap_rank": 391,
+      "market_cap_rank_with_rehypothecated": 530,
+      "name": "BNB Attestation Service",
+      "platforms": {
+        "binance-smart-chain": "0x0f0df6cb17ee5e883eddfef9153fc6036bdb4e37"
+      },
+      "preview_listing": false,
+      "public_notice": null,
+      "sentiment_votes_down_percentage": 50.0,
+      "sentiment_votes_up_percentage": 50.0,
+      "status_updates": [],
+      "symbol": "bas",
+      "watchlist_portfolio_users": 2205,
+      "web_slug": "bnb-attestation-service"
+    },
+    "raw_sha256": "824fff434e1352c18e100e60c3dffe2ea6c90adce8ecb6209e0d6a2e39c6637f",
+    "source": "https://api.coingecko.com/api/v3/coins/bas",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v3",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-08-28T23:29:44.498334+00:00",
+    "payload": {
+      "active": true,
+      "code": "BAS",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "BAS",
+      "info": {
+        "category": [],
+        "chain": "BSC",
+        "chains": [
+          {
+            "addr": "0x0f0df6cb17ee5e883eddfef9153fc6036bdb4e37",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "BAS",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "61145000.0",
+        "name": "BNB Attestation Service",
+        "total_supply": "10000000000",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "BNB Attestation Service",
+      "networks": {
+        "BEP20": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "BSC",
+          "info": {
+            "addr": "0x0f0df6cb17ee5e883eddfef9153fc6036bdb4e37",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "BEP20",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "296c01ad46e9e303780c2e8871a1b40edae2b36c80759969f5691a3fff21eb2c",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "exact_contract",
+  "source_contract": {
+    "block_hash": "0xba5d78add001b16933a0b7bfaad8c4c35ecd3238a219737c8f890753d7a8bd27",
+    "block_number": 118663762,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0x0f0df6cb17ee5e883eddfef9153fc6036bdb4e37",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-08-28T23:29:44.933584+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "8e73d72cca28014c8646f2033e87ec712fc9eb6dbc2664092e1cf446ce4e6937",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "source_market_evidence": {
+    "exchange": "gate",
+    "inference_basis": "gate futures contract payload has no base_asset/quote_asset/settle_asset fields; base/quote split parsed from the reported native_market_id ('BAS_USDT') on its '_' separator, settle asset inferred from the /futures/usdt/ endpoint family",
+    "inferred_base_asset": "BAS",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "BAS_USDT",
+    "onboarded_at_ms": 1756210848000,
+    "raw_evidence": {
+      "endpoint": "https://api.gateio.ws/api/v4/futures/usdt/contracts/BAS_USDT",
+      "observed_at": "2026-08-28T23:29:46.032310+00:00",
+      "payload": {
+        "config_change_time": 1787754186,
+        "contract_type": "",
+        "create_time": 1756210848,
+        "cross_leverage_default": "10",
+        "enable_bonus": true,
+        "enable_circuit_breaker": false,
+        "enable_credit": true,
+        "enable_decimal": false,
+        "funding_cap_ratio": "2",
+        "funding_impact_value": "5000",
+        "funding_interval": 14400,
+        "funding_next_apply": 1787961600,
+        "funding_offset": 0,
+        "funding_rate": "0.00005",
+        "funding_rate_indicative": "0.00005",
+        "funding_rate_limit": "0.02",
+        "in_delisting": false,
+        "index_price": "0.023231",
+        "interest_rate": "0.0003",
+        "is_pre_market": false,
+        "last_price": "0.023346",
+        "launch_time": 1756210848,
+        "leverage_max": "10",
+        "leverage_min": "1",
+        "long_users": 163,
+        "maintenance_rate": "0.08",
+        "maker_fee_rate": "-0.0001",
+        "mark_price": "0.023331",
+        "mark_price_round": "0.000001",
+        "mark_type": "index",
+        "market_order_size_max": "25000",
+        "market_order_slip_ratio": "0.05",
+        "name": "BAS_USDT",
+        "order_price_deviate": "0.2",
+        "order_price_round": "0.000001",
+        "order_size_max": 38000,
+        "order_size_min": 1,
+        "orderbook_id": 1434591908,
+        "orders_limit": 100,
+        "position_size": 40499,
+        "quanto_multiplier": "100",
+        "ref_discount_rate": "0",
+        "ref_rebate_rate": "0.2",
+        "risk_limit_base": "5000",
+        "risk_limit_max": "2500000",
+        "risk_limit_step": "2495000",
+        "short_users": 124,
+        "status": "trading",
+        "taker_fee_rate": "0.00075",
+        "trade_id": 6241943,
+        "trade_size": 330457911,
+        "type": "direct",
+        "voucher_leverage": "2"
+      },
+      "raw_sha256": "22f9f9e6d38315b871e72f28eac6c3cd87ffa2ef6027ec2189aa1c9aa244f744",
+      "source": "https://api.gateio.ws/api/v4/futures/usdt/contracts/BAS_USDT",
+      "wire_exact": true
+    },
+    "reported_base_asset": null,
+    "reported_quote_asset": null,
+    "reported_settle_asset": null,
+    "status": "trading"
+  },
+  "target_catalog_evidence": {
+    "endpoint": "https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list",
+    "observed_at": "2026-08-28T23:28:45.355309+00:00",
+    "payload": {
+      "chainId": "56",
+      "chainName": "BSC",
+      "contractAddress": "0x0f0df6cb17ee5e883eddfef9153fc6036bdb4e37",
+      "decimals": 18,
+      "fullyDelisted": false,
+      "listingCex": false,
+      "name": "BNB Attestation",
+      "offline": false,
+      "symbol": "BAS"
+    },
+    "raw_sha256": "604a356cd93808bb2e36a39ed3ca1c05b7f562b917a23a049e8bb07f3754fffb",
+    "source": "binance:alpha_catalog_entry",
+    "wire_exact": false
+  },
+  "target_contract": {
+    "block_hash": "0xd88ae3498d42fee88e61ade90518dca5becf6d086833f91f39d84ffb2021768a",
+    "block_number": 118663765,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0x0f0df6cb17ee5e883eddfef9153fc6036bdb4e37",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-08-28T23:29:46.182738+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "8e73d72cca28014c8646f2033e87ec712fc9eb6dbc2664092e1cf446ce4e6937",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "target_exchange": "binance",
+  "target_market_evidence": {
+    "exchange": "binance",
+    "inference_basis": "copied verbatim from binance futures exchangeInfo's own baseAsset/quoteAsset/marginAsset fields -- genuinely reported, not parsed",
+    "inferred_base_asset": "BAS",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "BASUSDT",
+    "onboarded_at_ms": 1756215000000,
+    "raw_evidence": {
+      "endpoint": "https://fapi.binance.com/fapi/v1/exchangeInfo",
+      "observed_at": "2026-08-28T23:28:45.923396+00:00",
+      "payload": {
+        "baseAsset": "BAS",
+        "baseAssetPrecision": 8,
+        "contractType": "PERPETUAL",
+        "deliveryDate": 4133404800000,
+        "filters": [
+          {
+            "filterType": "PRICE_FILTER",
+            "maxPrice": "200",
+            "minPrice": "0.0000010",
+            "tickSize": "0.0000010"
+          },
+          {
+            "filterType": "LOT_SIZE",
+            "maxQty": "10000000",
+            "minQty": "1",
+            "stepSize": "1"
+          },
+          {
+            "filterType": "MARKET_LOT_SIZE",
+            "maxQty": "3000000",
+            "minQty": "1",
+            "stepSize": "1"
+          },
+          {
+            "filterType": "MAX_NUM_ORDERS",
+            "limit": 200
+          },
+          {
+            "filterType": "MIN_NOTIONAL",
+            "notional": "5"
+          },
+          {
+            "filterType": "PERCENT_PRICE",
+            "multiplierDecimal": "4",
+            "multiplierDown": "0.8500",
+            "multiplierUp": "1.1500"
+          },
+          {
+            "filterType": "POSITION_RISK_CONTROL",
+            "positionControlSide": "NONE"
+          }
+        ],
+        "liquidationFee": "0.020000",
+        "maintMarginPercent": "2.5000",
+        "marginAsset": "USDT",
+        "marketTakeBound": "0.15",
+        "maxMoveOrderLimit": 10000,
+        "onboardDate": 1756215000000,
+        "orderTypes": [
+          "LIMIT",
+          "MARKET",
+          "STOP",
+          "STOP_MARKET",
+          "TAKE_PROFIT",
+          "TAKE_PROFIT_MARKET",
+          "TRAILING_STOP_MARKET"
+        ],
+        "pair": "BASUSDT",
+        "permissionSets": ["GRID", "COPY", "DCA", "PSB"],
+        "pricePrecision": 7,
+        "quantityPrecision": 0,
+        "quoteAsset": "USDT",
+        "quotePrecision": 8,
+        "requiredMarginPercent": "5.0000",
+        "status": "TRADING",
+        "symbol": "BASUSDT",
+        "timeInForce": ["GTC", "IOC", "FOK", "GTX", "GTD"],
+        "triggerProtect": "0.1500",
+        "underlyingSubType": ["Alpha"],
+        "underlyingType": "COIN"
+      },
+      "raw_sha256": "b0c0a73128a789ea0c3b7ab7dedf6cc842972ea12d0d4b5382578c3f298dd10b",
+      "source": "binance:futures_exchange_info_entry",
+      "wire_exact": false
+    },
+    "reported_base_asset": "BAS",
+    "reported_quote_asset": "USDT",
+    "reported_settle_asset": "USDT",
+    "status": "TRADING"
+  },
+  "working_tree_dirty": false
+}

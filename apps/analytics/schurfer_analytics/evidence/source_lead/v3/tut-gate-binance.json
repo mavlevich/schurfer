@@ -1,0 +1,398 @@
+{
+  "base": "TUT",
+  "bundle_sha256": "6c226ac074c9151d583e7f9f1d968bce403caf8524124e64a25669a4f1db7025",
+  "captured_at": "2026-08-28T23:28:55.364106+00:00",
+  "code_revision": "aacf83c38b046990461e9142ddf82154e6ced91e",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/tutorial?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-08-28T23:28:54.775307+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "binance-smart-chain",
+      "block_time_in_minutes": 0,
+      "categories": [
+        "BNB Chain Ecosystem",
+        "Meme",
+        "AI Meme",
+        "AI Agents",
+        "Four.meme Ecosystem (BNB Memes)"
+      ],
+      "contract_address": "0xcaae2a2f939f51d97cdfa9a86e79e3f085b799f3",
+      "country_origin": "",
+      "description": {
+        "en": "Tutorial is a token from a dev who made a tutorial on how to launch token on BNB chain 10 month ago, the OG Tutorial token was on testnet, so he decided to launch it on mainnet as a meme. \n\nThe purpose of the project is to promote building on bsc and making useful education content. \nThe project was originally created on four.meme and liquidity was transferred to pancakeswap as bonding curve criteria was met.\n\n"
+      },
+      "detail_platforms": {
+        "binance-smart-chain": {
+          "contract_address": "0xcaae2a2f939f51d97cdfa9a86e79e3f085b799f3",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/bsc/tokens/0xcaae2a2f939f51d97cdfa9a86e79e3f085b799f3"
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": false,
+      "hashing_algorithm": null,
+      "id": "tutorial",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/54299/large/image_2025-02-08_18-56-13.png?1739165439",
+        "small": "https://coin-images.coingecko.com/coins/images/54299/small/image_2025-02-08_18-56-13.png?1739165439",
+        "thumb": "https://coin-images.coingecko.com/coins/images/54299/thumb/image_2025-02-08_18-56-13.png?1739165439"
+      },
+      "last_updated": "2026-08-28T23:26:40.000Z",
+      "links": {
+        "announcement_url": [],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://bscscan.com/token/0xcaae2a2f939f51d97cdfa9a86e79e3f085b799f3",
+          "https://binplorer.com/address/0xcaae2a2f939f51d97cdfa9a86e79e3f085b799f3"
+        ],
+        "chat_url": [],
+        "facebook_username": "",
+        "homepage": ["https://tutorialtoken.com"],
+        "official_forum_url": [],
+        "repos_url": {
+          "bitbucket": [],
+          "github": []
+        },
+        "snapshot_url": null,
+        "subreddit_url": null,
+        "telegram_channel_identifier": "",
+        "twitter_screen_name": "tutorialtoken",
+        "whitepaper": ""
+      },
+      "listing_currency": null,
+      "listing_price": null,
+      "listing_source": null,
+      "listing_source_url": null,
+      "listing_timestamp": null,
+      "market_cap_rank": 622,
+      "market_cap_rank_with_rehypothecated": 797,
+      "name": "Tutorial",
+      "platforms": {
+        "binance-smart-chain": "0xcaae2a2f939f51d97cdfa9a86e79e3f085b799f3"
+      },
+      "preview_listing": false,
+      "public_notice": null,
+      "sentiment_votes_down_percentage": 7.14,
+      "sentiment_votes_up_percentage": 92.86,
+      "status_updates": [],
+      "symbol": "tut",
+      "watchlist_portfolio_users": 3374,
+      "web_slug": "tutorial"
+    },
+    "raw_sha256": "b2f3bbc3681a6e6ba8239d10c75ea4c5b761afed268356a56555fc17234f7858",
+    "source": "https://api.coingecko.com/api/v3/coins/tutorial",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v3",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-08-28T23:28:54.480850+00:00",
+    "payload": {
+      "active": true,
+      "code": "TUT",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "TUT",
+      "info": {
+        "category": [],
+        "chain": "BSC",
+        "chains": [
+          {
+            "addr": "0xcaae2a2f939f51d97cdfa9a86e79e3f085b799f3",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "TUT",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "40660000.0",
+        "name": "Tutorial",
+        "total_supply": "1000000000",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "Tutorial",
+      "networks": {
+        "BEP20": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "BSC",
+          "info": {
+            "addr": "0xcaae2a2f939f51d97cdfa9a86e79e3f085b799f3",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "BEP20",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "a5dbeaaf13d76abeabbf67a307e79dbd2e2735e9344b71e0d273069f74959fa1",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "exact_contract",
+  "source_contract": {
+    "block_hash": "0xbada67832a2f6ea5655fe72cebc668760045a60b75a31b17140ccd27946a323d",
+    "block_number": 118663650,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0xcaae2a2f939f51d97cdfa9a86e79e3f085b799f3",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-08-28T23:28:54.930086+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "8e73d72cca28014c8646f2033e87ec712fc9eb6dbc2664092e1cf446ce4e6937",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "source_market_evidence": {
+    "exchange": "gate",
+    "inference_basis": "gate futures contract payload has no base_asset/quote_asset/settle_asset fields; base/quote split parsed from the reported native_market_id ('TUT_USDT') on its '_' separator, settle asset inferred from the /futures/usdt/ endpoint family",
+    "inferred_base_asset": "TUT",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "TUT_USDT",
+    "onboarded_at_ms": 1742353181000,
+    "raw_evidence": {
+      "endpoint": "https://api.gateio.ws/api/v4/futures/usdt/contracts/TUT_USDT",
+      "observed_at": "2026-08-28T23:28:55.212286+00:00",
+      "payload": {
+        "config_change_time": 1787754164,
+        "contract_type": "",
+        "create_time": 1742353181,
+        "cross_leverage_default": "10",
+        "enable_bonus": true,
+        "enable_circuit_breaker": false,
+        "enable_credit": true,
+        "enable_decimal": false,
+        "funding_cap_ratio": "2",
+        "funding_impact_value": "5000",
+        "funding_interval": 14400,
+        "funding_next_apply": 1787961600,
+        "funding_offset": 0,
+        "funding_rate": "-0.000171",
+        "funding_rate_indicative": "-0.000171",
+        "funding_rate_limit": "0.02",
+        "in_delisting": false,
+        "index_price": "0.038502",
+        "interest_rate": "0.0003",
+        "is_pre_market": false,
+        "last_price": "0.038445",
+        "launch_time": 1742353181,
+        "leverage_max": "10",
+        "leverage_min": "1",
+        "long_users": 520,
+        "maintenance_rate": "0.08",
+        "maker_fee_rate": "-0.0001",
+        "mark_price": "0.038445",
+        "mark_price_round": "0.000001",
+        "mark_type": "index",
+        "market_order_size_max": "50000",
+        "market_order_slip_ratio": "0.04",
+        "name": "TUT_USDT",
+        "order_price_deviate": "0.15",
+        "order_price_round": "0.000001",
+        "order_size_max": 75000,
+        "order_size_min": 1,
+        "orderbook_id": 2473691630,
+        "orders_limit": 100,
+        "position_size": 128737,
+        "quanto_multiplier": "100",
+        "ref_discount_rate": "0",
+        "ref_rebate_rate": "0.2",
+        "risk_limit_base": "5000",
+        "risk_limit_max": "2500000",
+        "risk_limit_step": "2495000",
+        "short_users": 331,
+        "status": "trading",
+        "taker_fee_rate": "0.00075",
+        "trade_id": 18067901,
+        "trade_size": 465756073,
+        "type": "direct",
+        "voucher_leverage": "0"
+      },
+      "raw_sha256": "793e529b18a468a234f06048067a3e14ede5254be0ba5475dbe387f6c97c25bd",
+      "source": "https://api.gateio.ws/api/v4/futures/usdt/contracts/TUT_USDT",
+      "wire_exact": true
+    },
+    "reported_base_asset": null,
+    "reported_quote_asset": null,
+    "reported_settle_asset": null,
+    "status": "trading"
+  },
+  "target_catalog_evidence": {
+    "endpoint": "https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list",
+    "observed_at": "2026-08-28T23:28:45.355309+00:00",
+    "payload": {
+      "chainId": "56",
+      "chainName": "BSC",
+      "contractAddress": "0xcaae2a2f939f51d97cdfa9a86e79e3f085b799f3",
+      "decimals": 18,
+      "fullyDelisted": true,
+      "listingCex": true,
+      "name": "Tutorial",
+      "offline": true,
+      "symbol": "TUT"
+    },
+    "raw_sha256": "79992ae9584b534795552b6b5cfb53aa05509c09d0137df997db8bf08b412082",
+    "source": "binance:alpha_catalog_entry",
+    "wire_exact": false
+  },
+  "target_contract": {
+    "block_hash": "0xc845ca328df38d69e3a1e048d484e749bc27168edaec7e323c0d9d1ccff4dde0",
+    "block_number": 118663652,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0xcaae2a2f939f51d97cdfa9a86e79e3f085b799f3",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-08-28T23:28:55.363690+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "8e73d72cca28014c8646f2033e87ec712fc9eb6dbc2664092e1cf446ce4e6937",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "target_exchange": "binance",
+  "target_market_evidence": {
+    "exchange": "binance",
+    "inference_basis": "copied verbatim from binance futures exchangeInfo's own baseAsset/quoteAsset/marginAsset fields -- genuinely reported, not parsed",
+    "inferred_base_asset": "TUT",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "TUTUSDT",
+    "onboarded_at_ms": 1742461200000,
+    "raw_evidence": {
+      "endpoint": "https://fapi.binance.com/fapi/v1/exchangeInfo",
+      "observed_at": "2026-08-28T23:28:45.923396+00:00",
+      "payload": {
+        "baseAsset": "TUT",
+        "baseAssetPrecision": 8,
+        "contractType": "PERPETUAL",
+        "deliveryDate": 4133404800000,
+        "filters": [
+          {
+            "filterType": "PRICE_FILTER",
+            "maxPrice": "200",
+            "minPrice": "0.0000100",
+            "tickSize": "0.0000100"
+          },
+          {
+            "filterType": "LOT_SIZE",
+            "maxQty": "20000000",
+            "minQty": "1",
+            "stepSize": "1"
+          },
+          {
+            "filterType": "MARKET_LOT_SIZE",
+            "maxQty": "4000000",
+            "minQty": "1",
+            "stepSize": "1"
+          },
+          {
+            "filterType": "MAX_NUM_ORDERS",
+            "limit": 200
+          },
+          {
+            "filterType": "MIN_NOTIONAL",
+            "notional": "5"
+          },
+          {
+            "filterType": "PERCENT_PRICE",
+            "multiplierDecimal": "4",
+            "multiplierDown": "0.8500",
+            "multiplierUp": "1.1500"
+          },
+          {
+            "filterType": "POSITION_RISK_CONTROL",
+            "positionControlSide": "NONE"
+          }
+        ],
+        "liquidationFee": "0.015000",
+        "maintMarginPercent": "2.5000",
+        "marginAsset": "USDT",
+        "marketTakeBound": "0.15",
+        "maxMoveOrderLimit": 10000,
+        "onboardDate": 1742461200000,
+        "orderTypes": [
+          "LIMIT",
+          "MARKET",
+          "STOP",
+          "STOP_MARKET",
+          "TAKE_PROFIT",
+          "TAKE_PROFIT_MARKET",
+          "TRAILING_STOP_MARKET"
+        ],
+        "pair": "TUTUSDT",
+        "permissionSets": ["GRID", "COPY", "DCA", "PSB"],
+        "pricePrecision": 7,
+        "quantityPrecision": 0,
+        "quoteAsset": "USDT",
+        "quotePrecision": 8,
+        "requiredMarginPercent": "5.0000",
+        "status": "TRADING",
+        "symbol": "TUTUSDT",
+        "timeInForce": ["GTC", "IOC", "FOK", "GTX", "GTD"],
+        "triggerProtect": "0.1500",
+        "underlyingSubType": ["Meme"],
+        "underlyingType": "COIN"
+      },
+      "raw_sha256": "cf28d4910af8157e9e1c98b0b3c17b7233001f4668de829c1ffca69627dd60b8",
+      "source": "binance:futures_exchange_info_entry",
+      "wire_exact": false
+    },
+    "reported_base_asset": "TUT",
+    "reported_quote_asset": "USDT",
+    "reported_settle_asset": "USDT",
+    "status": "TRADING"
+  },
+  "working_tree_dirty": false
+}

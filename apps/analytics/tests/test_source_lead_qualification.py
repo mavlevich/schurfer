@@ -329,6 +329,10 @@ def _sample_bundle(
         gate_evidence=gate_evidence,
         target_catalog_evidence=target_catalog_evidence,
         coingecko_evidence=coingecko_evidence,
+        # None: this helper simulates a v2-shaped bundle (evidence_version
+        # above is literally "...v2"), from before these fields existed.
+        source_market_evidence=None,
+        target_market_evidence=None,
         code_revision="abc123",
         working_tree_dirty=False,
         captured_at=datetime(2026, 8, 28, tzinfo=UTC),

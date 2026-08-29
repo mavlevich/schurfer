@@ -1,0 +1,413 @@
+{
+  "base": "RESOLV",
+  "bundle_sha256": "cb61c0f9e7e7035195d944812cdcfe24428bfd621b992d78c9ba742eb4111318",
+  "captured_at": "2026-08-28T23:30:40.684110+00:00",
+  "code_revision": "aacf83c38b046990461e9142ddf82154e6ced91e",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/resolv?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-08-28T23:30:39.022925+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "ethereum",
+      "block_time_in_minutes": 0,
+      "categories": [
+        "Decentralized Finance (DeFi)",
+        "BNB Chain Ecosystem",
+        "Ethereum Ecosystem",
+        "Coinbase Ventures Portfolio",
+        "Stablecoin Issuer",
+        "Delphi Ventures Portfolio",
+        "Binance HODLer Airdrops"
+      ],
+      "contract_address": "0x259338656198ec7a76c729514d3cb45dfbf768a1",
+      "country_origin": "",
+      "description": {
+        "en": ""
+      },
+      "detail_platforms": {
+        "binance-smart-chain": {
+          "contract_address": "0xda6cef7f667d992a60eb823ab215493aa0c6b360",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/bsc/tokens/0xda6cef7f667d992a60eb823ab215493aa0c6b360"
+        },
+        "ethereum": {
+          "contract_address": "0x259338656198ec7a76c729514d3cb45dfbf768a1",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/eth/tokens/0x259338656198ec7a76c729514d3cb45dfbf768a1"
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": true,
+      "hashing_algorithm": null,
+      "id": "resolv",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/56092/large/resolv_token.png?1749800512",
+        "small": "https://coin-images.coingecko.com/coins/images/56092/small/resolv_token.png?1749800512",
+        "thumb": "https://coin-images.coingecko.com/coins/images/56092/thumb/resolv_token.png?1749800512"
+      },
+      "last_updated": "2026-08-28T23:28:40.000Z",
+      "links": {
+        "announcement_url": [],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://etherscan.io/token/0x259338656198ec7a76c729514d3cb45dfbf768a1",
+          "https://intel.arkm.com/explorer/token/resolv",
+          "https://ethplorer.io/address/0x259338656198ec7a76c729514d3cb45dfbf768a1",
+          "https://bscscan.com/token/0xdA6CEF7F667d992A60EB823Ab215493aA0c6b360",
+          "https://binplorer.com/address/0xdA6CEF7F667d992A60EB823Ab215493aA0c6b360"
+        ],
+        "chat_url": [],
+        "facebook_username": "",
+        "homepage": ["https://resolv.xyz/"],
+        "official_forum_url": [
+          "https://discord.com/invite/resolvcommunity",
+          "https://resolvlabs.substack.com/",
+          "https://resolv.xyz/blog"
+        ],
+        "repos_url": {
+          "bitbucket": [],
+          "github": []
+        },
+        "snapshot_url": null,
+        "subreddit_url": null,
+        "telegram_channel_identifier": "Resolv_Community",
+        "twitter_screen_name": "ResolvLabs",
+        "whitepaper": "https://docs.resolv.xyz/litepaper"
+      },
+      "listing_currency": null,
+      "listing_price": null,
+      "listing_source": null,
+      "listing_source_url": null,
+      "listing_timestamp": null,
+      "market_cap_rank": 1288,
+      "market_cap_rank_with_rehypothecated": 1573,
+      "name": "Resolv",
+      "platforms": {
+        "binance-smart-chain": "0xda6cef7f667d992a60eb823ab215493aa0c6b360",
+        "ethereum": "0x259338656198ec7a76c729514d3cb45dfbf768a1"
+      },
+      "preview_listing": false,
+      "public_notice": null,
+      "sentiment_votes_down_percentage": null,
+      "sentiment_votes_up_percentage": null,
+      "status_updates": [],
+      "symbol": "resolv",
+      "watchlist_portfolio_users": 3652,
+      "web_slug": "resolv"
+    },
+    "raw_sha256": "1d4e0a06455b83838737a9a27f96e6fd68bc894084d2a470f88ab24672cd50e8",
+    "source": "https://api.coingecko.com/api/v3/coins/resolv",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v3",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-08-28T23:30:35.340881+00:00",
+    "payload": {
+      "active": true,
+      "code": "RESOLV",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "RESOLV",
+      "info": {
+        "category": [],
+        "chain": "ETH",
+        "chains": [
+          {
+            "addr": "0x259338656198ec7a76c729514d3cb45dfbf768a1",
+            "deposit_disabled": false,
+            "name": "ETH",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "RESOLV",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "2794880.0",
+        "name": "Resolv",
+        "total_supply": "1000000000",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "Resolv",
+      "networks": {
+        "ERC20": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "ETH",
+          "info": {
+            "addr": "0x259338656198ec7a76c729514d3cb45dfbf768a1",
+            "deposit_disabled": false,
+            "name": "ETH",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "ERC20",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "11071e1faf4e53d344f6d7ad0cac7546ffe22aefa05c6697f1c542a0eefc2907",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "same_asset_multichain_candidate",
+  "source_contract": {
+    "block_hash": "0xba63751d282867e455835de5ec58f58b2d051a117177d834a56d1b646febf2f5",
+    "block_number": 25857036,
+    "chain": "ethereum",
+    "chain_id": 1,
+    "contract_address": "0x259338656198ec7a76c729514d3cb45dfbf768a1",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://ethereum-rpc.publicnode.com",
+      "observed_at": "2026-08-28T23:30:39.216548+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "a0cfb5a1c696cf1b33c6808f77538ba8fbf89fc8515499513d43ce204d7a457a",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "source_market_evidence": {
+    "exchange": "gate",
+    "inference_basis": "gate futures contract payload has no base_asset/quote_asset/settle_asset fields; base/quote split parsed from the reported native_market_id ('RESOLV_USDT') on its '_' separator, settle asset inferred from the /futures/usdt/ endpoint family",
+    "inferred_base_asset": "RESOLV",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "RESOLV_USDT",
+    "onboarded_at_ms": 1749560719000,
+    "raw_evidence": {
+      "endpoint": "https://api.gateio.ws/api/v4/futures/usdt/contracts/RESOLV_USDT",
+      "observed_at": "2026-08-28T23:30:40.352902+00:00",
+      "payload": {
+        "config_change_time": 1787753990,
+        "contract_type": "",
+        "create_time": 1749560719,
+        "cross_leverage_default": "10",
+        "enable_bonus": true,
+        "enable_circuit_breaker": false,
+        "enable_credit": true,
+        "enable_decimal": false,
+        "funding_cap_ratio": "4",
+        "funding_impact_value": "5000",
+        "funding_interval": 28800,
+        "funding_next_apply": 1787961600,
+        "funding_offset": 0,
+        "funding_rate": "0.0001",
+        "funding_rate_indicative": "0.0001",
+        "funding_rate_limit": "0.02",
+        "in_delisting": false,
+        "index_price": "0.01774",
+        "interest_rate": "0.0003",
+        "is_pre_market": false,
+        "last_price": "0.0178",
+        "launch_time": 1749560719,
+        "leverage_max": "25",
+        "leverage_min": "1",
+        "long_users": 147,
+        "maintenance_rate": "0.02",
+        "maker_fee_rate": "-0.0001",
+        "mark_price": "0.01778",
+        "mark_price_round": "0.00001",
+        "mark_type": "index",
+        "market_order_size_max": "200000",
+        "market_order_slip_ratio": "0.035",
+        "name": "RESOLV_USDT",
+        "order_price_deviate": "0.12",
+        "order_price_round": "0.00001",
+        "order_size_max": 300000,
+        "order_size_min": 1,
+        "orderbook_id": 849454828,
+        "orders_limit": 100,
+        "position_size": 1748465,
+        "quanto_multiplier": "10",
+        "ref_discount_rate": "0",
+        "ref_rebate_rate": "0.2",
+        "risk_limit_base": "5000",
+        "risk_limit_max": "10000000",
+        "risk_limit_step": "9995000",
+        "short_users": 172,
+        "status": "trading",
+        "taker_fee_rate": "0.00075",
+        "trade_id": 7717570,
+        "trade_size": 1842575295,
+        "type": "direct",
+        "voucher_leverage": "0"
+      },
+      "raw_sha256": "664fd1af58ae709d641d251e7c218459d2c125237df81108673592903739a6e0",
+      "source": "https://api.gateio.ws/api/v4/futures/usdt/contracts/RESOLV_USDT",
+      "wire_exact": true
+    },
+    "reported_base_asset": null,
+    "reported_quote_asset": null,
+    "reported_settle_asset": null,
+    "status": "trading"
+  },
+  "target_catalog_evidence": {
+    "endpoint": "https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list",
+    "observed_at": "2026-08-28T23:28:45.355309+00:00",
+    "payload": {
+      "chainId": "56",
+      "chainName": "BSC",
+      "contractAddress": "0xda6cef7f667d992a60eb823ab215493aa0c6b360",
+      "decimals": 18,
+      "fullyDelisted": true,
+      "listingCex": false,
+      "name": "Resolv",
+      "offline": true,
+      "symbol": "RESOLV"
+    },
+    "raw_sha256": "099e1871366ed517b9e45a3077a0b99cb754051e3c92858d7e6ea5a2e778925b",
+    "source": "binance:alpha_catalog_entry",
+    "wire_exact": false
+  },
+  "target_contract": {
+    "block_hash": "0x523eae12ca1f0a3d9f6594b15f15a11efcda1332e2fdbbaf7884204f7009fd31",
+    "block_number": 118663886,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0xda6cef7f667d992a60eb823ab215493aa0c6b360",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-08-28T23:30:40.683004+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "8e73d72cca28014c8646f2033e87ec712fc9eb6dbc2664092e1cf446ce4e6937",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "target_exchange": "binance",
+  "target_market_evidence": {
+    "exchange": "binance",
+    "inference_basis": "copied verbatim from binance futures exchangeInfo's own baseAsset/quoteAsset/marginAsset fields -- genuinely reported, not parsed",
+    "inferred_base_asset": "RESOLV",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "RESOLVUSDT",
+    "onboarded_at_ms": 1749562200000,
+    "raw_evidence": {
+      "endpoint": "https://fapi.binance.com/fapi/v1/exchangeInfo",
+      "observed_at": "2026-08-28T23:28:45.923396+00:00",
+      "payload": {
+        "baseAsset": "RESOLV",
+        "baseAssetPrecision": 8,
+        "contractType": "PERPETUAL",
+        "deliveryDate": 4133404800000,
+        "filters": [
+          {
+            "filterType": "PRICE_FILTER",
+            "maxPrice": "200",
+            "minPrice": "0.0000100",
+            "tickSize": "0.0000100"
+          },
+          {
+            "filterType": "LOT_SIZE",
+            "maxQty": "30000000",
+            "minQty": "1",
+            "stepSize": "1"
+          },
+          {
+            "filterType": "MARKET_LOT_SIZE",
+            "maxQty": "3000000",
+            "minQty": "1",
+            "stepSize": "1"
+          },
+          {
+            "filterType": "MAX_NUM_ORDERS",
+            "limit": 200
+          },
+          {
+            "filterType": "MIN_NOTIONAL",
+            "notional": "5"
+          },
+          {
+            "filterType": "PERCENT_PRICE",
+            "multiplierDecimal": "4",
+            "multiplierDown": "0.8500",
+            "multiplierUp": "1.1500"
+          },
+          {
+            "filterType": "POSITION_RISK_CONTROL",
+            "positionControlSide": "NONE"
+          }
+        ],
+        "liquidationFee": "0.015000",
+        "maintMarginPercent": "2.5000",
+        "marginAsset": "USDT",
+        "marketTakeBound": "0.15",
+        "maxMoveOrderLimit": 10000,
+        "onboardDate": 1749562200000,
+        "orderTypes": [
+          "LIMIT",
+          "MARKET",
+          "STOP",
+          "STOP_MARKET",
+          "TAKE_PROFIT",
+          "TAKE_PROFIT_MARKET",
+          "TRAILING_STOP_MARKET"
+        ],
+        "pair": "RESOLVUSDT",
+        "permissionSets": ["GRID", "COPY", "DCA", "PSB"],
+        "pricePrecision": 7,
+        "quantityPrecision": 0,
+        "quoteAsset": "USDT",
+        "quotePrecision": 8,
+        "requiredMarginPercent": "5.0000",
+        "status": "TRADING",
+        "symbol": "RESOLVUSDT",
+        "timeInForce": ["GTC", "IOC", "FOK", "GTX", "GTD"],
+        "triggerProtect": "0.1500",
+        "underlyingSubType": ["DeFi"],
+        "underlyingType": "COIN"
+      },
+      "raw_sha256": "60b76cd49bfe0504021055a2981836f585381723322cb6614f80f949d594e839",
+      "source": "binance:futures_exchange_info_entry",
+      "wire_exact": false
+    },
+    "reported_base_asset": "RESOLV",
+    "reported_quote_asset": "USDT",
+    "reported_settle_asset": "USDT",
+    "status": "TRADING"
+  },
+  "working_tree_dirty": false
+}
