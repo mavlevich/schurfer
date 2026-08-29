@@ -357,9 +357,9 @@ def _market_evidence_for_link(
 def _verify_link_route_evidence(link: CanonicalInstrumentLink, bundle: EvidenceBundle) -> None:
     """Cross-checks link's own instrument_identity_key against the bundle's
     independently fetched derivative-market evidence for that side of the
-    route -- a no-op for a v2-era bundle (market evidence absent). Parses
-    instrument_identity_key with the identical 4-part
-    exchange:market_type:market_id:onboarded_at_ms scheme
+    route -- a no-op for a genuinely v2-era bundle (both market-evidence
+    fields absent). Parses instrument_identity_key with the identical
+    4-part exchange:market_type:market_id:onboarded_at_ms scheme
     instrument_metadata() builds it with and
     _resolve_registered_target_market already parses it with in
     source_lead_capture.py, so all three call sites can never silently
@@ -372,10 +372,44 @@ def _verify_link_route_evidence(link: CanonicalInstrumentLink, bundle: EvidenceB
     encoded a different exchange than its own link.exchange field (or a
     non-'swap' market_type) would still pass as long as the market id and
     onboard timestamp happened to match (colleague review, 2026-08-29,
-    PR 2 review round)."""
+    PR 2 review round).
+
+    Distinguishes "genuinely v2" from "malformed v3" before skipping --
+    an earlier version treated any None from _market_evidence_for_link as
+    "nothing to check", which conflated two different things: a true
+    v2-era bundle (both source_market_evidence/target_market_evidence
+    None, nothing ever captured) and a bundle whose evidence_version
+    claims v3 but is missing market evidence for just this link's side
+    (capture_bundle always populates both together or neither, so that
+    combination only arises from a corrupt or hand-edited file) -- the
+    latter was silently accepted as if it were legacy v2 instead of
+    failing closed (colleague review, 2026-08-29, PR 2 second review
+    round)."""
+    source_present = bundle.source_market_evidence is not None
+    target_present = bundle.target_market_evidence is not None
+    if not source_present and not target_present:
+        return
+    if source_present != target_present:
+        raise ValueError(
+            f"identity registry link {link.canonical_asset_id}/{link.exchange} evidence bundle "
+            "has inconsistent derivative-market evidence: exactly one of "
+            "source_market_evidence/target_market_evidence is present. capture_bundle always "
+            "populates both together or neither, so this bundle is corrupt or was hand-edited "
+            "-- it must not be silently treated as a legacy v2 bundle with nothing to check"
+        )
     market = _market_evidence_for_link(link, bundle)
     if market is None:
-        return
+        # Unreachable in the real call path: verify_registry_against_evidence
+        # only ever passes a bundle it selected via bundle_by_base_exchange
+        # keyed on (base, link.exchange), so link.exchange is guaranteed to
+        # equal bundle.source_exchange or bundle.target_exchange already.
+        # Fail loud rather than silently skip if that invariant is ever
+        # violated by a future caller.
+        raise ValueError(
+            f"identity registry link {link.canonical_asset_id}/{link.exchange} does not match "
+            f"either side of its own evidence bundle ({bundle.source_exchange}/"
+            f"{bundle.target_exchange})"
+        )
     parts = link.instrument_identity_key.split(":")
     if len(parts) != 4:
         raise ValueError(

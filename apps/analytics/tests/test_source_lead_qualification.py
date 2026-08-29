@@ -505,6 +505,28 @@ def test_registry_load_v3_bundle_rejects_non_swap_market_type(tmp_path: Path) ->
         verify_registry_against_evidence(links, evidence_dir=tmp_path)
 
 
+def test_registry_load_rejects_bundle_with_only_one_side_of_market_evidence(
+    tmp_path: Path,
+) -> None:
+    """A bundle with market evidence for only one side (source or target)
+    is never produced by capture_bundle -- it always populates both
+    together or neither -- so this combination means the bundle is corrupt
+    or was hand-edited. Must fail closed, not be silently accepted as if it
+    were a legacy v2 bundle with nothing to cross-check (colleague review,
+    2026-08-29, PR 2 second review round: an earlier version of
+    _verify_link_route_evidence conflated "genuinely v2" with "malformed
+    v3" because both produce None from _market_evidence_for_link)."""
+    bundle = _sample_bundle_v3(base="ZED")
+    half_evidenced = replace(bundle, target_market_evidence=None)
+    half_evidenced = replace(half_evidenced, bundle_sha256=compute_bundle_sha256(half_evidenced))
+    save_evidence_bundle(half_evidenced, tmp_path / "zed-gate-binance.json")
+
+    with pytest.raises(ValueError, match="inconsistent derivative-market evidence"):
+        verify_registry_against_evidence(
+            _links_for_v3("ZED", half_evidenced.bundle_sha256), evidence_dir=tmp_path
+        )
+
+
 def test_registry_load_v2_bundle_skips_route_evidence_cross_check(tmp_path: Path) -> None:
     """A v2-era bundle (market evidence absent) has nothing to cross-check
     -- must not raise, and the live v2 path stays entirely unaffected by

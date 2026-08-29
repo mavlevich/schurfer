@@ -22,6 +22,7 @@ import os
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import psycopg
 import pytest
@@ -43,6 +44,56 @@ TEST_DATABASE_URL = os.getenv(
     "DATABASE_URL", "postgresql://schurfer:schurfer_dev@localhost:5432/schurfer"
 )
 ALEMBIC_INI = Path(__file__).resolve().parents[1] / "alembic.ini"
+
+# Deriving TEST_DATABASE_URL from DATABASE_URL (above) closed the "two
+# different databases" gap, but opened a worse one: this test runs real DDL
+# (command.downgrade, DROP/ADD CONSTRAINT) and INSERT/DELETE, and would
+# blindly trust whatever DATABASE_URL happens to be set to -- including this
+# repo's own documented production tunnel (`ssh -f -N -L
+# 15432:127.0.0.1:5432 schurfer`), if a developer's shell still had
+# DATABASE_URL exported from an earlier prod session (colleague review,
+# 2026-08-29, PR 2 second review round). Refuses to proceed unless the
+# resolved host/port is exactly the local dev Postgres or CI's own isolated
+# service container -- both this project's Makefile and .github/workflows/
+# ci.yml always use localhost:5432/127.0.0.1:5432 for that; the prod tunnel
+# is deliberately mapped to the non-standard 15432 specifically so the two
+# can never collide.
+_ALLOWED_TEST_HOSTS = {"localhost", "127.0.0.1"}
+_ALLOWED_TEST_PORT = 5432
+
+
+def _refuse_unless_local_test_database(url: str) -> None:
+    parsed = urlsplit(url)
+    if parsed.hostname not in _ALLOWED_TEST_HOSTS or parsed.port != _ALLOWED_TEST_PORT:
+        raise RuntimeError(
+            f"refusing to run destructive migration-test DDL/DML against "
+            f"{parsed.hostname}:{parsed.port} -- only localhost/127.0.0.1:{_ALLOWED_TEST_PORT} "
+            "(the local dev or CI Postgres) is permitted. DATABASE_URL is pointed somewhere "
+            "else -- if this is genuinely a safe, isolated test database, point it at port "
+            f"{_ALLOWED_TEST_PORT} rather than changing this guard."
+        )
+
+
+_refuse_unless_local_test_database(TEST_DATABASE_URL)
+
+
+def test_refuses_the_documented_production_tunnel_port() -> None:
+    """The exact scenario the guard exists for: DATABASE_URL left pointed
+    at this repo's own documented production tunnel
+    (`ssh -f -N -L 15432:127.0.0.1:5432 schurfer`) from an earlier session."""
+    with pytest.raises(RuntimeError, match="refusing to run destructive"):
+        _refuse_unless_local_test_database("postgresql://schurfer:x@127.0.0.1:15432/schurfer")
+
+
+def test_refuses_a_remote_host_even_on_the_expected_port() -> None:
+    with pytest.raises(RuntimeError, match="refusing to run destructive"):
+        _refuse_unless_local_test_database("postgresql://schurfer:x@db.example.com:5432/schurfer")
+
+
+def test_accepts_localhost_and_loopback_on_the_local_dev_port() -> None:
+    _refuse_unless_local_test_database("postgresql://schurfer:x@localhost:5432/schurfer")
+    _refuse_unless_local_test_database("postgresql://schurfer:x@127.0.0.1:5432/schurfer")
+
 
 _V2_VERSION = "source_lead_qualified_capture_v2"
 _V2_REGISTRY_VERSION = "source_lead_identity_registry_v2"
