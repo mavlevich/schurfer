@@ -6,7 +6,9 @@ import pytest
 from schurfer_analytics.source_lead_capture import TargetObservation
 from schurfer_analytics.source_lead_contract import IDENTITY_REGISTRY_V2_START
 from schurfer_analytics.source_lead_identity_evidence import (
+    EVIDENCE_VERSION,
     ChainContractEvidence,
+    DerivativeMarketEvidence,
     EvidenceBundle,
     IdentityClass,
     RawFetch,
@@ -17,9 +19,12 @@ from schurfer_analytics.source_lead_qualification import (
     EXPECTED_REGISTRY_FINGERPRINT,
     EXPECTED_REGISTRY_VERSION,
     IDENTITY_MATCH_METHOD_REGISTRY_LOOKUP_V2,
+    REGISTRY_FINGERPRINT_V3,
+    REGISTRY_VERSION_V3,
     CanonicalInstrumentLink,
     IdentityRegistry,
     load_identity_registry,
+    load_identity_registry_v3,
     parse_identity_registry,
     qualify_source_lead,
     verify_registry_against_evidence,
@@ -110,6 +115,21 @@ def test_packaged_registry_matches_frozen_contract() -> None:
 
     assert registry.version == EXPECTED_REGISTRY_VERSION
     assert registry.fingerprint == EXPECTED_REGISTRY_FINGERPRINT
+
+
+def test_packaged_v3_registry_loads_verifies_and_matches_frozen_contract() -> None:
+    """Proves registry v3 is valid and loadable now (research/gate-source-
+    lead-registry-activation-v3, PR 2 of 3), including the new route-
+    evidence cross-check, without touching the live v2 path
+    (load_identity_registry, tested above) at all -- see
+    ROUTE_EVIDENCE_INDEPENDENTLY_VERIFIED's own docstring for why the
+    switch itself waits for PR 3."""
+    registry = load_identity_registry_v3()
+
+    assert registry.version == REGISTRY_VERSION_V3
+    assert registry.fingerprint == REGISTRY_FINGERPRINT_V3
+    # Same 14 assets as v2 -- only the evidence backing each link changed.
+    assert len(registry.links_by_identity) == 28
 
 
 def test_registry_rejects_content_change_under_frozen_fingerprint() -> None:
@@ -339,6 +359,183 @@ def _sample_bundle(
         bundle_sha256="",
     )
     return replace(bundle, bundle_sha256=compute_bundle_sha256(bundle))
+
+
+_V3_ONBOARDED_AT_MS = 1_700_000_000_000
+
+
+def _sample_market_evidence(
+    exchange: str, native_market_id: str, base: str
+) -> DerivativeMarketEvidence:
+    is_gate = exchange == "gate"
+    return DerivativeMarketEvidence(
+        exchange=exchange,
+        native_market_id=native_market_id,
+        reported_base_asset=None if is_gate else base,
+        reported_quote_asset=None if is_gate else "USDT",
+        reported_settle_asset=None if is_gate else "USDT",
+        inferred_base_asset=base,
+        inferred_quote_asset="USDT",
+        inferred_settle_asset="USDT",
+        inference_basis="test fixture",
+        onboarded_at_ms=_V3_ONBOARDED_AT_MS,
+        status="trading" if is_gate else "TRADING",
+        raw_evidence=RawFetch(
+            source="test",
+            endpoint="https://fake/",
+            observed_at=datetime(2026, 8, 28, tzinfo=UTC),
+            raw_sha256="d" * 64,
+            wire_exact=True,
+            payload=({"in_delisting": False} if is_gate else {"contractType": "PERPETUAL"}),
+        ),
+    )
+
+
+def _sample_bundle_v3(*, base: str) -> EvidenceBundle:
+    """A real v3-schema bundle (source_market_evidence/target_market_evidence
+    populated) for exercising verify_registry_against_evidence's route-
+    evidence cross-check -- _sample_bundle above deliberately stays v2-
+    shaped (market evidence None) to keep covering the unaffected live path."""
+    v2_bundle = _sample_bundle(base=base)
+    v3_bundle = replace(
+        v2_bundle,
+        evidence_version=EVIDENCE_VERSION,
+        source_market_evidence=_sample_market_evidence("gate", f"{base}_USDT", base),
+        target_market_evidence=_sample_market_evidence("binance", f"{base}USDT", base),
+    )
+    return replace(v3_bundle, bundle_sha256=compute_bundle_sha256(v3_bundle))
+
+
+def _links_for_v3(base: str, sha256: str) -> dict[tuple[str, str], CanonicalInstrumentLink]:
+    evidence_url = f"https://example.com/{base.lower()}-gate-binance.json"
+    gate = CanonicalInstrumentLink(
+        canonical_asset_id=f"asset:{base.lower()}",
+        exchange="gate",
+        instrument_identity_key=f"gate:swap:{base}_USDT:{_V3_ONBOARDED_AT_MS}",
+        evidence_url=evidence_url,
+        evidence_sha256=sha256,
+    )
+    binance = CanonicalInstrumentLink(
+        canonical_asset_id=f"asset:{base.lower()}",
+        exchange="binance",
+        instrument_identity_key=f"binance:swap:{base}USDT:{_V3_ONBOARDED_AT_MS}",
+        evidence_url=evidence_url,
+        evidence_sha256=sha256,
+    )
+    return {
+        (gate.exchange, gate.instrument_identity_key): gate,
+        (binance.exchange, binance.instrument_identity_key): binance,
+    }
+
+
+def test_registry_load_v3_bundle_accepts_matching_route_evidence(tmp_path: Path) -> None:
+    bundle = _sample_bundle_v3(base="ZED")
+    save_evidence_bundle(bundle, tmp_path / "zed-gate-binance.json")
+
+    verify_registry_against_evidence(
+        _links_for_v3("ZED", bundle.bundle_sha256), evidence_dir=tmp_path
+    )
+
+
+def test_registry_load_v3_bundle_rejects_market_id_mismatch(tmp_path: Path) -> None:
+    bundle = _sample_bundle_v3(base="ZED")
+    save_evidence_bundle(bundle, tmp_path / "zed-gate-binance.json")
+    links = _links_for_v3("ZED", bundle.bundle_sha256)
+    wrong = replace(
+        links[("gate", f"gate:swap:ZED_USDT:{_V3_ONBOARDED_AT_MS}")],
+        instrument_identity_key=f"gate:swap:WRONG_USDT:{_V3_ONBOARDED_AT_MS}",
+    )
+    links = {**links, ("gate", wrong.instrument_identity_key): wrong}
+    del links[("gate", f"gate:swap:ZED_USDT:{_V3_ONBOARDED_AT_MS}")]
+
+    with pytest.raises(ValueError, match="native_market_id"):
+        verify_registry_against_evidence(links, evidence_dir=tmp_path)
+
+
+def test_registry_load_v3_bundle_rejects_onboard_timestamp_mismatch(tmp_path: Path) -> None:
+    bundle = _sample_bundle_v3(base="ZED")
+    save_evidence_bundle(bundle, tmp_path / "zed-gate-binance.json")
+    links = _links_for_v3("ZED", bundle.bundle_sha256)
+    wrong = replace(
+        links[("gate", f"gate:swap:ZED_USDT:{_V3_ONBOARDED_AT_MS}")],
+        instrument_identity_key="gate:swap:ZED_USDT:1",
+    )
+    links = {**links, ("gate", wrong.instrument_identity_key): wrong}
+    del links[("gate", f"gate:swap:ZED_USDT:{_V3_ONBOARDED_AT_MS}")]
+
+    with pytest.raises(ValueError, match="onboarded_at_ms"):
+        verify_registry_against_evidence(links, evidence_dir=tmp_path)
+
+
+def test_registry_load_v3_bundle_rejects_identity_key_exchange_mismatch(tmp_path: Path) -> None:
+    """A link whose own exchange field is 'gate' but whose
+    instrument_identity_key encodes a different exchange prefix must be
+    rejected, even when the market id and onboard timestamp happen to
+    match (colleague review, 2026-08-29, PR 2 review round: the first
+    version of this check discarded the identity_key's own exchange/
+    market_type fields as unused, so this exact mismatch would pass)."""
+    bundle = _sample_bundle_v3(base="ZED")
+    save_evidence_bundle(bundle, tmp_path / "zed-gate-binance.json")
+    links = _links_for_v3("ZED", bundle.bundle_sha256)
+    original = links[("gate", f"gate:swap:ZED_USDT:{_V3_ONBOARDED_AT_MS}")]
+    wrong = replace(
+        original,
+        instrument_identity_key=f"binance:swap:ZED_USDT:{_V3_ONBOARDED_AT_MS}",
+    )
+    del links[("gate", original.instrument_identity_key)]
+    links[("gate", wrong.instrument_identity_key)] = wrong
+
+    with pytest.raises(ValueError, match="does not match the link's own exchange field"):
+        verify_registry_against_evidence(links, evidence_dir=tmp_path)
+
+
+def test_registry_load_v3_bundle_rejects_non_swap_market_type(tmp_path: Path) -> None:
+    bundle = _sample_bundle_v3(base="ZED")
+    save_evidence_bundle(bundle, tmp_path / "zed-gate-binance.json")
+    links = _links_for_v3("ZED", bundle.bundle_sha256)
+    original = links[("gate", f"gate:swap:ZED_USDT:{_V3_ONBOARDED_AT_MS}")]
+    wrong = replace(
+        original,
+        instrument_identity_key=f"gate:spot:ZED_USDT:{_V3_ONBOARDED_AT_MS}",
+    )
+    del links[("gate", original.instrument_identity_key)]
+    links[("gate", wrong.instrument_identity_key)] = wrong
+
+    with pytest.raises(ValueError, match="market_type"):
+        verify_registry_against_evidence(links, evidence_dir=tmp_path)
+
+
+def test_registry_load_rejects_bundle_with_only_one_side_of_market_evidence(
+    tmp_path: Path,
+) -> None:
+    """A bundle with market evidence for only one side (source or target)
+    is never produced by capture_bundle -- it always populates both
+    together or neither -- so this combination means the bundle is corrupt
+    or was hand-edited. Must fail closed, not be silently accepted as if it
+    were a legacy v2 bundle with nothing to cross-check (colleague review,
+    2026-08-29, PR 2 second review round: an earlier version of
+    _verify_link_route_evidence conflated "genuinely v2" with "malformed
+    v3" because both produce None from _market_evidence_for_link)."""
+    bundle = _sample_bundle_v3(base="ZED")
+    half_evidenced = replace(bundle, target_market_evidence=None)
+    half_evidenced = replace(half_evidenced, bundle_sha256=compute_bundle_sha256(half_evidenced))
+    save_evidence_bundle(half_evidenced, tmp_path / "zed-gate-binance.json")
+
+    with pytest.raises(ValueError, match="inconsistent derivative-market evidence"):
+        verify_registry_against_evidence(
+            _links_for_v3("ZED", half_evidenced.bundle_sha256), evidence_dir=tmp_path
+        )
+
+
+def test_registry_load_v2_bundle_skips_route_evidence_cross_check(tmp_path: Path) -> None:
+    """A v2-era bundle (market evidence absent) has nothing to cross-check
+    -- must not raise, and the live v2 path stays entirely unaffected by
+    this PR's new check."""
+    bundle = _sample_bundle(base="ZED")
+    assert bundle.source_market_evidence is None
+    save_evidence_bundle(bundle, tmp_path / "zed-gate-binance.json")
+
+    verify_registry_against_evidence(_links_for("ZED", bundle.bundle_sha256), evidence_dir=tmp_path)
 
 
 def _links_for(base: str, sha256: str) -> dict[tuple[str, str], CanonicalInstrumentLink]:

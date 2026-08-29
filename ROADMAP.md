@@ -1,6 +1,6 @@
 # Roadmap
 
-> Living document. Updated as we progress. Last refreshed 2026-08-13.
+> Living document. Updated as we progress. Last refreshed 2026-08-29.
 
 ## Guiding principle
 
@@ -80,6 +80,71 @@ dedicated documentation PR is justified for cross-cutting drift, navigation, or
 architecture cleanup, but must have an explicit file list and finish condition. UI
 work follows the same rule: one coherent user workflow per PR, with backend contracts
 defined first and no empty navigation for capabilities that do not exist yet.
+
+### Near-term interleaving from 2026-08-29
+
+Supersedes the 2026-08-13 list below for current prioritization (retained as decision
+log, not current instruction). Written to resolve several parallel branches/threads
+that had accumulated without an explicit order: `research/source-lead-derivative-
+market-evidence-v1` (merged, PR 1 of 3), `research/pump-analytics` (a colleague's
+branch, blocked on its own review), the Research-page production incident (fixed),
+and a proposed Markets/Assets catalog UI overhaul. Applies the WIP-limit rule above:
+at most one primary (profit/evidence) and one support (bounded enabling change) slot.
+
+1. **Primary slot: `research/source-lead-derivative-market-evidence-v1` PR 2 (registry
+   v3, evidence-backed).** New `source_lead_identity_registry_v3.json` (same 14
+   assets, evidence_sha256s pointing at the v3 bundles merged in PR 1), new
+   `EXPECTED_REGISTRY_VERSION`/`EXPECTED_REGISTRY_FINGERPRINT`, migration 0043,
+   `verify_registry_against_evidence` extended to cross-check
+   `source_market_evidence`/`target_market_evidence` against each link's
+   `instrument_identity_key`. `ROUTE_EVIDENCE_INDEPENDENTLY_VERIFIED` stays `False` --
+   zero behavior change to `qualify_source_lead`'s output, deployable and bakeable in
+   production with no risk to money-relevant capture.
+2. **Primary slot, next: PR 3 (flip the switch).**
+   `ROUTE_EVIDENCE_INDEPENDENTLY_VERIFIED = True`, `QUALIFICATION_VERSION` bump,
+   `IDENTITY_REGISTRY_V3_START` cutover, Go dashboard mirror. This is the only step in
+   the current plan that actually changes what `qualify_source_lead` can return --
+   the closest thing to "money" in everything currently in flight.
+3. **Independent of slots 1-2: `research/pump-analytics` (colleague-owned).** Not our
+   PR to build -- the colleague fixes their own review blockers (matching-cardinality,
+   burst-arithmetic test coverage, 100-episode floor, radar-query bound, direction
+   tuple duplication, O(n^2) CEX matching) on their own branch and resubmits for
+   review. Does not block or wait on 1-2.
+4. **Support slot: `fix/token-activity-non-pump-assets-v1`.** `/pumps/<TOKEN>` for an
+   asset with no pump episode (e.g. a paper trade from `early_momentum_v4`) currently
+   reads as "not found"; it should read as "no pump episode, but available through
+   [strategy]". Small, bounded, no schema change.
+5. **Support slot, next: Go `Readiness()` handler concurrency** (tech debt, logged
+   above under "Tech debt and DX") -- `errgroup` + per-call timeout for the remaining
+   live sub-queries, so the class of incident just fixed in the Research page cannot
+   recur on a different section as data volume grows. Not urgent; pick up when nothing
+   higher-value is queued for the support slot.
+6. **Gated, not started: CEXTrack / `research/post-pump-hold-exit-foundation-v1`
+   validation.** Do not build new live capture infrastructure to test this. The
+   momentum-capture workers already freeze and record the **full** USDT-perpetual
+   universe on each captured exchange (not a selective set of past pumpers -- see
+   `apps/collector/cmd/momentumcapturebinance/main.go`'s own "frozen universe"
+   design), so a bounded, read-only discovery report against the minute bars already
+   accumulated (same pattern as `liquid_taker_report.py`) can test "does elevated
+   activity predict continuation vs. blow-off" today, with no new production
+   commitment. Only if that report shows a real, money-relevant effect does building
+   a bounded live signal (in-memory ring window, online activity ratio, only
+   threshold-crossing events written to Postgres) become a separately gated decision.
+   The one real data gap: multi-exchange listing expansion is not tracked over time by
+   existing capture (Bybit/Binance only) -- if the hypothesis specifically needs that,
+   the fix is a small periodic listing-catalog snapshot, not full order-flow capture.
+   Sequenced after `research/pump-analytics` lands, since building a new analysis on
+   top of that branch's still-disputed matching logic would repeat the same review
+   cycle twice.
+7. **Deprioritized, split into its own sequence, not started: Markets/Assets catalog.**
+   `feat/market-catalog-api-v1` -> `feat/markets-screener-ui-v1` ->
+   `feat/asset-market-pages-v1` -> `feat/asset-activity-timeline-v1` ->
+   `feat/market-watchlists-v1`, one PR at a time through the support slot (never as
+   one big-bang PR, per the "one coherent user workflow per PR" rule above). Valuable
+   for research/ops visibility and directly motivated by the OPG incident (item 4),
+   but it is not itself a money step, so it never competes with the primary slot and
+   starts only once 1-2 and `research/pump-analytics` are no longer occupying
+   attention.
 
 ### Near-term interleaving from 2026-08-13
 
