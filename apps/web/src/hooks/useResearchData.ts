@@ -117,7 +117,7 @@ export interface SourceLeadProgress {
   calendar_weeks: ResearchMilestone;
   confirmed_within_hour: number;
   qualified: number;
-  identity_registry_v2_start: string;
+  identity_registry_v3_start: string;
   qualified_prospective: number;
   qualification_missing: number;
   identity_unapproved: number;

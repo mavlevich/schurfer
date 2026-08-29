@@ -363,7 +363,7 @@ func TestQueriesPreserveResearchBoundaries(t *testing.T) {
 		"count(DISTINCT identity_registry_version)",
 		"IS DISTINCT FROM (identity_registry_fingerprint IS NULL)",
 		"exact_target_identities",
-		"qualification.qualification_version = 'source_lead_qualified_capture_v2'",
+		"qualification.qualification_version = 'source_lead_qualified_capture_v3'",
 		"AND source_first_observed_at >= $3",
 		"t.status = 'sampled' AND t.identity_verified",
 		"AND c.source_first_observed_at >= $3",

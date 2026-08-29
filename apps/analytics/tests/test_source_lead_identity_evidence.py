@@ -8,7 +8,8 @@ from typing import TYPE_CHECKING, Any
 import pytest
 from schurfer_analytics.source_lead_identity_evidence import (
     CANDIDATES,
-    EVIDENCE_DIR_V3,
+    EVIDENCE_DIR,
+    EVIDENCE_DIR_V2,
     EVIDENCE_VERSION,
     ChainContractEvidence,
     DerivativeMarketEvidence,
@@ -1077,8 +1078,10 @@ def test_load_all_evidence_bundles_is_deterministically_ordered(tmp_path: Path) 
 
 def test_captured_evidence_set_loads_and_verifies_if_present() -> None:
     """Integration-style check against whatever this branch actually shipped
-    in evidence/source_lead/v2/."""
-    bundles = load_all_evidence_bundles(allow_empty=True)
+    in evidence/source_lead/v2/ -- explicitly, not via load_all_evidence_
+    bundles' default directory, which moved to v3
+    (research/gate-source-lead-registry-activation-v3, PR 3 of 3)."""
+    bundles = load_all_evidence_bundles(EVIDENCE_DIR_V2, allow_empty=True)
     if not bundles:
         pytest.skip("no captured evidence bundles present on this checkout")
     nil = next((b for b in bundles if b.base == "NIL"), None)
@@ -1108,8 +1111,11 @@ def test_captured_v3_evidence_set_loads_verifies_and_carries_route_evidence() ->
     allow_empty=True and skipped when the directory was empty, which makes a
     genuinely broken or deleted evidence set silently pass CI instead of
     failing it -- a missing/incomplete required directory must raise, like
-    every other integrity check in this module."""
-    bundles = load_all_evidence_bundles(EVIDENCE_DIR_V3)
+    every other integrity check in this module. Passes EVIDENCE_DIR
+    explicitly (rather than relying on load_all_evidence_bundles' default)
+    so this test keeps checking the same directory regardless of what the
+    default happens to be."""
+    bundles = load_all_evidence_bundles(EVIDENCE_DIR)
     assert len(bundles) == len(CANDIDATES)
     for bundle in bundles:
         assert bundle.evidence_version == EVIDENCE_VERSION

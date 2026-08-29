@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 from schurfer_analytics.source_lead_capture import TargetObservation
-from schurfer_analytics.source_lead_contract import IDENTITY_REGISTRY_V2_START
+from schurfer_analytics.source_lead_contract import IDENTITY_REGISTRY_V3_START
 from schurfer_analytics.source_lead_identity_evidence import (
     EVIDENCE_VERSION,
     ChainContractEvidence,
@@ -19,19 +19,16 @@ from schurfer_analytics.source_lead_qualification import (
     EXPECTED_REGISTRY_FINGERPRINT,
     EXPECTED_REGISTRY_VERSION,
     IDENTITY_MATCH_METHOD_REGISTRY_LOOKUP_V2,
-    REGISTRY_FINGERPRINT_V3,
-    REGISTRY_VERSION_V3,
     CanonicalInstrumentLink,
     IdentityRegistry,
     load_identity_registry,
-    load_identity_registry_v3,
     parse_identity_registry,
     qualify_source_lead,
     verify_registry_against_evidence,
 )
 
-_AFTER_CUTOVER = IDENTITY_REGISTRY_V2_START + timedelta(hours=1)
-_BEFORE_CUTOVER = IDENTITY_REGISTRY_V2_START - timedelta(hours=1)
+_AFTER_CUTOVER = IDENTITY_REGISTRY_V3_START + timedelta(hours=1)
+_BEFORE_CUTOVER = IDENTITY_REGISTRY_V3_START - timedelta(hours=1)
 
 
 def _registry() -> IdentityRegistry:
@@ -111,23 +108,15 @@ def test_registry_rejects_duplicate_asset_exchange_links() -> None:
 
 
 def test_packaged_registry_matches_frozen_contract() -> None:
+    """Proves the live registry (v3 as of research/gate-source-lead-
+    registry-activation-v3, PR 3 of 3) is valid, fully loadable, and
+    verified -- including the route-evidence cross-check
+    (_verify_link_route_evidence) PR 2 added -- via the actual live path
+    every SourceLeadCaptureWorker call goes through, not a side loader."""
     registry = load_identity_registry()
 
     assert registry.version == EXPECTED_REGISTRY_VERSION
     assert registry.fingerprint == EXPECTED_REGISTRY_FINGERPRINT
-
-
-def test_packaged_v3_registry_loads_verifies_and_matches_frozen_contract() -> None:
-    """Proves registry v3 is valid and loadable now (research/gate-source-
-    lead-registry-activation-v3, PR 2 of 3), including the new route-
-    evidence cross-check, without touching the live v2 path
-    (load_identity_registry, tested above) at all -- see
-    ROUTE_EVIDENCE_INDEPENDENTLY_VERIFIED's own docstring for why the
-    switch itself waits for PR 3."""
-    registry = load_identity_registry_v3()
-
-    assert registry.version == REGISTRY_VERSION_V3
-    assert registry.fingerprint == REGISTRY_FINGERPRINT_V3
     # Same 14 assets as v2 -- only the evidence backing each link changed.
     assert len(registry.links_by_identity) == 28
 
@@ -162,12 +151,13 @@ def test_unapproved_source_fails_closed_before_ticker_matching() -> None:
     assert result.canonical_asset_id is None
 
 
-def test_capture_before_registry_v2_activation_is_excluded_even_with_valid_identity() -> None:
+def test_capture_before_registry_v3_activation_is_excluded_even_with_valid_identity() -> None:
     """A capture whose source_first_observed_at predates
-    IDENTITY_REGISTRY_V2_START must never be treated as v2-qualified
+    IDENTITY_REGISTRY_V3_START must never be treated as v3-qualified
     prospective evidence, even when its identity and targets would
     otherwise fully qualify -- identity was confirmed retroactively, not in
-    real time (colleague review, 2026-08-28)."""
+    real time (colleague review, 2026-08-28, applied again for the v3
+    cutover in PR 3)."""
     result = qualify_source_lead(
         source_exchange="gate",
         source_identity_key="gate:swap:ABC_USDT:1",
@@ -177,7 +167,7 @@ def test_capture_before_registry_v2_activation_is_excluded_even_with_valid_ident
     )
 
     assert result.status == "excluded"
-    assert result.reason == "before_identity_registry_v2_activation"
+    assert result.reason == "before_identity_registry_v3_activation"
     assert result.canonical_asset_id is None
 
 
@@ -208,13 +198,50 @@ def test_target_not_registry_confirmed_is_excluded_despite_matching_identity_key
 
 
 def test_selector_uses_lowest_round_trip_impact_with_stable_tie_break() -> None:
-    """Venue selection still runs the same lowest-round-trip-impact logic
-    with a stable tie-break, but ROUTE_EVIDENCE_INDEPENDENTLY_VERIFIED=False
-    means the result is recorded as excluded/route_evidence_not_yet_
-    independent, with the selection preserved under details['would_select']
-    rather than ever actually returning status='qualified' (colleague
-    review, 2026-08-28, second round: the registry's evidence bundles
-    vouch for asset identity, not the specific derivative markets)."""
+    """Venue selection runs the same lowest-round-trip-impact logic with a
+    stable tie-break. ROUTE_EVIDENCE_INDEPENDENTLY_VERIFIED=True as of
+    research/gate-source-lead-registry-activation-v3 (PR 3 of 3): a fully
+    eligible candidate now actually reaches status='qualified' with a
+    selected venue, not just details['would_select'] (see the monkeypatched
+    test below for the still-present pre-flip branch)."""
+    result = qualify_source_lead(
+        source_exchange="gate",
+        source_identity_key="gate:swap:ABC_USDT:1",
+        source_first_observed_at=_AFTER_CUTOVER,
+        target_observations=(_target("bybit", 2.0), _target("binance", 1.0)),
+        registry=_registry(),
+    )
+
+    assert result.status == "qualified"
+    assert result.reason == "lowest_round_trip_impact"
+    assert result.canonical_asset_id == "asset:abc"
+    assert result.selected_target_exchange == "binance"
+    assert result.selected_round_trip_impact_bps == 2.0
+
+    tied = qualify_source_lead(
+        source_exchange="gate",
+        source_identity_key="gate:swap:ABC_USDT:1",
+        source_first_observed_at=_AFTER_CUTOVER,
+        target_observations=(_target("bybit", 1.0), _target("binance", 1.0)),
+        registry=_registry(),
+    )
+    assert tied.selected_target_exchange == "binance"
+
+
+def test_selector_records_would_select_when_route_evidence_flag_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The pre-PR-3 code path (ROUTE_EVIDENCE_INDEPENDENTLY_VERIFIED=False)
+    still exists in qualify_source_lead and must still behave exactly as it
+    did before the flip -- exercised directly via monkeypatch since the
+    live module constant is now True (colleague review, 2026-08-28, second
+    round: the registry's evidence originally vouched for asset identity
+    only, not the specific derivative markets -- this is the branch that
+    protected against that gap before PR 1/PR 2 closed it)."""
+    import schurfer_analytics.source_lead_qualification as qualification_module
+
+    monkeypatch.setattr(qualification_module, "ROUTE_EVIDENCE_INDEPENDENTLY_VERIFIED", False)
+
     result = qualify_source_lead(
         source_exchange="gate",
         source_identity_key="gate:swap:ABC_USDT:1",
@@ -225,22 +252,12 @@ def test_selector_uses_lowest_round_trip_impact_with_stable_tie_break() -> None:
 
     assert result.status == "excluded"
     assert result.reason == "route_evidence_not_yet_independent"
-    assert result.canonical_asset_id == "asset:abc"
     assert result.selected_target_exchange is None
     assert result.selected_round_trip_impact_bps is None
     assert result.details["would_select"] == {
         "target_exchange": "binance",
         "round_trip_impact_bps": 2.0,
     }
-
-    tied = qualify_source_lead(
-        source_exchange="gate",
-        source_identity_key="gate:swap:ABC_USDT:1",
-        source_first_observed_at=_AFTER_CUTOVER,
-        target_observations=(_target("bybit", 1.0), _target("binance", 1.0)),
-        registry=_registry(),
-    )
-    assert tied.details["would_select"]["target_exchange"] == "binance"
 
 
 def test_selector_requires_full_two_sided_notional() -> None:

@@ -15,7 +15,7 @@ from schurfer_analytics.source_lead_capture import (
     prepare_source_lead_captures,
     summarize_order_book,
 )
-from schurfer_analytics.source_lead_contract import CAPTURE_VERSION, IDENTITY_REGISTRY_V2_START
+from schurfer_analytics.source_lead_contract import CAPTURE_VERSION, IDENTITY_REGISTRY_V3_START
 from schurfer_analytics.source_lead_qualification import (
     IDENTITY_MATCH_METHOD_BASE_SYMBOL_V1,
     IDENTITY_MATCH_METHOD_REGISTRY_EXACT_V2,
@@ -490,11 +490,11 @@ async def test_target_capture_marks_identity_verified_even_when_fetch_fails() ->
 
 
 async def test_capture_processes_target_clients_sequentially(monkeypatch: Any) -> None:
-    # After IDENTITY_REGISTRY_V2_START so the "source_identity_unapproved"
+    # After IDENTITY_REGISTRY_V3_START so the "source_identity_unapproved"
     # assertion below actually exercises the empty-registry lookup this
     # test is about, rather than being short-circuited by the (unrelated)
     # pre-activation exclusion qualify_source_lead checks first.
-    candidate = _candidate(first_seen_at=IDENTITY_REGISTRY_V2_START + timedelta(hours=1))
+    candidate = _candidate(first_seen_at=IDENTITY_REGISTRY_V3_START + timedelta(hours=1))
     claimed = (ClaimedCapture(capture_id=11, candidate=candidate),)
     active = 0
     maximum_active = 0
@@ -571,11 +571,12 @@ async def test_capture_processes_target_clients_sequentially(monkeypatch: Any) -
     assert maximum_active == 1
     assert active == 0
     assert [row.target_exchange for row in persisted[11]] == ["binance", "bybit"]
-    # ROUTE_EVIDENCE_INDEPENDENTLY_VERIFIED=False (colleague review,
-    # 2026-08-28, second round): the pipeline still runs identity and
-    # liquidity checks to completion, but never actually returns
-    # status='qualified' yet.
-    assert qualifications[11].reason == "route_evidence_not_yet_independent"
+    # ROUTE_EVIDENCE_INDEPENDENTLY_VERIFIED=True as of research/gate-source-
+    # lead-registry-activation-v3 (PR 3 of 3): the pipeline runs identity
+    # and liquidity checks to completion and now actually reaches
+    # status='qualified' with a selected venue.
+    assert qualifications[11].status == "qualified"
+    assert qualifications[11].reason == "lowest_round_trip_impact"
 
 
 async def test_capture_skips_exchange_client_entirely_when_no_route_is_registered(
@@ -586,7 +587,7 @@ async def test_capture_skips_exchange_client_entirely_when_no_route_is_registere
     create an exchange client or call load_markets at all (colleague
     review, 2026-08-28 -- AI_RULES.md requires gating before expensive work
     starts, not only at the final per-candidate check)."""
-    candidate = _candidate(first_seen_at=IDENTITY_REGISTRY_V2_START + timedelta(hours=1))
+    candidate = _candidate(first_seen_at=IDENTITY_REGISTRY_V3_START + timedelta(hours=1))
     claimed = (ClaimedCapture(capture_id=21, candidate=candidate),)
     created = 0
 

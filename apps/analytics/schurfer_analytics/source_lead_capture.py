@@ -20,7 +20,7 @@ import structlog
 
 from .exchange_registry import EXCHANGE_FACTORIES, ExchangeFactory
 from .instruments import instrument_metadata
-from .source_lead_contract import CAPTURE_VERSION, IDENTITY_REGISTRY_V2_START
+from .source_lead_contract import CAPTURE_VERSION, IDENTITY_REGISTRY_V3_START
 from .source_lead_qualification import (
     IDENTITY_MATCH_METHOD_REGISTRY_EXACT_V2,
     IDENTITY_MATCH_METHOD_REGISTRY_LOOKUP_V2,
@@ -833,8 +833,8 @@ async def capture_claimed_source_leads(
     registry = identity_registry or load_identity_registry()
     results: dict[int, list[TargetObservation]] = {item.capture_id: [] for item in claimed}
 
-    # A capture from before the v2 registry existed must never be treated as
-    # v2-qualified prospective evidence (see IDENTITY_REGISTRY_V2_START's own
+    # A capture from before the v3 registry existed must never be treated as
+    # v3-qualified prospective evidence (see IDENTITY_REGISTRY_V3_START's own
     # docstring). qualify_source_lead already enforces this at the
     # qualification layer; checked here too, before any network call, so a
     # pre-cutover candidate never gets a 'sampled'+identity_verified=True
@@ -843,12 +843,12 @@ async def capture_claimed_source_leads(
     # target_eligible without also checking the cutover would otherwise
     # still see these rows).
     pre_cutover = tuple(
-        item for item in claimed if item.candidate.source.first_seen_at < IDENTITY_REGISTRY_V2_START
+        item for item in claimed if item.candidate.source.first_seen_at < IDENTITY_REGISTRY_V3_START
     )
     network_eligible = tuple(
         item
         for item in claimed
-        if item.candidate.source.first_seen_at >= IDENTITY_REGISTRY_V2_START
+        if item.candidate.source.first_seen_at >= IDENTITY_REGISTRY_V3_START
     )
     for item in pre_cutover:
         skip_started = time.monotonic()
@@ -856,7 +856,7 @@ async def capture_claimed_source_leads(
             results[item.capture_id].append(
                 _target_failure(
                     exchange_name,
-                    "before_identity_registry_v2_activation",
+                    "before_identity_registry_v3_activation",
                     skip_started,
                     target_usd,
                 )
