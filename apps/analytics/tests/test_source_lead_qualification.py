@@ -467,6 +467,44 @@ def test_registry_load_v3_bundle_rejects_onboard_timestamp_mismatch(tmp_path: Pa
         verify_registry_against_evidence(links, evidence_dir=tmp_path)
 
 
+def test_registry_load_v3_bundle_rejects_identity_key_exchange_mismatch(tmp_path: Path) -> None:
+    """A link whose own exchange field is 'gate' but whose
+    instrument_identity_key encodes a different exchange prefix must be
+    rejected, even when the market id and onboard timestamp happen to
+    match (colleague review, 2026-08-29, PR 2 review round: the first
+    version of this check discarded the identity_key's own exchange/
+    market_type fields as unused, so this exact mismatch would pass)."""
+    bundle = _sample_bundle_v3(base="ZED")
+    save_evidence_bundle(bundle, tmp_path / "zed-gate-binance.json")
+    links = _links_for_v3("ZED", bundle.bundle_sha256)
+    original = links[("gate", f"gate:swap:ZED_USDT:{_V3_ONBOARDED_AT_MS}")]
+    wrong = replace(
+        original,
+        instrument_identity_key=f"binance:swap:ZED_USDT:{_V3_ONBOARDED_AT_MS}",
+    )
+    del links[("gate", original.instrument_identity_key)]
+    links[("gate", wrong.instrument_identity_key)] = wrong
+
+    with pytest.raises(ValueError, match="does not match the link's own exchange field"):
+        verify_registry_against_evidence(links, evidence_dir=tmp_path)
+
+
+def test_registry_load_v3_bundle_rejects_non_swap_market_type(tmp_path: Path) -> None:
+    bundle = _sample_bundle_v3(base="ZED")
+    save_evidence_bundle(bundle, tmp_path / "zed-gate-binance.json")
+    links = _links_for_v3("ZED", bundle.bundle_sha256)
+    original = links[("gate", f"gate:swap:ZED_USDT:{_V3_ONBOARDED_AT_MS}")]
+    wrong = replace(
+        original,
+        instrument_identity_key=f"gate:spot:ZED_USDT:{_V3_ONBOARDED_AT_MS}",
+    )
+    del links[("gate", original.instrument_identity_key)]
+    links[("gate", wrong.instrument_identity_key)] = wrong
+
+    with pytest.raises(ValueError, match="market_type"):
+        verify_registry_against_evidence(links, evidence_dir=tmp_path)
+
+
 def test_registry_load_v2_bundle_skips_route_evidence_cross_check(tmp_path: Path) -> None:
     """A v2-era bundle (market evidence absent) has nothing to cross-check
     -- must not raise, and the live v2 path stays entirely unaffected by

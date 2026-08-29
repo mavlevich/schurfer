@@ -28,7 +28,20 @@ import pytest
 from alembic import command
 from alembic.config import Config
 
-TEST_DATABASE_URL = "postgresql://schurfer:schurfer_dev@localhost:5432/schurfer"
+# Single source of truth for which database this test operates on --
+# TEST_DATABASE_URL (the raw psycopg connection _connect_or_skip uses for
+# every INSERT/assert) and _alembic_config() (which drives command.upgrade/
+# command.downgrade) must never be able to disagree. An earlier version
+# read DATABASE_URL only inside _alembic_config(), independently of this
+# constant: if DATABASE_URL was set to a different database than the
+# hardcoded default, the test's own assertions ran against one database
+# while its downgrade/upgrade commands ran DDL against a different one --
+# a misleading pass/fail signal at best, and a real risk of running
+# alembic downgrade against an unintended database at worst (colleague
+# review, 2026-08-29, PR 2 review round).
+TEST_DATABASE_URL = os.getenv(
+    "DATABASE_URL", "postgresql://schurfer:schurfer_dev@localhost:5432/schurfer"
+)
 ALEMBIC_INI = Path(__file__).resolve().parents[1] / "alembic.ini"
 
 _V2_VERSION = "source_lead_qualified_capture_v2"
@@ -62,10 +75,22 @@ def _connect_or_skip() -> psycopg.Connection:
 
 
 def _alembic_config() -> Config:
+    """Sets sqlalchemy.url from TEST_DATABASE_URL directly, normalizing a
+    plain postgresql:// scheme to postgresql+psycopg:// the same way
+    migrations/env.py does -- env.py only applies that normalization when
+    it reads DATABASE_URL from the OS environment itself, which it does
+    NOT do when the variable is unset, leaving a plain postgresql:// URL
+    to reach SQLAlchemy's engine_from_config and default to the psycopg2
+    driver (not installed here). Must stay independent of whether
+    DATABASE_URL happens to be set in the ambient shell, not just work when
+    it is."""
     config = Config(str(ALEMBIC_INI))
-    db_url = os.getenv("DATABASE_URL")
-    if db_url:
-        config.set_main_option("sqlalchemy.url", db_url)
+    url = TEST_DATABASE_URL
+    for prefix in ("postgresql://", "postgres://"):
+        if url.startswith(prefix):
+            url = "postgresql+psycopg://" + url[len(prefix) :]
+            break
+    config.set_main_option("sqlalchemy.url", url)
     return config
 
 

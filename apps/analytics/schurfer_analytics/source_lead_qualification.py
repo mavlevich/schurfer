@@ -81,8 +81,9 @@ EXPECTED_REGISTRY_FINGERPRINT = "757fd1327593d07ca27efe17a031ae0eab95bf6998aecc1
 # DEFAULT_REGISTRY_RESOURCE, EXPECTED_REGISTRY_VERSION,
 # EXPECTED_REGISTRY_FINGERPRINT, EVIDENCE_DIR, and this flag all move
 # together, atomically, in PR 3 -- the same commit that bumps
-# QUALIFICATION_VERSION to 'source_lead_qualified_capture_v3' and adds the
-# migration that actually permits v3-tagged rows.
+# QUALIFICATION_VERSION to 'source_lead_qualified_capture_v3'. Migration
+# 0043 (permitting v3-tagged rows) already ships in this PR, inertly --
+# PR 3 is the first commit that actually writes a row it applies to.
 ROUTE_EVIDENCE_INDEPENDENTLY_VERIFIED = False
 
 # research/gate-source-lead-registry-activation-v3 (PR 2 of 3): the
@@ -363,7 +364,15 @@ def _verify_link_route_evidence(link: CanonicalInstrumentLink, bundle: EvidenceB
     _resolve_registered_target_market already parses it with in
     source_lead_capture.py, so all three call sites can never silently
     disagree about the format (research/gate-source-lead-registry-
-    activation-v3, PR 2 of 3)."""
+    activation-v3, PR 2 of 3).
+
+    Checks all four parsed fields, not just market_id/onboarded_at_ms --
+    an earlier version of this function discarded exchange_part/market_type
+    as `_`-prefixed locals, so a link whose instrument_identity_key
+    encoded a different exchange than its own link.exchange field (or a
+    non-'swap' market_type) would still pass as long as the market id and
+    onboard timestamp happened to match (colleague review, 2026-08-29,
+    PR 2 review round)."""
     market = _market_evidence_for_link(link, bundle)
     if market is None:
         return
@@ -373,7 +382,19 @@ def _verify_link_route_evidence(link: CanonicalInstrumentLink, bundle: EvidenceB
             f"identity registry link {link.canonical_asset_id}/{link.exchange} "
             f"instrument_identity_key {link.instrument_identity_key!r} is malformed"
         )
-    _exchange_part, _market_type, market_id, onboard_field = parts
+    identity_exchange, market_type, market_id, onboard_field = parts
+    if identity_exchange != link.exchange:
+        raise ValueError(
+            f"identity registry link {link.canonical_asset_id}/{link.exchange} "
+            f"instrument_identity_key names exchange {identity_exchange!r}, which does not "
+            f"match the link's own exchange field {link.exchange!r}"
+        )
+    if market_type != "swap":
+        raise ValueError(
+            f"identity registry link {link.canonical_asset_id}/{link.exchange} "
+            f"instrument_identity_key names market_type {market_type!r}, expected 'swap' "
+            "(every registered route here is a perpetual)"
+        )
     if market.native_market_id != market_id:
         raise ValueError(
             f"identity registry link {link.canonical_asset_id}/{link.exchange} names market id "
