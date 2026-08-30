@@ -18,6 +18,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/mavlevich/schurfer/api-gateway/internal/trades"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -74,6 +75,20 @@ type pumpEntry struct {
 	// fallback below this type made "Active on N exchanges" and the header's
 	// change_pct read as live for a token that had not pumped in days).
 	IsLive bool `json:"is_live"`
+}
+
+// tokenNoPumpResponse is returned by Token (still HTTP 200, not 404) for a
+// base with zero app.pump_events history but real activity in a non-pump
+// strategy -- e.g. an early_momentum_v4 paper trade (fix/token-activity-
+// non-pump-assets-v1). HasPumpEpisode is always false here; it exists so
+// the frontend can discriminate this shape from pumpEntry without relying
+// on which optional fields happen to be present. Genuinely unknown bases
+// (no pump_events AND no other-strategy activity) still get a plain 404,
+// unchanged.
+type tokenNoPumpResponse struct {
+	Base             string `json:"base"`
+	HasPumpEpisode   bool   `json:"has_pump_episode"`
+	OtherStrategyKey string `json:"other_strategy_key"`
 }
 
 type pumpsPayload struct {
@@ -236,6 +251,13 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 // AIINU) showed "Token not found" on TokenPage's header for tokens with
 // dozens of DB-recorded episodes, purely because none of them happened to be
 // live in pumps:latest at request time.
+//
+// A base can also have zero app.pump_events rows at all -- never a pump --
+// while still having real activity through a non-pump strategy (e.g. an
+// early_momentum_v4 paper trade). That is not "not found" either
+// (fix/token-activity-non-pump-assets-v1): when both the live snapshot and
+// dbTokenFallback come up empty, otherStrategyActivity gets one more look
+// before this genuinely 404s.
 func (h *Handler) Token(w http.ResponseWriter, r *http.Request) {
 	base := strings.ToUpper(chi.URLParam(r, "base"))
 	if !isValidBase(base) {
@@ -266,12 +288,59 @@ func (h *Handler) Token(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	if entry == nil {
+	if entry != nil {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(entry)
+		return
+	}
+
+	strategyKey, err := h.otherStrategyActivity(r.Context(), base)
+	if err != nil {
+		slog.Error("pumps.token.other_strategy_activity", "base", base, "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if strategyKey == "" {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(entry)
+	_ = json.NewEncoder(w).Encode(tokenNoPumpResponse{
+		Base:             base,
+		HasPumpEpisode:   false,
+		OtherStrategyKey: strategyKey,
+	})
+}
+
+// otherStrategyActivity reports the most recent strategy_key (e.g.
+// "early_momentum_v4") with any recorded activity for base, reusing
+// trades.CombinedTradesCTE rather than reimplementing its app.trades /
+// app.momentum_flow_paper_probes union -- see that constant's own doc
+// comment for why the two must never drift apart. Returns ("", nil) -- not
+// an error -- when h.pool is nil or nothing matches, mirroring
+// dbTokenFallback's own convention. base is matched via the CCXT-unified
+// symbol convention every writer of these tables uses ("BASE/USDT:USDT",
+// see apps/execution/schurfer_execution/symbols.py's ExecutionInstrument).
+func (h *Handler) otherStrategyActivity(ctx context.Context, base string) (string, error) {
+	if h.pool == nil {
+		return "", nil
+	}
+	var strategyKey string
+	err := h.pool.QueryRow(ctx,
+		trades.CombinedTradesCTE+`
+		SELECT strategy_key FROM combined
+		WHERE symbol LIKE $1 || '/%'
+		ORDER BY created_at DESC
+		LIMIT 1`,
+		base,
+	).Scan(&strategyKey)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return strategyKey, nil
 }
 
 // dbTokenFallback loads the most recent app.pump_events row for base and

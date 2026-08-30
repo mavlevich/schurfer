@@ -18,7 +18,7 @@ const (
 	defaultLimit = 50
 )
 
-// combinedTradesCTE unions app.trades (the pump-short strategy's own
+// CombinedTradesCTE unions app.trades (the pump-short strategy's own
 // live/dry-run execution ledger) with app.momentum_flow_paper_probes
 // (the momentum_flow WATCH->paper discovery instrumentation's own
 // simulated long positions) into one column shape, tagged by origin.
@@ -30,6 +30,12 @@ const (
 // this CTE (List and Stats below) must keep origin visible in its own
 // response so momentum_flow_paper rows are never silently presented as
 // if they were the already-promoted pump-short strategy's own trades.
+//
+// Exported so apps/api-gateway/internal/pumps's own Token handler can reuse
+// the exact same union to answer "does this base have activity in a
+// non-pump strategy at all" (fix/token-activity-non-pump-assets-v1) --
+// deliberately not reimplemented there, so the two never drift apart on
+// which tables/statuses count as "activity".
 //
 // The momentum_flow side only includes entry_status = 'opened' probes: a
 // probe whose entry never actually filled (stale, quote_rejected,
@@ -76,7 +82,7 @@ const (
 // strategy_name="unknown". A LEFT JOIN (not INNER) so one hypothetically
 // missing app.strategies row degrades a single trade's identity to
 // "unknown" rather than dropping that trade from the page entirely.
-const combinedTradesCTE = `
+const CombinedTradesCTE = `
 	WITH combined AS (
 		SELECT
 			COALESCE(t.setup_context->>'strategy', 'pump_short') || ':' || t.id::text AS id,
@@ -267,7 +273,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 
 	var total int
 	if err := h.pool.QueryRow(r.Context(),
-		combinedTradesCTE+"SELECT COUNT(*) FROM combined "+where, args...,
+		CombinedTradesCTE+"SELECT COUNT(*) FROM combined "+where, args...,
 	).Scan(&total); err != nil {
 		slog.Error("trades.count", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -277,7 +283,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	//nolint:gocritic
 	dataArgs := append(args, limit, offset)
 	n := len(dataArgs)
-	rows, err := h.pool.Query(r.Context(), combinedTradesCTE+`
+	rows, err := h.pool.Query(r.Context(), CombinedTradesCTE+`
 		SELECT id, origin, strategy_key, strategy_name, strategy_version, mode, exit_reason, symbol, exchange, market_type, side,
 		       size_usd, leverage,
 		       entry_price, entry_at,
@@ -532,7 +538,7 @@ func (h *Handler) Stats(w http.ResponseWriter, r *http.Request) {
 
 	var a statsAgg
 	row := h.pool.QueryRow(r.Context(),
-		combinedTradesCTE+"SELECT"+statsAggColumns+"\nFROM combined "+where, args...,
+		CombinedTradesCTE+"SELECT"+statsAggColumns+"\nFROM combined "+where, args...,
 	)
 	if err := scanStatsAggRow(row, &a); err != nil {
 		slog.Error("trades.stats", "err", err)
@@ -572,7 +578,7 @@ type byStrategyResponse struct {
 func (h *Handler) ByStrategy(w http.ResponseWriter, r *http.Request) {
 	where, args := statsFilterWhere(r.URL.Query())
 
-	rows, err := h.pool.Query(r.Context(), combinedTradesCTE+`
+	rows, err := h.pool.Query(r.Context(), CombinedTradesCTE+`
 		SELECT strategy_name, strategy_version,`+statsAggColumns+`
 		FROM combined `+where+`
 		GROUP BY strategy_name, strategy_version

@@ -260,6 +260,58 @@ func TestTokenHandlerReturnsNotFoundWhenNeitherLiveNorDBHasIt(t *testing.T) {
 	}
 }
 
+// TestTokenHandlerFallsBackToOtherStrategyActivityWhenNoPumpEpisode covers
+// fix/token-activity-non-pump-assets-v1: a base with zero app.pump_events
+// rows but real activity in a non-pump strategy (e.g. an early_momentum_v4
+// paper trade) must not read as a bare 404 -- it gets a 200 with
+// has_pump_episode=false and the real strategy_key.
+func TestTokenHandlerFallsBackToOtherStrategyActivityWhenNoPumpEpisode(t *testing.T) {
+	t.Parallel()
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+
+	var call int
+	pool := &stubQuerier{
+		onQueryRow: func(_ context.Context, _ string, _ ...any) pgxRow {
+			call++
+			if call == 1 {
+				// dbTokenFallback: no app.pump_events row.
+				return &stubRow{err: pgx.ErrNoRows}
+			}
+			// otherStrategyActivity: matches an early_momentum_v4 trade.
+			return &stubRow{vals: []any{"early_momentum_v4"}}
+		},
+	}
+
+	h := &Handler{rdb: rdb, pool: pool}
+	router := chi.NewRouter()
+	router.Get("/api/pumps/{base}", h.Token)
+	req := httptest.NewRequest(http.MethodGet, "/api/pumps/NOPUMP", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	var response tokenNoPumpResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Base != "NOPUMP" {
+		t.Errorf("base = %q, want NOPUMP", response.Base)
+	}
+	if response.HasPumpEpisode {
+		t.Errorf("has_pump_episode = true, want false")
+	}
+	if response.OtherStrategyKey != "early_momentum_v4" {
+		t.Errorf("other_strategy_key = %q, want early_momentum_v4", response.OtherStrategyKey)
+	}
+	if call != 2 {
+		t.Errorf("QueryRow called %d times, want 2 (pump_events fallback, then other-strategy lookup)", call)
+	}
+}
+
 // ---- stub DB infrastructure ----
 
 // stubRow implements pgxRow with a fixed set of values.
