@@ -1773,6 +1773,28 @@ filter-report` (`confirmed_oi_growth_baseline_filter_v1`) tests this as a
     registered contracts. Confirmed only if the floor is met and the
     primary sensitivity's 95% cluster CI excludes zero on the lower bound.
     See [the frozen contract](docs/research/pump-short-maker-entry-prospective-v1.md).
+12. **[Registered 2026-08-30, matures ~2026-10-01] Source-lead forward
+    cohort.** `source_lead_forward_cohort_v1` (`source_lead_forward_cohort.py`)
+    registers the untouched forward read that research/gate-source-lead-
+    registry-activation-v3 (PR 3 of 3, `ROUTE_EVIDENCE_INDEPENDENTLY_VERIFIED
+= True`) was built to answer: for the 14 identity- and route-verified
+    canonical assets, does buying on the selected target exchange the moment
+    Gate shows a leading source-lead capture hold a real, after-cost edge
+    over the following half hour? Cohort start
+    (`SOURCE_LEAD_FORWARD_COHORT_START`) is aliased to
+    `IDENTITY_REGISTRY_V3_START`, `2026-09-03T00:00:00Z` -- no v3-qualified
+    capture can exist before that instant. Frozen entry at `0m` (the
+    already-captured, already-executable target quote `qualify_source_lead`
+    itself selected, not a re-fetch), primary outcome `+30m` via exact-venue
+    OHLCV, this codebase's shared conservative cost model. Evidence floor:
+    100 resolved episodes, 7 distinct asset clusters (half the 14-asset
+    universe, not this codebase's usual 30 -- unsatisfiable here by
+    construction), 4 distinct UTC weeks. No report/evaluation code exists
+    yet -- nothing can mature before ~2026-10-01 at the earliest, and
+    building outcome-resolution mechanics against zero real qualified
+    episodes would mean designing them against imagined data. The report
+    lands as its own change once the floor is close to being met. See
+    [the frozen contract](docs/research/source-lead-forward-cohort-v1.md).
 
 Reporting duplication is reduced incrementally while implementing items 1, 3, 4, and
 5 through the shared `reporting`, replay, and challenger-inference modules. A separate
