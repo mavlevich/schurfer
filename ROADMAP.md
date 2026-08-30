@@ -1778,22 +1778,31 @@ filter-report` (`confirmed_oi_growth_baseline_filter_v1`) tests this as a
     registers the untouched forward read that research/gate-source-lead-
     registry-activation-v3 (PR 3 of 3, `ROUTE_EVIDENCE_INDEPENDENTLY_VERIFIED
 = True`) was built to answer: for the 14 identity- and route-verified
-    canonical assets, does buying on the selected target exchange the moment
-    Gate shows a leading source-lead capture hold a real, after-cost edge
-    over the following half hour? Cohort start
+    canonical assets (gate -> binance only -- registry v3 has zero bybit
+    links), does an immediate long entry the moment Gate shows a leading
+    source-lead capture hold a real, after-cost edge over the following
+    half hour? A narrower estimand than HYP-012's original paired,
+    4-route, Holm-corrected family (`docs/research/discovery-ledger.md`),
+    not a claimed replication of it -- the registry currently verifies only
+    one of those four routes. HYP-012's paired early-vs-confirmed delta is
+    kept as a secondary diagnostic, never gating. Cohort start
     (`SOURCE_LEAD_FORWARD_COHORT_START`) is aliased to
-    `IDENTITY_REGISTRY_V3_START`, `2026-09-03T00:00:00Z` -- no v3-qualified
-    capture can exist before that instant. Frozen entry at `0m` (the
-    already-captured, already-executable target quote `qualify_source_lead`
-    itself selected, not a re-fetch), primary outcome `+30m` via exact-venue
-    OHLCV, this codebase's shared conservative cost model. Evidence floor:
-    100 resolved episodes, 7 distinct asset clusters (half the 14-asset
-    universe, not this codebase's usual 30 -- unsatisfiable here by
-    construction), 4 distinct UTC weeks. No report/evaluation code exists
-    yet -- nothing can mature before ~2026-10-01 at the earliest, and
-    building outcome-resolution mechanics against zero real qualified
-    episodes would mean designing them against imagined data. The report
-    lands as its own change once the floor is close to being met. See
+    `IDENTITY_REGISTRY_V3_START`, `2026-09-03T00:00:00Z`. Frozen entry at
+    `0m` (the already-captured, already-executable `ask_vwap`
+    `qualify_source_lead` itself selected, not a re-fetch); exit is a
+    labeled OHLCV-close proxy (1m, ceil-aligned, max 2-minute gap) with a
+    fixed conservative 15 bps slippage haircut, never claimed executable;
+    this codebase's shared conservative cost model. `resolve_episode`/
+    `formal_verdict` are pure functions with synthetic-input tests, frozen
+    now rather than left for whoever writes the evaluator later to decide
+    with real outcomes already in view. Evidence floor: 100 resolved
+    episodes, 7 distinct asset clusters (not this codebase's usual 30 --
+    unreachable here by construction) plus explicit 35%/45%
+    per-asset/per-week concentration caps; a `candidate` verdict under this
+    small-universe floor authorizes only a broader confirmatory cohort, not
+    paper or live execution directly. No report/evaluation _plumbing_
+    (DB fetch, CLI, rendering) exists yet -- nothing can mature before
+    ~2026-10-01 at the earliest. See
     [the frozen contract](docs/research/source-lead-forward-cohort-v1.md).
 
 Reporting duplication is reduced incrementally while implementing items 1, 3, 4, and
