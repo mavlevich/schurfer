@@ -26,13 +26,13 @@ confirms HYP-012 in that original sense would be dishonest about what a
 single, currently-unconfirmable-on-3-of-4-routes registry can actually test.
 
 This contract is registered as its own narrower estimand instead
-(`ESTIMAND` below): standalone after-cost net return on the qualified,
-verified gate -> binance route alone. That is honestly a *different*,
-arguably more directly money-relevant question than HYP-012's original
-"does early beat waiting" claim -- and it does not need a multiple-testing
-correction, because there is exactly one primary test, not four. Where a
-confirming second-exchange source does appear (the same signal
-`SourceLeadProgress.confirmed_within_hour` already surfaces from
+(`ESTIMAND_VERSION` below): standalone after-cost net return on the
+qualified, verified gate -> binance route alone. That is honestly a
+*different*, arguably more directly money-relevant question than HYP-012's
+original "does early beat waiting" claim -- and it does not need a
+multiple-testing correction, because there is exactly one primary test, not
+four. Where a confirming second-exchange source does appear (the same
+signal `SourceLeadProgress.confirmed_within_hour` already surfaces from
 `app.pump_event_sources`), the original paired early-vs-confirmed delta is
 still computed and reported as a **secondary diagnostic** -- kept for
 continuity with HYP-012's design, useful for telling "informational lead"
@@ -40,7 +40,7 @@ apart from "pumps go up regardless" -- but it never gates the verdict.
 
 ## What is frozen now vs. what waits
 
-Colleague review, second round: freezing only the cohort boundary and
+Colleague review, three rounds: freezing only the cohort boundary and
 leaving exit-price mechanics, unresolved semantics, and the verdict rule to
 be decided once real data exists reverses this codebase's own prospective-
 research discipline -- whoever writes the evaluator later would be choosing
@@ -52,18 +52,39 @@ exists. Only the DB-fetching, CLI, and Markdown-rendering plumbing around
 these two functions waits for real data to shape it against -- there is
 nothing prospective-research-sensitive about that plumbing itself.
 
+Third round specifically closed: `resolve_episode` now derives the exit-bar
+boundary and gap itself from `entry_at` (never trusts a pre-computed gap a
+future caller could get wrong), reuses this codebase's shared
+`calculate_performance` (packages/performance/schurfer_performance) for
+fees/funding/validation instead of a partial hand-rolled fee calculation
+(a 30-minute hold can, contrary to an earlier version of this docstring,
+cross an 8h funding settlement if entry happens shortly before one --
+`calculate_performance` prorates this correctly), and the primary
+sensitivity's cluster-bootstrap method/seed/iterations/confidence level are
+frozen via this codebase's shared `clustered_inference` module rather than
+left for the eventual evaluator to pick after seeing the cohort.
+
 See docs/research/source-lead-forward-cohort-v1.md for the full frozen
 contract and the small-universe evidence-floor rationale.
 """
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from schurfer_performance import DEFAULT_COSTS, CostParameters
+from schurfer_performance import DEFAULT_COSTS, CostParameters, calculate_performance
 
-from .ohlcv import ONE_MINUTE_MS
+from .clustered_inference import (
+    CLUSTER_BOOTSTRAP_VERSION,
+    DEFAULT_BOOTSTRAP_ITERATIONS,
+    DEFAULT_BOOTSTRAP_SEED,
+    DEFAULT_CONFIDENCE_LEVEL,
+    ClusterObservation,
+    cluster_bootstrap_mean,
+)
+from .ohlcv import ONE_MINUTE_MS, ceil_to_timeframe
 from .source_lead_contract import IDENTITY_REGISTRY_V3_START
 
 if TYPE_CHECKING:
@@ -105,15 +126,18 @@ QUALIFICATION_VERSION = "source_lead_qualified_capture_v3"
 
 # --- entry -----------------------------------------------------------------
 
-# Frozen at 0m, no artificial delay, no re-fetch. Uses the qualification
-# result's own selected TargetObservation -- entry_price is that
-# observation's liquidity["ask_vwap"] (buy side; this contract only tests
-# longs), the exact executable VWAP qualify_source_lead itself already
-# proved was fillable against real order-book depth, on the fixed
-# SOURCE_LEAD_NOTIONAL_USD ($50) quote. Not an assumption -- the same fill
-# qualify_source_lead used to select this route.
+# Frozen at 0m, no artificial delay, no re-fetch. entry_price is the
+# qualification result's own selected TargetObservation.liquidity["ask_vwap"]
+# (buy side; this contract only tests longs) -- the exact executable VWAP
+# qualify_source_lead itself already proved fillable against real
+# order-book depth. entry_notional_usd is that same observation's own
+# requested_notional_usd (the real captured value, currently
+# SOURCE_LEAD_NOTIONAL_USD=$50 by env default) -- not a hardcoded constant
+# this contract would otherwise have to keep in sync with that env var by
+# hand.
 ENTRY_TIME_SOURCE = "target_observation_observed_at"
 ENTRY_PRICE_SOURCE = "target_observation_liquidity_ask_vwap"
+ENTRY_NOTIONAL_SOURCE = "target_observation_requested_notional_usd"
 ENTRY_DELAY_MINUTES = 0
 
 # --- outcome / exit ----------------------------------------------------
@@ -125,30 +149,30 @@ OUTCOME_HORIZON_MINUTES = 30
 # once, at qualification time. Building that (a new live capture worker,
 # mirroring trade_exit_liquidity_observations) is a bigger lift than
 # registering a cohort should require. OHLCV close is used instead,
-# explicitly labeled as a proxy, never claimed to be an executable quote --
-# and EXIT_SLIPPAGE_BPS_ASSUMED is charged against it specifically so an
-# unrealistically clean proxy fill can never manufacture an edge that would
-# not survive a real one.
+# explicitly labeled as a proxy, never claimed to be an executable quote.
+#
+# EXIT_SLIPPAGE_BPS_ASSUMED is a pre-registered, deliberately conservative
+# proxy assumption charged against that close -- not a guarantee that a
+# real fill could never be worse (colleague review, third round: an
+# earlier version of this comment overclaimed "never"). The eventual
+# report must include a sensitivity read against this assumption (e.g. 0
+# bps and 2x this value), not just the frozen primary number.
 EXIT_PRICE_SOURCE_VERSION = "ohlcv_close_proxy_v1"
 EXIT_BAR_TIMEFRAME_MS = ONE_MINUTE_MS
-# First fully-closed 1m bar at or after (entry_at + OUTCOME_HORIZON_MINUTES)
-# -- ceil, never floor, so the exit bar is never inspected before it closes.
-EXIT_BAR_ALIGNMENT = "ceil"
+EXIT_SLIPPAGE_BPS_ASSUMED = 15.0
+REQUIRE_EXIT_SLIPPAGE_SENSITIVITY = True
+
 # Unresolved (not a synthetic worst-case fill) if the nearest usable bar is
 # farther than this from the ideal exit boundary -- a real gap in captured
 # OHLCV history, not something to paper over with a guess.
 MAX_EXIT_BAR_GAP_MINUTES = 2.0
-# Fixed, deliberately conservative haircut against the OHLCV close proxy.
-# Chosen to exceed typical entry-side ask_impact_bps already observed on
-# this notional in real TargetObservation captures, specifically so the
-# proxy is never more favorable than a real fill would be -- biases toward
-# fail, never toward candidate.
-EXIT_SLIPPAGE_BPS_ASSUMED = 15.0
 
 UNRESOLVED_REASONS = frozenset(
     {
         "missing_exit_bar",
+        "exit_bar_before_boundary",
         "exit_bar_gap_exceeded",
+        "invalid_market_data",
         "market_path_unavailable",
         "delisted_before_exit",
     }
@@ -163,13 +187,30 @@ UNRESOLVED_REASONS = frozenset(
 
 # --- costs ---------------------------------------------------------------
 
-# This codebase's shared conservative cost model
-# (packages/performance/schurfer_performance), not a bespoke one. Entry
-# slippage/impact is not modeled separately -- it is the real, order-book-
-# derived ask_vwap TargetObservation captured. A 30-minute hold never
-# crosses an 8h funding settlement, so funding_cost_bps_per_8h is carried
-# for completeness but never actually charged by resolve_episode below.
+# This codebase's shared conservative cost model and accounting function
+# (packages/performance/schurfer_performance), not a bespoke one --
+# calculate_performance validates entry/exit prices (finite, positive),
+# charges both-side taker fees, and prorates funding_cost_bps_per_8h by
+# duration_minutes/480. A 30-minute hold CAN cross an 8h funding
+# settlement if entry happens shortly before one (colleague review, third
+# round: an earlier version of this module claimed it never could) --
+# calculate_performance's proration is this codebase's existing, already
+# accepted answer to exactly that, not something resolve_episode needs to
+# detect itself.
 COSTS: CostParameters = DEFAULT_COSTS
+
+# --- primary sensitivity: frozen bootstrap parameters -----------------
+
+# This codebase's shared cluster bootstrap (clustered_inference.py), not a
+# bespoke method -- colleague review, third round: leaving bootstrap
+# method/seed/iterations/confidence level unfrozen would let the eventual
+# evaluator choose them after already seeing the cohort. primary_sensitivity_ci
+# below is the only entry point the eventual report may use to turn
+# per-episode results into the CI formal_verdict gates on.
+BOOTSTRAP_VERSION = CLUSTER_BOOTSTRAP_VERSION
+BOOTSTRAP_ITERATIONS = DEFAULT_BOOTSTRAP_ITERATIONS
+BOOTSTRAP_SEED = DEFAULT_BOOTSTRAP_SEED
+CONFIDENCE_LEVEL = DEFAULT_CONFIDENCE_LEVEL
 
 # --- evidence floor and concentration --------------------------------------
 
@@ -200,12 +241,25 @@ SMALL_UNIVERSE_PROMOTION_NOTE = (
     "itself authorize paper or live execution."
 )
 
-# Checkpoint / stopping rule: evaluate once, at the earliest point where
-# BOTH min_resolved_episodes and min_distinct_utc_weeks are met (the same
-# "earliest maturity prefix" convention this codebase's other registered
-# contracts use, e.g. liquid_taker_report.py) -- never re-peeked at
-# incrementally. An early look that fails the floor is insufficient_data,
-# not a result, and is not logged as one.
+# Checkpoint / stopping rule, made unambiguous (colleague review, third
+# round -- an earlier version named only the episode/week floors here while
+# formal_verdict also gated on clusters/concentration, leaving it unclear
+# whether the cohort could be re-peeked if those lagged behind): evaluate
+# formal_verdict exactly ONCE, at the earliest point where
+# min_resolved_episodes AND min_distinct_utc_weeks are BOTH met. If the
+# cluster or concentration gates are not satisfied at that single
+# checkpoint, the verdict is insufficient_data PERMANENTLY for this
+# contract -- it is not re-run later on the same growing window (that would
+# be exactly the incremental re-peeking this codebase's other registered
+# contracts also forbid). The only sanctioned next step after an
+# insufficient_data verdict here is registering a new, broader cohort (more
+# weeks and/or a wider identity registry), not re-evaluating this one.
+STOPPING_RULE = (
+    "Evaluate exactly once, at the earliest point where "
+    "min_resolved_episodes and min_distinct_utc_weeks are both met. A "
+    "cluster/concentration failure at that single checkpoint is "
+    "insufficient_data permanently for this contract, never re-peeked."
+)
 
 VERDICT_CANDIDATE = "candidate"
 VERDICT_FAIL = "fail"
@@ -218,18 +272,24 @@ VERDICT_INSUFFICIENT_DATA = "insufficient_data"
 # itself is frozen and unit-testable with synthetic inputs before any real
 # qualified capture exists -- see the module docstring's "what is frozen
 # now" section. DB-fetching, CLI, and Markdown-rendering are separate,
-# later plumbing around these two functions.
+# later plumbing around these functions.
 
 
 @dataclass(frozen=True)
 class EpisodeInputs:
     """Already-fetched inputs for one episode -- no fetching happens inside
-    resolve_episode itself."""
+    resolve_episode itself. entry_at/exit_bar are the raw, unvalidated
+    values a future DB-fetch step would produce; resolve_episode computes
+    and validates the exit boundary and gap itself (colleague review, third
+    round: an earlier version accepted a pre-computed gap directly, which a
+    buggy caller could get wrong -- e.g. a floor-aligned bar, the wrong
+    venue/path, or a zero timestamp -- and still have it silently resolve)."""
 
     base: str
+    entry_at: datetime
     entry_price: float
+    entry_notional_usd: float
     exit_bar: Candle | None
-    exit_bar_gap_minutes: float | None
 
 
 @dataclass(frozen=True)
@@ -240,20 +300,71 @@ class EpisodeResult:
     net_return_pct: float | None
 
 
+def _expected_exit_boundary_ms(entry_at: datetime) -> int:
+    """First fully-closed EXIT_BAR_TIMEFRAME_MS bar at or after
+    entry_at + OUTCOME_HORIZON_MINUTES -- ceil, never floor, so the exit
+    bar is never inspected before it closes. Ordering (exit strictly after
+    entry) follows automatically: the target is always
+    OUTCOME_HORIZON_MINUTES in the future before it is even rounded
+    forward."""
+    entry_ms = int(entry_at.timestamp() * 1000)
+    target_ms = entry_ms + OUTCOME_HORIZON_MINUTES * 60_000
+    return ceil_to_timeframe(target_ms, EXIT_BAR_TIMEFRAME_MS)
+
+
 def resolve_episode(inputs: EpisodeInputs, *, costs: CostParameters = COSTS) -> EpisodeResult:
     """One episode's resolved net return, or its unresolved reason. Pure --
-    see the section header above."""
+    see the section header above. Computes and validates the exit-bar
+    boundary/gap itself from entry_at rather than trusting a pre-computed
+    value, and delegates price validation/fees/funding to this codebase's
+    shared calculate_performance rather than a partial hand-rolled
+    calculation."""
     if inputs.exit_bar is None:
         return EpisodeResult(inputs.base, False, "missing_exit_bar", None)
-    gap = inputs.exit_bar_gap_minutes
-    if gap is None or gap > MAX_EXIT_BAR_GAP_MINUTES:
+
+    expected_boundary_ms = _expected_exit_boundary_ms(inputs.entry_at)
+    if inputs.exit_bar.ts_ms < expected_boundary_ms:
+        # Never accept a bar that closes before the frozen ceil boundary --
+        # would mean inspecting the outcome before it is fully known yet.
+        return EpisodeResult(inputs.base, False, "exit_bar_before_boundary", None)
+    gap_minutes = (inputs.exit_bar.ts_ms - expected_boundary_ms) / 60_000
+    if gap_minutes > MAX_EXIT_BAR_GAP_MINUTES:
         return EpisodeResult(inputs.base, False, "exit_bar_gap_exceeded", None)
-    exit_price = inputs.exit_bar.close * (1 - EXIT_SLIPPAGE_BPS_ASSUMED / 10_000)
-    gross_return_pct = (exit_price - inputs.entry_price) / inputs.entry_price * 100
-    # Entry + exit taker fee, both sides at the shared conservative rate.
-    # No funding: a 30-minute hold never crosses an 8h settlement.
-    fee_cost_pct = costs.taker_fee_bps_per_side * 2 / 100
-    return EpisodeResult(inputs.base, True, None, round(gross_return_pct - fee_cost_pct, 6))
+
+    try:
+        result = calculate_performance(
+            position_usd=inputs.entry_notional_usd,
+            entry_price=inputs.entry_price,
+            exit_price=inputs.exit_bar.close,
+            side="long",
+            duration_minutes=OUTCOME_HORIZON_MINUTES,
+            entry_slippage_bps=0.0,  # ask_vwap already reflects real captured impact
+            exit_slippage_bps=EXIT_SLIPPAGE_BPS_ASSUMED,
+            costs=costs,
+        )
+    except ValueError:
+        # calculate_performance fails closed on non-finite/non-positive
+        # prices or notional -- a real market-data problem, not a
+        # programming error this function should crash on (colleague
+        # review, third round).
+        return EpisodeResult(inputs.base, False, "invalid_market_data", None)
+
+    assert result.net_return_pct is not None  # entry/exit slippage are both always provided above
+    return EpisodeResult(inputs.base, True, None, round(result.net_return_pct, 6))
+
+
+def primary_sensitivity_ci(observations: tuple[ClusterObservation, ...]) -> float:
+    """The only entry point the eventual report may use to turn per-episode
+    net returns into the lower CI bound formal_verdict gates on -- frozen
+    bootstrap method/seed/iterations/confidence level, this codebase's
+    shared clustered_inference module, not a choice left for later."""
+    computation = cluster_bootstrap_mean(
+        observations,
+        iterations=BOOTSTRAP_ITERATIONS,
+        seed=BOOTSTRAP_SEED,
+        confidence_level=CONFIDENCE_LEVEL,
+    )
+    return computation.estimate.lower_bound
 
 
 def formal_verdict(
@@ -267,7 +378,9 @@ def formal_verdict(
 ) -> str:
     """Frozen verdict rule over already-aggregated statistics -- aggregation
     itself belongs to the eventual report, not here. Pure -- see the
-    section header above."""
+    section header above. Called exactly once, per STOPPING_RULE; a
+    cluster/concentration failure here is final for this contract, not a
+    reason to call this again later on the same growing window."""
     floor_met = (
         resolved_episodes >= EVIDENCE_FLOOR["min_resolved_episodes"]
         and distinct_asset_clusters >= EVIDENCE_FLOOR["min_distinct_asset_clusters"]
@@ -279,20 +392,24 @@ def formal_verdict(
         return VERDICT_INSUFFICIENT_DATA
     if max_single_week_share > MAX_SINGLE_WEEK_EPISODE_SHARE:
         return VERDICT_INSUFFICIENT_DATA
-    if ci_lower_bound_pct is None:
+    if ci_lower_bound_pct is None or not math.isfinite(ci_lower_bound_pct):
         return VERDICT_INSUFFICIENT_DATA
     return VERDICT_CANDIDATE if ci_lower_bound_pct > 0 else VERDICT_FAIL
 
 
 __all__ = [
+    "BOOTSTRAP_ITERATIONS",
+    "BOOTSTRAP_SEED",
+    "BOOTSTRAP_VERSION",
+    "CONFIDENCE_LEVEL",
     "CONTRACT_VERSION",
     "COSTS",
     "ENTRY_DELAY_MINUTES",
+    "ENTRY_NOTIONAL_SOURCE",
     "ENTRY_PRICE_SOURCE",
     "ENTRY_TIME_SOURCE",
     "ESTIMAND_VERSION",
     "EVIDENCE_FLOOR",
-    "EXIT_BAR_ALIGNMENT",
     "EXIT_BAR_TIMEFRAME_MS",
     "EXIT_PRICE_SOURCE_VERSION",
     "EXIT_SLIPPAGE_BPS_ASSUMED",
@@ -302,9 +419,11 @@ __all__ = [
     "MAX_SINGLE_WEEK_EPISODE_SHARE",
     "QUALIFICATION_STATUS",
     "QUALIFICATION_VERSION",
+    "REQUIRE_EXIT_SLIPPAGE_SENSITIVITY",
     "SECONDARY_DIAGNOSTIC_VERSION",
     "SMALL_UNIVERSE_PROMOTION_NOTE",
     "SOURCE_LEAD_FORWARD_COHORT_START",
+    "STOPPING_RULE",
     "UNRESOLVED_REASONS",
     "VERDICT_CANDIDATE",
     "VERDICT_FAIL",
@@ -312,5 +431,6 @@ __all__ = [
     "EpisodeInputs",
     "EpisodeResult",
     "formal_verdict",
+    "primary_sensitivity_ci",
     "resolve_episode",
 ]

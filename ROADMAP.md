@@ -1790,12 +1790,22 @@ filter-report` (`confirmed_oi_growth_baseline_filter_v1`) tests this as a
     `IDENTITY_REGISTRY_V3_START`, `2026-09-03T00:00:00Z`. Frozen entry at
     `0m` (the already-captured, already-executable `ask_vwap`
     `qualify_source_lead` itself selected, not a re-fetch); exit is a
-    labeled OHLCV-close proxy (1m, ceil-aligned, max 2-minute gap) with a
-    fixed conservative 15 bps slippage haircut, never claimed executable;
-    this codebase's shared conservative cost model. `resolve_episode`/
+    labeled OHLCV-close proxy (1m, ceil-aligned, max 2-minute gap, boundary
+    and gap derived from `entry_at` by `resolve_episode` itself, never a
+    pre-computed value trusted from a future caller) with a pre-registered,
+    deliberately conservative 15 bps slippage haircut -- not a guarantee a
+    real fill could never be worse, and `REQUIRE_EXIT_SLIPPAGE_SENSITIVITY`
+    requires the eventual report to show the read either side of that
+    assumption too. Costs and funding delegate to this codebase's shared
+    `schurfer_performance.calculate_performance` (a 30-minute hold can
+    still cross an 8h funding settlement depending on entry timing;
+    proration handles it, not assumed away). `resolve_episode`/
     `formal_verdict` are pure functions with synthetic-input tests, frozen
     now rather than left for whoever writes the evaluator later to decide
-    with real outcomes already in view. Evidence floor: 100 resolved
+    with real outcomes already in view -- including the primary
+    sensitivity's cluster-bootstrap method/seed/iterations/confidence
+    level, frozen via this codebase's shared `clustered_inference` module.
+    Evidence floor: 100 resolved
     episodes, 7 distinct asset clusters (not this codebase's usual 30 --
     unreachable here by construction) plus explicit 35%/45%
     per-asset/per-week concentration caps; a `candidate` verdict under this

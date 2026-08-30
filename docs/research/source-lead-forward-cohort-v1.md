@@ -83,6 +83,22 @@ about that plumbing, and the earliest point it could produce a first read is
 ~2026-10-01 (cohort start plus the 4-week floor) regardless of when it is
 written.
 
+Colleague review, third round, closed two more degrees of freedom that
+would otherwise have been left to the eventual evaluator: `resolve_episode`
+now derives the exit-bar boundary and gap itself from each episode's
+`entry_at` rather than trusting a pre-computed gap a future caller could
+get wrong (a floor-aligned bar, the wrong venue/path, or a zero timestamp
+could otherwise have silently resolved), and it delegates fees/funding/
+price-validity to this codebase's shared `calculate_performance`
+(`packages/performance/schurfer_performance`) instead of a bespoke partial
+calculation -- see Costs, below, for why that also fixed a substantive
+factual error, not just a style issue. The primary sensitivity's
+cluster-bootstrap method/seed/iterations/confidence level are likewise
+frozen now, via this codebase's shared `clustered_inference` module, so the
+only sanctioned way to turn per-episode results into the CI `formal_verdict`
+gates on is `primary_sensitivity_ci()` -- not a choice available to
+whoever writes the eventual report.
+
 ## Frozen cohort and selection
 
 All values live in `source_lead_forward_cohort.py`
@@ -105,17 +121,34 @@ capture_v3'` whose capture's `source_first_observed_at` is at or after
   `trade_exit_liquidity_observations`) is a bigger lift than registering a
   cohort should require. `exit_price` is instead the first fully-closed 1m
   OHLCV bar at or after `entry_at + 30m` (`ceil`, never `floor`), explicitly
-  labeled a **proxy** (`EXIT_PRICE_SOURCE_VERSION = "ohlcv_close_proxy_v1"`),
-  never claimed to be an executable quote -- with a fixed, conservative
-  `EXIT_SLIPPAGE_BPS_ASSUMED = 15.0` bps haircut charged against it so an
-  unrealistically clean proxy fill can never manufacture an edge that would
-  not survive a real one. An episode is `unresolved` (not a synthetic
-  worst-case fill) if the nearest usable bar is more than
-  `MAX_EXIT_BAR_GAP_MINUTES = 2.0` from the ideal boundary.
-- **Costs**: this codebase's shared conservative model
-  (`packages/performance/schurfer_performance.DEFAULT_COSTS` --
-  `taker_fee_bps_per_side=10.0`, charged on both entry and exit; no
-  funding, since a 30-minute hold never crosses an 8h settlement).
+  labeled a **proxy** (`EXIT_PRICE_SOURCE_VERSION = "ohlcv_close_proxy_v1"`).
+  `resolve_episode` computes and validates that boundary itself from
+  `entry_at` (never trusts a pre-computed gap a future caller could get
+  wrong). `EXIT_SLIPPAGE_BPS_ASSUMED = 15.0` bps is charged against the
+  proxy close as a pre-registered, deliberately conservative assumption --
+  not a guarantee that a real fill could never be worse (an earlier draft
+  of this contract overclaimed "never"; `REQUIRE_EXIT_SLIPPAGE_SENSITIVITY
+= True` requires the eventual report to also show the read against 0 bps
+  and 2x this value, not just the frozen primary number). An episode is
+  `unresolved` (not a synthetic worst-case fill) if the nearest usable bar
+  is more than `MAX_EXIT_BAR_GAP_MINUTES = 2.0` from the ideal boundary.
+- **Costs**: this codebase's shared conservative model and accounting
+  function (`packages/performance/schurfer_performance.calculate_
+performance`/`DEFAULT_COSTS`, not a bespoke calculation) --
+  `taker_fee_bps_per_side=10.0` charged on both entry and exit, plus
+  `funding_cost_bps_per_8h` prorated by `duration_minutes/480`. A
+  30-minute hold **can** still cross an 8h funding settlement depending on
+  when entry lands within the cycle (an earlier draft of this contract
+  claimed it never could); `calculate_performance`'s proration is this
+  codebase's existing, already-accepted answer to that, not something this
+  contract needs to detect itself.
+- **Primary-sensitivity bootstrap**: method, seed, iteration count, and
+  confidence level are frozen via this codebase's shared
+  `clustered_inference` module (`BOOTSTRAP_VERSION`/`BOOTSTRAP_ITERATIONS`/
+  `BOOTSTRAP_SEED`/`CONFIDENCE_LEVEL`), not left for the eventual report to
+  pick after already seeing the cohort. `primary_sensitivity_ci()` is the
+  only sanctioned entry point for turning per-episode net returns into the
+  CI lower bound `formal_verdict` gates on.
 - **Episode definition**: one `app.source_lead_qualifications` row is one
   episode -- no additional cooldown/dedup logic, since each Gate pump event
   is already a discrete, upstream-deduplicated unit (`app.pump_events`).
