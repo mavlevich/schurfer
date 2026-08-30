@@ -1773,6 +1773,47 @@ filter-report` (`confirmed_oi_growth_baseline_filter_v1`) tests this as a
     registered contracts. Confirmed only if the floor is met and the
     primary sensitivity's 95% cluster CI excludes zero on the lower bound.
     See [the frozen contract](docs/research/pump-short-maker-entry-prospective-v1.md).
+12. **[Registered 2026-08-30, matures ~2026-10-01] Source-lead forward
+    cohort.** `source_lead_forward_cohort_v1` (`source_lead_forward_cohort.py`)
+    registers the untouched forward read that research/gate-source-lead-
+    registry-activation-v3 (PR 3 of 3, `ROUTE_EVIDENCE_INDEPENDENTLY_VERIFIED
+= True`) was built to answer: for the 14 identity- and route-verified
+    canonical assets (gate -> binance only -- registry v3 has zero bybit
+    links), does an immediate long entry the moment Gate shows a leading
+    source-lead capture hold a real, after-cost edge over the following
+    half hour? A narrower estimand than HYP-012's original paired,
+    4-route, Holm-corrected family (`docs/research/discovery-ledger.md`),
+    not a claimed replication of it -- the registry currently verifies only
+    one of those four routes. HYP-012's paired early-vs-confirmed delta is
+    kept as a secondary diagnostic, never gating. Cohort start
+    (`SOURCE_LEAD_FORWARD_COHORT_START`) is aliased to
+    `IDENTITY_REGISTRY_V3_START`, `2026-09-03T00:00:00Z`. Frozen entry at
+    `0m` (the already-captured, already-executable `ask_vwap`
+    `qualify_source_lead` itself selected, not a re-fetch); exit is a
+    labeled OHLCV-close proxy (1m, ceil-aligned, max 2-minute gap, boundary
+    and gap derived from `entry_at` by `resolve_episode` itself, never a
+    pre-computed value trusted from a future caller) with a pre-registered,
+    deliberately conservative 15 bps slippage haircut -- not a guarantee a
+    real fill could never be worse, and `REQUIRE_EXIT_SLIPPAGE_SENSITIVITY`
+    requires the eventual report to show the read either side of that
+    assumption too. Costs and funding delegate to this codebase's shared
+    `schurfer_performance.calculate_performance` (a 30-minute hold can
+    still cross an 8h funding settlement depending on entry timing;
+    proration handles it, not assumed away). `resolve_episode`/
+    `formal_verdict` are pure functions with synthetic-input tests, frozen
+    now rather than left for whoever writes the evaluator later to decide
+    with real outcomes already in view -- including the primary
+    sensitivity's cluster-bootstrap method/seed/iterations/confidence
+    level, frozen via this codebase's shared `clustered_inference` module.
+    Evidence floor: 100 resolved
+    episodes, 7 distinct asset clusters (not this codebase's usual 30 --
+    unreachable here by construction) plus explicit 35%/45%
+    per-asset/per-week concentration caps; a `candidate` verdict under this
+    small-universe floor authorizes only a broader confirmatory cohort, not
+    paper or live execution directly. No report/evaluation _plumbing_
+    (DB fetch, CLI, rendering) exists yet -- nothing can mature before
+    ~2026-10-01 at the earliest. See
+    [the frozen contract](docs/research/source-lead-forward-cohort-v1.md).
 
 Reporting duplication is reduced incrementally while implementing items 1, 3, 4, and
 5 through the shared `reporting`, replay, and challenger-inference modules. A separate
