@@ -35,19 +35,19 @@ var (
 	orderflowStart        = time.Date(2026, time.July, 30, 18, 15, 0, 0, time.UTC)
 	exitLiquidityStart    = time.Date(2026, time.July, 29, 15, 45, 34, 0, time.UTC)
 	sourceLeadStart       = time.Date(2026, time.August, 2, 0, 0, 0, 0, time.UTC)
-	// The date identity registry v2 was frozen and populated with real,
-	// evidenced links (research/gate-source-lead-registry-activation-v2;
-	// mirrors source_lead_contract.IDENTITY_REGISTRY_V2_START on the
-	// analytics side -- keep both in sync). A capture whose
+	// The date identity registry v3 was frozen and populated with
+	// evidence-backed links (research/gate-source-lead-registry-
+	// activation-v3; mirrors source_lead_contract.IDENTITY_REGISTRY_V3_START
+	// on the analytics side -- keep both in sync). A capture whose
 	// source_first_observed_at is before this must never count toward
 	// SourceLeadProgress.QualifiedProspective even if its own qualification
 	// row says 'qualified': identity was not confirmed at the time that
 	// capture occurred, only retroactively. Set a few days past this line's
 	// own authoring date, not at midnight today, so it cannot fall before
 	// this PR actually merges and deploys (colleague review, 2026-08-28,
-	// second round). Bump to the actual deploy date if it lands later;
-	// never move it earlier.
-	identityRegistryV2Start = time.Date(2026, time.August, 30, 0, 0, 0, 0, time.UTC)
+	// second round, applied again for the v3 cutover). Bump to the actual
+	// deploy date if it lands later; never move it earlier.
+	identityRegistryV3Start = time.Date(2026, time.September, 3, 0, 0, 0, 0, time.UTC)
 )
 
 type pgxRow interface {
@@ -206,29 +206,36 @@ type SourceLeadProgress struct {
 	ConfirmedWithinHour     int       `json:"confirmed_within_hour"`
 	// Qualified counts every source_lead_qualifications row with
 	// status='qualified' under the current qualification_version -- it is
-	// NOT itself prospective-clean, because identity_registry_v2 was empty
-	// before IdentityRegistryV2Start and a capture's own qualification is
+	// NOT itself prospective-clean, because identity_registry_v3 was empty
+	// before IdentityRegistryV3Start and a capture's own qualification is
 	// only ever computed once, at capture time (colleague review,
 	// 2026-08-28: "не применять текущие каталоги ретроактивно" -- identity
 	// confirmed today does not make a historical capture's own qualified
 	// verdict retroactively trustworthy). QualifiedProspective is the
 	// number that actually matters for the money-first net-EV decision:
 	// the same qualified count, restricted to captures whose
-	// source_first_observed_at is at or after IdentityRegistryV2Start.
+	// source_first_observed_at is at or after IdentityRegistryV3Start.
 	Qualified               int       `json:"qualified"`
-	IdentityRegistryV2Start time.Time `json:"identity_registry_v2_start"`
+	IdentityRegistryV3Start time.Time `json:"identity_registry_v3_start"`
 	QualifiedProspective    int       `json:"qualified_prospective"`
 	QualificationMissing    int       `json:"qualification_missing"`
 	IdentityUnapproved      int       `json:"identity_unapproved"`
 	NoExecutableTarget      int       `json:"no_approved_executable_target"`
 	// RouteEvidencePending counts qualification_reason=
 	// 'route_evidence_not_yet_independent' -- identity and liquidity both
-	// checked out and a venue was selected, but ROUTE_EVIDENCE_
-	// INDEPENDENTLY_VERIFIED=False (source_lead_qualification.py) means
-	// registry v2's evidence only vouches for asset identity, not the
-	// specific derivative markets, so nothing can reach status='qualified'
-	// yet (colleague review, 2026-08-28, second round). Every one of these
-	// rows carries its full would-have-selected venue/impact under its own
+	// checked out and a venue was selected, but
+	// ROUTE_EVIDENCE_INDEPENDENTLY_VERIFIED=False at capture time
+	// (source_lead_qualification.py) meant registry v2's evidence only
+	// vouched for asset identity, not the specific derivative markets, so
+	// qualification could not reach status='qualified' yet (colleague
+	// review, 2026-08-28, second round). Flipped to True in
+	// research/gate-source-lead-registry-activation-v3 (PR 3 of 3), so this
+	// count is now purely historical -- no new row can be tagged this
+	// reason going forward, but the qualification join above is not
+	// version-scoped (colleague review, PR 3 review round), so every
+	// pre-flip row still tagged this reason stays visible here rather than
+	// disappearing on deploy. Every one of these rows carries its full
+	// would-have-selected venue/impact under its own
 	// details['would_select'] in the database, not summarized here.
 	RouteEvidencePending        int                                 `json:"route_evidence_pending"`
 	SelectedBinance             int                                 `json:"selected_binance"`
@@ -470,9 +477,26 @@ WITH captures AS (
 			  AND confirmation.first_seen_at <= captures.source_first_observed_at + interval '60 minutes'
 		) AS confirmed_within_hour
 	FROM captures
+	-- Not filtered to qualification_version = 'source_lead_qualified_capture_v3'
+	-- (colleague review, 2026-08-29/30, PR 3 review round): captures spans the
+	-- full history from sourceLeadStart, but a capture's own qualification row
+	-- is written exactly once, at capture time, tagged with whatever
+	-- QUALIFICATION_VERSION was live then (source_lead_qualification.py) --
+	-- ux_source_lead_qualification_capture_version enforces at most one row
+	-- per (capture_id, qualification_version), and application discipline
+	-- ("computed once, at capture time") never writes a second one under a
+	-- different version for the same capture. Filtering this join to only
+	-- the current version made every pre-cutover capture's already-computed
+	-- qualification (status/reason/selected exchange) disappear from every
+	-- count below the moment this code deploys, even though nothing about
+	-- that capture's own row changed -- a scope mismatch between the
+	-- full-history captures CTE and a version-scoped join. Joining
+	-- unconditionally keeps that history visible; the identity_registry_
+	-- version/fingerprint distinct-count logic further down already exists
+	-- to surface exactly this kind of multi-version window as "mixed", not
+	-- to silently hide it.
 	LEFT JOIN app.source_lead_qualifications AS qualification
 	  ON qualification.capture_id = captures.id
-	 AND qualification.qualification_version = 'source_lead_qualified_capture_v2'
 )
 SELECT
 	count(*),
@@ -574,7 +598,7 @@ SELECT
 	count(*) FILTER (WHERE status = 'excluded'),
 	count(*) FILTER (WHERE status = 'fetch_failed'),
 	-- Latency/spread/impact percentiles require identity_verified AND
-	-- source_first_observed_at >= $4 (identityRegistryV2Start) alongside
+	-- source_first_observed_at >= $4 (identityRegistryV3Start) alongside
 	-- status='sampled' (colleague review, 2026-08-28): these numbers feed
 	-- venue-quality analysis directly, so neither a pre-activation
 	-- wrong-market row nor a pre-cutover row (redundant with the
@@ -694,7 +718,7 @@ func (h *Handler) sourceLeadProgress(
 	progress := SourceLeadProgress{
 		Contract:                sourceLeadContract,
 		CohortStart:             sourceLeadStart,
-		IdentityRegistryV2Start: identityRegistryV2Start,
+		IdentityRegistryV3Start: identityRegistryV3Start,
 		Targets: []SourceLeadTargetProgress{
 			{Exchange: "binance"},
 			{Exchange: "bybit"},
@@ -715,7 +739,7 @@ func (h *Handler) sourceLeadProgress(
 
 	var targetEligible, mature, clusters, weeks int
 	err := h.db.QueryRow(
-		ctx, sourceLeadProgressSQL, sourceLeadStart, now, identityRegistryV2Start,
+		ctx, sourceLeadProgressSQL, sourceLeadStart, now, identityRegistryV3Start,
 	).Scan(
 		&progress.Captures,
 		&progress.SourceEligible,
@@ -761,7 +785,7 @@ func (h *Handler) sourceLeadProgress(
 			sourceLeadStart,
 			now,
 			exchange,
-			identityRegistryV2Start,
+			identityRegistryV3Start,
 		).Scan(
 			&target.Observations,
 			&target.Sampled,

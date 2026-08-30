@@ -156,17 +156,24 @@ from .reporting import json_ready
 
 EVIDENCE_VERSION = "source_lead_identity_evidence_v3"
 
-# Deliberately NOT bumped to "v3" in this PR: EVIDENCE_DIR is also the
-# default `evidence_dir` verify_registry_against_evidence uses (via
-# load_identity_registry), and the currently-deployed registry is still v2
-# -- pointing this at a v3 directory before the registry itself moves would
-# break every production capture run at startup the moment this PR
-# deploys, regardless of when PR 2 (registry v3) merges after it. v2's
-# evidence bundles stay committed, untouched, and this constant stays
-# pointed at them until PR 2 moves both together, atomically. Fresh v3
-# bundles are captured into EVIDENCE_DIR_V3 below instead.
-EVIDENCE_DIR = Path(__file__).parent / "evidence" / "source_lead" / "v2"
-EVIDENCE_DIR_V3 = Path(__file__).parent / "evidence" / "source_lead" / "v3"
+# research/gate-source-lead-registry-activation-v3 (PR 3 of 3): moved to v3,
+# atomically with source_lead_qualification.py's DEFAULT_REGISTRY_RESOURCE/
+# EXPECTED_REGISTRY_VERSION/EXPECTED_REGISTRY_FINGERPRINT/QUALIFICATION_
+# VERSION -- this is also the default `evidence_dir`
+# verify_registry_against_evidence uses (via load_identity_registry), so it
+# had to move in the same commit as the registry itself, not before (PR 1
+# and PR 2 both deliberately kept this at v2 for exactly that reason -- see
+# their own history in this module's docstring above). v2's evidence
+# bundles stay committed, untouched, for the frozen v2-tagged rows that
+# already exist.
+EVIDENCE_DIR = Path(__file__).parent / "evidence" / "source_lead" / "v3"
+
+# Frozen history, named explicitly now that EVIDENCE_DIR itself points
+# elsewhere -- the v2 bundles on disk back the v2-tagged rows already
+# written and must stay loadable on request (load_all_evidence_bundles
+# takes an explicit directory), even though nothing defaults here any
+# more.
+EVIDENCE_DIR_V2 = Path(__file__).parent / "evidence" / "source_lead" / "v2"
 
 IdentityClass = Literal[
     "exact_contract",
@@ -320,10 +327,13 @@ class EvidenceBundle:
     # deserializing a bundle captured before this field existed
     # (evidence_version < v3), so old files on disk stay loadable by this
     # same code without a version-branched parser (colleague review,
-    # 2026-08-28, third round: EVIDENCE_DIR still points at the
-    # currently-deployed v2 evidence, and load_identity_registry must keep
-    # working against it after this PR ships, before the registry itself
-    # moves to v3 in a later PR).
+    # 2026-08-28, third round). EVIDENCE_DIR itself moved to v3 in
+    # research/gate-source-lead-registry-activation-v3 (PR 3 of 3); the
+    # committed evidence/source_lead/v2/ directory is kept only for the
+    # frozen v2-tagged rows that already exist, and load_evidence_bundle
+    # still loads it correctly on request via the None-popping described
+    # below -- it is just no longer what load_identity_registry() defaults
+    # to.
     source_market_evidence: DerivativeMarketEvidence | None
     target_market_evidence: DerivativeMarketEvidence | None
     code_revision: str
@@ -356,12 +366,17 @@ def compute_bundle_sha256(bundle: EvidenceBundle) -> str:
     evidence_version < v3, and a v2 bundle's stored bundle_sha256 was
     computed before these fields existed at all. Including two extra
     None-valued keys in the hash would change every v2 bundle's digest
-    without their content actually changing, breaking the currently-
-    committed, currently-deployed evidence directory's integrity check the
-    moment this code ships (colleague review, 2026-08-28, third round).
-    capture_bundle always populates both for every bundle it produces, so
-    this only ever excludes them for genuinely old files being read back,
-    never for a freshly captured one."""
+    without their content actually changing, breaking the committed
+    evidence/source_lead/v2/ directory's own integrity check the moment
+    this code shipped (colleague review, 2026-08-28, third round) --
+    still true today even though EVIDENCE_DIR no longer defaults there
+    (research/gate-source-lead-registry-activation-v3, PR 3 of 3): those
+    v2 files are still on disk, still load-bearing for the frozen
+    v2-tagged rows already written, and load_evidence_bundle must keep
+    passing their integrity check on request. capture_bundle always
+    populates both for every bundle it produces, so this only ever
+    excludes them for genuinely old files being read back, never for a
+    freshly captured one."""
     payload = asdict(bundle)
     payload.pop("bundle_sha256", None)
     if bundle.source_market_evidence is None:
@@ -1602,12 +1617,12 @@ async def _run(_args: argparse.Namespace) -> None:
     bundles: list[EvidenceBundle] = []
     failed: list[tuple[str, str]] = []
     run_id = str(uuid.uuid4())
-    # A sibling of EVIDENCE_DIR_V3 (same parent directory), not
+    # A sibling of EVIDENCE_DIR (same parent directory), not
     # tempfile.mkdtemp()'s system temp dir -- so _atomic_publish's final
     # swap is a same-filesystem os.rename, not a cross-filesystem copy (see
     # _atomic_publish's docstring for why that matters).
-    EVIDENCE_DIR_V3.parent.mkdir(parents=True, exist_ok=True)
-    staging_dir = EVIDENCE_DIR_V3.parent / f".v3.staging.{run_id}"
+    EVIDENCE_DIR.parent.mkdir(parents=True, exist_ok=True)
+    staging_dir = EVIDENCE_DIR.parent / f".v3.staging.{run_id}"
     staging_dir.mkdir(parents=True, exist_ok=False)
     try:
         async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
@@ -1682,11 +1697,8 @@ async def _run(_args: argparse.Namespace) -> None:
         json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
 
-    # Publishes to EVIDENCE_DIR_V3, not EVIDENCE_DIR: the currently-deployed
-    # registry is still v2 and reads EVIDENCE_DIR by default (via
-    # verify_registry_against_evidence) -- see EVIDENCE_DIR's own comment.
-    _atomic_publish(staging_dir, EVIDENCE_DIR_V3)
-    sys.stderr.write(f"\npublished {len(bundles)} bundles atomically to {EVIDENCE_DIR_V3}\n")
+    _atomic_publish(staging_dir, EVIDENCE_DIR)
+    sys.stderr.write(f"\npublished {len(bundles)} bundles atomically to {EVIDENCE_DIR}\n")
 
 
 def build_parser() -> argparse.ArgumentParser:

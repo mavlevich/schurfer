@@ -9,10 +9,9 @@ from dataclasses import dataclass
 from importlib.resources import files
 from typing import TYPE_CHECKING, Any
 
-from .source_lead_contract import IDENTITY_REGISTRY_V2_START
+from .source_lead_contract import IDENTITY_REGISTRY_V3_START
 from .source_lead_identity_evidence import (
     EVIDENCE_DIR,
-    EVIDENCE_DIR_V3,
     DerivativeMarketEvidence,
     EvidenceBundle,
     EvidenceIntegrityError,
@@ -28,77 +27,59 @@ if TYPE_CHECKING:
 # v1 stays defined (never mutated -- its registry file, its DB rows, and
 # migration 0022's CHECK CONSTRAINT pinning EXPECTED_REGISTRY_FINGERPRINT_V1
 # are all frozen history) so any code that still needs to reference the old
-# contract explicitly can, but nothing in this module uses these below
-# QUALIFICATION_VERSION's v2 bump.
+# contract explicitly can, but nothing in this module uses these any more.
 QUALIFICATION_VERSION_V1 = "source_lead_qualified_capture_v1"
 REGISTRY_VERSION_V1 = "source_lead_identity_registry_v1"
 REGISTRY_FINGERPRINT_V1 = "31604214fa148d3f86562a212fdc935029c82a7a4959a7b5001b6bd5637ff7f8"
 
-# research/gate-source-lead-registry-activation-v2: 14 gate<->binance routes
-# with real, evidenced exact_contract identity (see
-# source_lead_identity_evidence.py and evidence/source_lead/v2/) -- the
-# first non-empty identity registry this system has ever qualified against.
-# Only captures at or after source_lead_contract.IDENTITY_REGISTRY_V2_START
-# may be treated as prospective evidence under this version; see that
-# constant's own docstring.
-QUALIFICATION_VERSION = "source_lead_qualified_capture_v2"
+# v2 stays defined too (never mutated -- migration 0041's CHECK CONSTRAINT
+# pinning EXPECTED_REGISTRY_FINGERPRINT_V2 and every v2-tagged row already
+# written are frozen history), same reasoning as v1 above. Nothing in this
+# module uses these below QUALIFICATION_VERSION's v3 bump
+# (research/gate-source-lead-registry-activation-v3, PR 3 of 3).
+QUALIFICATION_VERSION_V2 = "source_lead_qualified_capture_v2"
+REGISTRY_VERSION_V2 = "source_lead_identity_registry_v2"
+REGISTRY_FINGERPRINT_V2 = "757fd1327593d07ca27efe17a031ae0eab95bf6998aecc1ec26f0df38667dca0"
+
+# research/gate-source-lead-registry-activation-v3 (PR 3 of 3): the live
+# contract. 14 gate<->binance routes, now backed by independently fetched
+# derivative-market evidence (research/source-lead-derivative-market-
+# evidence-v1, PR 1) in addition to the asset-identity evidence v2 already
+# had, cross-checked at registry-load time (verify_registry_against_evidence,
+# _verify_link_route_evidence, PR 2). Only captures at or after
+# source_lead_contract.IDENTITY_REGISTRY_V3_START may be treated as
+# prospective evidence under this version; see that constant's own
+# docstring for why it is later than v2's cutover, not merely a renamed
+# copy of it.
+QUALIFICATION_VERSION = "source_lead_qualified_capture_v3"
 VENUE_SELECTOR_VERSION = "lowest_round_trip_impact_v1"
-DEFAULT_REGISTRY_RESOURCE = "registry/source_lead_identity_registry_v2.json"
-EXPECTED_REGISTRY_VERSION = "source_lead_identity_registry_v2"
-EXPECTED_REGISTRY_FINGERPRINT = "757fd1327593d07ca27efe17a031ae0eab95bf6998aecc1ec26f0df38667dca0"
+DEFAULT_REGISTRY_RESOURCE = "registry/source_lead_identity_registry_v3.json"
+EXPECTED_REGISTRY_VERSION = "source_lead_identity_registry_v3"
+EXPECTED_REGISTRY_FINGERPRINT = "9d36c41442261cfe4e608342378e2d83f96c78afd537de682698796e77733236"
 
-# Registry v2's evidence bundles (verify_registry_against_evidence) vouch
-# for *asset* identity only -- an on-chain contract match across Gate,
-# Binance Alpha, and CoinGecko. Nothing evidences the specific derivative
-# markets themselves (native market id, market type, quote/settle asset,
-# onboard time): no exchange's futures/perpetual catalog is captured today.
-# _resolve_registered_target_market's live re-verification at capture time
-# only proves a registered instrument_identity_key genuinely *exists* on
-# the exchange, not that it names the *right* project's perpetual rather
-# than a different, ticker-colliding one sharing a symbol (colleague
-# review, 2026-08-28, second round -- corrected from an earlier, weaker
-# framing of this same gap). Until independent route evidence exists,
-# qualify_source_lead below computes and records everything it would have
-# selected, but never actually returns status='qualified' -- see its
-# route_evidence_not_yet_independent branch. Flip this once real
-# derivative-market evidence backs the registry.
+# research/gate-source-lead-registry-activation-v3 (PR 3 of 3): flipped.
+# Registry v2's evidence bundles vouched for *asset* identity only -- an
+# on-chain contract match across Gate, Binance Alpha, and CoinGecko --
+# never the specific derivative markets themselves. That gap is what PR 1
+# (research/source-lead-derivative-market-evidence-v1, independent
+# Gate-futures/Binance-futures evidence) and PR 2 (this registry's
+# verify_registry_against_evidence, extended to cross-check each link's own
+# instrument_identity_key -- exchange, market_type, native market id,
+# onboard timestamp, all four fields -- against that independently fetched
+# evidence) exist to close. registry.links_by_identity is only ever
+# populated by load_identity_registry() after verify_registry_against_
+# evidence has already run and raised on any mismatch, so by the time
+# qualify_source_lead below reaches this flag, every link it could possibly
+# select against has already passed that cross-check -- there is nothing
+# further to gate here.
 #
-# research/gate-source-lead-registry-activation-v3 (PR 2 of 3): the
-# derivative-market evidence that flag's docstring asks for now exists
-# (research/source-lead-derivative-market-evidence-v1, merged) and a v3
-# registry backed by it is defined below (REGISTRY_VERSION_V3 etc.) and
-# provably loadable (load_identity_registry_v3, exercised by tests). This
-# PR deliberately does NOT flip ROUTE_EVIDENCE_INDEPENDENTLY_VERIFIED or
-# repoint load_identity_registry()/QUALIFICATION_VERSION/EVIDENCE_DIR at
-# v3 -- doing so here would change what every row SourceLeadCaptureWorker
-# writes right now records as identity_registry_version/fingerprint, while
-# qualification_version stays 'source_lead_qualified_capture_v2', which
-# would violate migration 0041's CHECK CONSTRAINT
-# (ck_source_lead_qualification_v2_registry_contract pins v2 rows to the
-# v2 fingerprint specifically) on the very next INSERT after this
-# deploys -- breaking live capture in production immediately. The v2 path
-# stays completely unexercised-by-this-PR/unchanged; QUALIFICATION_VERSION,
-# DEFAULT_REGISTRY_RESOURCE, EXPECTED_REGISTRY_VERSION,
-# EXPECTED_REGISTRY_FINGERPRINT, EVIDENCE_DIR, and this flag all move
-# together, atomically, in PR 3 -- the same commit that bumps
-# QUALIFICATION_VERSION to 'source_lead_qualified_capture_v3'. Migration
-# 0043 (permitting v3-tagged rows) already ships in this PR, inertly --
-# PR 3 is the first commit that actually writes a row it applies to.
-ROUTE_EVIDENCE_INDEPENDENTLY_VERIFIED = False
-
-# research/gate-source-lead-registry-activation-v3 (PR 2 of 3): the
-# evidence-backed v3 registry, defined now and provably loadable/verifiable
-# (load_identity_registry_v3 below), but not yet the live default -- see
-# ROUTE_EVIDENCE_INDEPENDENTLY_VERIFIED's docstring above for exactly why
-# switching DEFAULT_REGISTRY_RESOURCE/EXPECTED_REGISTRY_VERSION/
-# EXPECTED_REGISTRY_FINGERPRINT/EVIDENCE_DIR now (ahead of QUALIFICATION_
-# VERSION) would break live capture. Same 14 assets as v2; only the
-# evidence backing each link changed (asset identity evidence unchanged,
-# plus the new independently-verified derivative-market evidence from
-# research/source-lead-derivative-market-evidence-v1).
-REGISTRY_VERSION_V3 = "source_lead_identity_registry_v3"
-REGISTRY_RESOURCE_V3 = "registry/source_lead_identity_registry_v3.json"
-REGISTRY_FINGERPRINT_V3 = "9d36c41442261cfe4e608342378e2d83f96c78afd537de682698796e77733236"
+# Still not a full route-identity proof even now (see
+# _validate_route_evidence's own docstring in source_lead_identity_
+# evidence.py): neither public API bridges Binance's Alpha catalog entry to
+# its futures listing, or Gate's currency catalog to its futures contract,
+# by anything other than the shared ticker string. That residual risk is
+# accepted, not eliminated -- narrower than before this PR, not closed.
+ROUTE_EVIDENCE_INDEPENDENTLY_VERIFIED = True
 
 # Shared vocabulary for TargetObservation.identity_match_method -- defined
 # here (not in source_lead_capture.py, which imports these) because
@@ -461,23 +442,6 @@ def load_identity_registry() -> IdentityRegistry:
     return registry
 
 
-def load_identity_registry_v3() -> IdentityRegistry:
-    """Loads and fully verifies the v3 registry -- including the new
-    route-evidence cross-check -- without being the live path
-    load_identity_registry() (still v2) is. Exists so PR 2 can prove v3 is
-    valid and loadable now, exercised by tests/tooling, ahead of PR 3's
-    atomic switch (see ROUTE_EVIDENCE_INDEPENDENTLY_VERIFIED's own
-    docstring for exactly why the switch itself waits)."""
-    resource = files("schurfer_analytics").joinpath(REGISTRY_RESOURCE_V3)
-    registry = parse_identity_registry(
-        json.loads(resource.read_text(encoding="utf-8")),
-        expected_version=REGISTRY_VERSION_V3,
-        expected_fingerprint=REGISTRY_FINGERPRINT_V3,
-    )
-    verify_registry_against_evidence(registry.links_by_identity, evidence_dir=EVIDENCE_DIR_V3)
-    return registry
-
-
 def _finite_nonnegative(value: Any) -> float | None:
     try:
         parsed = float(value)
@@ -498,17 +462,18 @@ def qualify_source_lead(
     requested_notional = (
         float(target_observations[0].requested_notional_usd) if target_observations else 0.0
     )
-    # A capture from before the v2 registry existed must never be treated as
-    # v2-qualified prospective evidence, even if its identity happens to
+    # A capture from before the v3 registry existed must never be treated as
+    # v3-qualified prospective evidence, even if its identity happens to
     # satisfy the (later-populated) registry -- identity was not confirmed
     # in real time when the capture occurred, only retroactively. See
-    # IDENTITY_REGISTRY_V2_START's own docstring (colleague review,
-    # 2026-08-28). Checked first, before any identity lookup, so this can
-    # never be bypassed by a coincidental registry match.
-    if source_first_observed_at < IDENTITY_REGISTRY_V2_START:
+    # IDENTITY_REGISTRY_V3_START's own docstring (colleague review,
+    # 2026-08-28, applied again for the v3 cutover in PR 3). Checked first,
+    # before any identity lookup, so this can never be bypassed by a
+    # coincidental registry match.
+    if source_first_observed_at < IDENTITY_REGISTRY_V3_START:
         return QualificationResult(
             status="excluded",
-            reason="before_identity_registry_v2_activation",
+            reason="before_identity_registry_v3_activation",
             canonical_asset_id=None,
             selected_target_exchange=None,
             selected_round_trip_impact_bps=None,

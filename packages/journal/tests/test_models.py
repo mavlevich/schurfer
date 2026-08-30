@@ -389,6 +389,7 @@ class TestSourceLeadCaptureModels:
         assert "ck_source_lead_qualification_registry_fingerprint" in constraints
         assert "ck_source_lead_qualification_v1_registry_contract" in constraints
         assert "ck_source_lead_qualification_v2_registry_contract" in constraints
+        assert "ck_source_lead_qualification_v3_registry_contract" in constraints
 
 
 class TestTradeDecisionModels:

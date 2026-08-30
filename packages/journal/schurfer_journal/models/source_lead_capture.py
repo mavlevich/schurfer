@@ -234,6 +234,20 @@ class SourceLeadQualification(Base, TimestampMixin):
             "'757fd1327593d07ca27efe17a031ae0eab95bf6998aecc1ec26f0df38667dca0')",
             name="ck_source_lead_qualification_v2_registry_contract",
         ),
+        # Mirrors migration 0043 exactly (research/gate-source-lead-registry-
+        # activation-v3) -- colleague review, 2026-08-29/30, PR 3 review
+        # round: the v1 and v2 registry-contract constraints above were both
+        # already mirrored here when each version activated, but the v3 one
+        # migration 0043 created was never added to this model. A fresh
+        # schema built from Base.metadata.create_all() (rather than through
+        # alembic) would silently omit it.
+        CheckConstraint(
+            "qualification_version != 'source_lead_qualified_capture_v3' OR "
+            "(identity_registry_version = 'source_lead_identity_registry_v3' AND "
+            "identity_registry_fingerprint = "
+            "'9d36c41442261cfe4e608342378e2d83f96c78afd537de682698796e77733236')",
+            name="ck_source_lead_qualification_v3_registry_contract",
+        ),
         CheckConstraint(
             "(status = 'qualified' AND canonical_asset_id IS NOT NULL "
             "AND selected_target_exchange IS NOT NULL "

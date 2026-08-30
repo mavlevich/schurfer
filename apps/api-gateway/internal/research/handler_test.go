@@ -363,7 +363,6 @@ func TestQueriesPreserveResearchBoundaries(t *testing.T) {
 		"count(DISTINCT identity_registry_version)",
 		"IS DISTINCT FROM (identity_registry_fingerprint IS NULL)",
 		"exact_target_identities",
-		"qualification.qualification_version = 'source_lead_qualified_capture_v2'",
 		"AND source_first_observed_at >= $3",
 		"t.status = 'sampled' AND t.identity_verified",
 		"AND c.source_first_observed_at >= $3",
@@ -379,6 +378,15 @@ func TestQueriesPreserveResearchBoundaries(t *testing.T) {
 		if !strings.Contains(sourceLeadQueries, fragment) {
 			t.Fatalf("source-lead query missing %q", fragment)
 		}
+	}
+	// Colleague review, 2026-08-29/30, PR 3 review round: the qualification
+	// join must never be scoped to one qualification_version -- captures
+	// spans the full history, and a version-scoped join makes every
+	// pre-cutover capture's already-computed qualification disappear from
+	// every count the moment QUALIFICATION_VERSION bumps, even though
+	// nothing about that capture's own row changed.
+	if strings.Contains(sourceLeadProgressSQL, "qualification.qualification_version =") {
+		t.Fatal("qualification join must not be scoped to a single qualification_version")
 	}
 }
 

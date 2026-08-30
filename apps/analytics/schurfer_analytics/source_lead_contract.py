@@ -22,4 +22,24 @@ OPERATIONAL_COHORT_START = datetime(2026, 8, 2, tzinfo=UTC)
 # deploy -- a capture in the gap between midnight and actual deploy would
 # satisfy ">=" while the v2 code was not even running yet. Bump this to the
 # actual deploy date if it lands after this value; never move it earlier.
+#
+# Frozen history: this cutover is no longer live (research/gate-source-
+# lead-registry-activation-v3, PR 3 of 3, replaced it with
+# IDENTITY_REGISTRY_V3_START below), kept only because captures made under
+# it are still on disk and its own value must never move. Nothing in this
+# module's current code path reads it any more.
 IDENTITY_REGISTRY_V2_START = datetime(2026, 8, 30, tzinfo=UTC)
+
+# research/gate-source-lead-registry-activation-v3 (PR 3 of 3): replaces
+# IDENTITY_REGISTRY_V2_START as the live cutover, not stacked alongside it --
+# qualify_source_lead and capture_claimed_source_leads both switched to this
+# constant entirely. Deliberately later than IDENTITY_REGISTRY_V2_START, not
+# just a v3-flavored copy of the same date: a capture whose identity was
+# confirmed under registry v2 alone is not enough any more now that route
+# evidence for the derivative markets themselves is required
+# (ROUTE_EVIDENCE_INDEPENDENTLY_VERIFIED, source_lead_qualification.py) --
+# only a capture made at or after the v3 registry (with that route evidence)
+# was actually live may be treated as v3-qualified prospective evidence.
+# Same "bump to the actual deploy date if it lands later, never move it
+# earlier" rule as IDENTITY_REGISTRY_V2_START above.
+IDENTITY_REGISTRY_V3_START = datetime(2026, 9, 3, tzinfo=UTC)
