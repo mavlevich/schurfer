@@ -22,7 +22,7 @@ import { useToken } from '@/hooks/useTokenData';
 import { formatVolume } from '../../volume';
 import { Percent } from '@/components/ui/domain/Percent';
 import { Price } from '@/components/ui/domain/Price';
-import type { ExchangeEntry } from '../../types';
+import { isPumpEntry, type ExchangeEntry } from '../../types';
 
 const columnHelper = createColumnHelper<ExchangeEntry>();
 
@@ -99,7 +99,10 @@ function buildColumns(isLive: boolean) {
 }
 
 export function ExchangeBreakdown({ base }: { base: string }) {
-  const { data: pump, isPending, isError } = useToken(base);
+  const { data, isPending, isError } = useToken(base);
+  // A no-pump-episode response has no exchanges to break down --
+  // fix/token-activity-non-pump-assets-v1.
+  const pump = data && isPumpEntry(data) ? data : undefined;
   const [sorting, setSorting] = useState<SortingState>([{ id: 'volume_24h_usd', desc: true }]);
   const isLive = pump?.is_live ?? true;
   const columns = useMemo(() => buildColumns(isLive), [isLive]);

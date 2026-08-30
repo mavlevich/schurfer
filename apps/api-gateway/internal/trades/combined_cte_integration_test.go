@@ -30,7 +30,7 @@ func newTestUUID() string {
 // scanInto proves the handler's own filtering/sorting/origin-tagging logic, but only
 // a real pgx connection can catch a genuine NULL-scan mismatch between a nullable SQL
 // column and a non-pointer Go destination field -- exactly the class of bug that
-// crashed this endpoint in production (2026-08-16, see combinedTradesCTE's own doc
+// crashed this endpoint in production (2026-08-16, see CombinedTradesCTE's own doc
 // comment). Skips instead of failing when no Postgres is reachable; CI's own test-go
 // job runs a real Postgres service specifically so this is NOT skipped there.
 const testDatabaseURL = "postgres://schurfer:schurfer_dev@localhost:5432/schurfer"
@@ -56,7 +56,7 @@ func connectTestPool(t *testing.T) *pgxpool.Pool {
 // are nullable (NULL until that probe's own cost accounting completes -- a still-
 // open probe legitimately has neither yet), but tradeRow.FeesUSD/FundingUSD are
 // plain non-pointer float64, matching app.trades' own NOT NULL columns. Without the
-// COALESCE in combinedTradesCTE, scanning such a probe crashed the whole /api/trades
+// COALESCE in CombinedTradesCTE, scanning such a probe crashed the whole /api/trades
 // endpoint -- impossible to catch with the stub-based tests in handler_test.go, since
 // stubRows.Scan (unlike real pgx) treats a nil column value as a harmless zero, not
 // an error. Only a real Postgres connection reproduces the actual crash this query

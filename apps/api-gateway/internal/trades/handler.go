@@ -18,7 +18,7 @@ const (
 	defaultLimit = 50
 )
 
-// combinedTradesCTE unions app.trades (the pump-short strategy's own
+// CombinedTradesCTE unions app.trades (the pump-short strategy's own
 // live/dry-run execution ledger) with app.momentum_flow_paper_probes
 // (the momentum_flow WATCH->paper discovery instrumentation's own
 // simulated long positions) into one column shape, tagged by origin.
@@ -30,6 +30,24 @@ const (
 // this CTE (List and Stats below) must keep origin visible in its own
 // response so momentum_flow_paper rows are never silently presented as
 // if they were the already-promoted pump-short strategy's own trades.
+//
+// Exported so apps/api-gateway/internal/pumps's own Token handler can reuse
+// the exact same union to answer "does this base have activity in a
+// non-pump strategy at all" (fix/token-activity-non-pump-assets-v1) --
+// deliberately not reimplemented there, so the two never drift apart on
+// which tables/statuses count as "activity".
+//
+// normalized_base (colleague review, fix/token-activity-non-pump-assets-v1)
+// exists specifically for that base-matching use: app.trades.symbol is
+// always the CCXT-unified form ("DOGE/USDT:USDT", see
+// apps/execution/schurfer_execution/symbols.py's ExecutionInstrument), but
+// app.momentum_flow_paper_probes.symbol is the native, watch-time symbol
+// ("ERAUSDT") -- the unified form only exists in that table's own separate
+// unified_symbol column, written atomically with entry_status='opened' in
+// open_entry (momentum_flow_paper_repository.py), so it is always present
+// on every row this CTE's momentum_flow arm can return. Matching base
+// against plain `symbol` would silently never match a momentum_flow row;
+// normalized_base is the one column both arms can be filtered on uniformly.
 //
 // The momentum_flow side only includes entry_status = 'opened' probes: a
 // probe whose entry never actually filled (stale, quote_rejected,
@@ -76,7 +94,7 @@ const (
 // strategy_name="unknown". A LEFT JOIN (not INNER) so one hypothetically
 // missing app.strategies row degrades a single trade's identity to
 // "unknown" rather than dropping that trade from the page entirely.
-const combinedTradesCTE = `
+const CombinedTradesCTE = `
 	WITH combined AS (
 		SELECT
 			COALESCE(t.setup_context->>'strategy', 'pump_short') || ':' || t.id::text AS id,
@@ -100,7 +118,8 @@ const combinedTradesCTE = `
 			t.pnl_usd::float8 AS pnl_usd, t.pnl_pct::float8 AS pnl_pct,
 			t.accounting_version, t.accounting_status, t.accounting_error,
 			t.status, t.outcome_label,
-			t.setup_context, t.notes, t.created_at
+			t.setup_context, t.notes, t.created_at,
+			split_part(t.symbol, '/', 1) AS normalized_base
 		FROM app.trades t
 		LEFT JOIN app.strategies s ON s.id = t.strategy_id
 		UNION ALL
@@ -128,7 +147,8 @@ const combinedTradesCTE = `
 			coalesce(p.accounting_status, 'pending')::varchar AS accounting_status,
 			p.accounting_error,
 			p.position_status AS status, p.exit_reason AS outcome_label,
-			'{}'::jsonb AS setup_context, NULL::text AS notes, p.created_at
+			'{}'::jsonb AS setup_context, NULL::text AS notes, p.created_at,
+			split_part(p.unified_symbol, '/', 1) AS normalized_base
 		FROM app.momentum_flow_paper_probes p
 		WHERE p.entry_status = 'opened'
 	)
@@ -267,7 +287,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 
 	var total int
 	if err := h.pool.QueryRow(r.Context(),
-		combinedTradesCTE+"SELECT COUNT(*) FROM combined "+where, args...,
+		CombinedTradesCTE+"SELECT COUNT(*) FROM combined "+where, args...,
 	).Scan(&total); err != nil {
 		slog.Error("trades.count", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -277,7 +297,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	//nolint:gocritic
 	dataArgs := append(args, limit, offset)
 	n := len(dataArgs)
-	rows, err := h.pool.Query(r.Context(), combinedTradesCTE+`
+	rows, err := h.pool.Query(r.Context(), CombinedTradesCTE+`
 		SELECT id, origin, strategy_key, strategy_name, strategy_version, mode, exit_reason, symbol, exchange, market_type, side,
 		       size_usd, leverage,
 		       entry_price, entry_at,
@@ -532,7 +552,7 @@ func (h *Handler) Stats(w http.ResponseWriter, r *http.Request) {
 
 	var a statsAgg
 	row := h.pool.QueryRow(r.Context(),
-		combinedTradesCTE+"SELECT"+statsAggColumns+"\nFROM combined "+where, args...,
+		CombinedTradesCTE+"SELECT"+statsAggColumns+"\nFROM combined "+where, args...,
 	)
 	if err := scanStatsAggRow(row, &a); err != nil {
 		slog.Error("trades.stats", "err", err)
@@ -572,7 +592,7 @@ type byStrategyResponse struct {
 func (h *Handler) ByStrategy(w http.ResponseWriter, r *http.Request) {
 	where, args := statsFilterWhere(r.URL.Query())
 
-	rows, err := h.pool.Query(r.Context(), combinedTradesCTE+`
+	rows, err := h.pool.Query(r.Context(), CombinedTradesCTE+`
 		SELECT strategy_name, strategy_version,`+statsAggColumns+`
 		FROM combined `+where+`
 		GROUP BY strategy_name, strategy_version
