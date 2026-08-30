@@ -231,9 +231,12 @@ type SourceLeadProgress struct {
 	// review, 2026-08-28, second round). Flipped to True in
 	// research/gate-source-lead-registry-activation-v3 (PR 3 of 3), so this
 	// count is now purely historical -- no new row can be tagged this
-	// reason going forward. Every one of these rows carries its full
-	// would-have-selected venue/impact under its own details['would_select']
-	// in the database, not summarized here.
+	// reason going forward, but the qualification join above is not
+	// version-scoped (colleague review, PR 3 review round), so every
+	// pre-flip row still tagged this reason stays visible here rather than
+	// disappearing on deploy. Every one of these rows carries its full
+	// would-have-selected venue/impact under its own
+	// details['would_select'] in the database, not summarized here.
 	RouteEvidencePending        int                                 `json:"route_evidence_pending"`
 	SelectedBinance             int                                 `json:"selected_binance"`
 	SelectedBybit               int                                 `json:"selected_bybit"`
@@ -474,9 +477,26 @@ WITH captures AS (
 			  AND confirmation.first_seen_at <= captures.source_first_observed_at + interval '60 minutes'
 		) AS confirmed_within_hour
 	FROM captures
+	-- Not filtered to qualification_version = 'source_lead_qualified_capture_v3'
+	-- (colleague review, 2026-08-29/30, PR 3 review round): captures spans the
+	-- full history from sourceLeadStart, but a capture's own qualification row
+	-- is written exactly once, at capture time, tagged with whatever
+	-- QUALIFICATION_VERSION was live then (source_lead_qualification.py) --
+	-- ux_source_lead_qualification_capture_version enforces at most one row
+	-- per (capture_id, qualification_version), and application discipline
+	-- ("computed once, at capture time") never writes a second one under a
+	-- different version for the same capture. Filtering this join to only
+	-- the current version made every pre-cutover capture's already-computed
+	-- qualification (status/reason/selected exchange) disappear from every
+	-- count below the moment this code deploys, even though nothing about
+	-- that capture's own row changed -- a scope mismatch between the
+	-- full-history captures CTE and a version-scoped join. Joining
+	-- unconditionally keeps that history visible; the identity_registry_
+	-- version/fingerprint distinct-count logic further down already exists
+	-- to surface exactly this kind of multi-version window as "mixed", not
+	-- to silently hide it.
 	LEFT JOIN app.source_lead_qualifications AS qualification
 	  ON qualification.capture_id = captures.id
-	 AND qualification.qualification_version = 'source_lead_qualified_capture_v3'
 )
 SELECT
 	count(*),

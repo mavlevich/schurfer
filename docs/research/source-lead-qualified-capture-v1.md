@@ -1,8 +1,18 @@
 # Source lead qualified capture v1
 
-Status: qualification foundation only. The bundled reviewed identity registry is
-empty, no `gate_source_lead_4h_v1` cohort is registered, and no strategy settings
-may change from this contract.
+Status as of research/gate-source-lead-registry-activation-v3 (PR 3 of 3,
+2026-08-29/30): the reviewed identity registry is no longer empty. It carries 14
+canonical assets (28 gate/binance links), each backed by both on-chain asset-identity
+evidence (research/gate-source-lead-registry-activation-v2) and independently fetched
+derivative-market evidence (research/source-lead-derivative-market-evidence-v1),
+cross-checked at load time. `ROUTE_EVIDENCE_INDEPENDENTLY_VERIFIED` is `True` --
+`qualify_source_lead` can now actually return `status='qualified'`, for captures at or
+after `IDENTITY_REGISTRY_V3_START`. No `gate_source_lead_4h_v1` cohort is registered
+yet and no strategy settings may change from this contract alone -- registration still
+follows the boundary below. The rest of this document describes the mechanism, which
+is unchanged in shape across v1/v2/v3; version-specific numbers (registry version,
+fingerprint, cutoff) live in `source_lead_qualification.py` and
+`source_lead_contract.py`, not duplicated here.
 
 ## Purpose
 
@@ -14,10 +24,11 @@ time.
 
 ## Reviewed identity registry
 
-The packaged `source_lead_identity_registry_v1.json` is fail-closed, versioned,
-and pinned to a canonical SHA-256 fingerprint by the qualification contract and
-database constraint.
-Each approved link must contain:
+The packaged registry (`source_lead_identity_registry_v3.json` as of PR 3; see
+`DEFAULT_REGISTRY_RESOURCE` in `source_lead_qualification.py` for whichever version is
+actually live) is fail-closed, versioned, and pinned to a canonical SHA-256 fingerprint
+by the qualification contract and database constraint. Each approved link must
+contain:
 
 - one internal canonical asset id;
 - the exact exchange and versioned instrument identity key;
@@ -30,9 +41,12 @@ Equal base tickers, display names, or market ids never create an approval. Chang
 any link requires a new registry and qualification version plus a new forward UTC
 cutoff; existing qualification rows remain immutable.
 
-The initial registry intentionally has no links. This makes deployment testable
-without silently approving any asset. Captures will record
-`source_identity_unapproved` until reviewed links are added.
+The v1 registry intentionally shipped with no links, so deployment was testable
+without silently approving any asset -- every capture recorded
+`source_identity_unapproved` until reviewed links existed. The now-live v3 registry
+carries 14 approved canonical assets; a capture whose source or target identity is
+not one of those still records `source_identity_unapproved` exactly the same way,
+fail-closed by construction, not by an empty table.
 
 ## Identity review queue
 
@@ -73,10 +87,14 @@ and cannot call them simultaneous.
 
 Each result stores the qualification, registry, and selector versions plus the exact
 registry fingerprint; status and reason; canonical asset id; selected exchange and
-impact when qualified; notional; and per-target diagnostics. The readiness endpoint
-fails closed if it ever observes more than one registry version or fingerprint under
-the frozen qualification version. `identity_verified=false` on the original target
-quote remains correct and unchanged.
+impact when qualified; notional; and per-target diagnostics. The readiness endpoint's
+source-lead query is not scoped to one qualification version (colleague review,
+2026-08-29/30, PR 3 review round -- an earlier version was, which made every
+pre-cutover capture's already-computed qualification disappear from every count the
+moment the live qualification version bumped), so a window spanning a version
+activation genuinely can carry more than one registry version or fingerprint; the
+endpoint surfaces that as `identity_registry_mixed=true` rather than erroring.
+`identity_verified=false` on the original target quote remains correct and unchanged.
 
 ## Operational alert
 
