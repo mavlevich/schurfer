@@ -37,6 +37,18 @@ const (
 // deliberately not reimplemented there, so the two never drift apart on
 // which tables/statuses count as "activity".
 //
+// normalized_base (colleague review, fix/token-activity-non-pump-assets-v1)
+// exists specifically for that base-matching use: app.trades.symbol is
+// always the CCXT-unified form ("DOGE/USDT:USDT", see
+// apps/execution/schurfer_execution/symbols.py's ExecutionInstrument), but
+// app.momentum_flow_paper_probes.symbol is the native, watch-time symbol
+// ("ERAUSDT") -- the unified form only exists in that table's own separate
+// unified_symbol column, written atomically with entry_status='opened' in
+// open_entry (momentum_flow_paper_repository.py), so it is always present
+// on every row this CTE's momentum_flow arm can return. Matching base
+// against plain `symbol` would silently never match a momentum_flow row;
+// normalized_base is the one column both arms can be filtered on uniformly.
+//
 // The momentum_flow side only includes entry_status = 'opened' probes: a
 // probe whose entry never actually filled (stale, quote_rejected,
 // still pending) is not a position, so it has no place in a trades list.
@@ -106,7 +118,8 @@ const CombinedTradesCTE = `
 			t.pnl_usd::float8 AS pnl_usd, t.pnl_pct::float8 AS pnl_pct,
 			t.accounting_version, t.accounting_status, t.accounting_error,
 			t.status, t.outcome_label,
-			t.setup_context, t.notes, t.created_at
+			t.setup_context, t.notes, t.created_at,
+			split_part(t.symbol, '/', 1) AS normalized_base
 		FROM app.trades t
 		LEFT JOIN app.strategies s ON s.id = t.strategy_id
 		UNION ALL
@@ -134,7 +147,8 @@ const CombinedTradesCTE = `
 			coalesce(p.accounting_status, 'pending')::varchar AS accounting_status,
 			p.accounting_error,
 			p.position_status AS status, p.exit_reason AS outcome_label,
-			'{}'::jsonb AS setup_context, NULL::text AS notes, p.created_at
+			'{}'::jsonb AS setup_context, NULL::text AS notes, p.created_at,
+			split_part(p.unified_symbol, '/', 1) AS normalized_base
 		FROM app.momentum_flow_paper_probes p
 		WHERE p.entry_status = 'opened'
 	)

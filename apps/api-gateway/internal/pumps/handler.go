@@ -318,9 +318,11 @@ func (h *Handler) Token(w http.ResponseWriter, r *http.Request) {
 // app.momentum_flow_paper_probes union -- see that constant's own doc
 // comment for why the two must never drift apart. Returns ("", nil) -- not
 // an error -- when h.pool is nil or nothing matches, mirroring
-// dbTokenFallback's own convention. base is matched via the CCXT-unified
-// symbol convention every writer of these tables uses ("BASE/USDT:USDT",
-// see apps/execution/schurfer_execution/symbols.py's ExecutionInstrument).
+// dbTokenFallback's own convention. Matched against the CTE's own
+// normalized_base column (colleague review: matching plain `symbol`
+// against a CCXT-unified `base/%` pattern silently never matched any
+// momentum_flow_paper row, since that arm's own `symbol` column is a
+// native, non-unified form -- see CombinedTradesCTE's doc comment).
 func (h *Handler) otherStrategyActivity(ctx context.Context, base string) (string, error) {
 	if h.pool == nil {
 		return "", nil
@@ -329,7 +331,7 @@ func (h *Handler) otherStrategyActivity(ctx context.Context, base string) (strin
 	err := h.pool.QueryRow(ctx,
 		trades.CombinedTradesCTE+`
 		SELECT strategy_key FROM combined
-		WHERE symbol LIKE $1 || '/%'
+		WHERE normalized_base = $1
 		ORDER BY created_at DESC
 		LIMIT 1`,
 		base,
