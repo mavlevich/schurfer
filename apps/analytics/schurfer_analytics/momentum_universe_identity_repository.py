@@ -13,12 +13,19 @@ cluster/member table content atomically (one transaction) rather than
 diffing against the previous run. A base that stops cross-matching (e.g.
 one venue delists it) simply has no cluster row after the next run, not a
 stale leftover a caller has to know to ignore.
+
+instruments_as_of/universe_seen_in_window (research/token-universe-
+coverage-v1) read the SAME two tables across their full snapshot history
+rather than only the latest row -- see token_universe_coverage.py's own
+module doc comment for why this was added as a read against already-
+persisted history rather than new capture infrastructure.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     Column,
@@ -38,6 +45,10 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from .momentum_universe_identity_classifier import AssetCluster, CandidateInstrument
 from .outcome_repository import async_database_url
+from .token_universe_coverage import AsOfCoverage, SeenInstrument, WindowCoverage
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncConnection
 
 _metadata = MetaData()
 
@@ -107,6 +118,18 @@ def _utc(value: datetime) -> datetime:
     return value.astimezone(UTC)
 
 
+def _require_aware(value: datetime, name: str) -> None:
+    """Fail-fast guard for instruments_as_of/universe_seen_in_window's own
+    caller-supplied timestamps -- colleague review, round 3: comparing a
+    naive datetime against this table's own TIMESTAMPTZ columns would
+    silently assume a timezone (psycopg/SQLAlchemy's own behavior) rather
+    than fail loudly, and this method's whole contract (staleness relative
+    to a specific UTC instant) depends on the caller meaning what they
+    wrote."""
+    if value.tzinfo is None:
+        raise ValueError(f"{name} must be timezone-aware, got a naive datetime: {value!r}")
+
+
 @dataclass(frozen=True)
 class MatchRunSummary:
     exchanges_read: tuple[str, ...]
@@ -153,43 +176,291 @@ class MomentumUniverseIdentityRepository:
         recent" deterministic instead of leaving Postgres's LIMIT 1 to
         break the tie arbitrarily."""
         async with self._engine.connect() as connection:
-            latest_result = await connection.execute(
-                select(_snapshots.c.universe_version, _snapshots.c.catalog_version)
-                .where(_snapshots.c.exchange == exchange)
-                .order_by(desc(_snapshots.c.captured_at), desc(_snapshots.c.created_at))
-                .limit(1)
-            )
-            latest = latest_result.first()
-            if latest is None:
+            snapshot = await self._latest_snapshot(connection, exchange, at_or_before=None)
+            if snapshot is None:
                 return ()
-            universe_version, catalog_version = latest
+            universe_version, catalog_version, _captured_at = snapshot
+            return await self._ready_instruments(
+                connection, exchange, universe_version, catalog_version
+            )
+
+    async def instruments_as_of(self, exchange: str, as_of: datetime) -> AsOfCoverage:
+        """research/token-universe-coverage-v1: what was ready on exchange
+        at instant as_of, using the nearest snapshot captured at or before
+        as_of -- momentum_universe_snapshots only gets a new row when a
+        capture process restarts (irregular, not a fixed cadence), so this
+        is necessarily an approximation, never a guarantee that as_of's own
+        true listing state is reflected exactly. Returns
+        snapshot_captured_at=None (and an empty instrument set) when no
+        snapshot exists at or before as_of at all -- e.g. as_of predates
+        this exchange's capture process ever starting -- so a caller can
+        tell "no evidence either way" apart from "evidence says nothing was
+        ready", which token_universe_coverage.AsOfCoverage.is_usable is the
+        sanctioned way to check before trusting the result for a formal
+        read.
+
+        Raises ValueError if as_of is not timezone-aware -- comparing a
+        naive datetime against this table's own TIMESTAMPTZ columns would
+        silently assume a timezone rather than fail loudly."""
+        _require_aware(as_of, "as_of")
+        async with self._engine.connect() as connection:
+            snapshot = await self._latest_snapshot(connection, exchange, at_or_before=as_of)
+            if snapshot is None:
+                return AsOfCoverage(
+                    exchange=exchange,
+                    as_of=as_of,
+                    snapshot_captured_at=None,
+                    native_market_ids=frozenset(),
+                    identity_keys=frozenset(),
+                )
+            universe_version, catalog_version, captured_at = snapshot
+            instruments = await self._ready_instruments(
+                connection, exchange, universe_version, catalog_version
+            )
+            return AsOfCoverage(
+                exchange=exchange,
+                as_of=as_of,
+                snapshot_captured_at=captured_at,
+                native_market_ids=frozenset(i.native_market_id for i in instruments),
+                identity_keys=frozenset(i.identity_key for i in instruments),
+            )
+
+    async def universe_seen_in_window(
+        self,
+        exchange: str,
+        window_start: datetime,
+        window_end: datetime,
+        *,
+        max_carry_in_staleness: timedelta,
+    ) -> WindowCoverage:
+        """research/token-universe-coverage-v1: every distinct instrument
+        LIFE (keyed by identity_key -- see SeenInstrument's own doc comment
+        on why a bare native_market_id would wrongly merge a delisted-then-
+        relisted market id with its predecessor) that was
+        identity_status='ready' at some point covering [window_start,
+        window_end) -- the control-group universe research/serial-pump-
+        regimes-v1 needs (every asset that COULD have been a pump candidate
+        during the window, not only ones app.pump_events happened to
+        record), independent of whether it is still listed today.
+
+        Colleague review, round 2: snapshots captured_at INSIDE the window
+        alone are not enough -- an exchange's own last snapshot before
+        window_start still describes what was ready for the whole window
+        up to the next restart (which could land anywhere inside or after
+        the window, or not at all). Without that carry-in snapshot, a
+        window containing zero capture-process restarts returns an empty
+        universe even though hundreds of instruments were genuinely
+        eligible throughout. This method includes the nearest snapshot at
+        or before window_start alongside every snapshot actually captured
+        inside the window -- but ONLY when that carry-in is itself
+        admissibly fresh (within max_carry_in_staleness of window_start);
+        a stale or missing carry-in is reported via
+        WindowCoverage.carry_in_snapshot_captured_at/
+        carry_in_within_tolerance=False for diagnosis, but excluded from
+        `seen` rather than silently mixed into the universe as if it were
+        still representative. A caller MUST check carry_in_within_tolerance
+        (or the equivalent has_reliable_coverage property) before trusting
+        `seen` as complete window-start coverage. There is no codebase-wide
+        default for max_carry_in_staleness, matching AsOfCoverage.
+        is_usable's own reasoning: how stale is still "the same listing
+        state" is a research-contract decision for whichever report calls
+        this.
+
+        Every returned entry's own currently_ready is None (not yet
+        classified) -- this method does not itself look at the
+        current/latest snapshot (a window ending before "now" must not
+        silently leak "now"'s own listing state into its answer); pass
+        WindowCoverage.seen through token_universe_coverage.mark_currently_
+        ready with this exchange's own instruments_as_of("now")'s own
+        identity_keys to classify it and derive delisted() from it.
+
+        Colleague review, round 3: raises ValueError, fail-fast, on any of
+        window_start/window_end not timezone-aware, window_start >=
+        window_end (an empty or reversed interval), or a negative
+        max_carry_in_staleness -- none of these were checked before, so an
+        empty/reversed window could still return a non-empty `seen` purely
+        from the carry-in (window_end is never consulted when deciding the
+        carry-in), silently producing a denominator for an interval that
+        does not exist."""
+        _require_aware(window_start, "window_start")
+        _require_aware(window_end, "window_end")
+        if window_start >= window_end:
+            raise ValueError(
+                f"window_start ({window_start!r}) must be strictly before "
+                f"window_end ({window_end!r})"
+            )
+        if max_carry_in_staleness < timedelta(0):
+            raise ValueError(
+                f"max_carry_in_staleness must be non-negative, got {max_carry_in_staleness!r}"
+            )
+        async with self._engine.connect() as connection:
+            carry_in = await self._latest_snapshot(connection, exchange, at_or_before=window_start)
+            carry_in_captured_at = carry_in[2] if carry_in is not None else None
+            carry_in_within_tolerance = (
+                carry_in_captured_at is not None
+                and (window_start - carry_in_captured_at) <= max_carry_in_staleness
+            )
+
+            # Only an ADMISSIBLY FRESH carry-in (within max_carry_in_staleness
+            # of window_start) is actually used to populate `seen` -- a carry-in
+            # far outside tolerance is reported via carry_in_snapshot_captured_at
+            # / carry_in_within_tolerance=False for diagnostic purposes, but its
+            # own (possibly long-stale, possibly no-longer-representative)
+            # instrument set must not silently leak into the window's universe.
+            snapshot_keys: list[tuple[str, str]] = []
+            if carry_in is not None and carry_in_within_tolerance:
+                snapshot_keys.append((carry_in[0], carry_in[1]))
+            in_window_result = await connection.execute(
+                select(_snapshots.c.universe_version, _snapshots.c.catalog_version)
+                .where(
+                    _snapshots.c.exchange == exchange,
+                    _snapshots.c.captured_at >= window_start,
+                    _snapshots.c.captured_at < window_end,
+                )
+                .distinct()
+            )
+            for row in in_window_result.all():
+                key = (str(row.universe_version), str(row.catalog_version))
+                if key not in snapshot_keys:
+                    snapshot_keys.append(key)
+
+            if not snapshot_keys:
+                # No admissible snapshot at all (carry-in excluded for
+                # staleness or missing entirely, and nothing captured inside
+                # the window either) -- still report the actual carry-in
+                # diagnosis computed above, not a hardcoded None/False that
+                # would silently discard it even when a stale-but-real
+                # carry-in candidate exists.
+                return WindowCoverage(
+                    exchange=exchange,
+                    window_start=window_start,
+                    window_end=window_end,
+                    carry_in_snapshot_captured_at=carry_in_captured_at,
+                    carry_in_within_tolerance=carry_in_within_tolerance,
+                    seen=(),
+                )
+
+            snapshot_condition = (_snapshots.c.universe_version == snapshot_keys[0][0]) & (
+                _snapshots.c.catalog_version == snapshot_keys[0][1]
+            )
+            for universe_version, catalog_version in snapshot_keys[1:]:
+                snapshot_condition = snapshot_condition | (
+                    (_snapshots.c.universe_version == universe_version)
+                    & (_snapshots.c.catalog_version == catalog_version)
+                )
+
             rows_result = await connection.execute(
                 select(
+                    _instruments.c.identity_key,
                     _instruments.c.native_market_id,
                     _instruments.c.base,
                     _instruments.c.canonical_market_type,
-                    _instruments.c.identity_key,
-                    _instruments.c.onboarded_at,
+                    func.min(_snapshots.c.captured_at).label("first_seen_ready_at"),
+                    func.max(_snapshots.c.captured_at).label("last_seen_ready_at"),
+                )
+                .select_from(
+                    _instruments.join(
+                        _snapshots,
+                        (_snapshots.c.exchange == _instruments.c.exchange)
+                        & (_snapshots.c.universe_version == _instruments.c.universe_version)
+                        & (_snapshots.c.catalog_version == _instruments.c.catalog_version),
+                    )
                 )
                 .where(
                     _instruments.c.exchange == exchange,
-                    _instruments.c.universe_version == universe_version,
-                    _instruments.c.catalog_version == catalog_version,
                     _instruments.c.identity_status == "ready",
+                    snapshot_condition,
+                )
+                .group_by(
+                    _instruments.c.identity_key,
+                    _instruments.c.native_market_id,
+                    _instruments.c.base,
+                    _instruments.c.canonical_market_type,
                 )
                 .order_by(_instruments.c.native_market_id)
             )
-            return tuple(
-                CandidateInstrument(
+            seen = tuple(
+                SeenInstrument(
                     exchange=exchange,
+                    identity_key=str(row.identity_key),
                     native_market_id=str(row.native_market_id),
                     base=str(row.base),
                     canonical_market_type=str(row.canonical_market_type),
-                    identity_key=str(row.identity_key),
-                    onboarded_at=_utc(row.onboarded_at),
+                    first_seen_ready_at=_utc(row.first_seen_ready_at),
+                    last_seen_ready_at=_utc(row.last_seen_ready_at),
                 )
                 for row in rows_result.all()
             )
+            return WindowCoverage(
+                exchange=exchange,
+                window_start=window_start,
+                window_end=window_end,
+                carry_in_snapshot_captured_at=carry_in_captured_at,
+                carry_in_within_tolerance=carry_in_within_tolerance,
+                seen=seen,
+            )
+
+    async def _latest_snapshot(
+        self, connection: AsyncConnection, exchange: str, *, at_or_before: datetime | None
+    ) -> tuple[str, str, datetime] | None:
+        """Shared by latest_ready_instruments (at_or_before=None: no upper
+        bound) and instruments_as_of (at_or_before=as_of): the most recent
+        snapshot's own (universe_version, catalog_version, captured_at),
+        tie-broken the same captured_at-then-created_at way
+        latest_ready_instruments's own doc comment explains. None if no
+        snapshot matches at all."""
+        conditions = [_snapshots.c.exchange == exchange]
+        if at_or_before is not None:
+            conditions.append(_snapshots.c.captured_at <= at_or_before)
+        result = await connection.execute(
+            select(
+                _snapshots.c.universe_version,
+                _snapshots.c.catalog_version,
+                _snapshots.c.captured_at,
+            )
+            .where(*conditions)
+            .order_by(desc(_snapshots.c.captured_at), desc(_snapshots.c.created_at))
+            .limit(1)
+        )
+        row = result.first()
+        if row is None:
+            return None
+        return str(row.universe_version), str(row.catalog_version), _utc(row.captured_at)
+
+    async def _ready_instruments(
+        self,
+        connection: AsyncConnection,
+        exchange: str,
+        universe_version: str,
+        catalog_version: str,
+    ) -> tuple[CandidateInstrument, ...]:
+        rows_result = await connection.execute(
+            select(
+                _instruments.c.native_market_id,
+                _instruments.c.base,
+                _instruments.c.canonical_market_type,
+                _instruments.c.identity_key,
+                _instruments.c.onboarded_at,
+            )
+            .where(
+                _instruments.c.exchange == exchange,
+                _instruments.c.universe_version == universe_version,
+                _instruments.c.catalog_version == catalog_version,
+                _instruments.c.identity_status == "ready",
+            )
+            .order_by(_instruments.c.native_market_id)
+        )
+        return tuple(
+            CandidateInstrument(
+                exchange=exchange,
+                native_market_id=str(row.native_market_id),
+                base=str(row.base),
+                canonical_market_type=str(row.canonical_market_type),
+                identity_key=str(row.identity_key),
+                onboarded_at=_utc(row.onboarded_at),
+            )
+            for row in rows_result.all()
+        )
 
     async def persist_clusters(
         self,

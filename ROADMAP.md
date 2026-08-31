@@ -141,15 +141,47 @@ enabling change) slot.
 6. **Then, only if 5 is positive: bounded shadow capture** (BBO/L2, queue-aware
    potential fills, partial fills, opportunity loss, capacity) -- still no real
    orders.
-7. **Then, in parallel with 6, not gated on its result:
-   `research/token-universe-identity-and-expansion-v1`.** Canonical
-   on-chain/exchange identity instead of a bare ticker (`BTR`/`CATE`/
-   `JIMOTHY`/`ONG` and the rest) -- distinct tokens sharing a symbol must
-   never silently merge (e.g. 牛来 and NIULAI need independent proof, not
-   an assumed match); point-in-time listing/venue coverage; delisted
-   assets kept, not survivorship-filtered out; a control group of every
-   eligible token, not just past pump winners. Prerequisite for item 8,
-   not itself a profit/evidence result on its own.
+7. **[Done, `research/token-universe-coverage-v1`] Point-in-time listing
+   coverage and a non-survivorship-biased control group.** This item
+   originally read `research/token-universe-identity-and-expansion-v1`
+   and described canonical on-chain/exchange identity instead of a bare
+   ticker, plus never silently merging two distinct tokens sharing a
+   symbol (e.g. 牛来 vs. NIULAI). Before writing any code, that turned out
+   to already be fully implemented and merged --
+   `feat/momentum-universe-identity-foundation-v1` (2026-08-15) and
+   `feat/momentum-universe-identity-resolution-v1` (2026-08-17, worked
+   example verbatim: "`base=BTR` on two venues with close onboarding
+   dates is a candidate, not proof of the same asset"), both above under
+   Phase 1. **Read those two entries and
+   `docs/research/momentum-universe-identity-resolution-v1.md` before
+   registering any future item that sounds like "cross-venue instrument
+   identity" -- this item's own original text duplicated them by not
+   checking first.** The one real, verified gap this PR actually closed:
+   `app.momentum_universe_snapshots` only gets a new row on a
+   capture-process restart (irregular), so "was base X listed on venue E
+   at historical instant Y" and "every base that was ever a real
+   candidate during a window, including ones since delisted" were
+   unanswerable. `MomentumUniverseIdentityRepository.instruments_as_of`/
+   `universe_seen_in_window` plus the pure `token_universe_coverage.py`
+   (`mark_currently_ready`/`delisted`/`AsOfCoverage`/`WindowCoverage`)
+   close exactly that, reading only already-persisted snapshot history --
+   no schema change, no new capture. Colleague review, round 2, caught
+   two P1s that would have corrupted the exact denominator this item
+   exists to produce: the window query originally excluded the carry-in
+   snapshot before `window_start`, so a window with zero capture-process
+   restarts inside it reported an empty universe instead of the one
+   genuinely listed throughout (fixed: an admissibly-fresh carry-in, per
+   a required `max_carry_in_staleness`, is now included, with
+   `WindowCoverage.has_reliable_coverage` reporting when it is not); and
+   grouping was by bare `native_market_id` instead of `identity_key`, so
+   a market id delisted and later relisted under the same ticker would
+   have been merged with its predecessor (fixed: keyed by `identity_key`
+   throughout, matching this codebase's own existing identity system).
+   Both fixes are proven against real Postgres by tests written to
+   reproduce the original bugs. See
+   [token-universe-coverage-v1.md](docs/research/token-universe-coverage-v1.md).
+   Prerequisite for item 8, not itself a profit/evidence result on its
+   own.
 8. **Then: `research/serial-pump-regimes-v1`.** What to do after a first
    pump on a given asset -- hold or sell -- using every radar episode
    (not only ones that went on to "win"), recurrence count and

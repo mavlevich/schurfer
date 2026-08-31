@@ -153,6 +153,19 @@ round-trips them through `latest_ready_instruments` -> `classify` ->
 SQL. Skips (does not fail) when no Postgres is reachable, same convention
 as the Go integration tests.
 
+## Point-in-time coverage and delisted assets: see token-universe-coverage-v1
+
+This PR (and its own foundation PR) only ever read the LATEST snapshot per
+exchange. `research/token-universe-coverage-v1` (see
+[token-universe-coverage-v1.md](token-universe-coverage-v1.md)) adds
+`instruments_as_of`/`universe_seen_in_window` on the same repository for
+"was base X listed on venue E at a past instant" and "every base ever
+seen ready during a window, including ones since delisted" -- reading the
+same two tables' full history, not a new capture. If a future task sounds
+like "canonical identity" or "cross-venue matching," it is very likely
+already covered by this PR plus that one; read both before writing new
+code.
+
 ## What item 9 inherits
 
 - `app.momentum_universe_cluster_members` rows with `match_status =
