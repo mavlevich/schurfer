@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -64,16 +65,63 @@ func assign(dest, source any) error {
 	return fmt.Errorf("cannot assign %T to %T", source, dest)
 }
 
+// stubDB routes each QueryRow call to a canned response keyed by the
+// query's own identity: the SQL text itself, except for the two SQL
+// constants shared by more than one call site (latestReportSQL, reused
+// across three different contracts; sourceLeadTargetProgressSQL, reused
+// across two exchanges), which are additionally keyed by the
+// distinguishing bind argument -- see stubKey. Readiness's own sections
+// now run concurrently (errgroup, fix/research-readiness-handler-
+// concurrency-v1), so a plain FIFO queue keyed only by call order is no
+// longer valid: goroutine scheduling order is not guaranteed, and a
+// positional queue could hand a hyp_010 row to the hyp_008 caller, or
+// panic on an out-of-range pop under -race. Mutex-protected for the same
+// reason -- concurrent QueryRow calls now genuinely happen.
 type stubDB struct {
-	rows  []stubRow
-	calls []string
+	mu        sync.Mutex
+	responses map[string][]stubRow
+	calls     []string
 }
 
-func (db *stubDB) QueryRow(_ context.Context, sql string, _ ...any) pgxRow {
+// stubKey mirrors the args a caller passes closely enough to disambiguate
+// every call site this package's handler actually has, without needing to
+// know here which named Go function is calling -- the stub only ever sees
+// (sql, args). Falls back to sql alone (rather than panicking or a static
+// index) when a caller's own bug passes fewer args than the query expects
+// -- QueryRow's own resulting "no queued response" error is a much more
+// legible test failure than an index-out-of-range panic here.
+func stubKey(sql string, args []any) string {
+	switch {
+	case sql == latestReportSQL && len(args) > 0:
+		if contract, ok := args[0].(string); ok {
+			return sql + ":" + contract // contract
+		}
+	case sql == sourceLeadTargetProgressSQL && len(args) > 2:
+		if exchange, ok := args[2].(string); ok { //nolint:gosec // len(args) > 2 above guards this index
+			return sql + ":" + exchange // exchange
+		}
+	}
+	return sql
+}
+
+// latestReportKey and targetKey let tests build stubDB.responses without
+// duplicating stubKey's own argument-position knowledge.
+func latestReportKey(contract string) string { return stubKey(latestReportSQL, []any{contract}) }
+func targetKey(exchange string) string {
+	return stubKey(sourceLeadTargetProgressSQL, []any{nil, nil, exchange})
+}
+
+func (db *stubDB) QueryRow(_ context.Context, sql string, args ...any) pgxRow {
+	db.mu.Lock()
+	defer db.mu.Unlock()
 	db.calls = append(db.calls, sql)
-	row := db.rows[0]
-	db.rows = db.rows[1:]
-	return row
+	key := stubKey(sql, args)
+	queue := db.responses[key]
+	if len(queue) == 0 {
+		return stubRow{err: fmt.Errorf("stubDB: no queued response for %s", key)}
+	}
+	db.responses[key] = queue[1:]
+	return queue[0]
 }
 
 func testRedis(t *testing.T, fields map[string]string) (*redis.Client, func()) {
@@ -103,8 +151,8 @@ func serve(t *testing.T, handler *Handler) *httptest.ResponseRecorder {
 func TestReadinessSeparatesExactAndOperationalProgress(t *testing.T) {
 	now := time.Date(2026, time.July, 31, 12, 0, 0, 0, time.UTC)
 	meanDelta := 0.17
-	db := &stubDB{rows: []stubRow{
-		{values: []any{
+	db := &stubDB{responses: map[string][]stubRow{
+		latestReportKey(liquidTakerContract): {{values: []any{
 			liquidTakerContract,
 			"liquid_taker_forward_report_v1",
 			now.Add(-time.Hour),
@@ -118,9 +166,9 @@ func TestReadinessSeparatesExactAndOperationalProgress(t *testing.T) {
 			802,
 			296,
 			5,
-		}},
-		{err: pgx.ErrNoRows},
-		{values: []any{6, 6, 6, 6, meanDelta}},
+		}}},
+		latestReportKey(liquidTakerWiderContract): {{err: pgx.ErrNoRows}},
+		exitLiquidityProgressSQL:                  {{values: []any{6, 6, 6, 6, meanDelta}}},
 	}}
 	rdb, closeRedis := testRedis(t, map[string]string{
 		"updated_at_ms":            strconv64(now.Add(-time.Second).UnixMilli()),
@@ -182,6 +230,9 @@ func TestReadinessSeparatesExactAndOperationalProgress(t *testing.T) {
 		t.Fatalf("HYP-010 latest report: expected none registered in this fixture, got %#v",
 			payload.ProspectiveCohorts[1].LatestReport)
 	}
+	if payload.ExitLiquidity == nil {
+		t.Fatal("exit liquidity progress missing")
+	}
 	if got := payload.ExitLiquidity.ComparableObservations.Current; got != 6 {
 		t.Fatalf("exit comparable count: got %d", got)
 	}
@@ -204,19 +255,19 @@ func TestReadinessSeparatesExactAndOperationalProgress(t *testing.T) {
 
 func TestReadinessClosedCohortsSkipLiveQuery(t *testing.T) {
 	now := time.Date(2026, time.August, 30, 12, 0, 0, 0, time.UTC)
-	db := &stubDB{rows: []stubRow{
-		{err: pgx.ErrNoRows},
-		{err: pgx.ErrNoRows},
-		{values: []any{30, 29, 28, 20, nil}},
-		{values: []any{
+	db := &stubDB{responses: map[string][]stubRow{
+		latestReportKey(liquidTakerContract):      {{err: pgx.ErrNoRows}},
+		latestReportKey(liquidTakerWiderContract): {{err: pgx.ErrNoRows}},
+		exitLiquidityProgressSQL:                  {{values: []any{30, 29, 28, 20, nil}}},
+		sourceLeadProgressSQL: {{values: []any{
 			120, 115, 110, 5, 0, 0, 0, 0, 0, 0, 105, 100, 31, 4, 80,
 			20, 15, 0, 80, 20, 5, 12, 8, "source_lead_identity_registry_v1",
 			strings.Repeat("a", 64), false, now.Add(-time.Hour),
-		}},
-		{values: []any{105, 100, 3, 2, 900.0, 1_500.0, 4.0, 8.0, 2.0, 5.0}},
-		{values: []any{105, 99, 4, 2, 1_000.0, 1_700.0, 5.0, 9.0, 2.5, 5.5}},
-		{values: []any{`[]`}},
-		{err: pgx.ErrNoRows},
+		}}},
+		targetKey("binance"):                {{values: []any{105, 100, 3, 2, 900.0, 1_500.0, 4.0, 8.0, 2.0, 5.0}}},
+		targetKey("bybit"):                  {{values: []any{105, 99, 4, 2, 1_000.0, 1_700.0, 5.0, 9.0, 2.5, 5.5}}},
+		sourceLeadIdentityReviewSQL:         {{values: []any{`[]`}}},
+		latestReportKey(sourceLeadContract): {{err: pgx.ErrNoRows}},
 	}}
 	rdb, closeRedis := testRedis(t, nil)
 	defer closeRedis()
@@ -239,6 +290,9 @@ func TestReadinessClosedCohortsSkipLiveQuery(t *testing.T) {
 	if payload.Orderflow != nil {
 		t.Fatal("missing Redis health should produce null orderflow progress")
 	}
+	if payload.SourceLead == nil {
+		t.Fatal("source lead progress missing")
+	}
 	if payload.SourceLead.Status != "report_required" {
 		t.Fatalf("source-lead status: got %s", payload.SourceLead.Status)
 	}
@@ -255,16 +309,18 @@ func TestReadinessClosedCohortsSkipLiveQuery(t *testing.T) {
 
 func TestSourceLeadProgressExposesOperationalFailures(t *testing.T) {
 	now := time.Date(2026, time.August, 3, 12, 0, 0, 0, time.UTC)
-	db := &stubDB{rows: []stubRow{
-		{values: []any{
+	db := &stubDB{responses: map[string][]stubRow{
+		sourceLeadProgressSQL: {{values: []any{
 			12, 11, 9, 1, 2, 1, 1, 0, 1, 1, 8, 4, 6, 1, 3,
 			2, 1, 1, 5, 1, 4, 1, 1, "source_lead_identity_registry_v1",
 			strings.Repeat("a", 64), false, now.Add(-time.Hour),
-		}},
-		{values: []any{8, 7, 0, 1, 800.0, 1_400.0, 3.0, 7.0, 1.5, 4.0}},
-		{values: []any{8, 6, 1, 1, 900.0, 1_600.0, 4.0, 8.0, 2.0, 5.0}},
-		{values: []any{`[{"base":"ABC","source_identity_key":"gate:swap:ABC_USDT:1","captures":2,"first_observed_at":"2026-08-02T01:00:00Z","last_observed_at":"2026-08-03T01:00:00Z","executable_targets":"binance,bybit","exact_target_identities":2,"source_conflict":false}]`}},
-		{err: pgx.ErrNoRows},
+		}}},
+		targetKey("binance"): {{values: []any{8, 7, 0, 1, 800.0, 1_400.0, 3.0, 7.0, 1.5, 4.0}}},
+		targetKey("bybit"):   {{values: []any{8, 6, 1, 1, 900.0, 1_600.0, 4.0, 8.0, 2.0, 5.0}}},
+		sourceLeadIdentityReviewSQL: {{values: []any{
+			`[{"base":"ABC","source_identity_key":"gate:swap:ABC_USDT:1","captures":2,"first_observed_at":"2026-08-02T01:00:00Z","last_observed_at":"2026-08-03T01:00:00Z","executable_targets":"binance,bybit","exact_target_identities":2,"source_conflict":false}]`,
+		}}},
+		latestReportKey(sourceLeadContract): {{err: pgx.ErrNoRows}},
 	}}
 	handler := &Handler{db: db, now: func() time.Time { return now }}
 
@@ -314,20 +370,153 @@ func TestSourceLeadStatusFailsClosedOnMixedRegistryContract(t *testing.T) {
 	}
 }
 
-func TestReadinessFailsClosedOnDatabaseError(t *testing.T) {
-	db := &stubDB{rows: []stubRow{{err: fmt.Errorf("database unavailable")}}}
+// TestReadinessDegradesFailingSectionsInsteadOfFailingWhole is the core
+// regression for fix/research-readiness-handler-concurrency-v1: Readiness
+// used to fail the entire response with 500 the instant any one section's
+// DB query errored (the previous version of this test, TestReadiness
+// FailsClosedOnDatabaseError, asserted exactly that as the intended
+// behavior). Now each section runs independently -- one section's error
+// must degrade only that section to nil, and every other, successfully-
+// fetched section must still be served at 200.
+func TestReadinessDegradesFailingSectionsInsteadOfFailingWhole(t *testing.T) {
+	now := time.Date(2026, time.August, 30, 12, 0, 0, 0, time.UTC)
+	db := &stubDB{responses: map[string][]stubRow{
+		latestReportKey(liquidTakerContract):      {{err: pgx.ErrNoRows}},
+		latestReportKey(liquidTakerWiderContract): {{err: pgx.ErrNoRows}},
+		// exit_liquidity is the one section that fails here -- must degrade
+		// to nil, not take the whole response down with it.
+		exitLiquidityProgressSQL: {{err: fmt.Errorf("database unavailable")}},
+		sourceLeadProgressSQL: {{values: []any{
+			120, 115, 110, 5, 0, 0, 0, 0, 0, 0, 105, 100, 31, 4, 80,
+			20, 15, 0, 80, 20, 5, 12, 8, "source_lead_identity_registry_v1",
+			strings.Repeat("a", 64), false, now.Add(-time.Hour),
+		}}},
+		targetKey("binance"):                {{values: []any{105, 100, 3, 2, 900.0, 1_500.0, 4.0, 8.0, 2.0, 5.0}}},
+		targetKey("bybit"):                  {{values: []any{105, 99, 4, 2, 1_000.0, 1_700.0, 5.0, 9.0, 2.5, 5.5}}},
+		sourceLeadIdentityReviewSQL:         {{values: []any{`[]`}}},
+		latestReportKey(sourceLeadContract): {{err: pgx.ErrNoRows}},
+	}}
+	rdb, closeRedis := testRedis(t, nil)
+	defer closeRedis()
+	handler := &Handler{db: db, redis: rdb, now: func() time.Time { return now }}
+
+	response := serve(t, handler)
+	if response.Code != http.StatusOK {
+		t.Fatalf(
+			"status: got %d, want 200 (a single failing section must degrade, not 500 the endpoint); body %s",
+			response.Code, response.Body.String(),
+		)
+	}
+
+	var payload Response
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.ExitLiquidity != nil {
+		t.Fatalf("exit_liquidity: want nil (degraded) after its query errored, got %+v", payload.ExitLiquidity)
+	}
+	if payload.SourceLead == nil || payload.SourceLead.Status != "report_required" {
+		t.Fatalf(
+			"source_lead: want a successfully-populated section despite exit_liquidity's failure, got %+v",
+			payload.SourceLead,
+		)
+	}
+	for _, item := range payload.ProspectiveCohorts {
+		if item.Status != "closed" {
+			t.Fatalf("%s status: want closed regardless of exit_liquidity's failure, got %s", item.Key, item.Status)
+		}
+	}
+}
+
+// blockingRow implements pgxRow by blocking until ctx is done, then
+// returning ctx.Err() -- a genuinely hanging query, not just a slow one,
+// so TestReadinessSubcallTimeoutBoundsAHangingQuery proves subcallContext's
+// timeout actually cuts a section off rather than merely asserting the
+// code compiles to use one.
+type blockingRow struct{ ctx context.Context }
+
+func (r blockingRow) Scan(_ ...any) error {
+	<-r.ctx.Done()
+	return r.ctx.Err()
+}
+
+// blockingDB implements queryRower by handing back a blockingRow for
+// every call -- every DB-backed section hangs.
+type blockingDB struct{}
+
+func (blockingDB) QueryRow(ctx context.Context, _ string, _ ...any) pgxRow {
+	return blockingRow{ctx: ctx}
+}
+
+// TestReadinessSubcallTimeoutBoundsAHangingQuery is the other half of
+// fix/research-readiness-handler-concurrency-v1's regression coverage: the
+// 2026-08-29 production incident this fix exists to prevent was a single
+// 18.6s query (cohortProgressSQL, since removed) starving every section
+// behind it on the shared, unbounded request context, timing out the
+// whole endpoint against the server's 30s WriteTimeout. A hanging query
+// must now be cut off by its own subcallContext budget and degrade to nil
+// -- Readiness must return promptly, not hang for the life of the request.
+// Uses a tiny injected subcallTimeout so the test itself stays fast rather
+// than paying the full production budget.
+func TestReadinessSubcallTimeoutBoundsAHangingQuery(t *testing.T) {
+	const testTimeout = 50 * time.Millisecond
 	rdb, closeRedis := testRedis(t, nil)
 	defer closeRedis()
 	handler := &Handler{
-		db:    db,
-		redis: rdb,
+		db:             blockingDB{},
+		redis:          rdb,
+		subcallTimeout: testTimeout,
 		now: func() time.Time {
-			return time.Date(2026, time.July, 31, 12, 0, 0, 0, time.UTC)
+			return time.Date(2026, time.August, 30, 12, 0, 0, 0, time.UTC)
 		},
 	}
+
+	start := time.Now()
 	response := serve(t, handler)
-	if response.Code != http.StatusInternalServerError {
-		t.Fatalf("status: got %d", response.Code)
+	elapsed := time.Since(start)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf(
+			"status: got %d, want 200 (a hanging section must degrade, not hang the endpoint); body %s",
+			response.Code, response.Body.String(),
+		)
+	}
+	// This bound must actually distinguish concurrent from sequential
+	// execution, not just "eventually returns" (colleague review: the
+	// original 10x margin here passed even under a regression back to
+	// sequential calls, since 4 blocking sections x testTimeout each still
+	// fell well inside it). blockingDB hangs every h.db call: liquidReport,
+	// widerReport, exitProgress, and sourceLeadProgress's own first internal
+	// query each block for exactly testTimeout (orderflowProgress touches
+	// only Redis, never blocks). Sequential execution of those 4 sections
+	// has a hard floor of 4*testTimeout; running them concurrently keeps
+	// wall time close to 1*testTimeout regardless of how many there are.
+	// 2*testTimeout sits strictly between those two floors -- generous
+	// enough for scheduling jitter on one timeout window, provably
+	// insufficient for four sequential ones.
+	if elapsed > 2*testTimeout {
+		t.Fatalf(
+			"Readiness took %s for 4 concurrently-hanging sections with a %s each -- "+
+				"want close to one timeout window, not a multiple of it (sequential execution regression?)",
+			elapsed, testTimeout,
+		)
+	}
+
+	var payload Response
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.ExitLiquidity != nil {
+		t.Fatalf("exit_liquidity: want nil after its query hung past the timeout, got %+v", payload.ExitLiquidity)
+	}
+	if payload.SourceLead != nil {
+		t.Fatalf("source_lead: want nil after its query hung past the timeout, got %+v", payload.SourceLead)
+	}
+	if payload.ProspectiveCohorts[0].LatestReport != nil {
+		t.Fatalf(
+			"hyp_008 latest_report: want nil after its query hung past the timeout, got %+v",
+			payload.ProspectiveCohorts[0].LatestReport,
+		)
 	}
 }
 

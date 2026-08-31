@@ -3145,22 +3145,24 @@ net performance suitable for tax or risk accounting.
   already needs one, not as its own standalone restart.
 
 - `fix/research-health-freshness-v1`: Make health commands fail if container is stopped or generated_at is stale.
-- **Research `Readiness()` handler: sequential sub-queries, no per-call
-  timeout.** `apps/api-gateway/internal/research/handler.go`'s `Readiness()`
-  calls its independent DB/Redis-backed sub-functions (`exitLiquidityProgress`,
-  `sourceLeadProgress`, `latestReport`, `orderflowProgress`, plus whatever
-  cohort sections remain live) one after another on the shared `r.Context()`,
-  with no `errgroup`/goroutines and no explicit per-call timeout budget --
-  the whole chain shares the single `WriteTimeout` (30s,
-  `apps/api-gateway/cmd/api-gateway/main.go`). One slow section can starve
-  the rest and time out the entire endpoint, which is exactly what happened
-  with the now-removed `cohortProgressSQL` (see the 2026-08-29 liquid-taker
-  closeout above). Fix: `errgroup.WithContext` + `context.WithTimeout` per
-  sub-call, degrading that one section out of the response instead of
-  failing the whole request. Not urgent today (the remaining live sections
-  are not currently slow) -- worth doing as insurance against the same
-  incident class recurring on a different section as data volume grows.
-  Revisit and decide the concrete timeout budget when picked up.
+- ~~**Research `Readiness()` handler: sequential sub-queries, no per-call
+  timeout.**~~ **Done (fix/research-readiness-handler-concurrency-v1,
+  2026-08-31).** `apps/api-gateway/internal/research/handler.go`'s
+  `Readiness()` now runs its independent DB/Redis-backed sections
+  (`exitLiquidityProgress`, `sourceLeadProgress`, the two `latestReport`
+  calls, `orderflowProgress`) concurrently via `errgroup.WithContext`, each
+  under its own `context.WithTimeout` (`Handler.subcallContext`,
+  `defaultReadinessSubcallTimeout` = 8s, injectable per-`Handler` for
+  tests). A section's own DB/Redis error degrades only that section to
+  `nil` in the response (`ExitLiquidity`/`SourceLead` joined `Orderflow` as
+  nullable `Response` fields) instead of 500ing the whole endpoint --
+  regression-tested against both a failing section
+  (`TestReadinessDegradesFailingSectionsInsteadOfFailingWhole`) and a
+  section that hangs past its timeout budget
+  (`TestReadinessSubcallTimeoutBoundsAHangingQuery`, using an injected
+  50ms budget so the test itself stays fast). Frontend (`ResearchPage.tsx`)
+  renders "telemetry unavailable" for a `null` `exit_liquidity`/
+  `source_lead`, mirroring the pattern `orderflow` already used.
 - `chore/dependency-update-automation-v1`: Setup Dependabot for weekly grouped updates (CCXT separate from GitHub Actions) without auto-merge.
 - `fix/momentum-flow-live-freshness-v1`: Stop catch-up/backfill WATCH evaluations from entering the executable paper lane, expose `last_bucket_start -> now` lag and stale-rejection rate, and alert when the paper cohort has no completely accounted executable probes. Keep the 30-second quote deadline fail-closed.
 - `analysis/momentum-flow-stale-entry-counterfactual-v1`: Measure whether rejected stale WATCH decisions retain any after-cost edge at the actual late decision time using point-in-time captured bars. Treat reconstructed bar entry as descriptive only, never as an executable quote or promotion evidence; any viable delay contract requires a new prospective cohort.

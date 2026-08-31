@@ -165,9 +165,14 @@ export interface ResearchReadinessResponse {
   generated_at: string;
   interpretation: string;
   prospective_cohorts: ProspectiveCohort[];
-  exit_liquidity: ExitLiquidityProgress;
+  // exit_liquidity and source_lead are nullable for the same reason
+  // orderflow already was: Readiness runs each section concurrently with
+  // its own timeout budget (fix/research-readiness-handler-concurrency-v1)
+  // and degrades a slow or failing section to null instead of failing the
+  // whole response.
+  exit_liquidity: ExitLiquidityProgress | null;
   orderflow: OrderflowProgress | null;
-  source_lead: SourceLeadProgress;
+  source_lead: SourceLeadProgress | null;
   checkpoint_runner: CheckpointRunner | null;
 }
 
