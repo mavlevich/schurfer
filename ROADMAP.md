@@ -81,6 +81,116 @@ architecture cleanup, but must have an explicit file list and finish condition. 
 work follows the same rule: one coherent user workflow per PR, with backend contracts
 defined first and no empty navigation for capabilities that do not exist yet.
 
+### Near-term interleaving from 2026-08-31
+
+Supersedes the 2026-08-29 list below for current prioritization (retained as decision
+log, not current instruction). Written because that list drifted materially behind
+actual state: PR 1-3 of the source-lead derivative-market-evidence sequence
+(#313-315) are merged and `ROUTE_EVIDENCE_INDEPENDENTLY_VERIFIED = True` is live; the
+forward cohort it unlocked is registered (#316, `source_lead_forward_cohort_v1`,
+cohort start `2026-09-03`, earliest possible read `~2026-10-01` -- item 12 below); the
+OPG `/pumps/<TOKEN>` fix is merged and deployed (#317); this Readiness-concurrency PR
+is the current, last-queued support-slot item, not a future one. Applies the same
+WIP-limit rule: at most one primary (profit/evidence) and one support (bounded
+enabling change) slot.
+
+1. **Finish the current support PR:
+   `fix/research-readiness-handler-concurrency-v1`.** Close remaining review
+   findings, merge, deploy API + web. Once this lands, no further queued
+   support-slot item exists -- the support slot goes idle until something new
+   needs it, rather than immediately pulling in Markets/Assets catalog (item
+   11 below) ahead of primary-slot work.
+2. **Primary slot: finish `research/pump-analytics` (colleague-owned, not a new
+   branch).** Real state, verified directly against that branch's own
+   `docs/research/discovery-ledger.md`: HYP-017 (radar-outcome, WATCH as a
+   +25%-within-24h precursor) is `rejected` -- paired delta -1.06 pts, cluster
+   95% CI [-4.21, +1.63] crosses zero, p=0.53. HYP-016 (CEX taker-burst
+   activity) is `parked` / `report_not_produced_operationally_unresolved`, not
+   a negative result -- the single-query implementation correctly hit its 300s
+   statement timeout, and the chunked-query fix that avoided that timeout was
+   manually stopped after 12 minutes because it was degrading production
+   I/O/diagnostic latency, before any candidate count, effect, or p-value was
+   ever viewed. Neither verdict is itself a merge blocker; the colleague's own
+   outstanding review items are: restore the 100-episode evidence floor, bound
+   the radar query, add a positive burst-arithmetic test, fix biased control
+   matching, deduplicate direction/control primitives. Land those, keep
+   HYP-017 `rejected` and HYP-016 `parked` (never reframed as a negative
+   result), merge and deploy.
+3. **Then: `research/cex-activity-offline-denominator-v1`.** What HYP-016
+   actually needs to become answerable at all -- a point-in-time 5m/24h
+   relative-activity denominator computed off the production hot path (frozen
+   extract or offline replica), full instrument universe, a runtime bound that
+   cannot repeat the 12-minute production I/O incident. No Telegram, no live
+   capture; this is infrastructure for a discovery query, not a product.
+4. **Then: `research/cex-activity-discovery-completion-v1`.** Re-run HYP-016's
+   already-registered, pre-declared two-direction family (buy/sell,
+   Holm-corrected) on the now-computable denominator, full candidate universe,
+   the same already-viewed `2026-08-18` -> `2026-08-27` window (discovery-only,
+   permanently -- see HYP-016's own instruction not to re-view it as
+   confirmation). Selects at most one direction to freeze for a future
+   untouched forward cutoff, or closes the idea.
+5. **Then: `research/liquidation-maker-upper-bound-v1`.** Binance/Bybit
+   liquidation capture is live in production
+   (`schurfer-liquidation-capture-binance`/`-bybit`, both healthy) -- test
+   maker-style reversion on the accumulated liquidation-event history itself,
+   not the 2 live-paper trades this idea started from: independent episodes,
+   exact venue, a limit level fixed in advance, price merely touching that
+   level counted only as an optimistic potential fill (never an actual one),
+   costs, MFE/MAE, adverse selection. A negative result closes the direction
+   before any L2/shadow-capture infrastructure gets built for it.
+6. **Then, only if 5 is positive: bounded shadow capture** (BBO/L2, queue-aware
+   potential fills, partial fills, opportunity loss, capacity) -- still no real
+   orders.
+7. **Then, in parallel with 6, not gated on its result:
+   `research/token-universe-identity-and-expansion-v1`.** Canonical
+   on-chain/exchange identity instead of a bare ticker (`BTR`/`CATE`/
+   `JIMOTHY`/`ONG` and the rest) -- distinct tokens sharing a symbol must
+   never silently merge (e.g. 牛来 and NIULAI need independent proof, not
+   an assumed match); point-in-time listing/venue coverage; delisted
+   assets kept, not survivorship-filtered out; a control group of every
+   eligible token, not just past pump winners. Prerequisite for item 8,
+   not itself a profit/evidence result on its own.
+8. **Then: `research/serial-pump-regimes-v1`.** What to do after a first
+   pump on a given asset -- hold or sell -- using every radar episode
+   (not only ones that went on to "win"), recurrence count and
+   inter-episode intervals, venue expansion, BTC/market-adjusted return,
+   `15m`/`1h`/`4h`/`1d`/`7d`/`30d` horizons, MFE/MAE/time-to-peak/
+   retrace/delisting. The historical window stays discovery-only; any
+   confirmation runs on a new, untouched forward cutoff, never on the
+   window already viewed here.
+9. **Passively maturing in parallel, no PR needed yet:**
+   `research/pump-short-maker-entry-prospective-v1` (registered, item 11
+   below) around `2026-09-21`; `source_lead_forward_cohort_v1` (registered,
+   item 12 below) around `2026-10-01`. Freezing and implementing each
+   one's evaluator/report plumbing against synthetic fixtures now, before
+   either cohort matures, is exactly the right order -- the danger this
+   codebase's prospective-research discipline actually guards against is
+   building or changing an evaluator _after_ real, mature outcomes are
+   already visible (see `source_lead_forward_cohort_v1`'s own
+   `resolve_episode`/`formal_verdict`, already frozen this way, before
+   this same cohort's own start date). What must wait is the formal run:
+   reading either cohort's real result exactly once, at its own
+   pre-declared checkpoint/evidence floor, never earlier and never
+   re-peeked.
+10. **Deferred, explicitly not silently dropped: LBank-first sequencing.**
+    Named a registered money-first direction elsewhere in this document,
+    but it sits behind several data PRs and still has no exact native
+    historical OHLCV path (see
+    [CCXT-003](docs/tasks/ccxt/003-lbank-perpetual-ohlcv-research.md)) --
+    it does not compete for the primary slot until that gap closes.
+11. **Deprioritized, split into its own sequence, not started: Markets/
+    Assets catalog.** Unchanged from the 2026-08-29 list below -- still
+    starts only once the primary slot is not occupied by 2-8 above.
+12. **Execution-readiness gates, before any maker/live step above ever places a
+    real order:** exact partial-fill adoption (`executed_amount` as the
+    exchange's own value, cancel the remainder), crash/restart reconciliation,
+    an operational smoke test against authenticated read-only/trading-disabled
+    exchange clients. Live position reconciliation and `clientOrderId`-keyed
+    `submission_unknown` recovery are already implemented and merged (#299,
+    `apps/execution/schurfer_execution/reconciliation.py`/
+    `reconciliation_worker.py`/`order_attempts.py`) -- do not re-plan or
+    rebuild either.
+
 ### Near-term interleaving from 2026-08-29
 
 Supersedes the 2026-08-13 list below for current prioritization (retained as decision
@@ -3145,22 +3255,24 @@ net performance suitable for tax or risk accounting.
   already needs one, not as its own standalone restart.
 
 - `fix/research-health-freshness-v1`: Make health commands fail if container is stopped or generated_at is stale.
-- **Research `Readiness()` handler: sequential sub-queries, no per-call
-  timeout.** `apps/api-gateway/internal/research/handler.go`'s `Readiness()`
-  calls its independent DB/Redis-backed sub-functions (`exitLiquidityProgress`,
-  `sourceLeadProgress`, `latestReport`, `orderflowProgress`, plus whatever
-  cohort sections remain live) one after another on the shared `r.Context()`,
-  with no `errgroup`/goroutines and no explicit per-call timeout budget --
-  the whole chain shares the single `WriteTimeout` (30s,
-  `apps/api-gateway/cmd/api-gateway/main.go`). One slow section can starve
-  the rest and time out the entire endpoint, which is exactly what happened
-  with the now-removed `cohortProgressSQL` (see the 2026-08-29 liquid-taker
-  closeout above). Fix: `errgroup.WithContext` + `context.WithTimeout` per
-  sub-call, degrading that one section out of the response instead of
-  failing the whole request. Not urgent today (the remaining live sections
-  are not currently slow) -- worth doing as insurance against the same
-  incident class recurring on a different section as data volume grows.
-  Revisit and decide the concrete timeout budget when picked up.
+- ~~**Research `Readiness()` handler: sequential sub-queries, no per-call
+  timeout.**~~ **Done (fix/research-readiness-handler-concurrency-v1,
+  2026-08-31).** `apps/api-gateway/internal/research/handler.go`'s
+  `Readiness()` now runs its independent DB/Redis-backed sections
+  (`exitLiquidityProgress`, `sourceLeadProgress`, the two `latestReport`
+  calls, `orderflowProgress`) concurrently via `errgroup.WithContext`, each
+  under its own `context.WithTimeout` (`Handler.subcallContext`,
+  `defaultReadinessSubcallTimeout` = 8s, injectable per-`Handler` for
+  tests). A section's own DB/Redis error degrades only that section to
+  `nil` in the response (`ExitLiquidity`/`SourceLead` joined `Orderflow` as
+  nullable `Response` fields) instead of 500ing the whole endpoint --
+  regression-tested against both a failing section
+  (`TestReadinessDegradesFailingSectionsInsteadOfFailingWhole`) and a
+  section that hangs past its timeout budget
+  (`TestReadinessSubcallTimeoutBoundsAHangingQuery`, using an injected
+  50ms budget so the test itself stays fast). Frontend (`ResearchPage.tsx`)
+  renders "telemetry unavailable" for a `null` `exit_liquidity`/
+  `source_lead`, mirroring the pattern `orderflow` already used.
 - `chore/dependency-update-automation-v1`: Setup Dependabot for weekly grouped updates (CCXT separate from GitHub Actions) without auto-merge.
 - `fix/momentum-flow-live-freshness-v1`: Stop catch-up/backfill WATCH evaluations from entering the executable paper lane, expose `last_bucket_start -> now` lag and stale-rejection rate, and alert when the paper cohort has no completely accounted executable probes. Keep the 30-second quote deadline fail-closed.
 - `analysis/momentum-flow-stale-entry-counterfactual-v1`: Measure whether rejected stale WATCH decisions retain any after-cost edge at the actual late decision time using point-in-time captured bars. Treat reconstructed bar entry as descriptive only, never as an executable quote or promotion evidence; any viable delay contract requires a new prospective cohort.

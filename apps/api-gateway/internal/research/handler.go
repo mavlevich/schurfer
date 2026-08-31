@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -68,11 +69,27 @@ type redisHashReader interface {
 	HGetAll(ctx context.Context, key string) *redis.MapStringStringCmd
 }
 
+// defaultReadinessSubcallTimeout bounds each of Readiness's independent
+// sub-calls (see Handler.subcallContext). Chosen well under the server's
+// 30s WriteTimeout (apps/api-gateway/cmd/api-gateway/main.go) so that even
+// if every sub-call happens to be this slow at once, they run concurrently
+// rather than summed -- total wall time stays close to this single budget,
+// not a multiple of it. Not tied to any specific query's normal latency;
+// revisit if a legitimately slower query needs more room once it exists.
+const defaultReadinessSubcallTimeout = 8 * time.Second
+
 type Handler struct {
 	db             queryRower
 	redis          redisHashReader
 	now            func() time.Time
 	checkpointPath string
+	// subcallTimeout overrides defaultReadinessSubcallTimeout when positive
+	// -- zero-value (the common case: NewHandler always sets it, but a
+	// hand-built Handler{} in a test does not) falls back to the default in
+	// subcallContext, never to an instantly-expired zero timeout. Tests use
+	// this to prove Readiness actually bounds a hanging sub-call without
+	// paying the full production timeout in wall-clock test time.
+	subcallTimeout time.Duration
 }
 
 func NewHandler(pool *pgxpool.Pool, rdb *redis.Client) *Handler {
@@ -81,7 +98,20 @@ func NewHandler(pool *pgxpool.Pool, rdb *redis.Client) *Handler {
 		redis:          rdb,
 		now:            time.Now,
 		checkpointPath: os.Getenv("RESEARCH_CHECKPOINTS_PATH"),
+		subcallTimeout: defaultReadinessSubcallTimeout,
 	}
+}
+
+// subcallContext derives a per-sub-call timeout from parent (itself already
+// derived from the request context by errgroup.WithContext in Readiness),
+// so a sub-call is bounded by BOTH the client disconnecting/the request
+// context and its own timeout budget, whichever fires first.
+func (h *Handler) subcallContext(parent context.Context) (context.Context, context.CancelFunc) {
+	timeout := h.subcallTimeout
+	if timeout <= 0 {
+		timeout = defaultReadinessSubcallTimeout
+	}
+	return context.WithTimeout(parent, timeout)
 }
 
 type Milestone struct {
@@ -252,13 +282,18 @@ type SourceLeadProgress struct {
 }
 
 type Response struct {
-	GeneratedAt        time.Time               `json:"generated_at"`
-	Interpretation     string                  `json:"interpretation"`
-	ProspectiveCohorts []CohortProgress        `json:"prospective_cohorts"`
-	ExitLiquidity      ExitLiquidityProgress   `json:"exit_liquidity"`
-	Orderflow          *OrderflowProgress      `json:"orderflow"`
-	SourceLead         SourceLeadProgress      `json:"source_lead"`
-	CheckpointRunner   *CheckpointOrchestrator `json:"checkpoint_runner"`
+	GeneratedAt        time.Time        `json:"generated_at"`
+	Interpretation     string           `json:"interpretation"`
+	ProspectiveCohorts []CohortProgress `json:"prospective_cohorts"`
+	// ExitLiquidity and SourceLead are nullable for the same reason
+	// Orderflow already was: Readiness runs each section concurrently with
+	// its own timeout budget (fix/research-readiness-handler-concurrency-v1)
+	// and degrades a slow or failing section to nil instead of failing the
+	// whole response -- see Readiness's own doc comment.
+	ExitLiquidity    *ExitLiquidityProgress  `json:"exit_liquidity"`
+	Orderflow        *OrderflowProgress      `json:"orderflow"`
+	SourceLead       *SourceLeadProgress     `json:"source_lead"`
+	CheckpointRunner *CheckpointOrchestrator `json:"checkpoint_runner"`
 }
 
 type cohortCounts struct {
@@ -967,41 +1002,101 @@ func cohort(
 	}
 }
 
+// runSection launches fn on g under its own per-call timeout budget
+// (h.subcallContext) and sends fn's own result to a buffered channel of
+// capacity 1, returned for the caller to read once g.Wait() completes. A
+// non-nil err is logged under logKey and degrades the section to T's zero
+// value -- deliberately never returned to g itself, so one failing or slow
+// section can never cancel or fail the others (see Readiness's own doc
+// comment). Colleague review: this is the isolation mechanism itself, not
+// a convention layered on top of it -- a channel's send/receive is Go's
+// own happens-before guarantee, so even a future section carelessly added
+// to reuse another section's variable cannot reintroduce a data race the
+// way it could with N goroutines each assumed (by convention only) to
+// write exactly one shared local variable.
+func runSection[T any](
+	h *Handler, g *errgroup.Group, gCtx context.Context, logKey string,
+	fn func(ctx context.Context) (T, error),
+) <-chan T {
+	out := make(chan T, 1)
+	g.Go(func() error {
+		ctx, cancel := h.subcallContext(gCtx)
+		defer cancel()
+		result, err := fn(ctx)
+		if err != nil {
+			slog.Error(logKey, "err", err)
+			var zero T
+			out <- zero
+			return nil
+		}
+		out <- result
+		return nil
+	})
+	return out
+}
+
 // Readiness returns collection progress only. It deliberately does not run CCXT,
 // fetch market paths, or issue a strategy verdict.
+//
+// Each independent section below runs concurrently (errgroup.WithContext)
+// via runSection, under its own context.WithTimeout budget
+// (h.subcallTimeout via subcallContext, defaultReadinessSubcallTimeout
+// unless a test overrides it) -- fix/research-readiness-handler-
+// concurrency-v1, tech debt logged in ROADMAP.md against the 2026-08-29
+// production incident: the sequential, unbounded cohortProgressSQL query
+// (18.6s against production data volume) starved every section behind it
+// and timed out the whole endpoint. A section's own DB/Redis error is
+// caught and logged inside runSection and degrades only that section to
+// its zero value in the response -- it is deliberately never returned to
+// the errgroup itself, so one slow or failing section can never cancel or
+// fail the others. g.Wait()'s own error return is therefore not expected
+// to fire in normal operation; it exists only so that stays true if a
+// future section is added carelessly.
 func (h *Handler) Readiness(w http.ResponseWriter, r *http.Request) {
 	now := h.now().UTC()
 	checkpointRunner := readCheckpointOrchestrator(h.checkpointPath)
 	if checkpointRunner != nil {
 		checkpointRunner.Stale = checkpointSnapshotIsStale(now, checkpointRunner.GeneratedAt)
 	}
-	// hyp_008 and hyp_010 are permanently closed (do_not_promote, 2026-08-29 --
-	// see ROADMAP.md). Their live cohortProgressSQL query was removed; only
-	// the cheap, contract-indexed latest-report lookup still runs.
-	liquidReport, err := h.latestReport(r.Context(), liquidTakerContract)
-	if err != nil {
-		slog.Error("research.liquid_taker_latest_report", "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-	widerReport, err := h.latestReport(r.Context(), liquidTakerWiderContract)
-	if err != nil {
-		slog.Error("research.liquid_taker_wider_latest_report", "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-	exitProgress, err := h.exitLiquidityProgress(r.Context(), now)
-	if err != nil {
-		slog.Error("research.exit_liquidity_progress", "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-	sourceLeadProgress, err := h.sourceLeadProgress(r.Context(), now)
-	if err != nil {
-		slog.Error("research.source_lead_progress", "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
+
+	g, gCtx := errgroup.WithContext(r.Context())
+
+	// hyp_008 and hyp_010 are permanently closed (do_not_promote, 2026-08-29
+	// -- see ROADMAP.md). Their live cohortProgressSQL query was removed;
+	// only the cheap, contract-indexed latest-report lookup still runs.
+	liquidCh := runSection(h, g, gCtx, "research.liquid_taker_latest_report",
+		func(ctx context.Context) (*RegisteredReportRun, error) {
+			return h.latestReport(ctx, liquidTakerContract)
+		})
+	widerCh := runSection(h, g, gCtx, "research.liquid_taker_wider_latest_report",
+		func(ctx context.Context) (*RegisteredReportRun, error) {
+			return h.latestReport(ctx, liquidTakerWiderContract)
+		})
+	exitCh := runSection(h, g, gCtx, "research.exit_liquidity_progress",
+		func(ctx context.Context) (*ExitLiquidityProgress, error) {
+			progress, err := h.exitLiquidityProgress(ctx, now)
+			if err != nil {
+				return nil, err
+			}
+			return &progress, nil
+		})
+	sourceLeadCh := runSection(h, g, gCtx, "research.source_lead_progress",
+		func(ctx context.Context) (*SourceLeadProgress, error) {
+			progress, err := h.sourceLeadProgress(ctx, now)
+			if err != nil {
+				return nil, err
+			}
+			return &progress, nil
+		})
+	orderflowCh := runSection(h, g, gCtx, "research.orderflow_progress",
+		func(ctx context.Context) (*OrderflowProgress, error) {
+			return h.orderflowProgress(ctx, now), nil
+		})
+
+	_ = g.Wait()
+
+	liquidReport, widerReport := <-liquidCh, <-widerCh
+	exitProgress, sourceLead, orderflow := <-exitCh, <-sourceLeadCh, <-orderflowCh
 
 	liquidCohort := cohort(
 		"hyp_008",
@@ -1029,8 +1124,8 @@ func (h *Handler) Readiness(w http.ResponseWriter, r *http.Request) {
 		Interpretation:     "collection_progress_only_no_strategy_change",
 		ProspectiveCohorts: []CohortProgress{liquidCohort, widerCohort},
 		ExitLiquidity:      exitProgress,
-		Orderflow:          h.orderflowProgress(r.Context(), now),
-		SourceLead:         sourceLeadProgress,
+		Orderflow:          orderflow,
+		SourceLead:         sourceLead,
 		CheckpointRunner:   checkpointRunner,
 	}
 
