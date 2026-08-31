@@ -70,6 +70,7 @@ early-momentum-discovery-report = "schurfer_analytics.early_momentum_discovery_r
 token-behavior-discovery-report = "schurfer_analytics.token_behavior_discovery_report:main"
 momentum-universe-identity-match = "schurfer_analytics.momentum_universe_identity_matcher:main"
 token-universe-coverage-report = "schurfer_analytics.token_universe_coverage_report:main"
+serial-pump-regimes-report = "schurfer_analytics.serial_pump_regimes_report:main"
 liquidation-cascade-validation-report = "schurfer_analytics.liquidation_cascade_validation_report:main"
 early-momentum-net-evidence-report = "schurfer_analytics.early_momentum_net_evidence_report:main"
 early-momentum-prospective-cohort-report = "schurfer_analytics.early_momentum_prospective_cohort_report:main"

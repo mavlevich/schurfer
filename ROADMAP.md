@@ -182,14 +182,117 @@ enabling change) slot.
    [token-universe-coverage-v1.md](docs/research/token-universe-coverage-v1.md).
    Prerequisite for item 8, not itself a profit/evidence result on its
    own.
-8. **Then: `research/serial-pump-regimes-v1`.** What to do after a first
-   pump on a given asset -- hold or sell -- using every radar episode
+8. **[Done, `research/serial-pump-regimes-v1`, after two colleague-review
+   rounds of five P1 fixes each] What happened after a first pump on a
+   given asset -- using every radar episode
    (not only ones that went on to "win"), recurrence count and
    inter-episode intervals, venue expansion, BTC/market-adjusted return,
    `15m`/`1h`/`4h`/`1d`/`7d`/`30d` horizons, MFE/MAE/time-to-peak/
-   retrace/delisting. The historical window stays discovery-only; any
+   retrace/delisting.** Discovery-only, no verdict -- explicit user
+   decision; the historical window stays discovery-only, any future
    confirmation runs on a new, untouched forward cutoff, never on the
-   window already viewed here.
+   window already viewed here. Before writing any new merging logic,
+   found that "every radar episode, recurrence count and inter-episode
+   intervals" was already built and colleague-review-hardened in
+   `pump_recurrence_integrity_report.py`'s own `Episode`/`Regime`/
+   `merge_episodes_into_regimes` -- reused directly via
+   `PumpRecurrenceIntegrityRepository.load()` rather than reimplemented.
+   New code: `serial_pump_regimes.py` (pure forward-outcome resolution)
+   and `serial_pump_regimes_report.py` (I/O + `make serial-pump-regimes-
+report`/`make prod-serial-pump-regimes-report`, no required bound -- an
+   explicit user decision to keep the default an unbounded run). Venue
+   expansion reuses item 7's own `instruments_as_of`. OHLCV fetched live
+   via the existing cached `ohlcv.fetch_symbol_candles`, not a new frozen
+   dataset -- an explicit user decision, to keep the report runnable
+   against the live, growing regime population.
+   **First colleague-review round (2026-09-01) found five P1s in the
+   first draft, all fixed** -- see
+   [serial-pump-regimes-v1.md](docs/research/serial-pump-regimes-v1.md)
+   for the full account: (1) the decision instant was anchored to
+   `regime.last_seen_at`, a running maximum a future episode can still
+   extend, answering "after the last episode once the regime is fully
+   formed" rather than item 8's own "after a FIRST pump" -- fixed by
+   anchoring `decision_boundary_ms` to `regime.first_seen_at` instead,
+   which is set once and never revised by a later merge; (2) entry price
+   used the boundary candle's own CLOSE, only known a full timeframe
+   after the decision instant -- a look-ahead -- fixed to use that
+   candle's OPEN, known instantly; (3) OHLCV/venue-expansion identity was
+   picked from a bare `base` ticker (`fetch_candles` reconstructing
+   `f"{base}/USDT:USDT"`), exactly the class of bug the identity
+   foundation/resolution PRs and the recurrence-integrity audit exist to
+   prevent -- fixed via `_resolve_regime_identities` (requires every
+   `SourceIdentityObservation` for a regime's own episodes, per exchange,
+   to agree on one `identity_key`/`unified_symbol` with no
+   `identity_conflict`, else fails closed) feeding `fetch_symbol_candles`
+   an already-resolved unified symbol; (4) a horizon resolved as long as
+   the tail candle reached far enough, even with a leading or internal
+   gap in the path -- fixed with an exact gapless-sequence check
+   (`ohlcv.covers_window_without_gaps`, made public for this reuse),
+   split into distinct `leading_candle_gap`/`internal_candle_gap`
+   reasons; (5) venue expansion's `ready_after` check could read a
+   still-future instant as if today's current snapshot were already the
+   answer -- fixed with an `evaluation_at` parameter gating the check to
+   `after_at_matured=False`/`ready_after=None` whenever the 30-day-
+   forward point has not actually occurred yet. Two P2s also fixed: one
+   regime's own OHLCV fetch failure used to propagate through
+   `asyncio.gather` and lose the whole run's already-completed work
+   (fixed: per-regime try/except -> `ohlcv_fetch_failed`, plus
+   `concurrency <= 0` now rejected before it could hang a
+   `Semaphore(0)` forever); and reproducibility metadata was incomplete
+   (`make serial-pump-regimes-report` never passed `--code-revision`/
+   `--working-tree-dirty`, and `input_fingerprint` only covered episodes,
+   not the identity observations that also determine exchange/symbol
+   choice -- both fixed). A real bug (`render_json` stringifying the
+   entire report via `repr()` instead of producing real nested JSON,
+   `json_ready` never handling a bare dataclass) was separately caught by
+   a live smoke run against real data before the colleague review, not by
+   the unit tests written before that run -- fixed and covered by two
+   regression tests that parse the rendered JSON back and inspect
+   individual fields.
+   **Second colleague-review round (2026-09-01) found five more P1s in
+   the round-1 identity/venue-expansion machinery itself, all fixed** --
+   see [serial-pump-regimes-v1.md](docs/research/serial-pump-regimes-v1.md)
+   for the full account: (1) identity resolution still ran over a
+   regime's FULL episode set, so a much-later merged episode's own first
+   identity observation could get used to pick an earlier decision
+   instant's OHLCV exchange -- a "future-known route selection" look-
+   ahead round 1's own first_seen_at anchor made more likely to bite, not
+   less -- fixed by restricting identity resolution to episodes already
+   known by the decision boundary; (2) the resolver silently dropped an
+   observation with a `None` identity_key instead of treating it as
+   evidence of an incomplete observation, and never checked `base_asset`
+   at all -- fixed by reusing `pump_recurrence_integrity_report.
+   identity_reason` (already built, already reviewed) instead of a
+   second, weaker check; (3) recurrence counting is still ticker-based
+   (an accepted characteristic of the reused `merge_episodes_into_regimes`,
+   not rearchitected) but now carries a disclosed
+   `next_regime_same_asset` overlay confirming or refuting same-asset
+   identity per recurrence link, rather than presenting every same-base
+   regime pair with unstated confidence; (4) venue expansion only checked
+   readiness on an exchange this regime already had a source-derived
+   identity on -- structurally excluding the exact "first-time listing on
+   a new venue" case the feature exists to detect -- fixed with a
+   disclosed two-tier match (`identity_key` when available, a
+   ticker-based fallback when not, both reported via
+   `VenueExpansionEntry.match_basis`); (5) `MarketPathCacheCorruptError`/
+   `MarketPathCacheWriteError` were swallowed by the same generic
+   per-regime except that also wrongly discarded already-computed
+   horizon outcomes on a venue-expansion-only failure -- fixed by letting
+   the two cache exceptions propagate and fail the whole run loudly (per
+   `market_path_cache.py`'s own contract), and giving venue expansion its
+   own separate try/except downstream of the horizons. Three more P2s:
+   markdown output used to surface only per-horizon medians, hiding
+   almost everything else the report computes -- now includes a
+   `## Regimes` table and a `## Horizon detail` table; `input_fingerprint`
+   ignored the `--base` filter for identity observations -- now narrowed
+   to the retained episodes' own event_ids; and the "hold or sell"
+   framing overclaimed economically (gross returns only, no
+   spread/fees/slippage/funding) -- now disclosed in the module
+   docstring, the CLI's own `--help`, and the rendered markdown header,
+   naming `packages/performance`'s `calculate_performance`/
+   `CostParameters` (already used by `source_lead_forward_cohort.py`) as
+   the required follow-up before any number here is read as an economic
+   recommendation. 77 tests total (up from 34).
 9. **Passively maturing in parallel, no PR needed yet:**
    `research/pump-short-maker-entry-prospective-v1` (registered, item 11
    below) around `2026-09-21`; `source_lead_forward_cohort_v1` (registered,

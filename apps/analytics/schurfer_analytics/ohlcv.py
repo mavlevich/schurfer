@@ -148,7 +148,7 @@ def closed_candles(
     ]
 
 
-def _covers_window_without_gaps(
+def covers_window_without_gaps(
     candles: list[Candle],
     start_ms: int,
     end_ms: int,
@@ -156,6 +156,16 @@ def _covers_window_without_gaps(
 ) -> bool:
     """True only if `candles` is the EXACT, gapless bar sequence
     `[first_expected_bar, ..., last_expected_bar]` for `[start_ms, end_ms)`.
+
+    Public (not `fetch_symbol_candles`-private) because a caller building its
+    own resolved outcome from an already-fetched candle series -- e.g.
+    `serial_pump_regimes.resolve_horizon_outcome` -- needs the exact same
+    gap check `fetch_symbol_candles` uses to decide whether a result is
+    cache-worthy: reaching `cursor >= end_ms` proves the fetch loop paged
+    through the whole window, but not that every bar inside it actually
+    arrived (a leading or internal gap is invisible to that check alone),
+    and a second, independently-written gap check here could silently drift
+    from this one.
 
     `fetch_symbol_candles` reaching `cursor >= end_ms` proves the loop asked
     for and received pages spanning the whole window, but not that every
@@ -504,10 +514,10 @@ async def fetch_symbol_candles(
         use_cache
         and exchange_id
         and reached_full_window
-        and _covers_window_without_gaps(result, start_ms, end_ms, timeframe_ms)
+        and covers_window_without_gaps(result, start_ms, end_ms, timeframe_ms)
     ):
         # Only a window proven gapless (reached_full_window AND no leading/
-        # internal gap -- see _covers_window_without_gaps's own docstring)
+        # internal gap -- see covers_window_without_gaps's own docstring)
         # is cached. An empty-page-after-retries or cursor-stall partial
         # result is deliberately never cached: this function's own
         # docstring already admits that case is not distinguishable from
