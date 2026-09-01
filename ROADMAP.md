@@ -1,6 +1,45 @@
 # Roadmap
 
-> Living document. Updated as we progress. Last refreshed 2026-08-29.
+> Living document. Updated as we progress. Last refreshed 2026-09-01.
+
+## Current focus
+
+Update only these four lines after every merge -- this is the fast-path
+status check, not a place for narrative.
+
+```
+Current primary: research/pump-analytics (PR #297) / HYP-016
+State: review_fixes
+Next after current primary merges: research/cex-activity-offline-denominator-v1
+User decision required: no
+```
+
+## Autonomy rules (when to just proceed, when to ask)
+
+"Primary slot" / "support slot" (see the WIP limits below) are a
+parallelism cap, not a permission gate -- do not stop and ask just because
+a slot is occupied. Use this order:
+
+- **Next PR is unambiguous and its prerequisites are met** -- start it,
+  no question needed.
+- **Current PR is in review** -- fix the findings; this is still the same
+  slot, not a new one.
+- **Primary is idle waiting on data/cohort maturity to accumulate** -- the
+  slot is free for the next independent profit/evidence item; take it.
+- **Primary depends on someone else's PR** -- help land that PR (fix
+  review findings on request) or take a support-slot item. Do not open a
+  third research direction while two are already active (see the WIP
+  limits below) -- that repeats the exact mistake this rule exists to
+  prevent.
+- **Ask the user only when**: choosing hypothesis parameters that aren't
+  already frozen, accepting additional identity/collision risk, enabling
+  live trading, or performing any production mutation or deployment.
+- **A referenced hypothesis/contract isn't found where expected** --
+  search every active branch (including open PRs not yet merged, e.g. via
+  `git fetch origin <branch>`) before concluding it's missing. If it
+  genuinely isn't registered anywhere, register it as part of the current
+  primary slot -- preferably in the current branch -- rather than opening
+  another research direction.
 
 ## Guiding principle
 
