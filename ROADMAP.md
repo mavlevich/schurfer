@@ -1,6 +1,45 @@
 # Roadmap
 
-> Living document. Updated as we progress. Last refreshed 2026-08-13.
+> Living document. Updated as we progress. Last refreshed 2026-09-01.
+
+## Current focus
+
+Update only these four lines after every merge -- this is the fast-path
+status check, not a place for narrative.
+
+```
+Current primary: research/pump-analytics (PR #297) / HYP-016
+State: review_fixes
+Next after current primary merges: research/cex-activity-offline-denominator-v1
+User decision required: no
+```
+
+## Autonomy rules (when to just proceed, when to ask)
+
+"Primary slot" / "support slot" (see the WIP limits below) are a
+parallelism cap, not a permission gate -- do not stop and ask just because
+a slot is occupied. Use this order:
+
+- **Next PR is unambiguous and its prerequisites are met** -- start it,
+  no question needed.
+- **Current PR is in review** -- fix the findings; this is still the same
+  slot, not a new one.
+- **Primary is idle waiting on data/cohort maturity to accumulate** -- the
+  slot is free for the next independent profit/evidence item; take it.
+- **Primary depends on someone else's PR** -- help land that PR (fix
+  review findings on request) or take a support-slot item. Do not open a
+  third research direction while two are already active (see the WIP
+  limits below) -- that repeats the exact mistake this rule exists to
+  prevent.
+- **Ask the user only when**: choosing hypothesis parameters that aren't
+  already frozen, accepting additional identity/collision risk, enabling
+  live trading, or performing any production mutation or deployment.
+- **A referenced hypothesis/contract isn't found where expected** --
+  search every active branch (including open PRs not yet merged, e.g. via
+  `git fetch origin <branch>`) before concluding it's missing. If it
+  genuinely isn't registered anywhere, register it as part of the current
+  primary slot -- preferably in the current branch -- rather than opening
+  another research direction.
 
 ## Guiding principle
 
@@ -80,6 +119,316 @@ dedicated documentation PR is justified for cross-cutting drift, navigation, or
 architecture cleanup, but must have an explicit file list and finish condition. UI
 work follows the same rule: one coherent user workflow per PR, with backend contracts
 defined first and no empty navigation for capabilities that do not exist yet.
+
+### Near-term interleaving from 2026-08-31
+
+Supersedes the 2026-08-29 list below for current prioritization (retained as decision
+log, not current instruction). Written because that list drifted materially behind
+actual state: PR 1-3 of the source-lead derivative-market-evidence sequence
+(#313-315) are merged and `ROUTE_EVIDENCE_INDEPENDENTLY_VERIFIED = True` is live; the
+forward cohort it unlocked is registered (#316, `source_lead_forward_cohort_v1`,
+cohort start `2026-09-03`, earliest possible read `~2026-10-01` -- item 12 below); the
+OPG `/pumps/<TOKEN>` fix is merged and deployed (#317); this Readiness-concurrency PR
+is the current, last-queued support-slot item, not a future one. Applies the same
+WIP-limit rule: at most one primary (profit/evidence) and one support (bounded
+enabling change) slot.
+
+1. **Finish the current support PR:
+   `fix/research-readiness-handler-concurrency-v1`.** Close remaining review
+   findings, merge, deploy API + web. Once this lands, no further queued
+   support-slot item exists -- the support slot goes idle until something new
+   needs it, rather than immediately pulling in Markets/Assets catalog (item
+   11 below) ahead of primary-slot work.
+2. **Primary slot: finish `research/pump-analytics` (colleague-owned, not a new
+   branch).** Real state, verified directly against that branch's own
+   `docs/research/discovery-ledger.md`: HYP-017 (radar-outcome, WATCH as a
+   +25%-within-24h precursor) is `rejected` -- paired delta -1.06 pts, cluster
+   95% CI [-4.21, +1.63] crosses zero, p=0.53. HYP-016 (CEX taker-burst
+   activity) is `parked` / `report_not_produced_operationally_unresolved`, not
+   a negative result -- the single-query implementation correctly hit its 300s
+   statement timeout, and the chunked-query fix that avoided that timeout was
+   manually stopped after 12 minutes because it was degrading production
+   I/O/diagnostic latency, before any candidate count, effect, or p-value was
+   ever viewed. Neither verdict is itself a merge blocker; the colleague's own
+   outstanding review items are: restore the 100-episode evidence floor, bound
+   the radar query, add a positive burst-arithmetic test, fix biased control
+   matching, deduplicate direction/control primitives. Land those, keep
+   HYP-017 `rejected` and HYP-016 `parked` (never reframed as a negative
+   result), merge and deploy.
+3. **Then: `research/cex-activity-offline-denominator-v1`.** What HYP-016
+   actually needs to become answerable at all -- a point-in-time 5m/24h
+   relative-activity denominator computed off the production hot path (frozen
+   extract or offline replica), full instrument universe, a runtime bound that
+   cannot repeat the 12-minute production I/O incident. No Telegram, no live
+   capture; this is infrastructure for a discovery query, not a product.
+4. **Then: `research/cex-activity-discovery-completion-v1`.** Re-run HYP-016's
+   already-registered, pre-declared two-direction family (buy/sell,
+   Holm-corrected) on the now-computable denominator, full candidate universe,
+   the same already-viewed `2026-08-18` -> `2026-08-27` window (discovery-only,
+   permanently -- see HYP-016's own instruction not to re-view it as
+   confirmation). Selects at most one direction to freeze for a future
+   untouched forward cutoff, or closes the idea.
+5. **Then: `research/liquidation-maker-upper-bound-v1`.** Binance/Bybit
+   liquidation capture is live in production
+   (`schurfer-liquidation-capture-binance`/`-bybit`, both healthy) -- test
+   maker-style reversion on the accumulated liquidation-event history itself,
+   not the 2 live-paper trades this idea started from: independent episodes,
+   exact venue, a limit level fixed in advance, price merely touching that
+   level counted only as an optimistic potential fill (never an actual one),
+   costs, MFE/MAE, adverse selection. A negative result closes the direction
+   before any L2/shadow-capture infrastructure gets built for it.
+6. **Then, only if 5 is positive: bounded shadow capture** (BBO/L2, queue-aware
+   potential fills, partial fills, opportunity loss, capacity) -- still no real
+   orders.
+7. **[Done, `research/token-universe-coverage-v1`] Point-in-time listing
+   coverage and a non-survivorship-biased control group.** This item
+   originally read `research/token-universe-identity-and-expansion-v1`
+   and described canonical on-chain/exchange identity instead of a bare
+   ticker, plus never silently merging two distinct tokens sharing a
+   symbol (e.g. 牛来 vs. NIULAI). Before writing any code, that turned out
+   to already be fully implemented and merged --
+   `feat/momentum-universe-identity-foundation-v1` (2026-08-15) and
+   `feat/momentum-universe-identity-resolution-v1` (2026-08-17, worked
+   example verbatim: "`base=BTR` on two venues with close onboarding
+   dates is a candidate, not proof of the same asset"), both above under
+   Phase 1. **Read those two entries and
+   `docs/research/momentum-universe-identity-resolution-v1.md` before
+   registering any future item that sounds like "cross-venue instrument
+   identity" -- this item's own original text duplicated them by not
+   checking first.** The one real, verified gap this PR actually closed:
+   `app.momentum_universe_snapshots` only gets a new row on a
+   capture-process restart (irregular), so "was base X listed on venue E
+   at historical instant Y" and "every base that was ever a real
+   candidate during a window, including ones since delisted" were
+   unanswerable. `MomentumUniverseIdentityRepository.instruments_as_of`/
+   `universe_seen_in_window` plus the pure `token_universe_coverage.py`
+   (`mark_currently_ready`/`delisted`/`AsOfCoverage`/`WindowCoverage`)
+   close exactly that, reading only already-persisted snapshot history --
+   no schema change, no new capture. Colleague review, round 2, caught
+   two P1s that would have corrupted the exact denominator this item
+   exists to produce: the window query originally excluded the carry-in
+   snapshot before `window_start`, so a window with zero capture-process
+   restarts inside it reported an empty universe instead of the one
+   genuinely listed throughout (fixed: an admissibly-fresh carry-in, per
+   a required `max_carry_in_staleness`, is now included, with
+   `WindowCoverage.has_reliable_coverage` reporting when it is not); and
+   grouping was by bare `native_market_id` instead of `identity_key`, so
+   a market id delisted and later relisted under the same ticker would
+   have been merged with its predecessor (fixed: keyed by `identity_key`
+   throughout, matching this codebase's own existing identity system).
+   Both fixes are proven against real Postgres by tests written to
+   reproduce the original bugs. See
+   [token-universe-coverage-v1.md](docs/research/token-universe-coverage-v1.md).
+   Prerequisite for item 8, not itself a profit/evidence result on its
+   own.
+8. **[Done, `research/serial-pump-regimes-v1`, after two colleague-review
+   rounds of five P1 fixes each] What happened after a first pump on a
+   given asset -- using every radar episode
+   (not only ones that went on to "win"), recurrence count and
+   inter-episode intervals, venue expansion, BTC/market-adjusted return,
+   `15m`/`1h`/`4h`/`1d`/`7d`/`30d` horizons, MFE/MAE/time-to-peak/
+   retrace/delisting.** Discovery-only, no verdict -- explicit user
+   decision; the historical window stays discovery-only, any future
+   confirmation runs on a new, untouched forward cutoff, never on the
+   window already viewed here. Before writing any new merging logic,
+   found that "every radar episode, recurrence count and inter-episode
+   intervals" was already built and colleague-review-hardened in
+   `pump_recurrence_integrity_report.py`'s own `Episode`/`Regime`/
+   `merge_episodes_into_regimes` -- reused directly via
+   `PumpRecurrenceIntegrityRepository.load()` rather than reimplemented.
+   New code: `serial_pump_regimes.py` (pure forward-outcome resolution)
+   and `serial_pump_regimes_report.py` (I/O + `make serial-pump-regimes-
+report`/`make prod-serial-pump-regimes-report`, no required bound -- an
+   explicit user decision to keep the default an unbounded run). Venue
+   expansion reuses item 7's own `instruments_as_of`. OHLCV fetched live
+   via the existing cached `ohlcv.fetch_symbol_candles`, not a new frozen
+   dataset -- an explicit user decision, to keep the report runnable
+   against the live, growing regime population.
+   **First colleague-review round (2026-09-01) found five P1s in the
+   first draft, all fixed** -- see
+   [serial-pump-regimes-v1.md](docs/research/serial-pump-regimes-v1.md)
+   for the full account: (1) the decision instant was anchored to
+   `regime.last_seen_at`, a running maximum a future episode can still
+   extend, answering "after the last episode once the regime is fully
+   formed" rather than item 8's own "after a FIRST pump" -- fixed by
+   anchoring `decision_boundary_ms` to `regime.first_seen_at` instead,
+   which is set once and never revised by a later merge; (2) entry price
+   used the boundary candle's own CLOSE, only known a full timeframe
+   after the decision instant -- a look-ahead -- fixed to use that
+   candle's OPEN, known instantly; (3) OHLCV/venue-expansion identity was
+   picked from a bare `base` ticker (`fetch_candles` reconstructing
+   `f"{base}/USDT:USDT"`), exactly the class of bug the identity
+   foundation/resolution PRs and the recurrence-integrity audit exist to
+   prevent -- fixed via `_resolve_regime_identities` (requires every
+   `SourceIdentityObservation` for a regime's own episodes, per exchange,
+   to agree on one `identity_key`/`unified_symbol` with no
+   `identity_conflict`, else fails closed) feeding `fetch_symbol_candles`
+   an already-resolved unified symbol; (4) a horizon resolved as long as
+   the tail candle reached far enough, even with a leading or internal
+   gap in the path -- fixed with an exact gapless-sequence check
+   (`ohlcv.covers_window_without_gaps`, made public for this reuse),
+   split into distinct `leading_candle_gap`/`internal_candle_gap`
+   reasons; (5) venue expansion's `ready_after` check could read a
+   still-future instant as if today's current snapshot were already the
+   answer -- fixed with an `evaluation_at` parameter gating the check to
+   `after_at_matured=False`/`ready_after=None` whenever the 30-day-
+   forward point has not actually occurred yet. Two P2s also fixed: one
+   regime's own OHLCV fetch failure used to propagate through
+   `asyncio.gather` and lose the whole run's already-completed work
+   (fixed: per-regime try/except -> `ohlcv_fetch_failed`, plus
+   `concurrency <= 0` now rejected before it could hang a
+   `Semaphore(0)` forever); and reproducibility metadata was incomplete
+   (`make serial-pump-regimes-report` never passed `--code-revision`/
+   `--working-tree-dirty`, and `input_fingerprint` only covered episodes,
+   not the identity observations that also determine exchange/symbol
+   choice -- both fixed). A real bug (`render_json` stringifying the
+   entire report via `repr()` instead of producing real nested JSON,
+   `json_ready` never handling a bare dataclass) was separately caught by
+   a live smoke run against real data before the colleague review, not by
+   the unit tests written before that run -- fixed and covered by two
+   regression tests that parse the rendered JSON back and inspect
+   individual fields.
+   **Second colleague-review round (2026-09-01) found five more P1s in
+   the round-1 identity/venue-expansion machinery itself, all fixed** --
+   see [serial-pump-regimes-v1.md](docs/research/serial-pump-regimes-v1.md)
+   for the full account: (1) identity resolution still ran over a
+   regime's FULL episode set, so a much-later merged episode's own first
+   identity observation could get used to pick an earlier decision
+   instant's OHLCV exchange -- a "future-known route selection" look-
+   ahead round 1's own first_seen_at anchor made more likely to bite, not
+   less -- fixed by restricting identity resolution to episodes already
+   known by the decision boundary; (2) the resolver silently dropped an
+   observation with a `None` identity_key instead of treating it as
+   evidence of an incomplete observation, and never checked `base_asset`
+   at all -- fixed by reusing `pump_recurrence_integrity_report.
+   identity_reason` (already built, already reviewed) instead of a
+   second, weaker check; (3) recurrence counting is still ticker-based
+   (an accepted characteristic of the reused `merge_episodes_into_regimes`,
+   not rearchitected) but now carries a disclosed
+   `next_regime_same_asset` overlay confirming or refuting same-asset
+   identity per recurrence link, rather than presenting every same-base
+   regime pair with unstated confidence; (4) venue expansion only checked
+   readiness on an exchange this regime already had a source-derived
+   identity on -- structurally excluding the exact "first-time listing on
+   a new venue" case the feature exists to detect -- fixed with a
+   disclosed two-tier match (`identity_key` when available, a
+   ticker-based fallback when not, both reported via
+   `VenueExpansionEntry.match_basis`); (5) `MarketPathCacheCorruptError`/
+   `MarketPathCacheWriteError` were swallowed by the same generic
+   per-regime except that also wrongly discarded already-computed
+   horizon outcomes on a venue-expansion-only failure -- fixed by letting
+   the two cache exceptions propagate and fail the whole run loudly (per
+   `market_path_cache.py`'s own contract), and giving venue expansion its
+   own separate try/except downstream of the horizons. Three more P2s:
+   markdown output used to surface only per-horizon medians, hiding
+   almost everything else the report computes -- now includes a
+   `## Regimes` table and a `## Horizon detail` table; `input_fingerprint`
+   ignored the `--base` filter for identity observations -- now narrowed
+   to the retained episodes' own event_ids; and the "hold or sell"
+   framing overclaimed economically (gross returns only, no
+   spread/fees/slippage/funding) -- now disclosed in the module
+   docstring, the CLI's own `--help`, and the rendered markdown header,
+   naming `packages/performance`'s `calculate_performance`/
+   `CostParameters` (already used by `source_lead_forward_cohort.py`) as
+   the required follow-up before any number here is read as an economic
+   recommendation. 77 tests total (up from 34).
+9. **Passively maturing in parallel, no PR needed yet:**
+   `research/pump-short-maker-entry-prospective-v1` (registered, item 11
+   below) around `2026-09-21`; `source_lead_forward_cohort_v1` (registered,
+   item 12 below) around `2026-10-01`. Freezing and implementing each
+   one's evaluator/report plumbing against synthetic fixtures now, before
+   either cohort matures, is exactly the right order -- the danger this
+   codebase's prospective-research discipline actually guards against is
+   building or changing an evaluator _after_ real, mature outcomes are
+   already visible (see `source_lead_forward_cohort_v1`'s own
+   `resolve_episode`/`formal_verdict`, already frozen this way, before
+   this same cohort's own start date). What must wait is the formal run:
+   reading either cohort's real result exactly once, at its own
+   pre-declared checkpoint/evidence floor, never earlier and never
+   re-peeked.
+10. **Deferred, explicitly not silently dropped: LBank-first sequencing.**
+    Named a registered money-first direction elsewhere in this document,
+    but it sits behind several data PRs and still has no exact native
+    historical OHLCV path (see
+    [CCXT-003](docs/tasks/ccxt/003-lbank-perpetual-ohlcv-research.md)) --
+    it does not compete for the primary slot until that gap closes.
+11. **Deprioritized, split into its own sequence, not started: Markets/
+    Assets catalog.** Unchanged from the 2026-08-29 list below -- still
+    starts only once the primary slot is not occupied by 2-8 above.
+12. **Execution-readiness gates, before any maker/live step above ever places a
+    real order:** exact partial-fill adoption (`executed_amount` as the
+    exchange's own value, cancel the remainder), crash/restart reconciliation,
+    an operational smoke test against authenticated read-only/trading-disabled
+    exchange clients. Live position reconciliation and `clientOrderId`-keyed
+    `submission_unknown` recovery are already implemented and merged (#299,
+    `apps/execution/schurfer_execution/reconciliation.py`/
+    `reconciliation_worker.py`/`order_attempts.py`) -- do not re-plan or
+    rebuild either.
+
+### Near-term interleaving from 2026-08-29
+
+Supersedes the 2026-08-13 list below for current prioritization (retained as decision
+log, not current instruction). Written to resolve several parallel branches/threads
+that had accumulated without an explicit order: `research/source-lead-derivative-
+market-evidence-v1` (merged, PR 1 of 3), `research/pump-analytics` (a colleague's
+branch, blocked on its own review), the Research-page production incident (fixed),
+and a proposed Markets/Assets catalog UI overhaul. Applies the WIP-limit rule above:
+at most one primary (profit/evidence) and one support (bounded enabling change) slot.
+
+1. **Primary slot: `research/source-lead-derivative-market-evidence-v1` PR 2 (registry
+   v3, evidence-backed).** New `source_lead_identity_registry_v3.json` (same 14
+   assets, evidence_sha256s pointing at the v3 bundles merged in PR 1), new
+   `EXPECTED_REGISTRY_VERSION`/`EXPECTED_REGISTRY_FINGERPRINT`, migration 0043,
+   `verify_registry_against_evidence` extended to cross-check
+   `source_market_evidence`/`target_market_evidence` against each link's
+   `instrument_identity_key`. `ROUTE_EVIDENCE_INDEPENDENTLY_VERIFIED` stays `False` --
+   zero behavior change to `qualify_source_lead`'s output, deployable and bakeable in
+   production with no risk to money-relevant capture.
+2. **Primary slot, next: PR 3 (flip the switch).**
+   `ROUTE_EVIDENCE_INDEPENDENTLY_VERIFIED = True`, `QUALIFICATION_VERSION` bump,
+   `IDENTITY_REGISTRY_V3_START` cutover, Go dashboard mirror. This is the only step in
+   the current plan that actually changes what `qualify_source_lead` can return --
+   the closest thing to "money" in everything currently in flight.
+3. **Independent of slots 1-2: `research/pump-analytics` (colleague-owned).** Not our
+   PR to build -- the colleague fixes their own review blockers (matching-cardinality,
+   burst-arithmetic test coverage, 100-episode floor, radar-query bound, direction
+   tuple duplication, O(n^2) CEX matching) on their own branch and resubmits for
+   review. Does not block or wait on 1-2.
+4. **Support slot: `fix/token-activity-non-pump-assets-v1`.** `/pumps/<TOKEN>` for an
+   asset with no pump episode (e.g. a paper trade from `early_momentum_v4`) currently
+   reads as "not found"; it should read as "no pump episode, but available through
+   [strategy]". Small, bounded, no schema change.
+5. **Support slot, next: Go `Readiness()` handler concurrency** (tech debt, logged
+   above under "Tech debt and DX") -- `errgroup` + per-call timeout for the remaining
+   live sub-queries, so the class of incident just fixed in the Research page cannot
+   recur on a different section as data volume grows. Not urgent; pick up when nothing
+   higher-value is queued for the support slot.
+6. **Gated, not started: CEXTrack / `research/post-pump-hold-exit-foundation-v1`
+   validation.** Do not build new live capture infrastructure to test this. The
+   momentum-capture workers already freeze and record the **full** USDT-perpetual
+   universe on each captured exchange (not a selective set of past pumpers -- see
+   `apps/collector/cmd/momentumcapturebinance/main.go`'s own "frozen universe"
+   design), so a bounded, read-only discovery report against the minute bars already
+   accumulated (same pattern as `liquid_taker_report.py`) can test "does elevated
+   activity predict continuation vs. blow-off" today, with no new production
+   commitment. Only if that report shows a real, money-relevant effect does building
+   a bounded live signal (in-memory ring window, online activity ratio, only
+   threshold-crossing events written to Postgres) become a separately gated decision.
+   The one real data gap: multi-exchange listing expansion is not tracked over time by
+   existing capture (Bybit/Binance only) -- if the hypothesis specifically needs that,
+   the fix is a small periodic listing-catalog snapshot, not full order-flow capture.
+   Sequenced after `research/pump-analytics` lands, since building a new analysis on
+   top of that branch's still-disputed matching logic would repeat the same review
+   cycle twice.
+7. **Deprioritized, split into its own sequence, not started: Markets/Assets catalog.**
+   `feat/market-catalog-api-v1` -> `feat/markets-screener-ui-v1` ->
+   `feat/asset-market-pages-v1` -> `feat/asset-activity-timeline-v1` ->
+   `feat/market-watchlists-v1`, one PR at a time through the support slot (never as
+   one big-bang PR, per the "one coherent user workflow per PR" rule above). Valuable
+   for research/ops visibility and directly motivated by the OPG incident (item 4),
+   but it is not itself a money step, so it never competes with the primary slot and
+   starts only once 1-2 and `research/pump-analytics` are no longer occupying
+   attention.
 
 ### Near-term interleaving from 2026-08-13
 
@@ -1383,15 +1732,27 @@ remains `DRY_RUN=true`, `AUTO_TRADE=false`.
    overwriting it. This is an observed exit quote, not an actual fill. Failure to
    fetch it must never block or erase the paper close. Ship the schema and collector
    early so observations accrue.
-3. **[In progress] Prospective liquid taker candidate.** Register
-   `liquid_taker_candidate_v1` from `2026-07-30T00:00:00Z`: keep the existing entry,
-   score, taker execution, and full-v1 exit rules, but require the recorded
+3. **[Completed 2026-08-29, do_not_promote] Prospective liquid taker candidate.**
+   `liquid_taker_candidate_v1` (registered `2026-07-30T00:00:00Z`): the existing
+   entry, score, taker execution, and full-v1 exit rules, requiring the recorded
    market-quality gate and decision-time round-trip impact at the configured notional
-   to be at most 20 bps. Treat Binance as a pre-declared sensitivity slice, not an
-   eligibility rule. Report trade flow, capacity, net expectancy, drawdown, venue and
-   weekly concentration. Promotion needs at least 100 eligible episodes, 30 asset
+   to be at most 20 bps. Binance was treated as a pre-declared sensitivity slice, not
+   an eligibility rule. Promotion needed at least 100 eligible episodes, 30 asset
    clusters, four calendar weeks, complete pairing, and a positive conservative
-   cluster interval. This remains shadow-only and does not change production.
+   cluster interval.
+
+   **2026-08-29, formal, `do_not_promote`.** Reached full maturity at the 4-week
+   checkpoint: 494 eligible episodes, 207 asset clusters, 4 calendar weeks. Point
+   estimate **-0.22%** net return per episode, 95% cluster-bootstrap CI
+   **[-0.45%, -0.01%]** — the entire interval is negative, holding under the
+   busiest-week exclusion (-0.34%) and minimum top-asset exclusion (-0.23%). Per
+   this repo's own rule, a negative mature test EV is `FAIL`, not a promotion.
+   Archived: `backups/reports/liquid-taker-2026-08-29.{json,md}`
+   (sha256 `be1e55ce8115f1f534562e5b7c65763d4cf8d568e4b9bceda57de63fb2e065a7`),
+   `decision_input_fingerprint` `052eaa2efa7cd474ba70f3c4e5697cfc0cdd5b722f956f372f27b26a0fa4781c`.
+   `pump_short_v1_market_quality`'s liquid-taker slice is closed; no further
+   promotion decision is pending on this candidate.
+
 4. **[Completed, collecting] Long-horizon and signed-funding research.** The resolver already stores 24-hour,
    72-hour, and 7-day outcomes. Add them as separate research rows with mature N,
    exact-venue coverage, MFE, MAE, baseline-stop survival, funding settlement count,
@@ -1451,7 +1812,7 @@ remains `DRY_RUN=true`, `AUTO_TRADE=false`.
    exact touches also became cash. Every cluster interval crossed zero and the
    defensive result was single-cluster fragile. OBS-009 is parked. Do not tune the
    limit or timeout on this cohort and do not build the paper post-only simulator.
-7. **[Registered, starts 2026-08-01] Prospective liquid-taker wider-stop shadow.**
+7. **[Completed 2026-08-29, do_not_promote] Prospective liquid-taker wider-stop shadow.**
    `liquid_taker_wider_stop_shadow_v1` reproduces the complete HYP-008 selector and
    compares the unchanged liquid-taker baseline with exactly one challenger on the
    same exact-venue path. The challenger widens only the initial stop to 1.5x and
@@ -1462,6 +1823,23 @@ remains `DRY_RUN=true`, `AUTO_TRADE=false`.
    challenger's absolute 95% lower bound and its paired-delta lower bound must be
    positive, including busiest-week and top-five-asset exclusions. A pass creates
    only a shadow candidate and cannot change production.
+
+   **2026-08-29, formal, `do_not_promote`.** Reached full maturity: 429 eligible
+   episodes, 183 asset clusters, 4 calendar weeks, complete pairing. Baseline point
+   estimate **-0.222%** net return per episode, 95% cluster-bootstrap CI
+   **[-0.464%, +0.018%]** — already not reliably negative on its own, but the gate
+   here is the challenger and the paired delta, not the baseline in isolation.
+   Challenger point estimate **-0.138%**, CI **[-0.328%, +0.038%]**. Paired delta
+   (challenger minus baseline) **+0.084%**, CI **[-0.045%, +0.228%]** — the interval
+   straddles zero, so the wider stop is not shown to help by a margin distinguishable
+   from noise; the promotion rule required both the challenger's absolute lower bound
+   and the paired-delta lower bound to be positive, and neither is. Busiest week
+   `2026-W32` exclusion does not change the conclusion. No shadow candidate is
+   promoted. Archived: `backups/reports/liquid-taker-wider-stop-2026-08-29.{json,md}`
+   (sha256 `d069f4a75f7a90ec9b10196499016ec04bc37fe1ee12a525e9c0cee61fa83208`). This
+   closes the wider-stop shadow track; no further promotion decision is pending on
+   this candidate.
+
 8. **[Implemented, collecting] Exit quote calibration.** The read-only
    `exit-liquidity-calibration-report` keeps every closed paper short in the coverage
    denominator and compares decision-time modeled impact with a complete executable
@@ -1679,6 +2057,47 @@ filter-report` (`confirmed_oi_growth_baseline_filter_v1`) tests this as a
     registered contracts. Confirmed only if the floor is met and the
     primary sensitivity's 95% cluster CI excludes zero on the lower bound.
     See [the frozen contract](docs/research/pump-short-maker-entry-prospective-v1.md).
+12. **[Registered 2026-08-30, matures ~2026-10-01] Source-lead forward
+    cohort.** `source_lead_forward_cohort_v1` (`source_lead_forward_cohort.py`)
+    registers the untouched forward read that research/gate-source-lead-
+    registry-activation-v3 (PR 3 of 3, `ROUTE_EVIDENCE_INDEPENDENTLY_VERIFIED
+= True`) was built to answer: for the 14 identity- and route-verified
+    canonical assets (gate -> binance only -- registry v3 has zero bybit
+    links), does an immediate long entry the moment Gate shows a leading
+    source-lead capture hold a real, after-cost edge over the following
+    half hour? A narrower estimand than HYP-012's original paired,
+    4-route, Holm-corrected family (`docs/research/discovery-ledger.md`),
+    not a claimed replication of it -- the registry currently verifies only
+    one of those four routes. HYP-012's paired early-vs-confirmed delta is
+    kept as a secondary diagnostic, never gating. Cohort start
+    (`SOURCE_LEAD_FORWARD_COHORT_START`) is aliased to
+    `IDENTITY_REGISTRY_V3_START`, `2026-09-03T00:00:00Z`. Frozen entry at
+    `0m` (the already-captured, already-executable `ask_vwap`
+    `qualify_source_lead` itself selected, not a re-fetch); exit is a
+    labeled OHLCV-close proxy (1m, ceil-aligned, max 2-minute gap, boundary
+    and gap derived from `entry_at` by `resolve_episode` itself, never a
+    pre-computed value trusted from a future caller) with a pre-registered,
+    deliberately conservative 15 bps slippage haircut -- not a guarantee a
+    real fill could never be worse, and `REQUIRE_EXIT_SLIPPAGE_SENSITIVITY`
+    requires the eventual report to show the read either side of that
+    assumption too. Costs and funding delegate to this codebase's shared
+    `schurfer_performance.calculate_performance` (a 30-minute hold can
+    still cross an 8h funding settlement depending on entry timing;
+    proration handles it, not assumed away). `resolve_episode`/
+    `formal_verdict` are pure functions with synthetic-input tests, frozen
+    now rather than left for whoever writes the evaluator later to decide
+    with real outcomes already in view -- including the primary
+    sensitivity's cluster-bootstrap method/seed/iterations/confidence
+    level, frozen via this codebase's shared `clustered_inference` module.
+    Evidence floor: 100 resolved
+    episodes, 7 distinct asset clusters (not this codebase's usual 30 --
+    unreachable here by construction) plus explicit 35%/45%
+    per-asset/per-week concentration caps; a `candidate` verdict under this
+    small-universe floor authorizes only a broader confirmatory cohort, not
+    paper or live execution directly. No report/evaluation _plumbing_
+    (DB fetch, CLI, rendering) exists yet -- nothing can mature before
+    ~2026-10-01 at the earliest. See
+    [the frozen contract](docs/research/source-lead-forward-cohort-v1.md).
 
 Reporting duplication is reduced incrementally while implementing items 1, 3, 4, and
 5 through the shared `reporting`, replay, and challenger-inference modules. A separate
@@ -3010,6 +3429,24 @@ net performance suitable for tax or risk accounting.
   already needs one, not as its own standalone restart.
 
 - `fix/research-health-freshness-v1`: Make health commands fail if container is stopped or generated_at is stale.
+- ~~**Research `Readiness()` handler: sequential sub-queries, no per-call
+  timeout.**~~ **Done (fix/research-readiness-handler-concurrency-v1,
+  2026-08-31).** `apps/api-gateway/internal/research/handler.go`'s
+  `Readiness()` now runs its independent DB/Redis-backed sections
+  (`exitLiquidityProgress`, `sourceLeadProgress`, the two `latestReport`
+  calls, `orderflowProgress`) concurrently via `errgroup.WithContext`, each
+  under its own `context.WithTimeout` (`Handler.subcallContext`,
+  `defaultReadinessSubcallTimeout` = 8s, injectable per-`Handler` for
+  tests). A section's own DB/Redis error degrades only that section to
+  `nil` in the response (`ExitLiquidity`/`SourceLead` joined `Orderflow` as
+  nullable `Response` fields) instead of 500ing the whole endpoint --
+  regression-tested against both a failing section
+  (`TestReadinessDegradesFailingSectionsInsteadOfFailingWhole`) and a
+  section that hangs past its timeout budget
+  (`TestReadinessSubcallTimeoutBoundsAHangingQuery`, using an injected
+  50ms budget so the test itself stays fast). Frontend (`ResearchPage.tsx`)
+  renders "telemetry unavailable" for a `null` `exit_liquidity`/
+  `source_lead`, mirroring the pattern `orderflow` already used.
 - `chore/dependency-update-automation-v1`: Setup Dependabot for weekly grouped updates (CCXT separate from GitHub Actions) without auto-merge.
 - `fix/momentum-flow-live-freshness-v1`: Stop catch-up/backfill WATCH evaluations from entering the executable paper lane, expose `last_bucket_start -> now` lag and stale-rejection rate, and alert when the paper cohort has no completely accounted executable probes. Keep the 30-second quote deadline fail-closed.
 - `analysis/momentum-flow-stale-entry-counterfactual-v1`: Measure whether rejected stale WATCH decisions retain any after-cost edge at the actual late decision time using point-in-time captured bars. Treat reconstructed bar entry as descriptive only, never as an executable quote or promotion evidence; any viable delay contract requires a new prospective cohort.

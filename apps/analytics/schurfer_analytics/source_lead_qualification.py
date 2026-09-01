@@ -9,13 +9,16 @@ from dataclasses import dataclass
 from importlib.resources import files
 from typing import TYPE_CHECKING, Any
 
-from .source_lead_contract import IDENTITY_REGISTRY_V2_START
+from .source_lead_contract import IDENTITY_REGISTRY_V3_START
 from .source_lead_identity_evidence import (
     EVIDENCE_DIR,
+    DerivativeMarketEvidence,
+    EvidenceBundle,
     EvidenceIntegrityError,
     evidence_bundle_path,
     load_all_evidence_bundles,
     revalidate_bundle_identity_class,
+    revalidate_bundle_route_evidence,
 )
 
 if TYPE_CHECKING:
@@ -24,41 +27,59 @@ if TYPE_CHECKING:
 # v1 stays defined (never mutated -- its registry file, its DB rows, and
 # migration 0022's CHECK CONSTRAINT pinning EXPECTED_REGISTRY_FINGERPRINT_V1
 # are all frozen history) so any code that still needs to reference the old
-# contract explicitly can, but nothing in this module uses these below
-# QUALIFICATION_VERSION's v2 bump.
+# contract explicitly can, but nothing in this module uses these any more.
 QUALIFICATION_VERSION_V1 = "source_lead_qualified_capture_v1"
 REGISTRY_VERSION_V1 = "source_lead_identity_registry_v1"
 REGISTRY_FINGERPRINT_V1 = "31604214fa148d3f86562a212fdc935029c82a7a4959a7b5001b6bd5637ff7f8"
 
-# research/gate-source-lead-registry-activation-v2: 14 gate<->binance routes
-# with real, evidenced exact_contract identity (see
-# source_lead_identity_evidence.py and evidence/source_lead/v2/) -- the
-# first non-empty identity registry this system has ever qualified against.
-# Only captures at or after source_lead_contract.IDENTITY_REGISTRY_V2_START
-# may be treated as prospective evidence under this version; see that
-# constant's own docstring.
-QUALIFICATION_VERSION = "source_lead_qualified_capture_v2"
-VENUE_SELECTOR_VERSION = "lowest_round_trip_impact_v1"
-DEFAULT_REGISTRY_RESOURCE = "registry/source_lead_identity_registry_v2.json"
-EXPECTED_REGISTRY_VERSION = "source_lead_identity_registry_v2"
-EXPECTED_REGISTRY_FINGERPRINT = "757fd1327593d07ca27efe17a031ae0eab95bf6998aecc1ec26f0df38667dca0"
+# v2 stays defined too (never mutated -- migration 0041's CHECK CONSTRAINT
+# pinning EXPECTED_REGISTRY_FINGERPRINT_V2 and every v2-tagged row already
+# written are frozen history), same reasoning as v1 above. Nothing in this
+# module uses these below QUALIFICATION_VERSION's v3 bump
+# (research/gate-source-lead-registry-activation-v3, PR 3 of 3).
+QUALIFICATION_VERSION_V2 = "source_lead_qualified_capture_v2"
+REGISTRY_VERSION_V2 = "source_lead_identity_registry_v2"
+REGISTRY_FINGERPRINT_V2 = "757fd1327593d07ca27efe17a031ae0eab95bf6998aecc1ec26f0df38667dca0"
 
-# Registry v2's evidence bundles (verify_registry_against_evidence) vouch
-# for *asset* identity only -- an on-chain contract match across Gate,
-# Binance Alpha, and CoinGecko. Nothing evidences the specific derivative
-# markets themselves (native market id, market type, quote/settle asset,
-# onboard time): no exchange's futures/perpetual catalog is captured today.
-# _resolve_registered_target_market's live re-verification at capture time
-# only proves a registered instrument_identity_key genuinely *exists* on
-# the exchange, not that it names the *right* project's perpetual rather
-# than a different, ticker-colliding one sharing a symbol (colleague
-# review, 2026-08-28, second round -- corrected from an earlier, weaker
-# framing of this same gap). Until independent route evidence exists,
-# qualify_source_lead below computes and records everything it would have
-# selected, but never actually returns status='qualified' -- see its
-# route_evidence_not_yet_independent branch. Flip this once real
-# derivative-market evidence backs the registry.
-ROUTE_EVIDENCE_INDEPENDENTLY_VERIFIED = False
+# research/gate-source-lead-registry-activation-v3 (PR 3 of 3): the live
+# contract. 14 gate<->binance routes, now backed by independently fetched
+# derivative-market evidence (research/source-lead-derivative-market-
+# evidence-v1, PR 1) in addition to the asset-identity evidence v2 already
+# had, cross-checked at registry-load time (verify_registry_against_evidence,
+# _verify_link_route_evidence, PR 2). Only captures at or after
+# source_lead_contract.IDENTITY_REGISTRY_V3_START may be treated as
+# prospective evidence under this version; see that constant's own
+# docstring for why it is later than v2's cutover, not merely a renamed
+# copy of it.
+QUALIFICATION_VERSION = "source_lead_qualified_capture_v3"
+VENUE_SELECTOR_VERSION = "lowest_round_trip_impact_v1"
+DEFAULT_REGISTRY_RESOURCE = "registry/source_lead_identity_registry_v3.json"
+EXPECTED_REGISTRY_VERSION = "source_lead_identity_registry_v3"
+EXPECTED_REGISTRY_FINGERPRINT = "9d36c41442261cfe4e608342378e2d83f96c78afd537de682698796e77733236"
+
+# research/gate-source-lead-registry-activation-v3 (PR 3 of 3): flipped.
+# Registry v2's evidence bundles vouched for *asset* identity only -- an
+# on-chain contract match across Gate, Binance Alpha, and CoinGecko --
+# never the specific derivative markets themselves. That gap is what PR 1
+# (research/source-lead-derivative-market-evidence-v1, independent
+# Gate-futures/Binance-futures evidence) and PR 2 (this registry's
+# verify_registry_against_evidence, extended to cross-check each link's own
+# instrument_identity_key -- exchange, market_type, native market id,
+# onboard timestamp, all four fields -- against that independently fetched
+# evidence) exist to close. registry.links_by_identity is only ever
+# populated by load_identity_registry() after verify_registry_against_
+# evidence has already run and raised on any mismatch, so by the time
+# qualify_source_lead below reaches this flag, every link it could possibly
+# select against has already passed that cross-check -- there is nothing
+# further to gate here.
+#
+# Still not a full route-identity proof even now (see
+# _validate_route_evidence's own docstring in source_lead_identity_
+# evidence.py): neither public API bridges Binance's Alpha catalog entry to
+# its futures listing, or Gate's currency catalog to its futures contract,
+# by anything other than the shared ticker string. That residual risk is
+# accepted, not eliminated -- narrower than before this PR, not closed.
+ROUTE_EVIDENCE_INDEPENDENTLY_VERIFIED = True
 
 # Shared vocabulary for TargetObservation.identity_match_method -- defined
 # here (not in source_lead_capture.py, which imports these) because
@@ -221,21 +242,31 @@ def verify_registry_against_evidence(
     evidenced now fails registry load outright, instead of silently
     inheriting a fingerprint pinned over its own (possibly wrong) content.
 
-    Deliberately narrower than full route verification: this confirms the
-    *asset* identity a bundle vouches for (on-chain contract match across
-    Gate/Binance/CoinGecko, identity_class == exact_contract), not that the
-    specific registered derivative market (native id/type/quote-settle/
-    onboard time) is really the same project's perpetual, rather than a
-    different, ticker-colliding one that happens to share a symbol.
-    _resolve_registered_target_market's live re-verification at capture
-    time only proves the registered market genuinely *exists* with that
-    exact id/type/onboarded_at combination -- a wrong-but-real
-    instrument_identity_key would still resolve and be marked
-    identity_verified=true (colleague review, 2026-08-28: this is a
-    materially weaker guarantee than "can never misroute", corrected from
-    this function's earlier framing). Independent evidence for the
-    derivative markets themselves is tracked as separate follow-up work,
-    not yet built."""
+    For a v3-schema bundle (source_market_evidence/target_market_evidence
+    populated -- see source_lead_identity_evidence.py's PR1 fix-round
+    docstring), also cross-checks the registered instrument_identity_key's
+    own native market id and onboard timestamp against that independently
+    fetched derivative-market evidence (_verify_link_route_evidence) --
+    this is where research/source-lead-derivative-market-evidence-v1's new
+    evidence actually gets *used*, not just stored
+    (research/gate-source-lead-registry-activation-v3, PR 2 of 3). A v2-era
+    bundle (market evidence absent) skips that check -- there is nothing to
+    cross-check yet -- so this same function still verifies the live v2
+    registry unchanged.
+
+    Deliberately still narrower than full route identity proof even for a
+    v3 bundle: confirms the registered market's own id and onboard time
+    against an independent fetch, and (for Binance) that its own reported
+    baseAsset agrees with the candidate -- not that Binance's Alpha catalog
+    entry and its futures listing are provably the same project (no field
+    bridges the two in either public API; see
+    _validate_route_evidence's own docstring). _resolve_registered_target_
+    market's live re-verification at capture time only proves the
+    registered market genuinely *exists* with that exact id/type/
+    onboarded_at combination -- a wrong-but-real instrument_identity_key
+    would still resolve and be marked identity_verified=true (colleague
+    review, 2026-08-28: this is a materially weaker guarantee than "can
+    never misroute", corrected from this function's earlier framing)."""
     try:
         bundles = load_all_evidence_bundles(evidence_dir)
     except EvidenceIntegrityError as exc:
@@ -291,6 +322,113 @@ def verify_registry_against_evidence(
                 f"identity registry link {link.canonical_asset_id}/{link.exchange} evidence bundle "
                 f"failed semantic revalidation: {exc}"
             ) from exc
+        _verify_link_route_evidence(link, bundle)
+
+
+def _market_evidence_for_link(
+    link: CanonicalInstrumentLink, bundle: EvidenceBundle
+) -> DerivativeMarketEvidence | None:
+    if link.exchange == bundle.source_exchange.lower():
+        return bundle.source_market_evidence
+    if link.exchange == bundle.target_exchange.lower():
+        return bundle.target_market_evidence
+    return None
+
+
+def _verify_link_route_evidence(link: CanonicalInstrumentLink, bundle: EvidenceBundle) -> None:
+    """Cross-checks link's own instrument_identity_key against the bundle's
+    independently fetched derivative-market evidence for that side of the
+    route -- a no-op for a genuinely v2-era bundle (both market-evidence
+    fields absent). Parses instrument_identity_key with the identical
+    4-part exchange:market_type:market_id:onboarded_at_ms scheme
+    instrument_metadata() builds it with and
+    _resolve_registered_target_market already parses it with in
+    source_lead_capture.py, so all three call sites can never silently
+    disagree about the format (research/gate-source-lead-registry-
+    activation-v3, PR 2 of 3).
+
+    Checks all four parsed fields, not just market_id/onboarded_at_ms --
+    an earlier version of this function discarded exchange_part/market_type
+    as `_`-prefixed locals, so a link whose instrument_identity_key
+    encoded a different exchange than its own link.exchange field (or a
+    non-'swap' market_type) would still pass as long as the market id and
+    onboard timestamp happened to match (colleague review, 2026-08-29,
+    PR 2 review round).
+
+    Distinguishes "genuinely v2" from "malformed v3" before skipping --
+    an earlier version treated any None from _market_evidence_for_link as
+    "nothing to check", which conflated two different things: a true
+    v2-era bundle (both source_market_evidence/target_market_evidence
+    None, nothing ever captured) and a bundle whose evidence_version
+    claims v3 but is missing market evidence for just this link's side
+    (capture_bundle always populates both together or neither, so that
+    combination only arises from a corrupt or hand-edited file) -- the
+    latter was silently accepted as if it were legacy v2 instead of
+    failing closed (colleague review, 2026-08-29, PR 2 second review
+    round)."""
+    source_present = bundle.source_market_evidence is not None
+    target_present = bundle.target_market_evidence is not None
+    if not source_present and not target_present:
+        return
+    if source_present != target_present:
+        raise ValueError(
+            f"identity registry link {link.canonical_asset_id}/{link.exchange} evidence bundle "
+            "has inconsistent derivative-market evidence: exactly one of "
+            "source_market_evidence/target_market_evidence is present. capture_bundle always "
+            "populates both together or neither, so this bundle is corrupt or was hand-edited "
+            "-- it must not be silently treated as a legacy v2 bundle with nothing to check"
+        )
+    market = _market_evidence_for_link(link, bundle)
+    if market is None:
+        # Unreachable in the real call path: verify_registry_against_evidence
+        # only ever passes a bundle it selected via bundle_by_base_exchange
+        # keyed on (base, link.exchange), so link.exchange is guaranteed to
+        # equal bundle.source_exchange or bundle.target_exchange already.
+        # Fail loud rather than silently skip if that invariant is ever
+        # violated by a future caller.
+        raise ValueError(
+            f"identity registry link {link.canonical_asset_id}/{link.exchange} does not match "
+            f"either side of its own evidence bundle ({bundle.source_exchange}/"
+            f"{bundle.target_exchange})"
+        )
+    parts = link.instrument_identity_key.split(":")
+    if len(parts) != 4:
+        raise ValueError(
+            f"identity registry link {link.canonical_asset_id}/{link.exchange} "
+            f"instrument_identity_key {link.instrument_identity_key!r} is malformed"
+        )
+    identity_exchange, market_type, market_id, onboard_field = parts
+    if identity_exchange != link.exchange:
+        raise ValueError(
+            f"identity registry link {link.canonical_asset_id}/{link.exchange} "
+            f"instrument_identity_key names exchange {identity_exchange!r}, which does not "
+            f"match the link's own exchange field {link.exchange!r}"
+        )
+    if market_type != "swap":
+        raise ValueError(
+            f"identity registry link {link.canonical_asset_id}/{link.exchange} "
+            f"instrument_identity_key names market_type {market_type!r}, expected 'swap' "
+            "(every registered route here is a perpetual)"
+        )
+    if market.native_market_id != market_id:
+        raise ValueError(
+            f"identity registry link {link.canonical_asset_id}/{link.exchange} names market id "
+            f"{market_id!r}, but its evidence bundle's independently fetched derivative-market "
+            f"evidence reports native_market_id={market.native_market_id!r}"
+        )
+    if str(market.onboarded_at_ms) != onboard_field:
+        raise ValueError(
+            f"identity registry link {link.canonical_asset_id}/{link.exchange} names onboard "
+            f"timestamp {onboard_field!r}, but its evidence bundle's independently fetched "
+            f"derivative-market evidence reports onboarded_at_ms={market.onboarded_at_ms!r}"
+        )
+    try:
+        revalidate_bundle_route_evidence(bundle)
+    except ValueError as exc:
+        raise ValueError(
+            f"identity registry link {link.canonical_asset_id}/{link.exchange} evidence bundle "
+            f"failed route-evidence revalidation: {exc}"
+        ) from exc
 
 
 def load_identity_registry() -> IdentityRegistry:
@@ -324,17 +462,18 @@ def qualify_source_lead(
     requested_notional = (
         float(target_observations[0].requested_notional_usd) if target_observations else 0.0
     )
-    # A capture from before the v2 registry existed must never be treated as
-    # v2-qualified prospective evidence, even if its identity happens to
+    # A capture from before the v3 registry existed must never be treated as
+    # v3-qualified prospective evidence, even if its identity happens to
     # satisfy the (later-populated) registry -- identity was not confirmed
     # in real time when the capture occurred, only retroactively. See
-    # IDENTITY_REGISTRY_V2_START's own docstring (colleague review,
-    # 2026-08-28). Checked first, before any identity lookup, so this can
-    # never be bypassed by a coincidental registry match.
-    if source_first_observed_at < IDENTITY_REGISTRY_V2_START:
+    # IDENTITY_REGISTRY_V3_START's own docstring (colleague review,
+    # 2026-08-28, applied again for the v3 cutover in PR 3). Checked first,
+    # before any identity lookup, so this can never be bypassed by a
+    # coincidental registry match.
+    if source_first_observed_at < IDENTITY_REGISTRY_V3_START:
         return QualificationResult(
             status="excluded",
-            reason="before_identity_registry_v2_activation",
+            reason="before_identity_registry_v3_activation",
             canonical_asset_id=None,
             selected_target_exchange=None,
             selected_round_trip_impact_bps=None,

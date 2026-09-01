@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import type { PumpEntry, TokenEpisode, SignalsResponse, TokenStats } from '@/pages/pumps/types';
+import type { TokenResponse, TokenEpisode, SignalsResponse, TokenStats } from '@/pages/pumps/types';
 
 const MIN = 60_000;
 
@@ -19,7 +19,7 @@ async function fetchNullable<T>(url: string): Promise<T | null> {
 export function useToken(base: string | undefined) {
   return useQuery({
     queryKey: ['token', base],
-    queryFn: () => fetchNullable<PumpEntry>(`/api/pumps/${encodeURIComponent(base!)}`),
+    queryFn: () => fetchNullable<TokenResponse>(`/api/pumps/${encodeURIComponent(base!)}`),
     enabled: !!base,
     staleTime: 30_000,
     refetchInterval: 60_000,

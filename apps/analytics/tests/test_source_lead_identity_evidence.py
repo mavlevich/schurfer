@@ -8,21 +8,31 @@ from typing import TYPE_CHECKING, Any
 import pytest
 from schurfer_analytics.source_lead_identity_evidence import (
     CANDIDATES,
+    EVIDENCE_DIR,
+    EVIDENCE_DIR_V2,
+    EVIDENCE_VERSION,
     ChainContractEvidence,
+    DerivativeMarketEvidence,
     EvidenceBundle,
     EvidenceIntegrityError,
     RawFetch,
     _alpha_identity_fields,
     _current_git_state,
+    _sha256_canonical,
     _validate_identity_class,
+    _validate_route_evidence,
     capture_bundle,
     compute_bundle_sha256,
     fetch_binance_alpha_catalog,
+    fetch_binance_futures_exchange_info,
     fetch_gate_currency,
+    fetch_gate_futures_contract,
     fetch_onchain_decimals,
     find_alpha_entry,
+    find_binance_futures_market,
     load_all_evidence_bundles,
     load_evidence_bundle,
+    revalidate_bundle_route_evidence,
     save_evidence_bundle,
 )
 
@@ -345,6 +355,237 @@ def test_alpha_identity_fields_drops_tokenid_and_other_non_identity_fields() -> 
     assert identity["chainId"] == "56"
 
 
+# --- fetch_gate_futures_contract / find_binance_futures_market / route evidence -
+
+
+async def test_fetch_gate_futures_contract_extracts_market_evidence() -> None:
+    client = _FakeHTTPClient()
+    client.queue_get(
+        "https://api.gateio.ws/",
+        _FakeResponse(
+            {
+                "name": "ARIA_USDT",
+                "launch_time": 1_755_781_800,
+                "create_time": 1_755_758_876,
+                "status": "trading",
+                "in_delisting": False,
+            }
+        ),
+    )
+    market = await fetch_gate_futures_contract(client, "ARIA")
+    assert market.exchange == "gate"
+    assert market.native_market_id == "ARIA_USDT"
+    # launch_time, not create_time -- confirmed live against the real API
+    # these two genuinely differ (see this module's onboarded_at_ms import).
+    assert market.onboarded_at_ms == 1_755_781_800_000
+    assert market.status == "trading"
+    # Gate's payload has no base_asset/quote_asset/settle_asset fields --
+    # reported_* must stay None, inferred_* is this tool's own parse.
+    assert market.reported_base_asset is None
+    assert market.reported_quote_asset is None
+    assert market.reported_settle_asset is None
+    assert market.inferred_base_asset == "ARIA"
+    assert market.inferred_quote_asset == "USDT"
+    assert market.inferred_settle_asset == "USDT"
+
+
+async def test_fetch_gate_futures_contract_fails_closed_on_name_mismatch() -> None:
+    """A malformed or wrong response (e.g. an error page) must never be
+    silently trusted as if it named the requested market."""
+    client = _FakeHTTPClient()
+    client.queue_get(
+        "https://api.gateio.ws/",
+        _FakeResponse({"name": "WRONG_USDT", "launch_time": 1, "status": "trading"}),
+    )
+    with pytest.raises(ValueError, match="malformed"):
+        await fetch_gate_futures_contract(client, "ARIA")
+
+
+def test_find_binance_futures_market_extracts_matching_symbol() -> None:
+    exchange_info = RawFetch(
+        source="test",
+        endpoint="test",
+        observed_at=datetime.now(UTC),
+        raw_sha256="x",
+        wire_exact=True,
+        payload={"symbols": [_binance_futures_market_response("ARIAUSDT", "ARIA")]},
+    )
+    market = find_binance_futures_market(exchange_info, "ariausdt")
+    assert market is not None
+    assert market.native_market_id == "ARIAUSDT"
+    # Binance genuinely reports baseAsset as a distinct field.
+    assert market.reported_base_asset == "ARIA"
+    assert market.inferred_base_asset == "ARIA"
+    assert market.onboarded_at_ms == 1_700_000_000_000
+
+
+def test_find_binance_futures_market_returns_none_when_absent() -> None:
+    exchange_info = RawFetch(
+        source="test",
+        endpoint="test",
+        observed_at=datetime.now(UTC),
+        raw_sha256="x",
+        wire_exact=True,
+        payload={"symbols": []},
+    )
+    assert find_binance_futures_market(exchange_info, "NILUSDT") is None
+
+
+def test_find_binance_futures_market_rejects_duplicate_symbols() -> None:
+    exchange_info = RawFetch(
+        source="test",
+        endpoint="test",
+        observed_at=datetime.now(UTC),
+        raw_sha256="x",
+        wire_exact=True,
+        payload={
+            "symbols": [
+                _binance_futures_market_response("TUTUSDT", "TUT"),
+                _binance_futures_market_response("TUTUSDT", "TUT"),
+            ]
+        },
+    )
+    with pytest.raises(ValueError, match="2 entries"):
+        find_binance_futures_market(exchange_info, "TUTUSDT")
+
+
+def test_validate_route_evidence_accepts_matching_markets() -> None:
+    _validate_route_evidence(
+        base="TUT",
+        source_market=_sample_market_evidence("gate", "TUT_USDT"),
+        target_market=_sample_market_evidence("binance", "TUTUSDT", base_asset="TUT"),
+    )
+
+
+def test_validate_route_evidence_rejects_wrong_gate_market_id() -> None:
+    with pytest.raises(ValueError, match="does not match the expected"):
+        _validate_route_evidence(
+            base="TUT",
+            source_market=_sample_market_evidence("gate", "WRONG_USDT"),
+            target_market=_sample_market_evidence("binance", "TUTUSDT", base_asset="TUT"),
+        )
+
+
+def test_validate_route_evidence_rejects_wrong_binance_market_id() -> None:
+    with pytest.raises(ValueError, match="does not match the expected"):
+        _validate_route_evidence(
+            base="TUT",
+            source_market=_sample_market_evidence("gate", "TUT_USDT"),
+            target_market=_sample_market_evidence("binance", "WRONGUSDT"),
+        )
+
+
+def test_validate_route_evidence_rejects_base_asset_mismatch() -> None:
+    """The one piece of independent corroboration Binance's own exchangeInfo
+    response adds beyond the symbol string already used to look it up --
+    reported_base_asset is a genuinely distinct field, not this tool's own
+    parse (see the module docstring's PR1 fix-round note)."""
+    mismatched = dataclasses.replace(
+        _sample_market_evidence("binance", "TUTUSDT", base_asset="TUT"),
+        reported_base_asset="OTHER",
+    )
+    with pytest.raises(ValueError, match="baseAsset"):
+        _validate_route_evidence(
+            base="TUT",
+            source_market=_sample_market_evidence("gate", "TUT_USDT"),
+            target_market=mismatched,
+        )
+
+
+def test_validate_route_evidence_rejects_non_usdt_quote_or_settle() -> None:
+    non_usdt = dataclasses.replace(
+        _sample_market_evidence("gate", "TUT_USDT"), inferred_quote_asset="USDC"
+    )
+    with pytest.raises(ValueError, match="does not parse to a USDT-quoted"):
+        _validate_route_evidence(
+            base="TUT",
+            source_market=non_usdt,
+            target_market=_sample_market_evidence("binance", "TUTUSDT", base_asset="TUT"),
+        )
+
+
+def test_validate_route_evidence_rejects_binance_non_usdt_quote_or_settle() -> None:
+    non_usdt = dataclasses.replace(
+        _sample_market_evidence("binance", "TUTUSDT", base_asset="TUT"),
+        reported_quote_asset="USDC",
+    )
+    with pytest.raises(ValueError, match="not USDT-quoted"):
+        _validate_route_evidence(
+            base="TUT",
+            source_market=_sample_market_evidence("gate", "TUT_USDT"),
+            target_market=non_usdt,
+        )
+
+
+def test_validate_route_evidence_rejects_gate_in_delisting() -> None:
+    delisting = dataclasses.replace(
+        _sample_market_evidence("gate", "TUT_USDT"),
+        raw_evidence=dataclasses.replace(
+            _sample_market_evidence("gate", "TUT_USDT").raw_evidence,
+            payload={"in_delisting": True},
+        ),
+    )
+    with pytest.raises(ValueError, match="in_delisting"):
+        _validate_route_evidence(
+            base="TUT",
+            source_market=delisting,
+            target_market=_sample_market_evidence("binance", "TUTUSDT", base_asset="TUT"),
+        )
+
+
+def test_validate_route_evidence_rejects_non_perpetual_contract_type() -> None:
+    market = _sample_market_evidence("binance", "TUTUSDT", base_asset="TUT")
+    delivery = dataclasses.replace(
+        market,
+        raw_evidence=dataclasses.replace(
+            market.raw_evidence,
+            payload={**market.raw_evidence.payload, "contractType": "CURRENT_QUARTER"},
+        ),
+    )
+    with pytest.raises(ValueError, match="not PERPETUAL"):
+        _validate_route_evidence(
+            base="TUT",
+            source_market=_sample_market_evidence("gate", "TUT_USDT"),
+            target_market=delivery,
+        )
+
+
+def test_validate_route_evidence_rejects_inactive_market() -> None:
+    inactive = dataclasses.replace(_sample_market_evidence("gate", "TUT_USDT"), status="delisted")
+    with pytest.raises(ValueError, match="not trading"):
+        _validate_route_evidence(
+            base="TUT",
+            source_market=inactive,
+            target_market=_sample_market_evidence("binance", "TUTUSDT", base_asset="TUT"),
+        )
+
+
+# --- revalidate_bundle_route_evidence: read-time re-check, not just capture-time -
+
+
+def test_revalidate_bundle_route_evidence_is_noop_for_pre_v3_bundle() -> None:
+    """A bundle captured before source_market_evidence/target_market_evidence
+    existed has nothing to revalidate -- must not raise."""
+    bundle = _sample_bundle(with_market_evidence=False)
+    revalidate_bundle_route_evidence(bundle)  # must not raise
+
+
+def test_revalidate_bundle_route_evidence_rejects_invalid_v3_bundle() -> None:
+    """Mirrors revalidate_bundle_identity_class's role: load_evidence_bundle
+    only re-checks bundle_sha256 (content not tampered with after writing),
+    which alone does not prove the route evidence was ever semantically
+    valid -- a hand-crafted file can compute a correct hash over content
+    that never actually passed _validate_route_evidence."""
+    bundle = _sample_bundle()
+    assert bundle.target_market_evidence is not None
+    tampered_market = dataclasses.replace(
+        bundle.target_market_evidence, reported_base_asset="NOT_THE_BASE"
+    )
+    bundle = dataclasses.replace(bundle, target_market_evidence=tampered_market)
+    with pytest.raises(ValueError, match="baseAsset"):
+        revalidate_bundle_route_evidence(bundle)
+
+
 # --- fetch_gate_currency: fails closed like fetch_exchange_evidence ------------
 
 
@@ -601,7 +842,36 @@ def _sample_chain_evidence(decimals: int = 18, contract: str = "0xaaaa") -> Chai
     )
 
 
-def _sample_bundle() -> EvidenceBundle:
+def _sample_market_evidence(
+    exchange: str, native_market_id: str, *, base_asset: str = "TEST"
+) -> DerivativeMarketEvidence:
+    is_gate = exchange == "gate"
+    return DerivativeMarketEvidence(
+        exchange=exchange,
+        native_market_id=native_market_id,
+        reported_base_asset=None if is_gate else base_asset,
+        reported_quote_asset=None if is_gate else "USDT",
+        reported_settle_asset=None if is_gate else "USDT",
+        inferred_base_asset=base_asset,
+        inferred_quote_asset="USDT",
+        inferred_settle_asset="USDT",
+        inference_basis="test fixture",
+        onboarded_at_ms=1_700_000_000_000,
+        status="trading" if is_gate else "TRADING",
+        raw_evidence=RawFetch(
+            source="test",
+            endpoint="https://fake/",
+            observed_at=datetime(2026, 8, 28, tzinfo=UTC),
+            raw_sha256="c" * 64,
+            wire_exact=True,
+            payload=(
+                {"contractType": "PERPETUAL"} if exchange == "binance" else {"in_delisting": False}
+            ),
+        ),
+    )
+
+
+def _sample_bundle(*, with_market_evidence: bool = True) -> EvidenceBundle:
     raw = RawFetch(
         source="test",
         endpoint="https://fake/",
@@ -611,7 +881,9 @@ def _sample_bundle() -> EvidenceBundle:
         payload={"ok": True},
     )
     return EvidenceBundle(
-        evidence_version="source_lead_identity_evidence_v2",
+        evidence_version=EVIDENCE_VERSION
+        if with_market_evidence
+        else "source_lead_identity_evidence_v2",
         base="TEST",
         source_exchange="gate",
         target_exchange="binance",
@@ -621,6 +893,12 @@ def _sample_bundle() -> EvidenceBundle:
         gate_evidence=raw,
         target_catalog_evidence=raw,
         coingecko_evidence=raw,
+        source_market_evidence=(
+            _sample_market_evidence("gate", "TEST_USDT") if with_market_evidence else None
+        ),
+        target_market_evidence=(
+            _sample_market_evidence("binance", "TESTUSDT") if with_market_evidence else None
+        ),
         code_revision="abc123",
         working_tree_dirty=False,
         captured_at=datetime(2026, 8, 28, tzinfo=UTC),
@@ -658,6 +936,31 @@ def test_save_and_load_evidence_bundle_round_trips(tmp_path: Path) -> None:
     assert loaded.source_contract.decimals == 18
     assert loaded.source_contract.block_hash == "0x" + "a" * 64
     assert loaded.bundle_sha256 == digest
+
+
+def test_save_and_load_pre_v3_bundle_without_market_evidence_still_round_trips(
+    tmp_path: Path,
+) -> None:
+    """A genuinely old (evidence_version < v3) bundle on disk, captured
+    before source_market_evidence/target_market_evidence existed, must
+    still load and pass its own integrity check under the current code --
+    the currently-deployed registry v2 depends on exactly this (colleague
+    review, 2026-08-28, third round)."""
+    bundle = _sample_bundle(with_market_evidence=False)
+    digest = compute_bundle_sha256(bundle)
+    finalized = dataclasses.replace(bundle, bundle_sha256=digest)
+    path = save_evidence_bundle(finalized, tmp_path / "test-gate-binance.json")
+
+    loaded = load_evidence_bundle(path)
+
+    assert loaded.source_market_evidence is None
+    assert loaded.target_market_evidence is None
+    assert loaded.bundle_sha256 == digest
+    # Matters regardless of whether the field is literally absent from the
+    # JSON (a genuinely old file) or present-as-null (round-tripped through
+    # current code, as here): compute_bundle_sha256 operates on the
+    # deserialized object, which is None either way, not on raw file bytes.
+    assert json.loads(path.read_text())["source_market_evidence"] is None
 
 
 def test_load_evidence_bundle_rejects_tampered_content(tmp_path: Path) -> None:
@@ -712,6 +1015,53 @@ def test_load_all_evidence_bundles_ignores_manifest_file(tmp_path: Path) -> None
     assert [b.base for b in bundles] == ["TEST"]
 
 
+def test_load_all_evidence_bundles_rejects_manifest_candidate_set_mismatch(
+    tmp_path: Path,
+) -> None:
+    """A manifest.json is written by _run alongside every bundle it
+    publishes but, before this fix, was never read back by anything --
+    colleague review, 2026-08-28, PR1 fix round: a bundle file added,
+    removed, or replaced by hand without regenerating the manifest passed
+    silently. This is the actual check that closes that gap."""
+    bundle = _sample_bundle()
+    digest = compute_bundle_sha256(bundle)
+    finalized = dataclasses.replace(bundle, bundle_sha256=digest)
+    save_evidence_bundle(finalized, tmp_path / "test-gate-binance.json")
+    (tmp_path / "manifest.json").write_text(
+        json.dumps({"candidates": ["SOMETHING_ELSE"], "bundle_fingerprint": None})
+    )
+
+    with pytest.raises(EvidenceIntegrityError, match="candidate set"):
+        load_all_evidence_bundles(tmp_path)
+
+
+def test_load_all_evidence_bundles_rejects_manifest_fingerprint_mismatch(tmp_path: Path) -> None:
+    bundle = _sample_bundle()
+    digest = compute_bundle_sha256(bundle)
+    finalized = dataclasses.replace(bundle, bundle_sha256=digest)
+    save_evidence_bundle(finalized, tmp_path / "test-gate-binance.json")
+    (tmp_path / "manifest.json").write_text(
+        json.dumps({"candidates": ["TEST"], "bundle_fingerprint": "0" * 64})
+    )
+
+    with pytest.raises(EvidenceIntegrityError, match="bundle_fingerprint"):
+        load_all_evidence_bundles(tmp_path)
+
+
+def test_load_all_evidence_bundles_accepts_matching_manifest(tmp_path: Path) -> None:
+    bundle = _sample_bundle()
+    digest = compute_bundle_sha256(bundle)
+    finalized = dataclasses.replace(bundle, bundle_sha256=digest)
+    save_evidence_bundle(finalized, tmp_path / "test-gate-binance.json")
+    fingerprint = _sha256_canonical([digest])
+    (tmp_path / "manifest.json").write_text(
+        json.dumps({"candidates": ["TEST"], "bundle_fingerprint": fingerprint})
+    )
+
+    bundles = load_all_evidence_bundles(tmp_path)
+    assert [b.base for b in bundles] == ["TEST"]
+
+
 def test_load_all_evidence_bundles_is_deterministically_ordered(tmp_path: Path) -> None:
     for name in ("zzz", "aaa", "mmm"):
         bundle = dataclasses.replace(_sample_bundle(), base=name.upper())
@@ -728,8 +1078,10 @@ def test_load_all_evidence_bundles_is_deterministically_ordered(tmp_path: Path) 
 
 def test_captured_evidence_set_loads_and_verifies_if_present() -> None:
     """Integration-style check against whatever this branch actually shipped
-    in evidence/source_lead/v2/."""
-    bundles = load_all_evidence_bundles(allow_empty=True)
+    in evidence/source_lead/v2/ -- explicitly, not via load_all_evidence_
+    bundles' default directory, which moved to v3
+    (research/gate-source-lead-registry-activation-v3, PR 3 of 3)."""
+    bundles = load_all_evidence_bundles(EVIDENCE_DIR_V2, allow_empty=True)
     if not bundles:
         pytest.skip("no captured evidence bundles present on this checkout")
     nil = next((b for b in bundles if b.base == "NIL"), None)
@@ -751,7 +1103,58 @@ def test_candidates_table_has_no_duplicate_routes() -> None:
     assert len(routes) == len(set(routes))
 
 
+def test_captured_v3_evidence_set_loads_verifies_and_carries_route_evidence() -> None:
+    """Integration-style check against the committed evidence/source_lead/v3/
+    bundles -- this directory is checked in, not gitignored, and must always
+    be present and complete on a real checkout of this branch. Colleague
+    review, 2026-08-28, PR1 fix round: the previous version passed
+    allow_empty=True and skipped when the directory was empty, which makes a
+    genuinely broken or deleted evidence set silently pass CI instead of
+    failing it -- a missing/incomplete required directory must raise, like
+    every other integrity check in this module. Passes EVIDENCE_DIR
+    explicitly (rather than relying on load_all_evidence_bundles' default)
+    so this test keeps checking the same directory regardless of what the
+    default happens to be."""
+    bundles = load_all_evidence_bundles(EVIDENCE_DIR)
+    assert len(bundles) == len(CANDIDATES)
+    for bundle in bundles:
+        assert bundle.evidence_version == EVIDENCE_VERSION
+        assert bundle.source_market_evidence is not None
+        assert bundle.source_market_evidence.native_market_id == f"{bundle.base}_USDT"
+        assert bundle.target_market_evidence is not None
+        assert bundle.target_market_evidence.native_market_id == f"{bundle.base}USDT"
+        assert bundle.target_market_evidence.reported_base_asset == bundle.base
+        # Route evidence must still pass a fresh semantic re-check at read
+        # time, not just have passed once at capture time.
+        revalidate_bundle_route_evidence(bundle)
+
+
 # --- capture_bundle: full end-to-end flow against fakes, no real network ------
+
+
+def _gate_futures_contract_response(
+    market_id: str, *, launch_time: int = 1_700_000_000, status: str = "trading"
+) -> dict[str, Any]:
+    return {"name": market_id, "launch_time": launch_time, "status": status, "in_delisting": False}
+
+
+def _binance_futures_market_response(
+    symbol: str,
+    base_asset: str,
+    *,
+    onboard_date: int = 1_700_000_000_000,
+    contract_type: str = "PERPETUAL",
+    status: str = "TRADING",
+) -> dict[str, Any]:
+    return {
+        "symbol": symbol,
+        "baseAsset": base_asset,
+        "quoteAsset": "USDT",
+        "marginAsset": "USDT",
+        "contractType": contract_type,
+        "onboardDate": onboard_date,
+        "status": status,
+    }
 
 
 def _queue_gate_style_client(*, with_alpha_entry: bool) -> _FakeHTTPClient:
@@ -769,6 +1172,9 @@ def _queue_gate_style_client(*, with_alpha_entry: bool) -> _FakeHTTPClient:
     _queue_decimals_rpc(client, rpc, decimals_hex="0x" + "0" * 62 + "12")  # source decimals=18
     if with_alpha_entry:
         _queue_decimals_rpc(client, rpc, decimals_hex="0x" + "0" * 62 + "12")  # target decimals=18
+    client.queue_get(
+        "https://api.gateio.ws/", _FakeResponse(_gate_futures_contract_response("TUT_USDT"))
+    )
     return client
 
 
@@ -789,6 +1195,10 @@ async def test_capture_bundle_exact_contract_end_to_end() -> None:
             }
         ),
     )
+    client.queue_get(
+        "https://fapi.binance.com/",
+        _FakeResponse({"symbols": [_binance_futures_market_response("TUTUSDT", "TUT")]}),
+    )
     gate = _FakeExchange(
         {
             "TUT": {
@@ -799,6 +1209,7 @@ async def test_capture_bundle_exact_contract_end_to_end() -> None:
         }
     )
     alpha_catalog = await fetch_binance_alpha_catalog(client)
+    binance_futures_exchange_info = await fetch_binance_futures_exchange_info(client)
 
     bundle = await capture_bundle(
         http_client=client,
@@ -813,6 +1224,7 @@ async def test_capture_bundle_exact_contract_end_to_end() -> None:
         target_chain="bsc",
         target_contract_address="0xcaae2a2f939f51d97cdfa9a86e79e3f085b799f3",
         alpha_catalog=alpha_catalog,
+        binance_futures_exchange_info=binance_futures_exchange_info,
         code_revision="abc123",
         working_tree_dirty=False,
     )
@@ -822,6 +1234,10 @@ async def test_capture_bundle_exact_contract_end_to_end() -> None:
     assert bundle.target_contract is not None
     assert bundle.target_contract.decimals == 18
     assert bundle.target_catalog_evidence is not None
+    assert bundle.source_market_evidence is not None
+    assert bundle.source_market_evidence.native_market_id == "TUT_USDT"
+    assert bundle.target_market_evidence is not None
+    assert bundle.target_market_evidence.native_market_id == "TUTUSDT"
     assert bundle.bundle_sha256 == compute_bundle_sha256(bundle)
 
 
@@ -844,10 +1260,15 @@ async def test_capture_bundle_rejects_eden_style_chain_mismatch() -> None:
             }
         ),
     )
+    client.queue_get(
+        "https://fapi.binance.com/",
+        _FakeResponse({"symbols": [_binance_futures_market_response("TUTUSDT", "TUT")]}),
+    )
     # Gate only reports an ethereum contract, but the candidate table claims
     # a bsc source_contract_address that gate never actually confirmed.
     gate = _FakeExchange({"TUT": {"networks": {"ERC20": {"info": {"addr": "0xdifferent"}}}}})
     alpha_catalog = await fetch_binance_alpha_catalog(client)
+    binance_futures_exchange_info = await fetch_binance_futures_exchange_info(client)
 
     with pytest.raises(ValueError, match="does not report"):
         await capture_bundle(
@@ -863,6 +1284,7 @@ async def test_capture_bundle_rejects_eden_style_chain_mismatch() -> None:
             target_chain="bsc",
             target_contract_address="0xcaae2a2f939f51d97cdfa9a86e79e3f085b799f3",
             alpha_catalog=alpha_catalog,
+            binance_futures_exchange_info=binance_futures_exchange_info,
             code_revision="abc123",
             working_tree_dirty=False,
         )
@@ -874,6 +1296,10 @@ async def test_capture_bundle_exact_contract_requires_alpha_entry() -> None:
     downgrade -- capture_bundle must raise, not guess."""
     client = _queue_gate_style_client(with_alpha_entry=True)
     client.queue_get("https://www.binance.com/", _FakeResponse({"data": []}))
+    client.queue_get(
+        "https://fapi.binance.com/",
+        _FakeResponse({"symbols": [_binance_futures_market_response("TUTUSDT", "TUT")]}),
+    )
     gate = _FakeExchange(
         {
             "TUT": {
@@ -884,6 +1310,7 @@ async def test_capture_bundle_exact_contract_requires_alpha_entry() -> None:
         }
     )
     alpha_catalog = await fetch_binance_alpha_catalog(client)
+    binance_futures_exchange_info = await fetch_binance_futures_exchange_info(client)
 
     with pytest.raises(ValueError, match="found none"):
         await capture_bundle(
@@ -899,6 +1326,7 @@ async def test_capture_bundle_exact_contract_requires_alpha_entry() -> None:
             target_chain="bsc",
             target_contract_address="0xcaae2a2f939f51d97cdfa9a86e79e3f085b799f3",
             alpha_catalog=alpha_catalog,
+            binance_futures_exchange_info=binance_futures_exchange_info,
             code_revision="abc123",
             working_tree_dirty=False,
         )
@@ -919,6 +1347,13 @@ async def test_capture_bundle_third_party_bridge_only_has_no_target_evidence() -
         client, "https://ethereum-rpc.publicnode.com", decimals_hex="0x" + "0" * 63 + "6"
     )
     client.queue_get("https://www.binance.com/", _FakeResponse({"data": []}))
+    client.queue_get(
+        "https://api.gateio.ws/", _FakeResponse(_gate_futures_contract_response("NIL_USDT"))
+    )
+    client.queue_get(
+        "https://fapi.binance.com/",
+        _FakeResponse({"symbols": [_binance_futures_market_response("NILUSDT", "NIL")]}),
+    )
     gate = _FakeExchange(
         {
             "NIL": {
@@ -929,6 +1364,7 @@ async def test_capture_bundle_third_party_bridge_only_has_no_target_evidence() -
         }
     )
     alpha_catalog = await fetch_binance_alpha_catalog(client)
+    binance_futures_exchange_info = await fetch_binance_futures_exchange_info(client)
 
     bundle = await capture_bundle(
         http_client=client,
@@ -943,6 +1379,7 @@ async def test_capture_bundle_third_party_bridge_only_has_no_target_evidence() -
         target_chain=None,
         target_contract_address=None,
         alpha_catalog=alpha_catalog,
+        binance_futures_exchange_info=binance_futures_exchange_info,
         code_revision="abc123",
         working_tree_dirty=False,
     )
@@ -950,6 +1387,10 @@ async def test_capture_bundle_third_party_bridge_only_has_no_target_evidence() -
     assert bundle.target_contract is None
     assert bundle.target_catalog_evidence is None
     assert bundle.source_contract.decimals == 6
+    assert bundle.source_market_evidence is not None
+    assert bundle.source_market_evidence.native_market_id == "NIL_USDT"
+    assert bundle.target_market_evidence is not None
+    assert bundle.target_market_evidence.native_market_id == "NILUSDT"
 
 
 def test_candidates_table_third_party_bridge_only_has_no_target_chain() -> None:

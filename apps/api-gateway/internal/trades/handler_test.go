@@ -571,10 +571,10 @@ func TestListNullExitReasonDoesNotCrash(t *testing.T) {
 // convention) rather than a real scan reproduction; the fix itself was
 // verified directly against production data before shipping.
 func TestCombinedTradesCTECoalescesNullableMomentumFlowCosts(t *testing.T) {
-	if !strings.Contains(combinedTradesCTE, "coalesce(p.fees_usd, 0)") {
+	if !strings.Contains(CombinedTradesCTE, "coalesce(p.fees_usd, 0)") {
 		t.Error("momentum_flow_paper fees_usd must be coalesced to 0, not left nullable")
 	}
-	if !strings.Contains(combinedTradesCTE, "coalesce(p.funding_usd, 0)") {
+	if !strings.Contains(CombinedTradesCTE, "coalesce(p.funding_usd, 0)") {
 		t.Error("momentum_flow_paper funding_usd must be coalesced to 0, not left nullable")
 	}
 }
@@ -596,7 +596,7 @@ func TestListOriginFilterPassedToSQL(t *testing.T) {
 // momentumFlowPaperRowVals mirrors tradeRowVals but for the momentum_flow_paper
 // side of the UNION: a UUID-shaped string id, origin set, and no legacy
 // pump-short-only fields (entry_slippage_bps/exit_slippage_bps/slippage_usd/
-// pnl_usd/pnl_pct all NULL, per combinedTradesCTE's own doc comment on why
+// pnl_usd/pnl_pct all NULL, per CombinedTradesCTE's own doc comment on why
 // those have no real equivalent on the paper side).
 func momentumFlowPaperRowVals(paperID, status, exchange string) []any {
 	return []any{

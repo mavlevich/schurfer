@@ -1,0 +1,401 @@
+{
+  "base": "AKE",
+  "bundle_sha256": "c3cf95efd181b9375ccbfb08aa6f87536ea2bf8249e76bc03b171735feb7dd25",
+  "captured_at": "2026-08-28T23:30:07.845421+00:00",
+  "code_revision": "aacf83c38b046990461e9142ddf82154e6ced91e",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/akedo?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-08-28T23:30:06.231797+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "binance-smart-chain",
+      "block_time_in_minutes": 0,
+      "categories": [
+        "Artificial Intelligence (AI)",
+        "BNB Chain Ecosystem",
+        "AI Applications",
+        "Binance Wallet IDO"
+      ],
+      "contract_address": "0x2c3a8ee94ddd97244a93bc48298f97d2c412f7db",
+      "country_origin": "",
+      "description": {
+        "en": "AKEDO is a Multi-Agent AI framework built for Autonomous Content Creation and Intelligent Collaboration. It empowers creators to design engaging games in just 2 minutes using simple natural language prompts.\n\nPowered by large language models (LLMs), AKEDO’s modular framework is designed for scalability and flexibility, enabling creators to turn their ideas into reality with ease."
+      },
+      "detail_platforms": {
+        "binance-smart-chain": {
+          "contract_address": "0x2c3a8ee94ddd97244a93bc48298f97d2c412f7db",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/bsc/tokens/0x2c3a8ee94ddd97244a93bc48298f97d2c412f7db"
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": false,
+      "hashing_algorithm": null,
+      "id": "akedo",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/68410/large/akedo.png?1755678461",
+        "small": "https://coin-images.coingecko.com/coins/images/68410/small/akedo.png?1755678461",
+        "thumb": "https://coin-images.coingecko.com/coins/images/68410/thumb/akedo.png?1755678461"
+      },
+      "last_updated": "2026-08-28T23:27:40.000Z",
+      "links": {
+        "announcement_url": [],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://bscscan.com/token/0x2c3a8Ee94dDD97244a93Bc48298f97d2C412F7Db",
+          "https://binplorer.com/address/0x2c3a8Ee94dDD97244a93Bc48298f97d2C412F7Db"
+        ],
+        "chat_url": [],
+        "facebook_username": "",
+        "homepage": ["https://akedo.fun"],
+        "official_forum_url": [
+          "https://medium.com/@akedo.fun",
+          "https://www.instagram.com/akedo_games/",
+          "https://www.tiktok.com/@akedo.fun"
+        ],
+        "repos_url": {
+          "bitbucket": [],
+          "github": []
+        },
+        "snapshot_url": null,
+        "subreddit_url": null,
+        "telegram_channel_identifier": "akedofun",
+        "twitter_screen_name": "akedofun",
+        "whitepaper": "https://akedo-1.gitbook.io/akedo-whitepaper"
+      },
+      "listing_currency": null,
+      "listing_price": null,
+      "listing_source": null,
+      "listing_source_url": null,
+      "listing_timestamp": null,
+      "market_cap_rank": 144,
+      "market_cap_rank_with_rehypothecated": 206,
+      "name": "Akedo",
+      "platforms": {
+        "binance-smart-chain": "0x2c3a8ee94ddd97244a93bc48298f97d2c412f7db"
+      },
+      "preview_listing": false,
+      "public_notice": null,
+      "sentiment_votes_down_percentage": 50.0,
+      "sentiment_votes_up_percentage": 50.0,
+      "status_updates": [],
+      "symbol": "ake",
+      "watchlist_portfolio_users": 2900,
+      "web_slug": "akedo"
+    },
+    "raw_sha256": "dd75c2c3c63f5b0d17b0e771a51ba633552885637ac0f0e7152731a6faec2685",
+    "source": "https://api.coingecko.com/api/v3/coins/akedo",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v3",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-08-28T23:30:05.570080+00:00",
+    "payload": {
+      "active": true,
+      "code": "AKE",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "AKE",
+      "info": {
+        "category": [],
+        "chain": "BSC",
+        "chains": [
+          {
+            "addr": "0x2c3a8ee94ddd97244a93bc48298f97d2c412f7db",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "AKE",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "211467720.00000003",
+        "name": "Akedo",
+        "total_supply": "100000000000",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "Akedo",
+      "networks": {
+        "BEP20": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "BSC",
+          "info": {
+            "addr": "0x2c3a8ee94ddd97244a93bc48298f97d2c412f7db",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "BEP20",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "2378427fbe092860bc207260229855f9e8ec694f92905c98bbdf12e8b7b92ae8",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "exact_contract",
+  "source_contract": {
+    "block_hash": "0x87c144edd65c93f44f0613c4bb52b83c42dbc1c99c81cfab895613f7081c003a",
+    "block_number": 118663810,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0x2c3a8ee94ddd97244a93bc48298f97d2c412f7db",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-08-28T23:30:06.571207+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "8e73d72cca28014c8646f2033e87ec712fc9eb6dbc2664092e1cf446ce4e6937",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "source_market_evidence": {
+    "exchange": "gate",
+    "inference_basis": "gate futures contract payload has no base_asset/quote_asset/settle_asset fields; base/quote split parsed from the reported native_market_id ('AKE_USDT') on its '_' separator, settle asset inferred from the /futures/usdt/ endpoint family",
+    "inferred_base_asset": "AKE",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "AKE_USDT",
+    "onboarded_at_ms": 1758881410000,
+    "raw_evidence": {
+      "endpoint": "https://api.gateio.ws/api/v4/futures/usdt/contracts/AKE_USDT",
+      "observed_at": "2026-08-28T23:30:07.690150+00:00",
+      "payload": {
+        "config_change_time": 1787754200,
+        "contract_type": "",
+        "create_time": 1758881410,
+        "cross_leverage_default": "10",
+        "enable_bonus": true,
+        "enable_circuit_breaker": false,
+        "enable_credit": true,
+        "enable_decimal": false,
+        "funding_cap_ratio": "2",
+        "funding_impact_value": "5000",
+        "funding_interval": 14400,
+        "funding_next_apply": 1787961600,
+        "funding_offset": 0,
+        "funding_rate": "0.000287",
+        "funding_rate_indicative": "0.000287",
+        "funding_rate_limit": "0.02",
+        "in_delisting": false,
+        "index_price": "0.0110156",
+        "interest_rate": "0.0003",
+        "is_pre_market": false,
+        "last_price": "0.0110166",
+        "launch_time": 1758881410,
+        "leverage_max": "25",
+        "leverage_min": "1",
+        "long_users": 579,
+        "maintenance_rate": "0.025",
+        "maker_fee_rate": "-0.0001",
+        "mark_price": "0.0110217",
+        "mark_price_round": "0.0000001",
+        "mark_type": "index",
+        "market_order_size_max": "80000",
+        "market_order_slip_ratio": "0.05",
+        "name": "AKE_USDT",
+        "order_price_deviate": "0.2",
+        "order_price_round": "0.0000001",
+        "order_size_max": 120000,
+        "order_size_min": 1,
+        "orderbook_id": 3965533099,
+        "orders_limit": 100,
+        "position_size": 322374,
+        "quanto_multiplier": "1000",
+        "ref_discount_rate": "0",
+        "ref_rebate_rate": "0.2",
+        "risk_limit_base": "5000",
+        "risk_limit_max": "2500000",
+        "risk_limit_step": "2495000",
+        "short_users": 1016,
+        "status": "trading",
+        "taker_fee_rate": "0.00075",
+        "trade_id": 22439734,
+        "trade_size": 1223964936,
+        "type": "direct",
+        "voucher_leverage": "0"
+      },
+      "raw_sha256": "b2d4b54318d66024d67043aea2d915956103f2c189fe6c1239d22db5f4d80e55",
+      "source": "https://api.gateio.ws/api/v4/futures/usdt/contracts/AKE_USDT",
+      "wire_exact": true
+    },
+    "reported_base_asset": null,
+    "reported_quote_asset": null,
+    "reported_settle_asset": null,
+    "status": "trading"
+  },
+  "target_catalog_evidence": {
+    "endpoint": "https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list",
+    "observed_at": "2026-08-28T23:28:45.355309+00:00",
+    "payload": {
+      "chainId": "56",
+      "chainName": "BSC",
+      "contractAddress": "0x2c3a8ee94ddd97244a93bc48298f97d2c412f7db",
+      "decimals": 18,
+      "fullyDelisted": false,
+      "listingCex": false,
+      "name": "AKE",
+      "offline": false,
+      "symbol": "AKE"
+    },
+    "raw_sha256": "2449a16c2199f0d1ecfa21424cc6cd86776ede44511f93e86a422165c62da5e7",
+    "source": "binance:alpha_catalog_entry",
+    "wire_exact": false
+  },
+  "target_contract": {
+    "block_hash": "0xc4434c20b8c3256f725b1ce5373ade04ae34846ecf2837632078a1e9576b1266",
+    "block_number": 118663813,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0x2c3a8ee94ddd97244a93bc48298f97d2c412f7db",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-08-28T23:30:07.844493+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "8e73d72cca28014c8646f2033e87ec712fc9eb6dbc2664092e1cf446ce4e6937",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "target_exchange": "binance",
+  "target_market_evidence": {
+    "exchange": "binance",
+    "inference_basis": "copied verbatim from binance futures exchangeInfo's own baseAsset/quoteAsset/marginAsset fields -- genuinely reported, not parsed",
+    "inferred_base_asset": "AKE",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "AKEUSDT",
+    "onboarded_at_ms": 1758889800000,
+    "raw_evidence": {
+      "endpoint": "https://fapi.binance.com/fapi/v1/exchangeInfo",
+      "observed_at": "2026-08-28T23:28:45.923396+00:00",
+      "payload": {
+        "baseAsset": "AKE",
+        "baseAssetPrecision": 8,
+        "contractType": "PERPETUAL",
+        "deliveryDate": 4133404800000,
+        "filters": [
+          {
+            "filterType": "PRICE_FILTER",
+            "maxPrice": "200",
+            "minPrice": "0.0000010",
+            "tickSize": "0.0000010"
+          },
+          {
+            "filterType": "LOT_SIZE",
+            "maxQty": "150000000",
+            "minQty": "1",
+            "stepSize": "1"
+          },
+          {
+            "filterType": "MARKET_LOT_SIZE",
+            "maxQty": "40000000",
+            "minQty": "1",
+            "stepSize": "1"
+          },
+          {
+            "filterType": "MAX_NUM_ORDERS",
+            "limit": 200
+          },
+          {
+            "filterType": "MIN_NOTIONAL",
+            "notional": "5"
+          },
+          {
+            "filterType": "PERCENT_PRICE",
+            "multiplierDecimal": "4",
+            "multiplierDown": "0.8500",
+            "multiplierUp": "1.1500"
+          },
+          {
+            "filterType": "POSITION_RISK_CONTROL",
+            "positionControlSide": "NONE"
+          }
+        ],
+        "liquidationFee": "0.020000",
+        "maintMarginPercent": "2.5000",
+        "marginAsset": "USDT",
+        "marketTakeBound": "0.15",
+        "maxMoveOrderLimit": 10000,
+        "onboardDate": 1758889800000,
+        "orderTypes": [
+          "LIMIT",
+          "MARKET",
+          "STOP",
+          "STOP_MARKET",
+          "TAKE_PROFIT",
+          "TAKE_PROFIT_MARKET",
+          "TRAILING_STOP_MARKET"
+        ],
+        "pair": "AKEUSDT",
+        "permissionSets": ["GRID", "COPY", "DCA", "PSB"],
+        "pricePrecision": 7,
+        "quantityPrecision": 0,
+        "quoteAsset": "USDT",
+        "quotePrecision": 8,
+        "requiredMarginPercent": "5.0000",
+        "status": "TRADING",
+        "symbol": "AKEUSDT",
+        "timeInForce": ["GTC", "IOC", "FOK", "GTX", "GTD"],
+        "triggerProtect": "0.1500",
+        "underlyingSubType": ["Alpha"],
+        "underlyingType": "COIN"
+      },
+      "raw_sha256": "457e0bbecb226a6e528f3e6d8328068ddd4df0274d561db58da11ace99ae8c8e",
+      "source": "binance:futures_exchange_info_entry",
+      "wire_exact": false
+    },
+    "reported_base_asset": "AKE",
+    "reported_quote_asset": "USDT",
+    "reported_settle_asset": "USDT",
+    "status": "TRADING"
+  },
+  "working_tree_dirty": false
+}

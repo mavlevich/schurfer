@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -35,19 +36,19 @@ var (
 	orderflowStart        = time.Date(2026, time.July, 30, 18, 15, 0, 0, time.UTC)
 	exitLiquidityStart    = time.Date(2026, time.July, 29, 15, 45, 34, 0, time.UTC)
 	sourceLeadStart       = time.Date(2026, time.August, 2, 0, 0, 0, 0, time.UTC)
-	// The date identity registry v2 was frozen and populated with real,
-	// evidenced links (research/gate-source-lead-registry-activation-v2;
-	// mirrors source_lead_contract.IDENTITY_REGISTRY_V2_START on the
-	// analytics side -- keep both in sync). A capture whose
+	// The date identity registry v3 was frozen and populated with
+	// evidence-backed links (research/gate-source-lead-registry-
+	// activation-v3; mirrors source_lead_contract.IDENTITY_REGISTRY_V3_START
+	// on the analytics side -- keep both in sync). A capture whose
 	// source_first_observed_at is before this must never count toward
 	// SourceLeadProgress.QualifiedProspective even if its own qualification
 	// row says 'qualified': identity was not confirmed at the time that
 	// capture occurred, only retroactively. Set a few days past this line's
 	// own authoring date, not at midnight today, so it cannot fall before
 	// this PR actually merges and deploys (colleague review, 2026-08-28,
-	// second round). Bump to the actual deploy date if it lands later;
-	// never move it earlier.
-	identityRegistryV2Start = time.Date(2026, time.August, 30, 0, 0, 0, 0, time.UTC)
+	// second round, applied again for the v3 cutover). Bump to the actual
+	// deploy date if it lands later; never move it earlier.
+	identityRegistryV3Start = time.Date(2026, time.September, 3, 0, 0, 0, 0, time.UTC)
 )
 
 type pgxRow interface {
@@ -68,11 +69,27 @@ type redisHashReader interface {
 	HGetAll(ctx context.Context, key string) *redis.MapStringStringCmd
 }
 
+// defaultReadinessSubcallTimeout bounds each of Readiness's independent
+// sub-calls (see Handler.subcallContext). Chosen well under the server's
+// 30s WriteTimeout (apps/api-gateway/cmd/api-gateway/main.go) so that even
+// if every sub-call happens to be this slow at once, they run concurrently
+// rather than summed -- total wall time stays close to this single budget,
+// not a multiple of it. Not tied to any specific query's normal latency;
+// revisit if a legitimately slower query needs more room once it exists.
+const defaultReadinessSubcallTimeout = 8 * time.Second
+
 type Handler struct {
 	db             queryRower
 	redis          redisHashReader
 	now            func() time.Time
 	checkpointPath string
+	// subcallTimeout overrides defaultReadinessSubcallTimeout when positive
+	// -- zero-value (the common case: NewHandler always sets it, but a
+	// hand-built Handler{} in a test does not) falls back to the default in
+	// subcallContext, never to an instantly-expired zero timeout. Tests use
+	// this to prove Readiness actually bounds a hanging sub-call without
+	// paying the full production timeout in wall-clock test time.
+	subcallTimeout time.Duration
 }
 
 func NewHandler(pool *pgxpool.Pool, rdb *redis.Client) *Handler {
@@ -81,7 +98,20 @@ func NewHandler(pool *pgxpool.Pool, rdb *redis.Client) *Handler {
 		redis:          rdb,
 		now:            time.Now,
 		checkpointPath: os.Getenv("RESEARCH_CHECKPOINTS_PATH"),
+		subcallTimeout: defaultReadinessSubcallTimeout,
 	}
+}
+
+// subcallContext derives a per-sub-call timeout from parent (itself already
+// derived from the request context by errgroup.WithContext in Readiness),
+// so a sub-call is bounded by BOTH the client disconnecting/the request
+// context and its own timeout budget, whichever fires first.
+func (h *Handler) subcallContext(parent context.Context) (context.Context, context.CancelFunc) {
+	timeout := h.subcallTimeout
+	if timeout <= 0 {
+		timeout = defaultReadinessSubcallTimeout
+	}
+	return context.WithTimeout(parent, timeout)
 }
 
 type Milestone struct {
@@ -206,29 +236,36 @@ type SourceLeadProgress struct {
 	ConfirmedWithinHour     int       `json:"confirmed_within_hour"`
 	// Qualified counts every source_lead_qualifications row with
 	// status='qualified' under the current qualification_version -- it is
-	// NOT itself prospective-clean, because identity_registry_v2 was empty
-	// before IdentityRegistryV2Start and a capture's own qualification is
+	// NOT itself prospective-clean, because identity_registry_v3 was empty
+	// before IdentityRegistryV3Start and a capture's own qualification is
 	// only ever computed once, at capture time (colleague review,
 	// 2026-08-28: "не применять текущие каталоги ретроактивно" -- identity
 	// confirmed today does not make a historical capture's own qualified
 	// verdict retroactively trustworthy). QualifiedProspective is the
 	// number that actually matters for the money-first net-EV decision:
 	// the same qualified count, restricted to captures whose
-	// source_first_observed_at is at or after IdentityRegistryV2Start.
+	// source_first_observed_at is at or after IdentityRegistryV3Start.
 	Qualified               int       `json:"qualified"`
-	IdentityRegistryV2Start time.Time `json:"identity_registry_v2_start"`
+	IdentityRegistryV3Start time.Time `json:"identity_registry_v3_start"`
 	QualifiedProspective    int       `json:"qualified_prospective"`
 	QualificationMissing    int       `json:"qualification_missing"`
 	IdentityUnapproved      int       `json:"identity_unapproved"`
 	NoExecutableTarget      int       `json:"no_approved_executable_target"`
 	// RouteEvidencePending counts qualification_reason=
 	// 'route_evidence_not_yet_independent' -- identity and liquidity both
-	// checked out and a venue was selected, but ROUTE_EVIDENCE_
-	// INDEPENDENTLY_VERIFIED=False (source_lead_qualification.py) means
-	// registry v2's evidence only vouches for asset identity, not the
-	// specific derivative markets, so nothing can reach status='qualified'
-	// yet (colleague review, 2026-08-28, second round). Every one of these
-	// rows carries its full would-have-selected venue/impact under its own
+	// checked out and a venue was selected, but
+	// ROUTE_EVIDENCE_INDEPENDENTLY_VERIFIED=False at capture time
+	// (source_lead_qualification.py) meant registry v2's evidence only
+	// vouched for asset identity, not the specific derivative markets, so
+	// qualification could not reach status='qualified' yet (colleague
+	// review, 2026-08-28, second round). Flipped to True in
+	// research/gate-source-lead-registry-activation-v3 (PR 3 of 3), so this
+	// count is now purely historical -- no new row can be tagged this
+	// reason going forward, but the qualification join above is not
+	// version-scoped (colleague review, PR 3 review round), so every
+	// pre-flip row still tagged this reason stays visible here rather than
+	// disappearing on deploy. Every one of these rows carries its full
+	// would-have-selected venue/impact under its own
 	// details['would_select'] in the database, not summarized here.
 	RouteEvidencePending        int                                 `json:"route_evidence_pending"`
 	SelectedBinance             int                                 `json:"selected_binance"`
@@ -245,13 +282,18 @@ type SourceLeadProgress struct {
 }
 
 type Response struct {
-	GeneratedAt        time.Time               `json:"generated_at"`
-	Interpretation     string                  `json:"interpretation"`
-	ProspectiveCohorts []CohortProgress        `json:"prospective_cohorts"`
-	ExitLiquidity      ExitLiquidityProgress   `json:"exit_liquidity"`
-	Orderflow          *OrderflowProgress      `json:"orderflow"`
-	SourceLead         SourceLeadProgress      `json:"source_lead"`
-	CheckpointRunner   *CheckpointOrchestrator `json:"checkpoint_runner"`
+	GeneratedAt        time.Time        `json:"generated_at"`
+	Interpretation     string           `json:"interpretation"`
+	ProspectiveCohorts []CohortProgress `json:"prospective_cohorts"`
+	// ExitLiquidity and SourceLead are nullable for the same reason
+	// Orderflow already was: Readiness runs each section concurrently with
+	// its own timeout budget (fix/research-readiness-handler-concurrency-v1)
+	// and degrades a slow or failing section to nil instead of failing the
+	// whole response -- see Readiness's own doc comment.
+	ExitLiquidity    *ExitLiquidityProgress  `json:"exit_liquidity"`
+	Orderflow        *OrderflowProgress      `json:"orderflow"`
+	SourceLead       *SourceLeadProgress     `json:"source_lead"`
+	CheckpointRunner *CheckpointOrchestrator `json:"checkpoint_runner"`
 }
 
 type cohortCounts struct {
@@ -265,101 +307,22 @@ type cohortCounts struct {
 	missingExactOutcomeEpisodes int
 }
 
-const cohortProgressSQL = `
-WITH candidate_events AS (
-	SELECT DISTINCT d.pump_event_id
-	FROM app.trade_decisions AS d
-	WHERE d.ts >= $1
-	  AND d.ts < $2
-	  AND d.strategy_version = 'pump_short_v1_market_quality'
-	  AND d.pump_event_id IS NOT NULL
-),
-episode_inputs AS (
-	SELECT
-		d.pump_event_id,
-		upper(e.base) AS base,
-		date_trunc('week', min(d.ts) AT TIME ZONE 'UTC') AS episode_week,
-		count(*) FILTER (
-			WHERE d.strategy_version = 'pump_short_measurement_v1'
-			  AND coalesce(d.features @> '{"measurement_only": true}'::jsonb, false)
-		) AS ignored_measurement_decisions,
-		bool_and(
-			d.strategy_version = 'pump_short_v1_market_quality'
-		) FILTER (
-			WHERE NOT (
-				d.strategy_version = 'pump_short_measurement_v1'
-				AND coalesce(d.features @> '{"measurement_only": true}'::jsonb, false)
-			)
-		) AS strategy_scope_valid,
-		bool_and(
-			d.decision_id IS NOT NULL
-			AND upper(d.base) = upper(e.base)
-			AND d.price IS NOT NULL
-			AND d.price > 0
-			AND d.features IS NOT NULL
-			AND d.features ? 'config'
-			AND d.features ? 'signal'
-			AND d.liquidity IS NOT NULL
-		) FILTER (
-			WHERE NOT (
-				d.strategy_version = 'pump_short_measurement_v1'
-				AND coalesce(d.features @> '{"measurement_only": true}'::jsonb, false)
-			)
-		) AS valid_input,
-		bool_and(o.id IS NOT NULL) FILTER (
-			WHERE NOT (
-				d.strategy_version = 'pump_short_measurement_v1'
-				AND coalesce(d.features @> '{"measurement_only": true}'::jsonb, false)
-			)
-		) AS exact_outcome_complete
-	FROM candidate_events AS candidates
-	JOIN app.trade_decisions AS d
-	  ON d.pump_event_id = candidates.pump_event_id
-	 AND d.ts >= $1
-	 AND d.ts < $2
-	JOIN app.pump_events AS e
-	  ON e.id = d.pump_event_id
-	LEFT JOIN app.trade_decision_outcomes AS o
-	  ON o.decision_id = d.decision_id
-	 AND o.resolver_version = 'forward_v1'
-	 AND o.horizon_minutes = 480
-	 AND o.status = 'complete'
-	WHERE coalesce(e.entry_qualified_at, e.first_seen_at) >= $1
-	  AND e.closed_at IS NOT NULL
-	  AND e.closed_at < $2
-	GROUP BY d.pump_event_id, e.base
+// liquidTakerClosedCounts and liquidTakerWiderClosedCounts freeze the formal
+// checkpoint counts each cohort matured at (see ROADMAP.md, 2026-08-29
+// closeout: both do_not_promote). A promotion decision is locked forever at
+// the earliest maturity checkpoint by design -- it does not move as more
+// data accumulates -- so these numbers never change again. Serving them as
+// constants instead of re-running the historical cohortProgressSQL query on
+// every request removes that query's only two call sites, which is what
+// produced the 2026-08-29 Readiness timeout incident (18.6s query against
+// production data volume). Diagnostic sub-counts (candidates, ignored
+// measurement decisions, invalid input episodes) are not preserved from the
+// frozen checkpoint and are intentionally left at zero; the frontend hides
+// that breakdown for closed cohorts rather than show fabricated numbers.
+var (
+	liquidTakerClosedCounts      = cohortCounts{episodes: 494, clusters: 207, weeks: 4}
+	liquidTakerWiderClosedCounts = cohortCounts{episodes: 429, clusters: 183, weeks: 4}
 )
-SELECT
-	count(*),
-	count(*) FILTER (
-		WHERE strategy_scope_valid AND valid_input AND exact_outcome_complete
-	),
-	count(DISTINCT base) FILTER (
-		WHERE strategy_scope_valid AND valid_input AND exact_outcome_complete
-	),
-	count(DISTINCT episode_week) FILTER (
-		WHERE strategy_scope_valid AND valid_input AND exact_outcome_complete
-	),
-	coalesce(sum(ignored_measurement_decisions), 0),
-	count(*) FILTER (WHERE NOT strategy_scope_valid),
-	count(*) FILTER (WHERE NOT valid_input),
-	count(*) FILTER (WHERE NOT exact_outcome_complete)
-FROM episode_inputs`
-
-func (h *Handler) cohortProgress(ctx context.Context, since, until time.Time) (cohortCounts, error) {
-	var counts cohortCounts
-	err := h.db.QueryRow(ctx, cohortProgressSQL, since, until).Scan(
-		&counts.candidates,
-		&counts.episodes,
-		&counts.clusters,
-		&counts.weeks,
-		&counts.ignoredMeasurementDecisions,
-		&counts.unexpectedStrategyEpisodes,
-		&counts.invalidInputEpisodes,
-		&counts.missingExactOutcomeEpisodes,
-	)
-	return counts, err
-}
 
 const latestReportSQL = `
 SELECT
@@ -549,9 +512,26 @@ WITH captures AS (
 			  AND confirmation.first_seen_at <= captures.source_first_observed_at + interval '60 minutes'
 		) AS confirmed_within_hour
 	FROM captures
+	-- Not filtered to qualification_version = 'source_lead_qualified_capture_v3'
+	-- (colleague review, 2026-08-29/30, PR 3 review round): captures spans the
+	-- full history from sourceLeadStart, but a capture's own qualification row
+	-- is written exactly once, at capture time, tagged with whatever
+	-- QUALIFICATION_VERSION was live then (source_lead_qualification.py) --
+	-- ux_source_lead_qualification_capture_version enforces at most one row
+	-- per (capture_id, qualification_version), and application discipline
+	-- ("computed once, at capture time") never writes a second one under a
+	-- different version for the same capture. Filtering this join to only
+	-- the current version made every pre-cutover capture's already-computed
+	-- qualification (status/reason/selected exchange) disappear from every
+	-- count below the moment this code deploys, even though nothing about
+	-- that capture's own row changed -- a scope mismatch between the
+	-- full-history captures CTE and a version-scoped join. Joining
+	-- unconditionally keeps that history visible; the identity_registry_
+	-- version/fingerprint distinct-count logic further down already exists
+	-- to surface exactly this kind of multi-version window as "mixed", not
+	-- to silently hide it.
 	LEFT JOIN app.source_lead_qualifications AS qualification
 	  ON qualification.capture_id = captures.id
-	 AND qualification.qualification_version = 'source_lead_qualified_capture_v2'
 )
 SELECT
 	count(*),
@@ -653,7 +633,7 @@ SELECT
 	count(*) FILTER (WHERE status = 'excluded'),
 	count(*) FILTER (WHERE status = 'fetch_failed'),
 	-- Latency/spread/impact percentiles require identity_verified AND
-	-- source_first_observed_at >= $4 (identityRegistryV2Start) alongside
+	-- source_first_observed_at >= $4 (identityRegistryV3Start) alongside
 	-- status='sampled' (colleague review, 2026-08-28): these numbers feed
 	-- venue-quality analysis directly, so neither a pre-activation
 	-- wrong-market row nor a pre-cutover row (redundant with the
@@ -773,7 +753,7 @@ func (h *Handler) sourceLeadProgress(
 	progress := SourceLeadProgress{
 		Contract:                sourceLeadContract,
 		CohortStart:             sourceLeadStart,
-		IdentityRegistryV2Start: identityRegistryV2Start,
+		IdentityRegistryV3Start: identityRegistryV3Start,
 		Targets: []SourceLeadTargetProgress{
 			{Exchange: "binance"},
 			{Exchange: "bybit"},
@@ -794,7 +774,7 @@ func (h *Handler) sourceLeadProgress(
 
 	var targetEligible, mature, clusters, weeks int
 	err := h.db.QueryRow(
-		ctx, sourceLeadProgressSQL, sourceLeadStart, now, identityRegistryV2Start,
+		ctx, sourceLeadProgressSQL, sourceLeadStart, now, identityRegistryV3Start,
 	).Scan(
 		&progress.Captures,
 		&progress.SourceEligible,
@@ -840,7 +820,7 @@ func (h *Handler) sourceLeadProgress(
 			sourceLeadStart,
 			now,
 			exchange,
-			identityRegistryV2Start,
+			identityRegistryV3Start,
 		).Scan(
 			&target.Observations,
 			&target.Sampled,
@@ -1022,82 +1002,131 @@ func cohort(
 	}
 }
 
+// runSection launches fn on g under its own per-call timeout budget
+// (h.subcallContext) and sends fn's own result to a buffered channel of
+// capacity 1, returned for the caller to read once g.Wait() completes. A
+// non-nil err is logged under logKey and degrades the section to T's zero
+// value -- deliberately never returned to g itself, so one failing or slow
+// section can never cancel or fail the others (see Readiness's own doc
+// comment). Colleague review: this is the isolation mechanism itself, not
+// a convention layered on top of it -- a channel's send/receive is Go's
+// own happens-before guarantee, so even a future section carelessly added
+// to reuse another section's variable cannot reintroduce a data race the
+// way it could with N goroutines each assumed (by convention only) to
+// write exactly one shared local variable.
+func runSection[T any](
+	h *Handler, g *errgroup.Group, gCtx context.Context, logKey string,
+	fn func(ctx context.Context) (T, error),
+) <-chan T {
+	out := make(chan T, 1)
+	g.Go(func() error {
+		ctx, cancel := h.subcallContext(gCtx)
+		defer cancel()
+		result, err := fn(ctx)
+		if err != nil {
+			slog.Error(logKey, "err", err)
+			var zero T
+			out <- zero
+			return nil
+		}
+		out <- result
+		return nil
+	})
+	return out
+}
+
 // Readiness returns collection progress only. It deliberately does not run CCXT,
 // fetch market paths, or issue a strategy verdict.
+//
+// Each independent section below runs concurrently (errgroup.WithContext)
+// via runSection, under its own context.WithTimeout budget
+// (h.subcallTimeout via subcallContext, defaultReadinessSubcallTimeout
+// unless a test overrides it) -- fix/research-readiness-handler-
+// concurrency-v1, tech debt logged in ROADMAP.md against the 2026-08-29
+// production incident: the sequential, unbounded cohortProgressSQL query
+// (18.6s against production data volume) starved every section behind it
+// and timed out the whole endpoint. A section's own DB/Redis error is
+// caught and logged inside runSection and degrades only that section to
+// its zero value in the response -- it is deliberately never returned to
+// the errgroup itself, so one slow or failing section can never cancel or
+// fail the others. g.Wait()'s own error return is therefore not expected
+// to fire in normal operation; it exists only so that stays true if a
+// future section is added carelessly.
 func (h *Handler) Readiness(w http.ResponseWriter, r *http.Request) {
 	now := h.now().UTC()
 	checkpointRunner := readCheckpointOrchestrator(h.checkpointPath)
 	if checkpointRunner != nil {
 		checkpointRunner.Stale = checkpointSnapshotIsStale(now, checkpointRunner.GeneratedAt)
 	}
-	liquidCounts, err := h.cohortProgress(r.Context(), liquidTakerStart, now)
-	if err != nil {
-		slog.Error("research.liquid_taker_progress", "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-	liquidReport, err := h.latestReport(r.Context(), liquidTakerContract)
-	if err != nil {
-		slog.Error("research.liquid_taker_latest_report", "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-	widerCounts := cohortCounts{}
-	var widerReport *RegisteredReportRun
-	if !now.Before(liquidTakerWiderStart) {
-		widerCounts, err = h.cohortProgress(r.Context(), liquidTakerWiderStart, now)
-		if err != nil {
-			slog.Error("research.liquid_taker_wider_progress", "err", err)
-			http.Error(w, "internal error", http.StatusInternalServerError)
-			return
-		}
-		widerReport, err = h.latestReport(r.Context(), liquidTakerWiderContract)
-		if err != nil {
-			slog.Error("research.liquid_taker_wider_latest_report", "err", err)
-			http.Error(w, "internal error", http.StatusInternalServerError)
-			return
-		}
-	}
-	exitProgress, err := h.exitLiquidityProgress(r.Context(), now)
-	if err != nil {
-		slog.Error("research.exit_liquidity_progress", "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-	sourceLeadProgress, err := h.sourceLeadProgress(r.Context(), now)
-	if err != nil {
-		slog.Error("research.source_lead_progress", "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
+
+	g, gCtx := errgroup.WithContext(r.Context())
+
+	// hyp_008 and hyp_010 are permanently closed (do_not_promote, 2026-08-29
+	// -- see ROADMAP.md). Their live cohortProgressSQL query was removed;
+	// only the cheap, contract-indexed latest-report lookup still runs.
+	liquidCh := runSection(h, g, gCtx, "research.liquid_taker_latest_report",
+		func(ctx context.Context) (*RegisteredReportRun, error) {
+			return h.latestReport(ctx, liquidTakerContract)
+		})
+	widerCh := runSection(h, g, gCtx, "research.liquid_taker_wider_latest_report",
+		func(ctx context.Context) (*RegisteredReportRun, error) {
+			return h.latestReport(ctx, liquidTakerWiderContract)
+		})
+	exitCh := runSection(h, g, gCtx, "research.exit_liquidity_progress",
+		func(ctx context.Context) (*ExitLiquidityProgress, error) {
+			progress, err := h.exitLiquidityProgress(ctx, now)
+			if err != nil {
+				return nil, err
+			}
+			return &progress, nil
+		})
+	sourceLeadCh := runSection(h, g, gCtx, "research.source_lead_progress",
+		func(ctx context.Context) (*SourceLeadProgress, error) {
+			progress, err := h.sourceLeadProgress(ctx, now)
+			if err != nil {
+				return nil, err
+			}
+			return &progress, nil
+		})
+	orderflowCh := runSection(h, g, gCtx, "research.orderflow_progress",
+		func(ctx context.Context) (*OrderflowProgress, error) {
+			return h.orderflowProgress(ctx, now), nil
+		})
+
+	_ = g.Wait()
+
+	liquidReport, widerReport := <-liquidCh, <-widerCh
+	exitProgress, sourceLead, orderflow := <-exitCh, <-sourceLeadCh, <-orderflowCh
+
+	liquidCohort := cohort(
+		"hyp_008",
+		"Liquid taker shelf",
+		liquidTakerContract,
+		liquidTakerStart,
+		now,
+		liquidTakerClosedCounts,
+		liquidReport,
+	)
+	liquidCohort.Status = "closed"
+	widerCohort := cohort(
+		"hyp_010",
+		"Liquid taker + wider stop",
+		liquidTakerWiderContract,
+		liquidTakerWiderStart,
+		now,
+		liquidTakerWiderClosedCounts,
+		widerReport,
+	)
+	widerCohort.Status = "closed"
 
 	response := Response{
-		GeneratedAt:    now,
-		Interpretation: "collection_progress_only_no_strategy_change",
-		ProspectiveCohorts: []CohortProgress{
-			cohort(
-				"hyp_008",
-				"Liquid taker shelf",
-				liquidTakerContract,
-				liquidTakerStart,
-				now,
-				liquidCounts,
-				liquidReport,
-			),
-			cohort(
-				"hyp_010",
-				"Liquid taker + wider stop",
-				liquidTakerWiderContract,
-				liquidTakerWiderStart,
-				now,
-				widerCounts,
-				widerReport,
-			),
-		},
-		ExitLiquidity:    exitProgress,
-		Orderflow:        h.orderflowProgress(r.Context(), now),
-		SourceLead:       sourceLeadProgress,
-		CheckpointRunner: checkpointRunner,
+		GeneratedAt:        now,
+		Interpretation:     "collection_progress_only_no_strategy_change",
+		ProspectiveCohorts: []CohortProgress{liquidCohort, widerCohort},
+		ExitLiquidity:      exitProgress,
+		Orderflow:          orderflow,
+		SourceLead:         sourceLead,
+		CheckpointRunner:   checkpointRunner,
 	}
 
 	w.Header().Set("Content-Type", "application/json")

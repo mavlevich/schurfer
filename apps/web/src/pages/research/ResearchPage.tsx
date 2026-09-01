@@ -62,6 +62,9 @@ function statusBadge(status: string) {
   if (status === 'report_required') {
     return <Badge variant="warning">run formal report</Badge>;
   }
+  if (status === 'closed') {
+    return <Badge variant="secondary">closed</Badge>;
+  }
   if (status === 'unhealthy' || status === 'error' || status === 'no_go' || status === 'stale') {
     return <Badge variant="destructive">{label}</Badge>;
   }
@@ -174,6 +177,7 @@ function MilestoneRow({ label, milestone }: { label: string; milestone: Research
 
 function CohortCard({ cohort }: { cohort: ProspectiveCohort }) {
   const diagnostics = cohort.input_diagnostics;
+  const closed = cohort.status === 'closed';
   return (
     <Card>
       <CardHeader className="space-y-3">
@@ -193,27 +197,31 @@ function CohortCard({ cohort }: { cohort: ProspectiveCohort }) {
         <MilestoneRow label="Mature database inputs" milestone={cohort.mature_input_episodes} />
         <MilestoneRow label="Asset clusters" milestone={cohort.asset_clusters} />
         <MilestoneRow label="UTC weeks" milestone={cohort.calendar_weeks} />
-        <div className="grid grid-cols-2 gap-3 text-sm">
-          <div className="rounded-md border p-3">
-            <p className="text-xs text-muted-foreground">Closed candidates</p>
-            <p className="mt-1 font-mono">{diagnostics.closed_candidate_episodes}</p>
-          </div>
-          <div className="rounded-md border p-3">
-            <p className="text-xs text-muted-foreground">Measurement rows ignored</p>
-            <p className="mt-1 font-mono">{diagnostics.ignored_measurement_decisions}</p>
-          </div>
-        </div>
-        {(diagnostics.unexpected_strategy_episodes > 0 ||
-          diagnostics.invalid_input_episodes > 0 ||
-          diagnostics.missing_exact_outcome_episodes > 0) && (
-          <div className="space-y-1 rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs">
-            <p className="font-medium text-amber-300">Input flags</p>
-            <p className="text-muted-foreground">
-              unexpected strategy {diagnostics.unexpected_strategy_episodes} · invalid input{' '}
-              {diagnostics.invalid_input_episodes} · missing exact 8h outcome{' '}
-              {diagnostics.missing_exact_outcome_episodes}
-            </p>
-          </div>
+        {!closed && (
+          <>
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="rounded-md border p-3">
+                <p className="text-xs text-muted-foreground">Closed candidates</p>
+                <p className="mt-1 font-mono">{diagnostics.closed_candidate_episodes}</p>
+              </div>
+              <div className="rounded-md border p-3">
+                <p className="text-xs text-muted-foreground">Measurement rows ignored</p>
+                <p className="mt-1 font-mono">{diagnostics.ignored_measurement_decisions}</p>
+              </div>
+            </div>
+            {(diagnostics.unexpected_strategy_episodes > 0 ||
+              diagnostics.invalid_input_episodes > 0 ||
+              diagnostics.missing_exact_outcome_episodes > 0) && (
+              <div className="space-y-1 rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs">
+                <p className="font-medium text-amber-300">Input flags</p>
+                <p className="text-muted-foreground">
+                  unexpected strategy {diagnostics.unexpected_strategy_episodes} · invalid input{' '}
+                  {diagnostics.invalid_input_episodes} · missing exact 8h outcome{' '}
+                  {diagnostics.missing_exact_outcome_episodes}
+                </p>
+              </div>
+            )}
+          </>
         )}
         <div className="rounded-md border p-3 text-xs">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -247,9 +255,9 @@ function CohortCard({ cohort }: { cohort: ProspectiveCohort }) {
           )}
         </div>
         <p className="text-xs leading-relaxed text-muted-foreground">
-          Measurement-only observations are ignored only when both their known strategy version and
-          persisted marker match. Unexpected strategy rows still fail closed. The registered CCXT
-          replay can additionally exclude unavailable exact-venue paths.
+          {closed
+            ? 'This cohort reached formal maturity and its promotion decision is final -- see ROADMAP.md for the full writeup.'
+            : 'Measurement-only observations are ignored only when both their known strategy version and persisted marker match. Unexpected strategy rows still fail closed. The registered CCXT replay can additionally exclude unavailable exact-venue paths.'}
         </p>
       </CardContent>
     </Card>
@@ -627,7 +635,26 @@ export function ResearchPage() {
         <>
           <CheckpointRunnerCard runner={data.checkpoint_runner} />
 
-          <SourceLeadCard progress={data.source_lead} />
+          {data.source_lead ? (
+            <SourceLeadCard progress={data.source_lead} />
+          ) : (
+            <Card>
+              <CardHeader className="space-y-3">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <GitBranch className="h-4 w-4 text-cyan-400" />
+                    Gate source lead
+                  </CardTitle>
+                  {statusBadge('telemetry unavailable')}
+                </div>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground">
+                  Source-lead progress is unavailable. No readiness claim is made.
+                </p>
+              </CardContent>
+            </Card>
+          )}
 
           <div className="grid gap-4 lg:grid-cols-2">
             {data.prospective_cohorts.map((cohort) => (
@@ -645,38 +672,46 @@ export function ResearchPage() {
                       Exit quote calibration
                     </CardTitle>
                     <p className="mt-1 font-mono text-xs text-muted-foreground">
-                      {data.exit_liquidity.contract}
+                      {data.exit_liquidity?.contract ?? 'exit_liquidity_calibration_v1'}
                     </p>
                   </div>
-                  {statusBadge(data.exit_liquidity.state)}
+                  {statusBadge(data.exit_liquidity?.state ?? 'telemetry unavailable')}
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
-                <MilestoneRow
-                  label="Comparable close quotes"
-                  milestone={data.exit_liquidity.comparable_observations}
-                />
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div className="rounded-md border p-3">
-                    <p className="text-xs text-muted-foreground">Capture</p>
-                    <p className="mt-1 font-mono">
-                      {data.exit_liquidity.captured_observations} /{' '}
-                      {data.exit_liquidity.closed_paper_shorts}
+                {data.exit_liquidity ? (
+                  <>
+                    <MilestoneRow
+                      label="Comparable close quotes"
+                      milestone={data.exit_liquidity.comparable_observations}
+                    />
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div className="rounded-md border p-3">
+                        <p className="text-xs text-muted-foreground">Capture</p>
+                        <p className="mt-1 font-mono">
+                          {data.exit_liquidity.captured_observations} /{' '}
+                          {data.exit_liquidity.closed_paper_shorts}
+                        </p>
+                      </div>
+                      <div className="rounded-md border p-3">
+                        <p className="text-xs text-muted-foreground">Mean quote delta</p>
+                        <p className="mt-1 font-mono">
+                          {data.exit_liquidity.mean_delta_bps === null
+                            ? 'n/a'
+                            : `${data.exit_liquidity.mean_delta_bps >= 0 ? '+' : ''}${data.exit_liquidity.mean_delta_bps.toFixed(2)} bps`}
+                        </p>
+                      </div>
+                    </div>
+                    <p className="text-xs leading-relaxed text-muted-foreground">
+                      The observed value is an executable quote at close time, not an actual fill.
+                      Thirty samples permit a directional read; 100 are the decision-grade target.
                     </p>
-                  </div>
-                  <div className="rounded-md border p-3">
-                    <p className="text-xs text-muted-foreground">Mean quote delta</p>
-                    <p className="mt-1 font-mono">
-                      {data.exit_liquidity.mean_delta_bps === null
-                        ? 'n/a'
-                        : `${data.exit_liquidity.mean_delta_bps >= 0 ? '+' : ''}${data.exit_liquidity.mean_delta_bps.toFixed(2)} bps`}
-                    </p>
-                  </div>
-                </div>
-                <p className="text-xs leading-relaxed text-muted-foreground">
-                  The observed value is an executable quote at close time, not an actual fill.
-                  Thirty samples permit a directional read; 100 are the decision-grade target.
-                </p>
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Exit quote calibration is unavailable. No readiness claim is made.
+                  </p>
+                )}
               </CardContent>
             </Card>
 

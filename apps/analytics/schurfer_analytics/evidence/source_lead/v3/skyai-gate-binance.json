@@ -1,0 +1,392 @@
+{
+  "base": "SKYAI",
+  "bundle_sha256": "b3a3385677df70fe8e5dc7569f1bfcabaf5106039c6813d3ecc2c72a064c33eb",
+  "captured_at": "2026-08-28T23:28:50.838036+00:00",
+  "code_revision": "aacf83c38b046990461e9142ddf82154e6ced91e",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/skyai?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-08-28T23:28:49.166154+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "binance-smart-chain",
+      "block_time_in_minutes": 0,
+      "categories": ["BNB Chain Ecosystem", "Binance Alpha Spotlight"],
+      "contract_address": "0x92aa03137385f18539301349dcfc9ebc923ffb10",
+      "country_origin": "",
+      "description": {
+        "en": "SkyAI is an all-in-one AI ecosystem powered by MCP, designed to seamlessly integrate intelligent solutions across industries."
+      },
+      "detail_platforms": {
+        "binance-smart-chain": {
+          "contract_address": "0x92aa03137385f18539301349dcfc9ebc923ffb10",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/bsc/tokens/0x92aa03137385f18539301349dcfc9ebc923ffb10"
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": false,
+      "hashing_algorithm": null,
+      "id": "skyai",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/55294/large/1.png?1745517593",
+        "small": "https://coin-images.coingecko.com/coins/images/55294/small/1.png?1745517593",
+        "thumb": "https://coin-images.coingecko.com/coins/images/55294/thumb/1.png?1745517593"
+      },
+      "last_updated": "2026-08-28T23:26:40.000Z",
+      "links": {
+        "announcement_url": [],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://bscscan.com/token/0x92aa03137385F18539301349dcfC9EbC923fFb10",
+          "https://binplorer.com/address/0x92aa03137385F18539301349dcfC9EbC923fFb10"
+        ],
+        "chat_url": [],
+        "facebook_username": "",
+        "homepage": ["https://skyai.pro/"],
+        "official_forum_url": [],
+        "repos_url": {
+          "bitbucket": [],
+          "github": []
+        },
+        "snapshot_url": null,
+        "subreddit_url": null,
+        "telegram_channel_identifier": "SKYAI_MCP",
+        "twitter_screen_name": "SKYAIpro",
+        "whitepaper": ""
+      },
+      "listing_currency": null,
+      "listing_price": null,
+      "listing_source": null,
+      "listing_source_url": null,
+      "listing_timestamp": null,
+      "market_cap_rank": 415,
+      "market_cap_rank_with_rehypothecated": 556,
+      "name": "SkyAI",
+      "platforms": {
+        "binance-smart-chain": "0x92aa03137385f18539301349dcfc9ebc923ffb10"
+      },
+      "preview_listing": false,
+      "public_notice": null,
+      "sentiment_votes_down_percentage": null,
+      "sentiment_votes_up_percentage": null,
+      "status_updates": [],
+      "symbol": "skyai",
+      "watchlist_portfolio_users": 3664,
+      "web_slug": "skyai"
+    },
+    "raw_sha256": "ef5c09fcc70b6636945cf66c9757e084fce54f171d06a1b7d4327faacb4c97e9",
+    "source": "https://api.coingecko.com/api/v3/coins/skyai",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v3",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-08-28T23:28:48.885795+00:00",
+    "payload": {
+      "active": true,
+      "code": "SKYAI",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "SKYAI",
+      "info": {
+        "category": [],
+        "chain": "BSC",
+        "chains": [
+          {
+            "addr": "0x92aa03137385f18539301349dcfc9ebc923ffb10",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "SKYAI",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "53070000.0",
+        "name": "SkyAI",
+        "total_supply": "1000000000",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "SkyAI",
+      "networks": {
+        "BEP20": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "BSC",
+          "info": {
+            "addr": "0x92aa03137385f18539301349dcfc9ebc923ffb10",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "BEP20",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "913ae8a384c726c36f5bb3c85fb13c5c6db878d8403dce4ad663145c30ac7d61",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "exact_contract",
+  "source_contract": {
+    "block_hash": "0x02590e3e19e945e9498f1983e22b02318b63e86b5192e1c92d0456c785f21fb2",
+    "block_number": 118663639,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0x92aa03137385f18539301349dcfc9ebc923ffb10",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-08-28T23:28:49.533013+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "8e73d72cca28014c8646f2033e87ec712fc9eb6dbc2664092e1cf446ce4e6937",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "source_market_evidence": {
+    "exchange": "gate",
+    "inference_basis": "gate futures contract payload has no base_asset/quote_asset/settle_asset fields; base/quote split parsed from the reported native_market_id ('SKYAI_USDT') on its '_' separator, settle asset inferred from the /futures/usdt/ endpoint family",
+    "inferred_base_asset": "SKYAI",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "SKYAI_USDT",
+    "onboarded_at_ms": 1747184611000,
+    "raw_evidence": {
+      "endpoint": "https://api.gateio.ws/api/v4/futures/usdt/contracts/SKYAI_USDT",
+      "observed_at": "2026-08-28T23:28:50.647902+00:00",
+      "payload": {
+        "config_change_time": 1787754164,
+        "contract_type": "",
+        "create_time": 1747184611,
+        "cross_leverage_default": "10",
+        "enable_bonus": true,
+        "enable_circuit_breaker": false,
+        "enable_credit": true,
+        "enable_decimal": false,
+        "funding_cap_ratio": "2",
+        "funding_impact_value": "3000",
+        "funding_interval": 14400,
+        "funding_next_apply": 1787961600,
+        "funding_offset": 0,
+        "funding_rate": "0.00005",
+        "funding_rate_indicative": "0.00005",
+        "funding_rate_limit": "0.02",
+        "in_delisting": false,
+        "index_price": "0.054468",
+        "interest_rate": "0.0003",
+        "is_pre_market": false,
+        "last_price": "0.05441",
+        "launch_time": 1747184611,
+        "leverage_max": "25",
+        "leverage_min": "1",
+        "long_users": 479,
+        "maintenance_rate": "0.025",
+        "maker_fee_rate": "-0.0001",
+        "mark_price": "0.05446",
+        "mark_price_round": "0.00001",
+        "mark_type": "index",
+        "market_order_size_max": "35000",
+        "market_order_slip_ratio": "0.025",
+        "name": "SKYAI_USDT",
+        "order_price_deviate": "0.1",
+        "order_price_round": "0.00001",
+        "order_size_max": 53000,
+        "order_size_min": 1,
+        "orderbook_id": 2999998198,
+        "orders_limit": 100,
+        "position_size": 3726618,
+        "quanto_multiplier": "10",
+        "ref_discount_rate": "0",
+        "ref_rebate_rate": "0.2",
+        "risk_limit_base": "10000",
+        "risk_limit_max": "2500000",
+        "risk_limit_step": "2490000",
+        "short_users": 321,
+        "status": "trading",
+        "taker_fee_rate": "0.00075",
+        "trade_id": 20047020,
+        "trade_size": 1589654461,
+        "type": "direct",
+        "voucher_leverage": "0"
+      },
+      "raw_sha256": "66aaebe32220811ac1833b54b5583008ebac7e3d96f7a621239b70df4807d6ec",
+      "source": "https://api.gateio.ws/api/v4/futures/usdt/contracts/SKYAI_USDT",
+      "wire_exact": true
+    },
+    "reported_base_asset": null,
+    "reported_quote_asset": null,
+    "reported_settle_asset": null,
+    "status": "trading"
+  },
+  "target_catalog_evidence": {
+    "endpoint": "https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list",
+    "observed_at": "2026-08-28T23:28:45.355309+00:00",
+    "payload": {
+      "chainId": "56",
+      "chainName": "BSC",
+      "contractAddress": "0x92aa03137385f18539301349dcfc9ebc923ffb10",
+      "decimals": 18,
+      "fullyDelisted": false,
+      "listingCex": true,
+      "name": "SKYAI",
+      "offline": false,
+      "symbol": "SKYAI"
+    },
+    "raw_sha256": "acc1ee6a98e90e57304d679cfa245f5ba68658440239c90e7f066b7a56b163b7",
+    "source": "binance:alpha_catalog_entry",
+    "wire_exact": false
+  },
+  "target_contract": {
+    "block_hash": "0x8566c0fffc90f33aa4c170cfbba9c9d3d581a0a3a785061600c6a7a1e447e5f4",
+    "block_number": 118663642,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0x92aa03137385f18539301349dcfc9ebc923ffb10",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-08-28T23:28:50.805170+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "8e73d72cca28014c8646f2033e87ec712fc9eb6dbc2664092e1cf446ce4e6937",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "target_exchange": "binance",
+  "target_market_evidence": {
+    "exchange": "binance",
+    "inference_basis": "copied verbatim from binance futures exchangeInfo's own baseAsset/quoteAsset/marginAsset fields -- genuinely reported, not parsed",
+    "inferred_base_asset": "SKYAI",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "SKYAIUSDT",
+    "onboarded_at_ms": 1747129500000,
+    "raw_evidence": {
+      "endpoint": "https://fapi.binance.com/fapi/v1/exchangeInfo",
+      "observed_at": "2026-08-28T23:28:45.923396+00:00",
+      "payload": {
+        "baseAsset": "SKYAI",
+        "baseAssetPrecision": 8,
+        "contractType": "PERPETUAL",
+        "deliveryDate": 4133404800000,
+        "filters": [
+          {
+            "filterType": "PRICE_FILTER",
+            "maxPrice": "200",
+            "minPrice": "0.0000100",
+            "tickSize": "0.0000100"
+          },
+          {
+            "filterType": "LOT_SIZE",
+            "maxQty": "15000000",
+            "minQty": "1",
+            "stepSize": "1"
+          },
+          {
+            "filterType": "MARKET_LOT_SIZE",
+            "maxQty": "3000000",
+            "minQty": "1",
+            "stepSize": "1"
+          },
+          {
+            "filterType": "MAX_NUM_ORDERS",
+            "limit": 200
+          },
+          {
+            "filterType": "MIN_NOTIONAL",
+            "notional": "5"
+          },
+          {
+            "filterType": "PERCENT_PRICE",
+            "multiplierDecimal": "4",
+            "multiplierDown": "0.8500",
+            "multiplierUp": "1.1500"
+          },
+          {
+            "filterType": "POSITION_RISK_CONTROL",
+            "positionControlSide": "NONE"
+          }
+        ],
+        "liquidationFee": "0.020000",
+        "maintMarginPercent": "2.5000",
+        "marginAsset": "USDT",
+        "marketTakeBound": "0.15",
+        "maxMoveOrderLimit": 10000,
+        "onboardDate": 1747129500000,
+        "orderTypes": [
+          "LIMIT",
+          "MARKET",
+          "STOP",
+          "STOP_MARKET",
+          "TAKE_PROFIT",
+          "TAKE_PROFIT_MARKET",
+          "TRAILING_STOP_MARKET"
+        ],
+        "pair": "SKYAIUSDT",
+        "permissionSets": ["GRID", "COPY", "DCA", "PSB"],
+        "pricePrecision": 7,
+        "quantityPrecision": 0,
+        "quoteAsset": "USDT",
+        "quotePrecision": 8,
+        "requiredMarginPercent": "5.0000",
+        "status": "TRADING",
+        "symbol": "SKYAIUSDT",
+        "timeInForce": ["GTC", "IOC", "FOK", "GTX", "GTD"],
+        "triggerProtect": "0.1500",
+        "underlyingSubType": ["AI"],
+        "underlyingType": "COIN"
+      },
+      "raw_sha256": "95e0c4e49a699f1803de205d816a3a3d58d7034751fdbc1703c2cd7a76edc3cf",
+      "source": "binance:futures_exchange_info_entry",
+      "wire_exact": false
+    },
+    "reported_base_asset": "SKYAI",
+    "reported_quote_asset": "USDT",
+    "reported_settle_asset": "USDT",
+    "status": "TRADING"
+  },
+  "working_tree_dirty": false
+}

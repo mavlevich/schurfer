@@ -25,6 +25,27 @@ export interface PumpEntry {
   is_live: boolean;
 }
 
+// TokenNoPumpEpisode is what GET /api/pumps/<base> returns (still 200, not
+// 404) for a base with zero app.pump_events history but real activity in a
+// non-pump strategy -- e.g. an early_momentum_v4 paper trade
+// (fix/token-activity-non-pump-assets-v1). has_pump_episode is always
+// `false` here and never appears on PumpEntry, so it is a safe discriminant
+// for TokenResponse without touching PumpEntry's own shape.
+export interface TokenNoPumpEpisode {
+  base: string;
+  has_pump_episode: false;
+  other_strategy_key: string;
+}
+
+export type TokenResponse = PumpEntry | TokenNoPumpEpisode;
+
+// PumpEntry never carries has_pump_episode; TokenNoPumpEpisode always does
+// (literal `false`). "in" narrows correctly either way even though
+// PumpEntry never declares the property.
+export function isPumpEntry(t: TokenResponse): t is PumpEntry {
+  return !('has_pump_episode' in t);
+}
+
 export interface PumpsResponse {
   ts: number;
   published_at_ms?: number;
