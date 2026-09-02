@@ -1,6 +1,12 @@
 export interface ExchangeEntry {
   exchange: string;
   symbol: string;
+  // Native per-exchange market id (e.g. Binance "BTCUSDT", Gate "BTC_USDT",
+  // OKX "BTC-USDT-SWAP") -- already returned by the API (apps/api-gateway's
+  // own exchangeEntry.MarketID, used server-side for OHLCV fetches) but
+  // unused on the frontend until exchangeLinks.ts's own deep link. May be
+  // empty for a source that predates market_id capture.
+  market_id?: string;
   price: string;
   change_pct: number;
   high_24h: string;

@@ -20,6 +20,7 @@ import {
 import { DataTableColumnHeader } from '@/components/ui/data-table-column-header';
 import { useToken } from '@/hooks/useTokenData';
 import { formatVolume } from '../../volume';
+import { exchangeTradeUrl } from '../../exchangeLinks';
 import { Percent } from '@/components/ui/domain/Percent';
 import { Price } from '@/components/ui/domain/Price';
 import { isPumpEntry, type ExchangeEntry } from '../../types';
@@ -35,7 +36,28 @@ function buildColumns(isLive: boolean) {
   return [
     columnHelper.accessor('exchange', {
       header: ({ column }) => <DataTableColumnHeader column={column} title="Exchange" />,
-      cell: ({ getValue }) => <div className="font-medium capitalize">{getValue()}</div>,
+      cell: ({ getValue, row }) => {
+        // Colleague review, 2026-09-02: a historical (is_live=false) row's
+        // own market_id is a last-observed snapshot -- if that ticker was
+        // since delisted and the venue reused it for a different contract,
+        // the "same" market_id could now open someone else's instrument.
+        // Only link a row we know is the CURRENT live listing.
+        const url = isLive ? exchangeTradeUrl(getValue(), row.original.market_id) : null;
+        if (!url) {
+          return <div className="font-medium capitalize">{getValue()}</div>;
+        }
+        return (
+          <a
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium capitalize text-primary hover:underline"
+            title={`Open ${getValue()} on the exchange`}
+          >
+            {getValue()}
+          </a>
+        );
+      },
     }),
     columnHelper.accessor('change_pct', {
       header: ({ column }) => (
