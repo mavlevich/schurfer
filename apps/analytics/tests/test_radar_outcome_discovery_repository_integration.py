@@ -84,6 +84,7 @@ async def test_fetch_watch_signals_uses_decision_time_and_next_full_minute() -> 
             watch_version=_WATCH_VERSION,
             since=_BUCKET_START,
             until=_BUCKET_START + timedelta(minutes=1),
+            limit=10,
         )
         assert len(signals) == 1
         (signal,) = signals
@@ -100,4 +101,80 @@ async def test_fetch_watch_signals_uses_decision_time_and_next_full_minute() -> 
                 """),
                 {"exchange": _EXCHANGE, "watch_version": _WATCH_VERSION},
             )
+        await engine.dispose()
+
+
+async def test_fetch_watch_signals_limit_actually_bounds_the_sql_result() -> None:
+    # Colleague review, 2026-09-01: an earlier version fetched every
+    # matching row unconditionally and only checked the count in Python
+    # AFTER the full DB scan/network transfer/row construction already
+    # happened -- this proves the cap is now a real SQL LIMIT, not a
+    # Python-side afterthought: three rows exist, `limit=2` must return
+    # exactly two, in ORDER BY (decision_at, symbol, watch_id) order.
+    engine = await _connect_or_skip()
+    watch_ids = [uuid4() for _ in range(3)]
+    try:
+        async with engine.begin() as connection:
+            for index, watch_id in enumerate(watch_ids):
+                decision_at = _BUCKET_START + timedelta(minutes=1, seconds=index)
+                await connection.execute(
+                    _INSERT_WATCH,
+                    {
+                        "exchange": _EXCHANGE,
+                        "market_type": _MARKET_TYPE,
+                        "symbol": f"LIMITUSDT{index}",
+                        "capture_version": _CAPTURE_VERSION,
+                        "watch_version": _WATCH_VERSION,
+                        "bucket_start": _BUCKET_START,
+                        "evaluator_started_at": decision_at - timedelta(milliseconds=2),
+                        "evaluator_completed_at": decision_at + timedelta(milliseconds=2),
+                        "decision_at": decision_at,
+                        "episode_id": uuid4(),
+                        "watch_id": watch_id,
+                        "input_hash": bytes([index]) * 32,
+                    },
+                )
+
+        repository = RadarOutcomeDiscoveryRepository(engine)
+        signals = await repository.fetch_watch_signals(
+            exchange=_EXCHANGE,
+            market_type=_MARKET_TYPE,
+            capture_version=_CAPTURE_VERSION,
+            watch_version=_WATCH_VERSION,
+            since=_BUCKET_START,
+            until=_BUCKET_START + timedelta(minutes=2),
+            limit=2,
+        )
+        assert len(signals) == 2
+        assert [signal.watch_id for signal in signals] == [
+            str(watch_ids[0]),
+            str(watch_ids[1]),
+        ]
+    finally:
+        async with engine.begin() as connection:
+            await connection.execute(
+                text("""
+                    DELETE FROM timeseries.momentum_flow_watch_evaluations_1m
+                    WHERE exchange = :exchange AND watch_version = :watch_version
+                """),
+                {"exchange": _EXCHANGE, "watch_version": _WATCH_VERSION},
+            )
+        await engine.dispose()
+
+
+async def test_fetch_watch_signals_rejects_non_positive_limit() -> None:
+    engine = await _connect_or_skip()
+    try:
+        repository = RadarOutcomeDiscoveryRepository(engine)
+        with pytest.raises(ValueError, match="limit must be positive"):
+            await repository.fetch_watch_signals(
+                exchange=_EXCHANGE,
+                market_type=_MARKET_TYPE,
+                capture_version=_CAPTURE_VERSION,
+                watch_version=_WATCH_VERSION,
+                since=_BUCKET_START,
+                until=_BUCKET_START + timedelta(minutes=1),
+                limit=0,
+            )
+    finally:
         await engine.dispose()

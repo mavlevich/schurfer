@@ -58,9 +58,25 @@ class RadarOutcomeDiscoveryRepository:
         watch_version: str,
         since: datetime,
         until: datetime,
+        limit: int,
     ) -> tuple[RadarWatchSignal, ...]:
+        """`limit` is a real SQL LIMIT, not a post-fetch Python check --
+        colleague review, 2026-09-01: an earlier version fetched every
+        matching row unconditionally and only rejected an over-large
+        result AFTER paying for the full DB scan, network transfer, and
+        Python-side row construction, contradicting this module's own
+        "Bounded point-in-time WATCH reads" docstring. The caller should
+        pass its own cap + 1 so it can distinguish "exactly at the cap"
+        from "genuinely over it" from the returned row count alone,
+        matching the caller-owned bound-then-check pattern check_
+        candidate_count already established for the analogous burst-
+        minute scan (which achieves the same bound via chunked queries
+        instead, since that data source has no natural LIMIT-able
+        ordering by importance the way ORDER BY decision_at here does)."""
         if since >= until:
             raise ValueError("since must be earlier than until")
+        if limit <= 0:
+            raise ValueError("limit must be positive")
         async with self._engine.connect() as connection, connection.begin():
             await connection.execute(text("SET TRANSACTION READ ONLY"))
             await connection.execute(
@@ -86,6 +102,7 @@ class RadarOutcomeDiscoveryRepository:
                       AND raw_qualified IS true
                       AND watch_id IS NOT NULL
                     ORDER BY decision_at, symbol, watch_id
+                    LIMIT :limit
                 """),
                 {
                     "exchange": exchange,
@@ -94,6 +111,7 @@ class RadarOutcomeDiscoveryRepository:
                     "watch_version": watch_version,
                     "since": since,
                     "until": until,
+                    "limit": limit,
                 },
             )
             rows = result.all()

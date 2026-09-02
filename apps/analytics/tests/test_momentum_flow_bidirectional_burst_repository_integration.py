@@ -182,6 +182,71 @@ async def test_fetch_candidate_extreme_minutes_rejects_a_gap_in_the_strict_windo
         await engine.dispose()
 
 
+async def test_fetch_candidate_extreme_minutes_detects_a_genuine_burst() -> None:
+    # Colleague review, 2026-09-01: every existing test against this query
+    # was a NEGATIVE case (rejects a gap, rejects since>until) -- none
+    # actually proved the SQL's own burst-percentage arithmetic
+    # (100.0 * buy_notional_5m / total_volume_24h) computes the right
+    # number on a clean, gapless dataset where a burst genuinely SHOULD be
+    # detected. A gapless 24h/1440-minute window: the first 1435 minutes
+    # are flat baseline volume, the last 5 minutes (the query's own
+    # candidate row and its 4 preceding minutes) carry a large one-sided
+    # buy burst -- hand-computed expected percentages below.
+    engine = await _connect_or_skip()
+    try:
+        symbol = "POSBURSTUSDT"
+        target = _START
+        baseline_minutes = 1435
+        baseline_buy = 100.0
+        baseline_sell = 100.0
+        burst_minutes = 5
+        burst_buy = 50_000.0
+        for i in range(baseline_minutes):
+            await _seed_bar(
+                engine,
+                symbol=symbol,
+                bucket_start=target - timedelta(minutes=baseline_minutes + burst_minutes - 1 - i),
+                close_price=1.0,
+                buy_notional=baseline_buy,
+                sell_notional=baseline_sell,
+            )
+        for i in range(burst_minutes):
+            await _seed_bar(
+                engine,
+                symbol=symbol,
+                bucket_start=target - timedelta(minutes=burst_minutes - 1 - i),
+                close_price=2.0,
+                buy_notional=burst_buy,
+                sell_notional=0.0,
+            )
+
+        total_volume_24h = baseline_minutes * (baseline_buy + baseline_sell) + burst_minutes * (
+            burst_buy
+        )
+        expected_buy_pct = 100.0 * (burst_minutes * burst_buy) / total_volume_24h
+
+        repository = MomentumFlowBidirectionalBurstRepository(engine)
+        minutes = await repository.fetch_candidate_extreme_minutes(
+            exchange=_TEST_EXCHANGE,
+            capture_version=_TEST_CAPTURE_VERSION,
+            market_type=_TEST_MARKET_TYPE,
+            since=target,
+            until=target + timedelta(minutes=1),
+            min_volume_24h_usd=1.0,
+            extreme_threshold_pct=10.0,
+        )
+        assert len(minutes) == 1
+        (minute,) = minutes
+        assert minute.symbol == symbol
+        assert minute.bucket_start == target
+        assert minute.close_price == pytest.approx(2.0)
+        assert minute.buy_burst_pct_5m == pytest.approx(expected_buy_pct)
+        assert minute.sell_burst_pct_5m == pytest.approx(0.0)
+    finally:
+        await _cleanup(engine)
+        await engine.dispose()
+
+
 async def test_fetch_candidate_extreme_minutes_rejects_since_after_until() -> None:
     engine = await _connect_or_skip()
     try:

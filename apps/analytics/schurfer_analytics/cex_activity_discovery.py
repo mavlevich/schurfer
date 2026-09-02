@@ -33,15 +33,31 @@ from .clustered_inference import (
     derived_seed,
     holm_step_down,
 )
+from .momentum_flow_bidirectional_burst_study import DIRECTIONS as REGISTERED_DIRECTIONS
+from .momentum_flow_bidirectional_burst_study import utc_week_key as _utc_week
 
 PRIMARY_MOVE_PCT = 25.0
 OUTCOME_HORIZON_MINUTES = 24 * 60
 CONTROL_QUIET_HOURS = 24
 CONTROL_SEARCH_DAYS = 7
-DISCOVERY_MIN_PAIRS = 60
+DISCOVERY_MIN_PAIRS = 100
 DISCOVERY_MIN_CLUSTERS = 20
 DISCOVERY_MIN_WEEKS = 2
-REGISTERED_DIRECTIONS = ("buy", "sell")
+
+# Bumped whenever select_matched_pairs' own assignment algorithm changes --
+# colleague review, 2026-09-02: HYP-017's own already-recorded discovery
+# read (docs/research/discovery-ledger.md) was produced by the PRIOR
+# greedy "first available control" version of select_matched_pairs, now
+# proven (test_pair_selection_maximizes_pairs_instead_of_greedy_first_
+# available) capable of systematically losing pairs an earlier episode
+# could have released to a later one. Every report that calls
+# select_matched_pairs carries this in its own manifest so a reader can
+# tell which assignment policy actually produced a given result --
+# without it, an old ledger row (or a re-run's own output) is silently
+# ambiguous about which algorithm built its own pair count. Read together
+# with docs/research/discovery-ledger.md's own HYP-017 note before
+# treating that row's 189 pairs as reliable evidence either way.
+MATCHING_POLICY_VERSION = "max_cardinality_bipartite_matching_v1"
 
 
 @dataclass(frozen=True)
@@ -177,11 +193,6 @@ def _control_request_id(episode_id: int, offset_days: int) -> str:
     return f"control:{episode_id}:{sign}{abs(offset_days)}"
 
 
-def _utc_week(value: datetime) -> str:
-    iso = value.isocalendar()
-    return f"{iso.year:04d}-W{iso.week:02d}"
-
-
 def build_control_requests(
     episodes: tuple[OutcomeSignalEpisode, ...],
     *,
@@ -243,23 +254,87 @@ def select_matched_pairs(
     control_requests: dict[int, tuple[PathRequest, ...]],
     control_paths: dict[str, ExactPricePath],
 ) -> tuple[MatchedMovePair, ...]:
-    """Select the first resolved quiet control without reusing a control."""
-    used_controls: set[tuple[str, datetime]] = set()
-    pairs: list[MatchedMovePair] = []
-    for episode in sorted(episodes, key=lambda item: (item.trigger_at, item.episode_id)):
+    """Deterministic MAXIMUM-CARDINALITY bipartite matching between
+    episodes and their own resolved quiet controls (Kuhn's augmenting-path
+    algorithm), not a greedy first-available pick.
+
+    Colleague review, 2026-09-01: the earlier greedy version processed
+    episodes in trigger_at order and let each one take the FIRST resolved,
+    unused control among its own candidates -- an early episode could
+    monopolize a control another, later episode could ONLY use, losing a
+    pair the correct global assignment would have kept. Example: E1 can
+    use C1 or C2, E2 can only use C1. Greedy (E1 first) takes C1 for E1,
+    leaving E2 with nothing -- 1 pair total. The correct maximum matching
+    is E1->C2, E2->C1 -- 2 pairs. Verified directly:
+    test_pair_selection_maximizes_pairs_instead_of_greedy_first_available
+    reproduces this exact scenario.
+
+    A control candidate's own symbol always equals its episode's own
+    symbol (build_control_requests only ever proposes same-instrument
+    controls), so this bipartite graph never has an edge crossing symbols
+    -- an implicit per-exact-instrument matching, with no need to
+    partition by symbol by hand.
+
+    Ordering is fixed for reproducibility: episodes are processed by
+    (trigger_at, episode_id), and each episode's own candidate controls in
+    control_requests' own existing (nearest-day-first) order -- the same
+    order the earlier greedy version used, so a tie between two otherwise-
+    equal maximum matchings resolves the same way every run."""
+    ordered_episodes = sorted(episodes, key=lambda item: (item.trigger_at, item.episode_id))
+
+    eligible: list[OutcomeSignalEpisode] = []
+    signal_by_episode: dict[int, ExactPricePath] = {}
+    candidates_by_episode: dict[int, tuple[tuple[str, datetime], ...]] = {}
+    path_by_key: dict[tuple[str, datetime], ExactPricePath] = {}
+
+    for episode in ordered_episodes:
         signal = signal_paths.get(signal_request(episode).request_id)
         if signal is None or not signal.resolved:
             continue
-        selected: ExactPricePath | None = None
+        keys: list[tuple[str, datetime]] = []
         for request in control_requests.get(episode.episode_id, ()):
             path = control_paths.get(request.request_id)
+            if path is None or not path.resolved:
+                continue
             key = (request.symbol, request.trigger_at)
-            if path is not None and path.resolved and key not in used_controls:
-                selected = path
-                used_controls.add(key)
-                break
-        if selected is not None:
-            pairs.append(MatchedMovePair(episode, signal, selected))
+            keys.append(key)
+            path_by_key.setdefault(key, path)
+        eligible.append(episode)
+        signal_by_episode[episode.episode_id] = signal
+        candidates_by_episode[episode.episode_id] = tuple(keys)
+
+    # match_for_control[key] = the episode_id currently assigned that
+    # control -- Kuhn's algorithm: try to give each episode, in turn, one
+    # of its own candidate controls; if every candidate is already taken,
+    # try to bump the current occupant of one candidate onto a DIFFERENT
+    # one of ITS OWN candidates first (an augmenting path), only failing
+    # if no such reshuffle exists anywhere down the chain.
+    match_for_control: dict[tuple[str, datetime], int] = {}
+
+    def _try_augment(episode_id: int, visited: set[tuple[str, datetime]]) -> bool:
+        for key in candidates_by_episode[episode_id]:
+            if key in visited:
+                continue
+            visited.add(key)
+            occupant = match_for_control.get(key)
+            if occupant is None or _try_augment(occupant, visited):
+                match_for_control[key] = episode_id
+                return True
+        return False
+
+    for episode in eligible:
+        _try_augment(episode.episode_id, set())
+
+    key_for_episode = {episode_id: key for key, episode_id in match_for_control.items()}
+    pairs: list[MatchedMovePair] = []
+    for episode in eligible:
+        control_key = key_for_episode.get(episode.episode_id)
+        if control_key is not None:
+            pairs.append(
+                MatchedMovePair(
+                    episode, signal_by_episode[episode.episode_id], path_by_key[control_key]
+                )
+            )
     return tuple(pairs)
 
 

@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING
 from .cex_activity_discovery import (
     CONTROL_QUIET_HOURS,
     CONTROL_SEARCH_DAYS,
+    MATCHING_POLICY_VERSION,
     OUTCOME_HORIZON_MINUTES,
     PRIMARY_MOVE_PCT,
     DirectionMoveResult,
@@ -49,6 +50,16 @@ if TYPE_CHECKING:
 REPORT_VERSION = "radar_outcome_discovery_report_v1"
 INTERPRETATION = "viewed_discovery_only_max_one_forward_candidate_no_trading_authorization"
 REGISTERED_DIRECTIONS = ("buy",)
+# Colleague review, 2026-09-01: fetch_watch_signals had no post-fetch bound,
+# unlike cex_activity_discovery_report.py's own check_candidate_count for
+# the analogous burst-minute scan. momentum_flow_watch_evaluations_1m is
+# already filtered to quality_ready/raw_qualified WATCH rows (much sparser
+# than the raw bars table -- HYP-017's own real run saw 1,273 decisions
+# over a 9-day window), so this default has generous headroom, but the
+# guard exists for the same reason check_candidate_count does: fail loudly
+# on a genuinely unexpected result size rather than silently evaluating
+# whatever came back.
+DEFAULT_MAX_WATCH_DECISIONS = 200_000
 
 
 @dataclass(frozen=True)
@@ -68,6 +79,7 @@ class RadarOutcomeManifest:
     outcome_horizon_minutes: int
     control_search_days: int
     control_quiet_hours: int
+    matching_policy_version: str
     input_fingerprint: str
 
 
@@ -95,12 +107,31 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--since", type=parse_utc_datetime, required=True)
     parser.add_argument("--until", type=parse_utc_datetime, required=True)
+    parser.add_argument(
+        "--max-watch-decisions",
+        type=int,
+        default=DEFAULT_MAX_WATCH_DECISIONS,
+        help=(
+            f"default {DEFAULT_MAX_WATCH_DECISIONS}; fails loudly rather than silently "
+            "evaluating an unexpectedly large result"
+        ),
+    )
     parser.add_argument("--code-revision", required=True)
     dirty = parser.add_mutually_exclusive_group(required=True)
     dirty.add_argument("--working-tree-dirty", action="store_true")
     dirty.add_argument("--no-working-tree-dirty", action="store_true")
     parser.add_argument("--format", choices=("markdown", "json"), default="markdown")
     return parser
+
+
+def check_watch_decision_count(count: int, max_watch_decisions: int) -> None:
+    if count > max_watch_decisions:
+        raise ValueError(
+            f"window produced {count} WATCH decisions, over "
+            f"--max-watch-decisions={max_watch_decisions}; narrow --since/--until "
+            "or raise --max-watch-decisions explicitly rather than silently evaluating "
+            "an unexpectedly large result"
+        )
 
 
 def _fmt_pct(value: float | None) -> str:
@@ -206,7 +237,13 @@ async def generate_report(args: argparse.Namespace) -> RadarOutcomeReport:
             watch_version=contract.watch_version,
             since=args.since,
             until=args.until,
+            # +1 so the returned count alone can distinguish "exactly at
+            # the cap" from "genuinely over it" -- the SQL LIMIT itself
+            # already bounds the DB scan/network/memory cost, this local
+            # count check only decides whether to raise.
+            limit=args.max_watch_decisions + 1,
         )
+        check_watch_decision_count(len(watch_signals), args.max_watch_decisions)
         episodes = tuple(
             OutcomeSignalEpisode(
                 episode_id=index,
@@ -272,6 +309,7 @@ async def generate_report(args: argparse.Namespace) -> RadarOutcomeReport:
                 outcome_horizon_minutes=OUTCOME_HORIZON_MINUTES,
                 control_search_days=CONTROL_SEARCH_DAYS,
                 control_quiet_hours=CONTROL_QUIET_HOURS,
+                matching_policy_version=MATCHING_POLICY_VERSION,
                 input_fingerprint=fingerprint,
             ),
             funnel=RadarOutcomeFunnel(

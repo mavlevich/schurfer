@@ -65,6 +65,20 @@ from .challenger_inference import (
 )
 
 DIRECTIONS = ("buy", "sell")
+
+
+def utc_week_key(value: datetime) -> str:
+    """ISO-8601 UTC week string ("2026-W35"). Single canonical source --
+    colleague review, 2026-09-01: cex_activity_discovery.py independently
+    reimplemented the identical isocalendar()-based computation as its own
+    private _utc_week, a genuine duplicate primitive that could drift.
+    Imported from here rather than the other way around, matching the
+    dependency direction cex_activity_discovery_report.py already
+    established (it already imports DIRECTIONS from this module)."""
+    iso = value.isocalendar()
+    return f"{iso.year:04d}-W{iso.week:02d}"
+
+
 OUTCOME_HORIZONS_MINUTES = (15, 60, 240, 720)
 PRECURSOR_LOOKBACK_MINUTES = 60
 # Position notional matches momentum_flow_paper_contract's own $50 default --
@@ -109,8 +123,7 @@ class BurstEpisode:
 
     @property
     def week_key(self) -> str:
-        iso = self.trigger_at.isocalendar()
-        return f"{iso.year}-W{iso.week:02d}"
+        return utc_week_key(self.trigger_at)
 
 
 def decluster_episodes(

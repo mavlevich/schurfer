@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING
 from .cex_activity_discovery import (
     CONTROL_QUIET_HOURS,
     CONTROL_SEARCH_DAYS,
+    MATCHING_POLICY_VERSION,
     OUTCOME_HORIZON_MINUTES,
     PRIMARY_MOVE_PCT,
     DirectionMoveResult,
@@ -94,6 +95,7 @@ class CexActivityManifest:
     outcome_horizon_minutes: int
     control_search_days: int
     control_quiet_hours: int
+    matching_policy_version: str
     input_fingerprint: str
 
 
@@ -349,6 +351,7 @@ async def generate_report(args: argparse.Namespace) -> CexActivityDiscoveryRepor
                 outcome_horizon_minutes=OUTCOME_HORIZON_MINUTES,
                 control_search_days=CONTROL_SEARCH_DAYS,
                 control_quiet_hours=CONTROL_QUIET_HOURS,
+                matching_policy_version=MATCHING_POLICY_VERSION,
                 input_fingerprint=fingerprint,
             ),
             funnel=CexActivityFunnel(

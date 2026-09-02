@@ -165,6 +165,51 @@ def test_pair_selection_never_reuses_one_control_path() -> None:
     ]
 
 
+def test_pair_selection_maximizes_pairs_instead_of_greedy_first_available() -> None:
+    # Colleague review, 2026-09-01: the exact counter-example that shows a
+    # greedy "first available" pick is a real bias, not just a style
+    # preference. E1 (earlier trigger_at) can use control C1 OR C2; E2
+    # (later) can ONLY use C1. Greedy processes E1 first and takes C1 (its
+    # own first candidate), leaving E2 with nothing -- 1 pair total, and a
+    # systematic loss of later episodes whenever an earlier one shares a
+    # control candidate. The correct maximum-cardinality matching is
+    # E1->C2, E2->C1 -- 2 pairs, using every resolved control available.
+    first = _episode(1, symbol="MATCHUSDT")
+    second = _episode(2, symbol="MATCHUSDT", trigger_at=BASE + timedelta(hours=2))
+    c1_at = BASE - timedelta(days=2)
+    c2_at = BASE - timedelta(days=3)
+    first_c1 = PathRequest("control:1:c1", "MATCHUSDT", c1_at, c1_at + timedelta(minutes=1))
+    first_c2 = PathRequest("control:1:c2", "MATCHUSDT", c2_at, c2_at + timedelta(minutes=1))
+    second_c1 = PathRequest("control:2:c1", "MATCHUSDT", c1_at, c1_at + timedelta(minutes=1))
+    signal_paths = {
+        signal_request(first).request_id: _path(
+            signal_request(first).request_id, symbol="MATCHUSDT", trigger_at=first.trigger_at
+        ),
+        signal_request(second).request_id: _path(
+            signal_request(second).request_id, symbol="MATCHUSDT", trigger_at=second.trigger_at
+        ),
+    }
+    control_paths = {
+        first_c1.request_id: _path(first_c1.request_id, symbol="MATCHUSDT", trigger_at=c1_at),
+        first_c2.request_id: _path(first_c2.request_id, symbol="MATCHUSDT", trigger_at=c2_at),
+        second_c1.request_id: _path(second_c1.request_id, symbol="MATCHUSDT", trigger_at=c1_at),
+    }
+    pairs = select_matched_pairs(
+        (first, second),
+        signal_paths=signal_paths,
+        control_requests={
+            1: (first_c1, first_c2),  # E1: C1 or C2
+            2: (second_c1,),  # E2: only C1
+        },
+        control_paths=control_paths,
+    )
+    assert len(pairs) == 2  # not 1, the greedy result
+    control_at_by_episode = {
+        pair.episode.episode_id: pair.control_path.trigger_at for pair in pairs
+    }
+    assert control_at_by_episode == {1: c2_at, 2: c1_at}
+
+
 def test_favorable_move_respects_signal_direction() -> None:
     assert favorable_move_pct(_path("up", up_hit=True), "buy") == pytest.approx(30.0)
     assert favorable_move_pct(_path("down", down_hit=True), "sell") == pytest.approx(30.0)
@@ -174,9 +219,9 @@ def test_joint_family_can_nominate_only_one_forward_direction() -> None:
     episodes: list[OutcomeSignalEpisode] = []
     pairs: list[MatchedMovePair] = []
     signal_paths: dict[str, ExactPricePath] = {}
-    for index in range(60):
+    for index in range(100):
         symbol = f"T{index % 20:02d}USDT"
-        trigger_at = BASE + timedelta(days=7 if index >= 30 else 0, minutes=index)
+        trigger_at = BASE + timedelta(days=7 if index >= 50 else 0, minutes=index)
         episode = _episode(index + 1, symbol=symbol, trigger_at=trigger_at)
         signal = _path(
             signal_request(episode).request_id,
@@ -211,9 +256,9 @@ def test_single_registered_radar_direction_is_not_penalized_as_a_two_way_screen(
     episodes: list[OutcomeSignalEpisode] = []
     pairs: list[MatchedMovePair] = []
     signal_paths: dict[str, ExactPricePath] = {}
-    for index in range(60):
+    for index in range(100):
         symbol = f"R{index % 20:02d}USDT"
-        trigger_at = BASE + timedelta(days=7 if index >= 30 else 0, minutes=index)
+        trigger_at = BASE + timedelta(days=7 if index >= 50 else 0, minutes=index)
         episode = _episode(index + 1, symbol=symbol, trigger_at=trigger_at)
         signal = _path(
             signal_request(episode).request_id,
