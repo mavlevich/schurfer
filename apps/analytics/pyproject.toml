@@ -8,6 +8,12 @@ dependencies = [
     "greenlet>=3.2",
     "httpx>=0.28",
     "psycopg[binary]>=3.2",
+    # Required by DuckDB's Python client to convert a TIMESTAMPTZ result
+    # column back into a tz-aware Python datetime (see
+    # momentum_flow_bidirectional_burst_offline_repository.py's own
+    # _duckdb_connect docstring) -- not imported directly anywhere in this
+    # package.
+    "pytz>=2024.1",
     "redis>=5.2",
     "schurfer-journal",
     "schurfer-performance",
