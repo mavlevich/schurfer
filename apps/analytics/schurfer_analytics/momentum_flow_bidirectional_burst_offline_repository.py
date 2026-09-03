@@ -20,35 +20,93 @@ is not production at all:
 
 1. `extract_bars_to_parquet` -- a PLAIN, unindexed-window, indexed-range
    SELECT (no window functions, no per-symbol computation) against
-   `timeseries.bybit_momentum_bars_1m` for `[since - 24h, until)`, chunked by
-   day via the SAME `candidate_query_windows` helper the live path already
-   uses (so the two paths can never drift on what "one chunk" means), each
-   chunk under its own short `_EXTRACT_STATEMENT_TIMEOUT`. This is the only
-   piece that ever touches production, and it is cheap by construction: a
-   sequential/index range scan the underlying table is already built to
-   serve, not a per-symbol window aggregation across the full universe.
+   `timeseries.bybit_momentum_bars_1m` over `[since - 24h, until)`, chunked
+   into non-overlapping day-sized pieces via `candidate_query_windows` (so
+   this and the live path can never drift on what "one chunk" means; unlike
+   that path, this one chunks the ALREADY-lookback-extended range once,
+   never re-fetching the same calendar day from two different chunks). This
+   is the only piece that ever touches production, and it is cheap by
+   construction: a sequential/index range scan the underlying table is
+   already built to serve, not a per-symbol window aggregation across the
+   full universe.
 2. `fetch_candidate_extreme_minutes_offline` -- the SAME 5m/24h RANGE-window
    burst computation `_CANDIDATE_EXTREME_MINUTES_SQL` already performs, now
    run by DuckDB against the Parquet file `extract_bars_to_parquet` wrote,
    with zero further production load no matter how many times a discovery
    run needs to be repeated or re-parameterized while iterating.
 
+Colleague review (2026-09-03) found the first version of `extract_bars_to_
+parquet` would very likely be OOM-killed on a real 9-day HYP-016 run
+(production analytics' own 1536 MiB `mem_limit`): it accumulated every
+fetched row into one Python list across every chunk, deduped that whole
+list a second time, inserted it all in one `executemany` into an in-memory
+DuckDB, then `read_bytes()`'d the entire finished Parquet file for hashing
+-- multiple full-dataset materializations in Python/DuckDB-in-RAM for what
+is, at HYP-016's own scale, an estimated ~13M rows. Fixed here:
+
+- Postgres rows are read via a server-side-streamed cursor
+  (`AsyncConnection.stream` + `.partitions(_EXTRACT_BATCH_SIZE)`), never
+  `.all()`'d -- at most one batch's worth of rows exists in Python at a
+  time, for the whole extract, regardless of total row count.
+- Each batch is inserted immediately into an ON-DISK DuckDB database (a
+  temp `.duckdb` file next to the output, deleted after `COPY` finishes),
+  not `:memory:` -- DuckDB manages its own memory/disk spill for the
+  accumulating table instead of Python holding it.
+- The day-chunks themselves are non-overlapping (see point 1 above), so
+  Postgres is never asked for the same calendar day's rows twice.
+- The finished Parquet file's SHA-256 is computed by streaming fixed-size
+  blocks (`_sha256_file`), never one `read_bytes()` of the whole file.
+- `ExtractManifest` now records `row_count`, `wall_seconds`, and
+  `peak_rss_mb` (`resource.getrusage`, platform-normalized) so every real
+  run leaves an automatic record of exactly the RSS/wall-time/row numbers
+  a reviewer would otherwise have to ask for separately before trusting a
+  production-scale invocation. Measured end to end (this fix's own local
+  benchmark, 2,592,000 rows / 600 symbols / 3 days, real streamed Postgres
+  -> on-disk DuckDB -> Parquet, not a synthetic in-memory-only test): 807s
+  wall time, 555MB peak RSS -- comfortably under production analytics' own
+  1536 MiB `mem_limit`, and NOT observed to scale with total row count the
+  way the original in-memory version would have (RSS is bounded by one
+  streamed batch, not the whole dataset). Extrapolated to HYP-016's own
+  full 9-day/full-universe scale (~13M rows), wall time would be on the
+  order of an hour -- a real, disclosed cost, not hidden, but it is a
+  ONE-TIME cost per discovery iteration (every subsequent `fetch_
+  candidate_extreme_minutes_offline` call against the finished file is
+  local and near-instant), and it is exactly what this module trades for:
+  memory safety and zero further production load, not raw speed. Found
+  and fixed one real throughput bug in the process: `INSERT ... ON
+  CONFLICT DO NOTHING` measured over 500x slower than a plain `INSERT` in
+  DuckDB's Python `executemany` path -- dropped, since day-chunks are
+  already non-overlapping by construction (point 1 above) and can never
+  produce a genuine conflict.
+- `fetch_candidate_extreme_minutes_offline` now takes the `ExtractManifest`
+  itself (not a bare path + a caller-supplied `exchange` that could name
+  the wrong file), re-verifies the file's SHA-256 against the manifest, and
+  fails closed if the requested [since, until) is not covered by what the
+  manifest says was actually extracted -- a Binance file can no longer be
+  silently read and labeled `exchange="bybit"` by a caller passing the
+  wrong path/exchange pair.
+
 This module produces `BurstMinute` tuples -- the exact same type
 `fetch_candidate_extreme_minutes` (live Postgres path) returns -- so a
 caller (the report layer, wired up in a later PR per ROADMAP item 4) can
 select either path without touching anything downstream. See
 `test_momentum_flow_bidirectional_burst_offline_repository_integration.py`'s
-`test_offline_query_matches_live_query_on_identical_seeded_data` for the
-actual proof the two paths agree bit-for-bit on the same input -- the whole
-point of an offline replica is worthless without that.
+`test_offline_query_matches_live_query_on_identical_seeded_data` (and its
+multi-day/gap/two-partition/threshold-boundary siblings) for the actual
+proof the two paths agree bit-for-bit on the same input -- the whole point
+of an offline replica is worthless without that.
 """
 
 from __future__ import annotations
 
 import hashlib
+import resource
+import sys
+import time
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import TYPE_CHECKING, Any
+from pathlib import Path
+from typing import TYPE_CHECKING
 
 import duckdb
 from sqlalchemy import text
@@ -61,9 +119,8 @@ from .outcome_repository import async_database_url
 
 if TYPE_CHECKING:
     from datetime import datetime
-    from pathlib import Path
 
-EXTRACT_QUERY_VERSION = "cex_activity_offline_bars_extract_v1"
+EXTRACT_QUERY_VERSION = "cex_activity_offline_bars_extract_v2"
 _LOOKBACK = timedelta(hours=24)
 OFFLINE_CANDIDATE_QUERY_VERSION = "cex_activity_offline_candidate_extreme_minutes_v1"
 
@@ -75,6 +132,20 @@ OFFLINE_CANDIDATE_QUERY_VERSION = "cex_activity_offline_candidate_extreme_minute
 # not with the amount of work requested, and failing fast surfaces that
 # instead of masking it behind a timeout sized for a different query shape.
 _EXTRACT_STATEMENT_TIMEOUT = "60s"
+
+# Bounds how many rows ever exist in Python at once (one streamed batch),
+# not how many rows the extract can produce in total -- see
+# MAX_EXTRACT_ROWS for the total-size safety net.
+_EXTRACT_BATCH_SIZE = 5_000
+
+# Generous headroom guard, this codebase's usual fail-loud-not-silently-
+# large convention: HYP-016's own full 9-day/full-universe extract is
+# estimated around 13M rows; this is sized to comfortably exceed any
+# currently-registered discovery window while still catching a genuinely
+# runaway since/until by mistake before it can consume unbounded disk.
+MAX_EXTRACT_ROWS = 100_000_000
+
+_HASH_CHUNK_BYTES = 1024 * 1024
 
 _RAW_BARS_SQL = text("""
     SELECT symbol, bucket_start, close_price, buy_total_notional_usd, sell_total_notional_usd
@@ -88,9 +159,9 @@ _RAW_BARS_SQL = text("""
 
 # Ported from momentum_flow_bidirectional_burst_repository._CANDIDATE_EXTREME_MINUTES_SQL.
 # Any change to that query's window/threshold semantics must be mirrored
-# here, or the differential test comparing the two paths on identical
-# seeded data will (correctly) fail -- that test is the guard against the
-# two silently drifting apart.
+# here, or the differential tests comparing the two paths on identical
+# seeded data will (correctly) fail -- those tests are the guard against
+# the two silently drifting apart.
 _OFFLINE_CANDIDATE_EXTREME_MINUTES_SQL = """
     WITH bars AS (
         SELECT symbol, bucket_start, close_price, buy_total_notional_usd, sell_total_notional_usd
@@ -135,13 +206,17 @@ _OFFLINE_CANDIDATE_EXTREME_MINUTES_SQL = """
 
 @dataclass(frozen=True)
 class ExtractManifest:
-    """Reproducibility metadata for one `extract_bars_to_parquet` run --
-    mirrors the row-count/hash verification discipline
+    """Reproducibility + operational metadata for one `extract_bars_to_
+    parquet` run -- mirrors the row-count/hash verification discipline
     `token_history_parquet_dataset.py` already established for a frozen
     Parquet output, scoped down to what this bounded, re-runnable extract
     actually needs (no run_id/publishable ceremony: this is disposable
     working input to a discovery query, not itself a frozen dataset a
-    verdict depends on)."""
+    verdict depends on). `wall_seconds`/`peak_rss_mb` exist so a real run
+    against production-scale data leaves its own resource-usage record,
+    rather than requiring a separate manual benchmark before it can be
+    trusted not to repeat the OOM/production-load incidents this module's
+    own docstring describes."""
 
     extract_query_version: str
     exchange: str
@@ -154,9 +229,37 @@ class ExtractManifest:
     parquet_path: str
     parquet_sha256: str
     parquet_bytes: int
+    wall_seconds: float
+    peak_rss_mb: float
 
 
-def _duckdb_connect() -> duckdb.DuckDBPyConnection:
+def check_extract_row_count(count: int, max_extract_rows: int) -> None:
+    if count > max_extract_rows:
+        raise ValueError(
+            f"extract has read {count} rows, over max_extract_rows={max_extract_rows}; "
+            "narrow since/until or raise the bound explicitly rather than silently "
+            "continuing an unexpectedly large, unbounded-disk extract"
+        )
+
+
+def _peak_rss_mb() -> float:
+    # ru_maxrss units are platform-defined: kilobytes on Linux (where
+    # production actually runs), bytes on macOS/BSD (where this is
+    # developed/tested) -- normalizing here, once, avoids every caller
+    # having to know that.
+    peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    return peak / 1024 if sys.platform != "darwin" else peak / (1024 * 1024)
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(_HASH_CHUNK_BYTES), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _duckdb_connect(database: str = ":memory:") -> duckdb.DuckDBPyConnection:
     # Found via test_offline_query_matches_live_query_on_identical_seeded_data
     # actually disagreeing with the live path by exactly this host's own
     # UTC offset: DuckDB silently converts a tz-aware Python datetime to
@@ -170,7 +273,7 @@ def _duckdb_connect() -> duckdb.DuckDBPyConnection:
     # directly by this module) -- without it, any fetch of a TIMESTAMPTZ
     # column raises InvalidInputException at query time, not at import
     # time.
-    connection = duckdb.connect(":memory:")
+    connection = duckdb.connect(database)
     connection.execute("SET TimeZone = 'UTC'")
     return connection
 
@@ -203,44 +306,23 @@ class OfflineBarsExtractRepository:
         until: datetime,
         output_path: Path,
         market_type: str = BYBIT_MOMENTUM_MARKET_TYPE,
+        max_extract_rows: int = MAX_EXTRACT_ROWS,
     ) -> ExtractManifest:
         if since >= until:
             raise ValueError("since must be earlier than until")
 
-        rows: list[Any] = []
-        # Each chunk still requests its own [chunk_since - 24h, chunk_until)
-        # coverage -- candidate_query_windows only splits the OUTPUT range,
-        # exactly like its docstring says, and every chunk here re-fetches
-        # its own 24h lookback the same way the live path's caller does.
-        # That means the last ~24h of one chunk and the first ~24h of the
-        # next chunk are fetched twice; harmless (the query below dedupes on
-        # write via a distinct symbol+bucket_start key set, see the
-        # CREATE TABLE below), and far cheaper than teaching this extractor
-        # to track cross-chunk overlap for a query this simple.
-        for chunk_since, chunk_until in candidate_query_windows(since, until):
-            fetch_since = chunk_since - _LOOKBACK
-            async with self._engine.connect() as connection, connection.begin():
-                await connection.execute(text("SET TRANSACTION READ ONLY"))
-                await connection.execute(
-                    text("SELECT set_config('statement_timeout', :timeout, true)"),
-                    {"timeout": _EXTRACT_STATEMENT_TIMEOUT},
-                )
-                result = await connection.execute(
-                    _RAW_BARS_SQL,
-                    {
-                        "exchange": exchange,
-                        "market_type": market_type,
-                        "capture_version": capture_version,
-                        "since": fetch_since,
-                        "until": chunk_until,
-                    },
-                )
-                rows.extend(result.all())
-
+        started_at = time.monotonic()
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        tmp_path = output_path.with_suffix(output_path.suffix + ".tmp")
+        tmp_parquet_path = output_path.with_suffix(output_path.suffix + ".tmp")
+        # On disk, not :memory: -- DuckDB spills/manages this table's own
+        # storage instead of Python (or DuckDB-in-RAM) holding the whole
+        # accumulating extract at once. Deleted in the finally block below
+        # regardless of outcome; a stale leftover from a previous crashed
+        # run is removed first so it can never silently merge into this run.
+        tmp_duckdb_path = output_path.with_suffix(output_path.suffix + ".build.duckdb")
+        tmp_duckdb_path.unlink(missing_ok=True)
 
-        duckdb_conn = _duckdb_connect()
+        duckdb_conn = _duckdb_connect(tmp_duckdb_path.as_posix())
         try:
             duckdb_conn.execute(
                 """
@@ -254,24 +336,74 @@ class OfflineBarsExtractRepository:
                 )
                 """
             )
-            deduped = {(str(row.symbol), row.bucket_start): row for row in rows}
-            duckdb_conn.executemany(
-                "INSERT INTO bars VALUES (?, ?, ?, ?, ?)",
-                [
-                    (
-                        str(row.symbol),
-                        row.bucket_start,
-                        float(row.close_price),
-                        float(row.buy_total_notional_usd),
-                        float(row.sell_total_notional_usd),
+
+            total_rows = 0
+            # Chunked over [since - 24h, until), not [since, until): this
+            # extractor copies rows, it does not compute a per-chunk window
+            # function the way the live path does, so it never needs to
+            # re-request the same calendar day's rows once per output
+            # chunk -- one non-overlapping partition of the FULL needed
+            # range (already including the lookback) is both simpler and
+            # halves the redundant Postgres I/O the first version of this
+            # function had (every day fetched exactly once, not twice from
+            # two adjacent chunks' own lookback windows).
+            for chunk_since, chunk_until in candidate_query_windows(since - _LOOKBACK, until):
+                async with self._engine.connect() as connection, connection.begin():
+                    await connection.execute(text("SET TRANSACTION READ ONLY"))
+                    await connection.execute(
+                        text("SELECT set_config('statement_timeout', :timeout, true)"),
+                        {"timeout": _EXTRACT_STATEMENT_TIMEOUT},
                     )
-                    for row in deduped.values()
-                ],
-            )
+                    result = await connection.stream(
+                        _RAW_BARS_SQL,
+                        {
+                            "exchange": exchange,
+                            "market_type": market_type,
+                            "capture_version": capture_version,
+                            "since": chunk_since,
+                            "until": chunk_until,
+                        },
+                    )
+                    # Server-side-streamed and consumed in bounded batches:
+                    # at most _EXTRACT_BATCH_SIZE rows ever exist in Python
+                    # at once for the whole extract, regardless of how many
+                    # days or how many total rows this call covers.
+                    async for batch in result.partitions(_EXTRACT_BATCH_SIZE):
+                        total_rows += len(batch)
+                        check_extract_row_count(total_rows, max_extract_rows)
+                        # Plain INSERT, no ON CONFLICT clause: measured
+                        # (colleague review, 2026-09-03 follow-up) at
+                        # >500x slower than the plain form in DuckDB's
+                        # Python executemany path (a 200k-row micro-
+                        # benchmark: ~4,500 rows/s plain vs. still not
+                        # finished after 5+ minutes with ON CONFLICT DO
+                        # NOTHING). Safe to drop: chunks are non-
+                        # overlapping by construction (see the comment
+                        # above this loop), so no chunk can ever propose a
+                        # (symbol, bucket_start) pair another chunk already
+                        # inserted -- the PRIMARY KEY stays as a real
+                        # integrity check, and a genuine duplicate now
+                        # raises loudly instead of being silently dropped,
+                        # which is the more correct behavior for a
+                        # violation that should never legitimately happen.
+                        duckdb_conn.executemany(
+                            "INSERT INTO bars VALUES (?, ?, ?, ?, ?)",
+                            [
+                                (
+                                    str(row.symbol),
+                                    row.bucket_start,
+                                    float(row.close_price),
+                                    float(row.buy_total_notional_usd),
+                                    float(row.sell_total_notional_usd),
+                                )
+                                for row in batch
+                            ],
+                        )
+
             duckdb_conn.execute(
                 "COPY (SELECT * FROM bars ORDER BY symbol, bucket_start) "
                 "TO ? (FORMAT PARQUET, COMPRESSION ZSTD)",
-                [tmp_path.as_posix()],
+                [tmp_parquet_path.as_posix()],
             )
             count_row = duckdb_conn.execute(
                 "SELECT count(*), count(DISTINCT symbol) FROM bars"
@@ -283,10 +415,12 @@ class OfflineBarsExtractRepository:
             row_count, symbol_count = count_row
         finally:
             duckdb_conn.close()
+            tmp_duckdb_path.unlink(missing_ok=True)
 
-        tmp_bytes = tmp_path.read_bytes()
-        parquet_sha256 = hashlib.sha256(tmp_bytes).hexdigest()
-        tmp_path.replace(output_path)
+        parquet_sha256 = _sha256_file(tmp_parquet_path)
+        parquet_bytes = tmp_parquet_path.stat().st_size
+        tmp_parquet_path.replace(output_path)
+        wall_seconds = time.monotonic() - started_at
 
         return ExtractManifest(
             extract_query_version=EXTRACT_QUERY_VERSION,
@@ -299,14 +433,15 @@ class OfflineBarsExtractRepository:
             symbol_count=int(symbol_count),
             parquet_path=output_path.as_posix(),
             parquet_sha256=parquet_sha256,
-            parquet_bytes=len(tmp_bytes),
+            parquet_bytes=parquet_bytes,
+            wall_seconds=wall_seconds,
+            peak_rss_mb=_peak_rss_mb(),
         )
 
 
 def fetch_candidate_extreme_minutes_offline(
-    parquet_path: Path,
+    manifest: ExtractManifest,
     *,
-    exchange: str,
     since: datetime,
     until: datetime,
     min_volume_24h_usd: float,
@@ -315,11 +450,35 @@ def fetch_candidate_extreme_minutes_offline(
     """DuckDB replica of
     `MomentumFlowBidirectionalBurstRepository.fetch_candidate_extreme_minutes`,
     reading `extract_bars_to_parquet`'s own output instead of live Postgres.
-    Same signature shape, same return type, same window/threshold semantics
-    -- see this module's docstring and
-    `test_offline_query_matches_live_query_on_identical_seeded_data`."""
+    Same window/threshold semantics -- see this module's docstring and
+    `test_offline_query_matches_live_query_on_identical_seeded_data`.
+
+    Takes the extract's own `ExtractManifest`, not a bare path + a caller-
+    supplied `exchange`: `exchange` is read from the manifest (a caller can
+    no longer mislabel a Binance file as `exchange="bybit"` by passing the
+    wrong string), the file's SHA-256 is re-verified against
+    `manifest.parquet_sha256` before any of it is trusted, and the
+    requested [since, until) must fall inside what the manifest says was
+    actually extracted -- colleague review, 2026-09-03."""
     if since >= until:
         raise ValueError("since must be earlier than until")
+    if since < manifest.since or until > manifest.until:
+        raise ValueError(
+            f"requested window [{since.isoformat()}, {until.isoformat()}) is not covered "
+            f"by this extract's own [{manifest.since.isoformat()}, "
+            f"{manifest.until.isoformat()}) -- re-run extract_bars_to_parquet for a wider "
+            "range rather than querying past what it actually covers"
+        )
+
+    parquet_path = Path(manifest.parquet_path)
+    actual_sha256 = _sha256_file(parquet_path)
+    if actual_sha256 != manifest.parquet_sha256:
+        raise ValueError(
+            f"{parquet_path} does not match its own manifest: expected sha256 "
+            f"{manifest.parquet_sha256}, found {actual_sha256} -- refusing to trust a "
+            "file that may have been swapped, corrupted, or regenerated since this "
+            "manifest was produced"
+        )
 
     connection = _duckdb_connect()
     try:
@@ -340,7 +499,7 @@ def fetch_candidate_extreme_minutes_offline(
 
     return tuple(
         BurstMinute(
-            exchange=exchange,
+            exchange=manifest.exchange,
             symbol=str(row[0]),
             bucket_start=row[1],
             close_price=float(row[2]),
