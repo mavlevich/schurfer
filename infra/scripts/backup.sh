@@ -14,8 +14,8 @@ RETENTION_COUNT="${RETENTION_COUNT:-1}"
 # (root disk at 88% used, weekly Docker build-cache prune hadn't run in 3
 # days) -- `set -euo pipefail` correctly aborted the whole run, but left the
 # uncompressed .dump it had already written sitting in $BACKUP_DIR forever,
-# since RETENTION_COUNT cleanup (line ~90) only ever runs after a
-# successful gzip. That leftover file was itself most of the remaining
+# since RETENTION_COUNT cleanup only ever runs after a successful backup
+# (further below in this file). That leftover file was itself most of the remaining
 # disk pressure the next run needed to succeed. Independent fixes: (1) a
 # cleanup trap so a failed run never leaves its own partial output behind;
 # (2) a pre-flight headroom check that fails fast with a clear message
@@ -29,16 +29,28 @@ RETENTION_COUNT="${RETENTION_COUNT:-1}"
 # once, silently invalidating the headroom check's own guarantee and
 # reproducing the exact incident this script exists to prevent; (4) the
 # fallback floor (8 GiB) undersized a real observed production backup
-# (6.5 GiB) -- during gzip, the raw dump AND the growing .gz coexist on
-# disk at once, so peak need is well over one backup's own size, and a
-# fixed floor sized below that can pass pre-flight and still run out of
-# room. Fixed here: `flock` before anything else touches disk (5), and the
-# required-space calculation now prefers the LIVE database's own current
-# size (the most accurate, least stale signal available) over a
-# potentially-stale previous backup's size, with the floor only used as a
-# last resort when neither signal is reachable (6).
+# (6.5 GiB) -- at the time, the raw dump AND the growing .gz coexisted on
+# disk at once during a run (see the streaming rewrite below, which
+# removes that), so peak need was well over one backup's own size, and a
+# fixed floor sized below that could pass pre-flight and still run out of
+# room. Fixed here: `flock` before anything else touches disk (5), and a
+# required-space calculation sized off real data instead of the floor
+# alone for every ordinary run (6) -- see the basis_kb comment further
+# below for which signal is actually preferred and why (that priority has
+# changed since this paragraph was first written; this paragraph is kept
+# for its own history, not as a description of the current calculation).
 LOCK_WAIT_SECONDS="${LOCK_WAIT_SECONDS:-300}"
-MIN_FREE_MULTIPLIER="${MIN_FREE_MULTIPLIER:-3}"
+# 2x, not 3x: colleague review, 2026-09-03, fourth round. Now that pg_dump
+# streams straight into gzip (see the backup-execution comment further
+# below) instead of writing a full raw dump to disk first, a run's own
+# peak NEW disk usage is just the growing compressed output -- there is no
+# separate raw file to also budget room for. The real remaining risk this
+# multiplier protects against is the NEW backup genuinely being bigger than
+# basis_kb's own estimate (organic DB growth since the last backup, mostly)
+# -- 2x still tolerates the database roughly doubling in size between two
+# consecutive daily backups before this check blocks a run, which is
+# already a generous margin for day-over-day growth.
+MIN_FREE_MULTIPLIER="${MIN_FREE_MULTIPLIER:-2}"
 # 16 GiB: a last-resort floor only, used when this host has no previous
 # backup AND the live database size could not be queried -- effectively
 # "first run ever, or something else is already wrong". Every ordinary run
@@ -51,13 +63,13 @@ mkdir -p "$BACKUP_DIR"
 # a cron-scheduled run and a prod-deploy-triggered run can both pass the
 # pre-flight headroom check (each individually correct, computed before
 # either had written a byte), then both start pg_dump concurrently -- two
-# simultaneous raw dumps plus two simultaneous growing .gz files chew
-# through the exact headroom the check just certified as sufficient for
-# one. `flock` on a dedicated lock file (not the script file itself, which
-# may not be writable/stable across deploys) serializes every invocation
-# of this script on this host. Bounded wait, not indefinite: a genuinely
-# stuck concurrent run should surface as a clear failure here, not hang
-# whichever caller (cron or `make prod-deploy`) is waiting on this one.
+# simultaneous streamed dump-and-compress pipelines chew through the exact
+# headroom the check just certified as sufficient for one. `flock` on a
+# dedicated lock file (not the script file itself, which may not be
+# writable/stable across deploys) serializes every invocation of this
+# script on this host. Bounded wait, not indefinite: a genuinely stuck
+# concurrent run should surface as a clear failure here, not hang whichever
+# caller (cron or `make prod-deploy`) is waiting on this one.
 LOCK_FILE="${BACKUP_DIR}/.backup.lock"
 exec 200>"$LOCK_FILE"
 if ! flock -w "$LOCK_WAIT_SECONDS" 200; then
@@ -68,43 +80,52 @@ if ! flock -w "$LOCK_WAIT_SECONDS" 200; then
 fi
 
 DATE=$(date +%Y%m%d_%H%M%S)
-RAW_FILE="${BACKUP_DIR}/schurfer_${DATE}.dump"
+FINAL_GZ="${BACKUP_DIR}/schurfer_${DATE}.dump.gz"
 # gzip writes through its OWN separate temp file, never straight to
-# FINAL_GZ: colleague review, 2026-09-03, third round -- the previous
-# version ran plain `gzip "$FILE"` (writing directly to schurfer_*.dump.gz
-# in place) and the cleanup trap only ever removed $RAW_FILE. Reviewer
-# reproduced a forced gzip failure that had already written PART of the
-# final .gz path before erroring out: the trap correctly removed the raw
-# dump but left that partial .gz sitting in $BACKUP_DIR forever -- the
-# exact class of leftover-file disk pressure this whole trap exists to
-# prevent, just one step later in the pipeline. Writing to $TMP_GZ and
-# only `mv`ing it to $FINAL_GZ after gzip fully succeeds means a partial
-# .gz can never exist under the real backup filename; the trap covers
-# BOTH files so a failure at any point (pg_dump, gzip, or in between)
-# leaves $BACKUP_DIR exactly as it was before this run started.
-TMP_GZ="${RAW_FILE}.gz.partial"
-FINAL_GZ="${RAW_FILE}.gz"
+# FINAL_GZ, so a partial .gz can never exist under the real backup
+# filename -- only `mv`'d there once the whole streamed pipeline below has
+# fully succeeded. Colleague review, 2026-09-03, third round: an earlier
+# version ran plain `gzip "$FILE"` in place and the cleanup trap only ever
+# removed the raw dump file, leaving a PARTIAL .gz sitting under the real
+# backup filename forever whenever gzip itself failed after already
+# writing some output. Colleague review, 2026-09-03, fourth round: pg_dump
+# no longer writes a separate raw dump file to disk at all (see the
+# backup-execution comment below) -- there is only ever this one temp file
+# to clean up now, not two.
+TMP_GZ="${FINAL_GZ}.partial"
 
 # (The lock above needs no explicit release: FD 200 closes, and the flock
 # with it, whenever this script's process exits, on every exit path.)
-trap 'rm -f "$RAW_FILE" "$TMP_GZ"' EXIT
+trap 'rm -f "$TMP_GZ"' EXIT
 
 # Basis for the multiplier: the PREVIOUS BACKUP's own compressed size,
-# preferred over the live database's raw uncompressed size. Colleague
+# preferred over the live database's raw uncompressed size -- this is the
+# CURRENT priority; see the "same-day follow-up" paragraph near the top of
+# this file for why an earlier revision briefly had it backwards. Colleague
 # review, 2026-09-03, third round: checked this against real production
-# numbers (2026-09-03) -- live DB 22,771,971,763 bytes (21.2 GiB) vs. the
-# actual retained backup 10,023,806,873 bytes (9.3 GiB), a ~2.3x
-# compression ratio from pg_dump -Fc plus gzip together. The peak
-# concurrent usage a backup run actually needs room for (old retained
-# backup + this run's new raw dump + this run's new growing .gz, all
-# roughly COMPRESSED-backup-sized, not raw-DB-sized) was previously
-# multiplied against the much larger RAW size, overestimating the real
-# requirement by roughly that same compression ratio. The live DB size is
-# still queried and used as a same-order-of-magnitude estimate ONLY when
-# there is no previous backup to size against yet (first run on this
-# host), divided by COMPRESSED_SIZE_ESTIMATE_DIVISOR to approximate what
-# the eventual compressed backup would be rather than assuming no
-# compression at all.
+# numbers -- live DB 22,771,971,763 bytes (21.2 GiB) vs. the actual
+# retained backup 10,023,806,873 bytes (9.3 GiB), a ~2.3x compression ratio
+# from pg_dump -Fc plus gzip together. The live DB size is still queried
+# and used as a same-order-of-magnitude estimate ONLY when there is no
+# previous backup to size against yet (first run on this host), divided by
+# COMPRESSED_SIZE_ESTIMATE_DIVISOR to approximate what the eventual
+# compressed backup would be rather than assuming no compression at all.
+#
+# What required_kb actually needs to cover: ONLY this run's own NEW
+# artifact (the growing $TMP_GZ, streaming-compressed straight from
+# pg_dump -- see the backup-execution comment below, which removed the
+# separate raw-dump-file phase a previous revision needed room for
+# alongside the compressed output). It does NOT need to additionally
+# budget room for the old retained backup that basis_kb is measured
+# from: that file already exists on disk, so `df` (available_kb below)
+# already excludes it from "available" -- counting it again in
+# required_kb would double-count space that was never actually free to
+# begin with. Colleague review, 2026-09-03, fourth round: an earlier
+# version of this comment described peak usage as "old retained backup +
+# new raw dump + new growing .gz", which conflated total on-disk footprint
+# during a run with the ADDITIONAL free space actually required beyond
+# what `df` already treats as used -- conservative in effect, but wrong as
+# a description of the arithmetic actually being performed below.
 COMPRESSED_SIZE_ESTIMATE_DIVISOR="${COMPRESSED_SIZE_ESTIMATE_DIVISOR:-2}"
 
 live_db_size_bytes="$(
@@ -159,14 +180,31 @@ if [[ "$available_kb" -lt "$required_kb" ]]; then
 fi
 
 echo "[$(date -Iseconds)] Starting backup..."
-docker exec "$CONTAINER" pg_dump -U "$DB_USER" -d "$DB_NAME" -Fc > "$RAW_FILE"
-# -c (write to stdout, redirected here) rather than in-place: leaves
-# $RAW_FILE untouched until $TMP_GZ has been written successfully in
-# full, so a failure partway through never leaves a half-written file
-# under the real backup filename -- see the trap's own comment above.
-gzip -c "$RAW_FILE" > "$TMP_GZ"
+# Streamed straight from pg_dump into gzip -- no separate raw .dump file
+# ever touches disk. Colleague review, 2026-09-03, fourth round: the
+# previous version wrote the full uncompressed dump to $RAW_FILE first,
+# THEN compressed it, so the raw dump and the growing .gz coexisted on
+# disk during every run; on 2026-09-03's real production numbers (21.2 GiB
+# raw vs. 9.3 GiB compressed) that meant the actual peak footprint was
+# roughly raw-dump-sized, not compressed-backup-sized, even though
+# required_kb was computed off the compressed basis -- the 3x multiplier
+# happened to roughly cover that gap by coincidence (raw is ~2.3x
+# compressed here), not by any principled accounting. Streaming removes
+# the raw file entirely: pg_dump's own stdout feeds gzip directly, so peak
+# NEW disk usage during a run is just $TMP_GZ growing to its final
+# compressed size, which is what required_kb's own basis_kb (the previous
+# backup's compressed size) is actually measuring.
+#
+# `set -euo pipefail` (set at the top of this file) makes this pipeline's
+# own exit status the LAST non-zero status among pg_dump/gzip, not just
+# gzip's: if pg_dump fails partway (dropped connection, statement
+# timeout, disk error on the Postgres side), gzip still sees a normal EOF
+# on its stdin and exits 0 having compressed whatever partial bytes it
+# received -- pipefail is what makes that partial success not silently
+# masked by gzip's own success, aborting this script and running the
+# cleanup trap exactly as if gzip itself had failed.
+docker exec "$CONTAINER" pg_dump -U "$DB_USER" -d "$DB_NAME" -Fc | gzip -c > "$TMP_GZ"
 mv "$TMP_GZ" "$FINAL_GZ"
-rm -f "$RAW_FILE"
 
 SIZE=$(du -sh "$FINAL_GZ" | cut -f1)
 echo "[$(date -Iseconds)] Saved: $(basename "$FINAL_GZ") ($SIZE)"

@@ -183,6 +183,48 @@ def test_gzip_failure_after_partial_output_leaves_no_partial_gz_behind(tmp_path:
     assert list(backup_dir.glob("schurfer_*")) == []
 
 
+def test_pg_dump_failure_mid_stream_leaves_no_partial_or_final_file(tmp_path: Path) -> None:
+    """Colleague review, 2026-09-03, fourth round: pg_dump now streams
+    straight into gzip (`pg_dump | gzip -c > $TMP_GZ`), so a pg_dump
+    failure AFTER it has already written some bytes is a real risk this
+    design must still handle -- gzip sees a normal EOF on a closed pipe
+    and happily exits 0 having compressed whatever partial bytes it
+    received, so ONLY `set -o pipefail` (already set at the top of
+    backup.sh) makes the overall pipeline's exit status reflect pg_dump's
+    own failure rather than gzip's unrelated success. This fake `docker`
+    writes real bytes for `pg_dump` (so gzip has something real to
+    compress) then exits 1, reproducing a dropped connection or a
+    statement-timeout kill partway through a real dump."""
+    backup_dir = tmp_path / "backups"
+    bin_dir = tmp_path / "fakebin"
+    bin_dir.mkdir(exist_ok=True)
+    docker_script = bin_dir / "docker"
+    docker_script.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -uo pipefail\n"
+        'if [[ "$*" == *pg_dump* ]]; then\n'
+        "    head -c 4096 /dev/zero\n"
+        "    echo 'fake pg_dump: simulated dropped connection' >&2\n"
+        "    exit 1\n"
+        "fi\n"
+        'if [[ "$*" == *pg_database_size* ]]; then\n'
+        "    echo 1048576\n"
+        "    exit 0\n"
+        "fi\n"
+        'echo "unhandled fake docker invocation: $*" >&2\n'
+        "exit 1\n"
+    )
+    docker_script.chmod(0o755)
+
+    result = _run_backup(backup_dir=backup_dir, bin_dir=bin_dir)
+
+    assert result.returncode != 0
+    # Nothing at all under the real backup filename or its temp partial --
+    # pipefail must have caught pg_dump's own failure even though gzip
+    # itself "succeeded" on the truncated stream it received.
+    assert list(backup_dir.glob("schurfer_*")) == []
+
+
 def test_concurrent_runs_serialize_instead_of_racing_pg_dump(tmp_path: Path) -> None:
     """Two runs launched back-to-back: the first holds the lock through a
     slow (simulated) pg_dump; the second, given a short LOCK_WAIT_SECONDS,
