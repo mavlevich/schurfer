@@ -37,7 +37,7 @@ _INSERT_EVENT_SQL = text("""
         payload_hash, quantity, quantity_unit, estimated_liquidation_notional, raw_payload
     ) VALUES (
         'liquidation_event_v1', :exchange, 'linear', :native_market_id, 'universe-v1',
-        'bybit_all_liquidation_v1', 'complete_stream', :position_side, :event_at,
+        :source_contract_variant, :coverage_kind, :position_side, :event_at,
         :event_at, :event_at, :session_id, :event_key, :payload_hash,
         :quantity, 'contracts', :notional, '{}'::jsonb
     )
@@ -63,9 +63,11 @@ async def _seed_event(
     notional: float,
     position_side: str = "long",
     native_market_id: str = _MARKET,
+    coverage_kind: str = "complete_stream",
+    source_contract_variant: str = "bybit_all_liquidation_v1",
     event_seq: int,
 ) -> None:
-    key_source = f"{native_market_id}:{event_at.isoformat()}:{event_seq}"
+    key_source = f"{native_market_id}:{coverage_kind}:{event_at.isoformat()}:{event_seq}"
     event_key = hashlib.sha256(key_source.encode()).digest()
     payload_hash = hashlib.sha256(event_key).digest()
     async with engine.begin() as connection:
@@ -75,6 +77,8 @@ async def _seed_event(
                 "exchange": _TEST_EXCHANGE,
                 "native_market_id": native_market_id,
                 "position_side": position_side,
+                "coverage_kind": coverage_kind,
+                "source_contract_variant": source_contract_variant,
                 "event_at": event_at,
                 "session_id": "test-session",
                 "event_key": event_key,
@@ -111,6 +115,53 @@ async def test_fetch_trigger_minutes_computes_the_rolling_trailing_sum() -> None
         by_minute = {row.bucket_start: row.trailing_notional_usd for row in rows}
         assert by_minute[_START] == pytest.approx(150_000.0)
         assert by_minute[_START + timedelta(minutes=1)] == pytest.approx(300_000.0)
+        assert all(row.coverage_kind == "complete_stream" for row in rows)
+    finally:
+        await _cleanup(engine)
+        await engine.dispose()
+
+
+async def test_fetch_trigger_minutes_never_blends_two_coverage_kinds_into_one_rolling_sum() -> None:
+    """Colleague review, 2026-09-03: timeseries.liquidation_events captures
+    Bybit as complete_stream and Binance as latest_per_symbol_1000ms --
+    genuinely different measurement processes. Even on the SAME (exchange,
+    native_market_id, position_side), two events under different
+    coverage_kind values must produce two INDEPENDENT rolling sums, not one
+    blended trailing_notional_usd -- proves the SQL's PARTITION BY now
+    includes coverage_kind, not just exchange/market/side."""
+    engine = await _connect_or_skip()
+    try:
+        await _seed_event(
+            engine,
+            event_at=_START,
+            notional=150_000.0,
+            coverage_kind="complete_stream",
+            source_contract_variant="bybit_all_liquidation_v1",
+            event_seq=1,
+        )
+        await _seed_event(
+            engine,
+            event_at=_START + timedelta(minutes=1),
+            notional=150_000.0,
+            coverage_kind="latest_per_symbol_1000ms",
+            source_contract_variant="binance_merged_um_v1",
+            event_seq=2,
+        )
+
+        repository = LiquidationMakerUpperBoundRepository(engine)
+        rows = await repository.fetch_trigger_minutes(
+            since=_START, until=_START + timedelta(minutes=2), limit=1000
+        )
+        by_coverage_and_minute = {(row.coverage_kind, row.bucket_start): row for row in rows}
+        # If these were blended (the pre-fix behavior), the second minute's
+        # trailing sum would be $300k, not $150k -- each coverage_kind's
+        # own rolling sum must only ever see its own $150k event.
+        assert by_coverage_and_minute[
+            ("complete_stream", _START)
+        ].trailing_notional_usd == pytest.approx(150_000.0)
+        assert by_coverage_and_minute[
+            ("latest_per_symbol_1000ms", _START + timedelta(minutes=1))
+        ].trailing_notional_usd == pytest.approx(150_000.0)
     finally:
         await _cleanup(engine)
         await engine.dispose()

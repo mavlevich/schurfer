@@ -51,9 +51,19 @@ Touching a price is also not proof of a maker fill on its own: queue
 position, available depth at that price, and this strategy's own place in
 the book are all unknown and unmodeled. Consequently:
 
-- A NEGATIVE net return under this optimistic upper bound is conclusive:
-  reject the direction immediately. No real order could plausibly beat an
-  upper bound that already loses money.
+- A NEGATIVE net return under this optimistic upper bound rejects THIS
+  specific candidate -- extremum-entry plus a FIXED
+  `MAX_POSITION_HOLD_MINUTES`-minute taker-style exit -- not the entire
+  maker-reversion idea space. Colleague review, 2026-09-03: an earlier
+  version of this docstring said "no real order could plausibly beat an
+  upper bound that already loses money", which overclaims -- a causal
+  variant with an earlier or dynamic (not fixed-60-minute) exit rule is a
+  DIFFERENT candidate this result says nothing about, since it changes the
+  very quantity being bounded. What a negative result here does
+  conclusively close off is this exact candidate: no real resting order,
+  filled at this episode's own best-possible price and held for exactly
+  this long before a taker exit, could have done better than what this
+  study already measured losing money on.
 - A POSITIVE net return is not itself authorization for paper or live
   trading -- it only justifies building the next, causal step: a BBO/L2
   shadow-capture test that can actually observe queue position and fill
@@ -79,13 +89,53 @@ actual hold duration via the shared `calculate_performance`. Exact-venue
 OHLCV only -- never a different exchange's prices substituted in.
 
 **Evidence floor.** This codebase's usual 100 resolved episodes / 30
-distinct asset clusters / 4 distinct UTC weeks, with the usual 35%/45%
-per-asset/per-week concentration caps, applied PER DIRECTION (long and
-short each need to clear the floor independently).
+distinct clusters / 4 distinct UTC weeks, with the usual 35%/45%
+per-cluster/per-week concentration caps, applied per (direction, exchange,
+`coverage_kind`) scope -- not merely per direction. Colleague review,
+2026-09-03: `timeseries.liquidation_events` captures Binance and Bybit
+under genuinely different `coverage_kind` semantics (Bybit:
+`complete_stream`, a real full event stream; Binance:
+`latest_per_symbol_1000ms`, a lossy periodic sample -- see migration
+0022's own CHECK constraint and the two exchanges' `source_contract_
+variant` values). Blending both into one denominator/CI would understate
+or otherwise distort which minutes cross the cascade threshold in a way
+that depends on which feed happened to capture more of the real event
+volume, not on the underlying market. Splitting the verdict per (exchange,
+coverage_kind) -- currently a 1:1 mapping in practice, so per exchange --
+closes that; the honest, disclosed cost is a smaller population per scope,
+making the floor genuinely harder to reach than a single pooled
+Binance+Bybit population would have been. This is accepted rather than
+lowering the floor to compensate: a real per-scope insufficient_data
+verdict is more honest than a pooled candidate/reject verdict resting on
+two incompatible measurement processes.
+
+**Cluster identity is instrument-level, not verified canonical asset
+identity.** The cluster key `formal_verdict`'s `distinct_asset_clusters`
+counts is `native_market_id` -- a native contract identifier on ONE
+exchange (already scoped to a single exchange by the per-(direction,
+exchange, coverage_kind) split above), not a cross-venue canonical asset
+identity resolved against an identity registry the way e.g.
+`source_lead_forward_cohort.py`'s own `canonical_asset_id` is. Colleague
+review, 2026-09-03: calling this an "asset cluster" without that
+qualification risks implying a stronger identity guarantee than what is
+actually verified here -- there is currently no canonical-identity
+registry covering arbitrary liquidated instruments the way the source-lead
+registry covers its own curated 14 assets. Scoping per exchange already
+removes the most severe risk (a ticker string colliding ACROSS venues);
+what remains is a labeling accuracy concern, not a data-mixing one -- treat
+`distinct_asset_clusters` here as "distinct native contract IDs on this
+scope's one exchange", not a claim of verified cross-venue asset identity.
+A real canonical-identity layer would be required before this module could
+support any genuine cross-exchange combined verdict, which it does not
+attempt.
 
 **Primary metrics.** Resolved/unresolved episode counts, median and mean
-net return, profit factor, win rate, MFE, MAE, drawdown -- broken down by
-side, asset, and week.
+net return, profit factor, win rate, MFE, MAE, and drawdown -- broken down
+by side, asset, and week. Drawdown here is the chronological ADDITIVE
+peak-to-trough decline ACROSS a scope's own ordered sequence of episode
+outcomes (`max_sequential_drawdown_pct`, mirrors `virtual_strategy.py`'s
+own `max_sequential_drawdown_usd`), a distinct metric from MFE/MAE (the
+best/worst excursion WITHIN one episode's own hold window).
 """
 
 from __future__ import annotations
@@ -108,6 +158,8 @@ from .clustered_inference import (
 from .ohlcv import ONE_MINUTE_MS, ceil_to_timeframe, covers_window_without_gaps
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from .ohlcv import Candle
 
 CONTRACT_VERSION = "liquidation_maker_upper_bound_v1"
@@ -145,6 +197,13 @@ EXIT_BAR_TIMEFRAME_MS = ONE_MINUTE_MS
 EXIT_PRICE_SOURCE_VERSION = "ohlcv_close_proxy_v1"
 EXIT_SLIPPAGE_BPS_ASSUMED = 15.0
 REQUIRE_EXIT_SLIPPAGE_SENSITIVITY = True
+
+# The sensitivity family REQUIRE_EXIT_SLIPPAGE_SENSITIVITY commits this
+# contract to: 0bps (no slippage at all), the frozen primary assumption
+# itself, and 2x that -- pre-registered here, not chosen by the eventual
+# report after seeing which one looks best (colleague review, 2026-09-03:
+# this frozen constant existed but nothing computed the family it names).
+EXIT_SLIPPAGE_SENSITIVITY_BPS = (0.0, EXIT_SLIPPAGE_BPS_ASSUMED, 2 * EXIT_SLIPPAGE_BPS_ASSUMED)
 MAX_EXIT_BAR_GAP_MINUTES = 2.0
 
 # A nominal position size; only the resulting *percentage* return is ever
@@ -217,13 +276,19 @@ def decluster_cascade_episodes(
 ) -> tuple[CascadeEpisode, ...]:
     """Group consecutive-in-time trigger minutes for the same (exchange,
     native_market_id, position_side) into one episode, keyed by the FIRST
-    such minute. A new episode starts only once `cooldown_minutes` has
-    passed since the LAST trigger minute for that same group -- mirrors
+    such minute. A new episode starts once `cooldown_minutes` has passed
+    since the LAST trigger minute for that same group -- mirrors
     `momentum_flow_bidirectional_burst_study.decluster_episodes`'s own
     refractory-window declustering (same shape of problem: a run of
     consecutive extreme minutes is one event, not one-per-minute), adapted
     to this module's own (exchange, native_market_id, position_side)
-    grouping key rather than that module's (exchange, symbol)."""
+    grouping key rather than that module's (exchange, symbol). The
+    boundary is inclusive (`gap >= cooldown_minutes` starts a new episode,
+    not `>`) -- colleague review, 2026-09-03: an earlier version used `>`,
+    silently merging two trigger minutes exactly `cooldown_minutes` apart
+    into one episode, inconsistent with the `decluster_episodes` precedent
+    this docstring already claims to mirror (that function's own refractory
+    check is `>=`)."""
     if cooldown_minutes <= 0:
         raise ValueError("cooldown_minutes must be positive")
     if start_id <= 0:
@@ -241,7 +306,7 @@ def decluster_cascade_episodes(
         episode_start: datetime | None = None
         episode_last: datetime | None = None
         for minute in ordered:
-            if episode_last is not None and minute.bucket_start - episode_last > cooldown:
+            if episode_last is not None and minute.bucket_start - episode_last >= cooldown:
                 assert episode_start is not None
                 episodes.append(
                     CascadeEpisode(
@@ -521,6 +586,29 @@ def primary_sensitivity_ci(observations: tuple[ClusterObservation, ...]) -> tupl
     return computation.estimate.lower_bound, computation.estimate.upper_bound
 
 
+def max_sequential_drawdown_pct(ordered_net_return_pct: Sequence[float]) -> float | None:
+    """Chronological (caller-ordered, by entry_at) ADDITIVE drawdown across
+    a scope's own resolved episodes -- mirrors `virtual_strategy.py`'s own
+    `max_sequential_drawdown_usd` (additive, not compounding, this
+    codebase's established convention for a simple, order-sensitive
+    peak-to-trough proxy across a sequence of independent trades), applied
+    to `net_return_pct` instead of USD P&L. Distinct from per-episode
+    MFE/MAE (the best/worst excursion WITHIN one episode's own hold
+    window): this is the worst peak-to-trough decline ACROSS the ordered
+    sequence of episode outcomes themselves, the frozen contract's own
+    "Primary metrics" list names alongside MFE/MAE."""
+    if not ordered_net_return_pct:
+        return None
+    equity = 0.0
+    peak = 0.0
+    drawdown = 0.0
+    for value in ordered_net_return_pct:
+        equity += value
+        peak = max(peak, equity)
+        drawdown = max(drawdown, peak - equity)
+    return round(drawdown, 6)
+
+
 def formal_verdict(
     *,
     resolved_episodes: int,
@@ -538,7 +626,14 @@ def formal_verdict(
     the optimistic upper bound's own confidence interval never crosses
     into positive territory" -- gating on the CI's lower bound (this
     codebase's usual convention for a confirmatory/candidate verdict)
-    would be the wrong direction of caution for an upper-bound study."""
+    would be the wrong direction of caution for an upper-bound study.
+
+    VERDICT_REJECT means exactly this candidate is rejected -- extremum
+    entry plus a fixed MAX_POSITION_HOLD_MINUTES taker-style exit -- not
+    that no maker-reversion variant could ever work; see the module
+    docstring's own "Entry is a post-hoc optimistic upper bound" section
+    (colleague review, 2026-09-03) for why a causal, differently-timed exit
+    is a different, unaddressed candidate."""
     floor_met = (
         resolved_episodes >= EVIDENCE_FLOOR["min_resolved_episodes"]
         and distinct_asset_clusters >= EVIDENCE_FLOOR["min_distinct_asset_clusters"]
@@ -570,6 +665,7 @@ __all__ = [
     "EXIT_BAR_TIMEFRAME_MS",
     "EXIT_PRICE_SOURCE_VERSION",
     "EXIT_SLIPPAGE_BPS_ASSUMED",
+    "EXIT_SLIPPAGE_SENSITIVITY_BPS",
     "INTERPRETATION",
     "MAKER_ENTRY_FEE_BPS",
     "MAX_EXIT_BAR_GAP_MINUTES",
@@ -590,6 +686,7 @@ __all__ = [
     "LiquidationTriggerMinute",
     "decluster_cascade_episodes",
     "formal_verdict",
+    "max_sequential_drawdown_pct",
     "primary_sensitivity_ci",
     "resolve_episode",
 ]

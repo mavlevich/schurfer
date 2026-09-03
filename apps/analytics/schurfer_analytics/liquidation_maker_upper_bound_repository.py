@@ -45,7 +45,7 @@ _LIQUIDATION_CAPTURE_VERSION = "liquidation_event_v1"
 
 _TRIGGER_MINUTES_SQL = text("""
     WITH events AS (
-        SELECT exchange, native_market_id, position_side, event_at,
+        SELECT exchange, native_market_id, position_side, coverage_kind, event_at,
                estimated_liquidation_notional
         FROM timeseries.liquidation_events
         WHERE capture_version = :capture_version
@@ -54,16 +54,28 @@ _TRIGGER_MINUTES_SQL = text("""
           AND event_at < :until
     ),
     per_minute AS (
-        SELECT exchange, native_market_id, position_side,
+        -- coverage_kind IS part of the GROUP BY here (colleague review,
+        -- 2026-09-03): verified against real production data that it is
+        -- currently a fixed 1:1 property of exchange (bybit =
+        -- complete_stream, binance = latest_per_symbol_1000ms), but
+        -- grouping by it explicitly, and partitioning the rolling sum
+        -- below by it too, means a FUTURE coverage transition on the same
+        -- (exchange, native_market_id, position_side) would correctly
+        -- split into two independent rolling sums instead of silently
+        -- blending a lossy and a complete measurement process into one
+        -- trailing_notional_usd value -- the exact mixing this fix exists
+        -- to prevent, not assumed away by a comment.
+        SELECT exchange, native_market_id, position_side, coverage_kind,
                date_trunc('minute', event_at) AS bucket_start,
                SUM(estimated_liquidation_notional) AS notional_usd
         FROM events
-        GROUP BY exchange, native_market_id, position_side, date_trunc('minute', event_at)
+        GROUP BY exchange, native_market_id, position_side, coverage_kind,
+                 date_trunc('minute', event_at)
     ),
     rolling AS (
-        SELECT exchange, native_market_id, position_side, bucket_start,
+        SELECT exchange, native_market_id, position_side, coverage_kind, bucket_start,
                SUM(notional_usd) OVER (
-                   PARTITION BY exchange, native_market_id, position_side
+                   PARTITION BY exchange, native_market_id, position_side, coverage_kind
                    ORDER BY bucket_start
                    RANGE BETWEEN
                        (:window_precede_minutes || ' minutes')::interval PRECEDING
@@ -71,7 +83,8 @@ _TRIGGER_MINUTES_SQL = text("""
                ) AS trailing_notional_usd
         FROM per_minute
     )
-    SELECT exchange, native_market_id, position_side, bucket_start, trailing_notional_usd
+    SELECT exchange, native_market_id, position_side, coverage_kind, bucket_start,
+           trailing_notional_usd
     FROM rolling
     WHERE bucket_start >= :since
     ORDER BY exchange, native_market_id, position_side, bucket_start
@@ -81,9 +94,18 @@ _TRIGGER_MINUTES_SQL = text("""
 
 @dataclass(frozen=True)
 class RawTriggerMinute:
+    """`coverage_kind` (colleague review, 2026-09-03) is a real, distinct
+    measurement process, not metadata -- `timeseries.liquidation_events`
+    captures Bybit as `complete_stream` (a genuine full event stream) and
+    Binance as `latest_per_symbol_1000ms` (a lossy periodic sample); see
+    migration 0022's own CHECK constraint. The report layer scopes every
+    verdict per (exchange, coverage_kind), never blending the two into one
+    denominator/CI."""
+
     exchange: str
     native_market_id: str
     position_side: str
+    coverage_kind: str
     bucket_start: datetime
     trailing_notional_usd: float
 
@@ -153,6 +175,7 @@ class LiquidationMakerUpperBoundRepository:
                 exchange=str(row.exchange),
                 native_market_id=str(row.native_market_id),
                 position_side=str(row.position_side),
+                coverage_kind=str(row.coverage_kind),
                 bucket_start=row.bucket_start,
                 trailing_notional_usd=float(row.trailing_notional_usd),
             )

@@ -18,6 +18,7 @@ from schurfer_analytics.liquidation_maker_upper_bound import (
     CASCADE_COOLDOWN_MINUTES,
     EVIDENCE_FLOOR,
     EXIT_SLIPPAGE_BPS_ASSUMED,
+    EXIT_SLIPPAGE_SENSITIVITY_BPS,
     MAX_EXIT_BAR_GAP_MINUTES,
     MAX_POSITION_HOLD_MINUTES,
     MAX_SINGLE_ASSET_EPISODE_SHARE,
@@ -32,6 +33,7 @@ from schurfer_analytics.liquidation_maker_upper_bound import (
     LiquidationTriggerMinute,
     decluster_cascade_episodes,
     formal_verdict,
+    max_sequential_drawdown_pct,
     resolve_episode,
 )
 from schurfer_analytics.ohlcv import Candle
@@ -83,6 +85,24 @@ def test_decluster_merges_trigger_minutes_within_cooldown_into_one_episode() -> 
     (episode,) = episodes
     assert episode.first_trigger_at == _T0
     assert episode.last_trigger_at == _T0 + timedelta(minutes=59)
+
+
+def test_decluster_splits_episodes_at_exactly_the_cooldown_boundary() -> None:
+    """Colleague review, 2026-09-03: the boundary is inclusive (gap >=
+    cooldown_minutes starts a new episode), matching decluster_episodes's
+    own >= refractory precedent -- an earlier version used a strict >,
+    silently merging two trigger minutes exactly CASCADE_COOLDOWN_MINUTES
+    apart into one episode. Neither pre-existing test above covered exactly
+    this boundary (59min merges, 61min splits -- 60min itself was
+    untested)."""
+    minutes = (
+        LiquidationTriggerMinute(_EXCHANGE, _MARKET, "long", _T0),
+        LiquidationTriggerMinute(_EXCHANGE, _MARKET, "long", _T0 + timedelta(minutes=60)),
+    )
+    episodes = decluster_cascade_episodes(minutes)
+    assert len(episodes) == 2
+    assert episodes[0].first_trigger_at == episodes[0].last_trigger_at == _T0
+    assert episodes[1].first_trigger_at == _T0 + timedelta(minutes=60)
 
 
 def test_decluster_splits_episodes_once_cooldown_is_exceeded() -> None:
@@ -294,3 +314,56 @@ def test_formal_verdict_positive_warrants_shadow_test_when_ci_upper_bound_is_pos
 def test_formal_verdict_rejects_when_ci_upper_bound_is_not_positive() -> None:
     assert formal_verdict(**_stats(ci_upper_bound_pct=0.0)) == VERDICT_REJECT
     assert formal_verdict(**_stats(ci_upper_bound_pct=-0.5)) == VERDICT_REJECT
+
+
+# --- EXIT_SLIPPAGE_SENSITIVITY_BPS (REQUIRE_EXIT_SLIPPAGE_SENSITIVITY) -----
+
+
+def test_exit_slippage_sensitivity_bps_is_the_frozen_zero_primary_double_family() -> None:
+    assert EXIT_SLIPPAGE_SENSITIVITY_BPS == (0.0, EXIT_SLIPPAGE_BPS_ASSUMED, 30.0)
+
+
+def test_resolve_episode_accepts_exit_slippage_bps_and_higher_slippage_nets_less() -> None:
+    episode = CascadeEpisode(1, _EXCHANGE, _MARKET, "long", _T0, _T0)
+    candles = [
+        _bar(_T0, o=100.0, h=100.0, low=90.0, c=95.0),
+        *[
+            _bar(_T0 + timedelta(minutes=i), o=95.0, h=95.0, low=95.0, c=95.0)
+            for i in range(1, MAX_POSITION_HOLD_MINUTES)
+        ],
+        _bar(
+            _T0 + timedelta(minutes=MAX_POSITION_HOLD_MINUTES), o=110.0, h=110.0, low=110.0, c=110.0
+        ),
+    ]
+    inputs = EpisodeInputs(episode, tuple(candles))
+    at_zero = resolve_episode(inputs, exit_slippage_bps=0.0)
+    at_primary = resolve_episode(inputs, exit_slippage_bps=EXIT_SLIPPAGE_BPS_ASSUMED)
+    at_double = resolve_episode(inputs, exit_slippage_bps=2 * EXIT_SLIPPAGE_BPS_ASSUMED)
+    assert at_zero.resolved and at_primary.resolved and at_double.resolved
+    assert at_zero.net_return_pct is not None
+    assert at_primary.net_return_pct is not None
+    assert at_double.net_return_pct is not None
+    assert at_zero.net_return_pct > at_primary.net_return_pct > at_double.net_return_pct
+
+
+# --- max_sequential_drawdown_pct -------------------------------------------
+
+
+def test_max_sequential_drawdown_pct_empty_sequence_is_none() -> None:
+    assert max_sequential_drawdown_pct(()) is None
+
+
+def test_max_sequential_drawdown_pct_all_positive_has_zero_drawdown() -> None:
+    # Equity only ever rises -- never dips below its own running peak.
+    assert max_sequential_drawdown_pct((1.0, 2.0, 3.0)) == 0.0
+
+
+def test_max_sequential_drawdown_pct_tracks_the_worst_peak_to_trough_decline() -> None:
+    # Equity path: +5, +3(peak=8), -10(trough=-2, drawdown=10), +1(-1).
+    # Worst peak-to-trough is peak(8) - trough(-2) = 10.
+    assert max_sequential_drawdown_pct((5.0, 3.0, -10.0, 1.0)) == pytest.approx(10.0)
+
+
+def test_max_sequential_drawdown_pct_single_value() -> None:
+    assert max_sequential_drawdown_pct((-3.0,)) == pytest.approx(3.0)
+    assert max_sequential_drawdown_pct((3.0,)) == pytest.approx(0.0)
