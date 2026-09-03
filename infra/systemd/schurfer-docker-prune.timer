@@ -1,8 +1,18 @@
 [Unit]
-Description=Weekly Schurfer Docker build cache and image prune
+Description=Daily Schurfer Docker build cache and image prune
 
 [Timer]
-OnCalendar=weekly
+# Was `weekly`: found 2026-09-03 that a week between checks is too coarse
+# against how often deploys actually happen -- the root disk reached 88%
+# used with cache/images crossing the service's own 168h (7-day) staleness
+# filter unreclaimed for up to several days because the CHECK itself only
+# ran once a week. Checking daily instead does not change what gets
+# reclaimed (the service's own `--filter until=168h` still protects
+# anything used in the last 7 days, preserving the cross-day layer-cache
+# reuse that filter was chosen for) -- only how promptly something that
+# has already crossed that 7-day line actually gets swept, which is the
+# gap that let this accumulate for days instead of hours.
+OnCalendar=daily
 Persistent=true
 # Spreads the actual run across a half-hour window instead of every host on
 # this schedule firing at exactly the same second -- harmless with one host,
