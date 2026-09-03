@@ -22,17 +22,22 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26.6'
-          # go.work.sum, not an enumerated list or an apps/*/go.sum glob:
-          # colleague review, 2026-09-03 -- the enumerated form (api-gateway/
-          # collector/notifier only) had silently drifted out of sync with
-          # go.work (which also lists apps/market-hotset), and a glob scoped
-          # to apps/* would silently repeat that drift for any future Go
-          # module living outside apps/ (e.g. under packages/). go.work.sum
-          # is the workspace's own single, already-maintained aggregate
-          # checksum file (go build/mod tidy in workspace mode keeps it in
-          # sync with every module go.work lists, wherever it lives) -- keying
-          # the cache on it needs no list to keep in sync by hand, ever.
-          cache-dependency-path: go.work.sum
+          # go.work + **/go.sum, not an enumerated list, an apps/*/go.sum
+          # glob, or go.work.sum: colleague review, 2026-09-03, two rounds.
+          # The enumerated form (api-gateway/collector/notifier only) had
+          # drifted out of sync with go.work (which also lists apps/
+          # market-hotset); an apps/*/go.sum glob would silently repeat
+          # that for a future module living outside apps/; go.work.sum
+          # would have been the cleanest fix, but it is `.gitignore`d and
+          # never committed -- pointing setup-go's cache at it on a clean
+          # checkout means the file plain doesn't exist there. go.work
+          # itself IS committed and changes whenever a module is added/
+          # removed; **/go.sum covers every module's own checksum file
+          # wherever it lives, present or future, with no list to keep in
+          # sync by hand.
+          cache-dependency-path: |
+            go.work
+            **/go.sum
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -153,17 +158,22 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26.6'
-          # go.work.sum, not an enumerated list or an apps/*/go.sum glob:
-          # colleague review, 2026-09-03 -- the enumerated form (api-gateway/
-          # collector/notifier only) had silently drifted out of sync with
-          # go.work (which also lists apps/market-hotset), and a glob scoped
-          # to apps/* would silently repeat that drift for any future Go
-          # module living outside apps/ (e.g. under packages/). go.work.sum
-          # is the workspace's own single, already-maintained aggregate
-          # checksum file (go build/mod tidy in workspace mode keeps it in
-          # sync with every module go.work lists, wherever it lives) -- keying
-          # the cache on it needs no list to keep in sync by hand, ever.
-          cache-dependency-path: go.work.sum
+          # go.work + **/go.sum, not an enumerated list, an apps/*/go.sum
+          # glob, or go.work.sum: colleague review, 2026-09-03, two rounds.
+          # The enumerated form (api-gateway/collector/notifier only) had
+          # drifted out of sync with go.work (which also lists apps/
+          # market-hotset); an apps/*/go.sum glob would silently repeat
+          # that for a future module living outside apps/; go.work.sum
+          # would have been the cleanest fix, but it is `.gitignore`d and
+          # never committed -- pointing setup-go's cache at it on a clean
+          # checkout means the file plain doesn't exist there. go.work
+          # itself IS committed and changes whenever a module is added/
+          # removed; **/go.sum covers every module's own checksum file
+          # wherever it lives, present or future, with no list to keep in
+          # sync by hand.
+          cache-dependency-path: |
+            go.work
+            **/go.sum
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
@@ -248,17 +258,22 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26.6'
-          # go.work.sum, not an enumerated list or an apps/*/go.sum glob:
-          # colleague review, 2026-09-03 -- the enumerated form (api-gateway/
-          # collector/notifier only) had silently drifted out of sync with
-          # go.work (which also lists apps/market-hotset), and a glob scoped
-          # to apps/* would silently repeat that drift for any future Go
-          # module living outside apps/ (e.g. under packages/). go.work.sum
-          # is the workspace's own single, already-maintained aggregate
-          # checksum file (go build/mod tidy in workspace mode keeps it in
-          # sync with every module go.work lists, wherever it lives) -- keying
-          # the cache on it needs no list to keep in sync by hand, ever.
-          cache-dependency-path: go.work.sum
+          # go.work + **/go.sum, not an enumerated list, an apps/*/go.sum
+          # glob, or go.work.sum: colleague review, 2026-09-03, two rounds.
+          # The enumerated form (api-gateway/collector/notifier only) had
+          # drifted out of sync with go.work (which also lists apps/
+          # market-hotset); an apps/*/go.sum glob would silently repeat
+          # that for a future module living outside apps/; go.work.sum
+          # would have been the cleanest fix, but it is `.gitignore`d and
+          # never committed -- pointing setup-go's cache at it on a clean
+          # checkout means the file plain doesn't exist there. go.work
+          # itself IS committed and changes whenever a module is added/
+          # removed; **/go.sum covers every module's own checksum file
+          # wherever it lives, present or future, with no list to keep in
+          # sync by hand.
+          cache-dependency-path: |
+            go.work
+            **/go.sum
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -305,17 +320,22 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26.6'
-          # go.work.sum, not an enumerated list or an apps/*/go.sum glob:
-          # colleague review, 2026-09-03 -- the enumerated form (api-gateway/
-          # collector/notifier only) had silently drifted out of sync with
-          # go.work (which also lists apps/market-hotset), and a glob scoped
-          # to apps/* would silently repeat that drift for any future Go
-          # module living outside apps/ (e.g. under packages/). go.work.sum
-          # is the workspace's own single, already-maintained aggregate
-          # checksum file (go build/mod tidy in workspace mode keeps it in
-          # sync with every module go.work lists, wherever it lives) -- keying
-          # the cache on it needs no list to keep in sync by hand, ever.
-          cache-dependency-path: go.work.sum
+          # go.work + **/go.sum, not an enumerated list, an apps/*/go.sum
+          # glob, or go.work.sum: colleague review, 2026-09-03, two rounds.
+          # The enumerated form (api-gateway/collector/notifier only) had
+          # drifted out of sync with go.work (which also lists apps/
+          # market-hotset); an apps/*/go.sum glob would silently repeat
+          # that for a future module living outside apps/; go.work.sum
+          # would have been the cleanest fix, but it is `.gitignore`d and
+          # never committed -- pointing setup-go's cache at it on a clean
+          # checkout means the file plain doesn't exist there. go.work
+          # itself IS committed and changes whenever a module is added/
+          # removed; **/go.sum covers every module's own checksum file
+          # wherever it lives, present or future, with no list to keep in
+          # sync by hand.
+          cache-dependency-path: |
+            go.work
+            **/go.sum
       - name: Python dead code
         run: |
           if find apps packages -name '*.py' 2>/dev/null | grep -q .; then

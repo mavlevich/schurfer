@@ -9,15 +9,24 @@
 
 GOLANGCI_LINT_VERSION = v2.1.6
 DEADCODE_VERSION = v0.48.0
-# Colleague review, 2026-09-03: a hardcoded module-path list here had
-# already drifted out of sync with go.work once (apps/market-hotset was
-# missing). Computed from go.work itself at Makefile-parse time instead --
-# this can never drift again, since it IS go.work's own module list, not a
-# copy of it. GO_MODULE_TEST_PATTERNS feeds `go test`/`go vet` directly
-# (see the [4/6] step in `verify`); the deadcode target below already
-# derived its own module list this same way (`grep '^use ' go.work`), so
-# nothing here duplicates a second independent extraction of it.
-GO_MODULE_DIRS := $(shell grep '^use ' go.work | awk '{print $$2}')
+# Colleague review, 2026-09-03, two rounds: a hardcoded module-path list
+# here had already drifted out of sync with go.work once (apps/market-
+# hotset was missing). Computed from go.work itself at Makefile-parse
+# time instead -- this can never drift again, since it IS go.work's own
+# module list, not a copy of it. First fix used `grep '^use ' go.work`,
+# which only recognizes the single-line `use ./apps/foo` form -- a valid
+# `use (\n ./apps/foo\n ./apps/bar\n)` block would silently produce an
+# EMPTY list and repeat the exact same "make verify stops checking Go"
+# failure this was meant to close, just via a different go.work syntax.
+# `go work edit -json` is go.work's own canonical parser (handles both
+# forms, and any future one) -- piped through a one-line python3 (already
+# a hard dependency everywhere else in this repo) rather than requiring
+# `jq`, which is not otherwise assumed present. GO_MODULE_TEST_PATTERNS
+# feeds `go test`/`go vet` directly (see the [4/6] step in `verify`); the
+# deadcode target below is switched to reuse this SAME variable instead
+# of independently re-deriving its own module list a second way.
+GO_MODULE_DIRS := $(shell go work edit -json | python3 -c \
+	"import json,sys; print(' '.join(m['DiskPath'] for m in json.load(sys.stdin)['Use']))")
 GO_MODULE_TEST_PATTERNS := $(addsuffix /...,$(GO_MODULE_DIRS))
 PROD_REPORT_MIN_HEADROOM_MB ?= 1280
 PROD_REPORT_MIN_AVAILABLE_MB ?= 1024
@@ -966,7 +975,7 @@ deadcode:
 		$(MAKE) install-deadcode; \
 		go_bin="$$(go env GOBIN)"; \
 		if test -z "$$go_bin"; then go_bin="$$(go env GOPATH)/bin"; fi; \
-		grep '^use ' go.work | awk '{print $$2}' | while read -r dir; do \
+		for dir in $(GO_MODULE_DIRS); do \
 			echo "=== deadcode $$dir ==="; \
 			(cd "$$dir" && "$$go_bin/deadcode" ./...); \
 		done; \
