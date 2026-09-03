@@ -22,6 +22,7 @@ fails) when no Postgres is reachable.
 
 from __future__ import annotations
 
+import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -231,16 +232,16 @@ async def test_extract_bars_to_parquet_rejects_over_row_cap(tmp_path: Path) -> N
 
 
 async def test_extract_bars_to_parquet_rejects_over_wall_time_budget(tmp_path: Path) -> None:
-    """No single chunk's own _EXTRACT_STATEMENT_TIMEOUT catches a runaway
-    TOTAL extract across many chunks (colleague review, 2026-09-03 follow-up
-    round 2) -- max_wall_seconds is checked once per chunk and must raise
-    even though every individual chunk here is trivially fast."""
+    """No single chunk's own statement_timeout alone catches a runaway
+    TOTAL extract across many chunks (colleague review, 2026-09-03) --
+    max_wall_seconds=0.0 means the deadline is already in the past by the
+    time the very first check runs, so this must raise immediately."""
     engine = await _connect_or_skip()
     try:
         symbol = "WALLBUDGETUSDT"
         await _seed_bar(engine, symbol=symbol, bucket_start=_START, close_price=1.0)
         repository = OfflineBarsExtractRepository(engine)
-        with pytest.raises(TimeoutError, match="over max_wall_seconds"):
+        with pytest.raises(TimeoutError, match="max_wall_seconds"):
             await repository.extract_bars_to_parquet(
                 exchange=_TEST_EXCHANGE,
                 capture_version=_TEST_CAPTURE_VERSION,
@@ -249,6 +250,69 @@ async def test_extract_bars_to_parquet_rejects_over_wall_time_budget(tmp_path: P
                 output_path=tmp_path / "bars.parquet",
                 max_wall_seconds=0.0,
             )
+    finally:
+        await _cleanup(engine)
+        await engine.dispose()
+
+
+async def test_extract_bars_to_parquet_enforces_the_deadline_after_chunk_work_finishes(
+    tmp_path: Path,
+) -> None:
+    """The wall-time budget must be enforced beyond just the pre-chunk
+    check -- also after each batch, after the whole chunk loop, and before
+    the local COPY/hash phases (colleague review, 2026-09-03 follow-up
+    round 3: a per-chunk-only check misses a single slow/stuck chunk or a
+    slow local COPY/hash phase, since those would only ever be checked
+    again at the START of the NEXT chunk, which may never come).
+
+    Uses a fake `_now` clock (the function's own private testing seam) that
+    returns small, real-looking values for its first few calls -- enough to
+    let both of this scenario's two chunks (the extract always adds one
+    chunk for the 24h lookback ahead of the requested since/until, even
+    when the requested window itself is one minute wide) pass their
+    pre-chunk checks and the one seeded row's post-batch check -- then
+    jumps far past the deadline on every call after that. If the deadline
+    were only ever checked before a chunk starts, this run would still
+    complete successfully (both chunks' own pre-checks already passed
+    before the clock jumps); it must instead raise from one of the later
+    checkpoints (after the loop, before COPY, or before hashing)."""
+    engine = await _connect_or_skip()
+    try:
+        symbol = "DEADLINEAFTERUSDT"
+        await _seed_bar(engine, symbol=symbol, bucket_start=_START, close_price=1.0)
+        repository = OfflineBarsExtractRepository(engine)
+
+        real_start = time.monotonic()
+        call_count = 0
+
+        def fake_now() -> float:
+            nonlocal call_count
+            call_count += 1
+            # Generous slack beyond the two pre-chunk checks + the one
+            # post-batch check this scenario makes (3 calls): if a future
+            # refactor adds a couple more checkpoints before the chunk loop
+            # ends, this still exercises the same "checked after chunk work
+            # finishes" property rather than becoming flaky.
+            if call_count <= 5:
+                return real_start + call_count * 0.001
+            return real_start + 10_000.0
+
+        with pytest.raises(TimeoutError, match="max_wall_seconds"):
+            await repository.extract_bars_to_parquet(
+                exchange=_TEST_EXCHANGE,
+                capture_version=_TEST_CAPTURE_VERSION,
+                since=_START,
+                until=_START + timedelta(minutes=1),
+                output_path=tmp_path / "bars.parquet",
+                max_wall_seconds=5.0,
+                _now=fake_now,
+            )
+        # Sanity: the fake clock's early, real-looking values must actually
+        # have been consumed (proving this test exercised real chunk/batch
+        # processing before the jump, not an immediate pre-first-chunk
+        # failure the way test_extract_bars_to_parquet_rejects_over_wall_
+        # time_budget above already covers).
+        assert call_count > 3
     finally:
         await _cleanup(engine)
         await engine.dispose()

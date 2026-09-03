@@ -108,10 +108,7 @@ Independent re-verification (colleague review, 2026-09-03 follow-up round
   universe scale (~13M rows) -- a real cost this module explicitly still
   does not hide, but one now bounded by a real, enforced budget rather
   than only disclosed in a docstring: `extract_bars_to_parquet` takes an
-  explicit `max_wall_seconds` and checks it after every chunk, raising
-  (not silently continuing) if exceeded, so a genuinely stuck or
-  much-larger-than-expected run against live production is stopped rather
-  than left to run indefinitely. Separately, the per-batch DuckDB insert
+  explicit `max_wall_seconds`. Separately, the per-batch DuckDB insert
   itself switched from Python-level `executemany` (row-by-row FFI/prepared-
   statement overhead) to one columnar `INSERT ... SELECT UNNEST(...)` per
   batch, binding five Python lists (one per column) instead of a list of
@@ -131,6 +128,41 @@ Independent re-verification (colleague review, 2026-09-03 follow-up round
   (~13M rows, roughly 5x this benchmark's row count), extract wall time
   would be on the order of 1-2 minutes, not the roughly one hour the
   previous executemany-based path extrapolated to.
+
+Independent re-verification (colleague review, 2026-09-03 follow-up round
+3) found the round-2 `max_wall_seconds` fix above still only checked its
+budget once per chunk, before that chunk's own Postgres query started --
+never during a chunk's own batch reads, never after the last chunk, and
+never during the local COPY/hash phases that follow. A single slow/stuck
+chunk (the only one, or the last one) could still run past the budget and
+the function would still return successfully; the same was true of the
+100%-local COPY/hash phases, which no per-chunk check could ever reach.
+Fixed by computing one `time.monotonic()` deadline at the very start of
+the call and checking it (`check_extract_deadline`) at every phase
+against that SAME deadline, never a fresh per-chunk budget: before each
+chunk, after every batch within a chunk, once more after the whole chunk
+loop ends, and once more before each of the local COPY and hash steps.
+Each chunk's own Postgres `statement_timeout` is now also capped at
+whatever time is actually left in the overall budget (`min` against the
+fixed `_EXTRACT_STATEMENT_TIMEOUT_MS`), not the fixed value regardless of
+how little time remains -- Postgres applies `statement_timeout` to every
+individual FETCH against a streamed/server-side cursor, not just the
+initial query, so this bounds a hang mid-stream too, enforced server-side
+rather than depending on the client staying responsive. The local
+COPY/hash phases are deliberately NOT preemptible mid-flight (no
+subprocess/hard-kill wrapping either one): both are 100% local work
+against the already-fetched on-disk DuckDB file, carrying none of the
+production-I/O risk `max_wall_seconds` primarily exists to bound, and the
+real benchmark above already measures both, included, at low single-digit
+seconds even at this benchmark's 2.59M-row scale -- the checks immediately
+before each one exist to fail fast rather than waste time entering a phase
+the budget is already spent for, not to interrupt one already running.
+`DEFAULT_MAX_EXTRACT_WALL_SECONDS` also dropped from 6 hours to 15
+minutes: 6 hours was sized as a generic "don't run forever" ceiling and
+directly contradicted this module's own stated goal of never repeating the
+12-minute production-I/O incident its own docstring opens with; 15 minutes
+still gives roughly 7-10x margin over the ~1-2 minute HYP-016-scale
+extrapolation above.
 
 This module produces `BurstMinute` tuples -- the exact same type
 `fetch_candidate_extreme_minutes` (live Postgres path) returns -- so a
@@ -165,6 +197,7 @@ from .momentum_flow_capture_contract import BYBIT_MOMENTUM_MARKET_TYPE
 from .outcome_repository import async_database_url
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from datetime import datetime
 
 EXTRACT_QUERY_VERSION = "cex_activity_offline_bars_extract_v2"
@@ -178,7 +211,11 @@ OFFLINE_CANDIDATE_QUERY_VERSION = "cex_activity_offline_candidate_extreme_minute
 # in well under a minute, something is wrong with the index or the table,
 # not with the amount of work requested, and failing fast surfaces that
 # instead of masking it behind a timeout sized for a different query shape.
-_EXTRACT_STATEMENT_TIMEOUT = "60s"
+# Each chunk's own statement_timeout is actually set to min(this, the time
+# actually left in the overall max_wall_seconds budget) -- see
+# extract_bars_to_parquet -- so this is a ceiling on top of the real
+# per-chunk budget, not the only bound in play.
+_EXTRACT_STATEMENT_TIMEOUT_MS = 60_000
 
 # Bounds how many rows ever exist in Python at once (one streamed batch),
 # not how many rows the extract can produce in total -- see
@@ -192,15 +229,19 @@ _EXTRACT_BATCH_SIZE = 5_000
 # runaway since/until by mistake before it can consume unbounded disk.
 MAX_EXTRACT_ROWS = 100_000_000
 
-# No per-chunk statement_timeout catches a runaway TOTAL extract -- each
-# chunk can individually finish well under _EXTRACT_STATEMENT_TIMEOUT while
-# the sum across many chunks still runs far longer than intended (colleague
-# review, 2026-09-03 follow-up round 2). Sized generously above this
-# module's own measured ~13M-row/full-scale extrapolation (see module
-# docstring) so a normal HYP-016-scale run is never falsely aborted, while
-# still catching a genuinely stuck or much-larger-than-expected run rather
-# than letting it hold a production connection pool slot indefinitely.
-DEFAULT_MAX_EXTRACT_WALL_SECONDS = 6 * 60 * 60
+# A single deadline (started_at + this) is computed once and enforced at
+# every phase of extract_bars_to_parquet -- before each chunk, after every
+# batch within a chunk, after the chunk loop ends, and before both the
+# local COPY and hash steps (colleague review, 2026-09-03 follow-up round 3:
+# a per-chunk-only check misses a runaway single/last chunk, and this
+# module's own stated goal is specifically avoiding a repeat of the
+# 12-minute production I/O incident its docstring describes, not giving a
+# runaway extract hours of unbounded runway). Sized against this module's
+# own measured post-UNNEST-fix scale (see module docstring: ~22s for
+# 2.59M rows, extrapolating to roughly 1-2 minutes for HYP-016's own full
+# ~13M-row scale) with generous margin for real production variance, not
+# against the old, much-slower executemany-based numbers.
+DEFAULT_MAX_EXTRACT_WALL_SECONDS = 15 * 60
 
 # Comfortably under production analytics' own 1536 MiB container
 # `mem_limit`, leaving headroom for Python/psycopg/the duckdb library's own
@@ -331,14 +372,23 @@ def check_candidate_row_count(count: int, max_candidate_rows: int) -> None:
         )
 
 
-def check_extract_wall_seconds(elapsed_seconds: float, max_wall_seconds: float) -> None:
-    if elapsed_seconds > max_wall_seconds:
+def check_extract_deadline(now: float, deadline: float, *, max_wall_seconds: float) -> None:
+    """`now`/`deadline` are `time.monotonic()`-comparable floats. Called at
+    every phase of `extract_bars_to_parquet` -- before each chunk, after
+    every batch within a chunk, after the chunk loop, and before the local
+    COPY/hash steps -- against the SAME deadline computed once at the
+    function's own start, not a fresh per-call budget (colleague review,
+    2026-09-03 follow-up round 3: a check that only ran once per chunk
+    could never catch a single slow/stuck chunk, or the local COPY/hash
+    phases that follow the last chunk, exceeding the budget)."""
+    if now >= deadline:
         raise TimeoutError(
-            f"extract_bars_to_parquet has run {elapsed_seconds:.1f}s, over "
-            f"max_wall_seconds={max_wall_seconds}; no single chunk's own "
-            "statement_timeout catches a runaway TOTAL extract across many chunks -- "
-            "narrow since/until, raise the bound explicitly, or investigate why this "
-            "run is taking far longer than a normal HYP-016-scale extract rather than "
+            f"extract_bars_to_parquet exceeded its own max_wall_seconds="
+            f"{max_wall_seconds} budget; no single chunk's own statement_timeout "
+            "alone catches a runaway TOTAL extract across many chunks, a single slow "
+            "chunk, or the local Parquet COPY/hash phases that follow -- narrow "
+            "since/until, raise the bound explicitly, or investigate why this run is "
+            "taking far longer than a normal HYP-016-scale extract rather than "
             "letting it hold a production connection pool slot indefinitely"
         )
 
@@ -430,11 +480,18 @@ class OfflineBarsExtractRepository:
         market_type: str = BYBIT_MOMENTUM_MARKET_TYPE,
         max_extract_rows: int = MAX_EXTRACT_ROWS,
         max_wall_seconds: float = DEFAULT_MAX_EXTRACT_WALL_SECONDS,
+        _now: Callable[[], float] = time.monotonic,
     ) -> ExtractManifest:
+        """`_now` is a private testing seam (defaults to `time.monotonic`):
+        letting a test substitute a controlled fake clock is what makes it
+        possible to prove the SAME deadline is enforced at every phase below
+        deterministically, without racing real wall-clock time against a
+        genuinely slow chunk."""
         if since >= until:
             raise ValueError("since must be earlier than until")
 
-        started_at = time.monotonic()
+        started_at = _now()
+        deadline = started_at + max_wall_seconds
         output_path.parent.mkdir(parents=True, exist_ok=True)
         tmp_parquet_path = output_path.with_suffix(output_path.suffix + ".tmp")
         # On disk, not :memory: -- DuckDB spills/manages this table's own
@@ -478,16 +535,37 @@ class OfflineBarsExtractRepository:
             # function had (every day fetched exactly once, not twice from
             # two adjacent chunks' own lookback windows).
             for chunk_since, chunk_until in candidate_query_windows(since - _LOOKBACK, until):
-                # No single chunk's own _EXTRACT_STATEMENT_TIMEOUT catches a
-                # runaway TOTAL extract across many chunks -- checked once
-                # per chunk (not per row/batch) so this stays cheap relative
-                # to the actual I/O the loop is doing.
-                check_extract_wall_seconds(time.monotonic() - started_at, max_wall_seconds)
+                # Checked against the SAME deadline computed once above, not
+                # a fresh per-chunk budget -- raises immediately if the
+                # PREVIOUS chunk(s) already exhausted it (colleague review,
+                # 2026-09-03 follow-up round 3).
+                now = _now()
+                check_extract_deadline(now, deadline, max_wall_seconds=max_wall_seconds)
+                # This chunk's own statement_timeout is capped at whatever
+                # time is ACTUALLY left in the overall budget, not just the
+                # fixed _EXTRACT_STATEMENT_TIMEOUT_MS regardless of how
+                # little time remains -- so a single slow/stuck chunk (the
+                # only one, or the last one) is cut off by Postgres itself
+                # once the real budget runs out, rather than being allowed
+                # its own full 60s (or more) on top of an already-exhausted
+                # deadline. Postgres applies statement_timeout to every
+                # individual FETCH against this streamed cursor, not just
+                # the initial query, so this also bounds a hang mid-stream,
+                # not only a slow query plan.
+                # max(1, ...): Postgres treats a statement_timeout of
+                # exactly 0 as DISABLED (no timeout at all), the opposite of
+                # what a near-zero remaining budget should mean here -- the
+                # check_extract_deadline call above already guarantees
+                # deadline - now > 0 at this point, but that could still
+                # round down to 0ms once truncated to whole milliseconds.
+                remaining_ms = max(
+                    1, min(_EXTRACT_STATEMENT_TIMEOUT_MS, int((deadline - now) * 1000))
+                )
                 async with self._engine.connect() as connection, connection.begin():
                     await connection.execute(text("SET TRANSACTION READ ONLY"))
                     await connection.execute(
                         text("SELECT set_config('statement_timeout', :timeout, true)"),
-                        {"timeout": _EXTRACT_STATEMENT_TIMEOUT},
+                        {"timeout": f"{remaining_ms}ms"},
                     )
                     result = await connection.stream(
                         _RAW_BARS_SQL,
@@ -546,12 +624,35 @@ class OfflineBarsExtractRepository:
                                 [float(row.sell_total_notional_usd) for row in batch],
                             ],
                         )
+                        # Checked after every batch, not just once per
+                        # chunk -- a chunk whose own PROCESSING (not just
+                        # its Postgres query) runs long, e.g. many batches
+                        # each individually fast but numerous, must still
+                        # be caught before it silently exceeds the budget
+                        # (colleague review, 2026-09-03 follow-up round 3).
+                        check_extract_deadline(_now(), deadline, max_wall_seconds=max_wall_seconds)
 
+            # The deadline is enforced once more here, after every chunk has
+            # been fully read and inserted, before starting the local
+            # COPY/hash phases below -- those phases never touch production
+            # (they are 100% local Parquet-write/hashing work against the
+            # on-disk DuckDB file already built above), so they carry none
+            # of the production-I/O risk max_wall_seconds primarily exists
+            # to bound; this check's job is only to fail fast rather than
+            # spend time on COPY/hashing when the budget is already spent,
+            # not to preempt COPY/hashing mid-flight once they've started
+            # (that would need running DuckDB's synchronous COPY in a
+            # killable subprocess -- a materially bigger redesign not
+            # justified by what these two phases actually cost: the real
+            # benchmark in this module's own docstring measured the WHOLE
+            # extract, COPY and hash included, at 22.14s for 2.59M rows).
+            check_extract_deadline(_now(), deadline, max_wall_seconds=max_wall_seconds)
             duckdb_conn.execute(
                 "COPY (SELECT * FROM bars ORDER BY symbol, bucket_start) "
                 "TO ? (FORMAT PARQUET, COMPRESSION ZSTD)",
                 [tmp_parquet_path.as_posix()],
             )
+            check_extract_deadline(_now(), deadline, max_wall_seconds=max_wall_seconds)
             count_row = duckdb_conn.execute(
                 "SELECT count(*), count(DISTINCT symbol) FROM bars"
             ).fetchone()
@@ -565,10 +666,15 @@ class OfflineBarsExtractRepository:
             tmp_duckdb_path.unlink(missing_ok=True)
             shutil.rmtree(tmp_spill_dir, ignore_errors=True)
 
+        # Checked once more before the (also 100% local, no production
+        # I/O) streamed-hash pass over the finished Parquet file, for the
+        # same fail-fast-rather-than-preempt-mid-flight reasoning as the
+        # COPY checkpoint above.
+        check_extract_deadline(_now(), deadline, max_wall_seconds=max_wall_seconds)
         parquet_sha256 = _sha256_file(tmp_parquet_path)
         parquet_bytes = tmp_parquet_path.stat().st_size
         tmp_parquet_path.replace(output_path)
-        wall_seconds = time.monotonic() - started_at
+        wall_seconds = _now() - started_at
 
         return ExtractManifest(
             extract_query_version=EXTRACT_QUERY_VERSION,
