@@ -1,15 +1,18 @@
 [Unit]
-Description=Schurfer weekly Docker build cache and dangling image prune
+Description=Schurfer daily Docker build cache and dangling image prune
 After=docker.service
 Requires=docker.service
 
 # Bounded (until=168h = 7 days), not a blanket -af with no filter: an active
 # multi-day deploy cadence (see this same day's own disk-usage-status PR)
 # still benefits from same-week layer cache reuse between back-to-back
-# deploys. Only truly stale cache/images get reclaimed. Decoupled from
-# `make prod-deploy` on purpose: pruning on every deploy would kill the
-# cache the VERY NEXT deploy needs to stay fast, turning every deploy into
-# a full rebuild.
+# deploys. Only truly stale cache/images get reclaimed. The TIMER (see
+# schurfer-docker-prune.timer) runs this daily, not weekly, as of
+# 2026-09-03 -- that only changes how often this staleness filter gets
+# re-checked, not what it protects; see the timer unit's own comment.
+# Decoupled from `make prod-deploy` on purpose: pruning on every deploy
+# would kill the cache the VERY NEXT deploy needs to stay fast, turning
+# every deploy into a full rebuild.
 [Service]
 Type=oneshot
 User=deploy
