@@ -22,10 +22,14 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26.6'
-          cache-dependency-path: |
-            apps/api-gateway/go.sum
-            apps/collector/go.sum
-            apps/notifier/go.sum
+          # A glob, not an enumerated list: the enumerated form (api-gateway/
+          # collector/notifier only) had silently drifted out of sync with
+          # go.work, which also lists apps/market-hotset -- its own go.sum
+          # was never part of this cache's key, so a change there could
+          # reuse a stale Go module cache without anyone noticing. A glob
+          # covers every apps/*/go.sum automatically, including any future
+          # module, with no list to keep in sync by hand.
+          cache-dependency-path: apps/*/go.sum
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -146,10 +150,14 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26.6'
-          cache-dependency-path: |
-            apps/api-gateway/go.sum
-            apps/collector/go.sum
-            apps/notifier/go.sum
+          # A glob, not an enumerated list: the enumerated form (api-gateway/
+          # collector/notifier only) had silently drifted out of sync with
+          # go.work, which also lists apps/market-hotset -- its own go.sum
+          # was never part of this cache's key, so a change there could
+          # reuse a stale Go module cache without anyone noticing. A glob
+          # covers every apps/*/go.sum automatically, including any future
+          # module, with no list to keep in sync by hand.
+          cache-dependency-path: apps/*/go.sum
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
@@ -234,10 +242,14 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26.6'
-          cache-dependency-path: |
-            apps/api-gateway/go.sum
-            apps/collector/go.sum
-            apps/notifier/go.sum
+          # A glob, not an enumerated list: the enumerated form (api-gateway/
+          # collector/notifier only) had silently drifted out of sync with
+          # go.work, which also lists apps/market-hotset -- its own go.sum
+          # was never part of this cache's key, so a change there could
+          # reuse a stale Go module cache without anyone noticing. A glob
+          # covers every apps/*/go.sum automatically, including any future
+          # module, with no list to keep in sync by hand.
+          cache-dependency-path: apps/*/go.sum
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -284,10 +296,14 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26.6'
-          cache-dependency-path: |
-            apps/api-gateway/go.sum
-            apps/collector/go.sum
-            apps/notifier/go.sum
+          # A glob, not an enumerated list: the enumerated form (api-gateway/
+          # collector/notifier only) had silently drifted out of sync with
+          # go.work, which also lists apps/market-hotset -- its own go.sum
+          # was never part of this cache's key, so a change there could
+          # reuse a stale Go module cache without anyone noticing. A glob
+          # covers every apps/*/go.sum automatically, including any future
+          # module, with no list to keep in sync by hand.
+          cache-dependency-path: apps/*/go.sum
       - name: Python dead code
         run: |
           if find apps packages -name '*.py' 2>/dev/null | grep -q .; then

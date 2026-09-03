@@ -991,8 +991,20 @@ verify:
 	uv run --extra dev --with sqlalchemy --with alembic --with "psycopg[binary]" pytest packages/journal packages/performance -q
 	uv run --extra dev --all-packages pytest apps/execution/tests -q
 	@echo "=== [4/6] Go: test + vet ==="
-	go test ./apps/api-gateway/... ./apps/collector/... ./apps/notifier/...
-	go vet ./apps/api-gateway/... ./apps/collector/... ./apps/notifier/...
+	@# Was missing ./apps/market-hotset/... : a real fourth go.work module
+	@# (its own go.mod/go.sum) that this step never touched -- go vet
+	@# included, not just tests -- while CI's own test-go job already
+	@# covered it (it enumerates go.work dynamically). A local
+	@# `make verify` (including the pre-push hook) could pass while a
+	@# genuine market-hotset regression only ever surfaced in CI. One `go
+	@# test`/`go vet` invocation across all workspace module paths (not a
+	@# per-module loop): go.work's own workspace mode already resolves
+	@# packages across every listed module in a single invocation, and any
+	@# one package's failure fails that single command's exit code the
+	@# normal way -- no risk of a shell loop masking an early module's
+	@# failure behind a later module's success.
+	go test ./apps/api-gateway/... ./apps/collector/... ./apps/market-hotset/... ./apps/notifier/...
+	go vet ./apps/api-gateway/... ./apps/collector/... ./apps/market-hotset/... ./apps/notifier/...
 	$(MAKE) deadcode
 	@echo "=== [5/6] Web: lint + typecheck + test + build ==="
 	pnpm --filter @schurfer/web lint
