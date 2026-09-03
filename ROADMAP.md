@@ -3392,6 +3392,20 @@ net performance suitable for tax or risk accounting.
 
 ## Tech debt and DX (opportunistic)
 
+- **`make prod-deploy`'s own step order runs the backup before the git
+  pull.** Found 2026-09-03 running the disk-safety PR's (#328) own first
+  real deploy: `prod-deploy`'s `[1/5] Backup...` step runs `bash
+infra/scripts/backup.sh` BEFORE `[2/5]` pulls the new code, so a deploy
+  that changes `backup.sh` itself still runs that step with whatever
+  version was already checked out on the server, not the new one being
+  deployed -- the new script only takes effect starting with the NEXT
+  `prod-deploy` invocation or the next cron-triggered run. Benign this
+  time only because `pg_dump -Fc`'s own internal compression kept the
+  interim raw `.dump` file's real size well under what the live (raw,
+  uncompressed) database size would suggest, so the disk had comfortable
+  room regardless of which script version ran. Swap the order (pull
+  first, then backup) so a backup-script change always takes effect on
+  the very deploy that ships it, not a real functional bug today.
 - **Orphan trade quarantine:** Detect open journal trades that lack exact exchange
   ownership or complete monitoring state. Close entry admission and require verified
   exchange/order evidence before changing the ledger; age or missing Redis keys alone
