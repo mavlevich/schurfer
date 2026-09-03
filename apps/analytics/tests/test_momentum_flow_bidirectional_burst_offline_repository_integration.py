@@ -230,6 +230,30 @@ async def test_extract_bars_to_parquet_rejects_over_row_cap(tmp_path: Path) -> N
         await engine.dispose()
 
 
+async def test_extract_bars_to_parquet_rejects_over_wall_time_budget(tmp_path: Path) -> None:
+    """No single chunk's own _EXTRACT_STATEMENT_TIMEOUT catches a runaway
+    TOTAL extract across many chunks (colleague review, 2026-09-03 follow-up
+    round 2) -- max_wall_seconds is checked once per chunk and must raise
+    even though every individual chunk here is trivially fast."""
+    engine = await _connect_or_skip()
+    try:
+        symbol = "WALLBUDGETUSDT"
+        await _seed_bar(engine, symbol=symbol, bucket_start=_START, close_price=1.0)
+        repository = OfflineBarsExtractRepository(engine)
+        with pytest.raises(TimeoutError, match="over max_wall_seconds"):
+            await repository.extract_bars_to_parquet(
+                exchange=_TEST_EXCHANGE,
+                capture_version=_TEST_CAPTURE_VERSION,
+                since=_START,
+                until=_START + timedelta(minutes=1),
+                output_path=tmp_path / "bars.parquet",
+                max_wall_seconds=0.0,
+            )
+    finally:
+        await _cleanup(engine)
+        await engine.dispose()
+
+
 async def test_extract_bars_to_parquet_spans_multiple_day_chunks(tmp_path: Path) -> None:
     """since/until spans 3 calendar days -> candidate_query_windows splits
     the fetch into multiple non-overlapping chunks; every row from every
@@ -619,6 +643,56 @@ async def test_offline_query_rejects_a_parquet_file_that_does_not_match_its_mani
                 until=_START + timedelta(minutes=1),
                 min_volume_24h_usd=1.0,
                 extreme_threshold_pct=1.0,
+            )
+    finally:
+        await _cleanup(engine)
+        await engine.dispose()
+
+
+async def test_offline_query_rejects_over_candidate_row_cap(tmp_path: Path) -> None:
+    """The candidate set crossing an extreme-burst threshold is expected to
+    be small by construction, but nothing previously enforced that -- this
+    seeds two independent symbols each producing one genuine candidate
+    minute, then caps max_candidate_rows at 1 and expects a loud failure
+    rather than a silently truncated result (colleague review, 2026-09-03
+    follow-up round 2)."""
+    engine = await _connect_or_skip()
+    try:
+        target = _START
+        await _seed_gapless_burst_window(engine, symbol="CAPAUSDT", target=target)
+        await _seed_gapless_burst_window(engine, symbol="CAPBUSDT", target=target)
+
+        since = target
+        until = target + timedelta(minutes=1)
+        extract_repository = OfflineBarsExtractRepository(engine)
+        manifest = await extract_repository.extract_bars_to_parquet(
+            exchange=_TEST_EXCHANGE,
+            capture_version=_TEST_CAPTURE_VERSION,
+            market_type=_TEST_MARKET_TYPE,
+            since=since,
+            until=until,
+            output_path=tmp_path / "candidate_cap.parquet",
+        )
+
+        # Sanity: with no cap tightened, both seeded symbols' candidate
+        # minutes come back.
+        uncapped = fetch_candidate_extreme_minutes_offline(
+            manifest,
+            since=since,
+            until=until,
+            min_volume_24h_usd=1.0,
+            extreme_threshold_pct=10.0,
+        )
+        assert len(uncapped) == 2
+
+        with pytest.raises(ValueError, match="over max_candidate_rows"):
+            fetch_candidate_extreme_minutes_offline(
+                manifest,
+                since=since,
+                until=until,
+                min_volume_24h_usd=1.0,
+                extreme_threshold_pct=10.0,
+                max_candidate_rows=1,
             )
     finally:
         await _cleanup(engine)
