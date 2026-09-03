@@ -974,9 +974,10 @@ verify:
 	go test ./apps/api-gateway/... ./apps/collector/... ./apps/notifier/...
 	go vet ./apps/api-gateway/... ./apps/collector/... ./apps/notifier/...
 	$(MAKE) deadcode
-	@echo "=== [5/6] Web: lint + typecheck + build ==="
+	@echo "=== [5/6] Web: lint + typecheck + test + build ==="
 	pnpm --filter @schurfer/web lint
 	pnpm --filter @schurfer/web typecheck
+	pnpm --filter @schurfer/web test
 	pnpm --filter @schurfer/web build
 	@echo "=== [6/6] Compose config ==="
 	docker compose --env-file .env.ci -f infra/docker/docker-compose.dev.yml config --quiet
