@@ -300,13 +300,21 @@ class EpisodeResult:
     net_return_pct: float | None
 
 
-def _expected_exit_boundary_ms(entry_at: datetime) -> int:
+def expected_exit_boundary_ms(entry_at: datetime) -> int:
     """First fully-closed EXIT_BAR_TIMEFRAME_MS bar at or after
     entry_at + OUTCOME_HORIZON_MINUTES -- ceil, never floor, so the exit
     bar is never inspected before it closes. Ordering (exit strictly after
     entry) follows automatically: the target is always
     OUTCOME_HORIZON_MINUTES in the future before it is even rounded
-    forward."""
+    forward.
+
+    Public (no leading underscore) so the DB-fetch plumbing this module's
+    own docstring defers to later (research/source-lead-forward-cohort-
+    plumbing-v1) can pick the exact same exit candle `resolve_episode`
+    itself will validate, via this one function, instead of reimplementing
+    the ceil formula a second time and risking the two drifting apart --
+    same reasoning as this codebase's own `instruments.onboarded_at_ms`
+    precedent."""
     entry_ms = int(entry_at.timestamp() * 1000)
     target_ms = entry_ms + OUTCOME_HORIZON_MINUTES * 60_000
     return ceil_to_timeframe(target_ms, EXIT_BAR_TIMEFRAME_MS)
@@ -322,7 +330,7 @@ def resolve_episode(inputs: EpisodeInputs, *, costs: CostParameters = COSTS) -> 
     if inputs.exit_bar is None:
         return EpisodeResult(inputs.base, False, "missing_exit_bar", None)
 
-    expected_boundary_ms = _expected_exit_boundary_ms(inputs.entry_at)
+    expected_boundary_ms = expected_exit_boundary_ms(inputs.entry_at)
     if inputs.exit_bar.ts_ms < expected_boundary_ms:
         # Never accept a bar that closes before the frozen ceil boundary --
         # would mean inspecting the outcome before it is fully known yet.
@@ -417,6 +425,7 @@ __all__ = [
     "MAX_EXIT_BAR_GAP_MINUTES",
     "MAX_SINGLE_ASSET_EPISODE_SHARE",
     "MAX_SINGLE_WEEK_EPISODE_SHARE",
+    "OUTCOME_HORIZON_MINUTES",
     "QUALIFICATION_STATUS",
     "QUALIFICATION_VERSION",
     "REQUIRE_EXIT_SLIPPAGE_SENSITIVITY",
@@ -430,6 +439,7 @@ __all__ = [
     "VERDICT_INSUFFICIENT_DATA",
     "EpisodeInputs",
     "EpisodeResult",
+    "expected_exit_boundary_ms",
     "formal_verdict",
     "primary_sensitivity_ci",
     "resolve_episode",
