@@ -158,7 +158,7 @@ help:
 	@echo "  make prod-runtime-metrics-health   Inspect host container-metrics service"
 	@echo "  make prod-disk-usage-install  Install host disk/Docker usage snapshot service"
 	@echo "  make prod-disk-usage-health   Inspect host disk/Docker usage snapshot service"
-	@echo "  make prod-docker-prune-install  Install weekly Docker build cache prune timer"
+	@echo "  make prod-docker-prune-install  Install daily Docker build cache prune timer"
 	@echo "  make prod-docker-prune-run      Run the Docker prune now"
 	@echo "  make prod-docker-prune-health   Inspect the Docker prune timer"
 	@echo "  make prod-research-checkpoints-install  Install bounded research timer"
