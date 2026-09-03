@@ -20,6 +20,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from schurfer_analytics.momentum_flow_bidirectional_burst_repository import (
     MomentumFlowBidirectionalBurstRepository,
+    candidate_query_windows,
 )
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
@@ -44,6 +45,15 @@ _INSERT_BAR_SQL = text("""
          true, true, true, decode(repeat('ef', 32), 'hex'))
     ON CONFLICT DO NOTHING
 """)
+
+
+def test_candidate_query_windows_are_half_open_daily_chunks() -> None:
+    until = _START + timedelta(days=2, hours=3)
+    assert candidate_query_windows(_START, until) == (
+        (_START, _START + timedelta(days=1)),
+        (_START + timedelta(days=1), _START + timedelta(days=2)),
+        (_START + timedelta(days=2), until),
+    )
 
 
 async def _connect_or_skip() -> AsyncEngine:
@@ -90,7 +100,7 @@ async def _cleanup(engine: AsyncEngine) -> None:
         )
 
 
-async def test_fetch_candidate_extreme_minutes_uses_a_real_5_minute_range_not_5_rows() -> None:
+async def test_fetch_candidate_extreme_minutes_rejects_a_gap_in_the_strict_windows() -> None:
     # 24h of flat baseline volume, then a gap (bucket_start + 4..6 missing),
     # then a burst minute at +7. If the window were ROWS-based, the 5
     # "rows" preceding the burst minute would actually span several real
@@ -163,26 +173,75 @@ async def test_fetch_candidate_extreme_minutes_uses_a_real_5_minute_range_not_5_
             min_volume_24h_usd=1.0,
             extreme_threshold_pct=1.0,
         )
+        # A RANGE frame prevents old physical rows from being pulled across
+        # the wall-clock gap. The stricter v2 contract additionally rejects
+        # the row because neither the 5m nor 24h window is continuous.
+        assert minutes == ()
+    finally:
+        await _cleanup(engine)
+        await engine.dispose()
+
+
+async def test_fetch_candidate_extreme_minutes_detects_a_genuine_burst() -> None:
+    # Colleague review, 2026-09-01: every existing test against this query
+    # was a NEGATIVE case (rejects a gap, rejects since>until) -- none
+    # actually proved the SQL's own burst-percentage arithmetic
+    # (100.0 * buy_notional_5m / total_volume_24h) computes the right
+    # number on a clean, gapless dataset where a burst genuinely SHOULD be
+    # detected. A gapless 24h/1440-minute window: the first 1435 minutes
+    # are flat baseline volume, the last 5 minutes (the query's own
+    # candidate row and its 4 preceding minutes) carry a large one-sided
+    # buy burst -- hand-computed expected percentages below.
+    engine = await _connect_or_skip()
+    try:
+        symbol = "POSBURSTUSDT"
+        target = _START
+        baseline_minutes = 1435
+        baseline_buy = 100.0
+        baseline_sell = 100.0
+        burst_minutes = 5
+        burst_buy = 50_000.0
+        for i in range(baseline_minutes):
+            await _seed_bar(
+                engine,
+                symbol=symbol,
+                bucket_start=target - timedelta(minutes=baseline_minutes + burst_minutes - 1 - i),
+                close_price=1.0,
+                buy_notional=baseline_buy,
+                sell_notional=baseline_sell,
+            )
+        for i in range(burst_minutes):
+            await _seed_bar(
+                engine,
+                symbol=symbol,
+                bucket_start=target - timedelta(minutes=burst_minutes - 1 - i),
+                close_price=2.0,
+                buy_notional=burst_buy,
+                sell_notional=0.0,
+            )
+
+        total_volume_24h = baseline_minutes * (baseline_buy + baseline_sell) + burst_minutes * (
+            burst_buy
+        )
+        expected_buy_pct = 100.0 * (burst_minutes * burst_buy) / total_volume_24h
+
+        repository = MomentumFlowBidirectionalBurstRepository(engine)
+        minutes = await repository.fetch_candidate_extreme_minutes(
+            exchange=_TEST_EXCHANGE,
+            capture_version=_TEST_CAPTURE_VERSION,
+            market_type=_TEST_MARKET_TYPE,
+            since=target,
+            until=target + timedelta(minutes=1),
+            min_volume_24h_usd=1.0,
+            extreme_threshold_pct=10.0,
+        )
         assert len(minutes) == 1
-        (burst,) = minutes
-        assert burst.bucket_start == _START + timedelta(minutes=7)
-
-        # 5m numerator: RANGE 5min preceding the burst row (_START+2 ..
-        # _START+7) sees only the bars that actually exist in that real
-        # 5-minute span -- _START+2, _START+3, and the burst bar itself
-        # (_START+4..6 are the seeded gap). A ROWS-based window would
-        # instead pull in whatever the 5 preceding physical ROWS are
-        # regardless of real elapsed time, reaching back to _START+0 and
-        # spanning 7 real minutes, not 5.
-        expected_buy_notional_5m = 100.0 + 100.0 + 50_000.0
-
-        # 24h denominator: RANGE 24h preceding the burst row starts at
-        # (_START+7 - 24h) = day_start + 7min, which excludes the first 7
-        # of the 1440 seeded baseline bars (i=0..6, each i=1min after
-        # day_start) -- 1433 baseline bars remain in-window.
-        expected_24h_volume = (1433 * 200.0) + (4 * 200.0) + 50_000.0
-        expected_buy_burst_pct = 100.0 * expected_buy_notional_5m / expected_24h_volume
-        assert burst.buy_burst_pct_5m == pytest.approx(expected_buy_burst_pct, rel=1e-9)
+        (minute,) = minutes
+        assert minute.symbol == symbol
+        assert minute.bucket_start == target
+        assert minute.close_price == pytest.approx(2.0)
+        assert minute.buy_burst_pct_5m == pytest.approx(expected_buy_pct)
+        assert minute.sell_burst_pct_5m == pytest.approx(0.0)
     finally:
         await _cleanup(engine)
         await engine.dispose()
