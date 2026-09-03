@@ -8,9 +8,9 @@ Update only these four lines after every merge -- this is the fast-path
 status check, not a place for narrative.
 
 ```
-Current primary: research/pump-analytics (PR #297) / HYP-016
-State: review_fixes
-Next after current primary merges: research/cex-activity-offline-denominator-v1
+Current primary: research/cex-activity-offline-denominator-v1
+State: in_progress
+Next after current primary merges: research/cex-activity-discovery-completion-v1
 User decision required: no
 ```
 
@@ -139,28 +139,43 @@ enabling change) slot.
    support-slot item exists -- the support slot goes idle until something new
    needs it, rather than immediately pulling in Markets/Assets catalog (item
    11 below) ahead of primary-slot work.
-2. **Primary slot: finish `research/pump-analytics` (colleague-owned, not a new
-   branch).** Real state, verified directly against that branch's own
-   `docs/research/discovery-ledger.md`: HYP-017 (radar-outcome, WATCH as a
-   +25%-within-24h precursor) is `rejected` -- paired delta -1.06 pts, cluster
-   95% CI [-4.21, +1.63] crosses zero, p=0.53. HYP-016 (CEX taker-burst
-   activity) is `parked` / `report_not_produced_operationally_unresolved`, not
-   a negative result -- the single-query implementation correctly hit its 300s
-   statement timeout, and the chunked-query fix that avoided that timeout was
-   manually stopped after 12 minutes because it was degrading production
-   I/O/diagnostic latency, before any candidate count, effect, or p-value was
-   ever viewed. Neither verdict is itself a merge blocker; the colleague's own
-   outstanding review items are: restore the 100-episode evidence floor, bound
-   the radar query, add a positive burst-arithmetic test, fix biased control
-   matching, deduplicate direction/control primitives. Land those, keep
-   HYP-017 `rejected` and HYP-016 `parked` (never reframed as a negative
-   result), merge and deploy.
-3. **Then: `research/cex-activity-offline-denominator-v1`.** What HYP-016
-   actually needs to become answerable at all -- a point-in-time 5m/24h
-   relative-activity denominator computed off the production hot path (frozen
-   extract or offline replica), full instrument universe, a runtime bound that
-   cannot repeat the 12-minute production I/O incident. No Telegram, no live
-   capture; this is infrastructure for a discovery query, not a product.
+2. **[Done, `research/pump-analytics`, PR #297, merged 2026-09-03.]** HYP-017
+   (radar-outcome, WATCH as a +25%-within-24h precursor): the colleague's
+   final review round found the pre-fix greedy pair-matching algorithm could
+   systematically lose pairs, making the recorded 189-pair read
+   methodologically unreliable as evidence for any verdict -- status changed
+   `rejected` -> `parked` accordingly (see `docs/research/discovery-ledger.md`
+   for the full amendment). HYP-016 (CEX taker-burst activity) stays `parked`
+   / `report_not_produced_operationally_unresolved`, not a negative result.
+   Landed: restored the 100-episode evidence floor, bounded the radar query,
+   added a positive burst-arithmetic test, replaced greedy control matching
+   with deterministic maximum-cardinality bipartite matching
+   (`MATCHING_POLICY_VERSION`), deduplicated direction/control primitives.
+3. **`research/cex-activity-offline-denominator-v1` (current primary).** What
+   HYP-016 actually needs to become answerable at all -- a point-in-time
+   5m/24h relative-activity denominator computed off the production hot path
+   (frozen extract or offline replica), full instrument universe, a runtime
+   bound that cannot repeat the 12-minute production I/O incident. No
+   Telegram, no live capture; this is infrastructure for a discovery query,
+   not a product. `momentum_flow_bidirectional_burst_offline_repository.py`:
+   `OfflineBarsExtractRepository.extract_bars_to_parquet` does the only part
+   that ever touches production -- a plain indexed range SELECT (no window
+   functions), chunked by day via the live path's own `candidate_query_windows`
+   so the two can never drift on chunk boundaries -- and writes the result to
+   a local Parquet file; `fetch_candidate_extreme_minutes_offline` then runs
+   the SAME 5m/24h RANGE-window burst computation via DuckDB against that
+   file, with zero further production load no matter how many times a
+   discovery run needs repeating while iterating. Proven equivalent to the
+   live path, not just similar to it:
+   `test_offline_query_matches_live_query_on_identical_seeded_data` asserts
+   the two paths return bit-identical `BurstMinute` tuples on the same seeded
+   Postgres data. Caught one real bug in the process: DuckDB silently
+   converts a tz-aware Python `datetime` to the session's local (host-
+   dependent) timezone when binding/storing it as a plain `TIMESTAMP` --
+   fixed by pinning the DuckDB session `TimeZone` to `'UTC'` and using
+   `TIMESTAMPTZ` throughout instead of bare `TIMESTAMP`. Wiring this into
+   `cex_activity_discovery_report.py` itself, and actually re-running HYP-016
+   against it, is the next item (4), not this one -- this PR is infra only.
 4. **Then: `research/cex-activity-discovery-completion-v1`.** Re-run HYP-016's
    already-registered, pre-declared two-direction family (buy/sell,
    Holm-corrected) on the now-computable denominator, full candidate universe,
@@ -3383,12 +3398,12 @@ net performance suitable for tax or risk accounting.
   must never synthesize a close.
 - **Execution Engine Resilience**: Add a `try...except` "bulletproof vest" inside the individual trade loop for `monitor.py` and `paper.py`. This ensures that if one legacy or malformed position raises an exception (like missing keys), it doesn't crash the entire monitoring cycle and block other healthy trades from closing.
 
-- Pre-push hook: run `make verify` as a pre-push stage so broken code does not reach
-  CI.
 - CI caching (Go modules, pnpm store, uv cache) keyed on lockfile hashes.
-- `golangci-lint` inside `make verify`, not just the pre-commit hook.
-- Remove the unused `recharts` from `apps/web` (about 200KB of bundle).
 - Docker: pin image versions (no `:latest`), add `mem_limit` and `cpus` per service.
+  `mem_limit`/`cpus` are already set for every service in
+  `docker-compose.prod.yml`; `timescale/timescaledb:latest-pg17`,
+  `redis:7-alpine`, `caddy:2-alpine`, and `nats:2-alpine` still float
+  within their major/minor tag.
 - Frontend polish: `scrollbar-gutter: stable`, force the `en-US` locale in dates and
   the chart, auto-refresh the active OHLCV candle, pump-episode markers on the chart
   (`setMarkers`), and a position-origin badge (paper, bot, manual) on the account
@@ -3399,22 +3414,10 @@ net performance suitable for tax or risk accounting.
   shared strategy-badge color/icon module. Audit and direction:
   [trades-ui-audit-v1.md](docs/design/trades-ui-audit-v1.md). Lands no
   earlier than `feat/trade-events-and-unified-presentation-v1`.
-- Pump scanner: make each per-exchange tag a deep link to that exchange's trade page
-  for the pair (open in a new tab), so a token can be inspected on the venue in one
-  click. Needs a small per-exchange URL-template map (symbol formats differ, spot vs
-  perp). Pure UX convenience, not urgent.
 - OHLCV storage in TimescaleDB (enables chart history beyond exchange lookback, plus
   ATR).
 - Telegram: persist `seen_bases` in Redis to avoid a startup alert storm, plus
   drop-below and "still pumping" follow-up alerts.
-- Status page container list re-sorts by live CPU% every poll
-  (`apps/api-gateway/internal/health/container_runtime.go`'s own
-  `sort.Slice` on `CPUPercent` descending, name as the only tie-break), so
-  rows visibly jump around as load fluctuates -- not useful for someone
-  scanning the list. Either stabilize the ordering (e.g. sort by name/
-  container-start-order by default, CPU% as an opt-in view) or add an
-  explicit sort-by control in the UI (name, CPU, memory) instead of one
-  fixed, constantly-reshuffling order.
 - `momentum-capture`'s own container/service name carries no exchange
   suffix (it predates Binance, back when Bybit was the only venue),
   unlike every venue added since (`momentum-capture-binance`,
