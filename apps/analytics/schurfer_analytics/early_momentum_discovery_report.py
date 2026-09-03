@@ -69,8 +69,8 @@ SELECT * FROM candidates ORDER BY symbol, bucket_start;
 
 def group_into_episodes(
     candidates: list[dict[str, Any]], merge_window_minutes: int = 60
-) -> list[dict[str, Any]]:
-    episodes = []
+) -> list[list[dict[str, Any]]]:
+    episodes: list[list[dict[str, Any]]] = []
     if not candidates:
         return episodes
 
@@ -93,7 +93,7 @@ def group_into_episodes(
     return episodes
 
 
-def simulate_episode(episode: list[dict[str, Any]]) -> dict[str, Any]:
+def simulate_episode(episode: list[dict[str, Any]]) -> dict[str, Any] | None:
     entry_bar = episode[-1]
     if entry_bar["close_price"] is None:
         return None
@@ -186,7 +186,7 @@ async def run_report() -> None:
     win_rate = (wins / total_trades) * 100 if total_trades > 0 else 0
     total_pnl = sum(r["pnl_pct"] for r in results)
 
-    outcomes = {}
+    outcomes: dict[str, int] = {}
     for r in results:
         outcomes[r["outcome"]] = outcomes.get(r["outcome"], 0) + 1
 
