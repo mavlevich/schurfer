@@ -261,6 +261,7 @@ install:
 	@echo "-> Installing pre-commit hooks..."
 	pre-commit install
 	pre-commit install --hook-type commit-msg
+	pre-commit install --hook-type pre-push
 	@$(MAKE) install-golangci-lint
 
 install-golangci-lint:
