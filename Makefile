@@ -9,24 +9,26 @@
 
 GOLANGCI_LINT_VERSION = v2.1.6
 DEADCODE_VERSION = v0.48.0
-# Colleague review, 2026-09-03, two rounds: a hardcoded module-path list
-# here had already drifted out of sync with go.work once (apps/market-
-# hotset was missing). Computed from go.work itself at Makefile-parse
-# time instead -- this can never drift again, since it IS go.work's own
-# module list, not a copy of it. First fix used `grep '^use ' go.work`,
-# which only recognizes the single-line `use ./apps/foo` form -- a valid
-# `use (\n ./apps/foo\n ./apps/bar\n)` block would silently produce an
-# EMPTY list and repeat the exact same "make verify stops checking Go"
-# failure this was meant to close, just via a different go.work syntax.
-# `go work edit -json` is go.work's own canonical parser (handles both
-# forms, and any future one) -- piped through a one-line python3 (already
-# a hard dependency everywhere else in this repo) rather than requiring
-# `jq`, which is not otherwise assumed present. GO_MODULE_TEST_PATTERNS
-# feeds `go test`/`go vet` directly (see the [4/6] step in `verify`); the
-# deadcode target below is switched to reuse this SAME variable instead
-# of independently re-deriving its own module list a second way.
-GO_MODULE_DIRS := $(shell go work edit -json | python3 -c \
-	"import json,sys; print(' '.join(m['DiskPath'] for m in json.load(sys.stdin)['Use']))")
+# Colleague review, 2026-09-03, three rounds on the same underlying bug --
+# see infra/scripts/go_workspace_modules.sh's own header comment for the
+# full history. That script is now the ONE place go.work gets parsed;
+# every CI job that needs the same module list (test-go, security,
+# deadcode in .github/workflows/ci.yml) calls it too, instead of each
+# independently re-deriving its own copy of this same logic. Failure here
+# is intentionally loud, not silent: the script itself exits non-zero on
+# an empty module list, and $(shell ...) failures are NOT automatically
+# fatal to `make` the way a normal recipe line's failure is -- the
+# explicit $(if $(GO_MODULE_DIRS),,$(error ...)) below is what actually
+# turns "the script found nothing" into a failed `make verify`/`make
+# deadcode` invocation rather than a silently empty test loop.
+# Deliberately NOT `2>&1`: on failure (go.work missing/invalid, `go`
+# unavailable, zero modules) the script's own `set -euo pipefail` means it
+# exits before ever printing to stdout, so GO_MODULE_DIRS ends up empty --
+# the $(error ...) below catches that. Merging stderr in here would instead
+# stuff the script's own error TEXT into GO_MODULE_DIRS, which is non-empty
+# and would silently defeat that same check.
+GO_MODULE_DIRS := $(shell infra/scripts/go_workspace_modules.sh | tr '\n' ' ')
+$(if $(strip $(GO_MODULE_DIRS)),,$(error GO_MODULE_DIRS is empty -- infra/scripts/go_workspace_modules.sh failed or go.work declares zero modules))
 GO_MODULE_TEST_PATTERNS := $(addsuffix /...,$(GO_MODULE_DIRS))
 PROD_REPORT_MIN_HEADROOM_MB ?= 1280
 PROD_REPORT_MIN_AVAILABLE_MB ?= 1024

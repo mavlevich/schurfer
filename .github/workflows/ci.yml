@@ -197,11 +197,25 @@ jobs:
           fi
       - name: Run tests
         if: steps.check.outputs.has_modules == 'true'
+        # infra/scripts/go_workspace_modules.sh, not `grep '^use '`, is the
+        # single source of truth for go.work's module list (colleague
+        # review, 2026-09-03, three rounds: `grep '^use '` silently returns
+        # nothing against the valid `use (...)` block syntax, and this job
+        # had drifted from the Makefile's own already-fixed parser). The
+        # `set -euo pipefail` plus explicit empty check below make a script
+        # failure (or a genuinely empty go.work) fail this job loudly
+        # rather than silently looping over nothing.
         run: |
-          grep '^use ' go.work | awk '{print $2}' | while read -r dir; do
+          set -euo pipefail
+          modules="$(infra/scripts/go_workspace_modules.sh)"
+          if [[ -z "$modules" ]]; then
+            echo "::error::go_workspace_modules.sh returned no modules"
+            exit 1
+          fi
+          while IFS= read -r dir; do
             echo "=== go test $dir ==="
             (cd "$dir" && go test -race -covermode=atomic ./...)
-          done
+          done <<< "$modules"
       - name: Upload coverage
         if: steps.check.outputs.has_modules == 'true'
         uses: actions/upload-artifact@v4
@@ -285,13 +299,21 @@ jobs:
           uv sync --frozen --extra dev --all-packages
           uv export --extra dev --no-emit-project --no-hashes | grep -v '^pip==' | uv run pip-audit -r /dev/stdin
       - name: Go vulnerability check
+        # infra/scripts/go_workspace_modules.sh, not `grep '^use '` -- see
+        # the Run tests step in the test-go job above for why.
         run: |
+          set -euo pipefail
           if find . -name 'go.mod' -not -path './vendor/*' 2>/dev/null | grep -q .; then
             go install golang.org/x/vuln/cmd/govulncheck@latest
-            grep '^use ' go.work | awk '{print $2}' | while read -r dir; do
+            modules="$(infra/scripts/go_workspace_modules.sh)"
+            if [[ -z "$modules" ]]; then
+              echo "::error::go_workspace_modules.sh returned no modules"
+              exit 1
+            fi
+            while IFS= read -r dir; do
               echo "=== govulncheck $dir ==="
               (cd "$dir" && govulncheck ./...)
-            done
+            done <<< "$modules"
           else
             echo "No Go modules found, skipping"
           fi
@@ -345,13 +367,21 @@ jobs:
             echo "No Python code found, skipping"
           fi
       - name: Go dead code
+        # infra/scripts/go_workspace_modules.sh, not `grep '^use '` -- see
+        # the Run tests step in the test-go job above for why.
         run: |
+          set -euo pipefail
           if find . -name 'go.mod' -not -path './vendor/*' 2>/dev/null | grep -q .; then
             go install golang.org/x/tools/cmd/deadcode@v0.48.0
-            grep '^use ' go.work | awk '{print $2}' | while read -r dir; do
+            modules="$(infra/scripts/go_workspace_modules.sh)"
+            if [[ -z "$modules" ]]; then
+              echo "::error::go_workspace_modules.sh returned no modules"
+              exit 1
+            fi
+            while IFS= read -r dir; do
               echo "=== deadcode $dir ==="
               (cd "$dir" && deadcode ./...)
-            done
+            done <<< "$modules"
           else
             echo "No Go modules found, skipping"
           fi
