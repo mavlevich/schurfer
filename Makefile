@@ -9,6 +9,16 @@
 
 GOLANGCI_LINT_VERSION = v2.1.6
 DEADCODE_VERSION = v0.48.0
+# Colleague review, 2026-09-03: a hardcoded module-path list here had
+# already drifted out of sync with go.work once (apps/market-hotset was
+# missing). Computed from go.work itself at Makefile-parse time instead --
+# this can never drift again, since it IS go.work's own module list, not a
+# copy of it. GO_MODULE_TEST_PATTERNS feeds `go test`/`go vet` directly
+# (see the [4/6] step in `verify`); the deadcode target below already
+# derived its own module list this same way (`grep '^use ' go.work`), so
+# nothing here duplicates a second independent extraction of it.
+GO_MODULE_DIRS := $(shell grep '^use ' go.work | awk '{print $$2}')
+GO_MODULE_TEST_PATTERNS := $(addsuffix /...,$(GO_MODULE_DIRS))
 PROD_REPORT_MIN_HEADROOM_MB ?= 1280
 PROD_REPORT_MIN_AVAILABLE_MB ?= 1024
 PROD_ORDERFLOW_MIN_AVAILABLE_MB ?= 768
@@ -991,20 +1001,26 @@ verify:
 	uv run --extra dev --with sqlalchemy --with alembic --with "psycopg[binary]" pytest packages/journal packages/performance -q
 	uv run --extra dev --all-packages pytest apps/execution/tests -q
 	@echo "=== [4/6] Go: test + vet ==="
-	@# Was missing ./apps/market-hotset/... : a real fourth go.work module
-	@# (its own go.mod/go.sum) that this step never touched -- go vet
-	@# included, not just tests -- while CI's own test-go job already
-	@# covered it (it enumerates go.work dynamically). A local
+	@# Was a hardcoded 3-module list (api-gateway/collector/notifier) that
+	@# had already drifted out of sync with go.work once (apps/market-hotset
+	@# is a real fourth module, own go.mod/go.sum, that this step never
+	@# touched -- go vet included, not just tests -- while CI's own test-go
+	@# job already covered it by enumerating go.work dynamically). A local
 	@# `make verify` (including the pre-push hook) could pass while a
-	@# genuine market-hotset regression only ever surfaced in CI. One `go
-	@# test`/`go vet` invocation across all workspace module paths (not a
+	@# genuine market-hotset regression only ever surfaced in CI. Fixed by
+	@# computing the module list FROM go.work itself
+	@# (GO_MODULE_TEST_PATTERNS, defined near the top of this file) instead
+	@# of a second, independently-maintained copy of it -- colleague review,
+	@# 2026-09-03: the first fix re-hardcoded a 4-module list, which would
+	@# have repeated the exact same drift at a 5th module. One `go test`/
+	@# `go vet` invocation across all workspace module paths (not a
 	@# per-module loop): go.work's own workspace mode already resolves
 	@# packages across every listed module in a single invocation, and any
 	@# one package's failure fails that single command's exit code the
 	@# normal way -- no risk of a shell loop masking an early module's
 	@# failure behind a later module's success.
-	go test ./apps/api-gateway/... ./apps/collector/... ./apps/market-hotset/... ./apps/notifier/...
-	go vet ./apps/api-gateway/... ./apps/collector/... ./apps/market-hotset/... ./apps/notifier/...
+	go test $(GO_MODULE_TEST_PATTERNS)
+	go vet $(GO_MODULE_TEST_PATTERNS)
 	$(MAKE) deadcode
 	@echo "=== [5/6] Web: lint + typecheck + test + build ==="
 	pnpm --filter @schurfer/web lint

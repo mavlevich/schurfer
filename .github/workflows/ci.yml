@@ -22,14 +22,17 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26.6'
-          # A glob, not an enumerated list: the enumerated form (api-gateway/
+          # go.work.sum, not an enumerated list or an apps/*/go.sum glob:
+          # colleague review, 2026-09-03 -- the enumerated form (api-gateway/
           # collector/notifier only) had silently drifted out of sync with
-          # go.work, which also lists apps/market-hotset -- its own go.sum
-          # was never part of this cache's key, so a change there could
-          # reuse a stale Go module cache without anyone noticing. A glob
-          # covers every apps/*/go.sum automatically, including any future
-          # module, with no list to keep in sync by hand.
-          cache-dependency-path: apps/*/go.sum
+          # go.work (which also lists apps/market-hotset), and a glob scoped
+          # to apps/* would silently repeat that drift for any future Go
+          # module living outside apps/ (e.g. under packages/). go.work.sum
+          # is the workspace's own single, already-maintained aggregate
+          # checksum file (go build/mod tidy in workspace mode keeps it in
+          # sync with every module go.work lists, wherever it lives) -- keying
+          # the cache on it needs no list to keep in sync by hand, ever.
+          cache-dependency-path: go.work.sum
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -150,14 +153,17 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26.6'
-          # A glob, not an enumerated list: the enumerated form (api-gateway/
+          # go.work.sum, not an enumerated list or an apps/*/go.sum glob:
+          # colleague review, 2026-09-03 -- the enumerated form (api-gateway/
           # collector/notifier only) had silently drifted out of sync with
-          # go.work, which also lists apps/market-hotset -- its own go.sum
-          # was never part of this cache's key, so a change there could
-          # reuse a stale Go module cache without anyone noticing. A glob
-          # covers every apps/*/go.sum automatically, including any future
-          # module, with no list to keep in sync by hand.
-          cache-dependency-path: apps/*/go.sum
+          # go.work (which also lists apps/market-hotset), and a glob scoped
+          # to apps/* would silently repeat that drift for any future Go
+          # module living outside apps/ (e.g. under packages/). go.work.sum
+          # is the workspace's own single, already-maintained aggregate
+          # checksum file (go build/mod tidy in workspace mode keeps it in
+          # sync with every module go.work lists, wherever it lives) -- keying
+          # the cache on it needs no list to keep in sync by hand, ever.
+          cache-dependency-path: go.work.sum
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
@@ -242,14 +248,17 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26.6'
-          # A glob, not an enumerated list: the enumerated form (api-gateway/
+          # go.work.sum, not an enumerated list or an apps/*/go.sum glob:
+          # colleague review, 2026-09-03 -- the enumerated form (api-gateway/
           # collector/notifier only) had silently drifted out of sync with
-          # go.work, which also lists apps/market-hotset -- its own go.sum
-          # was never part of this cache's key, so a change there could
-          # reuse a stale Go module cache without anyone noticing. A glob
-          # covers every apps/*/go.sum automatically, including any future
-          # module, with no list to keep in sync by hand.
-          cache-dependency-path: apps/*/go.sum
+          # go.work (which also lists apps/market-hotset), and a glob scoped
+          # to apps/* would silently repeat that drift for any future Go
+          # module living outside apps/ (e.g. under packages/). go.work.sum
+          # is the workspace's own single, already-maintained aggregate
+          # checksum file (go build/mod tidy in workspace mode keeps it in
+          # sync with every module go.work lists, wherever it lives) -- keying
+          # the cache on it needs no list to keep in sync by hand, ever.
+          cache-dependency-path: go.work.sum
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -296,14 +305,17 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26.6'
-          # A glob, not an enumerated list: the enumerated form (api-gateway/
+          # go.work.sum, not an enumerated list or an apps/*/go.sum glob:
+          # colleague review, 2026-09-03 -- the enumerated form (api-gateway/
           # collector/notifier only) had silently drifted out of sync with
-          # go.work, which also lists apps/market-hotset -- its own go.sum
-          # was never part of this cache's key, so a change there could
-          # reuse a stale Go module cache without anyone noticing. A glob
-          # covers every apps/*/go.sum automatically, including any future
-          # module, with no list to keep in sync by hand.
-          cache-dependency-path: apps/*/go.sum
+          # go.work (which also lists apps/market-hotset), and a glob scoped
+          # to apps/* would silently repeat that drift for any future Go
+          # module living outside apps/ (e.g. under packages/). go.work.sum
+          # is the workspace's own single, already-maintained aggregate
+          # checksum file (go build/mod tidy in workspace mode keeps it in
+          # sync with every module go.work lists, wherever it lives) -- keying
+          # the cache on it needs no list to keep in sync by hand, ever.
+          cache-dependency-path: go.work.sum
       - name: Python dead code
         run: |
           if find apps packages -name '*.py' 2>/dev/null | grep -q .; then
