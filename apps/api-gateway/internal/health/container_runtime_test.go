@@ -30,22 +30,27 @@ func TestReadContainerRuntime(t *testing.T) {
 	if got.CapturedAtMS != 1785245544572 || len(got.Containers) != 3 {
 		t.Fatalf("unexpected snapshot: %+v", got)
 	}
-	if got.Containers[0].Name != "schurfer-collector" {
-		t.Fatalf("expected CPU-descending ordering, got %+v", got.Containers)
+	// Stable name-ascending ordering (tech debt fix), not live CPU% --
+	// api-gateway < collector < orderflow-pilot regardless of which one
+	// happens to be using the most CPU this particular poll.
+	if got.Containers[0].Name != "schurfer-api-gateway" ||
+		got.Containers[1].Name != "schurfer-collector" ||
+		got.Containers[2].Name != "schurfer-orderflow-pilot" {
+		t.Fatalf("expected name-ascending ordering, got %+v", got.Containers)
 	}
 	if got.TotalCPUPercent != 15.25 {
 		t.Fatalf("unexpected total CPU: %f", got.TotalCPUPercent)
 	}
-	collector := got.Containers[0]
-	if !collector.OOMKilled || collector.Status != "restarting" {
-		t.Fatalf("unexpected collector metric: %+v", collector)
-	}
-	api := got.Containers[1]
+	api := got.Containers[0]
 	if api.RestartCount != 1 || api.Health != "healthy" || api.MemoryLimitBytes != 384*1024*1024 {
 		t.Fatalf("unexpected api-gateway metric: %+v", api)
 	}
 	if api.OOMKilled {
 		t.Fatalf("expected api-gateway to not be OOM-killed: %+v", api)
+	}
+	collector := got.Containers[1]
+	if !collector.OOMKilled || collector.Status != "restarting" {
+		t.Fatalf("unexpected collector metric: %+v", collector)
 	}
 	stopped := got.Containers[2]
 	if stopped.Name != "schurfer-orderflow-pilot" || stopped.Status != "exited" ||

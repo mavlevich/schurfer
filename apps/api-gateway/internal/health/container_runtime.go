@@ -134,11 +134,15 @@ func readContainerRuntime(path string) *ContainerRuntime {
 		result.TotalMemoryUsedBytes += metric.MemoryUsedBytes
 		result.Containers = append(result.Containers, metric)
 	}
+	// Stable by name, not live CPU% -- tech debt (ROADMAP.md): sorting
+	// descending by a value that changes every poll made the status page's
+	// own container list visibly reshuffle rows on every refresh, which is
+	// not useful for someone scanning it for a specific service. The
+	// frontend renders this slice in the order returned here with no
+	// client-side re-sort (StatusPage.tsx), so this is the only place that
+	// needs to change.
 	sort.Slice(result.Containers, func(i, j int) bool {
-		if result.Containers[i].CPUPercent == result.Containers[j].CPUPercent {
-			return result.Containers[i].Name < result.Containers[j].Name
-		}
-		return result.Containers[i].CPUPercent > result.Containers[j].CPUPercent
+		return result.Containers[i].Name < result.Containers[j].Name
 	})
 	return result
 }

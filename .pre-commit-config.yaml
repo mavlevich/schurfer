@@ -1,6 +1,10 @@
 # Pre-commit hooks for Schurfer
-# Install: uv tool install pre-commit && pre-commit install
+# Install: make install (runs pre-commit install for all three hook types
+# this repo uses: pre-commit, commit-msg, and pre-push -- a bare
+# `pre-commit install` alone only wires up the pre-commit stage below and
+# silently skips the commit-msg and make-verify pre-push hooks).
 # Run manually: pre-commit run --all-files
+# Run just the pre-push stage manually: pre-commit run --hook-stage pre-push --all-files
 
 repos:
   # --- General ---
@@ -93,3 +97,22 @@ repos:
         language: system
         entry: pnpm exec prettier --write
         types_or: [javascript, jsx, ts, tsx, json, yaml, markdown, css]
+
+  # --- Pre-push ---
+  # ROADMAP tech debt: the per-commit hooks above are deliberately fast
+  # (lint/format/unit-test-adjacent checks only) so they don't slow down
+  # every commit -- make verify (full Python/Go test suites, mypy,
+  # deadcode) is much slower and belongs at push time instead, so broken
+  # code has one more gate before it reaches CI, not on every commit.
+  # `make install` runs `pre-commit install --hook-type pre-push` so this
+  # actually activates; pass_filenames: false and always_run: true since
+  # make verify itself decides its own file scope, not pre-commit's diff.
+  - repo: local
+    hooks:
+      - id: make-verify
+        name: make verify (pre-push)
+        language: system
+        entry: make verify
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]

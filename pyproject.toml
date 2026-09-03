@@ -83,6 +83,18 @@ no_implicit_optional = true
 module = ["ccxt.*", "redis.*", "structlog.*"]
 ignore_missing_imports = true
 
+# tick_simulator.py is a disposable, one-off backtest script (never a
+# package entry point, reads/writes ad-hoc backups/reports/*.json caches
+# directly) that already opts out of ruff via its own top-of-file
+# "# ruff: noqa" -- this mirrors that same exemption for mypy instead of
+# retrofitting full strict typing onto throwaway grid-search code.
+# Colleague review, 2026-09-02: this must stay scoped to exactly this one
+# module, never a wildcard, and never used to hide a real bug in code
+# that's actually depended on -- see make-verify pre-push hook's own docs.
+[[tool.mypy.overrides]]
+module = ["schurfer_analytics.tick_simulator"]
+ignore_errors = true
+
 [tool.pytest.ini_options]
 testpaths = ["apps", "packages"]
 python_files = ["test_*.py", "*_test.py"]
