@@ -69,25 +69,44 @@ fi
 
 DATE=$(date +%Y%m%d_%H%M%S)
 RAW_FILE="${BACKUP_DIR}/schurfer_${DATE}.dump"
-FILE="$RAW_FILE"
+# gzip writes through its OWN separate temp file, never straight to
+# FINAL_GZ: colleague review, 2026-09-03, third round -- the previous
+# version ran plain `gzip "$FILE"` (writing directly to schurfer_*.dump.gz
+# in place) and the cleanup trap only ever removed $RAW_FILE. Reviewer
+# reproduced a forced gzip failure that had already written PART of the
+# final .gz path before erroring out: the trap correctly removed the raw
+# dump but left that partial .gz sitting in $BACKUP_DIR forever -- the
+# exact class of leftover-file disk pressure this whole trap exists to
+# prevent, just one step later in the pipeline. Writing to $TMP_GZ and
+# only `mv`ing it to $FINAL_GZ after gzip fully succeeds means a partial
+# .gz can never exist under the real backup filename; the trap covers
+# BOTH files so a failure at any point (pg_dump, gzip, or in between)
+# leaves $BACKUP_DIR exactly as it was before this run started.
+TMP_GZ="${RAW_FILE}.gz.partial"
+FINAL_GZ="${RAW_FILE}.gz"
 
-# Cleanup-on-failure: if pg_dump or gzip fails partway (including via
-# `set -e`), remove the raw dump this run itself was writing, so a failed
-# run's own leftovers can never become next run's disk-pressure cause.
-# Deliberately targets ONLY $RAW_FILE, which gzip itself already deletes
-# on success -- never $FILE, whose value changes to the finished .gz path
-# after a successful gzip; trapping that too would risk deleting a
-# just-completed backup if anything failed between the gzip line and
-# retention cleanup below. (The lock above needs no explicit release: FD
-# 200 closes, and the flock with it, whenever this script's process exits,
-# on every exit path.)
-trap 'rm -f "$RAW_FILE"' EXIT
+# (The lock above needs no explicit release: FD 200 closes, and the flock
+# with it, whenever this script's process exits, on every exit path.)
+trap 'rm -f "$RAW_FILE" "$TMP_GZ"' EXIT
 
-# Prefer the LIVE database's own current size over a possibly-stale
-# previous backup: it reflects today's actual data, not whatever the DB
-# happened to be sized at whenever the last successful backup ran (which
-# could be days or weeks stale on a slow-changing table, or -- the
-# dangerous direction -- understate a database that has since grown a lot).
+# Basis for the multiplier: the PREVIOUS BACKUP's own compressed size,
+# preferred over the live database's raw uncompressed size. Colleague
+# review, 2026-09-03, third round: checked this against real production
+# numbers (2026-09-03) -- live DB 22,771,971,763 bytes (21.2 GiB) vs. the
+# actual retained backup 10,023,806,873 bytes (9.3 GiB), a ~2.3x
+# compression ratio from pg_dump -Fc plus gzip together. The peak
+# concurrent usage a backup run actually needs room for (old retained
+# backup + this run's new raw dump + this run's new growing .gz, all
+# roughly COMPRESSED-backup-sized, not raw-DB-sized) was previously
+# multiplied against the much larger RAW size, overestimating the real
+# requirement by roughly that same compression ratio. The live DB size is
+# still queried and used as a same-order-of-magnitude estimate ONLY when
+# there is no previous backup to size against yet (first run on this
+# host), divided by COMPRESSED_SIZE_ESTIMATE_DIVISOR to approximate what
+# the eventual compressed backup would be rather than assuming no
+# compression at all.
+COMPRESSED_SIZE_ESTIMATE_DIVISOR="${COMPRESSED_SIZE_ESTIMATE_DIVISOR:-2}"
+
 live_db_size_bytes="$(
     docker exec "$CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -tAc \
         "SELECT pg_database_size('${DB_NAME}')" 2>/dev/null | tr -d '[:space:]' || true
@@ -105,13 +124,14 @@ else
     previous_size_kb=0
 fi
 
-# max(live DB size, previous backup size) x multiplier, floored at
-# MIN_FREE_FLOOR_KB only when NEITHER signal is available at all (first
-# run ever on this host, or the live DB query itself failed).
-basis_kb=$live_db_size_kb
-if [[ "$previous_size_kb" -gt "$basis_kb" ]]; then
+if [[ "$previous_size_kb" -gt 0 ]]; then
     basis_kb=$previous_size_kb
+elif [[ "$live_db_size_kb" -gt 0 ]]; then
+    basis_kb=$((live_db_size_kb / COMPRESSED_SIZE_ESTIMATE_DIVISOR))
+else
+    basis_kb=0
 fi
+
 if [[ "$basis_kb" -eq 0 ]]; then
     required_kb="$MIN_FREE_FLOOR_KB"
 else
@@ -124,8 +144,9 @@ fi
 available_kb=$(df -Pk "$BACKUP_DIR" | awk 'NR==2 {print $4}')
 if [[ "$available_kb" -lt "$required_kb" ]]; then
     echo "[$(date -Iseconds)] ERROR: only ${available_kb}KB free in $BACKUP_DIR," \
-        "need at least ${required_kb}KB (${MIN_FREE_MULTIPLIER}x max(live DB size" \
-        "${live_db_size_kb}KB, previous backup ${previous_size_kb}KB), floored at" \
+        "need at least ${required_kb}KB (${MIN_FREE_MULTIPLIER}x basis ${basis_kb}KB --" \
+        "previous backup ${previous_size_kb}KB if available, else live DB" \
+        "${live_db_size_kb}KB / ${COMPRESSED_SIZE_ESTIMATE_DIVISOR} -- floored at" \
         "${MIN_FREE_FLOOR_KB}KB). Not starting pg_dump. Free disk space" \
         "(see: make prod-docker-prune-run) and retry." >&2
     if [[ -n "${TELEGRAM_BOT_TOKEN:-}" && -n "${TELEGRAM_CHAT_ID:-}" ]]; then
@@ -138,12 +159,17 @@ if [[ "$available_kb" -lt "$required_kb" ]]; then
 fi
 
 echo "[$(date -Iseconds)] Starting backup..."
-docker exec "$CONTAINER" pg_dump -U "$DB_USER" -d "$DB_NAME" -Fc > "$FILE"
-gzip "$FILE"
-FILE="${FILE}.gz"
+docker exec "$CONTAINER" pg_dump -U "$DB_USER" -d "$DB_NAME" -Fc > "$RAW_FILE"
+# -c (write to stdout, redirected here) rather than in-place: leaves
+# $RAW_FILE untouched until $TMP_GZ has been written successfully in
+# full, so a failure partway through never leaves a half-written file
+# under the real backup filename -- see the trap's own comment above.
+gzip -c "$RAW_FILE" > "$TMP_GZ"
+mv "$TMP_GZ" "$FINAL_GZ"
+rm -f "$RAW_FILE"
 
-SIZE=$(du -sh "$FILE" | cut -f1)
-echo "[$(date -Iseconds)] Saved: $(basename "$FILE") ($SIZE)"
+SIZE=$(du -sh "$FINAL_GZ" | cut -f1)
+echo "[$(date -Iseconds)] Saved: $(basename "$FINAL_GZ") ($SIZE)"
 
 # Keep only the most recent RETENTION_COUNT backups
 ls -1t "$BACKUP_DIR"/schurfer_*.dump.gz | tail -n +$((RETENTION_COUNT + 1)) | xargs -r rm -f
@@ -151,7 +177,7 @@ echo "[$(date -Iseconds)] Retention: kept last ${RETENTION_COUNT} backups"
 
 # Offsite upload — requires rclone configured with a remote named "r2" (or B2/S3).
 # To enable: install rclone, run `rclone config`, then uncomment:
-# rclone copy "$FILE" r2:schurfer-backups/ \
+# rclone copy "$FINAL_GZ" r2:schurfer-backups/ \
 #     && echo "[$(date -Iseconds)] Offsite: uploaded to r2:schurfer-backups/" \
 #     || echo "[$(date -Iseconds)] WARNING: offsite upload failed"
 

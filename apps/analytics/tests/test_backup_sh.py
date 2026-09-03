@@ -140,7 +140,7 @@ def test_required_space_scales_with_live_db_size_not_just_the_floor(tmp_path: Pa
     assert list(backup_dir.glob("schurfer_*")) == []
 
 
-def test_gzip_failure_leaves_the_backups_dir_empty(tmp_path: Path) -> None:
+def test_gzip_failure_before_any_output_leaves_the_backups_dir_empty(tmp_path: Path) -> None:
     backup_dir = tmp_path / "backups"
     bin_dir = _fake_bin(tmp_path)
     (bin_dir / "gzip").write_text(
@@ -153,6 +153,33 @@ def test_gzip_failure_leaves_the_backups_dir_empty(tmp_path: Path) -> None:
     assert result.returncode != 0
     # The exact reproduction of the 2026-09-03 incident: no leftover raw
     # .dump from a run whose gzip step failed partway.
+    assert list(backup_dir.glob("schurfer_*")) == []
+
+
+def test_gzip_failure_after_partial_output_leaves_no_partial_gz_behind(tmp_path: Path) -> None:
+    """Colleague review, 2026-09-03, third round: the first version of
+    this fix (`gzip "$FILE"`, in place, trap only covering $RAW_FILE) left
+    a PARTIAL .dump.gz sitting under the real backup filename when gzip
+    failed after already writing some output -- the exact same class of
+    disk-pressure leftover the original incident was, just one pipeline
+    stage later. This fake gzip reproduces that shape of failure (writes
+    real bytes to stdout, exactly like `gzip -c` would mid-write, THEN
+    fails) rather than failing before writing anything at all."""
+    backup_dir = tmp_path / "backups"
+    bin_dir = _fake_bin(tmp_path)
+    (bin_dir / "gzip").write_text(
+        "#!/usr/bin/env bash\n"
+        "head -c 1000 /dev/zero\n"
+        "echo 'fake gzip: simulated disk-full failure mid-write' >&2\n"
+        "exit 1\n"
+    )
+    (bin_dir / "gzip").chmod(0o755)
+
+    result = _run_backup(backup_dir=backup_dir, bin_dir=bin_dir)
+
+    assert result.returncode != 0
+    # Nothing at all under the real backup filename -- raw dump, partial
+    # .gz.partial, AND a partial schurfer_*.dump.gz must all be absent.
     assert list(backup_dir.glob("schurfer_*")) == []
 
 
