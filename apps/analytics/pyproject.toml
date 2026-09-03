@@ -74,6 +74,7 @@ momentum-universe-identity-match = "schurfer_analytics.momentum_universe_identit
 token-universe-coverage-report = "schurfer_analytics.token_universe_coverage_report:main"
 serial-pump-regimes-report = "schurfer_analytics.serial_pump_regimes_report:main"
 liquidation-cascade-validation-report = "schurfer_analytics.liquidation_cascade_validation_report:main"
+liquidation-maker-upper-bound-report = "schurfer_analytics.liquidation_maker_upper_bound_report:main"
 early-momentum-net-evidence-report = "schurfer_analytics.early_momentum_net_evidence_report:main"
 early-momentum-prospective-cohort-report = "schurfer_analytics.early_momentum_prospective_cohort_report:main"
 early-momentum-unused-flow-features-report = "schurfer_analytics.early_momentum_unused_flow_features_report:main"
