@@ -39,6 +39,7 @@ _QUALIFIED_EPISODES_SQL = text("""
     SELECT
         c.id AS capture_id,
         c.base,
+        q.canonical_asset_id,
         q.selected_target_exchange AS target_exchange,
         t.observed_at,
         t.requested_notional_usd,
@@ -62,10 +63,21 @@ _QUALIFIED_EPISODES_SQL = text("""
 class RawQualifiedEpisode:
     """Unresolved -- resolve_episode still needs an exit_bar fetched
     separately (a live OHLCV lookup, not something this repository, whose
-    job is only the already-persisted qualification data, provides)."""
+    job is only the already-persisted qualification data, provides).
+
+    `canonical_asset_id` (not `base`, a bare ticker string) is what the
+    report's own clustering/concentration/bootstrap must use -- colleague
+    review, 2026-09-03: `base` alone can silently merge two different
+    assets sharing a ticker, or split one multi-chain asset across two
+    tickers, exactly the identity risk this codebase's own source-lead
+    identity registry exists to close. Migration 0022's own CHECK
+    constraint (`status = 'qualified' AND canonical_asset_id IS NOT NULL
+    ...`) guarantees this is never null for a row this query's own
+    `status = 'qualified'` filter selects."""
 
     capture_id: int
     base: str
+    canonical_asset_id: str
     target_exchange: str
     observed_at: datetime
     requested_notional_usd: float
@@ -130,15 +142,32 @@ class SourceLeadForwardCohortRepository:
                 },
             )
             rows = result.all()
-        return tuple(
-            RawQualifiedEpisode(
-                capture_id=int(row.capture_id),
-                base=str(row.base),
-                target_exchange=str(row.target_exchange),
-                observed_at=row.observed_at,
-                requested_notional_usd=float(row.requested_notional_usd),
-                liquidity=_as_json_dict(row.liquidity),
-                instrument=_as_json_dict(row.instrument),
+        episodes = []
+        for row in rows:
+            canonical_asset_id = row.canonical_asset_id
+            if not isinstance(canonical_asset_id, str) or not canonical_asset_id:
+                # Migration 0022's own CHECK constraint should make this
+                # unreachable for a status='qualified' row -- fail loud
+                # rather than silently falling back to `base` (a bare
+                # ticker) and reintroducing the identity risk this field
+                # exists to close, in case that constraint is ever bypassed
+                # (a raw migration, a manual UPDATE, a future schema change).
+                raise ValueError(
+                    f"source_lead_qualifications row for capture_id={row.capture_id} has no "
+                    "canonical_asset_id despite status='qualified' -- migration 0022's own "
+                    "CHECK constraint should make this unreachable; refusing to silently "
+                    "cluster this episode by its bare ticker instead"
+                )
+            episodes.append(
+                RawQualifiedEpisode(
+                    capture_id=int(row.capture_id),
+                    base=str(row.base),
+                    canonical_asset_id=canonical_asset_id,
+                    target_exchange=str(row.target_exchange),
+                    observed_at=row.observed_at,
+                    requested_notional_usd=float(row.requested_notional_usd),
+                    liquidity=_as_json_dict(row.liquidity),
+                    instrument=_as_json_dict(row.instrument),
+                )
             )
-            for row in rows
-        )
+        return tuple(episodes)

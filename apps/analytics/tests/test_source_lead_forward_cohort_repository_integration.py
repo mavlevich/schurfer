@@ -192,6 +192,7 @@ async def test_fetch_qualified_episodes_returns_a_genuine_joined_row() -> None:
         assert len(matching) == 1
         (episode,) = matching
         assert episode.capture_id == capture_id
+        assert episode.canonical_asset_id == f"canonical:{capture_id}"
         assert episode.target_exchange == "binance"
         assert episode.observed_at == observed_at
         assert episode.requested_notional_usd == pytest.approx(50.0)
