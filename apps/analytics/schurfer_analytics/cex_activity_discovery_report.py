@@ -48,11 +48,14 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import json
 import os
 import sys
+import tempfile
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from . import cex_activity_discovery_dataset_artifact as dataset_artifact
@@ -82,15 +85,16 @@ from .cex_activity_discovery_repository import (
     CexActivityDiscoveryRepository,
     report_maturity_at,
 )
+from .momentum_flow_bidirectional_burst_offline_repository import (
+    OfflineBarsExtractRepository,
+    fetch_candidate_extreme_minutes_offline,
+)
 from .momentum_flow_bidirectional_burst_report import (
     DEFAULT_EXTREME_THRESHOLD_PCT,
     DEFAULT_MAX_CANDIDATE_MINUTES,
     DEFAULT_MIN_VOLUME_24H_USD,
     DEFAULT_REFRACTORY_MINUTES,
     check_candidate_count,
-)
-from .momentum_flow_bidirectional_burst_repository import (
-    MomentumFlowBidirectionalBurstRepository,
 )
 from .momentum_flow_bidirectional_burst_study import (
     DIRECTIONS,
@@ -242,6 +246,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--artifact-directory",
         default=None,
         help="override the default research-artifact store location",
+    )
+    parser.add_argument(
+        "--extract-directory",
+        default=None,
+        help=(
+            "keep the offline Parquet extract this run's own candidate-minute detection "
+            "produces under this directory instead of a temp dir deleted at exit -- for "
+            "inspecting or reusing a real production extract, --freeze-artifact only"
+        ),
     )
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument(
@@ -433,24 +446,58 @@ async def freeze_dataset(args: argparse.Namespace) -> DatasetArtifactManifest:
         )
     code_revision = normalize_code_revision(args.code_revision)
     path_repository = CexActivityDiscoveryRepository.from_url(os.environ["DATABASE_URL"])
-    burst_repository = MomentumFlowBidirectionalBurstRepository.from_url(os.environ["DATABASE_URL"])
+    extract_repository = OfflineBarsExtractRepository.from_url(os.environ["DATABASE_URL"])
     try:
         database_now = await path_repository.database_now()
-        # Candidate-minute detection touches only the already-fully-past
-        # discovery window itself (DISCOVERY_UNTIL is not gated by any
-        # forward-looking maturity requirement -- the candidates it finds
-        # are burst-trigger minutes, not outcome paths), so it is safe to
-        # run before the real maturity check below, which needs the actual
-        # request set this run will build to compute correctly.
-        candidate_minutes = await burst_repository.fetch_candidate_extreme_minutes(
-            exchange=args.exchange,
-            market_type=args.market_type,
-            capture_version=args.capture_version,
-            since=args.since,
-            until=args.until,
-            min_volume_24h_usd=args.min_volume_24h_usd,
-            extreme_threshold_pct=args.extreme_threshold_pct,
-        )
+        # Candidate-minute detection runs OFFLINE, against a Parquet
+        # extract, not the live 5m/24h RANGE-window query -- see
+        # momentum_flow_bidirectional_burst_offline_repository.py's own
+        # docstring: the first production attempt at the live query was
+        # manually stopped after 12 minutes for degrading production I/O
+        # (ROADMAP.md's "Near-term interleaving from 2026-08-31", item 3).
+        # extract_bars_to_parquet is the only piece of THIS function that
+        # ever touches production -- a plain indexed range SELECT, not a
+        # per-symbol window aggregation. Touches only the already-fully-
+        # past discovery window itself (DISCOVERY_UNTIL is not gated by
+        # any forward-looking maturity requirement -- the candidates found
+        # here are burst-trigger minutes, not outcome paths), so it is
+        # safe to run before the real maturity check below, which needs
+        # the actual request set this run will build to compute correctly.
+        with contextlib.ExitStack() as scratch_stack:
+            # Only opened (and only ever deleted at exit) when the caller
+            # did not pin --extract-directory -- a real production freeze
+            # that wants to keep/inspect the extract must never have this
+            # function silently create and then immediately discard an
+            # unused scratch directory alongside it.
+            extract_directory = (
+                Path(args.extract_directory)
+                if args.extract_directory
+                else Path(
+                    scratch_stack.enter_context(
+                        tempfile.TemporaryDirectory(prefix="cex_activity_hyp016_extract_")
+                    )
+                )
+            )
+            extract_directory.mkdir(parents=True, exist_ok=True)
+            extract_output_path = extract_directory / (
+                f"{args.exchange}_{args.market_type}_{args.capture_version}_"
+                f"{args.since.date().isoformat()}_{args.until.date().isoformat()}.parquet"
+            )
+            extract_manifest = await extract_repository.extract_bars_to_parquet(
+                exchange=args.exchange,
+                capture_version=args.capture_version,
+                market_type=args.market_type,
+                since=args.since,
+                until=args.until,
+                output_path=extract_output_path,
+            )
+            candidate_minutes = fetch_candidate_extreme_minutes_offline(
+                extract_manifest,
+                since=args.since,
+                until=args.until,
+                min_volume_24h_usd=args.min_volume_24h_usd,
+                extreme_threshold_pct=args.extreme_threshold_pct,
+            )
         check_candidate_count(len(candidate_minutes), args.max_candidate_minutes)
 
         outcome_episodes = _build_episodes(
@@ -504,7 +551,7 @@ async def freeze_dataset(args: argparse.Namespace) -> DatasetArtifactManifest:
             requests=control_request_rows,
         )
     finally:
-        await asyncio.gather(path_repository.close(), burst_repository.close())
+        await asyncio.gather(path_repository.close(), extract_repository.close())
 
     rows = dataset_artifact.build_rows(
         episodes=outcome_episodes,
@@ -533,6 +580,16 @@ async def freeze_dataset(args: argparse.Namespace) -> DatasetArtifactManifest:
         "max_candidate_minutes": args.max_candidate_minutes,
         "max_path_requests": args.max_path_requests,
         "database_snapshot_at": database_now.isoformat(),
+        # Provenance for the offline candidate-detection extract itself
+        # (colleague review, 2026-09-03 planning) -- so a reviewer of the
+        # frozen artifact alone can see exactly how the candidate universe
+        # was computed (row/symbol counts, the Parquet's own content hash,
+        # wall time) without needing the original run's own logs.
+        "extract_query_version": extract_manifest.extract_query_version,
+        "extract_row_count": extract_manifest.row_count,
+        "extract_symbol_count": extract_manifest.symbol_count,
+        "extract_parquet_sha256": extract_manifest.parquet_sha256,
+        "extract_wall_seconds": extract_manifest.wall_seconds,
     }
     return dataset_artifact.freeze(
         cohort=cohort,
