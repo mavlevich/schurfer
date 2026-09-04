@@ -19,7 +19,7 @@ import json
 import math
 from collections import defaultdict
 from dataclasses import asdict, dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from statistics import fmean, median
 
 from .clustered_inference import (
@@ -36,6 +36,23 @@ from .clustered_inference import (
 from .momentum_flow_bidirectional_burst_study import DIRECTIONS as REGISTERED_DIRECTIONS
 from .momentum_flow_bidirectional_burst_study import utc_week_key as _utc_week
 
+# --- HYP-016's own frozen discovery window ------------------------------
+#
+# Registered in docs/research/discovery-ledger.md's own HYP-016 row --
+# copied here verbatim (not re-typed from memory) so the formal freeze path
+# (research/cex-activity-discovery-completion-v1) has exactly one place
+# that can accept --since/--until, rejecting anything else, matching this
+# codebase's established discipline for a viewed, already-registered
+# window (mirrors SOURCE_LEAD_FORWARD_COHORT_START's own single-frozen-
+# value pattern in source_lead_forward_cohort.py). The broader
+# 2026-08-14 through 2026-08-28 context was already viewed per that same
+# ledger row; DISCOVERY_SINCE/DISCOVERY_UNTIL below are the narrower
+# half-open window the formal read actually commits to, not the wider
+# context.
+HYPOTHESIS_ID = "HYP-016"
+DISCOVERY_SINCE = datetime(2026, 8, 18, tzinfo=UTC)
+DISCOVERY_UNTIL = datetime(2026, 8, 27, tzinfo=UTC)
+
 PRIMARY_MOVE_PCT = 25.0
 OUTCOME_HORIZON_MINUTES = 24 * 60
 CONTROL_QUIET_HOURS = 24
@@ -43,6 +60,40 @@ CONTROL_SEARCH_DAYS = 7
 DISCOVERY_MIN_PAIRS = 100
 DISCOVERY_MIN_CLUSTERS = 20
 DISCOVERY_MIN_WEEKS = 2
+
+# Colleague review, 2026-09-03 (research/cex-activity-discovery-completion-v1
+# planning): build_control_requests already restricts every control
+# candidate to strictly inside [since, until) (`if candidate_at < since or
+# candidate_at >= until: continue`, unchanged below) -- an earlier proposal
+# to widen that search past the discovery window's own edges was rejected:
+# the window is already viewed and its boundaries already registered
+# (DISCOVERY_SINCE/DISCOVERY_UNTIL above), so widening the control search
+# now would add previously-unregistered data and change the estimand after
+# the window was already chosen, exactly the kind of post-hoc adjustment
+# this codebase's other frozen contracts (Holm correction, pre-registered
+# thresholds) exist to prevent. This version pins that decision explicitly,
+# so a future change to the boundary behavior is a deliberate, versioned
+# one, not a silent edit to already-working code.
+CONTROL_BOUNDARY_POLICY_VERSION = "within_discovery_window_v1"
+
+# The five reasons ExactPricePath.unresolved_reason can return, plus the
+# one reason it structurally cannot (a request_id the repository returned
+# no row for at all -- classified by the caller, since there is no
+# ExactPricePath instance to classify it on). Every unresolved path in a
+# funnel must fall into exactly one of these -- a caller finding a reason
+# outside this set has a real bug to investigate, not a new category to
+# silently accept.
+MISSING_PATH_RESULT_REASON = "missing_path_result"
+UNRESOLVED_REASONS = frozenset(
+    {
+        "missing_entry_bar",
+        "invalid_entry_price",
+        "incomplete_24h_path",
+        "missing_extrema",
+        "invalid_extrema",
+        MISSING_PATH_RESULT_REASON,
+    }
+)
 
 # Bumped whenever select_matched_pairs' own assignment algorithm changes --
 # colleague review, 2026-09-02: HYP-017's own already-recorded discovery
@@ -108,6 +159,19 @@ class OutcomeSignalEpisode:
 
 @dataclass(frozen=True)
 class ExactPricePath:
+    """`unresolved_reason` classifies exactly WHY a path failed to resolve
+    -- colleague review, 2026-09-03 (research/cex-activity-discovery-
+    completion-v1 planning): a single collapsed `resolved` boolean cannot
+    reproduce the funnel a real formal report must show (how many failed
+    for a missing entry bar versus a genuinely gappy 24h outcome window
+    are very different findings). `resolved` is now DERIVED from
+    `unresolved_reason is None`, not a second, independently-maintained
+    boolean check -- the two can never silently drift apart. See
+    UNRESOLVED_REASONS below for the full frozen set of reason strings
+    this can return; MISSING_PATH_RESULT (a request_id the repository
+    returned no row for at all, a shape this dataclass itself cannot
+    represent) is classified by the caller, not here."""
+
     request_id: str
     symbol: str
     trigger_at: datetime
@@ -120,19 +184,27 @@ class ExactPricePath:
     first_down_25_at: datetime | None
 
     @property
-    def resolved(self) -> bool:
-        return (
-            self.entry_price is not None
-            and math.isfinite(self.entry_price)
-            and self.entry_price > 0
-            and self.observed_minutes == OUTCOME_HORIZON_MINUTES
-            and self.max_high is not None
-            and self.min_low is not None
-            and math.isfinite(self.max_high)
+    def unresolved_reason(self) -> str | None:
+        if self.entry_price is None:
+            return "missing_entry_bar"
+        if not math.isfinite(self.entry_price) or not (self.entry_price > 0):
+            return "invalid_entry_price"
+        if self.observed_minutes != OUTCOME_HORIZON_MINUTES:
+            return "incomplete_24h_path"
+        if self.max_high is None or self.min_low is None:
+            return "missing_extrema"
+        if not (
+            math.isfinite(self.max_high)
             and math.isfinite(self.min_low)
             and self.max_high > 0
             and self.min_low > 0
-        )
+        ):
+            return "invalid_extrema"
+        return None
+
+    @property
+    def resolved(self) -> bool:
+        return self.unresolved_reason is None
 
 
 @dataclass(frozen=True)

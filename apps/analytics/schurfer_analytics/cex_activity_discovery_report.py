@@ -28,8 +28,12 @@ from datetime import timedelta
 from typing import TYPE_CHECKING
 
 from .cex_activity_discovery import (
+    CONTROL_BOUNDARY_POLICY_VERSION,
     CONTROL_QUIET_HOURS,
     CONTROL_SEARCH_DAYS,
+    DISCOVERY_SINCE,
+    DISCOVERY_UNTIL,
+    HYPOTHESIS_ID,
     MATCHING_POLICY_VERSION,
     OUTCOME_HORIZON_MINUTES,
     PRIMARY_MOVE_PCT,
@@ -75,6 +79,7 @@ INTERPRETATION = "discovery_only_max_one_forward_candidate_no_trading_authorizat
 
 @dataclass(frozen=True)
 class CexActivityManifest:
+    hypothesis_id: str
     report_version: str
     candidate_query_version: str
     path_query_version: str
@@ -95,18 +100,29 @@ class CexActivityManifest:
     outcome_horizon_minutes: int
     control_search_days: int
     control_quiet_hours: int
+    control_boundary_policy_version: str
     matching_policy_version: str
     input_fingerprint: str
 
 
 @dataclass(frozen=True)
 class CexActivityFunnel:
+    """`unmatched_resolved_signal_episodes` (colleague review, 2026-09-03,
+    research/cex-activity-discovery-completion-v1 planning): an episode
+    whose own signal path resolved but never made it into a matched pair
+    (no resolved control candidate existed, or it lost the maximum-
+    cardinality assignment to another episode) previously only showed up
+    as an implicit gap between resolved_signal_paths and matched_pairs --
+    easy to miss, and impossible to distinguish from an episode whose
+    signal itself never resolved. Counted explicitly here instead."""
+
     candidate_extreme_minutes: int
     independent_episodes: int
     resolved_signal_paths: int
     generated_control_candidates: int
     resolved_control_paths: int
     matched_pairs: int
+    unmatched_resolved_signal_episodes: int
 
 
 @dataclass(frozen=True)
@@ -122,8 +138,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="CEX activity -> exact +25% discovery with quiet-day matched controls"
     )
-    parser.add_argument("--since", type=parse_utc_datetime, required=True)
-    parser.add_argument("--until", type=parse_utc_datetime, required=True)
+    # Defaulted to (and, in generate_report, validated against) the frozen
+    # DISCOVERY_SINCE/DISCOVERY_UNTIL -- colleague review, 2026-09-03
+    # (research/cex-activity-discovery-completion-v1 planning): this window
+    # is already viewed and registered (docs/research/discovery-ledger.md's
+    # own HYP-016 row), so accepting an arbitrary --since/--until here
+    # would let a caller silently widen or shift the estimand after the
+    # window was already chosen -- kept as real CLI arguments (not removed
+    # outright) only so an invocation's own command line stays self-
+    # documenting, mirroring source_lead_forward_cohort_report.py's own
+    # established --since pattern.
+    parser.add_argument("--since", type=parse_utc_datetime, default=DISCOVERY_SINCE)
+    parser.add_argument("--until", type=parse_utc_datetime, default=DISCOVERY_UNTIL)
     parser.add_argument("--max-candidate-minutes", type=int, default=DEFAULT_MAX_CANDIDATE_MINUTES)
     parser.add_argument("--code-revision", required=True)
     dirty = parser.add_mutually_exclusive_group(required=True)
@@ -175,6 +201,10 @@ def render_markdown(report: CexActivityDiscoveryReport) -> str:
                 ("Generated control candidates", report.funnel.generated_control_candidates),
                 ("Resolved control paths", report.funnel.resolved_control_paths),
                 ("Matched pairs", report.funnel.matched_pairs),
+                (
+                    "Resolved signal, unmatched",
+                    report.funnel.unmatched_resolved_signal_episodes,
+                ),
             ],
         )
     )
@@ -245,8 +275,12 @@ def render_json(report: CexActivityDiscoveryReport) -> str:
 
 
 async def generate_report(args: argparse.Namespace) -> CexActivityDiscoveryReport:
-    if args.since >= args.until:
-        raise ValueError("--since must be earlier than --until")
+    if args.since != DISCOVERY_SINCE or args.until != DISCOVERY_UNTIL:
+        raise ValueError(
+            f"--since/--until must equal the frozen {HYPOTHESIS_ID} window "
+            f"[{DISCOVERY_SINCE.isoformat()}, {DISCOVERY_UNTIL.isoformat()}); this contract "
+            "registers exactly one already-viewed discovery window, not an arbitrary one"
+        )
     code_revision = normalize_code_revision(args.code_revision)
     path_repository = CexActivityDiscoveryRepository.from_url(os.environ["DATABASE_URL"])
     burst_repository = MomentumFlowBidirectionalBurstRepository.from_url(os.environ["DATABASE_URL"])
@@ -329,8 +363,17 @@ async def generate_report(args: argparse.Namespace) -> CexActivityDiscoveryRepor
         )
         direction_results = build_direction_results(outcome_episodes, pairs, signal_paths)
         fingerprint = input_fingerprint(outcome_episodes, signal_paths, control_paths)
+        matched_episode_ids = {pair.episode.episode_id for pair in pairs}
+        unmatched_resolved_signal_episodes = sum(
+            1
+            for episode in outcome_episodes
+            if episode.episode_id not in matched_episode_ids
+            and (path := signal_paths.get(signal_request(episode).request_id)) is not None
+            and path.resolved
+        )
         return CexActivityDiscoveryReport(
             manifest=CexActivityManifest(
+                hypothesis_id=HYPOTHESIS_ID,
                 report_version=REPORT_VERSION,
                 candidate_query_version=CANDIDATE_QUERY_VERSION,
                 path_query_version=PATH_QUERY_VERSION,
@@ -351,6 +394,7 @@ async def generate_report(args: argparse.Namespace) -> CexActivityDiscoveryRepor
                 outcome_horizon_minutes=OUTCOME_HORIZON_MINUTES,
                 control_search_days=CONTROL_SEARCH_DAYS,
                 control_quiet_hours=CONTROL_QUIET_HOURS,
+                control_boundary_policy_version=CONTROL_BOUNDARY_POLICY_VERSION,
                 matching_policy_version=MATCHING_POLICY_VERSION,
                 input_fingerprint=fingerprint,
             ),
@@ -361,6 +405,7 @@ async def generate_report(args: argparse.Namespace) -> CexActivityDiscoveryRepor
                 generated_control_candidates=len(control_request_rows),
                 resolved_control_paths=sum(path.resolved for path in control_paths.values()),
                 matched_pairs=len(pairs),
+                unmatched_resolved_signal_episodes=unmatched_resolved_signal_episodes,
             ),
             directions=direction_results,
             selected_forward_candidate=select_forward_candidate(direction_results),

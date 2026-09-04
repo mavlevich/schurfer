@@ -4,7 +4,13 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from schurfer_analytics.cex_activity_discovery import (
+    CONTROL_BOUNDARY_POLICY_VERSION,
+    DISCOVERY_SINCE,
+    DISCOVERY_UNTIL,
+    HYPOTHESIS_ID,
+    MISSING_PATH_RESULT_REASON,
     OUTCOME_HORIZON_MINUTES,
+    UNRESOLVED_REASONS,
     ExactPricePath,
     MatchedMovePair,
     OutcomeSignalEpisode,
@@ -16,7 +22,7 @@ from schurfer_analytics.cex_activity_discovery import (
     select_matched_pairs,
     signal_request,
 )
-from schurfer_analytics.cex_activity_discovery_report import build_parser
+from schurfer_analytics.cex_activity_discovery_report import build_parser, generate_report
 from schurfer_analytics.momentum_flow_bidirectional_burst_report import (
     DEFAULT_EXTREME_THRESHOLD_PCT,
 )
@@ -38,6 +44,52 @@ def test_cex_v1_primary_threshold_cannot_be_overridden_from_the_cli() -> None:
     assert parsed.extreme_threshold_pct == DEFAULT_EXTREME_THRESHOLD_PCT
     with pytest.raises(SystemExit):
         build_parser().parse_args([*base_args, "--extreme-threshold-pct", "9"])
+
+
+# --- HYP-016's own frozen window (colleague review, 2026-09-03) -----------
+
+
+def test_discovery_window_matches_the_registered_ledger_row() -> None:
+    """Copied verbatim from docs/research/discovery-ledger.md's own
+    HYP-016 row -- a change here means either the ledger or this contract
+    drifted from the other, both of which must be caught loudly."""
+    assert HYPOTHESIS_ID == "HYP-016"
+    assert datetime(2026, 8, 18, tzinfo=UTC) == DISCOVERY_SINCE
+    assert datetime(2026, 8, 27, tzinfo=UTC) == DISCOVERY_UNTIL
+
+
+def test_build_parser_defaults_since_and_until_to_the_frozen_window() -> None:
+    args = build_parser().parse_args(["--code-revision", "deadbeef", "--no-working-tree-dirty"])
+    assert args.since == DISCOVERY_SINCE
+    assert args.until == DISCOVERY_UNTIL
+
+
+async def test_generate_report_rejects_a_since_other_than_the_frozen_window() -> None:
+    args = build_parser().parse_args(
+        [
+            "--since",
+            "2026-01-01T00:00:00Z",
+            "--code-revision",
+            "deadbeef",
+            "--no-working-tree-dirty",
+        ]
+    )
+    with pytest.raises(ValueError, match="must equal the frozen"):
+        await generate_report(args)
+
+
+async def test_generate_report_rejects_an_until_other_than_the_frozen_window() -> None:
+    args = build_parser().parse_args(
+        [
+            "--until",
+            "2026-12-31T00:00:00Z",
+            "--code-revision",
+            "deadbeef",
+            "--no-working-tree-dirty",
+        ]
+    )
+    with pytest.raises(ValueError, match="must equal the frozen"):
+        await generate_report(args)
 
 
 def _episode(
@@ -89,6 +141,101 @@ def test_exact_path_requires_every_minute_in_the_24h_window() -> None:
     assert not _path("gap", observed_minutes=OUTCOME_HORIZON_MINUTES - 1).resolved
 
 
+# --- ExactPricePath.unresolved_reason (colleague review, 2026-09-03) ------
+
+
+def test_unresolved_reason_is_none_for_a_resolved_path() -> None:
+    assert _path("resolved").unresolved_reason is None
+
+
+def test_unresolved_reason_missing_entry_bar() -> None:
+    path = ExactPricePath(
+        request_id="r",
+        symbol="TESTUSDT",
+        trigger_at=BASE,
+        entry_at=BASE + timedelta(minutes=1),
+        entry_price=None,
+        observed_minutes=0,
+        max_high=None,
+        min_low=None,
+        first_up_25_at=None,
+        first_down_25_at=None,
+    )
+    assert path.unresolved_reason == "missing_entry_bar"
+    assert not path.resolved
+
+
+def test_unresolved_reason_invalid_entry_price() -> None:
+    for bad_price in (0.0, -1.0, float("nan"), float("inf")):
+        path = ExactPricePath(
+            request_id="r",
+            symbol="TESTUSDT",
+            trigger_at=BASE,
+            entry_at=BASE + timedelta(minutes=1),
+            entry_price=bad_price,
+            observed_minutes=OUTCOME_HORIZON_MINUTES,
+            max_high=110.0,
+            min_low=95.0,
+            first_up_25_at=None,
+            first_down_25_at=None,
+        )
+        assert path.unresolved_reason == "invalid_entry_price", bad_price
+
+
+def test_unresolved_reason_incomplete_24h_path() -> None:
+    path = _path("gap", observed_minutes=OUTCOME_HORIZON_MINUTES - 1)
+    assert path.unresolved_reason == "incomplete_24h_path"
+
+
+def test_unresolved_reason_missing_extrema() -> None:
+    path = ExactPricePath(
+        request_id="r",
+        symbol="TESTUSDT",
+        trigger_at=BASE,
+        entry_at=BASE + timedelta(minutes=1),
+        entry_price=100.0,
+        observed_minutes=OUTCOME_HORIZON_MINUTES,
+        max_high=None,
+        min_low=95.0,
+        first_up_25_at=None,
+        first_down_25_at=None,
+    )
+    assert path.unresolved_reason == "missing_extrema"
+
+
+def test_unresolved_reason_invalid_extrema() -> None:
+    path = ExactPricePath(
+        request_id="r",
+        symbol="TESTUSDT",
+        trigger_at=BASE,
+        entry_at=BASE + timedelta(minutes=1),
+        entry_price=100.0,
+        observed_minutes=OUTCOME_HORIZON_MINUTES,
+        max_high=-5.0,
+        min_low=95.0,
+        first_up_25_at=None,
+        first_down_25_at=None,
+    )
+    assert path.unresolved_reason == "invalid_extrema"
+
+
+def test_unresolved_reasons_cover_every_reason_this_property_can_return() -> None:
+    """Every string unresolved_reason can actually return (plus the one
+    reason -- missing_path_result -- it structurally cannot, classified by
+    the caller instead) must be a member of UNRESOLVED_REASONS, so a
+    report's own funnel can never see a reason string outside this frozen
+    set."""
+    assert MISSING_PATH_RESULT_REASON in UNRESOLVED_REASONS
+    for reason in (
+        "missing_entry_bar",
+        "invalid_entry_price",
+        "incomplete_24h_path",
+        "missing_extrema",
+        "invalid_extrema",
+    ):
+        assert reason in UNRESOLVED_REASONS
+
+
 def test_controls_keep_same_symbol_and_utc_time_and_require_over_24h_quiet() -> None:
     episode = _episode(1)
     controls = build_control_requests(
@@ -111,6 +258,55 @@ def test_control_builder_excludes_other_bursts_for_the_same_instrument() -> None
         until=BASE + timedelta(days=8),
     )[1]
     assert BASE + timedelta(days=2) not in {row.trigger_at for row in controls}
+
+
+# --- CONTROL_BOUNDARY_POLICY_VERSION: within-window only, never outside --
+# (colleague review, 2026-09-03, research/cex-activity-discovery-
+# completion-v1 planning: this behavior was already correct, but
+# unversioned and untested at exactly the two edges that matter.)
+
+
+def test_control_boundary_policy_version_is_frozen() -> None:
+    assert CONTROL_BOUNDARY_POLICY_VERSION == "within_discovery_window_v1"
+
+
+def test_control_builder_near_since_only_offers_forward_candidates() -> None:
+    """An episode right at the discovery window's own start: every
+    backward-looking control offset would land before `since`, outside the
+    window -- only forward (future) candidates may ever be offered."""
+    since = BASE
+    until = BASE + timedelta(days=20)
+    episode = _episode(1, trigger_at=since)
+    controls = build_control_requests((episode,), since=since, until=until)[1]
+    assert controls
+    assert all(row.trigger_at >= since for row in controls)
+    assert all(row.trigger_at > episode.trigger_at for row in controls)
+
+
+def test_control_builder_near_until_only_offers_backward_candidates() -> None:
+    """An episode right at the discovery window's own end (until is
+    exclusive): every forward-looking control offset would land at or past
+    `until`, outside the window -- only backward (past) candidates may
+    ever be offered."""
+    since = BASE - timedelta(days=20)
+    until = BASE + timedelta(minutes=1)
+    episode = _episode(1, trigger_at=BASE)
+    controls = build_control_requests((episode,), since=since, until=until)[1]
+    assert controls
+    assert all(row.trigger_at < until for row in controls)
+    assert all(row.trigger_at < episode.trigger_at for row in controls)
+
+
+def test_control_builder_returns_no_candidates_when_the_window_is_too_narrow() -> None:
+    """An episode with no room on either side (a window barely wider than
+    the episode's own trigger instant): zero candidates, not an error --
+    the episode becomes unmatched, classified explicitly by the report
+    layer's own funnel rather than silently disappearing."""
+    since = BASE
+    until = BASE + timedelta(minutes=1)
+    episode = _episode(1, trigger_at=BASE)
+    controls = build_control_requests((episode,), since=since, until=until)[1]
+    assert controls == ()
 
 
 def test_pair_selection_never_reuses_one_control_path() -> None:
