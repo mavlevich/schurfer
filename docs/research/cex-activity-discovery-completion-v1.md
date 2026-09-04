@@ -338,27 +338,96 @@ cohort" rule, enforced in code, not just in the report's own prose.
   in the artifact's own `extra` metadata is the audit trail for what that
   extract actually contained.
 
+## 2026-09-04 incident: the first real freeze attempt, and what it found
+
+`research/cex-activity-discovery-result-v1` deployed this PR to production
+(`make prod-deploy-svc SERVICE=analytics`, code-only, no migration,
+verified clean afterward) and attempted the real formal freeze. It did
+not succeed on the first two attempts, both via `--freeze-artifact`:
+
+1. From a laptop, over the SSH tunnel documented in the runbook below --
+   exceeded `extract_bars_to_parquet`'s own 900s budget for the FULL
+   10-day range, and for a 120s-budgeted single-day diagnostic slice.
+2. Suspecting SSH-tunnel round-trip latency, redeployed and re-ran the
+   same single-day diagnostic directly on the production host via
+   `docker compose run --entrypoint python analytics -c "..."` (zero
+   network hop between the `analytics` container and Postgres) -- still
+   exceeded a 180s budget for one day.
+
+Diagnosis went through real evidence before changing any code, not a
+guess -- full detail in
+`momentum_flow_bidirectional_burst_offline_repository.py`'s own
+"2026-09-04" docstring section:
+
+- `timescaledb_information.chunks` confirmed the relevant days were
+  already TimescaleDB-compressed (`compress_after = 1 day`, migration 0024) -- true of every real HYP-016 date by construction, never true of
+  this module's own benchmark or any of its integration tests, all of
+  which extract freshly-seeded, always-uncompressed data.
+- `EXPLAIN (VERBOSE, COSTS, SETTINGS)` (plan only, no execution) against
+  the real extract SELECT showed a `Custom Scan (ColumnarScan)`
+  (TimescaleDB's own decompression) but no separate `Sort` node, with or
+  without the (then still-present) `ORDER BY symbol, bucket_start` --
+  ruling that clause out as a cost driver, though it was still removed as
+  a correct, independent simplification (the final Parquet file is
+  already deterministically sorted by the `COPY` step's own `ORDER BY`).
+- `EXPLAIN (ANALYZE, VERBOSE, BUFFERS, SETTINGS)` against that same real
+  compressed day -- one hour under a 30s `statement_timeout` first, then
+  the full day under 60s -- measured **1.36 seconds** for the whole day
+  (736,703 rows). Decisive: Postgres/decompression was never the
+  bottleneck.
+
+That redirected the investigation to `extract_bars_to_parquet`'s own
+Python/DuckDB loop, where the real cause was found by reading the code:
+every batch INSERT ran in DuckDB's own default autocommit mode against an
+on-disk database with a `PRIMARY KEY`, so each of the ~148 per-day
+batches paid its own commit/index-maintenance cost -- roughly 1,480
+individual commits for the full 10-day range, under production's own
+`cpus: 1.0` container limit. Fixed in `fix/cex-activity-compressed-
+extract-v1`: the whole batch-insert sequence now runs inside ONE explicit
+DuckDB transaction (the standard bulk-load pattern), plus a new
+`test_offline_extract_matches_live_query_against_a_compressed_chunk`
+regression test (the compression finding was real and worth covering,
+even though it was not itself the bottleneck), plus a phase-level timing
+breakdown added to `ExtractManifest` so a future slow run does not need a
+fresh round of ad-hoc production `EXPLAIN`s to re-diagnose.
+
 ## Post-merge runbook
 
 Running the real, formal freeze is `research/cex-activity-discovery-result-v1`,
 not this PR -- listed here so the next PR does not have to re-derive it.
+Updated 2026-09-04 after the incident above: run directly on the
+production host, not over an SSH tunnel from a laptop -- tunnel
+round-trip latency was ruled out as the cause, but the many-small-batch
+pattern the real fix addresses is still meaningfully worse over any added
+per-round-trip latency, so there is no reason to reintroduce it now that
+the direct-on-host path is already proven to work end to end.
 
 ```bash
-# From your machine, reach production Postgres through the SSH tunnel
-# documented in docs/runbooks/README.md:
-ssh -L 15432:127.0.0.1:5432 schurfer
+ssh schurfer
+cd /opt/schurfer
 
 # Freeze (the only step that touches Postgres -- a plain indexed-range
-# extract, not the live 5m/24h window query). Run from a clean, committed
-# tree so --no-working-tree-dirty is genuinely true.
-DATABASE_URL='postgresql://schurfer:<password>@localhost:15432/schurfer' \
-  make cex-activity-discovery-report ARGS='--freeze-artifact'
+# extract against a compressed chunk, not the live 5m/24h window query).
+# Runs from the server's own clean, committed main -- --no-working-tree-
+# dirty is selected automatically when the tree has no local changes.
+docker compose --env-file .env.prod -f infra/docker/docker-compose.prod.yml \
+  run --rm --no-deps --entrypoint cex-activity-discovery-report analytics \
+  --code-revision="$(git rev-parse HEAD)" --no-working-tree-dirty --freeze-artifact
 # -> prints {"fingerprint": "...", "row_count": N}
 
 # Render (zero DB calls, byte-identical on repeat) -- inspect before
 # recording anything in discovery-ledger.md:
-make cex-activity-discovery-report ARGS='--from-artifact <fingerprint> --format markdown'
+docker compose --env-file .env.prod -f infra/docker/docker-compose.prod.yml \
+  run --rm --no-deps --entrypoint cex-activity-discovery-report analytics \
+  --code-revision="$(git rev-parse HEAD)" --no-working-tree-dirty \
+  --from-artifact <fingerprint> --format markdown
 ```
+
+The artifact lands in `/opt/schurfer/runtime/research-dataset-artifacts/`
+on the host (the `analytics` service's own `../../runtime:/runtime`
+mount plus its `SCHURFER_RESEARCH_DATASET_ARTIFACT_DIR=/runtime/
+research-dataset-artifacts` env var), durable across the disposable
+`docker compose run --rm` container itself.
 
 That follow-up PR is responsible for: running the freeze for real, reading
 the rendered report, and -- only after human review of the actual

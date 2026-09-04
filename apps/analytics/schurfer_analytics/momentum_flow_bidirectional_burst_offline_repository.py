@@ -26,9 +26,15 @@ is not production at all:
    that path, this one chunks the ALREADY-lookback-extended range once,
    never re-fetching the same calendar day from two different chunks). This
    is the only piece that ever touches production, and it is cheap by
-   construction: a sequential/index range scan the underlying table is
-   already built to serve, not a per-symbol window aggregation across the
-   full universe.
+   construction relative to the live path's own per-symbol window
+   aggregation across the full universe: no window functions, no per-symbol
+   computation. It is NOT a plain sequential/index range scan for any date
+   HYP-016 will actually query, though -- this table compresses after 1 day
+   (`add_compression_policy`, migration 0024), and every real HYP-016 run
+   is retrospective by construction, so it always reads already-compressed
+   chunks. See "2026-09-04" below for what that costs in practice (measured:
+   not much -- Postgres itself is fast against compressed chunks, see that
+   section for what the real bottleneck actually was).
 2. `fetch_candidate_extreme_minutes_offline` -- the SAME 5m/24h RANGE-window
    burst computation `_CANDIDATE_EXTREME_MINUTES_SQL` already performs, now
    run by DuckDB against the Parquet file `extract_bars_to_parquet` wrote,
@@ -173,6 +179,76 @@ select either path without touching anything downstream. See
 multi-day/gap/two-partition/threshold-boundary siblings) for the actual
 proof the two paths agree bit-for-bit on the same input -- the whole point
 of an offline replica is worthless without that.
+
+## 2026-09-04: the real production run did not match this docstring's own
+## benchmark, and the actual cause was not the one first suspected
+
+The first real HYP-016 freeze attempt (`research/cex-activity-discovery-
+completion-v1`, after production deploy) exceeded `DEFAULT_MAX_EXTRACT_
+WALL_SECONDS` even for a SINGLE day of the 10-day range -- both over an
+SSH tunnel and, after redeploying to rule out tunnel latency, running
+directly on the production host with zero network hop to Postgres.
+Diagnosis (full writeup: `docs/research/cex-activity-discovery-
+completion-v1.md`'s own incident note) went through three real,
+evidence-gathering steps before changing anything, not a guess:
+
+1. `timescaledb_information.chunks` confirmed the relevant day's chunk
+   was already TimescaleDB-compressed (`add_compression_policy(...,
+   INTERVAL '1 day')`, migration 0024) -- this table's own `compress_
+   segmentby = 'exchange, market_type, symbol, capture_version'` means a
+   query that does not filter by `symbol` (this one never does) touches
+   roughly one compressed segment per symbol, not the "sequential/index
+   range scan" this module's own opening paragraph above describes.
+   That framing is accurate for same-day (uncompressed) data only --
+   which is ALL the benchmark below and every integration test in this
+   file ever exercises, and NONE of what any real HYP-016 run, being
+   retrospective by construction, will ever see.
+2. `EXPLAIN (VERBOSE, COSTS, SETTINGS)` (plan only) against the real
+   extract SELECT confirmed a `Custom Scan (ColumnarScan)` (TimescaleDB's
+   own decompression scan) and, importantly, NO separate `Sort` node
+   with or without the (at the time still-present) `ORDER BY symbol,
+   bucket_start` clause -- `compress_orderby` already gives the scan a
+   stable order, so that clause was never the cost driver, though it was
+   still removed below as a correct, independent simplification (the
+   final Parquet file is already deterministically sorted by the `COPY`
+   step's own `ORDER BY`).
+3. `EXPLAIN (ANALYZE, VERBOSE, BUFFERS, SETTINGS)` against that SAME real
+   compressed day, run in two steps (one hour under a 30s
+   `statement_timeout`, then the full day under 60s, per this project's
+   own "measure the narrowest slice first" discipline) measured
+   **1.36 seconds** execution time for the whole day, 736,703 rows.
+   Decisive: Postgres/decompression was never the bottleneck at all.
+
+That redirected the investigation to this function's own Python/DuckDB
+loop, where reading the code (not another benchmark) found the real
+cause: `duckdb_conn`'s batch INSERTs ran in DuckDB's own default
+autocommit mode, on an ON-DISK database, against a table with a
+`PRIMARY KEY (symbol, bucket_start)` -- meaning every one of the ~148
+per-day batches (`_EXTRACT_BATCH_SIZE=5_000`) paid its own commit and
+unique-index-maintenance cost, roughly 1,480 individual commits for
+HYP-016's own 10-day range, on a production container capped to `cpus:
+1.0`. Fixed by wrapping the whole batch-insert sequence in one explicit
+DuckDB transaction (see `extract_bars_to_parquet`'s own comment at the
+`BEGIN TRANSACTION` call) -- the standard DuckDB bulk-load pattern, and
+the actual fix, not the compression finding above (which is real and
+worth the new `test_offline_extract_matches_live_query_against_a_
+compressed_chunk` regression test, but was not itself the bottleneck
+this incident traced to). `ExtractManifest` also gained a phase-level
+timing breakdown (`time_to_first_batch_seconds`, `postgres_stream_
+seconds`, `python_conversion_seconds`, `duckdb_insert_seconds`,
+`parquet_copy_seconds`, `hash_seconds`) so a future slow run leaves its
+own diagnosis on the manifest instead of requiring a fresh round of
+ad-hoc production `EXPLAIN`s to re-derive it.
+
+**The benchmark quoted throughout this docstring (22.14s / 2.59M rows /
+654MB peak RSS) was measured against freshly-seeded, always-uncompressed
+test data, like every integration test in this file -- it structurally
+cannot represent what any real, retrospective HYP-016 run against
+already-compressed historical chunks will experience**, and should not
+be read as a production-scale performance guarantee on its own. Treat it
+as a correctness/memory-bound benchmark, not a timing one, until a
+fresh benchmark is run against genuinely compressed data at HYP-016's
+own real scale.
 """
 
 from __future__ import annotations
@@ -264,6 +340,23 @@ MAX_CANDIDATE_ROWS = 1_000_000
 
 _HASH_CHUNK_BYTES = 1024 * 1024
 
+# No ORDER BY here (colleague review, 2026-09-04, real-production
+# diagnosis of the extract's own slowness): the final Parquet output is
+# already deterministically ordered by the COPY step below (`COPY (SELECT
+# * FROM bars ORDER BY symbol, bucket_start) TO ...`), and chunk
+# non-overlap already guarantees no duplicate (symbol, bucket_start) pair
+# across chunks -- row arrival order from this SELECT has no effect on the
+# final file. Verified via `EXPLAIN (VERBOSE, COSTS, SETTINGS)` against
+# real production data (compressed chunk) that the plan is IDENTICAL with
+# or without this ORDER BY -- TimescaleDB's own compress_orderby already
+# gives the ColumnarScan a stable order, so this clause was not even
+# costing anything measurable there, but it is a fragile thing to depend
+# on (a different chunk/compression state could force a real Sort), and
+# removing a clause with zero purpose is a correct simplification either
+# way. See docs/research/cex-activity-discovery-completion-v1.md's own
+# "compressed-chunk extract" note for the fuller incident writeup -- the
+# ORDER BY was NOT the actual bottleneck found there (the batch-insert
+# transaction pattern below was); this is a real but secondary fix.
 _RAW_BARS_SQL = text("""
     SELECT symbol, bucket_start, close_price, buy_total_notional_usd, sell_total_notional_usd
     FROM timeseries.bybit_momentum_bars_1m
@@ -271,7 +364,6 @@ _RAW_BARS_SQL = text("""
       AND capture_version = :capture_version
       AND complete = true AND close_price > 0
       AND bucket_start >= :since AND bucket_start < :until
-    ORDER BY symbol, bucket_start
 """)
 
 # Ported from momentum_flow_bidirectional_burst_repository._CANDIDATE_EXTREME_MINUTES_SQL.
@@ -349,6 +441,25 @@ class ExtractManifest:
     parquet_bytes: int
     wall_seconds: float
     peak_rss_mb: float
+    # Phase-level timing breakdown (colleague review, 2026-09-04, real-
+    # production diagnosis: raw `SELECT count(*)` for one day of real,
+    # TimescaleDB-compressed production data completed in 0.27s, but this
+    # function's own full pipeline for the SAME day did not finish inside
+    # a 180s budget -- neither the Postgres query nor decompression turned
+    # out to be the cause; a real `EXPLAIN (ANALYZE, ...)` of the actual
+    # extract SELECT against that same compressed day measured 1.36s.
+    # These fields exist so any future slow run leaves its own breakdown
+    # on the manifest instead of requiring a fresh round of ad-hoc
+    # production diagnosis to find out which phase regressed. Default to
+    # 0.0 only for synthetic manifests built directly in tests that never
+    # call extract_bars_to_parquet itself -- the real constructor below
+    # always sets every one of these explicitly.
+    time_to_first_batch_seconds: float = 0.0
+    postgres_stream_seconds: float = 0.0
+    python_conversion_seconds: float = 0.0
+    duckdb_insert_seconds: float = 0.0
+    parquet_copy_seconds: float = 0.0
+    hash_seconds: float = 0.0
 
 
 def check_extract_row_count(count: int, max_extract_rows: int) -> None:
@@ -533,8 +644,38 @@ class OfflineBarsExtractRepository:
                 )
                 """
             )
+            # ONE explicit transaction spanning every batch insert across
+            # every chunk, not DuckDB's own default autocommit-per-
+            # statement (colleague review, 2026-09-04, real-production
+            # diagnosis): a real HYP-016-scale extract against real,
+            # TimescaleDB-compressed production data did not finish inside
+            # a 180s budget even though `EXPLAIN (ANALYZE, ...)` of the
+            # ACTUAL Postgres SELECT for the same day measured 1.36s --
+            # Postgres/decompression was never the bottleneck. This table
+            # is on-disk (not `:memory:`, see the comment above) with a
+            # `PRIMARY KEY`, so every one of the ~148 autocommitted
+            # per-batch INSERTs (at `_EXTRACT_BATCH_SIZE=5_000`) previously
+            # paid its own commit/durability and unique-index-maintenance
+            # cost -- roughly 1,480 individual commits for HYP-016's own
+            # 10-day range, under this container's own 1-CPU production
+            # limit. Wrapping the whole insert sequence in one transaction
+            # (committed once, right before the COPY step below) is the
+            # standard DuckDB bulk-load pattern and turns that into one
+            # commit total. If this raises partway through (a TimeoutError
+            # from check_extract_deadline, or anything else), the
+            # transaction is left uncommitted and implicitly discarded --
+            # `duckdb_conn.close()` in the `finally` block never commits an
+            # open transaction, and the whole on-disk `.duckdb` file is
+            # deleted immediately after regardless, so a partial extract
+            # can never masquerade as a complete one.
+            duckdb_conn.execute("BEGIN TRANSACTION")
 
             total_rows = 0
+            time_to_first_batch_seconds = 0.0
+            postgres_stream_seconds = 0.0
+            python_conversion_seconds = 0.0
+            duckdb_insert_seconds = 0.0
+            first_batch_seen = False
             # Chunked over [since - 24h, until), not [since, until): this
             # extractor copies rows, it does not compute a per-chunk window
             # function the way the live path does, so it never needs to
@@ -591,7 +732,24 @@ class OfflineBarsExtractRepository:
                     # at most _EXTRACT_BATCH_SIZE rows ever exist in Python
                     # at once for the whole extract, regardless of how many
                     # days or how many total rows this call covers.
+                    #
+                    # Phase timers (colleague review, 2026-09-04): `pending`
+                    # marks the instant this loop last handed control back
+                    # to `async for` awaiting the next batch -- the delta
+                    # between that and actually receiving one is real time
+                    # spent waiting on Postgres (query execution +
+                    # decompression + network), attributed to
+                    # `postgres_stream_seconds` below. `time_to_first_batch_
+                    # seconds` is that same delta for the very first batch
+                    # of the whole extract, isolating "Postgres/decompression
+                    # slow to even start" from "many small batches add up."
+                    pending = _now()
                     async for batch in result.partitions(_EXTRACT_BATCH_SIZE):
+                        received_at = _now()
+                        postgres_stream_seconds += received_at - pending
+                        if not first_batch_seen:
+                            first_batch_seen = True
+                            time_to_first_batch_seconds = received_at - started_at
                         total_rows += len(batch)
                         check_extract_row_count(total_rows, max_extract_rows)
                         # Columnar UNNEST insert, not row-by-row
@@ -614,6 +772,13 @@ class OfflineBarsExtractRepository:
                         # inserted -- the PRIMARY KEY stays as a real
                         # integrity check, and a genuine duplicate now
                         # raises loudly instead of being silently dropped.
+                        symbols = [str(row.symbol) for row in batch]
+                        bucket_starts = [row.bucket_start for row in batch]
+                        close_prices = [float(row.close_price) for row in batch]
+                        buy_notionals = [float(row.buy_total_notional_usd) for row in batch]
+                        sell_notionals = [float(row.sell_total_notional_usd) for row in batch]
+                        insert_started_at = _now()
+                        python_conversion_seconds += insert_started_at - received_at
                         duckdb_conn.execute(
                             """
                             INSERT INTO bars
@@ -626,21 +791,17 @@ class OfflineBarsExtractRepository:
                                     UNNEST(?::DOUBLE[]) AS sell_total_notional_usd
                             )
                             """,
-                            [
-                                [str(row.symbol) for row in batch],
-                                [row.bucket_start for row in batch],
-                                [float(row.close_price) for row in batch],
-                                [float(row.buy_total_notional_usd) for row in batch],
-                                [float(row.sell_total_notional_usd) for row in batch],
-                            ],
+                            [symbols, bucket_starts, close_prices, buy_notionals, sell_notionals],
                         )
+                        pending = _now()
+                        duckdb_insert_seconds += pending - insert_started_at
                         # Checked after every batch, not just once per
                         # chunk -- a chunk whose own PROCESSING (not just
                         # its Postgres query) runs long, e.g. many batches
                         # each individually fast but numerous, must still
                         # be caught before it silently exceeds the budget
                         # (colleague review, 2026-09-03 follow-up round 3).
-                        check_extract_deadline(_now(), deadline, max_wall_seconds=max_wall_seconds)
+                        check_extract_deadline(pending, deadline, max_wall_seconds=max_wall_seconds)
 
             # The deadline is enforced once more here, after every chunk has
             # been fully read and inserted, before starting the local
@@ -657,11 +818,17 @@ class OfflineBarsExtractRepository:
             # benchmark in this module's own docstring measured the WHOLE
             # extract, COPY and hash included, at 22.14s for 2.59M rows).
             check_extract_deadline(_now(), deadline, max_wall_seconds=max_wall_seconds)
+            # Seals the one explicit transaction opened before the chunk
+            # loop above -- every batch insert across every chunk commits
+            # here, once, instead of each having already committed itself.
+            duckdb_conn.execute("COMMIT")
+            copy_started_at = _now()
             duckdb_conn.execute(
                 "COPY (SELECT * FROM bars ORDER BY symbol, bucket_start) "
                 "TO ? (FORMAT PARQUET, COMPRESSION ZSTD)",
                 [tmp_parquet_path.as_posix()],
             )
+            parquet_copy_seconds = _now() - copy_started_at
             check_extract_deadline(_now(), deadline, max_wall_seconds=max_wall_seconds)
             count_row = duckdb_conn.execute(
                 "SELECT count(*), count(DISTINCT symbol) FROM bars"
@@ -681,7 +848,9 @@ class OfflineBarsExtractRepository:
         # same fail-fast-rather-than-preempt-mid-flight reasoning as the
         # COPY checkpoint above.
         check_extract_deadline(_now(), deadline, max_wall_seconds=max_wall_seconds)
+        hash_started_at = _now()
         parquet_sha256 = _sha256_file(tmp_parquet_path)
+        hash_seconds = _now() - hash_started_at
         parquet_bytes = tmp_parquet_path.stat().st_size
         tmp_parquet_path.replace(output_path)
         wall_seconds = _now() - started_at
@@ -700,6 +869,12 @@ class OfflineBarsExtractRepository:
             parquet_bytes=parquet_bytes,
             wall_seconds=wall_seconds,
             peak_rss_mb=_peak_rss_mb(),
+            time_to_first_batch_seconds=time_to_first_batch_seconds,
+            postgres_stream_seconds=postgres_stream_seconds,
+            python_conversion_seconds=python_conversion_seconds,
+            duckdb_insert_seconds=duckdb_insert_seconds,
+            parquet_copy_seconds=parquet_copy_seconds,
+            hash_seconds=hash_seconds,
         )
 
 

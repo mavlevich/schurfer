@@ -417,6 +417,97 @@ async def test_offline_query_matches_live_query_on_identical_seeded_data(tmp_pat
         await engine.dispose()
 
 
+async def test_offline_extract_matches_live_query_against_a_compressed_chunk(
+    tmp_path: Path,
+) -> None:
+    """Colleague review, 2026-09-04, real-production incident: this
+    module's own docstring benchmark, and every OTHER test in this file,
+    seed fresh rows and extract them in the same test -- by construction,
+    TimescaleDB's own `add_compression_policy(..., INTERVAL '1 day')`
+    (migration 0024) never has a chance to apply, so none of them ever
+    exercise the one condition every real HYP-016 production run will
+    always hit: querying an ALREADY-COMPRESSED chunk. Confirmed against
+    real production data the same day this test was added: a raw
+    `SELECT count(*)` against a compressed day answered in 0.27s and a
+    real `EXPLAIN (ANALYZE, ...)` of the actual extract SELECT against
+    that same compressed day measured 1.36s -- compression itself was
+    NOT the production bottleneck found that day (the batch-insert
+    transaction pattern in `extract_bars_to_parquet` was), but nothing
+    before this test ever actually proved that by running the offline
+    path against genuinely compressed storage. This seeds a day of data,
+    explicitly compresses that chunk via `compress_chunk()` (not relying
+    on the background compression job's own schedule, which would make
+    this test non-deterministic), and proves the offline extract still
+    agrees bit-for-bit with the live path -- not just that it runs
+    without error."""
+    engine = await _connect_or_skip()
+    exchange = "test_bidir_offline_compressed"
+    try:
+        await _cleanup(engine, exchange=exchange)
+        symbol = "COMPRESSEDPARITYUSDT"
+        target = _START
+        await _seed_gapless_burst_window(engine, symbol=symbol, target=target, exchange=exchange)
+
+        # Explicitly compress the chunk covering target's own calendar day.
+        # Chunks partition purely by time (not by exchange), so this also
+        # compresses any other exchange's rows sharing that day -- safe,
+        # since TimescaleDB compression is transparent to query results,
+        # only to physical storage.
+        async with engine.begin() as connection:
+            await connection.execute(
+                text("""
+                    SELECT compress_chunk(chunk, if_not_compressed => true)
+                    FROM show_chunks(
+                        'timeseries.bybit_momentum_bars_1m',
+                        older_than => :chunk_end,
+                        newer_than => :chunk_start
+                    ) AS chunk
+                """),
+                {"chunk_start": target.date(), "chunk_end": target.date() + timedelta(days=1)},
+            )
+
+        since = target
+        until = target + timedelta(minutes=1)
+        min_volume_24h_usd = 1.0
+        extreme_threshold_pct = 10.0
+
+        live_repository = MomentumFlowBidirectionalBurstRepository(engine)
+        live_minutes = await live_repository.fetch_candidate_extreme_minutes(
+            exchange=exchange,
+            capture_version=_TEST_CAPTURE_VERSION,
+            market_type=_TEST_MARKET_TYPE,
+            since=since,
+            until=until,
+            min_volume_24h_usd=min_volume_24h_usd,
+            extreme_threshold_pct=extreme_threshold_pct,
+        )
+        # Sanity: the seeded burst is still real even read back from
+        # compressed storage.
+        assert len(live_minutes) == 1
+
+        extract_repository = OfflineBarsExtractRepository(engine)
+        manifest = await extract_repository.extract_bars_to_parquet(
+            exchange=exchange,
+            capture_version=_TEST_CAPTURE_VERSION,
+            market_type=_TEST_MARKET_TYPE,
+            since=since,
+            until=until,
+            output_path=tmp_path / "compressed_parity.parquet",
+        )
+        offline_minutes = fetch_candidate_extreme_minutes_offline(
+            manifest,
+            since=since,
+            until=until,
+            min_volume_24h_usd=min_volume_24h_usd,
+            extreme_threshold_pct=extreme_threshold_pct,
+        )
+
+        assert offline_minutes == live_minutes
+    finally:
+        await _cleanup(engine, exchange=exchange)
+        await engine.dispose()
+
+
 async def test_offline_query_matches_live_query_with_a_real_gap(tmp_path: Path) -> None:
     """A missing minute inside the trailing-24h window must reject the
     candidate on BOTH paths identically (observed_bars_24h != 1440) -- not
