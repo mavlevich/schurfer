@@ -1,6 +1,6 @@
 # Roadmap
 
-> Living document. Updated as we progress. Last refreshed 2026-09-01.
+> Living document. Updated as we progress. Last refreshed 2026-09-04.
 
 ## Current focus
 
@@ -8,9 +8,9 @@ Update only these four lines after every merge -- this is the fast-path
 status check, not a place for narrative.
 
 ```
-Current primary: research/cex-activity-discovery-completion-v1
-State: in_progress
-Next after current primary merges: research/cex-activity-discovery-result-v1
+Current primary: research/cex-activity-discovery-result-v1
+State: not_started
+Next after current primary merges: depends on HYP-016's own verdict -- see item 3 below
 User decision required: no
 ```
 
@@ -176,23 +176,54 @@ enabling change) slot.
    `TIMESTAMPTZ` throughout instead of bare `TIMESTAMP`. Wiring this into
    `cex_activity_discovery_report.py` itself, and actually re-running HYP-016
    against it, is the next item (4), not this one -- this PR is infra only.
-4. **`research/cex-activity-discovery-completion-v1` (current primary).**
-   Re-run HYP-016's
-   already-registered, pre-declared two-direction family (buy/sell,
-   Holm-corrected) on the now-computable denominator, full candidate universe,
-   the same already-viewed `2026-08-18` -> `2026-08-27` window (discovery-only,
+4. **[Done, `research/cex-activity-discovery-completion-v1`, PR #333,
+   merged 2026-09-04.]** Wires the offline denominator into
+   `cex_activity_discovery_report.py` itself and splits the CLI into
+   `--freeze-artifact` (the only mode that touches PostgreSQL, via one
+   `REPEATABLE READ` transaction spanning `fetch_exact_paths`' own
+   batches) and `--from-artifact` (pure render, zero PostgreSQL, byte-
+   identical across repeated calls). Across two colleague-review rounds,
+   also closed: non-authoritative-artifact rejection (a losing cohort-lock
+   race or a crash between publish and claim), a `contract_fingerprint()`
+   binding every estimand/decision-rule constant (plus the three
+   operational thresholds that pick the candidate universe) into `cohort`
+   itself so a later parameter/code change can never silently collide with
+   an existing frozen result, per-reason missingness breakdown in the
+   funnel, and a crash-durable cohort-drift lock. **This PR is infra
+   only** -- it does not perform the actual formal freeze or record any
+   verdict. That is `research/cex-activity-discovery-result-v1` (current
+   primary): re-run HYP-016's already-registered, pre-declared
+   two-direction family (buy/sell, Holm-corrected) for real, via
+   `--freeze-artifact` through the SSH tunnel against production, on the
+   same already-viewed `2026-08-18` -> `2026-08-27` window (discovery-only,
    permanently -- see HYP-016's own instruction not to re-view it as
-   confirmation). Selects at most one direction to freeze for a future
-   untouched forward cutoff, or closes the idea.
-5. **Then: `research/liquidation-maker-upper-bound-v1`.** Binance/Bybit
-   liquidation capture is live in production
-   (`schurfer-liquidation-capture-binance`/`-bybit`, both healthy) -- test
-   maker-style reversion on the accumulated liquidation-event history itself,
-   not the 2 live-paper trades this idea started from: independent episodes,
-   exact venue, a limit level fixed in advance, price merely touching that
-   level counted only as an optimistic potential fill (never an actual one),
-   costs, MFE/MAE, adverse selection. A negative result closes the direction
-   before any L2/shadow-capture infrastructure gets built for it.
+   confirmation), then record the real verdict in
+   `docs/research/discovery-ledger.md` and update this file's own
+   "Current focus" block. What each verdict does next, agreed 2026-09-04,
+   never decided after seeing the numbers: `forward_candidate` -> freeze
+   exactly one direction and its parameters for a new, untouched forward
+   window; `no_evidence` -> close HYP-016, do not build CEXTrack-style
+   capture infrastructure for it; `insufficient_data` -> diagnose whether
+   the gap is genuinely too few episodes or a data-quality problem before
+   deciding anything further, and never change the threshold parameters
+   on this already-viewed window to try to clear the floor;
+   `inconclusive` -> park the direction, or start a prospective
+   (forward-only) cohort instead of re-searching parameters on the
+   already-viewed window.
+5. **[Done, `research/liquidation-maker-upper-bound-v1`, PR #332,
+   merged.]** Binance/Bybit liquidation capture is live in production
+   (`schurfer-liquidation-capture-binance`/`-bybit`, both healthy) -- tests
+   maker-style reversion on the accumulated liquidation-event history
+   itself, not the 2 live-paper trades this idea started from: independent
+   episodes, exact venue, a limit level fixed in advance, price merely
+   touching that level counted only as an optimistic potential fill (never
+   an actual one), costs, MFE/MAE, adverse selection. **The actual
+   numeric result (positive/negative upper bound) has not yet been
+   verified/recorded against real production data** -- running the report
+   for real and recording its verdict is separate, still-pending follow-up
+   work, not part of this landed PR. A negative result closes the
+   direction before any L2/shadow-capture infrastructure gets built for
+   it.
 6. **Then, only if 5 is positive: bounded shadow capture** (BBO/L2, queue-aware
    potential fills, partial fills, opportunity loss, capacity) -- still no real
    orders.
@@ -351,17 +382,17 @@ report`/`make prod-serial-pump-regimes-report`, no required bound -- an
 9. **Passively maturing in parallel, no PR needed yet:**
    `research/pump-short-maker-entry-prospective-v1` (registered, item 11
    below) around `2026-09-21`; `source_lead_forward_cohort_v1` (registered,
-   item 12 below) around `2026-10-01`. Freezing and implementing each
-   one's evaluator/report plumbing against synthetic fixtures now, before
-   either cohort matures, is exactly the right order -- the danger this
-   codebase's prospective-research discipline actually guards against is
-   building or changing an evaluator _after_ real, mature outcomes are
-   already visible (see `source_lead_forward_cohort_v1`'s own
-   `resolve_episode`/`formal_verdict`, already frozen this way, before
-   this same cohort's own start date). What must wait is the formal run:
-   reading either cohort's real result exactly once, at its own
-   pre-declared checkpoint/evidence floor, never earlier and never
-   re-peeked.
+   item 12 below), cohort start `2026-09-03`, earliest possible read
+   around `2026-10-01`. **`source_lead_forward_cohort_v1`'s own evaluator/
+   report/CLI plumbing is done** (`research/source-lead-forward-cohort-
+plumbing-v1`, PR #331, merged) -- `source_lead_forward_cohort.py`'s
+   `resolve_episode`/`formal_verdict` were frozen against synthetic
+   fixtures before this cohort's own start date, exactly the order this
+   codebase's prospective-research discipline requires (never build or
+   change an evaluator _after_ real, mature outcomes are already visible).
+   What must still wait is the formal run: reading either cohort's real
+   result exactly once, at its own pre-declared checkpoint/evidence floor,
+   never earlier and never re-peeked.
 10. **Deferred, explicitly not silently dropped: LBank-first sequencing.**
     Named a registered money-first direction elsewhere in this document,
     but it sits behind several data PRs and still has no exact native
