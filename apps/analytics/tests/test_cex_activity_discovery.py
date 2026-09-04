@@ -25,7 +25,7 @@ from schurfer_analytics.cex_activity_discovery import (
 from schurfer_analytics.cex_activity_discovery_report import (
     build_parser,
     check_path_request_count,
-    generate_report,
+    freeze_dataset,
 )
 from schurfer_analytics.momentum_flow_bidirectional_burst_report import (
     DEFAULT_EXTREME_THRESHOLD_PCT,
@@ -49,11 +49,31 @@ def test_cex_v1_primary_threshold_cannot_be_overridden_from_the_cli() -> None:
         "--code-revision",
         "84d9388",
         "--no-working-tree-dirty",
+        "--freeze-artifact",
     ]
     parsed = build_parser().parse_args(base_args)
     assert parsed.extreme_threshold_pct == DEFAULT_EXTREME_THRESHOLD_PCT
     with pytest.raises(SystemExit):
         build_parser().parse_args([*base_args, "--extreme-threshold-pct", "9"])
+
+
+# --- freeze/evaluate CLI split (colleague review, 2026-09-03) -------------
+
+
+def test_freeze_artifact_and_from_artifact_are_mutually_exclusive_and_required() -> None:
+    required_args = ["--code-revision", "deadbeef", "--no-working-tree-dirty"]
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(required_args)  # neither given
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(
+            [*required_args, "--freeze-artifact", "--from-artifact", "abc123"]
+        )  # both given
+    parsed = build_parser().parse_args([*required_args, "--freeze-artifact"])
+    assert parsed.freeze_artifact is True
+    assert parsed.from_artifact is None
+    parsed = build_parser().parse_args([*required_args, "--from-artifact", "abc123"])
+    assert parsed.freeze_artifact is False
+    assert parsed.from_artifact == "abc123"
 
 
 # --- HYP-016's own frozen window (colleague review, 2026-09-03) -----------
@@ -69,12 +89,14 @@ def test_discovery_window_matches_the_registered_ledger_row() -> None:
 
 
 def test_build_parser_defaults_since_and_until_to_the_frozen_window() -> None:
-    args = build_parser().parse_args(["--code-revision", "deadbeef", "--no-working-tree-dirty"])
+    args = build_parser().parse_args(
+        ["--code-revision", "deadbeef", "--no-working-tree-dirty", "--freeze-artifact"]
+    )
     assert args.since == DISCOVERY_SINCE
     assert args.until == DISCOVERY_UNTIL
 
 
-async def test_generate_report_rejects_a_since_other_than_the_frozen_window() -> None:
+async def test_freeze_dataset_rejects_a_since_other_than_the_frozen_window() -> None:
     args = build_parser().parse_args(
         [
             "--since",
@@ -82,13 +104,14 @@ async def test_generate_report_rejects_a_since_other_than_the_frozen_window() ->
             "--code-revision",
             "deadbeef",
             "--no-working-tree-dirty",
+            "--freeze-artifact",
         ]
     )
     with pytest.raises(ValueError, match="must equal the frozen"):
-        await generate_report(args)
+        await freeze_dataset(args)
 
 
-async def test_generate_report_rejects_an_until_other_than_the_frozen_window() -> None:
+async def test_freeze_dataset_rejects_an_until_other_than_the_frozen_window() -> None:
     args = build_parser().parse_args(
         [
             "--until",
@@ -96,10 +119,23 @@ async def test_generate_report_rejects_an_until_other_than_the_frozen_window() -
             "--code-revision",
             "deadbeef",
             "--no-working-tree-dirty",
+            "--freeze-artifact",
         ]
     )
     with pytest.raises(ValueError, match="must equal the frozen"):
-        await generate_report(args)
+        await freeze_dataset(args)
+
+
+async def test_freeze_dataset_rejects_a_dirty_working_tree() -> None:
+    """--freeze-artifact requires --no-working-tree-dirty: a formal freeze
+    that becomes a permanent record must not be produced from an
+    uncommitted tree. Checked before the since/until check, so a dirty
+    tree is caught regardless of what window was requested."""
+    args = build_parser().parse_args(
+        ["--code-revision", "deadbeef", "--working-tree-dirty", "--freeze-artifact"]
+    )
+    with pytest.raises(ValueError, match="requires --no-working-tree-dirty"):
+        await freeze_dataset(args)
 
 
 def _episode(
