@@ -76,6 +76,23 @@ REPORT_VERSION = "cex_activity_discovery_report_v1"
 CANDIDATE_QUERY_VERSION = "strict_5_of_5_and_1440_of_1440_range_windows_v1"
 INTERPRETATION = "discovery_only_max_one_forward_candidate_no_trading_authorization"
 
+# Generous headroom guard, this codebase's usual fail-loud-not-silently-
+# large convention -- colleague review, 2026-09-03 (research/cex-activity-
+# discovery-completion-v1 planning): the total signal+control path-request
+# count was previously unbounded (implicitly capped only by however many
+# candidate minutes decluster_episodes happened to produce), checked here
+# BEFORE either fetch_exact_paths call, not after the fact.
+DEFAULT_MAX_PATH_REQUESTS = 200_000
+
+
+def check_path_request_count(count: int, max_path_requests: int) -> None:
+    if count > max_path_requests:
+        raise ValueError(
+            f"report would issue {count} signal+control path requests, over "
+            f"--max-path-requests={max_path_requests}; investigate before raising the "
+            "bound and silently evaluating an unexpectedly large result"
+        )
+
 
 @dataclass(frozen=True)
 class CexActivityManifest:
@@ -151,6 +168,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--since", type=parse_utc_datetime, default=DISCOVERY_SINCE)
     parser.add_argument("--until", type=parse_utc_datetime, default=DISCOVERY_UNTIL)
     parser.add_argument("--max-candidate-minutes", type=int, default=DEFAULT_MAX_CANDIDATE_MINUTES)
+    parser.add_argument("--max-path-requests", type=int, default=DEFAULT_MAX_PATH_REQUESTS)
     parser.add_argument("--code-revision", required=True)
     dirty = parser.add_mutually_exclusive_group(required=True)
     dirty.add_argument("--working-tree-dirty", action="store_true")
@@ -286,12 +304,12 @@ async def generate_report(args: argparse.Namespace) -> CexActivityDiscoveryRepor
     burst_repository = MomentumFlowBidirectionalBurstRepository.from_url(os.environ["DATABASE_URL"])
     try:
         database_now = await path_repository.database_now()
-        maturity_at = report_maturity_at(args.until)
-        if database_now < maturity_at:
-            raise ValueError(
-                f"report window is immature: database now {database_now.isoformat()}, "
-                f"requires at least {maturity_at.isoformat()}"
-            )
+        # Candidate-minute detection touches only the already-fully-past
+        # discovery window itself (DISCOVERY_UNTIL is not gated by any
+        # forward-looking maturity requirement -- the candidates it finds
+        # are burst-trigger minutes, not outcome paths), so it is safe to
+        # run before the real maturity check below, which needs the actual
+        # request set this run will build to compute correctly.
         candidate_minutes = await burst_repository.fetch_candidate_extreme_minutes(
             exchange=args.exchange,
             market_type=args.market_type,
@@ -334,13 +352,13 @@ async def generate_report(args: argparse.Namespace) -> CexActivityDiscoveryRepor
             for episode in burst_episodes
         )
 
+        # Both request sets are built (pure, no I/O) BEFORE either is
+        # fetched -- colleague review, 2026-09-03 (research/cex-activity-
+        # discovery-completion-v1 planning): the real maturity check below
+        # needs the actual entry_at of every request this run depends on,
+        # not just --until, since a control can be offset up to
+        # CONTROL_SEARCH_DAYS forward of its own episode.
         signal_requests = tuple(signal_request(episode) for episode in outcome_episodes)
-        signal_paths = await path_repository.fetch_exact_paths(
-            exchange=args.exchange,
-            market_type=args.market_type,
-            capture_version=args.capture_version,
-            requests=signal_requests,
-        )
         controls_by_episode = build_control_requests(
             outcome_episodes,
             since=args.since,
@@ -348,6 +366,29 @@ async def generate_report(args: argparse.Namespace) -> CexActivityDiscoveryRepor
         )
         control_request_rows = tuple(
             request for rows in controls_by_episode.values() for request in rows
+        )
+
+        total_path_requests = len(signal_requests) + len(control_request_rows)
+        check_path_request_count(total_path_requests, args.max_path_requests)
+
+        all_entry_ats = tuple(
+            request.entry_at for request in (*signal_requests, *control_request_rows)
+        )
+        if all_entry_ats:
+            maturity_at = report_maturity_at(max(all_entry_ats))
+            if database_now < maturity_at:
+                raise ValueError(
+                    f"report window is immature: database now {database_now.isoformat()}, "
+                    f"requires at least {maturity_at.isoformat()} (the latest of "
+                    f"{total_path_requests} signal+control requests' own entry_at, plus "
+                    f"{OUTCOME_HORIZON_MINUTES} minutes and one bar close)"
+                )
+
+        signal_paths = await path_repository.fetch_exact_paths(
+            exchange=args.exchange,
+            market_type=args.market_type,
+            capture_version=args.capture_version,
+            requests=signal_requests,
         )
         control_paths = await path_repository.fetch_exact_paths(
             exchange=args.exchange,

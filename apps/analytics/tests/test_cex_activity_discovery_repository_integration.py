@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import time
 from datetime import UTC, datetime, timedelta
 
 import pytest
 from schurfer_analytics.cex_activity_discovery import OUTCOME_HORIZON_MINUTES, PathRequest
-from schurfer_analytics.cex_activity_discovery_repository import CexActivityDiscoveryRepository
+from schurfer_analytics.cex_activity_discovery_repository import (
+    PATH_BATCH_SIZE,
+    CexActivityDiscoveryRepository,
+    report_maturity_at,
+)
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
@@ -124,3 +129,89 @@ async def test_fetch_exact_paths_requires_all_1440_native_minutes() -> None:
     finally:
         await _cleanup(engine)
         await engine.dispose()
+
+
+async def test_fetch_exact_paths_rejects_over_wall_time_budget() -> None:
+    """Colleague review, 2026-09-03 (research/cex-activity-discovery-
+    completion-v1 planning): mirrors momentum_flow_bidirectional_burst_
+    offline_repository.py's own wall-time-budget test -- max_wall_seconds=0.0
+    means the deadline is already in the past by the time the very first
+    per-batch check runs."""
+    engine = await _connect_or_skip()
+    try:
+        repository = CexActivityDiscoveryRepository(engine)
+        request = PathRequest("signal:1", _SYMBOL, _TRIGGER_AT, _TRIGGER_AT + timedelta(minutes=1))
+        with pytest.raises(TimeoutError, match="max_wall_seconds"):
+            await repository.fetch_exact_paths(
+                exchange=_TEST_EXCHANGE,
+                market_type=_TEST_MARKET_TYPE,
+                capture_version=_TEST_CAPTURE_VERSION,
+                requests=(request,),
+                max_wall_seconds=0.0,
+            )
+    finally:
+        await engine.dispose()
+
+
+async def test_fetch_exact_paths_enforces_the_deadline_across_multiple_batches() -> None:
+    """The same deadline persists across several batches, not a fresh
+    per-batch budget -- a fake `_now` clock (the function's own private
+    testing seam) lets the first few pre-batch checks pass with small,
+    real-looking values, then jumps far past the deadline, proving the
+    check fires at a LATER batch than the very first one without racing
+    real wall-clock time. Three batches' worth of requests forces at least
+    3 pre-batch checks (PATH_BATCH_SIZE=200)."""
+    engine = await _connect_or_skip()
+    try:
+        repository = CexActivityDiscoveryRepository(engine)
+        requests = tuple(
+            PathRequest(f"signal:{i}", _SYMBOL, _TRIGGER_AT, _TRIGGER_AT + timedelta(minutes=1))
+            for i in range(2 * PATH_BATCH_SIZE + 1)  # forces 3 batches
+        )
+
+        real_start = time.monotonic()
+        call_count = 0
+
+        def fake_now() -> float:
+            nonlocal call_count
+            call_count += 1
+            if call_count <= 2:
+                return real_start + call_count * 0.001
+            return real_start + 10_000.0
+
+        with pytest.raises(TimeoutError, match="max_wall_seconds"):
+            await repository.fetch_exact_paths(
+                exchange=_TEST_EXCHANGE,
+                market_type=_TEST_MARKET_TYPE,
+                capture_version=_TEST_CAPTURE_VERSION,
+                requests=requests,
+                max_wall_seconds=5.0,
+                _now=fake_now,
+            )
+        # Sanity: the fake clock's early, real-looking values were actually
+        # consumed (proving this exercised real batch processing before
+        # the jump, not an immediate pre-first-batch failure).
+        assert call_count > 1
+    finally:
+        await engine.dispose()
+
+
+# --- report_maturity_at (colleague review, 2026-09-03) ---------------------
+
+
+def test_report_maturity_at_adds_horizon_and_one_minute_to_the_latest_entry() -> None:
+    latest_entry_at = datetime(2026, 8, 27, 0, 1, tzinfo=UTC)
+    maturity = report_maturity_at(latest_entry_at)
+    assert maturity == latest_entry_at + timedelta(minutes=OUTCOME_HORIZON_MINUTES + 1)
+
+
+def test_report_maturity_at_reflects_a_control_offset_past_the_window() -> None:
+    """The exact scenario this fix closes: a control request offset up to
+    CONTROL_SEARCH_DAYS forward of an episode near the discovery window's
+    own end lands well past `until` -- report_maturity_at must be computed
+    from THAT entry_at, not from `until` itself."""
+    until = datetime(2026, 8, 27, tzinfo=UTC)
+    control_entry_at = until + timedelta(days=6, minutes=1)  # a real, in-window-search offset
+    old_naive_maturity = until + timedelta(minutes=OUTCOME_HORIZON_MINUTES + 1)
+    real_maturity = report_maturity_at(control_entry_at)
+    assert real_maturity > old_naive_maturity

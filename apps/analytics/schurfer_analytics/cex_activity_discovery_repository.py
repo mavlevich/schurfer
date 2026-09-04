@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
@@ -18,11 +19,33 @@ from .cex_activity_discovery import (
 from .outcome_repository import async_database_url
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
 PATH_BATCH_SIZE = 200
 PATH_QUERY_VERSION = "cex_activity_exact_native_path_v1"
+# radar_outcome_discovery_repository.py also imports this exact string
+# constant (its own SET statement_timeout call passes it as-is) -- kept
+# unchanged so that module's own unrelated behavior stays untouched.
+# REPORT_STATEMENT_TIMEOUT_MS below is the same 300s expressed as an int,
+# used only by this module's own deadline-capping arithmetic (see
+# fetch_exact_paths), which needs a number, not a Postgres interval string.
 REPORT_STATEMENT_TIMEOUT = "300s"
+REPORT_STATEMENT_TIMEOUT_MS = 300_000
+
+# Colleague review, 2026-09-03 (research/cex-activity-discovery-completion-v1
+# planning): fetch_exact_paths previously had no budget covering its own
+# TOTAL runtime across every batch -- REPORT_STATEMENT_TIMEOUT_MS only
+# bounded each individual batch's own query. Mirrors the exact deadline
+# pattern momentum_flow_bidirectional_burst_offline_repository.py's own
+# extract_bars_to_parquet already established (colleague review, same day,
+# earlier round on that module): one deadline computed once, checked
+# before every batch, each batch's own statement_timeout capped to
+# whatever time is actually left rather than the fixed value regardless of
+# how little time remains. 15 minutes is generous for even several
+# thousand path requests at PATH_BATCH_SIZE -- HYP-016's own real request
+# count (bounded by MAX_PATH_REQUESTS at the report layer) is far smaller
+# than the scale that would ever approach this budget.
+DEFAULT_PATH_MAX_WALL_SECONDS = 15 * 60
 
 
 _PATH_STATEMENT = text("""
@@ -80,6 +103,20 @@ _PATH_STATEMENT = text("""
     """)
 
 
+def check_path_deadline(now: float, deadline: float, *, max_wall_seconds: float) -> None:
+    """`now`/`deadline` are `time.monotonic()`-comparable floats. Checked
+    once per batch, against the SAME deadline computed once at
+    `fetch_exact_paths`'s own start, not a fresh per-batch budget."""
+    if now >= deadline:
+        raise TimeoutError(
+            f"fetch_exact_paths exceeded its own max_wall_seconds={max_wall_seconds} "
+            "budget -- no single batch's own statement_timeout alone catches a runaway "
+            "TOTAL fetch across many batches; narrow the request count, raise the bound "
+            "explicitly, or investigate why this run is taking far longer than normal "
+            "rather than letting it hold a production connection pool slot indefinitely"
+        )
+
+
 class CexActivityDiscoveryRepository:
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
@@ -110,13 +147,33 @@ class CexActivityDiscoveryRepository:
         capture_version: str,
         requests: Sequence[PathRequest],
         batch_size: int = PATH_BATCH_SIZE,
+        max_wall_seconds: float = DEFAULT_PATH_MAX_WALL_SECONDS,
+        _now: Callable[[], float] = time.monotonic,
     ) -> dict[str, ExactPricePath]:
+        """`_now` is a private testing seam (defaults to `time.monotonic`):
+        lets a test substitute a controlled fake clock to prove the
+        deadline survives past the first pre-batch check, deterministically,
+        without racing real wall-clock time against an artificially slow
+        batch -- same pattern established in
+        momentum_flow_bidirectional_burst_offline_repository.py's own
+        extract_bars_to_parquet."""
         if batch_size <= 0:
             raise ValueError("path batch size must be positive")
         if len({item.request_id for item in requests}) != len(requests):
             raise ValueError("path request ids must be unique")
+        started_at = _now()
+        deadline = started_at + max_wall_seconds
         paths: dict[str, ExactPricePath] = {}
         for start in range(0, len(requests), batch_size):
+            now = _now()
+            check_path_deadline(now, deadline, max_wall_seconds=max_wall_seconds)
+            # This batch's own statement_timeout is capped at whatever time
+            # is ACTUALLY left in the overall budget, not the fixed
+            # REPORT_STATEMENT_TIMEOUT_MS regardless of how little time
+            # remains -- max(1, ...) since Postgres treats a statement_
+            # timeout of exactly 0 as DISABLED, the opposite of what a
+            # near-zero remaining budget should mean here.
+            remaining_ms = max(1, min(REPORT_STATEMENT_TIMEOUT_MS, int((deadline - now) * 1000)))
             batch = tuple(requests[start : start + batch_size])
             parameters: dict[str, object] = {
                 "exchange": exchange,
@@ -142,7 +199,7 @@ class CexActivityDiscoveryRepository:
                 await connection.execute(text("SET TRANSACTION READ ONLY"))
                 await connection.execute(
                     text("SELECT set_config('statement_timeout', :timeout, true)"),
-                    {"timeout": REPORT_STATEMENT_TIMEOUT},
+                    {"timeout": f"{remaining_ms}ms"},
                 )
                 result = await connection.execute(_PATH_STATEMENT, parameters)
                 rows = result.all()
@@ -166,5 +223,18 @@ class CexActivityDiscoveryRepository:
         await self._engine.dispose()
 
 
-def report_maturity_at(until: datetime) -> datetime:
-    return until + timedelta(minutes=OUTCOME_HORIZON_MINUTES + 1)
+def report_maturity_at(latest_request_entry_at: datetime) -> datetime:
+    """Colleague review, 2026-09-03 (research/cex-activity-discovery-
+    completion-v1 planning): this previously took `until` (the discovery
+    window's own exclusive end) directly, silently assuming every
+    request's own entry_at falls at or before it. Two things break that
+    assumption -- an episode's own entry_at is `trigger_at + 1 minute`,
+    which for a burst triggered in the LAST minute before `until` can land
+    strictly past it, and control requests can be offset up to
+    CONTROL_SEARCH_DAYS forward of their own episode. The caller must pass
+    the actual maximum entry_at across EVERY signal and control request
+    this run will fetch (`max(request.entry_at for request in ...)`), not
+    `until` -- maturity is "the latest real outcome window this run
+    depends on has fully closed", not "the discovery window's own
+    boundary plus the standard horizon"."""
+    return latest_request_entry_at + timedelta(minutes=OUTCOME_HORIZON_MINUTES + 1)

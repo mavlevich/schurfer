@@ -22,12 +22,22 @@ from schurfer_analytics.cex_activity_discovery import (
     select_matched_pairs,
     signal_request,
 )
-from schurfer_analytics.cex_activity_discovery_report import build_parser, generate_report
+from schurfer_analytics.cex_activity_discovery_report import (
+    build_parser,
+    check_path_request_count,
+    generate_report,
+)
 from schurfer_analytics.momentum_flow_bidirectional_burst_report import (
     DEFAULT_EXTREME_THRESHOLD_PCT,
 )
 
 BASE = datetime(2026, 8, 17, 12, 0, tzinfo=UTC)
+
+
+def test_check_path_request_count_rejects_over_limit() -> None:
+    with pytest.raises(ValueError, match="over --max-path-requests"):
+        check_path_request_count(11, 10)
+    check_path_request_count(10, 10)  # exactly at the cap does not raise
 
 
 def test_cex_v1_primary_threshold_cannot_be_overridden_from_the_cli() -> None:
