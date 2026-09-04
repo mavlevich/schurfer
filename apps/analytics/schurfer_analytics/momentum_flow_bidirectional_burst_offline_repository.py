@@ -469,6 +469,16 @@ class OfflineBarsExtractRepository:
             )
         )
 
+    async def close(self) -> None:
+        # Colleague review, 2026-09-04 (research/cex-activity-discovery-
+        # completion-v1 wiring in the offline denominator): this class had
+        # no way to dispose the engine `from_url` creates -- every other
+        # repository in this codebase (e.g. CexActivityDiscoveryRepository)
+        # exposes this exact one-liner so a caller's own finally block can
+        # release the connection pool deterministically instead of relying
+        # on GC.
+        await self._engine.dispose()
+
     async def extract_bars_to_parquet(
         self,
         *,

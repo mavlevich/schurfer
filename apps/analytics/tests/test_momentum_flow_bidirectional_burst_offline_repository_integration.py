@@ -191,6 +191,18 @@ async def test_extract_bars_to_parquet_writes_readable_rows(tmp_path: Path) -> N
         await engine.dispose()
 
 
+async def test_from_url_repository_can_be_closed() -> None:
+    """Colleague review, 2026-09-04 (research/cex-activity-discovery-
+    completion-v1 wiring in the offline denominator): from_url() creates
+    its own engine, and until this fix there was no way to dispose it --
+    every other repository in this codebase exposes close() for exactly
+    this. SQLAlchemy engines connect lazily, so neither from_url() nor
+    close() needs a real Postgres to be reachable -- this always runs,
+    unlike the rest of this file's own _connect_or_skip-gated tests."""
+    repository = OfflineBarsExtractRepository.from_url(TEST_DATABASE_URL)
+    await repository.close()
+
+
 async def test_extract_bars_to_parquet_rejects_since_after_until(tmp_path: Path) -> None:
     engine = await _connect_or_skip()
     try:

@@ -1,0 +1,654 @@
+"""Synthetic-fixture tests for cex_activity_discovery_dataset_artifact.py
+(research/cex-activity-discovery-completion-v1).
+
+No real qualified freeze exists yet (HYP-016's own discovery window is
+already fully in the past, but the freeze/evaluate CLI split this module
+supports has not run for real) -- exercised here against synthetic
+`OutcomeSignalEpisode`/`ExactPricePath`/`PathRequest` fixtures, mirroring
+this codebase's own established discipline of testing a frozen artifact
+contract before any real invocation depends on it.
+"""
+
+from __future__ import annotations
+
+import json
+from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
+
+import pytest
+from schurfer_analytics.cex_activity_discovery import (
+    ExactPricePath,
+    OutcomeSignalEpisode,
+    PathRequest,
+)
+from schurfer_analytics.cex_activity_discovery_dataset_artifact import (
+    DATASET_NAME,
+    DATASET_VERSION,
+    ROW_ID_FIELD,
+    ROW_ORDER,
+    SCHEMA_VERSION,
+    CohortDriftDetectedError,
+    NonAuthoritativeArtifactError,
+    WrongDatasetArtifactError,
+    _cohort_lock_path,
+    build_cohort,
+    build_rows,
+    claim_authoritative_fingerprint,
+    freeze,
+    read,
+    read_authoritative_fingerprint,
+)
+from schurfer_analytics.research_dataset_artifact import (
+    ArtifactWriteOutcome,
+    ResearchDatasetArtifactCorruptError,
+    write_dataset_artifact,
+)
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+_BASE = datetime(2026, 8, 18, 12, 0, tzinfo=UTC)
+
+
+def _episode(
+    episode_id: int, *, symbol: str = "TESTUSDT", direction: str = "buy"
+) -> OutcomeSignalEpisode:
+    trigger_at = _BASE + timedelta(minutes=episode_id)
+    return OutcomeSignalEpisode(
+        episode_id=episode_id,
+        signal_id=f"cex_test:{episode_id}",
+        source="cex_buy_burst_v1",
+        exchange="bybit",
+        symbol=symbol,
+        direction=direction,
+        trigger_at=trigger_at,
+        entry_at=trigger_at + timedelta(minutes=1),
+        signal_value=12.5,
+    )
+
+
+def _resolved_path(request_id: str, *, symbol: str = "TESTUSDT") -> ExactPricePath:
+    entry_at = _BASE + timedelta(minutes=1)
+    return ExactPricePath(
+        request_id=request_id,
+        symbol=symbol,
+        trigger_at=_BASE,
+        entry_at=entry_at,
+        entry_price=100.0,
+        observed_minutes=1440,
+        max_high=110.0,
+        min_low=95.0,
+        first_up_25_at=None,
+        first_down_25_at=None,
+    )
+
+
+def _unresolved_path(request_id: str) -> ExactPricePath:
+    return ExactPricePath(
+        request_id=request_id,
+        symbol="TESTUSDT",
+        trigger_at=_BASE,
+        entry_at=_BASE + timedelta(minutes=1),
+        entry_price=None,
+        observed_minutes=0,
+        max_high=None,
+        min_low=None,
+        first_up_25_at=None,
+        first_down_25_at=None,
+    )
+
+
+def _cohort() -> dict[str, object]:
+    return build_cohort(
+        hypothesis_id="HYP-016",
+        since=datetime(2026, 8, 18, tzinfo=UTC),
+        until_exclusive=datetime(2026, 8, 27, tzinfo=UTC),
+        exchange="bybit",
+        market_type="linear",
+        capture_version="test_capture_v1",
+        directions=("buy", "sell"),
+        control_boundary_policy_version="within_discovery_window_v1",
+        extreme_threshold_pct=10.0,
+        refractory_minutes=60,
+        min_volume_24h_usd=50_000.0,
+        contract_fingerprint="c" * 64,
+    )
+
+
+def _fixture() -> (
+    tuple[
+        tuple[OutcomeSignalEpisode, ...],
+        dict[str, ExactPricePath],
+        dict[int, tuple[PathRequest, ...]],
+        dict[str, ExactPricePath],
+    ]
+):
+    episode1 = _episode(1)
+    episode2 = _episode(2, symbol="OTHERUSDT", direction="sell")
+    signal_paths = {
+        "signal:1": _resolved_path("signal:1"),
+        "signal:2": _unresolved_path("signal:2"),
+    }
+    control_request = PathRequest(
+        "control:1:p1", "TESTUSDT", _BASE + timedelta(days=1), _BASE + timedelta(days=1, minutes=1)
+    )
+    controls_by_episode = {1: (control_request,), 2: ()}
+    control_paths = {"control:1:p1": _resolved_path("control:1:p1")}
+    return (episode1, episode2), signal_paths, controls_by_episode, control_paths
+
+
+def test_build_rows_is_pure_and_deterministic() -> None:
+    episodes, signal_paths, controls_by_episode, control_paths = _fixture()
+    rows1 = build_rows(
+        episodes=episodes,
+        signal_paths=signal_paths,
+        controls_by_episode=controls_by_episode,
+        control_paths=control_paths,
+    )
+    rows2 = build_rows(
+        episodes=episodes,
+        signal_paths=signal_paths,
+        controls_by_episode=controls_by_episode,
+        control_paths=control_paths,
+    )
+    assert rows1 == rows2
+    assert len(rows1) == 2
+    assert rows1[0]["row_id"] == "cex_test:1"
+    assert rows1[0]["signal_path"]["present"] is True
+    assert rows1[0]["control_requests"] == [
+        {
+            "request_id": "control:1:p1",
+            "symbol": "TESTUSDT",
+            "trigger_at": (_BASE + timedelta(days=1)).isoformat(),
+            "entry_at": (_BASE + timedelta(days=1, minutes=1)).isoformat(),
+        }
+    ]
+    # episode2's own signal is unresolved -- present=True still (a real
+    # ExactPricePath exists, just not resolved), unlike a genuinely
+    # missing_path_result.
+    assert rows1[1]["signal_path"]["present"] is True
+    assert rows1[1]["signal_path"]["unresolved_reason"] == "missing_entry_bar"
+
+
+def test_build_rows_missing_path_result_when_no_row_exists_at_all() -> None:
+    episode = _episode(3)
+    rows = build_rows(
+        episodes=(episode,), signal_paths={}, controls_by_episode={3: ()}, control_paths={}
+    )
+    assert rows[0]["signal_path"] == {
+        "present": False,
+        "unresolved_reason": "missing_path_result",
+    }
+
+
+def test_freeze_then_read_round_trips_utc_and_every_field(tmp_path: Path) -> None:
+    episodes, signal_paths, controls_by_episode, control_paths = _fixture()
+    rows = build_rows(
+        episodes=episodes,
+        signal_paths=signal_paths,
+        controls_by_episode=controls_by_episode,
+        control_paths=control_paths,
+    )
+    manifest = freeze(
+        cohort=_cohort(),
+        rows=rows,
+        code_revision="deadbeef",
+        working_tree_dirty=False,
+        directory=tmp_path,
+    )
+    (
+        read_manifest,
+        read_episodes,
+        read_signal_paths,
+        read_controls_by_episode,
+        read_control_paths,
+    ) = read(manifest.fingerprint, directory=tmp_path)
+
+    assert read_manifest.fingerprint == manifest.fingerprint
+    assert read_episodes == episodes
+    assert read_signal_paths["signal:1"] == signal_paths["signal:1"]
+    assert read_signal_paths["signal:1"].trigger_at.tzinfo is not None
+    # episode2's own unresolved signal path round-trips too (present=True,
+    # just unresolved) -- only a genuinely absent row is dropped from the
+    # dict.
+    assert read_signal_paths["signal:2"] == signal_paths["signal:2"]
+    assert read_signal_paths["signal:2"].unresolved_reason == "missing_entry_bar"
+    assert read_controls_by_episode[1] == controls_by_episode[1]
+    assert read_controls_by_episode[2] == ()
+    assert read_control_paths["control:1:p1"] == control_paths["control:1:p1"]
+
+
+def test_read_rejects_a_fingerprint_from_a_different_dataset(tmp_path: Path) -> None:
+    _outcome, other_manifest = write_dataset_artifact(
+        dataset_name="some_other_dataset",
+        dataset_version="v1",
+        schema_version="v1",
+        rows=[{"row_id": "a", "value": 1}],
+        row_id_field="row_id",
+        row_order="row_id ascending",
+        cohort={"x": 1},
+        code_revision="deadbeef",
+        working_tree_dirty=False,
+        directory=tmp_path,
+    )
+    assert other_manifest is not None
+    with pytest.raises(WrongDatasetArtifactError):
+        read(other_manifest.fingerprint, directory=tmp_path)
+
+
+def test_read_rejects_a_corrupted_artifact(tmp_path: Path) -> None:
+    episodes, signal_paths, controls_by_episode, control_paths = _fixture()
+    rows = build_rows(
+        episodes=episodes,
+        signal_paths=signal_paths,
+        controls_by_episode=controls_by_episode,
+        control_paths=control_paths,
+    )
+    manifest = freeze(
+        cohort=_cohort(),
+        rows=rows,
+        code_revision="deadbeef",
+        working_tree_dirty=False,
+        directory=tmp_path,
+    )
+    data_path = tmp_path / manifest.fingerprint[:2] / manifest.fingerprint / "data.json"
+    data_path.write_text('[{"tampered": true}]')
+    with pytest.raises(ResearchDatasetArtifactCorruptError):
+        read(manifest.fingerprint, directory=tmp_path)
+
+
+# --- cohort-drift lock (colleague review, 2026-09-03) ----------------------
+
+
+def test_freeze_is_idempotent_for_the_same_cohort_and_content(tmp_path: Path) -> None:
+    episodes, signal_paths, controls_by_episode, control_paths = _fixture()
+    rows = build_rows(
+        episodes=episodes,
+        signal_paths=signal_paths,
+        controls_by_episode=controls_by_episode,
+        control_paths=control_paths,
+    )
+    cohort = _cohort()
+    manifest1 = freeze(
+        cohort=cohort, rows=rows, code_revision="rev1", working_tree_dirty=False, directory=tmp_path
+    )
+    manifest2 = freeze(
+        cohort=cohort, rows=rows, code_revision="rev2", working_tree_dirty=False, directory=tmp_path
+    )
+    assert manifest1.fingerprint == manifest2.fingerprint
+    assert read_authoritative_fingerprint(cohort, directory=tmp_path) == manifest1.fingerprint
+
+
+def test_freeze_raises_on_genuine_cohort_drift(tmp_path: Path) -> None:
+    """The exact scenario this whole module exists to catch: a SECOND
+    freeze attempt for the SAME cohort produces DIFFERENT content (a
+    stand-in for a late-arriving historical bar correction changing an
+    exact path's own outcome) -- must raise, never silently prefer the new
+    result."""
+    episodes, signal_paths, controls_by_episode, control_paths = _fixture()
+    cohort = _cohort()
+    rows1 = build_rows(
+        episodes=episodes,
+        signal_paths=signal_paths,
+        controls_by_episode=controls_by_episode,
+        control_paths=control_paths,
+    )
+    freeze(
+        cohort=cohort,
+        rows=rows1,
+        code_revision="rev1",
+        working_tree_dirty=False,
+        directory=tmp_path,
+    )
+
+    drifted_signal_paths = dict(signal_paths)
+    drifted_signal_paths["signal:1"] = _resolved_path("signal:1")  # same shape, will mutate below
+    # Force a genuine content difference: a different entry_price for the
+    # same request_id, as a late correction would produce.
+    original = drifted_signal_paths["signal:1"]
+    drifted_signal_paths["signal:1"] = ExactPricePath(
+        request_id=original.request_id,
+        symbol=original.symbol,
+        trigger_at=original.trigger_at,
+        entry_at=original.entry_at,
+        entry_price=999.0,
+        observed_minutes=original.observed_minutes,
+        max_high=original.max_high,
+        min_low=original.min_low,
+        first_up_25_at=original.first_up_25_at,
+        first_down_25_at=original.first_down_25_at,
+    )
+    rows2 = build_rows(
+        episodes=episodes,
+        signal_paths=drifted_signal_paths,
+        controls_by_episode=controls_by_episode,
+        control_paths=control_paths,
+    )
+    with pytest.raises(CohortDriftDetectedError):
+        freeze(
+            cohort=cohort,
+            rows=rows2,
+            code_revision="rev2",
+            working_tree_dirty=False,
+            directory=tmp_path,
+        )
+    # The FIRST freeze's own fingerprint remains authoritative -- a failed
+    # second attempt must never overwrite it.
+    first_fingerprint = read_authoritative_fingerprint(cohort, directory=tmp_path)
+    assert first_fingerprint is not None
+
+
+def test_read_authoritative_fingerprint_is_none_for_an_unfrozen_cohort(tmp_path: Path) -> None:
+    assert read_authoritative_fingerprint(_cohort(), directory=tmp_path) is None
+
+
+def test_different_cohorts_never_collide_on_the_same_lock(tmp_path: Path) -> None:
+    episodes, signal_paths, controls_by_episode, control_paths = _fixture()
+    rows = build_rows(
+        episodes=episodes,
+        signal_paths=signal_paths,
+        controls_by_episode=controls_by_episode,
+        control_paths=control_paths,
+    )
+    cohort_a = _cohort()
+    cohort_b = build_cohort(
+        hypothesis_id="HYP-016",
+        since=datetime(2026, 9, 1, tzinfo=UTC),  # a genuinely different window
+        until_exclusive=datetime(2026, 9, 8, tzinfo=UTC),
+        exchange="bybit",
+        market_type="linear",
+        capture_version="test_capture_v1",
+        directions=("buy", "sell"),
+        control_boundary_policy_version="within_discovery_window_v1",
+        extreme_threshold_pct=10.0,
+        refractory_minutes=60,
+        min_volume_24h_usd=50_000.0,
+        contract_fingerprint="c" * 64,
+    )
+    manifest_a = freeze(
+        cohort=cohort_a,
+        rows=rows,
+        code_revision="rev1",
+        working_tree_dirty=False,
+        directory=tmp_path,
+    )
+    # Same rows, different cohort -- must NOT raise CohortDriftDetectedError,
+    # since these are two independent cohort locks (write_dataset_artifact's
+    # own fingerprint already includes `cohort`, so the two manifests get
+    # DIFFERENT fingerprints here even with identical rows -- that is
+    # expected and not itself what this test checks; the real assertion is
+    # that each cohort's own lock tracks its own fingerprint independently,
+    # with neither call raising a spurious drift error against the other).
+    manifest_b = freeze(
+        cohort=cohort_b,
+        rows=rows,
+        code_revision="rev1",
+        working_tree_dirty=False,
+        directory=tmp_path,
+    )
+    assert manifest_a.fingerprint != manifest_b.fingerprint
+    assert read_authoritative_fingerprint(cohort_a, directory=tmp_path) == manifest_a.fingerprint
+    assert read_authoritative_fingerprint(cohort_b, directory=tmp_path) == manifest_b.fingerprint
+
+
+# --- read() refuses a non-authoritative artifact (colleague review, 2026-09-04) --
+
+
+def test_read_rejects_a_losing_drift_artifact(tmp_path: Path) -> None:
+    """The exact gap colleague review, 2026-09-04 found: freeze() writes
+    the content-addressed artifact via write_dataset_artifact BEFORE it
+    claims the cohort lock, so a losing (drifted) attempt's own artifact
+    is still a fully valid, self-consistent artifact on its own --
+    read() must refuse to evaluate it anyway, since it is not this
+    cohort's own authoritative fingerprint."""
+    episodes, signal_paths, controls_by_episode, control_paths = _fixture()
+    cohort = _cohort()
+    rows1 = build_rows(
+        episodes=episodes,
+        signal_paths=signal_paths,
+        controls_by_episode=controls_by_episode,
+        control_paths=control_paths,
+    )
+    winning_manifest = freeze(
+        cohort=cohort,
+        rows=rows1,
+        code_revision="rev1",
+        working_tree_dirty=False,
+        directory=tmp_path,
+    )
+
+    drifted_signal_paths = dict(signal_paths)
+    drifted_signal_paths["signal:1"] = ExactPricePath(
+        request_id="signal:1",
+        symbol="TESTUSDT",
+        trigger_at=_BASE,
+        entry_at=_BASE + timedelta(minutes=1),
+        entry_price=999.0,
+        observed_minutes=1440,
+        max_high=110.0,
+        min_low=95.0,
+        first_up_25_at=None,
+        first_down_25_at=None,
+    )
+    rows2 = build_rows(
+        episodes=episodes,
+        signal_paths=drifted_signal_paths,
+        controls_by_episode=controls_by_episode,
+        control_paths=control_paths,
+    )
+    # write_dataset_artifact directly, bypassing freeze()'s own cohort-lock
+    # claim -- durably publishes a real, self-consistent, but non-
+    # authoritative artifact, exactly what a losing concurrent freeze
+    # attempt would leave behind on disk.
+    outcome, losing_manifest = write_dataset_artifact(
+        dataset_name=DATASET_NAME,
+        dataset_version=DATASET_VERSION,
+        schema_version=SCHEMA_VERSION,
+        rows=rows2,
+        row_id_field=ROW_ID_FIELD,
+        row_order=ROW_ORDER,
+        cohort=cohort,
+        code_revision="rev2",
+        working_tree_dirty=False,
+        directory=tmp_path,
+    )
+    assert outcome is ArtifactWriteOutcome.CREATED
+    assert losing_manifest is not None
+    assert losing_manifest.fingerprint != winning_manifest.fingerprint
+
+    with pytest.raises(NonAuthoritativeArtifactError):
+        read(losing_manifest.fingerprint, directory=tmp_path)
+    # The winning fingerprint still reads fine.
+    read(winning_manifest.fingerprint, directory=tmp_path)
+
+
+def test_read_rejects_an_artifact_whose_cohort_was_never_claimed(tmp_path: Path) -> None:
+    """Stand-in for a crash between freeze()'s own publish and claim
+    steps: a real, valid artifact exists on disk, but no cohort lock was
+    ever written for it at all -- read() must fail closed, never treat an
+    unclaimed cohort as trivially authoritative."""
+    episodes, signal_paths, controls_by_episode, control_paths = _fixture()
+    cohort = _cohort()
+    rows = build_rows(
+        episodes=episodes,
+        signal_paths=signal_paths,
+        controls_by_episode=controls_by_episode,
+        control_paths=control_paths,
+    )
+    outcome, manifest = write_dataset_artifact(
+        dataset_name=DATASET_NAME,
+        dataset_version=DATASET_VERSION,
+        schema_version=SCHEMA_VERSION,
+        rows=rows,
+        row_id_field=ROW_ID_FIELD,
+        row_order=ROW_ORDER,
+        cohort=cohort,
+        code_revision="rev1",
+        working_tree_dirty=False,
+        directory=tmp_path,
+    )
+    assert outcome is ArtifactWriteOutcome.CREATED
+    assert manifest is not None
+    assert read_authoritative_fingerprint(cohort, directory=tmp_path) is None
+
+    with pytest.raises(NonAuthoritativeArtifactError):
+        read(manifest.fingerprint, directory=tmp_path)
+
+
+# --- cohort lock durability + payload validation (colleague review, 2026-09-04) --
+
+
+def test_claim_authoritative_fingerprint_cleans_up_its_own_temp_file(tmp_path: Path) -> None:
+    cohort = _cohort()
+    fingerprint = "a" * 64
+    claim_authoritative_fingerprint(cohort, fingerprint, directory=tmp_path)
+    lock_path = _cohort_lock_path(cohort, directory=tmp_path)
+    assert lock_path.exists()
+    leftover_temp_files = list(lock_path.parent.glob(".*.tmp-*"))
+    assert leftover_temp_files == []
+
+
+def test_read_authoritative_fingerprint_rejects_a_cohort_mismatched_lock_payload(
+    tmp_path: Path,
+) -> None:
+    """Defense against a hash collision or a corrupted/foreign payload
+    landing at this cohort's own lock path -- read_authoritative_
+    fingerprint must not trust `authoritative_fingerprint` at face value
+    without checking the payload's own `cohort` field matches what was
+    requested."""
+    cohort = _cohort()
+    lock_path = _cohort_lock_path(cohort, directory=tmp_path)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path.write_text(
+        json.dumps({"cohort": {"different": "cohort"}, "authoritative_fingerprint": "a" * 64})
+    )
+    with pytest.raises(ResearchDatasetArtifactCorruptError, match="different cohort"):
+        read_authoritative_fingerprint(cohort, directory=tmp_path)
+
+
+def test_read_authoritative_fingerprint_rejects_a_malformed_fingerprint_format(
+    tmp_path: Path,
+) -> None:
+    cohort = _cohort()
+    lock_path = _cohort_lock_path(cohort, directory=tmp_path)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path.write_text(
+        json.dumps({"cohort": cohort, "authoritative_fingerprint": "not-a-real-fingerprint"})
+    )
+    with pytest.raises(
+        ResearchDatasetArtifactCorruptError, match="no valid authoritative_fingerprint"
+    ):
+        read_authoritative_fingerprint(cohort, directory=tmp_path)
+
+
+# --- research-contract parameters are bound to the fingerprint/cohort ------
+# (colleague review, 2026-09-04 follow-up round)
+
+
+def _cohort_with(
+    *,
+    extreme_threshold_pct: float = 10.0,
+    refractory_minutes: int = 60,
+    min_volume_24h_usd: float = 50_000.0,
+    contract_fingerprint: str = "a" * 64,
+) -> dict[str, object]:
+    """Same fixed since/until/exchange/etc as `_cohort()`, but every
+    research-contract field is an explicit, typed override -- used by the
+    tests below that need two cohorts differing in exactly one such field."""
+    return build_cohort(
+        hypothesis_id="HYP-016",
+        since=datetime(2026, 8, 18, tzinfo=UTC),
+        until_exclusive=datetime(2026, 8, 27, tzinfo=UTC),
+        exchange="bybit",
+        market_type="linear",
+        capture_version="test_capture_v1",
+        directions=("buy", "sell"),
+        control_boundary_policy_version="within_discovery_window_v1",
+        extreme_threshold_pct=extreme_threshold_pct,
+        refractory_minutes=refractory_minutes,
+        min_volume_24h_usd=min_volume_24h_usd,
+        contract_fingerprint=contract_fingerprint,
+    )
+
+
+def test_a_different_threshold_produces_a_different_fingerprint_for_identical_rows(
+    tmp_path: Path,
+) -> None:
+    """The exact gap the follow-up review found: extreme_threshold_pct/
+    refractory_minutes/min_volume_24h_usd directly determine WHICH
+    candidates a freeze selects -- the sampling frame itself -- but
+    previously lived only in the artifact's own `extra` field, which
+    `research_dataset_artifact`'s own generic fingerprint deliberately
+    excludes. Two freezes with byte-IDENTICAL rows but a different
+    threshold must never collide on the same fingerprint (which would let
+    `ALREADY_EXISTS` silently discard the second run's own different
+    parameters with no error at all)."""
+    episodes, signal_paths, controls_by_episode, control_paths = _fixture()
+    rows = build_rows(
+        episodes=episodes,
+        signal_paths=signal_paths,
+        controls_by_episode=controls_by_episode,
+        control_paths=control_paths,
+    )
+    # contract_fingerprint deliberately identical on both sides -- only the
+    # threshold differs.
+    cohort_10pct = _cohort_with(extreme_threshold_pct=10.0)
+    cohort_9pct = _cohort_with(extreme_threshold_pct=9.0)
+
+    manifest_10pct = freeze(
+        cohort=cohort_10pct,
+        rows=rows,
+        code_revision="rev1",
+        working_tree_dirty=False,
+        directory=tmp_path,
+    )
+    # SAME rows, only the threshold in cohort differs.
+    manifest_9pct = freeze(
+        cohort=cohort_9pct,
+        rows=rows,
+        code_revision="rev1",
+        working_tree_dirty=False,
+        directory=tmp_path,
+    )
+    assert manifest_10pct.fingerprint != manifest_9pct.fingerprint
+    # Both are independently readable and authoritative for their own
+    # (different) cohorts -- neither silently overwrote or absorbed the
+    # other.
+    read(manifest_10pct.fingerprint, directory=tmp_path)
+    read(manifest_9pct.fingerprint, directory=tmp_path)
+
+
+def test_a_different_contract_fingerprint_alone_produces_a_different_cohort(
+    tmp_path: Path,
+) -> None:
+    """Same principle, isolated to contract_fingerprint itself (which
+    covers every code-level constant contract_fingerprint() hashes) --
+    even with identical threshold parameters and identical rows, a
+    different contract_fingerprint must produce a different fingerprint,
+    proving a code-level contract change is never silently absorbed into
+    an existing cohort either."""
+    episodes, signal_paths, controls_by_episode, control_paths = _fixture()
+    rows = build_rows(
+        episodes=episodes,
+        signal_paths=signal_paths,
+        controls_by_episode=controls_by_episode,
+        control_paths=control_paths,
+    )
+    cohort_contract_a = _cohort_with(contract_fingerprint="a" * 64)
+    cohort_contract_b = _cohort_with(contract_fingerprint="b" * 64)
+
+    manifest_a = freeze(
+        cohort=cohort_contract_a,
+        rows=rows,
+        code_revision="rev1",
+        working_tree_dirty=False,
+        directory=tmp_path,
+    )
+    manifest_b = freeze(
+        cohort=cohort_contract_b,
+        rows=rows,
+        code_revision="rev1",
+        working_tree_dirty=False,
+        directory=tmp_path,
+    )
+    assert manifest_a.fingerprint != manifest_b.fingerprint

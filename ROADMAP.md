@@ -8,9 +8,9 @@ Update only these four lines after every merge -- this is the fast-path
 status check, not a place for narrative.
 
 ```
-Current primary: research/cex-activity-offline-denominator-v1
+Current primary: research/cex-activity-discovery-completion-v1
 State: in_progress
-Next after current primary merges: research/cex-activity-discovery-completion-v1
+Next after current primary merges: research/cex-activity-discovery-result-v1
 User decision required: no
 ```
 
@@ -151,8 +151,8 @@ enabling change) slot.
    added a positive burst-arithmetic test, replaced greedy control matching
    with deterministic maximum-cardinality bipartite matching
    (`MATCHING_POLICY_VERSION`), deduplicated direction/control primitives.
-3. **`research/cex-activity-offline-denominator-v1` (current primary).** What
-   HYP-016 actually needs to become answerable at all -- a point-in-time
+3. **[Done, `research/cex-activity-offline-denominator-v1`, PR #327, merged.]**
+   What HYP-016 actually needs to become answerable at all -- a point-in-time
    5m/24h relative-activity denominator computed off the production hot path
    (frozen extract or offline replica), full instrument universe, a runtime
    bound that cannot repeat the 12-minute production I/O incident. No
@@ -176,7 +176,8 @@ enabling change) slot.
    `TIMESTAMPTZ` throughout instead of bare `TIMESTAMP`. Wiring this into
    `cex_activity_discovery_report.py` itself, and actually re-running HYP-016
    against it, is the next item (4), not this one -- this PR is infra only.
-4. **Then: `research/cex-activity-discovery-completion-v1`.** Re-run HYP-016's
+4. **`research/cex-activity-discovery-completion-v1` (current primary).**
+   Re-run HYP-016's
    already-registered, pre-declared two-direction family (buy/sell,
    Holm-corrected) on the now-computable denominator, full candidate universe,
    the same already-viewed `2026-08-18` -> `2026-08-27` window (discovery-only,
