@@ -16,7 +16,7 @@ real data.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from schurfer_analytics.clustered_inference import ClusterObservation
@@ -30,6 +30,7 @@ from schurfer_analytics.source_lead_forward_cohort import (
     ENTRY_DELAY_MINUTES,
     ESTIMAND_VERSION,
     EVIDENCE_FLOOR,
+    EXIT_BAR_TIMEFRAME_MS,
     EXIT_SLIPPAGE_BPS_ASSUMED,
     HYPOTHESIS_ORIGIN,
     MAX_EXIT_BAR_GAP_MINUTES,
@@ -43,9 +44,13 @@ from schurfer_analytics.source_lead_forward_cohort import (
     VERDICT_FAIL,
     VERDICT_INSUFFICIENT_DATA,
     EpisodeInputs,
+    episode_is_matured,
+    expected_exit_boundary_ms,
+    find_earliest_checkpoint_prefix_length,
     formal_verdict,
     primary_sensitivity_ci,
     resolve_episode,
+    resolve_episode_at_exit_slippage,
 )
 from schurfer_performance import DEFAULT_COSTS, calculate_performance
 
@@ -319,3 +324,139 @@ def test_formal_verdict_fail_when_floor_met_and_ci_not_positive() -> None:
 
 def test_formal_verdict_candidate_when_floor_met_and_ci_strictly_positive() -> None:
     assert formal_verdict(**_aggregate(ci_lower_bound_pct=0.01)) == VERDICT_CANDIDATE
+
+
+# --- episode_is_matured (colleague review, 2026-09-03) --------------------
+
+
+def test_episode_is_matured_false_well_before_the_exit_boundary() -> None:
+    database_now = _ENTRY_AT + timedelta(minutes=1)
+    assert episode_is_matured(_ENTRY_AT, database_now) is False
+
+
+def test_episode_is_matured_false_exactly_at_the_boundary() -> None:
+    """The exit bar OPENS at the boundary -- it has not closed yet, so this
+    must not be treated as matured (the exact bug the colleague review
+    caught: a flat entry_at + OUTCOME_HORIZON_MINUTES cutoff would say True
+    here)."""
+    boundary_ms = expected_exit_boundary_ms(_ENTRY_AT)
+    database_now = datetime.fromtimestamp(boundary_ms / 1000, tz=UTC)
+    assert episode_is_matured(_ENTRY_AT, database_now) is False
+
+
+def test_episode_is_matured_false_one_ms_before_bar_close() -> None:
+    boundary_ms = expected_exit_boundary_ms(_ENTRY_AT)
+    database_now = datetime.fromtimestamp((boundary_ms + EXIT_BAR_TIMEFRAME_MS - 1) / 1000, tz=UTC)
+    assert episode_is_matured(_ENTRY_AT, database_now) is False
+
+
+def test_episode_is_matured_true_exactly_when_the_bar_closes() -> None:
+    boundary_ms = expected_exit_boundary_ms(_ENTRY_AT)
+    database_now = datetime.fromtimestamp((boundary_ms + EXIT_BAR_TIMEFRAME_MS) / 1000, tz=UTC)
+    assert episode_is_matured(_ENTRY_AT, database_now) is True
+
+
+def test_episode_is_matured_true_well_after_the_bar_closes() -> None:
+    database_now = _ENTRY_AT + timedelta(minutes=OUTCOME_HORIZON_MINUTES + 10)
+    assert episode_is_matured(_ENTRY_AT, database_now) is True
+
+
+# --- find_earliest_checkpoint_prefix_length (STOPPING_RULE, literal) ------
+
+
+def test_find_earliest_checkpoint_prefix_length_empty_sequence_is_none() -> None:
+    assert find_earliest_checkpoint_prefix_length(()) is None
+
+
+def test_find_earliest_checkpoint_prefix_length_none_when_floor_never_reached() -> None:
+    # Far below both floors: 5 resolved episodes, 1 distinct week.
+    outcomes = [("2026-W36", True) for _ in range(5)]
+    assert find_earliest_checkpoint_prefix_length(outcomes) is None
+
+
+def test_find_earliest_checkpoint_prefix_length_none_when_only_episode_floor_met() -> None:
+    # 100 resolved episodes, but all in the same single UTC week.
+    outcomes = [("2026-W36", True) for _ in range(EVIDENCE_FLOOR["min_resolved_episodes"])]
+    assert find_earliest_checkpoint_prefix_length(outcomes) is None
+
+
+def test_find_earliest_checkpoint_prefix_length_none_when_only_week_floor_met() -> None:
+    # 4 distinct weeks, but only 1 resolved episode per week (well below 100).
+    outcomes = [(f"2026-W{36 + i}", True) for i in range(EVIDENCE_FLOOR["min_distinct_utc_weeks"])]
+    assert find_earliest_checkpoint_prefix_length(outcomes) is None
+
+
+def test_find_earliest_checkpoint_prefix_length_stops_at_the_earliest_point() -> None:
+    """The whole point of STOPPING_RULE: reaching the floor early and then
+    having MORE matured episodes appended afterward must not move the
+    checkpoint boundary -- this is what makes the checkpoint reproducible
+    run to run as more data becomes available."""
+    floor_episodes = EVIDENCE_FLOOR["min_resolved_episodes"]
+    floor_weeks = EVIDENCE_FLOOR["min_distinct_utc_weeks"]
+    # Exactly enough resolved episodes across exactly enough distinct weeks
+    # to cross both floors at the very last of these entries.
+    checkpoint_prefix = [(f"2026-W{36 + (i % floor_weeks)}", True) for i in range(floor_episodes)]
+    extra_after_checkpoint = [("2026-W99", True) for _ in range(50)]
+    with_extra = checkpoint_prefix + extra_after_checkpoint
+
+    without_extra_result = find_earliest_checkpoint_prefix_length(checkpoint_prefix)
+    with_extra_result = find_earliest_checkpoint_prefix_length(with_extra)
+
+    assert without_extra_result == floor_episodes
+    assert with_extra_result == floor_episodes  # unchanged despite 50 more episodes
+
+
+def test_find_earliest_checkpoint_prefix_length_unresolved_entries_do_not_count() -> None:
+    floor_episodes = EVIDENCE_FLOOR["min_resolved_episodes"]
+    floor_weeks = EVIDENCE_FLOOR["min_distinct_utc_weeks"]
+    # Interleave unresolved (week_key=None, per the report's own convention
+    # for an unresolved episode) entries that must not advance either
+    # counter.
+    outcomes: list[tuple[str | None, bool]] = []
+    for i in range(floor_episodes):
+        outcomes.append((None, False))  # unresolved noise
+        outcomes.append((f"2026-W{36 + (i % floor_weeks)}", True))
+    prefix_length = find_earliest_checkpoint_prefix_length(outcomes)
+    assert prefix_length is not None
+    # The prefix must include exactly floor_episodes resolved entries --
+    # i.e. it stops right after the floor_episodes-th resolved entry, not
+    # earlier (which would mean unresolved entries were miscounted as
+    # resolved) and not with room to spare (which would mean the boundary
+    # wasn't the EARLIEST one).
+    resolved_in_prefix = sum(1 for _week, resolved in outcomes[:prefix_length] if resolved)
+    assert resolved_in_prefix == floor_episodes
+
+
+# --- resolve_episode_at_exit_slippage (REQUIRE_EXIT_SLIPPAGE_SENSITIVITY) -
+
+
+def test_resolve_episode_at_exit_slippage_matches_resolve_episode_at_the_primary_bps() -> None:
+    bar = _bar(1.1)
+    inputs = _inputs(exit_bar=bar)
+    assert resolve_episode(inputs) == resolve_episode_at_exit_slippage(
+        inputs, exit_slippage_bps=EXIT_SLIPPAGE_BPS_ASSUMED
+    )
+
+
+def test_resolve_episode_at_exit_slippage_higher_slippage_means_lower_net_return() -> None:
+    bar = _bar(1.1)
+    inputs = _inputs(exit_bar=bar)
+    at_zero = resolve_episode_at_exit_slippage(inputs, exit_slippage_bps=0.0)
+    at_primary = resolve_episode_at_exit_slippage(
+        inputs, exit_slippage_bps=EXIT_SLIPPAGE_BPS_ASSUMED
+    )
+    at_double = resolve_episode_at_exit_slippage(
+        inputs, exit_slippage_bps=2 * EXIT_SLIPPAGE_BPS_ASSUMED
+    )
+    assert at_zero.resolved and at_primary.resolved and at_double.resolved
+    assert at_zero.net_return_pct is not None
+    assert at_primary.net_return_pct is not None
+    assert at_double.net_return_pct is not None
+    assert at_zero.net_return_pct > at_primary.net_return_pct > at_double.net_return_pct
+
+
+def test_resolve_episode_at_exit_slippage_still_unresolved_for_a_missing_bar() -> None:
+    inputs = _inputs(exit_bar=None)
+    result = resolve_episode_at_exit_slippage(inputs, exit_slippage_bps=0.0)
+    assert result.resolved is False
+    assert result.unresolved_reason == "missing_exit_bar"

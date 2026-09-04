@@ -88,6 +88,7 @@ from .ohlcv import ONE_MINUTE_MS, ceil_to_timeframe
 from .source_lead_contract import IDENTITY_REGISTRY_V3_START
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from datetime import datetime
 
     from .ohlcv import Candle
@@ -161,6 +162,13 @@ EXIT_PRICE_SOURCE_VERSION = "ohlcv_close_proxy_v1"
 EXIT_BAR_TIMEFRAME_MS = ONE_MINUTE_MS
 EXIT_SLIPPAGE_BPS_ASSUMED = 15.0
 REQUIRE_EXIT_SLIPPAGE_SENSITIVITY = True
+
+# The sensitivity family REQUIRE_EXIT_SLIPPAGE_SENSITIVITY commits this
+# contract to: 0bps (no slippage at all), the frozen primary assumption
+# itself, and 2x that -- pre-registered here, not chosen by the eventual
+# report after seeing which one looks best (colleague review, 2026-09-03:
+# this frozen constant existed but nothing computed the family it names).
+EXIT_SLIPPAGE_SENSITIVITY_BPS = (0.0, EXIT_SLIPPAGE_BPS_ASSUMED, 2 * EXIT_SLIPPAGE_BPS_ASSUMED)
 
 # Unresolved (not a synthetic worst-case fill) if the nearest usable bar is
 # farther than this from the ideal exit boundary -- a real gap in captured
@@ -300,29 +308,59 @@ class EpisodeResult:
     net_return_pct: float | None
 
 
-def _expected_exit_boundary_ms(entry_at: datetime) -> int:
+def expected_exit_boundary_ms(entry_at: datetime) -> int:
     """First fully-closed EXIT_BAR_TIMEFRAME_MS bar at or after
     entry_at + OUTCOME_HORIZON_MINUTES -- ceil, never floor, so the exit
     bar is never inspected before it closes. Ordering (exit strictly after
     entry) follows automatically: the target is always
     OUTCOME_HORIZON_MINUTES in the future before it is even rounded
-    forward."""
+    forward.
+
+    Public (no leading underscore) so the DB-fetch plumbing this module's
+    own docstring defers to later (research/source-lead-forward-cohort-
+    plumbing-v1) can pick the exact same exit candle `resolve_episode`
+    itself will validate, via this one function, instead of reimplementing
+    the ceil formula a second time and risking the two drifting apart --
+    same reasoning as this codebase's own `instruments.onboarded_at_ms`
+    precedent."""
     entry_ms = int(entry_at.timestamp() * 1000)
     target_ms = entry_ms + OUTCOME_HORIZON_MINUTES * 60_000
     return ceil_to_timeframe(target_ms, EXIT_BAR_TIMEFRAME_MS)
 
 
-def resolve_episode(inputs: EpisodeInputs, *, costs: CostParameters = COSTS) -> EpisodeResult:
-    """One episode's resolved net return, or its unresolved reason. Pure --
-    see the section header above. Computes and validates the exit-bar
-    boundary/gap itself from entry_at rather than trusting a pre-computed
-    value, and delegates price validation/fees/funding to this codebase's
-    shared calculate_performance rather than a partial hand-rolled
-    calculation."""
+def episode_is_matured(entry_at: datetime, database_now: datetime) -> bool:
+    """True once the episode's own exit bar has fully CLOSED, not merely
+    once OUTCOME_HORIZON_MINUTES of wall-clock time has elapsed since
+    entry_at. Colleague review, 2026-09-03: a flat `entry_at +
+    OUTCOME_HORIZON_MINUTES` cutoff can land inside the exit bar's own OPEN
+    window right at the boundary -- a real bar's own life span is
+    [expected_exit_boundary_ms, expected_exit_boundary_ms +
+    EXIT_BAR_TIMEFRAME_MS), and reading it before that window ends risks
+    two runs against the SAME episode seeing a different close once the bar
+    finishes accumulating trades. Matured only once database_now is at or
+    past the END of that window, not merely at its start."""
+    boundary_ms = expected_exit_boundary_ms(entry_at)
+    database_now_ms = int(database_now.timestamp() * 1000)
+    return database_now_ms >= boundary_ms + EXIT_BAR_TIMEFRAME_MS
+
+
+def resolve_episode_at_exit_slippage(
+    inputs: EpisodeInputs, *, exit_slippage_bps: float, costs: CostParameters = COSTS
+) -> EpisodeResult:
+    """The same resolution logic `resolve_episode` exposes at the frozen
+    primary `EXIT_SLIPPAGE_BPS_ASSUMED`, parameterized by exit slippage
+    instead -- `resolve_episode` itself is a thin wrapper calling this with
+    `exit_slippage_bps=EXIT_SLIPPAGE_BPS_ASSUMED`, so the two can never
+    independently drift apart. Exists so the report can compute
+    `EXIT_SLIPPAGE_SENSITIVITY_BPS`'s own family (0bps / primary / 2x
+    primary), which `REQUIRE_EXIT_SLIPPAGE_SENSITIVITY` commits this
+    contract to, without a second, independently-maintained copy of this
+    resolution logic (colleague review, 2026-09-03: the frozen requirement
+    existed but nothing computed it)."""
     if inputs.exit_bar is None:
         return EpisodeResult(inputs.base, False, "missing_exit_bar", None)
 
-    expected_boundary_ms = _expected_exit_boundary_ms(inputs.entry_at)
+    expected_boundary_ms = expected_exit_boundary_ms(inputs.entry_at)
     if inputs.exit_bar.ts_ms < expected_boundary_ms:
         # Never accept a bar that closes before the frozen ceil boundary --
         # would mean inspecting the outcome before it is fully known yet.
@@ -339,7 +377,7 @@ def resolve_episode(inputs: EpisodeInputs, *, costs: CostParameters = COSTS) -> 
             side="long",
             duration_minutes=OUTCOME_HORIZON_MINUTES,
             entry_slippage_bps=0.0,  # ask_vwap already reflects real captured impact
-            exit_slippage_bps=EXIT_SLIPPAGE_BPS_ASSUMED,
+            exit_slippage_bps=exit_slippage_bps,
             costs=costs,
         )
     except ValueError:
@@ -351,6 +389,18 @@ def resolve_episode(inputs: EpisodeInputs, *, costs: CostParameters = COSTS) -> 
 
     assert result.net_return_pct is not None  # entry/exit slippage are both always provided above
     return EpisodeResult(inputs.base, True, None, round(result.net_return_pct, 6))
+
+
+def resolve_episode(inputs: EpisodeInputs, *, costs: CostParameters = COSTS) -> EpisodeResult:
+    """One episode's resolved net return, or its unresolved reason, at the
+    frozen primary `EXIT_SLIPPAGE_BPS_ASSUMED`. Pure -- see the section
+    header above. Computes and validates the exit-bar boundary/gap itself
+    from entry_at rather than trusting a pre-computed value, and delegates
+    price validation/fees/funding to this codebase's shared
+    calculate_performance rather than a partial hand-rolled calculation."""
+    return resolve_episode_at_exit_slippage(
+        inputs, exit_slippage_bps=EXIT_SLIPPAGE_BPS_ASSUMED, costs=costs
+    )
 
 
 def primary_sensitivity_ci(observations: tuple[ClusterObservation, ...]) -> float:
@@ -397,10 +447,68 @@ def formal_verdict(
     return VERDICT_CANDIDATE if ci_lower_bound_pct > 0 else VERDICT_FAIL
 
 
+# --- checkpoint (STOPPING_RULE, made literal) --------------------------
+#
+# STOPPING_RULE above is a description; find_earliest_checkpoint_prefix_
+# length below is what actually makes "evaluate exactly once, at the
+# earliest point" a real, testable computation rather than a comment a
+# future caller could accidentally violate. These three versions pin the
+# checkpoint's own identity once it is persisted via research_dataset_
+# artifact.write_dataset_artifact (see source_lead_forward_cohort_report.py's
+# generate_report) -- first successful write at a given content fingerprint
+# wins, and every subsequent run (even with more matured episodes now
+# available) must reproduce byte-identical rows for the SAME earliest-
+# checkpoint prefix, or find_earliest_checkpoint_prefix_length's own
+# determinism has broken.
+CHECKPOINT_DATASET_NAME = "source_lead_forward_cohort_checkpoint"
+CHECKPOINT_DATASET_VERSION = "source_lead_forward_cohort_checkpoint_v1"
+CHECKPOINT_SCHEMA_VERSION = "source_lead_forward_cohort_checkpoint_schema_v1"
+
+
+def find_earliest_checkpoint_prefix_length(
+    ordered_episode_outcomes: Sequence[tuple[str | None, bool]],
+) -> int | None:
+    """`ordered_episode_outcomes` is `(utc_week_key_or_None, resolved)` per
+    MATURED episode, in this contract's own frozen deterministic order
+    (`observed_at`, then `capture_id` -- the repository query's own
+    `ORDER BY`). Returns the 1-based length of the EARLIEST prefix at which
+    BOTH `EVIDENCE_FLOOR['min_resolved_episodes']` and
+    `EVIDENCE_FLOOR['min_distinct_utc_weeks']` are first satisfied among the
+    RESOLVED episodes seen so far. Returns `None` if the floor was never
+    reached across the whole sequence -- a genuinely transient state, not
+    yet a checkpoint, safe to check again on a later run once more episodes
+    have matured, since no verdict has been computed yet to re-peek.
+
+    Pure and order-sensitive by design: the caller must pass episodes in
+    the query's own deterministic order, unchanged run to run for the same
+    underlying data, so the SAME prefix boundary is found every time the
+    same episodes are present -- this is what makes the checkpoint this
+    function locates a stable fact that later runs (with more matured
+    episodes appended after it) cannot shift, matching STOPPING_RULE's own
+    "never re-peeked" requirement without needing any persisted state of
+    its own."""
+    resolved_count = 0
+    weeks_seen: set[str] = set()
+    for index, (week_key, resolved) in enumerate(ordered_episode_outcomes):
+        if resolved:
+            resolved_count += 1
+            if week_key is not None:
+                weeks_seen.add(week_key)
+        if (
+            resolved_count >= EVIDENCE_FLOOR["min_resolved_episodes"]
+            and len(weeks_seen) >= EVIDENCE_FLOOR["min_distinct_utc_weeks"]
+        ):
+            return index + 1
+    return None
+
+
 __all__ = [
     "BOOTSTRAP_ITERATIONS",
     "BOOTSTRAP_SEED",
     "BOOTSTRAP_VERSION",
+    "CHECKPOINT_DATASET_NAME",
+    "CHECKPOINT_DATASET_VERSION",
+    "CHECKPOINT_SCHEMA_VERSION",
     "CONFIDENCE_LEVEL",
     "CONTRACT_VERSION",
     "COSTS",
@@ -413,10 +521,12 @@ __all__ = [
     "EXIT_BAR_TIMEFRAME_MS",
     "EXIT_PRICE_SOURCE_VERSION",
     "EXIT_SLIPPAGE_BPS_ASSUMED",
+    "EXIT_SLIPPAGE_SENSITIVITY_BPS",
     "HYPOTHESIS_ORIGIN",
     "MAX_EXIT_BAR_GAP_MINUTES",
     "MAX_SINGLE_ASSET_EPISODE_SHARE",
     "MAX_SINGLE_WEEK_EPISODE_SHARE",
+    "OUTCOME_HORIZON_MINUTES",
     "QUALIFICATION_STATUS",
     "QUALIFICATION_VERSION",
     "REQUIRE_EXIT_SLIPPAGE_SENSITIVITY",
@@ -430,7 +540,11 @@ __all__ = [
     "VERDICT_INSUFFICIENT_DATA",
     "EpisodeInputs",
     "EpisodeResult",
+    "episode_is_matured",
+    "expected_exit_boundary_ms",
+    "find_earliest_checkpoint_prefix_length",
     "formal_verdict",
     "primary_sensitivity_ci",
     "resolve_episode",
+    "resolve_episode_at_exit_slippage",
 ]
