@@ -40,9 +40,12 @@ decides on its own.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
+import re
+import uuid
 from dataclasses import asdict
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
@@ -75,6 +78,12 @@ ROW_ID_FIELD = "row_id"
 ROW_ORDER = "trigger_at ascending, then episode_id ascending"
 
 _COHORT_LOCK_SUBDIR = "cex_activity_hyp016_cohort_locks"
+# Same format research_dataset_artifact.py's own fingerprints use (64
+# lowercase hex characters) -- a local copy rather than importing that
+# module's private `_FINGERPRINT_RE`, since this check is specifically
+# about validating an `authoritative_fingerprint` value read back from a
+# cohort-lock payload, not about that module's own artifact paths.
+_FINGERPRINT_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 class CohortDriftDetectedError(Exception):
@@ -96,6 +105,25 @@ class WrongDatasetArtifactError(ValueError):
     caller accidentally passing another consumer's fingerprint) would
     silently corrupt the discovery report's own funnel/statistics with
     unrelated rows shaped just similarly enough to not crash outright."""
+
+
+class NonAuthoritativeArtifactError(ValueError):
+    """Raised by `read()` when `fingerprint` is a real, valid, correctly-
+    typed artifact but is NOT (or no longer) the cohort-lock's own
+    authoritative fingerprint for its cohort. Colleague review, 2026-09-04:
+    `freeze()` publishes the content-addressed artifact via
+    `write_dataset_artifact` BEFORE it claims the cohort lock -- an
+    artifact that loses the cohort-lock race (a concurrent freeze attempt
+    for the same cohort) or was written moments before a genuine drift was
+    detected is still a completely valid, self-consistent artifact by
+    every check `read_dataset_artifact` performs on its own. Without this
+    check, `--from-artifact` could successfully evaluate and render
+    exactly the artifact `freeze()` itself rejected -- silently presenting
+    a non-authoritative result as though it were this cohort's own frozen
+    truth. `read()` requires the cohort lock to already exist and to name
+    THIS fingerprint exactly; a missing lock (e.g. a crash between publish
+    and claim) or a different one both fail closed here, never fall back
+    to trusting the artifact on its own."""
 
 
 def build_cohort(
@@ -234,7 +262,17 @@ def _cohort_lock_path(cohort: dict[str, Any], *, directory: str | Path | None = 
 def read_authoritative_fingerprint(
     cohort: dict[str, Any], *, directory: str | Path | None = None
 ) -> str | None:
-    """None if this cohort has never had a successful freeze."""
+    """None if this cohort has never had a successful freeze. Colleague
+    review, 2026-09-04: previously trusted `authoritative_fingerprint`
+    at face value without checking the payload's own `cohort` field
+    matches the one requested -- a hash collision on the two-hex-char
+    shard prefix plus full hash (astronomically unlikely but the whole
+    point of a fingerprint scheme is to never assume that away) or a
+    corrupted/foreign payload landing at this exact path would otherwise
+    be silently trusted as this cohort's own lock. Now verified
+    explicitly, and the fingerprint's own format is validated too (not
+    just "is a string") -- both failures raise the same loud
+    corruption error as every other integrity check in this module."""
     path = _cohort_lock_path(cohort, directory=directory)
     if not path.exists():
         return None
@@ -244,8 +282,15 @@ def read_authoritative_fingerprint(
         raise ResearchDatasetArtifactCorruptError(
             f"cohort lock at {path} is unreadable or not valid JSON: {exc}"
         ) from exc
+    stored_cohort = payload.get("cohort")
+    if stored_cohort != cohort:
+        raise ResearchDatasetArtifactCorruptError(
+            f"cohort lock at {path} stores a different cohort than requested -- expected "
+            f"{json.dumps(cohort, sort_keys=True)}, found "
+            f"{json.dumps(stored_cohort, sort_keys=True)}"
+        )
     fingerprint = payload.get("authoritative_fingerprint")
-    if not isinstance(fingerprint, str):
+    if not isinstance(fingerprint, str) or not _FINGERPRINT_RE.match(fingerprint):
         raise ResearchDatasetArtifactCorruptError(
             f"cohort lock at {path} has no valid authoritative_fingerprint"
         )
@@ -255,36 +300,65 @@ def read_authoritative_fingerprint(
 def claim_authoritative_fingerprint(
     cohort: dict[str, Any], fingerprint: str, *, directory: str | Path | None = None
 ) -> str:
-    """Atomic create-if-absent (`O_CREAT | O_EXCL`) -- no read-then-write
-    race between two concurrent freeze attempts for the same cohort.
-    Returns the fingerprint that IS now authoritative for this cohort:
+    """Returns the fingerprint that IS now authoritative for this cohort:
     `fingerprint` itself if this call created the lock or an earlier one
     already recorded the exact same value; raises `CohortDriftDetectedError`
-    if a DIFFERENT value was already recorded."""
+    if a DIFFERENT value was already recorded.
+
+    Crash-durable create-if-absent (colleague review, 2026-09-04): the
+    payload is written to a temp file in the SAME directory (same
+    filesystem, so the hard-link below is atomic) and `fsync`'d before it
+    is ever linked to the final lock path. The final path is then
+    materialized via `os.link` -- like `O_CREAT | O_EXCL`, this fails if
+    the target already exists (no read-then-write race between two
+    concurrent freeze attempts), but unlike a bare `open(..., O_EXCL)`
+    write, the linked file's content is guaranteed complete and durable
+    the instant the link succeeds; a hard crash or ENOSPC can only ever
+    happen before that link (leaving no lock at all, safely retryable),
+    never after it with a half-written lock permanently masquerading as
+    corruption. The parent directory is `fsync`'d too, since a new
+    directory entry's own durability is a separate guarantee from the
+    file content's on POSIX."""
     path = _cohort_lock_path(cohort, directory=directory)
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = json.dumps(
         {"cohort": cohort, "authoritative_fingerprint": fingerprint}, sort_keys=True, indent=2
     )
+    tmp_path = path.parent / f".{path.name}.tmp-{os.getpid()}-{uuid.uuid4().hex}"
     try:
-        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
-    except FileExistsError:
-        existing = read_authoritative_fingerprint(cohort, directory=directory)
-        if existing != fingerprint:
-            raise CohortDriftDetectedError(
-                f"cohort_key={_cohort_key_hash(cohort)}: authoritative fingerprint is "
-                f"{existing!r}, but this freeze computed {fingerprint!r} for the SAME "
-                f"cohort ({json.dumps(cohort, sort_keys=True)}). The underlying data this "
-                "cohort depends on appears to have changed since the first successful "
-                "freeze (a late backfill/correction is the realistic cause) -- "
-                "investigate before treating either fingerprint as current; do not "
-                "silently prefer the newer one."
-            ) from None
-        return existing
-    else:
-        with os.fdopen(fd, "w") as handle:
+        with tmp_path.open("w") as handle:
             handle.write(payload)
-        return fingerprint
+            handle.flush()
+            os.fsync(handle.fileno())
+        try:
+            os.link(tmp_path, path)
+        except FileExistsError:
+            existing = read_authoritative_fingerprint(cohort, directory=directory)
+            if existing != fingerprint:
+                raise CohortDriftDetectedError(
+                    f"cohort_key={_cohort_key_hash(cohort)}: authoritative fingerprint is "
+                    f"{existing!r}, but this freeze computed {fingerprint!r} for the SAME "
+                    f"cohort ({json.dumps(cohort, sort_keys=True)}). The underlying data "
+                    "this cohort depends on appears to have changed since the first "
+                    "successful freeze (a late backfill/correction is the realistic "
+                    "cause) -- investigate before treating either fingerprint as "
+                    "current; do not silently prefer the newer one."
+                ) from None
+            return existing
+        else:
+            with contextlib.suppress(OSError):
+                _fsync_directory(path.parent)
+            return fingerprint
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+
+def _fsync_directory(directory: Path) -> None:
+    fd = os.open(directory, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
 
 
 def freeze(
@@ -335,12 +409,16 @@ def read(
     dict[str, ExactPricePath],
 ]:
     """Raises `ResearchDatasetArtifactCorruptError` (via
-    `read_dataset_artifact`) on any integrity failure, or
+    `read_dataset_artifact`) on any integrity failure,
     `WrongDatasetArtifactError` if `fingerprint` resolves to a real
-    artifact that is not this dataset. Returns `(manifest, episodes,
-    signal_paths, controls_by_episode, control_paths)` -- exactly the
-    shape `select_matched_pairs`/`build_direction_results` already
-    consume, so the evaluate path can call them unchanged."""
+    artifact that is not this dataset, or `NonAuthoritativeArtifactError`
+    if `fingerprint` is a valid artifact of this dataset but is not (or no
+    longer) its own cohort's authoritative fingerprint -- see that error's
+    own docstring for why this check exists (colleague review, 2026-09-04).
+    Returns `(manifest, episodes, signal_paths, controls_by_episode,
+    control_paths)` -- exactly the shape `select_matched_pairs`/
+    `build_direction_results` already consume, so the evaluate path can
+    call them unchanged."""
     manifest, raw_rows = read_dataset_artifact(fingerprint, directory=directory)
     if (
         manifest.dataset_name != DATASET_NAME
@@ -351,6 +429,15 @@ def read(
             f"fingerprint {fingerprint} resolves to "
             f"{manifest.dataset_name}/{manifest.dataset_version}/{manifest.schema_version}, "
             f"not {DATASET_NAME}/{DATASET_VERSION}/{SCHEMA_VERSION}"
+        )
+
+    authoritative = read_authoritative_fingerprint(manifest.cohort, directory=directory)
+    if authoritative != fingerprint:
+        raise NonAuthoritativeArtifactError(
+            f"fingerprint {fingerprint} is a valid {DATASET_NAME} artifact but is not its "
+            f"own cohort's authoritative fingerprint (cohort lock names "
+            f"{authoritative!r}) -- refusing to evaluate a non-authoritative artifact; "
+            "see NonAuthoritativeArtifactError's own docstring"
         )
 
     episodes: list[OutcomeSignalEpisode] = []

@@ -625,3 +625,54 @@ def input_fingerprint(
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode()
     return hashlib.sha256(encoded).hexdigest()
+
+
+def contract_fingerprint(*, candidate_query_version: str, path_query_version: str) -> str:
+    """Hashes every constant this module's own estimand/decision-rule
+    computation depends on -- colleague review, 2026-09-04
+    (research/cex-activity-discovery-completion-v1): a frozen artifact's
+    own raw rows never change, but `build_report`
+    (cex_activity_discovery_report.py) re-runs LIVE matching/bootstrap/
+    Holm code against them on every `--from-artifact` call. If any of
+    these constants ever changes in a later code revision -- deliberately
+    (a genuine parameter change, which by this codebase's own convention
+    should be a new hypothesis id/contract, not a silent edit here) or by
+    accident -- re-evaluating an OLD artifact with NEW code would
+    silently compute a different verdict while still labeling itself with
+    whatever the CURRENT code's version strings happen to be, misrepresenting
+    what actually produced that number. `freeze_dataset` stores this
+    fingerprint at freeze time; `build_report` recomputes it fresh from the
+    CURRENT code's own constants and refuses to render if they disagree,
+    rather than silently mixing frozen data with a different evaluation
+    contract.
+
+    `candidate_query_version`/`path_query_version` are owned by the
+    report/repository modules that actually run those queries, not by this
+    module -- passed in rather than imported, since both of those modules
+    already import from this one and importing back would be circular."""
+    payload = {
+        "candidate_query_version": candidate_query_version,
+        "path_query_version": path_query_version,
+        "matching_policy_version": MATCHING_POLICY_VERSION,
+        "primary_move_pct": PRIMARY_MOVE_PCT,
+        "outcome_horizon_minutes": OUTCOME_HORIZON_MINUTES,
+        "control_search_days": CONTROL_SEARCH_DAYS,
+        "control_quiet_hours": CONTROL_QUIET_HOURS,
+        "control_boundary_policy_version": CONTROL_BOUNDARY_POLICY_VERSION,
+        "discovery_min_pairs": DISCOVERY_MIN_PAIRS,
+        "discovery_min_clusters": DISCOVERY_MIN_CLUSTERS,
+        "discovery_min_weeks": DISCOVERY_MIN_WEEKS,
+        "bootstrap_seed": DEFAULT_BOOTSTRAP_SEED,
+        "bootstrap_iterations": DEFAULT_BOOTSTRAP_ITERATIONS,
+        "confidence_level": DEFAULT_CONFIDENCE_LEVEL,
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
+class IncompatibleResearchContractError(ValueError):
+    """Raised by `build_report` when the CURRENT code's own
+    `contract_fingerprint()` does not match the one an artifact was frozen
+    with -- fail closed rather than silently applying a changed matching/
+    bootstrap/floor/query contract to old frozen raw data and mislabeling
+    the result with the new code's own version strings."""

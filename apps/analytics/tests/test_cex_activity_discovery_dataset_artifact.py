@@ -11,6 +11,7 @@ contract before any real invocation depends on it.
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
@@ -21,15 +22,27 @@ from schurfer_analytics.cex_activity_discovery import (
     PathRequest,
 )
 from schurfer_analytics.cex_activity_discovery_dataset_artifact import (
+    DATASET_NAME,
+    DATASET_VERSION,
+    ROW_ID_FIELD,
+    ROW_ORDER,
+    SCHEMA_VERSION,
     CohortDriftDetectedError,
+    NonAuthoritativeArtifactError,
     WrongDatasetArtifactError,
+    _cohort_lock_path,
     build_cohort,
     build_rows,
+    claim_authoritative_fingerprint,
     freeze,
     read,
     read_authoritative_fingerprint,
 )
-from schurfer_analytics.research_dataset_artifact import ResearchDatasetArtifactCorruptError
+from schurfer_analytics.research_dataset_artifact import (
+    ArtifactWriteOutcome,
+    ResearchDatasetArtifactCorruptError,
+    write_dataset_artifact,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -202,8 +215,6 @@ def test_freeze_then_read_round_trips_utc_and_every_field(tmp_path: Path) -> Non
 
 
 def test_read_rejects_a_fingerprint_from_a_different_dataset(tmp_path: Path) -> None:
-    from schurfer_analytics.research_dataset_artifact import write_dataset_artifact
-
     _outcome, other_manifest = write_dataset_artifact(
         dataset_name="some_other_dataset",
         dataset_version="v1",
@@ -370,3 +381,153 @@ def test_different_cohorts_never_collide_on_the_same_lock(tmp_path: Path) -> Non
     assert manifest_a.fingerprint != manifest_b.fingerprint
     assert read_authoritative_fingerprint(cohort_a, directory=tmp_path) == manifest_a.fingerprint
     assert read_authoritative_fingerprint(cohort_b, directory=tmp_path) == manifest_b.fingerprint
+
+
+# --- read() refuses a non-authoritative artifact (colleague review, 2026-09-04) --
+
+
+def test_read_rejects_a_losing_drift_artifact(tmp_path: Path) -> None:
+    """The exact gap colleague review, 2026-09-04 found: freeze() writes
+    the content-addressed artifact via write_dataset_artifact BEFORE it
+    claims the cohort lock, so a losing (drifted) attempt's own artifact
+    is still a fully valid, self-consistent artifact on its own --
+    read() must refuse to evaluate it anyway, since it is not this
+    cohort's own authoritative fingerprint."""
+    episodes, signal_paths, controls_by_episode, control_paths = _fixture()
+    cohort = _cohort()
+    rows1 = build_rows(
+        episodes=episodes,
+        signal_paths=signal_paths,
+        controls_by_episode=controls_by_episode,
+        control_paths=control_paths,
+    )
+    winning_manifest = freeze(
+        cohort=cohort,
+        rows=rows1,
+        code_revision="rev1",
+        working_tree_dirty=False,
+        directory=tmp_path,
+    )
+
+    drifted_signal_paths = dict(signal_paths)
+    drifted_signal_paths["signal:1"] = ExactPricePath(
+        request_id="signal:1",
+        symbol="TESTUSDT",
+        trigger_at=_BASE,
+        entry_at=_BASE + timedelta(minutes=1),
+        entry_price=999.0,
+        observed_minutes=1440,
+        max_high=110.0,
+        min_low=95.0,
+        first_up_25_at=None,
+        first_down_25_at=None,
+    )
+    rows2 = build_rows(
+        episodes=episodes,
+        signal_paths=drifted_signal_paths,
+        controls_by_episode=controls_by_episode,
+        control_paths=control_paths,
+    )
+    # write_dataset_artifact directly, bypassing freeze()'s own cohort-lock
+    # claim -- durably publishes a real, self-consistent, but non-
+    # authoritative artifact, exactly what a losing concurrent freeze
+    # attempt would leave behind on disk.
+    outcome, losing_manifest = write_dataset_artifact(
+        dataset_name=DATASET_NAME,
+        dataset_version=DATASET_VERSION,
+        schema_version=SCHEMA_VERSION,
+        rows=rows2,
+        row_id_field=ROW_ID_FIELD,
+        row_order=ROW_ORDER,
+        cohort=cohort,
+        code_revision="rev2",
+        working_tree_dirty=False,
+        directory=tmp_path,
+    )
+    assert outcome is ArtifactWriteOutcome.CREATED
+    assert losing_manifest is not None
+    assert losing_manifest.fingerprint != winning_manifest.fingerprint
+
+    with pytest.raises(NonAuthoritativeArtifactError):
+        read(losing_manifest.fingerprint, directory=tmp_path)
+    # The winning fingerprint still reads fine.
+    read(winning_manifest.fingerprint, directory=tmp_path)
+
+
+def test_read_rejects_an_artifact_whose_cohort_was_never_claimed(tmp_path: Path) -> None:
+    """Stand-in for a crash between freeze()'s own publish and claim
+    steps: a real, valid artifact exists on disk, but no cohort lock was
+    ever written for it at all -- read() must fail closed, never treat an
+    unclaimed cohort as trivially authoritative."""
+    episodes, signal_paths, controls_by_episode, control_paths = _fixture()
+    cohort = _cohort()
+    rows = build_rows(
+        episodes=episodes,
+        signal_paths=signal_paths,
+        controls_by_episode=controls_by_episode,
+        control_paths=control_paths,
+    )
+    outcome, manifest = write_dataset_artifact(
+        dataset_name=DATASET_NAME,
+        dataset_version=DATASET_VERSION,
+        schema_version=SCHEMA_VERSION,
+        rows=rows,
+        row_id_field=ROW_ID_FIELD,
+        row_order=ROW_ORDER,
+        cohort=cohort,
+        code_revision="rev1",
+        working_tree_dirty=False,
+        directory=tmp_path,
+    )
+    assert outcome is ArtifactWriteOutcome.CREATED
+    assert manifest is not None
+    assert read_authoritative_fingerprint(cohort, directory=tmp_path) is None
+
+    with pytest.raises(NonAuthoritativeArtifactError):
+        read(manifest.fingerprint, directory=tmp_path)
+
+
+# --- cohort lock durability + payload validation (colleague review, 2026-09-04) --
+
+
+def test_claim_authoritative_fingerprint_cleans_up_its_own_temp_file(tmp_path: Path) -> None:
+    cohort = _cohort()
+    fingerprint = "a" * 64
+    claim_authoritative_fingerprint(cohort, fingerprint, directory=tmp_path)
+    lock_path = _cohort_lock_path(cohort, directory=tmp_path)
+    assert lock_path.exists()
+    leftover_temp_files = list(lock_path.parent.glob(".*.tmp-*"))
+    assert leftover_temp_files == []
+
+
+def test_read_authoritative_fingerprint_rejects_a_cohort_mismatched_lock_payload(
+    tmp_path: Path,
+) -> None:
+    """Defense against a hash collision or a corrupted/foreign payload
+    landing at this cohort's own lock path -- read_authoritative_
+    fingerprint must not trust `authoritative_fingerprint` at face value
+    without checking the payload's own `cohort` field matches what was
+    requested."""
+    cohort = _cohort()
+    lock_path = _cohort_lock_path(cohort, directory=tmp_path)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path.write_text(
+        json.dumps({"cohort": {"different": "cohort"}, "authoritative_fingerprint": "a" * 64})
+    )
+    with pytest.raises(ResearchDatasetArtifactCorruptError, match="different cohort"):
+        read_authoritative_fingerprint(cohort, directory=tmp_path)
+
+
+def test_read_authoritative_fingerprint_rejects_a_malformed_fingerprint_format(
+    tmp_path: Path,
+) -> None:
+    cohort = _cohort()
+    lock_path = _cohort_lock_path(cohort, directory=tmp_path)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path.write_text(
+        json.dumps({"cohort": cohort, "authoritative_fingerprint": "not-a-real-fingerprint"})
+    )
+    with pytest.raises(
+        ResearchDatasetArtifactCorruptError, match="no valid authoritative_fingerprint"
+    ):
+        read_authoritative_fingerprint(cohort, directory=tmp_path)

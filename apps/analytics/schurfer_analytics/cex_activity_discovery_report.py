@@ -42,6 +42,47 @@ fallback this module implements anywhere -- a missing or corrupted
 artifact is a loud error (via `cex_activity_discovery_dataset_artifact
 .read`'s own `research_dataset_artifact` integrity checks), never a
 silent trigger to fall back to a live query.
+
+## What `--freeze-artifact` does and does not guarantee about consistency
+## (colleague review, 2026-09-04)
+
+`freeze_dataset` reads PostgreSQL in three phases, each its own
+connection/transaction: (1) `database_now()`, (2) the offline candidate-
+detection extract (`extract_bars_to_parquet`, chunked into many
+connections of its own), (3) one `fetch_exact_paths` call over the
+combined signal + control request set (also internally batched). This is
+NOT a single PostgreSQL snapshot -- a late backfill/correction to
+`timeseries.bybit_momentum_bars_1m` landing between phases 2 and 3 could,
+in principle, mean the candidate universe was detected under one version
+of the data while the exact entry/outcome paths for that same universe
+were read under a different, corrected version.
+
+A genuine fix -- importing one `pg_export_snapshot()`-exported snapshot
+into every connection across all three phases via `SET TRANSACTION
+SNAPSHOT` -- was considered and rejected: the exporting transaction must
+stay open for the ENTIRE freeze (up to ~30 minutes, per the resource
+bounds below), which means holding a live `REPEATABLE READ` transaction
+against production's `timeseries.bybit_momentum_bars_1m` -- a large,
+high-throughput table -- for that whole duration. That holds back
+autovacuum on that table for as long as the transaction is open, which is
+exactly the class of new production resource risk
+`research/cex-activity-offline-denominator-v1` (PR #327) was built to
+eliminate in the first place, not something this PR should reintroduce to
+close a narrower and much rarer risk (a backfill to already-years-settled
+historical bars, landing in the middle of one specific freeze run).
+
+What IS done: the two most consequential reads -- an episode's own signal
+path and its matched control path, the exact pair the paired estimand
+compares -- are fetched together in ONE `fetch_exact_paths` call (not two
+separate top-level calls, each its own start/end), closing the one
+inconsistency window that would directly corrupt the paired comparison.
+Beyond that, `extra["database_snapshot_at"]`/`extra["extract_completed_
+at"]`/`extra["path_fetch_completed_at"]` (all from Postgres's own
+`now()`) record the real wall-clock bounds of each phase, so a reviewer
+auditing a specific freeze can check those bounds against any known
+backfill/correction event rather than the run being silently unauditable
+either way. This is a documented, accepted residual risk, not a solved
+one -- see docs/research/cex-activity-discovery-completion-v1.md.
 """
 
 from __future__ import annotations
@@ -53,6 +94,7 @@ import json
 import os
 import sys
 import tempfile
+from collections import defaultdict
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -67,14 +109,17 @@ from .cex_activity_discovery import (
     DISCOVERY_UNTIL,
     HYPOTHESIS_ID,
     MATCHING_POLICY_VERSION,
+    MISSING_PATH_RESULT_REASON,
     OUTCOME_HORIZON_MINUTES,
     PRIMARY_MOVE_PCT,
     DirectionMoveResult,
     ExactPricePath,
+    IncompatibleResearchContractError,
     OutcomeSignalEpisode,
     PathRequest,
     build_control_requests,
     build_direction_results,
+    contract_fingerprint,
     input_fingerprint,
     select_forward_candidate,
     select_matched_pairs,
@@ -142,6 +187,8 @@ class CexActivityDataset:
     or cares which."""
 
     artifact_fingerprint: str
+    artifact_code_revision: str
+    artifact_working_tree_dirty: bool
     manifest_generated_at: datetime
     database_snapshot_at: datetime
     since: datetime
@@ -155,6 +202,9 @@ class CexActivityDataset:
     max_candidate_minutes: int
     max_path_requests: int
     candidate_extreme_minutes: int
+    candidate_query_version: str
+    path_query_version: str
+    contract_fingerprint: str
     episodes: tuple[OutcomeSignalEpisode, ...]
     signal_paths: dict[str, ExactPricePath]
     controls_by_episode: dict[int, tuple[PathRequest, ...]]
@@ -168,8 +218,18 @@ class CexActivityManifest:
     candidate_query_version: str
     path_query_version: str
     interpretation: str
+    # code_revision/working_tree_dirty describe THIS RENDER -- the
+    # evaluator, i.e. whatever code state ran `build_report` right now.
+    # artifact_code_revision/artifact_working_tree_dirty describe the
+    # FREEZE instead -- the code state `freeze_dataset` ran under when it
+    # produced the underlying raw rows. These are two different points in
+    # time and are kept as two separate field pairs (colleague review,
+    # 2026-09-04) rather than one, so a reader can always tell whether a
+    # `--from-artifact` render used the same code that froze the data.
     code_revision: str
     working_tree_dirty: bool
+    artifact_code_revision: str
+    artifact_working_tree_dirty: bool
     generated_at: datetime
     database_snapshot_at: datetime
     since: datetime
@@ -186,6 +246,7 @@ class CexActivityManifest:
     control_quiet_hours: int
     control_boundary_policy_version: str
     matching_policy_version: str
+    contract_fingerprint: str
     artifact_fingerprint: str
     input_fingerprint: str
 
@@ -199,7 +260,22 @@ class CexActivityFunnel:
     cardinality assignment to another episode) previously only showed up
     as an implicit gap between resolved_signal_paths and matched_pairs --
     easy to miss, and impossible to distinguish from an episode whose
-    signal itself never resolved. Counted explicitly here instead."""
+    signal itself never resolved. Counted explicitly here instead.
+
+    `signal_unresolved_by_reason`/`control_unresolved_by_reason`
+    (colleague review, 2026-09-04): the artifact already classifies every
+    unresolved path via `ExactPricePath.unresolved_reason`, but the
+    formal report previously only ever surfaced the aggregate
+    resolved/unresolved counts -- never WHY or on WHICH SIDE observations
+    were missing (missing entry, incomplete 24h, invalid extrema, or no
+    row at all). A systematic selection bias hiding behind one of those
+    reasons (e.g. every `sell`-direction control consistently missing its
+    entry bar) would be invisible in the aggregate count alone. Per
+    `build_report`'s own reconciliation check: `resolved_signal_paths +
+    sum(signal_unresolved_by_reason.values())` always equals the total
+    number of signal requests (one per episode), and the equivalent holds
+    for control -- every request is accounted for exactly once, resolved
+    or under exactly one unresolved reason, never both and never neither."""
 
     candidate_extreme_minutes: int
     independent_episodes: int
@@ -208,6 +284,8 @@ class CexActivityFunnel:
     resolved_control_paths: int
     matched_pairs: int
     unmatched_resolved_signal_episodes: int
+    signal_unresolved_by_reason: dict[str, int]
+    control_unresolved_by_reason: dict[str, int]
 
 
 @dataclass(frozen=True)
@@ -301,6 +379,11 @@ def render_markdown(report: CexActivityDiscoveryReport) -> str:
         f"{manifest.outcome_horizon_minutes // 60}h from next-bar open",
         f"Artifact fingerprint: `{manifest.artifact_fingerprint}`",
         f"Input fingerprint: `{manifest.input_fingerprint}`",
+        f"Research contract fingerprint: `{manifest.contract_fingerprint}`",
+        f"Freeze code revision: `{manifest.artifact_code_revision}`"
+        + (" (dirty)" if manifest.artifact_working_tree_dirty else ""),
+        f"Render code revision: `{manifest.code_revision}`"
+        + (" (dirty)" if manifest.working_tree_dirty else ""),
         "",
         "## Funnel",
         "",
@@ -322,6 +405,27 @@ def render_markdown(report: CexActivityDiscoveryReport) -> str:
             ],
         )
     )
+    if report.funnel.signal_unresolved_by_reason or report.funnel.control_unresolved_by_reason:
+        lines.extend(["", "### Unresolved, by reason", ""])
+        reasons = sorted(
+            {
+                *report.funnel.signal_unresolved_by_reason,
+                *report.funnel.control_unresolved_by_reason,
+            }
+        )
+        lines.extend(
+            markdown_table(
+                ("Reason", "Signal", "Control"),
+                [
+                    (
+                        reason,
+                        report.funnel.signal_unresolved_by_reason.get(reason, 0),
+                        report.funnel.control_unresolved_by_reason.get(reason, 0),
+                    )
+                    for reason in reasons
+                ],
+            )
+        )
     lines.extend(["", "## Registered directional family", ""])
     rows = []
     for row in report.directions:
@@ -538,18 +642,38 @@ async def freeze_dataset(args: argparse.Namespace) -> DatasetArtifactManifest:
                     f"{OUTCOME_HORIZON_MINUTES} minutes and one bar close)"
                 )
 
-        signal_paths = await path_repository.fetch_exact_paths(
+        # ONE fetch_exact_paths call over the union of signal and control
+        # requests, not two separate ones -- colleague review, 2026-09-04:
+        # the paired estimand directly compares each episode's own signal
+        # path against its matched control path, so if a late backfill/
+        # correction landed on the underlying bars table BETWEEN two
+        # separate top-level calls, a signal path and its own matched
+        # control path could be read from two different data vintages --
+        # the exact pair this report's whole statistic depends on being
+        # comparable. One call, batched together, closes that specific
+        # window; see the freeze-consistency note in this module's own
+        # top-of-file docstring for what this does and does not guarantee
+        # across the extract phase too.
+        extract_completed_at = await path_repository.database_now()
+        all_requests = (*signal_requests, *control_request_rows)
+        all_paths = await path_repository.fetch_exact_paths(
             exchange=args.exchange,
             market_type=args.market_type,
             capture_version=args.capture_version,
-            requests=signal_requests,
+            requests=all_requests,
         )
-        control_paths = await path_repository.fetch_exact_paths(
-            exchange=args.exchange,
-            market_type=args.market_type,
-            capture_version=args.capture_version,
-            requests=control_request_rows,
-        )
+        path_fetch_completed_at = await path_repository.database_now()
+        signal_request_ids = {request.request_id for request in signal_requests}
+        signal_paths = {
+            request_id: path
+            for request_id, path in all_paths.items()
+            if request_id in signal_request_ids
+        }
+        control_paths = {
+            request_id: path
+            for request_id, path in all_paths.items()
+            if request_id not in signal_request_ids
+        }
     finally:
         await asyncio.gather(path_repository.close(), extract_repository.close())
 
@@ -574,6 +698,10 @@ async def freeze_dataset(args: argparse.Namespace) -> DatasetArtifactManifest:
         "candidate_query_version": CANDIDATE_QUERY_VERSION,
         "path_query_version": PATH_QUERY_VERSION,
         "matching_policy_version": MATCHING_POLICY_VERSION,
+        "contract_fingerprint": contract_fingerprint(
+            candidate_query_version=CANDIDATE_QUERY_VERSION,
+            path_query_version=PATH_QUERY_VERSION,
+        ),
         "extreme_threshold_pct": args.extreme_threshold_pct,
         "refractory_minutes": args.refractory_minutes,
         "min_volume_24h_usd": args.min_volume_24h_usd,
@@ -590,6 +718,18 @@ async def freeze_dataset(args: argparse.Namespace) -> DatasetArtifactManifest:
         "extract_symbol_count": extract_manifest.symbol_count,
         "extract_parquet_sha256": extract_manifest.parquet_sha256,
         "extract_wall_seconds": extract_manifest.wall_seconds,
+        # Phase-timing provenance (colleague review, 2026-09-04, "freeze is
+        # not one snapshot"): database_snapshot_at/extract_completed_at/
+        # path_fetch_completed_at bound the real wall-clock window during
+        # which this run's own reads happened, all from Postgres's own
+        # `now()` (not this process's local clock) so they are directly
+        # comparable to each other and to any known backfill/correction
+        # timestamp during a later audit. This does NOT provide snapshot
+        # isolation -- see this module's own top-of-file docstring for why
+        # holding a live snapshot transaction open against production for
+        # the whole freeze was evaluated and rejected.
+        "extract_completed_at": extract_completed_at.isoformat(),
+        "path_fetch_completed_at": path_fetch_completed_at.isoformat(),
     }
     return dataset_artifact.freeze(
         cohort=cohort,
@@ -617,6 +757,14 @@ def load_dataset_from_artifact(
     database_snapshot_at = datetime.fromisoformat(manifest.extra["database_snapshot_at"])
     return CexActivityDataset(
         artifact_fingerprint=manifest.fingerprint,
+        # The FREEZE's own recorded code state -- colleague review,
+        # 2026-09-04: distinct from the `code_revision`/`working_tree_
+        # dirty` build_report's own caller passes in, which describe the
+        # RENDER instead. manifest.code_revision/working_tree_dirty come
+        # straight from write_dataset_artifact's own top-level fields
+        # (never part of the content fingerprint), not from `extra`.
+        artifact_code_revision=manifest.code_revision,
+        artifact_working_tree_dirty=manifest.working_tree_dirty,
         manifest_generated_at=database_snapshot_at,
         database_snapshot_at=database_snapshot_at,
         since=since,
@@ -630,11 +778,32 @@ def load_dataset_from_artifact(
         max_candidate_minutes=manifest.extra["max_candidate_minutes"],
         max_path_requests=manifest.extra["max_path_requests"],
         candidate_extreme_minutes=manifest.extra["candidate_extreme_minutes"],
+        candidate_query_version=manifest.extra["candidate_query_version"],
+        path_query_version=manifest.extra["path_query_version"],
+        contract_fingerprint=manifest.extra["contract_fingerprint"],
         episodes=episodes,
         signal_paths=signal_paths,
         controls_by_episode=controls_by_episode,
         control_paths=control_paths,
     )
+
+
+def _unresolved_by_reason(
+    requests: tuple[PathRequest, ...], paths: dict[str, ExactPricePath]
+) -> dict[str, int]:
+    """Colleague review, 2026-09-04: iterates over every REQUEST, not just
+    the paths dict, so a request with no returned row at all (absent from
+    `paths` entirely, `MISSING_PATH_RESULT_REASON`) is correctly counted
+    rather than silently vanishing -- the same distinction `ExactPricePath
+    .unresolved_reason` already makes for a present-but-unresolved path,
+    applied consistently at the funnel level."""
+    counts: dict[str, int] = defaultdict(int)
+    for request in requests:
+        path = paths.get(request.request_id)
+        reason = MISSING_PATH_RESULT_REASON if path is None else path.unresolved_reason
+        if reason is not None:
+            counts[reason] += 1
+    return dict(counts)
 
 
 def build_report(
@@ -643,7 +812,28 @@ def build_report(
     """Pure -- no PostgreSQL, no filesystem. Takes an already-loaded
     CexActivityDataset (from either freeze_dataset's own in-memory result
     or load_dataset_from_artifact) and computes the funnel/direction
-    statistics/verdict, exactly the same way regardless of which."""
+    statistics/verdict, exactly the same way regardless of which.
+
+    Fails closed with `IncompatibleResearchContractError` if the CURRENT
+    code's own `contract_fingerprint()` does not match the one this
+    dataset was frozen with (colleague review, 2026-09-04) -- never
+    silently apply a changed matching/bootstrap/floor/query contract to
+    old frozen raw data while labeling the rendered result with the new
+    code's own version strings."""
+    current_contract_fingerprint = contract_fingerprint(
+        candidate_query_version=CANDIDATE_QUERY_VERSION,
+        path_query_version=PATH_QUERY_VERSION,
+    )
+    if current_contract_fingerprint != dataset.contract_fingerprint:
+        raise IncompatibleResearchContractError(
+            f"dataset (artifact fingerprint {dataset.artifact_fingerprint}) was frozen "
+            f"under research contract {dataset.contract_fingerprint}, but the running "
+            f"code's own contract is {current_contract_fingerprint} -- refusing to "
+            "evaluate old frozen raw data against a changed matching/bootstrap/floor/"
+            "query contract; see contract_fingerprint's own docstring"
+        )
+
+    signal_requests = tuple(signal_request(episode) for episode in dataset.episodes)
     control_request_rows = tuple(
         request for rows in dataset.controls_by_episode.values() for request in rows
     )
@@ -663,15 +853,35 @@ def build_report(
         and (path := dataset.signal_paths.get(signal_request(episode).request_id)) is not None
         and path.resolved
     )
+    resolved_signal_paths = sum(path.resolved for path in dataset.signal_paths.values())
+    resolved_control_paths = sum(path.resolved for path in dataset.control_paths.values())
+    signal_unresolved_by_reason = _unresolved_by_reason(signal_requests, dataset.signal_paths)
+    control_unresolved_by_reason = _unresolved_by_reason(
+        control_request_rows, dataset.control_paths
+    )
+    # Reconciliation (colleague review, 2026-09-04): every signal/control
+    # request is either resolved or accounted for under exactly one
+    # unresolved reason -- never both, never neither. This must hold by
+    # construction (both counts are computed from the SAME per-request
+    # loop, just filtered differently); asserted here as a cheap, direct
+    # sanity check rather than trusting that invariant silently.
+    assert resolved_signal_paths + sum(signal_unresolved_by_reason.values()) == len(
+        signal_requests
+    ), "signal resolved + unresolved-by-reason must reconcile to the total request count"
+    assert resolved_control_paths + sum(control_unresolved_by_reason.values()) == len(
+        control_request_rows
+    ), "control resolved + unresolved-by-reason must reconcile to the total request count"
     return CexActivityDiscoveryReport(
         manifest=CexActivityManifest(
             hypothesis_id=HYPOTHESIS_ID,
             report_version=REPORT_VERSION,
-            candidate_query_version=CANDIDATE_QUERY_VERSION,
-            path_query_version=PATH_QUERY_VERSION,
+            candidate_query_version=dataset.candidate_query_version,
+            path_query_version=dataset.path_query_version,
             interpretation=INTERPRETATION,
             code_revision=code_revision,
             working_tree_dirty=working_tree_dirty,
+            artifact_code_revision=dataset.artifact_code_revision,
+            artifact_working_tree_dirty=dataset.artifact_working_tree_dirty,
             generated_at=dataset.manifest_generated_at,
             database_snapshot_at=dataset.database_snapshot_at,
             since=dataset.since,
@@ -688,17 +898,20 @@ def build_report(
             control_quiet_hours=CONTROL_QUIET_HOURS,
             control_boundary_policy_version=CONTROL_BOUNDARY_POLICY_VERSION,
             matching_policy_version=MATCHING_POLICY_VERSION,
+            contract_fingerprint=dataset.contract_fingerprint,
             artifact_fingerprint=dataset.artifact_fingerprint,
             input_fingerprint=fingerprint,
         ),
         funnel=CexActivityFunnel(
             candidate_extreme_minutes=dataset.candidate_extreme_minutes,
             independent_episodes=len(dataset.episodes),
-            resolved_signal_paths=sum(path.resolved for path in dataset.signal_paths.values()),
+            resolved_signal_paths=resolved_signal_paths,
             generated_control_candidates=len(control_request_rows),
-            resolved_control_paths=sum(path.resolved for path in dataset.control_paths.values()),
+            resolved_control_paths=resolved_control_paths,
             matched_pairs=len(pairs),
             unmatched_resolved_signal_episodes=unmatched_resolved_signal_episodes,
+            signal_unresolved_by_reason=signal_unresolved_by_reason,
+            control_unresolved_by_reason=control_unresolved_by_reason,
         ),
         directions=direction_results,
         selected_forward_candidate=select_forward_candidate(direction_results),

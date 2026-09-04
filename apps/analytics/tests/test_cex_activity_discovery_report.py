@@ -17,6 +17,7 @@ import json
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
+import pytest
 from schurfer_analytics import cex_activity_discovery_dataset_artifact as dataset_artifact
 from schurfer_analytics import cex_activity_discovery_report as report_module
 from schurfer_analytics.cex_activity_discovery import (
@@ -24,16 +25,22 @@ from schurfer_analytics.cex_activity_discovery import (
     HYPOTHESIS_ID,
     OUTCOME_HORIZON_MINUTES,
     ExactPricePath,
+    IncompatibleResearchContractError,
     OutcomeSignalEpisode,
     PathRequest,
+    contract_fingerprint,
     signal_request,
 )
 from schurfer_analytics.cex_activity_discovery_report import (
+    CANDIDATE_QUERY_VERSION,
     CexActivityDataset,
     build_report,
     load_dataset_from_artifact,
 )
-from schurfer_analytics.cex_activity_discovery_repository import CexActivityDiscoveryRepository
+from schurfer_analytics.cex_activity_discovery_repository import (
+    PATH_QUERY_VERSION,
+    CexActivityDiscoveryRepository,
+)
 from schurfer_analytics.momentum_flow_bidirectional_burst_repository import (
     MomentumFlowBidirectionalBurstRepository,
 )
@@ -41,8 +48,6 @@ from schurfer_analytics.momentum_flow_bidirectional_burst_study import DIRECTION
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-    import pytest
 
 _BASE = datetime(2026, 8, 18, 12, 0, tzinfo=UTC)
 _SINCE = datetime(2026, 8, 18, tzinfo=UTC)
@@ -84,6 +89,11 @@ def _resolved_path(
     )
 
 
+_LIVE_CONTRACT_FINGERPRINT = contract_fingerprint(
+    candidate_query_version=CANDIDATE_QUERY_VERSION, path_query_version=PATH_QUERY_VERSION
+)
+
+
 def _dataset(
     *,
     episodes: tuple[OutcomeSignalEpisode, ...],
@@ -91,9 +101,12 @@ def _dataset(
     controls_by_episode: dict[int, tuple[PathRequest, ...]],
     control_paths: dict[str, ExactPricePath],
     generated_at: datetime = _BASE,
+    contract_fingerprint_override: str | None = None,
 ) -> CexActivityDataset:
     return CexActivityDataset(
         artifact_fingerprint="fake-fingerprint",
+        artifact_code_revision="frozen-deadbeef",
+        artifact_working_tree_dirty=False,
         manifest_generated_at=generated_at,
         database_snapshot_at=generated_at,
         since=_SINCE,
@@ -107,6 +120,9 @@ def _dataset(
         max_candidate_minutes=100_000,
         max_path_requests=200_000,
         candidate_extreme_minutes=7,
+        candidate_query_version=CANDIDATE_QUERY_VERSION,
+        path_query_version=PATH_QUERY_VERSION,
+        contract_fingerprint=contract_fingerprint_override or _LIVE_CONTRACT_FINGERPRINT,
         episodes=episodes,
         signal_paths=signal_paths,
         controls_by_episode=controls_by_episode,
@@ -188,6 +204,110 @@ def test_build_report_funnel_counts_unmatched_resolved_signal_episodes() -> None
     assert report.funnel.unmatched_resolved_signal_episodes == 1
 
 
+# --- contract_fingerprint gate (colleague review, 2026-09-04) --------------
+
+
+def test_build_report_rejects_a_dataset_frozen_under_a_different_contract() -> None:
+    """The core of finding [P1] "artifact does not pin the full research
+    contract": a dataset whose own contract_fingerprint does not match
+    what the CURRENT code's own constants would produce must never be
+    silently evaluated with live matching/bootstrap/floor logic -- that
+    would compute a real verdict from stale frozen data under a contract
+    that no longer matches what the report claims to be running."""
+    episode = _episode(1)
+    dataset = _dataset(
+        episodes=(episode,),
+        signal_paths={},
+        controls_by_episode={1: ()},
+        control_paths={},
+        contract_fingerprint_override="a" * 64,
+    )
+    with pytest.raises(IncompatibleResearchContractError, match="research contract"):
+        build_report(dataset, code_revision="deadbeef", working_tree_dirty=False)
+
+
+def test_build_report_surfaces_freeze_vs_render_code_revision_separately() -> None:
+    episode = _episode(1)
+    dataset = _dataset(
+        episodes=(episode,), signal_paths={}, controls_by_episode={1: ()}, control_paths={}
+    )
+    report = build_report(dataset, code_revision="render-code", working_tree_dirty=True)
+    assert report.manifest.code_revision == "render-code"
+    assert report.manifest.working_tree_dirty is True
+    assert report.manifest.artifact_code_revision == "frozen-deadbeef"
+    assert report.manifest.artifact_working_tree_dirty is False
+    assert report.manifest.contract_fingerprint == _LIVE_CONTRACT_FINGERPRINT
+
+
+# --- unresolved-by-reason funnel breakdown (colleague review, 2026-09-04) --
+
+
+def test_build_report_funnel_breaks_down_unresolved_paths_by_reason_and_side() -> None:
+    """Missingness is classified (ExactPricePath.unresolved_reason) but was
+    previously invisible in the formal report -- the funnel must show WHY
+    and on WHICH SIDE observations were missing, and resolved + every
+    reason must reconcile exactly to the total request count on each side
+    (asserted inside build_report itself; re-checked here as the public
+    contract this test is meant to lock in)."""
+    signal_episode = _episode(1, symbol="AUSDT")
+    control_only_episode = _episode(2, symbol="BUSDT")
+    # signal_episode's own signal path is present but has no entry bar.
+    signal_request_id = signal_request(signal_episode).request_id
+    signal_paths = {
+        signal_request_id: ExactPricePath(
+            request_id=signal_request_id,
+            symbol=signal_episode.symbol,
+            trigger_at=signal_episode.trigger_at,
+            entry_at=signal_episode.entry_at,
+            entry_price=None,
+            observed_minutes=0,
+            max_high=None,
+            min_low=None,
+            first_up_25_at=None,
+            first_down_25_at=None,
+        )
+        # control_only_episode's own signal request has NO row at all --
+        # missing_path_result, not present in the dict.
+    }
+    control_request = PathRequest(
+        "control:2:p1",
+        control_only_episode.symbol,
+        control_only_episode.trigger_at,
+        control_only_episode.entry_at,
+    )
+    control_paths = {
+        # control_request's own path is present but has an invalid extremum.
+        control_request.request_id: ExactPricePath(
+            request_id=control_request.request_id,
+            symbol=control_only_episode.symbol,
+            trigger_at=control_request.trigger_at,
+            entry_at=control_request.entry_at,
+            entry_price=100.0,
+            observed_minutes=OUTCOME_HORIZON_MINUTES,
+            max_high=-5.0,
+            min_low=95.0,
+            first_up_25_at=None,
+            first_down_25_at=None,
+        )
+    }
+    dataset = _dataset(
+        episodes=(signal_episode, control_only_episode),
+        signal_paths=signal_paths,
+        controls_by_episode={1: (), 2: (control_request,)},
+        control_paths=control_paths,
+    )
+    report = build_report(dataset, code_revision="deadbeef", working_tree_dirty=False)
+    assert report.funnel.signal_unresolved_by_reason == {
+        "missing_entry_bar": 1,
+        "missing_path_result": 1,
+    }
+    assert report.funnel.control_unresolved_by_reason == {"invalid_extrema": 1}
+    # Reconciliation: 2 signal requests total, 0 resolved, 2 unresolved (1+1).
+    assert report.funnel.resolved_signal_paths == 0
+    # 1 control request total, 0 resolved, 1 unresolved.
+    assert report.funnel.resolved_control_paths == 0
+
+
 # --- load_dataset_from_artifact (real freeze, real read) -------------------
 
 
@@ -216,9 +336,16 @@ def _freeze_synthetic_cohort(directory: Path) -> tuple[str, OutcomeSignalEpisode
         working_tree_dirty=False,
         extra={
             "candidate_extreme_minutes": 3,
-            "candidate_query_version": "test_v1",
-            "path_query_version": "test_v1",
+            # The REAL live constants, not placeholder strings -- these
+            # feed contract_fingerprint below, and build_report's own
+            # contract check compares against the CURRENT code's live
+            # CANDIDATE_QUERY_VERSION/PATH_QUERY_VERSION, so a synthetic
+            # cohort meant to round-trip through build_report (not just
+            # load_dataset_from_artifact) must actually match them.
+            "candidate_query_version": CANDIDATE_QUERY_VERSION,
+            "path_query_version": PATH_QUERY_VERSION,
             "matching_policy_version": "test_v1",
+            "contract_fingerprint": _LIVE_CONTRACT_FINGERPRINT,
             "extreme_threshold_pct": 10.0,
             "refractory_minutes": 60,
             "min_volume_24h_usd": 50_000.0,
@@ -248,6 +375,11 @@ def test_load_dataset_from_artifact_round_trips_every_field(tmp_path: Path) -> N
     assert dataset.max_candidate_minutes == 100_000
     assert dataset.max_path_requests == 200_000
     assert dataset.candidate_extreme_minutes == 3
+    assert dataset.candidate_query_version == CANDIDATE_QUERY_VERSION
+    assert dataset.path_query_version == PATH_QUERY_VERSION
+    assert dataset.contract_fingerprint == _LIVE_CONTRACT_FINGERPRINT
+    assert dataset.artifact_code_revision == "deadbeef"
+    assert dataset.artifact_working_tree_dirty is False
     assert dataset.episodes == (episode,)
 
 
