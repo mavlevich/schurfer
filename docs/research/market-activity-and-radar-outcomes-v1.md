@@ -93,15 +93,27 @@ adverse excursion are diagnostics; the only primary metric is the paired
 ## Commands after merge
 
 ```bash
-# Offline replica or frozen extract only; do not point this full-universe scan
-# at the production primary.
-DATABASE_URL='<offline-postgres-url>' make cex-activity-discovery-report ARGS='--since 2026-08-18T00:00:00Z --until 2026-08-27T00:00:00Z --format json'
+# --freeze-artifact is the only mode that touches Postgres, and only for a
+# plain indexed-range Parquet extract (OfflineBarsExtractRepository) -- the
+# 5m/24h burst computation itself runs afterward via DuckDB against that
+# extract, never as a live window-function query against production. See
+# docs/research/cex-activity-discovery-completion-v1.md for the full
+# artifact contract and runbook.
+DATABASE_URL='<postgres-url>' make cex-activity-discovery-report ARGS='--freeze-artifact'
+
+# Prints only the resulting fingerprint. Render from it separately (no DB
+# calls at all, byte-identical across repeated calls):
+make cex-activity-discovery-report ARGS='--from-artifact <fingerprint> --format json'
 
 make prod-radar-outcome-discovery-report ARGS='--since 2026-08-18T00:00:00Z --until 2026-08-27T00:00:00Z --format json'
 ```
 
 The WATCH production target refuses to start without the normal report memory
 headroom. Each SQL transaction is read-only and has a five-minute statement
-timeout. The CEX scan deliberately has no production target after its first
-frozen run proved too I/O-heavy for the primary database; HYP-016 remains parked
-until the denominator is materialized or an offline replica is available.
+timeout. The CEX scan's own live 5m/24h RANGE-window query still has no
+production target after its first frozen run proved too I/O-heavy for the
+primary database; `research/cex-activity-discovery-completion-v1` replaces
+that live query with the offline extract + DuckDB path above so a formal
+freeze no longer needs one. Running that freeze for real against production
+is its own later, separate step (`research/cex-activity-discovery-result-v1`),
+not part of wiring the CLI itself.
