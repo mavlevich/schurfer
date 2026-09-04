@@ -86,7 +86,7 @@ flowchart TD
     A["extract_bars_to_parquet -- the only step touching Postgres"] --> B["fetch_candidate_extreme_minutes_offline -- DuckDB, zero further Postgres load"]
     B --> C["decluster_episodes, per direction"]
     C --> D["build signal + control PathRequests, pure"]
-    D --> E["fetch_exact_paths x2, bounded batches + deadline"]
+    D --> E["ONE fetch_exact_paths call over signal+control union, bounded batches + deadline"]
     E --> F["dataset_artifact.build_rows"]
     F --> G["dataset_artifact.freeze -- content-addressed write + cohort-drift lock"]
     G --> H(("Immutable artifact + fingerprint"))
@@ -120,22 +120,50 @@ monkeypatches both repository classes' `from_url` to raise and asserts
 - Content-addressed via `research_dataset_artifact.write_dataset_artifact`
   (first-successful-write-wins by content fingerprint, excluding
   `code_revision`/`generated_at` from the hash) -- but content-addressing
-  alone does not prevent two _different_ contents for the _same_ logical
-  cohort (since/until/exchange/market*type/capture_version/directions/
-  control-boundary-policy) from both being written as separate artifacts.
-  A second, atomically-created (`O_CREAT | O_EXCL`) lock file per cohort
+  alone does not prevent two different contents for the same logical
+  cohort (`since`/`until`/`exchange`/`market_type`/`capture_version`/
+  `directions`/`control_boundary_policy_version`) from both being written
+  as separate artifacts. A second, create-if-absent lock file per cohort
   key records the first successful freeze's own fingerprint as
-  authoritative; a later freeze for the same cohort that computes a
-  \_different* fingerprint raises `CohortDriftDetectedError` rather than
+  authoritative -- written crash-durably (an fsync'd temp file, then
+  atomically hard-linked to the final lock path, then the parent
+  directory itself fsync'd, since the 2026-09-04 colleague review found
+  the original bare `O_CREAT | O_EXCL` write was not durable against a
+  crash mid-write); a later freeze for the same cohort that computes a
+  different fingerprint raises `CohortDriftDetectedError` rather than
   silently treating the newer result as current. See that module's own
   docstring for the full rationale.
+- `read()` requires the cohort lock to exist and to name exactly the
+  fingerprint being read, raising `NonAuthoritativeArtifactError`
+  otherwise (colleague review, 2026-09-04) -- `freeze()` durably publishes
+  the content-addressed artifact BEFORE it claims the cohort lock, so a
+  losing (drifted) attempt's own artifact is a fully valid, self-
+  consistent artifact on its own; without this check `--from-artifact`
+  could successfully evaluate exactly the artifact `freeze()` itself
+  rejected. Covers both a losing concurrent-freeze race and a crash
+  between publish and claim.
+- `contract_fingerprint()` (`cex_activity_discovery.py`) hashes every
+  constant the estimand/decision rule depends on -- `move_pct`, horizon,
+  control policy, evidence floors, bootstrap seed/iterations/confidence,
+  matching policy, candidate/path query versions -- stored in `extra` at
+  freeze time, recomputed from the CURRENT code's own constants at render
+  time. `build_report` raises `IncompatibleResearchContractError` if they
+  disagree, rather than silently applying a changed matching/bootstrap/
+  floor/query contract to old frozen raw data while labeling the result
+  with the new code's own version strings (colleague review, 2026-09-04).
+  `CexActivityManifest` separately carries `artifact_code_revision` (the
+  freeze's own recorded code state) alongside `code_revision` (the
+  render's own) -- two different points in time, never conflated.
 - `extra` metadata on the manifest carries every operational number needed
   to reconstruct a `CexActivityDataset` on read (thresholds, caps,
-  `database_snapshot_at`), plus the offline extract's own provenance
+  `database_snapshot_at`, `candidate_query_version`, `path_query_version`,
+  `contract_fingerprint`), plus the offline extract's own provenance
   (`extract_query_version`, `extract_row_count`, `extract_symbol_count`,
-  `extract_parquet_sha256`, `extract_wall_seconds`) -- a reviewer can see
-  exactly how the candidate universe was computed from the frozen artifact
-  alone, without the original run's own logs.
+  `extract_parquet_sha256`, `extract_wall_seconds`) and phase-timing
+  provenance (`extract_completed_at`, `path_fetch_completed_at`, both from
+  Postgres's own `now()`) -- a reviewer can see exactly how the candidate
+  universe was computed, and the real wall-clock bounds each phase ran in,
+  from the frozen artifact alone, without the original run's own logs.
 - `--from-artifact` renders reuse the freeze's own recorded
   `database_snapshot_at` for both `generated_at` and
   `database_snapshot_at` on the rendered report's manifest, not
@@ -164,6 +192,16 @@ resolved control candidate, or it lost the maximum-cardinality assignment)
 is counted explicitly in the funnel as
 `unmatched_resolved_signal_episodes`, rather than only showing up as an
 implicit gap between `resolved_signal_paths` and `matched_pairs`.
+
+`CexActivityFunnel.signal_unresolved_by_reason`/
+`control_unresolved_by_reason` (colleague review, 2026-09-04) break the
+unresolved count down by reason, separately for signal and control, so a
+systematic selection bias hiding behind one specific reason (e.g. every
+`sell`-direction control consistently missing its entry bar) is visible
+in the rendered report, not just classified internally and then
+collapsed to an aggregate count. `build_report` asserts the
+reconciliation invariant directly: `resolved + sum(unresolved_by_reason
+.values())` always equals the total request count, on both sides.
 
 ## Resource bounds
 
@@ -196,9 +234,9 @@ implicit gap between `resolved_signal_paths` and `matched_pairs`.
 Per direction, independently:
 
 1. **Evidence floor.** `readiness = "discovery_ready"` only once paired
-   episodes >= 100, distinct asset clusters >= 20, and distinct UTC weeks
-   > = 2. Anything short of that is `insufficient_data`, regardless of
-   > what the point estimate looks like.
+   episodes reach at least 100, distinct asset clusters reach at least
+   20, and distinct UTC weeks reach at least 2. Anything short of that is
+   `insufficient_data`, regardless of what the point estimate looks like.
 2. **Cluster bootstrap.** Once `discovery_ready`, a whole-symbol cluster
    bootstrap 95% CI on the paired hit-rate difference (fixed seed per
    direction, derived deterministically so a re-run is reproducible).
@@ -223,6 +261,29 @@ cohort" rule, enforced in code, not just in the report's own prose.
 
 ## Result limitations
 
+- **A freeze is not one PostgreSQL snapshot** (colleague review,
+  2026-09-04). `freeze_dataset` reads Postgres in three phases, each its
+  own connection/transaction: `database_now()`, the offline extract, and
+  one `fetch_exact_paths` call over the combined signal+control request
+  set. A late backfill/correction to `timeseries.bybit_momentum_bars_1m`
+  landing between the extract and the path fetch could, in principle,
+  mean the candidate universe was detected under one version of the data
+  and its outcome paths read under a corrected version. A genuine fix
+  (one `pg_export_snapshot()` shared across all three phases) was
+  evaluated and rejected: it requires holding a live `REPEATABLE READ`
+  transaction against production's `timeseries.bybit_momentum_bars_1m`
+  for the whole ~30-minute freeze, holding back autovacuum on that
+  table -- exactly the class of production risk
+  `research/cex-activity-offline-denominator-v1` (PR #327) exists to
+  eliminate. What IS closed: the signal and its own matched control (the
+  exact pair the paired estimand compares) are fetched together in one
+  call, not two separate ones. `extra["database_snapshot_at"]`/
+  `extra["extract_completed_at"]`/`extra["path_fetch_completed_at"]`
+  (from Postgres's own `now()`) record the real bounds of each phase for
+  a later audit. This is a documented, accepted residual risk against
+  already-years-settled historical bars, not a solved one -- see
+  `cex_activity_discovery_report.py`'s own top-of-file docstring for the
+  full reasoning.
 - **Discovery only, permanently, for this window.** The
   `2026-08-18`-`2026-08-27` window has already been viewed (twice, via the
   two prior incident attempts). A `forward_candidate` verdict here is not
