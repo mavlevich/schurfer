@@ -17,19 +17,29 @@ DEADCODE_VERSION = v0.48.0
 # independently re-deriving its own copy of this same logic. Failure here
 # is intentionally loud, not silent: the script itself exits non-zero on
 # an empty module list, and $(shell ...) failures are NOT automatically
-# fatal to `make` the way a normal recipe line's failure is -- the
-# explicit $(if $(GO_MODULE_DIRS),,$(error ...)) below is what actually
-# turns "the script found nothing" into a failed `make verify`/`make
-# deadcode` invocation rather than a silently empty test loop.
-# Deliberately NOT `2>&1`: on failure (go.work missing/invalid, `go`
-# unavailable, zero modules) the script's own `set -euo pipefail` means it
-# exits before ever printing to stdout, so GO_MODULE_DIRS ends up empty --
-# the $(error ...) below catches that. Merging stderr in here would instead
-# stuff the script's own error TEXT into GO_MODULE_DIRS, which is non-empty
-# and would silently defeat that same check.
-GO_MODULE_DIRS := $(shell infra/scripts/go_workspace_modules.sh | tr '\n' ' ')
-$(if $(strip $(GO_MODULE_DIRS)),,$(error GO_MODULE_DIRS is empty -- infra/scripts/go_workspace_modules.sh failed or go.work declares zero modules))
-GO_MODULE_TEST_PATTERNS := $(addsuffix /...,$(GO_MODULE_DIRS))
+# fatal to `make` the way a normal recipe line's failure is.
+#
+# `=` (recursively expanded), NOT `:=` (simply expanded): GO_MODULE_DIRS
+# must only shell out to go_workspace_modules.sh -- which requires a `go`
+# binary -- at the moment a recipe actually expands it, never at Makefile
+# parse time. A `:=` here previously forced eager evaluation on every
+# single `make` invocation, and the empty-list check used to live in a
+# top-level `$(if $(GO_MODULE_DIRS),,$(error ...))` right below it, which
+# runs at parse time too -- so on any host without `go` installed (the
+# production host, deliberately Go-free) EVERY `make` target failed,
+# `prod-deploy-svc`/`prod-health`/every report target included, none of
+# which touch Go at all. Colleague review, 2026-09-04/05: fixed by making
+# both variables lazy and moving the emptiness check into the two recipes
+# that actually consume them (`verify`'s Go step, `deadcode`'s Go branch)
+# instead of the top level. Deliberately NOT `2>&1` in the script call: on
+# failure (go.work missing/invalid, `go` unavailable, zero modules) the
+# script's own `set -euo pipefail` means it exits before ever printing to
+# stdout, so GO_MODULE_DIRS ends up empty -- the recipe-level check below
+# catches that. Merging stderr in here would instead stuff the script's
+# own error TEXT into GO_MODULE_DIRS, which is non-empty and would
+# silently defeat that same check.
+GO_MODULE_DIRS = $(shell infra/scripts/go_workspace_modules.sh | tr '\n' ' ')
+GO_MODULE_TEST_PATTERNS = $(addsuffix /...,$(GO_MODULE_DIRS))
 PROD_REPORT_MIN_HEADROOM_MB ?= 1280
 PROD_REPORT_MIN_AVAILABLE_MB ?= 1024
 PROD_ORDERFLOW_MIN_AVAILABLE_MB ?= 768
@@ -995,6 +1005,7 @@ deadcode:
 	fi
 	@echo "-> Go dead code..."
 	@if find . -name 'go.mod' -not -path './vendor/*' 2>/dev/null | grep -q .; then \
+		test -n "$(strip $(GO_MODULE_DIRS))" || { echo "GO_MODULE_DIRS is empty -- infra/scripts/go_workspace_modules.sh failed or go.work declares zero modules" >&2; exit 1; }; \
 		$(MAKE) install-deadcode; \
 		go_bin="$$(go env GOBIN)"; \
 		if test -z "$$go_bin"; then go_bin="$$(go env GOPATH)/bin"; fi; \
@@ -1051,6 +1062,7 @@ verify:
 	@# one package's failure fails that single command's exit code the
 	@# normal way -- no risk of a shell loop masking an early module's
 	@# failure behind a later module's success.
+	@test -n "$(strip $(GO_MODULE_DIRS))" || { echo "GO_MODULE_DIRS is empty -- infra/scripts/go_workspace_modules.sh failed or go.work declares zero modules" >&2; exit 1; }
 	go test $(GO_MODULE_TEST_PATTERNS)
 	go vet $(GO_MODULE_TEST_PATTERNS)
 	$(MAKE) deadcode
