@@ -19,7 +19,7 @@ from .cex_activity_discovery import (
 from .outcome_repository import async_database_url
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Awaitable, Callable, Sequence
 
 PATH_BATCH_SIZE = 200
 PATH_QUERY_VERSION = "cex_activity_exact_native_path_v1"
@@ -149,6 +149,7 @@ class CexActivityDiscoveryRepository:
         batch_size: int = PATH_BATCH_SIZE,
         max_wall_seconds: float = DEFAULT_PATH_MAX_WALL_SECONDS,
         _now: Callable[[], float] = time.monotonic,
+        _after_batch: Callable[[], Awaitable[None]] | None = None,
     ) -> dict[str, ExactPricePath]:
         """`_now` is a private testing seam (defaults to `time.monotonic`):
         lets a test substitute a controlled fake clock to prove the
@@ -156,67 +157,114 @@ class CexActivityDiscoveryRepository:
         without racing real wall-clock time against an artificially slow
         batch -- same pattern established in
         momentum_flow_bidirectional_burst_offline_repository.py's own
-        extract_bars_to_parquet."""
+        extract_bars_to_parquet. `_after_batch` is a second private testing
+        seam (default `None`, a no-op): awaited once after each batch's own
+        rows are consumed, letting a test commit a concurrent write via a
+        SEPARATE connection between two batches of the SAME call, to prove
+        a later batch's own query still cannot see it (see
+        `test_fetch_exact_paths_holds_one_snapshot_across_batches`).
+
+        ALL batches run inside ONE `REPEATABLE READ`, read-only transaction
+        (colleague review, 2026-09-04 follow-up round): the previous
+        version opened a brand-new connection/transaction PER BATCH, so a
+        request's own signal path and its matched control path -- landing
+        in different batches once `len(requests) > batch_size`, which is
+        already true for any real-scale run -- could observe genuinely
+        different data if a backfill/correction landed mid-fetch, making
+        the earlier "one call closes this" comment factually wrong: one
+        Python-level call was never the same thing as one Postgres
+        snapshot. `REPEATABLE READ`'s own snapshot is captured at the
+        FIRST query inside a transaction and held for every later query in
+
+        ALL batches run inside ONE `REPEATABLE READ`, read-only transaction
+        (colleague review, 2026-09-04 follow-up round): the previous
+        version opened a brand-new connection/transaction PER BATCH, so a
+        request's own signal path and its matched control path -- landing
+        in different batches once `len(requests) > batch_size`, which is
+        already true for any real-scale run -- could observe genuinely
+        different data if a backfill/correction landed mid-fetch, making
+        the earlier "one call closes this" comment factually wrong: one
+        Python-level call was never the same thing as one Postgres
+        snapshot. `REPEATABLE READ`'s own snapshot is captured at the
+        FIRST query inside a transaction and held for every later query in
+        that SAME transaction, regardless of batch boundaries or request
+        order -- so every batch this call issues, whatever order they run
+        in, now genuinely reads the same consistent view of the data."""
         if batch_size <= 0:
             raise ValueError("path batch size must be positive")
         if len({item.request_id for item in requests}) != len(requests):
             raise ValueError("path request ids must be unique")
+        if not requests:
+            return {}
         started_at = _now()
         deadline = started_at + max_wall_seconds
         paths: dict[str, ExactPricePath] = {}
-        for start in range(0, len(requests), batch_size):
-            now = _now()
-            check_path_deadline(now, deadline, max_wall_seconds=max_wall_seconds)
-            # This batch's own statement_timeout is capped at whatever time
-            # is ACTUALLY left in the overall budget, not the fixed
-            # REPORT_STATEMENT_TIMEOUT_MS regardless of how little time
-            # remains -- max(1, ...) since Postgres treats a statement_
-            # timeout of exactly 0 as DISABLED, the opposite of what a
-            # near-zero remaining budget should mean here.
-            remaining_ms = max(1, min(REPORT_STATEMENT_TIMEOUT_MS, int((deadline - now) * 1000)))
-            batch = tuple(requests[start : start + batch_size])
-            parameters: dict[str, object] = {
-                "exchange": exchange,
-                "market_type": market_type,
-                "capture_version": capture_version,
-                "up_multiplier": 1 + PRIMARY_MOVE_PCT / 100,
-                "down_multiplier": 1 - PRIMARY_MOVE_PCT / 100,
-                "outcome_minutes": OUTCOME_HORIZON_MINUTES,
-                "requests_json": json.dumps(
-                    [
-                        {
-                            "request_id": request.request_id,
-                            "symbol": request.symbol,
-                            "trigger_at": request.trigger_at.isoformat(),
-                            "entry_at": request.entry_at.isoformat(),
-                        }
-                        for request in batch
-                    ],
-                    separators=(",", ":"),
-                ),
-            }
-            async with self._engine.connect() as connection, connection.begin():
+        async with self._engine.connect() as connection:
+            connection = await connection.execution_options(isolation_level="REPEATABLE READ")
+            async with connection.begin():
                 await connection.execute(text("SET TRANSACTION READ ONLY"))
-                await connection.execute(
-                    text("SELECT set_config('statement_timeout', :timeout, true)"),
-                    {"timeout": f"{remaining_ms}ms"},
-                )
-                result = await connection.execute(_PATH_STATEMENT, parameters)
-                rows = result.all()
-            for row in rows:
-                path = ExactPricePath(
-                    request_id=str(row.request_id),
-                    symbol=str(row.symbol),
-                    trigger_at=row.trigger_at,
-                    entry_at=row.entry_at,
-                    entry_price=float(row.entry_price) if row.entry_price is not None else None,
-                    observed_minutes=int(row.observed_minutes or 0),
-                    max_high=float(row.max_high) if row.max_high is not None else None,
-                    min_low=float(row.min_low) if row.min_low is not None else None,
-                    first_up_25_at=row.first_up_25_at,
-                    first_down_25_at=row.first_down_25_at,
-                )
-                paths[path.request_id] = path
+                for start in range(0, len(requests), batch_size):
+                    now = _now()
+                    check_path_deadline(now, deadline, max_wall_seconds=max_wall_seconds)
+                    # This batch's own statement_timeout is capped at
+                    # whatever time is ACTUALLY left in the overall budget,
+                    # not the fixed REPORT_STATEMENT_TIMEOUT_MS regardless
+                    # of how little time remains -- max(1, ...) since
+                    # Postgres treats a statement_timeout of exactly 0 as
+                    # DISABLED, the opposite of what a near-zero remaining
+                    # budget should mean here. set_config's own third
+                    # argument (`true` = LOCAL) still works mid-transaction
+                    # here -- re-issuing it before each batch updates the
+                    # timeout for that batch's own statement without
+                    # needing a fresh transaction.
+                    remaining_ms = max(
+                        1, min(REPORT_STATEMENT_TIMEOUT_MS, int((deadline - now) * 1000))
+                    )
+                    batch = tuple(requests[start : start + batch_size])
+                    parameters: dict[str, object] = {
+                        "exchange": exchange,
+                        "market_type": market_type,
+                        "capture_version": capture_version,
+                        "up_multiplier": 1 + PRIMARY_MOVE_PCT / 100,
+                        "down_multiplier": 1 - PRIMARY_MOVE_PCT / 100,
+                        "outcome_minutes": OUTCOME_HORIZON_MINUTES,
+                        "requests_json": json.dumps(
+                            [
+                                {
+                                    "request_id": request.request_id,
+                                    "symbol": request.symbol,
+                                    "trigger_at": request.trigger_at.isoformat(),
+                                    "entry_at": request.entry_at.isoformat(),
+                                }
+                                for request in batch
+                            ],
+                            separators=(",", ":"),
+                        ),
+                    }
+                    await connection.execute(
+                        text("SELECT set_config('statement_timeout', :timeout, true)"),
+                        {"timeout": f"{remaining_ms}ms"},
+                    )
+                    result = await connection.execute(_PATH_STATEMENT, parameters)
+                    rows = result.all()
+                    for row in rows:
+                        path = ExactPricePath(
+                            request_id=str(row.request_id),
+                            symbol=str(row.symbol),
+                            trigger_at=row.trigger_at,
+                            entry_at=row.entry_at,
+                            entry_price=(
+                                float(row.entry_price) if row.entry_price is not None else None
+                            ),
+                            observed_minutes=int(row.observed_minutes or 0),
+                            max_high=float(row.max_high) if row.max_high is not None else None,
+                            min_low=float(row.min_low) if row.min_low is not None else None,
+                            first_up_25_at=row.first_up_25_at,
+                            first_down_25_at=row.first_down_25_at,
+                        )
+                        paths[path.request_id] = path
+                    if _after_batch is not None:
+                        await _after_batch()
         return paths
 
     async def close(self) -> None:

@@ -44,45 +44,55 @@ artifact is a loud error (via `cex_activity_discovery_dataset_artifact
 silent trigger to fall back to a live query.
 
 ## What `--freeze-artifact` does and does not guarantee about consistency
-## (colleague review, 2026-09-04)
+## (colleague review, 2026-09-04, two rounds)
 
-`freeze_dataset` reads PostgreSQL in three phases, each its own
-connection/transaction: (1) `database_now()`, (2) the offline candidate-
-detection extract (`extract_bars_to_parquet`, chunked into many
-connections of its own), (3) one `fetch_exact_paths` call over the
-combined signal + control request set (also internally batched). This is
-NOT a single PostgreSQL snapshot -- a late backfill/correction to
-`timeseries.bybit_momentum_bars_1m` landing between phases 2 and 3 could,
-in principle, mean the candidate universe was detected under one version
-of the data while the exact entry/outcome paths for that same universe
-were read under a different, corrected version.
+`freeze_dataset` reads PostgreSQL in three phases: (1) `database_now()`,
+(2) the offline candidate-detection extract (`extract_bars_to_parquet`,
+chunked into many connections of its own), (3) one `fetch_exact_paths`
+call over the combined signal + control request set. This is NOT a
+single PostgreSQL snapshot spanning all three phases -- a late backfill/
+correction to `timeseries.bybit_momentum_bars_1m` landing between phase 2
+and phase 3 could, in principle, mean the candidate universe was detected
+under one version of the data while the exact entry/outcome paths for
+that same universe were read under a different, corrected version.
 
+What phase 3 DOES now guarantee on its own (fixed in the second review
+round, after the first round's own fix -- merely combining signal and
+control requests into one Python-level call -- turned out to be
+insufficient): `fetch_exact_paths` runs every one of its internal batches
+inside ONE `REPEATABLE READ`, read-only Postgres transaction, not a new
+connection/transaction per batch. An episode's own signal path and its
+matched control path -- the exact pair the paired estimand compares --
+are therefore guaranteed to come from the SAME consistent snapshot
+regardless of which batch either one lands in, proven directly by
+`test_fetch_exact_paths_holds_one_snapshot_across_batches` (a real
+Postgres test that commits a write between two batches of one call and
+asserts the later batch still cannot see it).
+
+What remains open: phase 2 (the extract) and phase 3 (the path fetch)
+still run as separate transactions against separate connections/engines.
 A genuine fix -- importing one `pg_export_snapshot()`-exported snapshot
-into every connection across all three phases via `SET TRANSACTION
-SNAPSHOT` -- was considered and rejected: the exporting transaction must
-stay open for the ENTIRE freeze (up to ~30 minutes, per the resource
-bounds below), which means holding a live `REPEATABLE READ` transaction
-against production's `timeseries.bybit_momentum_bars_1m` -- a large,
-high-throughput table -- for that whole duration. That holds back
-autovacuum on that table for as long as the transaction is open, which is
-exactly the class of new production resource risk
-`research/cex-activity-offline-denominator-v1` (PR #327) was built to
-eliminate in the first place, not something this PR should reintroduce to
-close a narrower and much rarer risk (a backfill to already-years-settled
-historical bars, landing in the middle of one specific freeze run).
-
-What IS done: the two most consequential reads -- an episode's own signal
-path and its matched control path, the exact pair the paired estimand
-compares -- are fetched together in ONE `fetch_exact_paths` call (not two
-separate top-level calls, each its own start/end), closing the one
-inconsistency window that would directly corrupt the paired comparison.
-Beyond that, `extra["database_snapshot_at"]`/`extra["extract_completed_
-at"]`/`extra["path_fetch_completed_at"]` (all from Postgres's own
-`now()`) record the real wall-clock bounds of each phase, so a reviewer
-auditing a specific freeze can check those bounds against any known
-backfill/correction event rather than the run being silently unauditable
-either way. This is a documented, accepted residual risk, not a solved
-one -- see docs/research/cex-activity-discovery-completion-v1.md.
+into both phases via `SET TRANSACTION SNAPSHOT` -- was considered and
+rejected: the exporting transaction must stay open for both phases
+combined (up to ~30 minutes worst-case, per the resource bounds below),
+which means holding a live `REPEATABLE READ` transaction against
+production's `timeseries.bybit_momentum_bars_1m` -- a large, high-
+throughput table -- for that whole duration, holding back autovacuum on
+it the entire time. That is exactly the class of new production resource
+risk `research/cex-activity-offline-denominator-v1` (PR #327) was built
+to eliminate in the first place. The realistic exposure this leaves is
+narrow but not negligible: a HYP-016 freeze is a one-time, manually
+triggered run (not a recurring job), so the risk is not about how old the
+underlying bars are -- it is whether an operator happens to run a
+backfill/correction during the specific ~15-30 minute window one freeze
+attempt is in flight. `extra["database_snapshot_at"]`/
+`extra["extract_completed_at"]`/`extra["path_fetch_completed_at"]` (all
+from Postgres's own `now()`) record the real wall-clock bounds of each
+phase, so a reviewer auditing a specific freeze can check those bounds
+against any known backfill/correction event rather than the run being
+silently unauditable either way. This is a documented, accepted residual
+risk, not a solved one -- see
+docs/research/cex-activity-discovery-completion-v1.md.
 """
 
 from __future__ import annotations
@@ -643,17 +653,27 @@ async def freeze_dataset(args: argparse.Namespace) -> DatasetArtifactManifest:
                 )
 
         # ONE fetch_exact_paths call over the union of signal and control
-        # requests, not two separate ones -- colleague review, 2026-09-04:
-        # the paired estimand directly compares each episode's own signal
-        # path against its matched control path, so if a late backfill/
-        # correction landed on the underlying bars table BETWEEN two
-        # separate top-level calls, a signal path and its own matched
-        # control path could be read from two different data vintages --
-        # the exact pair this report's whole statistic depends on being
-        # comparable. One call, batched together, closes that specific
-        # window; see the freeze-consistency note in this module's own
-        # top-of-file docstring for what this does and does not guarantee
-        # across the extract phase too.
+        # requests, not two separate ones -- colleague review, 2026-09-04
+        # (both the original round and a follow-up round that found the
+        # first fix here was incomplete). The paired estimand directly
+        # compares each episode's own signal path against its matched
+        # control path, so if a late backfill/correction landed on the
+        # underlying bars table mid-fetch, a signal path and its own
+        # matched control could be read from two different data vintages
+        # -- the exact pair this report's whole statistic depends on being
+        # comparable. Merely combining them into one Python-level call was
+        # NOT enough on its own (the follow-up review's own finding):
+        # fetch_exact_paths still batched internally, and the previous
+        # version opened a brand-new connection/transaction PER BATCH, so
+        # two requests landing in different batches -- guaranteed once the
+        # combined request count exceeds PATH_BATCH_SIZE, which any real
+        # run does -- could still observe different data. fetch_exact_paths
+        # itself now runs every batch inside ONE REPEATABLE READ, read-only
+        # transaction (see that method's own docstring), so this one call
+        # genuinely reads one consistent snapshot regardless of batch
+        # boundaries or request order. See the freeze-consistency note in
+        # this module's own top-of-file docstring for what this does and
+        # does not guarantee across the extract phase too.
         extract_completed_at = await path_repository.database_now()
         all_requests = (*signal_requests, *control_request_rows)
         all_paths = await path_repository.fetch_exact_paths(
@@ -683,6 +703,24 @@ async def freeze_dataset(args: argparse.Namespace) -> DatasetArtifactManifest:
         controls_by_episode=controls_by_episode,
         control_paths=control_paths,
     )
+    # Computed BEFORE build_cohort, not just stored alongside it in `extra`
+    # -- colleague review, 2026-09-04 follow-up: `extra` is deliberately
+    # excluded from research_dataset_artifact's own generic fingerprint,
+    # so a value that lived only there was never actually bound to the
+    # artifact/cohort identity a caller addresses the data by. Folding it
+    # (and the three raw threshold/floor parameters that directly define
+    # WHICH candidates get selected) into `cohort` instead makes a
+    # different research contract, or a different threshold, genuinely a
+    # different cohort -- never silently absorbed into an existing one via
+    # ALREADY_EXISTS. See contract_fingerprint's and build_cohort's own
+    # docstrings for the full reasoning.
+    current_contract_fingerprint = contract_fingerprint(
+        candidate_query_version=CANDIDATE_QUERY_VERSION,
+        path_query_version=PATH_QUERY_VERSION,
+        extreme_threshold_pct=args.extreme_threshold_pct,
+        refractory_minutes=args.refractory_minutes,
+        min_volume_24h_usd=args.min_volume_24h_usd,
+    )
     cohort = dataset_artifact.build_cohort(
         hypothesis_id=HYPOTHESIS_ID,
         since=args.since,
@@ -692,19 +730,16 @@ async def freeze_dataset(args: argparse.Namespace) -> DatasetArtifactManifest:
         capture_version=args.capture_version,
         directions=DIRECTIONS,
         control_boundary_policy_version=CONTROL_BOUNDARY_POLICY_VERSION,
+        extreme_threshold_pct=args.extreme_threshold_pct,
+        refractory_minutes=args.refractory_minutes,
+        min_volume_24h_usd=args.min_volume_24h_usd,
+        contract_fingerprint=current_contract_fingerprint,
     )
     extra = {
         "candidate_extreme_minutes": len(candidate_minutes),
         "candidate_query_version": CANDIDATE_QUERY_VERSION,
         "path_query_version": PATH_QUERY_VERSION,
         "matching_policy_version": MATCHING_POLICY_VERSION,
-        "contract_fingerprint": contract_fingerprint(
-            candidate_query_version=CANDIDATE_QUERY_VERSION,
-            path_query_version=PATH_QUERY_VERSION,
-        ),
-        "extreme_threshold_pct": args.extreme_threshold_pct,
-        "refractory_minutes": args.refractory_minutes,
-        "min_volume_24h_usd": args.min_volume_24h_usd,
         "max_candidate_minutes": args.max_candidate_minutes,
         "max_path_requests": args.max_path_requests,
         "database_snapshot_at": database_now.isoformat(),
@@ -751,9 +786,16 @@ def load_dataset_from_artifact(
     manifest, episodes, signal_paths, controls_by_episode, control_paths = dataset_artifact.read(
         fingerprint, directory=directory
     )
-    extra = manifest.cohort
-    since = datetime.fromisoformat(extra["since"])
-    until_exclusive = datetime.fromisoformat(extra["until_exclusive"])
+    # `cohort` (not `extra`) is this dataset's own identity-bearing source
+    # for the research-contract fields -- colleague review, 2026-09-04
+    # follow-up: extreme_threshold_pct/refractory_minutes/
+    # min_volume_24h_usd/contract_fingerprint live in `cohort`, which
+    # participates in both the generic artifact fingerprint and the
+    # cohort-lock key, never only in `extra` (deliberately excluded from
+    # the generic fingerprint -- see build_cohort's own docstring).
+    cohort = manifest.cohort
+    since = datetime.fromisoformat(cohort["since"])
+    until_exclusive = datetime.fromisoformat(cohort["until_exclusive"])
     database_snapshot_at = datetime.fromisoformat(manifest.extra["database_snapshot_at"])
     return CexActivityDataset(
         artifact_fingerprint=manifest.fingerprint,
@@ -769,18 +811,18 @@ def load_dataset_from_artifact(
         database_snapshot_at=database_snapshot_at,
         since=since,
         until_exclusive=until_exclusive,
-        exchange=extra["exchange"],
-        market_type=extra["market_type"],
-        capture_version=extra["capture_version"],
-        extreme_threshold_pct=manifest.extra["extreme_threshold_pct"],
-        refractory_minutes=manifest.extra["refractory_minutes"],
-        min_volume_24h_usd=manifest.extra["min_volume_24h_usd"],
+        exchange=cohort["exchange"],
+        market_type=cohort["market_type"],
+        capture_version=cohort["capture_version"],
+        extreme_threshold_pct=cohort["extreme_threshold_pct"],
+        refractory_minutes=cohort["refractory_minutes"],
+        min_volume_24h_usd=cohort["min_volume_24h_usd"],
         max_candidate_minutes=manifest.extra["max_candidate_minutes"],
         max_path_requests=manifest.extra["max_path_requests"],
         candidate_extreme_minutes=manifest.extra["candidate_extreme_minutes"],
         candidate_query_version=manifest.extra["candidate_query_version"],
         path_query_version=manifest.extra["path_query_version"],
-        contract_fingerprint=manifest.extra["contract_fingerprint"],
+        contract_fingerprint=cohort["contract_fingerprint"],
         episodes=episodes,
         signal_paths=signal_paths,
         controls_by_episode=controls_by_episode,
@@ -823,6 +865,16 @@ def build_report(
     current_contract_fingerprint = contract_fingerprint(
         candidate_query_version=CANDIDATE_QUERY_VERSION,
         path_query_version=PATH_QUERY_VERSION,
+        # These three are operational parameters, not code constants --
+        # this module has no independent "live" opinion about them, so
+        # recomputing with the dataset's own recorded values checks that
+        # `extra`/`cohort` are internally self-consistent (e.g. catches a
+        # manually-tampered threshold that was not also re-hashed) rather
+        # than a live-vs-frozen code drift, which is what the query/
+        # matching/floor/bootstrap constants above this check for.
+        extreme_threshold_pct=dataset.extreme_threshold_pct,
+        refractory_minutes=dataset.refractory_minutes,
+        min_volume_24h_usd=dataset.min_volume_24h_usd,
     )
     if current_contract_fingerprint != dataset.contract_fingerprint:
         raise IncompatibleResearchContractError(

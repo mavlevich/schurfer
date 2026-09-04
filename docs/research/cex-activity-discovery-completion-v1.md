@@ -145,22 +145,39 @@ monkeypatches both repository classes' `from_url` to raise and asserts
 - `contract_fingerprint()` (`cex_activity_discovery.py`) hashes every
   constant the estimand/decision rule depends on -- `move_pct`, horizon,
   control policy, evidence floors, bootstrap seed/iterations/confidence,
-  matching policy, candidate/path query versions -- stored in `extra` at
-  freeze time, recomputed from the CURRENT code's own constants at render
-  time. `build_report` raises `IncompatibleResearchContractError` if they
-  disagree, rather than silently applying a changed matching/bootstrap/
-  floor/query contract to old frozen raw data while labeling the result
-  with the new code's own version strings (colleague review, 2026-09-04).
-  `CexActivityManifest` separately carries `artifact_code_revision` (the
-  freeze's own recorded code state) alongside `code_revision` (the
-  render's own) -- two different points in time, never conflated.
-- `extra` metadata on the manifest carries every operational number needed
-  to reconstruct a `CexActivityDataset` on read (thresholds, caps,
-  `database_snapshot_at`, `candidate_query_version`, `path_query_version`,
-  `contract_fingerprint`), plus the offline extract's own provenance
-  (`extract_query_version`, `extract_row_count`, `extract_symbol_count`,
-  `extract_parquet_sha256`, `extract_wall_seconds`) and phase-timing
-  provenance (`extract_completed_at`, `path_fetch_completed_at`, both from
+  matching policy, candidate/path query versions -- plus
+  `extreme_threshold_pct`/`refractory_minutes`/`min_volume_24h_usd`
+  (colleague review, 2026-09-04 follow-up round: these three directly
+  determine WHICH candidates a freeze selects, the sampling frame itself,
+  not just how a frozen result is later evaluated). Computed at freeze
+  time, recomputed from the CURRENT code's own constants (and the
+  dataset's own recorded threshold values) at render time. `build_report`
+  raises `IncompatibleResearchContractError` if they disagree, rather than
+  silently applying a changed matching/bootstrap/floor/query contract to
+  old frozen raw data while labeling the result with the new code's own
+  version strings. `CexActivityManifest` separately carries
+  `artifact_code_revision` (the freeze's own recorded code state)
+  alongside `code_revision` (the render's own) -- two different points in
+  time, never conflated.
+- `extreme_threshold_pct`/`refractory_minutes`/`min_volume_24h_usd`/
+  `contract_fingerprint` live in `cohort` itself, not only in `extra`
+  (colleague review, 2026-09-04 follow-up round) -- `extra` is
+  deliberately excluded from `research_dataset_artifact`'s own generic
+  fingerprint, so a value that lived only there was never actually bound
+  to the artifact/cohort identity a caller addresses the data by. Two
+  freezes with byte-identical rows but a different threshold (or a
+  different code-level contract) now produce genuinely different
+  fingerprints/cohort locks, proven by
+  `test_a_different_threshold_produces_a_different_fingerprint_for_identical_rows`
+  and its contract-fingerprint counterpart -- never silently absorbed into
+  an existing artifact via `ALREADY_EXISTS`.
+- `extra` metadata on the manifest carries every remaining operational
+  number needed to reconstruct a `CexActivityDataset` on read (caps,
+  `database_snapshot_at`, `candidate_query_version`, `path_query_version`),
+  plus the offline extract's own provenance (`extract_query_version`,
+  `extract_row_count`, `extract_symbol_count`, `extract_parquet_sha256`,
+  `extract_wall_seconds`) and phase-timing provenance
+  (`extract_completed_at`, `path_fetch_completed_at`, both from
   Postgres's own `now()`) -- a reviewer can see exactly how the candidate
   universe was computed, and the real wall-clock bounds each phase ran in,
   from the frozen artifact alone, without the original run's own logs.
@@ -261,27 +278,39 @@ cohort" rule, enforced in code, not just in the report's own prose.
 
 ## Result limitations
 
-- **A freeze is not one PostgreSQL snapshot** (colleague review,
-  2026-09-04). `freeze_dataset` reads Postgres in three phases, each its
-  own connection/transaction: `database_now()`, the offline extract, and
+- **A freeze is not one PostgreSQL snapshot across all three phases**
+  (colleague review, 2026-09-04, two rounds). `freeze_dataset` reads
+  Postgres in three phases: `database_now()`, the offline extract, and
   one `fetch_exact_paths` call over the combined signal+control request
-  set. A late backfill/correction to `timeseries.bybit_momentum_bars_1m`
-  landing between the extract and the path fetch could, in principle,
-  mean the candidate universe was detected under one version of the data
-  and its outcome paths read under a corrected version. A genuine fix
-  (one `pg_export_snapshot()` shared across all three phases) was
-  evaluated and rejected: it requires holding a live `REPEATABLE READ`
-  transaction against production's `timeseries.bybit_momentum_bars_1m`
-  for the whole ~30-minute freeze, holding back autovacuum on that
-  table -- exactly the class of production risk
+  set. Within that third phase, `fetch_exact_paths` now runs every one of
+  its internal batches inside ONE `REPEATABLE READ`, read-only
+  transaction, not a new connection/transaction per batch -- an episode's
+  own signal path and its matched control (the exact pair the paired
+  estimand compares) are therefore guaranteed to come from the same
+  consistent snapshot regardless of which batch either lands in, proven
+  by a real-Postgres test
+  (`test_fetch_exact_paths_holds_one_snapshot_across_batches`) that
+  commits a write between two batches of one call and confirms the later
+  batch still cannot see it. What remains open is the boundary BETWEEN
+  phases: a late backfill/correction landing between the extract and the
+  path fetch could still mean the candidate universe was detected under
+  one version of the data and its outcome paths read under a corrected
+  one. A genuine fix (one `pg_export_snapshot()` shared across both
+  phases) was evaluated and rejected: it requires holding a live
+  `REPEATABLE READ` transaction against production's
+  `timeseries.bybit_momentum_bars_1m` for both phases combined (up to
+  ~30 minutes worst-case), holding back autovacuum on that table for the
+  whole duration -- exactly the class of production risk
   `research/cex-activity-offline-denominator-v1` (PR #327) exists to
-  eliminate. What IS closed: the signal and its own matched control (the
-  exact pair the paired estimand compares) are fetched together in one
-  call, not two separate ones. `extra["database_snapshot_at"]`/
-  `extra["extract_completed_at"]`/`extra["path_fetch_completed_at"]`
-  (from Postgres's own `now()`) record the real bounds of each phase for
-  a later audit. This is a documented, accepted residual risk against
-  already-years-settled historical bars, not a solved one -- see
+  eliminate. The realistic exposure this leaves is narrow: a HYP-016
+  freeze is a one-time, manually triggered run, not a recurring job, so
+  the risk is not about how old the underlying bars are -- it is whether
+  an operator happens to run a backfill/correction during the specific
+  ~15-30 minute window one freeze attempt is in flight.
+  `extra["database_snapshot_at"]`/`extra["extract_completed_at"]`/
+  `extra["path_fetch_completed_at"]` (from Postgres's own `now()`) record
+  the real bounds of each phase for a later audit. This is a documented,
+  accepted residual risk, not a solved one -- see
   `cex_activity_discovery_report.py`'s own top-of-file docstring for the
   full reasoning.
 - **Discovery only, permanently, for this window.** The

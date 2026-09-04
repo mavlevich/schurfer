@@ -90,7 +90,11 @@ def _resolved_path(
 
 
 _LIVE_CONTRACT_FINGERPRINT = contract_fingerprint(
-    candidate_query_version=CANDIDATE_QUERY_VERSION, path_query_version=PATH_QUERY_VERSION
+    candidate_query_version=CANDIDATE_QUERY_VERSION,
+    path_query_version=PATH_QUERY_VERSION,
+    extreme_threshold_pct=10.0,
+    refractory_minutes=60,
+    min_volume_24h_usd=50_000.0,
 )
 
 
@@ -328,6 +332,15 @@ def _freeze_synthetic_cohort(directory: Path) -> tuple[str, OutcomeSignalEpisode
         capture_version="v1",
         directions=DIRECTIONS,
         control_boundary_policy_version=CONTROL_BOUNDARY_POLICY_VERSION,
+        # The REAL live constants, not placeholder values -- these feed
+        # _LIVE_CONTRACT_FINGERPRINT above, and build_report's own contract
+        # check compares against the CURRENT code's live constants, so a
+        # synthetic cohort meant to round-trip through build_report (not
+        # just load_dataset_from_artifact) must actually match them.
+        extreme_threshold_pct=10.0,
+        refractory_minutes=60,
+        min_volume_24h_usd=50_000.0,
+        contract_fingerprint=_LIVE_CONTRACT_FINGERPRINT,
     )
     manifest = dataset_artifact.freeze(
         cohort=cohort,
@@ -336,19 +349,9 @@ def _freeze_synthetic_cohort(directory: Path) -> tuple[str, OutcomeSignalEpisode
         working_tree_dirty=False,
         extra={
             "candidate_extreme_minutes": 3,
-            # The REAL live constants, not placeholder strings -- these
-            # feed contract_fingerprint below, and build_report's own
-            # contract check compares against the CURRENT code's live
-            # CANDIDATE_QUERY_VERSION/PATH_QUERY_VERSION, so a synthetic
-            # cohort meant to round-trip through build_report (not just
-            # load_dataset_from_artifact) must actually match them.
             "candidate_query_version": CANDIDATE_QUERY_VERSION,
             "path_query_version": PATH_QUERY_VERSION,
             "matching_policy_version": "test_v1",
-            "contract_fingerprint": _LIVE_CONTRACT_FINGERPRINT,
-            "extreme_threshold_pct": 10.0,
-            "refractory_minutes": 60,
-            "min_volume_24h_usd": 50_000.0,
             "max_candidate_minutes": 100_000,
             "max_path_requests": 200_000,
             "database_snapshot_at": _BASE.isoformat(),

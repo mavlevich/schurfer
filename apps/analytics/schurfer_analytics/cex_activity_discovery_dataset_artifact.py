@@ -136,13 +136,35 @@ def build_cohort(
     capture_version: str,
     directions: Sequence[str],
     control_boundary_policy_version: str,
+    extreme_threshold_pct: float,
+    refractory_minutes: int,
+    min_volume_24h_usd: float,
+    contract_fingerprint: str,
 ) -> dict[str, Any]:
     """The one `cohort` dict used for BOTH `write_dataset_artifact`'s own
     content-fingerprint scoping AND `claim_authoritative_fingerprint`'s own
     cohort-lock key -- these must always be identical (both describe "what
     discovery run is this", not "what did it find"), so they are built in
     exactly one place rather than independently at two call sites that
-    could drift apart."""
+    could drift apart.
+
+    `extreme_threshold_pct`/`refractory_minutes`/`min_volume_24h_usd`/
+    `contract_fingerprint` (colleague review, 2026-09-04 follow-up): the
+    first three directly determine WHICH candidates a freeze selects --
+    the sampling frame itself -- and `contract_fingerprint` (see
+    `cex_activity_discovery.contract_fingerprint`'s own docstring) covers
+    every other estimand/decision-rule constant. All four belong in
+    `cohort`, not only in the artifact's `extra` field: the generic
+    artifact fingerprint (`research_dataset_artifact._fingerprint()`)
+    deliberately excludes `extra`, so a value that lives ONLY there is
+    never actually bound to the artifact/cohort identity a caller
+    addresses the data by -- two freezes producing the same rows under
+    different thresholds could otherwise silently collide on
+    `ALREADY_EXISTS`, discarding the second run's own different
+    parameters with no error. Folding them into `cohort` instead makes a
+    different threshold, or a different code-level contract, genuinely a
+    different cohort: a different content fingerprint, a different
+    cohort-lock key, never absorbed into an existing one."""
     return {
         "hypothesis_id": hypothesis_id,
         "since": since.isoformat(),
@@ -152,6 +174,10 @@ def build_cohort(
         "capture_version": capture_version,
         "directions": sorted(directions),
         "control_boundary_policy_version": control_boundary_policy_version,
+        "extreme_threshold_pct": extreme_threshold_pct,
+        "refractory_minutes": refractory_minutes,
+        "min_volume_24h_usd": min_volume_24h_usd,
+        "contract_fingerprint": contract_fingerprint,
     }
 
 

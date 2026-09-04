@@ -196,6 +196,81 @@ async def test_fetch_exact_paths_enforces_the_deadline_across_multiple_batches()
         await engine.dispose()
 
 
+async def test_fetch_exact_paths_holds_one_snapshot_across_batches() -> None:
+    """The exact gap colleague review, 2026-09-04 found: the previous
+    per-batch connection/transaction meant a request landing in a LATER
+    batch could observe a write committed WHILE an earlier batch was
+    already running, even within one Python-level fetch_exact_paths call.
+    Forces exactly 2 batches (PATH_BATCH_SIZE filler requests + 1 more),
+    and uses the private `_after_batch` testing seam to commit a brand-new
+    entry bar via a SEPARATE connection right after batch 1 finishes, for
+    a symbol whose own request only appears in batch 2. If the two batches
+    genuinely share one REPEATABLE READ snapshot (established at batch 1's
+    own first query), batch 2's query -- issued strictly after the write
+    was committed -- must still not see it."""
+    engine = await _connect_or_skip()
+    other_engine = create_async_engine(TEST_DATABASE_URL, pool_pre_ping=True)
+    try:
+        await _cleanup(engine)
+        late_symbol = "LATESNAPUSDT"
+        late_request = PathRequest(
+            "signal:late", late_symbol, _TRIGGER_AT, _TRIGGER_AT + timedelta(minutes=1)
+        )
+        # PATH_BATCH_SIZE filler requests (batch 1, indices 0..199) + the
+        # late request (batch 2, index 200) -- exactly 2 batches.
+        requests = (
+            *(
+                PathRequest(f"signal:{i}", _SYMBOL, _TRIGGER_AT, _TRIGGER_AT + timedelta(minutes=1))
+                for i in range(PATH_BATCH_SIZE)
+            ),
+            late_request,
+        )
+
+        async def _insert_late_entry_bar() -> None:
+            async with other_engine.begin() as connection:
+                await connection.execute(
+                    _INSERT_BAR_SQL,
+                    {
+                        "exchange": _TEST_EXCHANGE,
+                        "market_type": _TEST_MARKET_TYPE,
+                        "symbol": late_symbol,
+                        "capture_version": _TEST_CAPTURE_VERSION,
+                        "bucket_start": _TRIGGER_AT + timedelta(minutes=1),
+                        "open_price": 100.0,
+                        "high_price": 101.0,
+                        "low_price": 99.0,
+                        "close_price": 100.0,
+                    },
+                )
+
+        repository = CexActivityDiscoveryRepository(engine)
+        paths = await repository.fetch_exact_paths(
+            exchange=_TEST_EXCHANGE,
+            market_type=_TEST_MARKET_TYPE,
+            capture_version=_TEST_CAPTURE_VERSION,
+            requests=requests,
+            _after_batch=_insert_late_entry_bar,
+        )
+        late_path = paths[late_request.request_id]
+        assert late_path.entry_price is None
+        assert late_path.unresolved_reason == "missing_entry_bar"
+
+        # Sanity: the bar really was committed and IS visible to a fresh
+        # query outside that transaction -- proving the assertion above is
+        # about snapshot isolation, not a seeding mistake.
+        fresh_paths = await repository.fetch_exact_paths(
+            exchange=_TEST_EXCHANGE,
+            market_type=_TEST_MARKET_TYPE,
+            capture_version=_TEST_CAPTURE_VERSION,
+            requests=(late_request,),
+        )
+        assert fresh_paths[late_request.request_id].entry_price == 100.0
+    finally:
+        await _cleanup(engine)
+        await engine.dispose()
+        await other_engine.dispose()
+
+
 # --- report_maturity_at (colleague review, 2026-09-03) ---------------------
 
 

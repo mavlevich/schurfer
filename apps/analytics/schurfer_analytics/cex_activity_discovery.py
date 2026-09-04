@@ -627,24 +627,52 @@ def input_fingerprint(
     return hashlib.sha256(encoded).hexdigest()
 
 
-def contract_fingerprint(*, candidate_query_version: str, path_query_version: str) -> str:
-    """Hashes every constant this module's own estimand/decision-rule
+def contract_fingerprint(
+    *,
+    candidate_query_version: str,
+    path_query_version: str,
+    extreme_threshold_pct: float,
+    refractory_minutes: int,
+    min_volume_24h_usd: float,
+) -> str:
+    """Hashes every parameter this module's own estimand/decision-rule
     computation depends on -- colleague review, 2026-09-04
-    (research/cex-activity-discovery-completion-v1): a frozen artifact's
-    own raw rows never change, but `build_report`
-    (cex_activity_discovery_report.py) re-runs LIVE matching/bootstrap/
-    Holm code against them on every `--from-artifact` call. If any of
-    these constants ever changes in a later code revision -- deliberately
-    (a genuine parameter change, which by this codebase's own convention
-    should be a new hypothesis id/contract, not a silent edit here) or by
-    accident -- re-evaluating an OLD artifact with NEW code would
-    silently compute a different verdict while still labeling itself with
-    whatever the CURRENT code's version strings happen to be, misrepresenting
-    what actually produced that number. `freeze_dataset` stores this
-    fingerprint at freeze time; `build_report` recomputes it fresh from the
-    CURRENT code's own constants and refuses to render if they disagree,
-    rather than silently mixing frozen data with a different evaluation
-    contract.
+    (research/cex-activity-discovery-completion-v1). Two things this
+    closes, found in two separate review rounds:
+
+    1. A frozen artifact's own raw rows never change, but `build_report`
+       (cex_activity_discovery_report.py) re-runs LIVE matching/bootstrap/
+       Holm code against them on every `--from-artifact` call. If any
+       CODE CONSTANT this hashes (`matching_policy_version`,
+       `primary_move_pct`, the evidence floors, the bootstrap seed/
+       iterations/confidence level, ...) ever changes in a later code
+       revision -- deliberately or by accident -- re-evaluating an OLD
+       artifact with NEW code would silently compute a different verdict
+       while still labeling itself with whatever the CURRENT code's
+       version strings happen to be. `freeze_dataset` stores this
+       fingerprint at freeze time; `build_report` recomputes it fresh from
+       the CURRENT code's own constants (passing back the dataset's own
+       recorded `extreme_threshold_pct`/`refractory_minutes`/
+       `min_volume_24h_usd`, since those are operational parameters this
+       module has no independent "live" opinion about) and refuses to
+       render if they disagree.
+    2. `extreme_threshold_pct`/`refractory_minutes`/`min_volume_24h_usd`
+       directly determine WHICH candidates/episodes a freeze selects --
+       the sampling frame itself, not just how it is later evaluated.
+       Colleague review, 2026-09-04 follow-up: hashing them here is not
+       enough on its own if this fingerprint only ever lived in the
+       artifact's `extra` field, since the generic artifact fingerprint
+       (`research_dataset_artifact._fingerprint()`) deliberately excludes
+       `extra` -- two freezes with the same resulting ROWS but different
+       thresholds could otherwise collide on the same content fingerprint
+       and silently resolve as `ALREADY_EXISTS`, discarding the second
+       run's own different parameters with no error at all.
+       `cex_activity_discovery_dataset_artifact.build_cohort` now takes
+       this fingerprint (and the three raw parameters, for human
+       auditability) and folds it into `cohort` itself, which DOES
+       participate in both the generic artifact fingerprint and the
+       cohort-lock key -- a different threshold is now genuinely a
+       different cohort, never silently absorbed into an existing one.
 
     `candidate_query_version`/`path_query_version` are owned by the
     report/repository modules that actually run those queries, not by this
@@ -653,6 +681,9 @@ def contract_fingerprint(*, candidate_query_version: str, path_query_version: st
     payload = {
         "candidate_query_version": candidate_query_version,
         "path_query_version": path_query_version,
+        "extreme_threshold_pct": extreme_threshold_pct,
+        "refractory_minutes": refractory_minutes,
+        "min_volume_24h_usd": min_volume_24h_usd,
         "matching_policy_version": MATCHING_POLICY_VERSION,
         "primary_move_pct": PRIMARY_MOVE_PCT,
         "outcome_horizon_minutes": OUTCOME_HORIZON_MINUTES,

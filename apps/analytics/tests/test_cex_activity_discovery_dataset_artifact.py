@@ -108,6 +108,10 @@ def _cohort() -> dict[str, object]:
         capture_version="test_capture_v1",
         directions=("buy", "sell"),
         control_boundary_policy_version="within_discovery_window_v1",
+        extreme_threshold_pct=10.0,
+        refractory_minutes=60,
+        min_volume_24h_usd=50_000.0,
+        contract_fingerprint="c" * 64,
     )
 
 
@@ -356,6 +360,10 @@ def test_different_cohorts_never_collide_on_the_same_lock(tmp_path: Path) -> Non
         capture_version="test_capture_v1",
         directions=("buy", "sell"),
         control_boundary_policy_version="within_discovery_window_v1",
+        extreme_threshold_pct=10.0,
+        refractory_minutes=60,
+        min_volume_24h_usd=50_000.0,
+        contract_fingerprint="c" * 64,
     )
     manifest_a = freeze(
         cohort=cohort_a,
@@ -531,3 +539,116 @@ def test_read_authoritative_fingerprint_rejects_a_malformed_fingerprint_format(
         ResearchDatasetArtifactCorruptError, match="no valid authoritative_fingerprint"
     ):
         read_authoritative_fingerprint(cohort, directory=tmp_path)
+
+
+# --- research-contract parameters are bound to the fingerprint/cohort ------
+# (colleague review, 2026-09-04 follow-up round)
+
+
+def _cohort_with(
+    *,
+    extreme_threshold_pct: float = 10.0,
+    refractory_minutes: int = 60,
+    min_volume_24h_usd: float = 50_000.0,
+    contract_fingerprint: str = "a" * 64,
+) -> dict[str, object]:
+    """Same fixed since/until/exchange/etc as `_cohort()`, but every
+    research-contract field is an explicit, typed override -- used by the
+    tests below that need two cohorts differing in exactly one such field."""
+    return build_cohort(
+        hypothesis_id="HYP-016",
+        since=datetime(2026, 8, 18, tzinfo=UTC),
+        until_exclusive=datetime(2026, 8, 27, tzinfo=UTC),
+        exchange="bybit",
+        market_type="linear",
+        capture_version="test_capture_v1",
+        directions=("buy", "sell"),
+        control_boundary_policy_version="within_discovery_window_v1",
+        extreme_threshold_pct=extreme_threshold_pct,
+        refractory_minutes=refractory_minutes,
+        min_volume_24h_usd=min_volume_24h_usd,
+        contract_fingerprint=contract_fingerprint,
+    )
+
+
+def test_a_different_threshold_produces_a_different_fingerprint_for_identical_rows(
+    tmp_path: Path,
+) -> None:
+    """The exact gap the follow-up review found: extreme_threshold_pct/
+    refractory_minutes/min_volume_24h_usd directly determine WHICH
+    candidates a freeze selects -- the sampling frame itself -- but
+    previously lived only in the artifact's own `extra` field, which
+    `research_dataset_artifact`'s own generic fingerprint deliberately
+    excludes. Two freezes with byte-IDENTICAL rows but a different
+    threshold must never collide on the same fingerprint (which would let
+    `ALREADY_EXISTS` silently discard the second run's own different
+    parameters with no error at all)."""
+    episodes, signal_paths, controls_by_episode, control_paths = _fixture()
+    rows = build_rows(
+        episodes=episodes,
+        signal_paths=signal_paths,
+        controls_by_episode=controls_by_episode,
+        control_paths=control_paths,
+    )
+    # contract_fingerprint deliberately identical on both sides -- only the
+    # threshold differs.
+    cohort_10pct = _cohort_with(extreme_threshold_pct=10.0)
+    cohort_9pct = _cohort_with(extreme_threshold_pct=9.0)
+
+    manifest_10pct = freeze(
+        cohort=cohort_10pct,
+        rows=rows,
+        code_revision="rev1",
+        working_tree_dirty=False,
+        directory=tmp_path,
+    )
+    # SAME rows, only the threshold in cohort differs.
+    manifest_9pct = freeze(
+        cohort=cohort_9pct,
+        rows=rows,
+        code_revision="rev1",
+        working_tree_dirty=False,
+        directory=tmp_path,
+    )
+    assert manifest_10pct.fingerprint != manifest_9pct.fingerprint
+    # Both are independently readable and authoritative for their own
+    # (different) cohorts -- neither silently overwrote or absorbed the
+    # other.
+    read(manifest_10pct.fingerprint, directory=tmp_path)
+    read(manifest_9pct.fingerprint, directory=tmp_path)
+
+
+def test_a_different_contract_fingerprint_alone_produces_a_different_cohort(
+    tmp_path: Path,
+) -> None:
+    """Same principle, isolated to contract_fingerprint itself (which
+    covers every code-level constant contract_fingerprint() hashes) --
+    even with identical threshold parameters and identical rows, a
+    different contract_fingerprint must produce a different fingerprint,
+    proving a code-level contract change is never silently absorbed into
+    an existing cohort either."""
+    episodes, signal_paths, controls_by_episode, control_paths = _fixture()
+    rows = build_rows(
+        episodes=episodes,
+        signal_paths=signal_paths,
+        controls_by_episode=controls_by_episode,
+        control_paths=control_paths,
+    )
+    cohort_contract_a = _cohort_with(contract_fingerprint="a" * 64)
+    cohort_contract_b = _cohort_with(contract_fingerprint="b" * 64)
+
+    manifest_a = freeze(
+        cohort=cohort_contract_a,
+        rows=rows,
+        code_revision="rev1",
+        working_tree_dirty=False,
+        directory=tmp_path,
+    )
+    manifest_b = freeze(
+        cohort=cohort_contract_b,
+        rows=rows,
+        code_revision="rev1",
+        working_tree_dirty=False,
+        directory=tmp_path,
+    )
+    assert manifest_a.fingerprint != manifest_b.fingerprint
