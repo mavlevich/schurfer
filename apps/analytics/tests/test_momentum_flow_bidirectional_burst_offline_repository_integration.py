@@ -26,10 +26,12 @@ import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import duckdb
 import pytest
 from schurfer_analytics.momentum_flow_bidirectional_burst_offline_repository import (
     ExtractManifest,
     OfflineBarsExtractRepository,
+    check_no_duplicate_bars,
     fetch_candidate_extreme_minutes_offline,
 )
 from schurfer_analytics.momentum_flow_bidirectional_burst_repository import (
@@ -911,3 +913,50 @@ async def test_offline_query_rejects_over_candidate_row_cap(tmp_path: Path) -> N
     finally:
         await _cleanup(engine)
         await engine.dispose()
+
+
+def test_check_no_duplicate_bars_passes_a_clean_table() -> None:
+    """No Postgres needed -- this exercises check_no_duplicate_bars
+    directly against a synthetic `bars` table, the way extract_bars_to_
+    parquet's own DuckDB connection would look right after its bulk
+    INSERT. Colleague review, 2026-09-05 follow-up round 3: `bars` no
+    longer carries a PRIMARY KEY (a live PRIMARY KEY needed roughly
+    1.5-1.8GB to build during a real ~14.7M-row HYP-016-scale bulk
+    INSERT -- more than production analytics' entire 1536 MiB container
+    budget, not fixable by tuning `_DEFAULT_MEMORY_LIMIT` alone), so this
+    function is now the ONLY thing enforcing the same "no duplicate
+    (symbol, bucket_start) pair" integrity guarantee the PRIMARY KEY used
+    to."""
+    connection = duckdb.connect(":memory:")
+    try:
+        connection.execute(
+            "CREATE TABLE bars (symbol VARCHAR, bucket_start TIMESTAMPTZ, "
+            "close_price DOUBLE, buy_total_notional_usd DOUBLE, sell_total_notional_usd DOUBLE)"
+        )
+        connection.execute(
+            "INSERT INTO bars VALUES "
+            "('AUSDT', '2026-08-17 00:00:00+00', 1.0, 10.0, 5.0), "
+            "('AUSDT', '2026-08-17 00:01:00+00', 1.0, 10.0, 5.0), "
+            "('BUSDT', '2026-08-17 00:00:00+00', 2.0, 20.0, 6.0)"
+        )
+        check_no_duplicate_bars(connection)  # must not raise
+    finally:
+        connection.close()
+
+
+def test_check_no_duplicate_bars_rejects_a_real_duplicate_pair() -> None:
+    connection = duckdb.connect(":memory:")
+    try:
+        connection.execute(
+            "CREATE TABLE bars (symbol VARCHAR, bucket_start TIMESTAMPTZ, "
+            "close_price DOUBLE, buy_total_notional_usd DOUBLE, sell_total_notional_usd DOUBLE)"
+        )
+        connection.execute(
+            "INSERT INTO bars VALUES "
+            "('AUSDT', '2026-08-17 00:00:00+00', 1.0, 10.0, 5.0), "
+            "('AUSDT', '2026-08-17 00:00:00+00', 1.5, 12.0, 4.0)"
+        )
+        with pytest.raises(ValueError, match="more than one row"):
+            check_no_duplicate_bars(connection)
+    finally:
+        connection.close()
