@@ -1,6 +1,6 @@
 # Roadmap
 
-> Living document. Updated as we progress. Last refreshed 2026-09-04.
+> Living document. Updated as we progress. Last refreshed 2026-09-05.
 
 ## Current focus
 
@@ -8,9 +8,9 @@ Update only these four lines after every merge -- this is the fast-path
 status check, not a place for narrative.
 
 ```
-Current primary: research/cex-activity-discovery-result-v1
+Current primary: research/cex-activity-path-coverage-audit-v1
 State: not_started
-Next after current primary merges: depends on HYP-016's own verdict -- see item 3 below
+Next after current primary merges: depends on the audit's own outcome -- see item 4 below
 User decision required: no
 ```
 
@@ -176,40 +176,66 @@ enabling change) slot.
    `TIMESTAMPTZ` throughout instead of bare `TIMESTAMP`. Wiring this into
    `cex_activity_discovery_report.py` itself, and actually re-running HYP-016
    against it, is the next item (4), not this one -- this PR is infra only.
-4. **[Done, `research/cex-activity-discovery-completion-v1`, PR #333,
-   merged 2026-09-04.]** Wires the offline denominator into
-   `cex_activity_discovery_report.py` itself and splits the CLI into
-   `--freeze-artifact` (the only mode that touches PostgreSQL, via one
-   `REPEATABLE READ` transaction spanning `fetch_exact_paths`' own
-   batches) and `--from-artifact` (pure render, zero PostgreSQL, byte-
-   identical across repeated calls). Across two colleague-review rounds,
-   also closed: non-authoritative-artifact rejection (a losing cohort-lock
-   race or a crash between publish and claim), a `contract_fingerprint()`
-   binding every estimand/decision-rule constant (plus the three
-   operational thresholds that pick the candidate universe) into `cohort`
-   itself so a later parameter/code change can never silently collide with
-   an existing frozen result, per-reason missingness breakdown in the
-   funnel, and a crash-durable cohort-drift lock. **This PR is infra
-   only** -- it does not perform the actual formal freeze or record any
-   verdict. That is `research/cex-activity-discovery-result-v1` (current
-   primary): re-run HYP-016's already-registered, pre-declared
-   two-direction family (buy/sell, Holm-corrected) for real, via
-   `--freeze-artifact` through the SSH tunnel against production, on the
-   same already-viewed `2026-08-18` -> `2026-08-27` window (discovery-only,
-   permanently -- see HYP-016's own instruction not to re-view it as
-   confirmation), then record the real verdict in
-   `docs/research/discovery-ledger.md` and update this file's own
-   "Current focus" block. What each verdict does next, agreed 2026-09-04,
-   never decided after seeing the numbers: `forward_candidate` -> freeze
-   exactly one direction and its parameters for a new, untouched forward
-   window; `no_evidence` -> close HYP-016, do not build CEXTrack-style
-   capture infrastructure for it; `insufficient_data` -> diagnose whether
-   the gap is genuinely too few episodes or a data-quality problem before
-   deciding anything further, and never change the threshold parameters
-   on this already-viewed window to try to clear the floor;
-   `inconclusive` -> park the direction, or start a prospective
-   (forward-only) cohort instead of re-searching parameters on the
-   already-viewed window.
+4. **[Done, `research/cex-activity-discovery-completion-v1`, PR #333;
+   `research/cex-activity-discovery-result-v1`, current primary --
+   formal freeze executed 2026-09-05, real verdict recorded.]** PR #333
+   wired the offline denominator into `cex_activity_discovery_report.py`
+   and split the CLI into `--freeze-artifact` (the only mode that touches
+   PostgreSQL) and `--from-artifact` (pure render, zero PostgreSQL,
+   byte-identical across repeated calls). Two later operational
+   incidents, neither touching any HYP-016 parameter or the discovery
+   window before the freeze, are recorded in full in the discovery
+   ledger row itself: the offline extract's per-batch UNNEST-insert path
+   measured roughly 50x slower on production than an identical benchmark
+   on a quiet machine at real scale (fixed by a COPY/CSV bulk-load
+   redesign, PRs #337/#338), and the first real freeze attempt on that
+   redesign then hit a genuine DuckDB memory ceiling from a `PRIMARY KEY`
+   index needing more than the container's own 1536 MiB budget (fixed by
+   dropping that key for an explicit post-load duplicate check).
+   The real, formal freeze then ran clean: freeze/render code revision
+   `064088a`, artifact fingerprint `382ac208...74bbb1`. **Verdict for
+   both directions: `insufficient_data`, `forward_candidate: none`** --
+   see `docs/research/discovery-ledger.md`'s own HYP-016 row for the full
+   funnel, the reconciled missingness histograms, and the two
+   independent, non-exclusive reasons (an evidence-floor counterfactual
+   -- 56 buy-eligible/60 sell-eligible episodes, both under the
+   `DISCOVERY_MIN_PAIRS=100` floor, so perfect data completeness alone
+   could not have reached readiness either way -- and a strict-
+   completeness finding: 99.91% overall signal-path minute coverage, but
+   the frozen 1,440/1,440-exact contract disqualifies an entire 24h path
+   on a routine 1-3 minute capture gap). This window is closed
+   permanently and is not re-run or re-parameterized regardless of what
+   the paragraph below finds.
+
+   **[Current primary.]** `research/cex-activity-path-coverage-audit-v1`:
+   read-only, using only the request IDs/timestamps already in the frozen
+   artifact above -- no new alpha thresholds, no re-optimization of
+   anything already frozen. Decomposes each unresolved path's missing
+   minutes by cause (row physically absent / present but not
+   `price_complete` / invalid or missing OHLC / wrong `capture_version` /
+   delisted or left the point-in-time universe / a global outage hitting
+   many symbols at the same minute / a boundary or identity bug), split
+   by signal versus control, buy versus sell, symbol, and entry
+   date/hour, plus the resolved/unresolved split over time against known
+   capture-service restarts and universe snapshots. Audit-outcome policy,
+   decided before viewing results (see the ledger row's own
+   `confirmation_requirement` for the full text): data genuinely absent
+   -> `insufficient_data` stays permanent on this window, register an
+   untouched prospective coverage cohort instead; a resolver bug
+   contradicting the already-frozen contract -> fix with proof, re-derive
+   without ever looking at outcome labels, still discovery-only; missing
+   traced to delisting/universe exit -> the missingness is non-random,
+   do not analyze the resolved subset alone, add a point-in-time
+   eligibility rule or close the candidate; data genuinely complete and
+   the completeness contract simply too strict -> do not loosen it
+   retroactively here, any looser rule only ever applies to a new
+   hypothesis ID against untouched forward data. Regardless of outcome,
+   a prospective continuation (if pursued at all) already independently
+   needs a new, longer, untouched forward window sized to plausibly clear
+   the 100-pairs-per-direction floor, plus a pre-declared policy for
+   routine 1-3 minute gaps -- no CEXTrack-style live-capture
+   infrastructure and no direction selection before that.
+
 5. **[Done, `research/liquidation-maker-upper-bound-v1`, PR #332,
    merged.]** Binance/Bybit liquidation capture is live in production
    (`schurfer-liquidation-capture-binance`/`-bybit`, both healthy) -- tests
