@@ -243,6 +243,50 @@ async def test_extract_bars_to_parquet_rejects_over_row_cap(tmp_path: Path) -> N
         await engine.dispose()
 
 
+async def test_extract_bars_to_parquet_cleans_up_build_artifacts_after_a_mid_copy_failure(
+    tmp_path: Path,
+) -> None:
+    """Colleague review, 2026-09-05 follow-up round 2: the row-cap/deadline
+    check that raises DURING a chunk's own PostgreSQL COPY stream (as
+    `test_extract_bars_to_parquet_rejects_over_row_cap` above already
+    exercises) happens before that chunk's own COPY-phase code ever
+    reaches the point where the DuckDB phase -- and its own cleanup --
+    would start. An earlier version of this function only cleaned up
+    `tmp_csv_dir`/`tmp_spill_dir`/`tmp_duckdb_path` from the DuckDB
+    phase's own `finally` block, which a COPY-phase failure never reaches
+    -- leaving the already-created, already partly-written CSV build
+    directory on disk indefinitely. The fix wraps the WHOLE function body
+    in one outer `finally` instead; this test proves it by triggering the
+    exact same over-row-cap failure mid-COPY and then asserting none of
+    the `.build.*` paths (or a dangling `.tmp` Parquet file) survive it."""
+    engine = await _connect_or_skip()
+    try:
+        symbol = "MIDCOPYCLEANUPUSDT"
+        await _seed_bar(engine, symbol=symbol, bucket_start=_START, close_price=1.0)
+        await _seed_bar(
+            engine, symbol=symbol, bucket_start=_START + timedelta(minutes=1), close_price=1.0
+        )
+        repository = OfflineBarsExtractRepository(engine)
+        output_path = tmp_path / "bars.parquet"
+        with pytest.raises(ValueError, match="over max_extract_rows"):
+            await repository.extract_bars_to_parquet(
+                exchange=_TEST_EXCHANGE,
+                capture_version=_TEST_CAPTURE_VERSION,
+                since=_START,
+                until=_START + timedelta(minutes=2),
+                output_path=output_path,
+                max_extract_rows=1,
+            )
+        assert not output_path.exists()
+        assert not output_path.with_suffix(".parquet.tmp").exists()
+        assert not output_path.with_suffix(".parquet.build.duckdb").exists()
+        assert not output_path.with_suffix(".parquet.build.spill").exists()
+        assert not output_path.with_suffix(".parquet.build.csv").exists()
+    finally:
+        await _cleanup(engine)
+        await engine.dispose()
+
+
 async def test_extract_bars_to_parquet_rejects_over_wall_time_budget(tmp_path: Path) -> None:
     """No single chunk's own statement_timeout alone catches a runaway
     TOTAL extract across many chunks (colleague review, 2026-09-03) --

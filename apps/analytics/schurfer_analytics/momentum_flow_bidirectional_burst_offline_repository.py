@@ -811,220 +811,275 @@ class OfflineBarsExtractRepository:
         # `read_csv` call per extract, regardless of which theory of the
         # production slowdown is correct -- fewer, larger DuckDB calls with
         # far less per-call Python/FFI marshaling either way).
-        psycopg_conn = await psycopg.AsyncConnection.connect(_psycopg_dsn(self._engine))
+        # ONE outer try/finally spans everything from here through the final
+        # rename below (colleague review, 2026-09-05 follow-up: the previous
+        # version's cleanup was split across the COPY-phase's own finally
+        # and the DuckDB-phase's own finally, with nothing covering either
+        # the COPY phase's own exception path -- tmp_csv_dir was created
+        # and populated BEFORE that phase's try/finally, which only closed
+        # the psycopg connection, never removed it -- or the gap between
+        # the DuckDB phase finishing and the final hash/rename. An
+        # exception raised ANYWHERE in this function, including a row-cap/
+        # deadline error mid-COPY or the deadline check right before
+        # hashing, must still leave no `.build.*` artifact behind).
+        # `output_path` itself is never touched here -- only ever removed
+        # via `tmp_parquet_path.unlink`, and by the time a successful run
+        # reaches `tmp_parquet_path.replace(output_path)` below,
+        # `tmp_parquet_path` no longer exists to unlink (missing_ok=True
+        # makes that a no-op), so a finished result is never at risk.
         try:
-            # Chunked over [since - 24h, until), not [since, until): this
-            # extractor copies rows, it does not compute a per-chunk window
-            # function the way the live path does, so it never needs to
-            # re-request the same calendar day's rows once per output
-            # chunk -- one non-overlapping partition of the FULL needed
-            # range (already including the lookback) is both simpler and
-            # halves the redundant Postgres I/O the first version of this
-            # function had (every day fetched exactly once, not twice from
-            # two adjacent chunks' own lookback windows).
-            for chunk_index, (chunk_since, chunk_until) in enumerate(
-                candidate_query_windows(since - _LOOKBACK, until)
-            ):
-                # Checked against the SAME deadline computed once above, not
-                # a fresh per-chunk budget -- raises immediately if the
-                # PREVIOUS chunk(s) already exhausted it (colleague review,
-                # 2026-09-03 follow-up round 3).
-                now = _now()
-                check_extract_deadline(now, deadline, max_wall_seconds=max_wall_seconds)
-                # This chunk's own statement_timeout is capped at whatever
-                # time is ACTUALLY left in the overall budget, not just the
-                # fixed _EXTRACT_STATEMENT_TIMEOUT_MS regardless of how
-                # little time remains -- so a single slow/stuck chunk (the
-                # only one, or the last one) is cut off by Postgres itself
-                # once the real budget runs out, rather than being allowed
-                # its own full 60s (or more) on top of an already-exhausted
-                # deadline. Postgres applies statement_timeout to every
-                # individual data-transfer step of an in-progress COPY, not
-                # just the initial query, so this also bounds a hang
-                # mid-stream, not only a slow query plan.
-                # max(1, ...): Postgres treats a statement_timeout of
-                # exactly 0 as DISABLED (no timeout at all), the opposite of
-                # what a near-zero remaining budget should mean here -- the
-                # check_extract_deadline call above already guarantees
-                # deadline - now > 0 at this point, but that could still
-                # round down to 0ms once truncated to whole milliseconds.
-                remaining_ms = max(
-                    1, min(_EXTRACT_STATEMENT_TIMEOUT_MS, int((deadline - now) * 1000))
-                )
-                chunk_csv_path = tmp_csv_dir / f"{chunk_index:05d}.csv"
-                chunk_csv_paths.append(chunk_csv_path)
-                copy_started_at = _now()
-                chunk_row_count = 0
-                async with psycopg_conn.transaction(), psycopg_conn.cursor() as cursor:
-                    await cursor.execute("SET TRANSACTION READ ONLY")
-                    # set_config(..., true) scopes to this transaction only
-                    # (the same as SET LOCAL), matching the previous
-                    # SQLAlchemy-routed version's own choice: a real
-                    # function call with a genuine bind parameter, not a
-                    # SET statement's less consistently parameterizable
-                    # value position.
-                    await cursor.execute(
-                        "SELECT set_config('statement_timeout', %s, true)",
-                        (f"{remaining_ms}ms",),
+            psycopg_conn = await psycopg.AsyncConnection.connect(_psycopg_dsn(self._engine))
+            try:
+                # Chunked over [since - 24h, until), not [since, until):
+                # this extractor copies rows, it does not compute a
+                # per-chunk window function the way the live path does, so
+                # it never needs to re-request the same calendar day's rows
+                # once per output chunk -- one non-overlapping partition of
+                # the FULL needed range (already including the lookback) is
+                # both simpler and halves the redundant Postgres I/O the
+                # first version of this function had (every day fetched
+                # exactly once, not twice from two adjacent chunks' own
+                # lookback windows).
+                for chunk_index, (chunk_since, chunk_until) in enumerate(
+                    candidate_query_windows(since - _LOOKBACK, until)
+                ):
+                    # Checked against the SAME deadline computed once above,
+                    # not a fresh per-chunk budget -- raises immediately if
+                    # the PREVIOUS chunk(s) already exhausted it (colleague
+                    # review, 2026-09-03 follow-up round 3).
+                    now = _now()
+                    check_extract_deadline(now, deadline, max_wall_seconds=max_wall_seconds)
+                    # This chunk's own statement_timeout is capped at
+                    # whatever time is ACTUALLY left in the overall budget,
+                    # not just the fixed _EXTRACT_STATEMENT_TIMEOUT_MS
+                    # regardless of how little time remains -- so a single
+                    # slow/stuck chunk (the only one, or the last one) is
+                    # cut off by Postgres itself once the real budget runs
+                    # out, rather than being allowed its own full 60s (or
+                    # more) on top of an already-exhausted deadline.
+                    # Postgres applies statement_timeout to every individual
+                    # data-transfer step of an in-progress COPY, not just
+                    # the initial query, so this also bounds a hang
+                    # mid-stream, not only a slow query plan.
+                    # max(1, ...): Postgres treats a statement_timeout of
+                    # exactly 0 as DISABLED (no timeout at all), the
+                    # opposite of what a near-zero remaining budget should
+                    # mean here -- the check_extract_deadline call above
+                    # already guarantees deadline - now > 0 at this point,
+                    # but that could still round down to 0ms once truncated
+                    # to whole milliseconds.
+                    remaining_ms = max(
+                        1, min(_EXTRACT_STATEMENT_TIMEOUT_MS, int((deadline - now) * 1000))
                     )
-                    with chunk_csv_path.open("wb") as csv_file:
-                        async with cursor.copy(
-                            _RAW_BARS_COPY_SQL,
-                            {
-                                "exchange": exchange,
-                                "market_type": market_type,
-                                "capture_version": capture_version,
-                                "since": chunk_since,
-                                "until": chunk_until,
-                            },
-                        ) as copy:
-                            # psycopg's async COPY TO iterator yields one
-                            # already-CSV-encoded row per iteration (raw,
-                            # undecoded bytes -- verified directly against a
-                            # real Postgres instance before this loop was
-                            # written): no Python-side field parsing/type
-                            # conversion happens here at all, unlike the
-                            # per-batch Python-list construction the
-                            # UNNEST-insert path this replaces required.
-                            # Newline-counting each row directly off the
-                            # wire, instead of a second pass over the
-                            # finished file, is what lets total_rows and
-                            # max_extract_rows stay enforced incrementally
-                            # without ever materializing a row in Python.
-                            async for data in copy:
-                                if not first_bytes_seen:
-                                    first_bytes_seen = True
-                                    time_to_first_bytes_seconds = _now() - started_at
-                                raw = bytes(data)
-                                csv_file.write(raw)
-                                chunk_row_count += raw.count(b"\n")
-                                total_rows += raw.count(b"\n")
-                                # Row-count check is a plain int comparison
-                                # (check_extract_row_count), cheap enough to
-                                # run every row; the wall-deadline check
-                                # below calls _now() and is throttled to
-                                # roughly every _EXTRACT_BATCH_SIZE rows
-                                # instead, so a multi-million-row chunk does
-                                # not pay a monotonic-clock call per row.
-                                check_extract_row_count(total_rows, max_extract_rows)
-                                if chunk_row_count % _EXTRACT_BATCH_SIZE == 0:
-                                    check_extract_deadline(
-                                        _now(), deadline, max_wall_seconds=max_wall_seconds
-                                    )
-                postgres_copy_seconds += _now() - copy_started_at
-                # Checked once more after the whole chunk finishes, not
-                # just at the _EXTRACT_BATCH_SIZE-row cadence above -- a
-                # chunk whose row count never lands on that exact boundary
-                # (or a chunk with very few rows) must still be caught
-                # before the next chunk starts (colleague review,
-                # 2026-09-03 follow-up round 3, preserved through the
-                # 2026-09-05 redesign).
-                check_extract_deadline(_now(), deadline, max_wall_seconds=max_wall_seconds)
-        finally:
-            await psycopg_conn.close()
+                    chunk_csv_path = tmp_csv_dir / f"{chunk_index:05d}.csv"
+                    chunk_csv_paths.append(chunk_csv_path)
+                    copy_started_at = _now()
+                    chunk_row_count = 0
+                    # Threshold this chunk's own deadline-check cadence
+                    # crosses next, not a `% _EXTRACT_BATCH_SIZE == 0` test
+                    # (colleague review, 2026-09-05 follow-up round 2): a
+                    # monotonically-advancing `>=` threshold, stepped past
+                    # in a `while` loop if a single iteration's row count
+                    # ever crosses more than one boundary at once, is
+                    # correct regardless of how many rows arrive per
+                    # iteration of the COPY loop below -- whereas an exact-
+                    # multiple check would silently skip every remaining
+                    # boundary for the rest of the chunk the first time a
+                    # single iteration's count overshoots one. psycopg's
+                    # AsyncCopy is documented and, verified directly against
+                    # a real Postgres instance at 200,000-row/2KB-row scale,
+                    # observed to yield exactly one CSV row per iteration
+                    # (each call wraps libpq's PQgetCopyData, itself
+                    # documented to return exactly one COPY row per call) --
+                    # so this can only ever advance by 1 in practice today,
+                    # but the threshold form costs nothing extra and does
+                    # not depend on that guarantee holding forever.
+                    next_deadline_check_at = _EXTRACT_BATCH_SIZE
+                    async with psycopg_conn.transaction(), psycopg_conn.cursor() as cursor:
+                        await cursor.execute("SET TRANSACTION READ ONLY")
+                        # set_config(..., true) scopes to this transaction
+                        # only (the same as SET LOCAL), matching the
+                        # previous SQLAlchemy-routed version's own choice: a
+                        # real function call with a genuine bind parameter,
+                        # not a SET statement's less consistently
+                        # parameterizable value position.
+                        await cursor.execute(
+                            "SELECT set_config('statement_timeout', %s, true)",
+                            (f"{remaining_ms}ms",),
+                        )
+                        with chunk_csv_path.open("wb") as csv_file:
+                            async with cursor.copy(
+                                _RAW_BARS_COPY_SQL,
+                                {
+                                    "exchange": exchange,
+                                    "market_type": market_type,
+                                    "capture_version": capture_version,
+                                    "since": chunk_since,
+                                    "until": chunk_until,
+                                },
+                            ) as copy:
+                                # Raw, undecoded CSV bytes per iteration, no
+                                # Python-side field parsing/type conversion
+                                # at all here, unlike the per-batch Python-
+                                # list construction the UNNEST-insert path
+                                # this replaces required. Newline-counting
+                                # each iteration's bytes directly off the
+                                # wire, instead of a second pass over the
+                                # finished file, is what lets total_rows and
+                                # max_extract_rows stay enforced
+                                # incrementally without ever materializing a
+                                # row in Python -- and, unlike the deadline-
+                                # check cadence above, is correct no matter
+                                # how many rows one iteration's bytes
+                                # contain, since it counts actual `\n` bytes
+                                # rather than assuming one iteration is one
+                                # row.
+                                async for data in copy:
+                                    if not first_bytes_seen:
+                                        first_bytes_seen = True
+                                        time_to_first_bytes_seconds = _now() - started_at
+                                    raw = bytes(data)
+                                    csv_file.write(raw)
+                                    row_delta = raw.count(b"\n")
+                                    chunk_row_count += row_delta
+                                    total_rows += row_delta
+                                    # The row-count check is a plain int
+                                    # comparison, cheap enough to run every
+                                    # iteration; the wall-deadline check
+                                    # below calls _now() and is throttled to
+                                    # roughly
+                                    # every _EXTRACT_BATCH_SIZE rows instead,
+                                    # so a multi-million-row chunk does not
+                                    # pay a monotonic-clock call per row.
+                                    check_extract_row_count(total_rows, max_extract_rows)
+                                    if chunk_row_count >= next_deadline_check_at:
+                                        check_extract_deadline(
+                                            _now(), deadline, max_wall_seconds=max_wall_seconds
+                                        )
+                                        while next_deadline_check_at <= chunk_row_count:
+                                            next_deadline_check_at += _EXTRACT_BATCH_SIZE
+                    postgres_copy_seconds += _now() - copy_started_at
+                    # Checked once more after the whole chunk finishes, not
+                    # just at the _EXTRACT_BATCH_SIZE-row cadence above -- a
+                    # chunk whose row count never reaches that cadence's
+                    # first threshold (or a chunk with very few rows) must
+                    # still be caught before the next chunk starts
+                    # (colleague review, 2026-09-03 follow-up round 3,
+                    # preserved through the 2026-09-05 redesign).
+                    check_extract_deadline(_now(), deadline, max_wall_seconds=max_wall_seconds)
+            finally:
+                await psycopg_conn.close()
 
-        duckdb_conn = _duckdb_connect(tmp_duckdb_path.as_posix(), temp_directory=tmp_spill_dir)
-        try:
-            duckdb_conn.execute(
-                """
-                CREATE TABLE bars (
-                    symbol VARCHAR NOT NULL,
-                    bucket_start TIMESTAMPTZ NOT NULL,
-                    close_price DOUBLE NOT NULL,
-                    buy_total_notional_usd DOUBLE NOT NULL,
-                    sell_total_notional_usd DOUBLE NOT NULL,
-                    PRIMARY KEY (symbol, bucket_start)
-                )
-                """
-            )
-            # ONE bulk INSERT reading every non-empty chunk CSV at once
-            # (colleague review, 2026-09-05, COPY/CSV redesign): replaces
-            # the ~148 per-batch UNNEST-bind calls a real HYP-016-scale
-            # extract previously made with a single DuckDB `read_csv` call
-            # over the whole file list -- the standard DuckDB bulk-load
-            # pattern, and a strict superset of the 2026-09-04 single-
-            # transaction fix this replaces (one DuckDB statement total,
-            # not merely one transaction wrapping many statements). Empty
-            # chunk files (a day with zero matching rows -- routine, not an
-            # error) are filtered out before the call: DuckDB's read_csv on
-            # a zero-byte file with an explicit schema and no header has
-            # nothing to infer from and is a needless edge case to feed it
-            # when the empty list itself is already meaningful (an extract
-            # whose every chunk is empty simply performs no INSERT at all,
-            # correctly leaving `bars` empty rather than raising). The
-            # PRIMARY KEY above still applies to a bulk INSERT exactly like
-            # it did to the old per-batch inserts -- chunks are non-
-            # overlapping by construction (see the comment above the chunk
-            # loop), so no chunk's file can ever contain a (symbol,
-            # bucket_start) pair another chunk's file already does; a
-            # genuine duplicate still raises loudly instead of being
-            # silently dropped.
-            non_empty_csv_paths = [
-                path.as_posix() for path in chunk_csv_paths if path.stat().st_size > 0
-            ]
-            bulk_load_started_at = _now()
-            if non_empty_csv_paths:
+            duckdb_conn = _duckdb_connect(tmp_duckdb_path.as_posix(), temp_directory=tmp_spill_dir)
+            try:
                 duckdb_conn.execute(
                     """
-                    INSERT INTO bars
-                    SELECT
-                        symbol,
-                        to_timestamp(bucket_start_epoch_s) AS bucket_start,
-                        close_price,
-                        buy_total_notional_usd,
-                        sell_total_notional_usd
-                    FROM read_csv(?, columns=?, header=False)
-                    """,
-                    [non_empty_csv_paths, _RAW_BARS_CSV_COLUMNS],
+                    CREATE TABLE bars (
+                        symbol VARCHAR NOT NULL,
+                        bucket_start TIMESTAMPTZ NOT NULL,
+                        close_price DOUBLE NOT NULL,
+                        buy_total_notional_usd DOUBLE NOT NULL,
+                        sell_total_notional_usd DOUBLE NOT NULL,
+                        PRIMARY KEY (symbol, bucket_start)
+                    )
+                    """
                 )
-            duckdb_bulk_load_seconds = _now() - bulk_load_started_at
-            # The deadline is enforced once more here, after the whole bulk
-            # load, before starting the local COPY/hash phases below --
-            # those phases never touch production (they are 100% local
-            # Parquet-write/hashing work against the on-disk DuckDB file
-            # already built above), so they carry none of the production-
-            # I/O risk max_wall_seconds primarily exists to bound; this
-            # check's job is only to fail fast rather than spend time on
-            # COPY/hashing when the budget is already spent, not to
-            # preempt COPY/hashing mid-flight once they've started (that
-            # would need running DuckDB's synchronous COPY in a killable
-            # subprocess -- a materially bigger redesign not justified by
-            # what these phases actually cost, measured at low single-digit
-            # seconds even at multi-million-row scale).
+                # ONE bulk INSERT reading every non-empty chunk CSV at once
+                # (colleague review, 2026-09-05, COPY/CSV redesign):
+                # replaces the ~148 per-batch UNNEST-bind calls a real
+                # HYP-016-scale extract previously made with a single
+                # DuckDB `read_csv` call over the whole file list -- the
+                # standard DuckDB bulk-load pattern, and a strict superset
+                # of the 2026-09-04 single-transaction fix this replaces
+                # (one DuckDB statement total, not merely one transaction
+                # wrapping many statements). Empty chunk files (a day with
+                # zero matching rows -- routine, not an error) are filtered
+                # out before the call: DuckDB's read_csv on a zero-byte file
+                # with an explicit schema and no header has nothing to
+                # infer from and is a needless edge case to feed it when
+                # the empty list itself is already meaningful (an extract
+                # whose every chunk is empty simply performs no INSERT at
+                # all, correctly leaving `bars` empty rather than raising).
+                # The PRIMARY KEY above still applies to a bulk INSERT
+                # exactly like it did to the old per-batch inserts --
+                # chunks are non-overlapping by construction (see the
+                # comment above the chunk loop), so no chunk's file can
+                # ever contain a (symbol, bucket_start) pair another
+                # chunk's file already does; a genuine duplicate still
+                # raises loudly instead of being silently dropped.
+                non_empty_csv_paths = [
+                    path.as_posix() for path in chunk_csv_paths if path.stat().st_size > 0
+                ]
+                bulk_load_started_at = _now()
+                if non_empty_csv_paths:
+                    duckdb_conn.execute(
+                        """
+                        INSERT INTO bars
+                        SELECT
+                            symbol,
+                            to_timestamp(bucket_start_epoch_s) AS bucket_start,
+                            close_price,
+                            buy_total_notional_usd,
+                            sell_total_notional_usd
+                        FROM read_csv(?, columns=?, header=False)
+                        """,
+                        [non_empty_csv_paths, _RAW_BARS_CSV_COLUMNS],
+                    )
+                duckdb_bulk_load_seconds = _now() - bulk_load_started_at
+                # The deadline is enforced once more here, after the whole
+                # bulk load, before starting the local COPY/hash phases
+                # below -- those phases never touch production (they are
+                # 100% local Parquet-write/hashing work against the on-disk
+                # DuckDB file already built above), so they carry none of
+                # the production-I/O risk max_wall_seconds primarily exists
+                # to bound; this check's job is only to fail fast rather
+                # than spend time on COPY/hashing when the budget is
+                # already spent, not to preempt COPY/hashing mid-flight
+                # once they've started (that would need running DuckDB's
+                # synchronous COPY in a killable subprocess -- a materially
+                # bigger redesign not justified by what these phases
+                # actually cost, measured at low single-digit seconds even
+                # at multi-million-row scale).
+                check_extract_deadline(_now(), deadline, max_wall_seconds=max_wall_seconds)
+                copy_started_at = _now()
+                duckdb_conn.execute(
+                    "COPY (SELECT * FROM bars ORDER BY symbol, bucket_start) "
+                    "TO ? (FORMAT PARQUET, COMPRESSION ZSTD)",
+                    [tmp_parquet_path.as_posix()],
+                )
+                parquet_copy_seconds = _now() - copy_started_at
+                check_extract_deadline(_now(), deadline, max_wall_seconds=max_wall_seconds)
+                count_row = duckdb_conn.execute(
+                    "SELECT count(*), count(DISTINCT symbol) FROM bars"
+                ).fetchone()
+                # An unqualified aggregate with no GROUP BY always returns
+                # exactly one row; this is a type-narrowing guard, not a
+                # real runtime possibility.
+                assert count_row is not None
+                row_count, symbol_count = count_row
+            finally:
+                duckdb_conn.close()
+
+            # Checked once more before the (also 100% local, no production
+            # I/O) streamed-hash pass over the finished Parquet file, for
+            # the same fail-fast-rather-than-preempt-mid-flight reasoning as
+            # the COPY checkpoint above.
             check_extract_deadline(_now(), deadline, max_wall_seconds=max_wall_seconds)
-            copy_started_at = _now()
-            duckdb_conn.execute(
-                "COPY (SELECT * FROM bars ORDER BY symbol, bucket_start) "
-                "TO ? (FORMAT PARQUET, COMPRESSION ZSTD)",
-                [tmp_parquet_path.as_posix()],
-            )
-            parquet_copy_seconds = _now() - copy_started_at
-            check_extract_deadline(_now(), deadline, max_wall_seconds=max_wall_seconds)
-            count_row = duckdb_conn.execute(
-                "SELECT count(*), count(DISTINCT symbol) FROM bars"
-            ).fetchone()
-            # An unqualified aggregate with no GROUP BY always returns
-            # exactly one row; this is a type-narrowing guard, not a real
-            # runtime possibility.
-            assert count_row is not None
-            row_count, symbol_count = count_row
+            hash_started_at = _now()
+            parquet_sha256 = _sha256_file(tmp_parquet_path)
+            hash_seconds = _now() - hash_started_at
+            parquet_bytes = tmp_parquet_path.stat().st_size
+            tmp_parquet_path.replace(output_path)
+            wall_seconds = _now() - started_at
         finally:
-            duckdb_conn.close()
+            # Unconditional, regardless of where (or whether) an exception
+            # was raised above -- see this block's own opening comment.
+            # unlink(missing_ok=True) on tmp_parquet_path is a no-op after
+            # a successful run (already renamed to output_path above).
             tmp_duckdb_path.unlink(missing_ok=True)
             shutil.rmtree(tmp_spill_dir, ignore_errors=True)
             shutil.rmtree(tmp_csv_dir, ignore_errors=True)
-
-        # Checked once more before the (also 100% local, no production
-        # I/O) streamed-hash pass over the finished Parquet file, for the
-        # same fail-fast-rather-than-preempt-mid-flight reasoning as the
-        # COPY checkpoint above.
-        check_extract_deadline(_now(), deadline, max_wall_seconds=max_wall_seconds)
-        hash_started_at = _now()
-        parquet_sha256 = _sha256_file(tmp_parquet_path)
-        hash_seconds = _now() - hash_started_at
-        parquet_bytes = tmp_parquet_path.stat().st_size
-        tmp_parquet_path.replace(output_path)
-        wall_seconds = _now() - started_at
+            tmp_parquet_path.unlink(missing_ok=True)
 
         return ExtractManifest(
             extract_query_version=EXTRACT_QUERY_VERSION,
