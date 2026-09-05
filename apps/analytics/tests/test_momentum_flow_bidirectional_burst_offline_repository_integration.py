@@ -243,6 +243,50 @@ async def test_extract_bars_to_parquet_rejects_over_row_cap(tmp_path: Path) -> N
         await engine.dispose()
 
 
+async def test_extract_bars_to_parquet_cleans_up_build_artifacts_after_a_mid_copy_failure(
+    tmp_path: Path,
+) -> None:
+    """Colleague review, 2026-09-05 follow-up round 2: the row-cap/deadline
+    check that raises DURING a chunk's own PostgreSQL COPY stream (as
+    `test_extract_bars_to_parquet_rejects_over_row_cap` above already
+    exercises) happens before that chunk's own COPY-phase code ever
+    reaches the point where the DuckDB phase -- and its own cleanup --
+    would start. An earlier version of this function only cleaned up
+    `tmp_csv_dir`/`tmp_spill_dir`/`tmp_duckdb_path` from the DuckDB
+    phase's own `finally` block, which a COPY-phase failure never reaches
+    -- leaving the already-created, already partly-written CSV build
+    directory on disk indefinitely. The fix wraps the WHOLE function body
+    in one outer `finally` instead; this test proves it by triggering the
+    exact same over-row-cap failure mid-COPY and then asserting none of
+    the `.build.*` paths (or a dangling `.tmp` Parquet file) survive it."""
+    engine = await _connect_or_skip()
+    try:
+        symbol = "MIDCOPYCLEANUPUSDT"
+        await _seed_bar(engine, symbol=symbol, bucket_start=_START, close_price=1.0)
+        await _seed_bar(
+            engine, symbol=symbol, bucket_start=_START + timedelta(minutes=1), close_price=1.0
+        )
+        repository = OfflineBarsExtractRepository(engine)
+        output_path = tmp_path / "bars.parquet"
+        with pytest.raises(ValueError, match="over max_extract_rows"):
+            await repository.extract_bars_to_parquet(
+                exchange=_TEST_EXCHANGE,
+                capture_version=_TEST_CAPTURE_VERSION,
+                since=_START,
+                until=_START + timedelta(minutes=2),
+                output_path=output_path,
+                max_extract_rows=1,
+            )
+        assert not output_path.exists()
+        assert not output_path.with_suffix(".parquet.tmp").exists()
+        assert not output_path.with_suffix(".parquet.build.duckdb").exists()
+        assert not output_path.with_suffix(".parquet.build.spill").exists()
+        assert not output_path.with_suffix(".parquet.build.csv").exists()
+    finally:
+        await _cleanup(engine)
+        await engine.dispose()
+
+
 async def test_extract_bars_to_parquet_rejects_over_wall_time_budget(tmp_path: Path) -> None:
     """No single chunk's own statement_timeout alone catches a runaway
     TOTAL extract across many chunks (colleague review, 2026-09-03) --
@@ -271,23 +315,26 @@ async def test_extract_bars_to_parquet_enforces_the_deadline_after_chunk_work_fi
     tmp_path: Path,
 ) -> None:
     """The wall-time budget must be enforced beyond just the pre-chunk
-    check -- also after each batch, after the whole chunk loop, and before
-    the local COPY/hash phases (colleague review, 2026-09-03 follow-up
-    round 3: a per-chunk-only check misses a single slow/stuck chunk or a
-    slow local COPY/hash phase, since those would only ever be checked
-    again at the START of the NEXT chunk, which may never come).
+    check -- also periodically during a chunk's own row stream, after each
+    chunk finishes, and before the local bulk-load/COPY/hash phases
+    (colleague review, 2026-09-03 follow-up round 3, preserved through the
+    2026-09-05 COPY/CSV redesign: a per-chunk-only check misses a single
+    slow/stuck chunk or a slow local phase, since those would only ever be
+    checked again at the START of the NEXT chunk, which may never come).
 
     Uses a fake `_now` clock (the function's own private testing seam) that
     returns small, real-looking values for its first few calls -- enough to
-    let both of this scenario's two chunks (the extract always adds one
-    chunk for the 24h lookback ahead of the requested since/until, even
-    when the requested window itself is one minute wide) pass their
-    pre-chunk checks and the one seeded row's post-batch check -- then
-    jumps far past the deadline on every call after that. If the deadline
-    were only ever checked before a chunk starts, this run would still
-    complete successfully (both chunks' own pre-checks already passed
-    before the clock jumps); it must instead raise from one of the later
-    checkpoints (after the loop, before COPY, or before hashing)."""
+    let real chunk/row processing actually happen (the one seeded row's own
+    COPY stream, at minimum) -- then jumps far past the deadline on every
+    call after that. If the deadline were only ever checked before a chunk
+    starts, a scenario this small (one row, two chunks -- the extract
+    always adds one chunk for the 24h lookback ahead of the requested
+    since/until) could complete successfully before the jump is ever
+    observed; the assertion below only requires that a TimeoutError is
+    eventually raised and that more than a few real clock calls preceded
+    it, not which exact checkpoint catches it -- pinning the exact call
+    count would make this test brittle against any future change to how
+    many times a single chunk's processing calls `_now`."""
     engine = await _connect_or_skip()
     try:
         symbol = "DEADLINEAFTERUSDT"
