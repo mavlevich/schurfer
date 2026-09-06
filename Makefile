@@ -3,6 +3,7 @@
 .PHONY: momentum-flow-discovery-report prod-momentum-flow-discovery-report
 .PHONY: ai-rules-check
 .PHONY: early-momentum-unused-flow-features-report prod-early-momentum-unused-flow-features-report
+.PHONY: cex-activity-path-coverage-audit-report prod-cex-activity-path-coverage-audit-report
 .PHONY: cex-activity-discovery-report radar-outcome-discovery-report prod-radar-outcome-discovery-report
 .PHONY: liquidation-capture-bybit-start liquidation-capture-bybit-stop liquidation-capture-bybit-health liquidation-capture-binance-start liquidation-capture-binance-stop liquidation-capture-binance-health
 .PHONY: prod-liquidation-capture-bybit-start prod-liquidation-capture-bybit-stop prod-liquidation-capture-bybit-health prod-liquidation-capture-binance-start prod-liquidation-capture-binance-stop prod-liquidation-capture-binance-health
@@ -148,6 +149,7 @@ help:
 	@echo "  make early-momentum-net-evidence-report  Read-only early_momentum_v4 net-edge evidence read (ARGS must include --cohort-end)"
 	@echo "  make early-momentum-prospective-cohort-report  Read-only prospective-cohort live-probe-eligibility status (ARGS must include --cohort-end)"
 	@echo "  make early-momentum-unused-flow-features-report  Discovery-only v4 flow-feature challenger read"
+	@echo "  make cex-activity-path-coverage-audit-report  Read-only HYP-016 unresolved-path missingness audit"
 	@echo "  make orderflow-start  Start the bounded local Bybit order-flow pilot"
 	@echo "  make orderflow-health  Show local order-flow pilot health"
 	@echo "  make orderflow-stop  Stop the local order-flow pilot"
@@ -248,6 +250,7 @@ help:
 	@echo "  make prod-early-momentum-net-evidence-report  Production early_momentum_v4 net-edge evidence read"
 	@echo "  make prod-early-momentum-prospective-cohort-report  Production prospective-cohort live-probe-eligibility status"
 	@echo "  make prod-early-momentum-unused-flow-features-report  Production discovery-only v4 flow-feature read"
+	@echo "  make prod-cex-activity-path-coverage-audit-report  Production read-only HYP-016 missingness audit"
 	@echo "  make prod-orderflow-start  Explicitly start the bounded order-flow trial"
 	@echo "  make prod-orderflow-health  Show order-flow trial health and resource use"
 	@echo "  make prod-orderflow-stop  Stop the order-flow trial"
@@ -848,6 +851,14 @@ early-momentum-prospective-cohort-report:
 early-momentum-unused-flow-features-report:
 	@DATABASE_URL="$${DATABASE_URL:-postgresql://schurfer:schurfer_dev@localhost:5432/schurfer}" \
 		uv run --package schurfer-analytics early-momentum-unused-flow-features-report \
+		--code-revision="$$(git rev-parse HEAD)" \
+		$$(test -z "$$(git status --porcelain)" \
+			&& printf '%s' '--no-working-tree-dirty' \
+			|| printf '%s' '--working-tree-dirty') $(ARGS)
+
+cex-activity-path-coverage-audit-report:
+	@DATABASE_URL="$${DATABASE_URL:-postgresql://schurfer:schurfer_dev@localhost:5432/schurfer}" \
+		uv run --package schurfer-analytics cex-activity-path-coverage-audit-report \
 		--code-revision="$$(git rev-parse HEAD)" \
 		$$(test -z "$$(git status --porcelain)" \
 			&& printf '%s' '--no-working-tree-dirty' \
@@ -1593,6 +1604,14 @@ prod-early-momentum-prospective-cohort-report:
 prod-early-momentum-unused-flow-features-report:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
 	@$(_PROD) run --rm --no-deps --entrypoint early-momentum-unused-flow-features-report analytics \
+		--code-revision="$$(git rev-parse HEAD)" \
+		$$(test -z "$$(git status --porcelain)" \
+			&& printf '%s' '--no-working-tree-dirty' \
+			|| printf '%s' '--working-tree-dirty') $(ARGS)
+
+prod-cex-activity-path-coverage-audit-report:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
+	@$(_PROD) run --rm --no-deps --entrypoint cex-activity-path-coverage-audit-report analytics \
 		--code-revision="$$(git rev-parse HEAD)" \
 		$$(test -z "$$(git status --porcelain)" \
 			&& printf '%s' '--no-working-tree-dirty' \

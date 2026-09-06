@@ -1,6 +1,6 @@
 # Roadmap
 
-> Living document. Updated as we progress. Last refreshed 2026-09-05.
+> Living document. Updated as we progress. Last refreshed 2026-09-06.
 
 ## Current focus
 
@@ -8,9 +8,9 @@ Update only these four lines after every merge -- this is the fast-path
 status check, not a place for narrative.
 
 ```
-Current primary: research/cex-activity-path-coverage-audit-v1
+Current primary: liquidation-maker-upper-bound real-data verdict (item 5)
 State: not_started
-Next after current primary merges: depends on the audit's own outcome -- see item 4 below
+Next after current primary merges: depends on the verdict -- see item 5/6 below
 User decision required: no
 ```
 
@@ -207,34 +207,33 @@ enabling change) slot.
    permanently and is not re-run or re-parameterized regardless of what
    the paragraph below finds.
 
-   **[Current primary.]** `research/cex-activity-path-coverage-audit-v1`:
-   read-only, using only the request IDs/timestamps already in the frozen
-   artifact above -- no new alpha thresholds, no re-optimization of
-   anything already frozen. Decomposes each unresolved path's missing
-   minutes by cause (row physically absent / present but not
-   `price_complete` / invalid or missing OHLC / wrong `capture_version` /
-   delisted or left the point-in-time universe / a global outage hitting
-   many symbols at the same minute / a boundary or identity bug), split
-   by signal versus control, buy versus sell, symbol, and entry
-   date/hour, plus the resolved/unresolved split over time against known
-   capture-service restarts and universe snapshots. Audit-outcome policy,
-   decided before viewing results (see the ledger row's own
-   `confirmation_requirement` for the full text): data genuinely absent
-   -> `insufficient_data` stays permanent on this window, register an
-   untouched prospective coverage cohort instead; a resolver bug
-   contradicting the already-frozen contract -> fix with proof, re-derive
-   without ever looking at outcome labels, still discovery-only; missing
-   traced to delisting/universe exit -> the missingness is non-random,
-   do not analyze the resolved subset alone, add a point-in-time
-   eligibility rule or close the candidate; data genuinely complete and
-   the completeness contract simply too strict -> do not loosen it
-   retroactively here, any looser rule only ever applies to a new
-   hypothesis ID against untouched forward data. Regardless of outcome,
-   a prospective continuation (if pursued at all) already independently
-   needs a new, longer, untouched forward window sized to plausibly clear
-   the 100-pairs-per-direction floor, plus a pre-declared policy for
-   routine 1-3 minute gaps -- no CEXTrack-style live-capture
-   infrastructure and no direction selection before that.
+   **[Done, `research/cex-activity-path-coverage-audit-v1`.]** Read-only,
+   using only the request IDs/timestamps already in the frozen artifact
+   above -- no new alpha thresholds, no re-optimization of anything
+   already frozen (`apps/analytics/schurfer_analytics/
+cex_activity_path_coverage_audit.py`, `make cex-activity-path-
+coverage-audit-report`). Decomposed each of the 678 unresolved paths'
+   missing minutes by cause. **Audit-outcome answer: data genuinely
+   absent.** Not a resolver bug (five requests' independently recomputed
+   `observed_minutes` matched the frozen artifact exactly). Not delisting
+   (every audited symbol's own last bar falls well after its request's
+   window end). Not an overly strict validator on otherwise-clean data
+   (1,813 real bad-minute instances: 1,143 `price_incomplete_or_null`,
+   383 `row_absent`, 287 `invalid_or_missing_ohlc`). Clusters heavily by
+   symbol; splits into isolated single-minute gaps (646/678 requests) and
+   a smaller population of genuine 8-12-minute outages (32/678), 46 of
+   which hit `>=5` symbols simultaneously. Full findings:
+   `docs/research/cex-activity-path-coverage-audit-v1.md`; verdict text
+   folded into the ledger row's own `confirmation_requirement`. Per the
+   policy agreed before viewing results, `insufficient_data` stays
+   permanent on this window -- unchanged from item 4's own verdict above,
+   since the evidence-floor counterfactual already independently ruled
+   out `forward_candidate` regardless of completeness. No CEXTrack-style
+   live-capture infrastructure and no direction selection is planned;
+   a prospective continuation, if ever pursued, still needs a new,
+   longer, untouched forward window sized to plausibly clear the
+   100-pairs-per-direction floor plus a pre-declared policy for these
+   routine gaps, not decided here.
 
 5. **[Done, `research/liquidation-maker-upper-bound-v1`, PR #332,
    merged.]** Binance/Bybit liquidation capture is live in production

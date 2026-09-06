@@ -85,6 +85,7 @@ liquidation-maker-upper-bound-report = "schurfer_analytics.liquidation_maker_upp
 early-momentum-net-evidence-report = "schurfer_analytics.early_momentum_net_evidence_report:main"
 early-momentum-prospective-cohort-report = "schurfer_analytics.early_momentum_prospective_cohort_report:main"
 early-momentum-unused-flow-features-report = "schurfer_analytics.early_momentum_unused_flow_features_report:main"
+cex-activity-path-coverage-audit-report = "schurfer_analytics.cex_activity_path_coverage_audit:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
