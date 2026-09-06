@@ -8,10 +8,10 @@ Update only these four lines after every merge -- this is the fast-path
 status check, not a place for narrative.
 
 ```
-Current primary: liquidation-maker-upper-bound real-data verdict (item 5)
-State: not_started
-Next after current primary merges: depends on the verdict -- see item 5/6 below
-User decision required: no
+Current primary: none -- item 5's real verdict is `insufficient_data`/`collecting` (not code work, waiting on ~2 more weeks of accumulating capture), item 6 is blocked on it
+State: idle
+Next after current primary merges: user to pick the next independent item
+User decision required: yes
 ```
 
 ## Autonomy rules (when to just proceed, when to ask)
@@ -242,16 +242,33 @@ coverage-audit-report`). Decomposed each of the 678 unresolved paths'
    itself, not the 2 live-paper trades this idea started from: independent
    episodes, exact venue, a limit level fixed in advance, price merely
    touching that level counted only as an optimistic potential fill (never
-   an actual one), costs, MFE/MAE, adverse selection. **The actual
-   numeric result (positive/negative upper bound) has not yet been
-   verified/recorded against real production data** -- running the report
-   for real and recording its verdict is separate, still-pending follow-up
-   work, not part of this landed PR. A negative result closes the
-   direction before any L2/shadow-capture infrastructure gets built for
-   it.
+   an actual one), costs, MFE/MAE, adverse selection.
+
+   **Real report run 2026-09-06** (`make prod-liquidation-maker-upper-
+bound-report --since=2026-08-25T21:00:00Z --until=<then-now>`; no
+   liquidation event exists before 2026-08-25 21:28 UTC on either venue,
+   confirmed directly -- that is genuinely the full accumulated history,
+   not a truncated window). All four independent scopes ((buy/sell) x
+   (Binance `latest_per_symbol_1000ms` / Bybit `complete_stream`), never
+   pooled) verdict `insufficient_data`: resolved episode counts alone
+   clear the 100-episode floor in 3 of 4 scopes (192/70/200/76 resolved),
+   but only 2 of the required 4 distinct UTC weeks have elapsed (only 12
+   days of history exist at all) and instrument-cluster counts (28/12/28/12)
+   fall short of the 30-cluster floor in every scope. This is a
+   `collecting` state, not a rejection -- the capture pipeline keeps
+   accumulating in production with no further code or infrastructure
+   needed, and the SAME report can simply be re-run once roughly 2 more
+   weeks have passed. Do NOT read the current point estimates (mean net
+   0.6-2.3%, profit factor 4.9-44, 70-86% win rate across scopes) as a
+   positive result or use them to decide anything yet -- the frozen
+   evidence floor exists precisely so a promising-looking sub-floor
+   sample is not mistaken for a validated one; re-run and record the
+   verdict again once the floor is actually met, not before.
+
 6. **Then, only if 5 is positive: bounded shadow capture** (BBO/L2, queue-aware
    potential fills, partial fills, opportunity loss, capacity) -- still no real
-   orders.
+   orders. Blocked on item 5's own evidence floor clearing (see above), not
+   on any further engineering work.
 7. **[Done, `research/token-universe-coverage-v1`] Point-in-time listing
    coverage and a non-survivorship-biased control group.** This item
    originally read `research/token-universe-identity-and-expansion-v1`
