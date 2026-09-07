@@ -581,8 +581,13 @@ verify`, `make deadcode`, `pre-commit run --all-files`, and 13 black-box tests t
 
 ### ENG-024 — Verify coverage artifacts and trace partial-outcome consumers
 
-- **Status / priority:** fingerprint fix `planned`, `P2` / `P1` for formal evidence
-  relying on it; partial-outcome impact `reported`; E-04/M-8, B06.
+- **Status / priority:** fingerprint fix `fixed in code`; partial-outcome impact still
+  `reported`; E-04/M-8, B06. The audit now hashes the bytes it actually read, refuses a
+  file whose fingerprint is not the one it was built against unless that is stated
+  explicitly, validates the episode shape, and reports the verified identity and path
+  instead of a constant. The September audit's own synthetic `[]` is rejected by name in
+  the regression tests. The partial-outcome consumer tracing is untouched and remains
+  open.
 - **Evidence:** `cex_activity_path_coverage_audit.py:230` reads an arbitrary JSON and
   `render_markdown` prints `_AUDITED_ARTIFACT_FINGERPRINT` without validating that
   input. The audit accepted a synthetic unrelated `[]`. This is now merged code.
