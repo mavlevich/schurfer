@@ -114,6 +114,13 @@ class TradeDecisionOutcome(Base, TimestampMixin):
     entry_price: Mapped[Decimal | None] = mapped_column(Numeric(), nullable=True)
     forward_price: Mapped[Decimal | None] = mapped_column(Numeric(), nullable=True)
     mfe_pct: Mapped[Decimal | None] = mapped_column(Numeric(12, 6), nullable=True)
+    # When each extreme occurred, so the two can be ordered. Without them the
+    # question "did the stop or the target come first" is unanswerable from
+    # this table, which is what limited HYP-020 to a bound (migration 0046).
+    # Null for every row written before these columns existed; never backfilled,
+    # because the ordering was not recorded and cannot be recovered.
+    mfe_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    mae_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     mae_pct: Mapped[Decimal | None] = mapped_column(Numeric(12, 6), nullable=True)
     short_return_pct: Mapped[Decimal | None] = mapped_column(Numeric(12, 6), nullable=True)
     bars_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

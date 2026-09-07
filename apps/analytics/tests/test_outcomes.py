@@ -735,3 +735,77 @@ async def test_runner_closes_exchanges_after_partial_factory_failure() -> None:
         await run_outcome_resolver(cfg, once=True, store=_store([]))
 
     first.close.assert_awaited_once()
+
+
+class TestExtremeTimestamps:
+    """The extremes were stored as magnitudes with no timing, so for a position
+    that touched both a favourable target and the stop level the table could not
+    say which came first. HYP-020 could therefore only bound the stop question
+    instead of answering it (migration 0046)."""
+
+    def test_records_the_bar_that_set_each_extreme(self) -> None:
+        decision = _decision(ts=datetime(2026, 7, 22, 12, 0, tzinfo=UTC))
+
+        result = compute_outcome(
+            decision,
+            15,
+            [
+                _candle(0, high=101, low=99, close=100),
+                _candle(5, high=110, low=98, close=105),  # the adverse extreme
+                _candle(10, high=104, low=90, close=95),  # the favourable one
+            ],
+            anchor="binance",
+            source="binance",
+        )
+
+        assert result.mae_at == datetime(2026, 7, 22, 12, 5, tzinfo=UTC)
+        assert result.mfe_at == datetime(2026, 7, 22, 12, 10, tzinfo=UTC)
+        # The ordering the whole change exists for: the stop level came first.
+        assert result.mae_at < result.mfe_at
+
+    def test_the_other_order_is_reported_as_such(self) -> None:
+        decision = _decision(ts=datetime(2026, 7, 22, 12, 0, tzinfo=UTC))
+
+        result = compute_outcome(
+            decision,
+            15,
+            [
+                _candle(0, high=101, low=90, close=95),  # favourable first
+                _candle(5, high=110, low=98, close=105),
+                _candle(10, high=104, low=99, close=100),
+            ],
+            anchor="binance",
+            source="binance",
+        )
+
+        assert result.mfe_at < result.mae_at
+
+    def test_a_tie_goes_to_the_earliest_bar_that_reached_the_level(self) -> None:
+        """Two bars reaching the same extreme are not equivalent: the level was
+        first touched at the earlier one, which is what an order would have
+        traded against."""
+        decision = _decision(ts=datetime(2026, 7, 22, 12, 0, tzinfo=UTC))
+
+        result = compute_outcome(
+            decision,
+            15,
+            [
+                _candle(0, high=110, low=90, close=100),
+                _candle(5, high=110, low=90, close=100),
+            ],
+            anchor="binance",
+            source="binance",
+        )
+
+        assert result.mfe_at == datetime(2026, 7, 22, 12, 0, tzinfo=UTC)
+        assert result.mae_at == datetime(2026, 7, 22, 12, 0, tzinfo=UTC)
+
+    def test_an_unresolved_outcome_carries_no_timestamps(self) -> None:
+        """A row with no window has no extremes to time, and null must keep
+        meaning "not recorded" rather than being filled with a placeholder."""
+        decision = _decision(ts=datetime(2026, 7, 22, 12, 0, tzinfo=UTC))
+
+        result = compute_outcome(decision, 15, [], anchor="binance", source="binance")
+
+        assert result.mfe_at is None
+        assert result.mae_at is None

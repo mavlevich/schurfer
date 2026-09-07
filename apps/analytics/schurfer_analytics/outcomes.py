@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 import os
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -170,8 +171,16 @@ def compute_outcome(
 
     entry = decision.price
     forward = window[-1].close
-    mfe = max(0.0, (entry - min(candle.low for candle in window)) / entry * 100)
-    mae = max(0.0, (max(candle.high for candle in window) - entry) / entry * 100)
+    # The bar that SET each extreme, not just its value. Without the timing the
+    # extremes cannot be ordered, and whether the stop or the target came first
+    # is unanswerable downstream (HYP-020 could only bound it). Ties go to the
+    # earliest bar, since that is when the level was first reached.
+    best_bar = min(window, key=lambda candle: (candle.low, candle.ts_ms))
+    worst_bar = max(window, key=lambda candle: (candle.high, -candle.ts_ms))
+    mfe = max(0.0, (entry - best_bar.low) / entry * 100)
+    mae = max(0.0, (worst_bar.high - entry) / entry * 100)
+    mfe_at = datetime.fromtimestamp(best_bar.ts_ms / 1000, tz=UTC)
+    mae_at = datetime.fromtimestamp(worst_bar.ts_ms / 1000, tz=UTC)
     short_return = (entry - forward) / entry * 100
     if coverage is not None and coverage < _COMPLETE_COVERAGE:
         status = "partial"
@@ -188,6 +197,8 @@ def compute_outcome(
         forward_price=forward,
         mfe_pct=mfe,
         mae_pct=mae,
+        mfe_at=mfe_at,
+        mae_at=mae_at,
         short_return_pct=short_return,
         bars_count=len(window),
         expected_bars=expected,
