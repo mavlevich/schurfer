@@ -196,7 +196,10 @@ def test_downgrade_removes_the_columns_and_upgrade_restores_them() -> None:
             )
             assert cursor.fetchall() == []
     finally:
-        command.upgrade(config, "0044")
+        # "head", not "0044": upgrading only as far as this migration would
+        # leave the database behind head, and the NEXT migration's own
+        # integration test would then skip itself rather than fail.
+        command.upgrade(config, "head")
         with connection.transaction(), connection.cursor() as cursor:
             cursor.execute(
                 "SELECT column_name FROM information_schema.columns "

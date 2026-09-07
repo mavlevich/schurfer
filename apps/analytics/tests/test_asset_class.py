@@ -18,6 +18,7 @@ from schurfer_analytics.asset_class import (
     FOREX,
     INDEX,
     KNOWN_CLASSES,
+    MAX_EVIDENCE_LENGTH,
     SOURCE_VENUE_FIELD_ABSENT,
     SOURCE_VENUE_VALUE_UNMAPPED,
     TOKENIZED_EQUITY,
@@ -138,6 +139,29 @@ class TestCuratedTable:
         assert classify("bybit", "DJT", _market({"symbolType": "stock"})).source == (
             "venue.bybit.symbolType"
         )
+
+
+class TestEvidenceIsBounded:
+    """Colleague review: evidence is built from venue-controlled values. A
+    venue returning a much larger payload than expected must not be able to
+    produce an unbounded string that bloats every row it is written to."""
+
+    def test_a_huge_tag_list_is_truncated_and_says_so(self) -> None:
+        tags = [f"VERY_LONG_TAG_NAME_NUMBER_{index:04d}" for index in range(200)]
+        result = classify("xt", "BTC", _market({"tags": tags}))
+        assert len(result.evidence or "") == MAX_EVIDENCE_LENGTH
+        assert (result.evidence or "").endswith("...[truncated]")
+        # Truncating the evidence must not change the decision itself.
+        assert result.asset_class == UNKNOWN
+
+    def test_a_huge_symbol_type_is_truncated(self) -> None:
+        result = classify("bybit", "BTC", _market({"symbolType": "x" * 5000}))
+        assert len(result.evidence or "") == MAX_EVIDENCE_LENGTH
+        assert (result.evidence or "").endswith("...[truncated]")
+
+    def test_ordinary_evidence_is_left_exactly_as_it_is(self) -> None:
+        result = classify("bybit", "BTC", _market({"symbolType": "stock"}))
+        assert result.evidence == "bybit.symbolType=stock"
 
 
 class TestCryptoAdmission:

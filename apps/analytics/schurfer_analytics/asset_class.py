@@ -58,6 +58,15 @@ KNOWN_CLASSES = frozenset(
     {CRYPTO, TOKENIZED_EQUITY, COMMODITY, INDEX, FOREX, LEVERAGED_PRODUCT, UNKNOWN}
 )
 
+#: Evidence is built from venue-controlled values, so its length is bounded
+#: here rather than being left to whatever a venue sends. The column is TEXT
+#: (migration 0045), so this is not what prevents a write failure -- it stops
+#: a pathological payload from bloating every row and the logs with it. The
+#: marker makes a truncated value obviously truncated rather than quietly
+#: wrong when someone later re-decides a classification from it.
+MAX_EVIDENCE_LENGTH = 512
+_TRUNCATION_MARKER = "...[truncated]"
+
 SOURCE_VENUE_FIELD_ABSENT = "venue_field_absent"
 SOURCE_VENUE_VALUE_UNMAPPED = "venue_value_unmapped"
 
@@ -80,6 +89,13 @@ class AssetClassification:
     evidence: str | None
     confidence: str | None
     version: str = CLASSIFIER_VERSION
+
+
+def _bounded_evidence(evidence: str) -> str:
+    if len(evidence) <= MAX_EVIDENCE_LENGTH:
+        return evidence
+    keep = MAX_EVIDENCE_LENGTH - len(_TRUNCATION_MARKER)
+    return evidence[:keep] + _TRUNCATION_MARKER
 
 
 @dataclass(frozen=True)
@@ -156,18 +172,19 @@ def _bybit(info: dict[str, Any]) -> AssetClassification | None:
     if "symbolType" not in info:
         return None
     raw = str(info.get("symbolType") or "").strip()
+    evidence = _bounded_evidence(f"bybit.symbolType={raw}")
     mapped = _BYBIT_SYMBOL_TYPE.get(raw.lower() if raw else "")
     if mapped is None:
         return AssetClassification(
             asset_class=UNKNOWN,
             source=SOURCE_VENUE_VALUE_UNMAPPED,
-            evidence=f"bybit.symbolType={raw}",
+            evidence=evidence,
             confidence=CONFIDENCE_VENUE,
         )
     return AssetClassification(
         asset_class=mapped,
         source="venue.bybit.symbolType",
-        evidence=f"bybit.symbolType={raw}",
+        evidence=evidence,
         confidence=CONFIDENCE_VENUE,
     )
 
@@ -177,7 +194,7 @@ def _xt(info: dict[str, Any]) -> AssetClassification | None:
         return None
     raw = info.get("tags")
     tags = [str(tag).strip().upper() for tag in raw] if isinstance(raw, list) else []
-    evidence = f"xt.tags={sorted(tags)}" if tags else "xt.tags=[]"
+    evidence = _bounded_evidence(f"xt.tags={sorted(tags)}" if tags else "xt.tags=[]")
     for tag, mapped in _XT_TAGS:
         if tag in tags:
             return AssetClassification(
