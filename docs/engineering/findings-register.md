@@ -458,9 +458,16 @@ label alone never establishes a P0 incident.
 
 ### ENG-020 — Enforce entry mode, TESTNET and stop admission consistently
 
-- **Status / priority:** `planned`, `P1`; source C-1/C-6/H-4/H-5, package B01. The
-  first two bounded steps are implemented on `fix/manual-entry-mode-ceiling-v1` with
-  regression tests; unmerged and undeployed, so nothing here is fixed in production.
+- **Status / priority:** first two bounded steps `fixed in code`, deployment
+  verification pending; durable stop-state `declared, not implemented`; `P1`; source
+  C-1/C-6/H-4/H-5, package B01. Merged as #343 at `356bbb7` with regression tests for
+  both reproduced defects. Executed there: full `apps/execution` pytest suite, ruff,
+  mypy, and the all-files CI gate (lint, Go, Python, TypeScript, dead code, security).
+  Not executed: any production action, so nothing here is verified in production. A
+  deployment must confirm the deployed revision, restart count, health, `GET /risk`
+  reporting its new reason field, and `POST /order` returning 409 under the current
+  ceiling. Note that `TESTNET=true` with MEXC or KUCOIN credentials now fails startup
+  by design; verify `.env.prod` before deploying.
 - **Evidence:** `routers/orders.py:35` selects authenticated trading clients without
   checking the global dry-run ceiling; `exchanges.py:148` logs sandbox failure and
   retains the client. `orders.py:218` reads stop before slow preflight, while
