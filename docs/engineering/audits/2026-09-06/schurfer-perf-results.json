@@ -1,0 +1,67 @@
+{
+  "environment": "local synthetic fixtures; no DB, exchange or production requests",
+  "paper_monitor": [
+    {
+      "positions": 1,
+      "injected_quote_latency_ms": 10.0,
+      "tick_seconds": 0.010880999965593219,
+      "last_quote_start_seconds": 0.000525916984770447,
+      "quote_calls": 1
+    },
+    {
+      "positions": 10,
+      "injected_quote_latency_ms": 10.0,
+      "tick_seconds": 0.11976966599468142,
+      "last_quote_start_seconds": 0.1075007080216892,
+      "quote_calls": 10
+    },
+    {
+      "positions": 50,
+      "injected_quote_latency_ms": 10.0,
+      "tick_seconds": 0.5949935829848982,
+      "last_quote_start_seconds": 0.582670874951873,
+      "quote_calls": 50
+    },
+    {
+      "positions": 100,
+      "injected_quote_latency_ms": 10.0,
+      "tick_seconds": 1.1923713330179453,
+      "last_quote_start_seconds": 1.1800365000381134,
+      "quote_calls": 100
+    }
+  ],
+  "serialization": [
+    {
+      "rows": 1000,
+      "old_asdict": {
+        "seconds_median": 0.021185707999393344,
+        "python_peak_mib": 1.1383390426635742,
+        "output_bytes": 303837,
+        "sha256": "cd2381567cc5c13ce82cba23c068fad949004fb8e27b977b73b6dc2bb39c424e"
+      },
+      "existing_shared_renderer": {
+        "seconds_median": 0.008348250004928559,
+        "python_peak_mib": 0.3905467987060547,
+        "output_bytes": 303837,
+        "sha256": "cd2381567cc5c13ce82cba23c068fad949004fb8e27b977b73b6dc2bb39c424e"
+      },
+      "byte_identical": true
+    },
+    {
+      "rows": 20000,
+      "old_asdict": {
+        "seconds_median": 0.594177791965194,
+        "python_peak_mib": 16.452665328979492,
+        "output_bytes": 6106937,
+        "sha256": "e1f36d02b4420380373cc6429c398d0c39b20553b231989c6a1fc51096cd90a7"
+      },
+      "existing_shared_renderer": {
+        "seconds_median": 0.14762704103486612,
+        "python_peak_mib": 7.392457008361816,
+        "output_bytes": 6106937,
+        "sha256": "e1f36d02b4420380373cc6429c398d0c39b20553b231989c6a1fc51096cd90a7"
+      },
+      "byte_identical": true
+    }
+  ]
+}

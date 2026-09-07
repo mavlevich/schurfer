@@ -1,6 +1,6 @@
 # Roadmap
 
-> Living document. Updated as we progress. Last refreshed 2026-09-06.
+> Living document. Updated as we progress. Last refreshed 2026-09-07.
 
 ## Current focus
 
@@ -8,10 +8,10 @@ Update only these four lines after every merge -- this is the fast-path
 status check, not a place for narrative.
 
 ```
-Current primary: none -- item 5's real verdict is `insufficient_data`/`collecting` (not code work, waiting on ~2 more weeks of accumulating capture), item 6 is blocked on it
-State: idle
-Next after current primary merges: user to pick the next independent item
-User decision required: yes
+Current primary: queued -- ENG-020, close manual-entry mode and TESTNET bypasses; support: ENG-021, repair Go verification gates
+State: audit plan recorded; implementation not started; frozen cohorts continue collecting
+Next after current primary merges: ENG-022 fill/close lifecycle; then ENG-023 paper fairness and ENG-024 artifact integrity, with economics preparation alongside
+User decision required: no for selecting this queue; owner economics, new hypothesis parameters, production operations and live trading remain separate decisions
 ```
 
 ## Autonomy rules (when to just proceed, when to ask)
@@ -61,6 +61,11 @@ Cross-cutting reliability and performance review claims are triaged in the
 finding does not enter this delivery queue until code, tests, production metrics, or
 a bounded benchmark confirms it; rejected and measurement-only claims remain in the
 register so they are not repeatedly rediscovered or implemented by assertion.
+The [September audit archive](docs/engineering/audits/2026-09-06/README.md) preserves
+the source reports and claim-by-claim reconciliation. It is evidence, not another
+live backlog. Owner economics and candidate feasibility belong in
+[ECONOMICS.md](ECONOMICS.md); frozen parameters and research results remain in their
+existing contracts and [discovery ledger](docs/research/discovery-ledger.md).
 
 ## Delivery portfolio and WIP limits
 
@@ -85,16 +90,20 @@ safety defect, data corruption risk, or failure of non-recoverable capture preem
 both slots until it is contained. Ordinary refactoring, visual polish, and speculative
 scaling never preempt a healthy evidence-producing lane.
 
-Use the following rolling target for every ten merged pull requests. This is an
-engineering allocation, separate from the experiment-family budget below.
+After immediate safety/data-loss risks are contained, use the following rolling
+allocation of planned engineering effort, reviewed weekly. This replaces a quota
+per ten merged PRs: splitting a change into more PRs does not create more value.
+Record actual time and the decision/result obtained, separately from the
+experiment-family budget below. These are planning targets, not permission to
+interrupt a coherent fix or to ship speculative features to meet a percentage.
 
-| Lane                           | Target per 10 merged PRs | Examples                                                                            |
-| ------------------------------ | -----------------------: | ----------------------------------------------------------------------------------- |
-| Profit and evidence            |               at least 5 | capture, discovery/confirmation reports, WATCH/paper candidates, costs and capacity |
-| Reliability and data platform  |                  about 2 | durability, recovery, bounded queues, venue adapters, resource protection           |
-| UI and research tooling        |                  about 1 | token workspace, event timeline, progressive Research rendering                     |
-| Documentation and architecture |                  about 1 | current-state diagrams, ADR supersession, roadmap/archive maintenance               |
-| Gate-driven flex               |                  about 1 | whichever lane removes the highest-value proven blocker                             |
+| Lane                           | Target share of effort | Examples                                                                            |
+| ------------------------------ | ---------------------: | ----------------------------------------------------------------------------------- |
+| Profit and evidence            |           at least 50% | capture, discovery/confirmation reports, WATCH/paper candidates, costs and capacity |
+| Reliability and data platform  |              about 20% | durability, recovery, bounded queues, venue adapters, resource protection           |
+| UI and research tooling        |              about 10% | token workspace, event timeline, progressive Research rendering                     |
+| Documentation and architecture |              about 10% | current-state diagrams, ADR supersession, roadmap/archive maintenance               |
+| Gate-driven flex               |              about 10% | whichever lane removes the highest-value proven blocker                             |
 
 Do not run more than two consecutive support PRs from UI, documentation, or general
 refactoring unless they remove an explicit blocker or active operational risk. After
@@ -120,10 +129,60 @@ architecture cleanup, but must have an explicit file list and finish condition. 
 work follows the same rule: one coherent user workflow per PR, with backend contracts
 defined first and no empty navigation for capabilities that do not exist yet.
 
-### Near-term interleaving from 2026-08-31
+### Current delivery sequence — 2026-09-07
 
-Supersedes the 2026-08-29 list below for current prioritization (retained as decision
-log, not current instruction). Written because that list drifted materially behind
+This section supersedes older near-term ordering below, preserving their completed
+work, deferred obligations and frozen research contracts. The user requested a
+durable feature/fix plan after the September audits. This records the queue; it does
+not claim fixes are merged or authorize production mutations or real orders.
+
+| Stage                           | Primary outcome                                                                                                              | Support outcome                                                                                                                                                   | Exit / selection rule                                                                                                                                                                                  |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1. Contain unsafe paths         | `ENG-020`: manual entry obeys the global mode ceiling; unsupported TESTNET fails closed                                      | `ENG-021`: Go hook/parser/config failures reliably fail verification; `ENG-025` recovery inventory/preparation is urgent if evidence indicates data-loss exposure | Reproducing entry/startup tests pass after the fix; gate failure injection passes. A real incident preempts both slots. Production containment is separately authorized and verified.                  |
+| 2. Trust execution and evidence | `ENG-022`: fill/remaining/protection lifecycle, then `ENG-023` fair paper servicing and `ENG-024` artifact integrity         | Fill the owner/candidate economics worksheet; rotate one bounded recovery, dependency or HTTP/UX fix (`ENG-025`–`ENG-027`, `ENG-005`)                             | Split the execution package into the small steps recorded in its register entry. Integrity affecting an imminent formal read or active paper workload can move ahead of unrelated live-readiness work. |
+| 3. Obtain an economic answer    | Due frozen readings; otherwise one bounded historical-data feasibility pilot after integrity and candidate feasibility gates | One measured bottleneck or useful user workflow, with a result and acceptance test                                                                                | No new third Confirmation line. A pilot checks whether data can answer a question before a full-universe/two-year import. Unmeasured optimization starts with measurement, not a rewrite.              |
+| 4. Reassess and continue        | Continue, park or close each candidate using its registered rules and economic budget                                        | Incremental reuse/documentation as the owning code is changed                                                                                                     | Negative mature candidates remain failed; a positive optimistic bound does not prove executable edge. Live still needs its own implementation, safety gates and authorization.                         |
+
+**Feature/fix selection:** deliver one coherent result at a time, not a mechanical
+"one feature, one bug" alternation. Safety, corruption and capture-loss defects go
+first. Once contained, do not wait for every P2/P3 issue to disappear before advancing
+evidence or a useful product workflow. A feature must name the user decision or
+economic question it improves; a fix must name the failed invariant and regression
+scenario; an optimization must name its measured bottleneck. A bug discovered in the
+current change is part of finishing that change, not another research direction.
+Keep the two-slot limit and the existing cap on consecutive discretionary support PRs.
+
+**Per-change card, before implementation:** owning ENG/HYP/roadmap ID; intended
+result and bounded file scope; dependencies; one accountable implementer; effort
+budget/stop condition; acceptance checks; and migration/deploy/rollback impact.
+Assign an implementer when work starts; do not create nominal parallel ownership.
+After merge, update this focus block and the owning register/contract with the PR,
+tested revision, executed/skipped checks, and whether deployment verification is
+pending. `fixed in code` must not be presented as `verified in production`.
+
+**Passive evidence, not implementation slots:**
+
+- Liquidation-maker upper bound: real 2026-09-06 result is `insufficient_data` /
+  `collecting`; four scopes remain separate. Wait for its registered maturity and
+  diversity conditions, approximately another two weeks, rather than rebuilding it.
+- Pump-short maker prospective: checkpoint around `2026-09-21`, subject to its own
+  stopping rules. This is distinct from liquidation-maker.
+- Source-lead forward: cohort started `2026-09-03`; earliest read around
+  `2026-10-01`, under its frozen rules. No early peeks or evaluator retuning.
+- HYP-016 stays parked on the closed window; `ENG-024` corrects audit integrity,
+  not the hypothesis or its verdict. HYP-017's old matching result is unreliable.
+
+**Economics and review:** [ECONOMICS.md](ECONOMICS.md) records the missing owner
+inputs and the candidate-card contract. Review delivery balance, evidence gained,
+remaining budget and blockers weekly; the implementer/owner records that review,
+without an implicit scheduled automation. Use six to eight weeks as a proposed
+portfolio review horizon, not a promised live-launch date. No research thresholds,
+capital amount or income target are invented by this plan.
+
+### Historical near-term interleaving from 2026-08-31
+
+Superseded for delivery order by the 2026-09-07 sequence above. Retained as a decision
+log, including obligations and evidence gates. Written because the 2026-08-29 list drifted materially behind
 actual state: PR 1-3 of the source-lead derivative-market-evidence sequence
 (#313-315) are merged and `ROUTE_EVIDENCE_INDEPENDENTLY_VERIFIED = True` is live; the
 forward cohort it unlocked is registered (#316, `source_lead_forward_cohort_v1`,

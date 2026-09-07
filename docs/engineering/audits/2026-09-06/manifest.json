@@ -1,0 +1,37 @@
+{
+  "imported_at": "2026-09-07",
+  "reviewed_code_revision": "657c411d96170de6ea16dbc05b4108f6734f1f07",
+  "transform": "Markdown: historical status notice, portable local links and repository Prettier formatting; colleague text: terminal newline normalized; measurement JSON: byte-identical.",
+  "files": [
+    {
+      "file": "schurfer-audit-2026-09-06.md",
+      "original_sha256": "a1da3d20323126e4ab50d70834f248654cb6e1c21b001abe7ba40db5f8d63346",
+      "archived_sha256": "5609cf6c4abffdde94ac715aead8c70841328d6e50cf79e77ed6b87cb4edecd2"
+    },
+    {
+      "file": "schurfer-performance-audit-2026-09-06.md",
+      "original_sha256": "79b2e8d9b000f926774173dddf4ef869e290fa8442e6f6643ff4ec9e0b262411",
+      "archived_sha256": "b0c291fe84368197ebcc76addd25fd344d39d689801b29434a3887404431acb7"
+    },
+    {
+      "file": "schurfer-unified-plan-2026-09-06.md",
+      "original_sha256": "18d6fd7bd403e3ce0fe4d87a3e13389e23f176d5ddfb0c4596c8c5392f34a86d",
+      "archived_sha256": "e495ba298691e6e7a5f4102edaf7357877d631d31327ffa68ee73d2bfe59c118"
+    },
+    {
+      "file": "schurfer-audit-reconciliation-2026-09-06.md",
+      "original_sha256": "2e299a6d7bbe3a273fdc8b6f5adacdc48343249bc65f2a2dae0e4e010f1861c8",
+      "archived_sha256": "fef5b8c95b5f1376f9469d6d8d123846d11d6f3b0362c4ed9ee75320527f6f63"
+    },
+    {
+      "file": "colleague-audit.txt",
+      "original_sha256": "564941a5d8884bca8183788100b5e8b70f7325f60b45b77ab48353c6280f2b77",
+      "archived_sha256": "54a945efac1e113af581f4651f8080f423dea0cb4cae5ac4da1a5cdde3d63955"
+    },
+    {
+      "file": "schurfer-perf-results.json",
+      "original_sha256": "e6e30f0ec8e7de3f5488c382e2133c74b53c49752bae3b362ff318e5d2dee097",
+      "archived_sha256": "e6e30f0ec8e7de3f5488c382e2133c74b53c49752bae3b362ff318e5d2dee097"
+    }
+  ]
+}
