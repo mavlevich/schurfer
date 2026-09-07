@@ -11,7 +11,7 @@ import structlog
 from . import exit as exit_module
 from . import incidents, journal, notify, symbols
 from .account import fetch_positions
-from .fill_price import FILL_UNRESOLVED, resolve_fill_price
+from .fill_price import FILL_NONE, FILL_UNRESOLVED, resolve_fill_price
 from .orders import close_position
 
 if TYPE_CHECKING:
@@ -316,6 +316,20 @@ async def _reconcile_one(
         return
 
     resolution = await resolve_fill_price(ex, symbol=symbol, order=order)
+    if resolution.status == FILL_NONE:
+        # The stop order reports status "closed" with no executed volume, which
+        # is self-contradictory: either it did not really fill or the exchange
+        # payload is wrong. Do not commit a close off it (ENG-022 / audit C-3).
+        # Left for the next reconciliation tick, which reads the live position
+        # rather than this order.
+        log.error(
+            "position_monitor.reconcile.sl_closed_without_fill",
+            base=base,
+            exchange=exchange,
+            order_id=sl_order_id,
+        )
+        return
+
     if resolution.status == FILL_UNRESOLVED:
         # Filled, but we can't determine at what price. Do NOT fabricate a
         # value (0 would read as a false +100% profit on a short). Unlike the
@@ -365,7 +379,9 @@ async def _reconcile_one(
         )
         return
     exit_price = resolution.price
-    assert exit_price is not None  # FILL_UNRESOLVED already returned above
+    # FILL_UNRESOLVED and FILL_NONE, the two price-less statuses, both returned
+    # above.
+    assert exit_price is not None
 
     trade_id_key = _TRADE_ID_KEY.format(exchange=exchange, base=base)
     trade_id_raw = await rdb.get(trade_id_key)
