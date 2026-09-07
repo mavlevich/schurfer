@@ -112,3 +112,37 @@ It also may not be read as a statement about live results. These are simulated
 paths with no order book behind them, and no live position is being reconciled
 against them here. Whether this replay reproduces what production actually did to
 real positions since 2026-08-18 is a separate question and a separate hypothesis.
+
+---
+
+# Amendment, 2026-09-07, before any result was read
+
+Two things in the registration above turned out to be unrunnable as written. Both
+are corrected here, in a commit that precedes the run, rather than being quietly
+reconciled afterwards.
+
+**The discovery window.** The registration declared `2026-07-17` through
+`2026-08-18`. The formal report refuses any cohort start other than
+`EXIT_POLICY_COHORT_START = 2026-07-29` and raises rather than running. That date
+is the family's own registered cohort start, and it predates this hypothesis, so
+it supersedes the one invented here. The window is the family's registered window.
+
+**The held-out split.** The `2026-08-18` holdout is dropped, not deferred. With a
+cohort starting `2026-07-29` there are three weeks before that boundary, and
+truncating the window there would cut the family's paired sample below its own
+readiness gates, so the split would buy nothing and cost the whole read. What the
+holdout was protecting against is already handled here by construction: this pass
+adds exactly one policy, sweeps nothing, and the family applies a Holm correction
+across the challengers. There is no parameter to overfit.
+
+**The verdict is subordinate to the family's readiness ladder.** The family
+reports `collecting`, `directional_only`, `insufficient_diversity`, or
+`formal_sample_ready`. The decision rule registered above applies **only** at
+`formal_sample_ready`. At `directional_only` the comparison may be described and
+the verdict is `insufficient_data`. At `collecting` or `insufficient_diversity`
+no per-policy number is read as evidence at all. This is not a weakening added
+after seeing a disappointing sample: it is the gate the family already enforces,
+written down here so the outcome cannot be reinterpreted later.
+
+The evidence floor of 200 completed trades and the ±0.25 point decision rule are
+unchanged.
