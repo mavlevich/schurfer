@@ -124,7 +124,11 @@ def test_report_registers_family_and_compares_same_episode() -> None:
         "longest_registered_window_required_for_paired_family"
     )
     assert payload["manifest"]["baseline"]["key"] == "baseline"
-    assert len(payload["manifest"]["challengers"]) == 4
+    challenger_keys = [item["key"] for item in payload["manifest"]["challengers"]]
+    assert len(challenger_keys) == 5
+    # The policy production actually runs has to be in the family it is compared
+    # against, not just the one it was assumed to be (HYP-021).
+    assert "production" in challenger_keys
     assert "Formal inference status: `collecting`" in markdown
     assert "breakeven_after_activation" in markdown
     assert "Holm family alpha" in markdown

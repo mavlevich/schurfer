@@ -21,6 +21,7 @@ from schurfer_performance import (
 from schurfer_performance import (
     calculate_performance,
 )
+from schurfer_performance.exit_policy import exit_params as shared_exit_params
 
 from .ohlcv import TIMEFRAME_MS, Candle, ceil_to_timeframe
 
@@ -61,6 +62,11 @@ class ExitPolicy:
     version: str
     protect_breakeven_after_activation: bool = False
     no_progress_minutes: int | None = None
+    # Production's own pre-activation cut: close at this age when trailing never
+    # activated, with no extension and no progress step. Distinct from
+    # no_progress_minutes, which is a rolling stall detector that keeps
+    # measuring after activation.
+    close_unactivated_after_minutes: int | None = None
     max_extension_minutes: int = 0
     minimum_progress_pct: float = 0.0
     recent_progress_lookback_minutes: int | None = None
@@ -72,6 +78,7 @@ class ExitPolicy:
         optional_minutes = (
             self.no_progress_minutes,
             self.recent_progress_lookback_minutes,
+            self.close_unactivated_after_minutes,
         )
         if (
             any(value is not None and (value <= 0 or value % 5 != 0) for value in optional_minutes)
@@ -135,6 +142,14 @@ class ExitMechanics:
         return self.baseline_hold_minutes(params) + exit_policy.max_extension_minutes
 
 
+# Named `production_max_hold_v1` when it did describe production. Since
+# 2026-08-18 production also closes a position at 60 minutes when trailing
+# never activated (`no_progress_min` in the shared exit policy), which this
+# baseline does not model, so it now holds a stalled loser up to three times
+# longer than production would. The version string is deliberately left alone:
+# reports registered against it were read under these semantics, and silently
+# redefining a registered baseline would invalidate them without a trace.
+# Correcting it is its own registered change, not an edit.
 BASELINE_EXIT_POLICY = ExitPolicy(
     key="baseline",
     version="production_max_hold_v1",
@@ -167,8 +182,17 @@ RECENT_PROGRESS_EXTENSION_EXIT_POLICY = ExitPolicy(
     recent_progress_lookback_minutes=30,
     extension_trail_pct=5.0,
 )
+# What production has actually run since 2026-08-18 (422f784): the exit engine
+# closes a position at no_progress_min minutes when trailing never activated.
+# Registered as HYP-021; see docs/research/production-exit-policy-reference-v1.md.
+PRODUCTION_EXIT_POLICY = ExitPolicy(
+    key="production",
+    version="production_no_progress_v2",
+    close_unactivated_after_minutes=60,
+)
 EXIT_POLICIES = (
     BASELINE_EXIT_POLICY,
+    PRODUCTION_EXIT_POLICY,
     BREAKEVEN_EXIT_POLICY,
     NO_PROGRESS_EXIT_POLICY,
     COMBINED_EXIT_POLICY,
@@ -279,13 +303,25 @@ def max_sequential_drawdown_usd(trades: Iterable[VirtualTrade]) -> float | None:
 
 
 def exit_parameters(pump_pct: float | None) -> ExitParameters:
-    """Mirror execution's three pump-magnitude exit bands."""
-    magnitude = pump_pct if pump_pct is not None else 50.0
-    if magnitude < 50:
-        return ExitParameters(8.0, 8.0, 12.0, 8.0, 90, 180)
-    if magnitude < 100:
-        return ExitParameters(10.0, 12.0, 15.0, 10.0, 120, 240)
-    return ExitParameters(12.0, 15.0, 20.0, 12.0, 180, 360)
+    """Read execution's three pump-magnitude exit bands from the shared policy.
+
+    These numbers used to be restated here as a hand-written mirror. They then
+    drifted: production gained a 60-minute no-progress exit on 2026-08-18
+    (commit 422f784) and the copy here did not follow, so `BASELINE_EXIT_POLICY`
+    kept the name `production_max_hold_v1` while no longer describing
+    production. Deriving the bands removes the class of drift for the numbers;
+    the no-progress gap is a modelling difference, not a number, and is called
+    out on BASELINE_EXIT_POLICY itself.
+    """
+    shared = shared_exit_params(pump_pct)
+    return ExitParameters(
+        initial_sl_pct=shared["initial_sl_pct"],
+        activation_pct=shared["activation_pct"],
+        trail_pct=shared["trail_pct"],
+        trail_tighten_pct=shared["trail_tighten_pct"],
+        tighten_after_min=int(shared["tighten_after_min"]),
+        max_hold_min=int(shared["max_hold_min"]),
+    )
 
 
 def select_episode_decision(episode: ReplayEpisode) -> EpisodeSelection:
@@ -731,6 +767,18 @@ def _simulate_selected_entry(
             exit_price = candle.close
             exit_at_ms = candle_end_ms
             exit_reason = "no_progress"
+            break
+
+        # Production's rule, mirroring evaluate_exit's pre-activation branch:
+        # once trailing has activated this no longer applies at all.
+        if (
+            exit_policy.close_unactivated_after_minutes is not None
+            and best_price is None
+            and elapsed_end_minutes >= exit_policy.close_unactivated_after_minutes
+        ):
+            exit_price = candle.close
+            exit_at_ms = candle_end_ms
+            exit_reason = "not_activated"
             break
 
         baseline_hold_minutes = exit_mechanics.baseline_hold_minutes(params)
