@@ -134,6 +134,21 @@ class Config:
         default_factory=lambda: _int("EARLY_MOMENTUM_HEALTH_ALERT_COOLDOWN_SECONDS", 1800)
     )
 
+    # How often every exchange's instrument catalog is reloaded while the
+    # service runs. It used to be loaded once at startup and never again, so an
+    # instrument listed afterwards was unresolvable for the process's whole
+    # lifetime -- 816 skipped evaluations in thirty days, including a +480%
+    # pump the trader watched for thirteen hours (ENG-031). The default trades
+    # rate limit against how stale the catalog may get; MIN_INTERVAL is the
+    # floor between two reloads of the same venue whichever mechanism asks,
+    # including the trader's own reload on a resolution miss.
+    market_refresh_interval_seconds: float = field(
+        default_factory=lambda: _float("MARKET_REFRESH_INTERVAL_SECONDS", 900.0)
+    )
+    market_refresh_min_interval_seconds: float = field(
+        default_factory=lambda: _float("MARKET_REFRESH_MIN_INTERVAL_SECONDS", 60.0)
+    )
+
     # Signal trader — set AUTO_TRADE=true and SIGNAL_POSITION_USD>0 to enable.
     # Scores are read from Redis (signals:{base}) — written by the api-gateway ticker.
     auto_trade: bool = field(default_factory=lambda: _bool("AUTO_TRADE", False))
@@ -255,6 +270,16 @@ class Config:
         # value (`_maybe_alert`'s cooldown reservation) and `EX 0` is
         # rejected by Redis outright, not treated as "no cooldown"
         # (colleague review).
+        if self.market_refresh_interval_seconds <= 0:
+            raise ValueError(
+                "MARKET_REFRESH_INTERVAL_SECONDS must be > 0, "
+                f"got {self.market_refresh_interval_seconds}"
+            )
+        if self.market_refresh_min_interval_seconds < 0:
+            raise ValueError(
+                "MARKET_REFRESH_MIN_INTERVAL_SECONDS must be >= 0, "
+                f"got {self.market_refresh_min_interval_seconds}"
+            )
         if self.early_momentum_health_alert_cooldown_seconds <= 0:
             raise ValueError(
                 "EARLY_MOMENTUM_HEALTH_ALERT_COOLDOWN_SECONDS must be > 0, "

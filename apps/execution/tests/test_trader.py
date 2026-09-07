@@ -40,13 +40,21 @@ async def _tick(
     cfg: Config,
     broker: Any = None,
     worker_gate: WorkerReadinessGate | None = None,
+    market_refresher: Any = None,
 ) -> None:
     """Run a trader tick with an explicit always-open test admission gate."""
     gate = worker_gate or WorkerReadinessGate(set())
     if broker is None:
         mode = execution_intent.resolve_mode(cfg, execution_intent.STRATEGY_PUMP_SHORT)
         broker = execution_intent.build_broker(mode, exchanges=exchanges, gate=gate)
-    await _production_tick(exchanges, rdb, cfg, broker=broker, worker_gate=gate)
+    await _production_tick(
+        exchanges,
+        rdb,
+        cfg,
+        broker=broker,
+        worker_gate=gate,
+        market_refresher=market_refresher,
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -1598,3 +1606,152 @@ async def test_tick_continues_other_pumps_after_order_lock_lost() -> None:
     assert first["reason"] == "order_lock_lost_outcome_uncertain"
     assert second["base"] == "MOON"
     assert second["action"] == "opened"
+
+
+class TestResolutionMissRefreshesTheMarketCatalog:
+    """ENG-031: the trader resolved instruments against a catalog loaded once at
+    startup, so a listing newer than the process was permanently unresolvable.
+    In production AMEMECOIN listed on bingx while the service had been running
+    for a week; its episode ran to +480% and the trader wrote 29 consecutive
+    `execution_instrument_unresolved` skips, the last of them at +192%."""
+
+    @staticmethod
+    def _newly_listed_exchange(known: set[str]) -> MagicMock:
+        """An exchange whose catalog gains the instrument only on reload."""
+        exchange = MagicMock()
+        exchange.id = "bingx"
+        exchange.markets = {"OLD/USDT:USDT": {}}
+        return exchange
+
+    async def test_a_new_listing_resolves_after_the_refresh(self, monkeypatch) -> None:
+        listed: set[str] = set()
+
+        def _resolve(ex, base, *args, **kwargs):
+            if base.upper() not in listed:
+                raise ValueError(f"Cannot resolve {base!r} on {ex.id}")
+            return ExecutionInstrument(
+                exchange="bingx",
+                symbol=f"{base.upper()}/USDT:USDT",
+                native_market_id=f"{base.upper()}USDT",
+                base=base.upper(),
+                quote="USDT",
+                settle="USDT",
+                market_type="swap",
+            )
+
+        monkeypatch.setattr(
+            "schurfer_execution.trader.symbols.resolve_execution_instrument", _resolve
+        )
+
+        refresher = MagicMock()
+
+        async def _refresh(name: str, *, reason: str) -> bool:
+            # The reload is what makes the venue's catalog carry the listing.
+            listed.add("AMEMECOIN")
+            return True
+
+        refresher.refresh = AsyncMock(side_effect=_refresh)
+
+        rdb = _rdb(pumps_raw=_pumps("AMEMECOIN", exchange="bingx"), signal_score=9)
+        exchange = self._newly_listed_exchange(listed)
+
+        with patch(
+            "schurfer_execution.trader.decisions.write_decision", new_callable=AsyncMock
+        ) as mock_write:
+            await _tick(
+                {"bingx": exchange},
+                rdb,
+                _cfg(score_threshold=1),
+                market_refresher=refresher,
+            )
+
+        refresher.refresh.assert_awaited_once()
+        assert refresher.refresh.await_args.kwargs["reason"] == "resolution_miss"
+        reasons = [call.kwargs.get("reason") for call in mock_write.call_args_list]
+        assert reasons, "the tick wrote no decision at all"
+        assert "execution_instrument_unresolved" not in reasons, reasons
+
+    async def test_retries_the_resolve_even_when_the_refresh_was_a_no_op(self, monkeypatch) -> None:
+        """Colleague review: refresh() returns False for a cooldown, not only
+        for a failure, and the catalog may already carry the listing because
+        somebody else just reloaded it.
+
+        The periodic sweep can take the per-exchange lock, fetch the catalog
+        that contains the new listing, release, and stamp the cooldown -- and
+        the trader, which was queued behind that very lock, then gets False and
+        would skip the retry. It would write execution_instrument_unresolved
+        for an instrument sitting in the dict it is about to read. The same
+        happens without any concurrency at all whenever a second base misses on
+        the same venue inside the cooldown window.
+        """
+        listed = {"AMEMECOIN"}  # the sweep already brought it in
+
+        def _resolve(ex, base, *args, **kwargs):
+            if base.upper() not in listed:
+                raise ValueError(f"Cannot resolve {base!r} on {ex.id}")
+            return ExecutionInstrument(
+                exchange="bingx",
+                symbol=f"{base.upper()}/USDT:USDT",
+                native_market_id=f"{base.upper()}USDT",
+                base=base.upper(),
+                quote="USDT",
+                settle="USDT",
+                market_type="swap",
+            )
+
+        first_call = {"done": False}
+
+        def _resolve_once_stale(ex, base, *args, **kwargs):
+            # First lookup happens before the refresh call and must miss, the
+            # way the real cached catalog did; the retry then finds it.
+            if not first_call["done"]:
+                first_call["done"] = True
+                raise ValueError(f"Cannot resolve {base!r} on {ex.id}")
+            return _resolve(ex, base, *args, **kwargs)
+
+        monkeypatch.setattr(
+            "schurfer_execution.trader.symbols.resolve_execution_instrument",
+            _resolve_once_stale,
+        )
+
+        refresher = MagicMock()
+        # False: the cooldown blocked THIS call, because the sweep just reloaded.
+        refresher.refresh = AsyncMock(return_value=False)
+
+        rdb = _rdb(pumps_raw=_pumps("AMEMECOIN", exchange="bingx"), signal_score=9)
+        exchange = self._newly_listed_exchange(listed)
+
+        with patch(
+            "schurfer_execution.trader.decisions.write_decision", new_callable=AsyncMock
+        ) as mock_write:
+            await _tick(
+                {"bingx": exchange},
+                rdb,
+                _cfg(score_threshold=1),
+                market_refresher=refresher,
+            )
+
+        reasons = [call.kwargs.get("reason") for call in mock_write.call_args_list]
+        assert "execution_instrument_unresolved" not in reasons, reasons
+
+    async def test_without_a_refresher_the_old_behaviour_is_unchanged(self, monkeypatch) -> None:
+        """A caller that passes no refresher (tests, and any future call site)
+        must still degrade to the same explicit skip, not crash."""
+
+        def _resolve(ex, base, *args, **kwargs):
+            raise ValueError(f"Cannot resolve {base!r} on {ex.id}")
+
+        monkeypatch.setattr(
+            "schurfer_execution.trader.symbols.resolve_execution_instrument", _resolve
+        )
+
+        rdb = _rdb(pumps_raw=_pumps("AMEMECOIN", exchange="bingx"), signal_score=9)
+        exchange = self._newly_listed_exchange(set())
+
+        with patch(
+            "schurfer_execution.trader.decisions.write_decision", new_callable=AsyncMock
+        ) as mock_write:
+            await _tick({"bingx": exchange}, rdb, _cfg(score_threshold=1))
+
+        reasons = [call.kwargs.get("reason") for call in mock_write.call_args_list]
+        assert "execution_instrument_unresolved" in reasons, reasons
