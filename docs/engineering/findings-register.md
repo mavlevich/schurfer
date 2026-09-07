@@ -458,7 +458,9 @@ label alone never establishes a P0 incident.
 
 ### ENG-020 — Enforce entry mode, TESTNET and stop admission consistently
 
-- **Status / priority:** `planned`, `P1`; source C-1/C-6/H-4/H-5, package B01.
+- **Status / priority:** `planned`, `P1`; source C-1/C-6/H-4/H-5, package B01. The
+  first two bounded steps are implemented on `fix/manual-entry-mode-ceiling-v1` with
+  regression tests; unmerged and undeployed, so nothing here is fixed in production.
 - **Evidence:** `routers/orders.py:35` selects authenticated trading clients without
   checking the global dry-run ceiling; `exchanges.py:148` logs sandbox failure and
   retains the client. `orders.py:218` reads stop before slow preflight, while
@@ -472,6 +474,38 @@ label alone never establishes a P0 incident.
 - **Acceptance:** endpoint-to-exchange tests for paper/disabled mode, failed sandbox,
   stop during preflight, missing state and protective reduce-only exit; unknown
   already-submitted requests reconcile rather than being assumed cancelled.
+- **Declared stop-state semantics** (required by the bounded sequence before any
+  persistent store is added; declaration only, not implemented):
+  - _Authority._ The latest durable stop/resume event in PostgreSQL is authoritative.
+    Redis `trading:enabled` is a hot-path cache of that decision, never the record of
+    it. This follows the accounting rule already stated in ARCHITECTURE.md.
+  - _Write order._ `POST /stop` persists the event (state, actor, reason, event time)
+    and only then writes Redis and acknowledges. A failed durable write is not an
+    acknowledged stop and must be reported as such.
+  - _Startup and recovery._ Execution reads the last durable event and reconciles
+    Redis to it before admitting any entry; admission stays closed until that
+    reconciliation succeeds. PostgreSQL is already mandatory when `AUTO_TRADE=true`,
+    so this adds no new runtime dependency to the live path.
+  - _Absence._ A missing Redis key means unknown, which admits nothing (implemented)
+    and triggers a re-read of the durable state rather than leaving trading silently
+    off until an operator notices.
+  - _Resume._ Only the resume handler may write the enabled value, and only after its
+    own durable write. No startup path, migration or repair script may infer resume.
+  - _Idempotency._ Events carry a monotonic id; re-applying the last event is a no-op,
+    so retries, double writes and replayed reconciliation are harmless.
+  - _Crash window._ Production Redis runs `noeviction` with AOF `everysec` and a named
+    volume, so eviction is not a failure mode, but up to about one second of
+    acknowledged writes can be lost on a host crash and a restored volume can carry an
+    older value. Losing the enabled value fails closed and costs only availability;
+    the one dangerous direction is a stale enabled value silently un-pressing the kill
+    switch, which the durable-first write removes.
+  - _Deliberately excluded._ Do not raise `appendfsync` for the whole instance to
+    protect one key, and do not introduce a separate coordination store.
+    `position:sl_order_id` and `position:opened_at` share this shape and stay in
+    ENG-022.
+  - _Sequencing._ A stale enabled value only matters once `orders.place_order` can
+    actually run, so implement this with the live-order-lifecycle work rather than
+    ahead of ENG-021/ENG-022.
 
 ### ENG-021 — Make Go verification wrappers and configuration fail reliably
 

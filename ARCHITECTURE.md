@@ -172,7 +172,7 @@ squeeze-avoidance, and delayed-short results separate.
 | `market:hotset:bybit`                                | hotset      | varies | restart-safe symbol registry with absolute hot-window expiries          |
 | `market:hotset:bybit:metadata`                       | hotset      | none   | base, pump event id, and activation reason for registered Bybit symbols |
 | `market:orderflow:health`                            | orderflow   | 30s    | pilot rate, lag, drops, buffers, captures, storage, and trial status    |
-| `trading:enabled`                                    | execution   | no TTL | `"true"/"false"`, kill switch                                           |
+| `trading:enabled`                                    | execution   | no TTL | `"1"`/`"0"` (`"true"`/`"false"` accepted), kill switch cache            |
 | `trading:daily_pnl`                                  | execution   | none   | float string (USD), monitoring cache                                    |
 | `risk:pnl_ready`                                     | execution   | 120s   | `"1"`, positive lease. Absent or stale means trading is blocked         |
 | `journal:pending_close:{exchange}:{base}:{trade_id}` | execution   | none   | durable retry marker: close confirmed on-exchange, journal write failed |
@@ -184,6 +184,15 @@ squeeze-avoidance, and delayed-short results separate.
 | `trade:id:{exchange}:{base}`                         | execution   | none   | open trade id pointer, CAS-guarded on close                             |
 | `position:paper:*`                                   | execution   | none   | paper and DRY_RUN position state                                        |
 
+> `trading:enabled` is a positive lease like `risk:pnl_ready`: only an explicit
+> enabled value admits a new entry, so a missing, deleted or unrecognized value
+> blocks trading rather than reading as enabled. Today Redis is the only record of
+> the kill switch, which means a restart from an older volume or the AOF `everysec`
+> window can restore a stale enabled value. The authoritative stop-state semantics
+> that remove this are declared under ENG-020 in the
+> [findings register](docs/engineering/findings-register.md); they land with the
+> live-order path and are not implemented yet.
+>
 > The source of truth for accounting is Postgres (`app.trades`, `realized_pnl_today`),
 > not Redis. The durable-daily-PnL work replaced the old ephemeral `daily_loss:{date}`
 > and `pnl:{exchange}:{date}` keys. Redis holds hot state plus the `risk:pnl_ready`
