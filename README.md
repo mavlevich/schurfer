@@ -194,7 +194,7 @@ GET  /api/pumps/history              filtered history (exchange, since, until)
 GET  /api/health                     dependency, server-load, and market-pipeline telemetry
 GET  /api/account/balance            exchange balances
 GET  /api/account/positions          open positions
-POST /api/account/order              place order
+POST /api/account/order              place order (rejected unless AUTO_TRADE=true: it opens a real position)
 POST /api/account/positions/close    close position manually
 POST /api/account/stop               emergency kill-switch
 POST /api/account/resume             resume trading

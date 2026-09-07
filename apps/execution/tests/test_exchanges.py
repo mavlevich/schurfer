@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from schurfer_analytics.exchange_registry import DEFAULT_EXCHANGES
 from schurfer_execution.config import Config
 from schurfer_execution.exchanges import (
     MARKET_EXCHANGE_FACTORIES,
     ExchangeClients,
+    SandboxUnsupportedError,
     build_exchange_clients,
     close_exchange_clients,
 )
@@ -20,6 +22,8 @@ def _cfg(
     testnet: bool = False,
     binance_api_key: str | None = None,
     binance_api_secret: str | None = None,
+    mexc_api_key: str | None = None,
+    mexc_api_secret: str | None = None,
 ) -> Config:
     cfg = object.__new__(Config)
     cfg.dry_run = dry_run
@@ -38,8 +42,8 @@ def _cfg(
     cfg.kucoin_passphrase = None
     cfg.bingx_api_key = None
     cfg.bingx_api_secret = None
-    cfg.mexc_api_key = None
-    cfg.mexc_api_secret = None
+    cfg.mexc_api_key = mexc_api_key
+    cfg.mexc_api_secret = mexc_api_secret
     return cfg
 
 
@@ -106,3 +110,52 @@ async def test_close_clients_attempts_every_client_after_failure() -> None:
 
     failed.close.assert_awaited_once()
     healthy.close.assert_awaited_once()
+
+
+class TestTestnetFailsClosedForTradingClients:
+    """Regression for ENG-020 / audit C-6: TESTNET=true used to only log a
+    warning when a venue had no sandbox endpoint, then keep the authenticated
+    client. The operator asked for testnet and got a credentialed client
+    pointed straight at the production venue. These use real ccxt clients:
+    mexc and kucoinfutures genuinely have no sandbox endpoints in this build.
+    """
+
+    def test_unsupported_trading_sandbox_fails_startup(self) -> None:
+        with pytest.raises(SandboxUnsupportedError) as exc_info:
+            build_exchange_clients(
+                _cfg(
+                    dry_run=False,
+                    testnet=True,
+                    mexc_api_key="private-key",
+                    mexc_api_secret="private-secret",  # noqa: S106
+                )
+            )
+
+        message = str(exc_info.value)
+        assert "mexc" in message
+        assert "trading" in message
+
+    async def test_supported_trading_sandbox_switches_endpoints(self) -> None:
+        clients = build_exchange_clients(
+            _cfg(
+                dry_run=False,
+                testnet=True,
+                binance_api_key="private-key",
+                binance_api_secret="private-secret",  # noqa: S106
+            )
+        )
+        try:
+            assert set(clients.trading) == {"binance"}
+            assert "testnet" in clients.trading["binance"].urls["api"]["fapiPrivate"]
+        finally:
+            await close_exchange_clients(clients)
+
+    async def test_unsupported_public_market_sandbox_does_not_fail_startup(self) -> None:
+        """The public measurement scope carries no credentials and no order
+        path, so falling back to production public data stays a warning."""
+        clients = build_exchange_clients(_cfg(dry_run=True, testnet=True))
+        try:
+            assert {"mexc", "kucoin"} <= set(clients.market)
+            assert clients.trading == {}
+        finally:
+            await close_exchange_clients(clients)

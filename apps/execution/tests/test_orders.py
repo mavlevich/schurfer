@@ -2,6 +2,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi import HTTPException
 from pydantic import ValidationError
 from schurfer_execution import exit as exit_module
 from schurfer_execution.orders import close_position, place_order
@@ -96,6 +97,121 @@ class TestOrderRequestValidation:
         assert req.base == "1INCH"
 
 
+class TestManualEntryModeCeiling:
+    """Regression for ENG-020: POST /order goes straight to orders.place_order,
+    which submits a real exchange order through the authenticated trading
+    clients. The endpoint used to ignore the global AUTO_TRADE/DRY_RUN ceiling
+    entirely, so a paper-mode -- or fully disabled -- deployment that still
+    holds live API keys would place a real order on request. The ceiling is
+    read through execution_intent.mode_ceiling, the same function resolve_mode
+    uses, so the endpoint's gate and the strategy mode ladder cannot drift.
+    """
+
+    @staticmethod
+    def _cfg(*, auto_trade: bool, dry_run: bool) -> MagicMock:
+        return MagicMock(
+            auto_trade=auto_trade,
+            dry_run=dry_run,
+            max_positions=5,
+            max_position_usd=500.0,
+            daily_loss_limit_usd=200.0,
+            liquidation_buffer_pct=20.0,
+            db_url=None,
+        )
+
+    @staticmethod
+    def _request(cfg: MagicMock) -> tuple[SimpleNamespace, MagicMock]:
+        ex = MagicMock()
+        ex.markets = {
+            "BEAT/USDT:USDT": {
+                "id": "BEATUSDT",
+                "type": "swap",
+                "contractSize": 1.0,
+                "limits": {},
+            }
+        }
+        ex.set_leverage = AsyncMock()
+        ex.fetch_ticker = AsyncMock(return_value={"last": 1.0})
+        ex.amount_to_precision = MagicMock(side_effect=lambda _symbol, amount: str(amount))
+        ex.price_to_precision = MagicMock(side_effect=lambda _symbol, price: str(price))
+        ex.create_market_order = AsyncMock(return_value={"id": "order-1"})
+        ex.create_stop_market_order = AsyncMock(return_value={"id": "sl-1"})
+
+        rdb = MagicMock()
+        rdb.set = AsyncMock(return_value=True)
+        rdb.get = AsyncMock(side_effect=_default_get)
+        rdb.eval = AsyncMock(return_value=1)
+        rdb.delete = AsyncMock(return_value=1)
+
+        request = SimpleNamespace(
+            app=SimpleNamespace(
+                state=SimpleNamespace(
+                    cfg=cfg,
+                    trading_exchanges={"bingx": ex},
+                    rdb=rdb,
+                    worker_gate=_open_gate(),
+                )
+            )
+        )
+        return request, ex
+
+    @pytest.mark.parametrize(
+        ("auto_trade", "dry_run", "expected_ceiling"),
+        [(False, True, "paper"), (False, False, "disabled")],
+    )
+    async def test_manual_entry_below_live_ceiling_never_reaches_the_exchange(
+        self, auto_trade: bool, dry_run: bool, expected_ceiling: str
+    ) -> None:
+        cfg = self._cfg(auto_trade=auto_trade, dry_run=dry_run)
+        request, ex = self._request(cfg)
+        req = OrderRequest(base="BEAT", exchange="bingx", side="short", size_usd=100.0)
+
+        with (
+            patch(
+                "schurfer_execution.routers.orders.symbols.resolve_execution_instrument",
+                return_value=SimpleNamespace(symbol="BEAT/USDT:USDT"),
+            ),
+            patch(
+                "schurfer_execution.orders.fetch_positions",
+                AsyncMock(return_value=([], set())),
+            ),
+            patch(
+                "schurfer_execution.orders.fetch_margin_balance",
+                AsyncMock(
+                    return_value=[
+                        {"exchange": "bingx", "asset": "USDT", "free": 10_000.0, "tradeable": True}
+                    ]
+                ),
+            ),
+            pytest.raises(HTTPException) as exc_info,
+        ):
+            await post_order(req, request)  # type: ignore[arg-type]
+
+        assert exc_info.value.status_code == 409
+        assert expected_ceiling in str(exc_info.value.detail)
+        ex.set_leverage.assert_not_awaited()
+        ex.create_market_order.assert_not_awaited()
+
+    async def test_manual_entry_is_allowed_under_a_live_ceiling(self) -> None:
+        """The gate must reject only what the ceiling actually forbids: with
+        AUTO_TRADE=true the existing manual path still runs unchanged."""
+        cfg = self._cfg(auto_trade=True, dry_run=False)
+        request, _ex = self._request(cfg)
+        req = OrderRequest(base="BEAT", exchange="bingx", side="short", size_usd=100.0)
+
+        with (
+            patch("schurfer_execution.routers.orders.symbols.resolve_execution_instrument"),
+            patch(
+                "schurfer_execution.routers.orders.place_order",
+                AsyncMock(return_value={"allowed": True}),
+            ) as mock_place,
+        ):
+            result = await post_order(req, request)  # type: ignore[arg-type]
+
+        assert result == {"allowed": True}
+        mock_place.assert_awaited_once()
+
+
 class TestManualOrderEndpointJournalsToo:
     """Regression: a manually-triggered order via POST /order used to place
     a real exchange order but never journal it at all -- cfg simply wasn't
@@ -106,6 +222,12 @@ class TestManualOrderEndpointJournalsToo:
 
     async def test_post_order_passes_cfg_and_manual_setup_context(self) -> None:
         cfg = MagicMock(
+            # Explicit: the endpoint now refuses manual entries below a live
+            # ceiling (TestManualEntryModeCeiling), so this journalling
+            # regression must state the mode it is exercising rather than
+            # relying on MagicMock's truthy default attributes.
+            auto_trade=True,
+            dry_run=False,
             max_positions=5,
             max_position_usd=500.0,
             daily_loss_limit_usd=200.0,
