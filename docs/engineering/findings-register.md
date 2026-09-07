@@ -549,6 +549,11 @@ verify`, `make deadcode`, `pre-commit run --all-files`, and 13 black-box tests t
   were reproduced synthetically. `journal.py:901` timestamps a first close at write
   time; delayed paper accounting can acquire extra modeled funding and a new UTC
   day. Missing opened_at defaults differ between legacy live and legacy paper.
+- **Residual after step 1:** a venue that never reports `filled` still journals the
+  requested notional on a partial entry. The fallback is logged
+  (`execution.order.filled_volume_unknown`), never silent. Requiring positive `filled`
+  everywhere was tried and rejected: it turns every legitimate exit on such a venue into
+  an incident. Revisit with step 2, which needs a remaining-quantity model anyway.
 - **Small implementation steps:** (1) fill evidence and actual notional;
   (2) partial-close/protection/remaining lifecycle; (3) portfolio reservation using
   existing durable attempts; (4) execution timestamp carried through pending-close
@@ -679,6 +684,32 @@ performance, style]`. Measured with those settings applied at `356bbb7`: 161
   nothing today.
 - **Acceptance:** whatever is adopted is written at a location `golangci-lint config
 verify` accepts, and the tree passes it with no baseline file or blanket nolint.
+
+### ENG-030 — Isolate the test suite from production services
+
+- **Status / priority:** `confirmed`, `P2`; found while writing the ENG-022 regressions,
+  not an audit finding.
+- **Evidence:** a test in `apps/execution/tests/test_orders.py` reached
+  `order_attempts.mark_completed` with an unpatched database call and opened a
+  connection to the production PostgreSQL host, failing only on a socket timeout after
+  roughly 75 seconds. In the same run a `MagicMock` config made `notify.credentials`
+  return truthy values, so the test sent a real Telegram request
+  (`notify.send.failed status=404`). Both are reachable from any test that constructs a
+  `MagicMock` config and takes an unmocked branch; the individual tests were patched,
+  the class of failure was not.
+- **Why it matters:** a test run can write to, or at minimum authenticate against,
+  production. It also makes the suite slow and flaky in ways that look like unrelated
+  hangs: the first symptom here was a fifteen-minute test run.
+- **Bounded remediation:** default the suite to an unroutable database URL and empty
+  notification credentials through a session fixture, and fail loudly on any attempted
+  outbound call that a test did not explicitly opt into. Real-database integration tests
+  keep their existing explicit connection path. Prefer a typed config double over
+  `MagicMock` where a test needs one, so an unset field is an error rather than a
+  truthy mock.
+- **Acceptance:** a test that forgets to patch a database or notification call fails
+  fast with a clear message instead of contacting a real service; the existing
+  real-PostgreSQL integration tests still run; no test in a full offline run performs
+  outbound network I/O.
 
 ## Promotion summary
 
