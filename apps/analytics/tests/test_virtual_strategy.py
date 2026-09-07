@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import fields, replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -33,6 +33,7 @@ from schurfer_analytics.virtual_strategy import (
     simulate_episode,
     simulate_episode_at_entry,
 )
+from schurfer_performance.exit_policy import exit_params as shared_exit_params
 
 
 def _decision(
@@ -124,7 +125,13 @@ def _path(decision: ReplayDecision, candles: tuple[Candle, ...] | None = None) -
 @pytest.mark.parametrize(
     ("pump_pct", "expected"),
     [
-        (0.0, ExitParameters(8.0, 8.0, 12.0, 8.0, 90, 180)),
+        # Production reads a 0.0 pump as "magnitude unknown" -- its band
+        # selection is `pump_pct or 50.0`, and 0.0 is falsy -- so it lands in
+        # the 50-100% band, exactly where None lands. The replay used to
+        # disagree here and put 0.0 in the sub-50% band. Matching production is
+        # what a replay is for; whether production's reading of 0.0 is the
+        # right one is a separate question about production.
+        (0.0, ExitParameters(10.0, 12.0, 15.0, 10.0, 120, 240)),
         (49.999, ExitParameters(8.0, 8.0, 12.0, 8.0, 90, 180)),
         (50.0, ExitParameters(10.0, 12.0, 15.0, 10.0, 120, 240)),
         (99.999, ExitParameters(10.0, 12.0, 15.0, 10.0, 120, 240)),
@@ -137,6 +144,29 @@ def test_exit_parameters_match_all_production_bands(
     expected: ExitParameters,
 ) -> None:
     assert exit_parameters(pump_pct) == expected
+
+
+# Everything the shared production policy returns that this replay does not
+# model. `no_progress_min` is here because production has closed stalled
+# positions at 60 minutes since 2026-08-18 while the replay's baseline holds
+# them to max_hold; that gap is deliberate and documented on
+# BASELINE_EXIT_POLICY, but any *new* production parameter must not join it
+# silently.
+_UNMODELLED_PRODUCTION_PARAMS = frozenset({"no_progress_min"})
+
+
+@pytest.mark.parametrize("pump_pct", [0.0, 49.999, 50.0, 99.999, 100.0, None])
+def test_replay_models_every_production_exit_parameter(pump_pct: float | None) -> None:
+    """The literal-value test above restates the numbers, so it agrees with a
+    stale copy. This one compares against the shared policy itself: it is the
+    check that would have failed when production gained the no-progress exit.
+    """
+    shared = shared_exit_params(pump_pct)
+    modelled = {field.name for field in fields(ExitParameters)}
+    assert set(shared) - modelled == _UNMODELLED_PRODUCTION_PARAMS
+    replayed = exit_parameters(pump_pct)
+    for name in modelled:
+        assert getattr(replayed, name) == shared[name], name
 
 
 @pytest.mark.parametrize(

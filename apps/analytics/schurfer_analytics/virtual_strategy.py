@@ -21,6 +21,7 @@ from schurfer_performance import (
 from schurfer_performance import (
     calculate_performance,
 )
+from schurfer_performance.exit_policy import exit_params as shared_exit_params
 
 from .ohlcv import TIMEFRAME_MS, Candle, ceil_to_timeframe
 
@@ -135,6 +136,14 @@ class ExitMechanics:
         return self.baseline_hold_minutes(params) + exit_policy.max_extension_minutes
 
 
+# Named `production_max_hold_v1` when it did describe production. Since
+# 2026-08-18 production also closes a position at 60 minutes when trailing
+# never activated (`no_progress_min` in the shared exit policy), which this
+# baseline does not model, so it now holds a stalled loser up to three times
+# longer than production would. The version string is deliberately left alone:
+# reports registered against it were read under these semantics, and silently
+# redefining a registered baseline would invalidate them without a trace.
+# Correcting it is its own registered change, not an edit.
 BASELINE_EXIT_POLICY = ExitPolicy(
     key="baseline",
     version="production_max_hold_v1",
@@ -279,13 +288,25 @@ def max_sequential_drawdown_usd(trades: Iterable[VirtualTrade]) -> float | None:
 
 
 def exit_parameters(pump_pct: float | None) -> ExitParameters:
-    """Mirror execution's three pump-magnitude exit bands."""
-    magnitude = pump_pct if pump_pct is not None else 50.0
-    if magnitude < 50:
-        return ExitParameters(8.0, 8.0, 12.0, 8.0, 90, 180)
-    if magnitude < 100:
-        return ExitParameters(10.0, 12.0, 15.0, 10.0, 120, 240)
-    return ExitParameters(12.0, 15.0, 20.0, 12.0, 180, 360)
+    """Read execution's three pump-magnitude exit bands from the shared policy.
+
+    These numbers used to be restated here as a hand-written mirror. They then
+    drifted: production gained a 60-minute no-progress exit on 2026-08-18
+    (commit 422f784) and the copy here did not follow, so `BASELINE_EXIT_POLICY`
+    kept the name `production_max_hold_v1` while no longer describing
+    production. Deriving the bands removes the class of drift for the numbers;
+    the no-progress gap is a modelling difference, not a number, and is called
+    out on BASELINE_EXIT_POLICY itself.
+    """
+    shared = shared_exit_params(pump_pct)
+    return ExitParameters(
+        initial_sl_pct=shared["initial_sl_pct"],
+        activation_pct=shared["activation_pct"],
+        trail_pct=shared["trail_pct"],
+        trail_tighten_pct=shared["trail_tighten_pct"],
+        tighten_after_min=int(shared["tighten_after_min"]),
+        max_hold_min=int(shared["max_hold_min"]),
+    )
 
 
 def select_episode_decision(episode: ReplayEpisode) -> EpisodeSelection:
