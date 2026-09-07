@@ -2,7 +2,9 @@
 
 Status: current engineering intake and verification register.
 
-Last reviewed: 2026-08-23.
+Last intake review: 2026-09-07, code revision `657c411`. September findings and
+selected stale entries were reconciled; this is not a fresh verification of every
+historical claim or any production deployment.
 
 This register records cross-cutting reliability, performance, and architecture
 findings before they become implementation work. It prevents an unverified review
@@ -42,28 +44,17 @@ smallest fix at the owning boundary and add a regression test for the exact fail
 
 ### ENG-001 — Supervise long-running execution workers
 
-- **Status / priority:** `confirmed`, `P1`.
-- **Evidence:** `apps/execution/schurfer_execution/main.py` starts several independent
-  workers with `asyncio.create_task`. Holding task references prevents garbage
-  collection, but it does not make an unexpectedly completed task fail the service or
-  restart the worker. Several worker loops catch ordinary exceptions themselves, so
-  supervision must distinguish a recovered iteration failure from termination of the
-  whole worker.
-- **Failure mode:** one strategy, monitor, or accounting worker can stop while the API
-  process and container remain healthy.
-- **Bounded remediation:** introduce one service-owned supervisor with named tasks,
-  explicit expected-cancellation semantics, termination logging, and a documented
-  policy per worker: fail the container, bounded restart, or intentionally stop. Do
-  not wrap every task in unrelated ad-hoc `try/except` blocks. `TaskGroup` is an
-  implementation option, not the acceptance criterion: naïvely adopting it can
-  cancel healthy workers when one optional worker exits.
-- **Regression/operational gates:** tests for unexpected return, raised exception,
-  cancellation during shutdown, restart exhaustion, and health becoming non-OK;
-  Docker restart behavior must be exercised in a bounded smoke test. A critical
-  worker must never disappear while `/health` remains green.
-- **Scheduling:** required before unattended micro-live. Reuse the generic heartbeat
-  and worker-health primitives introduced by the early-momentum input-quality work;
-  do not create a second health framework.
+- **Status / priority:** missing-supervisor claim `rejected` as stale on 2026-09-07;
+  residual operational verification `reported`, `P1` before unattended live.
+- **Evidence:** `apps/execution/schurfer_execution/main.py` constructs and starts
+  `WorkerSupervisor`, exposes its readiness gate, and stops/waits for it at shutdown.
+  `supervisor.py` defines per-worker restart policies and intentional-stop states;
+  `apps/execution/tests/test_supervisor.py` already exists.
+- **Residual gate:** verify the deployed critical-worker inventory, restart
+  exhaustion, stale-worker health and container shutdown/restart behavior. The
+  documentation intake did not run a production drill or re-run these tests.
+- **Scheduling:** validate or repair a concrete remaining failure. Do not implement
+  a second supervisor because the old register described it as absent.
 
 ### ENG-002 — Reconcile unknown live exchange positions at startup
 
@@ -72,7 +63,9 @@ smallest fix at the owning boundary and add a regression test for the exact fail
 - **Evidence:** `apps/execution/schurfer_execution/monitor.py` already fetches live
   exchange positions, reconciles vanished tracked positions from exchange-native stop
   fills, persists unresolved incidents, and retries pending journal closes. Paper also
-  repairs missing Redis state in `paper.py`.
+  repairs missing Redis state in `paper.py`. September amendment:
+  `reconciliation_worker.py`, `reconciliation.py` and `order_attempts.py` also exist,
+  are wired into startup under a readiness blocker, and have dedicated tests.
 - **Residual question:** verify what happens when an exchange position exists but
   neither the journal nor Redis contains a corresponding tracked position—for
   example, after an entry fill followed by a persistence failure or after a manual
@@ -86,7 +79,8 @@ smallest fix at the owning boundary and add a regression test for the exact fail
   idempotent incident creation and recovery notification; micro-live remains blocked
   until the result is fail-closed.
 - **Scheduling:** part of the existing real-money execution checklist and live-risk
-  reconciliation lane, not a newly discovered replacement subsystem.
+  reconciliation lane, not a newly discovered replacement subsystem. Use the existing
+  worker for ENG-022 residual fill/protection/restart fixes; do not rebuild it.
 
 ### ENG-003 — Replace per-position paper quote polling with a quote snapshot boundary
 
@@ -108,6 +102,11 @@ smallest fix at the owning boundary and add a regression test for the exact fail
   one-symbol failure does not block other exits; stale/missing quotes fail closed;
   deterministic ordering and timeout coverage; metrics for batch size, latency,
   fallbacks, 429s, and quote age.
+- **2026-09-06 measurement:** the real `_tick` with fake Redis/exchange and 10 ms
+  artificial latency took 0.0109/0.1198/0.5950/1.1924 seconds at 1/10/50/100
+  positions. This confirms sequential scaling, not production exchange latency.
+  See the [performance snapshot](audits/2026-09-06/schurfer-performance-audit-2026-09-06.md).
+  Momentum repository starvation is a separate selection defect, ENG-023.
 
 ### ENG-004 — Harden Telegram HTTP delivery and finish gateway migration
 
@@ -168,6 +167,10 @@ smallest fix at the owning boundary and add a regression test for the exact fail
   check, statement/transaction timeouts, rollback hygiene, and graceful close.
 - **Regression gates:** concurrency/load test, connection-loss recovery, pool
   exhaustion, leaked transaction prevention, and clean application shutdown.
+- **2026-09-07 clarification:** several analytics repositories already use bounded
+  SQLAlchemy pools. The momentum-paper repository has two connections, one held for
+  its advisory lock. The claim that Python has no pooling anywhere is rejected;
+  adding more idle pools is not a substitute for a service-wide connection budget.
 
 ### ENG-007 — Benchmark alternative JSON parsers; do not adopt by assertion
 
@@ -445,25 +448,182 @@ smallest fix at the owning boundary and add a regression test for the exact fail
   costs, liquidity, asset/time concentration, listing status, and unresolved rows.
   Only a pre-registered surviving segment may start prospective shadow capture.
 
+## September audit intake
+
+Source IDs below refer to the [archived reconciliation](audits/2026-09-06/schurfer-audit-reconciliation-2026-09-06.md).
+`planned` means selected in the roadmap, not implemented, tested or deployed.
+Before each fix, pin the current revision and reproduce its concrete failure.
+Production claims not independently verified remain reported; an audit severity
+label alone never establishes a P0 incident.
+
+### ENG-020 — Enforce entry mode, TESTNET and stop admission consistently
+
+- **Status / priority:** `planned`, `P1`; source C-1/C-6/H-4/H-5, package B01.
+- **Evidence:** `routers/orders.py:35` selects authenticated trading clients without
+  checking the global dry-run ceiling; `exchanges.py:148` logs sandbox failure and
+  retains the client. `orders.py:218` reads stop before slow preflight, while
+  `routers/control.py` only changes the Redis flag. The audit reproduced these paths
+  with fake exchange/DB/Redis effects. `risk.check_trading_enabled(None)` allows,
+  but the current orders caller substitutes `0`: deletion alone does not enable it.
+- **Bounded sequence:** first reject prohibited manual entries and fail trading
+  startup on unsupported TESTNET; then reconcile stop with final admission and make
+  the helper fail closed. Declare authoritative stop-state and recovery semantics
+  before adding a persistent store; preserve allowed protective close operations.
+- **Acceptance:** endpoint-to-exchange tests for paper/disabled mode, failed sandbox,
+  stop during preflight, missing state and protective reduce-only exit; unknown
+  already-submitted requests reconcile rather than being assumed cancelled.
+
+### ENG-021 — Make Go verification wrappers and configuration fail reliably
+
+- **Status / priority:** `planned`, `P1` verification blocker; H-1/H-2/M-10, B02.
+- **Evidence:** `.pre-commit-config.yaml:86` uses a per-module pipeline/while loop
+  whose final success masks an earlier failure. Its parser differs from
+  `infra/scripts/go_workspace_modules.sh`. `.golangci.yml` declares v2 while using
+  root `linters-settings` and `issues.exclude-dirs`; bundled v2 schema and Go types
+  reject those locations. The analogous `deadcode` loop in Makefile needs the same
+  exit-status review. Full network-dependent config verification was unavailable
+  during the audit; the colleague's three notifier issues need a fresh lint run.
+- **Bounded remediation:** one workspace parser, empty-list failure, propagate any
+  failing module, validate the pinned schema, then fix current lint results.
+- **Acceptance:** injected failure in first/middle/last module fails hook/verify;
+  both go.work forms work; empty/invalid workspace and bad config keys fail. Do not
+  claim all Go tests/vet were ineffective merely because this lint wrapper was wrong.
+
+### ENG-022 — Preserve fills, residual exposure and close accounting across recovery
+
+- **Status / priority:** `planned`, `P1`; C-3/C-4/C-5/H-3/H-6/J-1/J-3, B04;
+  reported EP-2 consumer behavior remains a verification subtask.
+- **Evidence:** `fill_price.py` accepts positive price with zero filled volume;
+  `orders.py` journals requested notional on partial entry, reports a partial exit
+  as closed, and removes stop protection/tracking before successful close. The
+  per-instrument lock does not reserve the global portfolio slot. These failures
+  were reproduced synthetically. `journal.py:901` timestamps a first close at write
+  time; delayed paper accounting can acquire extra modeled funding and a new UTC
+  day. Missing opened_at defaults differ between legacy live and legacy paper.
+- **Small implementation steps:** (1) fill evidence and actual notional;
+  (2) partial-close/protection/remaining lifecycle; (3) portfolio reservation using
+  existing durable attempts; (4) execution timestamp carried through pending-close
+  retries and recovery of missing position age; (5) strategy identity compatibility
+  and explicit reconciliation-error summaries after consumer verification.
+- **Acceptance:** regression scenarios for zero/partial/full/unknown fills,
+  contractSize, failed close after stop cancellation, restart between each external
+  boundary, delayed commit across UTC midnight, and concurrent distinct instruments
+  at the portfolio limit. Use real PostgreSQL for durable/concurrency guarantees.
+  Never skip all protective servicing forever because opened_at is missing.
+- **Reuse:** extend ENG-002's implemented reconciliation worker and ENG-013 risk
+  limits. Stop-key loss does not make an open exchange position invisible to every
+  monitor; keep the narrower protection/tracking claim and test it.
+
+### ENG-023 — Guarantee fair servicing beyond the momentum-paper batch limit
+
+- **Status / priority:** `planned`, `P2` now / `P1` before scaling beyond the limit;
+  source E-01, B05. No production threshold breach has been established.
+- **Evidence:** `momentum_flow_paper_repository.py:591` orders eligible open probes
+  by unchanged entry_at and applies limit=100 by default. A successful quote does
+  not remove an open position from that ordering. Later positions can wait while
+  the oldest batch remains open. Sequential quotes also delay scheduled outcomes.
+- **Bounded remediation:** fair queue/cursor or explicit admission bound, maximum
+  quote age and deadline budget; coordinate with ENG-003's venue-aware concurrency.
+  Account for the advisory-lock connection before parallelizing DB work.
+- **Acceptance:** real repository test above the batch limit services every probe
+  over successive ticks without requiring older positions to close; slow/failing
+  quotes cannot silently violate the declared observation contract. Preserve frozen
+  cohort semantics or introduce a declared version/cutover.
+
+### ENG-024 — Verify coverage artifacts and trace partial-outcome consumers
+
+- **Status / priority:** fingerprint fix `planned`, `P2` / `P1` for formal evidence
+  relying on it; partial-outcome impact `reported`; E-04/M-8, B06.
+- **Evidence:** `cex_activity_path_coverage_audit.py:230` reads an arbitrary JSON and
+  `render_markdown` prints `_AUDITED_ARTIFACT_FINGERPRINT` without validating that
+  input. The audit accepted a synthetic unrelated `[]`. This is now merged code.
+  A last bar after a historical window does not exclude suspension/relisting within
+  it. `outcomes.py` already labels incomplete windows partial, so downstream
+  contamination must be traced rather than asserted for every formal verdict.
+- **Bounded remediation:** reuse artifact/schema/checksum verification; report the
+  actual verified identity; correct causal claims without changing frozen HYP-016
+  outcomes. Verify consumers and exact grid/duplicate/boundary cases separately.
+- **Acceptance:** corrupt/unrelated/wrong-schema inputs fail closed; partial extrema
+  cannot be treated as exact by formal consumers; independently recalculate a small
+  pinned accounting/outcome sample. Preserve original and corrected artifact versions.
+
+### ENG-025 — Establish recovery evidence and capture continuity
+
+- **Status / priority:** `confirmed` script defaults, `reported` production coverage;
+  `P1` before unattended live; C-2/M-6/M-11/P-7, B03. Inventory/isolated preparation
+  is queued; production actions require their own authorization.
+- **Evidence:** `infra/scripts/backup.sh:12` defaults to one retained local dump;
+  offsite upload is commented out. This does not prove no separate backup service
+  exists. Momentum capture has `restart: 'no'`; current deployment mode and external
+  monitoring must be verified. Shared-host analytics pressure is recorded history.
+- **Bounded remediation:** inventory copies and disk headroom, choose local/offsite
+  generations and RPO/RTO, verify checksum/restore in isolation, and document capture
+  restart/alert behavior. Do not blindly retain 14 large dumps on the same full disk.
+- **Acceptance:** a dated restore record with schema revision, row/time-range checks,
+  achieved RPO/RTO and duration; failed upload does not discard the last verified
+  copy; a stopped critical collector is detected. Keep backup-before-migration and
+  explicitly handle deployment of the backup script itself.
+
+### ENG-026 — Update vulnerable dependencies and verify runtime exposure
+
+- **Status / priority:** `confirmed` lock finding, `planned`, `P1`; H-7/E-06, B10.
+- **Evidence:** September pip-audit found aiohttp 3.14.1 in uv.lock with upstream fix
+  3.14.3 for GHSA-cq5v-8q36-5273. Production image versions/exploitation were not
+  verified. Other cryptography/pip findings need reachability/tooling separation.
+- **Bounded remediation:** update the compatible lock, exercise CCXT adapters,
+  rebuild and scan affected images; record deployed versions only after authorized
+  rollout. UID/capabilities, DB roles, key permissions and ingress claims from the
+  colleague report remain reported hardening checks, not proven compromises.
+- **Acceptance:** affected dependency finding cleared, adapter tests pass, image
+  inventory matches intended versions; production verification explicitly tracked.
+
+### ENG-027 — Bound web retries/cancellation and verify PWA artifacts
+
+- **Status / priority:** `confirmed`, `planned`, `P2`; M-9/E-02, B10.
+- **Evidence:** `apps/web/src/hooks/useOHLCV.ts:34` ignores attempt count for 5xx and
+  network failures; the installed Query client retried 12 times until explicit
+  cancellation in the synthetic audit. Fetch does not receive AbortSignal. Build
+  exit=0 produced an index referencing missing manifest/registerSW resources.
+- **Bounded sequence:** shared HTTP boundary with finite retries, cancellation and
+  ENG-005 session handling; separate compatible PWA integration/build smoke change.
+  Preserve endpoint-specific 404-as-null behavior and distinct error statuses.
+- **Acceptance:** finite retries and cancelled network work, no concurrent-401
+  logout storm, existing success paths preserved, every referenced generated PWA
+  resource exists and registration is exercised by an appropriate smoke check.
+- **Residual reported work:** WS deadlines/origin, login/body limits and outbox
+  capacity have separate verification scopes in the archive; do not silently drop
+  undelivered outbox data to obtain a bounded list.
+
+### ENG-028 — Reuse report serialization only with equivalent measured output
+
+- **Status / priority:** `measuring`, `P3`; E-03/E-05, B11. Synthetic stage-level
+  benefit is confirmed; production report impact remains to be measured.
+- **Evidence:** existing `reporting.render_dataclass_json` avoids recursive asdict
+  copying. On a synthetic 20,000-row report, median serialization was 594 vs 148 ms,
+  peak tracked Python allocations 16.45 vs 7.39 MiB, with byte-identical JSON.
+  This is not a fourfold whole-report speedup or RSS measurement.
+- **Bounded next step:** profile one actual report still using json_ready(asdict),
+  then reuse the existing renderer if material. Check nested types, NaN handling,
+  ordering, datetime serialization and final newline. No new parser dependency is
+  required by this finding.
+- **Acceptance:** identical JSON/hash/verdict on pinned real inputs and measured
+  useful improvement. Other duplicated loaders require matching contracts and two
+  real consumers; do not generalize all research into a speculative framework.
+
 ## Promotion summary
 
-The reviewed findings currently imply this bounded support sequence. It does not
-replace the profit/evidence lane or expand the active early-momentum PR:
+The [current roadmap sequence](../../ROADMAP.md#current-delivery-sequence--2026-09-07)
+owns selection and the feature/fix balance. September packages map to ENG-020–028
+and existing entries rather than creating duplicate implementation queues. The
+[archive index](audits/2026-09-06/README.md) maps every B-package, and its reconciliation
+retains all 61 source IDs, including rejected, reported and research-only claims.
 
-1. execution worker supervision and health (`ENG-001`);
-2. unknown live-position startup reconciliation (`ENG-002`);
-3. quote snapshot/batching boundary (`ENG-003`);
-4. complete notifier delivery hardening through the existing gateway plan
-   (`ENG-004`);
-5. centralized expired-session behavior (`ENG-005`);
-6. measure connection lifecycle before deciding pool scope (`ENG-006`).
-
-`ENG-001`, `ENG-002`, and `ENG-013` are capital-safety gates. `ENG-003` becomes a
-capital-safety gate when concurrency grows beyond the bounded current paper cohort.
-The parser/event-loop/region ideas remain experiments unless measurements promote
-them. `ENG-017` through `ENG-019` are a bounded research-quality sequence tied to the
-LBank-first money hypothesis, not general refactoring permission. The rejected
-`waitOutPause` claim must not consume an implementation PR.
+ENG-001/002 require validation of existing mechanisms, not reconstruction.
+ENG-003/023 become critical when paper concurrency threatens observation timing;
+ENG-013/020/022 remain live capital-safety gates. ENG-017–019 remain scoped to the
+LBank-first thesis, not blockers for unrelated Bybit/Binance evidence. Measurement
+items stay measurements until their thresholds justify implementation. A positive
+hindsight bound or a proposed TP/score change belongs in research, not the fix queue.
 
 ## Deferred performance verification queue
 
