@@ -11,11 +11,17 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useOHLCV, INTERVALS, getInterval } from '@/hooks/useOHLCV';
 import { useTokenEpisodes } from '@/hooks/useTokenData';
+import { useDecisions } from '@/hooks/useDecisionsData';
+import { buildChartMarkers } from '../../decisionMarkers';
 
 export function TokenChart({ base }: { base: string }) {
   const [chartInterval, setChartInterval] = useState(15);
   const { data: ohlcv, isFetching } = useOHLCV(base, chartInterval);
   const { data: episodes } = useTokenEpisodes(base);
+  // What the system decided about this token, and why. The reason is the point:
+  // a chart that shows only where price moved cannot say why nothing was
+  // opened there.
+  const { data: decisionsData } = useDecisions({ base, limit: 500, offset: 0 });
 
   type ChartApi = ReturnType<typeof createChart>;
   type SeriesApi = ReturnType<ChartApi['addSeries']>;
@@ -95,54 +101,20 @@ export function TokenChart({ base }: { base: string }) {
       })),
     );
 
-    if (episodes && episodes.length > 0) {
-      const getPeakColor = (pct: number) => {
-        if (pct >= 100) return '#f87171';
-        if (pct >= 50) return '#fb923c';
-        return '#facc15';
-      };
-
-      const candleTimes = ohlcv.candles.map((c) => c.time);
-      const getNearestCandleTime = (ts: number) => {
-        if (!candleTimes.length) return ts as UTCTimestamp;
-        let closest = candleTimes[0];
-        for (const ct of candleTimes) {
-          if (ct <= ts) closest = ct;
-          else break;
-        }
-        return closest as UTCTimestamp;
-      };
-
-      const markers: SeriesMarker<UTCTimestamp>[] = episodes
-        .filter((e) => e.first_seen_at)
-        .map(
-          (e) =>
-            ({
-              time: getNearestCandleTime(e.first_seen_at),
-              position: 'aboveBar',
-              color: getPeakColor(e.observed_peak_pct),
-              shape: 'circle',
-              size: 1,
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            }) as any,
-        )
-        .sort((a, b) => (a.time as number) - (b.time as number));
-
-      // Deduplicate by time (lightweight-charts crashes on duplicate times)
-      const seenTimes = new Set<number>();
-      const uniqueMarkers: SeriesMarker<UTCTimestamp>[] = [];
-      for (const m of markers) {
-        if (!seenTimes.has(m.time as number)) {
-          seenTimes.add(m.time as number);
-          uniqueMarkers.push(m);
-        }
-      }
-
-      if (markersRef.current) markersRef.current.setMarkers(uniqueMarkers);
+    // Applied unconditionally, including when it is empty: switching to a token
+    // with nothing to show must clear the previous token's markers rather than
+    // leave them floating over the new candles (colleague review).
+    const markers = buildChartMarkers({
+      episodes,
+      decisions: decisionsData?.decisions,
+      candleTimes: ohlcv.candles.map((candle) => candle.time),
+    });
+    if (markersRef.current) {
+      markersRef.current.setMarkers(markers as unknown as SeriesMarker<UTCTimestamp>[]);
     }
 
     chartRef.current?.timeScale().fitContent();
-  }, [ohlcv, episodes]);
+  }, [ohlcv, episodes, decisionsData]);
 
   return (
     <Card>
