@@ -62,6 +62,11 @@ class ExitPolicy:
     version: str
     protect_breakeven_after_activation: bool = False
     no_progress_minutes: int | None = None
+    # Production's own pre-activation cut: close at this age when trailing never
+    # activated, with no extension and no progress step. Distinct from
+    # no_progress_minutes, which is a rolling stall detector that keeps
+    # measuring after activation.
+    close_unactivated_after_minutes: int | None = None
     max_extension_minutes: int = 0
     minimum_progress_pct: float = 0.0
     recent_progress_lookback_minutes: int | None = None
@@ -73,6 +78,7 @@ class ExitPolicy:
         optional_minutes = (
             self.no_progress_minutes,
             self.recent_progress_lookback_minutes,
+            self.close_unactivated_after_minutes,
         )
         if (
             any(value is not None and (value <= 0 or value % 5 != 0) for value in optional_minutes)
@@ -176,8 +182,17 @@ RECENT_PROGRESS_EXTENSION_EXIT_POLICY = ExitPolicy(
     recent_progress_lookback_minutes=30,
     extension_trail_pct=5.0,
 )
+# What production has actually run since 2026-08-18 (422f784): the exit engine
+# closes a position at no_progress_min minutes when trailing never activated.
+# Registered as HYP-021; see docs/research/production-exit-policy-reference-v1.md.
+PRODUCTION_EXIT_POLICY = ExitPolicy(
+    key="production",
+    version="production_no_progress_v2",
+    close_unactivated_after_minutes=60,
+)
 EXIT_POLICIES = (
     BASELINE_EXIT_POLICY,
+    PRODUCTION_EXIT_POLICY,
     BREAKEVEN_EXIT_POLICY,
     NO_PROGRESS_EXIT_POLICY,
     COMBINED_EXIT_POLICY,
@@ -752,6 +767,18 @@ def _simulate_selected_entry(
             exit_price = candle.close
             exit_at_ms = candle_end_ms
             exit_reason = "no_progress"
+            break
+
+        # Production's rule, mirroring evaluate_exit's pre-activation branch:
+        # once trailing has activated this no longer applies at all.
+        if (
+            exit_policy.close_unactivated_after_minutes is not None
+            and best_price is None
+            and elapsed_end_minutes >= exit_policy.close_unactivated_after_minutes
+        ):
+            exit_price = candle.close
+            exit_at_ms = candle_end_ms
+            exit_reason = "not_activated"
             break
 
         baseline_hold_minutes = exit_mechanics.baseline_hold_minutes(params)
