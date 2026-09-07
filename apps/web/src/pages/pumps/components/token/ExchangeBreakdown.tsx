@@ -24,6 +24,8 @@ import { exchangeTradeUrl } from '../../exchangeLinks';
 import { Percent } from '@/components/ui/domain/Percent';
 import { Price } from '@/components/ui/domain/Price';
 import { isPumpEntry, type ExchangeEntry } from '../../types';
+import { assetClassBadge } from '../../assetClass';
+import { Badge } from '@/components/ui/badge';
 
 const columnHelper = createColumnHelper<ExchangeEntry>();
 
@@ -43,10 +45,12 @@ function buildColumns(isLive: boolean) {
         // the "same" market_id could now open someone else's instrument.
         // Only link a row we know is the CURRENT live listing.
         const url = isLive ? exchangeTradeUrl(getValue(), row.original.market_id) : null;
-        if (!url) {
-          return <div className="font-medium capitalize">{getValue()}</div>;
-        }
-        return (
+        // ENG-018: a venue can list a tokenized equity, commodity or index as
+        // an ordinary USDT perpetual, and it reaches this table looking like
+        // any other coin. Only a positively non-crypto class is badged --
+        // see assetClass.ts for why unknown is not.
+        const badge = assetClassBadge(row.original.asset_class, row.original.asset_class_source);
+        const name = url ? (
           <a
             href={url}
             target="_blank"
@@ -56,6 +60,22 @@ function buildColumns(isLive: boolean) {
           >
             {getValue()}
           </a>
+        ) : (
+          <span className="font-medium capitalize">{getValue()}</span>
+        );
+        return (
+          <div className="flex items-center gap-2">
+            {name}
+            {badge && (
+              <Badge
+                variant={badge.curated ? 'outline' : 'secondary'}
+                title={badge.description}
+                aria-label={badge.description}
+              >
+                {badge.label}
+              </Badge>
+            )}
+          </div>
         );
       },
     }),

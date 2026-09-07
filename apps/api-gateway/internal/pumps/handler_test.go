@@ -1948,3 +1948,54 @@ func TestMomentumWatchQueryFallsBackFirstWatchToLastWatch(t *testing.T) {
 		t.Error("first_watch_at must fall back to s.last_watch_at instead of staying NULL")
 	}
 }
+
+// ENG-018: the scanner classifies what each instrument actually tracks, and
+// that classification has to survive the trip through pumps:latest to the
+// frontend. It was dropped here before: exchangeEntry maps fields explicitly,
+// so an unlisted JSON key is silently discarded.
+func TestExchangeEntryCarriesTheAssetClassFromRedis(t *testing.T) {
+	payload := `{"pumps":[{"base":"DJT","max_change_pct":180.0,"exchanges":[
+		{"exchange":"lbank","symbol":"DJTUSDT","change_pct":180.0,
+		 "asset_class":"tokenized_equity","asset_class_source":"curated"},
+		{"exchange":"bybit","symbol":"BTCUSDT","change_pct":12.0,
+		 "asset_class":"crypto","asset_class_source":"venue.bybit.symbolType"}]}]}`
+
+	var decoded pumpsPayload
+	if err := json.Unmarshal([]byte(payload), &decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if len(decoded.Pumps) != 1 || len(decoded.Pumps[0].Exchanges) != 2 {
+		t.Fatalf("unexpected shape: %+v", decoded)
+	}
+	first := decoded.Pumps[0].Exchanges[0]
+	if first.AssetClass != "tokenized_equity" || first.AssetClassSource != "curated" {
+		t.Fatalf("asset class dropped: %+v", first)
+	}
+	if decoded.Pumps[0].Exchanges[1].AssetClass != "crypto" {
+		t.Fatalf("second entry class dropped: %+v", decoded.Pumps[0].Exchanges[1])
+	}
+
+	// And it must reach the client as the same JSON keys the frontend reads.
+	out, err := json.Marshal(first)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	for _, want := range []string{`"asset_class":"tokenized_equity"`, `"asset_class_source":"curated"`} {
+		if !strings.Contains(string(out), want) {
+			t.Fatalf("serialized entry missing %s: %s", want, out)
+		}
+	}
+}
+
+// An entry captured before the classifier existed must not grow empty keys in
+// the response: absent and "unknown" are different states downstream.
+func TestExchangeEntryOmitsTheAssetClassWhenAbsent(t *testing.T) {
+	out, err := json.Marshal(exchangeEntry{Exchange: "gate", Symbol: "BTCUSDT"})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(out), "asset_class") {
+		t.Fatalf("absent class must be omitted, got %s", out)
+	}
+}

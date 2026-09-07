@@ -36,6 +36,7 @@ from .execution_intent import (
 )
 from .incident_worker import run_incident_worker
 from .liquidation_cascade import run_liquidation_cascade_scanner
+from .market_refresh import MarketRefresher, run_market_refresher
 from .monitor import run_position_monitor
 from .paper import run_paper_monitor
 from .reconciliation import STARTUP_BLOCKER
@@ -127,6 +128,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         log.info("startup.preload_markets", count=len(market_exchanges))
         await _preload_markets(market_exchanges)
 
+    # The catalog loaded above used to be the ONLY one this process ever saw,
+    # so an instrument listed afterwards stayed unresolvable until a restart
+    # (ENG-031). The refresher owns the same client objects, so a reload is
+    # visible to every component that already holds them.
+    market_refresher = MarketRefresher(
+        strategy_exchanges,
+        min_interval_seconds=cfg.market_refresh_min_interval_seconds,
+    )
+
     writer_rdb = (
         aioredis.from_url(
             f"redis://{host}:{port}",
@@ -203,6 +213,23 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
             enabled=bool(cfg.db_url),
         ),
         WorkerSpec(
+            name="market_refresher",
+            factory=lambda tr: run_market_refresher(
+                market_refresher,
+                interval_seconds=cfg.market_refresh_interval_seconds,
+                tracker=tr,
+            ),
+            # Degraded, not fatal: a stale catalog costs evaluations, which is
+            # exactly the harm this fixes, but it is not a reason to take the
+            # service down and lose the strategies that ARE resolving.
+            policy=WorkerRestartPolicy.BOUNDED_DEGRADED,
+            is_critical=False,
+            restart_budget=5,
+            restart_window_seconds=300.0,
+            stale_timeout_seconds=cfg.market_refresh_interval_seconds * 3,
+            enabled=bool(strategy_exchanges),
+        ),
+        WorkerSpec(
             name="signal_trader",
             factory=lambda tr: run_signal_trader(
                 strategy_exchanges,
@@ -211,6 +238,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
                 pump_short_broker,
                 tr,
                 worker_gate=supervisor.gate,
+                market_refresher=market_refresher,
             ),
             policy=WorkerRestartPolicy.NEVER,
             is_critical=True,

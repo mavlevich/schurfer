@@ -241,10 +241,42 @@ def test_source_args_normalizes_optional_numeric_fields() -> None:
     args = _source_args(7, exchange)
 
     assert args[0:3] == (7, "bybit", "BTCUSDT")
-    assert args[3:15] == (None,) * 12
-    assert args[15:18] == (40.0, 40.0, 40.0)
-    assert args[18:22] == (None, None, None, None)
-    assert args[22] == args[23] == datetime.fromtimestamp(1_800_000_000, tz=UTC)
+    # Identity, asset class, contract size and the two ticker timestamps are all
+    # absent from this fixture and must bind as NULL rather than a default.
+    assert args[3:20] == (None,) * 17
+    assert args[20:23] == (40.0, 40.0, 40.0)
+    assert args[23:27] == (None, None, None, None)
+    assert args[27] == args[28] == datetime.fromtimestamp(1_800_000_000, tz=UTC)
+
+
+def test_source_args_carry_the_asset_class_and_its_evidence() -> None:
+    """ENG-018: the class and the evidence behind it are persisted together, so
+    a wrong mapping is auditable rather than an unexplained label."""
+    exchange = _ex("100", 40.0, "110")
+    exchange.update(
+        {
+            "asset_class": "tokenized_equity",
+            "asset_class_source": "curated",
+            "asset_class_evidence": "lbank:DJT",
+            "asset_class_confidence": "curated_reported",
+            "asset_class_version": "asset_class_v1",
+        }
+    )
+
+    args = _source_args(7, exchange)
+
+    assert args[11:16] == (
+        "tokenized_equity",
+        "curated",
+        "lbank:DJT",
+        "curated_reported",
+        "asset_class_v1",
+    )
+    assert _UPSERT_EVENT_SOURCE.count("%s") == len(args)
+    # An established class is never erased by a later batch that could not
+    # classify the instrument, and an existing `unknown` is replaced once one
+    # can be.
+    assert "EXCLUDED.asset_class <> 'unknown'" in _UPSERT_EVENT_SOURCE
 
 
 def test_source_args_preserves_instrument_identity_and_timestamps() -> None:
@@ -267,7 +299,7 @@ def test_source_args_preserves_instrument_identity_and_timestamps() -> None:
 
     args = _source_args(7, exchange)
 
-    assert args[3:12] == (
+    assert args[3:11] == (
         "bingx:swap:GMEROBINHOOD-USDT:1784805000000",
         "GMEROBINHOOD-USDT",
         "GMEROBINHOOD/USDT:USDT",
@@ -276,12 +308,12 @@ def test_source_args_preserves_instrument_identity_and_timestamps() -> None:
         "GMEROBINHOOD",
         "USDT",
         "USDT",
-        1.0,
     )
-    assert args[12].isoformat() == "2026-07-23T11:10:00+00:00"
-    assert args[13].isoformat() == "2026-07-23T11:26:40+00:00"
-    assert args[14] == args[13]
-    assert args[22] == args[23] == datetime.fromtimestamp(1_800_000_000, tz=UTC)
+    assert args[16] == 1.0
+    assert args[17].isoformat() == "2026-07-23T11:10:00+00:00"
+    assert args[18].isoformat() == "2026-07-23T11:26:40+00:00"
+    assert args[19] == args[18]
+    assert args[27] == args[28] == datetime.fromtimestamp(1_800_000_000, tz=UTC)
     assert _UPSERT_EVENT_SOURCE.count("%s") == len(args)
     assert "identity_conflict" in _UPSERT_EVENT_SOURCE
     assert "market_id <> EXCLUDED.market_id" in _UPSERT_EVENT_SOURCE

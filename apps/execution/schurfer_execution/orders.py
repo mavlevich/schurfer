@@ -8,7 +8,7 @@ import structlog
 from . import exit as exit_module
 from . import incidents, journal, notify, order_attempts
 from .account import fetch_margin_balance, fetch_positions
-from .fill_price import FILL_UNRESOLVED, resolve_fill_price
+from .fill_price import FILL_NONE, FILL_PARTIAL, FILL_UNRESOLVED, resolve_fill_price
 from .journal import revoke_pnl_readiness
 from .order_lock import OrderLockLease
 from .risk import (
@@ -39,6 +39,7 @@ async def _handle_unresolved_open(
     side: str,
     size_usd: float,
     leverage: int,
+    contract_size: float,
     setup_context: dict[str, Any] | None,
 ) -> dict[str, Any]:
     """The order is confirmed placed on the exchange, but its fill price is not.
@@ -62,6 +63,10 @@ async def _handle_unresolved_open(
                 "side": side,
                 "size_usd": size_usd,
                 "leverage": leverage,
+                # Recovery needs this to turn a later-confirmed filled amount
+                # into a real notional instead of re-journalling the requested
+                # size_usd above (ENG-022 / audit C-3).
+                "contract_size": contract_size,
                 "setup_context": setup_context,
             },
         )
@@ -428,11 +433,47 @@ async def place_order(
         resolution = await resolve_fill_price(
             ex, symbol=symbol, order=order, requested_amount=amount
         )
+
+        if resolution.status == FILL_NONE:
+            # The exchange positively reports that nothing executed (a market
+            # order converted to IOC and cancelled for lack of liquidity, for
+            # instance). There is no position, so there is nothing to protect,
+            # nothing to journal and nothing to track.
+            #
+            # This has to come BEFORE the protective stop below, not after it.
+            # A reduceOnly stop against a position that does not exist is
+            # rejected by the venue, which would drop us into the stop-failure
+            # fail-safe: it force-closes (also failing, there is nothing to
+            # close) and returns early with an "UNPROTECTED position" reason
+            # that is not true, never reaching mark_failed -- leaving the
+            # durable attempt row pending forever (colleague review).
+            await rdb.delete(f"position:opened_at:{exchange}:{base.upper()}")
+            reason = f"exchange reports no fill for order {order_id} -- no position opened"
+            if db_url and attempt_id is not None:
+                await order_attempts.mark_failed(db_url, attempt_id, error=reason)
+            log.warning(
+                "execution.order.no_fill",
+                base=base,
+                exchange=exchange,
+                order_id=order_id,
+                requested_amount=amount,
+            )
+            return {"allowed": False, "reason": reason, "fill_status": FILL_NONE}
+
         # The protective stop must exist even if the fill price cannot be confirmed
         # yet — an unprotected position is worse than one sized off the best
         # available reference. This reference price is never recorded as the fill:
         # accounting/journal stays blocked on resolution.price, not on this.
         sl_reference_price = resolution.price if resolution.price is not None else price
+        # Protect what actually filled when the exchange has told us, and the
+        # full requested amount otherwise. The stop is reduceOnly either way,
+        # so an amount larger than the real position cannot over-close; this
+        # only avoids resting a stop for volume that does not exist.
+        sl_amount = (
+            resolution.filled_amount
+            if resolution.filled_amount is not None and resolution.filled_amount > 0
+            else amount
+        )
         stop_side = "buy" if ccxt_side == "sell" else "sell"
         trigger_price = (
             sl_reference_price * (1 + initial_sl_pct / 100)
@@ -446,7 +487,7 @@ async def place_order(
             sl_order = await ex.create_stop_market_order(
                 symbol,
                 stop_side,
-                amount,
+                sl_amount,
                 trigger_price,
                 params={"reduceOnly": True, "clientOrderId": sl_client_order_id},
             )
@@ -529,6 +570,7 @@ async def place_order(
                 side=side,
                 size_usd=size_usd,
                 leverage=leverage,
+                contract_size=contract_size,
                 setup_context=setup_context,
             )
             if db_url and attempt_id is not None:
@@ -547,6 +589,36 @@ async def place_order(
         # exchange position) was never at risk, only the ledger was
         # (colleague review candidate on an earlier draft).
         assert resolution.price is not None
+        # The notional that actually executed, not the one that was requested.
+        # A partial entry used to be journalled at the full requested size, so
+        # the ledger claimed exposure the exchange never gave us and every
+        # downstream net-economics number inherited that error (ENG-022 /
+        # audit C-3). When the venue reports no filled volume at all the
+        # requested size is the only figure available -- that fallback is
+        # logged rather than silent, because it is exactly the case where the
+        # ledger can still overstate a partial fill.
+        if resolution.filled_amount is not None and resolution.filled_amount > 0:
+            filled_usd = round(resolution.filled_amount * resolution.price * contract_size, 2)
+        else:
+            filled_usd = actual_usd
+            log.warning(
+                "execution.order.filled_volume_unknown",
+                base=base,
+                exchange=exchange,
+                order_id=order_id,
+                journalled_usd=filled_usd,
+            )
+        if resolution.status == FILL_PARTIAL:
+            log.warning(
+                "execution.order.partial_fill",
+                base=base,
+                exchange=exchange,
+                order_id=order_id,
+                requested_amount=amount,
+                filled_amount=resolution.filled_amount,
+                requested_usd=actual_usd,
+                filled_usd=filled_usd,
+            )
         trade_id = await journal.complete_open(
             db_url,
             rdb,
@@ -555,7 +627,7 @@ async def place_order(
             base=base,
             side=side,
             order_id=str(order_id) if order_id is not None else None,
-            size_usd=actual_usd,
+            size_usd=filled_usd,
             leverage=leverage,
             entry_price=resolution.price,
             exit_params=exit_params,
@@ -594,7 +666,7 @@ async def place_order(
                 trade_id=None,
                 context={
                     "side": side,
-                    "size_usd": actual_usd,
+                    "size_usd": filled_usd,
                     "leverage": leverage,
                     "setup_context": setup_context,
                     "exit_params": exit_params,
@@ -641,7 +713,9 @@ async def place_order(
             "exchange": exchange,
             "base": base,
             "side": side,
-            "size_usd": size_usd,
+            "size_usd": filled_usd,
+            "requested_size_usd": actual_usd,
+            "filled_amount": resolution.filled_amount,
             "leverage": leverage,
             "price": resolution.price,
             "status": order.get("status"),
@@ -726,6 +800,33 @@ async def close_position(
         resolution = await resolve_fill_price(
             ex, symbol=symbol, order=order, requested_amount=amount
         )
+        if resolution.status == FILL_NONE:
+            # The close order executed nothing, so the position is still open
+            # and still ours to protect. Never report this as closed: the
+            # caller would commit a journal close and drop exit tracking for a
+            # position that is still on the exchange (ENG-022 / audit C-3).
+            # The protective stop was already cancelled above, so say so --
+            # the position is currently unprotected and needs another attempt.
+            log.error(
+                "execution.position.close_no_fill",
+                base=base,
+                exchange=exchange,
+                order_id=order_id,
+                requested_amount=amount,
+            )
+            return {
+                "closed": False,
+                "fill_status": FILL_NONE,
+                "order_id": order_id,
+                "exchange": exchange,
+                "base": base,
+                "side": position_side,
+                "reason": (
+                    f"close order {order_id} filled nothing -- position still open "
+                    f"and its protective stop was cancelled; retry the close"
+                ),
+            }
+
         if resolution.status == FILL_UNRESOLVED:
             close_order_id = str(order_id) if order_id is not None else f"unknown:{uuid.uuid4()}"
             return await _handle_unresolved_close(

@@ -28,6 +28,8 @@ async def test_disabled_strategy_workers_do_not_crash_startup() -> None:
         pump_short_mode=None,
         early_momentum_mode=None,
         liquidation_cascade_mode=None,
+        market_refresh_interval_seconds=900.0,
+        market_refresh_min_interval_seconds=60.0,
     )
     rdb = MagicMock()
     rdb.set = AsyncMock(return_value=True)

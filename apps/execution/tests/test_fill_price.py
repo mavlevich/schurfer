@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from schurfer_execution.fill_price import (
     FILL_CONFIRMED,
+    FILL_NONE,
     FILL_PARTIAL,
     FILL_UNRESOLVED,
     resolve_fill_price,
@@ -23,20 +24,90 @@ def _exchange(**overrides: Any) -> MagicMock:
 
 async def test_prefers_order_average() -> None:
     result = await resolve_fill_price(
-        _exchange(), symbol="BEAT/USDT:USDT", order={"id": "1", "average": 1.23, "price": 9.99}
+        _exchange(),
+        symbol="BEAT/USDT:USDT",
+        order={"id": "1", "average": 1.23, "price": 9.99, "filled": 10.0},
     )
     assert result.status == FILL_CONFIRMED
     assert result.price == 1.23
     assert result.source == "order.average"
+    assert result.filled_amount == 10.0
 
 
 async def test_falls_back_to_order_price() -> None:
     result = await resolve_fill_price(
-        _exchange(), symbol="BEAT/USDT:USDT", order={"id": "1", "average": None, "price": 1.5}
+        _exchange(),
+        symbol="BEAT/USDT:USDT",
+        order={"id": "1", "average": None, "price": 1.5, "filled": 10.0},
     )
     assert result.status == FILL_CONFIRMED
     assert result.price == 1.5
     assert result.source == "order.price"
+
+
+class TestFillEvidenceIsRequired:
+    """Regression for ENG-022 / audit C-3: a price was reported as a confirmed
+    fill with no filled volume behind it at all, so an order that never
+    executed was journalled as a real open position at whatever average the
+    payload happened to carry."""
+
+    async def test_zero_filled_with_a_price_is_not_a_fill(self) -> None:
+        result = await resolve_fill_price(
+            _exchange(),
+            symbol="BEAT/USDT:USDT",
+            order={"id": "1", "average": 1.23, "filled": 0.0},
+            requested_amount=10.0,
+        )
+        assert result.status == FILL_NONE
+        assert result.price is None
+        assert result.filled_amount == 0.0
+
+    async def test_missing_filled_field_still_resolves_but_reports_no_volume(self) -> None:
+        """Unknown volume is not the same as zero: an exchange that simply does
+        not report `filled` still gives a usable price, and the caller is the
+        one that must not turn a None filled_amount into an assumed full
+        fill."""
+        result = await resolve_fill_price(
+            _exchange(), symbol="BEAT/USDT:USDT", order={"id": "1", "average": 1.23}
+        )
+        assert result.status == FILL_CONFIRMED
+        assert result.price == 1.23
+        assert result.filled_amount is None
+
+    async def test_zero_filled_create_response_settles_on_refetch(self) -> None:
+        """A market order can report nothing filled in the immediate create
+        response and settle a moment later, so the chain re-fetches before
+        calling it a no-fill."""
+        ex = _exchange()
+        ex.fetch_order = AsyncMock(return_value={"id": "1", "average": 1.5, "filled": 10.0})
+
+        result = await resolve_fill_price(
+            ex,
+            symbol="BEAT/USDT:USDT",
+            order={"id": "1", "average": 1.23, "filled": 0.0},
+            requested_amount=10.0,
+        )
+
+        assert result.status == FILL_CONFIRMED
+        assert result.price == 1.5
+        assert result.filled_amount == 10.0
+        assert result.source == "refetch.order.average"
+
+    async def test_zero_filled_confirmed_by_trades_lookup_is_no_fill(self) -> None:
+        ex = _exchange()
+        ex.has = {"fetchOrderTrades": True}
+        ex.fetch_order = AsyncMock(return_value={"id": "1", "average": 1.23, "filled": 0.0})
+        ex.fetch_order_trades = AsyncMock(return_value=[])
+
+        result = await resolve_fill_price(
+            ex,
+            symbol="BEAT/USDT:USDT",
+            order={"id": "1", "average": 1.23, "filled": 0.0},
+            requested_amount=10.0,
+        )
+
+        assert result.status == FILL_NONE
+        assert result.price is None
 
 
 async def test_falls_back_to_cost_over_filled() -> None:

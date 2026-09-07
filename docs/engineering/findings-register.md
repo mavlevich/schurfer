@@ -586,8 +586,13 @@ verify`, `make deadcode`, `pre-commit run --all-files`, and 13 black-box tests t
 
 ### ENG-024 — Verify coverage artifacts and trace partial-outcome consumers
 
-- **Status / priority:** fingerprint fix `planned`, `P2` / `P1` for formal evidence
-  relying on it; partial-outcome impact `reported`; E-04/M-8, B06.
+- **Status / priority:** fingerprint fix `fixed in code`; partial-outcome impact still
+  `reported`; E-04/M-8, B06. The audit now hashes the bytes it actually read, refuses a
+  file whose fingerprint is not the one it was built against unless that is stated
+  explicitly, validates the episode shape, and reports the verified identity and path
+  instead of a constant. The September audit's own synthetic `[]` is rejected by name in
+  the regression tests. The partial-outcome consumer tracing is untouched and remains
+  open.
 - **Evidence:** `cex_activity_path_coverage_audit.py:230` reads an arbitrary JSON and
   `render_markdown` prints `_AUDITED_ARTIFACT_FINGERPRINT` without validating that
   input. The audit accepted a synthetic unrelated `[]`. This is now merged code.
@@ -710,6 +715,62 @@ verify` accepts, and the tree passes it with no baseline file or blanket nolint.
   fast with a clear message instead of contacting a real service; the existing
   real-PostgreSQL integration tests still run; no test in a full offline run performs
   outbound network I/O.
+
+### ENG-031 — Refresh instrument catalogs while the service runs
+
+- **Status / priority:** `confirmed`, `P1`; found on 2026-09-07 by investigating why
+  two specific tokens produced no evaluation, not by an audit.
+- **Evidence:** `main._preload_markets` loads each client's catalog once at startup and
+  nothing refreshes it afterwards, while `symbols.resolve_execution_instrument` reads
+  that in-memory `client.markets` dict. An instrument listed after the process started
+  is therefore unresolvable for the whole lifetime of that process. In production
+  AMEMECOIN was onboarded on bingx on 2026-09-04 while the execution container had run
+  since roughly 2026-08-28; its episode `12200` reached +480.15% over sixteen hours and
+  the trader wrote 29 consecutive `skipped` / `execution_instrument_unresolved`
+  decisions across thirteen hours of it, from +31% to +290%. The first evaluation after
+  a deploy restarted the service opened a paper trade on the same instrument at +209%.
+  Resolving `AMEMECOIN` against a freshly loaded bingx catalog succeeds, confirming the
+  symbol itself was never the problem.
+- **Scale:** in the thirty days to 2026-09-07 the same reason accounts for 816 skipped
+  evaluations: lbank 301 across 11 bases (max pump 844%), mexc 209 across 15, bingx 130
+  across 9, bybit 93, gate 74, bitget 5 (max 907%), binance 4.
+- **Why it matters:** the strategy family is new-listing pumps, so the blind spot lines
+  up exactly with the instruments the system exists to evaluate. Production runs paper,
+  so the cost is not missed trades but missed evidence: observations that candidate
+  promotion depends on were never generated at all.
+- **Bounded remediation:** one refresher owning the same client objects every component
+  already holds, with a periodic sweep bounding staleness and a reload on a resolution
+  miss for the minutes-long case, both through one per-exchange cooldown so a base that
+  genuinely does not exist on a venue cannot turn every tick into an API call.
+- **Acceptance:** an instrument absent from the cached catalog resolves after a refresh;
+  repeated misses on a base that does not exist reload at most once per cooldown; a
+  failed reload still holds off the next attempt; one venue's failure does not stop the
+  others; concurrent misses on one venue reload once; and a miss retries the resolve
+  even when the refresh call itself did nothing. That last one is not cosmetic: a
+  refresh returns False for a cooldown as well as for a failure, so a trader queued
+  behind the periodic sweep's own lock gets False for a catalog that now contains the
+  listing, and two new listings on one venue inside the cooldown window hit it with no
+  concurrency at all (colleague review). Do not claim the 816 skipped
+  evaluations can be recovered: those events are gone, only future ones are protected.
+- **First production sweep, 2026-09-07:** the worker ran on schedule (two sweeps,
+  seventeen venues each) and the skipped-evaluation count went to zero and stayed there
+  for five hours while total decisions per hour held at 400-650, so the fix works. But
+  19 of those first 34 reloads failed. Reloading all seventeen venues concurrently
+  pushed several past their timeout (`load_markets` is dozens of rate-limited requests
+  for venues that paginate per category), and `asyncio.wait_for` cancelling a ccxt request
+  mid-flight left its aiohttp connector unusable, observed as
+  `File descriptor 21 is used by transport <TCPTransport closed=False reading=True>` on
+  bitget. Those clients are shared with everything else in the process, so a broken
+  connector is not confined to this worker. Fixed by sweeping one venue at a time,
+  removing the asyncio-level deadline in favour of the client's own per-request timeout,
+  and logging the exception type, since ccxt renders many errors as a bare
+  `<id> <METHOD> <url>` that does not say whether it timed out or was refused.
+- **Not covered:** CZ is a different case and not a defect. It resolved on lbank and was
+  skipped on score (`score 3 < threshold 5` at pumps up to 602%). Whether that threshold
+  is right is a strategy question needing a registered hypothesis, not a fix. Neither CZ
+  nor AMEMECOIN appears in the momentum universe at all (zero watch states, zero paper
+  probes): those strategies cover bybit and binance, these tokens live on bingx, lbank
+  and mexc.
 
 ## Promotion summary
 

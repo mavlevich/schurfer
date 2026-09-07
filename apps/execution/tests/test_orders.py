@@ -737,6 +737,177 @@ class TestExchangeStopLoss:
         assert "UNPROTECTED" in result["reason"]
 
 
+class TestFillEvidenceGovernsTheLedger:
+    """Regression for ENG-022 / audit C-3. Two related claims the ledger used
+    to make without evidence: a partial entry was journalled at the full
+    requested notional, and an order the exchange said filled nothing was
+    journalled as a real position at whatever average the payload carried."""
+
+    @staticmethod
+    def _exchange(*, order: dict[str, object]) -> MagicMock:
+        ex = MagicMock()
+        ex.markets = {"BEAT/USDT:USDT": {"contractSize": 1.0}}
+        ex.set_leverage = AsyncMock()
+        ex.fetch_ticker = AsyncMock(return_value={"last": 1.0})
+        ex.amount_to_precision = MagicMock(return_value="100.0")
+        ex.price_to_precision = MagicMock(return_value="1.1")
+        ex.create_market_order = AsyncMock(return_value=order)
+        ex.create_stop_market_order = AsyncMock(return_value={"id": "sl-1"})
+        ex.cancel_order = AsyncMock()
+        ex.fetch_order = AsyncMock(return_value=order)
+        ex.has = {}
+        return ex
+
+    @staticmethod
+    def _rdb() -> MagicMock:
+        stored: dict[str, bytes] = {}
+
+        async def _get(key: str) -> bytes | None:
+            if key == TRADING_ENABLED_KEY:
+                return b"1"
+            if key == PNL_READY_KEY:
+                return b"1"
+            return stored.get(key)
+
+        async def _set(key: str, value: object, **_kw: object) -> bool:
+            stored[key] = str(value).encode()
+            return True
+
+        async def _delete(key: str) -> int:
+            return 1 if stored.pop(key, None) is not None else 0
+
+        rdb = MagicMock()
+        rdb.get = AsyncMock(side_effect=_get)
+        rdb.set = AsyncMock(side_effect=_set)
+        rdb.delete = AsyncMock(side_effect=_delete)
+        rdb.eval = AsyncMock(return_value=1)
+        return rdb
+
+    @patch("schurfer_execution.orders.fetch_positions", return_value=([], set()))
+    @patch(
+        "schurfer_execution.orders.fetch_margin_balance",
+        return_value=[{"exchange": "bingx", "free": 1000.0, "used": 0.0, "total": 1000.0}],
+    )
+    async def test_partial_entry_journals_the_filled_notional(
+        self, _mock_bal: MagicMock, _mock_pos: MagicMock
+    ) -> None:
+        """40 of 100 contracts filled at 1.5 is $60 of exposure, not the $100
+        that was requested."""
+        cfg = MagicMock(db_url="postgresql://x")
+        ex = self._exchange(
+            order={"id": "entry-1", "status": "closed", "average": 1.5, "filled": 40.0}
+        )
+
+        with (
+            patch(
+                "schurfer_execution.orders.journal.complete_open", AsyncMock(return_value=77)
+            ) as mock_complete,
+            patch(
+                "schurfer_execution.orders.order_attempts.create_attempt",
+                AsyncMock(return_value=1),
+            ),
+            patch("schurfer_execution.orders.order_attempts.mark_accepted", AsyncMock()),
+            patch("schurfer_execution.orders.order_attempts.mark_completed", AsyncMock()),
+        ):
+            result = await place_order(**_kwargs(exchanges={"bingx": ex}, cfg=cfg))
+
+        assert result["allowed"]
+        assert result["fill_status"] == "partial"
+        assert mock_complete.call_args.kwargs["size_usd"] == 60.0
+        assert result["size_usd"] == 60.0
+        assert result["requested_size_usd"] == 100.0
+        # The protective stop covers what actually filled, not the request.
+        assert ex.create_stop_market_order.call_args.args[2] == 40.0
+
+    @patch("schurfer_execution.orders.fetch_positions", return_value=([], set()))
+    @patch(
+        "schurfer_execution.orders.fetch_margin_balance",
+        return_value=[{"exchange": "bingx", "free": 1000.0, "used": 0.0, "total": 1000.0}],
+    )
+    async def test_zero_fill_opens_no_position_and_leaves_no_resting_stop(
+        self, _mock_bal: MagicMock, _mock_pos: MagicMock
+    ) -> None:
+        cfg = MagicMock(db_url="postgresql://x")
+        ex = self._exchange(
+            order={"id": "entry-1", "status": "canceled", "average": 1.5, "filled": 0.0}
+        )
+        # What a real venue does with a reduceOnly stop when no position
+        # exists. If the no-fill check ever moves back below the protective
+        # stop, this rejection drops the call into the stop-failure fail-safe,
+        # which returns early with a false "UNPROTECTED position" reason and
+        # never marks the durable attempt failed (colleague review).
+        ex.create_stop_market_order = AsyncMock(
+            side_effect=RuntimeError("reduceOnly rejected: no position")
+        )
+        rdb = self._rdb()
+
+        with (
+            patch(
+                "schurfer_execution.orders.journal.complete_open", AsyncMock(return_value=77)
+            ) as mock_complete,
+            patch(
+                "schurfer_execution.orders.order_attempts.create_attempt",
+                AsyncMock(return_value=1),
+            ),
+            patch("schurfer_execution.orders.order_attempts.mark_accepted", AsyncMock()),
+            # Patched so that a regression which lets this path reach the
+            # completion write cannot open a real database connection.
+            patch("schurfer_execution.orders.order_attempts.mark_completed", AsyncMock()),
+            patch(
+                "schurfer_execution.orders.order_attempts.mark_failed", AsyncMock()
+            ) as mock_failed,
+        ):
+            result = await place_order(**_kwargs(rdb=rdb, exchanges={"bingx": ex}, cfg=cfg))
+
+        assert not result["allowed"]
+        assert result["fill_status"] == "none"
+        assert "no fill" in result["reason"]
+        # No ledger entry for a position that does not exist.
+        mock_complete.assert_not_awaited()
+        # Nothing to protect, so no stop is attempted at all: no rejected
+        # reduceOnly order, no fail-safe force-close, no stray resting stop for
+        # the next real position on this instrument to inherit.
+        ex.create_stop_market_order.assert_not_awaited()
+        ex.cancel_order.assert_not_awaited()
+        # The durable attempt row is closed out rather than left pending.
+        mock_failed.assert_awaited_once()
+
+    async def test_close_that_fills_nothing_is_not_reported_closed(self) -> None:
+        """The caller commits a journal close and drops exit tracking off
+        `closed`, so claiming it for an order that executed nothing would
+        abandon a position that is still on the exchange."""
+        ex = MagicMock()
+        ex.markets = {"BEAT/USDT:USDT": {"contractSize": 1.0}}
+        ex.fetch_positions = AsyncMock(
+            return_value=[
+                {"symbol": "BEAT/USDT:USDT", "contracts": 10.0, "side": "short", "markPrice": 1.0}
+            ]
+        )
+        ex.amount_to_precision = MagicMock(return_value="10.0")
+        ex.cancel_order = AsyncMock()
+        ex.create_market_order = AsyncMock(
+            return_value={"id": "close-1", "status": "canceled", "average": 1.0, "filled": 0.0}
+        )
+        ex.fetch_order = AsyncMock(
+            return_value={"id": "close-1", "status": "canceled", "average": 1.0, "filled": 0.0}
+        )
+        ex.has = {}
+        rdb = self._rdb()
+
+        result = await close_position(
+            exchanges={"bingx": ex},
+            exchange="bingx",
+            base="BEAT",
+            symbol="BEAT/USDT:USDT",
+            reason="manual",
+            rdb=rdb,
+        )
+
+        assert result["closed"] is False
+        assert result["fill_status"] == "none"
+        assert "still open" in result["reason"]
+
+
 class TestCompletesJournalOnFill:
     """place_order's happy path now completes journal.complete_open itself
     (see journal.py's own docstring on why), instead of leaving it to
