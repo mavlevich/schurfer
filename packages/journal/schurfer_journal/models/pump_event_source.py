@@ -41,6 +41,15 @@ class PumpEventSource(Base):
     base_asset: Mapped[str | None] = mapped_column(String(64), nullable=True)
     quote_asset: Mapped[str | None] = mapped_column(String(32), nullable=True)
     settle_asset: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # What is being traded, as opposed to market_type's swap/future. Nullable
+    # because every row written before the classifier existed has no evidence
+    # for it, and backfilling a guess would be worse than an honest NULL
+    # (ENG-018).
+    asset_class: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    asset_class_source: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    asset_class_evidence: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    asset_class_confidence: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    asset_class_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
     contract_size: Mapped[float | None] = mapped_column(Double(), nullable=True)
     onboarded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     first_ticker_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

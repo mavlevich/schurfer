@@ -31,6 +31,14 @@ def test_bingx_identity_preserves_display_alias_and_launch_version() -> None:
         "settle_asset": "USDT",
         "contract_size": 1.0,
         "onboarded_at_ms": 1_784_805_000_000,
+        # BingX exposes no asset-class field over 1126 USDT linear instruments,
+        # so this one is honestly unclassified rather than assumed crypto --
+        # note the fixture is itself a tokenized equity (ENG-018).
+        "asset_class": "unknown",
+        "asset_class_source": "venue_field_absent",
+        "asset_class_evidence": None,
+        "asset_class_confidence": None,
+        "asset_class_version": "asset_class_v1",
     }
 
 
