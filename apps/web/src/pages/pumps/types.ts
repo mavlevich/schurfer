@@ -14,6 +14,11 @@ export interface ExchangeEntry {
   volume_24h_source?: 'quote_volume' | 'unavailable';
   ticker_timestamp_ms?: number | null;
   observed_at_ms?: number | null;
+  // What the instrument tracks, not just that it is a perpetual (ENG-018).
+  // Absent for an entry captured before the classifier existed; 'unknown'
+  // means it was classified and the venue exposes no usable class field.
+  asset_class?: string;
+  asset_class_source?: string;
 }
 
 export interface PumpEntry {
