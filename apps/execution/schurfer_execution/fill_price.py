@@ -15,6 +15,11 @@ from typing import Any
 
 FILL_CONFIRMED = "confirmed"
 FILL_PARTIAL = "partial"
+# The exchange positively reports that nothing was filled. Distinct from
+# `unresolved` (we do not know) and from `confirmed` (we know it filled): a
+# zero-fill order opened no position, so the caller must unwind rather than
+# journal an entry or claim a close (ENG-022 / audit C-3).
+FILL_NONE = "none"
 FILL_UNRESOLVED = "unresolved"
 
 _DEFAULT_TIMEOUT_SECONDS = 10.0
@@ -23,7 +28,7 @@ _PARTIAL_FILL_TOLERANCE = 0.001  # 0.1% rounding slack before calling a fill par
 
 @dataclass(frozen=True)
 class FillResolution:
-    status: str  # confirmed | partial | unresolved
+    status: str  # confirmed | partial | none | unresolved
     price: float | None
     source: str
     filled_amount: float | None
@@ -37,9 +42,23 @@ def _finite_positive(value: Any) -> float | None:
     return parsed if math.isfinite(parsed) and parsed > 0 else None
 
 
+def _finite_non_negative(value: Any) -> float | None:
+    """Filled volume specifically: an explicit 0 is evidence, not absence.
+
+    `_finite_positive` collapses "filled 0" and "no filled field at all" into
+    the same None, which is what let a zero-fill order with a stale average
+    price be reported as a confirmed fill.
+    """
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if math.isfinite(parsed) and parsed >= 0 else None
+
+
 def _from_order_fields(order: dict[str, Any]) -> tuple[float | None, float | None, str | None]:
     """Try average, then price, then cost/filled. Returns (price, filled_amount, source)."""
-    filled = _finite_positive(order.get("filled"))
+    filled = _finite_non_negative(order.get("filled"))
     average = _finite_positive(order.get("average"))
     if average is not None:
         return average, filled, "order.average"
@@ -47,7 +66,7 @@ def _from_order_fields(order: dict[str, Any]) -> tuple[float | None, float | Non
     if price is not None:
         return price, filled, "order.price"
     cost = _finite_positive(order.get("cost"))
-    if cost is not None and filled is not None:
+    if cost is not None and filled is not None and filled > 0:
         return cost / filled, filled, "order.cost_filled"
     return None, filled, None
 
@@ -101,6 +120,23 @@ def _status_for(filled_amount: float | None, requested_amount: float | None) -> 
     return FILL_CONFIRMED
 
 
+def _resolved(
+    *, price: float, filled_amount: float | None, requested_amount: float | None, source: str
+) -> FillResolution:
+    return FillResolution(
+        status=_status_for(filled_amount, requested_amount),
+        price=price,
+        source=source,
+        filled_amount=filled_amount,
+    )
+
+
+def _unresolved() -> FillResolution:
+    return FillResolution(
+        status=FILL_UNRESOLVED, price=None, source="unresolved", filled_amount=None
+    )
+
+
 async def resolve_fill_price(
     exchange: Any,
     *,
@@ -113,48 +149,69 @@ async def resolve_fill_price(
 
     Priority: order.average -> order.price -> order.cost/filled -> re-fetch the
     order and retry the same chain -> VWAP of confirmed trades tied to the order
-    id -> unresolved. Ticker/mark price is never used as a substitute.
+    id -> no_fill or unresolved. Ticker/mark price is never used as a substitute.
+
+    An explicit filled=0 is never reported as a fill, whatever price the payload
+    carries alongside it: that is what let an order which executed nothing be
+    journalled as a real position at a stale average (ENG-022 / audit C-3).
+    Such an order is re-checked and then reported as `none`. A missing filled
+    field is a different thing, unknown volume rather than zero, and still
+    resolves on price as before; callers that need a real notional must handle
+    filled_amount being None rather than assume a full fill.
     """
     order_id = order.get("id")
     price, filled_amount, source = _from_order_fields(order)
-    if price is not None and source is not None:
-        return FillResolution(
-            status=_status_for(filled_amount, requested_amount),
+    if price is not None and source is not None and filled_amount != 0:
+        return _resolved(
             price=price,
-            source=source,
             filled_amount=filled_amount,
+            requested_amount=requested_amount,
+            source=source,
         )
 
     if order_id is None:
-        return FillResolution(
-            status=FILL_UNRESOLVED, price=None, source="unresolved", filled_amount=None
-        )
+        return _unresolved()
 
+    # Either there is no price yet, or the exchange reported an explicit
+    # filled=0 next to one. A zero-filled order executed nothing, so its
+    # average is not a fill price and must not be returned as one; that is what
+    # let an order which never executed be journalled as a real position
+    # (ENG-022 / audit C-3). Re-fetch before concluding: a market order can
+    # report zero filled in the immediate create response and settle a moment
+    # later. A missing filled field is a different case and still resolves
+    # normally above -- unknown volume, not zero.
     try:
         refreshed = await asyncio.wait_for(
             exchange.fetch_order(order_id, symbol), timeout=timeout_seconds
         )
     except Exception:
         refreshed = None
+    refreshed_filled: float | None = None
     if isinstance(refreshed, dict):
-        price, filled_amount, source = _from_order_fields(refreshed)
-        if price is not None and source is not None:
-            return FillResolution(
-                status=_status_for(filled_amount, requested_amount),
-                price=price,
-                source=f"refetch.{source}",
-                filled_amount=filled_amount,
+        refreshed_price, refreshed_filled, refreshed_source = _from_order_fields(refreshed)
+        if refreshed_price is not None and refreshed_source is not None and refreshed_filled != 0:
+            return _resolved(
+                price=refreshed_price,
+                filled_amount=refreshed_filled,
+                requested_amount=requested_amount,
+                source=f"refetch.{refreshed_source}",
             )
 
     vwap, trade_amount = await _vwap_from_trades(exchange, symbol, order_id, timeout_seconds)
-    if vwap is not None:
-        return FillResolution(
-            status=_status_for(trade_amount, requested_amount),
+    if vwap is not None and trade_amount is not None and trade_amount > 0:
+        return _resolved(
             price=vwap,
-            source="trades.vwap",
             filled_amount=trade_amount,
+            requested_amount=requested_amount,
+            source="trades.vwap",
         )
 
-    return FillResolution(
-        status=FILL_UNRESOLVED, price=None, source="unresolved", filled_amount=None
-    )
+    # Nothing filled, positively: both the freshest order view and the trade
+    # history agree there is no executed volume. Reported as its own status so
+    # the caller unwinds instead of opening incident-driven retries for a fill
+    # that is never going to arrive.
+    latest_filled = refreshed_filled if refreshed_filled is not None else filled_amount
+    if latest_filled == 0:
+        return FillResolution(status=FILL_NONE, price=None, source="no_fill", filled_amount=0.0)
+
+    return _unresolved()
