@@ -9,6 +9,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    Text,
     UniqueConstraint,
     func,
 )
@@ -47,7 +48,10 @@ class PumpEventSource(Base):
     # (ENG-018).
     asset_class: Mapped[str | None] = mapped_column(String(32), nullable=True)
     asset_class_source: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    asset_class_evidence: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    # TEXT, not a bounded varchar: this is built from venue-controlled values,
+    # and a venue that suddenly returns a longer payload must never be able to
+    # fail the scanner's whole batch upsert (migration 0045).
+    asset_class_evidence: Mapped[str | None] = mapped_column(Text(), nullable=True)
     asset_class_confidence: Mapped[str | None] = mapped_column(String(32), nullable=True)
     asset_class_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
     contract_size: Mapped[float | None] = mapped_column(Double(), nullable=True)

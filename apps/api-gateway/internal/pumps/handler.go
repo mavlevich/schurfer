@@ -58,6 +58,14 @@ type exchangeEntry struct {
 	Volume24hSource   string   `json:"volume_24h_source"`
 	TickerTimestampMS *int64   `json:"ticker_timestamp_ms"`
 	ObservedAtMS      *int64   `json:"observed_at_ms"`
+	// What the instrument actually tracks, as opposed to market_type's
+	// swap/future (ENG-018). Written by the scanner's own classifier and
+	// round-tripped through pumps:latest unchanged. Empty for an entry
+	// captured before the classifier existed; "unknown" means it WAS
+	// classified and the venue exposes no usable class field, which is a
+	// different thing the frontend must be able to tell apart.
+	AssetClass       string `json:"asset_class,omitempty"`
+	AssetClassSource string `json:"asset_class_source,omitempty"`
 }
 
 type pumpEntry struct {
