@@ -6,14 +6,24 @@ against production was performed and verified)."""
 
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+import pytest
 from schurfer_analytics.cex_activity_path_coverage_audit import (
+    ArtifactVerificationError,
+    PathCoverageAuditReport,
     _RawMinute,
     _unresolved_requests_from_artifact,
     audit_one_request,
+    load_verified_artifact,
+    render_markdown,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 _ENTRY_AT = datetime(2026, 8, 20, 15, 32, tzinfo=UTC)
 
@@ -137,3 +147,109 @@ def test_unresolved_requests_from_artifact_only_includes_incomplete_24h_path() -
     assert requests[0].direction == "buy"
     assert requests[1].kind == "control"
     assert requests[1].symbol == "AUSDT"
+
+
+class TestArtifactVerification:
+    """ENG-024 / audit E-04: the audit read whatever file --artifact-path named
+    and rendered the result under a hardcoded fingerprint, so the September
+    audit fed it a synthetic `[]` and got a clean report carrying the frozen
+    artifact's identity. The report's own header was therefore not evidence of
+    what had been audited."""
+
+    @staticmethod
+    def _episode() -> dict[str, object]:
+        return {
+            "direction": "long",
+            "signal_path": {
+                "symbol": "BTCUSDT",
+                "entry_at": "2026-08-20T00:00:00+00:00",
+                "request_id": "req-1",
+                "unresolved_reason": "incomplete_24h_path",
+            },
+            "control_paths": [],
+        }
+
+    def _write(self, tmp_path: Path, payload: object) -> tuple[Path, str]:
+        raw = json.dumps(payload).encode()
+        path = tmp_path / "data.json"
+        path.write_bytes(raw)
+        return path, hashlib.sha256(raw).hexdigest()
+
+    def test_reports_the_fingerprint_of_the_file_it_actually_read(self, tmp_path: Path) -> None:
+        path, digest = self._write(tmp_path, [self._episode()])
+
+        artifact = load_verified_artifact(path, expected_fingerprint=digest)
+
+        assert artifact.fingerprint == digest
+        assert artifact.path == path
+        assert len(artifact.episodes) == 1
+
+    def test_a_different_artifact_fails_closed(self, tmp_path: Path) -> None:
+        path, digest = self._write(tmp_path, [self._episode()])
+
+        with pytest.raises(ArtifactVerificationError) as exc_info:
+            load_verified_artifact(path, expected_fingerprint="0" * 64)
+
+        message = str(exc_info.value)
+        assert digest in message
+        assert "does not match" in message
+
+    def test_the_synthetic_empty_list_from_the_audit_is_rejected(self, tmp_path: Path) -> None:
+        """The exact input the September audit used."""
+        path, digest = self._write(tmp_path, [])
+
+        with pytest.raises(ArtifactVerificationError, match="non-empty list"):
+            load_verified_artifact(path, expected_fingerprint=digest)
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {"episodes": []},
+            ["not-an-object"],
+            [{"direction": "long"}],
+            [{"signal_path": {}}],
+            [{"direction": "long", "signal_path": "not-an-object"}],
+        ],
+    )
+    def test_wrong_schema_fails_closed_even_with_a_matching_fingerprint(
+        self, tmp_path: Path, payload: object
+    ) -> None:
+        """A matching hash proves the bytes, not that they are this artifact."""
+        path, digest = self._write(tmp_path, payload)
+
+        with pytest.raises(ArtifactVerificationError):
+            load_verified_artifact(path, expected_fingerprint=digest)
+
+    def test_invalid_json_fails_closed(self, tmp_path: Path) -> None:
+        path = tmp_path / "data.json"
+        path.write_bytes(b"{not json")
+        digest = hashlib.sha256(b"{not json").hexdigest()
+
+        with pytest.raises(ArtifactVerificationError, match="not valid JSON"):
+            load_verified_artifact(path, expected_fingerprint=digest)
+
+    def test_expecting_any_artifact_still_verifies_the_shape(self, tmp_path: Path) -> None:
+        """Opting out of the fingerprint comparison is for auditing a different
+        artifact deliberately. It never means accepting anything at all."""
+        path, _ = self._write(tmp_path, [])
+
+        with pytest.raises(ArtifactVerificationError, match="non-empty list"):
+            load_verified_artifact(path, expected_fingerprint=None)
+
+    def test_render_reports_the_real_identity_and_flags_a_mismatch(self) -> None:
+        report = PathCoverageAuditReport(
+            rows=(),
+            reason_totals={},
+            reason_totals_by_kind={},
+            longest_gap_histogram={},
+            missing_minutes_by_symbol={},
+            candidate_global_outage_minutes={},
+            artifact_fingerprint="a" * 64,
+            artifact_path="/elsewhere/not-the-frozen-artifact/data.json",
+        )
+
+        rendered = render_markdown(report, code_revision="abc1234", working_tree_dirty=False)
+
+        assert "a" * 64 in rendered
+        assert "/elsewhere/not-the-frozen-artifact/data.json" in rendered
+        assert "**Not** the artifact this audit was built against" in rendered
