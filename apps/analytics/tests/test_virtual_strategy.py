@@ -16,12 +16,14 @@ from schurfer_analytics.virtual_strategy import (
     INITIAL_SL_MAX_HOLD_EXIT_MECHANICS,
     MAX_HOLD_ONLY_EXIT_MECHANICS,
     NO_PROGRESS_EXIT_POLICY,
+    PRODUCTION_EXIT_POLICY,
     RECENT_PROGRESS_EXTENSION_EXIT_POLICY,
     CostParameters,
     ExitMechanics,
     ExitParameters,
     ExitPolicy,
     MarketPath,
+    VirtualTrade,
     economics_path_bounds,
     exit_parameters,
     exit_policy_family_path_bounds,
@@ -757,3 +759,45 @@ def test_market_path_fingerprint_is_order_independent_and_content_sensitive() ->
 
     assert market_path_fingerprint((first, second)) == market_path_fingerprint((second, first))
     assert market_path_fingerprint((first, second)) != market_path_fingerprint((changed, second))
+
+
+def _flat_price_trade(price: float, policy: ExitPolicy) -> VirtualTrade:
+    """A short whose price sits flat at `price` for the whole window: it never
+    reaches the initial stop and never triggers a trail, so the only thing that
+    can close it is a time-based rule."""
+    decision = _decision(pump_pct=40.0)
+    candles = _candles(decision, close=price, exit_policy=policy)
+    return simulate_episode(_episode(decision), _path(decision, candles), exit_policy=policy)
+
+
+def test_production_policy_closes_at_60_minutes_when_trailing_never_activated() -> None:
+    """The sub-50% band activates trailing at 8%. A short sitting at 96 is up
+    4% -- not enough -- so production closes it at 60 minutes, while the policy
+    still named `production_max_hold_v1` holds it to max_hold at 180.
+    """
+    entry_ms = expected_path_bounds(_decision(pump_pct=40.0), exit_policy=PRODUCTION_EXIT_POLICY)[0]
+    entry_at = datetime.fromtimestamp(entry_ms / 1000, tz=UTC)
+
+    production = _flat_price_trade(96.0, PRODUCTION_EXIT_POLICY)
+    assert production.exit_reason == "not_activated"
+    assert production.exit_at == entry_at + timedelta(minutes=60)
+
+    baseline = _flat_price_trade(96.0, BASELINE_EXIT_POLICY)
+    assert baseline.exit_reason == "max_hold"
+    assert baseline.exit_at == entry_at + timedelta(minutes=180)
+
+
+def test_production_policy_leaves_an_activated_position_alone_at_60_minutes() -> None:
+    """Mirrors evaluate_exit's pre-activation branch: once trailing activates,
+    the 60-minute cut stops applying entirely. A short down at 90 is up 10%,
+    past the 8% activation, and must survive to max_hold.
+    """
+    trade = _flat_price_trade(90.0, PRODUCTION_EXIT_POLICY)
+    assert trade.exit_reason == "max_hold"
+
+
+def test_production_policy_still_stops_out_before_the_60_minute_cut() -> None:
+    """The cut is not a replacement for the initial stop: an adverse move past
+    8% must close as `initial_sl`, not wait for minute 60."""
+    trade = _flat_price_trade(109.0, PRODUCTION_EXIT_POLICY)
+    assert trade.exit_reason == "initial_sl"
