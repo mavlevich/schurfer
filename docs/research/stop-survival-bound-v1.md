@@ -123,3 +123,42 @@ spend weeks to measure something this thin.
 Spend the effort on path replay coverage instead. Until "which came first" is answerable,
 every stop-related question about this strategy family stays bounded rather than
 answered.
+
+---
+
+# Correction, 2026-09-07, before merge
+
+The stop model above is **not the policy this system runs**, and the numbers should be
+read accordingly.
+
+`exit.exit_params` returns a bracket, sized by pump magnitude:
+
+| pump    | initial SL | trail activates | trail | tighten after | max hold | no progress |
+| ------- | ---------: | --------------: | ----: | ------------: | -------: | ----------: |
+| < 50%   |         8% |              8% |   12% |        90 min |  180 min |      60 min |
+| 50-100% |        10% |             12% |   15% |       120 min |  240 min |      60 min |
+
+Three things follow, all of which weaken this pass:
+
+1. **The stop level is not a constant 10%.** It is 8% for the smaller pumps that make up
+   much of the low-score band, so this pass applied too wide a stop to exactly the rows
+   its conclusion rests on.
+2. **It is a trailing bracket, not a fixed stop held to the horizon.** After the trail
+   activates, the exit level moves with the position, so a run that goes favourable and
+   then reverses exits far above the initial stop.
+3. **There are two time-based exits** -- `max_hold_min` and `no_progress_min` -- that end
+   positions before 240 minutes regardless of price.
+
+The earlier claim that this is a "pessimistic bound whose truth lies between it and
+hold-to-horizon" is therefore wrong in both directions: a tighter initial stop makes it
+optimistic for some rows, while a trailing exit makes it pessimistic for others. It is
+not a bound at all. It is a calculation against a policy that does not exist.
+
+What survives the correction: the **ordering** finding from HYP-019, which does not depend
+on any exit model. What does not survive: the specific claim that the edge is eaten by the
+stop. That question is now open again, and answering it needs a replay of the real bracket
+against minute bars rather than any aggregate over stored extremes.
+
+Recorded here rather than by quietly editing the numbers above, because the mistake is the
+useful part: an analysis is only as good as its model of what the system actually does,
+and this one was checked against the code too late.
