@@ -615,6 +615,56 @@ verify`, `make deadcode`, `pre-commit run --all-files`, and 13 black-box tests t
   offsite upload is commented out. This does not prove no separate backup service
   exists. Momentum capture has `restart: 'no'`; current deployment mode and external
   monitoring must be verified. Shared-host analytics pressure is recorded history.
+- **Measured inventory, 2026-09-07** (read-only, production):
+
+  | What                                            | Size                                          |
+  | ----------------------------------------------- | --------------------------------------------- |
+  | Root filesystem                                 | 75 GB total, 49 GB used, **23 GB free** (69%) |
+  | `docker_postgres_data` volume                   | 27.4 GB                                       |
+  | Database                                        | 25 GB                                         |
+  | `timeseries.bybit_momentum_bars_1m`             | 13 GB, 52% of the database                    |
+  | `app.pump_derivatives_context_samples`          | 3.4 GB                                        |
+  | `timeseries.momentum_flow_watch_evaluations_1m` | 2.7 GB                                        |
+  | `app.trade_decisions` + outcomes                | 2.6 GB                                        |
+  | `/opt/schurfer/backups`                         | 12 GB, a single dump                          |
+
+- **The guard already cannot pass.** `backup.sh` requires `2 x` the previous compressed
+  dump free before it will start. Today's dump is 12 GB, so it needs 24 GB, and 23 GB is
+  free. The next `make prod-deploy` is blocked exactly as this morning's was, unless
+  Docker build cache is pruned first. That is not a projection; it is the arithmetic of
+  the current numbers.
+- **And growth is fast.** 27% of `bybit_momentum_bars_1m` rows and 18% of
+  `trade_decisions` rows are less than seven days old, and the dump itself went from
+  9.6 GB on 2026-09-03 to 12 GB on 2026-09-07, +25% in four days. Pruning Docker cache
+  buys days, not weeks.
+- **Compression is already applied**, so it is not an untapped win: 27 of 29
+  `bybit_momentum_bars_1m` chunks are compressed and the hypertable is 13 GB in that
+  state. Only `app.live_long_short_ratio` (378 MB) has compression off.
+- **There is no scheduled backup at all.** `backup.sh`'s own header says to run it from
+  cron at 03:00, but nothing installs that: no user or root crontab entry, no
+  `/etc/cron.d` file, and no systemd timer (the host has timers for momentum canary
+  checkpoints, research checkpoints, Docker prune and the OS's own dpkg backup, and none
+  for this). Backups therefore happen only as step 1 of `make prod-deploy`, so the real
+  RPO is "since the last deploy" -- four days between the 2026-09-03 and 2026-09-07
+  dumps. It also means the script's own Telegram alert on a skipped backup only fires
+  during a deploy, so nothing would warn about the disk situation between deploys.
+- **Right now a backup cannot run unattended.** The guard needs 24 GB and 23 GB is free,
+  so installing a nightly schedule today would skip and alert every night until space is
+  freed. Both facts point the same way: this is not a scheduling gap OR a capacity gap,
+  it is both at once.
+- **What this forces:** a 12 GB dump and a 25 GB database cannot both keep living on one
+  75 GB disk while the database grows several GB a week. Offsite is no longer an
+  optimization; it is the only option that does not require deleting research data. The
+  owner decision is where copies go (object storage, a storage box, another host), since
+  that costs money and needs an account.
+- **Owner decision, 2026-09-07: postponed.** The offsite storage choice is deliberately
+  deferred, with the cost understood and stated: the only copy of the database is up to
+  four days old, sits on the same disk as the database itself, and a new one cannot be
+  taken without first pruning Docker cache by hand. A disk failure loses both. Until this
+  is revisited, `docker builder prune -f --filter until=24h` must precede every
+  `make prod-deploy`. Revisit when a deploy is blocked again, or when the dump passes
+  13 GB, whichever comes first. This is recorded so the deferral stays a decision rather
+  than becoming drift.
 - **Bounded remediation:** inventory copies and disk headroom, choose local/offsite
   generations and RPO/RTO, verify checksum/restore in isolation, and document capture
   restart/alert behavior. Do not blindly retain 14 large dumps on the same full disk.
