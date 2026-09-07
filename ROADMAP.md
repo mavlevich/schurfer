@@ -8,10 +8,10 @@ Update only these four lines after every merge -- this is the fast-path
 status check, not a place for narrative.
 
 ```
-Current primary: queued -- ENG-020, close manual-entry mode and TESTNET bypasses; support: ENG-021, repair Go verification gates
-State: audit plan recorded; implementation not started; frozen cohorts continue collecting
+Current primary: ENG-021, repair Go verification gates; support: ENG-025 recovery inventory
+State: ENG-020's entry-mode, TESTNET and stop-admission fixes merged (#343, 356bbb7), fixed in code and NOT deployed; durable stop-state declared, not implemented; frozen cohorts continue collecting
 Next after current primary merges: ENG-022 fill/close lifecycle; then ENG-023 paper fairness and ENG-024 artifact integrity, with economics preparation alongside
-User decision required: no for selecting this queue; owner economics, new hypothesis parameters, production operations and live trading remain separate decisions
+User decision required: yes -- whether to deploy execution now (code-only restart, depends on whether production holds trading API keys); owner economics, new hypothesis parameters and live trading remain separate decisions
 ```
 
 ## Autonomy rules (when to just proceed, when to ask)
