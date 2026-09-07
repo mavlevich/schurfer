@@ -56,8 +56,9 @@ func newLiquidationCaptureMonitor(n *Notifier) *liquidationCaptureMonitor {
 
 func parseMonitoredExchanges(raw string) []string {
 	seen := make(map[string]struct{})
-	var exchanges []string
-	for _, value := range strings.Split(raw, ",") {
+	values := strings.Split(raw, ",")
+	exchanges := make([]string, 0, len(values))
+	for _, value := range values {
 		exchange := strings.ToLower(strings.TrimSpace(value))
 		if exchange != "bybit" && exchange != "binance" {
 			continue
@@ -289,7 +290,7 @@ func (m *liquidationCaptureMonitor) handleOk(
 ) {
 	previousState := monitorState["state"]
 	previousTransition := monitorState["transition_id"]
-	if !(previousState == "ok" && previousTransition == transitionID) {
+	if previousState != "ok" || previousTransition != transitionID {
 		switch previousState {
 		case "", "ok", "starting", "warning":
 			m.storeMonitorState(ctx, stateKey, "ok", transitionID)

@@ -70,8 +70,12 @@ repos:
   # golangci-lint uses language: system (official recommendation, see
   # https://golangci-lint.run/welcome/install/#pre-commit).
   # `make install` installs the version pinned in the root Makefile.
-  # Runs from the module dir because golangci-lint v2 cannot resolve ./...
-  # from a directory that is not listed in go.work.
+  # The loop itself lives in infra/scripts/go_lint.sh (module list from the
+  # one go.work parser, config schema verified, any failing module fails the
+  # hook) rather than as an inline one-liner here -- see that script's header
+  # for the two ways the previous one-liner reported a clean tree that was
+  # not clean. It runs from each module dir because golangci-lint v2 cannot
+  # resolve ./... from a directory that is not listed in go.work.
   - repo: local
     hooks:
       - id: ai-rules-check
@@ -83,9 +87,12 @@ repos:
       - id: golangci-lint
         name: golangci-lint
         language: system
-        entry: bash -c 'ROOT=$(git rev-parse --show-toplevel) && LINT="$(go env GOPATH)/bin/golangci-lint" && grep "^use " "$ROOT/go.work" | awk "{print \$2}" | while read -r dir; do (cd "$ROOT/$dir" && "$LINT" run --config "$ROOT/.golangci.yml" ./...); done'
+        entry: infra/scripts/go_lint.sh
         pass_filenames: false
-        types: [go]
+        # Not `types: [go]`: a change to the lint config or to the wrappers
+        # themselves must re-run the gate too, otherwise an invalid config
+        # key reaches main whenever the same commit touches no Go file.
+        files: '(\.go$|^\.golangci\.yml$|^go\.work$|^infra/scripts/go_(lint|workspace_modules)\.sh$)'
         require_serial: true
 
   # --- TypeScript / JavaScript ---

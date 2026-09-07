@@ -60,6 +60,11 @@ func (s *Source) RunLiquidations(
 	for ctx.Err() == nil {
 		err := s.liquidationStream(ctx, allowed, universeVersion, consume, onLifecycle)
 		if ctx.Err() != nil {
+			// Shutdown, not a stream failure: the caller cancelled while the
+			// stream was running, so whatever err the stream returned is the
+			// consequence of that cancellation and must not be reported as a
+			// capture error.
+			//nolint:nilerr // cancellation is a normal exit, see above
 			return nil
 		}
 		if err != nil {
@@ -252,7 +257,12 @@ func (s *Source) handleLiquidationPayload(
 		data.Order.LastFilledQuantity, data.Order.AccumulatedFilledQuantity))
 	if quantityErr != nil || orderPriceErr != nil || averagePriceErr != nil ||
 		lastFilledErr != nil || accumulatedErr != nil || rawErr != nil || eventErr != nil {
+		// One malformed event is counted and dropped, never propagated: a
+		// single unparseable payload must not tear down the capture stream
+		// and lose every subsequent event. liquidationInvalidTotal is what
+		// makes the drop visible rather than silent.
 		s.liquidationInvalidTotal.Add(1)
+		//nolint:nilerr // counted and dropped on purpose, see above
 		return nil
 	}
 	if err := consume(ctx, event); err != nil {

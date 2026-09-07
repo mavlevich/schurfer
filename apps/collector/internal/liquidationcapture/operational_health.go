@@ -93,15 +93,16 @@ func EvaluateHealth(
 
 	status := StatusOk
 
-	if mismatchTotal > 0 {
+	switch {
+	case mismatchTotal > 0:
 		status = StatusFailed
 		reasons = append(reasons, "fatal_payload_mismatch")
 		shouldExit = true
-	} else if dropsDelta > 0 {
+	case dropsDelta > 0:
 		status = StatusFailed
 		reasons = append(reasons, "queue_drop_critical")
 		shouldExit = true
-	} else if state.LastCompleteBucket.IsZero() {
+	case state.LastCompleteBucket.IsZero():
 		if !state.StartedAt.IsZero() && now.Sub(state.StartedAt) > ProlongedIncompleteAfter {
 			status = StatusFailed
 			reasons = append(reasons, "startup_never_complete")
@@ -110,11 +111,11 @@ func EvaluateHealth(
 			status = StatusStarting
 			reasons = append(reasons, "awaiting_first_complete_minute")
 		}
-	} else if now.Sub(state.LastCompleteBucket) > ProlongedIncompleteAfter {
+	case now.Sub(state.LastCompleteBucket) > ProlongedIncompleteAfter:
 		status = StatusFailed
 		reasons = append(reasons, "prolonged_incomplete")
 		shouldExit = true
-	} else if state.ConsecutiveIncomplete > 0 {
+	case state.ConsecutiveIncomplete > 0:
 		status = StatusDegraded
 		reasons = append(reasons, "incomplete_minute")
 	}

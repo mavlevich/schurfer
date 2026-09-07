@@ -816,8 +816,13 @@ func invalidOptionalFinite(value *float64) bool {
 
 func timePairComplete(value, eventAt, observedAt *time.Time) bool {
 	present := value != nil
-	return present == (eventAt != nil) && present == (observedAt != nil) &&
-		(!present || (!value.IsZero() && !eventAt.IsZero() && !observedAt.IsZero()))
+	if present != (eventAt != nil) || present != (observedAt != nil) {
+		return false
+	}
+	if !present {
+		return true
+	}
+	return !value.IsZero() && !eventAt.IsZero() && !observedAt.IsZero()
 }
 
 // MarkTickerDiscontinuity tells the engine the ticker/OI feed for symbol

@@ -1018,12 +1018,7 @@ deadcode:
 	@if find . -name 'go.mod' -not -path './vendor/*' 2>/dev/null | grep -q .; then \
 		test -n "$(strip $(GO_MODULE_DIRS))" || { echo "GO_MODULE_DIRS is empty -- infra/scripts/go_workspace_modules.sh failed or go.work declares zero modules" >&2; exit 1; }; \
 		$(MAKE) install-deadcode; \
-		go_bin="$$(go env GOBIN)"; \
-		if test -z "$$go_bin"; then go_bin="$$(go env GOPATH)/bin"; fi; \
-		for dir in $(GO_MODULE_DIRS); do \
-			echo "=== deadcode $$dir ==="; \
-			(cd "$$dir" && "$$go_bin/deadcode" ./...); \
-		done; \
+		bash infra/scripts/go_deadcode.sh; \
 	else \
 		echo "  (no Go code yet)"; \
 	fi
