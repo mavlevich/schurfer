@@ -15,7 +15,7 @@ import structlog
 
 from . import exit as exit_module
 from . import incidents, journal, notify, order_attempts
-from .fill_price import FILL_UNRESOLVED, resolve_fill_price
+from .fill_price import FILL_NONE, FILL_UNRESOLVED, resolve_fill_price
 
 if TYPE_CHECKING:
     from .config import Config
@@ -152,6 +152,16 @@ async def _process_one(
 
     if resolution.status == FILL_UNRESOLVED:
         await _bump_attempt_or_escalate(incident, db_url, cfg, error="fill price still unresolved")
+        return
+
+    if resolution.status == FILL_NONE:
+        # The exchange positively reports no executed volume for this order.
+        # Retrying resolution cannot produce a price that does not exist, so
+        # this escalates to a human rather than completing an open or a close
+        # that never happened (ENG-022 / audit C-3).
+        await _bump_attempt_or_escalate(
+            incident, db_url, cfg, error="exchange reports no fill for this order"
+        )
         return
 
     assert resolution.price is not None
@@ -294,9 +304,26 @@ async def _complete_open(
         return False
     setup_context = incident.context.get("setup_context")
     setup_context = setup_context if isinstance(setup_context, dict) else {}
-    size_usd = float(incident.context.get("size_usd") or 0)
     leverage = int(incident.context.get("leverage") or 1)
     side = str(incident.context.get("side") or "short")
+    # The executed notional, recomputed from the fill this resolution just
+    # confirmed. The recorded size_usd is the requested one for incidents
+    # created before the fill was known, and journalling that would restate a
+    # partial entry as a full one (ENG-022 / audit C-3). It stays the fallback
+    # for incidents whose context predates contract_size.
+    recorded_size_usd = float(incident.context.get("size_usd") or 0)
+    contract_size = incident.context.get("contract_size")
+    size_usd = recorded_size_usd
+    if filled_amount is not None and filled_amount > 0 and contract_size is not None:
+        size_usd = round(filled_amount * price * float(contract_size), 2)
+    elif filled_amount is not None and filled_amount > 0:
+        log.warning(
+            "incident_worker.open_notional_from_recorded_size",
+            incident_id=incident.id,
+            base=incident.base,
+            exchange=incident.exchange,
+            reason="incident context carries no contract_size",
+        )
     # place_order itself has no equivalent recomputation to worry about
     # diverging from here (unlike this recovery path, it always has its own
     # already-resolved exit_params in hand) -- this is the ONE place
