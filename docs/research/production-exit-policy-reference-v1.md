@@ -146,3 +146,100 @@ written down here so the outcome cannot be reinterpreted later.
 
 The evidence floor of 200 completed trades and the ±0.25 point decision rule are
 unchanged.
+
+---
+
+# Result, 2026-09-07
+
+Run on production at `4a1ef1f`, working tree clean.
+Scope `2026-07-29` through `2026-09-07T18:28Z`.
+Decision fingerprint `47933cf06de82ce0`, market-path fingerprint `e2d9fffe492af949`.
+
+## Verdict: `insufficient_data`
+
+The family reports readiness **`insufficient_resolution`** and withholds its formal
+intervals: the locked first 100 eligible episodes contain only 69 that are
+completely paired, against a tolerance of 1. By the amendment above the decision
+rule applies only at `formal_sample_ready`, so **no formal claim is made here**,
+in either direction.
+
+Note that `insufficient_resolution` is a readiness state the amendment did not
+enumerate. That does not create room for interpretation: the rule was that the
+verdict is subordinate to `formal_sample_ready`, and this is not it.
+
+## Coverage
+
+| Metric                           |                      Value |
+| -------------------------------- | -------------------------: |
+| Dataset episodes                 |                      1,929 |
+| Eligible                         |                      1,083 |
+| Excluded                         |                        846 |
+| Resolved per policy              |                        837 |
+| Locked formal sample             | 100 episodes / 70 clusters |
+| Completely paired in that sample |                         69 |
+
+Exclusions are dominated by missing price paths, not by policy: 319
+`market_path_unavailable`, 303 `missing_outcome`, 236
+`complete_fallback_unsupported`. Nearly half the dataset never reaches the metric,
+and that is a data-capture limit, not a property of any exit rule.
+
+## Descriptive result, not a verdict
+
+All 837 resolved episodes, paired per episode across policies.
+
+| Policy                                       |   Mean net | Profit factor | Win rate | Median-ish duration | Closed by initial SL |
+| -------------------------------------------- | ---------: | ------------: | -------: | ------------------: | -------------------: |
+| recent_progress_extension                    |     -0.51% |          0.85 |   47.43% |              117.6m |               31.90% |
+| baseline (`production_max_hold_v1`)          |     -0.54% |          0.85 |   47.43% |              114.7m |               31.90% |
+| breakeven_after_activation                   |     -0.57% |          0.83 |   49.34% |              111.1m |               31.90% |
+| **production (`production_no_progress_v2`)** | **-0.76%** |      **0.74** |   45.28% |           **62.9m** |               22.22% |
+| no_progress_60m                              |     -0.76% |          0.76 |   42.41% |               80.4m |               24.97% |
+| breakeven_no_progress_60m                    |     -0.77% |          0.75 |   44.44% |               77.1m |               24.97% |
+
+Paired against the baseline, production's real policy is **-0.23 percentage points**
+of mean net return, changing the exit on 423 of 837 episodes and cutting mean
+holding time by 51.8 minutes. Per episode it is close to a coin flip: 210 improved,
+213 worsened, 414 unchanged.
+
+## What is worth saying without a verdict
+
+**The finding that does not depend on the readiness gate is that every policy in
+the family is unprofitable on this cohort.** Profit factor runs 0.74 to 0.85 and
+mean net return -0.51% to -0.77% across all six. The exit rule is not the thing
+standing between this strategy and money, and choosing among these six is
+rearranging what a losing cohort loses.
+
+The mechanism behind production's direction is visible in the exit-reason counts
+and is worth recording because it is structural rather than statistical. The
+60-minute cut fires on 423 episodes and replaces 81 stop-outs (`initial_sl` falls
+from 267 to 186) with an earlier exit at market. It therefore truncates losses
+whose downside was already bounded by the initial stop, while truncating gains
+whose upside was not. Episode 11115 (FLORK) is the shape: the baseline trails to
++7.92%, production closes at minute 60 for -7.13%, because at that moment the
+position was 3.90% in profit and the sub-50% band activates trailing only at 8%.
+
+That is a hypothesis about the mechanism, generated after seeing the result. It is
+recorded here as such and is **not** evidence for changing the 60-minute mark or
+the activation threshold. Doing so would need its own id and an untouched window.
+
+## What this does not say
+
+- It does not say production's exit costs money. The `-0.23` point gap is under
+  the registered `0.25` decision margin and, more decisively, the family withheld
+  formal inference.
+- It does not say the earlier family comparisons were wrong in their conclusions.
+  It does say they were measured against a reference that has not described
+  production since 2026-08-18, and that the reference flatters production by
+  roughly this gap.
+- It is not evidence about live results. No live position was reconciled against
+  this replay.
+
+## What this changes
+
+Nothing in production. The immediate value is that the family now contains the
+policy production actually runs, so the next read is against the real thing.
+
+The binding constraint the run exposed is resolution, not policy: 31 of the 100
+locked formal episodes are unpaired, and 846 of 1,929 episodes never enter the
+metric at all, mostly for want of a price path. Until that improves, this family
+cannot produce a formal verdict about any policy, including the one in production.
