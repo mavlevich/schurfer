@@ -43,6 +43,8 @@ INSERT INTO app.pump_event_sources (
     event_id, exchange, symbol,
     identity_key, market_id, unified_symbol, display_name,
     market_type, base_asset, quote_asset, settle_asset,
+    asset_class, asset_class_source, asset_class_evidence,
+    asset_class_confidence, asset_class_version,
     contract_size, onboarded_at, first_ticker_at, last_ticker_at,
     first_change_pct, last_change_pct, peak_change_pct,
     first_price, last_price,
@@ -53,6 +55,8 @@ VALUES (
     %s, %s, %s,
     %s, %s, %s, %s,
     %s, %s, %s, %s,
+    %s, %s, %s,
+    %s, %s,
     %s, %s, %s, %s,
     %s, %s, %s,
     %s, %s,
@@ -100,6 +104,42 @@ SET identity_conflict = app.pump_event_sources.identity_conflict OR (
     base_asset         = COALESCE(app.pump_event_sources.base_asset, EXCLUDED.base_asset),
     quote_asset        = COALESCE(app.pump_event_sources.quote_asset, EXCLUDED.quote_asset),
     settle_asset       = COALESCE(app.pump_event_sources.settle_asset, EXCLUDED.settle_asset),
+    -- Not COALESCE: an existing `unknown` must be replaced once the venue (or a
+    -- later classifier version) can actually classify the instrument, while a
+    -- transient metadata gap that classifies as `unknown` must never erase a
+    -- class already established. All five fields move together, on the same
+    -- predicate, so the recorded class and the evidence behind it cannot drift
+    -- apart (ENG-018).
+    asset_class        = CASE
+        WHEN EXCLUDED.asset_class <> 'unknown'
+            OR app.pump_event_sources.asset_class IS NULL
+            THEN EXCLUDED.asset_class
+        ELSE app.pump_event_sources.asset_class
+    END,
+    asset_class_source = CASE
+        WHEN EXCLUDED.asset_class <> 'unknown'
+            OR app.pump_event_sources.asset_class IS NULL
+            THEN EXCLUDED.asset_class_source
+        ELSE app.pump_event_sources.asset_class_source
+    END,
+    asset_class_evidence = CASE
+        WHEN EXCLUDED.asset_class <> 'unknown'
+            OR app.pump_event_sources.asset_class IS NULL
+            THEN EXCLUDED.asset_class_evidence
+        ELSE app.pump_event_sources.asset_class_evidence
+    END,
+    asset_class_confidence = CASE
+        WHEN EXCLUDED.asset_class <> 'unknown'
+            OR app.pump_event_sources.asset_class IS NULL
+            THEN EXCLUDED.asset_class_confidence
+        ELSE app.pump_event_sources.asset_class_confidence
+    END,
+    asset_class_version = CASE
+        WHEN EXCLUDED.asset_class <> 'unknown'
+            OR app.pump_event_sources.asset_class IS NULL
+            THEN EXCLUDED.asset_class_version
+        ELSE app.pump_event_sources.asset_class_version
+    END,
     contract_size      = COALESCE(
         app.pump_event_sources.contract_size,
         EXCLUDED.contract_size
@@ -210,6 +250,11 @@ def _source_args(event_id: int, exchange: dict[str, Any]) -> tuple[Any, ...]:
         exchange.get("base_asset"),
         exchange.get("quote_asset"),
         exchange.get("settle_asset"),
+        exchange.get("asset_class"),
+        exchange.get("asset_class_source"),
+        exchange.get("asset_class_evidence"),
+        exchange.get("asset_class_confidence"),
+        exchange.get("asset_class_version"),
         _finite_float(exchange.get("contract_size")),
         _datetime_ms(exchange.get("onboarded_at_ms")),
         _datetime_ms(exchange.get("ticker_timestamp_ms")),

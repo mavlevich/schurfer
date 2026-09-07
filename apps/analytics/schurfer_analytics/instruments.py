@@ -4,6 +4,8 @@ import math
 from datetime import UTC, datetime
 from typing import Any
 
+from .asset_class import classify
+
 _ONBOARD_FIELDS: dict[str, tuple[str, ...]] = {
     "binance": ("onboardDate",),
     "bybit": ("launchTime",),
@@ -95,17 +97,27 @@ def instrument_metadata(
     market_type = _market_type(market)
     onboarded_ms = onboarded_at_ms(exchange, info)
     identity_version = str(onboarded_ms) if onboarded_ms is not None else "unknown"
+    base_asset = str(market.get("base") or unified_symbol.split("/", 1)[0])
+    # market_type says swap/future; it says nothing about WHAT is being traded.
+    # A tokenized equity perpetual is a swap too, which is how LBank 24H stock
+    # futures entered pump cohorts as crypto pumps (ENG-018).
+    classification = classify(exchange, base_asset, market)
     return {
         "identity_key": f"{exchange}:{market_type}:{market_id}:{identity_version}",
         "market_id": market_id,
         "unified_symbol": str(market.get("symbol") or unified_symbol),
         "display_name": _display_name(info),
         "market_type": market_type,
-        "base_asset": str(market.get("base") or unified_symbol.split("/", 1)[0]),
+        "base_asset": base_asset,
         "quote_asset": str(market.get("quote") or "") or None,
         "settle_asset": str(market.get("settle") or "") or None,
         "contract_size": _positive_float(market.get("contractSize")),
         "onboarded_at_ms": onboarded_ms,
+        "asset_class": classification.asset_class,
+        "asset_class_source": classification.source,
+        "asset_class_evidence": classification.evidence,
+        "asset_class_confidence": classification.confidence,
+        "asset_class_version": classification.version,
     }
 
 
