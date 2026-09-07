@@ -1,7 +1,6 @@
 # HYP-019 — Does the score rank outcomes at all?
 
-**Status: pre-registered. No outcome value from this window has been read at the time of
-writing.**
+**Status: read on 2026-09-07. The score ranks candidates BACKWARDS. The contract below was committed (`bb51127`) before any query against this window.**
 
 Registered 2026-09-07, after HYP-018 and before any query against the window below.
 
@@ -69,3 +68,69 @@ It may not adjust the score formula, propose weights, or re-run with a different
 after seeing the result. Those need a new hypothesis and an untouched window. It also
 inherits HYP-018's limitation: price paths with no order book, so nothing here is an
 executable claim.
+
+---
+
+# Result, 2026-09-07
+
+158,169 decisions across 439 base symbols, `threshold = 5` window, complete 240-minute
+outcomes only.
+
+## Primary metric
+
+**Spearman rank correlation between score and net short return: −0.0997**
+**Cluster bootstrap 95% CI over 439 bases: [−0.1398, −0.0609]**
+
+The interval excludes zero and sits entirely on the negative side. Per the pre-declared
+rule this is not "rejected as an ordering device": the score _does_ order outcomes, in
+the **opposite** direction to its intent. The contract named this case in advance as a
+finding rather than a failure.
+
+## The shape
+
+| score |      n | bases | median net % |
+| ----: | -----: | ----: | -----------: |
+|     1 |  7,532 |   176 |   **+2.669** |
+|     2 | 30,614 |   360 |   **+1.543** |
+|     3 | 58,394 |   399 |   **+0.584** |
+|     4 | 40,702 |   304 |       −0.038 |
+|     5 | 15,090 |   211 |   **−0.442** |
+|     6 |  4,564 |    83 |   **−0.805** |
+|     7 |  1,176 |    20 |       +1.031 |
+|     8 |     97 |     4 |       −3.197 |
+
+Monotonically decreasing from 1 to 6, on hundreds of distinct symbols per level. Scores 7
+and 8 rest on 20 and 4 symbols respectively and are noise at that width.
+
+## What this means for the gate
+
+`SCORE_THRESHOLD = 5` admits scores 5 and above and rejects everything below. In this
+window that is precisely inverted: the admitted band has a **negative** median net return
+(−0.44 at 5, −0.81 at 6) and the rejected band a **positive** one (+2.67, +1.54, +0.58 at
+1, 2, 3).
+
+This is consistent with HYP-018 on the _other_ window, which found the same
+non-monotonicity and the best returns at the lowest score level. Two windows, two
+regimes, same direction.
+
+## What it does not establish
+
+- **Hold-to-horizon, no stop.** HYP-018 showed 32% to 51% of such positions reach a 10%
+  adverse excursion before 240 minutes, and the live stop is 10%. Whether the low-score
+  band survives its own stop better than the high-score band is a separate question this
+  pass did not ask.
+- **No order book.** Price paths only: no spread, no depth, no fill.
+- **Mechanism unknown.** A plausible story is that a high score marks a stronger, still-
+  running move, which is bad for an immediate short. That is a hypothesis, not a result.
+- **Correlation is modest.** −0.10 is a real but weak ordering; the per-level medians are
+  the more legible statement.
+
+## What this authorizes
+
+Nothing automatic. It does not license inverting the score, moving the threshold, or
+trading the low band. Each of those is a strategy change needing its own registered
+hypothesis and an untouched window.
+
+What it does do is redirect the question. Until now the open item was where to put the
+threshold. The finding says the ordering underneath it is pointed the wrong way, so
+tuning the threshold on the current score would be optimising the wrong dial.
