@@ -652,6 +652,14 @@ verify`, `make deadcode`, `pre-commit run --all-files`, and 13 black-box tests t
   optimization; it is the only option that does not require deleting research data. The
   owner decision is where copies go (object storage, a storage box, another host), since
   that costs money and needs an account.
+- **Owner decision, 2026-09-07: postponed.** The offsite storage choice is deliberately
+  deferred, with the cost understood and stated: the only copy of the database is up to
+  four days old, sits on the same disk as the database itself, and a new one cannot be
+  taken without first pruning Docker cache by hand. A disk failure loses both. Until this
+  is revisited, `docker builder prune -f --filter until=24h` must precede every
+  `make prod-deploy`. Revisit when a deploy is blocked again, or when the dump passes
+  13 GB, whichever comes first. This is recorded so the deferral stays a decision rather
+  than becoming drift.
 - **Bounded remediation:** inventory copies and disk headroom, choose local/offsite
   generations and RPO/RTO, verify checksum/restore in isolation, and document capture
   restart/alert behavior. Do not blindly retain 14 large dumps on the same full disk.
