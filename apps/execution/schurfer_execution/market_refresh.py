@@ -45,7 +45,6 @@ log = structlog.get_logger()
 DEFAULT_REFRESH_INTERVAL_SECONDS = 900.0
 #: Floor between two reloads of the SAME exchange, whichever mechanism asks.
 DEFAULT_MIN_REFRESH_INTERVAL_SECONDS = 60.0
-_RELOAD_TIMEOUT_SECONDS = 30.0
 
 
 class MarketRefresher:
@@ -98,9 +97,28 @@ class MarketRefresher:
             # venue turns every miss into another call.
             self._last_refresh[name] = self._now()
             try:
-                await asyncio.wait_for(client.load_markets(True), timeout=_RELOAD_TIMEOUT_SECONDS)
+                # No asyncio.wait_for here, deliberately. These are the SAME
+                # client objects other components in this process use, and
+                # cancelling a ccxt request mid-flight leaves its aiohttp
+                # connector unusable: the first production sweep produced
+                # "File descriptor 21 is used by transport <TCPTransport
+                # closed=False reading=True>" on bitget, which is that state,
+                # and a broken connector on a shared client is everyone's
+                # problem, not just this worker's. Each individual HTTP request
+                # is already bounded by the client's own ccxt timeout, so a
+                # venue cannot hang here indefinitely.
+                await client.load_markets(True)
             except Exception as exc:
-                log.warning("market_refresh.failed", exchange=name, reason=reason, err=str(exc))
+                # ccxt renders many errors as bare "<id> <METHOD> <url>", which
+                # does not say whether it timed out or was refused, so the type
+                # is logged separately.
+                log.warning(
+                    "market_refresh.failed",
+                    exchange=name,
+                    reason=reason,
+                    error_type=type(exc).__name__,
+                    err=str(exc),
+                )
                 return False
             log.info(
                 "market_refresh.reloaded",
@@ -111,12 +129,29 @@ class MarketRefresher:
             return True
 
     async def refresh_all(self) -> int:
-        """Reload every client, one venue's failure never stopping the others."""
-        results = await asyncio.gather(
-            *(self.refresh(name, reason="periodic", force=True) for name in self._exchanges),
-            return_exceptions=True,
-        )
-        return sum(1 for result in results if result is True)
+        """Reload every client in turn, one venue's failure never stopping the others.
+
+        Sequential, not gathered. The first production sweep reloaded all
+        seventeen venues at once and more than half failed: `load_markets` is
+        dozens of rate-limited requests for some venues (bybit paginates
+        instruments per category), and seventeen of those sequences running
+        together pushed them past their timeouts. The sweep has the whole
+        refresh interval to spend and no reason to be fast, so it takes one
+        venue at a time.
+        """
+        reloaded = 0
+        for name in list(self._exchanges):
+            try:
+                if await self.refresh(name, reason="periodic", force=True):
+                    reloaded += 1
+            except Exception as exc:  # one venue must never end the sweep
+                log.warning(
+                    "market_refresh.sweep_error",
+                    exchange=name,
+                    error_type=type(exc).__name__,
+                    err=str(exc),
+                )
+        return reloaded
 
 
 async def run_market_refresher(

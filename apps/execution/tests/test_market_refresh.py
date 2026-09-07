@@ -36,6 +36,53 @@ def _client(*, markets: dict[str, object] | None = None) -> MagicMock:
 
 
 class TestPeriodicRefresh:
+    async def test_the_sweep_is_sequential_not_concurrent(self) -> None:
+        """Production regression: reloading all seventeen venues at once pushed
+        most of them past their timeouts -- load_markets is dozens of
+        rate-limited requests for some venues. The sweep has the whole interval
+        to spend and takes one venue at a time."""
+        in_flight = 0
+        peak = 0
+
+        async def _slow(_reload: bool) -> None:
+            nonlocal in_flight, peak
+            in_flight += 1
+            peak = max(peak, in_flight)
+            await asyncio.sleep(0.01)
+            in_flight -= 1
+
+        clients = {}
+        for name in ("a", "b", "c", "d"):
+            client = _client()
+            client.load_markets = AsyncMock(side_effect=_slow)
+            clients[name] = client
+        refresher = MarketRefresher(clients)
+
+        reloaded = await refresher.refresh_all()
+
+        assert reloaded == 4
+        assert peak == 1, f"{peak} venues were reloading at once"
+
+    async def test_a_slow_reload_is_awaited_rather_than_cancelled(self) -> None:
+        """These are the same client objects other components use, and
+        cancelling a ccxt request mid-flight leaves its aiohttp connector
+        unusable -- production showed exactly that as "File descriptor 21 is
+        used by transport". Nothing here may impose an asyncio-level deadline
+        on a shared client."""
+        completed = False
+
+        async def _slow(_reload: bool) -> None:
+            nonlocal completed
+            await asyncio.sleep(0.05)
+            completed = True
+
+        client = _client()
+        client.load_markets = AsyncMock(side_effect=_slow)
+        refresher = MarketRefresher({"slow": client})
+
+        assert await refresher.refresh("slow", reason="periodic", force=True) is True
+        assert completed is True
+
     async def test_reloads_every_client_forcing_a_true_reload(self) -> None:
         first, second = _client(), _client()
         refresher = MarketRefresher({"bingx": first, "lbank": second})
@@ -49,6 +96,8 @@ class TestPeriodicRefresh:
         second.load_markets.assert_awaited_once_with(True)
 
     async def test_one_failing_venue_does_not_stop_the_others(self) -> None:
+        """Order matters now that the sweep is sequential: the broken venue is
+        first, so a sweep that aborted on failure would never reach the second."""
         broken = _client()
         broken.load_markets = AsyncMock(side_effect=RuntimeError("venue down"))
         healthy = _client()
