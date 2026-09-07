@@ -51,6 +51,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 import sys
 from collections import Counter, defaultdict
@@ -158,6 +159,12 @@ class PathCoverageAuditReport:
     missing_minutes_by_symbol: dict[str, int]
     candidate_global_outage_minutes: dict[datetime, int]
     possible_delisting_requests: tuple[str, ...] = field(default_factory=tuple)
+    # The fingerprint of the file this run actually read, not the constant the
+    # module was written against. Reporting the constant regardless of the
+    # input is what let an unrelated file be rendered under the frozen
+    # artifact's identity (ENG-024).
+    artifact_fingerprint: str = ""
+    artifact_path: str = ""
 
 
 def _classify_row(rows: dict[datetime, _RawMinute], minute: datetime) -> _RawMinute | None:
@@ -189,6 +196,76 @@ def audit_one_request(
                 continue
         longest = max(longest, current)
     return dict(reason_counts), longest
+
+
+class ArtifactVerificationError(RuntimeError):
+    """The file handed to this audit is not the artifact it claims to audit."""
+
+
+@dataclass(frozen=True)
+class VerifiedArtifact:
+    """An artifact whose bytes were hashed before anything was read out of them."""
+
+    path: Path
+    fingerprint: str
+    episodes: tuple[dict[str, Any], ...]
+
+
+def _validate_episode_shape(episodes: Any, path: Path) -> tuple[dict[str, Any], ...]:
+    """Reject anything that is not this artifact's episode list.
+
+    `json.load` happily returns `[]` for an unrelated file, and an empty list
+    produces an empty but otherwise successful report -- which is exactly how
+    the September audit fed this module a synthetic `[]` and got a clean render
+    carrying the frozen artifact's fingerprint (ENG-024 / E-04).
+    """
+    if not isinstance(episodes, list) or not episodes:
+        described = f"{type(episodes).__name__}"
+        if isinstance(episodes, list):
+            described += " of length 0"
+        raise ArtifactVerificationError(
+            f"{path}: expected a non-empty list of episodes, got {described}"
+        )
+    for index, episode in enumerate(episodes):
+        if not isinstance(episode, dict):
+            raise ArtifactVerificationError(
+                f"{path}: episode {index} is {type(episode).__name__}, not an object"
+            )
+        missing = {"direction", "signal_path"} - set(episode)
+        if missing:
+            raise ArtifactVerificationError(f"{path}: episode {index} is missing {sorted(missing)}")
+        if not isinstance(episode["signal_path"], dict):
+            raise ArtifactVerificationError(f"{path}: episode {index} signal_path is not an object")
+    return tuple(episodes)
+
+
+def load_verified_artifact(
+    artifact_path: Path, *, expected_fingerprint: str | None
+) -> VerifiedArtifact:
+    """Read the artifact, hashing the exact bytes that were read.
+
+    `expected_fingerprint=None` is for auditing a deliberately different
+    artifact: the identity is still computed and reported, it is simply not
+    compared. It never means "skip verification of the shape".
+    """
+    raw = artifact_path.read_bytes()
+    fingerprint = hashlib.sha256(raw).hexdigest()
+    if expected_fingerprint is not None and fingerprint != expected_fingerprint:
+        raise ArtifactVerificationError(
+            f"{artifact_path}: fingerprint {fingerprint} does not match the expected "
+            f"{expected_fingerprint}. This audit's findings are only meaningful for the "
+            "artifact it was built against; pass --expect-any-artifact to audit a "
+            "different one deliberately."
+        )
+    try:
+        episodes = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ArtifactVerificationError(f"{artifact_path}: not valid JSON: {exc}") from exc
+    return VerifiedArtifact(
+        path=artifact_path,
+        fingerprint=fingerprint,
+        episodes=_validate_episode_shape(episodes, artifact_path),
+    )
 
 
 def _unresolved_requests_from_artifact(
@@ -226,10 +303,10 @@ async def audit_path_coverage(
     *,
     artifact_path: Path = _DEFAULT_ARTIFACT_PATH,
     market_type: str = BYBIT_MOMENTUM_MARKET_TYPE,
+    expected_fingerprint: str | None = _AUDITED_ARTIFACT_FINGERPRINT,
 ) -> PathCoverageAuditReport:
-    with artifact_path.open() as handle:
-        episodes = json.load(handle)
-    requests = _unresolved_requests_from_artifact(episodes)
+    artifact = load_verified_artifact(artifact_path, expected_fingerprint=expected_fingerprint)
+    requests = _unresolved_requests_from_artifact(artifact.episodes)
 
     audit_rows: list[PathCoverageAuditRow] = []
     reason_totals: Counter[str] = Counter()
@@ -324,6 +401,8 @@ async def audit_path_coverage(
         missing_minutes_by_symbol=dict(missing_minutes_by_symbol),
         candidate_global_outage_minutes=candidate_global_outage_minutes,
         possible_delisting_requests=possible_delisting,
+        artifact_fingerprint=artifact.fingerprint,
+        artifact_path=str(artifact.path),
     )
 
 
@@ -333,7 +412,15 @@ def render_markdown(
     lines = [
         "# CEX Activity Path Coverage Audit",
         "",
-        f"Audited artifact fingerprint: `{_AUDITED_ARTIFACT_FINGERPRINT}`",
+        f"Audited artifact fingerprint: `{report.artifact_fingerprint}`",
+        f"Audited artifact path: `{report.artifact_path}`",
+        (
+            "Matches the artifact this audit was built against."
+            if report.artifact_fingerprint == _AUDITED_ARTIFACT_FINGERPRINT
+            else "**Not** the artifact this audit was built against "
+            f"(`{_AUDITED_ARTIFACT_FINGERPRINT}`): its findings do not describe that "
+            "artifact."
+        ),
         f"Audit code revision: `{code_revision}`{' (dirty)' if working_tree_dirty else ''}",
         f"Unresolved requests audited: {len(report.rows)}",
         "",
@@ -395,6 +482,17 @@ def render_markdown(
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--artifact-path", type=Path, default=_DEFAULT_ARTIFACT_PATH)
+    # Auditing a different artifact has to be stated, not achieved by pointing
+    # --artifact-path somewhere else and getting the frozen artifact's identity
+    # printed over the result anyway (ENG-024).
+    parser.add_argument(
+        "--expect-any-artifact",
+        action="store_true",
+        help=(
+            "audit whatever file --artifact-path names, reporting its real "
+            "fingerprint instead of requiring the frozen one"
+        ),
+    )
     parser.add_argument("--code-revision", required=True)
     dirty = parser.add_mutually_exclusive_group(required=True)
     dirty.add_argument("--working-tree-dirty", dest="working_tree_dirty", action="store_true")
@@ -409,7 +507,15 @@ def main() -> None:
     database_url = os.environ["DATABASE_URL"]
     engine = create_async_engine(async_database_url(database_url), pool_pre_ping=True)
     try:
-        report = asyncio.run(audit_path_coverage(engine, artifact_path=args.artifact_path))
+        report = asyncio.run(
+            audit_path_coverage(
+                engine,
+                artifact_path=args.artifact_path,
+                expected_fingerprint=(
+                    None if args.expect_any_artifact else _AUDITED_ARTIFACT_FINGERPRINT
+                ),
+            )
+        )
     finally:
         asyncio.run(engine.dispose())
     sys.stdout.write(
