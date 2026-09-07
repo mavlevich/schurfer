@@ -22,7 +22,10 @@ from schurfer_analytics.scanner import (
     publish,
 )
 
-NEW_EXCHANGES = ("lbank", "bitmart", "xt", "toobit", "blofin")
+# bitmart dropped with the ccxt 4.5.77 upgrade -- upstream removed the
+# exchange, and staying below that version keeps ccxt's exact pins on two
+# packages carrying four advisories (ENG-026).
+NEW_EXCHANGES = ("lbank", "xt", "toobit", "blofin")
 OBSERVED_AT_MS = 1_800_000_000_000
 
 

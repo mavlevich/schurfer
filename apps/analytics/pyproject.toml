@@ -3,7 +3,9 @@ name = "schurfer-analytics"
 version = "0.1.0"
 requires-python = ">=3.13"
 dependencies = [
-    "ccxt==4.5.68",
+    # Kept in step with apps/execution: one ccxt version across the
+    # workspace, so the lock cannot resolve two (ENG-026).
+    "ccxt==4.5.77",
     "duckdb==1.5.5",
     "greenlet>=3.2",
     "httpx>=0.28",
