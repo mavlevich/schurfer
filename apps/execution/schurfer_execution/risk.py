@@ -16,9 +16,46 @@ class RiskCheck:
 
 
 def check_trading_enabled(flag: str | None) -> RiskCheck:
+    """Positive lease, not a negative flag: only an explicit enabled value
+    admits a new entry.
+
+    This helper used to allow None, and every caller compensated by
+    substituting "0" for a missing key at the read site. That made the
+    fail-closed behavior a property of each call site rather than of the
+    check, so deleting or corrupting trading:enabled read as "enabled" for
+    any caller that forgot the substitution, and a future caller could
+    reintroduce the hole silently (ENG-020 / audit H-5). Read the key through
+    read_trading_enabled_flag below and pass whatever it returns.
+
+    The reasons distinguish a deliberate stop from missing and unrecognized
+    state: a blocked entry must say which of the three happened.
+    """
+    if flag in ("1", "true"):
+        return RiskCheck(allowed=True, reason="ok")
     if flag in ("0", "false"):
         return RiskCheck(allowed=False, reason="trading disabled (emergency stop)")
-    return RiskCheck(allowed=True, reason="ok")
+    if flag is None:
+        return RiskCheck(
+            allowed=False,
+            reason=(
+                f"trading state unknown ({TRADING_ENABLED_KEY} missing) - POST /resume to enable"
+            ),
+        )
+    return RiskCheck(
+        allowed=False,
+        reason=f"trading state unrecognized ({flag!r}) in {TRADING_ENABLED_KEY}",
+    )
+
+
+async def read_trading_enabled_flag(rdb: Any) -> str | None:
+    """The single reader for trading:enabled.
+
+    Returns the raw value, including None for a missing key: substituting a
+    default here would put the fail-closed decision back into the read site.
+    check_trading_enabled above is what decides.
+    """
+    raw = await rdb.get(TRADING_ENABLED_KEY)
+    return raw.decode() if isinstance(raw, bytes) else raw
 
 
 def check_pnl_data_available(flag: str | None) -> RiskCheck:

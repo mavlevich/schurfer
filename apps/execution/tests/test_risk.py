@@ -36,16 +36,36 @@ def _bal(
 
 
 class TestCheckTradingEnabled:
-    def test_enabled_by_default(self) -> None:
-        assert check_trading_enabled(None).allowed
+    """Positive lease, like PNL_READY_KEY: the helper itself fails closed.
+
+    It used to allow None and rely on every call site substituting "0" for a
+    missing key, so a caller that forgot the substitution read a deleted or
+    corrupted trading:enabled as enabled (ENG-020 / audit H-5).
+    """
+
+    def test_allowed_only_on_an_explicit_enabled_value(self) -> None:
         assert check_trading_enabled("1").allowed
         assert check_trading_enabled("true").allowed
 
     def test_disabled_on_zero(self) -> None:
-        assert not check_trading_enabled("0").allowed
+        check = check_trading_enabled("0")
+        assert not check.allowed
+        assert "emergency stop" in check.reason
 
     def test_disabled_on_false(self) -> None:
         assert not check_trading_enabled("false").allowed
+
+    def test_missing_key_blocks_and_says_so(self) -> None:
+        check = check_trading_enabled(None)
+        assert not check.allowed
+        assert "missing" in check.reason
+
+    def test_unrecognized_value_blocks_and_says_so(self) -> None:
+        """A deliberate stop, absent state and a corrupted value are three
+        different operational situations and must not report as one."""
+        check = check_trading_enabled("yes")
+        assert not check.allowed
+        assert "unrecognized" in check.reason
 
 
 class TestCheckPnlDataAvailable:

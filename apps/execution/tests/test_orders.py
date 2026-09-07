@@ -300,7 +300,7 @@ class TestLockBehavior:
             result = await place_order(**_kwargs(rdb=rdb))
 
         assert not result["allowed"]
-        assert "disabled" in result["reason"]
+        assert "missing" in result["reason"]
 
     async def test_lock_released_via_lua_not_delete(self) -> None:
         """Lock release must use compare-and-delete, not unconditional DEL."""
@@ -855,6 +855,114 @@ class TestCompletesJournalOnFill:
         assert result["allowed"]
         assert mock_complete.call_args.args[0] is None
         mock_incident.assert_not_awaited()
+
+
+class TestEmergencyStopDuringPreFlight:
+    """Regression for ENG-020 / audit H-4: trading:enabled was read once, at
+    the start of place_order, before several seconds of network pre-flight
+    (positions, balances, load_markets, set_leverage, fetch_ticker). An
+    operator pressing POST /stop inside that window still saw the entry go
+    out. The flag is now re-read immediately before submission, where the
+    readiness-gate generation is already rechecked.
+    """
+
+    def _confirmed_exchange(self) -> MagicMock:
+        ex = MagicMock()
+        ex.markets = {"BEAT/USDT:USDT": {"contractSize": 1.0}}
+        ex.set_leverage = AsyncMock()
+        ex.fetch_ticker = AsyncMock(return_value={"last": 1.0})
+        ex.amount_to_precision = MagicMock(return_value="100.0")
+        ex.price_to_precision = MagicMock(return_value="1.1")
+        ex.create_market_order = AsyncMock(
+            return_value={"id": "entry-1", "status": "closed", "average": 1.5}
+        )
+        ex.create_stop_market_order = AsyncMock(return_value={"id": "sl-1"})
+        return ex
+
+    @staticmethod
+    def _rdb(*, stop_after_reads: int | None = None, stopped: dict[str, bool] | None = None):
+        """A Redis double whose kill switch flips mid-flight: either after a
+        given number of admission reads, or when `stopped` is set by the
+        exchange call itself."""
+        reads = {"trading": 0}
+
+        async def _get(key: str) -> bytes | None:
+            if key == TRADING_ENABLED_KEY:
+                reads["trading"] += 1
+                if stopped is not None and stopped.get("value"):
+                    return b"0"
+                if stop_after_reads is not None and reads["trading"] > stop_after_reads:
+                    return b"0"
+                return b"1"
+            if key == PNL_READY_KEY:
+                return b"1"
+            return None
+
+        rdb = MagicMock()
+        rdb.set = AsyncMock(return_value=True)
+        rdb.get = AsyncMock(side_effect=_get)
+        rdb.eval = AsyncMock(return_value=1)
+        rdb.delete = AsyncMock(return_value=1)
+        return rdb
+
+    @patch("schurfer_execution.orders.fetch_positions", return_value=([], set()))
+    @patch(
+        "schurfer_execution.orders.fetch_margin_balance",
+        return_value=[{"exchange": "bingx", "free": 1000.0, "used": 0.0, "total": 1000.0}],
+    )
+    async def test_stop_pressed_during_preflight_blocks_submission(
+        self, _mock_bal: MagicMock, _mock_pos: MagicMock
+    ) -> None:
+        cfg = MagicMock(db_url="postgresql://x")
+        ex = self._confirmed_exchange()
+        rdb = self._rdb(stop_after_reads=1)
+
+        with (
+            patch(
+                "schurfer_execution.orders.order_attempts.create_attempt",
+                AsyncMock(return_value=7),
+            ),
+            patch(
+                "schurfer_execution.orders.order_attempts.mark_failed", AsyncMock()
+            ) as mock_failed,
+        ):
+            result = await place_order(**_kwargs(rdb=rdb, exchanges={"bingx": ex}, cfg=cfg))
+
+        assert not result["allowed"]
+        assert "emergency stop" in result["reason"]
+        assert "pre-flight" in result["reason"]
+        ex.create_market_order.assert_not_called()
+        # The durable attempt row was already written before the exchange call,
+        # so it must be closed out as failed rather than left pending forever.
+        mock_failed.assert_awaited_once()
+
+    @patch("schurfer_execution.orders.fetch_positions", return_value=([], set()))
+    @patch(
+        "schurfer_execution.orders.fetch_margin_balance",
+        return_value=[{"exchange": "bingx", "free": 1000.0, "used": 0.0, "total": 1000.0}],
+    )
+    async def test_stop_after_submission_still_protects_the_position(
+        self, _mock_bal: MagicMock, _mock_pos: MagicMock
+    ) -> None:
+        """The entry is the only thing an emergency stop may cancel. Once a
+        real position exists, its protective stop must still be placed --
+        blocking that would leave the position unprotected, which is worse
+        than the entry the operator was trying to prevent."""
+        stopped = {"value": False}
+        ex = self._confirmed_exchange()
+
+        async def _submit(*_args: object, **_kwargs: object) -> dict[str, object]:
+            stopped["value"] = True  # operator presses stop as the order lands
+            return {"id": "entry-1", "status": "closed", "average": 1.5}
+
+        ex.create_market_order = AsyncMock(side_effect=_submit)
+        rdb = self._rdb(stopped=stopped)
+
+        result = await place_order(**_kwargs(rdb=rdb, exchanges={"bingx": ex}))
+
+        assert result["allowed"]
+        ex.create_market_order.assert_awaited_once()
+        ex.create_stop_market_order.assert_awaited_once()
 
 
 class TestPreFlightDurability:

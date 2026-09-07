@@ -2,7 +2,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from schurfer_execution.account import fetch_balance, fetch_margin_balance, fetch_positions
 from schurfer_execution.config import Config
-from schurfer_execution.routers.account import CloseBody, manual_close_position
+from schurfer_execution.risk import TRADING_ENABLED_KEY
+from schurfer_execution.routers.account import CloseBody, get_risk, manual_close_position
 
 
 def _mock_exchange_positions(
@@ -444,3 +445,53 @@ async def test_manual_close_no_exit_price_does_not_double_revoke_readiness() -> 
         await manual_close_position(body, request)
 
     mock_revoke.assert_not_called()
+
+
+class TestTradingStateReportingAndProtectiveClose:
+    """GET /risk is what an operator reads to confirm the kill switch took,
+    so it must report through the same check the order path admits on, not a
+    second hand-written comparison. And an emergency stop must never block
+    closing an existing position (ENG-020 acceptance)."""
+
+    @staticmethod
+    async def _risk(trading_flag: bytes | None) -> dict[str, object]:
+        rdb = _close_rdb(**{TRADING_ENABLED_KEY: trading_flag})
+        request = _close_request(_close_cfg(), rdb)
+        with patch(
+            "schurfer_execution.routers.account.fetch_positions",
+            new_callable=AsyncMock,
+            return_value=([], set()),
+        ):
+            return await get_risk(request)
+
+    async def test_enabled_value_reports_active(self) -> None:
+        result = await self._risk(b"1")
+        assert result["trading_enabled"] is True
+
+    async def test_missing_key_reports_stopped_and_says_why(self) -> None:
+        result = await self._risk(None)
+        assert result["trading_enabled"] is False
+        assert "missing" in str(result["trading_state_reason"])
+
+    async def test_unrecognized_value_reports_stopped(self) -> None:
+        """Previously any value other than "0"/"false" read as active here,
+        so a corrupted key showed "Trading active" while the order path's own
+        check would have to agree by coincidence."""
+        result = await self._risk(b"yes")
+        assert result["trading_enabled"] is False
+        assert "unrecognized" in str(result["trading_state_reason"])
+
+    async def test_manual_close_still_works_while_trading_is_stopped(self) -> None:
+        rdb = _close_rdb(**{TRADING_ENABLED_KEY: b"0", "trade:id:bybit:BEAT": None})
+        request = _close_request(_close_cfg(), rdb)
+        body = CloseBody(exchange="bybit", base="BEAT")
+
+        with patch(
+            "schurfer_execution.routers.account.close_position",
+            new_callable=AsyncMock,
+            return_value={"closed": True, "order_id": "ord-1", "exit_price": 95.0},
+        ) as mock_close:
+            result = await manual_close_position(body, request)
+
+        assert result["closed"] is True
+        mock_close.assert_awaited_once()

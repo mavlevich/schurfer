@@ -10,7 +10,7 @@ from .. import exit as exit_module
 from .. import journal, symbols
 from ..account import fetch_balance, fetch_positions
 from ..orders import close_position
-from ..risk import DAILY_PNL_KEY, TRADING_ENABLED_KEY
+from ..risk import DAILY_PNL_KEY, check_trading_enabled, read_trading_enabled_flag
 
 log = structlog.get_logger()
 
@@ -131,11 +131,14 @@ async def get_risk(request: Request) -> dict[str, Any]:
 
     positions, _ = await fetch_positions(request.app.state.trading_exchanges)
     daily_pnl = float(await rdb.get(DAILY_PNL_KEY) or 0)
-    # Mirrors the fail-closed default in orders.place_order.
-    trading_enabled = (await rdb.get(TRADING_ENABLED_KEY) or b"0").decode()
+    # Reported through the same check the order path admits on, rather than a
+    # second hand-written comparison that only usually agrees with it: this
+    # endpoint is what an operator reads before deciding the kill switch took.
+    trading_enabled = check_trading_enabled(await read_trading_enabled_flag(rdb))
 
     return {
-        "trading_enabled": trading_enabled not in ("0", "false"),
+        "trading_enabled": trading_enabled.allowed,
+        "trading_state_reason": trading_enabled.reason,
         "open_positions": len(positions),
         "max_positions": cfg.max_positions,
         "slots_free": max(0, cfg.max_positions - len(positions)),

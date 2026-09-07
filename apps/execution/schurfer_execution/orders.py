@@ -14,10 +14,11 @@ from .order_lock import OrderLockLease
 from .risk import (
     DAILY_PNL_KEY,
     PNL_READY_KEY,
-    TRADING_ENABLED_KEY,
     check_liquidation_distance,
     check_max_position_size,
     check_sufficient_margin,
+    check_trading_enabled,
+    read_trading_enabled_flag,
     run_all_checks,
 )
 from .supervisor import SUBMISSION_UNKNOWN_BLOCKER, WorkerReadinessGate
@@ -215,7 +216,9 @@ async def place_order(
     async with lease:
         # Fail-closed: a missing key (fresh deploy, Redis eviction/flush) means
         # trading is NOT enabled. Must be explicitly turned on via POST /resume.
-        trading_flag = (await rdb.get(TRADING_ENABLED_KEY) or b"0").decode()
+        # The default now lives in check_trading_enabled itself, not in this
+        # read -- see its docstring.
+        trading_flag = await read_trading_enabled_flag(rdb)
         # trading:daily_pnl is maintained by the pnl tracker (tracker.py), which
         # also refreshes PNL_READY_KEY below only after a fully successful tick.
         daily_pnl = float(await rdb.get(DAILY_PNL_KEY) or 0)
@@ -353,6 +356,29 @@ async def place_order(
         is_open, current_token = worker_gate.is_open()
         if not is_open or current_token != gate_token:
             reason = "worker readiness gate closed or generation changed during checks"
+            if db_url and attempt_id is not None:
+                await order_attempts.mark_failed(db_url, attempt_id, error=reason)
+            return {"allowed": False, "reason": reason}
+
+        # The admission read above happens before the slow pre-flight (positions,
+        # balances, load_markets, set_leverage, fetch_ticker): several seconds of
+        # network calls during which an operator can press POST /stop and still
+        # see this entry go out (ENG-020 / audit H-4). Re-read it here, in the
+        # same place the readiness-gate generation is rechecked, so the value
+        # that admits the order is the one that held immediately before
+        # submission. This gate covers the ENTRY only: everything after a
+        # successful create_market_order (the protective stop, journalling,
+        # reconciliation) must still run while trading is stopped, or an
+        # emergency stop would leave a real position unprotected.
+        recheck = check_trading_enabled(await read_trading_enabled_flag(rdb))
+        if not recheck.allowed:
+            reason = f"{recheck.reason} during pre-flight"
+            log.warning(
+                "execution.order.stopped_during_preflight",
+                base=base,
+                exchange=exchange,
+                reason=recheck.reason,
+            )
             if db_url and attempt_id is not None:
                 await order_attempts.mark_failed(db_url, attempt_id, error=reason)
             return {"allowed": False, "reason": reason}
