@@ -22,6 +22,7 @@ _FUNDING_FETCH_TIMEOUT = 5  # seconds
 
 if TYPE_CHECKING:
     from .config import Config
+    from .market_refresh import MarketRefresher
     from .supervisor import WorkerReadinessGate
 
 log = structlog.get_logger()
@@ -59,13 +60,21 @@ async def run_signal_trader(
     tracker: Any = None,
     *,
     worker_gate: WorkerReadinessGate,
+    market_refresher: MarketRefresher | None = None,
 ) -> None:
     while True:
         if tracker:
             tracker.tick_started()
         await asyncio.sleep(_INTERVAL_SECONDS)
         try:
-            await _tick(exchanges, rdb, cfg, broker, worker_gate=worker_gate)
+            await _tick(
+                exchanges,
+                rdb,
+                cfg,
+                broker,
+                worker_gate=worker_gate,
+                market_refresher=market_refresher,
+            )
             if tracker:
                 tracker.tick_succeeded()
         except asyncio.CancelledError:
@@ -83,6 +92,7 @@ async def _tick(
     broker: Broker | None = None,
     *,
     worker_gate: WorkerReadinessGate,
+    market_refresher: MarketRefresher | None = None,
 ) -> None:
     # Resolved here (not just once in run_signal_trader) so a direct _tick()
     # call -- every existing test, plus any future caller -- gets the same
@@ -190,7 +200,31 @@ async def _tick(
                 instrument = symbols.resolve_execution_instrument(ex, base)
                 symbol = instrument.symbol
             except (RuntimeError, ValueError) as e:
+                # A miss is most often a listing newer than this process's
+                # cached catalog, which used to make the instrument permanently
+                # unresolvable until someone restarted the service -- 29
+                # consecutive skips across a +480% pump in the production case
+                # this handles (ENG-031). Reload once, under the refresher's own
+                # per-exchange cooldown, and try again before giving up.
                 log.warning("trader.unresolved_symbol", base=base, err=str(e))
+                if market_refresher is not None and exchange is not None:
+                    await market_refresher.refresh(exchange, reason="resolution_miss")
+                    try:
+                        instrument = symbols.resolve_execution_instrument(ex, base)
+                        symbol = instrument.symbol
+                        log.info(
+                            "trader.resolved_after_market_refresh",
+                            base=base,
+                            exchange=exchange,
+                            symbol=symbol,
+                        )
+                    except (RuntimeError, ValueError) as retry_exc:
+                        log.warning(
+                            "trader.unresolved_symbol_after_refresh",
+                            base=base,
+                            exchange=exchange,
+                            err=str(retry_exc),
+                        )
 
         features = _decision_features(
             signal,
