@@ -517,9 +517,14 @@ label alone never establishes a P0 incident.
 ### ENG-021 — Make Go verification wrappers and configuration fail reliably
 
 - **Status / priority:** `fixed in code`, `P1` verification blocker; H-1/H-2/M-10,
-  B02. The wrappers, the config schema locations and the findings they were hiding
-  are addressed on `fix/go-verification-gates-v1`; the newly effective linter
-  settings this exposed are carried to ENG-029 rather than fixed here.
+  B02. Merged as #345. The masking was real, not hypothetical: at `356bbb7` the hook
+  exited 0 while apps/collector had 9 findings and apps/notifier 3, hidden behind
+  apps/market-hotset being last in go.work and clean. Wrappers, config schema
+  locations and all twelve findings are fixed; the linter settings the schema fix
+  exposed are carried to ENG-029 rather than adopted by accident. Executed: `make
+verify`, `make deadcode`, `pre-commit run --all-files`, and 13 black-box tests that
+  run the real scripts, six of which fail against the previous one-liner. This gate
+  runs in CI and locally, so there is no separate deployment step for it.
 - **Evidence:** `.pre-commit-config.yaml:86` uses a per-module pipeline/while loop
   whose final success masks an earlier failure. Its parser differs from
   `infra/scripts/go_workspace_modules.sh`. `.golangci.yml` declares v2 while using
