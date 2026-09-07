@@ -73,48 +73,40 @@ func TestRedisStoreStoresHealthWithTTLAndSampledSymbolLists(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fields["exchange"] != "bybit" {
-		t.Fatalf("exchange = %q, want bybit", fields["exchange"])
+	// One table rather than twenty sequential if-blocks: the assertions are
+	// identical in shape, and the chain pushed this function over gocyclo's
+	// threshold once the lint gate actually started reporting it.
+	for _, want := range []struct{ field, value string }{
+		{"exchange", "bybit"},
+		{"status", "ok"},
+		{"schema_version", "4"},
+		{"subscribed_symbols", "735"},
+		{"ready_symbols", "400"},
+		{"catalog_items_total", "775"},
+		{"crypto_perpetuals_included", "551"},
+		{"dated_futures_excluded", "40"},
+		{"stock_perpetuals_excluded", "180"},
+		{"bars_completed_total", "727"},
+		{"bars_persisted_total", "727"},
+		{"payload_hash_mismatch_total", "1"},
+		{"derivatives_gap_total", "2"},
+		{"book_ticker_queue_depth", "12"},
+		{"book_ticker_queue_peak", "30"},
+		{"book_ticker_coalesced_total", "500"},
+		{"book_ticker_drops_total", "1"},
+		{"trade_handler_count", "100"},
+		{"trade_handler_p99_us", "500"},
+		{"flush_count", "20"},
+		{"flush_p99_us", "2500"},
+		// The TRUE missing count, not the length of the capped sample below.
+		{"symbols_missing_ticker_count", "25"},
+		{"updated_at_ms", "2000000"},
+	} {
+		if fields[want.field] != want.value {
+			t.Fatalf("%s = %q, want %q", want.field, fields[want.field], want.value)
+		}
 	}
-	if fields["status"] != "ok" {
-		t.Fatalf("status = %q, want ok", fields["status"])
-	}
-	if fields["schema_version"] != "4" {
-		t.Fatalf("schema_version = %q, want 4", fields["schema_version"])
-	}
-	if fields["subscribed_symbols"] != "735" || fields["ready_symbols"] != "400" {
-		t.Fatalf("universe fields wrong: %+v", fields)
-	}
-	if fields["catalog_items_total"] != "775" ||
-		fields["crypto_perpetuals_included"] != "551" ||
-		fields["dated_futures_excluded"] != "40" ||
-		fields["stock_perpetuals_excluded"] != "180" {
-		t.Fatalf("catalog scope fields wrong: %+v", fields)
-	}
-	if fields["bars_completed_total"] != "727" || fields["bars_persisted_total"] != "727" {
-		t.Fatalf("bar counters wrong: %+v", fields)
-	}
-	if fields["payload_hash_mismatch_total"] != "1" {
-		t.Fatalf("payload_hash_mismatch_total = %q, want 1", fields["payload_hash_mismatch_total"])
-	}
-	if fields["derivatives_gap_total"] != "2" {
-		t.Fatalf("derivatives_gap_total = %q, want 2", fields["derivatives_gap_total"])
-	}
-	if fields["book_ticker_queue_depth"] != "12" ||
-		fields["book_ticker_queue_peak"] != "30" ||
-		fields["book_ticker_coalesced_total"] != "500" ||
-		fields["book_ticker_drops_total"] != "1" {
-		t.Fatalf("book ticker mailbox fields wrong: %+v", fields)
-	}
-	if fields["trade_handler_count"] != "100" || fields["trade_handler_p99_us"] != "500" {
-		t.Fatalf("trade handler latency fields wrong: %+v", fields)
-	}
-	if fields["flush_count"] != "20" || fields["flush_p99_us"] != "2500" {
-		t.Fatalf("flush latency fields wrong: %+v", fields)
-	}
-	if fields["symbols_missing_ticker_count"] != "25" {
-		t.Fatalf("symbols_missing_ticker_count = %q, want the TRUE count (25), not the sampled length", fields["symbols_missing_ticker_count"])
-	}
+
 	sampleCount := len(splitNonEmpty(fields["symbols_missing_ticker_sample"]))
 	if sampleCount != missingSymbolsSample {
 		t.Fatalf("symbols_missing_ticker_sample has %d entries, want the capped %d", sampleCount, missingSymbolsSample)

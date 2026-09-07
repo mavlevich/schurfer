@@ -516,7 +516,10 @@ label alone never establishes a P0 incident.
 
 ### ENG-021 — Make Go verification wrappers and configuration fail reliably
 
-- **Status / priority:** `planned`, `P1` verification blocker; H-1/H-2/M-10, B02.
+- **Status / priority:** `fixed in code`, `P1` verification blocker; H-1/H-2/M-10,
+  B02. The wrappers, the config schema locations and the findings they were hiding
+  are addressed on `fix/go-verification-gates-v1`; the newly effective linter
+  settings this exposed are carried to ENG-029 rather than fixed here.
 - **Evidence:** `.pre-commit-config.yaml:86` uses a per-module pipeline/while loop
   whose final success masks an earlier failure. Its parser differs from
   `infra/scripts/go_workspace_modules.sh`. `.golangci.yml` declares v2 while using
@@ -650,6 +653,27 @@ label alone never establishes a P0 incident.
 - **Acceptance:** identical JSON/hash/verdict on pinned real inputs and measured
   useful improvement. Other duplicated loaders require matching contracts and two
   real consumers; do not generalize all research into a speculative framework.
+
+### ENG-029 — Decide the Go lint policy the repaired gate would enforce
+
+- **Status / priority:** `planned`, `P3`; follow-up to ENG-021's schema fix, not an
+  audit finding of its own.
+- **Evidence:** `.golangci.yml` declared `version: '2'` while writing `gocyclo`,
+  `gocritic` and `gosec` settings at the v1 root location, where this version's
+  schema rejects them and `run` ignores them silently. The tree was therefore never
+  held to `gocyclo.min-complexity: 15` or `gocritic.enabled-tags: [diagnostic,
+performance, style]`. Measured with those settings applied at `356bbb7`: 161
+  findings, api-gateway 48, collector 90, notifier 23, market-hotset 0, of which
+  about 100 are gocritic style suggestions and 49 are gocyclo, including eight
+  production functions (`OHLCV`, `computeSignals`, `readCheckpointOrchestrator`,
+  trades `List`, `validateCapability`, `Observe`, `Activate`, notifier `tick`).
+- **Bounded next step:** decide per setting whether the repo adopts it, then land the
+  cleanup separately from the gate repair. A test-only exclusion for gocyclo is a
+  legitimate option; silently relaxing a threshold to whatever the tree already
+  passes is not. `gosec` severity/confidence is already restored, since it changes
+  nothing today.
+- **Acceptance:** whatever is adopted is written at a location `golangci-lint config
+verify` accepts, and the tree passes it with no baseline file or blanket nolint.
 
 ## Promotion summary
 

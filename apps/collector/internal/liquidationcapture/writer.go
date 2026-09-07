@@ -95,9 +95,13 @@ func (w *Writer) Flush(ctx context.Context) error {
 			batch.Queue(insertEventSQL, eventArgs(event)...)
 		}
 		results := w.db.SendBatch(flushCtx, batch)
-		insertedCount := 0
-		duplicateCount := 0
-		mismatchCount := 0
+		// uint64 rather than int plus a conversion at the accumulation
+		// below: these only ever count upward from zero into uint64 stats,
+		// so the conversion was both unnecessary and an integer-overflow
+		// finding (gosec G115).
+		insertedCount := uint64(0)
+		duplicateCount := uint64(0)
+		mismatchCount := uint64(0)
 		for _, event := range batchEvents {
 			var inserted bool
 			var storedHash []byte
@@ -129,9 +133,9 @@ func (w *Writer) Flush(ctx context.Context) error {
 
 		w.mu.Lock()
 		w.pending = w.pending[n:]
-		w.stats.EventsPersistedTotal += uint64(insertedCount)
-		w.stats.DuplicateEventsTotal += uint64(duplicateCount)
-		w.stats.PayloadHashMismatchTotal += uint64(mismatchCount)
+		w.stats.EventsPersistedTotal += insertedCount
+		w.stats.DuplicateEventsTotal += duplicateCount
+		w.stats.PayloadHashMismatchTotal += mismatchCount
 		w.stats.LastPersistAt = time.Now()
 		w.mu.Unlock()
 		remaining -= n

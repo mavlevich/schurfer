@@ -23,22 +23,30 @@ linters:
     - unconvert # unnecessary type conversions
     - unparam # unused function parameters
     - wastedassign # wasted assignments
-
-linters-settings:
-  gocyclo:
-    min-complexity: 15
-  gocritic:
-    enabled-tags:
-      - diagnostic
-      - performance
-      - style
-  gosec:
-    severity: medium
-    confidence: medium
+  # v2 location. These lived at the root as `linters-settings` while the file
+  # already declared `version: '2'`, where golangci-lint's own schema rejects
+  # them -- but `run` ignores unknown keys silently, so every setting below
+  # read as configured and none of it ever applied (September audit, M-10).
+  # infra/scripts/go_lint.sh now runs `config verify` before linting, so a
+  # key at a location this version does not understand fails the gate.
+  settings:
+    gosec:
+      severity: medium
+      confidence: medium
+  # gocyclo.min-complexity: 15 and gocritic.enabled-tags (diagnostic,
+  # performance, style) are deliberately NOT restored here. They were dead
+  # for as long as this file has been on v2, so the tree was never held to
+  # them: applying them surfaces about 160 findings, roughly 100 gocritic
+  # style suggestions and 49 gocyclo functions, including production
+  # handlers that need real refactoring. Turning them on is a policy change
+  # with its own cleanup, tracked as ENG-029, not a side effect of repairing
+  # the gate. gocyclo's default threshold of 30 and gocritic's default check
+  # set stay in force meanwhile, which is what was actually enforced before.
+  exclusions:
+    paths:
+      - vendor
+      - node_modules
 
 issues:
-  exclude-dirs:
-    - vendor
-    - node_modules
   max-issues-per-linter: 50
   max-same-issues: 5

@@ -92,9 +92,9 @@ func TestLiquidationCaptureMonitorAlertsEveryFatalSessionExactlyOnce(t *testing.
 	now := time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
 	monitor := newTestLiquidationMonitor(t, rdb, now)
 
-	addFatalIncident(t, rdb, "bybit", "session-1", now, "queue_drop_critical")
+	addFatalIncident(t, rdb, "session-1", now, "queue_drop_critical")
 	monitor.checkFatalIncidents(ctx, "bybit")
-	addFatalIncident(t, rdb, "bybit", "session-2", now.Add(time.Second), "fatal_payload_mismatch")
+	addFatalIncident(t, rdb, "session-2", now.Add(time.Second), "fatal_payload_mismatch")
 	monitor.checkFatalIncidents(ctx, "bybit")
 	monitor.checkFatalIncidents(ctx, "bybit")
 
@@ -116,7 +116,7 @@ func TestLiquidationCaptureMonitorFatalRestartRecoversOnlyAfterOk(t *testing.T) 
 	now := time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
 	monitor := newTestLiquidationMonitor(t, rdb, now)
 
-	addFatalIncident(t, rdb, "bybit", "session-failed", now, "queue_drop_critical")
+	addFatalIncident(t, rdb, "session-failed", now, "queue_drop_critical")
 	setLiquidationHealth(t, rdb, "starting", "awaiting_first_complete_minute", "session-new", now.Add(time.Second).UnixMilli())
 	monitor.checkHealth(ctx)
 	if got := outboxMessages(t, rdb); len(got) != 1 {
@@ -563,15 +563,19 @@ func setExchangeHealth(
 	}
 }
 
+// Bybit-scoped like newTestLiquidationMonitor above, which is what every
+// caller here monitors. The exchange was a parameter that only ever received
+// "bybit"; a binance case would reintroduce it along with a monitor fixture
+// that actually watches binance.
 func addFatalIncident(
 	t *testing.T,
 	rdb *redis.Client,
-	exchange string,
 	sessionID string,
 	when time.Time,
 	reason string,
 ) {
 	t.Helper()
+	const exchange = "bybit"
 	ctx := context.Background()
 	if err := rdb.HSet(ctx, liquidationIncidentKey(exchange, sessionID), map[string]any{
 		"exchange": exchange, "process_session_id": sessionID,
@@ -608,7 +612,7 @@ func TestLiquidationCaptureMonitorFatalDuringOpenCoverageIncidentDoesNotDoubleRe
 	}
 
 	fatalAt := now.Add(time.Minute)
-	addFatalIncident(t, rdb, "bybit", "session-1", fatalAt, "queue_drop_critical")
+	addFatalIncident(t, rdb, "session-1", fatalAt, "queue_drop_critical")
 	fatalMonitor := newTestLiquidationMonitor(t, rdb, fatalAt)
 	fatalMonitor.checkFatalIncidents(ctx, "bybit")
 	if got := outboxMessages(t, rdb); len(got) != 2 {

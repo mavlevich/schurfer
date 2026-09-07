@@ -324,7 +324,7 @@ func runHealthcheck() error {
 	defer cancel()
 
 	rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr})
-	defer rdb.Close()
+	defer func() { _ = rdb.Close() }()
 
 	key := liquidationcapture.HealthKey(cfg.Exchange)
 	res, err := rdb.HGetAll(ctx, key).Result()
