@@ -721,6 +721,19 @@ verify` accepts, and the tree passes it with no baseline file or blanket nolint.
   listing, and two new listings on one venue inside the cooldown window hit it with no
   concurrency at all (colleague review). Do not claim the 816 skipped
   evaluations can be recovered: those events are gone, only future ones are protected.
+- **First production sweep, 2026-09-07:** the worker ran on schedule (two sweeps,
+  seventeen venues each) and the skipped-evaluation count went to zero and stayed there
+  for five hours while total decisions per hour held at 400-650, so the fix works. But
+  19 of those first 34 reloads failed. Reloading all seventeen venues concurrently
+  pushed several past their timeout (`load_markets` is dozens of rate-limited requests
+  for venues that paginate per category), and `asyncio.wait_for` cancelling a ccxt request
+  mid-flight left its aiohttp connector unusable, observed as
+  `File descriptor 21 is used by transport <TCPTransport closed=False reading=True>` on
+  bitget. Those clients are shared with everything else in the process, so a broken
+  connector is not confined to this worker. Fixed by sweeping one venue at a time,
+  removing the asyncio-level deadline in favour of the client's own per-request timeout,
+  and logging the exception type, since ccxt renders many errors as a bare
+  `<id> <METHOD> <url>` that does not say whether it timed out or was refused.
 - **Not covered:** CZ is a different case and not a defect. It resolved on lbank and was
   skipped on score (`score 3 < threshold 5` at pumps up to 602%). Whether that threshold
   is right is a strategy question needing a registered hypothesis, not a fix. Neither CZ
