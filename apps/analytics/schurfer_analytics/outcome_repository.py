@@ -170,6 +170,8 @@ def upsert_outcomes_statement(
         "forward_price",
         "mfe_pct",
         "mae_pct",
+        "mfe_at",
+        "mae_at",
         "short_return_pct",
         "bars_count",
         "expected_bars",

@@ -36,6 +36,14 @@ class Outcome:
     coverage_ratio: float | None
     status: str
     error: str | None = None
+    # When each extreme occurred. Without these the extremes cannot be ordered,
+    # so "did the stop or the target come first" is unanswerable from this
+    # table: HYP-020 could only bound the stop question instead of answering it.
+    # This is the start of the minute bar that set the extreme, a bucket rather
+    # than an intra-bar instant, and it is null for every row written before
+    # these fields existed.
+    mfe_at: datetime | None = None
+    mae_at: datetime | None = None
 
     @classmethod
     def unavailable(
