@@ -3,7 +3,11 @@ name = "schurfer-execution"
 version = "0.1.0"
 requires-python = ">=3.13"
 dependencies = [
-    "ccxt==4.5.68",
+    # Pinned exactly, because ccxt itself pins its own transitive versions
+    # exactly (4.5.68 required aiohttp==3.14.1 and cryptography==49.0.0, both
+    # carrying advisories). Moving those requires moving ccxt: 4.5.77 relaxes
+    # them to aiohttp>=3.14.3 and cryptography>=50 (ENG-026).
+    "ccxt==4.5.77",
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
     "redis>=5.2",

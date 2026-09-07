@@ -675,7 +675,24 @@ verify`, `make deadcode`, `pre-commit run --all-files`, and 13 black-box tests t
 
 ### ENG-026 — Update vulnerable dependencies and verify runtime exposure
 
-- **Status / priority:** `confirmed` lock finding, `planned`, `P1`; H-7/E-06, B10.
+- **Status / priority:** `fixed in code`, `P1`; H-7/E-06, B10. The audit's own scope was
+  the larger half of this finding: CI ran `uv export --extra dev` **without**
+  `--all-packages`, so it audited 47 of the workspace's 94 packages and every runtime
+  dependency of the deployed services was invisible to it. The execution image installs
+  `uv sync --package schurfer-execution --no-dev --frozen`, so ccxt and everything it
+  pulls shipped to production unscanned. With the scope corrected, pip-audit reports
+  four advisories in two packages, not the one the entry recorded: aiohttp 3.14.1
+  (PYSEC-2026-3545/3546/3547) and cryptography 49.0.0 (PYSEC-2026-3552).
+- **Why the lock could not simply be bumped:** ccxt 4.5.68 pins `aiohttp==3.14.1` and
+  `cryptography==49.0.0` exactly, so `uv lock --upgrade-package` is a no-op. Upstream
+  relaxes those to `aiohttp>=3.14.3` and `cryptography>=50` only from 4.5.72 -- and
+  removed the bitmart exchange in 4.5.71. There is no version that both keeps bitmart
+  and admits the fixed dependencies.
+- **Why dropping bitmart was the cheap side of that trade:** over the 30 days to
+  2026-09-07 bitmart produced **zero** pump event sources and was never the only venue
+  for an event, despite listing 1187 USDT linear instruments. Whether it was dormant or
+  quietly broken is a separate question worth asking, but either way it was not
+  evidence being lost. Historical rows keep their bitmart attribution.
 - **Evidence:** September pip-audit found aiohttp 3.14.1 in uv.lock with upstream fix
   3.14.3 for GHSA-cq5v-8q36-5273. Production image versions/exploitation were not
   verified. Other cryptography/pip findings need reachability/tooling separation.

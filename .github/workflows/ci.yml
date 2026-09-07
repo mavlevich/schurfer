@@ -295,9 +295,16 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - name: Python dependency audit
+        # --all-packages on the EXPORT, not only on the sync: without it the
+        # audit sees the root project's dev extra alone, 47 of the workspace's
+        # 94 packages, and every runtime dependency of the deployed services is
+        # invisible to it. The execution image installs `uv sync --package
+        # schurfer-execution --no-dev --frozen`, so ccxt and everything it pulls
+        # ship to production while never being scanned (ENG-026).
         run: |
           uv sync --frozen --extra dev --all-packages
-          uv export --extra dev --no-emit-project --no-hashes | grep -v '^pip==' | uv run pip-audit -r /dev/stdin
+          uv export --extra dev --all-packages --no-emit-project --no-hashes \
+            | grep -v '^pip==' | uv run pip-audit -r /dev/stdin
       - name: Go vulnerability check
         # infra/scripts/go_workspace_modules.sh, not `grep '^use '` -- see
         # the Run tests step in the test-go job above for why.
