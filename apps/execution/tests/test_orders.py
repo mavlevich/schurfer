@@ -2,6 +2,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi import HTTPException
 from pydantic import ValidationError
 from schurfer_execution import exit as exit_module
 from schurfer_execution.orders import close_position, place_order
@@ -96,6 +97,121 @@ class TestOrderRequestValidation:
         assert req.base == "1INCH"
 
 
+class TestManualEntryModeCeiling:
+    """Regression for ENG-020: POST /order goes straight to orders.place_order,
+    which submits a real exchange order through the authenticated trading
+    clients. The endpoint used to ignore the global AUTO_TRADE/DRY_RUN ceiling
+    entirely, so a paper-mode -- or fully disabled -- deployment that still
+    holds live API keys would place a real order on request. The ceiling is
+    read through execution_intent.mode_ceiling, the same function resolve_mode
+    uses, so the endpoint's gate and the strategy mode ladder cannot drift.
+    """
+
+    @staticmethod
+    def _cfg(*, auto_trade: bool, dry_run: bool) -> MagicMock:
+        return MagicMock(
+            auto_trade=auto_trade,
+            dry_run=dry_run,
+            max_positions=5,
+            max_position_usd=500.0,
+            daily_loss_limit_usd=200.0,
+            liquidation_buffer_pct=20.0,
+            db_url=None,
+        )
+
+    @staticmethod
+    def _request(cfg: MagicMock) -> tuple[SimpleNamespace, MagicMock]:
+        ex = MagicMock()
+        ex.markets = {
+            "BEAT/USDT:USDT": {
+                "id": "BEATUSDT",
+                "type": "swap",
+                "contractSize": 1.0,
+                "limits": {},
+            }
+        }
+        ex.set_leverage = AsyncMock()
+        ex.fetch_ticker = AsyncMock(return_value={"last": 1.0})
+        ex.amount_to_precision = MagicMock(side_effect=lambda _symbol, amount: str(amount))
+        ex.price_to_precision = MagicMock(side_effect=lambda _symbol, price: str(price))
+        ex.create_market_order = AsyncMock(return_value={"id": "order-1"})
+        ex.create_stop_market_order = AsyncMock(return_value={"id": "sl-1"})
+
+        rdb = MagicMock()
+        rdb.set = AsyncMock(return_value=True)
+        rdb.get = AsyncMock(side_effect=_default_get)
+        rdb.eval = AsyncMock(return_value=1)
+        rdb.delete = AsyncMock(return_value=1)
+
+        request = SimpleNamespace(
+            app=SimpleNamespace(
+                state=SimpleNamespace(
+                    cfg=cfg,
+                    trading_exchanges={"bingx": ex},
+                    rdb=rdb,
+                    worker_gate=_open_gate(),
+                )
+            )
+        )
+        return request, ex
+
+    @pytest.mark.parametrize(
+        ("auto_trade", "dry_run", "expected_ceiling"),
+        [(False, True, "paper"), (False, False, "disabled")],
+    )
+    async def test_manual_entry_below_live_ceiling_never_reaches_the_exchange(
+        self, auto_trade: bool, dry_run: bool, expected_ceiling: str
+    ) -> None:
+        cfg = self._cfg(auto_trade=auto_trade, dry_run=dry_run)
+        request, ex = self._request(cfg)
+        req = OrderRequest(base="BEAT", exchange="bingx", side="short", size_usd=100.0)
+
+        with (
+            patch(
+                "schurfer_execution.routers.orders.symbols.resolve_execution_instrument",
+                return_value=SimpleNamespace(symbol="BEAT/USDT:USDT"),
+            ),
+            patch(
+                "schurfer_execution.orders.fetch_positions",
+                AsyncMock(return_value=([], set())),
+            ),
+            patch(
+                "schurfer_execution.orders.fetch_margin_balance",
+                AsyncMock(
+                    return_value=[
+                        {"exchange": "bingx", "asset": "USDT", "free": 10_000.0, "tradeable": True}
+                    ]
+                ),
+            ),
+            pytest.raises(HTTPException) as exc_info,
+        ):
+            await post_order(req, request)  # type: ignore[arg-type]
+
+        assert exc_info.value.status_code == 409
+        assert expected_ceiling in str(exc_info.value.detail)
+        ex.set_leverage.assert_not_awaited()
+        ex.create_market_order.assert_not_awaited()
+
+    async def test_manual_entry_is_allowed_under_a_live_ceiling(self) -> None:
+        """The gate must reject only what the ceiling actually forbids: with
+        AUTO_TRADE=true the existing manual path still runs unchanged."""
+        cfg = self._cfg(auto_trade=True, dry_run=False)
+        request, _ex = self._request(cfg)
+        req = OrderRequest(base="BEAT", exchange="bingx", side="short", size_usd=100.0)
+
+        with (
+            patch("schurfer_execution.routers.orders.symbols.resolve_execution_instrument"),
+            patch(
+                "schurfer_execution.routers.orders.place_order",
+                AsyncMock(return_value={"allowed": True}),
+            ) as mock_place,
+        ):
+            result = await post_order(req, request)  # type: ignore[arg-type]
+
+        assert result == {"allowed": True}
+        mock_place.assert_awaited_once()
+
+
 class TestManualOrderEndpointJournalsToo:
     """Regression: a manually-triggered order via POST /order used to place
     a real exchange order but never journal it at all -- cfg simply wasn't
@@ -106,6 +222,12 @@ class TestManualOrderEndpointJournalsToo:
 
     async def test_post_order_passes_cfg_and_manual_setup_context(self) -> None:
         cfg = MagicMock(
+            # Explicit: the endpoint now refuses manual entries below a live
+            # ceiling (TestManualEntryModeCeiling), so this journalling
+            # regression must state the mode it is exercising rather than
+            # relying on MagicMock's truthy default attributes.
+            auto_trade=True,
+            dry_run=False,
             max_positions=5,
             max_position_usd=500.0,
             daily_loss_limit_usd=200.0,
@@ -178,7 +300,7 @@ class TestLockBehavior:
             result = await place_order(**_kwargs(rdb=rdb))
 
         assert not result["allowed"]
-        assert "disabled" in result["reason"]
+        assert "missing" in result["reason"]
 
     async def test_lock_released_via_lua_not_delete(self) -> None:
         """Lock release must use compare-and-delete, not unconditional DEL."""
@@ -733,6 +855,114 @@ class TestCompletesJournalOnFill:
         assert result["allowed"]
         assert mock_complete.call_args.args[0] is None
         mock_incident.assert_not_awaited()
+
+
+class TestEmergencyStopDuringPreFlight:
+    """Regression for ENG-020 / audit H-4: trading:enabled was read once, at
+    the start of place_order, before several seconds of network pre-flight
+    (positions, balances, load_markets, set_leverage, fetch_ticker). An
+    operator pressing POST /stop inside that window still saw the entry go
+    out. The flag is now re-read immediately before submission, where the
+    readiness-gate generation is already rechecked.
+    """
+
+    def _confirmed_exchange(self) -> MagicMock:
+        ex = MagicMock()
+        ex.markets = {"BEAT/USDT:USDT": {"contractSize": 1.0}}
+        ex.set_leverage = AsyncMock()
+        ex.fetch_ticker = AsyncMock(return_value={"last": 1.0})
+        ex.amount_to_precision = MagicMock(return_value="100.0")
+        ex.price_to_precision = MagicMock(return_value="1.1")
+        ex.create_market_order = AsyncMock(
+            return_value={"id": "entry-1", "status": "closed", "average": 1.5}
+        )
+        ex.create_stop_market_order = AsyncMock(return_value={"id": "sl-1"})
+        return ex
+
+    @staticmethod
+    def _rdb(*, stop_after_reads: int | None = None, stopped: dict[str, bool] | None = None):
+        """A Redis double whose kill switch flips mid-flight: either after a
+        given number of admission reads, or when `stopped` is set by the
+        exchange call itself."""
+        reads = {"trading": 0}
+
+        async def _get(key: str) -> bytes | None:
+            if key == TRADING_ENABLED_KEY:
+                reads["trading"] += 1
+                if stopped is not None and stopped.get("value"):
+                    return b"0"
+                if stop_after_reads is not None and reads["trading"] > stop_after_reads:
+                    return b"0"
+                return b"1"
+            if key == PNL_READY_KEY:
+                return b"1"
+            return None
+
+        rdb = MagicMock()
+        rdb.set = AsyncMock(return_value=True)
+        rdb.get = AsyncMock(side_effect=_get)
+        rdb.eval = AsyncMock(return_value=1)
+        rdb.delete = AsyncMock(return_value=1)
+        return rdb
+
+    @patch("schurfer_execution.orders.fetch_positions", return_value=([], set()))
+    @patch(
+        "schurfer_execution.orders.fetch_margin_balance",
+        return_value=[{"exchange": "bingx", "free": 1000.0, "used": 0.0, "total": 1000.0}],
+    )
+    async def test_stop_pressed_during_preflight_blocks_submission(
+        self, _mock_bal: MagicMock, _mock_pos: MagicMock
+    ) -> None:
+        cfg = MagicMock(db_url="postgresql://x")
+        ex = self._confirmed_exchange()
+        rdb = self._rdb(stop_after_reads=1)
+
+        with (
+            patch(
+                "schurfer_execution.orders.order_attempts.create_attempt",
+                AsyncMock(return_value=7),
+            ),
+            patch(
+                "schurfer_execution.orders.order_attempts.mark_failed", AsyncMock()
+            ) as mock_failed,
+        ):
+            result = await place_order(**_kwargs(rdb=rdb, exchanges={"bingx": ex}, cfg=cfg))
+
+        assert not result["allowed"]
+        assert "emergency stop" in result["reason"]
+        assert "pre-flight" in result["reason"]
+        ex.create_market_order.assert_not_called()
+        # The durable attempt row was already written before the exchange call,
+        # so it must be closed out as failed rather than left pending forever.
+        mock_failed.assert_awaited_once()
+
+    @patch("schurfer_execution.orders.fetch_positions", return_value=([], set()))
+    @patch(
+        "schurfer_execution.orders.fetch_margin_balance",
+        return_value=[{"exchange": "bingx", "free": 1000.0, "used": 0.0, "total": 1000.0}],
+    )
+    async def test_stop_after_submission_still_protects_the_position(
+        self, _mock_bal: MagicMock, _mock_pos: MagicMock
+    ) -> None:
+        """The entry is the only thing an emergency stop may cancel. Once a
+        real position exists, its protective stop must still be placed --
+        blocking that would leave the position unprotected, which is worse
+        than the entry the operator was trying to prevent."""
+        stopped = {"value": False}
+        ex = self._confirmed_exchange()
+
+        async def _submit(*_args: object, **_kwargs: object) -> dict[str, object]:
+            stopped["value"] = True  # operator presses stop as the order lands
+            return {"id": "entry-1", "status": "closed", "average": 1.5}
+
+        ex.create_market_order = AsyncMock(side_effect=_submit)
+        rdb = self._rdb(stopped=stopped)
+
+        result = await place_order(**_kwargs(rdb=rdb, exchanges={"bingx": ex}))
+
+        assert result["allowed"]
+        ex.create_market_order.assert_awaited_once()
+        ex.create_stop_market_order.assert_awaited_once()
 
 
 class TestPreFlightDurability:

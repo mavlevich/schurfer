@@ -111,17 +111,44 @@ def _mode_override(cfg: Config, strategy: str) -> TradingMode | None:
     return None if raw is None else parse_mode(raw)
 
 
+def mode_ceiling(cfg: Config) -> TradingMode:
+    """The most permissive mode the two global switches allow, and the only
+    place that mapping is written down: auto_trade=True -> LIVE_MICRO,
+    dry_run=True -> PAPER, neither -> DISABLED (matches main.py's own
+    task-startup gating).
+
+    resolve_mode below and every non-strategy admission gate (the manual
+    POST /order endpoint, which has no strategy name to resolve a mode for)
+    must both read the ceiling from here. A gate that re-derives
+    auto_trade/dry_run locally is exactly the drift AI_RULES forbids: a
+    computed safety decision must be the same value the actual branch reads.
+    """
+    if cfg.auto_trade:
+        return TradingMode.LIVE_MICRO
+    if cfg.dry_run:
+        return TradingMode.PAPER
+    return TradingMode.DISABLED
+
+
+def live_execution_allowed(cfg: Config) -> bool:
+    """Whether the current config permits placing a real exchange order at all.
+
+    Only the LIVE_* rungs mean real money; PAPER and DISABLED must never reach
+    orders.place_order, whatever credentials happen to be configured.
+    """
+    return _LADDER[mode_ceiling(cfg)] >= _LADDER[TradingMode.LIVE_PROBE]
+
+
 def resolve_mode(cfg: Config, strategy: str) -> TradingMode:
     """The mode ladder's only entry point -- every call site (Config
     validation at startup, and each run_* task at broker-construction time)
     must go through this, never re-derive dry_run/auto_trade -> mode logic
     locally.
 
-    ceiling is what the two existing global switches allow at most:
-    auto_trade=True -> LIVE_MICRO, dry_run=True -> PAPER, neither -> DISABLED
-    (matches main.py's own task-startup gating, which this function does not
-    change or duplicate -- resolve_mode only ever runs for a strategy whose
-    task main.py already decided to start).
+    ceiling is what the two existing global switches allow at most, read
+    from mode_ceiling above (which this function does not duplicate --
+    resolve_mode only ever runs for a strategy whose task main.py already
+    decided to start).
 
     An UNSET override never exceeds PAPER, regardless of ceiling -- this is
     the fix for the reviewed danger in an earlier draft of this module: with
@@ -130,12 +157,7 @@ def resolve_mode(cfg: Config, strategy: str) -> TradingMode:
     live trading. A live (or shadow) mode is only ever reached by an
     explicit, correctly-spelled override -- never by omission.
     """
-    if cfg.auto_trade:
-        ceiling = TradingMode.LIVE_MICRO
-    elif cfg.dry_run:
-        ceiling = TradingMode.PAPER
-    else:
-        ceiling = TradingMode.DISABLED
+    ceiling = mode_ceiling(cfg)
 
     override = _mode_override(cfg, strategy)
     if override is None:

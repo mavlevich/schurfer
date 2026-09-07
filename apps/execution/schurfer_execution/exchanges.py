@@ -145,18 +145,46 @@ def _build_trading_exchanges(cfg: Config) -> dict[str, ccxt.Exchange]:
     return exchanges
 
 
-def _enable_testnet(exchanges: dict[str, ccxt.Exchange], *, scope: str) -> None:
+class SandboxUnsupportedError(RuntimeError):
+    """TESTNET was requested but an authenticated client stayed on production."""
+
+
+def _enable_testnet(exchanges: dict[str, ccxt.Exchange], *, scope: str, required: bool) -> None:
+    """Switch clients to their sandbox endpoints.
+
+    required=True (the authenticated trading clients) fails closed: a client
+    that could not switch is still pointed at the production venue while
+    holding real API keys, so the operator asked for testnet and would have
+    silently got real orders on real money (ENG-020 / audit C-6). ccxt raises
+    here for every venue with no sandbox endpoints -- kucoinfutures and mexc
+    among the credentialed ones today -- so this must fail startup, not log.
+
+    required=False is the public measurement scope: those clients carry no
+    credentials and no order path, and falling back to production public data
+    is the safe direction. It is still logged as a warning naming the venue,
+    because paper accounting then prices against production, not sandbox.
+    """
+    unsupported: list[str] = []
     for name, exchange in exchanges.items():
         try:
             exchange.set_sandbox_mode(True)
             log.info("exchanges.testnet.enabled", exchange=name, scope=scope)
         except Exception as exc:
+            unsupported.append(name)
             log.warning(
                 "exchanges.testnet.unsupported",
                 exchange=name,
                 scope=scope,
+                required=required,
                 err=str(exc),
             )
+    if required and unsupported:
+        raise SandboxUnsupportedError(
+            f"TESTNET=true but {scope} client(s) {', '.join(sorted(unsupported))} have no "
+            "sandbox endpoint in this ccxt build -- they would trade against the "
+            "production venue with the configured API keys. Remove those exchanges' "
+            "keys or unset TESTNET."
+        )
 
 
 def build_exchange_clients(cfg: Config) -> ExchangeClients:
@@ -169,8 +197,8 @@ def build_exchange_clients(cfg: Config) -> ExchangeClients:
     trading = _build_trading_exchanges(cfg)
 
     if cfg.testnet:
-        _enable_testnet(market, scope="market")
-        _enable_testnet(trading, scope="trading")
+        _enable_testnet(market, scope="market", required=False)
+        _enable_testnet(trading, scope="trading", required=True)
 
     return ExchangeClients(market=market, trading=trading)
 

@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
 
 from .. import symbols
+from ..execution_intent import live_execution_allowed, mode_ceiling
 from ..orders import place_order
 
 log = structlog.get_logger()
@@ -35,6 +36,31 @@ class OrderRequest(BaseModel):
 async def post_order(req: OrderRequest, request: Request) -> dict[str, Any]:
     cfg = request.app.state.cfg
     exchanges = request.app.state.trading_exchanges
+
+    # place_order below submits a real market order (plus its protective stop)
+    # through the authenticated trading clients -- it has no paper branch. This
+    # endpoint therefore has to honor the same global ceiling every strategy
+    # obeys, read from the one function that defines it. Without this gate a
+    # paper-mode or fully disabled deployment that still holds live API keys
+    # placed a real order on request (ENG-020 / audit C-1). Protective closes
+    # (routers/account.py) are deliberately not gated here: reducing or
+    # exiting existing exposure must stay available in every mode.
+    if not live_execution_allowed(cfg):
+        ceiling = mode_ceiling(cfg)
+        log.warning(
+            "execution.order.rejected_mode_ceiling",
+            base=req.base,
+            exchange=req.exchange,
+            ceiling=ceiling.value,
+        )
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"manual entry is not permitted: this deployment's mode ceiling is "
+                f"{ceiling.value!r}, and POST /order places a real exchange order. "
+                "Set AUTO_TRADE=true to allow live manual entries."
+            ),
+        )
 
     if req.exchange not in exchanges:
         raise HTTPException(status_code=400, detail=f"exchange {req.exchange!r} not configured")
