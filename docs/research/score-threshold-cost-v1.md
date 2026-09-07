@@ -1,6 +1,6 @@
 # HYP-018 — What the score threshold costs
 
-**Status: pre-registered. No outcome value has been read at the time of writing.**
+**Status: read on 2026-09-07. Verdict `candidate`, with a caveat that matters more than the verdict. The contract above was committed (`1ae4945`) before any outcome value was queried.**
 
 Registered 2026-09-07, before any return, MFE or MAE for the population below was
 queried. Only row counts and outcome-status counts were inspected, to establish that the
@@ -88,3 +88,75 @@ a new id and an untouched window.
 It also may not be read as an estimate of profit forgone. These are price-path outcomes
 with no order book behind them: no spread, no depth, no fill. A positive median here
 means "worth investigating with execution evidence", not "money we lost".
+
+---
+
+# Result, 2026-09-07
+
+## Coverage, discovery window
+
+| Score level | complete | other status | % complete |
+| ----------- | -------: | -----------: | ---------: |
+| 0           |       53 |           33 |       61.6 |
+| 1           |      800 |          331 |       70.7 |
+| 2           |    3,681 |        1,212 |       75.2 |
+| 3           |   10,985 |        2,743 |       80.0 |
+| 4           |   11,545 |        4,110 |       73.7 |
+| 5           |    2,983 |          698 |       81.0 |
+
+Coverage ranges 62% to 81%, so between-level comparisons carry that difference and are
+not clean.
+
+## Primary metric: median net short return at 240 minutes
+
+| Score level |      n | gross % | **net %** | median MFE | median MAE |
+| ----------- | -----: | ------: | --------: | ---------: | ---------: |
+| 0           |     53 |   3.299 |     3.074 |      11.53 |       6.14 |
+| 1           |    800 |   3.492 | **3.267** |      12.95 |      10.47 |
+| 2           |  3,681 |   1.373 | **1.148** |       9.69 |       8.92 |
+| 3           | 10,985 |   1.228 | **1.003** |       8.13 |       7.39 |
+| 4           | 11,545 |   0.581 |     0.356 |       8.24 |       7.28 |
+| 5           |  2,983 |   1.094 | **0.869** |       8.27 |       6.36 |
+
+By the pre-declared rule this is `candidate`: levels 1, 2, 3 and 5 clear the +0.5% margin
+on far more than 100 complete outcomes. Level 4 does not clear it and level 0 is below
+the evidence floor.
+
+## The caveat that outweighs the verdict
+
+`short_return_pct` at 240 minutes is **enter and hold for four hours with no stop**. The
+strategy does not trade that way: it places a protective stop at `initial_sl_pct`,
+default 10%.
+
+| Score level | % whose adverse excursion reached 10% | median MAE |
+| ----------- | ------------------------------------: | ---------: |
+| 0           |                                  39.6 |       6.14 |
+| 1           |                              **51.4** |      10.47 |
+| 2           |                                  46.1 |       8.92 |
+| 3           |                                  39.0 |       7.39 |
+| 4           |                                  38.6 |       7.28 |
+| 5           |                                  31.6 |       6.36 |
+
+Between 32% and 51% of these positions would have been stopped out before the horizon.
+Level 1, which shows the best median net return, is also the one that would have been
+stopped most often: its median adverse excursion alone is 10.47%, past the stop.
+
+So the positive medians are not a claim that these trades were available. They are a
+claim that the price path, held without a stop, ended positive at the median.
+
+## Also worth recording
+
+The metric is **not monotonic in the score**. Level 4, the largest bucket, has the worst
+net return of any level above the floor, below both level 3 and level 5. Whatever the
+score is ordering in this window, it is not four-hour short outcome.
+
+## What happens next, per the contract
+
+A candidate earns a read of the held-out `threshold = 5` window under its own registered
+rules. It changes no threshold, and this pass may not be re-run with a different horizon,
+cost model or stop assumption to obtain a better-looking answer.
+
+The obvious next question -- what these look like under the actual exit bracket rather
+than hold-to-horizon -- is a **different** hypothesis with its own id and its own
+untouched window, because the exit policy is a strategy parameter and tuning it against
+this already-viewed window would be exactly the fitting this ledger exists to prevent.
