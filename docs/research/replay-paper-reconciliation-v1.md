@@ -149,3 +149,49 @@ has been _observed_ to, on a sample the contract calls too small.
 Nothing about live execution. All 936 trades in the database are `paper: true`
 with no exchange order id. Agreement here would establish that the replay
 reproduces the paper broker, and nothing about slippage, fills, or depth.
+
+---
+
+# Recount, 2026-09-08, after the pairing defects were fixed
+
+A colleague reproduced two defects in the version that produced the result
+above: the market path's venue was never compared to the trade's, so a Bybit
+trade could be measured against Binance candles and come back `compared` with a
+matching reason; and an unmatched `decision_id` silently fell back to the
+episode's first decision, whose own `pump_pct` can select a different pump band
+and therefore different exit thresholds.
+
+Both were fixed and both are now coverage statuses that cannot reach the
+agreement rate. The result above was computed with both present, so it was
+re-run at `291f3c8`.
+
+## The number did not move
+
+|                 | Before the fix |          After |
+| --------------- | -------------: | -------------: |
+| Reconcilable    |             72 |         **73** |
+| Reasons matched |             68 |         **69** |
+| Match rate      |          94.4% |      **94.5%** |
+| Verdict         | `inconclusive` | `inconclusive` |
+
+Neither `exchange_mismatch` nor `decision_unmatched` appears in the new coverage
+table at all. **On this cohort the two defects never fired.** Every trade's
+episode path came from its own venue, and every recorded `decision_id` resolved
+inside its episode.
+
+I expected coverage to fall and said so. It did not, and the honest reading is
+that the previous number survives by luck rather than by having been safe: the
+defects were real, a colleague reproduced both in isolation, and nothing in the
+data prevented them from firing on the next run instead of this one.
+
+The extra trade is one that closed between the two runs.
+
+## The verdict still rests on the floor, not the rate
+
+73 reconcilable against a registered floor of 80. The rate has cleared the 85%
+agreement bar on both runs and the sample has not cleared the evidence bar on
+either.
+
+Artifact preserved at
+`backups/reports/reconciliation/reconciliation-guarded-291f3c8.md`, inside the
+research archive family.
