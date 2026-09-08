@@ -18,6 +18,7 @@ from schurfer_analytics.virtual_strategy import (
     NO_PROGRESS_EXIT_POLICY,
     PRODUCTION_EXIT_POLICY,
     RECENT_PROGRESS_EXTENSION_EXIT_POLICY,
+    SCALED_P50_EXIT_POLICY,
     CostParameters,
     ExitMechanics,
     ExitParameters,
@@ -801,3 +802,60 @@ def test_production_policy_still_stops_out_before_the_60_minute_cut() -> None:
     8% must close as `initial_sl`, not wait for minute 60."""
     trade = _flat_price_trade(109.0, PRODUCTION_EXIT_POLICY)
     assert trade.exit_reason == "initial_sl"
+
+
+def test_scaled_policy_activates_where_production_cannot(tmp_path: object = None) -> None:
+    """The point of HYP-022 in one case. A short that reaches 5% in the first
+    hour is past scaled_p50's 3.99% activation and nowhere near production's
+    8%, so one of them trails the move and the other closes at minute 60
+    without ever having started."""
+    decision = _decision(pump_pct=40.0)
+    # Opens at 100, dips to 95 (5% in our favour) and comes back to 99.
+    start_ms, end_ms = expected_path_bounds(decision, exit_policy=SCALED_P50_EXIT_POLICY)
+    count = (end_ms - start_ms) // TIMEFRAME_MS
+    rows = [Candle(start_ms, 100.0, 100.0, 100.0, 100.0, 1.0)]
+    rows.append(Candle(start_ms + TIMEFRAME_MS, 99.0, 99.0, 95.0, 95.0, 1.0))
+    rows.extend(
+        Candle(start_ms + index * TIMEFRAME_MS, 99.0, 99.0, 99.0, 99.0, 1.0)
+        for index in range(2, count)
+    )
+    path = _path(decision, tuple(rows))
+
+    scaled = simulate_episode(_episode(decision), path, exit_policy=SCALED_P50_EXIT_POLICY)
+    production = simulate_episode(_episode(decision), path, exit_policy=PRODUCTION_EXIT_POLICY)
+
+    assert scaled.exit_reason == "trailing_stop"
+    assert production.exit_reason == "not_activated"
+
+
+def test_scale_overrides_must_be_set_together() -> None:
+    """A trail sized for one activation threshold says nothing when paired with
+    another, so half an override is a configuration error rather than a
+    default."""
+    with pytest.raises(ValueError, match="together"):
+        ExitPolicy(key="half", version="half_v1", activation_pct_override=4.0)
+    with pytest.raises(ValueError, match="together"):
+        ExitPolicy(key="half", version="half_v1", trail_pct_override=2.0)
+
+
+def test_scaled_trail_does_not_tighten() -> None:
+    """Tightening after tighten_after_min belongs to the round-number bands. A
+    trail already sized to the observed excursion has nothing to tighten to that
+    would not be a second, unregistered parameter."""
+    assert SCALED_P50_EXIT_POLICY.trail_pct_override == 2.00
+    decision = _decision(pump_pct=40.0)
+    # Best price 95, then a slow drift back. With a fixed 2% trail the exit is
+    # at 96.9 whether it happens at minute 20 or minute 120.
+    start_ms, end_ms = expected_path_bounds(decision, exit_policy=SCALED_P50_EXIT_POLICY)
+    count = (end_ms - start_ms) // TIMEFRAME_MS
+    rows = [Candle(start_ms, 100.0, 100.0, 100.0, 100.0, 1.0)]
+    rows.append(Candle(start_ms + TIMEFRAME_MS, 99.0, 99.0, 95.0, 95.0, 1.0))
+    rows.extend(
+        Candle(start_ms + index * TIMEFRAME_MS, 96.0, 96.0, 96.0, 96.0, 1.0)
+        for index in range(2, count)
+    )
+    trade = simulate_episode(
+        _episode(decision), _path(decision, tuple(rows)), exit_policy=SCALED_P50_EXIT_POLICY
+    )
+    assert trade.exit_reason == "trailing_stop"
+    assert trade.exit_price == pytest.approx(95.0 * 1.02)
