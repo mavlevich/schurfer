@@ -66,6 +66,33 @@ def horizon_cost_pct(horizon_minutes: int, costs: CostParameters = DEFAULT_COSTS
     return (fees_bps + funding_bps) / 100
 
 
+def component_value(recorded: Any) -> float | None:
+    """The raw measurement a component recorded, or None if it recorded nothing.
+
+    Five of the six are objects carrying both a `value` -- the measurement, in
+    the component's own units -- and `points`, the 0-2 contribution the score
+    actually sums. `mad_score` is a bare number.
+
+    This study reads `value`, and the contract says so. The ingredient is the
+    measurement; `points` is the composite's own discretisation, and HYP-019
+    already found the composite ranks backwards. Measuring `value` is what makes
+    "the ingredients carry signal the weighting discards" answerable at all --
+    reading `points` would be asking the same question HYP-019 answered.
+
+    Which part of the machinery loses it, the bucketing or the weights, is a
+    separate hypothesis. It is not folded in here, because six components read
+    two ways is twelve searches wearing the costume of six.
+    """
+    if recorded is None:
+        return None
+    if isinstance(recorded, dict):
+        raw = recorded.get("value")
+        return None if raw is None else float(raw)
+    if isinstance(recorded, int | float):
+        return float(recorded)
+    return None
+
+
 @dataclass(frozen=True)
 class EpisodeObservation:
     """One episode, reduced to a single decision and its forward outcome."""
@@ -148,9 +175,9 @@ def select_one_per_episode(
     observations = []
     for row in by_episode.values():
         components = {
-            name: float(value)
+            name: extracted
             for name in COMPONENTS
-            if (value := (row.get("components") or {}).get(name)) is not None
+            if (extracted := component_value((row.get("components") or {}).get(name))) is not None
         }
         observations.append(
             EpisodeObservation(
@@ -437,6 +464,7 @@ __all__ = [
     "ComponentResult",
     "EpisodeObservation",
     "QuintileStat",
+    "component_value",
     "horizon_cost_pct",
     "main",
     "render_markdown",
