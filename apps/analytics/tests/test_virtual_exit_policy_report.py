@@ -125,10 +125,13 @@ def test_report_registers_family_and_compares_same_episode() -> None:
     )
     assert payload["manifest"]["baseline"]["key"] == "baseline"
     challenger_keys = [item["key"] for item in payload["manifest"]["challengers"]]
-    assert len(challenger_keys) == 5
+    assert len(challenger_keys) == 8
     # The policy production actually runs has to be in the family it is compared
     # against, not just the one it was assumed to be (HYP-021).
     assert "production" in challenger_keys
+    # And the three scale variants, whose activation comes from the measured
+    # 60-minute excursion rather than a round number (HYP-022).
+    assert {"scaled_p25", "scaled_p50", "scaled_p75"} <= set(challenger_keys)
     assert "Formal inference status: `collecting`" in markdown
     assert "breakeven_after_activation" in markdown
     assert "Holm family alpha" in markdown

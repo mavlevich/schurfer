@@ -67,6 +67,14 @@ class ExitPolicy:
     # no_progress_minutes, which is a rolling stall detector that keeps
     # measuring after activation.
     close_unactivated_after_minutes: int | None = None
+    # Replace the pump-band activation threshold and trail width outright,
+    # rather than adjusting them. The bands are round numbers; these are set
+    # from the measured 60-minute excursion distribution, which is the window
+    # in which trailing has to activate before the no-progress cut fires
+    # (HYP-022). Both are overridden together or neither is: a trail sized for
+    # one activation threshold says nothing when paired with another.
+    activation_pct_override: float | None = None
+    trail_pct_override: float | None = None
     max_extension_minutes: int = 0
     minimum_progress_pct: float = 0.0
     recent_progress_lookback_minutes: int | None = None
@@ -103,6 +111,13 @@ class ExitPolicy:
             not math.isfinite(self.extension_trail_pct) or self.extension_trail_pct <= 0
         ):
             raise ValueError("extension trail must be finite and positive")
+        overrides = (self.activation_pct_override, self.trail_pct_override)
+        if (overrides[0] is None) != (overrides[1] is None):
+            raise ValueError("activation and trail overrides must be set together")
+        if any(
+            value is not None and (not math.isfinite(value) or value <= 0) for value in overrides
+        ):
+            raise ValueError("scale overrides must be finite and positive")
 
     def maximum_hold_minutes(self, params: ExitParameters) -> int:
         return params.max_hold_min + self.max_extension_minutes
@@ -190,9 +205,40 @@ PRODUCTION_EXIT_POLICY = ExitPolicy(
     version="production_no_progress_v2",
     close_unactivated_after_minutes=60,
 )
+# HYP-022. Activation is the measured 60-minute favourable excursion at the
+# 25th, 50th and 75th percentile on the discovery window (31,166 complete
+# outcomes); the trail is half of it in all three, one rule rather than a second
+# free parameter. Production activates at 8%, which sits above the 75th
+# percentile of that distribution -- three quarters of positions cannot reach it
+# before the no-progress cut fires.
+# See docs/research/exit-scale-vs-excursion-v1.md.
+SCALED_P25_EXIT_POLICY = ExitPolicy(
+    key="scaled_p25",
+    version="scaled_activation_1_65_trail_0_83_v1",
+    close_unactivated_after_minutes=60,
+    activation_pct_override=1.65,
+    trail_pct_override=0.83,
+)
+SCALED_P50_EXIT_POLICY = ExitPolicy(
+    key="scaled_p50",
+    version="scaled_activation_3_99_trail_2_00_v1",
+    close_unactivated_after_minutes=60,
+    activation_pct_override=3.99,
+    trail_pct_override=2.00,
+)
+SCALED_P75_EXIT_POLICY = ExitPolicy(
+    key="scaled_p75",
+    version="scaled_activation_7_69_trail_3_85_v1",
+    close_unactivated_after_minutes=60,
+    activation_pct_override=7.69,
+    trail_pct_override=3.85,
+)
 EXIT_POLICIES = (
     BASELINE_EXIT_POLICY,
     PRODUCTION_EXIT_POLICY,
+    SCALED_P25_EXIT_POLICY,
+    SCALED_P50_EXIT_POLICY,
+    SCALED_P75_EXIT_POLICY,
     BREAKEVEN_EXIT_POLICY,
     NO_PROGRESS_EXIT_POLICY,
     COMBINED_EXIT_POLICY,
@@ -644,7 +690,12 @@ def _simulate_selected_entry(
         )
     initial_sl_pct = initial_sl_pct_override or params.initial_sl_pct
     stop_price = entry_price * (1 + initial_sl_pct / 100)
-    activation_price = entry_price * (1 - params.activation_pct / 100)
+    activation_pct = (
+        exit_policy.activation_pct_override
+        if exit_policy.activation_pct_override is not None
+        else params.activation_pct
+    )
+    activation_price = entry_price * (1 - activation_pct / 100)
     best_price: float | None = None
     exit_price: float | None = None
     exit_at_ms: int | None = None
@@ -660,11 +711,18 @@ def _simulate_selected_entry(
         elapsed_minutes = (candle.ts_ms - entry_at_ms) / 60_000
         candle_end_ms = candle.ts_ms + timeframe_ms
         elapsed_end_minutes = (candle_end_ms - entry_at_ms) / 60_000
-        trail_pct = (
-            params.trail_tighten_pct
-            if elapsed_minutes >= params.tighten_after_min
-            else params.trail_pct
-        )
+        if exit_policy.trail_pct_override is not None:
+            # One width for the whole life of the trade. Tightening after
+            # tighten_after_min is a property of the round-number bands; a trail
+            # already sized to the observed excursion has nothing to tighten to
+            # that would not simply be a second, unregistered parameter.
+            trail_pct = exit_policy.trail_pct_override
+        else:
+            trail_pct = (
+                params.trail_tighten_pct
+                if elapsed_minutes >= params.tighten_after_min
+                else params.trail_pct
+            )
         if extension_active and exit_policy.extension_trail_pct is not None:
             trail_pct = min(trail_pct, exit_policy.extension_trail_pct)
         if best_price is None:
