@@ -778,6 +778,12 @@ class TestExtremeTimestamps:
             source="binance",
         )
 
+        # Narrowed before comparing: both are Optional on the model, and this
+        # test is worthless if either came back None -- asserting that first
+        # states the real expectation instead of letting the comparison stand
+        # in for it.
+        assert result.mfe_at is not None
+        assert result.mae_at is not None
         assert result.mfe_at < result.mae_at
 
     def test_a_tie_goes_to_the_earliest_bar_that_reached_the_level(self) -> None:
