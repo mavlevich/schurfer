@@ -1,6 +1,18 @@
 services:
   postgres:
-    image: timescale/timescaledb:latest-pg17
+    # Pinned by digest, not by `latest-pg17`. On 2026-09-08 that floating tag
+    # was republished mid-afternoon and every Postgres integration test began
+    # failing with `missing operator 1(1043,1043) in opfamily 1994` -- a broken
+    # operator family inside the database itself, on a branch that had touched
+    # none of it. main had passed on the same code 80 minutes earlier.
+    #
+    # This digest is the image production is running (TimescaleDB 2.28.3), so
+    # the pin also makes CI test against the database that actually serves the
+    # data rather than against whatever was published most recently.
+    #
+    # Moving it is a deliberate change with its own pull request, which is the
+    # point: a database upgrade should not arrive as a side effect of the clock.
+    image: timescale/timescaledb@sha256:9372c578c11ea83c56e4a8f7af6ec4156646722d270f5ade79559ccb101161a9
     container_name: schurfer-postgres
     ports:
       - '5432:5432'

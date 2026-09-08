@@ -70,7 +70,12 @@ jobs:
     # than pass by never executing. Mirrors the test-go job's service block.
     services:
       postgres:
-        image: timescale/timescaledb:latest-pg17
+        # Pinned by digest. On 2026-09-08 the `latest-pg17` tag was
+        # republished mid-afternoon and every Postgres integration test started
+        # failing with `missing operator 1(1043,1043) in opfamily 1994`, on a
+        # branch that had touched none of that code. This digest is what
+        # production runs, so CI now tests against the same database.
+        image: timescale/timescaledb@sha256:9372c578c11ea83c56e4a8f7af6ec4156646722d270f5ade79559ccb101161a9
         env:
           POSTGRES_USER: schurfer
           POSTGRES_PASSWORD: schurfer_dev
@@ -147,7 +152,12 @@ jobs:
     # anyone with `make dev` up, but were previously always skipped here.
     services:
       postgres:
-        image: timescale/timescaledb:latest-pg17
+        # Pinned by digest. On 2026-09-08 the `latest-pg17` tag was
+        # republished mid-afternoon and every Postgres integration test started
+        # failing with `missing operator 1(1043,1043) in opfamily 1994`, on a
+        # branch that had touched none of that code. This digest is what
+        # production runs, so CI now tests against the same database.
+        image: timescale/timescaledb@sha256:9372c578c11ea83c56e4a8f7af6ec4156646722d270f5ade79559ccb101161a9
         env:
           POSTGRES_USER: schurfer
           POSTGRES_PASSWORD: schurfer_dev
