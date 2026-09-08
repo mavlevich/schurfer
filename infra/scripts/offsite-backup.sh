@@ -54,6 +54,12 @@ RESEARCH_PATHS=(
 # unit was silently a no-op for months because of a permissions error).
 DB_STAMP="${STATE_DIR}/offsite-backup-db.stamp"
 RESEARCH_STAMP="${STATE_DIR}/offsite-backup-research.stamp"
+BARS_STAMP="${STATE_DIR}/offsite-backup-bars.stamp"
+
+# Exported cold minute bars. Timescale drops the source after 35 days and the
+# PostgreSQL dump only holds what is still in the database, so once a day is
+# exported and archived here, this is the only copy that exists anywhere.
+COLD_BARS_DIR="${COLD_BARS_DIR:-runtime/cold-bars}"
 
 log() { echo "[$(date -Iseconds)] $*"; }
 
@@ -188,6 +194,54 @@ else
     fi
 fi
 
+# --- cold bar archive -------------------------------------------------------
+#
+# Parquet files are immutable once written, so re-archiving the directory costs
+# only the new day: everything else deduplicates against the previous archive.
+#
+# The local Parquet is removed once it is confirmed present in the archive,
+# because 324 MB a day would fill this disk in a season. The manifest stays: it
+# is kilobytes, and it is what tells the exporter which days are already done.
+#
+# That deletion is only safe because bars archives are NEVER pruned -- see the
+# retention section. Once a local file is gone, the day exists solely in the
+# archives that already contain it, and no later archive will list it again.
+if [[ -d "$COLD_BARS_DIR" ]] && bars_files=$(find "$COLD_BARS_DIR" -type f -print | sort) \
+    && [[ -n "$bars_files" ]]; then
+    if printf '%s' "$bars_files" | grep -q '[[:cntrl:]]'; then
+        part_failed "a cold-bar path contains a control character; refusing to archive"
+    else
+        bars_archive="bars-$(date -u +%Y-%m-%dT%H:%M:%S)"
+        log "bars: archiving $(printf '%s\n' "$bars_files" | wc -l) files as ${bars_archive}"
+        if printf '%s\n' "$bars_files" \
+            | borg create --compression zstd,3 --paths-from-stdin "::${bars_archive}"
+        then
+            if archived_bars=$(borg list --format '{path}{NL}' "::${bars_archive}"); then
+                if [[ "$(printf '%s\n' "$archived_bars" | sort)" == "$bars_files" ]]; then
+                    log "bars: contents match"
+                    date -Iseconds > "$BARS_STAMP"
+                    # Only the Parquet is reclaimed, and only what this archive
+                    # was just verified to contain.
+                    printf '%s\n' "$bars_files" | grep '\.parquet$' | while read -r file; do
+                        rm -f "$file" && log "bars: reclaimed ${file}"
+                    done
+                else
+                    drop_archive "$bars_archive"
+                    part_failed "cold-bar archive contents differ from the list requested. Deleted."
+                fi
+            else
+                drop_archive "$bars_archive"
+                part_failed "could not list ${bars_archive} to verify it. Deleted."
+            fi
+        else
+            drop_archive "$bars_archive"
+            part_failed "borg create failed for ${bars_archive}"
+        fi
+    fi
+else
+    log "bars: nothing to archive"
+fi
+
 # --- retention --------------------------------------------------------------
 #
 # Separate globs, separate rules. Research inputs are excluded from the dump
@@ -200,6 +254,12 @@ borg prune --glob-archives 'research-*' \
     --keep-daily 7 --keep-weekly 8 --keep-monthly 24 \
     || part_failed "borg prune failed for research-*"
 
+# bars-* is deliberately absent from the prune rules above, and must stay that
+# way. The local Parquet is deleted once archived, so a given day lives only in
+# the archives that already contained it; no later archive lists it again.
+# Pruning this family by age would therefore delete data rather than delete a
+# redundant copy of it. Archives are metadata and references -- what costs space
+# is the chunks, and those must never be freed.
 borg compact || log "Warning: borg compact failed; space will be reclaimed next run"
 
 if [[ ${#FAILURES[@]} -gt 0 ]]; then

@@ -1,0 +1,27 @@
+[Unit]
+Description=Export cold minute bars to Parquet before Timescale retention drops them
+After=docker.service
+Requires=docker.service
+
+# Runs before the offsite backup, not after: a day exported at 03:30 is archived
+# by the 04:00 backup the same night. Reversing the order would leave every
+# freshly exported day sitting only on local disk for 24 hours, which is the one
+# place it is not safe.
+[Service]
+Type=oneshot
+User=deploy
+Group=deploy
+WorkingDirectory=/opt/schurfer
+ExecStart=/usr/bin/make prod-cold-bar-export
+
+# One day takes about 107 seconds and roughly 324 MB. The backfill of everything
+# still inside the 35-day retention window is the long case; bounded so a run
+# wedged on a stalled query fails and alerts rather than holding the lock into
+# the backup's window.
+TimeoutStartSec=3h
+
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -49,6 +49,9 @@ def _fake_env(tmp_path: Path, *, borg_body: str) -> tuple[Path, dict[str, str]]:
         "backups/reports",
     ):
         (repo / relative).mkdir(parents=True)
+    (repo / "runtime/cold-bars").mkdir(parents=True)
+    (repo / "runtime/cold-bars/bars-2026-08-20.parquet").write_text("parquet")
+    (repo / "runtime/cold-bars/bars-2026-08-20.manifest.json").write_text("{}")
     (repo / "runtime/market-path-cache/a.json").write_text("a")
     (repo / "runtime/research-dataset-artifacts/b.json").write_text("b")
     (repo / "backups/reports/c.md").write_text("c")
@@ -265,3 +268,59 @@ def test_missing_research_path_does_not_silently_shrink_the_archive(
     result = _run(env)
     assert result.returncode != 0
     assert not (state / "offsite-backup-research.stamp").exists()
+
+
+def test_archived_cold_bars_are_reclaimed_but_their_manifests_are_kept(tmp_path: Path) -> None:
+    """324 MB a day fills this disk in a season, so the Parquet has to go once
+    it is safely archived. The manifest is kilobytes and is what tells the
+    exporter which days are already done, so it stays."""
+    state, env = _fake_env(tmp_path, borg_body=_HONEST_BORG)
+    repo = Path(env["REPO_ROOT"])
+    result = _run(env)
+    assert result.returncode == 0, result.stderr
+    assert not (repo / "runtime/cold-bars/bars-2026-08-20.parquet").exists()
+    assert (repo / "runtime/cold-bars/bars-2026-08-20.manifest.json").exists()
+    assert (state / "offsite-backup-bars.stamp").exists()
+
+
+def test_cold_bars_survive_an_unverified_archive(tmp_path: Path) -> None:
+    """The whole point of deleting only what was verified: if borg cannot
+    confirm the archive holds what was asked for, the local copy is the only
+    one left and must not be touched."""
+    borg = """\
+        #!/usr/bin/env bash
+        echo "$*" >> "$BORG_TRACE"
+        case "$1" in
+          create)
+            if [[ "$*" == *--paths-from-stdin* ]]; then
+              cat > "${BORG_TRACE}.paths"
+            else
+              cat > /dev/null
+            fi
+            ;;
+          list)
+            # Reports one file fewer than it was handed.
+            [[ -f "${BORG_TRACE}.paths" ]] && tail -n +2 "${BORG_TRACE}.paths"
+            ;;
+          *) : ;;
+        esac
+        exit 0
+        """
+    state, env = _fake_env(tmp_path, borg_body=borg)
+    repo = Path(env["REPO_ROOT"])
+    result = _run(env)
+    assert result.returncode != 0
+    assert (repo / "runtime/cold-bars/bars-2026-08-20.parquet").exists()
+    assert not (state / "offsite-backup-bars.stamp").exists()
+
+
+def test_bars_are_never_pruned(tmp_path: Path) -> None:
+    """A day exists only in the archives that already held it, because the local
+    file is gone. Pruning this family by age would delete data, not a redundant
+    copy of it."""
+    _, env = _fake_env(tmp_path, borg_body=_HONEST_BORG)
+    _run(env)
+    calls = (tmp_path / "borg-calls.log").read_text()
+    prunes = [line for line in calls.splitlines() if line.startswith("prune")]
+    assert prunes, "expected the other families to still be pruned"
+    assert not any("bars-*" in line for line in prunes), prunes

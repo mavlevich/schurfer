@@ -1,0 +1,16 @@
+[Unit]
+Description=Daily export of cold minute bars to Parquet
+
+[Timer]
+# 03:30 UTC, half an hour before the offsite backup at 04:00. The gap is the
+# margin for one day's export; a backfill run that overruns it simply gets
+# archived by the following night's backup instead, because the exporter skips
+# days it has already written.
+OnCalendar=*-*-* 03:30:00
+# Retention deletes the oldest surviving day every day, so a missed run is not
+# a cosmetic gap: it is a day of history with a deadline.
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target
