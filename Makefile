@@ -1113,8 +1113,25 @@ prod-deploy:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
 	@test "$$(git branch --show-current)" = "main" || (echo "ERROR: not on main (on '$$(git branch --show-current)'). Deploy only from main." && exit 1)
 	@test -z "$$(git status --porcelain)" || (echo "ERROR: working tree not clean. Commit or stash first." && exit 1)
-	@echo "-> [1/5] Backup..."
-	@bash infra/scripts/backup.sh
+	@echo "-> [1/5] Backup (offsite)..."
+	@# The gate is unchanged in purpose and changed in source of truth: a
+	@# migration still refuses to run without a fresh backup, but the backup it
+	@# demands is now the offsite archive rather than a 12 GB dump on the same
+	@# disk as the database it protects.
+	@#
+	@# The local path blocked three deploys on 2026-09-08 alone -- short by 136
+	@# MB, 320 MB and 372 MB -- because it needs free space worth twice the
+	@# previous dump before it will start. Streaming into Borg removes that
+	@# artifact entirely, so the deploy stops competing with the thing it is
+	@# protecting.
+	@#
+	@# Switched only after a restore was actually performed from that archive
+	@# into a throwaway instance, covering schema, policies, application data,
+	@# uncompressed chunks and the columnstore path
+	@# (docs/runbooks/offsite-backup-restore.md, verification log 2026-09-08).
+	@# An unverified archive would not have been a reason to drop a verified
+	@# one.
+	@sudo /opt/schurfer/infra/scripts/offsite-backup.sh
 	@echo "-> [2/5] Pull (fast-forward only)..."
 	git pull --ff-only origin main
 	@echo "-> [3/5] Start DB..."

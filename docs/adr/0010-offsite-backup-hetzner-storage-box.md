@@ -115,19 +115,29 @@ immediately.
 
 ## Consequences
 
-The local backup path and the offsite path both run for now. That is deliberate:
-an unverified offsite archive is not a reason to drop the only verified copy.
-Switching the deploy gate to the offsite path, and retiring the local dump, is a
-separate change, gated on an actual restore.
+The deploy gate ran on the local dump until a restore had actually been
+performed from the offsite repository. That restore happened on 2026-09-08 and
+is recorded in the runbook's verification log: a throwaway instance, schema and
+policies, application data, uncompressed chunk data, and the columnstore path
+that carries most of the real data. `prod-deploy` now gates on the offsite
+archive instead.
 
-That restore is not a formality. `pg_dump` warns about circular foreign-key
-constraints in `_timescaledb_catalog.continuous_agg`, so a plain `pg_restore`
-may not reproduce a working database. The existing `restore-local.sh` does
-exactly a plain `pg_restore`, with no `timescaledb_pre_restore()` /
-`timescaledb_post_restore()` wrapping, and it restores from a locally downloaded
-dump rather than from the repository. Verifying the offsite path needs a
-separate procedure into an isolated instance, checking schema, data ranges and a
-few working queries.
+The gate's purpose is unchanged and only its source of truth moved. A migration
+still refuses to run without a fresh backup. What changed is that the backup it
+demands no longer needs free space worth twice the previous dump on the same
+disk as the database, which had blocked three deploys in one day.
+
+The restore was not a formality, and it produced a finding of its own.
+`pg_dump` warns about circular foreign-key constraints in
+`_timescaledb_catalog.continuous_agg`, and a restore that ends before
+`timescaledb_post_restore()` leaves compressed data invisible -- which looks
+exactly like compressed data that failed to restore. The runbook says so
+explicitly, because the natural conclusion at three in the morning is that the
+archive is broken.
+
+`backup.sh` is not deleted and not scheduled: nothing runs it now that the
+deploy does not. The single 12 GB dump it left behind is still on disk. Removing
+it is a decision for whoever owns the machine, not a side effect of this change.
 
 Cost is roughly 4 EUR per month. Measured on the first archive: 40.50 GB
 streamed, 11.19 GB stored, 15 minutes 21 seconds.
