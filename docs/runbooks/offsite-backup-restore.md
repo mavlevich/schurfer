@@ -185,6 +185,34 @@ preference:
 3. Only then consider letting Timescale retention delete unexported chunks, and
    record what was lost.
 
+## Verification log
+
+Record every verification here: the date, what was checked, and the outcome. An
+untested backup and a backup tested a year ago are close to the same thing.
+
+### 2026-09-08 -- archive integrity, no restore
+
+Archive `db-2026-09-08T07:00:54`.
+
+- **Read back end to end:** 40,534,809,206 bytes streamed out of the repository,
+  matching the 40.53 GB the archive records as its original size.
+- **`borg check --verify-data`:** exit 0. This reads and verifies every chunk,
+  not just the index.
+- **Dump structure:** `pg_restore --list` on the streamed dump returns 1989 TOC
+  entries, `Format: CUSTOM`, `Compression: none` (so `-Z0` took effect), 203
+  `TABLE DATA` entries, and the `timescaledb` extension with its compressed
+  hypertables present.
+
+**Not verified: that a database actually comes up from it.** A full restore
+needs roughly 27 GB of free disk on a host that is not production, and
+production has 24 GB free. `pg_restore --list` reads only the table of contents
+at the start of the file and then closes the pipe, so it says the dump's header
+is valid, not that its contents are complete -- the end-to-end read and
+`--verify-data` are what cover that.
+
+Until a restore has been performed, step 2 of the storage plan is not done, and
+the local dump stays.
+
 ## What this does not cover yet
 
 Parquet export of cold minute bars before Timescale retention drops them, and
