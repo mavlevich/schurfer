@@ -131,3 +131,86 @@ produces can speak to which candidates should have been traded.
 It also may not be read as evidence about live results. The replay's agreement
 with the paper broker is currently `inconclusive` at 94.4% on 72 trades, below
 its own 80-trade floor, and no live position exists at all.
+
+---
+
+# Result, 2026-09-08
+
+Run on production at `2831746`. Decision fingerprint `db70a8d30e7cd9c6`,
+market-path fingerprint `0042b91c3907be46`.
+
+## Verdict: `inconclusive`
+
+Twice over, and neither reason is that the result looked bad.
+
+The registered margin was **1.0 percentage point** over the baseline.
+`scaled_p25` came in at **+0.64**. And the family again returned readiness
+`insufficient_resolution` and withheld its formal intervals, which the contract
+names as inconclusive on its own.
+
+## What the run actually showed
+
+| Policy                                 |   Mean net | Profit factor |  Win rate | Duration | Max drawdown |
+| -------------------------------------- | ---------: | ------------: | --------: | -------: | -----------: |
+| **scaled_p25** (act 1.65 / trail 0.83) | **+0.10%** |      **1.07** | **68.4%** |    19.7m |    85.82 USD |
+| recent_progress_extension              |     -0.51% |          0.86 |     47.6% |   117.4m |   239.50 USD |
+| baseline                               |     -0.53% |          0.85 |     47.6% |   114.5m |   248.10 USD |
+| breakeven_after_activation             |     -0.57% |          0.83 |     49.5% |   110.9m |   257.24 USD |
+| scaled_p50 (act 3.99 / trail 2.00)     |     -0.58% |          0.76 |     55.6% |    32.6m |   272.26 USD |
+| scaled_p75 (act 7.69 / trail 3.85)     |     -0.64% |          0.77 |     50.5% |    44.3m |   280.45 USD |
+| no_progress_60m                        |     -0.76% |          0.76 |     42.5% |    80.2m |   335.99 USD |
+| production                             |     -0.77% |          0.74 |     45.2% |    63.1m |   341.08 USD |
+| breakeven_no_progress_60m              |     -0.77% |          0.75 |     44.5% |    77.0m |   336.94 USD |
+
+851 resolved episodes, paired.
+
+**`scaled_p25` is the first policy this repository has measured above a profit
+factor of 1.** It is also the tightest scale tested, and the three scaled
+variants are monotone in the direction of tightness: +0.10, -0.58, -0.64 as
+activation rises from 1.65% to 3.99% to 7.69%. Every one of the six
+round-number policies sits below all three on drawdown.
+
+Its exit reasons are a different regime rather than the same one tuned:
+`trailing_stop` fires on **649 of 851** episodes against 227 for the baseline,
+`initial_sl` falls from 273 to 101, and mean holding time drops from 114 minutes
+to 20.
+
+## Why this is not promoted
+
+**+0.10% mean net is not a business.** Taken entirely at face value, on a
+population that pays no spread and has no order book behind it, it is
+indistinguishable from zero for any practical purpose. What it establishes is a
+direction, not an edge.
+
+**0.64 is inside the margin that was set precisely to catch this.** The margin
+was 1.0 point against the 0.26-point spread the six round-number policies
+already show among themselves. 0.64 is larger than that spread but smaller than
+the bar, and the bar was written down before the number existed. Moving it now
+because the result is interesting is the whole failure mode the contract exists
+to prevent.
+
+**The family withheld formal inference again.** Whatever the point estimate
+says, the machinery that would put an interval around it declined to.
+
+## What may not be done next, and is tempting
+
+`scaled_p25` is the tightest variant tested and the relationship is monotone in
+tightness. The obvious move is to try something tighter still. **That is a
+sweep, this contract forbids it, and it would be fitting to the window that
+produced the ordering.** Anything tighter is a new hypothesis with a new id and
+an untouched window.
+
+The result also may not be read as evidence about the entry. Every variant here
+shares the same entries; what changed is only what happens after.
+
+## What this does change
+
+The claim that "the exit is not the lever" is now clearly wrong as stated, and
+so is the softer version a colleague and I settled on. Within the round-number
+family the exit was not a lever, because the family never varied the scale. Vary
+it and the whole distribution moves: win rate from 47.6% to 68.4%, drawdown
+from 248 to 86, holding time from 114 minutes to 20.
+
+That does not make the strategy profitable. It does mean the exit is worth
+another registered pass on untouched data, which is more than could be said this
+morning.
