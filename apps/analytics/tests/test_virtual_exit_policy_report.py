@@ -16,6 +16,7 @@ from schurfer_analytics.replay import (
     build_replay_dataset,
 )
 from schurfer_analytics.reporting import ReportWindowNotStartedError
+from schurfer_analytics.research_contract import ResearchContract
 from schurfer_analytics.virtual_exit_policy_report import (
     EXIT_POLICY_COHORT_START,
     EXIT_POLICY_INFERENCE_VERSION,
@@ -244,3 +245,76 @@ def test_main_renders_precohort_failure_without_traceback(
     stderr = capsys.readouterr().err
     assert "error: cohort starts later" in stderr
     assert "Traceback" not in stderr
+
+
+def _bound_contract(**over: object) -> ResearchContract:
+    """A contract naming the family this report actually runs."""
+    from schurfer_analytics.virtual_strategy import (
+        BASELINE_EXIT_POLICY,
+        COST_MODEL_VERSION,
+        EXIT_POLICIES,
+    )
+
+    defaults: dict[str, object] = {
+        "hypothesis_id": "HYP-022",
+        "contract_version": "v1",
+        "window_since": datetime(2026, 7, 29, tzinfo=UTC),
+        "window_until": datetime(2026, 8, 25, tzinfo=UTC),
+        "strategy_versions": ("pump_short_v1_market_quality",),
+        "allow_fallback": False,
+        "outcome_horizon_minutes": 60,
+        "metric": "median",
+        "comparison": "difference_of_metric",
+        "baseline_policy": BASELINE_EXIT_POLICY.key,
+        "challenger_policies": tuple(
+            policy.key for policy in EXIT_POLICIES if policy.key != BASELINE_EXIT_POLICY.key
+        ),
+        "cost_model_version": COST_MODEL_VERSION,
+        "minimum_completed_trades": 1,
+        "minimum_clusters": 1,
+        "candidate_margin": 1.0,
+        "rejection_margin": -1.0,
+    }
+    defaults.update(over)
+    return ResearchContract(**defaults)  # type: ignore[arg-type]
+
+
+def test_the_contract_section_reports_the_registered_statistic() -> None:
+    """The error this binding exists to prevent. The report prints mean and
+    median tables side by side and a human picked the wrong one to compare
+    against a registered margin. Here the statistic comes from the contract."""
+    from schurfer_analytics.virtual_exit_policy_report import render_contract_verdict
+
+    dataset, filters, path = _inputs()
+    report = build_exit_policy_report(
+        dataset,
+        filters,
+        (path,),
+        generated_at=datetime(2026, 8, 20, tzinfo=UTC),
+        code_revision="abc1234",
+        working_tree_dirty=False,
+    )
+    rendered = render_contract_verdict(_bound_contract(), report)
+    assert "Metric `median`" in rendered
+    assert "comparison `difference_of_metric`" in rendered
+    assert "HYP-022" in rendered
+
+
+def test_a_withheld_formal_interval_overrides_every_verdict() -> None:
+    """Part of the registered rule rather than a caveat added afterwards, and
+    the condition both HYP-021 and HYP-022 actually landed on."""
+    from schurfer_analytics.virtual_exit_policy_report import render_contract_verdict
+
+    dataset, filters, path = _inputs()
+    report = build_exit_policy_report(
+        dataset,
+        filters,
+        (path,),
+        generated_at=datetime(2026, 8, 20, tzinfo=UTC),
+        code_revision="abc1234",
+        working_tree_dirty=False,
+    )
+    assert report.inference.readiness.status != "formal_sample_ready"
+    rendered = render_contract_verdict(_bound_contract(), report)
+    assert "regardless of its value" in rendered
+    assert "candidate" not in rendered.split("Formal inference is")[0].replace("candidate at", "")
