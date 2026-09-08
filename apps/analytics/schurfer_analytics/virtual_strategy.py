@@ -924,6 +924,51 @@ def simulate_episode_at_entry(
     )
 
 
+def simulate_recorded_entry(
+    episode: ReplayEpisode,
+    market_path: MarketPath,
+    decision: ReplayDecision,
+    *,
+    entry_at_ms: int,
+    entry_price: float,
+    selection_reason: str,
+    exit_policy: ExitPolicy = PRODUCTION_EXIT_POLICY,
+    costs: CostParameters = DEFAULT_COSTS,
+) -> VirtualTrade:
+    """Replay a trade that actually happened, entered where it actually entered.
+
+    Reconciling the replay against the paper broker means comparing exit rules,
+    not two different trades. The broker waits for a retrace before entering and
+    the replay enters at the next complete bar, so leaving the entry to the
+    replay changes every stop level relative to it and the comparison stops
+    meaning anything. Forcing both the entry bar and the entry price isolates
+    the thing under test.
+
+    See docs/research/replay-paper-reconciliation-v1.md.
+    """
+    normalized_reason = selection_reason.strip()
+    if not normalized_reason:
+        raise ValueError("selection reason must not be empty")
+    if not math.isfinite(entry_price) or entry_price <= 0:
+        raise ValueError("recorded entry price must be finite and positive")
+    if decision not in episode.decisions:
+        raise ValueError("selected decision does not belong to the episode")
+    selection = EpisodeSelection(
+        decision=decision,
+        taken=True,
+        selection_reason=normalized_reason,
+    )
+    return _simulate_selected_entry(
+        episode,
+        market_path,
+        selection,
+        ceil_to_timeframe(entry_at_ms),
+        costs=costs,
+        exit_policy=exit_policy,
+        entry_price_override=entry_price,
+    )
+
+
 def simulate_decision(
     episode: ReplayEpisode,
     market_path: MarketPath,
