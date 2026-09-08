@@ -214,3 +214,81 @@ from 248 to 86, holding time from 114 minutes to 20.
 That does not make the strategy profitable. It does mean the exit is worth
 another registered pass on untouched data, which is more than could be said this
 morning.
+
+---
+
+# Correction, 2026-09-08: the held-out window was read
+
+A colleague asked where the artifact for fingerprint `db70a8d30e7cd9c6` was and
+what window it actually covered. It covered the wrong one.
+
+## What happened
+
+The run was `make prod-virtual-exit-policy-report`, whose `--until` defaults to
+the run's own start time. Its scope line says so plainly:
+
+```
+Scope: 2026-07-29T00:00:00+00:00 <= decision < 2026-09-08T14:20:04.791299+00:00
+```
+
+This contract declared discovery as `2026-07-29` to `2026-08-25` and held out
+everything after. The run read **both**. `--until` exists on that report; it was
+simply not passed. The error was avoidable and nobody would have found it from
+the numbers alone -- only from the scope line, which is why it was asked for.
+
+## The number the contract actually asked for
+
+Re-run restricted to the discovery window, fingerprint `94eba938a5678f9b`,
+scope `2026-07-29 <= decision < 2026-08-25`, 556 resolved episodes:
+
+| Policy                     |   Mean net | Profit factor |  Win rate | Max drawdown |
+| -------------------------- | ---------: | ------------: | --------: | -----------: |
+| **scaled_p25**             | **+0.27%** |      **1.19** | **70.7%** |    56.47 USD |
+| recent_progress_extension  |     -0.25% |          0.93 |     48.0% |    87.25 USD |
+| baseline                   |     -0.29% |          0.91 |     48.0% |   100.86 USD |
+| scaled_p75                 |     -0.32% |          0.88 |     50.4% |   132.92 USD |
+| breakeven_after_activation |     -0.34% |          0.89 |     49.6% |   109.57 USD |
+| scaled_p50                 |     -0.36% |          0.84 |     55.0% |   146.84 USD |
+| no_progress_60m            |     -0.41% |          0.86 |     43.2% |   131.03 USD |
+| breakeven_no_progress_60m  |     -0.44% |          0.84 |     45.1% |   137.10 USD |
+| production                 |     -0.45% |          0.83 |     45.9% |   150.06 USD |
+
+Paired delta for `scaled_p25` against baseline: **+0.55 points**, against the
+registered margin of 1.0.
+
+**The verdict is unchanged: `inconclusive`.** That is luck, not diligence. Had
+the contaminated number crossed 1.0 while the correct one did not, this
+correction would have retracted a conclusion rather than a scope line.
+
+## What the contamination does and does not cost
+
+The variant parameters were derived from the discovery window only -- the
+percentile query was bounded at `2026-08-25` -- so the 295 episodes after that
+date were never used to choose anything. Nothing was fitted to them.
+
+What is gone is their value as an unread confirmation. They have been seen, and
+a window cannot be un-seen. Any comparison against them from here carries the
+knowledge that the result was already visible when the comparison was designed.
+
+## Consequences
+
+**HYP-026 is withdrawn as registered.** Its premise was that `2026-08-25` onward
+was untouched. It was not.
+
+The only genuinely unread window in this line of work is data that does not
+exist yet. A replication has to be registered against a future date and waited
+for, which is slower and is the actual cost of this mistake.
+
+## Artifacts
+
+Both runs are preserved on the production host under
+`/opt/schurfer/backups/reports/hyp022/`, and are therefore inside the research
+archive family:
+
+| File                            | Fingerprint        | Scope                             |
+| ------------------------------- | ------------------ | --------------------------------- |
+| `hyp022-full-range-db70a8d3.md` | `db70a8d30e7cd9c6` | 2026-07-29 to 2026-09-08T14:20:04 |
+| `hyp022-discovery-94eba938.md`  | `94eba938a5678f9b` | 2026-07-29 to 2026-08-25          |
+
+Command in both cases: `make prod-virtual-exit-policy-report`, the second with
+`ARGS="--until 2026-08-25"`, at code revision `2831746`.
