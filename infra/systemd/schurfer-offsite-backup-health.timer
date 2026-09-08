@@ -1,0 +1,13 @@
+[Unit]
+Description=Hourly staleness check for the Schurfer offsite backup
+
+[Timer]
+# Hourly, not daily: the alert exists to shorten the window between "backups
+# stopped working" and "somebody knows". Checking once a day would make that
+# window up to two days wide, which is most of the value gone.
+OnCalendar=hourly
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,18 @@
+[Unit]
+Description=Daily Schurfer offsite backup to Hetzner Storage Box
+
+[Timer]
+# 04:00 UTC: after the existing local backup's 03:00 cron slot, so the two do
+# not compete for the same database while both paths still run in parallel.
+# The local dump is kept until a restore has actually been performed from the
+# offsite repository -- an unverified archive is not a reason to drop a
+# verified one.
+OnCalendar=*-*-* 04:00:00
+# A missed run (host down, deploy in progress) fires on the next boot rather
+# than waiting a full day. Backups are exactly the case where catching up
+# matters more than the schedule being tidy.
+Persistent=true
+RandomizedDelaySec=900
+
+[Install]
+WantedBy=timers.target
