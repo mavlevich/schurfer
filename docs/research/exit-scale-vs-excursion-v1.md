@@ -56,6 +56,36 @@ different id and an untouched window.
 The percentiles are computed on the **discovery window only** and then applied
 unchanged; they are not refitted per window.
 
+### Which excursion, decided before running anything
+
+The horizon matters more than the percentile does, and picking it after seeing
+returns would be the whole experiment. Fixed here: **the 60-minute horizon**,
+because 60 minutes is the window in which trailing must activate or the
+no-progress cut closes the position. An excursion the price reaches in hour six
+cannot activate a trail that was required to start in hour one.
+
+Measured on the discovery window, `pump_short_v1_market_quality`, complete
+outcomes only (n = 31,166):
+
+| Horizon |   p25 |       p50 |    p75 |
+| ------: | ----: | --------: | -----: |
+|  60 min | 1.65% | **3.99%** |  7.69% |
+| 480 min | 5.66% |    11.08% | 17.49% |
+
+The production activation threshold is 8%. Against the 60-minute distribution
+that sits **above the 75th percentile**: three quarters of positions cannot
+reach it before the cut fires, whatever the price does afterwards.
+
+That is a stronger statement than the one this hypothesis was opened on. The
+opening argument compared 8% against the family's mean realised MFE of 7.51%,
+which is itself truncated by the exit under test and therefore partly circular.
+The 60-minute outcome MFE is measured independently of any exit policy.
+
+The three variants therefore are: **`scaled_p25`** activation 1.65%, trail
+0.83%; **`scaled_p50`** activation 3.99%, trail 2.00%; **`scaled_p75`**
+activation 7.69%, trail 3.85%. Trail is half of activation in all three, as
+declared.
+
 ## Windows
 
 - **Discovery:** `2026-07-29` to `2026-08-25`, half-open.
