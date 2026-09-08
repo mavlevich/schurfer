@@ -236,3 +236,53 @@ def test_markdown_states_the_verdict_and_the_rule() -> None:
     assert "`agrees`" in markdown
     assert "never changes production exits" in markdown
     assert "85 of 100" in markdown
+
+
+def test_a_trade_is_not_compared_against_another_venue() -> None:
+    """Reproduced by a colleague: a Bybit trade measured against Binance candles
+    came back `compared` with a matching reason. Two venues move similarly
+    enough for the same rule to fire, so the agreement was meaningless rather
+    than obviously wrong."""
+    report = _reconcile(_trade(exchange="bybit"), _path(96.0))
+    assert report.comparisons[0].status == "exchange_mismatch"
+    assert report.reconcilable == ()
+
+
+def test_an_unmatched_decision_id_is_coverage_not_a_comparison() -> None:
+    """An earlier version substituted the episode's first decision and counted
+    the result. Exit parameters come from the decision's own pump_pct, so a
+    substitution can select a different pump band and therefore different
+    thresholds -- the comparison would measure a policy the broker never ran."""
+    trade = PaperTrade(
+        trade_id=1,
+        pump_event_id=42,
+        decision_id="does-not-exist",
+        exchange="binance",
+        base="ERA",
+        entry_at=_ENTRY,
+        entry_price=100.0,
+        exit_at=_ENTRY + timedelta(minutes=60),
+        exit_price=96.0,
+        reason="no_progress age=60min",
+    )
+    report = _reconcile(trade, _path(96.0))
+    assert report.comparisons[0].status == "decision_unmatched"
+    assert report.reconcilable == ()
+    assert report.match_rate_pct is None
+
+
+def test_a_missing_decision_id_is_also_not_substituted() -> None:
+    trade = PaperTrade(
+        trade_id=1,
+        pump_event_id=42,
+        decision_id=None,
+        exchange="binance",
+        base="ERA",
+        entry_at=_ENTRY,
+        entry_price=100.0,
+        exit_at=_ENTRY + timedelta(minutes=60),
+        exit_price=96.0,
+        reason="no_progress age=60min",
+    )
+    report = _reconcile(trade, _path(96.0))
+    assert report.comparisons[0].status == "decision_unmatched"

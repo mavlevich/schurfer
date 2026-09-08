@@ -172,20 +172,22 @@ class ReconciliationReport:
         return "inconclusive"
 
 
-def _episode_decision(
-    episode: ReplayEpisode, decision_id: str | None
-) -> tuple[ReplayDecision | None, str]:
-    """The decision the trade was opened from, or the episode's first.
+def _episode_decision(episode: ReplayEpisode, decision_id: str | None) -> ReplayDecision | None:
+    """The decision the trade was opened from, or None.
 
-    A trade carries the decision_id it acted on. Falling back to the first
-    decision keeps an episode comparable when that link is missing, and the
-    fallback is recorded in the comparison rather than hidden.
+    There is deliberately no fallback to another decision in the episode. An
+    earlier version substituted the first one and counted the result in the
+    agreement rate, which is worse than it sounds: exit parameters come from the
+    decision's own `pump_pct`, so a substituted decision can select a different
+    pump band and therefore a different set of thresholds. The comparison would
+    then be measuring a policy the broker never ran.
     """
-    if decision_id:
-        for decision in episode.decisions:
-            if decision.decision_id == decision_id:
-                return decision, "recorded_decision"
-    return (episode.decisions[0], "first_decision_fallback") if episode.decisions else (None, "")
+    if not decision_id:
+        return None
+    for decision in episode.decisions:
+        if decision.decision_id == decision_id:
+            return decision
+    return None
 
 
 def reconcile(
@@ -217,9 +219,29 @@ def reconcile(
                 Comparison(trade, "market_path_unavailable", detail=path.error if path else None)
             )
             continue
-        decision, selection_reason = _episode_decision(episode, trade.decision_id)
+        # The path is fetched per episode and carries its own venue. Comparing a
+        # Bybit trade against Binance candles produced a `compared` result and a
+        # matching reason before this check existed: two venues can move
+        # similarly enough for the same rule to fire, which is exactly why the
+        # agreement would have been meaningless rather than obviously wrong.
+        if path.exchange.casefold() != trade.exchange.casefold():
+            comparisons.append(
+                Comparison(
+                    trade,
+                    "exchange_mismatch",
+                    detail=f"trade on {trade.exchange}, path from {path.exchange}",
+                )
+            )
+            continue
+        decision = _episode_decision(episode, trade.decision_id)
         if decision is None:
-            comparisons.append(Comparison(trade, "episode_has_no_decisions"))
+            comparisons.append(
+                Comparison(
+                    trade,
+                    "decision_unmatched",
+                    detail=f"decision_id {trade.decision_id!r} not in episode",
+                )
+            )
             continue
 
         entry_at_ms = int(trade.entry_at.timestamp() * 1000)
@@ -233,7 +255,7 @@ def reconcile(
                 decision,
                 entry_at_ms=entry_at_ms,
                 entry_price=trade.entry_price,
-                selection_reason=selection_reason,
+                selection_reason="recorded_decision",
                 exit_policy=PRODUCTION_EXIT_POLICY,
             )
         except (ValueError, RuntimeError) as exc:
