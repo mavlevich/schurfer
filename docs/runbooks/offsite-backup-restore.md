@@ -120,14 +120,27 @@ backup tested a year ago are close to the same thing.
 
 ## Restoring research inputs
 
+Paths inside the archive are relative (`runtime/...`, `backups/...`). Extract
+into a **new, empty directory** and inspect before moving anything: extracting
+from `/` would scatter `runtime/` and `backups/` into the filesystem root.
+
 ```bash
-sudo bash -c 'set -a; . /opt/schurfer/runtime/backup.env; set +a; \
-  cd / && borg extract ::research-YYYY-MM-DDTHH:MM:SS'
+sudo mkdir -p /var/tmp/schurfer-restore && cd /var/tmp/schurfer-restore
 ```
 
-Paths are stored relative to `/opt/schurfer`, so extract from a directory where
-`runtime/` and `backups/` land where you want them, or extract elsewhere and
-move.
+```bash
+sudo bash -c 'set -a; . /opt/schurfer/runtime/backup.env; set +a; \
+  cd /var/tmp/schurfer-restore && borg extract ::research-YYYY-MM-DDTHH:MM:SS'
+```
+
+Check what landed before touching the live tree:
+
+```bash
+find /var/tmp/schurfer-restore -type f | wc -l && ls /var/tmp/schurfer-restore
+```
+
+Only then move the parts you actually need into `/opt/schurfer`, preserving
+ownership, and delete the staging directory afterwards.
 
 ## Replacing the SSH key
 

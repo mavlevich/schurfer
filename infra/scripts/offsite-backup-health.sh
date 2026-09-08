@@ -22,9 +22,12 @@ STATE_DIR="${STATE_DIR:-/opt/schurfer/runtime}"
 DB_STAMP="${STATE_DIR}/offsite-backup-db.stamp"
 RESEARCH_STAMP="${STATE_DIR}/offsite-backup-research.stamp"
 
-# 36 hours, not 24: a daily timer plus RandomizedDelaySec plus one skipped run
-# during a long deploy is normal and must not page anyone. Two consecutive
-# missed days is not normal.
+# 36 hours, not 24. The 12-hour margin covers ordinary jitter: the timer's
+# RandomizedDelaySec, a run that started late because a deploy held the lock,
+# a run that took longer than usual. It deliberately does NOT tolerate a fully
+# missed daily run -- that leaves roughly 48 hours between successful archives
+# and should alert. An earlier version of this comment claimed the opposite,
+# which was arithmetic nobody had done.
 MAX_AGE_HOURS="${MAX_AGE_HOURS:-36}"
 # Below this, the disk stops being able to absorb a Storage Box outage.
 MIN_FREE_GB="${MIN_FREE_GB:-15}"
@@ -61,7 +64,13 @@ fi
 message="Offsite backup health: $(printf '%s; ' "${problems[@]}")"
 echo "[$(date -Iseconds)] ${message}" >&2
 if [[ -n "${TELEGRAM_BOT_TOKEN:-}" && -n "${TELEGRAM_CHAT_ID:-}" ]]; then
-    curl -sf "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+    # Bounded on purpose. An unbounded curl on a hung connection keeps this
+    # oneshot unit running, and systemd skips every later firing of the timer
+    # while the previous run is still active -- so the notification that
+    # something is wrong would be the thing that stops anyone finding out.
+    curl -sf --connect-timeout "${CURL_CONNECT_TIMEOUT:-10}" \
+        --max-time "${CURL_MAX_TIME:-30}" \
+        "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
         --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
         --data-urlencode "text=${message}" \
         > /dev/null || echo "Warning: Telegram notification failed" >&2

@@ -61,11 +61,21 @@ schedule.
 backup, as `deploy`, archived 57 of 1624 research files and exited 1: a warning,
 not an error.
 
-**Completeness is asserted, not assumed.** The script counts files before and
-after and deletes the archive and fails on any mismatch. This is the durable
-protection; running as root only makes the count pass. A new path, a new
-container or a different umask will be caught by the count, not by anyone having
-remembered to check ownership.
+**Completeness is checked against an explicit file list.** The list is captured
+once and handed to Borg with `--paths-from-stdin`, which archives exactly those
+paths and no others; the archive's contents are then compared to that same list
+as a set, not as a count. Two matching counts do not establish matching
+contents, and letting Borg walk the directories itself made the check race
+against the containers writing them: a new cache entry appearing mid-run made a
+perfectly good archive look wrong.
+
+The limit of what this proves is worth stating, because an earlier draft of this
+ADR overstated it. It establishes that every file found under the three listed
+paths reached the archive. It does not notice a fourth directory that nobody
+added to the list, and it says nothing about file contents beyond what Borg's
+own integrity checking covers. Running as root is what makes the check pass
+rather than what makes it correct, but neither one turns this into a guarantee
+that everything worth keeping is being kept.
 
 **The alert watches the last successful archive, not the last run.** Stamp files
 are written only after an archive succeeded. A unit that fires punctually and

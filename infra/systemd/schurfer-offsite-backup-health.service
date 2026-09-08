@@ -13,6 +13,10 @@ User=root
 Group=root
 EnvironmentFile=-/opt/schurfer/.env.prod
 ExecStart=/opt/schurfer/infra/scripts/offsite-backup-health.sh
+# Type=oneshot disables the start timeout by default, and systemd skips a
+# timer firing while the previous run is still active. Without this, one
+# hung check silently ends all future checks.
+TimeoutStartSec=5min
 NoNewPrivileges=true
 PrivateTmp=true
 

@@ -1172,10 +1172,16 @@ prod-offsite-backup-run:
 
 # Reports what the ALERT reports: the age of the last successful archive, not
 # whether the timer fired. Those differ, and only the first one is a backup.
+#
+# Diagnostics keep running after a failure, but the target's own exit status
+# preserves it: an earlier version swallowed the health script's status with
+# `|| true`, so an unhealthy backup reported success -- including to
+# prod-offsite-backup-install, which calls this target as its final check.
 prod-offsite-backup-health:
 	@systemctl list-timers schurfer-offsite-backup.timer schurfer-offsite-backup-health.timer --no-pager
-	@sudo /opt/schurfer/infra/scripts/offsite-backup-health.sh || true
-	@sudo bash -c 'set -a; . /opt/schurfer/runtime/backup.env; set +a; borg list | tail -8'
+	@rc=0; sudo /opt/schurfer/infra/scripts/offsite-backup-health.sh || rc=$$?; \
+		sudo bash -o pipefail -c 'set -a; . /opt/schurfer/runtime/backup.env; set +a; borg list | tail -8' || rc=$$?; \
+		exit $$rc
 
 prod-docker-prune-install:
 	@test "$$(git branch --show-current)" = "main" || (echo "ERROR: not on main (on '$$(git branch --show-current)'). Install only from main." && exit 1)
