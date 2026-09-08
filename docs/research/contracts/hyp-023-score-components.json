@@ -1,0 +1,21 @@
+{
+  "allow_fallback": false,
+  "baseline_policy": "bottom_quintile",
+  "candidate_margin": 1.5,
+  "challenger_policies": ["top_quintile"],
+  "checksum": "d34e796b7c6a77af7f2244df437753e09d4c4e2198fea32a3d6cd173e19c600e",
+  "comparison": "difference_of_metric",
+  "contract_version": "v1",
+  "cost_model_version": "conservative_costs_v1",
+  "hypothesis_id": "HYP-023",
+  "metric": "median",
+  "minimum_clusters": 30,
+  "minimum_completed_trades": 150,
+  "notes": "Registered in docs/research/score-components-v1.md and bound by entry-signal-family-rules-v1.md. minimum_completed_trades counts EPISODES, one per pump event, not decision rows. The margins are read as ABSOLUTE spreads between the top and bottom quintile: a component that predicts the outcome downwards is as informative as one predicting it upwards, which is the point given the composite already ranks backwards. A candidate also requires monotonicity across all five quintiles. Sufficiency is checked before either verdict.",
+  "outcome_horizon_minutes": 60,
+  "rejection_margin": 0.5,
+  "schema_version": "research_contract_v1",
+  "strategy_versions": ["pump_short_v1_market_quality"],
+  "window_since": "2026-07-29T00:00:00+00:00",
+  "window_until": "2026-08-25T00:00:00+00:00"
+}
