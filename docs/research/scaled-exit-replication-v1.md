@@ -1,6 +1,32 @@
 # HYP-026 — Does the tight exit replicate on data it was not derived from
 
-**Status: registered 2026-09-08, before the held-out window was read.**
+**Status: WITHDRAWN 2026-09-08, before it was ever run. Never valid.**
+
+> This registration rests on a premise that was false when it was written: that
+> `2026-08-25` onward had not been read. It had. HYP-022's run used the report's
+> default `--until`, which is the run's own start time, so its scope was
+> `2026-07-29` to `2026-09-08T14:20:04` and included every episode this document
+> calls held out. The scope line in
+> `backups/reports/hyp022/hyp022-full-range-db70a8d3.md` says so.
+>
+> A second reason stands on its own even without that. `scaled_p25` was chosen
+> as the variant worth confirming after all three had been scored on the full
+> range. Selecting a winner is using the data, so this window could not have
+> served as an independent confirmation of that choice regardless of how the
+> boundary had been handled.
+>
+> The text below is kept unchanged as the record of what was registered. It is
+> not a live contract and must not be run. The implementation it describes was
+> also found not to enforce what it claims: each run takes `until=now()` and
+> reloads, so "read once" was a sentence in a report rather than a property of
+> the code.
+>
+> A replication has to be registered against an evaluation moment that has not
+> happened yet, and waited for. That is filed separately.
+
+---
+
+**Original registration, 2026-09-08, retained verbatim:**
 
 ## Why this exists
 
