@@ -13,6 +13,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from schurfer_analytics.research_contract import ResearchContract
 from schurfer_analytics.score_component_study import (
+    component_value,
     horizon_cost_pct,
     select_one_per_episode,
     study_component,
@@ -60,7 +61,14 @@ def _row(
         "base": base or f"TOK{episode}",
         "ts": _SINCE + timedelta(minutes=minutes),
         "action": action,
-        "components": {"oi_trend": oi_trend, "pump_age": float(minutes)},
+        # The real shape: five components are objects carrying both the raw
+        # measurement and the 0-2 points the score sums; mad_score is a bare
+        # number. Faking only one shape would have hidden the crash that found
+        # this.
+        "components": {
+            "oi_trend": {"value": oi_trend, "points": 1, "max": 2, "note": ""},
+            "pump_age": {"value": float(minutes), "points": 0, "max": 2, "note": ""},
+        },
         "short_return_pct": ret,
     }
 
@@ -202,3 +210,27 @@ def test_the_shared_cost_model_is_used_as_is() -> None:
 def test_net_return_is_gross_minus_the_horizon_cost() -> None:
     observation = select_one_per_episode([_row(1, ret=1.0)])[0]
     assert observation.net_short_return_pct(60) == pytest.approx(1.0 - horizon_cost_pct(60))
+
+
+# --- the two shapes a component can take ------------------------------------
+
+
+def test_the_raw_measurement_is_read_not_the_score_points() -> None:
+    """Five components record both a `value` -- the measurement -- and `points`,
+    the 0-2 contribution the composite sums. Reading points would be asking the
+    question HYP-019 already answered; the ingredient is the measurement."""
+    assert component_value({"value": 321.74, "points": 0, "max": 2, "note": "x"}) == 321.74
+
+
+def test_a_bare_number_component_is_read_directly() -> None:
+    """mad_score is recorded as a plain float rather than an object. The first
+    run crashed on exactly this: float() of a dict."""
+    assert component_value(1.3883495145631297) == pytest.approx(1.38834951)
+
+
+def test_a_component_with_no_measurement_is_absent_rather_than_zero() -> None:
+    """Absent and zero are different things, and treating one as the other would
+    put every episode missing a component into the same quintile."""
+    assert component_value(None) is None
+    assert component_value({"points": 1, "max": 2, "note": "no value recorded"}) is None
+    assert component_value("not a number") is None

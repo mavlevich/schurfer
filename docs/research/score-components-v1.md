@@ -50,6 +50,36 @@ destroying signal that is already being collected -- a much cheaper thing to fix
 reported and the component is analysed on its own subset, never merged into a
 comparison with components that have full coverage.
 
+## Which number a component is, decided before any relationship was computed
+
+The first run crashed before computing anything, and the crash was informative:
+five of the six components are not numbers. They are objects carrying both
+
+- `value`, the raw measurement in the component's own units (`oi_trend` 321.74
+  percent, `pump_age` 7.34 hours), and
+- `points`, the discretised 0 to 2 contribution the composite actually sums.
+
+`mad_score` is a bare float.
+
+The registration said "components" and did not distinguish these, which is an
+ambiguity in the contract rather than in the data. Resolved here, before any
+component was related to any outcome:
+
+**This study reads `value`.** The ingredient is the measurement. `points` is the
+composite's own discretisation, and HYP-019 already found the composite ranks
+backwards, so measuring `points` would be asking the question that has been
+answered. Reading `value` is what makes "the ingredients carry signal the
+weighting discards" answerable at all.
+
+Reading both would double a search that already carries a family correction: six
+components read two ways is twelve searches wearing the costume of six. Which
+part of the machinery loses the signal, the bucketing or the weights, is a
+separate hypothesis with its own id.
+
+**What the crashed run saw:** the SQL executed and returned rows. No component
+was related to any outcome, no statistic was computed, and no value was
+displayed. The window is not spent.
+
 ## Population
 
 `app.trade_decisions` with `strategy_version = 'pump_short_v1_market_quality'`,
