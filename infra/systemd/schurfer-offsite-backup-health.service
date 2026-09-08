@@ -1,0 +1,20 @@
+[Unit]
+Description=Alert when the last SUCCESSFUL Schurfer offsite backup is too old
+
+# Watches the stamp files the backup writes only after an archive actually
+# succeeded -- not the timer's own last-run time, and not the unit's exit
+# status. The difference is the whole point: this repository has already
+# shipped a unit that fired punctually and silently did nothing for months
+# (schurfer-docker-prune, broken by a permissions error, found 2026-08-17).
+# A schedule that runs is not evidence that a backup exists.
+[Service]
+Type=oneshot
+User=root
+Group=root
+EnvironmentFile=-/opt/schurfer/.env.prod
+ExecStart=/opt/schurfer/infra/scripts/offsite-backup-health.sh
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

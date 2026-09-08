@@ -1,0 +1,42 @@
+[Unit]
+Description=Schurfer offsite backup to Hetzner Storage Box via Borg
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+# Runs as root, deliberately, and this is the one setting here that must not be
+# "tidied up" later. The analytics container writes runtime/market-path-cache
+# as root:root mode 600. The first run of this backup, as `deploy`, archived 57
+# of 1624 research input files and exited 1 -- a warning, not an error. Those
+# files are what makes a frozen research report reproducible at all (see
+# market_path_cache.py), so a backup that cannot read them is a backup that
+# reports success while being empty in the part that mattered.
+#
+# The script itself no longer depends on this being right: it counts files
+# before and after and fails on any mismatch. Running as root is what makes
+# that count pass rather than what makes it correct.
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/opt/schurfer
+ExecStart=/opt/schurfer/infra/scripts/offsite-backup.sh
+
+# A full dump currently streams 40.5 GB and takes about 15 minutes. The
+# timeout is generous against organic growth, but bounded: a run wedged on a
+# stalled network write must fail and alert, not sit holding the repository
+# lock until the next deploy blocks behind it.
+TimeoutStartSec=4h
+
+# Telegram credentials for the failure alert, shared with the existing backup
+# path. Optional: the script degrades to logging when they are absent.
+EnvironmentFile=-/opt/schurfer/.env.prod
+
+# No ProtectHome: the SSH key for the Storage Box lives in /home/deploy/.ssh,
+# referenced from BORG_RSH. This service reads that key and nothing else under
+# /home, and the alternative (a second copy of the key elsewhere) is worse.
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
