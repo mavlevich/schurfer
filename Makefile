@@ -1113,7 +1113,24 @@ prod-deploy:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
 	@test "$$(git branch --show-current)" = "main" || (echo "ERROR: not on main (on '$$(git branch --show-current)'). Deploy only from main." && exit 1)
 	@test -z "$$(git status --porcelain)" || (echo "ERROR: working tree not clean. Commit or stash first." && exit 1)
-	@echo "-> [1/5] Backup (offsite)..."
+	@echo "-> [1/5] Pull (fast-forward only)..."
+	@# Before the backup, not after. The invariant that matters is that a
+	@# backup exists before MIGRATIONS run, and migrations are step 4, so
+	@# pulling first preserves it exactly: `git pull` does not touch the
+	@# database.
+	@#
+	@# What it fixes is a deadlock that blocked three deploys on 2026-09-08. The
+	@# backup ran from the checked-out tree, so a fix to the backup script could
+	@# only arrive through a deploy -- and a deploy could not get past the
+	@# broken backup to pull it. Every such fix needed a manual `git pull` on
+	@# the host first, which is a step nobody would think of at three in the
+	@# morning.
+	@#
+	@# It also means the backup that guards a deploy is the one from the commit
+	@# being deployed, so a broken backup script fails its own deploy rather
+	@# than the next person's.
+	git pull --ff-only origin main
+	@echo "-> [2/5] Backup (offsite)..."
 	@# The gate is unchanged in purpose and changed in source of truth: a
 	@# migration still refuses to run without a fresh backup, but the backup it
 	@# demands is now the offsite archive rather than a 12 GB dump on the same
@@ -1132,8 +1149,6 @@ prod-deploy:
 	@# An unverified archive would not have been a reason to drop a verified
 	@# one.
 	@sudo /opt/schurfer/infra/scripts/offsite-backup.sh
-	@echo "-> [2/5] Pull (fast-forward only)..."
-	git pull --ff-only origin main
 	@echo "-> [3/5] Start DB..."
 	$(_PROD) up -d postgres redis nats
 	@$(_PROD) exec -T postgres pg_isready -U schurfer -q --timeout=30
