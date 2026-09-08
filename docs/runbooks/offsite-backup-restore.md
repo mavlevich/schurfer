@@ -213,6 +213,50 @@ is valid, not that its contents are complete -- the end-to-end read and
 Until a restore has been performed, step 2 of the storage plan is not done, and
 the local dump stays.
 
+### 2026-09-08 -- restore performed, three mechanisms verified
+
+Archive `db-2026-09-08T07:00:54`, restored into a throwaway container
+(`timescale/timescaledb:latest-pg17`, `--network none`, own volume, no published
+port) on the production host. The dump was streamed straight out of the
+repository into `pg_restore`, so nothing landed on disk.
+
+Restored in three passes, each with `timescaledb_pre_restore()` before and
+`timescaledb_post_restore()` after:
+
+1. **Schema, policies and application data.** All 5 hypertables, all 4
+   columnstore policies and all 4 retention policies came back. 941 trades,
+   488,356 decisions, 3,481,214 outcomes, 12,685 pump events, with date ranges
+   matching production. A real research query -- exit reasons for closed paper
+   `pump_short` trades since 2026-08-18 -- returned the same distribution as
+   production.
+2. **Uncompressed chunk data.** Writing into `_timescaledb_internal` chunk
+   tables under `timescaledb.restoring` works: 35,396 rows.
+3. **Compressed chunk data.** The columnstore path, which carries most of the
+   real data -- 27 of 29 bar chunks are compressed.
+
+`mfe_at` and `mae_at` were absent, correctly: the archive predates migration 0046.
+
+**The one thing that will mislead you.** After pass 3 the hypertable still
+reported 35,396 rows and the compressed chunk looked empty. It was not: the
+database was still in restoring mode, because the restore script had aborted on
+`set -e` before reaching `timescaledb_post_restore()`. Running it manually took
+the count to 38,579. **Compressed data is invisible until `post_restore` runs**,
+so a restore that ends without it looks like compressed data failed to restore
+rather than like an unfinished restore. Check `SHOW timescaledb.restoring;`
+before concluding anything about missing rows.
+
+Note also that `borg extract --stdout | pg_restore` raises `BrokenPipeError` in
+Borg whenever `pg_restore` finishes early, which it does for any partial
+selection. That is expected, not a failure of the archive -- but under
+`set -euo pipefail` it will abort the script, which is exactly how the
+`post_restore` above got skipped.
+
+**Not covered: a full-volume restore.** These passes deliberately excluded the
+bulk chunk data, because a complete restore needs roughly 27 GB free on a host
+that is not production and production has 24 GB. What remains untested is
+therefore volume and duration, not correctness: every mechanism the dump relies
+on has now been exercised against real data.
+
 ## What this does not cover yet
 
 Parquet export of cold minute bars before Timescale retention drops them, and
