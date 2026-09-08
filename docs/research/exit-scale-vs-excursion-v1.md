@@ -292,3 +292,64 @@ archive family:
 
 Command in both cases: `make prod-virtual-exit-policy-report`, the second with
 `ARGS="--until 2026-08-25"`, at code revision `2831746`.
+
+---
+
+# Correction 2, 2026-09-08: the registered metric is the median, and it was not used
+
+A colleague read the contract against the result and found that the two do not
+measure the same thing. The contract's primary metric is **median** net return
+per completed virtual trade, and its decision rule is a median exceeding the
+baseline's by more than 1.0 point. Everything reported above is **mean** net
+return, and `+0.64` is a difference of means compared against a margin written
+for medians.
+
+## The registered metric, computed from the saved discovery run
+
+From `hyp022-discovery-94eba938.md`, 556 episodes completed under every policy:
+
+| Policy         |  Median net | Difference of medians vs baseline | Mean net |
+| -------------- | ----------: | --------------------------------: | -------: |
+| baseline       |     -0.315% |                                -- |   -0.29% |
+| production     |     -0.315% |                            +0.000 |   -0.45% |
+| **scaled_p25** | **+0.950%** |                        **+1.265** |   +0.27% |
+| **scaled_p50** | **+0.965%** |                        **+1.280** |   -0.36% |
+| scaled_p75     |     +0.105% |                            +0.420 |   -0.32% |
+
+**On the registered metric two variants clear the 1.0 margin, and the correct
+number for `scaled_p25` is +1.27 rather than +0.64.** The error understated the
+effect rather than inflating it, which is luck again and not a defence.
+
+## Three things this changes
+
+**The verdict's reason.** `inconclusive` still stands, but not because the
+margin was missed. It stands on the other registered condition: the family
+returned `insufficient_resolution` and withheld formal inference. That is now
+the only thing between this and a candidate.
+
+**The monotonicity claim is false on the registered metric.** On means the three
+variants were monotone in tightness. On medians they are not: `scaled_p50`
+(+1.280) edges out `scaled_p25` (+1.265), and `scaled_p75` is far behind at
++0.420. The tidy story about tightness was an artifact of the metric I was not
+supposed to be using.
+
+**The median paired delta is zero.** Across 556 episodes the per-episode
+difference is negative on 237, zero on 61 and positive on 258, so the middle of
+that distribution sits inside the zero block. **The typical episode is not
+improved at all.** What moves is the shape of the tails: fewer deep losses, and
+the mean and median both shift because of what happens away from the centre.
+
+That last point is the most useful thing in this correction and would not have
+surfaced without it. A policy that helps the median episode and one that only
+truncates the left tail are different propositions, and only the second is
+supported here.
+
+## The drawdown claim was also wrong
+
+The result above states that all three scaled variants beat all six
+round-number policies on maximum drawdown. The tables say otherwise, on both
+runs. On the discovery window: baseline 100.86 USD, `scaled_p25` 56.47,
+`scaled_p50` 146.84, `scaled_p75` 132.92. Only `scaled_p25` beats the baseline.
+
+Corrected: **`scaled_p25` has the lowest maximum drawdown of any policy in the
+family. The other two scaled variants do not.**
