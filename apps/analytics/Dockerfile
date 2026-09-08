@@ -24,4 +24,14 @@ COPY --from=builder /app/.venv /app/.venv
 
 ENV PATH="/app/.venv/bin:$PATH"
 
+# Bake DuckDB's postgres extension into the image. `INSTALL postgres` downloads
+# it from DuckDB's extension repository on first use, and the cold-bar export
+# runs in `docker compose run --rm` containers whose home directory does not
+# survive the run -- so without this every scheduled export would re-download
+# it, and an export that exists to stop us losing history would depend on a
+# third-party endpoint being up at 04:00.
+ENV DUCKDB_HOME=/app/.duckdb
+RUN mkdir -p "$DUCKDB_HOME" \
+    && HOME=/app python -c "import duckdb; duckdb.connect().execute('INSTALL postgres')"
+
 ENTRYPOINT ["pump-scanner"]
