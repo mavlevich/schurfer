@@ -170,6 +170,24 @@ ssh -p 23 -i ~/.ssh/schurfer_storagebox.new -o BatchMode=yes u664974-sub1@u66497
 Then swap the files, remove the old public key from
 `prod-borg/.ssh/authorized_keys` on the box, and run one backup by hand.
 
+## If a fix to the backup script will not deploy
+
+It will, now, and this note is here because it did not before 2026-09-08.
+
+`prod-deploy` used to back up before pulling. The backup therefore ran from the
+tree already on the host, so a fix to `offsite-backup.sh` could only arrive
+through a deploy, and a deploy could not get past the broken backup to pull it.
+Three deploys died that way in one day, each needing a manual `git pull
+--ff-only origin main` on the host before `make prod-deploy` would work.
+
+The order is now pull, then back up. The invariant is unchanged -- a backup
+still exists before migrations, which are step 4 -- and `git pull` does not
+touch the database. The deadlock is gone, and a broken backup script now fails
+its own deploy instead of the next person's.
+
+If you ever meet this shape again on some other guard, the manual escape is the
+same: pull on the host first, then run the deploy.
+
 ## When the Storage Box is unreachable
 
 Backups fail and the health check alerts after 36 hours. Nothing is deleted from
