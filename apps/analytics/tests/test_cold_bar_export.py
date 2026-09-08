@@ -101,7 +101,7 @@ def test_a_failed_export_leaves_nothing_under_the_real_name(tmp_path: Path) -> N
     the next run would take it for a finished export and move on."""
     connection = _connection(3)
     connection.execute("DROP TABLE pg.timeseries.bybit_momentum_bars_1m")
-    with pytest.raises(Exception, match="(?i)bybit_momentum_bars_1m"):
+    with pytest.raises(Exception, match=r"(?i)bybit_momentum_bars_1m"):
         export_day(connection, _DAY, tmp_path)
     assert not (tmp_path / f"bars-{_DAY.isoformat()}.parquet").exists()
     assert list(tmp_path.glob(".*partial")) == []
