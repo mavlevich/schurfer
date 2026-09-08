@@ -206,7 +206,14 @@ fi
 # That deletion is only safe because bars archives are NEVER pruned -- see the
 # retention section. Once a local file is gone, the day exists solely in the
 # archives that already contain it, and no later archive will list it again.
-if [[ -d "$COLD_BARS_DIR" ]] && bars_files=$(find "$COLD_BARS_DIR" -type f -print | sort) \
+# `! -name '.*'` skips the exporter's own staging files. It writes each day
+# under `.bars-<date>.parquet.partial` and renames it into place only once the
+# row count matches, so a staging file is by definition an unfinished export --
+# and it can vanish mid-archive when that rename happens. That is not
+# hypothetical: it failed a deploy on 2026-09-08, when the backfill was still
+# running as the backup started.
+if [[ -d "$COLD_BARS_DIR" ]] \
+    && bars_files=$(find "$COLD_BARS_DIR" -type f ! -name '.*' -print | sort) \
     && [[ -n "$bars_files" ]]; then
     if printf '%s' "$bars_files" | grep -q '[[:cntrl:]]'; then
         part_failed "a cold-bar path contains a control character; refusing to archive"

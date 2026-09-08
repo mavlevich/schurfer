@@ -324,3 +324,23 @@ def test_bars_are_never_pruned(tmp_path: Path) -> None:
     prunes = [line for line in calls.splitlines() if line.startswith("prune")]
     assert prunes, "expected the other families to still be pruned"
     assert not any("bars-*" in line for line in prunes), prunes
+
+
+def test_exporter_staging_files_are_not_archived(tmp_path: Path) -> None:
+    """The exporter writes each day under a dot-prefixed staging name and
+    renames it into place only once the row count matches, so a staging file is
+    an unfinished export by definition -- and it can disappear mid-archive when
+    that rename happens. That failed a deploy on 2026-09-08 while a backfill was
+    still running."""
+    state, env = _fake_env(tmp_path, borg_body=_HONEST_BORG)
+    repo = Path(env["REPO_ROOT"])
+    staging = repo / "runtime/cold-bars/.bars-2026-08-21.parquet.partial"
+    staging.write_text("half a day")
+
+    result = _run(env)
+    assert result.returncode == 0, result.stderr
+    assert (state / "offsite-backup-bars.stamp").exists()
+    archived = (tmp_path / "borg-calls.log.paths").read_text()
+    assert ".partial" not in archived
+    # And the unfinished file is left alone rather than reclaimed.
+    assert staging.exists()
