@@ -75,3 +75,77 @@ It also says nothing about live execution. There is no live execution: every one
 of the 936 trades in the database is `paper: true` with no exchange order id. A
 successful reconciliation establishes that the replay agrees with the paper
 broker, and nothing about slippage, fills, or depth.
+
+---
+
+# Result, 2026-09-08
+
+Run on production at `b17b386`, policy `production_no_progress_v2`.
+
+## Verdict: `inconclusive`
+
+Not because the agreement looked bad. **The reasons matched on 68 of 72
+reconcilable trades, 94.4%**, comfortably above the 85% the contract calls
+agreement.
+
+The evidence floor is what binds: the contract required at least **80**
+reconcilable trades and the run produced **72**. That floor was written down
+before any rate was computed, precisely so a good-looking number on a thin
+sample could not be promoted afterwards. It is not promoted here.
+
+## Coverage
+
+| Status                        | Trades |
+| ----------------------------- | -----: |
+| compared                      |     72 |
+| unreplayable_exchange (LBank) |     33 |
+| episode_unavailable           |     32 |
+| market_path_unavailable       |      2 |
+| entry_outside_market_path     |      1 |
+
+`episode_unavailable` is the replay dataset's own eligibility filter: those
+episodes are excluded from the exit-policy family, so they are excluded here
+too. Reconciling them would mean comparing against episodes the machinery under
+test does not itself accept.
+
+**Loosening that filter to reach 80 is exactly what this pass may not do.** It
+would be choosing the population after seeing the result, and it is the reason
+the contract forbids tuning for a better match.
+
+## Descriptive agreement, not a verdict
+
+| Recorded      | Replayed      | Trades |
+| ------------- | ------------- | -----: |
+| no_progress   | no_progress   |     48 |
+| initial_sl    | initial_sl    |     11 |
+| trailing_stop | trailing_stop |      6 |
+| max_hold      | max_hold      |      3 |
+| no_progress   | trailing_stop |      2 |
+| max_hold      | trailing_stop |      1 |
+| no_progress   | initial_sl    |      1 |
+
+All four disagreements have the shape bar resolution predicts: the replay sees
+a trail or a stop trigger inside a bar whose extremes the broker's ticker
+samples never visited, and closes earlier than the broker did. None of them is
+the replay inventing a rule that did not fire; every replayed reason is a rule
+the policy really contains.
+
+Among the 68 that agreed, the replay exits a median **1.5 minutes later** at a
+median **0.22% lower** price. Both are reported, not graded. A zero here would
+have been the surprising result, not a reassuring one.
+
+## What happens next
+
+Re-run under this same contract once the sample clears 80. Roughly half of
+closed trades are reconcilable and the broker closes on the order of eight a
+day, so that is a few days of waiting rather than a change of method.
+
+Until then, every replay-derived statement about exit policy, HYP-021 included,
+carries this: the simulator has not been _shown_ to agree with the broker, it
+has been _observed_ to, on a sample the contract calls too small.
+
+## What this still does not say
+
+Nothing about live execution. All 936 trades in the database are `paper: true`
+with no exchange order id. Agreement here would establish that the replay
+reproduces the paper broker, and nothing about slippage, fills, or depth.
