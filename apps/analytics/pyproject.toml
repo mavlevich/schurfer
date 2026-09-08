@@ -54,7 +54,6 @@ virtual-threshold-challenger-report = "schurfer_analytics.virtual_threshold_chal
 virtual-exit-policy-report = "schurfer_analytics.virtual_exit_policy_report:main"
 paper-replay-reconciliation = "schurfer_analytics.paper_replay_reconciliation:main"
 cold-bar-export = "schurfer_analytics.cold_bar_export:main"
-scaled-exit-replication = "schurfer_analytics.scaled_exit_replication:main"
 virtual-exit-discovery-report = "schurfer_analytics.virtual_exit_discovery_report:main"
 virtual-score-challenger-report = "schurfer_analytics.virtual_score_challenger_report:main"
 virtual-banded-price-extent-report = "schurfer_analytics.virtual_banded_price_extent_report:main"
