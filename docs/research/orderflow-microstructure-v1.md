@@ -3,6 +3,14 @@
 **Status: registered 2026-09-08, before any relationship to outcome was
 computed.**
 
+> **Amended 2026-09-08, before any outcome was joined.** The family rules in
+> [entry-signal-family-rules-v1.md](entry-signal-family-rules-v1.md) bind this
+> contract and override anything below that contradicts them: the unit of
+> observation is the episode and not the decision, the floors count episodes and
+> asset clusters, a negative verdict needs as much data as a positive one, no
+> outcome may straddle a window boundary, and a feature counts only if it was
+> available when the decision was made.
+
 ## Family declaration
 
 One of three hypotheses registered together on 2026-09-08 (HYP-023, HYP-024,
@@ -81,12 +89,17 @@ not replace the registered ten-minute measure.
 
 ## Decision rule, declared before reading
 
+- **Insufficient** before anything else: below **150 episodes** per compared
+  quintile or **30 asset clusters** across them, the verdict is `inconclusive`
+  in both directions. The bars start on 2026-08-10, so this floor is the one
+  most likely to bind here, and it must bind rather than produce a rejection.
 - **Candidate** if the top-to-bottom spread exceeds **1.5 percentage points**
-  with at least 500 complete outcomes per quintile and a monotone relationship
-  across all five. It earns a read of the held-out window and nothing else.
-- **Rejected** if the spread is under 0.5 points. The order flow we collect does
-  not carry signal at this horizon in this form, and the 13 GB is then justified
-  by other uses or by nothing.
+  with a monotone relationship across all five quintiles. It earns a read of the
+  held-out window and nothing else.
+- **Rejected** if the spread is under 0.5 points, and only above the
+  sufficiency floor. The order flow we collect does not carry signal at this
+  horizon in this form, and the 13 GB is then justified by other uses or by
+  nothing.
 - **Inconclusive** otherwise.
 
 ## What this pass may not do

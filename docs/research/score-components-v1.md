@@ -3,6 +3,14 @@
 **Status: registered 2026-09-08, before any component's relationship to outcome
 was computed.**
 
+> **Amended 2026-09-08, before any outcome was joined.** The family rules in
+> [entry-signal-family-rules-v1.md](entry-signal-family-rules-v1.md) bind this
+> contract and override anything below that contradicts them: the unit of
+> observation is the episode and not the decision, the floors count episodes and
+> asset clusters, a negative verdict needs as much data as a positive one, no
+> outcome may straddle a window boundary, and a feature counts only if it was
+> available when the decision was made.
+
 ## Family declaration, read this first
 
 This is one of **three** hypotheses registered together on 2026-09-08 (HYP-023,
@@ -77,12 +85,18 @@ non-monotone in between is reported as such and is not treated as a signal.
 
 ## Decision rule, declared before reading
 
+- **Insufficient** before anything else: below **150 episodes** in either
+  compared quintile, or below **30 asset clusters** across them, the verdict is
+  `inconclusive` in both directions. This is checked first, so a component with
+  poor coverage cannot become a negative result through absence of data --
+  `mad_score` is recorded on 4,067 of 62,168 decisions and would have been the
+  first casualty.
 - **A component is a candidate** if its top-to-bottom quintile spread exceeds
-  **1.5 percentage points** of median net return, with at least 500 complete
-  outcomes in each of the two quintiles, **and** the relationship is monotone
-  across all five quintiles. A candidate earns a read of the held-out window,
-  nothing more.
-- **The ingredients are not the problem** if no component clears 0.5 points. The
+  **1.5 percentage points** of median net return **and** the relationship is
+  monotone across all five quintiles. A candidate earns a read of the held-out
+  window, nothing more.
+- **The ingredients are not the problem** if no component clears 0.5 points,
+  and only where every component cleared the sufficiency floor above. The
   score's weighting is then not what is destroying the signal, because there is
   no signal in the parts either.
 - **Inconclusive** otherwise.

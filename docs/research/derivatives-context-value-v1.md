@@ -3,6 +3,14 @@
 **Status: registered 2026-09-08, before any relationship to outcome was
 computed.**
 
+> **Amended 2026-09-08, before any outcome was joined.** The family rules in
+> [entry-signal-family-rules-v1.md](entry-signal-family-rules-v1.md) bind this
+> contract and override anything below that contradicts them: the unit of
+> observation is the episode and not the decision, the floors count episodes and
+> asset clusters, a negative verdict needs as much data as a positive one, no
+> outcome may straddle a window boundary, and a feature counts only if it was
+> available when the decision was made.
+
 ## Family declaration
 
 One of three hypotheses registered together on 2026-09-08 (HYP-023, HYP-024,
@@ -60,14 +68,22 @@ best-of-N is a search and reporting the winner without N would misrepresent it.
 
 ## Decision rule, declared before reading
 
+- **Unavailable** before anything else: a field whose availability at decision
+  time cannot be established under family rule 5 is excluded from the metric
+  and reported separately as a research approximation. It is neither a
+  candidate nor evidence of absence. This is the rule that decides this
+  hypothesis: the table holds historically reconstructed values, and
+  `source_at` preceding a decision does not mean the value existed then.
+- **Insufficient** next: below **150 episodes** per compared quintile or **30
+  asset clusters** across them, `inconclusive` in both directions.
 - **Candidate** if a field's top-to-bottom quintile spread exceeds **2.0
-  percentage points**, monotone across all five quintiles, with at least 500
-  complete outcomes per quintile. Higher than the other two hypotheses' 1.5
-  because this one searches an unknown number of fields rather than a fixed six
-  or a single statistic.
-- **Not worth its cost** if no field clears 0.5 points. That is not a
-  recommendation to drop the table -- retention and collection are an owner's
-  decision -- but it is the evidence that would inform one.
+  percentage points**, monotone across all five quintiles. Higher than the other
+  two hypotheses' 1.5 because this one searches an unknown number of fields
+  rather than a fixed six or a single statistic.
+- **Not worth its cost** if no _available_ field clears 0.5 points, and only
+  where those fields cleared the sufficiency floor. That is not a recommendation
+  to drop the table -- retention and collection are an owner's decision -- but it
+  is the evidence that would inform one.
 - **Inconclusive** otherwise.
 
 ## What this pass may not do
