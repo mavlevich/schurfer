@@ -206,7 +206,14 @@ fi
 # That deletion is only safe because bars archives are NEVER pruned -- see the
 # retention section. Once a local file is gone, the day exists solely in the
 # archives that already contain it, and no later archive will list it again.
-if [[ -d "$COLD_BARS_DIR" ]] && bars_files=$(find "$COLD_BARS_DIR" -type f -print | sort) \
+# `! -name '.*'` skips the exporter's own staging files. It writes each day
+# under `.bars-<date>.parquet.partial` and renames it into place only once the
+# row count matches, so a staging file is by definition an unfinished export --
+# and it can vanish mid-archive when that rename happens. That is not
+# hypothetical: it failed a deploy on 2026-09-08, when the backfill was still
+# running as the backup started.
+if [[ -d "$COLD_BARS_DIR" ]] \
+    && bars_files=$(find "$COLD_BARS_DIR" -type f ! -name '.*' -print | sort) \
     && [[ -n "$bars_files" ]]; then
     if printf '%s' "$bars_files" | grep -q '[[:cntrl:]]'; then
         part_failed "a cold-bar path contains a control character; refusing to archive"
@@ -222,9 +229,22 @@ if [[ -d "$COLD_BARS_DIR" ]] && bars_files=$(find "$COLD_BARS_DIR" -type f -prin
                     date -Iseconds > "$BARS_STAMP"
                     # Only the Parquet is reclaimed, and only what this archive
                     # was just verified to contain.
-                    printf '%s\n' "$bars_files" | grep '\.parquet$' | while read -r file; do
-                        rm -f "$file" && log "bars: reclaimed ${file}"
-                    done
+                    #
+                    # The list is built before the loop rather than piped into
+                    # it. Piping `grep` into `while` fails the whole job under
+                    # pipefail when grep matches nothing, and matching nothing
+                    # is the steady state: once every day has been archived and
+                    # reclaimed, only manifests remain. That blocked a deploy on
+                    # 2026-09-08, after the backup itself had entirely
+                    # succeeded.
+                    reclaimable=$(printf '%s\n' "$bars_files" | grep '\.parquet$' || true)
+                    if [[ -n "$reclaimable" ]]; then
+                        while read -r file; do
+                            rm -f "$file" && log "bars: reclaimed ${file}"
+                        done <<< "$reclaimable"
+                    else
+                        log "bars: nothing to reclaim, every archived day is already local-free"
+                    fi
                 else
                     drop_archive "$bars_archive"
                     part_failed "cold-bar archive contents differ from the list requested. Deleted."
