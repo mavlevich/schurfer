@@ -229,9 +229,22 @@ if [[ -d "$COLD_BARS_DIR" ]] \
                     date -Iseconds > "$BARS_STAMP"
                     # Only the Parquet is reclaimed, and only what this archive
                     # was just verified to contain.
-                    printf '%s\n' "$bars_files" | grep '\.parquet$' | while read -r file; do
-                        rm -f "$file" && log "bars: reclaimed ${file}"
-                    done
+                    #
+                    # The list is built before the loop rather than piped into
+                    # it. Piping `grep` into `while` fails the whole job under
+                    # pipefail when grep matches nothing, and matching nothing
+                    # is the steady state: once every day has been archived and
+                    # reclaimed, only manifests remain. That blocked a deploy on
+                    # 2026-09-08, after the backup itself had entirely
+                    # succeeded.
+                    reclaimable=$(printf '%s\n' "$bars_files" | grep '\.parquet$' || true)
+                    if [[ -n "$reclaimable" ]]; then
+                        while read -r file; do
+                            rm -f "$file" && log "bars: reclaimed ${file}"
+                        done <<< "$reclaimable"
+                    else
+                        log "bars: nothing to reclaim, every archived day is already local-free"
+                    fi
                 else
                     drop_archive "$bars_archive"
                     part_failed "cold-bar archive contents differ from the list requested. Deleted."
