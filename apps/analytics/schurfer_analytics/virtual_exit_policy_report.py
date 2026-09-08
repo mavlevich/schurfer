@@ -10,6 +10,7 @@ import sys
 from collections import Counter
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from statistics import fmean
 
 from .challenger_inference import (
@@ -39,6 +40,15 @@ from .reporting import (
     parse_utc_datetime,
     profit_factor,
     resolve_report_until,
+)
+from .research_contract import (
+    ContractViolationError,
+    ResearchContract,
+    compare,
+    freeze_or_verify_sample,
+    load_contract,
+    validate_configuration,
+    verdict,
 )
 from .virtual_strategy import (
     BASELINE_EXIT_POLICY,
@@ -838,6 +848,80 @@ def render_markdown(report: ExitPolicyReport) -> str:
     return "\n".join(lines) + "\n"
 
 
+def render_contract_verdict(contract: ResearchContract, report: ExitPolicyReport) -> str:
+    """Apply the contract's own metric and rule to this report's trades.
+
+    This is the section that would have caught HYP-022's error. The report
+    prints mean and median tables side by side, and a human picked the wrong one
+    to compare against a registered margin. Here the statistic, the comparison
+    and the thresholds all come from the contract, so there is nothing left to
+    pick.
+    """
+    by_policy: dict[str, dict[int, float]] = {}
+    for entry in report.policy_trades:
+        value = entry.trade.net_return_pct
+        if entry.trade.status == "complete" and value is not None:
+            by_policy.setdefault(entry.policy_key, {})[entry.trade.pump_event_id] = value
+
+    baseline = by_policy.get(contract.baseline_policy, {})
+    lines = [
+        "",
+        f"## Contract verdict ({contract.hypothesis_id})",
+        "",
+        f"Contract `{contract.contract_version}`, checksum `{contract.compute_checksum()[:16]}`.",
+        "",
+        f"Metric `{contract.metric}`, comparison `{contract.comparison}`, "
+        f"candidate at {contract.candidate_margin:+.2f}, rejection at "
+        f"{contract.rejection_margin:+.2f}, floors "
+        f"{contract.minimum_completed_trades} trades and "
+        f"{contract.minimum_clusters} clusters.",
+        "",
+        "| Challenger | Value | Paired trades | Verdict |",
+        "| --- | ---: | ---: | --- |",
+    ]
+    formal_available = report.inference.readiness.status == "formal_sample_ready"
+    for policy_key in contract.challenger_policies:
+        challenger = by_policy.get(policy_key, {})
+        # Paired on the episodes both policies resolved. An unpaired comparison
+        # would fold whatever separates the two populations into the result.
+        shared = sorted(set(baseline) & set(challenger))
+        if not shared:
+            lines.append(f"| {policy_key} | n/a | 0 | inconclusive |")
+            continue
+        value = compare(
+            contract,
+            [baseline[episode] for episode in shared],
+            [challenger[episode] for episode in shared],
+        )
+        clusters = len(
+            {
+                entry.trade.cluster_key
+                for entry in report.policy_trades
+                if entry.policy_key == policy_key and entry.trade.pump_event_id in set(shared)
+            }
+        )
+        decision = verdict(
+            contract,
+            value=value,
+            completed_trades=len(shared),
+            clusters=clusters,
+            formal_inference_available=formal_available,
+        )
+        lines.append(f"| {policy_key} | {value:+.3f} | {len(shared)} | {decision} |")
+
+    if not formal_available:
+        lines.extend(
+            [
+                "",
+                f"Formal inference is `{report.inference.readiness.status}`, so every "
+                "verdict above is `inconclusive` regardless of its value. That "
+                "override is part of the registered rule, not a caveat added after "
+                "seeing the numbers.",
+            ]
+        )
+    return "\n".join(lines) + "\n"
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Replay the pre-registered pump-short exit-policy family"
@@ -880,6 +964,15 @@ def build_parser() -> argparse.ArgumentParser:
         action=argparse.BooleanOptionalAction,
         required=True,
     )
+    parser.add_argument(
+        "--contract",
+        type=Path,
+        help=(
+            "path to a registered research contract. When given, the window and "
+            "the metric come from it, the run is refused if the configuration "
+            "does not match, and the episode sample is frozen on the first run."
+        ),
+    )
     parser.add_argument("--format", choices=("markdown", "json"), default="markdown")
     return parser
 
@@ -890,19 +983,37 @@ async def _run(args: argparse.Namespace) -> str:
     from .virtual_market import fetch_exit_policy_paths
 
     generated_at = datetime.now(UTC)
-    until = resolve_report_until(
-        args.until,
-        generated_at,
-        cohort_start=EXIT_POLICY_COHORT_START,
-        report_label="exit-policy",
-    )
+    contract = load_contract(args.contract) if args.contract else None
+    if contract is None:
+        until = resolve_report_until(
+            args.until,
+            generated_at,
+            cohort_start=EXIT_POLICY_COHORT_START,
+            report_label="exit-policy",
+        )
+        since = args.since
+    else:
+        # The window comes from the contract, never from the clock. HYP-022 was
+        # run with this argument left at its default, so it covered the window
+        # the contract had declared held out and nothing objected.
+        since, until = contract.window_since, contract.window_until
+        if args.until is not None and args.until != until:
+            raise ContractViolationError(
+                f"--until {args.until.isoformat()} contradicts "
+                f"{contract.hypothesis_id}'s window ending {until.isoformat()}"
+            )
+        if args.since != EXIT_POLICY_COHORT_START and args.since != since:
+            raise ContractViolationError(
+                f"--since {args.since.isoformat()} contradicts "
+                f"{contract.hypothesis_id}'s window starting {since.isoformat()}"
+            )
     db_url = os.getenv("DATABASE_URL")
     if not db_url:
         raise ValueError("DATABASE_URL is required for virtual-exit-policy-report")
     if not args.code_revision:
         raise ValueError("--code-revision or SCHURFER_GIT_SHA is required")
     filters = ReplayFilters(
-        since=args.since,
+        since=since,
         until=until,
         strategy_versions=tuple(args.strategy_version or EXIT_POLICY_STRATEGY_VERSIONS),
         resolver_version=args.resolver_version,
@@ -913,12 +1024,43 @@ async def _run(args: argparse.Namespace) -> str:
         taker_fee_bps_per_side=args.taker_fee_bps_per_side,
         funding_cost_bps_per_8h=args.funding_cost_bps_per_8h,
     )
+    if contract is not None:
+        # Before the first query, deliberately. Validating afterwards would mean
+        # the outcomes had already been read by a run that turns out not to have
+        # been the registered experiment, and reading is the irreversible part.
+        if filters.since is None:
+            raise ContractViolationError(
+                f"{contract.hypothesis_id} requires a bounded window; filters have no start"
+            )
+        validate_configuration(
+            contract,
+            since=filters.since,
+            until=filters.until,
+            metric=contract.metric,
+            comparison=contract.comparison,
+            baseline_policy=BASELINE_EXIT_POLICY.key,
+            challenger_policies=tuple(
+                policy.key for policy in EXIT_POLICIES if policy.key != BASELINE_EXIT_POLICY.key
+            ),
+            cost_model_version=COST_MODEL_VERSION,
+            strategy_versions=filters.strategy_versions,
+            allow_fallback=filters.allow_fallback,
+        )
     repository = ReplayRepository.from_url(db_url)
     try:
         decisions = await repository.load(filters)
     finally:
         await repository.close()
     dataset = build_replay_dataset(decisions, filters)
+    if contract is not None:
+        # First run records the sample; later runs must find the same one. A
+        # re-run that picks up whatever accumulated since is a second experiment
+        # reported under the first one's name.
+        freeze_or_verify_sample(
+            contract,
+            [episode.pump_event_id for episode in dataset.eligible_episodes],
+            args.contract.with_suffix(".sample.json"),
+        )
     paths = await fetch_exit_policy_paths(dataset.eligible_episodes, EXCHANGE_FACTORIES)
     report = build_exit_policy_report(
         dataset,
@@ -929,7 +1071,12 @@ async def _run(args: argparse.Namespace) -> str:
         working_tree_dirty=args.working_tree_dirty,
         costs=costs,
     )
-    return render_json(report) if args.format == "json" else render_markdown(report)
+    if args.format == "json":
+        return render_json(report)
+    rendered = render_markdown(report)
+    if contract is not None:
+        rendered += render_contract_verdict(contract, report)
+    return rendered
 
 
 def main() -> None:
