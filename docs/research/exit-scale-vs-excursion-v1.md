@@ -1,6 +1,14 @@
 # HYP-022 — The exit parameters are scaled past the moves they are meant to catch
 
-**Status: registered 2026-09-08, before any variant's return was computed.**
+**Status: registered 2026-09-08, before any variant's return was computed.
+Result recorded and then CORRECTED TWICE the same day.**
+
+> **Read the corrections before the result.** The first run read the window this
+> contract declared held out, so its scope was the whole range and not the
+> discovery window. And the result was reported in means while this contract's
+> registered metric is the median. Both are corrected at the end of this
+> document; the result section below is left as written, with its own errors
+> struck in place, because rewriting it would hide what was claimed and when.
 
 ## What is already established, and is not the hypothesis
 
@@ -167,8 +175,13 @@ names as inconclusive on its own.
 **`scaled_p25` is the first policy this repository has measured above a profit
 factor of 1.** It is also the tightest scale tested, and the three scaled
 variants are monotone in the direction of tightness: +0.10, -0.58, -0.64 as
-activation rises from 1.65% to 3.99% to 7.69%. Every one of the six
-round-number policies sits below all three on drawdown.
+activation rises from 1.65% to 3.99% to 7.69%.
+
+~~Every one of the six round-number policies sits below all three on
+drawdown.~~ **False, contradicted by the table directly above it: baseline
+248.10 against scaled_p50's 272.26 and scaled_p75's 280.45. Only `scaled_p25`
+beats the baseline on drawdown.** The monotonicity claim in the same paragraph
+is also an artifact of the wrong metric; see correction 2.
 
 Its exit reasons are a different regime rather than the same one tuned:
 `trailing_stop` fires on **649 of 851** episodes against 227 for the baseline,
@@ -262,9 +275,16 @@ correction would have retracted a conclusion rather than a scope line.
 
 ## What the contamination does and does not cost
 
-The variant parameters were derived from the discovery window only -- the
-percentile query was bounded at `2026-08-25` -- so the 295 episodes after that
-date were never used to choose anything. Nothing was fitted to them.
+The variant parameters were derived from the discovery window only: the
+percentile query was bounded at `2026-08-25`.
+
+~~So the 295 episodes after that date were never used to choose anything.
+Nothing was fitted to them.~~ **Too strong, and withdrawn.** The numbers were
+not fitted to those episodes, but `scaled_p25` was picked as the variant worth
+confirming _after_ seeing all three variants scored on the full range. Choosing
+a winner is using the data, whatever the parameters were derived from. That is
+the substantive reason the confirmation is withdrawn, and it would hold even if
+the window boundary had been honoured for everything else.
 
 What is gone is their value as an unread confirmation. They have been seen, and
 a window cannot be un-seen. Any comparison against them from here carries the
