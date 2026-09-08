@@ -97,6 +97,12 @@ jobs:
           cd packages/journal && \
             DATABASE_URL=postgresql://schurfer:schurfer_dev@localhost:5432/schurfer \
             uv run --package schurfer-journal alembic upgrade head
+      # The same target `make verify` runs at pre-push. Without it CI type-checks
+      # only packages/journal (all the pre-commit mypy hook covers), so an error
+      # in apps/analytics or apps/execution passes here, lands on main, and then
+      # fails every developer's next push instead of this pull request.
+      - name: Type-check apps and packages
+        run: make typecheck
       - name: Check for tests
         id: check
         run: |
