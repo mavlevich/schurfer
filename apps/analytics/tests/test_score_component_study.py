@@ -234,3 +234,55 @@ def test_a_component_with_no_measurement_is_absent_rather_than_zero() -> None:
     assert component_value(None) is None
     assert component_value({"points": 1, "max": 2, "note": "no value recorded"}) is None
     assert component_value("not a number") is None
+
+
+# --- a partition the component does not impose ------------------------------
+
+
+def _tied_rows() -> list[dict[str, object]]:
+    """Thirty episodes whose outcome rises steadily while the component is a
+    single value across the middle three quintiles."""
+    tiers = {0: 0.0, 1: 1.0, 2: 1.0, 3: 1.0, 4: 2.0}
+    return [
+        _row(
+            episode,
+            oi_trend=tiers[(episode - 1) // 6],
+            ret=float((episode - 1) // 6),
+        )
+        for episode in range(1, 31)
+    ]
+
+
+def test_a_partition_split_through_tied_values_is_not_a_candidate() -> None:
+    """The defect that produced HYP-023's first pump_age result. 368 of 821
+    episodes read exactly 0.6 minutes, so quintiles two and three sat wholly
+    inside one value and the difference between their medians was decided by the
+    sort order. Monotone and wide, and still not a finding."""
+    result = study_component(select_one_per_episode(_tied_rows()), "oi_trend", _contract())
+    assert result.monotone
+    assert result.spread_pct is not None
+    assert result.spread_pct > 1.5
+    assert not result.separated
+    assert result.tied_boundaries == 2
+    assert result.verdict == "inconclusive"
+    assert "tied value" in result.detail
+
+
+def test_the_tie_check_only_ever_withdraws_a_candidate() -> None:
+    """Stated as a test because it is the argument for fixing this after the
+    first result was read: the check can turn a candidate into inconclusive and
+    can never turn anything into a candidate."""
+    separated = study_component(
+        select_one_per_episode(_monotone_rows(0.5)), "oi_trend", _contract()
+    )
+    assert separated.separated
+    assert separated.verdict == "candidate"
+
+
+def test_the_distribution_behind_a_verdict_is_reported() -> None:
+    """Coverage alone hid this: 821 episodes carrying 142 distinct values looks
+    identical to 821 carrying 821 until the numbers are printed."""
+    result = study_component(select_one_per_episode(_tied_rows()), "oi_trend", _contract())
+    assert result.coverage_episodes == 30
+    assert result.distinct_values == 3
+    assert result.largest_tied_group == 18

@@ -17,12 +17,16 @@ because the first draft would have counted evidence it does not have:
   observations;
 - floors in episodes and asset clusters rather than rows;
 - the same floors before a negative verdict as before a positive one;
-- no decision whose outcome window runs past the study window.
+- no decision whose outcome window runs past the study window;
+- no candidate from a partition the component does not impose: a quintile
+  boundary that falls inside a tied value splits equal measurements by sort
+  order, and an ordering produced that way says nothing about the component.
 """
 
 from __future__ import annotations
 
 import os
+from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from itertools import pairwise
@@ -113,6 +117,8 @@ class QuintileStat:
     episodes: int
     clusters: int
     median_net_pct: float
+    lower_value: float
+    upper_value: float
 
 
 @dataclass(frozen=True)
@@ -124,6 +130,8 @@ class ComponentResult:
     quintiles: tuple[QuintileStat, ...]
     verdict: str
     detail: str = ""
+    distinct_values: int = 0
+    largest_tied_group: int = 0
 
     @property
     def spread_pct(self) -> float | None:
@@ -131,6 +139,36 @@ class ComponentResult:
         if len(self.quintiles) < QUINTILES:
             return None
         return self.quintiles[-1].median_net_pct - self.quintiles[0].median_net_pct
+
+    @property
+    def tied_boundaries(self) -> int:
+        """How many of the four quintile boundaries fall inside one tied value.
+
+        A component recorded at coarse resolution has large groups of episodes
+        sharing a value. Splitting by rank position then cuts through such a
+        group, and which side of the boundary an episode lands on is decided by
+        the sort's tie order rather than by the component. `pump_age` is recorded
+        to a tenth of a minute and 368 of 821 discovery episodes read exactly
+        0.6: quintiles two and three sat wholly inside that single value, so the
+        difference between their medians was noise wearing the shape of a trend.
+        """
+        if len(self.quintiles) < QUINTILES:
+            return 0
+        return sum(
+            1
+            for earlier, later in pairwise(self.quintiles)
+            if earlier.upper_value == later.lower_value
+        )
+
+    @property
+    def separated(self) -> bool:
+        """Whether every adjacent pair of quintiles differs in the component.
+
+        Without this the ordering the monotonicity check reads is imposed by the
+        sort and not by the measurement, so it can be neither believed nor
+        disbelieved.
+        """
+        return len(self.quintiles) >= QUINTILES and self.tied_boundaries == 0
 
     @property
     def monotone(self) -> bool:
@@ -227,6 +265,8 @@ def _quintile_stats(
                 episodes=len(chunk),
                 clusters=len({item.cluster_key for item in chunk}),
                 median_net_pct=median(item.net_short_return_pct(horizon_minutes) for item in chunk),
+                lower_value=chunk[0].components[component],
+                upper_value=chunk[-1].components[component],
             )
         )
     return tuple(stats)
@@ -249,17 +289,19 @@ def study_component(
     candidate_spread_pct = abs(contract.candidate_margin)
     rejection_spread_pct = abs(contract.rejection_margin)
     present = [item for item in observations if component in item.components]
+    values = [item.components[component] for item in present]
+    counts = Counter(values)
     quintiles = _quintile_stats(observations, component, contract.outcome_horizon_minutes)
-    result = ComponentResult(
-        component=component,
-        coverage_episodes=len(present),
-        quintiles=quintiles,
-        verdict="inconclusive",
-    )
+    facts: dict[str, Any] = {
+        "component": component,
+        "coverage_episodes": len(present),
+        "distinct_values": len(counts),
+        "largest_tied_group": max(counts.values(), default=0),
+    }
+    result = ComponentResult(**facts, quintiles=quintiles, verdict="inconclusive")
     if not quintiles:
         return ComponentResult(
-            component=component,
-            coverage_episodes=len(present),
+            **facts,
             quintiles=(),
             verdict="inconclusive",
             detail="too few episodes carry this component to form quintiles",
@@ -274,8 +316,7 @@ def study_component(
     clusters_ok = sum(stat.clusters for stat in compared) >= contract.minimum_clusters
     if not episodes_ok or not clusters_ok:
         return ComponentResult(
-            component=component,
-            coverage_episodes=len(present),
+            **facts,
             quintiles=quintiles,
             verdict="inconclusive",
             detail=(
@@ -288,25 +329,34 @@ def study_component(
     spread = result.spread_pct
     if spread is None:
         return result
+
+    # A partition the component does not actually impose cannot support a
+    # candidate. This is checked before the spread, alongside sufficiency and for
+    # the same reason: the first draft would have promoted an ordering produced
+    # by the sort. The check can only withdraw a candidate, never create one.
+    if not result.separated:
+        return ComponentResult(
+            **facts,
+            quintiles=quintiles,
+            verdict="inconclusive",
+            detail=(
+                f"{result.tied_boundaries} of {QUINTILES - 1} quintile boundaries fall inside a "
+                f"single tied value ({facts['largest_tied_group']} of {len(present)} episodes "
+                f"share one value, {facts['distinct_values']} distinct in all), so the ordering "
+                "between adjacent quintiles is imposed by the sort, not by the component"
+            ),
+        )
     if abs(spread) >= candidate_spread_pct and result.monotone:
         return ComponentResult(
-            component=component,
-            coverage_episodes=len(present),
+            **facts,
             quintiles=quintiles,
             verdict="candidate",
             detail="earns a read of the held-out window, nothing more",
         )
     if abs(spread) < rejection_spread_pct:
-        return ComponentResult(
-            component=component,
-            coverage_episodes=len(present),
-            quintiles=quintiles,
-            verdict="no_signal",
-            detail="",
-        )
+        return ComponentResult(**facts, quintiles=quintiles, verdict="no_signal", detail="")
     return ComponentResult(
-        component=component,
-        coverage_episodes=len(present),
+        **facts,
         quintiles=quintiles,
         verdict="inconclusive",
         detail="" if result.monotone else "spread is not monotone across all five quintiles",
@@ -339,15 +389,19 @@ def render_markdown(
         "",
         "## Verdicts",
         "",
-        "| Component | Coverage | Spread (top - bottom) | Monotone | Verdict | Detail |",
-        "| --- | ---: | ---: | --- | --- | --- |",
+        "| Component | Coverage | Distinct | Largest tie | Spread (top - bottom) "
+        "| Monotone | Separated | Verdict | Detail |",
+        "| --- | ---: | ---: | ---: | ---: | --- | --- | --- | --- |",
     ]
     for result in results:
         spread = result.spread_pct
         lines.append(
             f"| {result.component} | {result.coverage_episodes} | "
+            f"{result.distinct_values} | {result.largest_tied_group} | "
             f"{'n/a' if spread is None else f'{spread:+.2f}'} | "
-            f"{'yes' if result.monotone else 'no'} | {result.verdict} | {result.detail} |"
+            f"{'yes' if result.monotone else 'no'} | "
+            f"{'yes' if result.separated else f'no ({result.tied_boundaries}/4)'} | "
+            f"{result.verdict} | {result.detail} |"
         )
 
     lines.extend(["", "## Quintile medians, net of costs", ""])
@@ -358,13 +412,14 @@ def render_markdown(
             [
                 f"### {result.component}",
                 "",
-                "| Quintile | Episodes | Clusters | Median net |",
-                "| ---: | ---: | ---: | ---: |",
+                "| Quintile | Episodes | Clusters | Value range | Median net |",
+                "| ---: | ---: | ---: | --- | ---: |",
             ]
         )
         for stat in result.quintiles:
             lines.append(
                 f"| {stat.index + 1} | {stat.episodes} | {stat.clusters} | "
+                f"{stat.lower_value:g} to {stat.upper_value:g} | "
                 f"{stat.median_net_pct:+.2f}% |"
             )
         lines.append("")
