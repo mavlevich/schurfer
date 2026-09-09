@@ -11,10 +11,12 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from schurfer_analytics.episode_selection import episode_decision_query
 from schurfer_analytics.research_contract import ResearchContract
 from schurfer_analytics.score_component_study import (
     component_value,
     horizon_cost_pct,
+    incomplete_outcome_episodes,
     select_one_per_episode,
     study_component,
     within_window,
@@ -286,3 +288,53 @@ def test_the_distribution_behind_a_verdict_is_reported() -> None:
     assert result.coverage_episodes == 30
     assert result.distinct_values == 3
     assert result.largest_tied_group == 18
+
+
+# --- the episode's decision is chosen before its outcome is known ------------
+
+
+def test_an_episode_whose_decision_has_no_outcome_is_dropped_not_substituted() -> None:
+    """The defect a colleague reproduced on a real Postgres. The SQL used to
+    filter to decisions with a completed outcome and only then apply the
+    "first opened, else earliest" rule, so an episode whose first `opened`
+    decision was still unresolved came back represented by a later `skipped` one
+    -- a different decision, at a different age, in a different group. On the
+    HYP-023 discovery window it fired on 24 of 822 episodes."""
+    rows = [
+        {**_row(1, minutes=0, action="opened", oi_trend=1.0), "short_return_pct": None},
+        _row(1, minutes=6, action="skipped", oi_trend=9.0, ret=3.0),
+    ]
+    # Both rows belong to episode 1; the opened one represents it and has no
+    # outcome, so the episode contributes nothing rather than contributing the
+    # skipped one's components.
+    assert select_one_per_episode(rows) == ()
+
+
+def test_the_dropped_episode_is_counted_as_coverage() -> None:
+    """Dropping it silently would shrink the denominator invisibly, which reads
+    as a population that simply is that size."""
+    rows = [
+        {**_row(1, action="opened"), "short_return_pct": None},
+        _row(2, ret=1.0),
+    ]
+    assert incomplete_outcome_episodes(rows) == 1
+    assert len(select_one_per_episode(rows)) == 1
+
+
+def test_a_complete_episode_is_unaffected() -> None:
+    rows = [_row(1, ret=1.0), _row(2, ret=2.0)]
+    assert incomplete_outcome_episodes(rows) == 0
+    assert len(select_one_per_episode(rows)) == 2
+
+
+def test_the_sql_selects_the_episode_before_joining_the_outcome() -> None:
+    """Read as text because the ordering of these two operations is the whole
+    defect, and a test that mocked the database would assert nothing about it."""
+    query = episode_decision_query("short_return_pct")
+    selection = query.index("DISTINCT ON (d.pump_event_id)")
+    outcome_join = query.index("LEFT JOIN app.trade_decision_outcomes")
+    assert selection < outcome_join
+    # A LEFT join, so an episode with no completed outcome still comes back and
+    # can be counted, rather than vanishing from the population.
+    assert "LEFT JOIN app.trade_decision_outcomes" in query
+    assert query.count("JOIN app.trade_decision_outcomes") == 1
