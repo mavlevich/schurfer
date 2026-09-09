@@ -46,12 +46,22 @@ export function TokenChart({ base }: { base: string }) {
   // What the system decided about this token, and why. The reason is the point:
   // a chart that shows only where price moved cannot say why nothing was opened
   // there.
-  const { data: bucketsData } = useDecisionBuckets({
+  const {
+    data: bucketsData,
+    isPlaceholderData,
+    isError: decisionsFailed,
+    isPending: decisionsPending,
+  } = useDecisionBuckets({
     base,
     intervalMinutes: chartInterval,
     sinceSeconds,
     untilSeconds,
   });
+  // Placeholder data belongs to the previous window of the same token. The hook
+  // already refuses to carry another token's answer, and this refuses to draw a
+  // stale window's: markers pinned to candles that are no longer on screen are
+  // worse than none.
+  const buckets = isPlaceholderData ? undefined : bucketsData;
 
   type ChartApi = ReturnType<typeof createChart>;
   type SeriesApi = ReturnType<ChartApi['addSeries']>;
@@ -63,9 +73,9 @@ export function TokenChart({ base }: { base: string }) {
   const markersRef = useRef<any>(null);
   const selectedInterval = getInterval(chartInterval);
 
-  const alignedBuckets = useMemo(
-    () => alignBuckets(bucketsData?.buckets ?? [], candleTimes),
-    [bucketsData, candleTimes],
+  const { aligned: alignedBuckets, unaligned: unalignedBuckets } = useMemo(
+    () => alignBuckets(buckets?.buckets ?? [], candleTimes),
+    [buckets, candleTimes],
   );
   // Every candle's bucket, not only the ones that got a marker: the marker says
   // where something changed, and the tooltip answers for whatever is hovered.
@@ -78,8 +88,15 @@ export function TokenChart({ base }: { base: string }) {
   bucketByTimeRef.current = bucketByTime;
 
   const markers = useMemo(
-    () => buildChartMarkers({ episodes, buckets: bucketsData?.buckets, candleTimes, visibility }),
-    [episodes, bucketsData, candleTimes, visibility],
+    () =>
+      buildChartMarkers({
+        episodes,
+        buckets: buckets?.buckets,
+        candleTimes,
+        intervalSeconds: chartInterval * 60,
+        visibility,
+      }),
+    [episodes, buckets, candleTimes, chartInterval, visibility],
   );
 
   useEffect(() => {
@@ -180,6 +197,12 @@ export function TokenChart({ base }: { base: string }) {
     markersRef.current.setMarkers(markers as SeriesMarker<UTCTimestamp>[]);
   }, [markers]);
 
+  // A tooltip describing the previous token's candle would outlive the data it
+  // describes, because the crosshair does not move when the token does.
+  useEffect(() => {
+    setHover(null);
+  }, [base, chartInterval]);
+
   const evaluated = alignedBuckets.reduce((sum, bucket) => sum + bucket.count, 0);
 
   return (
@@ -232,14 +255,28 @@ export function TokenChart({ base }: { base: string }) {
               unreadable, so most candles have none; without this line an empty
               stretch reads as "nothing was evaluated" when it means "nothing
               changed". */}
-          {bucketsData && (
+          {/* Three states, said out loud. An empty stretch of chart means
+              "nothing changed" only when the decisions actually loaded; while
+              they are in flight or after they failed it means nothing at all,
+              and the previous version rendered all three identically. */}
+          {decisionsFailed ? (
+            <span className="font-mono text-amber-500">decisions unavailable</span>
+          ) : decisionsPending || isPlaceholderData ? (
+            <span className="font-mono opacity-60">loading decisions…</span>
+          ) : buckets ? (
             <span className="font-mono">
               {evaluated.toLocaleString()} evaluations in {alignedBuckets.length} candles
-              {bucketsData.truncated && (
+              {unalignedBuckets > 0 && (
+                <span className="text-amber-500">
+                  {' '}
+                  · {unalignedBuckets} outside the drawn candles
+                </span>
+              )}
+              {buckets.truncated && (
                 <span className="text-amber-500"> · truncated, older candles not shown</span>
               )}
             </span>
-          )}
+          ) : null}
         </div>
       </CardHeader>
       <CardContent className="p-0 pb-2">

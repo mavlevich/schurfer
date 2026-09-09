@@ -33,53 +33,91 @@ function bucket(
 }
 
 describe('alignBuckets', () => {
-  it('keeps buckets that land on a candle', () => {
-    expect(alignBuckets([bucket(0), bucket(2)], CANDLES).map((b) => b.time)).toEqual([
+  it('keeps buckets whose start is a candle being drawn', () => {
+    expect(alignBuckets([bucket(0), bucket(2)], CANDLES).aligned.map((b) => b.time)).toEqual([
       CANDLES[0],
       CANDLES[2],
     ]);
   });
 
-  it('snaps a bucket inside a candle to that candle', () => {
-    const inside = { ...bucket(0), time: CANDLES[0] + 120 };
-    expect(alignBuckets([inside], CANDLES)[0].time).toBe(CANDLES[0]);
+  it('does not fold a bucket into the previous candle', () => {
+    // The defect: nearest-before matching moved a bucket that fell in a candle
+    // the series does not have onto the candle before it, drawing the event
+    // minutes early. Server buckets are interval starts, so anything that is not
+    // one is a grid disagreement, not a candle to snap to.
+    const between = { ...bucket(0), time: CANDLES[0] + 120 };
+    const result = alignBuckets([between], CANDLES);
+    expect(result.aligned).toEqual([]);
+    expect(result.unaligned).toBe(1);
+  });
+
+  it('reports an opening in a missing candle instead of moving it', () => {
+    // Minute candles at t=60 and t=180, with an opening in the absent t=120.
+    // Drawing it at t=60 claims the entry happened a minute before it did.
+    const minuteCandles = [60, 180];
+    const opening: DecisionBucket = {
+      time: 120,
+      count: 1,
+      opened: true,
+      dominant_reason: 'entered',
+      distinct_reasons: 1,
+    };
+    const result = alignBuckets([opening], minuteCandles);
+    expect(result.aligned).toEqual([]);
+    expect(result.unaligned).toBe(1);
   });
 
   it('drops a bucket older than the first candle rather than pinning it there', () => {
-    // Drawing it at the window's left edge would claim it happened at a time it
-    // did not.
     const before = { ...bucket(0), time: CANDLES[0] - 600 };
-    expect(alignBuckets([before], CANDLES)).toEqual([]);
-  });
-
-  it('merges rather than drops when two buckets land on one candle', () => {
-    // Only possible when the requested interval and the drawn one disagree.
-    // Losing half the evaluations silently is the failure this whole change is
-    // about.
-    const first = { ...bucket(0), count: 3, dominant_reason: 'a', distinct_reasons: 1 };
-    const second = { ...bucket(0), time: CANDLES[0] + 60, count: 9, dominant_reason: 'b' };
-    const merged = alignBuckets([first, second], CANDLES);
-
-    expect(merged).toHaveLength(1);
-    expect(merged[0].count).toBe(12);
-    // The larger side's reason wins, because it is the one that dominated.
-    expect(merged[0].dominant_reason).toBe('b');
-  });
-
-  it('marks a merged candle as opened when either side opened', () => {
-    const skip = { ...bucket(0), opened: false };
-    const open = { ...bucket(0), time: CANDLES[0] + 60, opened: true };
-    expect(alignBuckets([skip, open], CANDLES)[0].opened).toBe(true);
+    expect(alignBuckets([before], CANDLES).aligned).toEqual([]);
   });
 
   it('returns buckets in ascending time order', () => {
-    expect(alignBuckets([bucket(2), bucket(0), bucket(1)], CANDLES).map((b) => b.time)).toEqual(
-      CANDLES,
-    );
+    expect(
+      alignBuckets([bucket(2), bucket(0), bucket(1)], CANDLES).aligned.map((b) => b.time),
+    ).toEqual(CANDLES);
   });
 
   it('is empty when there are no candles to attach to', () => {
-    expect(alignBuckets([bucket(0)], [])).toEqual([]);
+    expect(alignBuckets([bucket(0)], []).aligned).toEqual([]);
+  });
+});
+
+describe('episode markers respect the candle they fall in', () => {
+  it('drops an episode that starts inside a candle the series does not have', () => {
+    // Five-minute candles with 19:20 missing. An episode at 19:21 belongs to a
+    // candle that is not drawn, and attaching it to 19:15 would claim it started
+    // five minutes earlier than it did.
+    const gapped = [CANDLES[0], CANDLES[2]];
+    const markers = buildChartMarkers({
+      episodes: [episode('2026-09-06T19:21:00Z', 120)],
+      buckets: [],
+      candleTimes: gapped,
+      intervalSeconds: 300,
+    });
+    expect(markers).toEqual([]);
+  });
+
+  it('keeps an episode inside the last candle', () => {
+    const markers = buildChartMarkers({
+      episodes: [episode('2026-09-06T19:27:00Z', 120)],
+      buckets: [],
+      candleTimes: CANDLES,
+      intervalSeconds: 300,
+    });
+    expect(markers.map((m) => m.time)).toEqual([CANDLES[2]]);
+  });
+
+  it('drops an episode past the right edge of the last candle', () => {
+    // 19:31 is beyond the 19:25 candle's five minutes. The series simply does
+    // not cover it yet.
+    const markers = buildChartMarkers({
+      episodes: [episode('2026-09-06T19:31:00Z', 120)],
+      buckets: [],
+      candleTimes: CANDLES,
+      intervalSeconds: 300,
+    });
+    expect(markers).toEqual([]);
   });
 });
 
@@ -164,6 +202,7 @@ describe('buildChartMarkers', () => {
       episodes: [],
       buckets: [bucket(0, { reason: 'momentum_too_low' })],
       candleTimes: CANDLES,
+      intervalSeconds: 300,
     });
 
     expect(markers).toHaveLength(1);
@@ -175,6 +214,7 @@ describe('buildChartMarkers', () => {
       episodes: undefined,
       buckets: [bucket(0)],
       candleTimes: CANDLES,
+      intervalSeconds: 300,
     });
 
     expect(markers).toHaveLength(1);
@@ -183,9 +223,16 @@ describe('buildChartMarkers', () => {
   it('returns an empty list when there is nothing to show', () => {
     // The caller applies the result unconditionally, so an empty list is what
     // clears the previous token's markers when switching tokens.
-    expect(buildChartMarkers({ episodes: [], buckets: [], candleTimes: CANDLES })).toEqual([]);
     expect(
-      buildChartMarkers({ episodes: undefined, buckets: undefined, candleTimes: CANDLES }),
+      buildChartMarkers({ episodes: [], buckets: [], candleTimes: CANDLES, intervalSeconds: 300 }),
+    ).toEqual([]);
+    expect(
+      buildChartMarkers({
+        episodes: undefined,
+        buckets: undefined,
+        candleTimes: CANDLES,
+        intervalSeconds: 300,
+      }),
     ).toEqual([]);
   });
 
@@ -194,6 +241,7 @@ describe('buildChartMarkers', () => {
       episodes: [episode('2026-09-06T19:16:00Z', 120)],
       buckets: [bucket(1)],
       candleTimes: CANDLES,
+      intervalSeconds: 300,
     });
 
     expect(markers.map((m) => m.position)).toEqual(['aboveBar', 'belowBar']);
@@ -204,6 +252,7 @@ describe('buildChartMarkers', () => {
       episodes: [episode('2026-09-06T19:16:00Z', 120)],
       buckets: [bucket(0)],
       candleTimes: CANDLES,
+      intervalSeconds: 300,
     });
 
     expect(markers).toHaveLength(1);
@@ -215,6 +264,7 @@ describe('buildChartMarkers', () => {
       episodes: [episode('2026-09-06T19:26:00Z', 50)],
       buckets: [bucket(0)],
       candleTimes: CANDLES,
+      intervalSeconds: 300,
     });
 
     expect(markers.map((m) => m.time)).toEqual([CANDLES[0], CANDLES[2]]);
@@ -225,6 +275,7 @@ describe('buildChartMarkers', () => {
       episodes: [episode('2026-09-06T18:00:00Z', 50)],
       buckets: [],
       candleTimes: CANDLES,
+      intervalSeconds: 300,
     });
 
     expect(markers).toEqual([]);
@@ -235,6 +286,7 @@ describe('buildChartMarkers', () => {
       episodes: [],
       buckets: [bucket(0, { count: 14 }), bucket(1, { opened: true })],
       candleTimes: CANDLES,
+      intervalSeconds: 300,
     });
 
     expect(markers[0].text).toBe('14');
@@ -246,6 +298,7 @@ describe('buildChartMarkers', () => {
       episodes: [episode('2026-09-06T19:16:00Z', 120)],
       buckets: [bucket(1, { opened: true }), bucket(2, { reason: 'x' })],
       candleTimes: CANDLES,
+      intervalSeconds: 300,
     };
 
     it('hides pump starts when unchecked', () => {

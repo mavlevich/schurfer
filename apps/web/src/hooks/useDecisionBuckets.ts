@@ -1,4 +1,4 @@
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 
 // One row per candle, aggregated in SQL. The chart used to fetch raw decisions
 // and fold them client-side, which could not work: /api/decisions orders by
@@ -35,6 +35,35 @@ interface UseDecisionBucketsParams {
   untilSeconds: number | undefined;
 }
 
+export type DecisionBucketsKey = readonly [
+  'decision-buckets',
+  string | undefined,
+  number,
+  number | undefined,
+  number | undefined,
+];
+
+/**
+ * Keep the previous answer only while it answers the same question.
+ *
+ * A plain `keepPreviousData` carries the last token's buckets across a token
+ * switch, and the chart drew them: with the new candles already loaded and the
+ * new decisions still in flight, one token's entries appeared over another
+ * token's price. Shifting the window on the same token is a refresh and keeps
+ * its previous answer; changing token or interval is a different question and
+ * gets no answer until the real one arrives.
+ */
+export function keepWithinIdentity(base: string | undefined, bucketSeconds: number) {
+  return (
+    previous: DecisionBucketsResponse | undefined,
+    previousQuery?: { queryKey: readonly unknown[] },
+  ): DecisionBucketsResponse | undefined => {
+    const key = previousQuery?.queryKey as DecisionBucketsKey | undefined;
+    if (!key || key[1] !== base || key[2] !== bucketSeconds) return undefined;
+    return previous;
+  };
+}
+
 export function useDecisionBuckets({
   base,
   intervalMinutes,
@@ -65,6 +94,8 @@ export function useDecisionBuckets({
     enabled: !!base && sinceSeconds !== undefined && untilSeconds !== undefined,
     staleTime: 30_000,
     refetchInterval: 60_000,
-    placeholderData: keepPreviousData,
+    // Previous data is kept only while the identity is unchanged. See
+    // keepWithinIdentity.
+    placeholderData: keepWithinIdentity(base, bucketSeconds),
   });
 }

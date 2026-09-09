@@ -21,56 +21,70 @@ import type { TokenEpisode } from './types';
 
 export type { DecisionBucket };
 
-function nearestCandleTime(candleTimes: readonly number[], timestamp: number): number | null {
-  if (candleTimes.length === 0) return null;
-  // Candles are ascending; an event belongs to the last candle at or before it.
-  // An event older than the first candle has no bucket rather than being
-  // silently attached to it.
+/**
+ * The candle an event at `timestamp` belongs to, or null if no candle covers it.
+ *
+ * Both edges are checked. Without the right edge, a timestamp falling in a candle
+ * the series does not have -- a gap in the data, a halted market -- was attached
+ * to the last candle before the gap, drawing the event minutes or hours before it
+ * happened. A missing candle is missing coverage, and the honest rendering of
+ * missing coverage is nothing.
+ *
+ * `intervalSeconds` is passed rather than inferred from the gaps between
+ * candles, because it cannot be inferred: a five-minute series with one candle
+ * missing is indistinguishable from a ten-minute series, and guessing wrong
+ * turns the gap check back into the bug it replaces. The caller knows the
+ * interval; it asked for it.
+ */
+function coveringCandleTime(
+  candleTimes: readonly number[],
+  timestamp: number,
+  intervalSeconds: number,
+): number | null {
+  if (candleTimes.length === 0 || intervalSeconds <= 0) return null;
   if (timestamp < candleTimes[0]) return null;
-  let chosen = candleTimes[0];
-  for (const candleTime of candleTimes) {
-    if (candleTime <= timestamp) chosen = candleTime;
+  let index = -1;
+  for (let position = 0; position < candleTimes.length; position += 1) {
+    if (candleTimes[position] <= timestamp) index = position;
     else break;
   }
-  return chosen;
+  if (index < 0) return null;
+  const chosen = candleTimes[index];
+  return timestamp < chosen + intervalSeconds ? chosen : null;
+}
+
+export interface AlignedBuckets {
+  /** Buckets whose time is a candle the chart is drawing. */
+  aligned: DecisionBucket[];
+  /** Buckets with no such candle. Reported, never folded into a neighbour. */
+  unaligned: number;
 }
 
 /**
- * Snap server buckets onto the candles actually drawn, and drop the ones that
- * fall outside them.
+ * Match server buckets to the candles actually drawn.
  *
- * The server buckets by the same interval the chart requested, so this is
- * normally an identity. It is not skipped for that reason: the candle series is
- * what the user sees, a bucket with no candle would be a marker floating over
- * nothing, and lightweight-charts rejects a marker whose time it does not have.
+ * **Exact match on the bucket's start**, not nearest-before. The server groups by
+ * the interval the chart asked for, so a bucket that does not land on a candle
+ * means the two grids disagree or the candle is missing -- and in both cases the
+ * honest answer is that the chart has no place to draw it. Folding it into the
+ * previous candle would report evaluations at a time they did not happen, and
+ * re-aggregating two buckets into one cannot be done correctly from what the
+ * server sends: the mode of a union is not the mode of its larger half, and
+ * distinct reasons do not combine by taking a maximum.
  */
 export function alignBuckets(
   buckets: readonly DecisionBucket[],
   candleTimes: readonly number[],
-): DecisionBucket[] {
-  const byTime = new Map<number, DecisionBucket>();
+): AlignedBuckets {
+  const drawn = new Set(candleTimes);
+  const aligned: DecisionBucket[] = [];
+  let unaligned = 0;
   for (const bucket of buckets) {
-    const time = nearestCandleTime(candleTimes, bucket.time);
-    if (time === null) continue;
-    const existing = byTime.get(time);
-    if (!existing) {
-      byTime.set(time, { ...bucket, time });
-      continue;
-    }
-    // Two server buckets landing on one candle can only happen when the
-    // requested interval and the drawn one disagree. Merge rather than drop:
-    // losing half the evaluations silently is the failure mode this whole change
-    // is about.
-    byTime.set(time, {
-      time,
-      count: existing.count + bucket.count,
-      opened: existing.opened || bucket.opened,
-      dominant_reason:
-        existing.count >= bucket.count ? existing.dominant_reason : bucket.dominant_reason,
-      distinct_reasons: Math.max(existing.distinct_reasons, bucket.distinct_reasons),
-    });
+    if (drawn.has(bucket.time)) aligned.push(bucket);
+    else unaligned += 1;
   }
-  return [...byTime.values()].sort((a, b) => a.time - b.time);
+  aligned.sort((a, b) => a.time - b.time);
+  return { aligned, unaligned };
 }
 
 /**
@@ -153,11 +167,14 @@ export function buildChartMarkers({
   episodes,
   buckets,
   candleTimes,
+  intervalSeconds,
   visibility = ALL_MARKERS_VISIBLE,
 }: {
   episodes: readonly TokenEpisode[] | undefined;
   buckets: readonly DecisionBucket[] | undefined;
   candleTimes: readonly number[];
+  /** The candle interval the chart is drawing, in seconds. */
+  intervalSeconds: number;
   visibility?: MarkerVisibility;
 }): ChartMarker[] {
   const episodeMarkers: ChartMarker[] = !visibility.episodes
@@ -170,7 +187,7 @@ export function buildChartMarkers({
           // it at the window's left edge would claim it happened at a time it did
           // not, and TokenEpisodes already lists every episode in full, so
           // nothing is lost by leaving it off the chart.
-          const time = nearestCandleTime(candleTimes, episode.first_seen_at);
+          const time = coveringCandleTime(candleTimes, episode.first_seen_at, intervalSeconds);
           if (time === null) return null;
           return {
             time,
@@ -183,7 +200,7 @@ export function buildChartMarkers({
         .filter((marker): marker is ChartMarker => marker !== null);
 
   const decisionMarkers: ChartMarker[] = selectNotableBuckets(
-    alignBuckets(buckets ?? [], candleTimes),
+    alignBuckets(buckets ?? [], candleTimes).aligned,
   )
     .filter((bucket) => (bucket.opened ? visibility.opened : visibility.skipped))
     .map((bucket) => ({
