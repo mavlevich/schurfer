@@ -53,7 +53,7 @@ _INSERT_INSTRUMENT = text("""
         onboarded_at, identity_status, identity_key, metadata_hash
     ) VALUES (
         :exchange, :universe_version, :catalog_version, :native_market_id,
-        :base, 'USDT', 'USDT', 'linear', 'linear',
+        :base, 'USDT', 'USDT', 'linear', 'linear_usdt_perpetual',
         :onboarded_at, 'ready', :identity_key, decode(repeat('cd', 32), 'hex')
     )
 """)
@@ -375,7 +375,10 @@ async def test_resolves_identity_and_sums_taker_imbalance_over_the_pre_window() 
         assert row.outcome_qualified is True
         assert row.match_count == 1
         assert row.native_market_id == native
-        assert row.market_type == "linear"
+        # Identity and bars deliberately use their real, different vocabularies:
+        # canonical identity is linear_usdt_perpetual while captured bars are linear.
+        # The original SQL joined these columns directly and returned zero bars.
+        assert row.market_type == "linear_usdt_perpetual"
         assert row.bars_10m == 10
         assert row.bars_5m == 5
         assert row.bars_20m == 20

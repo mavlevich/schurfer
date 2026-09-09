@@ -73,7 +73,10 @@ from typing import TYPE_CHECKING
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-from .momentum_flow_capture_contract import BYBIT_MOMENTUM_CAPTURE_VERSION
+from .momentum_flow_capture_contract import (
+    BYBIT_MOMENTUM_CAPTURE_VERSION,
+    BYBIT_MOMENTUM_MARKET_TYPE,
+)
 from .orderflow_microstructure import (
     HELD_OUT_START,
     HORIZON_MINUTES,
@@ -107,6 +110,15 @@ class HeldOutWindowError(ValueError):
 # on a different contract would show up as per-exchange coverage loss, which
 # is honest, never a wrong number.
 MOMENTUM_CAPTURE_VERSION = BYBIT_MOMENTUM_CAPTURE_VERSION
+
+# The bars' own market_type vocabulary, NOT the identity table's. The momentum
+# capture writers persist market_type = "linear" for both bybit and binance
+# (cmd/momentumcapture/main.go and cmd/momentumcapturebinance/main.go both pin
+# the literal "linear"), while `momentum_universe_instruments.canonical_market_type`
+# is "linear_usdt_perpetual". Joining bars on the identity table's canonical
+# value therefore matches ZERO bars. The bar join must use the capture writer's
+# own value.
+MOMENTUM_BARS_MARKET_TYPE = BYBIT_MOMENTUM_MARKET_TYPE
 
 
 # One row per EPISODE (representative decision per pump_event_id). The per-bar
@@ -238,7 +250,7 @@ LEFT JOIN LATERAL (
             END AS imbalance
         FROM timeseries.bybit_momentum_bars_1m AS bar
         WHERE bar.exchange = r.exchange
-          AND bar.market_type = r.market_type
+          AND bar.market_type = :bars_market_type
           AND bar.symbol = r.native_market_id
           AND bar.capture_version = :capture_version
           AND bar.trades_complete
@@ -327,6 +339,7 @@ class OrderflowMicrostructureRepository:
                                 "cohort_start": cohort_start,
                                 "cohort_end": cohort_end,
                                 "capture_version": MOMENTUM_CAPTURE_VERSION,
+                                "bars_market_type": MOMENTUM_BARS_MARKET_TYPE,
                             },
                         )
                     )
@@ -340,6 +353,7 @@ class OrderflowMicrostructureRepository:
 
 
 __all__ = [
+    "MOMENTUM_BARS_MARKET_TYPE",
     "MOMENTUM_CAPTURE_VERSION",
     "_RESOLVED_DECISIONS_SQL",
     "HeldOutWindowError",
