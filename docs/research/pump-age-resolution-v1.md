@@ -22,6 +22,36 @@ One claim survived that withdrawal, and it does not depend on the broken
 partition. It is narrower and sharper than the one first written down, and this
 is its registration.
 
+## Amended 2026-09-09, before any outcome in this window was joined
+
+**`pump_age` does not measure the pump's age.** Traced through
+`apps/api-gateway/internal/pumps/handler.go`: the value is hours since
+`signalStrategyAnchorAt`, which is `entry_qualified_at` when the episode has one
+and `first_seen_at` otherwise. On all **821** discovery episodes the anchor was
+`entry_qualified_at`, uniformly, so there is no mixed-anchor problem -- but the
+quantity is **time since the system qualified the episode for entry**, not time
+since the pump began in the market.
+
+That changes what the two groups mean, and the change is recorded here rather
+than discovered while reading a result:
+
+- Group A is not "young pumps". It is episodes **decided on essentially the first
+  pass after qualification**.
+- Group B is not "older pumps". It is episodes that **stayed qualified and were
+  re-evaluated for minutes without being opened**.
+
+The test itself is untouched: both groups still score zero, and the question is
+still whether two groups production cannot distinguish have different outcomes.
+Only the interpretation changes, and it must change before the read rather than
+after.
+
+It also raises the stakes on the surrounding code, which is a separate claim with
+its own evidence and not part of this contract. The score's own notes read
+"extended pump (%.1fh), high time risk" and "early pump (%.1fh), may continue",
+and its thresholds sit at 1 and 4 hours. Those are descriptions and cutoffs for a
+pump's market age. The variable they are applied to is a system-observation
+delay.
+
 ## The claim
 
 Production's scoring code buckets pump age like this
@@ -143,11 +173,14 @@ is a further hypothesis with its own window.
 
 ## Confounds, stated before the result so they cannot be chosen afterwards
 
-**Age at decision is not a property anyone selected.** It is how long after the
-pump's start the scanner reached it, so it can proxy for detection latency, for
-how quickly a venue's data arrives, for liquidity, or for which assets pump
-fast. A confirmed difference would still be actionable -- refusing an entry is
-something this system can do -- but the cause would not be established by it.
+**Age at decision is not a property anyone selected, and it is not the pump's
+age.** It is how long the episode had been qualified for entry when the decision
+was taken, so it can proxy for how long the episode kept meeting the entry
+condition without being opened, for scan cadence, for how quickly a venue's data
+arrives, or for which assets resolve fast. A confirmed difference would still be
+actionable -- refusing an entry is something this system can do -- but the cause
+would not be established by it, and "young pumps are better" is specifically not
+what it would show.
 
 **The age distribution moved between the windows.** In discovery the 60th
 percentile of age was 1.2 minutes; in this window it is 0.6. The comparison is
@@ -165,9 +198,10 @@ here rather than left to be discovered later.
 2. **This registration used its age distribution.** Planning the floors required
    knowing how many episodes fall in each group, so percentiles and counts of
    `pump_age` were queried here on 2026-09-09: 254 in A, 119 in B, 45 above an
-   hour, and the age percentiles quoted above. **No outcome value was selected,
-   joined by group, or displayed.** A sample-size count is not a result, but it
-   is a look, and it is recorded as one.
+   hour, and the age percentiles quoted above. The anchor check that produced the
+   amendment above was run on the discovery window only. **No outcome value was
+   selected, joined by group, or displayed in either window.** A sample-size
+   count is not a result, but it is a look, and it is recorded as one.
 
 Neither of those touches the quantity this contract grades. What cannot be
 claimed afterwards is that the window was untouched.
