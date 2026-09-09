@@ -308,14 +308,27 @@ So `monotone: yes` was a property of the sort, not of `pump_age`, and the
 Its number was already `inconclusive` for non-monotonicity, so nothing was
 claimed from it, but the number itself meant nothing either.
 
-| Component         | Distinct values | Largest tied group |
-| ----------------- | --------------: | -----------------: |
-| pump_age          |             142 |            **368** |
-| funding_rate      |             431 |                121 |
-| price_extent      |             657 |                  5 |
-| oi_trend          |             211 |            **606** |
-| retrace_from_peak |             627 |                 85 |
-| mad_score         |              83 |                  1 |
+Re-run at `b9ce265` under contract v3, which is what the corrected artifact
+records:
+
+| Component         | Distinct | Largest tie | Tied boundaries | Verdict now                   |
+| ----------------- | -------: | ----------: | --------------- | ----------------------------- |
+| pump_age          |      142 |     **368** | **4 of 4**      | inconclusive                  |
+| funding_rate      |      431 |         121 | **2 of 4**      | inconclusive                  |
+| oi_trend          |      211 |     **606** | **3 of 4**      | inconclusive                  |
+| retrace_from_peak |      627 |          85 | none            | inconclusive, not monotone    |
+| price_extent      |      657 |           5 | none            | no_signal                     |
+| mad_score         |       83 |           1 | none            | inconclusive, below the floor |
+
+**Three of the six have unusable partitions, not two.** `funding_rate` was the
+surprise: its largest tied group is 121, smaller than a 164-episode quintile, and
+I had assumed that made it safe. It does not. A tied group narrower than a bucket
+can still straddle a boundary, and two of its four did. The rule has to be stated
+in boundaries rather than in group sizes, which is how the check is written.
+
+Artifact preserved at
+`backups/reports/hyp023/hyp023-discovery-923c97a7-separated.md`, beside the
+original.
 
 ## What was fixed
 
