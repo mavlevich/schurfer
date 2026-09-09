@@ -35,6 +35,7 @@ from typing import TYPE_CHECKING, Any
 
 from schurfer_performance import DEFAULT_COSTS, CostParameters
 
+from .episode_selection import episode_decision_query
 from .research_contract import crosses_window_boundary
 
 if TYPE_CHECKING:
@@ -212,6 +213,10 @@ def select_one_per_episode(
 
     observations = []
     for row in by_episode.values():
+        # No completed outcome for the decision that represents this episode.
+        # Dropped and counted, never replaced by a decision that has one.
+        if row.get("short_return_pct") is None:
+            continue
         components = {
             name: extracted
             for name in COMPONENTS
@@ -227,6 +232,18 @@ def select_one_per_episode(
             )
         )
     return tuple(observations)
+
+
+def incomplete_outcome_episodes(rows: Sequence[dict[str, Any]]) -> int:
+    """Episodes whose representative decision has no completed outcome.
+
+    Coverage, not a result. Reported so a shrinking denominator stays visible
+    rather than being mistaken for a population that simply is that size.
+    """
+    by_episode: dict[int, dict[str, Any]] = {}
+    for row in sorted(rows, key=lambda item: (item["pump_event_id"], item["ts"])):
+        by_episode.setdefault(int(row["pump_event_id"]), row)
+    return sum(1 for row in by_episode.values() if row.get("short_return_pct") is None)
 
 
 def within_window(
@@ -370,6 +387,7 @@ def render_markdown(
     generated_at: datetime,
     code_revision: str,
     episodes: int,
+    incomplete_episodes: int,
 ) -> str:
     lines = [
         "# Score components against forward outcome",
@@ -381,8 +399,11 @@ def render_markdown(
         f"Window: {contract.window_since.date()} to {contract.window_until.date()}, "
         f"horizon {contract.outcome_horizon_minutes} minutes",
         "",
-        f"> One decision per episode, {episodes} episodes after excluding those whose "
-        f"outcome window runs past the study window. Floors: "
+        f"> One decision per episode, chosen before any outcome was joined, "
+        f"{episodes} episodes after excluding those whose outcome window runs past "
+        f"the study window. {incomplete_episodes} further episodes are excluded as "
+        f"coverage because the decision that represents them has no completed "
+        f"outcome; they are never replaced by a decision that does. Floors: "
         f"{contract.minimum_completed_trades} episodes and {contract.minimum_clusters} "
         "clusters across the compared quintiles, checked before any verdict in "
         "either direction. This report never changes production entries.",
@@ -435,10 +456,14 @@ def render_markdown(
 
 
 async def load_observations(db_url: str, contract: ResearchContract) -> tuple[dict[str, Any], ...]:
-    """Decisions with their score components and forward outcome, one row each.
+    """The episode's own decision, with that decision's forward outcome.
 
     Aggregated in SQL rather than pulled raw: the discovery window holds tens of
     thousands of decisions and this reads them over an SSH tunnel.
+
+    The episode's decision is chosen before any outcome is joined. See
+    `episode_selection.py` for why, and for the 24 episodes on this very window
+    where the previous order picked a different one.
     """
     from sqlalchemy import text
     from sqlalchemy.ext.asyncio import create_async_engine
@@ -449,21 +474,7 @@ async def load_observations(db_url: str, contract: ResearchContract) -> tuple[di
     try:
         async with engine.connect() as connection:
             rows = await connection.execute(
-                text("""
-                    SELECT d.pump_event_id, d.base, d.ts, d.action,
-                           d.features->'signal'->'components' AS components,
-                           o.short_return_pct
-                    FROM app.trade_decisions d
-                    JOIN app.trade_decision_outcomes o
-                      ON o.decision_id = d.decision_id
-                     AND o.horizon_minutes = :horizon
-                    WHERE d.strategy_version = ANY(:strategies)
-                      AND d.ts >= :since AND d.ts < :until
-                      AND o.status = 'complete'
-                      AND o.short_return_pct IS NOT NULL
-                      AND d.pump_event_id IS NOT NULL
-                    ORDER BY d.pump_event_id, d.ts
-                """),
+                text(episode_decision_query("short_return_pct")),
                 {
                     "horizon": contract.outcome_horizon_minutes,
                     "strategies": list(contract.strategy_versions),
@@ -509,6 +520,7 @@ def main() -> None:
             generated_at=datetime.now(UTC),
             code_revision=args.code_revision,
             episodes=len(observations),
+            incomplete_episodes=incomplete_outcome_episodes(rows),
         )
     )
 
