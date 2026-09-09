@@ -12,6 +12,7 @@ this package's own convention, unless REQUIRE_INTEGRATION_DB=1.
 
 from __future__ import annotations
 
+import json
 import os
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -44,29 +45,57 @@ async def _connect_or_skip() -> AsyncEngine:
     return engine
 
 
+# Column lists match the models in packages/journal rather than a guess. Two
+# rounds of CI were spent learning that: the first version invented
+# `app.pump_events.exchange`, and the second hand-built a JSON string one closing
+# brace short. Every NOT NULL column is supplied explicitly, because only
+# first_seen_at and last_seen_at carry server defaults -- every other `default=`
+# in the models is Python-side and does nothing for a raw INSERT.
+_INSERT_EPISODE = text("""
+    INSERT INTO app.pump_events
+        (base, episode, miss_count, first_seen_at, last_seen_at,
+         peak_pct, last_pct, exchanges)
+    VALUES (:base, 1, 0, :ts, :ts, 50, 40, '[]'::jsonb)
+    RETURNING id
+""")
+
 _INSERT_DECISION = text("""
     INSERT INTO app.trade_decisions
         (decision_id, pump_event_id, base, exchange, ts, action, reason,
-         strategy_version, features)
+         strategy_version, features, created_at)
     VALUES (:decision_id, :pump_event_id, :base, 'bybit', :ts, :action, 'test',
-            :strategy_version, :features)
+            :strategy_version, CAST(:features AS jsonb), :ts)
 """)
 
 _INSERT_OUTCOME = text("""
     INSERT INTO app.trade_decision_outcomes
-        (decision_id, horizon_minutes, status, short_return_pct)
-    VALUES (:decision_id, :horizon, :status, :short_return_pct)
+        (decision_id, horizon_minutes, resolver_version, timeframe_minutes,
+         status, short_return_pct, bars_count, expected_bars, attempt_count,
+         resolved_at)
+    VALUES (:decision_id, :horizon, 'test_v1', 5, :status, :short_return_pct,
+            0, 0, 1, :ts)
 """)
 
 
 def _features(age_minutes: float) -> str:
-    return (
-        '{"signal": {"components": {"pump_age": '
-        f'{{"value": {age_minutes / 60}, "points": 0, "max": 2, "note": ""}}}}}}'
+    """Serialized rather than hand-written. The hand-written version was one
+    closing brace short, which Postgres reported and no local test could."""
+    return json.dumps(
+        {
+            "signal": {
+                "components": {
+                    "pump_age": {
+                        "value": age_minutes / 60,
+                        "points": 0,
+                        "max": 2,
+                        "note": "",
+                    }
+                }
+            }
+        }
     )
 
 
-@pytest.mark.asyncio
 async def test_the_episode_keeps_its_own_decision_when_that_outcome_is_unresolved() -> None:
     """The exact shape a colleague reproduced: an episode whose first
     `opened_paper` decision is unresolved and whose later `skipped` decision is
@@ -74,17 +103,11 @@ async def test_the_episode_keeps_its_own_decision_when_that_outcome_is_unresolve
     null outcome, rather than by the skipped one at a different age."""
     engine = await _connect_or_skip()
     episode_id = None
-    opened_id, skipped_id = uuid.uuid4(), uuid.uuid4()
+    opened_id, skipped_id = str(uuid.uuid4()), str(uuid.uuid4())
     try:
         async with engine.begin() as connection:
             episode_id = (
-                await connection.execute(
-                    text("""
-                        INSERT INTO app.pump_events (base, exchange, first_seen_at, last_seen_at)
-                        VALUES ('EPISODESEL', 'bybit', :ts, :ts) RETURNING id
-                    """),
-                    {"ts": _SINCE},
-                )
+                await connection.execute(_INSERT_EPISODE, {"base": "EPISODESEL", "ts": _SINCE})
             ).scalar_one()
 
             # 0.6 minutes old, opened, outcome still unresolved.
@@ -107,6 +130,7 @@ async def test_the_episode_keeps_its_own_decision_when_that_outcome_is_unresolve
                     "horizon": _HORIZON,
                     "status": "pending",
                     "short_return_pct": None,
+                    "ts": _SINCE,
                 },
             )
             # 6 minutes old, skipped, outcome complete. The tempting substitute.
@@ -129,6 +153,7 @@ async def test_the_episode_keeps_its_own_decision_when_that_outcome_is_unresolve
                     "horizon": _HORIZON,
                     "status": "complete",
                     "short_return_pct": 3.0,
+                    "ts": _SINCE,
                 },
             )
 
@@ -151,11 +176,16 @@ async def test_the_episode_keeps_its_own_decision_when_that_outcome_is_unresolve
 
         assert len(rows) == 1, "one row per episode"
         row = rows[0]
-        assert (
-            row["decision_id"] == opened_id
+        # str() on both sides: the column is uuid, and psycopg returns a UUID
+        # object regardless of what was passed in. Comparing the two types
+        # directly fails on a pair that is in fact equal.
+        assert str(row["decision_id"]) == str(
+            opened_id
         ), "the opened decision represents the episode even though it is unresolved"
         assert row["short_return_pct"] is None, "and it carries no outcome, rather than another's"
         assert row["components"]["pump_age"]["value"] == pytest.approx(0.01)
+        # The substitution this whole change exists to prevent.
+        assert str(row["decision_id"]) != str(skipped_id)
     finally:
         async with engine.begin() as connection:
             await connection.execute(
