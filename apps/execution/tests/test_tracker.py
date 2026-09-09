@@ -1,6 +1,16 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from schurfer_execution.tracker import _tick
+
+
+@pytest.fixture(autouse=True)
+def _no_partial_close_rows():  # type: ignore[no-untyped-def]
+    with patch(
+        "schurfer_execution.tracker.journal.any_open_trade_close_fills",
+        AsyncMock(return_value=False),
+    ):
+        yield
 
 
 def _mock_rdb() -> MagicMock:
@@ -133,6 +143,25 @@ async def test_tick_revokes_existing_lease_while_close_pending() -> None:
         await _tick({"bybit": _mock_exchange(-5.0)}, rdb, db_url="postgresql://x")
 
     mock_pending.assert_called_once()
+    rdb.set.assert_not_called()
+    rdb.delete.assert_called_once_with("risk:pnl_ready")
+
+
+async def test_tick_revokes_existing_lease_while_partial_close_is_open() -> None:
+    rdb = _mock_rdb()
+    with (
+        patch(
+            "schurfer_execution.tracker.journal.realized_pnl_today",
+            AsyncMock(return_value=-20.0),
+        ),
+        _patch_no_pending(),
+        patch(
+            "schurfer_execution.tracker.journal.any_open_trade_close_fills",
+            AsyncMock(return_value=True),
+        ),
+    ):
+        await _tick({"bybit": _mock_exchange(-5.0)}, rdb, db_url="postgresql://x")
+
     rdb.set.assert_not_called()
     rdb.delete.assert_called_once_with("risk:pnl_ready")
 

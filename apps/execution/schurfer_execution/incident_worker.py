@@ -15,7 +15,7 @@ import structlog
 
 from . import exit as exit_module
 from . import incidents, journal, notify, order_attempts
-from .fill_price import FILL_NONE, FILL_UNRESOLVED, resolve_fill_price
+from .fill_price import FILL_NONE, FILL_UNRESOLVED, order_is_terminal, resolve_fill_price
 
 if TYPE_CHECKING:
     from .config import Config
@@ -148,7 +148,35 @@ async def _process_one(
     except (RuntimeError, ValueError) as e:
         await _bump_attempt_or_escalate(incident, db_url, cfg, error=f"unresolved symbol: {e}")
         return
-    resolution = await resolve_fill_price(exchange, symbol=symbol, order={"id": incident.order_id})
+    if incident.operation == "close" and incident.context.get("order_terminal") is False:
+        try:
+            current_order = await exchange.fetch_order(incident.order_id, symbol)
+        except Exception as exc:
+            await _bump_attempt_or_escalate(
+                incident,
+                db_url,
+                cfg,
+                error=f"active close order status unavailable: {exc}",
+            )
+            return
+        if not isinstance(current_order, dict) or not order_is_terminal(current_order):
+            log.info(
+                "incident_worker.close_waiting_on_active_order",
+                incident_id=incident.id,
+                order_id=incident.order_id,
+            )
+            return
+    requested_amount_raw = incident.context.get("requested_amount")
+    try:
+        requested_amount = float(requested_amount_raw) if requested_amount_raw is not None else None
+    except (TypeError, ValueError):
+        requested_amount = None
+    resolution = await resolve_fill_price(
+        exchange,
+        symbol=symbol,
+        order={"id": incident.order_id},
+        requested_amount=requested_amount,
+    )
 
     if resolution.status == FILL_UNRESOLVED:
         await _bump_attempt_or_escalate(incident, db_url, cfg, error="fill price still unresolved")
@@ -175,7 +203,15 @@ async def _process_one(
     # review). A price that resolves but never gets written is not
     # "resolved" from this worker's own point of view.
     completed = (
-        await _complete_close(incident, symbol, resolution.price, rdb, cfg)
+        await _complete_close(
+            incident,
+            symbol,
+            resolution.price,
+            resolution.filled_amount,
+            resolution.source,
+            rdb,
+            cfg,
+        )
         if incident.operation == "close"
         else await _complete_open(
             incident,
@@ -224,7 +260,13 @@ async def _process_one(
 
 
 async def _complete_close(
-    incident: Incident, symbol: str, price: float, rdb: Any, cfg: Config
+    incident: Incident,
+    symbol: str,
+    price: float,
+    resolved_filled_amount: float | None,
+    fill_source: str,
+    rdb: Any,
+    cfg: Config,
 ) -> bool:
     """Returns True only once this close is durably accounted for -- either
     committed straight to the journal, or handed off to write_pending_close's
@@ -262,6 +304,69 @@ async def _complete_close(
                 ),
             )
         return False
+
+    # Incidents created before ENG-022 step 2 have no close-leg contract.
+    # Preserve their established recovery path rather than inventing volume
+    # that was never captured.
+    has_close_leg_context = "requested_amount" in incident.context
+    aggregate_price = price
+    terminal = bool(incident.context.get("terminal", True))
+    if has_close_leg_context:
+        requested_amount_raw = incident.context.get("requested_amount")
+        remaining_amount_raw = incident.context.get("remaining_amount")
+        context_filled_raw = incident.context.get("filled_amount")
+        if requested_amount_raw is None:
+            return False
+        try:
+            requested_amount = float(requested_amount_raw)
+            remaining_amount = (
+                float(remaining_amount_raw) if remaining_amount_raw is not None else None
+            )
+            context_filled = float(context_filled_raw) if context_filled_raw is not None else None
+        except (TypeError, ValueError):
+            return False
+        filled_amount = (
+            resolved_filled_amount
+            if resolved_filled_amount is not None and resolved_filled_amount > 0
+            else context_filled
+        )
+        if remaining_amount is None or filled_amount is None or filled_amount <= 0:
+            log.error(
+                "incident_worker.close_leg_volume_unresolved",
+                incident_id=incident.id,
+                trade_id=trade_id,
+            )
+            return False
+        tolerance = max(requested_amount * 0.001, 1e-12)
+        if terminal and filled_amount < requested_amount - tolerance:
+            # The exchange position reached zero, but this order did not fill
+            # the requested residual in full.  The standing reduce-only stop
+            # (or another externally visible close) supplied the missing leg.
+            # Preserve this order as a partial leg so stop reconciliation can
+            # append the rest before the trade-level VWAP is finalized.
+            terminal = False
+            remaining_amount = max(remaining_amount, requested_amount - filled_amount)
+        recorded_price = await journal.record_close_fill(
+            cfg.db_url,
+            trade_id=trade_id,
+            exchange=incident.exchange,
+            order_id=incident.order_id,
+            fill_price=price,
+            filled_amount=filled_amount,
+            requested_amount=requested_amount,
+            remaining_amount=remaining_amount,
+            terminal=terminal,
+            fill_source=fill_source,
+        )
+        if recorded_price is None:
+            return False
+        aggregate_price = recorded_price
+        if not terminal:
+            # This incident represented one partial close leg.  The exchange
+            # position, stop and monitor remain active; the DB fill row keeps
+            # PnL readiness blocked until a later terminal leg closes the trade.
+            return True
+
     trade_id_key = _TRADE_ID_KEY.format(exchange=incident.exchange, base=incident.base.upper())
     reason = str(incident.context.get("reason", "reconciled"))
     committed = await journal.try_commit_close(
@@ -271,7 +376,7 @@ async def _complete_close(
         base=incident.base.upper(),
         trade_id=trade_id,
         exit_order_id=incident.order_id,
-        exit_price=price,
+        exit_price=aggregate_price,
         reason=reason,
     )
     if committed:
@@ -286,6 +391,15 @@ async def _complete_close(
             incident_id=incident.id,
             trade_id=trade_id,
         )
+    if terminal:
+        await rdb.delete(f"position:opened_at:{incident.exchange}:{incident.base.upper()}")
+        await rdb.delete(exit_module.best_price_key(incident.exchange, incident.base))
+        await rdb.delete(exit_module.params_key(incident.exchange, incident.base))
+        await rdb.delete(exit_module.entry_key(incident.exchange, incident.base))
+        await rdb.delete(exit_module.side_key(incident.exchange, incident.base))
+        await rdb.delete(exit_module.size_usd_key(incident.exchange, incident.base))
+        if reason == "exchange_stop_loss_triggered":
+            await rdb.delete(f"position:sl_order_id:{incident.exchange}:{incident.base.upper()}")
     return True
 
 

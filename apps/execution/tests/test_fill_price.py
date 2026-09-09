@@ -7,6 +7,7 @@ from schurfer_execution.fill_price import (
     FILL_NONE,
     FILL_PARTIAL,
     FILL_UNRESOLVED,
+    order_is_terminal,
     resolve_fill_price,
 )
 
@@ -20,6 +21,16 @@ def _exchange(**overrides: Any) -> MagicMock:
     for key, value in overrides.items():
         setattr(ex, key, value)
     return ex
+
+
+@pytest.mark.parametrize("status", ["closed", "canceled", "cancelled", "expired", "rejected"])
+def test_terminal_order_statuses(status: str) -> None:
+    assert order_is_terminal({"status": status})
+
+
+@pytest.mark.parametrize("status", ["open", "new", None, ""])
+def test_non_terminal_order_statuses(status: str | None) -> None:
+    assert not order_is_terminal({"status": status})
 
 
 async def test_prefers_order_average() -> None:

@@ -813,6 +813,89 @@ class TestAnyPendingCloses:
         assert await journal.any_pending_closes(rdb) is False
 
 
+@patch("psycopg.AsyncConnection.connect")
+async def test_record_close_fill_returns_amount_weighted_aggregate(mock_connect) -> None:
+    conn, cur = _mock_conn([(101,), (107.5, 4.0)])
+    mock_connect.return_value = conn
+
+    aggregate = await journal.record_close_fill(
+        "postgresql://x",
+        trade_id=42,
+        exchange="bingx",
+        order_id="close-2",
+        fill_price=110.0,
+        filled_amount=3.0,
+        requested_amount=3.0,
+        remaining_amount=0.0,
+        terminal=True,
+        fill_source="order.average",
+    )
+
+    assert aggregate == 107.5
+    insert_params = cur.execute.call_args_list[0].args[1]
+    assert insert_params[:3] == (42, "bingx", "close-2")
+    assert insert_params[3:7] == (110.0, 3.0, 3.0, 0.0)
+
+
+@patch("psycopg.AsyncConnection.connect")
+async def test_record_close_fill_retry_is_idempotent(mock_connect) -> None:
+    conn, _cur = _mock_conn(
+        [
+            None,
+            (42, 100.0, 1.0, 4.0, 3.0, False),
+            (100.0, 1.0),
+        ]
+    )
+    mock_connect.return_value = conn
+
+    aggregate = await journal.record_close_fill(
+        "postgresql://x",
+        trade_id=42,
+        exchange="bingx",
+        order_id="close-1",
+        fill_price=100.0,
+        filled_amount=1.0,
+        requested_amount=4.0,
+        remaining_amount=3.0,
+        terminal=False,
+        fill_source="order.average",
+    )
+
+    assert aggregate == 100.0
+
+
+@patch("psycopg.AsyncConnection.connect")
+async def test_record_close_fill_rejects_conflicting_retry(mock_connect) -> None:
+    conn, _cur = _mock_conn([None, (42, 99.0, 1.0, 4.0, 3.0, False)])
+    mock_connect.return_value = conn
+
+    aggregate = await journal.record_close_fill(
+        "postgresql://x",
+        trade_id=42,
+        exchange="bingx",
+        order_id="close-1",
+        fill_price=100.0,
+        filled_amount=1.0,
+        requested_amount=4.0,
+        remaining_amount=3.0,
+        terminal=False,
+        fill_source="order.average",
+    )
+
+    assert aggregate is None
+
+
+@patch("psycopg.AsyncConnection.connect")
+async def test_aggregate_close_fill_price_loads_durable_vwap(mock_connect) -> None:
+    conn, cur = _mock_conn([(107.5, 4.0)])
+    mock_connect.return_value = conn
+
+    aggregate = await journal.aggregate_close_fill_price("postgresql://x", trade_id=42)
+
+    assert aggregate == 107.5
+    assert cur.execute.call_args.args[1] == (42,)
+
+
 @pytest.mark.asyncio
 async def test_open_trade_side_validation() -> None:
     with pytest.raises(ValueError, match="invalid side: middle"):

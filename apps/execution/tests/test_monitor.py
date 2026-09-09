@@ -8,9 +8,11 @@ from schurfer_execution.monitor import (
     _parse_sl_key,
     _reconcile_one,
     _reconcile_vanished_positions,
+    _recover_close_attempts,
     _retry_one_pending_close,
     _retry_pending_closes,
 )
+from schurfer_execution.order_attempts import CloseAttempt
 from schurfer_execution.symbols import ExecutionInstrument
 
 
@@ -28,6 +30,10 @@ def mock_resolve_execution_instrument(monkeypatch):
         )
 
     monkeypatch.setattr("schurfer_execution.symbols.resolve_execution_instrument", dummy_resolve)
+    monkeypatch.setattr(
+        "schurfer_execution.monitor.journal.remaining_trade_amount",
+        AsyncMock(return_value=None),
+    )
 
 
 async def _async_iter(items: list) -> object:  # type: ignore[type-arg]
@@ -101,6 +107,267 @@ def _rdb_with(entries: dict[str, bytes | None]) -> MagicMock:
     rdb.get = AsyncMock(side_effect=_get)
     rdb.delete = AsyncMock()
     return rdb
+
+
+async def test_recover_terminal_close_attempt_commits_aggregate_and_cleans_up() -> None:
+    attempt = CloseAttempt(
+        id=7,
+        client_order_id="close-client",
+        exchange="bybit",
+        base="BEAT",
+        symbol="BEAT/USDT:USDT",
+        side="buy",
+        status="accepted",
+        order_id="close-1",
+        requested_amount=6.0,
+        filled_amount=None,
+        trade_id=42,
+        context={"reason": "trailing_stop", "position_side": "short", "sl_order_id": "sl-1"},
+    )
+    ex = MagicMock()
+    ex.has = {"fetchOrder": True}
+    ex.fetch_order = AsyncMock(return_value={"id": "close-1", "average": 105.0, "filled": 6.0})
+    ex.fetch_positions = AsyncMock(return_value=[])
+    ex.cancel_order = AsyncMock()
+    rdb = _rdb_with({})
+    cfg = _mock_cfg()
+
+    with (
+        patch(
+            "schurfer_execution.monitor.order_attempts.load_recoverable_close_attempts",
+            AsyncMock(return_value=[attempt]),
+        ),
+        patch(
+            "schurfer_execution.monitor.order_attempts.mark_completed", AsyncMock()
+        ) as mock_completed,
+        patch(
+            "schurfer_execution.monitor.journal.record_close_fill",
+            AsyncMock(return_value=102.5),
+        ) as mock_record,
+        patch(
+            "schurfer_execution.monitor.journal.try_commit_close",
+            AsyncMock(return_value=True),
+        ) as mock_commit,
+        patch("schurfer_execution.monitor.journal.delete_trade_id_if_matches", AsyncMock()),
+    ):
+        blocked = await _recover_close_attempts({"bybit": ex}, rdb, cfg)
+
+    assert blocked == set()
+    mock_record.assert_awaited_once()
+    assert mock_record.call_args.kwargs["terminal"] is True
+    mock_completed.assert_awaited_once()
+    assert mock_commit.call_args.kwargs["exit_price"] == 102.5
+    ex.cancel_order.assert_awaited_once_with("sl-1", "BEAT/USDT:USDT")
+
+
+async def test_recover_completed_close_uses_durable_fill_without_exchange_order() -> None:
+    attempt = CloseAttempt(
+        id=7,
+        client_order_id="close-client",
+        exchange="bybit",
+        base="BEAT",
+        symbol="BEAT/USDT:USDT",
+        side="buy",
+        status="completed",
+        order_id="close-1",
+        requested_amount=6.0,
+        filled_amount=6.0,
+        trade_id=42,
+        context={"reason": "trailing_stop", "position_side": "short", "sl_order_id": "sl-1"},
+    )
+    ex = MagicMock()
+    ex.fetch_order = AsyncMock(side_effect=AssertionError("durable recovery must not refetch"))
+    ex.cancel_order = AsyncMock()
+    rdb = _rdb_with({})
+
+    with (
+        patch(
+            "schurfer_execution.monitor.order_attempts.load_recoverable_close_attempts",
+            AsyncMock(return_value=[attempt]),
+        ),
+        patch(
+            "schurfer_execution.monitor.journal.aggregate_close_fill_price",
+            AsyncMock(return_value=102.5),
+        ) as aggregate,
+        patch(
+            "schurfer_execution.monitor.journal.try_commit_close",
+            AsyncMock(return_value=True),
+        ) as commit,
+        patch("schurfer_execution.monitor.journal.delete_trade_id_if_matches", AsyncMock()),
+    ):
+        blocked = await _recover_close_attempts({"bybit": ex}, rdb, _mock_cfg())
+
+    assert blocked == set()
+    aggregate.assert_awaited_once_with("postgresql://x", trade_id=42)
+    commit.assert_awaited_once()
+    assert commit.call_args.kwargs["exit_price"] == 102.5
+    ex.fetch_order.assert_not_awaited()
+
+
+async def test_recover_unknown_close_attempt_blocks_duplicate_submission() -> None:
+    attempt = CloseAttempt(
+        id=7,
+        client_order_id="close-client",
+        exchange="bybit",
+        base="BEAT",
+        symbol="BEAT/USDT:USDT",
+        side="buy",
+        status="submission_unknown",
+        order_id=None,
+        requested_amount=6.0,
+        filled_amount=None,
+        trade_id=42,
+        context={"reason": "trailing_stop", "position_side": "short", "sl_order_id": "sl-1"},
+    )
+    ex = MagicMock()
+    ex.has = {}
+
+    with patch(
+        "schurfer_execution.monitor.order_attempts.load_recoverable_close_attempts",
+        AsyncMock(return_value=[attempt]),
+    ):
+        blocked = await _recover_close_attempts({"bybit": ex}, _rdb_with({}), _mock_cfg())
+
+    assert blocked == {("bybit", "BEAT")}
+
+
+async def test_recover_partial_close_attempt_records_leg_and_allows_residual_retry() -> None:
+    attempt = CloseAttempt(
+        id=8,
+        client_order_id="close-client",
+        exchange="bybit",
+        base="BEAT",
+        symbol="BEAT/USDT:USDT",
+        side="buy",
+        status="accepted",
+        order_id="close-1",
+        requested_amount=6.0,
+        filled_amount=None,
+        trade_id=42,
+        context={"reason": "trailing_stop", "position_side": "short", "sl_order_id": "sl-1"},
+    )
+    ex = MagicMock()
+    ex.has = {"fetchOrder": True}
+    ex.fetch_order = AsyncMock(
+        return_value={"id": "close-1", "status": "closed", "average": 105.0, "filled": 4.0}
+    )
+    ex.fetch_positions = AsyncMock(
+        return_value=[{"symbol": "BEAT/USDT:USDT", "side": "short", "contracts": 2.0}]
+    )
+    ex.cancel_order = AsyncMock()
+    rdb = _rdb_with({})
+
+    with (
+        patch(
+            "schurfer_execution.monitor.order_attempts.load_recoverable_close_attempts",
+            AsyncMock(return_value=[attempt]),
+        ),
+        patch(
+            "schurfer_execution.monitor.order_attempts.mark_partial",
+            AsyncMock(return_value=True),
+        ) as mock_partial,
+        patch(
+            "schurfer_execution.monitor.journal.record_close_fill",
+            AsyncMock(return_value=105.0),
+        ),
+        patch("schurfer_execution.monitor.journal.revoke_pnl_readiness", AsyncMock()),
+        patch("schurfer_execution.monitor.journal.try_commit_close", AsyncMock()) as mock_commit,
+    ):
+        blocked = await _recover_close_attempts({"bybit": ex}, rdb, _mock_cfg())
+
+    assert blocked == set()
+    mock_partial.assert_awaited_once_with("postgresql://x", 8, trade_id=42, filled_amount=4.0)
+    mock_commit.assert_not_awaited()
+    ex.cancel_order.assert_not_awaited()
+
+
+async def test_recover_active_partial_close_blocks_duplicate_and_defers_ledger() -> None:
+    attempt = CloseAttempt(
+        id=8,
+        client_order_id="close-client",
+        exchange="bybit",
+        base="BEAT",
+        symbol="BEAT/USDT:USDT",
+        side="buy",
+        status="accepted",
+        order_id="close-1",
+        requested_amount=6.0,
+        filled_amount=None,
+        trade_id=42,
+        context={"reason": "trailing_stop", "position_side": "short", "sl_order_id": "sl-1"},
+    )
+    ex = MagicMock()
+    ex.has = {"fetchOrder": True}
+    ex.fetch_order = AsyncMock(
+        return_value={"id": "close-1", "status": "open", "average": 105.0, "filled": 4.0}
+    )
+    ex.fetch_positions = AsyncMock(
+        return_value=[{"symbol": "BEAT/USDT:USDT", "side": "short", "contracts": 2.0}]
+    )
+
+    with (
+        patch(
+            "schurfer_execution.monitor.order_attempts.load_recoverable_close_attempts",
+            AsyncMock(return_value=[attempt]),
+        ),
+        patch(
+            "schurfer_execution.monitor.order_attempts.mark_partial", AsyncMock()
+        ) as mark_partial,
+        patch("schurfer_execution.monitor.journal.record_close_fill", AsyncMock()) as record_fill,
+        patch("schurfer_execution.monitor.journal.revoke_pnl_readiness", AsyncMock()),
+    ):
+        blocked = await _recover_close_attempts({"bybit": ex}, _rdb_with({}), _mock_cfg())
+
+    assert blocked == {("bybit", "BEAT")}
+    record_fill.assert_not_awaited()
+    mark_partial.assert_not_awaited()
+
+
+async def test_recover_zero_position_does_not_assign_stop_fill_to_partial_market_order() -> None:
+    attempt = CloseAttempt(
+        id=8,
+        client_order_id="close-client",
+        exchange="bybit",
+        base="BEAT",
+        symbol="BEAT/USDT:USDT",
+        side="buy",
+        status="accepted",
+        order_id="close-1",
+        requested_amount=6.0,
+        filled_amount=None,
+        trade_id=42,
+        context={"reason": "trailing_stop", "position_side": "short", "sl_order_id": "sl-1"},
+    )
+    ex = MagicMock()
+    ex.has = {"fetchOrder": True}
+    ex.fetch_order = AsyncMock(
+        return_value={"id": "close-1", "status": "closed", "average": 105.0, "filled": 4.0}
+    )
+    ex.fetch_positions = AsyncMock(return_value=[])
+
+    with (
+        patch(
+            "schurfer_execution.monitor.order_attempts.load_recoverable_close_attempts",
+            AsyncMock(return_value=[attempt]),
+        ),
+        patch(
+            "schurfer_execution.monitor.order_attempts.mark_partial",
+            AsyncMock(return_value=True),
+        ) as mark_partial,
+        patch(
+            "schurfer_execution.monitor.journal.record_close_fill",
+            AsyncMock(return_value=105.0),
+        ) as record_fill,
+        patch("schurfer_execution.monitor.journal.revoke_pnl_readiness", AsyncMock()),
+        patch("schurfer_execution.monitor.journal.try_commit_close", AsyncMock()) as commit,
+    ):
+        blocked = await _recover_close_attempts({"bybit": ex}, _rdb_with({}), _mock_cfg())
+
+    assert blocked == set()
+    assert record_fill.call_args.kwargs["terminal"] is False
+    assert record_fill.call_args.kwargs["remaining_amount"] == 2.0
+    mark_partial.assert_awaited_once()
+    commit.assert_not_awaited()
 
 
 class TestCheckExitNotifyPnlUsd:
@@ -256,6 +523,38 @@ class TestReconcileOne:
         mock_close.assert_not_called()
         rdb.delete.assert_not_called()
 
+    async def test_partial_stop_fill_does_not_close_trade_after_position_vanishes(self) -> None:
+        ex = MagicMock()
+        ex.fetch_order = AsyncMock(
+            return_value={"status": "closed", "average": 1.2, "filled": 2.0, "id": "sl-1"}
+        )
+        rdb = _rdb_with(
+            {
+                "position:sl_order_id:bingx:BEAT": b"sl-1",
+                "trade:id:bingx:BEAT": b"42",
+            }
+        )
+
+        with (
+            patch(
+                "schurfer_execution.monitor.journal.remaining_trade_amount",
+                AsyncMock(return_value=6.0),
+            ),
+            patch(
+                "schurfer_execution.monitor.journal.record_close_fill",
+                AsyncMock(return_value=1.2),
+            ) as record_fill,
+            patch("schurfer_execution.monitor.journal.revoke_pnl_readiness", AsyncMock()),
+            patch("schurfer_execution.monitor.journal.try_commit_close", AsyncMock()) as commit,
+        ):
+            await _reconcile_one("bingx", "BEAT", {"bingx": ex}, rdb, _mock_cfg())
+
+        assert record_fill.call_args.kwargs["terminal"] is False
+        assert record_fill.call_args.kwargs["requested_amount"] == 6.0
+        assert record_fill.call_args.kwargs["remaining_amount"] == 4.0
+        commit.assert_not_awaited()
+        rdb.delete.assert_not_awaited()
+
     async def test_unresolvable_exit_price_touches_nothing_but_revokes_readiness(self) -> None:
         """Regression: a filled SL order with no average/price and no fetchable
         trades must NOT be treated as exit_price=0 (which would read as a
@@ -309,6 +608,10 @@ class TestReconcileOne:
                 AsyncMock(return_value=True),
             ) as mock_close,
             patch("schurfer_execution.monitor.journal.delete_trade_id_if_matches", AsyncMock()),
+            patch(
+                "schurfer_execution.monitor.journal.record_close_fill",
+                AsyncMock(return_value=107.5),
+            ),
         ):
             await _reconcile_one("bingx", "BEAT", {"bingx": ex}, rdb, cfg)
 

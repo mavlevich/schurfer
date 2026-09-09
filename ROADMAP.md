@@ -1,6 +1,6 @@
 # Roadmap
 
-> Living document. Updated as we progress. Last refreshed 2026-09-07.
+> Living document. Updated as we progress. Last refreshed 2026-09-10.
 
 ## Current focus
 
@@ -8,10 +8,10 @@ Update only these four lines after every merge -- this is the fast-path
 status check, not a place for narrative.
 
 ```
-Current primary: ENG-022 step 1, fill evidence and actual notional; support: conditional launch/delayed-short plan PR #395 in review
-State: HYP-024 corrected by #397, deployed at b118019 and formally inconclusive (89 measured; 17/18 compared episodes and 28 clusters, below both floors; no held-out read); ENG-020/#343 and ENG-021/#345 remain fixed in code and NOT deployed
-Next after current primary merges: ENG-022 step 2 partial-close/protection/remaining lifecycle; then its durable portfolio/timestamp steps, ENG-023 paper fairness and ENG-024 partial-outcome consumer tracing
-User decision required: yes before any execution deployment or live-mode change; no new hypothesis parameters were selected and HYP-024 earned no continuation
+Current primary: ENG-022 step 2, partial-close/protection/remaining lifecycle, ready for review; support: conditional launch/delayed-short plan PR #395 in review
+State: ENG-022 step 1 already merged as #347; HYP-024 corrected by #397, deployed at b118019 and formally inconclusive (89 measured; 17/18 compared episodes and 28 clusters, below both floors; no held-out read); ENG-020/#343 and ENG-021/#345 remain fixed in code and NOT deployed
+Next after current primary merges: ENG-022 step 3 durable portfolio reservation, then its execution-timestamp/recovery step, ENG-023 paper fairness and ENG-024 partial-outcome consumer tracing
+User decision required: yes before the ENG-022 migration/execution deployment or any live-mode change; no new hypothesis parameters were selected and HYP-024 earned no continuation
 ```
 
 ## Autonomy rules (when to just proceed, when to ask)

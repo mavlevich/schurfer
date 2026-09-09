@@ -33,6 +33,7 @@ class LiveOrderAttempt(Base, TimestampMixin):
     __tablename__ = "live_order_attempts"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    operation: Mapped[str] = mapped_column(String(8), nullable=False, default="entry")
     client_order_id: Mapped[str] = mapped_column(String(64), nullable=False)
     exchange: Mapped[str] = mapped_column(String(32), nullable=False)
     base: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -69,8 +70,13 @@ class LiveOrderAttempt(Base, TimestampMixin):
             unique=True,
         ),
         Index("ix_live_order_attempts_status", "status"),
+        Index("ix_live_order_attempts_operation_status", "operation", "status"),
         CheckConstraint(
-            "status IN ('pending', 'accepted', 'completed', 'failed', "
+            "operation IN ('entry', 'close')",
+            name="ck_live_order_attempts_operation",
+        ),
+        CheckConstraint(
+            "status IN ('pending', 'accepted', 'partial', 'completed', 'failed', "
             "'submission_unknown', 'no_fill', 'manual_required')",
             name="ck_live_order_attempts_status",
         ),

@@ -24,6 +24,7 @@ FILL_UNRESOLVED = "unresolved"
 
 _DEFAULT_TIMEOUT_SECONDS = 10.0
 _PARTIAL_FILL_TOLERANCE = 0.001  # 0.1% rounding slack before calling a fill partial
+_TERMINAL_ORDER_STATUSES = frozenset({"closed", "canceled", "cancelled", "expired", "rejected"})
 
 
 @dataclass(frozen=True)
@@ -32,6 +33,12 @@ class FillResolution:
     price: float | None
     source: str
     filled_amount: float | None
+
+
+def order_is_terminal(order: dict[str, Any]) -> bool:
+    """Whether the unified exchange payload proves this order cannot fill more."""
+    status = order.get("status")
+    return isinstance(status, str) and status.lower() in _TERMINAL_ORDER_STATUSES
 
 
 def _finite_positive(value: Any) -> float | None:

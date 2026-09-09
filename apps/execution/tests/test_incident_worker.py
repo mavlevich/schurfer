@@ -164,6 +164,7 @@ async def test_process_one_open_not_marked_resolved_when_journal_write_fails() -
 async def test_process_one_completes_a_resolved_close() -> None:
     incident = _close_incident()
     rdb = MagicMock()
+    rdb.delete = AsyncMock()
 
     with (
         patch(
@@ -195,6 +196,128 @@ async def test_process_one_completes_a_resolved_close() -> None:
     assert mock_commit.call_args.kwargs["exit_price"] == 2.0
     assert mock_commit.call_args.kwargs["reason"] == "trailing_stop"
     mock_cas_delete.assert_called_once_with(rdb, "trade:id:bybit:BEAT", 42)
+    deleted = {call.args[0] for call in rdb.delete.await_args_list}
+    assert "position:opened_at:bybit:BEAT" in deleted
+    assert "position:size_usd:bybit:BEAT" in deleted
+
+
+async def test_process_one_records_partial_close_leg_without_closing_trade() -> None:
+    incident = _close_incident(
+        context={
+            "reason": "trailing_stop",
+            "requested_amount": 10.0,
+            "filled_amount": 4.0,
+            "remaining_amount": 6.0,
+            "terminal": False,
+        }
+    )
+    exchange = _exchange_confirming(2.0)
+    exchange.fetch_order = AsyncMock(return_value={"id": "ord-2", "average": 2.0, "filled": 4.0})
+
+    with (
+        patch(
+            "schurfer_execution.incident_worker.incidents.has_pending_open",
+            AsyncMock(return_value=False),
+        ),
+        patch(
+            "schurfer_execution.incident_worker.incidents.mark_resolved",
+            AsyncMock(return_value=True),
+        ) as mock_resolved,
+        patch(
+            "schurfer_execution.incident_worker.incidents.claim_recovery_notification",
+            AsyncMock(return_value=False),
+        ),
+        patch(
+            "schurfer_execution.incident_worker.journal.record_close_fill",
+            AsyncMock(return_value=2.0),
+        ) as mock_record,
+        patch(
+            "schurfer_execution.incident_worker.journal.try_commit_close", AsyncMock()
+        ) as mock_commit,
+    ):
+        await _process_one(incident, {"bybit": exchange}, MagicMock(), _cfg())
+
+    mock_record.assert_awaited_once()
+    assert mock_record.call_args.kwargs["filled_amount"] == 4.0
+    assert mock_record.call_args.kwargs["remaining_amount"] == 6.0
+    assert mock_record.call_args.kwargs["terminal"] is False
+    mock_commit.assert_not_awaited()
+    mock_resolved.assert_awaited_once()
+
+
+async def test_terminal_position_with_partial_market_fill_waits_for_stop_leg() -> None:
+    incident = _close_incident(
+        context={
+            "reason": "trailing_stop",
+            "requested_amount": 10.0,
+            "filled_amount": None,
+            "remaining_amount": 0.0,
+            "terminal": True,
+        }
+    )
+    exchange = _exchange_confirming(2.0)
+    exchange.fetch_order = AsyncMock(
+        return_value={"id": "ord-2", "status": "closed", "average": 2.0, "filled": 4.0}
+    )
+
+    with (
+        patch(
+            "schurfer_execution.incident_worker.incidents.has_pending_open",
+            AsyncMock(return_value=False),
+        ),
+        patch(
+            "schurfer_execution.incident_worker.incidents.mark_resolved",
+            AsyncMock(return_value=True),
+        ),
+        patch(
+            "schurfer_execution.incident_worker.incidents.claim_recovery_notification",
+            AsyncMock(return_value=False),
+        ),
+        patch(
+            "schurfer_execution.incident_worker.journal.record_close_fill",
+            AsyncMock(return_value=2.0),
+        ) as record_fill,
+        patch("schurfer_execution.incident_worker.journal.try_commit_close", AsyncMock()) as commit,
+    ):
+        await _process_one(incident, {"bybit": exchange}, MagicMock(), _cfg())
+
+    assert record_fill.call_args.kwargs["terminal"] is False
+    assert record_fill.call_args.kwargs["remaining_amount"] == 6.0
+    commit.assert_not_awaited()
+
+
+async def test_close_incident_waits_without_consuming_retry_while_order_is_active() -> None:
+    incident = _close_incident(
+        context={
+            "reason": "trailing_stop",
+            "requested_amount": 10.0,
+            "filled_amount": None,
+            "remaining_amount": 6.0,
+            "terminal": False,
+            "order_terminal": False,
+        }
+    )
+    exchange = _exchange_confirming(2.0)
+    exchange.fetch_order = AsyncMock(
+        return_value={"id": "ord-2", "status": "open", "average": 2.0, "filled": 4.0}
+    )
+
+    with (
+        patch(
+            "schurfer_execution.incident_worker.incidents.has_pending_open",
+            AsyncMock(return_value=False),
+        ),
+        patch("schurfer_execution.incident_worker.incidents.mark_attempt", AsyncMock()) as attempt,
+        patch(
+            "schurfer_execution.incident_worker.incidents.mark_resolved", AsyncMock()
+        ) as resolved,
+        patch("schurfer_execution.incident_worker.journal.record_close_fill", AsyncMock()) as fill,
+    ):
+        await _process_one(incident, {"bybit": exchange}, MagicMock(), _cfg())
+
+    attempt.assert_not_awaited()
+    resolved.assert_not_awaited()
+    fill.assert_not_awaited()
 
 
 async def test_process_one_close_waits_when_matching_open_still_pending() -> None:
@@ -224,6 +347,7 @@ async def test_process_one_close_with_missing_trade_id_falls_back_to_db_lookup()
     the journal even though it wasn't known when this incident was created."""
     incident = _close_incident(trade_id=None)
     rdb = MagicMock()
+    rdb.delete = AsyncMock()
 
     with (
         patch(

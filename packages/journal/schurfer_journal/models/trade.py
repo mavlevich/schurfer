@@ -5,6 +5,8 @@ from uuid import UUID
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -177,6 +179,9 @@ class Trade(Base, TimestampMixin):
         back_populates="trade",
         uselist=False,
     )
+    close_fills: Mapped[list["TradeCloseFill"]] = relationship(
+        "TradeCloseFill", back_populates="trade", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         Index("ix_trades_strategy_id", "strategy_id"),
@@ -205,6 +210,46 @@ class Trade(Base, TimestampMixin):
             "entry_order_id",
             unique=True,
             postgresql_where=text("entry_order_id IS NOT NULL"),
+        ),
+        {"schema": "app"},
+    )
+
+
+class TradeCloseFill(Base, TimestampMixin):
+    """One confirmed reduce-only fill contributing to a live trade's exit."""
+
+    __tablename__ = "trade_close_fills"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    trade_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("app.trades.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    exchange: Mapped[str] = mapped_column(String(32), nullable=False)
+    order_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    fill_price: Mapped[Decimal] = mapped_column(Numeric(30, 14), nullable=False)
+    filled_amount: Mapped[Decimal] = mapped_column(Numeric(30, 14), nullable=False)
+    requested_amount: Mapped[Decimal] = mapped_column(Numeric(30, 14), nullable=False)
+    remaining_amount: Mapped[Decimal] = mapped_column(Numeric(30, 14), nullable=False)
+    terminal: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    fill_source: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    trade: Mapped["Trade"] = relationship("Trade", back_populates="close_fills")
+
+    __table_args__ = (
+        Index(
+            "ux_trade_close_fills_exchange_order_id",
+            "exchange",
+            "order_id",
+            unique=True,
+        ),
+        Index("ix_trade_close_fills_trade_id", "trade_id"),
+        CheckConstraint("fill_price > 0", name="ck_trade_close_fills_price_positive"),
+        CheckConstraint("filled_amount > 0", name="ck_trade_close_fills_amount_positive"),
+        CheckConstraint("requested_amount > 0", name="ck_trade_close_fills_requested_positive"),
+        CheckConstraint(
+            "remaining_amount >= 0", name="ck_trade_close_fills_remaining_non_negative"
         ),
         {"schema": "app"},
     )
