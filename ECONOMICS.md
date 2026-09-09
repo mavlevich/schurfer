@@ -45,6 +45,18 @@ and execution safeguards permit it. Its budget alone establishes neither sample
 sufficiency nor profitability or capacity at larger sizes. Feasibility at USD 50
 still depends on the chosen instruments' minimum orders, fees and margin needs.
 
+Clarifications recorded from the owner on 2026-09-09: the USD 50 is a nominal
+real-money mechanics-test floor, not a cap on ambition. Leverage may extend
+position size within it (subject to a later, separately set stop/margin policy),
+and the owner is willing to add capital beyond the nominal amount once an edge is
+demonstrated; no specific scaling figure, target percentage or horizon is
+committed by this statement. Infrastructure and hosting are absorbed personally
+by the owner and are deliberately excluded from the trading break-even: report
+trading PnL and equity return on their own, and keep owner-borne infrastructure
+cost as a separate line rather than netting it into the strategy result. None of
+this authorizes live mode or any order; income still depends on a demonstrated
+edge and a committed scaling amount, neither of which exists yet.
+
 ## Required candidate card
 
 Create a card beside the candidate's existing research contract, or extend its
