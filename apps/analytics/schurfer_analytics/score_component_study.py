@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from itertools import pairwise
 from statistics import median
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 from schurfer_performance import DEFAULT_COSTS, CostParameters
 
@@ -189,16 +189,15 @@ class ComponentResult:
         return rising or falling
 
 
-def select_one_per_episode(
-    rows: Sequence[dict[str, Any]],
-) -> tuple[EpisodeObservation, ...]:
-    """Reduce many decisions per episode to one, by the registered rule.
+def pick_episode_rows(rows: Sequence[dict[str, Any]]) -> tuple[dict[str, Any], ...]:
+    """One decision row per episode, by the registered rule.
 
     First decision whose action opened something, else the earliest. This is
-    `select_episode_decision`'s rule, restated over raw rows because this study
-    reads decisions directly rather than through the replay dataset. Two
+    `select_episode_decision`'s rule, restated over raw rows because these
+    studies read decisions directly rather than through the replay dataset. Two
     research lines that disagree about which decision represents an episode
-    cannot be compared, so the rule is copied rather than reinvented.
+    cannot be compared, so it lives here once and is imported rather than
+    copied again.
     """
     by_episode: dict[int, dict[str, Any]] = {}
     for row in sorted(rows, key=lambda item: (item["pump_event_id"], item["ts"])):
@@ -210,9 +209,15 @@ def select_one_per_episode(
             continue
         if opened and not str(current.get("action", "")).startswith("opened"):
             by_episode[episode] = row
+    return tuple(by_episode.values())
 
+
+def select_one_per_episode(
+    rows: Sequence[dict[str, Any]],
+) -> tuple[EpisodeObservation, ...]:
+    """One episode per pump event, reduced to its components and its outcome."""
     observations = []
-    for row in by_episode.values():
+    for row in pick_episode_rows(rows):
         # No completed outcome for the decision that represents this episode.
         # Dropped and counted, never replaced by a decision that has one.
         if row.get("short_return_pct") is None:
@@ -240,15 +245,19 @@ def incomplete_outcome_episodes(rows: Sequence[dict[str, Any]]) -> int:
     Coverage, not a result. Reported so a shrinking denominator stays visible
     rather than being mistaken for a population that simply is that size.
     """
-    by_episode: dict[int, dict[str, Any]] = {}
-    for row in sorted(rows, key=lambda item: (item["pump_event_id"], item["ts"])):
-        by_episode.setdefault(int(row["pump_event_id"]), row)
-    return sum(1 for row in by_episode.values() if row.get("short_return_pct") is None)
+    return sum(1 for row in pick_episode_rows(rows) if row.get("short_return_pct") is None)
 
 
-def within_window(
-    observations: Sequence[EpisodeObservation], contract: ResearchContract
-) -> tuple[EpisodeObservation, ...]:
+class HasDecisionTime(Protocol):
+    """Anything `within_window` can filter: it needs only the decision's time."""
+
+    @property
+    def decision_at(self) -> datetime: ...
+
+
+def within_window[ObservationT: HasDecisionTime](
+    observations: Sequence[ObservationT], contract: ResearchContract
+) -> tuple[ObservationT, ...]:
     """Drop episodes whose outcome window runs past the study window.
 
     A decision forty minutes before the window closes has a 60-minute outcome
