@@ -275,9 +275,69 @@ that is not production and production has 24 GB. What remains untested is
 therefore volume and duration, not correctness: every mechanism the dump relies
 on has now been exercised against real data.
 
+## Checking bar coverage
+
+The health check watches three stamps and, separately, whether the nightly cold
+bar export is keeping up:
+
+```bash
+sudo /opt/schurfer/infra/scripts/offsite-backup-health.sh
+```
+
+It reads the manifests in `/opt/schurfer/runtime/cold-bars`, not the Parquet
+files. The backup deletes each `.parquet` once it is confirmed inside a `bars-*`
+archive and leaves the `.manifest.json` beside it, so the manifests are a
+permanent local index of which days were exported: answerable without the
+repository passphrase, without reaching the Storage Box, and without reading
+8 GB of Parquet to answer a question about filenames.
+
+Failures, reported separately:
+
+| Message                                                               | What actually broke                                                                                              |
+| --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `last successful cold bars archive is Nh old`                         | The export or the archive stopped. The days themselves may still be in the database.                             |
+| `N cold bar day(s) inside the 35-day retention window have no export` | Specific days are missing. Each names a deadline.                                                                |
+| `no collection start recorded`                                        | `cold-bars/collection-start` is gone. Coverage cannot be checked at all, so the check fails rather than passing. |
+
+**Why the start file exists.** The expected range used to begin at the oldest
+surviving manifest, which meant deleting the five oldest manifests shrank the
+expected range to match and the check stayed green while five unrecoverable days
+had gone missing. The exporter writes `collection-start` on its first run and it
+is then read, never re-derived. Expected coverage runs from the later of that
+date and the retention edge.
+
+**After deploying this for the first time**, run the exporter once so the file
+exists; until then the check fails closed every hour, which is the intended
+behaviour and not a reason to weaken it:
+
+```bash
+sudo make prod-cold-bar-export
+```
+
+**A missing day is recoverable until retention deletes it.** Re-run the export
+for that day:
+
+```bash
+sudo make prod-cold-bar-export
+```
+
+The exporter skips days it has already written, so a plain run backfills every
+gap still inside the window. Days already dropped from the database cannot be
+recovered by any means this system has, which is why the alert is hourly rather
+than daily.
+
 ## What this does not cover yet
 
-Parquet export of cold minute bars before Timescale retention drops them, and
-the controlled deletion that replaces the automatic retention policy. Until that
-exists, minute bars older than 35 days are gone regardless of these backups: the
-dump only contains what is still in the database when it runs.
+**The retention policy is still automatic.** Migration 0024 sets
+`add_retention_policy(timeseries.bybit_momentum_bars_1m, INTERVAL '35 days')`,
+and it deletes on schedule whether or not the day was exported. Nothing checks
+the export before the deletion, and the two mechanisms do not know about each
+other.
+
+What the health check above buys is time, not a guarantee: a broken exporter is
+now reported within a day or two, and every skipped day stays recoverable for the
+rest of its 35 days. What it does not do is prevent the deletion of a day nobody
+looked at. Gated deletion -- replacing the automatic policy with an explicit
+`drop_chunks` that runs only after that day's export is verified and confirmed
+offsite -- is the remaining step, and it removes the case where the alert is
+simply ignored for five weeks.

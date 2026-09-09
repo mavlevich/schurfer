@@ -266,6 +266,29 @@ def source_day_range(connection: Any) -> tuple[date, date] | None:
     return oldest, newest_complete
 
 
+COLLECTION_START_FILE = "collection-start"
+
+
+def record_collection_start(out_dir: Path, oldest_day: date) -> date:
+    """Write the first day of history once, and never re-derive it.
+
+    The health check needs to know where expected coverage begins. Deriving that
+    from the oldest surviving manifest cannot work: delete the five oldest
+    manifests and the expected range silently shrinks to match, so a real loss
+    reports healthy. A colleague reproduced exactly that.
+
+    So the start is recorded on the first export and then read, never
+    recomputed. It is the oldest day the source held when this first ran, which
+    is the best evidence available at the only moment it exists -- retention has
+    been deleting since.
+    """
+    path = out_dir / COLLECTION_START_FILE
+    if path.exists():
+        return date.fromisoformat(path.read_text().strip())
+    path.write_text(f"{oldest_day.isoformat()}\n")
+    return oldest_day
+
+
 def main() -> None:
     import argparse
     import sys
@@ -297,6 +320,8 @@ def main() -> None:
         if span is None:
             sys.stdout.write("no complete day available to export\n")
             return
+        started = record_collection_start(args.out_dir, span[0])
+        sys.stdout.write(f"collection starts {started.isoformat()}\n")
         targets = days_to_export(span[0], span[1], existing_days(args.out_dir))
         if args.max_days > 0:
             targets = targets[: args.max_days]
