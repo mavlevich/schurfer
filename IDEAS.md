@@ -161,11 +161,15 @@ OHLCV storage exists: ATR and volatility, max intraday wick.
 
 ## Funding-rate arbitrage (basis trade)
 
-- Basis-trade alert: funding over 0.3% per 8h (about 328% APR) means short perp plus
-  long spot captures funding with zero directional risk. Show estimated daily yield
-  and size.
-- Basis-trade tracker: log threshold crossings and duration to build a dataset of
-  chronic crowded-long tokens (recurring short setups).
+Parked under the [conditional roadmap gates](ROADMAP.md#conditional-launch-and-delayed-short-plan--2026-09-09).
+
+- Basis/funding feasibility: measure actual funding intervals and executable
+  spot/perp quotes, fees, collateral and entry/exit costs. A changing funding rate
+  is not a fixed annual yield; no alert threshold is registered by this catalog.
+- Match base exposure using contract specifications, not equal dollar notionals
+  at different prices. Basis, liquidation, venue and unmatched-leg risks remain.
+- Persist opportunities and funding changes only when a bounded economic question
+  justifies collection; positive funding alone is not evidence for a short entry.
 
 ## Correlation break detector
 

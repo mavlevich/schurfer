@@ -66,6 +66,9 @@ the source reports and claim-by-claim reconciliation. It is evidence, not anothe
 live backlog. Owner economics and candidate feasibility belong in
 [ECONOMICS.md](ECONOMICS.md); frozen parameters and research results remain in their
 existing contracts and [discovery ledger](docs/research/discovery-ledger.md).
+The [conditional launch and delayed-short plan](#conditional-launch-and-delayed-short-plan--2026-09-09)
+records the September 9 ideas and their activation gates; it creates no active
+strategy or additional research slot.
 
 ## Delivery portfolio and WIP limits
 
@@ -178,6 +181,75 @@ remaining budget and blockers weekly; the implementer/owner records that review,
 without an implicit scheduled automation. Use six to eight weeks as a proposed
 portfolio review horizon, not a promised live-launch date. No research thresholds,
 capital amount or income target are invented by this plan.
+
+### Conditional launch and delayed-short plan — 2026-09-09
+
+**Status: queued feasibility question; expanded launch, on-chain and arbitrage
+infrastructure remains parked.** The owner requested a bounded path from ideas to
+economic evidence. This section governs these additions to the older DEX narrative
+radar and [parked catalog](IDEAS.md); it does not reopen frozen results or activate
+their unchecked implementation lists.
+
+Select this work at the next available primary slot if no due registered read or
+more valuable candidate is ready. Safety, data corruption and imminent capture loss
+still preempt it. Keep one primary and one support implementation PR and at most two
+active Confirmation lines. Passive collection may continue. The
+[USD 50 owner budget](ECONOMICS.md) is total initial trading capital, with full loss
+accepted; it is neither per-trade notional nor funding for new services. This plan
+sets no entry thresholds and authorizes no live orders.
+
+**First question:** does waiting for a mechanically observable failed recovery after
+a pump improve net short economics enough to compensate for entering later?
+Celebrity/political labels, tokenomics and famous crashes are context, not an entry
+rule or a sample-selection criterion. Start with instruments on supported venues;
+a launch-specific variant needs reliable event-time evidence before that restriction
+can define a cohort.
+
+- [ ] **Check novelty and feasibility first.** Compare with the existing
+      [order-flow pilot's delayed-short lane](docs/research/bybit-order-flow-pilot-v1.md),
+      [entry-confirmation replay](docs/research/episode-replay-protocol-v1.md), and
+      [HYP-024](docs/research/orderflow-microstructure-v1.md). Record what differs,
+      prior outcomes/window exposure, available price/flow inputs and gaps. Use one
+      bounded work session initially; if it cannot finish, record the blocker and
+      effort estimate before extending. Finish with `duplicate`, `feasible`, or
+      `blocked`, without screening returns or inventing a new dump score.
+- [ ] **If feasible and distinct, register one comparison.** Freeze the observable
+      recovery/failure rule, event/decision times, maximum wait, exit/cost policy,
+      evidence floor, primary economic gate and deadline before reading evaluation
+      outcomes. No hindsight peaks or future-confirmed wallet labels. Record the
+      hypothesis in the ledger when actually registered, not merely queued here.
+      Reuse episode selection, provenance and reporting; no generic experiment
+      platform. Historical discovery, if used, cannot validate its selected rule.
+- [ ] **Run a bounded future SHADOW on common opportunities.** Keep the baseline
+      and delayed challenger on the same eligible episodes. Retain no-confirmation
+      opportunities as cash and missing evidence as unresolved. Verify canonical
+      identity and actual shortability at the delayed entry time, and capture
+      executable prices/liquidity there; an earlier book or a listing announcement
+      alone is insufficient. Add only missing inputs required by this comparison.
+- [ ] **Decide before expanding.** Report paired net change and standalone net
+      return per original opportunity, trade frequency, uncertainty, drawdown,
+      concentration, capital occupancy and size feasibility. An improvement over a
+      losing baseline is insufficient if the challenger is still negative. A mature
+      failure closes the candidate; insufficient data at the registered deadline
+      parks it with a specific reason. Positive evidence earns the next registered
+      validation/paper stage, not automatic live execution or a claim of capacity
+      beyond the measured size.
+
+**Conditional follow-ups; each needs its own economic case and a free slot:**
+
+| Idea                              | Cheapest useful check                                                                                                                                 | What must be true before implementation expands                                                                                                                                                                                                                                                                         |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Launch detection and shortability | Small reviewed set of official announcements and market-state observations; separate announced, trading-open and first-observed times                 | A candidate needs earlier detection, and measured lead time plus exact asset/market links justify one source adapter. Preserve all eligible launches, not only subsequent crashes.                                                                                                                                      |
+| Spot/perp premium and funding     | Executable simultaneous quotes for an identical asset on already supported routes; actual funding intervals, fees, two-leg costs and collateral needs | Persisting net opportunity, feasible sizes and reliable management of partial/unmatched legs justify a separate shadow book. Match base exposure using contract specifications; equal dollar notionals at different prices do not give an exact hedge. No risk-free yield or extrapolation of a transient funding rate. |
+| Airdrop/deployer sales            | A bounded watchlist on one chain with documented address provenance, transfers distinguished from swaps and unknown labels retained                   | Events are observable before the price response, a usable trade route exists, and incremental value over price/flow survives costs and latency on untouched data. Only then consider a collector under the existing [on-chain roadmap](docs/research/onchain-intelligence-roadmap.md).                                  |
+| Pre-market/spot convergence       | Verify exact underlying, index/settlement rules, simultaneous market availability and executable exit                                                 | A separately funded feasibility case supports both legs and collateral. A displayed price gap alone earns no adapter or trade. Park under the current USD 50 experiment.                                                                                                                                                |
+
+Full wallet graphs, broad news/X ingestion, paid chain-wide feeds, new exchanges
+solely for one headline token, celebrity dump scores, immediate-TGE shorts and
+funding-only short baskets stay parked. None is an automatic reward for a positive
+delayed-short result: each must demonstrate its own incremental economic purpose.
+If existing inputs cannot answer the first question, name the smallest missing
+measurement and its cost; do not turn the blocker into a full launch platform.
 
 ### Historical near-term interleaving from 2026-08-31
 
@@ -3126,6 +3198,9 @@ The intended stream topology is:
       tradeable signal. This is a separate strategy and dataset from the CEX
       pump-short model; no wallet or automatic execution is part of the first
       version.
+      **Parked expansion:** the [September 9 activation gates](#conditional-launch-and-delayed-short-plan--2026-09-09)
+      take precedence over the implementation list below. Do not start both chains
+      or the full radar as part of the initial delayed-short feasibility check.
   - [ ] Start with Solana and Base. Discover new contracts from point-in-time feeds,
         initially using the
         [Birdeye new-listing API](https://docs.birdeye.so/reference/get-defi-v2-tokens-new_listing)
