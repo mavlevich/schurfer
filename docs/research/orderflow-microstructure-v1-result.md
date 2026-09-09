@@ -31,18 +31,18 @@ held-out window only through a later, separately registered pass.
 
 ## Provenance to record (copy from the report header)
 
-| Field | Value |
-| --- | --- |
-| report_version | `orderflow_microstructure_v1` |
-| strategy_version | `pump_short_v1_market_quality` |
-| resolver_version / horizon | `forward_v1` / 60m |
-| capture_version (pinned) | `v1` |
-| cost_model_version | `conservative_costs_v1` |
+| Field                               | Value                                         |
+| ----------------------------------- | --------------------------------------------- |
+| report_version                      | `orderflow_microstructure_v1`                 |
+| strategy_version                    | `pump_short_v1_market_quality`                |
+| resolver_version / horizon          | `forward_v1` / 60m                            |
+| capture_version (pinned)            | `v1`                                          |
+| cost_model_version                  | `conservative_costs_v1`                       |
 | cost deduction (net = gross - this) | `0.20625%` (2x10bps taker + 5bps/8h x 60/480) |
-| cohort_start / cohort_end | `2026-08-10` / `TODO` |
-| db_snapshot_at | `TODO` |
-| dataset_fingerprint | `TODO` |
-| code_revision / formal_run | `TODO` / `TODO` |
+| cohort_start / cohort_end           | `2026-08-10` / `TODO`                         |
+| db_snapshot_at                      | `TODO`                                        |
+| dataset_fingerprint                 | `TODO`                                        |
+| code_revision / formal_run          | `TODO` / `TODO`                               |
 
 ## Coverage (copy from the coverage funnel and per-exchange table)
 
@@ -52,24 +52,24 @@ binance from 2026-08-15). Decisions on venues without bars, decisions whose
 decisions without a complete ten-bar pre-window are all **coverage loss**, not
 negative outcomes.
 
-| Coverage step | Count |
-| --- | --- |
+| Coverage step                                | Count  |
+| -------------------------------------------- | ------ |
 | Cohort decisions with a resolved 60m outcome | `TODO` |
-| Identity resolved to a single native market | `TODO` |
-| Complete ten-bar pre-window | `TODO` |
-| Measured episodes | `TODO` |
+| Identity resolved to a single native market  | `TODO` |
+| Complete ten-bar pre-window                  | `TODO` |
+| Measured episodes                            | `TODO` |
 
 Per exchange: `TODO` (unresolved / ambiguous identity, missing bars, measured).
 
 ## Primary metric (registered ten-minute taker imbalance)
 
-| Quintile | Episodes | Clusters | Median net short return |
-| --- | --- | --- | --- |
-| Q1 (lowest imbalance) | `TODO` | `TODO` | `TODO` |
-| Q2 | `TODO` | `TODO` | `TODO` |
-| Q3 | `TODO` | `TODO` | `TODO` |
-| Q4 | `TODO` | `TODO` | `TODO` |
-| Q5 (highest imbalance) | `TODO` | `TODO` | `TODO` |
+| Quintile               | Episodes | Clusters | Median net short return |
+| ---------------------- | -------- | -------- | ----------------------- |
+| Q1 (lowest imbalance)  | `TODO`   | `TODO`   | `TODO`                  |
+| Q2                     | `TODO`   | `TODO`   | `TODO`                  |
+| Q3                     | `TODO`   | `TODO`   | `TODO`                  |
+| Q4                     | `TODO`   | `TODO`   | `TODO`                  |
+| Q5 (highest imbalance) | `TODO`   | `TODO`   | `TODO`                  |
 
 - Top-minus-bottom median net spread: `TODO` pp
 - Monotone across all five quintiles: `TODO`
