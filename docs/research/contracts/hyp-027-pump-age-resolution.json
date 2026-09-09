@@ -1,0 +1,21 @@
+{
+  "allow_fallback": false,
+  "baseline_policy": "pump_age_above_0.6_to_60_minutes",
+  "candidate_margin": 1.0,
+  "challenger_policies": ["pump_age_at_most_0.6_minutes"],
+  "checksum": "89da877019c09111cac5ea6830d55f4727572d27bae2d7c4f81c11bbc46785bb",
+  "comparison": "difference_of_metric",
+  "contract_version": "v1",
+  "cost_model_version": "conservative_costs_v1",
+  "hypothesis_id": "HYP-027",
+  "metric": "median",
+  "minimum_clusters": 30,
+  "minimum_completed_trades": 150,
+  "notes": "Registered in docs/research/pump-age-resolution-v1.md and bound by entry-signal-family-rules-v1.md. The surviving claim from HYP-023 after its pump_age candidate was withdrawn for a partition the component did not impose. Production scores pump age 0 points below one hour, and 692 of 821 discovery episodes were under an hour: the whole informative range is collapsed into one bucket. This contract compares two groups that both score ZERO, so any difference between them is invisible to the composite by construction rather than by weighting. The cutoffs are ABSOLUTE and taken from the tied groups the discovery window revealed, never recomputed per window, which is exactly what the withdrawn result got wrong. Episodes older than 60 minutes are excluded rather than reported, because they are the ones production does score and they are a different question with its own window. The margins are SIGNED: the value graded is challenger minus baseline, that is median net return of the at-most-0.6-minute group minus the 0.6-to-60-minute group, and the direction is declared in advance from discovery, so this is one-sided. minimum_completed_trades and minimum_clusters are applied to the SMALLER of the two groups, not to the pooled sample. 1.0 rather than HYP-023's 1.5 because this is a single pre-specified two-group comparison rather than the best of six across five buckets: the bar is economic, roughly doubling a median net return of about one point and about five times the 0.21-point round-trip cost. window_until is a hard outer edge, not a prediction: the read runs when the floors clear and the artifact records the latest decision timestamp included; if the floors are unmet by then the verdict is inconclusive. One read, frozen with freeze_or_verify_sample.",
+  "outcome_horizon_minutes": 60,
+  "rejection_margin": -1.0,
+  "schema_version": "research_contract_v1",
+  "strategy_versions": ["pump_short_v1_market_quality"],
+  "window_since": "2026-08-25T00:00:00+00:00",
+  "window_until": "2026-09-30T00:00:00+00:00"
+}

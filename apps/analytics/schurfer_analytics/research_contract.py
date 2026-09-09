@@ -313,26 +313,36 @@ def verdict(
 
 @dataclass(frozen=True)
 class SampleManifest:
-    """Which episodes a contract's first run actually measured.
+    """What a contract's first run actually measured.
 
     Without this, "read once" is a sentence a report prints about itself. A
     second run picks up whatever has accumulated since, reports the same
     sentence, and the difference between the two numbers is invisible.
+
+    Episodes alone are not enough to say two runs measured the same thing. An
+    episode is represented by one of its decisions, and until 2026-09-09 which
+    decision that was could change as outcomes resolved: the same
+    `pump_event_id` at a different `pump_age`, in a different comparison group.
+    So `measurement_keys` records what was actually measured -- the decisions --
+    and the checksum covers both.
     """
 
     hypothesis_id: str
     contract_checksum: str
     episode_ids: tuple[int, ...]
     frozen_at: str
+    measurement_keys: tuple[str, ...] = ()
 
     @property
     def sample_checksum(self) -> str:
-        encoded = ",".join(str(value) for value in sorted(self.episode_ids)).encode()
-        return hashlib.sha256(encoded).hexdigest()
+        episodes = ",".join(str(value) for value in sorted(self.episode_ids))
+        measurements = ",".join(sorted(self.measurement_keys))
+        return hashlib.sha256(f"{episodes}|{measurements}".encode()).hexdigest()
 
     def to_json(self) -> str:
         payload = asdict(self)
         payload["episode_ids"] = sorted(self.episode_ids)
+        payload["measurement_keys"] = sorted(self.measurement_keys)
         payload["sample_checksum"] = self.sample_checksum
         return json.dumps(payload, indent=2, sort_keys=True) + "\n"
 
@@ -341,6 +351,7 @@ def freeze_or_verify_sample(
     contract: ResearchContract,
     episode_ids: Sequence[int],
     path: Path,
+    measurement_keys: Sequence[str] = (),
 ) -> SampleManifest:
     """Record the sample on the first run; require it to match on every later one.
 
@@ -353,6 +364,7 @@ def freeze_or_verify_sample(
         contract_checksum=contract.compute_checksum(),
         episode_ids=tuple(sorted(episode_ids)),
         frozen_at=datetime.now(UTC).isoformat(),
+        measurement_keys=tuple(sorted(measurement_keys)),
     )
     if not path.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -372,10 +384,15 @@ def freeze_or_verify_sample(
     if stored["sample_checksum"] != manifest.sample_checksum:
         stored_ids = set(stored["episode_ids"])
         current_ids = set(manifest.episode_ids)
+        stored_keys = set(stored.get("measurement_keys", ()))
+        current_keys = set(manifest.measurement_keys)
         raise ContractViolationError(
             f"{contract.hypothesis_id}: this run measures a different sample than the frozen one. "
             f"{len(current_ids - stored_ids)} episodes appeared, "
-            f"{len(stored_ids - current_ids)} disappeared. "
-            "A re-run that finds different episodes is a second experiment."
+            f"{len(stored_ids - current_ids)} disappeared; "
+            f"{len(current_keys - stored_keys)} measurements appeared, "
+            f"{len(stored_keys - current_keys)} disappeared. "
+            "A re-run that finds different episodes, or the same episodes measured "
+            "through different decisions, is a second experiment."
         )
     return manifest
