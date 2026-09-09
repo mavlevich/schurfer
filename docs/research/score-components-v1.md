@@ -201,6 +201,10 @@ each:
 
 Younger pumps short better, and the relationship does not reverse anywhere.
 
+> **Wrong on two counts, corrected below.** The partition was decided by sort
+> order rather than by the component, and `pump_age` does not measure a pump's
+> age at all.
+
 ## What the scoring code does with that
 
 From `apps/api-gateway/internal/pumps/handler.go`, a fact about code rather than
@@ -357,8 +361,8 @@ production's own cutoffs define the groups: 1 point above 1 hour, 2 points above
 episode earning any `pump_age` points at all falls inside the one quintile with a
 negative median.
 
-**But that is 129 episodes out of 821.** 692 of 821 discovery episodes are under
-an hour old and score **zero** on this component. So the mechanism stated in the
+**But that is 129 episodes out of 821.** 692 of 821 discovery episodes were
+decided within an hour of qualifying and score **zero** on this component. So the mechanism stated in the
 first record -- the score awarding its maximum where the outcome is worst -- is
 real in direction and small in reach: on 84% of the cohort `pump_age` contributes
 nothing to the composite at all. It is not the explanation of HYP-019's
@@ -379,3 +383,50 @@ A registered test of the surviving claim needs a partition the data can support
 -- the tied groups themselves are natural buckets, and there are three large ones
 -- and needs declaring before any outcome in the holdout is read. That is a new
 contract, not a re-read of this one.
+
+---
+
+# Second correction, 2026-09-09: the variable is not what its name says
+
+Found while amending HYP-027, and it is worth separating from the tie defect
+because it survives it. Neither correction depends on the other.
+
+`pump_age` is hours since `signalStrategyAnchorAt`
+(`apps/api-gateway/internal/pumps/handler.go`), which is `entry_qualified_at`
+when the episode has one and `first_seen_at` otherwise. On all 821 discovery
+episodes the anchor was `entry_qualified_at`.
+
+**So the quantity is time since the system qualified the episode for entry, not
+time since the pump began in the market.** Everything above that reads it as a
+pump's age is wrong, including the sentence "younger pumps short better" and the
+phrase "under an hour old". The correct reading of the concentration is that
+**decisions follow qualification within about 36 seconds**, which is a fact about
+the scanner's cadence rather than about how old pumps are when the system meets
+them.
+
+## What that does to the mechanism claim
+
+It sharpens it into something more specific than "the score is inverted".
+
+The scoring code's own notes read `"extended pump (%.1fh), high time risk"` and
+`"early pump (%.1fh), may continue"`, and its thresholds sit at 1 hour and 4
+hours. Those are descriptions and cutoffs for a pump's **market age**. The
+variable they are applied to is a **system-observation delay**.
+
+An episode scores 2 points for "extended pump, high time risk" when it has been
+sitting in the qualified state for four hours, which is not the same claim at
+all and may be nearly the opposite one. 84% of episodes score zero not because
+pumps are young when the system meets them, but because the scanner decides
+almost immediately after qualification.
+
+**This is a claim about code and about what a stored number means, and it is
+checkable.** It is not a claim about outcomes: no relationship between this
+variable and any forward return survives the tie defect above. The two findings
+are independent, and neither rescues the other.
+
+## What it does not answer
+
+Whether scanning more often would help. `pump_age` cannot speak to detection
+latency in either direction, because it starts counting at qualification rather
+than at the pump. The question is open and this variable is not the instrument
+for it.
