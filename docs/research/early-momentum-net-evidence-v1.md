@@ -309,3 +309,71 @@ reports `insufficient_data` on an empty dataset rather than a false `PASS`
 or a crash. The first real interim checkpoint (`>= 50` closed trades) will
 follow naturally once the strategy has accumulated enough paper volume;
 none of the gates above are retuned to get there sooner.
+
+## First formal read (2026-09-09)
+
+First run over real matured volume. Provenance:
+`code_revision=ae4a89a570b9f0263395a0fdae2c3b3797f23be4`,
+`working_tree_dirty=False`, `formal_run=True`,
+`cohort_end=2026-09-09T06:00:00Z`, `db_snapshot_at=2026-09-09T12:23:13Z`,
+observed contract hash equals the pinned expected hash, zero cohort-level
+and zero row-level integrity violations.
+
+**Verdict: `fail`.** The evidence floor is cleared (438 comparable trades
+across 4 UTC weeks, well past the 100-trade/30-cluster/4-week floor), and
+every `PASS` gate fails:
+`mean_net_return_not_positive`, `total_net_pnl_not_positive`,
+`profit_factor_below_threshold`, `bootstrap_lower_bound_not_positive`,
+`leave_best_asset_out_not_positive`, `leave_one_week_out_not_all_positive`.
+
+Headline numbers:
+
+- total net PnL `-117.60 USD`; total gross PnL `-20.01 USD`; fees `87.60`,
+  funding `9.99`, slippage `0.00`.
+- mean net return `-0.27%` / trade on notional (median `-0.45%`); profit
+  factor `0.77`; win rate `40.6%` (178/260).
+- block-bootstrap 90% CI on mean net return `[-0.55%, -0.02%]` -- the whole
+  interval is below zero; leave-best-asset-out `-0.30%`; every
+  leave-one-week-out value negative.
+
+The decisive structural fact is that **gross PnL is already negative
+(`-20.01 USD`) before any cost.** The signal shows no positive forward edge
+on this cohort; fees and funding (`-97.59 USD` together) deepen a
+flat-to-negative gross rather than eroding a real one. Round-trip cost is
+~22 bps/trade (Bybit taker plus ~5.7/5.5 bps entry/exit impact at the only
+measured size, `100 USD` notional) against a gross return of ~`-4.6`
+bps/trade. Exit mix: `take_profit` 71 trades `+281.67` (`+3.97%` mean);
+`max_hold` 363 trades `-348.49` (`-0.96%` mean, 83% of the set);
+`initial_sl` 4 trades `-50.79` (`-12.70%` mean).
+
+Honest scope limit: this is ~17 days and one market regime, and the report
+itself flags results as provisional at the floor (weekly swings are large,
+W36 was near flat at `-0.03%` over 218 trades). The defensible reading is
+"no edge demonstrated, gross ~0," not "proven unprofitable forever."
+
+Implication for delivery order: `early_momentum_v4` as frozen here has no
+demonstrated executable edge, so building entry-filter or exit-tuning
+superstructure on top of this exact signal is not justified by this
+evidence. A filter (e.g. the `moderate_15m_taker_imbalance_filter_v1`
+discovery candidate) is a subset of a gross-negative population and would
+have to clear the full ~22 bps cost on its retained slice to matter; run it,
+if at all, as a cheap SHADOW that cleanly parks the candidate, not as the
+primary path to positive economics. Owner economics
+([ECONOMICS.md](../../ECONOMICS.md)) remain unfilled, and capacity is
+measured only at `100 USD` notional, so even a rescued variant would need a
+materiality decision before live work.
+
+Independent cross-check (prospective cohort, same `db_snapshot`). The
+`early_momentum_prospective_cohort_report` over the isolated forward window
+(`cohort_start 2026-08-25T06:25:00.970709Z`, deliberately excluding the
+historical v1-v4 data this report already covers) is still `collecting`
+(`distinct_utc_weeks_3_below_4`, so its own formal verdict is
+`insufficient_data` until W38), but its 399-trade economics match this read
+almost exactly: gross `-8.40 USD`, net `-97.28`, mean net `-0.24%`/trade,
+profit factor `0.79`, leave-best-asset-out `-0.27%`, every leave-one-week-out
+value negative (`-0.20% / -0.50% / -0.14%`). Because that window is untouched
+by any candidate selection, it independently rules out the "negative only
+because the signal was fit on this same data" explanation: a fresh forward
+cohort shows the same no-edge, cost-dominated result. (Its bootstrap CI upper
+bound sits marginally above zero at `+0.02%` purely from having 3 weeks
+rather than 4; the point estimate and every other cut stay negative.)
