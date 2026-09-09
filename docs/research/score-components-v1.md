@@ -10,6 +10,14 @@ was computed.**
 > asset clusters, a negative verdict needs as much data as a positive one, no
 > outcome may straddle a window boundary, and a feature counts only if it was
 > available when the decision was made.
+>
+> **Amended again 2026-09-09, still before any outcome was joined.** Rule 6 was
+> added after HYP-023's `pump_age` candidate was withdrawn: a quintile boundary
+> falling inside a tied value splits equal measurements by sort order, so a
+> candidate now requires every adjacent pair of compared buckets to differ in the
+> feature, and every report states the distinct-value count and the largest tied
+> group. This binds here too, and it matters most for any feature recorded at
+> coarse resolution.
 
 ## Family declaration, read this first
 

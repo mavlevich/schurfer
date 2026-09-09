@@ -85,7 +85,44 @@ clearly labelled research approximation. They may not enter a metric that is
 read as evidence about a tradeable signal, because a signal you could not have
 seen is not a signal.
 
-## 6. The family multiplies, and the reader is told so
+## 6. A partition the feature does not impose is not a partition
+
+Added 2026-09-09, from HYP-023. It reported `pump_age` as a candidate on a
+top-to-bottom quintile spread of -2.89 points that was monotone across all five
+quintiles, and the candidate was withdrawn before publication.
+
+The reason is arithmetic rather than judgement. `pump_age` is recorded to a tenth
+of a minute and the scanner reaches most pumps within a minute of detection, so
+821 episodes carry only **142 distinct values** and 368 of them read exactly 0.6.
+A quintile is 164 episodes, which put **all four** boundaries inside a tied value
+and made quintile two one value wide. Which side of a cut a tied episode landed on
+was decided by the sort's tie order, so the medians of quintiles two and three
+were two arbitrary halves of one group of identical measurements. Their difference
+pointed the way the neighbours already pointed, and that is what produced the
+`monotone` verdict. A different tie order breaks it with no data changing.
+
+`oi_trend` is worse on the same measure: **606 of 821** episodes share one value.
+
+So, binding on all of these hypotheses:
+
+- **A candidate requires that every adjacent pair of compared buckets differ in
+  the feature.** A boundary inside a tied value imposes no ordering, so the
+  monotonicity read across it can be neither believed nor disbelieved.
+- **Every report states, per feature, the number of distinct values and the size
+  of the largest tied group.** A coverage count of 821 must not be able to stand
+  in for 821 measurements.
+- **A rank-based partition is the thing to distrust first** on any feature
+  recorded at coarse resolution, which includes anything discretised, rounded,
+  clipped, or sampled on a schedule. Where the data has natural tied groups, they
+  are better buckets than quantiles, and their cutoffs are absolute rather than
+  refitted per window.
+
+This check is strictly stricter than what it replaces: it can withdraw a
+candidate and can never create one. That asymmetry is what allowed it to be
+applied to a window that had already been read, and `score_component_study.py`
+carries a test asserting it.
+
+## 7. The family multiplies, and the reader is told so
 
 Three independent searches produce a finding at a 5% threshold about 14% of the
 time by chance. Every one of the three states this, and a positive result in one
