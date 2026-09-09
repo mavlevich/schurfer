@@ -10,6 +10,15 @@ was computed.**
 > asset clusters, a negative verdict needs as much data as a positive one, no
 > outcome may straddle a window boundary, and a feature counts only if it was
 > available when the decision was made.
+>
+> **Amended again 2026-09-09, and for THIS hypothesis that is after the result
+> was read, not before.** Rule 6 came out of the withdrawal recorded below, so
+> calling it a pre-registration here would be a false journal entry. It is a
+> post-result check, admissible for one reason only: it can withdraw a candidate
+> and can never create one, and there is a test asserting that. The artifact
+> computed under the previous contract is kept beside the corrected one. For
+> HYP-024 and HYP-025, neither of which is implemented, the same rule genuinely
+> is a pre-registration.
 
 ## Family declaration, read this first
 
@@ -193,6 +202,10 @@ each:
 
 Younger pumps short better, and the relationship does not reverse anywhere.
 
+> **Wrong on two counts, corrected below.** The partition was decided by sort
+> order rather than by the component, and `pump_age` does not measure a pump's
+> age at all.
+
 ## What the scoring code does with that
 
 From `apps/api-gateway/internal/pumps/handler.go`, a fact about code rather than
@@ -258,9 +271,11 @@ distribution that makes the result above unreadable as stated.
 
 ## What the data actually looks like
 
-`pump_age` is recorded in hours, at a resolution of a tenth of a minute, and the
-scanner reaches most pumps within a minute of detection. Across the 821 discovery
-episodes there are **142 distinct values**, and three of them hold 629 episodes:
+`pump_age` is stored in hours and rounded to a hundredth of one
+(`math.Round(hours*100)/100`), so its granularity is **0.6 of a minute** and every
+value is a multiple of it. Decisions follow within about half a minute of the
+thing it counts from. Across the 821 discovery episodes there are **142 distinct
+values**, and three of them hold 629 episodes:
 
 | Age at decision | Episodes |
 | --------------: | -------: |
@@ -300,14 +315,27 @@ So `monotone: yes` was a property of the sort, not of `pump_age`, and the
 Its number was already `inconclusive` for non-monotonicity, so nothing was
 claimed from it, but the number itself meant nothing either.
 
-| Component         | Distinct values | Largest tied group |
-| ----------------- | --------------: | -----------------: |
-| pump_age          |             142 |            **368** |
-| funding_rate      |             431 |                121 |
-| price_extent      |             657 |                  5 |
-| oi_trend          |             211 |            **606** |
-| retrace_from_peak |             627 |                 85 |
-| mad_score         |              83 |                  1 |
+Re-run at `b9ce265` under contract v3, which is what the corrected artifact
+records:
+
+| Component         | Distinct | Largest tie | Tied boundaries | Verdict now                   |
+| ----------------- | -------: | ----------: | --------------- | ----------------------------- |
+| pump_age          |      142 |     **368** | **4 of 4**      | inconclusive                  |
+| funding_rate      |      431 |         121 | **2 of 4**      | inconclusive                  |
+| oi_trend          |      211 |     **606** | **3 of 4**      | inconclusive                  |
+| retrace_from_peak |      627 |          85 | none            | inconclusive, not monotone    |
+| price_extent      |      657 |           5 | none            | no_signal                     |
+| mad_score         |       83 |           1 | none            | inconclusive, below the floor |
+
+**Three of the six have unusable partitions, not two.** `funding_rate` was the
+surprise: its largest tied group is 121, smaller than a 164-episode quintile, and
+I had assumed that made it safe. It does not. A tied group narrower than a bucket
+can still straddle a boundary, and two of its four did. The rule has to be stated
+in boundaries rather than in group sizes, which is how the check is written.
+
+Artifact preserved at
+`backups/reports/hyp023/hyp023-discovery-923c97a7-separated.md`, beside the
+original.
 
 ## What was fixed
 
@@ -336,8 +364,8 @@ production's own cutoffs define the groups: 1 point above 1 hour, 2 points above
 episode earning any `pump_age` points at all falls inside the one quintile with a
 negative median.
 
-**But that is 129 episodes out of 821.** 692 of 821 discovery episodes are under
-an hour old and score **zero** on this component. So the mechanism stated in the
+**But that is 129 episodes out of 821.** 692 of 821 discovery episodes were
+decided within an hour of qualifying and score **zero** on this component. So the mechanism stated in the
 first record -- the score awarding its maximum where the outcome is worst -- is
 real in direction and small in reach: on 84% of the cohort `pump_age` contributes
 nothing to the composite at all. It is not the explanation of HYP-019's
@@ -358,3 +386,50 @@ A registered test of the surviving claim needs a partition the data can support
 -- the tied groups themselves are natural buckets, and there are three large ones
 -- and needs declaring before any outcome in the holdout is read. That is a new
 contract, not a re-read of this one.
+
+---
+
+# Second correction, 2026-09-09: the variable is not what its name says
+
+Found while amending HYP-027, and it is worth separating from the tie defect
+because it survives it. Neither correction depends on the other.
+
+`pump_age` is hours since `signalStrategyAnchorAt`
+(`apps/api-gateway/internal/pumps/handler.go`), which is `entry_qualified_at`
+when the episode has one and `first_seen_at` otherwise. On all 821 discovery
+episodes the anchor was `entry_qualified_at`.
+
+**So the quantity is time since the system qualified the episode for entry, not
+time since the pump began in the market.** Everything above that reads it as a
+pump's age is wrong, including the sentence "younger pumps short better" and the
+phrase "under an hour old". The correct reading of the concentration is that
+**decisions follow qualification within about 36 seconds**, which is a fact about
+the scanner's cadence rather than about how old pumps are when the system meets
+them.
+
+## What that does to the mechanism claim
+
+It sharpens it into something more specific than "the score is inverted".
+
+The scoring code's own notes read `"extended pump (%.1fh), high time risk"` and
+`"early pump (%.1fh), may continue"`, and its thresholds sit at 1 hour and 4
+hours. Those are descriptions and cutoffs for a pump's **market age**. The
+variable they are applied to is a **system-observation delay**.
+
+An episode scores 2 points for "extended pump, high time risk" when it has been
+sitting in the qualified state for four hours, which is not the same claim at
+all and may be nearly the opposite one. 84% of episodes score zero not because
+pumps are young when the system meets them, but because the scanner decides
+almost immediately after qualification.
+
+**This is a claim about code and about what a stored number means, and it is
+checkable.** It is not a claim about outcomes: no relationship between this
+variable and any forward return survives the tie defect above. The two findings
+are independent, and neither rescues the other.
+
+## What it does not answer
+
+Whether scanning more often would help. `pump_age` cannot speak to detection
+latency in either direction, because it starts counting at qualification rather
+than at the pump. The question is open and this variable is not the instrument
+for it.
