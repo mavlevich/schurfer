@@ -433,3 +433,53 @@ Whether scanning more often would help. `pump_age` cannot speak to detection
 latency in either direction, because it starts counting at qualification rather
 than at the pump. The question is open and this variable is not the instrument
 for it.
+
+---
+
+# Third correction, 2026-09-09: the population was conditioned on the outcome
+
+From review, and reproduced on a real Postgres by the colleague who raised it.
+Independent of both corrections above.
+
+The SQL filtered to decisions with a completed 60-minute outcome and **then**
+applied the registered rule, "the first decision that opened something, else the
+earliest". That is a different rule. An episode whose first `opened_paper`
+decision was still unresolved, and whose later `skipped` decision was complete,
+came back represented by the skipped one -- a different decision, at a different
+`pump_age`, in a different quintile.
+
+## How much it fired here
+
+Measured read-only on production over this window:
+
+|                                             | Episodes |
+| ------------------------------------------- | -------: |
+| Returned by the corrected query             |     1086 |
+| Whose own decision has no completed outcome |      288 |
+| **Usable**                                  |  **798** |
+| Reported in the result above                |      821 |
+| Represented by a substituted decision       |   **24** |
+| Of those, crossing the 0.6-minute boundary  |   **19** |
+
+So the published table was computed on 821 episodes of which 24 were the wrong
+decision, and the correct population is smaller than the one reported.
+
+It was also **unstable in time**: the substitution disappears once the first
+decision's outcome resolves, so the same contract over the same window measures a
+different set of episodes depending on the day it is run. A sample manifest meant
+to make a re-read detectable would have been comparing the wrong thing.
+
+## What it does to the verdicts
+
+Nothing that has been confirmed yet, and I am not going to assume it.
+
+The ties are a quantization artifact of rounding hours to a hundredth, so they
+will survive a 3% change in population, and every verdict in the table is already
+`inconclusive` or `no_signal`. The expectation is therefore that nothing moves.
+**That is a prediction, not a result**, and the corrected re-run is what settles
+it. Until that runs, the numbers above carry three defects rather than two.
+
+The fix is in `episode_selection.py`: the rule is expressed once, in SQL, and
+runs before the outcome is joined. An episode whose chosen decision has no
+completed outcome is coverage -- dropped, counted, and printed in the artifact --
+never replaced by a decision that has one.
