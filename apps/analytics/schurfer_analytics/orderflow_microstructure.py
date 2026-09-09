@@ -143,22 +143,28 @@ class MeasuredEpisode:
 
 @dataclass(frozen=True)
 class ResolvedDecisionRow:
-    """One cohort decision (strategy_version + resolved 60m outcome) after
-    SQL-side identity resolution and bar aggregation. `match_count` is the
-    number of distinct native market ids the decision's (exchange, base)
-    resolved to in the point-in-time snapshot: 0 = identity unresolved, 1 =
-    resolved, >1 = ambiguous (fail closed -- both non-1 cases are coverage
-    loss, never a negative outcome). `bars_10m/5m/20m` count the complete
-    (trades_complete) bars found in each pre-decision window; a window is
-    usable only when its full bar count is present. Imbalance sums are the
-    summed per-bar `(sell-buy)/(sell+buy)` over the complete bars in the
-    window, or None when that window's bars were incomplete."""
+    """One EPISODE -- the representative decision per `pump_event_id` -- after
+    SQL-side outcome qualification, identity resolution and bar aggregation.
+    `outcome_qualified` is True only when the representative decision has its
+    OWN complete, same-venue 60m outcome (`short_return_pct` is then non-None);
+    False means no qualifying outcome (a counted coverage step, never a
+    negative). `match_count` is the number of distinct native market ids the
+    decision's (exchange, base) resolved to in the point-in-time snapshot: 0 =
+    identity unresolved, 1 = resolved, >1 = ambiguous (fail closed -- both
+    non-1 cases are coverage loss, never a negative outcome). `bars_10m/5m/20m`
+    count the complete (trades_complete) AND already-received bars found in
+    each pre-decision window; a window is usable only when its full bar count
+    is present. Imbalance sums are the summed per-bar `(sell-buy)/(sell+buy)`
+    over those bars, or None when that window's bars were incomplete or the
+    episode never reached bar aggregation."""
 
     decision_id: str
+    pump_event_id: str
     base: str
     exchange: str
     ts: datetime
-    short_return_pct: float
+    outcome_qualified: bool
+    short_return_pct: float | None
     mfe_pct: float | None
     mae_pct: float | None
     match_count: int
@@ -187,9 +193,11 @@ class CoverageFunnelStep:
 @dataclass(frozen=True)
 class ExchangeCoverage:
     exchange: str
-    resolved_cohort_decisions: int
+    episodes: int
+    with_complete_outcome: int
     identity_resolved: int
     measured_episodes: int
+    no_complete_outcome: int
     unresolved_identity: int
     ambiguous_identity: int
     missing_or_incomplete_bars: int
@@ -205,21 +213,33 @@ class CoverageResult:
 _FULL_BAR_COUNT = {5: 5, 10: 10, 20: 20}
 
 
+def _has_complete_outcome(r: ResolvedDecisionRow) -> bool:
+    return r.outcome_qualified and r.short_return_pct is not None
+
+
+def _identity_resolved(r: ResolvedDecisionRow) -> bool:
+    return r.match_count == 1 and r.native_market_id is not None
+
+
+def _bars_complete(r: ResolvedDecisionRow) -> bool:
+    return r.bars_10m == _FULL_BAR_COUNT[10] and r.imbalance_10m is not None
+
+
 def build_coverage(rows: tuple[ResolvedDecisionRow, ...]) -> CoverageResult:
-    """Pure decisions -> measured-episode funnel, so the coverage/fail-closed
-    rules are unit-testable without a database. A decision becomes a measured
-    episode only when its identity resolved to exactly one native market AND
-    its full ten-bar pre-window is complete. Every drop is an explicit,
-    counted coverage step (never a silent WHERE-clause disappearance) and is
-    reported per exchange; an unresolved/ambiguous identity or a missing
-    ten-bar window is coverage loss, NOT a negative outcome."""
+    """Pure episodes -> measured-episode funnel, so the coverage/fail-closed
+    rules are unit-testable without a database. Each row is already one EPISODE
+    (the representative decision per pump_event_id). An episode becomes a
+    measured episode only when it has its own complete, same-venue 60m outcome
+    AND its identity resolved to exactly one native market AND its full ten-bar
+    pre-window is complete and was available at decision time. Every drop is an
+    explicit, counted coverage step (never a silent WHERE-clause disappearance)
+    and is reported per exchange; a missing/incomplete outcome, an
+    unresolved/ambiguous identity, or a missing/unavailable ten-bar window is
+    coverage loss, NOT a negative outcome."""
     all_rows = list(rows)
-    identity_resolved = [r for r in all_rows if r.match_count == 1 and r.native_market_id]
-    bars_complete = [
-        r
-        for r in identity_resolved
-        if r.bars_10m == _FULL_BAR_COUNT[10] and r.imbalance_10m is not None
-    ]
+    with_outcome = [r for r in all_rows if _has_complete_outcome(r)]
+    identity_resolved = [r for r in with_outcome if _identity_resolved(r)]
+    bars_complete = [r for r in identity_resolved if _bars_complete(r)]
 
     measured = tuple(
         MeasuredEpisode(
@@ -230,8 +250,8 @@ def build_coverage(rows: tuple[ResolvedDecisionRow, ...]) -> CoverageResult:
             taker_imbalance_10m=r.imbalance_10m,  # type: ignore[arg-type]
             taker_imbalance_5m=(r.imbalance_5m if r.bars_5m == _FULL_BAR_COUNT[5] else None),
             taker_imbalance_20m=(r.imbalance_20m if r.bars_20m == _FULL_BAR_COUNT[20] else None),
-            gross_short_return_pct=r.short_return_pct,
-            net_short_return_pct=net_short_return_pct(r.short_return_pct),
+            gross_short_return_pct=r.short_return_pct,  # type: ignore[arg-type]
+            net_short_return_pct=net_short_return_pct(r.short_return_pct),  # type: ignore[arg-type]
             mfe_pct=r.mfe_pct,
             mae_pct=r.mae_pct,
         )
@@ -239,39 +259,47 @@ def build_coverage(rows: tuple[ResolvedDecisionRow, ...]) -> CoverageResult:
     )
 
     funnel = (
-        CoverageFunnelStep(1, "cohort_decisions_with_resolved_60m_outcome", len(all_rows), 0, None),
+        CoverageFunnelStep(1, "episodes", len(all_rows), 0, None),
         CoverageFunnelStep(
             2,
-            "identity_resolved_to_single_native_market",
-            len(identity_resolved),
-            len(all_rows) - len(identity_resolved),
-            "unresolved_or_ambiguous_identity",
+            "with_complete_same_venue_60m_outcome",
+            len(with_outcome),
+            len(all_rows) - len(with_outcome),
+            "no_complete_same_venue_outcome",
         ),
         CoverageFunnelStep(
             3,
-            "complete_ten_bar_pre_window",
+            "identity_resolved_to_single_native_market",
+            len(identity_resolved),
+            len(with_outcome) - len(identity_resolved),
+            "unresolved_or_ambiguous_identity",
+        ),
+        CoverageFunnelStep(
+            4,
+            "complete_available_ten_bar_pre_window",
             len(bars_complete),
             len(identity_resolved) - len(bars_complete),
-            "missing_or_incomplete_bars",
+            "missing_incomplete_or_unavailable_bars",
         ),
-        CoverageFunnelStep(4, "measured_episodes", len(measured), 0, None),
+        CoverageFunnelStep(5, "measured_episodes", len(measured), 0, None),
     )
 
     by_exchange: list[ExchangeCoverage] = []
     for exchange in sorted({r.exchange for r in all_rows}):
         scoped = [r for r in all_rows if r.exchange == exchange]
-        resolved = [r for r in scoped if r.match_count == 1 and r.native_market_id]
-        measured_here = [
-            r for r in resolved if r.bars_10m == _FULL_BAR_COUNT[10] and r.imbalance_10m is not None
-        ]
+        outcome_here = [r for r in scoped if _has_complete_outcome(r)]
+        resolved = [r for r in outcome_here if _identity_resolved(r)]
+        measured_here = [r for r in resolved if _bars_complete(r)]
         by_exchange.append(
             ExchangeCoverage(
                 exchange=exchange,
-                resolved_cohort_decisions=len(scoped),
+                episodes=len(scoped),
+                with_complete_outcome=len(outcome_here),
                 identity_resolved=len(resolved),
                 measured_episodes=len(measured_here),
-                unresolved_identity=sum(1 for r in scoped if r.match_count == 0),
-                ambiguous_identity=sum(1 for r in scoped if r.match_count > 1),
+                no_complete_outcome=len(scoped) - len(outcome_here),
+                unresolved_identity=sum(1 for r in outcome_here if r.match_count == 0),
+                ambiguous_identity=sum(1 for r in outcome_here if r.match_count > 1),
                 missing_or_incomplete_bars=len(resolved) - len(measured_here),
             )
         )

@@ -103,23 +103,29 @@ def _row(
     bars_10m: int,
     native: str | None = "BTCUSDT",
     imbalance_10m: float | None = 1.0,
+    outcome_qualified: bool = True,
+    pump_event_id: str | None = None,
 ) -> ResolvedDecisionRow:
     return ResolvedDecisionRow(
         decision_id=decision_id,
+        pump_event_id=pump_event_id or f"pe-{decision_id}",
         base="BTC",
         exchange=exchange,
         ts=_TS,
-        short_return_pct=1.0,
-        mfe_pct=2.0,
-        mae_pct=-1.0,
+        outcome_qualified=outcome_qualified,
+        short_return_pct=1.0 if outcome_qualified else None,
+        mfe_pct=2.0 if outcome_qualified else None,
+        mae_pct=-1.0 if outcome_qualified else None,
         match_count=match_count,
         native_market_id=native if match_count == 1 else None,
         market_type="linear" if match_count == 1 else None,
         bars_10m=bars_10m,
         bars_5m=min(bars_10m, 5),
         bars_20m=bars_10m,
-        imbalance_10m=imbalance_10m if match_count == 1 and bars_10m == 10 else None,
-        imbalance_5m=0.5 if match_count == 1 and bars_10m >= 5 else None,
+        imbalance_10m=(
+            imbalance_10m if outcome_qualified and match_count == 1 and bars_10m == 10 else None
+        ),
+        imbalance_5m=0.5 if outcome_qualified and match_count == 1 and bars_10m >= 5 else None,
         imbalance_20m=None,
     )
 
@@ -127,6 +133,7 @@ def _row(
 def test_build_coverage_classifies_each_failure_mode_as_coverage_not_negative() -> None:
     rows = (
         _row("measured", exchange="bybit", match_count=1, bars_10m=10),
+        _row("no_outcome", exchange="bybit", match_count=1, bars_10m=10, outcome_qualified=False),
         _row("unresolved", exchange="bybit", match_count=0, bars_10m=0),
         _row("ambiguous", exchange="bybit", match_count=2, bars_10m=0),
         _row("missing_bars", exchange="binance", match_count=1, bars_10m=7),
@@ -135,23 +142,34 @@ def test_build_coverage_classifies_each_failure_mode_as_coverage_not_negative() 
 
     assert {e.decision_id for e in result.measured} == {"measured"}
     by_exchange = {c.exchange: c for c in result.by_exchange}
+    # An episode with no complete same-venue 60m outcome is coverage loss, not a
+    # measured episode and never a negative (Rule 6 review finding 3). It is also
+    # excluded from identity/ambiguity counts, which are scoped to episodes that
+    # already cleared the outcome step.
+    assert by_exchange["bybit"].no_complete_outcome == 1
     assert by_exchange["bybit"].unresolved_identity == 1
     assert by_exchange["bybit"].ambiguous_identity == 1
     assert by_exchange["bybit"].measured_episodes == 1
     assert by_exchange["binance"].missing_or_incomplete_bars == 1
     assert by_exchange["binance"].measured_episodes == 0
-    # Coverage-lost decisions never appear as measured episodes (never a
+    # Coverage-lost episodes never appear as measured episodes (never a
     # negative outcome).
     assert result.funnel[-1].label == "measured_episodes"
     assert result.funnel[-1].remaining == 1
+    outcome_step = next(
+        s for s in result.funnel if s.label == "with_complete_same_venue_60m_outcome"
+    )
+    assert outcome_step.excluded == 1
 
 
 def test_missing_context_window_is_dropped_only_from_that_context() -> None:
     row = ResolvedDecisionRow(
         decision_id="d",
+        pump_event_id="pe-d",
         base="BTC",
         exchange="bybit",
         ts=_TS,
+        outcome_qualified=True,
         short_return_pct=1.0,
         mfe_pct=None,
         mae_pct=None,

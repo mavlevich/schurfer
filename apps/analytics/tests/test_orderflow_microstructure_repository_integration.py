@@ -1,13 +1,14 @@
-"""Real-Postgres coverage for the HYP-024 identity resolution and taker-
-imbalance aggregation.
+"""Real-Postgres coverage for the HYP-024 identity resolution, outcome
+qualification, and taker-imbalance aggregation.
 
-A mocked SQL result cannot prove that the point-in-time snapshot selection,
-the base -> native-market resolution, the bars primary-key join, the
-capture-version pin, and the ten/five/twenty-minute pre-decision windows are
-all scoped together, so this regression test exercises the migrated schema
-directly. It skips when no local Postgres is reachable (unless
-REQUIRE_INTEGRATION_DB=1), matching the other repository integration tests in
-this package.
+A mocked SQL result cannot prove that the episode dedup, the point-in-time
+snapshot selection, the base -> native-market resolution, the bars primary-key
+join, the capture-version pin, the complete-same-venue outcome filter, the
+outcome-straddle guard, the pre-decision availability rule, and the
+ten/five/twenty-minute windows are all scoped together, so this regression test
+exercises the migrated schema directly. It skips when no local Postgres is
+reachable (unless REQUIRE_INTEGRATION_DB=1), matching the other repository
+integration tests in this package.
 """
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_en
 TEST_DATABASE_URL = "postgresql+psycopg://schurfer:schurfer_dev@localhost:5432/schurfer"
 
 _DECISION_BUCKET = datetime(2026, 8, 15, 12, 0, tzinfo=UTC)
+_DECISION_TS = _DECISION_BUCKET + timedelta(seconds=5)
 _COHORT_START = datetime(2026, 8, 10, tzinfo=UTC)
 _COHORT_END = HELD_OUT_START
 
@@ -56,27 +58,43 @@ _INSERT_INSTRUMENT = text("""
     )
 """)
 
+_INSERT_PUMP_EVENT = text("""
+    INSERT INTO app.pump_events
+        (base, episode, miss_count, first_seen_at, last_seen_at,
+         peak_pct, last_pct, exchanges)
+    VALUES (:base, 1, 0, :ts, :ts, 50, 40, '[]'::jsonb)
+    RETURNING id
+""")
+
 _INSERT_DECISION = text("""
     INSERT INTO app.trade_decisions (
-        ts, base, exchange, action, reason, decision_id, strategy_version, created_at
+        ts, base, exchange, action, reason, decision_id, pump_event_id,
+        strategy_version, created_at
     ) VALUES (
-        :ts, :base, :exchange, 'opened', 'integration test',
-        :decision_id, 'pump_short_v1_market_quality', :ts
+        :ts, :base, :exchange, :action, 'integration test',
+        :decision_id, :pump_event_id, 'pump_short_v1_market_quality', :ts
     )
 """)
 
+# status and source/anchor exchange are parameterised so a test can seed a
+# 'partial' or a cross-exchange (source != anchor) outcome and prove it does
+# NOT qualify.
 _INSERT_OUTCOME = text("""
     INSERT INTO app.trade_decision_outcomes (
         decision_id, horizon_minutes, resolver_version, timeframe_minutes,
         short_return_pct, mfe_pct, mae_pct, bars_count, expected_bars,
-        status, resolved_at
+        status, anchor_exchange, source_exchange, resolved_at
     ) VALUES (
         :decision_id, 60, 'forward_v1', 1,
         :short_return_pct, :mfe_pct, :mae_pct, 60, 60,
-        'complete', :resolved_at
+        :status, :anchor_exchange, :source_exchange, :resolved_at
     )
 """)
 
+# complete flags are parameterised so a test can seed a legitimately incomplete
+# bar (complete=false) without violating the migration CHECK
+# (NOT complete OR (ticker_complete AND trades_complete)); last_trade_received_at
+# is explicit so the availability rule can be exercised in both directions.
 _INSERT_BAR = text("""
     INSERT INTO timeseries.bybit_momentum_bars_1m (
         exchange, market_type, symbol, capture_version, bucket_start,
@@ -85,6 +103,7 @@ _INSERT_BAR = text("""
         buy_hist_counts, buy_hist_notional, sell_hist_counts, sell_hist_notional,
         buy_max_10s_notional_usd, sell_max_10s_notional_usd,
         open_interest, open_interest_value,
+        last_trade_received_at,
         ticker_complete, trades_complete, complete,
         price_complete, open_interest_complete, payload_hash
     ) VALUES (
@@ -94,7 +113,8 @@ _INSERT_BAR = text("""
         '{}', '{}', '{}', '{}',
         5.0, 5.0,
         100000.0, 100000.0,
-        true, :trades_complete, true,
+        :last_trade_received_at,
+        :ticker_complete, :trades_complete, :complete,
         true, true, decode(repeat('ab', 32), 'hex')
     )
 """)
@@ -139,6 +159,9 @@ async def _cleanup(connection: AsyncConnection, *, exchange: str) -> None:
         text("DELETE FROM app.momentum_universe_snapshots WHERE exchange = :exchange"),
         {"exchange": exchange},
     )
+    await connection.execute(
+        text("DELETE FROM app.pump_events WHERE base LIKE 'OF%' OR base = 'AMBIG'"),
+    )
 
 
 async def _seed_snapshot_and_instruments(
@@ -175,18 +198,35 @@ async def _seed_snapshot_and_instruments(
         )
 
 
+async def _seed_pump_event(connection: AsyncConnection, *, base: str, ts: datetime) -> int:
+    result = await connection.execute(_INSERT_PUMP_EVENT, {"base": base, "ts": ts})
+    return int(result.scalar_one())
+
+
 async def _seed_decision_with_outcome(
     connection: AsyncConnection,
     *,
     exchange: str,
     base: str,
     decision_id: str,
+    pump_event_id: int,
     ts: datetime,
     short_return_pct: float,
+    action: str = "opened",
+    status: str = "complete",
+    anchor_exchange: str | None = None,
+    source_exchange: str | None = None,
 ) -> None:
     await connection.execute(
         _INSERT_DECISION,
-        {"ts": ts, "base": base, "exchange": exchange, "decision_id": decision_id},
+        {
+            "ts": ts,
+            "base": base,
+            "exchange": exchange,
+            "decision_id": decision_id,
+            "pump_event_id": pump_event_id,
+            "action": action,
+        },
     )
     await connection.execute(
         _INSERT_OUTCOME,
@@ -195,9 +235,43 @@ async def _seed_decision_with_outcome(
             "short_return_pct": short_return_pct,
             "mfe_pct": 2.5,
             "mae_pct": -1.5,
+            "status": status,
+            "anchor_exchange": anchor_exchange if anchor_exchange is not None else exchange,
+            "source_exchange": source_exchange if source_exchange is not None else exchange,
             "resolved_at": ts + timedelta(hours=2),
         },
     )
+
+
+def _bar_row(
+    *,
+    exchange: str,
+    symbol: str,
+    universe_version: str,
+    capture_version: str,
+    bucket_start: datetime,
+    buy_notional: float,
+    sell_notional: float,
+    trades_complete: bool = True,
+    received_at: datetime | None = None,
+) -> dict[str, object]:
+    return {
+        "exchange": exchange,
+        "symbol": symbol,
+        "capture_version": capture_version,
+        "bucket_start": bucket_start,
+        "universe_version": universe_version,
+        "buy_notional": buy_notional,
+        "sell_notional": sell_notional,
+        "ticker_complete": True,
+        "trades_complete": trades_complete,
+        "complete": trades_complete,
+        # Default: received within the bar's own minute, so it is available for
+        # any decision at or after the following minute boundary.
+        "last_trade_received_at": (
+            received_at if received_at is not None else bucket_start + timedelta(seconds=59)
+        ),
+    }
 
 
 async def _seed_bars(
@@ -212,16 +286,15 @@ async def _seed_bars(
     sell_notional: float,
 ) -> None:
     bars = [
-        {
-            "exchange": exchange,
-            "symbol": symbol,
-            "capture_version": capture_version,
-            "bucket_start": _DECISION_BUCKET - timedelta(minutes=count - i),
-            "universe_version": universe_version,
-            "buy_notional": buy_notional,
-            "sell_notional": sell_notional,
-            "trades_complete": True,
-        }
+        _bar_row(
+            exchange=exchange,
+            symbol=symbol,
+            universe_version=universe_version,
+            capture_version=capture_version,
+            bucket_start=_DECISION_BUCKET - timedelta(minutes=count - i),
+            buy_notional=buy_notional,
+            sell_notional=sell_notional,
+        )
         for i in range(count)
     ]
     await connection.execute(_INSERT_BAR, bars)
@@ -244,12 +317,14 @@ async def test_resolves_identity_and_sums_taker_imbalance_over_the_pre_window() 
                 native_market_ids=[native],
                 base="OFTEST",
             )
+            pump_event_id = await _seed_pump_event(connection, base="OFTEST", ts=_DECISION_TS)
             await _seed_decision_with_outcome(
                 connection,
                 exchange=exchange,
                 base="OFTEST",
                 decision_id=decision_id,
-                ts=_DECISION_BUCKET + timedelta(seconds=5),
+                pump_event_id=pump_event_id,
+                ts=_DECISION_TS,
                 short_return_pct=3.5,
             )
             # 20 complete bars, each (sell - buy)/(sell + buy) = (75-25)/100 = 0.5.
@@ -263,37 +338,48 @@ async def test_resolves_identity_and_sums_taker_imbalance_over_the_pre_window() 
                 buy_notional=25.0,
                 sell_notional=75.0,
             )
-            # Noise rows that any missing predicate would wrongly include.
-            noise_bar = {
-                "exchange": exchange,
-                "symbol": native,
-                "capture_version": "wrong_capture",
-                "bucket_start": _DECISION_BUCKET - timedelta(minutes=1),
-                "universe_version": universe_version,
-                "buy_notional": 999999.0,
-                "sell_notional": 0.0,
-                "trades_complete": True,
-            }
-            await connection.execute(_INSERT_BAR, noise_bar)
-            # An incomplete bar inside the window must not be counted.
-            incomplete_bar = dict(noise_bar, capture_version="v1", trades_complete=False)
-            await connection.execute(_INSERT_BAR, incomplete_bar)
-            # The decision-minute bar itself is not "before" the decision.
-            on_minute_bar = dict(noise_bar, capture_version="v1", bucket_start=_DECISION_BUCKET)
-            await connection.execute(_INSERT_BAR, on_minute_bar)
+            # Noise rows at DISTINCT primary keys that any missing predicate
+            # would wrongly include. A wrong capture_version (distinct PK) and
+            # an on-minute bar (bucket_start = decision minute, distinct PK)
+            # must both be excluded.
+            await connection.execute(
+                _INSERT_BAR,
+                _bar_row(
+                    exchange=exchange,
+                    symbol=native,
+                    universe_version=universe_version,
+                    capture_version="wrong_capture",
+                    bucket_start=_DECISION_BUCKET - timedelta(minutes=1),
+                    buy_notional=999999.0,
+                    sell_notional=0.0,
+                ),
+            )
+            await connection.execute(
+                _INSERT_BAR,
+                _bar_row(
+                    exchange=exchange,
+                    symbol=native,
+                    universe_version=universe_version,
+                    capture_version="v1",
+                    bucket_start=_DECISION_BUCKET,
+                    buy_notional=999999.0,
+                    sell_notional=0.0,
+                ),
+            )
 
         repository = OrderflowMicrostructureRepository(engine)
         _, rows = await repository.fetch(cohort_start=_COHORT_START, cohort_end=_COHORT_END)
         mine = [r for r in rows if r.decision_id == decision_id]
         assert len(mine) == 1
         row = mine[0]
+        assert row.outcome_qualified is True
         assert row.match_count == 1
         assert row.native_market_id == native
         assert row.market_type == "linear"
         assert row.bars_10m == 10
         assert row.bars_5m == 5
         assert row.bars_20m == 20
-        # incomplete + on-minute + wrong-capture rows all excluded.
+        # wrong-capture + on-minute rows excluded.
         assert row.imbalance_10m == pytest.approx(0.5 * 10)
         assert row.imbalance_5m == pytest.approx(0.5 * 5)
         assert row.imbalance_20m == pytest.approx(0.5 * 20)
@@ -301,6 +387,277 @@ async def test_resolves_identity_and_sums_taker_imbalance_over_the_pre_window() 
         coverage = build_coverage(tuple(mine))
         assert len(coverage.measured) == 1
         assert coverage.measured[0].taker_imbalance_10m == pytest.approx(5.0)
+    finally:
+        async with engine.begin() as connection:
+            await _cleanup(connection, exchange=exchange)
+        await engine.dispose()
+
+
+async def test_two_decisions_of_one_pump_are_a_single_episode() -> None:
+    # Review finding 1: counting raw decisions double-counts an episode. The
+    # representative (opened-first, then earliest ts) is the only row.
+    engine = await _connect_or_skip()
+    exchange = f"test_of_{uuid.uuid4().hex[:8]}"
+    native = "OFDUPUSDT"
+    universe_version = f"uni-{uuid.uuid4().hex[:8]}"
+    catalog_version = f"cat-{uuid.uuid4().hex[:8]}"
+    first_id = str(uuid.uuid4())
+    second_id = str(uuid.uuid4())
+    try:
+        async with engine.begin() as connection:
+            await _seed_snapshot_and_instruments(
+                connection,
+                exchange=exchange,
+                universe_version=universe_version,
+                catalog_version=catalog_version,
+                native_market_ids=[native],
+                base="OFDUP",
+            )
+            pump_event_id = await _seed_pump_event(connection, base="OFDUP", ts=_DECISION_TS)
+            # Two decisions of the SAME pump. Earliest ts is the representative.
+            await _seed_decision_with_outcome(
+                connection,
+                exchange=exchange,
+                base="OFDUP",
+                decision_id=first_id,
+                pump_event_id=pump_event_id,
+                ts=_DECISION_TS,
+                short_return_pct=3.5,
+            )
+            await _seed_decision_with_outcome(
+                connection,
+                exchange=exchange,
+                base="OFDUP",
+                decision_id=second_id,
+                pump_event_id=pump_event_id,
+                ts=_DECISION_TS + timedelta(seconds=20),
+                short_return_pct=9.9,
+            )
+            await _seed_bars(
+                connection,
+                exchange=exchange,
+                symbol=native,
+                universe_version=universe_version,
+                capture_version="v1",
+                count=20,
+                buy_notional=25.0,
+                sell_notional=75.0,
+            )
+        repository = OrderflowMicrostructureRepository(engine)
+        _, rows = await repository.fetch(cohort_start=_COHORT_START, cohort_end=_COHORT_END)
+        mine = [r for r in rows if r.decision_id in {first_id, second_id}]
+        assert len(mine) == 1
+        assert mine[0].decision_id == first_id
+    finally:
+        async with engine.begin() as connection:
+            await _cleanup(connection, exchange=exchange)
+        await engine.dispose()
+
+
+async def test_outcome_straddling_the_held_out_boundary_is_excluded() -> None:
+    # Review finding 2: a decision whose own 60m outcome window ends inside the
+    # held-out period must not enter the discovery pass. ts + 60m > cohort_end.
+    engine = await _connect_or_skip()
+    exchange = f"test_of_{uuid.uuid4().hex[:8]}"
+    native = "OFSTRUSDT"
+    universe_version = f"uni-{uuid.uuid4().hex[:8]}"
+    catalog_version = f"cat-{uuid.uuid4().hex[:8]}"
+    decision_id = str(uuid.uuid4())
+    straddle_ts = HELD_OUT_START - timedelta(minutes=30)
+    try:
+        async with engine.begin() as connection:
+            await _seed_snapshot_and_instruments(
+                connection,
+                exchange=exchange,
+                universe_version=universe_version,
+                catalog_version=catalog_version,
+                native_market_ids=[native],
+                base="OFSTR",
+            )
+            pump_event_id = await _seed_pump_event(connection, base="OFSTR", ts=straddle_ts)
+            await _seed_decision_with_outcome(
+                connection,
+                exchange=exchange,
+                base="OFSTR",
+                decision_id=decision_id,
+                pump_event_id=pump_event_id,
+                ts=straddle_ts,
+                short_return_pct=3.5,
+            )
+        repository = OrderflowMicrostructureRepository(engine)
+        _, rows = await repository.fetch(cohort_start=_COHORT_START, cohort_end=_COHORT_END)
+        assert [r for r in rows if r.decision_id == decision_id] == []
+    finally:
+        async with engine.begin() as connection:
+            await _cleanup(connection, exchange=exchange)
+        await engine.dispose()
+
+
+async def test_partial_outcome_does_not_qualify() -> None:
+    # Review finding 3: a non-complete outcome (or a cross-exchange fallback)
+    # must be coverage loss, not a measured episode.
+    engine = await _connect_or_skip()
+    exchange = f"test_of_{uuid.uuid4().hex[:8]}"
+    native = "OFPARUSDT"
+    universe_version = f"uni-{uuid.uuid4().hex[:8]}"
+    catalog_version = f"cat-{uuid.uuid4().hex[:8]}"
+    decision_id = str(uuid.uuid4())
+    try:
+        async with engine.begin() as connection:
+            await _seed_snapshot_and_instruments(
+                connection,
+                exchange=exchange,
+                universe_version=universe_version,
+                catalog_version=catalog_version,
+                native_market_ids=[native],
+                base="OFPAR",
+            )
+            pump_event_id = await _seed_pump_event(connection, base="OFPAR", ts=_DECISION_TS)
+            await _seed_decision_with_outcome(
+                connection,
+                exchange=exchange,
+                base="OFPAR",
+                decision_id=decision_id,
+                pump_event_id=pump_event_id,
+                ts=_DECISION_TS,
+                short_return_pct=3.5,
+                status="partial",
+            )
+            await _seed_bars(
+                connection,
+                exchange=exchange,
+                symbol=native,
+                universe_version=universe_version,
+                capture_version="v1",
+                count=20,
+                buy_notional=25.0,
+                sell_notional=75.0,
+            )
+        repository = OrderflowMicrostructureRepository(engine)
+        _, rows = await repository.fetch(cohort_start=_COHORT_START, cohort_end=_COHORT_END)
+        mine = [r for r in rows if r.decision_id == decision_id]
+        assert len(mine) == 1
+        assert mine[0].outcome_qualified is False
+        assert mine[0].short_return_pct is None
+        assert build_coverage(tuple(mine)).measured == ()
+    finally:
+        async with engine.begin() as connection:
+            await _cleanup(connection, exchange=exchange)
+        await engine.dispose()
+
+
+async def test_bar_received_after_decision_is_not_available() -> None:
+    # Review finding 4: a closed minute whose data arrived after the decision
+    # is look-ahead and must be excluded, so its window is short of ten bars.
+    engine = await _connect_or_skip()
+    exchange = f"test_of_{uuid.uuid4().hex[:8]}"
+    native = "OFLAGUSDT"
+    universe_version = f"uni-{uuid.uuid4().hex[:8]}"
+    catalog_version = f"cat-{uuid.uuid4().hex[:8]}"
+    decision_id = str(uuid.uuid4())
+    try:
+        async with engine.begin() as connection:
+            await _seed_snapshot_and_instruments(
+                connection,
+                exchange=exchange,
+                universe_version=universe_version,
+                catalog_version=catalog_version,
+                native_market_ids=[native],
+                base="OFLAG",
+            )
+            pump_event_id = await _seed_pump_event(connection, base="OFLAG", ts=_DECISION_TS)
+            await _seed_decision_with_outcome(
+                connection,
+                exchange=exchange,
+                base="OFLAG",
+                decision_id=decision_id,
+                pump_event_id=pump_event_id,
+                ts=_DECISION_TS,
+                short_return_pct=3.5,
+            )
+            # Ten in-window bars, but the most recent one's last trade was
+            # received AFTER the decision (12:00:40 > 12:00:05).
+            bars = [
+                _bar_row(
+                    exchange=exchange,
+                    symbol=native,
+                    universe_version=universe_version,
+                    capture_version="v1",
+                    bucket_start=_DECISION_BUCKET - timedelta(minutes=10 - i),
+                    buy_notional=25.0,
+                    sell_notional=75.0,
+                    received_at=(
+                        _DECISION_BUCKET + timedelta(seconds=40)
+                        if i == 9
+                        else _DECISION_BUCKET - timedelta(minutes=10 - i) + timedelta(seconds=59)
+                    ),
+                )
+                for i in range(10)
+            ]
+            await connection.execute(_INSERT_BAR, bars)
+        repository = OrderflowMicrostructureRepository(engine)
+        _, rows = await repository.fetch(cohort_start=_COHORT_START, cohort_end=_COHORT_END)
+        mine = [r for r in rows if r.decision_id == decision_id]
+        assert len(mine) == 1
+        assert mine[0].bars_10m == 9
+        assert build_coverage(tuple(mine)).measured == ()
+    finally:
+        async with engine.begin() as connection:
+            await _cleanup(connection, exchange=exchange)
+        await engine.dispose()
+
+
+async def test_incomplete_bar_is_excluded() -> None:
+    # Review finding 6 (correctness): an incomplete bar (complete=false) inside
+    # the window is dropped, so the window is short of ten bars. The fixture
+    # must respect the migration CHECK: complete=false when trades_complete is
+    # false.
+    engine = await _connect_or_skip()
+    exchange = f"test_of_{uuid.uuid4().hex[:8]}"
+    native = "OFINCUSDT"
+    universe_version = f"uni-{uuid.uuid4().hex[:8]}"
+    catalog_version = f"cat-{uuid.uuid4().hex[:8]}"
+    decision_id = str(uuid.uuid4())
+    try:
+        async with engine.begin() as connection:
+            await _seed_snapshot_and_instruments(
+                connection,
+                exchange=exchange,
+                universe_version=universe_version,
+                catalog_version=catalog_version,
+                native_market_ids=[native],
+                base="OFINC",
+            )
+            pump_event_id = await _seed_pump_event(connection, base="OFINC", ts=_DECISION_TS)
+            await _seed_decision_with_outcome(
+                connection,
+                exchange=exchange,
+                base="OFINC",
+                decision_id=decision_id,
+                pump_event_id=pump_event_id,
+                ts=_DECISION_TS,
+                short_return_pct=3.5,
+            )
+            bars = [
+                _bar_row(
+                    exchange=exchange,
+                    symbol=native,
+                    universe_version=universe_version,
+                    capture_version="v1",
+                    bucket_start=_DECISION_BUCKET - timedelta(minutes=10 - i),
+                    buy_notional=25.0,
+                    sell_notional=75.0,
+                    trades_complete=(i != 9),
+                )
+                for i in range(10)
+            ]
+            await connection.execute(_INSERT_BAR, bars)
+        repository = OrderflowMicrostructureRepository(engine)
+        _, rows = await repository.fetch(cohort_start=_COHORT_START, cohort_end=_COHORT_END)
+        mine = [r for r in rows if r.decision_id == decision_id]
+        assert len(mine) == 1
+        assert mine[0].bars_10m == 9
+        assert build_coverage(tuple(mine)).measured == ()
     finally:
         async with engine.begin() as connection:
             await _cleanup(connection, exchange=exchange)
@@ -324,12 +681,14 @@ async def test_ambiguous_identity_is_coverage_loss_not_a_negative() -> None:
                 native_market_ids=["AMBIGUSDT", "AMBIGUSDC"],
                 base="AMBIG",
             )
+            pump_event_id = await _seed_pump_event(connection, base="AMBIG", ts=_DECISION_TS)
             await _seed_decision_with_outcome(
                 connection,
                 exchange=exchange,
                 base="AMBIG",
                 decision_id=decision_id,
-                ts=_DECISION_BUCKET + timedelta(seconds=5),
+                pump_event_id=pump_event_id,
+                ts=_DECISION_TS,
                 short_return_pct=3.5,
             )
         repository = OrderflowMicrostructureRepository(engine)

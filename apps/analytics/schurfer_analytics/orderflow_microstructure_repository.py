@@ -1,18 +1,44 @@
 """Repeatable-read, read-only repository for the HYP-024 order-flow report.
 
 Everything runs inside a single REPEATABLE READ, read-only transaction so the
-whole read -- the `SELECT now()` snapshot timestamp, every cohort decision,
-its point-in-time identity resolution, and its aggregated pre-decision taker
+whole read -- the `SELECT now()` snapshot timestamp, every episode, its
+point-in-time identity resolution, and its aggregated pre-decision taker
 imbalance -- comes from one consistent Postgres snapshot. The snapshot
 timestamp is the transaction's FIRST statement (the database's own clock, not
 the report process's), matching every other formal report in this package.
 
+The unit of observation is the EPISODE, not the raw decision. A pump can carry
+several decisions, and counting them all would double-count one episode and
+skew both the evidence volume and the quintiles. We take the single
+representative decision per `pump_event_id` using the shared rule expressed in
+`episode_selection.py` (opened-first, then earliest `ts`), then join THAT
+decision's own outcome. An episode whose representative has no qualifying
+outcome is a counted coverage-loss step, never a silent drop.
+
+Only a COMPLETE, same-venue 60-minute outcome qualifies. `short_return_pct IS
+NOT NULL` alone is insufficient: it admits `partial` outcomes and the
+`complete_fallback*` substitutions that resolve the return off a DIFFERENT
+exchange. We require `status = ANY(EXACT_OUTCOME_STATUSES)` (i.e. 'complete')
+and `source_exchange IS NOT DISTINCT FROM anchor_exchange` so no cross-exchange
+substitution slips in.
+
+No outcome may straddle the held-out boundary. The cohort keeps a decision
+only when its OWN 60-minute outcome window ends at or before `cohort_end`
+(`ts + horizon <= cohort_end`); a decision late enough that its hour reaches
+into the held-out window is excluded, so the discovery pass never reads an
+outcome from the held-out period.
+
+No look-ahead in the feature. A closed 1-minute bucket does not prove its data
+was available at decision time: a bar can carry a trade whose receive time is
+after the decision. A pre-decision bar counts ONLY when its trade data was
+received strictly before the decision (`last_trade_received_at < ts`, and not
+NULL). This is the frozen availability policy for this study; unconfirmed data
+is not evidence of a tradable signal.
+
 SQL-SIDE AGGREGATION ONLY. The prod host is 4 GB and OOM-kills a report that
 pulls raw bars into Python. The ten/five/twenty-minute taker imbalance is
-summed per decision in SQL; this query returns exactly one row per cohort
-decision (thousands of rows), never the underlying bars (millions). No
-server-side cursor is needed because the result set is already one row per
-decision.
+summed per episode in SQL; this query returns exactly one row per episode
+(thousands of rows), never the underlying bars (millions).
 
 Identity resolution (the hard part). pump_short decisions carry `base` +
 `exchange`, never the momentum-bar native symbol, so a naive
@@ -56,6 +82,7 @@ from .orderflow_microstructure import (
     ResolvedDecisionRow,
 )
 from .outcome_repository import async_database_url
+from .outcomes import EXACT_OUTCOME_STATUSES
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -82,42 +109,68 @@ class HeldOutWindowError(ValueError):
 MOMENTUM_CAPTURE_VERSION = BYBIT_MOMENTUM_CAPTURE_VERSION
 
 
-# One row per cohort decision. The per-bar taker imbalance is
-# (sell - buy) / (sell + buy), summed over the complete (trades_complete) bars
-# strictly before the decision minute; a zero-taker-notional bar contributes 0
-# rather than dividing by zero. The pre-decision windows are anchored on
-# date_trunc('minute', ts) so only bars fully BEFORE the decision are read
-# (point in time). Identity is a LEFT JOIN LATERAL against the single
-# most-recent snapshot at or before ts; the bar aggregate LATERAL runs only
-# when identity resolved to exactly one native market.
+# One row per EPISODE (representative decision per pump_event_id). The per-bar
+# taker imbalance is (sell - buy) / (sell + buy), summed over the complete
+# (trades_complete) AND already-received bars strictly before the decision
+# minute; a zero-taker-notional bar contributes 0 rather than dividing by zero.
+# Pre-decision windows are anchored on date_trunc('minute', ts) so only bars
+# fully BEFORE the decision are read; the availability guard
+# (last_trade_received_at < ts) additionally drops any such bar whose data had
+# not yet arrived at decision time. Identity is a LEFT JOIN LATERAL against the
+# single most-recent snapshot at or before ts; the bar aggregate LATERAL runs
+# only when the episode has a qualifying outcome AND identity resolved to
+# exactly one native market.
 _RESOLVED_DECISIONS_SQL = text("""
-WITH cohort AS (
-    SELECT
+WITH episode_rep AS (
+    SELECT DISTINCT ON (d.pump_event_id)
         d.decision_id::text AS decision_id,
-        d.ts,
+        d.pump_event_id,
         d.base,
         d.exchange,
+        d.ts
+    FROM app.trade_decisions AS d
+    WHERE d.strategy_version = :strategy_version
+      AND d.decision_id IS NOT NULL
+      AND d.pump_event_id IS NOT NULL
+      AND d.ts >= :cohort_start
+      AND d.ts + make_interval(mins => :horizon_minutes) <= :cohort_end
+    ORDER BY d.pump_event_id, (left(d.action, 6) = 'opened') DESC, d.ts
+),
+with_outcome AS (
+    SELECT
+        e.decision_id,
+        e.pump_event_id,
+        e.base,
+        e.exchange,
+        e.ts,
+        (o.decision_id IS NOT NULL) AS outcome_qualified,
         o.short_return_pct::double precision AS short_return_pct,
         o.mfe_pct::double precision AS mfe_pct,
         o.mae_pct::double precision AS mae_pct
-    FROM app.trade_decisions AS d
-    JOIN app.trade_decision_outcomes AS o
-      ON o.decision_id = d.decision_id
+    FROM episode_rep AS e
+    LEFT JOIN app.trade_decision_outcomes AS o
+      ON o.decision_id = e.decision_id
      AND o.horizon_minutes = :horizon_minutes
      AND o.resolver_version = :resolver_version
-    WHERE d.strategy_version = :strategy_version
-      AND d.decision_id IS NOT NULL
-      AND d.ts >= :cohort_start
-      AND d.ts < :cohort_end
-      AND o.short_return_pct IS NOT NULL
+     AND o.status = ANY(:exact_outcome_statuses)
+     AND o.short_return_pct IS NOT NULL
+     AND o.source_exchange IS NOT DISTINCT FROM o.anchor_exchange
 ),
 resolved AS (
     SELECT
-        c.*,
+        w.decision_id,
+        w.pump_event_id,
+        w.base,
+        w.exchange,
+        w.ts,
+        w.outcome_qualified,
+        w.short_return_pct,
+        w.mfe_pct,
+        w.mae_pct,
         ident.match_count,
         ident.native_market_id,
         ident.market_type
-    FROM cohort AS c
+    FROM with_outcome AS w
     LEFT JOIN LATERAL (
         SELECT
             count(DISTINCT i.native_market_id) AS match_count,
@@ -127,23 +180,25 @@ resolved AS (
         JOIN LATERAL (
             SELECT s.universe_version, s.catalog_version
             FROM app.momentum_universe_snapshots AS s
-            WHERE s.exchange = c.exchange
-              AND s.captured_at <= c.ts
+            WHERE s.exchange = w.exchange
+              AND s.captured_at <= w.ts
             ORDER BY s.captured_at DESC, s.created_at DESC
             LIMIT 1
         ) AS snap
           ON snap.universe_version = i.universe_version
          AND snap.catalog_version = i.catalog_version
-        WHERE i.exchange = c.exchange
-          AND i.base = c.base
+        WHERE i.exchange = w.exchange
+          AND i.base = w.base
           AND i.identity_status = 'ready'
     ) AS ident ON TRUE
 )
 SELECT
     r.decision_id,
+    r.pump_event_id::text AS pump_event_id,
     r.ts,
     r.base,
     r.exchange,
+    r.outcome_qualified,
     r.short_return_pct,
     r.mfe_pct,
     r.mae_pct,
@@ -187,21 +242,26 @@ LEFT JOIN LATERAL (
           AND bar.symbol = r.native_market_id
           AND bar.capture_version = :capture_version
           AND bar.trades_complete
+          AND bar.last_trade_received_at IS NOT NULL
+          AND bar.last_trade_received_at < r.ts
           AND bar.bucket_start >= date_trunc('minute', r.ts) - interval '20 minutes'
           AND bar.bucket_start < date_trunc('minute', r.ts)
     ) AS b
-) AS bars ON r.match_count = 1 AND r.native_market_id IS NOT NULL
+) AS bars ON r.outcome_qualified AND r.match_count = 1 AND r.native_market_id IS NOT NULL
 ORDER BY r.exchange, r.ts, r.decision_id
 """)
 
 
 def _row(row: RowMapping) -> ResolvedDecisionRow:
+    short_return = row["short_return_pct"]
     return ResolvedDecisionRow(
         decision_id=str(row["decision_id"]),
+        pump_event_id=str(row["pump_event_id"]),
         base=str(row["base"]),
         exchange=str(row["exchange"]),
         ts=row["ts"],
-        short_return_pct=float(row["short_return_pct"]),
+        outcome_qualified=bool(row["outcome_qualified"]),
+        short_return_pct=float(short_return) if short_return is not None else None,
         mfe_pct=float(row["mfe_pct"]) if row["mfe_pct"] is not None else None,
         mae_pct=float(row["mae_pct"]) if row["mae_pct"] is not None else None,
         match_count=int(row["match_count"]),
@@ -236,11 +296,12 @@ class OrderflowMicrostructureRepository:
     async def fetch(
         self, *, cohort_start: datetime, cohort_end: datetime
     ) -> tuple[datetime, tuple[ResolvedDecisionRow, ...]]:
-        """Fetch the resolved-decision rows for one discovery window. Refuses
-        to read at or past the frozen held-out boundary -- this defensive
-        guard is redundant with the CLI's own check, but the repository is the
-        thing that actually touches held-out rows, so it fails closed here
-        too."""
+        """Fetch the per-episode rows for one discovery window. Refuses to read
+        at or past the frozen held-out boundary -- this defensive guard is
+        redundant with the CLI's own check, but the repository is the thing
+        that actually touches held-out rows, so it fails closed here too. The
+        straddle guard in the SQL further ensures no single episode's own 60m
+        outcome window reaches into the held-out period."""
         if cohort_end > HELD_OUT_START:
             raise HeldOutWindowError(
                 f"cohort_end={cohort_end.isoformat()} is past the held-out boundary "
@@ -262,6 +323,7 @@ class OrderflowMicrostructureRepository:
                                 "horizon_minutes": HORIZON_MINUTES,
                                 "resolver_version": RESOLVER_VERSION,
                                 "strategy_version": STRATEGY_VERSION,
+                                "exact_outcome_statuses": list(EXACT_OUTCOME_STATUSES),
                                 "cohort_start": cohort_start,
                                 "cohort_end": cohort_end,
                                 "capture_version": MOMENTUM_CAPTURE_VERSION,

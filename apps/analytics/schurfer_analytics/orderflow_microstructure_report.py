@@ -164,7 +164,11 @@ def build_report(
         generated_at=datetime.now(UTC),
         code_revision=normalize_code_revision(code_revision),
         working_tree_dirty=working_tree_dirty,
-        formal_run=not working_tree_dirty,
+        formal_run=(
+            not working_tree_dirty
+            and cohort_start == DISCOVERY_START
+            and cohort_end == HELD_OUT_START
+        ),
         db_snapshot_at=db_snapshot_at,
         cohort_start=cohort_start,
         cohort_end=cohort_end,
@@ -309,7 +313,7 @@ def render_markdown(report: OrderflowReport) -> str:
         ],
     )
 
-    lines += ["", "## Coverage funnel (decisions -> measured episodes)", ""]
+    lines += ["", "## Coverage funnel (episodes -> measured episodes)", ""]
     lines += _table(
         ("Step", "Label", "Remaining", "Excluded", "Reason"),
         [
@@ -326,19 +330,23 @@ def render_markdown(report: OrderflowReport) -> str:
     lines += _table(
         (
             "Exchange",
-            "Cohort decisions",
+            "Episodes",
+            "Complete outcome",
             "Identity resolved",
             "Measured",
+            "No complete outcome",
             "Unresolved identity",
             "Ambiguous identity",
-            "Missing/incomplete bars",
+            "Missing/unavailable bars",
         ),
         [
             (
                 c.exchange,
-                c.resolved_cohort_decisions,
+                c.episodes,
+                c.with_complete_outcome,
                 c.identity_resolved,
                 c.measured_episodes,
+                c.no_complete_outcome,
                 c.unresolved_identity,
                 c.ambiguous_identity,
                 c.missing_or_incomplete_bars,
@@ -351,8 +359,10 @@ def render_markdown(report: OrderflowReport) -> str:
         "",
         "## Primary metric -- registered ten-minute taker imbalance",
         "",
-        f"Total cohort decisions with a resolved 60m outcome: {report.total_cohort_decisions}. "
-        f"Measured episodes (identity resolved + complete ten-bar pre-window): "
+        f"Total episodes (representative decision per pump event): "
+        f"{report.total_cohort_decisions}. "
+        f"Measured episodes (complete same-venue 60m outcome + identity resolved + complete, "
+        f"available ten-bar pre-window): "
         f"{report.measured_episodes}.",
         "",
     ]

@@ -36,9 +36,11 @@ def _rows() -> tuple[ResolvedDecisionRow, ...]:
             rows.append(
                 ResolvedDecisionRow(
                     decision_id=f"d{running:05d}",
+                    pump_event_id=f"pe{running:05d}",
                     base=f"A{running % 40}",
                     exchange="bybit" if running % 2 == 0 else "binance",
                     ts=datetime(2026, 8, 12, tzinfo=UTC) + timedelta(minutes=running),
+                    outcome_qualified=True,
                     short_return_pct=base_net,
                     mfe_pct=1.0,
                     mae_pct=-1.0,
@@ -58,9 +60,11 @@ def _rows() -> tuple[ResolvedDecisionRow, ...]:
     rows.append(
         ResolvedDecisionRow(
             decision_id="unresolved",
+            pump_event_id="pe-unresolved",
             base="ZZZ",
             exchange="kraken",
             ts=datetime(2026, 8, 12, tzinfo=UTC),
+            outcome_qualified=True,
             short_return_pct=99.0,
             mfe_pct=None,
             mae_pct=None,
@@ -99,6 +103,23 @@ def test_build_report_produces_a_candidate_and_excludes_coverage_loss() -> None:
     kraken = next(c for c in report.coverage_by_exchange if c.exchange == "kraken")
     assert kraken.measured_episodes == 0
     assert kraken.unresolved_identity == 1
+
+
+def test_diagnostic_window_is_not_a_formal_run() -> None:
+    # A window that does not exactly match the registered contract window
+    # (2026-08-10 .. HELD_OUT_START) is a diagnostic run and must never be
+    # stamped formal, even on the very rows that otherwise reach a candidate
+    # (review finding 5).
+    report = build_report(
+        rows=_rows(),
+        db_snapshot_at=_DB_NOW,
+        cohort_start=_COHORT_START,
+        cohort_end=HELD_OUT_START - timedelta(days=5),
+        code_revision="abc123",
+        working_tree_dirty=False,
+    )
+    assert report.verdict.verdict == VERDICT_CANDIDATE
+    assert report.formal_run is False
 
 
 def test_context_windows_are_present_but_separate_from_the_primary() -> None:
