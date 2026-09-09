@@ -11,13 +11,14 @@ was computed.**
 > outcome may straddle a window boundary, and a feature counts only if it was
 > available when the decision was made.
 >
-> **Amended again 2026-09-09, still before any outcome was joined.** Rule 6 was
-> added after HYP-023's `pump_age` candidate was withdrawn: a quintile boundary
-> falling inside a tied value splits equal measurements by sort order, so a
-> candidate now requires every adjacent pair of compared buckets to differ in the
-> feature, and every report states the distinct-value count and the largest tied
-> group. This binds here too, and it matters most for any feature recorded at
-> coarse resolution.
+> **Amended again 2026-09-09, and for THIS hypothesis that is after the result
+> was read, not before.** Rule 6 came out of the withdrawal recorded below, so
+> calling it a pre-registration here would be a false journal entry. It is a
+> post-result check, admissible for one reason only: it can withdraw a candidate
+> and can never create one, and there is a test asserting that. The artifact
+> computed under the previous contract is kept beside the corrected one. For
+> HYP-024 and HYP-025, neither of which is implemented, the same rule genuinely
+> is a pre-registration.
 
 ## Family declaration, read this first
 
@@ -270,9 +271,11 @@ distribution that makes the result above unreadable as stated.
 
 ## What the data actually looks like
 
-`pump_age` is recorded in hours, at a resolution of a tenth of a minute, and the
-scanner reaches most pumps within a minute of detection. Across the 821 discovery
-episodes there are **142 distinct values**, and three of them hold 629 episodes:
+`pump_age` is stored in hours and rounded to a hundredth of one
+(`math.Round(hours*100)/100`), so its granularity is **0.6 of a minute** and every
+value is a multiple of it. Decisions follow within about half a minute of the
+thing it counts from. Across the 821 discovery episodes there are **142 distinct
+values**, and three of them hold 629 episodes:
 
 | Age at decision | Episodes |
 | --------------: | -------: |

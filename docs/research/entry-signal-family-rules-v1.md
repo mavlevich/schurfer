@@ -91,11 +91,13 @@ Added 2026-09-09, from HYP-023. It reported `pump_age` as a candidate on a
 top-to-bottom quintile spread of -2.89 points that was monotone across all five
 quintiles, and the candidate was withdrawn before publication.
 
-The reason is arithmetic rather than judgement. `pump_age` is recorded to a tenth
-of a minute and the scanner reaches most pumps within a minute of detection, so
-821 episodes carry only **142 distinct values** and 368 of them read exactly 0.6.
-A quintile is 164 episodes, which put **all four** boundaries inside a tied value
-and made quintile two one value wide. Which side of a cut a tied episode landed on
+The reason is arithmetic rather than judgement. `pump_age` is stored in hours,
+rounded to a hundredth (`math.Round(hours*100)/100` in
+`apps/api-gateway/internal/pumps/handler.go`), so its **granularity is 0.6 of a
+minute** and every value is a multiple of it. Decisions follow qualification
+within about half a minute, so 821 episodes carry only **142 distinct values** and
+368 of them read exactly 0.01 hours. A quintile is 164 episodes, which put **all
+four** boundaries inside a tied value and made quintile two one value wide. Which side of a cut a tied episode landed on
 was decided by the sort's tie order, so the medians of quintiles two and three
 were two arbitrary halves of one group of identical measurements. Their difference
 pointed the way the neighbours already pointed, and that is what produced the
