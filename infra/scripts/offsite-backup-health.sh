@@ -31,6 +31,7 @@ DB_STAMP="${STATE_DIR}/offsite-backup-db.stamp"
 RESEARCH_STAMP="${STATE_DIR}/offsite-backup-research.stamp"
 BARS_STAMP="${STATE_DIR}/offsite-backup-bars.stamp"
 COLD_BARS_DIR="${COLD_BARS_DIR:-${STATE_DIR}/cold-bars}"
+COLD_BARS_START_FILE="${COLD_BARS_START_FILE:-${COLD_BARS_DIR}/collection-start}"
 
 # 36 hours, not 24. The 12-hour margin covers ordinary jitter: the timer's
 # RandomizedDelaySec, a run that started late because a deploy held the lock,
@@ -93,14 +94,36 @@ check_bar_coverage() {
         return
     fi
 
-    local oldest newest_expected earliest_checked cursor missing=()
-    oldest=$(printf '%s\n' "${days[@]}" | sort | head -1)
+    # Where expected coverage begins, read rather than derived. Deriving it from
+    # the oldest surviving manifest cannot work: delete the five oldest and the
+    # expected range shrinks to match, so a real loss reports healthy. A
+    # colleague reproduced exactly that. The exporter records this once, on its
+    # first run, from the oldest day the source then held.
+    local collection_start
+    if [[ -n "${COLLECTION_START:-}" ]]; then
+        collection_start="$COLLECTION_START"
+    elif [[ -f "$COLD_BARS_START_FILE" ]]; then
+        collection_start=$(tr -d '[:space:]' < "$COLD_BARS_START_FILE")
+    else
+        # Failing closed on purpose. Without this the check has no idea what it
+        # is supposed to have, and silence would read as health.
+        problems+=("no collection start recorded (${COLD_BARS_START_FILE} missing); \
+cold bar coverage cannot be checked")
+        return
+    fi
+    if [[ ! "$collection_start" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+        problems+=("collection start ${collection_start} is not a YYYY-MM-DD date")
+        return
+    fi
+
+    local newest_expected earliest_checked cursor missing=()
     newest_expected=$(date -u -d "${EXPORT_LAG_DAYS} days ago" +%Y-%m-%d)
     earliest_checked=$(date -u -d "${RETENTION_DAYS} days ago" +%Y-%m-%d)
-    # Start from the first day ever exported when that is later than the
-    # retention edge. Capture began at some point and the days before it are
-    # absent by history, not by failure.
-    [[ "$oldest" > "$earliest_checked" ]] && earliest_checked="$oldest"
+    # max(collection start, retention edge). Days before collection began never
+    # existed; days past the retention edge are gone from the source and cannot
+    # be recovered, so alerting on them hourly forever teaches everyone to
+    # ignore the alert.
+    [[ "$collection_start" > "$earliest_checked" ]] && earliest_checked="$collection_start"
 
     cursor="$earliest_checked"
     while [[ ! "$cursor" > "$newest_expected" ]]; do

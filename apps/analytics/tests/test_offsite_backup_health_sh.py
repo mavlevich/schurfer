@@ -49,7 +49,13 @@ def _day(days_ago: int) -> str:
     return (datetime.now(UTC) - timedelta(days=days_ago)).date().isoformat()
 
 
-def _state(tmp_path: Path, *, exported: list[str], bars_stamp_age_days: int = 0) -> Path:
+def _state(
+    tmp_path: Path,
+    *,
+    exported: list[str],
+    bars_stamp_age_days: int = 0,
+    collection_start: str | None = None,
+) -> Path:
     state = tmp_path / "runtime"
     cold = state / "cold-bars"
     cold.mkdir(parents=True)
@@ -61,6 +67,11 @@ def _state(tmp_path: Path, *, exported: list[str], bars_stamp_age_days: int = 0)
         os.utime(stamp, (old, old))
     for day in exported:
         (cold / f"bars-{day}.manifest.json").write_text("{}")
+    start = (
+        collection_start if collection_start is not None else (exported[-1] if exported else None)
+    )
+    if start is not None:
+        (cold / "collection-start").write_text(f"{start}\n")
     return state
 
 
@@ -129,11 +140,74 @@ def test_a_stale_bars_stamp_is_reported_even_when_coverage_looks_complete(
     assert "cold bars archive is 72h old" in result.stderr
 
 
-def test_history_before_the_first_export_is_not_a_gap(tmp_path: Path) -> None:
-    """Capture began at some point. Days before the oldest manifest are absent by
-    history rather than by failure, and alerting on them hourly forever is how
-    an alert becomes something everyone filters out."""
-    result = _run(_state(tmp_path, exported=[_day(index) for index in range(2, 6)]))
+def test_history_before_collection_began_is_not_a_gap(tmp_path: Path) -> None:
+    """Capture began at some point. Days before the recorded start never existed,
+    and alerting on them hourly forever is how an alert becomes something
+    everyone filters out."""
+    result = _run(
+        _state(
+            tmp_path,
+            exported=[_day(index) for index in range(2, 6)],
+            collection_start=_day(5),
+        )
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_losing_the_oldest_manifests_is_reported_not_absorbed(tmp_path: Path) -> None:
+    """The defect a colleague reproduced. The expected range used to begin at the
+    oldest surviving manifest, so deleting the five oldest shrank the range to
+    match and the check stayed green while five days of unrecoverable history had
+    gone missing. The start is recorded once and read, never re-derived."""
+    state = _state(
+        tmp_path,
+        exported=[_day(index) for index in range(2, 20)],
+        collection_start=_day(19),
+    )
+    assert _run(state).returncode == 0
+
+    for days_ago in range(15, 20):
+        (state / "cold-bars" / f"bars-{_day(days_ago)}.manifest.json").unlink()
+
+    result = _run(state)
+    assert result.returncode == 1
+    assert "5 cold bar day" in result.stderr
+    for days_ago in range(15, 20):
+        assert _day(days_ago) in result.stderr
+
+
+def test_a_missing_collection_start_fails_closed(tmp_path: Path) -> None:
+    """Without it the check does not know what it is supposed to have, and
+    silence would read as health."""
+    state = _state(tmp_path, exported=[_day(index) for index in range(2, 20)])
+    (state / "cold-bars" / "collection-start").unlink()
+    result = _run(state)
+    assert result.returncode == 1
+    assert "no collection start recorded" in result.stderr
+
+
+def test_a_malformed_collection_start_is_refused(tmp_path: Path) -> None:
+    state = _state(tmp_path, exported=[_day(index) for index in range(2, 20)])
+    (state / "cold-bars" / "collection-start").write_text("last tuesday\n")
+    result = _run(state)
+    assert result.returncode == 1
+    assert "not a YYYY-MM-DD date" in result.stderr
+
+
+def test_a_start_older_than_the_retention_edge_does_not_widen_the_range(
+    tmp_path: Path,
+) -> None:
+    """Days past the retention edge are gone from the source and cannot be
+    recovered by anything, so the range begins at the later of the two bounds.
+    With a start in 2020 and the whole retention window exported, this is healthy;
+    without the clamp it would demand six years of files."""
+    result = _run(
+        _state(
+            tmp_path,
+            exported=[_day(index) for index in range(2, 36)],
+            collection_start="2020-01-01",
+        )
+    )
     assert result.returncode == 0, result.stderr
 
 

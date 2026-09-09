@@ -291,12 +291,28 @@ permanent local index of which days were exported: answerable without the
 repository passphrase, without reaching the Storage Box, and without reading
 8 GB of Parquet to answer a question about filenames.
 
-Two different failures, reported separately:
+Failures, reported separately:
 
-| Message                                                               | What actually broke                                                                  |
-| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `last successful cold bars archive is Nh old`                         | The export or the archive stopped. The days themselves may still be in the database. |
-| `N cold bar day(s) inside the 35-day retention window have no export` | Specific days are missing. Each names a deadline.                                    |
+| Message                                                               | What actually broke                                                                                              |
+| --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `last successful cold bars archive is Nh old`                         | The export or the archive stopped. The days themselves may still be in the database.                             |
+| `N cold bar day(s) inside the 35-day retention window have no export` | Specific days are missing. Each names a deadline.                                                                |
+| `no collection start recorded`                                        | `cold-bars/collection-start` is gone. Coverage cannot be checked at all, so the check fails rather than passing. |
+
+**Why the start file exists.** The expected range used to begin at the oldest
+surviving manifest, which meant deleting the five oldest manifests shrank the
+expected range to match and the check stayed green while five unrecoverable days
+had gone missing. The exporter writes `collection-start` on its first run and it
+is then read, never re-derived. Expected coverage runs from the later of that
+date and the retention edge.
+
+**After deploying this for the first time**, run the exporter once so the file
+exists; until then the check fails closed every hour, which is the intended
+behaviour and not a reason to weaken it:
+
+```bash
+sudo make prod-cold-bar-export
+```
 
 **A missing day is recoverable until retention deletes it.** Re-run the export
 for that day:
