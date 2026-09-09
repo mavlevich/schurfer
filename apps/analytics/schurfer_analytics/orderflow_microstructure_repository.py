@@ -123,7 +123,7 @@ MOMENTUM_CAPTURE_VERSION = BYBIT_MOMENTUM_CAPTURE_VERSION
 _RESOLVED_DECISIONS_SQL = text("""
 WITH episode_rep AS (
     SELECT DISTINCT ON (d.pump_event_id)
-        d.decision_id::text AS decision_id,
+        d.decision_id,
         d.pump_event_id,
         d.base,
         d.exchange,
@@ -193,7 +193,7 @@ resolved AS (
     ) AS ident ON TRUE
 )
 SELECT
-    r.decision_id,
+    r.decision_id::text AS decision_id,
     r.pump_event_id::text AS pump_event_id,
     r.ts,
     r.base,
