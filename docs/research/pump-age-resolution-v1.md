@@ -63,8 +63,8 @@ AgeHours > 4      -> 2 points   "extended pump, high time risk"
 AgeHours <= 1     -> 0 points   "early pump, may continue"
 ```
 
-**692 of the 821 discovery episodes were under an hour old.** They all scored
-zero on this component, so as far as the composite is concerned they are the same
+**692 of the 821 discovery episodes were decided within an hour of qualifying.**
+They all scored zero on this component, so as far as the composite is concerned they are the same
 episode. Meanwhile the entire measured spread of ages in that mass runs from zero
 to a few minutes.
 
@@ -74,12 +74,30 @@ The claim is therefore not "the score is inverted". It is:
 > forward outcome. The bucketing collapses the whole informative range into one
 > bucket, and a score cannot rank on a distinction it does not represent.
 
+## The episode's decision is chosen before any outcome is joined
+
+Also from review, and the sharpest of the three. The first implementation
+filtered to decisions with a completed outcome and only then applied "the first
+decision that opened something, else the earliest". An episode whose first
+`opened_paper` decision was unresolved came back represented by a later `skipped`
+one -- at a different age, and therefore in a different group.
+
+Measured on the HYP-023 window: 24 of 822 episodes were substituted, and **19 of
+those crossed this contract's own 0.6-minute boundary**. The substitution also
+disappears as outcomes resolve, so the same contract over the same window would
+measure a different population depending on the day it ran.
+
+The rule now runs in SQL before the outcome is joined (`episode_selection.py`).
+An episode whose own decision has no completed outcome is coverage: dropped,
+counted, printed, never replaced.
+
 ## Population
 
-`app.trade_decisions` with `strategy_version = 'pump_short_v1_market_quality'`,
-joined to `app.trade_decision_outcomes` at the **60-minute** horizon, complete
-outcomes only. One decision per episode: the first that opened something, else
-the earliest, the same rule as the replay and HYP-023.
+`app.trade_decisions` with `strategy_version = 'pump_short_v1_market_quality'`.
+One decision per episode, chosen first: the first that opened something, else the
+earliest, the same rule as the replay and HYP-023. That decision's own outcome at
+the **60-minute** horizon is then joined, and an episode whose decision has no
+complete outcome is coverage rather than a substitution.
 
 60 minutes because that is the window a decision can act inside: production's
 exit closes an unactivated position there.
@@ -137,8 +155,23 @@ nothing else: it does not join an outcome, compute a metric, or look at a return
 At about eight qualifying episodes a day, group B should clear 150 a few days
 after registration.
 
+That separation is enforced rather than promised. `make prod-pump-age-readiness`
+runs a mode with no code path to a median, and `make prod-pump-age-read` is the
+formal measurement. Neither has a default: a run has to say which one it is.
+
+Below the floors the read computes **no outcome statistic at all** -- not
+suppressed at print time, not computed. The first implementation calculated
+medians, quartiles and the difference and then printed them beside the word
+`inconclusive`, which spends the window while claiming not to.
+
 **There is exactly one read**, and the sample it measured is frozen with
-`freeze_or_verify_sample` so that a second run has to admit it is one. If the
+`freeze_or_verify_sample` so that a second run has to admit it is one. The
+manifest is a fixed path, not a flag to remember: when it was optional the
+ordinary run was the unfrozen one, and two consecutive runs on different samples
+both printed a result under this contract with nothing recording it. What is
+frozen is the episodes **and the decisions they were measured through**, because
+the same `pump_event_id` measured through a different decision is a different
+measurement, at a different age, in a different group. If the
 floors are still unmet on 2026-09-30 the window closes anyway and the verdict is
 `inconclusive`: an open-ended wait for a sample to become convincing is the same
 error as an open-ended search for a threshold.
