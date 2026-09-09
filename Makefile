@@ -3,6 +3,7 @@
 .PHONY: momentum-flow-discovery-report prod-momentum-flow-discovery-report
 .PHONY: ai-rules-check
 .PHONY: early-momentum-unused-flow-features-report prod-early-momentum-unused-flow-features-report
+.PHONY: hyp-024-orderflow-report prod-hyp-024-orderflow-report
 .PHONY: cex-activity-path-coverage-audit-report prod-cex-activity-path-coverage-audit-report
 .PHONY: cex-activity-discovery-report radar-outcome-discovery-report prod-radar-outcome-discovery-report
 .PHONY: liquidation-capture-bybit-start liquidation-capture-bybit-stop liquidation-capture-bybit-health liquidation-capture-binance-start liquidation-capture-binance-stop liquidation-capture-binance-health
@@ -147,6 +148,7 @@ help:
 	@echo "  make liquidation-cascade-validation-report  Episode-level discovery/validation/test read (ARGS must include --since --discovery-end --validation-end --until)"
 	@echo "  make liquidation-maker-upper-bound-report  Post-hoc oracle upper-bound liquidation-cascade reversion (ARGS must include --since --until)"
 	@echo "  make early-momentum-net-evidence-report  Read-only early_momentum_v4 net-edge evidence read (ARGS must include --cohort-end)"
+	@echo "  make hyp-024-orderflow-report  Read-only HYP-024 order-flow microstructure read (frozen window; refuses --cohort-end past 2026-08-25)"
 	@echo "  make early-momentum-prospective-cohort-report  Read-only prospective-cohort live-probe-eligibility status (ARGS must include --cohort-end)"
 	@echo "  make early-momentum-unused-flow-features-report  Discovery-only v4 flow-feature challenger read"
 	@echo "  make cex-activity-path-coverage-audit-report  Read-only HYP-016 unresolved-path missingness audit"
@@ -251,6 +253,7 @@ help:
 	@echo "  make prod-liquidation-cascade-validation-report  Production episode-level discovery/validation/test read"
 	@echo "  make prod-liquidation-maker-upper-bound-report  Production liquidation-cascade upper-bound report"
 	@echo "  make prod-early-momentum-net-evidence-report  Production early_momentum_v4 net-edge evidence read"
+	@echo "  make prod-hyp-024-orderflow-report  Production read-only HYP-024 order-flow microstructure read (refuses the held-out window)"
 	@echo "  make prod-early-momentum-prospective-cohort-report  Production prospective-cohort live-probe-eligibility status"
 	@echo "  make prod-early-momentum-unused-flow-features-report  Production discovery-only v4 flow-feature read"
 	@echo "  make prod-cex-activity-path-coverage-audit-report  Production read-only HYP-016 missingness audit"
@@ -833,6 +836,19 @@ liquidation-maker-upper-bound-report:
 early-momentum-net-evidence-report:
 	@DATABASE_URL="$${DATABASE_URL:-postgresql://schurfer:schurfer_dev@localhost:5432/schurfer}" \
 		uv run --package schurfer-analytics early-momentum-net-evidence-report \
+		--code-revision="$$(git rev-parse HEAD)" \
+		$$(test -z "$$(git status --porcelain)" \
+			&& printf '%s' '--no-working-tree-dirty' \
+			|| printf '%s' '--working-tree-dirty') $(ARGS)
+
+# Read-only HYP-024 order-flow microstructure report (research/orderflow-
+# microstructure-v1). cohort_start is frozen at 2026-08-10; --cohort-end
+# defaults to and is refused past the held-out boundary 2026-08-25, so this
+# discovery pass can never read the held-out window. Pass any narrower window
+# via ARGS (e.g. ARGS="--cohort-end=2026-08-20T00:00:00Z --format=json").
+hyp-024-orderflow-report:
+	@DATABASE_URL="$${DATABASE_URL:-postgresql://schurfer:schurfer_dev@localhost:5432/schurfer}" \
+		uv run --package schurfer-analytics hyp-024-orderflow-report \
 		--code-revision="$$(git rev-parse HEAD)" \
 		$$(test -z "$$(git status --porcelain)" \
 			&& printf '%s' '--no-working-tree-dirty' \
@@ -1728,6 +1744,17 @@ prod-early-momentum-net-evidence-report:
 			&& printf '%s' '--no-working-tree-dirty' \
 			|| printf '%s' '--working-tree-dirty') $(ARGS)
 
+# Read-only against prod via the SSH tunnel: HYP-024 order-flow microstructure
+# report. Read-only, so the production analytics service is not restarted; the
+# report itself still refuses to read the held-out window (>= 2026-08-25).
+prod-hyp-024-orderflow-report:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
+	@$(_PROD) run --rm --no-deps --entrypoint hyp-024-orderflow-report analytics \
+		--code-revision="$$(git rev-parse HEAD)" \
+		$$(test -z "$$(git status --porcelain)" \
+			&& printf '%s' '--no-working-tree-dirty' \
+			|| printf '%s' '--working-tree-dirty') $(ARGS)
+
 prod-early-momentum-prospective-cohort-report:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
 	@$(_PROD) run --rm --no-deps --entrypoint early-momentum-prospective-cohort-report analytics \
@@ -2312,6 +2339,7 @@ verify-docker: verify
 	docker run --rm --entrypoint token-history-parquet-dataset schurfer-analytics:ci --help
 	docker run --rm --entrypoint liquidation-cascade-validation-report schurfer-analytics:ci --help
 	docker run --rm --entrypoint early-momentum-net-evidence-report schurfer-analytics:ci --help
+	docker run --rm --entrypoint hyp-024-orderflow-report schurfer-analytics:ci --help
 	@docker rmi schurfer-analytics:ci --force > /dev/null
 	@echo "=== Docker: execution build + import check ==="
 	docker build -f apps/execution/Dockerfile -t schurfer-execution:ci . -q
