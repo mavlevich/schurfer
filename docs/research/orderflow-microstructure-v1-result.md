@@ -1,117 +1,145 @@
-# HYP-024 order-flow microstructure -- result stub (NOT YET RUN)
+# HYP-024 order-flow microstructure -- formal discovery result
 
-**Status: placeholder.** This document records the result of the frozen
-pre-registration in
-[orderflow-microstructure-v1.md](orderflow-microstructure-v1.md). Every number
-below is a `TODO` to be copied verbatim from the report output. Nothing here is
-filled in yet, because the report has not been run against production data in
-this change (the implementation was written and unit/integration tested
-without production access). Do not fabricate any figure: run the report, then
-transcribe.
+**Status: `inconclusive`; no candidate and no held-out read earned.** This
+document records the frozen discovery run registered in
+[orderflow-microstructure-v1.md](orderflow-microstructure-v1.md). The corrected
+formal report ran on production on 2026-09-09 after PR #397 fixed the bars
+market-type join. It read only the registered discovery window; the held-out
+window beginning at `2026-08-25T00:00:00Z` remains unread by this report.
 
-## How to produce the numbers
+## Reproduction
 
-Read-only, against prod via the SSH tunnel (does not restart the analytics
-service):
+Read-only, from clean production `main`:
 
-```
-make prod-hyp-024-orderflow-report ARGS="--format=json"
+```bash
+make prod-hyp-024-orderflow-report \
+  ARGS="--cohort-end 2026-08-25T00:00:00Z --format json"
 ```
 
-Local (against a tunnelled or local `DATABASE_URL`):
+## Provenance
 
-```
-make hyp-024-orderflow-report ARGS="--format=json"
-```
-
-`cohort_start` is frozen at `2026-08-10`; `--cohort-end` defaults to the
-held-out boundary `2026-08-25` and is refused past it, so this discovery pass
-can never read the held-out window. A `candidate` verdict earns a read of the
-held-out window only through a later, separately registered pass.
-
-## Provenance to record (copy from the report header)
-
-| Field                               | Value                                         |
-| ----------------------------------- | --------------------------------------------- |
-| report_version                      | `orderflow_microstructure_v1`                 |
-| strategy_version                    | `pump_short_v1_market_quality`                |
-| resolver_version / horizon          | `forward_v1` / 60m                            |
-| capture_version (pinned)            | `v1`                                          |
-| cost_model_version                  | `conservative_costs_v1`                       |
-| cost deduction (net = gross - this) | `0.20625%` (2x10bps taker + 5bps/8h x 60/480) |
-| cohort_start / cohort_end           | `2026-08-10` / `TODO`                         |
-| db_snapshot_at                      | `TODO`                                        |
-| dataset_fingerprint                 | `TODO`                                        |
-| code_revision / formal_run          | `TODO` / `TODO`                               |
-
-## Coverage (copy from the coverage funnel and per-exchange table)
-
-The measure is only defined where the bars exist (bybit from 2026-08-10,
-binance from 2026-08-15). Decisions on venues without bars, decisions whose
-`base` could not be resolved to exactly one native market at decision time, and
-decisions without a complete ten-bar pre-window are all **coverage loss**, not
-negative outcomes.
-
-| Coverage step                                | Count  |
-| -------------------------------------------- | ------ |
-| Cohort decisions with a resolved 60m outcome | `TODO` |
-| Identity resolved to a single native market  | `TODO` |
-| Complete ten-bar pre-window                  | `TODO` |
-| Measured episodes                            | `TODO` |
-
-Per exchange: `TODO` (unresolved / ambiguous identity, missing bars, measured).
-
-## Primary metric (registered ten-minute taker imbalance)
-
-| Quintile               | Episodes | Clusters | Median net short return |
-| ---------------------- | -------- | -------- | ----------------------- |
-| Q1 (lowest imbalance)  | `TODO`   | `TODO`   | `TODO`                  |
-| Q2                     | `TODO`   | `TODO`   | `TODO`                  |
-| Q3                     | `TODO`   | `TODO`   | `TODO`                  |
-| Q4                     | `TODO`   | `TODO`   | `TODO`                  |
-| Q5 (highest imbalance) | `TODO`   | `TODO`   | `TODO`                  |
-
-- Top-minus-bottom median net spread: `TODO` pp
-- Monotone across all five quintiles: `TODO`
-- Rule 6: distinct feature values `TODO`, largest tied group `TODO`, adjacent
-  boundaries distinct `TODO`
-- Compared-quintile episode floor met (>=150 each): `TODO`
-- Compared-quintile asset-cluster floor met (>=30 union): `TODO`
-
-## Secondary context (never replaces the registered measure)
-
-- Median MFE / MAE per quintile: `TODO`
-- Five-minute lookback top-minus-bottom spread: `TODO` pp
-- Twenty-minute lookback top-minus-bottom spread: `TODO` pp
-
-The alternative lookbacks are context only: they show whether any relationship
-is a knife edge. Reaching for them if the ten-minute measure fails is a new
-hypothesis with a new id and an untouched window, not a refinement here.
+| Field                           | Value                                                              |
+| ------------------------------- | ------------------------------------------------------------------ |
+| report version                  | `orderflow_microstructure_v1`                                      |
+| strategy version                | `pump_short_v1_market_quality`                                     |
+| resolver version / horizon      | `forward_v1` / 60m                                                 |
+| capture version                 | `v1`                                                               |
+| cost model version              | `conservative_costs_v1`                                            |
+| cost deduction                  | `0.20625` percentage points                                        |
+| cohort start / end              | `2026-08-10T00:00:00Z` / `2026-08-25T00:00:00Z`                    |
+| held-out start                  | `2026-08-25T00:00:00Z`                                             |
+| database snapshot               | `2026-09-09T20:12:24.947915Z`                                      |
+| generated at                    | `2026-09-09T20:12:25.948633Z`                                      |
+| dataset fingerprint             | `6ad531840bcf1624c96062945cacd3f85369acdca53b6a20a76a3e52b075735d` |
+| code revision                   | `b118019ecc884fbb14e219d8136e9e34b1b4e7e6`                         |
+| working tree dirty / formal run | `False` / `True`                                                   |
 
 ## Verdict
 
-`TODO` (one of `candidate` / `rejected` / `inconclusive`), with the report's
-own `reasons`. Per the frozen decision rule, the sufficiency floor binds first
-and can only ever produce `inconclusive` -- the bars start on 2026-08-10, so
-this floor is the one most likely to bind. A `rejected` verdict is reachable
-only above the floor.
+| Field                                     | Value                                                                                                 |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| verdict                                   | `inconclusive`                                                                                        |
+| registered measure                        | 10-minute taker imbalance                                                                             |
+| top-minus-bottom median net spread        | `+0.454997` percentage points                                                                         |
+| compared quintile episodes (top / bottom) | 17 / 18                                                                                               |
+| compared asset clusters (union)           | 28                                                                                                    |
+| episode floor (`>=150` each)              | not met                                                                                               |
+| cluster floor (`>=30` union)              | not met                                                                                               |
+| reasons                                   | `episodes_per_compared_quintile_below_150 (top=17, bottom=18)`; `compared_asset_clusters_28_below_30` |
 
-## Assumptions a human should confirm before trusting the numbers
+The sufficiency floor binds before the directional rule, exactly as registered.
+The observed primary spread is below the `0.5`-point rejection boundary and the
+five quintiles are neither monotonically increasing nor monotonically decreasing,
+but 89 measured episodes cannot support a formal rejection. Equally, this result
+does not earn candidate status, a held-out read, implementation work, or live
+trading.
 
-1. **Cost model.** `short_return_pct` from the forward resolver is a raw price-
-   path return; the report subtracts the shared `conservative_costs_v1` fee +
-   funding deduction (0.20625 pp at 60m). Slippage is not subtracted because
-   the forward-outcome path carries no fills or order-book depth. Because the
-   deduction is a constant at this fixed horizon, it cancels out of the
-   top-minus-bottom spread and only shifts the absolute per-quintile levels.
-2. **Asset cluster = `base`.** The diversity floor counts the exchange-
-   independent `base` as the asset cluster (so the same asset on bybit and
-   binance is one cluster). Confirm this matches the family-rules intent of
-   "asset clusters" for pump_short.
-3. **capture_version pin = `v1` for both venues.** If a venue were captured
-   under a different contract, its bars fall out as visible per-exchange
-   coverage loss (never a wrong number); confirm binance is on `v1` from the
-   per-exchange coverage row rather than assuming it.
-4. **Point-in-time identity via the momentum-universe snapshot at or before the
-   decision `ts`.** Ambiguous (`base` -> more than one native market) and
-   unresolved identities fail closed as coverage loss.
+## Coverage funnel
+
+| Step | Population                             | Remaining | Excluded | Exclusion reason                         |
+| ---: | -------------------------------------- | --------: | -------: | ---------------------------------------- |
+|    1 | representative pump episodes           |       600 |        0 | --                                       |
+|    2 | complete same-venue 60m outcome        |       432 |      168 | `no_complete_same_venue_outcome`         |
+|    3 | identity resolved to one native market |        94 |      338 | `unresolved_or_ambiguous_identity`       |
+|    4 | complete, available ten-bar pre-window |        89 |        5 | `missing_incomplete_or_unavailable_bars` |
+|    5 | measured episodes                      |        89 |        0 | --                                       |
+
+### Coverage by exchange
+
+| Exchange | Episodes | Complete outcome | Identity resolved | Measured | No complete outcome | Unresolved identity | Ambiguous identity | Missing/unavailable bars |
+| -------- | -------: | ---------------: | ----------------: | -------: | ------------------: | ------------------: | -----------------: | -----------------------: |
+| binance  |      199 |              199 |                81 |       77 |                   0 |                 118 |                  0 |                        4 |
+| bingx    |       58 |               49 |                 0 |        0 |                   9 |                  49 |                  0 |                        0 |
+| bitget   |        8 |                8 |                 0 |        0 |                   0 |                   8 |                  0 |                        0 |
+| bybit    |       15 |               15 |                13 |       12 |                   0 |                   2 |                  0 |                        1 |
+| gate     |       14 |               14 |                 0 |        0 |                   0 |                  14 |                  0 |                        0 |
+| lbank    |      153 |                0 |                 0 |        0 |                 153 |                   0 |                  0 |                        0 |
+| mexc     |      146 |              140 |                 0 |        0 |                   6 |                 140 |                  0 |                        0 |
+| okx      |        1 |                1 |                 0 |        0 |                   0 |                   1 |                  0 |                        0 |
+| xt       |        6 |                6 |                 0 |        0 |                   0 |                   6 |                  0 |                        0 |
+
+Venues without captured bars remain coverage loss, never negative outcomes.
+The resolved Bybit/Binance population lost only five episodes at the bar gate
+after the join fix.
+
+## Registered 10-minute measure
+
+| Quintile | Episodes | Clusters | Feature range        | Median net | Median gross | Median MFE | Median MAE |
+| -------: | -------: | -------: | -------------------- | ---------: | -----------: | ---------: | ---------: |
+|        1 |       18 |       16 | `-2.9329 .. -0.9751` |    `0.46%` |      `0.66%` |    `2.68%` |    `4.19%` |
+|        2 |       18 |       15 | `-0.9249 .. -0.5453` |    `2.37%` |      `2.57%` |    `5.09%` |    `2.34%` |
+|        3 |       18 |       15 | `-0.5382 .. -0.3291` |   `-0.98%` |     `-0.77%` |    `2.93%` |    `4.56%` |
+|        4 |       18 |       15 | `-0.3235 .. 0.0485`  |    `0.34%` |      `0.55%` |    `4.33%` |    `2.96%` |
+|        5 |       17 |       14 | `0.0657 .. 2.0933`   |    `0.91%` |      `1.12%` |    `3.35%` |    `3.72%` |
+
+- Top-minus-bottom median net spread: `+0.454997` percentage points.
+- Monotone increasing / decreasing: `False` / `False`.
+- Rule 6: 89 distinct values, largest tied group 1, every adjacent boundary
+  distinct, no tied boundary pairs.
+
+## Secondary context
+
+These lookbacks were registered as context only. They do not replace the
+10-minute measure or create a new candidate.
+
+| Lookback | Usable episodes | Top-minus-bottom median net spread | Monotone increasing / decreasing | Distinct values | Largest tied group |
+| -------: | --------------: | ---------------------------------: | -------------------------------- | --------------: | -----------------: |
+|       5m |              89 |                 `-2.260885` points | `False` / `False`                |              89 |                  1 |
+|      20m |              88 |                 `+0.443393` points | `False` / `False`                |              88 |                  1 |
+
+The sign reversal at 5 minutes and lack of monotonicity at every lookback are
+descriptive only. Selecting another lookback after seeing these values would be
+a new search requiring a new hypothesis and untouched window.
+
+## Invalidated pre-fix run
+
+The first production invocation at clean revision
+`bab9aa85bd04b1a1773d31b424fcf3192397f2a1` reported 94 identity-resolved
+episodes and zero measured episodes with fingerprint
+`c48a2309753e94cfc8a31d6ae194858c5887404ae892f38194992806ad0ee2cd`.
+That output is invalid and must not be cited as a research result: the SQL joined
+`timeseries.bybit_momentum_bars_1m.market_type = 'linear'` to
+`momentum_universe_instruments.canonical_market_type =
+'linear_usdt_perpetual'`, so every resolved episode necessarily lost its bars.
+
+PR #397 separated the capture-writer and canonical-identity vocabularies and
+added a real-PostgreSQL regression fixture containing both actual values. A
+read-only production diagnostic before deployment predicted 77 measurable
+Binance and 12 measurable Bybit episodes; the corrected formal run reproduced
+those counts exactly. `formal_run=True` records revision/tree/window hygiene; it
+does not make a semantically defective query valid.
+
+## Boundaries retained
+
+1. `short_return_pct` is a raw price-path return. The report deducts the fixed
+   `0.20625`-point fee/funding model; slippage is unavailable and not deducted.
+   The constant cost shifts quintile levels but cancels from their spread.
+2. Asset diversity is counted by exchange-independent `base`, so the same asset
+   on Bybit and Binance is one cluster.
+3. Both measured venues use captured `market_type='linear'` and
+   `capture_version='v1'`; canonical identity remains
+   `linear_usdt_perpetual`.
+4. Identity is resolved through the most recent momentum-universe snapshot at
+   or before each decision. Ambiguous and unresolved identities fail closed.
+5. The discovery window is closed. No HYP-024 held-out read is permitted because
+   the registered discovery rule did not produce a candidate.

@@ -8,10 +8,10 @@ Update only these four lines after every merge -- this is the fast-path
 status check, not a place for narrative.
 
 ```
-Current primary: ENG-022, fill/remaining/protection lifecycle (stage 2); support: ENG-025 recovery inventory
-State: stage 1 contained -- ENG-020 (#343) and ENG-021 (#345) merged, both fixed in code and NOT deployed; durable stop-state and the Go lint policy (ENG-029) declared, not implemented; frozen cohorts continue collecting
-Next after current primary merges: ENG-022 fill/close lifecycle; then ENG-023 paper fairness and ENG-024 artifact integrity, with economics preparation alongside
-User decision required: yes -- whether to deploy execution now (code-only restart, depends on whether production holds trading API keys); owner economics, new hypothesis parameters and live trading remain separate decisions
+Current primary: ENG-022 step 1, fill evidence and actual notional; support: conditional launch/delayed-short plan PR #395 in review
+State: HYP-024 corrected by #397, deployed at b118019 and formally inconclusive (89 measured; 17/18 compared episodes and 28 clusters, below both floors; no held-out read); ENG-020/#343 and ENG-021/#345 remain fixed in code and NOT deployed
+Next after current primary merges: ENG-022 step 2 partial-close/protection/remaining lifecycle; then its durable portfolio/timestamp steps, ENG-023 paper fairness and ENG-024 partial-outcome consumer tracing
+User decision required: yes before any execution deployment or live-mode change; no new hypothesis parameters were selected and HYP-024 earned no continuation
 ```
 
 ## Autonomy rules (when to just proceed, when to ask)
