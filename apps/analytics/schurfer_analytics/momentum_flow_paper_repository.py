@@ -617,7 +617,14 @@ class MomentumFlowPaperRepository:
                 _probes.c.entry_status == "opened",
                 or_(_probes.c.position_status == "open", due_outcome),
             )
-            .order_by(_probes.c.entry_at)
+            # `entry_at` is immutable, so ordering on it alone permanently
+            # selected the oldest `limit` open probes on every tick. Both a
+            # successful quote (`apply_quote`) and a failed quote
+            # (`record_quote_failure`) advance `updated_at`; selecting the least
+            # recently serviced rows therefore forms a durable fair queue without
+            # a process-local cursor that would be lost on restart. The remaining
+            # columns make equal timestamps deterministic.
+            .order_by(_probes.c.updated_at, _probes.c.entry_at, _probes.c.paper_id)
             .limit(limit)
         )
         result = await self._execute(statement)
