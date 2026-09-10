@@ -8,28 +8,28 @@ Update only these four lines after every merge -- this is the fast-path
 status check, not a place for narrative.
 
 ```
-Current primary: ENG-024 partial-outcome consumer tracing, fixed in code and awaiting production verification; support: HYP-015 hold12h launch readiness
-State: ENG-020/#343, ENG-021/#345, ENG-022/#347/#399/#400/#401/#402 and ENG-023/#404 deployed through cd62fa0 on 2026-09-10; all 20 open baseline paper probes were serviced within 5.7 seconds after the ENG-023 deploy, with no missed outcomes, quote failures or restarts; HYP-024 re-run unchanged and inconclusive with no held-out read
-Next: merge, deploy and verify ENG-024, then decide whether to start the already registered HYP-015 hold12h forward paper worker; do not reopen the stopped delayed-short/orderflow line
-User decision required: no live-mode change is authorized; starting the HYP-015 hold12h production paper worker needs a separate explicit production authorization after ENG-023
+Current primary: bounded existing-data extreme-mover replay; support: HYP-027 age-group readiness and HYP-015 hold12h launch readiness
+State: ENG-024/#405 deployed at e6605d1 on 2026-09-10; 26,297 production partial outcomes remain coverage-only and zero decision/horizon pairs have multiple complete resolvers; corrected HYP-023 and HYP-024 reports remain inconclusive, while HYP-027 needs 16 more older-group episodes before its one formal read
+Next: implement and run the frozen extreme-mover replay contract, then let its stop/capture/candidate verdict decide whether any event-triggered venue capture is worth building; do not reopen the stopped delayed-short/orderflow line
+User decision required: no live-mode change is authorized; starting the HYP-015 hold12h production paper worker, deploying a future venue canary, or any live order requires separate explicit production authorization
 ```
 
-### Active change card — ENG-024 outcome-consumer integrity
+### Active change card — existing-data extreme-mover replay
 
-- **Result / scope:** prove every direct consumer of decision outcomes treats
-  `partial` as coverage rather than exact evidence; bind legacy direct joins to one
-  resolver version so another resolver cannot duplicate or substitute an outcome.
-- **Dependencies / owner:** reuse the shared replay outcome-status contract and
-  preserve frozen HYP-016/HYP-023/HYP-027 data and artifacts.
-- **Effort / stop condition:** stop after static consumer tracing, a real-PostgreSQL
-  partial/alternate-resolver regression, and an independent pinned arithmetic sample.
-- **Deploy / rollback:** analytics/report code only, with no schema, worker or live-mode
-  change. Preserve original artifacts; use a corrected artifact version only if a
-  historical result is actually affected.
-- **Implementation:** replay, measurement and HYP-024 already fail closed on partial
-  rows. The HYP-023/HYP-027 direct episode join now binds `forward_v1` as well as
-  `complete`, preventing alternate-resolver duplication while keeping partial rows in
-  the visible coverage denominator.
+- **Result / scope:** test continuation long, delayed-exhaustion short and cash on the
+  same selected extreme-mover episodes using only exact preserved paths and declared
+  entry-cost assumptions. The frozen contract and ten delivery gates are in
+  [extreme-mover-replay-program-v1.md](docs/research/extreme-mover-replay-program-v1.md).
+- **Dependencies / owner:** reuse ENG-024's exact outcome-consumer boundary and saved
+  entry order books; preserve the HYP-016/HYP-017/HYP-023/HYP-024 viewed windows.
+- **Effort / stop condition:** one bounded report PR and one archived production run.
+  Stop if no broad interpretable segment survives conservative costs; build capture
+  only when a plausible mechanism is specifically blocked by missing inputs.
+- **Deploy / rollback:** analytics/report code only. No schema, worker, strategy,
+  live-mode or order-routing change in the replay PR.
+- **Feasibility:** an exploratory production audit found 977 selected episodes and 445
+  exact same-venue complete 60m paths. LBank contributes 320 episodes but zero exact
+  paths, so it remains a visible coverage gap rather than a substituted outcome.
 
 ## Autonomy rules (when to just proceed, when to ask)
 
