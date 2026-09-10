@@ -12,6 +12,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from schurfer_analytics.momentum_flow_paper_contract import PaperContract
+from schurfer_analytics.momentum_flow_paper_market import QuoteFailure
 from schurfer_analytics.momentum_flow_paper_repository import (
     MomentumFlowPaperRepository,
     _outcomes,
@@ -297,5 +298,91 @@ async def test_paper_repository_live_freshness_queries() -> None:
                 delete(_watch_evaluations).where(
                     _watch_evaluations.c.watch_version == test_watch_version
                 )
+            )
+        await engine.dispose()
+
+
+async def test_monitored_probes_rotate_past_failed_oldest_batch() -> None:
+    engine = await _connect_or_skip()
+    repository = MomentumFlowPaperRepository(engine)
+    now = datetime.now(UTC)
+    test_watch_version = f"test_watch_{uuid4()}"
+    test_paper_version = f"test_paper_{uuid4()}"
+    contract = PaperContract(
+        paper_version=test_paper_version,
+        watch_version=test_watch_version,
+        source_exchange="bybit",
+        market_type="linear",
+        max_hold_minutes=15,
+        outcome_horizons_minutes=(5, 15),
+    )
+    paper_ids = tuple(uuid4() for _ in range(3))
+    oldest_update = now - timedelta(minutes=2)
+
+    try:
+        await repository.register_run(
+            contract=contract,
+            contract_sha256=contract.sha256_hex(),
+            now=now - timedelta(hours=1),
+        )
+        async with engine.begin() as connection:
+            await connection.execute(
+                insert(_probes),
+                [
+                    {
+                        "paper_id": paper_id,
+                        "paper_version": test_paper_version,
+                        "watch_version": test_watch_version,
+                        "watch_id": uuid4(),
+                        "episode_id": uuid4(),
+                        "exchange": "bybit",
+                        "market_type": "linear",
+                        "symbol": f"TEST{index}USDT",
+                        "watch_bucket_start": now - timedelta(minutes=2),
+                        "watch_decision_at": now - timedelta(minutes=1, seconds=30),
+                        "claimed_at": now - timedelta(minutes=1, seconds=20),
+                        "entry_status": "opened",
+                        "entry_reason": "exact_venue_executable_ask",
+                        "entry_at": now - timedelta(minutes=1) + timedelta(milliseconds=index),
+                        "entry_vwap": 100.0,
+                        "entry_filled_notional_usd": 50.0,
+                        "position_status": "open",
+                        "updated_at": oldest_update,
+                    }
+                    for index, paper_id in enumerate(paper_ids)
+                ],
+            )
+
+        first_batch = await repository.monitored_probes(contract=contract, now=now, limit=2)
+        assert tuple(probe.paper_id for probe in first_batch) == paper_ids[:2]
+
+        for probe in first_batch:
+            await repository.record_quote_failure(
+                probe.paper_id,
+                QuoteFailure(
+                    symbol=probe.symbol,
+                    side="bid",
+                    requested_at=now,
+                    failed_at=now,
+                    latency_ms=5_000,
+                    reason="quote_timeout",
+                    error="test timeout",
+                ),
+            )
+
+        second_batch = await repository.monitored_probes(
+            contract=contract,
+            now=now + timedelta(seconds=5),
+            limit=2,
+        )
+        assert second_batch[0].paper_id == paper_ids[2]
+        assert {probe.paper_id for probe in first_batch + second_batch} == set(paper_ids)
+    finally:
+        async with engine.begin() as connection:
+            await connection.execute(
+                delete(_probes).where(_probes.c.paper_version == test_paper_version)
+            )
+            await connection.execute(
+                delete(_runs).where(_runs.c.paper_version == test_paper_version)
             )
         await engine.dispose()

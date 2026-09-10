@@ -134,6 +134,27 @@ async def test_fresh_selection_excludes_future_decisions() -> None:
     assert "decision_at <=" in sql
 
 
+async def test_monitored_probe_selection_is_least_recently_serviced_first() -> None:
+    repository = _StatementRepository()
+
+    await repository.monitored_probes(
+        contract=FROZEN_PAPER_CONTRACT,
+        now=T0,
+        limit=100,
+    )
+
+    sql = str(
+        repository.statement.compile(
+            dialect=postgresql.dialect(),  # type: ignore[no-untyped-call]
+            compile_kwargs={"literal_binds": True},
+        )
+    )
+    order_by = sql.split("ORDER BY", maxsplit=1)[1]
+    assert "updated_at" in order_by
+    assert order_by.index("updated_at") < order_by.index("entry_at")
+    assert order_by.index("entry_at") < order_by.index("paper_id")
+
+
 class _BulkResult:
     def all(self) -> list[tuple[UUID]]:
         return [(UUID("00000000-0000-0000-0000-000000000010"),)]

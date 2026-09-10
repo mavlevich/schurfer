@@ -8,9 +8,9 @@ Update only these four lines after every merge -- this is the fast-path
 status check, not a place for narrative.
 
 ```
-Current primary: ENG-023 fair momentum-paper servicing beyond the batch limit, planned; support: ENG-024 partial-outcome consumer tracing
+Current primary: ENG-023 fair momentum-paper servicing beyond the batch limit, fixed in code and awaiting production verification; support: ENG-024 partial-outcome consumer tracing
 State: ENG-020/#343, ENG-021/#345 and ENG-022/#347/#399/#400/#401/#402 deployed at 913d8f7 on 2026-09-10; migration 0048, workers, recovery and accounting queues verified healthy; HYP-024 re-run unchanged and inconclusive with no held-out read
-Next: implement and verify ENG-023 before adding another paper sibling, then complete ENG-024; HYP-015 hold12h remains the next registered forward edge candidate but its production worker has not been started
+Next: deploy and verify ENG-023 before adding another paper sibling, then complete ENG-024; HYP-015 hold12h remains the next registered forward edge candidate but its production worker has not been started
 User decision required: no live-mode change is authorized; starting the HYP-015 hold12h production paper worker needs a separate explicit production authorization after ENG-023
 ```
 
@@ -28,6 +28,10 @@ User decision required: no live-mode change is authorized; starting the HYP-015 
 - **Deploy / rollback:** code-only unless the solution needs a migration. Do not start
   another paper sibling until this fairness invariant is merged and separately
   deployed; keep live trading mode unchanged.
+- **Implementation:** eligible probes now form a durable least-recently-serviced
+  queue ordered by `updated_at`, `entry_at`, then `paper_id`. Both successful and
+  failed quote attempts advance `updated_at`; regression coverage proves a later
+  probe enters the next batch even when the oldest batch remains open.
 
 ## Autonomy rules (when to just proceed, when to ask)
 

@@ -584,8 +584,9 @@ verify`, `make deadcode`, `pre-commit run --all-files`, and 13 black-box tests t
 
 ### ENG-023 — Guarantee fair servicing beyond the momentum-paper batch limit
 
-- **Status / priority:** `planned`, `P2` now / `P1` before scaling beyond the limit;
-  source E-01, B05. No production threshold breach has been established.
+- **Status / priority:** `fixed in code`, awaiting production verification; `P2`
+  now / `P1` before scaling beyond the limit; source E-01, B05. No production
+  threshold breach has been established.
 - **Evidence:** `momentum_flow_paper_repository.py:591` orders eligible open probes
   by unchanged entry_at and applies limit=100 by default. A successful quote does
   not remove an open position from that ordering. Later positions can wait while
@@ -597,6 +598,12 @@ verify`, `make deadcode`, `pre-commit run --all-files`, and 13 black-box tests t
   over successive ticks without requiring older positions to close; slow/failing
   quotes cannot silently violate the declared observation contract. Preserve frozen
   cohort semantics or introduce a declared version/cutover.
+- **Implementation:** select eligible probes by `updated_at`, `entry_at`, and
+  `paper_id`. Successful and failed quote attempts already advance `updated_at`, so
+  this is a restart-safe fair queue with deterministic ties and no frozen-contract
+  or schema change. Unit SQL coverage and a real-PostgreSQL rotation regression
+  cover the selection invariant; the existing deadline expiry path keeps missed
+  observations visible.
 
 ### ENG-024 — Verify coverage artifacts and trace partial-outcome consumers
 
