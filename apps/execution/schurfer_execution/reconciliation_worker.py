@@ -48,8 +48,11 @@ SELECT
     a.trade_id
 FROM app.live_order_attempts AS a
 LEFT JOIN app.trades AS t ON t.id = a.trade_id
-WHERE a.status IN ('pending', 'accepted', 'submission_unknown', 'manual_required')
-   OR (a.status = 'completed' AND (a.trade_id IS NULL OR t.status = 'open'))
+WHERE a.operation = 'entry'
+  AND (
+      a.status IN ('pending', 'accepted', 'submission_unknown', 'manual_required')
+      OR (a.status = 'completed' AND (a.trade_id IS NULL OR t.status = 'open'))
+  )
 """
 
 _OPEN_TRADES_SQL = """
@@ -69,7 +72,7 @@ SELECT
     a.status AS attempt_status,
     a.requested_amount
 FROM app.trades AS t
-LEFT JOIN app.live_order_attempts AS a ON a.trade_id = t.id
+LEFT JOIN app.live_order_attempts AS a ON a.trade_id = t.id AND a.operation = 'entry'
 WHERE t.status = 'open'
   AND COALESCE(t.setup_context->>'paper', 'false') != 'true'
 """

@@ -102,6 +102,8 @@ async def manual_close_position(body: CloseBody, request: Request) -> dict[str, 
                     exit_order_id=result.get("order_id"),
                     exit_price=float(exit_price),
                     reason="manual",
+                    executed_at=result.get("executed_at"),
+                    execution_time_source=result.get("execution_time_source"),
                 )
                 # Only drop the pointer once durably recorded, and only if
                 # it still points at this trade — otherwise a DB outage
@@ -120,6 +122,7 @@ async def manual_close_position(body: CloseBody, request: Request) -> dict[str, 
         await rdb.delete(exit_module.params_key(body.exchange, body.base))
         await rdb.delete(exit_module.entry_key(body.exchange, body.base))
         await rdb.delete(exit_module.side_key(body.exchange, body.base))
+        await rdb.delete(exit_module.size_usd_key(body.exchange, body.base))
 
     return result
 

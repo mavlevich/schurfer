@@ -1,6 +1,6 @@
 # Roadmap
 
-> Living document. Updated as we progress. Last refreshed 2026-09-07.
+> Living document. Updated as we progress. Last refreshed 2026-09-10.
 
 ## Current focus
 
@@ -8,11 +8,27 @@ Update only these four lines after every merge -- this is the fast-path
 status check, not a place for narrative.
 
 ```
-Current primary: ENG-022, fill/remaining/protection lifecycle (stage 2); support: ENG-025 recovery inventory
-State: stage 1 contained -- ENG-020 (#343) and ENG-021 (#345) merged, both fixed in code and NOT deployed; durable stop-state and the Go lint policy (ENG-029) declared, not implemented; frozen cohorts continue collecting
-Next after current primary merges: ENG-022 fill/close lifecycle; then ENG-023 paper fairness and ENG-024 artifact integrity, with economics preparation alongside
-User decision required: yes -- whether to deploy execution now (code-only restart, depends on whether production holds trading API keys); owner economics, new hypothesis parameters and live trading remain separate decisions
+Current primary: ENG-022 step 5, strategy-identity compatibility and explicit reaper failure, in progress; support: conditional launch/delayed-short plan PR #395 in review
+State: ENG-022 steps 1-4 merged as #347/#399/#400/#401 and NOT deployed; HYP-024 corrected by #397, deployed at b118019 and formally inconclusive (89 measured; 17/18 compared episodes and 28 clusters, below both floors; no held-out read); ENG-020/#343 and ENG-021/#345 remain fixed in code and NOT deployed
+Next after current primary merges: user-authorized backup/migrate/deploy and operational validation of the full ENG-022 stack; ENG-023 paper fairness and ENG-024 partial-outcome consumer tracing follow
+User decision required: deployment authorized on 2026-09-10, but no live-mode change is authorized; no new hypothesis parameters were selected and HYP-024 earned no continuation
 ```
+
+### Active change card — ENG-022 step 5
+
+- **Result / scope:** make combined strategy identity parsing unambiguous while
+  preserving every active producer shape, and ensure a failed episode reaper cannot
+  return the same zero summary as a successful no-op.
+- **Dependencies / owner:** builds on the complete execution lifecycle merged through
+  #401; consumer inventory covers trader, early-momentum, liquidation-cascade, paper,
+  journal registry, API strategy FK reads, and the sole reaper caller;
+  implementation is isolated to one branch and one pull request.
+- **Effort / stop condition:** stop when `pump_short_v2_venue` resolves to
+  `pump_short`/`2_venue`, all active identity shapes have compatibility tests, and a
+  reaper DB failure reaches the worker boundary instead of reporting zeros.
+- **Deploy / rollback:** code-only completion of the migration-backed ENG-022 stack.
+  User authorized one backup/migrate/deploy on 2026-09-10; keep live trading mode
+  unchanged and execute production validation only after this step merges.
 
 ## Autonomy rules (when to just proceed, when to ask)
 

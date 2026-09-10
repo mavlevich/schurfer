@@ -1,5 +1,5 @@
-import time
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 import ccxt
@@ -8,7 +8,13 @@ import structlog
 from . import exit as exit_module
 from . import incidents, journal, notify, order_attempts
 from .account import fetch_margin_balance, fetch_positions
-from .fill_price import FILL_NONE, FILL_PARTIAL, FILL_UNRESOLVED, resolve_fill_price
+from .fill_price import (
+    FILL_NONE,
+    FILL_PARTIAL,
+    FILL_UNRESOLVED,
+    order_is_terminal,
+    resolve_fill_price,
+)
 from .journal import revoke_pnl_readiness
 from .order_lock import OrderLockLease
 from .risk import (
@@ -41,6 +47,7 @@ async def _handle_unresolved_open(
     leverage: int,
     contract_size: float,
     setup_context: dict[str, Any] | None,
+    entry_observed_at: datetime,
 ) -> dict[str, Any]:
     """The order is confirmed placed on the exchange, but its fill price is not.
 
@@ -68,6 +75,7 @@ async def _handle_unresolved_open(
                 # size_usd above (ENG-022 / audit C-3).
                 "contract_size": contract_size,
                 "setup_context": setup_context,
+                "entry_observed_at": entry_observed_at.isoformat(),
             },
         )
         if incident_id is not None and await incidents.claim_creation_notification(
@@ -116,19 +124,37 @@ async def _handle_unresolved_close(
     side: str,
     reason: str,
     mark_price: float,
+    requested_amount: float,
+    filled_amount: float | None,
+    remaining_amount: float | None,
+    terminal: bool,
+    order_terminal: bool | None,
+    executed_at: datetime,
+    execution_time_source: str,
 ) -> dict[str, Any]:
-    """The close is confirmed on the exchange, but its fill price is not.
+    """Persist a close leg whose accounting cannot yet be completed.
 
-    The position is already gone from the exchange's perspective, so the caller
-    must still stop monitoring it — only the journal close (and therefore this
-    trade's realized PnL) is deferred, exactly like an unresolved journal write
-    already is via journal.write_pending_close, just one step earlier.
+    ``terminal`` is based on exchange position state or positive full-fill
+    evidence.  A non-terminal incident must never close the journal trade when
+    its price resolves: it represents only one leg of a still-open position.
     """
     await revoke_pnl_readiness(rdb)
     incident_id = None
     if db_url:
         trade_id_raw = await rdb.get(f"trade:id:{exchange}:{base.upper()}")
         trade_id = int(trade_id_raw) if trade_id_raw else None
+        context: dict[str, Any] = {
+            "reason": reason,
+            "mark_price": mark_price,
+            "requested_amount": requested_amount,
+            "filled_amount": filled_amount,
+            "remaining_amount": remaining_amount,
+            "terminal": terminal,
+            "executed_at": executed_at.isoformat(),
+            "execution_time_source": execution_time_source,
+        }
+        if order_terminal is not None:
+            context["order_terminal"] = order_terminal
         incident_id = await incidents.create_incident(
             db_url,
             exchange=exchange,
@@ -136,7 +162,7 @@ async def _handle_unresolved_close(
             operation="close",
             order_id=order_id,
             trade_id=trade_id,
-            context={"reason": reason, "mark_price": mark_price},
+            context=context,
         )
         if incident_id is not None and await incidents.claim_creation_notification(
             db_url, incident_id
@@ -146,9 +172,10 @@ async def _handle_unresolved_close(
                 await notify.notify_alert(
                     *creds,
                     text=(
-                        f"Fill price unresolved for CLOSE {base} on {exchange} "
-                        f"(order {order_id}). Position is closed on the exchange; "
-                        f"PnL is unknown until reconciled. See incident {incident_id}."
+                        f"Close fill/accounting unresolved for {base} on {exchange} "
+                        f"(order {order_id}). Position is "
+                        f"{'closed' if terminal else 'still open and protected'}; "
+                        f"PnL remains blocked until reconciled. See incident {incident_id}."
                     ),
                 )
     log.error(
@@ -159,7 +186,7 @@ async def _handle_unresolved_close(
         incident_id=incident_id,
     )
     return {
-        "closed": True,
+        "closed": terminal,
         "fill_status": FILL_UNRESOLVED,
         "incident_id": incident_id,
         "order_id": order_id,
@@ -168,6 +195,8 @@ async def _handle_unresolved_close(
         "side": side,
         "reason": reason,
         "exit_price": None,
+        "filled_amount": filled_amount,
+        "remaining_amount": remaining_amount,
     }
 
 
@@ -335,7 +364,7 @@ async def place_order(
         # convention one step earlier.
         attempt_id: int | None = None
         if db_url:
-            attempt_id = await order_attempts.create_attempt(
+            reservation = await order_attempts.create_attempt(
                 db_url,
                 client_order_id=entry_client_order_id,
                 exchange=exchange,
@@ -350,13 +379,24 @@ async def place_order(
                 contract_size=contract_size,
                 exit_params=exit_params,
                 setup_context=setup_context or {},
+                open_positions=positions,
+                max_positions=max_positions,
             )
-            if attempt_id is None:
+            if isinstance(reservation, order_attempts.PortfolioCapacityReached):
+                return {
+                    "allowed": False,
+                    "reason": (
+                        "max positions reached "
+                        f"({reservation.occupied_slots}/{reservation.max_positions})"
+                    ),
+                }
+            if reservation is None:
                 return {
                     "allowed": False,
                     "reason": "cannot durably record order intent (db unavailable) -- "
                     "refusing to place a live order that could not be tracked",
                 }
+            attempt_id = reservation
 
         is_open, current_token = worker_gate.is_open()
         if not is_open or current_token != gate_token:
@@ -411,13 +451,15 @@ async def place_order(
             worker_gate.set_safety_blocker(SUBMISSION_UNKNOWN_BLOCKER)
             return {"allowed": False, "reason": f"submission_unknown: unexpected error {exc}"}
 
+        entry_observed_at = datetime.now(tz=UTC)
+
         if db_url and attempt_id is not None:
             await order_attempts.mark_accepted(db_url, attempt_id, order_id=str(order.get("id")))
 
         await rdb.set(
             f"position:opened_at:{exchange}:{base.upper()}",
-            str(int(time.time())),
-            ex=86400,
+            str(entry_observed_at.timestamp()),
+            ex=86400 * 7,
         )
         order_id = order.get("id")
         log.info(
@@ -572,6 +614,7 @@ async def place_order(
                 leverage=leverage,
                 contract_size=contract_size,
                 setup_context=setup_context,
+                entry_observed_at=entry_observed_at,
             )
             if db_url and attempt_id is not None:
                 await order_attempts.mark_completed(db_url, attempt_id, trade_id=None)
@@ -631,7 +674,13 @@ async def place_order(
             leverage=leverage,
             entry_price=resolution.price,
             exit_params=exit_params,
-            setup_context=setup_context or {},
+            setup_context={
+                **(setup_context or {}),
+                "entry_time_source": (
+                    resolution.execution_time_source or "local.order_response_observed_at"
+                ),
+            },
+            entry_at=resolution.executed_at or entry_observed_at,
         )
         if db_url and attempt_id is not None:
             await order_attempts.mark_completed(
@@ -673,6 +722,7 @@ async def place_order(
                     "contract_size": contract_size,
                     "client_order_id": entry_client_order_id,
                     "filled_amount": resolution.filled_amount,
+                    "entry_observed_at": entry_observed_at.isoformat(),
                 },
             )
             await revoke_pnl_readiness(rdb)
@@ -725,6 +775,77 @@ async def place_order(
     raise RuntimeError("open order lease exited without an operation result")
 
 
+async def _remaining_position_amount(
+    ex: Any, *, symbol: str, position_side: str, exchange: str, base: str
+) -> float | None:
+    """Read the post-close residual; None means the exchange could not prove it."""
+    try:
+        positions = await ex.fetch_positions()
+    except Exception as exc:
+        log.error(
+            "execution.position.close_residual_fetch_failed",
+            exchange=exchange,
+            base=base,
+            err=str(exc),
+        )
+        return None
+    return sum(
+        float(position.get("contracts") or 0)
+        for position in positions
+        if position.get("symbol") == symbol
+        and position.get("side") == position_side
+        and float(position.get("contracts") or 0) > 0
+    )
+
+
+async def _tracked_trade_id(
+    *, db_url: str, rdb: Any, exchange: str, base: str, symbol: str
+) -> int | None:
+    raw = await rdb.get(f"trade:id:{exchange}:{base.upper()}")
+    try:
+        if raw is not None:
+            return int(raw)
+    except (TypeError, ValueError):
+        log.error(
+            "execution.position.close_invalid_trade_id",
+            exchange=exchange,
+            base=base,
+        )
+    return await journal.find_open_trade_id(db_url, exchange=exchange, symbol=symbol)
+
+
+async def _cancel_terminal_stop(
+    *,
+    ex: Any,
+    rdb: Any,
+    sl_key: str,
+    sl_order_id: str | None,
+    symbol: str,
+    exchange: str,
+    base: str,
+) -> None:
+    """Cancel the old reduce-only stop only after terminal close evidence.
+
+    On cancellation failure the key is deliberately retained.  The vanished-
+    position reconciler can retry cleanup; deleting it would orphan a resting
+    order that could attach to a later position on the same instrument.
+    """
+    if not sl_order_id:
+        return
+    try:
+        await ex.cancel_order(sl_order_id, symbol)
+    except Exception as exc:
+        log.error(
+            "execution.stop_loss.terminal_cancel_failed",
+            base=base,
+            exchange=exchange,
+            order_id=sl_order_id,
+            err=str(exc),
+        )
+        return
+    await rdb.delete(sl_key)
+
+
 async def close_position(
     *,
     exchanges: dict[str, Any],
@@ -770,43 +891,119 @@ async def close_position(
         if not ex.markets:
             await ex.load_markets()
 
-        # Cancel the resting exchange stop-loss first, so it doesn't linger as a
-        # dangling reduce-only order once this close fills the position to zero.
+        market = ex.markets.get(symbol) or {}
+        contract_size = float(market.get("contractSize") or 1.0)
+
+        # Keep the reduce-only stop live while the market close is in flight.
+        # It cannot reverse the position, and it is the only protection left if
+        # this close fills partially, fills nothing, raises, or the process dies
+        # at an external boundary.  It is cancelled only after terminal evidence.
         sl_key = SL_ORDER_ID_KEY.format(exchange=exchange, base=base.upper())
         sl_order_id = await rdb.get(sl_key)
         if sl_order_id:
             sl_order_id = sl_order_id.decode() if isinstance(sl_order_id, bytes) else sl_order_id
-            try:
-                await ex.cancel_order(sl_order_id, symbol)
-            except Exception as cancel_exc:
-                # Order may have already filled or expired — not fatal, proceed with close.
-                log.warning(
-                    "execution.stop_loss.cancel_failed",
-                    base=base,
-                    exchange=exchange,
-                    order_id=sl_order_id,
-                    err=str(cancel_exc),
-                )
-            await rdb.delete(sl_key)
 
         mark_price = float(position.get("markPrice") or position.get("mark_price") or 0)
         amount = float(ex.amount_to_precision(symbol, contracts))
-        order = await ex.create_market_order(
-            symbol, close_side, amount, params={"reduceOnly": True}
+        db_url = getattr(cfg, "db_url", None) if cfg is not None else None
+        trade_id = (
+            await _tracked_trade_id(
+                db_url=db_url,
+                rdb=rdb,
+                exchange=exchange,
+                base=base,
+                symbol=symbol,
+            )
+            if db_url
+            else None
         )
+        close_client_order_id = str(uuid.uuid4())
+        close_attempt_id = None
+        if db_url:
+            close_attempt_id = await order_attempts.create_close_attempt(
+                db_url,
+                client_order_id=close_client_order_id,
+                exchange=exchange,
+                base=base,
+                symbol=symbol,
+                native_market_id=(str(market.get("id")) if market.get("id") else None),
+                market_type=(str(market.get("type")) if market.get("type") else None),
+                side=close_side,
+                size_usd=amount * mark_price * contract_size,
+                requested_amount=amount,
+                contract_size=contract_size,
+                trade_id=trade_id,
+                context={
+                    "reason": reason,
+                    "position_side": position_side,
+                    "sl_order_id": str(sl_order_id) if sl_order_id else None,
+                },
+            )
+            if close_attempt_id is None:
+                # Exits are never blocked by a DB outage, but new entries must
+                # stop until the unjournalled external outcome is reconciled.
+                await revoke_pnl_readiness(rdb)
+
+        try:
+            close_params: dict[str, Any] = {
+                "reduceOnly": True,
+                "clientOrderId": close_client_order_id,
+            }
+            order = await ex.create_market_order(
+                symbol,
+                close_side,
+                amount,
+                params=close_params,
+            )
+        except ccxt.NetworkError as exc:
+            if db_url and close_attempt_id is not None:
+                await order_attempts.mark_submission_unknown(
+                    db_url, close_attempt_id, error=str(exc)
+                )
+            return {
+                "closed": False,
+                "reason": f"submission_unknown: close order may exist: {exc}",
+                "protected": bool(sl_order_id),
+            }
+        except ccxt.ExchangeError as exc:
+            if db_url and close_attempt_id is not None:
+                await order_attempts.mark_failed(db_url, close_attempt_id, error=str(exc))
+            return {
+                "closed": False,
+                "reason": f"exchange_rejection: {exc}",
+                "protected": bool(sl_order_id),
+            }
+        except Exception as exc:
+            if db_url and close_attempt_id is not None:
+                await order_attempts.mark_submission_unknown(
+                    db_url, close_attempt_id, error=str(exc)
+                )
+            return {
+                "closed": False,
+                "reason": f"submission_unknown: unexpected close error {exc}",
+                "protected": bool(sl_order_id),
+            }
+        close_observed_at = datetime.now(tz=UTC)
         order_id = order.get("id")
-        await rdb.delete(f"position:opened_at:{exchange}:{base.upper()}")
+        close_order_id = str(order_id) if order_id is not None else close_client_order_id
+        if db_url and close_attempt_id is not None and order_id is not None:
+            await order_attempts.mark_accepted(db_url, close_attempt_id, order_id=str(order_id))
 
         resolution = await resolve_fill_price(
             ex, symbol=symbol, order=order, requested_amount=amount
         )
+        executed_at = resolution.executed_at or close_observed_at
+        execution_time_source = (
+            resolution.execution_time_source or "local.order_response_observed_at"
+        )
+        order_terminal = order_is_terminal(order)
+        order_status = order.get("status")
+        order_terminal_evidence = order_terminal if isinstance(order_status, str) else None
         if resolution.status == FILL_NONE:
             # The close order executed nothing, so the position is still open
             # and still ours to protect. Never report this as closed: the
             # caller would commit a journal close and drop exit tracking for a
             # position that is still on the exchange (ENG-022 / audit C-3).
-            # The protective stop was already cancelled above, so say so --
-            # the position is currently unprotected and needs another attempt.
             log.error(
                 "execution.position.close_no_fill",
                 base=base,
@@ -814,6 +1011,12 @@ async def close_position(
                 order_id=order_id,
                 requested_amount=amount,
             )
+            if db_url and close_attempt_id is not None and order_terminal:
+                await order_attempts.mark_failed(
+                    db_url,
+                    close_attempt_id,
+                    error=f"exchange reports no fill for close order {order_id}",
+                )
             return {
                 "closed": False,
                 "fill_status": FILL_NONE,
@@ -822,14 +1025,69 @@ async def close_position(
                 "base": base,
                 "side": position_side,
                 "reason": (
-                    f"close order {order_id} filled nothing -- position still open "
-                    f"and its protective stop was cancelled; retry the close"
+                    f"close order {order_id} has no confirmed fill"
+                    f"{' and is still active' if not order_terminal else ''} -- "
+                    "position still open; "
+                    f"protective stop {'retained' if sl_order_id else 'was not tracked'}"
                 ),
+                "filled_amount": 0.0,
+                "remaining_amount": amount,
+                "protected": bool(sl_order_id),
+            }
+
+        filled_amount = resolution.filled_amount
+        remaining_amount: float | None
+        if resolution.status == FILL_PARTIAL:
+            assert filled_amount is not None
+            remaining_amount = max(0.0, amount - filled_amount)
+        elif resolution.status == FILL_UNRESOLVED or filled_amount is None:
+            remaining_amount = await _remaining_position_amount(
+                ex,
+                symbol=symbol,
+                position_side=position_side,
+                exchange=exchange,
+                base=base,
+            )
+            if remaining_amount is not None:
+                filled_amount = max(0.0, amount - remaining_amount)
+        else:
+            remaining_amount = max(0.0, amount - filled_amount)
+
+        tolerance = max(amount * 0.001, 1e-12)
+        terminal = remaining_amount is not None and remaining_amount <= tolerance
+
+        if not terminal and not order_terminal and resolution.status == FILL_PARTIAL:
+            # The reported amount is cumulative, not a final close leg. Persisting
+            # it now would conflict with the same order after it fills further;
+            # marking the attempt partial would also let the monitor submit a
+            # duplicate close while this order is still active. Leave the durable
+            # attempt recoverable until the exchange proves the order is terminal.
+            await revoke_pnl_readiness(rdb)
+            log.warning(
+                "execution.position.close_partial_order_active",
+                base=base,
+                exchange=exchange,
+                order_id=order_id,
+                filled_amount=filled_amount,
+                remaining_amount=remaining_amount,
+            )
+            return {
+                "closed": False,
+                "fill_status": FILL_PARTIAL,
+                "fill_source": resolution.source,
+                "order_id": order_id,
+                "exchange": exchange,
+                "base": base,
+                "side": position_side,
+                "reason": f"{reason}: close order remains active; duplicate submission blocked",
+                "exit_price": resolution.price,
+                "filled_amount": filled_amount,
+                "remaining_amount": remaining_amount,
+                "protected": bool(sl_order_id),
             }
 
         if resolution.status == FILL_UNRESOLVED:
-            close_order_id = str(order_id) if order_id is not None else f"unknown:{uuid.uuid4()}"
-            return await _handle_unresolved_close(
+            unresolved_result = await _handle_unresolved_close(
                 db_url=getattr(cfg, "db_url", None) if cfg is not None else None,
                 rdb=rdb,
                 cfg=cfg,
@@ -839,7 +1097,160 @@ async def close_position(
                 side=position_side,
                 reason=reason,
                 mark_price=mark_price,
+                requested_amount=amount,
+                filled_amount=filled_amount if filled_amount and filled_amount > 0 else None,
+                remaining_amount=remaining_amount,
+                terminal=terminal,
+                order_terminal=order_terminal_evidence,
+                executed_at=executed_at,
+                execution_time_source=execution_time_source,
             )
+            if terminal:
+                await _cancel_terminal_stop(
+                    ex=ex,
+                    rdb=rdb,
+                    sl_key=sl_key,
+                    sl_order_id=str(sl_order_id) if sl_order_id else None,
+                    symbol=symbol,
+                    exchange=exchange,
+                    base=base,
+                )
+                await rdb.delete(f"position:opened_at:{exchange}:{base.upper()}")
+            return unresolved_result
+
+        assert resolution.price is not None
+        if filled_amount is None or filled_amount <= 0:
+            # A price without executed volume plus an unverifiable/residual
+            # position is not terminal evidence.  Keep every protection key.
+            log.error(
+                "execution.position.close_volume_unproven",
+                base=base,
+                exchange=exchange,
+                order_id=order_id,
+                remaining_amount=remaining_amount,
+            )
+            return {
+                "closed": False,
+                "fill_status": resolution.status,
+                "fill_source": resolution.source,
+                "order_id": order_id,
+                "exchange": exchange,
+                "base": base,
+                "side": position_side,
+                "reason": "close volume/terminal state not proven; protection retained",
+                "exit_price": resolution.price,
+                "filled_amount": filled_amount,
+                "remaining_amount": remaining_amount,
+                "protected": bool(sl_order_id),
+            }
+
+        effective_exit_price = resolution.price
+        if db_url:
+            if trade_id is not None:
+                aggregate_price = await journal.record_close_fill(
+                    db_url,
+                    trade_id=trade_id,
+                    exchange=exchange,
+                    order_id=close_order_id,
+                    fill_price=resolution.price,
+                    filled_amount=filled_amount,
+                    requested_amount=amount,
+                    remaining_amount=max(0.0, remaining_amount or 0.0),
+                    terminal=terminal,
+                    fill_source=resolution.source,
+                    executed_at=executed_at,
+                    execution_time_source=execution_time_source,
+                )
+            else:
+                aggregate_price = None
+            if aggregate_price is None:
+                # The exchange fill is real, but without durable leg evidence
+                # a later retry could account only the last fill.  Defer the
+                # journal rather than publishing fabricated aggregate PnL.
+                unresolved_result = await _handle_unresolved_close(
+                    db_url=db_url,
+                    rdb=rdb,
+                    cfg=cfg,
+                    exchange=exchange,
+                    base=base,
+                    order_id=close_order_id,
+                    side=position_side,
+                    reason=reason,
+                    mark_price=mark_price,
+                    requested_amount=amount,
+                    filled_amount=filled_amount,
+                    remaining_amount=remaining_amount,
+                    terminal=terminal,
+                    order_terminal=order_terminal_evidence,
+                    executed_at=executed_at,
+                    execution_time_source=execution_time_source,
+                )
+                if terminal:
+                    await _cancel_terminal_stop(
+                        ex=ex,
+                        rdb=rdb,
+                        sl_key=sl_key,
+                        sl_order_id=str(sl_order_id) if sl_order_id else None,
+                        symbol=symbol,
+                        exchange=exchange,
+                        base=base,
+                    )
+                    await rdb.delete(f"position:opened_at:{exchange}:{base.upper()}")
+                return unresolved_result
+            effective_exit_price = aggregate_price
+            if close_attempt_id is not None:
+                if terminal:
+                    await order_attempts.mark_completed(
+                        db_url,
+                        close_attempt_id,
+                        trade_id=trade_id,
+                        filled_amount=filled_amount,
+                    )
+                else:
+                    assert trade_id is not None
+                    await order_attempts.mark_partial(
+                        db_url,
+                        close_attempt_id,
+                        trade_id=trade_id,
+                        filled_amount=filled_amount,
+                    )
+        if not terminal:
+            await revoke_pnl_readiness(rdb)
+
+        if not terminal:
+            log.warning(
+                "execution.position.close_partial",
+                base=base,
+                exchange=exchange,
+                order_id=order_id,
+                filled_amount=filled_amount,
+                remaining_amount=remaining_amount,
+            )
+            return {
+                "closed": False,
+                "fill_status": FILL_PARTIAL,
+                "fill_source": resolution.source,
+                "order_id": order_id,
+                "exchange": exchange,
+                "base": base,
+                "side": position_side,
+                "reason": f"{reason}: partial close; residual position remains protected",
+                "exit_price": resolution.price,
+                "filled_amount": filled_amount,
+                "remaining_amount": remaining_amount,
+                "protected": bool(sl_order_id),
+            }
+
+        await _cancel_terminal_stop(
+            ex=ex,
+            rdb=rdb,
+            sl_key=sl_key,
+            sl_order_id=str(sl_order_id) if sl_order_id else None,
+            symbol=symbol,
+            exchange=exchange,
+            base=base,
+        )
+        await rdb.delete(f"position:opened_at:{exchange}:{base.upper()}")
 
         log.info(
             "execution.position.closed",
@@ -848,7 +1259,7 @@ async def close_position(
             side=position_side,
             reason=reason,
             order_id=order_id,
-            exit_price=resolution.price,
+            exit_price=effective_exit_price,
         )
         return {
             "closed": True,
@@ -859,6 +1270,10 @@ async def close_position(
             "base": base,
             "side": position_side,
             "reason": reason,
-            "exit_price": resolution.price,
+            "exit_price": effective_exit_price,
+            "filled_amount": filled_amount,
+            "remaining_amount": 0.0,
+            "executed_at": executed_at,
+            "execution_time_source": execution_time_source,
         }
     raise RuntimeError("close order lease exited without an operation result")

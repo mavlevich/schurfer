@@ -100,6 +100,10 @@ class ReapSummary:
     infrastructure_failed_claims: int
 
 
+class ReapUnavailableError(RuntimeError):
+    """The reaper could not determine or persist a truthful summary."""
+
+
 def _row_to_episode(row: dict[str, Any]) -> Episode:
     return Episode(
         episode_id=str(row["episode_id"]),
@@ -514,7 +518,10 @@ async def reap_overdue(
         )
     except Exception as exc:
         log.error("episodes.reap_overdue_failed", err=str(exc))
-        return ReapSummary(expired_armed=0, expired_while_claimed=0, infrastructure_failed_claims=0)
+        # A zero summary means the transaction completed and matched no rows.
+        # Returning the same zeros after a DB failure makes the consumer report
+        # success from unknown state, so make unavailability a distinct result.
+        raise ReapUnavailableError("episode reaper summary unavailable") from exc
 
 
 _LIST_ACTIONABLE = """

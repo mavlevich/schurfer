@@ -45,6 +45,7 @@ def _display_strategy(setup_context: dict[str, Any]) -> str:
 _KEY_PREFIX = "position:paper:"
 _TRADE_ID_KEY = "trade:id:paper:{exchange}:{base}"
 _INTERVAL_SECONDS = 30
+_POSITION_TTL = 86400 * 7
 
 # A separate namespace from the real position key, never a partial payload
 # written under position:paper:* itself -- _tick scans that exact prefix
@@ -516,6 +517,31 @@ async def close_paper(
     side = pos.get("side", "short")
     strategy = pos.get("strategy", "unknown")
     leverage_raw = pos.get("leverage")
+    pending_close = pos.get("pending_close")
+    pending_close = pending_close if isinstance(pending_close, dict) else None
+    close_executed_at: datetime | None = None
+    pending_exit_observation: dict[str, Any] | None = None
+    if pending_close is not None:
+        try:
+            close_executed_at = datetime.fromisoformat(str(pending_close["executed_at"]))
+            current_price = float(pending_close["exit_price"])
+            reason = str(pending_close["reason"])
+            stored_observation = pending_close.get("exit_observation")
+            if isinstance(stored_observation, dict):
+                pending_exit_observation = dict(stored_observation)
+                observed_at = pending_exit_observation.get("observed_at")
+                if isinstance(observed_at, str):
+                    pending_exit_observation["observed_at"] = datetime.fromisoformat(observed_at)
+        except (KeyError, TypeError, ValueError):
+            log.error(
+                "paper.pending_close_invalid",
+                trade_id=pos.get("trade_id"),
+                base=base,
+                exchange=exchange,
+            )
+            pending_close = None
+            close_executed_at = None
+            pending_exit_observation = None
 
     # Fallback figures for the case journal.close_trade never runs at all (no
     # DB, no trade_id, or exchange_client unavailable). Once close_trade does
@@ -552,7 +578,13 @@ async def close_paper(
     exit_observation: dict[str, Any] | None = None
     exit_vwap: float | None = None
     fresh_exit_slippage_bps: float | None = None
-    if trade_id_raw and cfg.db_url and exchange_client is not None and symbol is not None:
+    if pending_close is not None:
+        exit_observation = pending_exit_observation
+        pending_exit_price = pending_close.get("exit_price")
+        exit_vwap = float(pending_exit_price) if pending_exit_price is not None else None
+        pending_slippage = pending_close.get("fresh_exit_slippage_bps")
+        fresh_exit_slippage_bps = float(pending_slippage) if pending_slippage is not None else None
+    elif trade_id_raw and cfg.db_url and exchange_client is not None and symbol is not None:
         try:
             exit_observation, exit_vwap, fresh_exit_slippage_bps = await _capture_exit_liquidity(
                 exchange_client,
@@ -582,12 +614,35 @@ async def close_paper(
 
     if trade_id_raw and cfg.db_url:
         trade_id = int(trade_id_raw)
+        if close_executed_at is None:
+            observed_at = exit_observation.get("observed_at") if exit_observation else None
+            close_executed_at = (
+                observed_at if isinstance(observed_at, datetime) else datetime.now(tz=UTC)
+            )
+            serializable_observation = None
+            if exit_observation is not None:
+                serializable_observation = dict(exit_observation)
+                observation_time = serializable_observation.get("observed_at")
+                if isinstance(observation_time, datetime):
+                    serializable_observation["observed_at"] = observation_time.isoformat()
+            pos["pending_close"] = {
+                "executed_at": close_executed_at.isoformat(),
+                "exit_price": exit_price_for_accounting,
+                "reason": reason,
+                "fresh_exit_slippage_bps": fresh_exit_slippage_bps,
+                "exit_observation": serializable_observation,
+            }
+            # Paper retries must reuse the first logical close event rather
+            # than acquire extra modeled funding or move PnL into a later UTC
+            # day while PostgreSQL is unavailable.
+            await rdb.set(paper_key(exchange, base), json.dumps(pos), ex=_POSITION_TTL)
         outcome = await journal.close_trade(
             cfg.db_url,
             trade_id=trade_id,
             exit_order_id=None,
             exit_price=exit_price_for_accounting,
             reason=reason,
+            executed_at=close_executed_at,
             fresh_exit_slippage_bps=fresh_exit_slippage_bps,
             exit_observation=exit_observation,
         )
@@ -807,8 +862,38 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:
             symbol = pos.get("symbol")
             exchange = pos["exchange"]
             entry_price = float(pos["entry_price"])
-            opened_at = float(pos.get("opened_at", 0))
+            opened_at_raw = pos.get("opened_at")
+            opened_at = float(opened_at_raw) if opened_at_raw is not None else None
             side = pos.get("side", "short")
+
+            if opened_at is None and cfg.db_url and pos.get("trade_id") is not None:
+                recovered_entry_at = await journal.find_trade_entry_at(
+                    cfg.db_url, trade_id=int(pos["trade_id"])
+                )
+                if recovered_entry_at is not None:
+                    opened_at = recovered_entry_at.timestamp()
+                    pos["opened_at"] = opened_at
+                    await rdb.set(key, json.dumps(pos), ex=_POSITION_TTL)
+                    log.warning(
+                        "paper.opened_at_recovered",
+                        trade_id=pos["trade_id"],
+                        base=base,
+                        exchange=exchange,
+                        source="journal.entry_at",
+                    )
+
+            if opened_at is None:
+                # Missing age is not an age of zero or Unix epoch.  Keep
+                # price-based paper exits running, but suppress max-hold/
+                # no-progress for this tick and make the evidence gap loud.
+                opened_at = time.time()
+                log.error(
+                    "paper.opened_at_unresolved",
+                    trade_id=pos.get("trade_id"),
+                    base=base,
+                    exchange=exchange,
+                    age_exit_suppressed=True,
+                )
 
             ex = exchanges.get(exchange)
             if not ex:

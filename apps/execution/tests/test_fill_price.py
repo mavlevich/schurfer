@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -7,6 +8,7 @@ from schurfer_execution.fill_price import (
     FILL_NONE,
     FILL_PARTIAL,
     FILL_UNRESOLVED,
+    order_is_terminal,
     resolve_fill_price,
 )
 
@@ -22,6 +24,16 @@ def _exchange(**overrides: Any) -> MagicMock:
     return ex
 
 
+@pytest.mark.parametrize("status", ["closed", "canceled", "cancelled", "expired", "rejected"])
+def test_terminal_order_statuses(status: str) -> None:
+    assert order_is_terminal({"status": status})
+
+
+@pytest.mark.parametrize("status", ["open", "new", None, ""])
+def test_non_terminal_order_statuses(status: str | None) -> None:
+    assert not order_is_terminal({"status": status})
+
+
 async def test_prefers_order_average() -> None:
     result = await resolve_fill_price(
         _exchange(),
@@ -32,6 +44,40 @@ async def test_prefers_order_average() -> None:
     assert result.price == 1.23
     assert result.source == "order.average"
     assert result.filled_amount == 10.0
+
+
+async def test_preserves_last_trade_timestamp_with_provenance() -> None:
+    result = await resolve_fill_price(
+        _exchange(),
+        symbol="BEAT/USDT:USDT",
+        order={
+            "id": "1",
+            "average": 1.23,
+            "filled": 10.0,
+            "timestamp": 1_788_937_100_000,
+            "lastTradeTimestamp": 1_788_937_200_000,
+        },
+    )
+
+    assert result.executed_at == datetime.fromtimestamp(1_788_937_200, tz=UTC)
+    assert result.execution_time_source == "exchange.lastTradeTimestamp"
+
+
+async def test_order_creation_timestamp_is_not_treated_as_fill_time() -> None:
+    result = await resolve_fill_price(
+        _exchange(),
+        symbol="BEAT/USDT:USDT",
+        order={
+            "id": "stop-1",
+            "average": 1.23,
+            "filled": 10.0,
+            "timestamp": 1_788_900_000_000,
+            "datetime": "2026-09-09T12:00:00Z",
+        },
+    )
+
+    assert result.executed_at is None
+    assert result.execution_time_source is None
 
 
 async def test_falls_back_to_order_price() -> None:
@@ -152,6 +198,23 @@ async def test_falls_back_to_trade_vwap() -> None:
     assert result.status == FILL_CONFIRMED
     assert result.price == pytest.approx(3.0)
     assert result.source == "trades.vwap"
+
+
+async def test_trade_vwap_uses_latest_trade_timestamp() -> None:
+    ex = _exchange(
+        has={"fetchOrderTrades": True, "fetchMyTrades": False},
+        fetch_order_trades=AsyncMock(
+            return_value=[
+                {"price": 2.0, "amount": 1.0, "timestamp": 1_788_937_100_000},
+                {"price": 4.0, "amount": 1.0, "timestamp": 1_788_937_200_000},
+            ]
+        ),
+    )
+
+    result = await resolve_fill_price(ex, symbol="BEAT/USDT:USDT", order={"id": "1"})
+
+    assert result.executed_at == datetime.fromtimestamp(1_788_937_200, tz=UTC)
+    assert result.execution_time_source == "exchange.timestamp"
 
 
 async def test_uses_fetch_my_trades_when_order_trades_unsupported() -> None:

@@ -44,6 +44,14 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, db_url: str | None) -> None
             await rdb.delete(PNL_READY_KEY)
             log.warning("pnl_tracker.skipping_update", reason="pending_close_outstanding")
             return
+        if await journal.any_open_trade_close_fills(db_url):
+            # A reduce-only order realized only part of an otherwise-open
+            # trade.  Its PnL is not in realized_pnl_today() until the final
+            # close commits the aggregate VWAP, so admitting new entries here
+            # would use an understated daily result.
+            await rdb.delete(PNL_READY_KEY)
+            log.warning("pnl_tracker.skipping_update", reason="partial_close_outstanding")
+            return
         if await incidents.any_open_incidents(db_url):
             # A fill's price is not yet confirmed at all (see fill_price.py) —
             # its PnL impact is unknown, not zero, so daily_pnl must not be

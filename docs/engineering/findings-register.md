@@ -540,24 +540,27 @@ verify`, `make deadcode`, `pre-commit run --all-files`, and 13 black-box tests t
 
 ### ENG-022 — Preserve fills, residual exposure and close accounting across recovery
 
-- **Status / priority:** `planned`, `P1`; C-3/C-4/C-5/H-3/H-6/J-1/J-3, B04;
-  reported EP-2 consumer behavior remains a verification subtask.
-- **Evidence:** `fill_price.py` accepts positive price with zero filled volume;
-  `orders.py` journals requested notional on partial entry, reports a partial exit
-  as closed, and removes stop protection/tracking before successful close. The
-  per-instrument lock does not reserve the global portfolio slot. These failures
-  were reproduced synthetically. `journal.py:901` timestamps a first close at write
+- **Status / priority:** steps 1-4 `fixed in code` by #347/#399/#400/#401; step 5
+  `in progress`, `P1`; all remain undeployed. C-3/C-4/C-5/H-3/H-6/J-1/J-3,
+  B04; reported EP-2 consumer behavior remains a verification subtask.
+- **Historical evidence:** before #347, `fill_price.py` accepted positive price with
+  zero filled volume and `orders.py` journalled requested notional on partial entry.
+  Before #399, it still reported a partial exit as closed and
+  removed stop protection/tracking before successful close. Before #400, the
+  per-instrument lock did not reserve the global portfolio slot. These failures
+  were reproduced synthetically. Before step 4, `journal.py` timestamped a first close at write
   time; delayed paper accounting can acquire extra modeled funding and a new UTC
   day. Missing opened_at defaults differ between legacy live and legacy paper.
-- **Residual after step 1:** a venue that never reports `filled` still journals the
-  requested notional on a partial entry. The fallback is logged
+- **Residual after steps 1-3:** a venue that never reports
+  `filled` still journals the requested notional on a partial entry. The fallback is logged
   (`execution.order.filled_volume_unknown`), never silent. Requiring positive `filled`
   everywhere was tried and rejected: it turns every legitimate exit on such a venue into
-  an incident. Revisit with step 2, which needs a remaining-quantity model anyway.
-- **Small implementation steps:** (1) fill evidence and actual notional;
-  (2) partial-close/protection/remaining lifecycle; (3) portfolio reservation using
-  existing durable attempts; (4) execution timestamp carried through pending-close
-  retries and recovery of missing position age; (5) strategy identity compatibility
+  an incident. Keep this explicit; resolving it needs venue-specific
+  entry evidence rather than a portfolio-reservation guess.
+- **Small implementation steps:** (1) fill evidence and actual notional — #347;
+  (2) partial-close/protection/remaining lifecycle — #399; (3) portfolio reservation using
+  existing durable attempts — #400; (4) execution timestamp carried through pending-close
+  retries and recovery of missing position age — #401; (5) strategy identity compatibility
   and explicit reconciliation-error summaries after consumer verification.
 - **Acceptance:** regression scenarios for zero/partial/full/unknown fills,
   contractSize, failed close after stop cancellation, restart between each external

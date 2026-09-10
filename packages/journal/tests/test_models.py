@@ -25,6 +25,7 @@ from schurfer_journal.models import (
     SourceLeadTargetObservation,
     Strategy,
     Trade,
+    TradeCloseFill,
     TradeDecision,
     TradeDecisionOutcome,
     TradeExitLiquidityObservation,
@@ -236,6 +237,39 @@ class TestTradeExitLiquidityObservationModel:
         foreign_keys = {
             foreign_key.target_fullname
             for foreign_key in TradeExitLiquidityObservation.__table__.foreign_keys
+        }
+        assert foreign_keys == {"app.trades.id"}
+
+
+class TestTradeCloseFillModel:
+    def test_table_contract(self) -> None:
+        assert TradeCloseFill.__tablename__ == "trade_close_fills"
+        assert TradeCloseFill.__table__.schema == "app"
+        columns = {column.name: column for column in TradeCloseFill.__table__.columns}
+        assert {
+            "id",
+            "trade_id",
+            "exchange",
+            "order_id",
+            "fill_price",
+            "filled_amount",
+            "requested_amount",
+            "remaining_amount",
+            "terminal",
+            "fill_source",
+            "executed_at",
+            "execution_time_source",
+            "created_at",
+            "updated_at",
+        } == set(columns)
+        assert columns["fill_price"].type.precision == 30
+        assert columns["filled_amount"].type.scale == 14
+
+    def test_order_id_is_idempotent_per_exchange(self) -> None:
+        indexes = {index.name: index for index in TradeCloseFill.__table__.indexes}
+        assert indexes["ux_trade_close_fills_exchange_order_id"].unique
+        foreign_keys = {
+            foreign_key.target_fullname for foreign_key in TradeCloseFill.__table__.foreign_keys
         }
         assert foreign_keys == {"app.trades.id"}
 
@@ -606,6 +640,8 @@ class TestLiveOrderAttemptModel:
         assert LiveOrderAttempt.__tablename__ == "live_order_attempts"
         assert LiveOrderAttempt.__table__.schema == "app"
         columns = LiveOrderAttempt.__table__.columns
+        assert columns["operation"].nullable is False
+        assert columns["status"].type.length == 32
         assert columns["client_order_id"].nullable is False
         assert columns["exchange"].nullable is False
         assert columns["side"].nullable is False
@@ -622,6 +658,8 @@ class TestLiveOrderAttemptModel:
 
         assert indexes["ux_live_order_attempts_client_order_id"].unique
         assert "ck_live_order_attempts_status" in constraints
+        assert "ck_live_order_attempts_operation" in constraints
+        assert "ix_live_order_attempts_operation_status" in indexes
         assert fks == {"app.trades.id"}
 
 
