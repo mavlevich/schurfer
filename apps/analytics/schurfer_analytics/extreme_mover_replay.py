@@ -570,6 +570,12 @@ def _peak_concurrency(rows: tuple[EpisodeResult, ...]) -> int:
     return peak
 
 
+def _completed_order_key(row: EpisodeResult) -> tuple[datetime, int, str]:
+    if row.decision_at is None:
+        raise ValueError("complete episode result is missing its decision timestamp")
+    return row.decision_at, row.pump_event_id, row.decision_id or ""
+
+
 def _cell_metrics(
     rows: tuple[EpisodeResult, ...],
     *,
@@ -584,7 +590,12 @@ def _cell_metrics(
         for row in rows
         if row.anchor == anchor and row.direction == direction and row.horizon_minutes == horizon
     )
-    completed = tuple(row for row in selected if row.status == "complete")
+    completed = tuple(
+        sorted(
+            (row for row in selected if row.status == "complete"),
+            key=_completed_order_key,
+        )
+    )
     resolved = tuple(row for row in selected if row.net_return_pct is not None)
     trade_returns = [
         float(row.net_return_pct) for row in completed if row.net_return_pct is not None
@@ -727,14 +738,29 @@ def _verdict(direction: str, metrics: tuple[CellMetrics, ...]) -> DirectionVerdi
             _cell_key(selected),
             "at least one pre-declared cell clears the data and concentration gates",
         )
-    mature = tuple(
+    negative_mature = tuple(
+        metric
+        for metric in directional
+        if metric.completed_trades >= MIN_COMPLETED_TRADES
+        and metric.mean_trade_net_return_pct is not None
+        and metric.mean_trade_net_return_pct < 0
+    )
+    fully_mature = tuple(
         metric
         for metric in directional
         if metric.completed_trades >= MIN_COMPLETED_TRADES
         and metric.clusters >= MIN_ASSET_CLUSTERS
         and metric.utc_weeks >= MIN_UTC_WEEKS
     )
-    if mature:
+    if negative_mature:
+        return DirectionVerdict(
+            direction,
+            "stop",
+            None,
+            "at least one cell has 100 completed trades and negative after-cost EV; "
+            "insufficient diversity cannot mask that result",
+        )
+    if fully_mature:
         return DirectionVerdict(
             direction,
             "stop",

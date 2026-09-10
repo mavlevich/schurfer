@@ -251,3 +251,76 @@ def test_episode_fails_closed_on_inconsistent_base_identity() -> None:
 
     with pytest.raises(ValueError, match="inconsistent base identity"):
         build_episodes((inconsistent,))
+
+
+def test_negative_ev_with_enough_trades_stops_even_without_week_diversity() -> None:
+    decisions = tuple(
+        _decision(
+            index,
+            index,
+            at=T0 + timedelta(minutes=index),
+            outcomes=tuple(_outcome(horizon, forward_price=98.0) for horizon in HORIZONS_MINUTES),
+        )
+        for index in range(1, 111)
+    )
+
+    report = _report(decisions)
+
+    long_verdict = next(row for row in report.verdicts if row.direction == "long")
+    long_60 = next(
+        row
+        for row in report.metrics
+        if row.anchor == "first_decision" and row.direction == "long" and row.horizon_minutes == 60
+    )
+    assert long_60.completed_trades == 110
+    assert long_60.utc_weeks == 1
+    assert long_60.mean_trade_net_return_pct is not None
+    assert long_60.mean_trade_net_return_pct < 0
+    assert long_verdict.verdict == "stop"
+    assert "insufficient diversity cannot mask" in long_verdict.reason
+
+
+def test_sequence_metrics_follow_selected_anchor_time_not_episode_start() -> None:
+    first_a = _decision(1, 1, at=T0, quality_allowed=False)
+    quality_a = _decision(
+        2,
+        1,
+        at=T0 + timedelta(minutes=10),
+        outcomes=tuple(_outcome(horizon, forward_price=95.0) for horizon in HORIZONS_MINUTES),
+    )
+    first_b = _decision(3, 2, at=T0 + timedelta(minutes=5), quality_allowed=False)
+    quality_b = _decision(
+        4,
+        2,
+        at=T0 + timedelta(minutes=6),
+        outcomes=tuple(_outcome(horizon, forward_price=120.0) for horizon in HORIZONS_MINUTES),
+    )
+    first_c = _decision(5, 3, at=T0 + timedelta(minutes=7), quality_allowed=False)
+    quality_c = _decision(
+        6,
+        3,
+        at=T0 + timedelta(minutes=8),
+        outcomes=tuple(_outcome(horizon, forward_price=95.0) for horizon in HORIZONS_MINUTES),
+    )
+
+    report = _report((first_a, quality_a, first_b, quality_b, first_c, quality_c))
+
+    metric = next(
+        row
+        for row in report.metrics
+        if row.anchor == "first_quality" and row.direction == "long" and row.horizon_minutes == 60
+    )
+    chronological = sorted(
+        (
+            row
+            for row in report.episode_results
+            if row.anchor == "first_quality"
+            and row.direction == "long"
+            and row.horizon_minutes == 60
+        ),
+        key=lambda row: row.decision_at or T0,
+    )
+    expected_drawdown = -sum(row.net_pnl_usd or 0.0 for row in chronological[-2:])
+    assert [row.pump_event_id for row in chronological] == [2, 3, 1]
+    assert metric.longest_losing_streak == 2
+    assert metric.max_sequential_drawdown_usd == pytest.approx(expected_drawdown)

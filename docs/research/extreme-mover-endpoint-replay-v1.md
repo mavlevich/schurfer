@@ -87,8 +87,10 @@ weeks for a cell.
   net return and profit factor above 1 (or no losses), and retains positive mean under
   every applicable leave-one-asset/week/venue sensitivity.
 - `stop`: at least one cell clears the floors, but no cell retains positive after-cost
-  economics across those sensitivities. Negative mature economics is not masked by
-  diversity commentary.
+  economics across those sensitivities; or, when there is no candidate, any cell has
+  at least 100 completed trades and negative after-cost mean EV. The negative-EV stop
+  does not require the asset-cluster or UTC-week floors: insufficient diversity is
+  additional context and cannot mask a demonstrated negative result.
 - `insufficient_discovery`: no cell clears the floor. No return threshold is changed
   and no best token/venue/week is promoted.
 
@@ -103,8 +105,8 @@ The implementation is analytics-only: pure selection/economics, a repeatable-rea
 repository, Markdown/JSON CLI, local/production Make targets and no migration. Tests
 cover selection before outcome, partial/alternate-resolver exclusion, cross-venue
 exclusion, missing-liquidity cash, window straddles, long/short accounting, candidate
-and insufficient verdicts, deterministic serialization, and a real-PostgreSQL
-repository regression.
+and insufficient verdicts, negative-EV stop precedence, selected-anchor chronological
+risk metrics, deterministic serialization, and a real-PostgreSQL repository regression.
 
 The one production run is archived after merge/deploy from clean `main`. Its result is
 viewed Discovery. Parameters cannot be edited and re-run on this window to rescue a
