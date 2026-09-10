@@ -71,7 +71,12 @@ def _exchange(*, contracts: float = 10.0, symbol: str = "BEAT/USDT:USDT") -> Mag
         return_value=[{"symbol": symbol, "contracts": contracts, "side": "short"}]
     )
     ex.create_market_order = AsyncMock(
-        return_value={"id": "order-123", "status": "closed", "average": 1.0}
+        return_value={
+            "id": "order-123",
+            "status": "closed",
+            "average": 1.0,
+            "filled": contracts,
+        }
     )
     ex.amount_to_precision = MagicMock(side_effect=lambda sym, amt: str(amt))
     return ex
@@ -107,7 +112,8 @@ async def test_close_short_places_buy_with_reduce_only() -> None:
     assert result["closed"] is True
     call = ex.create_market_order.call_args
     assert call[0][1] == "buy"
-    assert call[1]["params"] == {"reduceOnly": True}
+    assert call[1]["params"]["reduceOnly"] is True
+    assert call[1]["params"]["clientOrderId"]
 
 
 async def test_close_long_places_sell_order() -> None:
@@ -255,6 +261,12 @@ async def test_close_unresolved_fill_never_fabricates_exit_price() -> None:
     # No average/price/cost/filled anywhere, no fetchable order-trades support —
     # close_position must never invent an exit price from mark/ticker data.
     ex = _exchange()
+    ex.fetch_positions = AsyncMock(
+        side_effect=[
+            [{"symbol": "BEAT/USDT:USDT", "contracts": 10.0, "side": "short"}],
+            [],
+        ]
+    )
     ex.create_market_order = AsyncMock(return_value={"id": "order-999", "status": "closed"})
     ex.has = {"fetchOrderTrades": False, "fetchMyTrades": False}
     rdb = _rdb()

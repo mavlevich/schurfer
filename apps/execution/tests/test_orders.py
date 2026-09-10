@@ -1,6 +1,7 @@
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
+import ccxt
 import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
@@ -1284,7 +1285,7 @@ class TestPreFlightDurability:
 
 
 class TestClosePositionCancelsStopLoss:
-    async def test_close_position_cancels_resting_sl_order_first(self) -> None:
+    async def test_close_position_cancels_resting_sl_order_after_terminal_fill(self) -> None:
         ex = MagicMock()
         ex.markets = {"BEAT/USDT:USDT": {}}
         ex.fetch_positions = AsyncMock(
@@ -1295,7 +1296,7 @@ class TestClosePositionCancelsStopLoss:
         ex.amount_to_precision = MagicMock(return_value="100.0")
         ex.cancel_order = AsyncMock(return_value={"id": "sl-1", "status": "canceled"})
         ex.create_market_order = AsyncMock(
-            return_value={"id": "close-1", "status": "closed", "average": 1.1}
+            return_value={"id": "close-1", "status": "closed", "average": 1.1, "filled": 100.0}
         )
 
         rdb = MagicMock()
@@ -1314,6 +1315,7 @@ class TestClosePositionCancelsStopLoss:
         )
 
         assert result["closed"]
+        assert ex.create_market_order.await_count == 1
         ex.cancel_order.assert_called_once_with("sl-1", "BEAT/USDT:USDT")
         rdb.delete.assert_any_call("position:sl_order_id:bingx:BEAT")
 
@@ -1329,7 +1331,7 @@ class TestClosePositionCancelsStopLoss:
         ex.amount_to_precision = MagicMock(return_value="100.0")
         ex.cancel_order = AsyncMock(side_effect=RuntimeError("order not found"))
         ex.create_market_order = AsyncMock(
-            return_value={"id": "close-1", "status": "closed", "average": 1.1}
+            return_value={"id": "close-1", "status": "closed", "average": 1.1, "filled": 100.0}
         )
 
         rdb = MagicMock()
@@ -1348,3 +1350,190 @@ class TestClosePositionCancelsStopLoss:
         )
 
         assert result["closed"]
+        # A failed terminal cleanup remains discoverable for reconciliation.
+        assert call("position:sl_order_id:bingx:BEAT") not in rdb.delete.await_args_list
+
+    async def test_partial_close_retains_stop_and_position_tracking(self) -> None:
+        ex = MagicMock()
+        ex.markets = {"BEAT/USDT:USDT": {}}
+        ex.fetch_positions = AsyncMock(
+            return_value=[
+                {"symbol": "BEAT/USDT:USDT", "contracts": 100.0, "side": "short", "markPrice": 1.1}
+            ]
+        )
+        ex.amount_to_precision = MagicMock(return_value="100.0")
+        ex.cancel_order = AsyncMock()
+        ex.create_market_order = AsyncMock(
+            return_value={"id": "close-partial", "status": "closed", "average": 1.1, "filled": 40.0}
+        )
+        rdb = MagicMock()
+        rdb.set = AsyncMock(return_value=True)
+        rdb.get = AsyncMock(return_value=b"sl-1")
+        rdb.delete = AsyncMock()
+        rdb.eval = AsyncMock(return_value=1)
+
+        result = await close_position(
+            exchanges={"bingx": ex},
+            exchange="bingx",
+            base="BEAT",
+            symbol="BEAT/USDT:USDT",
+            reason="test",
+            rdb=rdb,
+        )
+
+        assert result["closed"] is False
+        assert result["fill_status"] == "partial"
+        assert result["filled_amount"] == 40.0
+        assert result["remaining_amount"] == 60.0
+        assert result["protected"] is True
+        ex.cancel_order.assert_not_awaited()
+        assert call("position:opened_at:bingx:BEAT") not in rdb.delete.await_args_list
+
+    async def test_active_partial_close_stays_recoverable_and_is_not_persisted_early(self) -> None:
+        ex = MagicMock()
+        ex.markets = {"BEAT/USDT:USDT": {"contractSize": 1.0}}
+        ex.fetch_positions = AsyncMock(
+            return_value=[
+                {"symbol": "BEAT/USDT:USDT", "contracts": 100.0, "side": "short", "markPrice": 1.1}
+            ]
+        )
+        ex.amount_to_precision = MagicMock(return_value="100.0")
+        ex.create_market_order = AsyncMock(
+            return_value={"id": "close-active", "status": "open", "average": 1.1, "filled": 40.0}
+        )
+        ex.cancel_order = AsyncMock()
+        rdb = MagicMock()
+        rdb.set = AsyncMock(return_value=True)
+        rdb.get = AsyncMock(return_value=b"sl-1")
+        rdb.delete = AsyncMock()
+        rdb.eval = AsyncMock(return_value=1)
+        cfg = MagicMock(db_url="postgresql://x")
+
+        with (
+            patch("schurfer_execution.orders._tracked_trade_id", AsyncMock(return_value=42)),
+            patch(
+                "schurfer_execution.orders.order_attempts.create_close_attempt",
+                AsyncMock(return_value=7),
+            ),
+            patch("schurfer_execution.orders.order_attempts.mark_accepted", AsyncMock()),
+            patch("schurfer_execution.orders.order_attempts.mark_partial", AsyncMock()) as partial,
+            patch("schurfer_execution.orders.journal.record_close_fill", AsyncMock()) as record,
+        ):
+            result = await close_position(
+                exchanges={"bingx": ex},
+                exchange="bingx",
+                base="BEAT",
+                symbol="BEAT/USDT:USDT",
+                reason="test",
+                rdb=rdb,
+                cfg=cfg,
+            )
+
+        assert result["closed"] is False
+        assert "remains active" in result["reason"]
+        record.assert_not_awaited()
+        partial.assert_not_awaited()
+        ex.cancel_order.assert_not_awaited()
+
+    async def test_close_intent_is_durable_before_exchange_submission(self) -> None:
+        ex = MagicMock()
+        ex.markets = {"BEAT/USDT:USDT": {"id": "BEAT-USDT", "type": "swap", "contractSize": 1.0}}
+        ex.fetch_positions = AsyncMock(
+            return_value=[
+                {"symbol": "BEAT/USDT:USDT", "contracts": 10.0, "side": "short", "markPrice": 1.0}
+            ]
+        )
+        ex.amount_to_precision = MagicMock(return_value="10.0")
+        events: list[str] = []
+
+        async def _create_attempt(*_args: object, **_kwargs: object) -> int:
+            events.append("durable")
+            return 7
+
+        async def _submit(*_args: object, **_kwargs: object) -> dict[str, object]:
+            events.append("exchange")
+            return {"id": "close-1", "average": 1.0, "filled": 10.0}
+
+        ex.create_market_order = AsyncMock(side_effect=_submit)
+        ex.cancel_order = AsyncMock()
+        rdb = MagicMock()
+        rdb.set = AsyncMock(return_value=True)
+        rdb.get = AsyncMock(return_value=None)
+        rdb.delete = AsyncMock()
+        rdb.eval = AsyncMock(return_value=1)
+        cfg = MagicMock(db_url="postgresql://x")
+
+        with (
+            patch("schurfer_execution.orders._tracked_trade_id", AsyncMock(return_value=42)),
+            patch(
+                "schurfer_execution.orders.order_attempts.create_close_attempt",
+                AsyncMock(side_effect=_create_attempt),
+            ) as mock_create_attempt,
+            patch("schurfer_execution.orders.order_attempts.mark_accepted", AsyncMock()),
+            patch("schurfer_execution.orders.order_attempts.mark_completed", AsyncMock()),
+            patch(
+                "schurfer_execution.orders.journal.record_close_fill",
+                AsyncMock(return_value=1.0),
+            ),
+        ):
+            result = await close_position(
+                exchanges={"bingx": ex},
+                exchange="bingx",
+                base="BEAT",
+                symbol="BEAT/USDT:USDT",
+                reason="test",
+                rdb=rdb,
+                cfg=cfg,
+            )
+
+        assert result["closed"] is True
+        assert events == ["durable", "exchange"]
+        mock_create_attempt.assert_awaited_once()
+        params = ex.create_market_order.call_args.kwargs["params"]
+        assert params["reduceOnly"] is True
+        assert params["clientOrderId"]
+
+    async def test_ambiguous_close_submission_keeps_stop_and_marks_attempt(self) -> None:
+        ex = MagicMock()
+        ex.markets = {"BEAT/USDT:USDT": {"contractSize": 1.0}}
+        ex.fetch_positions = AsyncMock(
+            return_value=[
+                {"symbol": "BEAT/USDT:USDT", "contracts": 10.0, "side": "short", "markPrice": 1.0}
+            ]
+        )
+        ex.amount_to_precision = MagicMock(return_value="10.0")
+        ex.create_market_order = AsyncMock(side_effect=ccxt.NetworkError("timeout"))
+        ex.cancel_order = AsyncMock()
+        rdb = MagicMock()
+        rdb.set = AsyncMock(return_value=True)
+        rdb.get = AsyncMock(return_value=b"sl-1")
+        rdb.delete = AsyncMock()
+        rdb.eval = AsyncMock(return_value=1)
+        cfg = MagicMock(db_url="postgresql://x")
+
+        with (
+            patch("schurfer_execution.orders._tracked_trade_id", AsyncMock(return_value=42)),
+            patch(
+                "schurfer_execution.orders.order_attempts.create_close_attempt",
+                AsyncMock(return_value=7),
+            ),
+            patch(
+                "schurfer_execution.orders.order_attempts.mark_submission_unknown",
+                AsyncMock(),
+            ) as mock_unknown,
+        ):
+            result = await close_position(
+                exchanges={"bingx": ex},
+                exchange="bingx",
+                base="BEAT",
+                symbol="BEAT/USDT:USDT",
+                reason="test",
+                rdb=rdb,
+                cfg=cfg,
+            )
+
+        assert result["closed"] is False
+        assert result["protected"] is True
+        assert "submission_unknown" in result["reason"]
+        mock_unknown.assert_awaited_once()
+        ex.cancel_order.assert_not_awaited()

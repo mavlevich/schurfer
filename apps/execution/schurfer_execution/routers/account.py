@@ -120,6 +120,7 @@ async def manual_close_position(body: CloseBody, request: Request) -> dict[str, 
         await rdb.delete(exit_module.params_key(body.exchange, body.base))
         await rdb.delete(exit_module.entry_key(body.exchange, body.base))
         await rdb.delete(exit_module.side_key(body.exchange, body.base))
+        await rdb.delete(exit_module.size_usd_key(body.exchange, body.base))
 
     return result
 

@@ -8,6 +8,7 @@ def _mock_conn(*, fetchone_results: list[tuple | None] | None = None) -> tuple:
     test_incidents.py's own pattern."""
     cur = AsyncMock()
     cur.execute = AsyncMock()
+    cur.rowcount = 1
     if fetchone_results is not None:
         cur.fetchone = AsyncMock(side_effect=fetchone_results)
 
@@ -44,9 +45,38 @@ async def test_create_attempt_returns_new_id() -> None:
 
     assert attempt_id == 1
     row = cur.execute.call_args.args[1]
-    assert row[0] == "coid-1"
-    assert row[1] == "bybit"
-    assert row[2] == "BEAT"  # base uppercased, matching every other table here
+    assert row[0] == "entry"
+    assert row[1] == "coid-1"
+    assert row[2] == "bybit"
+    assert row[3] == "BEAT"  # base uppercased, matching every other table here
+
+
+async def test_create_close_attempt_persists_recovery_identity() -> None:
+    conn, cur = _mock_conn(fetchone_results=[(9,)])
+    with patch(
+        "schurfer_execution.order_attempts.psycopg.AsyncConnection.connect",
+        AsyncMock(return_value=conn),
+    ):
+        attempt_id = await order_attempts.create_close_attempt(
+            "postgresql://test",
+            client_order_id="close-coid",
+            exchange="bingx",
+            base="beat",
+            symbol="BEAT/USDT:USDT",
+            native_market_id="BEAT-USDT",
+            market_type="swap",
+            side="buy",
+            size_usd=100.0,
+            requested_amount=10.0,
+            contract_size=1.0,
+            trade_id=42,
+            context={"reason": "trailing_stop", "sl_order_id": "sl-1"},
+        )
+
+    assert attempt_id == 9
+    row = cur.execute.call_args.args[1]
+    assert row[:4] == ("close-coid", "bingx", "BEAT", "BEAT/USDT:USDT")
+    assert row[-1] == 42
 
 
 async def test_create_attempt_returns_none_on_db_failure() -> None:
@@ -122,6 +152,21 @@ async def test_mark_completed_accepts_none_trade_id() -> None:
 
     row = cur.execute.call_args.args[1]
     assert row[1] is None
+
+
+async def test_mark_partial_keeps_trade_link_and_actual_fill() -> None:
+    conn, cur = _mock_conn()
+    with patch(
+        "schurfer_execution.order_attempts.psycopg.AsyncConnection.connect",
+        AsyncMock(return_value=conn),
+    ):
+        recorded = await order_attempts.mark_partial(
+            "postgresql://test", 7, trade_id=42, filled_amount=4.0
+        )
+
+    assert recorded is True
+    row = cur.execute.call_args.args[1]
+    assert row == (order_attempts.STATUS_PARTIAL, 42, 4.0, 7)
 
 
 async def test_mark_failed_records_error() -> None:

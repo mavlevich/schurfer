@@ -161,6 +161,53 @@ ORDER BY entry_at DESC
 LIMIT 1
 """
 
+_INSERT_CLOSE_FILL = """
+INSERT INTO app.trade_close_fills (
+    trade_id, exchange, order_id, fill_price, filled_amount,
+    requested_amount, remaining_amount, terminal, fill_source
+) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+ON CONFLICT (exchange, order_id) DO NOTHING
+RETURNING id
+"""
+
+_SELECT_CLOSE_FILL = """
+SELECT trade_id, fill_price, filled_amount, requested_amount, remaining_amount, terminal
+FROM app.trade_close_fills
+WHERE exchange = %s AND order_id = %s
+"""
+
+_AGGREGATE_CLOSE_FILLS = """
+SELECT
+    SUM(fill_price * filled_amount) / NULLIF(SUM(filled_amount), 0),
+    SUM(filled_amount)
+FROM app.trade_close_fills
+WHERE trade_id = %s
+"""
+
+_ANY_OPEN_TRADE_CLOSE_FILLS = """
+SELECT 1
+FROM app.trade_close_fills AS f
+JOIN app.trades AS t ON t.id = f.trade_id
+WHERE t.status = 'open'
+LIMIT 1
+"""
+
+_TRADE_REMAINING_AMOUNT = """
+SELECT
+    (
+        SELECT filled_amount
+        FROM app.live_order_attempts
+        WHERE trade_id = %s AND operation = 'entry' AND filled_amount IS NOT NULL
+        ORDER BY id
+        LIMIT 1
+    ),
+    COALESCE((
+        SELECT SUM(filled_amount)
+        FROM app.trade_close_fills
+        WHERE trade_id = %s
+    ), 0)
+"""
+
 _REALIZED_PNL_TODAY = """
 SELECT COALESCE(SUM(pnl_usd), 0)
 FROM app.trades
@@ -305,6 +352,156 @@ async def find_strategy_id(db_url: str, *, name: str, version: str) -> int | Non
             return row[0] if row else None
     except Exception as exc:
         log.error("journal.find_strategy_id.failed", name=name, version=version, err=str(exc))
+        return None
+
+
+async def record_close_fill(
+    db_url: str,
+    *,
+    trade_id: int,
+    exchange: str,
+    order_id: str,
+    fill_price: float,
+    filled_amount: float,
+    requested_amount: float,
+    remaining_amount: float,
+    terminal: bool,
+    fill_source: str,
+) -> float | None:
+    """Append one close leg and return the trade's amount-weighted exit price.
+
+    The exchange/order id is the idempotency key.  A retry may observe the
+    same row, but conflicting evidence for that key is rejected loudly rather
+    than rewriting history.  The returned aggregate is what the terminal
+    close must commit to ``app.trades.exit_price``.
+    """
+    if min(fill_price, filled_amount, requested_amount) <= 0 or remaining_amount < 0:
+        log.error(
+            "journal.record_close_fill.invalid",
+            trade_id=trade_id,
+            exchange=exchange,
+            order_id=order_id,
+        )
+        return None
+    try:
+        async with (
+            await psycopg.AsyncConnection.connect(db_url) as aconn,
+            aconn.cursor() as cur,
+        ):
+            await cur.execute(
+                _INSERT_CLOSE_FILL,
+                (
+                    trade_id,
+                    exchange,
+                    order_id,
+                    fill_price,
+                    filled_amount,
+                    requested_amount,
+                    remaining_amount,
+                    terminal,
+                    fill_source,
+                ),
+            )
+            inserted = await cur.fetchone()
+            if inserted is None:
+                await cur.execute(_SELECT_CLOSE_FILL, (exchange, order_id))
+                existing = await cur.fetchone()
+                if existing is None:
+                    return None
+                (
+                    existing_trade_id,
+                    existing_price,
+                    existing_filled,
+                    existing_requested,
+                    existing_remaining,
+                    existing_terminal,
+                ) = existing
+                expected = (
+                    trade_id,
+                    fill_price,
+                    filled_amount,
+                    requested_amount,
+                    remaining_amount,
+                    terminal,
+                )
+                observed = (
+                    int(existing_trade_id),
+                    float(existing_price),
+                    float(existing_filled),
+                    float(existing_requested),
+                    float(existing_remaining),
+                    bool(existing_terminal),
+                )
+                numeric_match = all(
+                    math.isclose(float(left), float(right), rel_tol=1e-9, abs_tol=1e-12)
+                    for left, right in zip(observed[1:5], expected[1:5], strict=True)
+                )
+                if observed[0] != expected[0] or observed[5] != expected[5] or not numeric_match:
+                    log.critical(
+                        "journal.record_close_fill.idempotency_conflict",
+                        trade_id=trade_id,
+                        exchange=exchange,
+                        order_id=order_id,
+                    )
+                    return None
+
+            await cur.execute(_AGGREGATE_CLOSE_FILLS, (trade_id,))
+            aggregate = await cur.fetchone()
+            if aggregate is None or aggregate[0] is None:
+                return None
+            return float(aggregate[0])
+    except Exception as exc:
+        log.error(
+            "journal.record_close_fill.failed",
+            trade_id=trade_id,
+            exchange=exchange,
+            order_id=order_id,
+            err=str(exc),
+        )
+        return None
+
+
+async def any_open_trade_close_fills(db_url: str) -> bool:
+    """Whether realized partial PnL is waiting for the terminal close.
+
+    Until the trade is closed with the aggregate VWAP, the ordinary daily-PnL
+    query cannot include those realized legs.  Keeping the readiness lease
+    revoked prevents new entries from being admitted against understated PnL.
+    """
+    try:
+        async with await psycopg.AsyncConnection.connect(db_url) as aconn, aconn.cursor() as cur:
+            await cur.execute(_ANY_OPEN_TRADE_CLOSE_FILLS)
+            return await cur.fetchone() is not None
+    except Exception as exc:
+        log.error("journal.open_trade_close_fills_check_failed", err=str(exc))
+        return True
+
+
+async def aggregate_close_fill_price(db_url: str, *, trade_id: int) -> float | None:
+    """Load the durable amount-weighted exit price for restart recovery."""
+    try:
+        async with await psycopg.AsyncConnection.connect(db_url) as aconn, aconn.cursor() as cur:
+            await cur.execute(_AGGREGATE_CLOSE_FILLS, (trade_id,))
+            row = await cur.fetchone()
+            if row is None or row[0] is None:
+                return None
+            return float(row[0])
+    except Exception as exc:
+        log.error("journal.aggregate_close_fill_price.failed", trade_id=trade_id, err=str(exc))
+        return None
+
+
+async def remaining_trade_amount(db_url: str, *, trade_id: int) -> float | None:
+    """Infer the unclosed contracts from durable entry and close fills."""
+    try:
+        async with await psycopg.AsyncConnection.connect(db_url) as aconn, aconn.cursor() as cur:
+            await cur.execute(_TRADE_REMAINING_AMOUNT, (trade_id, trade_id))
+            row = await cur.fetchone()
+            if row is None or row[0] is None:
+                return None
+            return max(0.0, float(row[0]) - float(row[1]))
+    except Exception as exc:
+        log.error("journal.remaining_trade_amount.failed", trade_id=trade_id, err=str(exc))
         return None
 
 

@@ -322,6 +322,7 @@ async def test_manual_close_journal_written_and_all_keys_deleted() -> None:
     assert "exit:params:bybit:BEAT" in deleted
     assert "position:entry:bybit:BEAT" in deleted
     assert "position:side:bybit:BEAT" in deleted
+    assert "position:size_usd:bybit:BEAT" in deleted
 
 
 async def test_manual_close_cleanup_happens_without_db_url() -> None:
@@ -351,6 +352,7 @@ async def test_manual_close_cleanup_happens_without_db_url() -> None:
     assert "exit:params:bybit:BEAT" in deleted
     assert "position:entry:bybit:BEAT" in deleted
     assert "position:side:bybit:BEAT" in deleted
+    assert "position:size_usd:bybit:BEAT" in deleted
 
 
 async def test_manual_close_journal_failure_does_not_delete_trade_id() -> None:

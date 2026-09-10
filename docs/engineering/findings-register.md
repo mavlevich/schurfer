@@ -540,11 +540,13 @@ verify`, `make deadcode`, `pre-commit run --all-files`, and 13 black-box tests t
 
 ### ENG-022 — Preserve fills, residual exposure and close accounting across recovery
 
-- **Status / priority:** `planned`, `P1`; C-3/C-4/C-5/H-3/H-6/J-1/J-3, B04;
-  reported EP-2 consumer behavior remains a verification subtask.
-- **Evidence:** `fill_price.py` accepts positive price with zero filled volume;
-  `orders.py` journals requested notional on partial entry, reports a partial exit
-  as closed, and removes stop protection/tracking before successful close. The
+- **Status / priority:** step 1 `fixed in code` by #347; step 2 `ready for review`,
+  `P1`; C-3/C-4/C-5/H-3/H-6/J-1/J-3, B04; reported EP-2 consumer behavior
+  remains a verification subtask.
+- **Historical evidence:** before #347, `fill_price.py` accepted positive price with
+  zero filled volume and `orders.py` journalled requested notional on partial entry.
+  Before the current step-2 branch, it still reported a partial exit as closed and
+  removed stop protection/tracking before successful close. The
   per-instrument lock does not reserve the global portfolio slot. These failures
   were reproduced synthetically. `journal.py:901` timestamps a first close at write
   time; delayed paper accounting can acquire extra modeled funding and a new UTC
