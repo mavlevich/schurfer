@@ -8,27 +8,26 @@ Update only these four lines after every merge -- this is the fast-path
 status check, not a place for narrative.
 
 ```
-Current primary: ENG-022 step 5, strategy-identity compatibility and explicit reaper failure, in progress; support: conditional launch/delayed-short plan PR #395 in review
-State: ENG-022 steps 1-4 merged as #347/#399/#400/#401 and NOT deployed; HYP-024 corrected by #397, deployed at b118019 and formally inconclusive (89 measured; 17/18 compared episodes and 28 clusters, below both floors; no held-out read); ENG-020/#343 and ENG-021/#345 remain fixed in code and NOT deployed
-Next after current primary merges: user-authorized backup/migrate/deploy and operational validation of the full ENG-022 stack; ENG-023 paper fairness and ENG-024 partial-outcome consumer tracing follow
-User decision required: deployment authorized on 2026-09-10, but no live-mode change is authorized; no new hypothesis parameters were selected and HYP-024 earned no continuation
+Current primary: ENG-023 fair momentum-paper servicing beyond the batch limit, planned; support: ENG-024 partial-outcome consumer tracing
+State: ENG-020/#343, ENG-021/#345 and ENG-022/#347/#399/#400/#401/#402 deployed at 913d8f7 on 2026-09-10; migration 0048, workers, recovery and accounting queues verified healthy; HYP-024 re-run unchanged and inconclusive with no held-out read
+Next: implement and verify ENG-023 before adding another paper sibling, then complete ENG-024; HYP-015 hold12h remains the next registered forward edge candidate but its production worker has not been started
+User decision required: no live-mode change is authorized; starting the HYP-015 hold12h production paper worker needs a separate explicit production authorization after ENG-023
 ```
 
-### Active change card — ENG-022 step 5
+### Active change card — ENG-023 fair paper servicing
 
-- **Result / scope:** make combined strategy identity parsing unambiguous while
-  preserving every active producer shape, and ensure a failed episode reaper cannot
-  return the same zero summary as a successful no-op.
-- **Dependencies / owner:** builds on the complete execution lifecycle merged through
-  #401; consumer inventory covers trader, early-momentum, liquidation-cascade, paper,
-  journal registry, API strategy FK reads, and the sole reaper caller;
-  implementation is isolated to one branch and one pull request.
-- **Effort / stop condition:** stop when `pump_short_v2_venue` resolves to
-  `pump_short`/`2_venue`, all active identity shapes have compatibility tests, and a
-  reaper DB failure reaches the worker boundary instead of reporting zeros.
-- **Deploy / rollback:** code-only completion of the migration-backed ENG-022 stack.
-  User authorized one backup/migrate/deploy on 2026-09-10; keep live trading mode
-  unchanged and execute production validation only after this step merges.
+- **Result / scope:** ensure every eligible open momentum-paper probe is serviced over
+  successive ticks even when the population exceeds the repository batch limit;
+  declare a maximum quote-age/deadline budget instead of allowing silent starvation.
+- **Dependencies / owner:** reuse the existing repository ordering, worker advisory
+  lock and ENG-003 venue-aware concurrency; preserve every frozen paper contract and
+  keep database work bounded to one implementation branch and pull request.
+- **Effort / stop condition:** stop when a real-repository test above the batch limit
+  proves complete fair coverage across ticks and slow/failing quotes cannot violate
+  the declared observation contract without a visible failure.
+- **Deploy / rollback:** code-only unless the solution needs a migration. Do not start
+  another paper sibling until this fairness invariant is merged and separately
+  deployed; keep live trading mode unchanged.
 
 ## Autonomy rules (when to just proceed, when to ask)
 
@@ -200,8 +199,8 @@ capital amount or income target are invented by this plan.
 
 ### Conditional launch and delayed-short plan — 2026-09-09
 
-**Status: queued feasibility question; expanded launch, on-chain and arbitrage
-infrastructure remains parked.** The owner requested a bounded path from ideas to
+**Status: first feasibility question closed as `duplicate`; expanded launch,
+on-chain and arbitrage infrastructure remains parked.** The owner requested a bounded path from ideas to
 economic evidence. This section governs these additions to the older DEX narrative
 radar and [parked catalog](IDEAS.md); it does not reopen frozen results or activate
 their unchecked implementation lists.
@@ -221,7 +220,7 @@ rule or a sample-selection criterion. Start with instruments on supported venues
 a launch-specific variant needs reliable event-time evidence before that restriction
 can define a cohort.
 
-- [ ] **Check novelty and feasibility first.** Compare with the existing
+- [x] **Check novelty and feasibility first.** Compare with the existing
       [order-flow pilot's delayed-short lane](docs/research/bybit-order-flow-pilot-v1.md),
       [entry-confirmation replay](docs/research/episode-replay-protocol-v1.md), and
       [HYP-024](docs/research/orderflow-microstructure-v1.md). Record what differs,
@@ -229,6 +228,19 @@ can define a cohort.
       bounded work session initially; if it cannot finish, record the blocker and
       effort estimate before extending. Finish with `duplicate`, `feasible`, or
       `blocked`, without screening returns or inventing a new dump score.
+
+      **Result, 2026-09-10: `duplicate`; stop.** The existing pilot already registered
+      the same mechanism as `delayed_short`: fading buy pressure after a pump versus
+      subsequent signed short return. Its endpoint-sensitivity read had adequate
+      samples at the usable bounds (N=146-232, 33-45 clusters, 8 UTC days), and the
+      apparent relationship collapsed toward zero as completeness increased; no lane
+      passed. A clean production re-run of the unmodified strict-5-second report at
+      `913d8f7` found 1,018 captures but only 53 complete matches and correctly
+      withheld economic interpretation. Do not restart that stopped capture, relax
+      its endpoint after seeing outcomes, or register the same delayed-short idea
+      under a new id. The remaining conditional steps below do not activate for this
+      question.
+
 - [ ] **If feasible and distinct, register one comparison.** Freeze the observable
       recovery/failure rule, event/decision times, maximum wait, exit/cost policy,
       evidence floor, primary economic gate and deadline before reading evaluation

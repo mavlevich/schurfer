@@ -34,6 +34,16 @@ make prod-hyp-024-orderflow-report \
 | code revision                   | `b118019ecc884fbb14e219d8136e9e34b1b4e7e6`                         |
 | working tree dirty / formal run | `False` / `True`                                                   |
 
+### Post-deploy reproducibility check — 2026-09-10
+
+The same frozen command was run after the ENG-020/021/022 production deployment on
+clean revision `913d8f7477a2e4029ff071fe1aa2bba31cb4c1bb`. It generated at
+`2026-09-10T11:59:47.032174Z` from database snapshot
+`2026-09-10T11:59:46.075842Z` with `formal_run=True` and reproduced the exact dataset
+fingerprint `6ad531840bcf1624c96062945cacd3f85369acdca53b6a20a76a3e52b075735d`,
+coverage funnel, quintiles and verdict below. This is a reproducibility check of the
+same closed discovery cohort, not additional evidence or a held-out read.
+
 ## Verdict
 
 | Field                                     | Value                                                                                                 |
