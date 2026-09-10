@@ -338,3 +338,5 @@ def test_the_sql_selects_the_episode_before_joining_the_outcome() -> None:
     # can be counted, rather than vanishing from the population.
     assert "LEFT JOIN app.trade_decision_outcomes" in query
     assert query.count("JOIN app.trade_decision_outcomes") == 1
+    assert "o.resolver_version = :resolver_version" in query
+    assert "o.status = 'complete'" in query

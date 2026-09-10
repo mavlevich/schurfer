@@ -36,6 +36,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 from schurfer_performance import DEFAULT_COSTS, CostParameters
 
 from .episode_selection import episode_decision_query
+from .outcomes import RESOLVER_VERSION
 from .research_contract import crosses_window_boundary
 
 if TYPE_CHECKING:
@@ -486,6 +487,7 @@ async def load_observations(db_url: str, contract: ResearchContract) -> tuple[di
                 text(episode_decision_query("short_return_pct")),
                 {
                     "horizon": contract.outcome_horizon_minutes,
+                    "resolver_version": RESOLVER_VERSION,
                     "strategies": list(contract.strategy_versions),
                     "since": contract.window_since,
                     "until": contract.window_until,
