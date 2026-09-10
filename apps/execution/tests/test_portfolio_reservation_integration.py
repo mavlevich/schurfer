@@ -172,7 +172,6 @@ async def test_concurrent_place_order_calls_submit_only_the_reserved_entry() -> 
     connection = await _connect_or_skip()
     suffix = uuid.uuid4().hex[:12].upper()
     bases = [f"X{suffix}", f"Y{suffix}"]
-    client_prefix = "test-eng022-place-order-"
 
     exchange = MagicMock()
     exchange.markets = {
@@ -226,14 +225,6 @@ async def test_concurrent_place_order_calls_submit_only_the_reserved_entry() -> 
                     ]
                 ),
             ),
-            patch(
-                "schurfer_execution.orders.uuid.uuid4",
-                side_effect=[
-                    f"{client_prefix}{suffix}-a",
-                    f"{client_prefix}{suffix}-b",
-                    "stop-client-id",
-                ],
-            ),
             patch("schurfer_execution.orders.order_attempts.mark_accepted", AsyncMock()),
             patch("schurfer_execution.orders.order_attempts.mark_completed", AsyncMock()),
             patch(
@@ -256,6 +247,7 @@ async def test_concurrent_place_order_calls_submit_only_the_reserved_entry() -> 
                         max_position_usd=500.0,
                         daily_loss_limit_usd=200.0,
                         cfg=cfg,
+                        setup_context={"test_run_id": suffix},
                         worker_gate=WorkerReadinessGate(set()),
                     )
                     for base in bases
@@ -268,7 +260,8 @@ async def test_concurrent_place_order_calls_submit_only_the_reserved_entry() -> 
     finally:
         async with connection.cursor() as cursor:
             await cursor.execute(
-                "DELETE FROM app.live_order_attempts WHERE client_order_id LIKE %s",
-                (f"{client_prefix}{suffix}%",),
+                "DELETE FROM app.live_order_attempts "
+                "WHERE operation = 'entry' AND setup_context->>'test_run_id' = %s",
+                (suffix,),
             )
         await connection.close()
