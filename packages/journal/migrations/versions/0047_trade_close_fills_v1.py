@@ -108,11 +108,12 @@ def downgrade() -> None:
         DO $$
         BEGIN
             IF EXISTS (
-                SELECT 1 FROM app.live_order_attempts
-                WHERE operation = 'close' AND status = 'partial'
+                SELECT 1 FROM app.live_order_attempts WHERE operation = 'close'
+            ) OR EXISTS (
+                SELECT 1 FROM app.trade_close_fills
             ) THEN
                 RAISE EXCEPTION
-                    'cannot downgrade 0047 with durable partial close attempts';
+                    'cannot downgrade 0047 with durable close lifecycle evidence';
             END IF;
         END $$
         """

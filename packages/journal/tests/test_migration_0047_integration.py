@@ -5,14 +5,19 @@ from __future__ import annotations
 import os
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 from urllib.parse import urlsplit
 
 import psycopg
 import pytest
+from alembic import command
+from alembic.config import Config
+from sqlalchemy.exc import DBAPIError
 
 TEST_DATABASE_URL = os.getenv(
     "DATABASE_URL", "postgresql://schurfer:schurfer_dev@localhost:5432/schurfer"
 )
+ALEMBIC_INI = Path(__file__).resolve().parents[1] / "alembic.ini"
 
 
 def _connect_or_skip() -> psycopg.Connection:
@@ -34,6 +39,40 @@ def _connect_or_skip() -> psycopg.Connection:
                 f"REQUIRE_INTEGRATION_DB=1 but PostgreSQL/head is unavailable: {exc}"
             ) from exc
         pytest.skip(f"no local postgres/head reachable: {exc}")
+
+
+def _alembic_config() -> Config:
+    config = Config(str(ALEMBIC_INI))
+    config.set_main_option("sqlalchemy.url", TEST_DATABASE_URL)
+    return config
+
+
+def test_empty_downgrade_and_upgrade_preserve_declared_schema_boundary() -> None:
+    connection = _connect_or_skip()
+    connection.close()
+    config = _alembic_config()
+
+    command.downgrade(config, "0046")
+    try:
+        with psycopg.connect(TEST_DATABASE_URL) as downgraded, downgraded.cursor() as cursor:
+            cursor.execute("SELECT to_regclass('app.trade_close_fills')")
+            assert cursor.fetchone() == (None,)
+            cursor.execute(
+                """
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema = 'app'
+                  AND table_name = 'live_order_attempts'
+                  AND column_name = 'operation'
+                """
+            )
+            assert cursor.fetchone() is None
+    finally:
+        command.upgrade(config, "head")
+
+    with psycopg.connect(TEST_DATABASE_URL) as upgraded, upgraded.cursor() as cursor:
+        cursor.execute("SELECT to_regclass('app.trade_close_fills')")
+        assert cursor.fetchone() == ("app.trade_close_fills",)
 
 
 def test_partial_close_legs_are_idempotent_and_aggregate_exactly() -> None:
@@ -125,6 +164,9 @@ def test_partial_close_legs_are_idempotent_and_aggregate_exactly() -> None:
                     """,
                     (trade_id, exchange),
                 )
+
+        with pytest.raises(DBAPIError, match="cannot downgrade 0047"):
+            command.downgrade(_alembic_config(), "0046")
     finally:
         if trade_id is not None:
             with connection.transaction(), connection.cursor() as cursor:

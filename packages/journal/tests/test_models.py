@@ -639,6 +639,7 @@ class TestLiveOrderAttemptModel:
         assert LiveOrderAttempt.__table__.schema == "app"
         columns = LiveOrderAttempt.__table__.columns
         assert columns["operation"].nullable is False
+        assert columns["status"].type.length == 32
         assert columns["client_order_id"].nullable is False
         assert columns["exchange"].nullable is False
         assert columns["side"].nullable is False
