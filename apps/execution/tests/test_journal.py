@@ -486,6 +486,25 @@ async def test_close_trade_already_closed_is_idempotent_success() -> None:
     cur.execute.assert_called_once()  # only the SELECT — no UPDATE attempted
 
 
+async def test_close_trade_uses_exchange_execution_time_not_commit_time() -> None:
+    executed_at = datetime(2026, 9, 9, 23, 58, tzinfo=UTC)
+    conn, cur = _mock_conn([_trade_row(), (1,)])
+
+    with patch("psycopg.AsyncConnection.connect", AsyncMock(return_value=conn)):
+        outcome = await journal.close_trade(
+            "postgresql://x",
+            trade_id=1,
+            exit_order_id="ord-1",
+            exit_price=90.0,
+            reason="test",
+            executed_at=executed_at,
+        )
+
+    assert outcome.committed is True
+    update_params = cur.execute.call_args_list[1].args[1]
+    assert update_params[2] == executed_at
+
+
 async def test_record_exit_liquidity_is_append_once() -> None:
     conn, cur = _mock_conn([])
     observed_at = datetime(2026, 7, 29, 12, tzinfo=UTC)
@@ -620,6 +639,30 @@ async def test_find_open_trade_id_returns_none_on_db_error() -> None:
     assert result is None
 
 
+async def test_find_open_trade_entry_at_returns_durable_timestamp() -> None:
+    entry_at = datetime(2026, 9, 9, 12, 0, tzinfo=UTC)
+    conn, cur = _mock_conn([(entry_at,)])
+
+    with patch("psycopg.AsyncConnection.connect", AsyncMock(return_value=conn)):
+        result = await journal.find_open_trade_entry_at(
+            "postgresql://x", exchange="bybit", symbol="BEAT/USDT:USDT"
+        )
+
+    assert result == entry_at
+    assert cur.execute.call_args.args[1] == ("bybit", "BEAT/USDT:USDT")
+
+
+async def test_find_trade_entry_at_returns_timestamp_by_id() -> None:
+    entry_at = datetime(2026, 9, 9, 12, 0, tzinfo=UTC)
+    conn, cur = _mock_conn([(entry_at,)])
+
+    with patch("psycopg.AsyncConnection.connect", AsyncMock(return_value=conn)):
+        result = await journal.find_trade_entry_at("postgresql://x", trade_id=42)
+
+    assert result == entry_at
+    assert cur.execute.call_args.args[1] == (42,)
+
+
 class TestTryCommitClose:
     async def test_success_clears_any_pending_marker(self) -> None:
         conn, _cur = _mock_conn([_trade_row(), (1,)])
@@ -652,6 +695,7 @@ class TestTryCommitClose:
         rdb.set = AsyncMock()
         rdb.delete = AsyncMock()
 
+        executed_at = datetime(2026, 9, 9, 23, 58, tzinfo=UTC)
         with patch(
             "psycopg.AsyncConnection.connect",
             AsyncMock(side_effect=Exception("connection refused")),
@@ -665,6 +709,8 @@ class TestTryCommitClose:
                 exit_order_id="ord-1",
                 exit_price=90.0,
                 reason="test",
+                executed_at=executed_at,
+                execution_time_source="exchange.lastTradeTimestamp",
             )
 
         assert committed is False
@@ -675,6 +721,8 @@ class TestTryCommitClose:
         data = json.loads(payload)
         assert data["trade_id"] == 1
         assert data["exit_price"] == 90.0
+        assert data["executed_at"] == executed_at.isoformat()
+        assert data["execution_time_source"] == "exchange.lastTradeTimestamp"
 
     async def test_revokes_readiness_before_attempting_commit(self) -> None:
         """Regression (P0): revocation must happen unconditionally and first —
@@ -842,7 +890,7 @@ async def test_record_close_fill_retry_is_idempotent(mock_connect) -> None:
     conn, _cur = _mock_conn(
         [
             None,
-            (42, 100.0, 1.0, 4.0, 3.0, False),
+            (42, 100.0, 1.0, 4.0, 3.0, False, None, None),
             (100.0, 1.0),
         ]
     )
@@ -865,8 +913,46 @@ async def test_record_close_fill_retry_is_idempotent(mock_connect) -> None:
 
 
 @patch("psycopg.AsyncConnection.connect")
+async def test_record_close_fill_retry_enriches_missing_execution_time(mock_connect) -> None:
+    executed_at = datetime(2026, 9, 9, 23, 58, tzinfo=UTC)
+    conn, cur = _mock_conn(
+        [
+            None,
+            (42, 100.0, 1.0, 4.0, 3.0, False, None, None),
+            (100.0, 1.0),
+        ]
+    )
+    mock_connect.return_value = conn
+
+    aggregate = await journal.record_close_fill(
+        "postgresql://x",
+        trade_id=42,
+        exchange="bingx",
+        order_id="close-1",
+        fill_price=100.0,
+        filled_amount=1.0,
+        requested_amount=4.0,
+        remaining_amount=3.0,
+        terminal=False,
+        fill_source="order.average",
+        executed_at=executed_at,
+        execution_time_source="exchange.lastTradeTimestamp",
+    )
+
+    assert aggregate == 100.0
+    enrichment = cur.execute.call_args_list[2]
+    assert "executed_at IS NULL" in enrichment.args[0]
+    assert enrichment.args[1] == (
+        executed_at,
+        "exchange.lastTradeTimestamp",
+        "bingx",
+        "close-1",
+    )
+
+
+@patch("psycopg.AsyncConnection.connect")
 async def test_record_close_fill_rejects_conflicting_retry(mock_connect) -> None:
-    conn, _cur = _mock_conn([None, (42, 99.0, 1.0, 4.0, 3.0, False)])
+    conn, _cur = _mock_conn([None, (42, 99.0, 1.0, 4.0, 3.0, False, None, None)])
     mock_connect.return_value = conn
 
     aggregate = await journal.record_close_fill(
@@ -1377,6 +1463,10 @@ async def test_complete_open_writes_journal_and_every_redis_key() -> None:
     rdb.set.assert_any_call("position:entry:bybit:BEAT", "1.5", ex=86400)
     rdb.set.assert_any_call("position:side:bybit:BEAT", "short", ex=86400)
     rdb.set.assert_any_call("position:size_usd:bybit:BEAT", "100.0", ex=86400)
+    opened_at_call = next(
+        call for call in rdb.set.call_args_list if call.args[0] == "position:opened_at:bybit:BEAT"
+    )
+    assert opened_at_call.kwargs["ex"] == 86400 * 7
     params_call = next(c for c in rdb.set.call_args_list if c.args[0] == "exit:params:bybit:BEAT")
     assert json.loads(params_call.args[1])["initial_sl_pct"] == 9.0
 

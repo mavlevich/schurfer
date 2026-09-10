@@ -1341,6 +1341,8 @@ class TestClosePositionCancelsStopLoss:
         )
 
         assert result["closed"]
+        assert result["executed_at"].tzinfo is not None
+        assert result["execution_time_source"] == "local.order_response_observed_at"
         assert ex.create_market_order.await_count == 1
         ex.cancel_order.assert_called_once_with("sl-1", "BEAT/USDT:USDT")
         rdb.delete.assert_any_call("position:sl_order_id:bingx:BEAT")

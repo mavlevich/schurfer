@@ -1,5 +1,5 @@
-import time
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 import ccxt
@@ -47,6 +47,7 @@ async def _handle_unresolved_open(
     leverage: int,
     contract_size: float,
     setup_context: dict[str, Any] | None,
+    entry_observed_at: datetime,
 ) -> dict[str, Any]:
     """The order is confirmed placed on the exchange, but its fill price is not.
 
@@ -74,6 +75,7 @@ async def _handle_unresolved_open(
                 # size_usd above (ENG-022 / audit C-3).
                 "contract_size": contract_size,
                 "setup_context": setup_context,
+                "entry_observed_at": entry_observed_at.isoformat(),
             },
         )
         if incident_id is not None and await incidents.claim_creation_notification(
@@ -127,6 +129,8 @@ async def _handle_unresolved_close(
     remaining_amount: float | None,
     terminal: bool,
     order_terminal: bool | None,
+    executed_at: datetime,
+    execution_time_source: str,
 ) -> dict[str, Any]:
     """Persist a close leg whose accounting cannot yet be completed.
 
@@ -146,6 +150,8 @@ async def _handle_unresolved_close(
             "filled_amount": filled_amount,
             "remaining_amount": remaining_amount,
             "terminal": terminal,
+            "executed_at": executed_at.isoformat(),
+            "execution_time_source": execution_time_source,
         }
         if order_terminal is not None:
             context["order_terminal"] = order_terminal
@@ -445,13 +451,15 @@ async def place_order(
             worker_gate.set_safety_blocker(SUBMISSION_UNKNOWN_BLOCKER)
             return {"allowed": False, "reason": f"submission_unknown: unexpected error {exc}"}
 
+        entry_observed_at = datetime.now(tz=UTC)
+
         if db_url and attempt_id is not None:
             await order_attempts.mark_accepted(db_url, attempt_id, order_id=str(order.get("id")))
 
         await rdb.set(
             f"position:opened_at:{exchange}:{base.upper()}",
-            str(int(time.time())),
-            ex=86400,
+            str(entry_observed_at.timestamp()),
+            ex=86400 * 7,
         )
         order_id = order.get("id")
         log.info(
@@ -606,6 +614,7 @@ async def place_order(
                 leverage=leverage,
                 contract_size=contract_size,
                 setup_context=setup_context,
+                entry_observed_at=entry_observed_at,
             )
             if db_url and attempt_id is not None:
                 await order_attempts.mark_completed(db_url, attempt_id, trade_id=None)
@@ -665,7 +674,13 @@ async def place_order(
             leverage=leverage,
             entry_price=resolution.price,
             exit_params=exit_params,
-            setup_context=setup_context or {},
+            setup_context={
+                **(setup_context or {}),
+                "entry_time_source": (
+                    resolution.execution_time_source or "local.order_response_observed_at"
+                ),
+            },
+            entry_at=resolution.executed_at or entry_observed_at,
         )
         if db_url and attempt_id is not None:
             await order_attempts.mark_completed(
@@ -707,6 +722,7 @@ async def place_order(
                     "contract_size": contract_size,
                     "client_order_id": entry_client_order_id,
                     "filled_amount": resolution.filled_amount,
+                    "entry_observed_at": entry_observed_at.isoformat(),
                 },
             )
             await revoke_pnl_readiness(rdb)
@@ -967,6 +983,7 @@ async def close_position(
                 "reason": f"submission_unknown: unexpected close error {exc}",
                 "protected": bool(sl_order_id),
             }
+        close_observed_at = datetime.now(tz=UTC)
         order_id = order.get("id")
         close_order_id = str(order_id) if order_id is not None else close_client_order_id
         if db_url and close_attempt_id is not None and order_id is not None:
@@ -974,6 +991,10 @@ async def close_position(
 
         resolution = await resolve_fill_price(
             ex, symbol=symbol, order=order, requested_amount=amount
+        )
+        executed_at = resolution.executed_at or close_observed_at
+        execution_time_source = (
+            resolution.execution_time_source or "local.order_response_observed_at"
         )
         order_terminal = order_is_terminal(order)
         order_status = order.get("status")
@@ -1081,6 +1102,8 @@ async def close_position(
                 remaining_amount=remaining_amount,
                 terminal=terminal,
                 order_terminal=order_terminal_evidence,
+                executed_at=executed_at,
+                execution_time_source=execution_time_source,
             )
             if terminal:
                 await _cancel_terminal_stop(
@@ -1135,6 +1158,8 @@ async def close_position(
                     remaining_amount=max(0.0, remaining_amount or 0.0),
                     terminal=terminal,
                     fill_source=resolution.source,
+                    executed_at=executed_at,
+                    execution_time_source=execution_time_source,
                 )
             else:
                 aggregate_price = None
@@ -1157,6 +1182,8 @@ async def close_position(
                     remaining_amount=remaining_amount,
                     terminal=terminal,
                     order_terminal=order_terminal_evidence,
+                    executed_at=executed_at,
+                    execution_time_source=execution_time_source,
                 )
                 if terminal:
                     await _cancel_terminal_stop(
@@ -1246,5 +1273,7 @@ async def close_position(
             "exit_price": effective_exit_price,
             "filled_amount": filled_amount,
             "remaining_amount": 0.0,
+            "executed_at": executed_at,
+            "execution_time_source": execution_time_source,
         }
     raise RuntimeError("close order lease exited without an operation result")

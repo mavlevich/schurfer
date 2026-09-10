@@ -21,13 +21,16 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import psycopg
 import structlog
 from psycopg.rows import dict_row
 
 log = structlog.get_logger()
+
+if TYPE_CHECKING:
+    from datetime import datetime
 
 STATUS_PENDING = "pending"
 STATUS_ACCEPTED = "accepted"
@@ -96,7 +99,7 @@ RETURNING id
 _SELECT_RECOVERABLE_CLOSES = """
 SELECT
     a.id, a.client_order_id, a.exchange, a.base, a.symbol, a.side, a.status, a.order_id,
-    a.requested_amount, a.filled_amount, a.trade_id, a.setup_context
+    a.requested_amount, a.filled_amount, a.trade_id, a.setup_context, a.created_at
 FROM app.live_order_attempts AS a
 LEFT JOIN app.trades AS t ON t.id = a.trade_id
 WHERE a.operation = 'close'
@@ -324,6 +327,7 @@ class CloseAttempt:
     filled_amount: float | None
     trade_id: int | None
     context: dict[str, Any]
+    created_at: datetime | None = None
 
 
 async def load_recoverable_close_attempts(db_url: str) -> list[CloseAttempt]:
@@ -350,6 +354,7 @@ async def load_recoverable_close_attempts(db_url: str) -> list[CloseAttempt]:
                 ),
                 trade_id=int(row["trade_id"]) if row["trade_id"] is not None else None,
                 context=row["setup_context"] if isinstance(row["setup_context"], dict) else {},
+                created_at=row.get("created_at"),
             )
             for row in rows
         ]

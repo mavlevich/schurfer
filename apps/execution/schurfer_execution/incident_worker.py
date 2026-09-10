@@ -9,6 +9,7 @@ never retries forever, never fabricates a price to force a resolution.
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -209,6 +210,8 @@ async def _process_one(
             resolution.price,
             resolution.filled_amount,
             resolution.source,
+            resolution.executed_at,
+            resolution.execution_time_source,
             rdb,
             cfg,
         )
@@ -218,6 +221,8 @@ async def _process_one(
             symbol,
             resolution.price,
             resolution.filled_amount,
+            resolution.executed_at,
+            resolution.execution_time_source,
             rdb,
             cfg,
         )
@@ -265,6 +270,8 @@ async def _complete_close(
     price: float,
     resolved_filled_amount: float | None,
     fill_source: str,
+    executed_at: datetime | None,
+    execution_time_source: str | None,
     rdb: Any,
     cfg: Config,
 ) -> bool:
@@ -277,6 +284,20 @@ async def _complete_close(
     it (colleague review)."""
     if not cfg.db_url:
         return False
+    if executed_at is None:
+        stored_executed_at = incident.context.get("executed_at")
+        if isinstance(stored_executed_at, str) and stored_executed_at:
+            try:
+                executed_at = datetime.fromisoformat(stored_executed_at)
+            except ValueError:
+                log.error(
+                    "incident_worker.close_execution_time_invalid",
+                    incident_id=incident.id,
+                    value=stored_executed_at,
+                )
+        stored_time_source = incident.context.get("execution_time_source")
+        if execution_time_source is None and isinstance(stored_time_source, str):
+            execution_time_source = stored_time_source
     trade_id = incident.trade_id
     if trade_id is None:
         # Wasn't captured at creation time (see incidents.has_pending_open) —
@@ -357,6 +378,8 @@ async def _complete_close(
             remaining_amount=remaining_amount,
             terminal=terminal,
             fill_source=fill_source,
+            executed_at=executed_at,
+            execution_time_source=execution_time_source,
         )
         if recorded_price is None:
             return False
@@ -378,6 +401,8 @@ async def _complete_close(
         exit_order_id=incident.order_id,
         exit_price=aggregate_price,
         reason=reason,
+        executed_at=executed_at,
+        execution_time_source=execution_time_source,
     )
     if committed:
         await journal.delete_trade_id_if_matches(rdb, trade_id_key, trade_id)
@@ -408,6 +433,8 @@ async def _complete_open(
     symbol: str,
     price: float,
     filled_amount: float | None,
+    executed_at: datetime | None,
+    execution_time_source: str | None,
     rdb: Any,
     cfg: Config,
 ) -> bool:
@@ -445,6 +472,29 @@ async def _complete_open(
     # FILL_UNRESOLVED incident's context is all that survives from the
     # original attempt.
     exit_params = exit_module.exit_params(setup_context.get("pump_pct"))
+    observed_at_raw = incident.context.get("entry_observed_at")
+    observed_at = None
+    if isinstance(observed_at_raw, str) and observed_at_raw:
+        try:
+            observed_at = datetime.fromisoformat(observed_at_raw)
+        except ValueError:
+            log.error(
+                "incident_worker.open_entry_time_invalid",
+                incident_id=incident.id,
+                value=observed_at_raw,
+            )
+    entry_at = executed_at or observed_at
+    entry_time_source = execution_time_source
+    if entry_time_source is None:
+        entry_time_source = (
+            "local.order_response_observed_at"
+            if observed_at is not None
+            else "journal_write_observed_at"
+        )
+    stored_context = {
+        **setup_context,
+        "entry_time_source": entry_time_source,
+    }
 
     # Same helper orders.place_order's own happy path calls -- one shared
     # implementation is what guarantees this recovery path and the normal
@@ -462,7 +512,8 @@ async def _complete_open(
         leverage=leverage,
         entry_price=price,
         exit_params=exit_params,
-        setup_context=setup_context,
+        setup_context=stored_context,
+        entry_at=entry_at,
     )
     if trade_id is None:
         return False

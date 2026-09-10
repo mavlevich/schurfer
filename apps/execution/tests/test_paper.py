@@ -1,6 +1,7 @@
 """Tests for paper.py — paper trading open/close via Redis."""
 
 import json
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -824,6 +825,44 @@ async def test_close_paper_journal_failure_leaves_position_tracked_for_retry() -
     close_notice.assert_not_awaited()
 
 
+async def test_close_paper_retry_reuses_first_close_price_time_and_reason() -> None:
+    rdb = _rdb()
+    cfg = _cfg()
+    cfg.db_url = "postgresql://localhost/test"
+    pos = {
+        "base": "BEAT",
+        "symbol": "BEAT/USDT:USDT",
+        "exchange": "bybit",
+        "entry_price": 100.0,
+        "size_usd": 50.0,
+        "side": "short",
+        "trade_id": 42,
+    }
+
+    with (
+        patch(
+            "schurfer_execution.paper.journal.close_trade",
+            new_callable=AsyncMock,
+            side_effect=[
+                journal.CloseOutcome(committed=False),
+                journal.CloseOutcome(committed=True),
+            ],
+        ) as close_trade,
+        patch(
+            "schurfer_execution.paper.journal.delete_trade_id_if_matches",
+            new_callable=AsyncMock,
+        ),
+    ):
+        await close_paper(rdb, pos=pos, current_price=90.0, reason="max_hold", cfg=cfg)
+        first = close_trade.call_args_list[0].kwargs
+        await close_paper(rdb, pos=pos, current_price=80.0, reason="stop_loss", cfg=cfg)
+        second = close_trade.call_args_list[1].kwargs
+
+    assert first["exit_price"] == second["exit_price"] == 90.0
+    assert first["reason"] == second["reason"] == "max_hold"
+    assert first["executed_at"] == second["executed_at"]
+
+
 async def test_close_paper_with_episode_id_cas_deletes_and_marks_episode_closed() -> None:
     rdb = _rdb()
     rdb.get = AsyncMock(return_value=None)  # no trade_id pointer -> no DB commit path
@@ -1175,3 +1214,48 @@ async def test_paper_tick_passes_same_market_client_to_close_capture() -> None:
 
     assert close.call_args.kwargs["exchange_client"] is ex
     assert close.call_args.kwargs["pos"]["symbol"] == "BEAT/USDT:USDT"
+
+
+async def test_paper_tick_recovers_missing_opened_at_from_journal() -> None:
+    entry_at = datetime(2026, 9, 9, 12, 0, tzinfo=UTC)
+    pos = {
+        "base": "BEAT",
+        "symbol": "BEAT/USDT:USDT",
+        "exchange": "bybit",
+        "entry_price": 100,
+        "size_usd": 50,
+        "side": "short",
+        "trade_id": 42,
+        "exit_params": {},
+    }
+    key = b"position:paper:bybit:BEAT"
+    rdb = _rdb()
+
+    async def _scan_iter(_pattern: str) -> object:  # type: ignore[type-arg]
+        yield key
+
+    rdb.scan_iter = _scan_iter
+    rdb.get = AsyncMock(return_value=json.dumps(pos).encode())
+    ex = AsyncMock()
+    ex.fetch_ticker = AsyncMock(return_value={"last": 90})
+    cfg = _cfg()
+    cfg.db_url = "postgresql://x"
+
+    with (
+        patch(
+            "schurfer_execution.paper.journal.find_trade_entry_at",
+            new_callable=AsyncMock,
+            return_value=entry_at,
+        ) as recover,
+        patch(
+            "schurfer_execution.paper.exit_module.check_exit",
+            new_callable=AsyncMock,
+            return_value=None,
+        ) as check_exit,
+    ):
+        await _tick({"bybit": ex}, rdb, cfg)
+
+    recover.assert_awaited_once_with("postgresql://x", trade_id=42)
+    assert check_exit.call_args.kwargs["opened_at"] == entry_at.timestamp()
+    cached = json.loads(rdb.set.call_args.args[1])
+    assert cached["opened_at"] == entry_at.timestamp()

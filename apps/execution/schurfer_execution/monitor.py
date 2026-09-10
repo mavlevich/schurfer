@@ -4,6 +4,7 @@ import asyncio
 import json
 import time
 import uuid
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -249,6 +250,10 @@ async def _recover_close_attempts(
             blocked.add(pair)
             await journal.revoke_pnl_readiness(rdb)
             continue
+        executed_at = resolution.executed_at or attempt.created_at
+        execution_time_source = resolution.execution_time_source
+        if execution_time_source is None and attempt.created_at is not None:
+            execution_time_source = "local.close_attempt_created_at"
         aggregate_price = await journal.record_close_fill(
             cfg.db_url,
             trade_id=trade_id,
@@ -260,6 +265,8 @@ async def _recover_close_attempts(
             remaining_amount=leg_remaining,
             terminal=terminal,
             fill_source=resolution.source,
+            executed_at=executed_at,
+            execution_time_source=execution_time_source,
         )
         if aggregate_price is None:
             blocked.add(pair)
@@ -331,6 +338,12 @@ async def _finalize_recovered_close(
     await rdb.delete(exit_module.size_usd_key(attempt.exchange, attempt.base))
 
     reason = str(attempt.context.get("reason") or "recovered_close")
+    executed_at, execution_time_source = await journal.terminal_close_execution_time(
+        cfg.db_url, trade_id=trade_id
+    )
+    if executed_at is None and attempt.created_at is not None:
+        executed_at = attempt.created_at
+        execution_time_source = "local.close_attempt_created_at"
     committed = await journal.try_commit_close(
         cfg.db_url,
         rdb,
@@ -340,6 +353,8 @@ async def _finalize_recovered_close(
         exit_order_id=order_id,
         exit_price=aggregate_price,
         reason=reason,
+        executed_at=executed_at,
+        execution_time_source=execution_time_source,
     )
     if committed:
         trade_id_key = _TRADE_ID_KEY.format(exchange=attempt.exchange, base=attempt.base)
@@ -369,7 +384,35 @@ async def _check_exit(
         return
 
     opened_at_raw = await rdb.get(f"position:opened_at:{exchange}:{base}")
-    opened_at = float(opened_at_raw) if opened_at_raw else time.time()
+    opened_at = float(opened_at_raw) if opened_at_raw else None
+    if opened_at is None and cfg.db_url:
+        recovered_entry_at = await journal.find_open_trade_entry_at(
+            cfg.db_url, exchange=exchange, symbol=position["symbol"]
+        )
+        if recovered_entry_at is not None:
+            opened_at = recovered_entry_at.timestamp()
+            await rdb.set(
+                f"position:opened_at:{exchange}:{base}",
+                str(opened_at),
+                ex=86400 * 7,
+            )
+            log.warning(
+                "position_monitor.opened_at_recovered",
+                base=base,
+                exchange=exchange,
+                source="journal.entry_at",
+            )
+    if opened_at is None:
+        # Continue price/protection servicing, but never guess an age.  An
+        # elapsed value of zero deliberately disables age-based exits for
+        # this tick while TP/SL/trailing checks still run.
+        opened_at = time.time()
+        log.error(
+            "position_monitor.opened_at_unresolved",
+            base=base,
+            exchange=exchange,
+            age_exit_suppressed=True,
+        )
 
     params_raw = await rdb.get(exit_module.params_key(exchange, base))
     params = exit_module.load_exit_params(params_raw)
@@ -432,6 +475,8 @@ async def _check_exit(
                 exit_order_id=result.get("order_id"),
                 exit_price=exit_price,
                 reason=reason,
+                executed_at=result.get("executed_at"),
+                execution_time_source=result.get("execution_time_source"),
             )
             # Only drop the pointer once the close is durably recorded, and only
             # if it still points at this trade — otherwise a DB outage at close
@@ -703,6 +748,9 @@ async def _reconcile_one(
         exit_price=exit_price,
     )
 
+    executed_at = resolution.executed_at or datetime.now(tz=UTC)
+    execution_time_source = resolution.execution_time_source or "local.reconciliation_observed_at"
+
     if trade_id_raw and cfg.db_url:
         trade_id = int(trade_id_raw)
         expected_amount = await journal.remaining_trade_amount(cfg.db_url, trade_id=trade_id)
@@ -736,6 +784,8 @@ async def _reconcile_one(
                 remaining_amount=remaining_amount,
                 terminal=terminal,
                 fill_source=resolution.source,
+                executed_at=executed_at,
+                execution_time_source=execution_time_source,
             )
             if aggregate_price is None:
                 await journal.revoke_pnl_readiness(rdb)
@@ -781,6 +831,8 @@ async def _reconcile_one(
             exit_order_id=sl_order_id,
             exit_price=exit_price,
             reason="exchange_stop_loss_triggered",
+            executed_at=executed_at,
+            execution_time_source=execution_time_source,
         )
         if committed:
             await journal.delete_trade_id_if_matches(rdb, trade_id_key, trade_id)
@@ -842,6 +894,12 @@ async def _retry_one_pending_close(
     if not raw:
         return
     data = json.loads(raw)
+    executed_at_raw = data.get("executed_at")
+    executed_at = (
+        datetime.fromisoformat(executed_at_raw)
+        if isinstance(executed_at_raw, str) and executed_at_raw
+        else None
+    )
     committed = await journal.try_commit_close(
         cfg.db_url,  # type: ignore[arg-type]
         rdb,
@@ -851,6 +909,8 @@ async def _retry_one_pending_close(
         exit_order_id=data["exit_order_id"],
         exit_price=data["exit_price"],
         reason=data["reason"],
+        executed_at=executed_at,
+        execution_time_source=data.get("execution_time_source"),
     )
     if committed:
         trade_id_key = _TRADE_ID_KEY.format(exchange=exchange, base=base)

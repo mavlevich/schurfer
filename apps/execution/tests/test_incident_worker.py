@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -86,6 +87,15 @@ async def test_process_one_completes_a_resolved_open() -> None:
     incident = _open_incident()
     rdb = MagicMock()
     rdb.set = AsyncMock()
+    executed_at = datetime(2026, 9, 9, 23, 58, tzinfo=UTC)
+    exchange = _exchange_confirming(1.5)
+    exchange.fetch_order = AsyncMock(
+        return_value={
+            "id": "ord-1",
+            "average": 1.5,
+            "lastTradeTimestamp": int(executed_at.timestamp() * 1000),
+        }
+    )
 
     with (
         patch(
@@ -106,7 +116,7 @@ async def test_process_one_completes_a_resolved_open() -> None:
             AsyncMock(return_value=True),
         ) as mock_link_attempt,
     ):
-        await _process_one(incident, {"bybit": _exchange_confirming(1.5)}, rdb, _cfg())
+        await _process_one(incident, {"bybit": exchange}, rdb, _cfg())
 
     mock_resolved.assert_called_once_with(
         "postgresql://x", 7, price=1.5, source="refetch.order.average"
@@ -115,6 +125,11 @@ async def test_process_one_completes_a_resolved_open() -> None:
     assert mock_open_trade.call_args.kwargs["entry_price"] == 1.5
     assert mock_open_trade.call_args.kwargs["size_usd"] == 50.0
     assert mock_open_trade.call_args.kwargs["leverage"] == 3
+    assert mock_open_trade.call_args.kwargs["entry_at"] == executed_at
+    assert (
+        mock_open_trade.call_args.kwargs["setup_context"]["entry_time_source"]
+        == "exchange.lastTradeTimestamp"
+    )
     mock_link_attempt.assert_awaited_once_with(
         "postgresql://x",
         exchange="bybit",
@@ -165,6 +180,15 @@ async def test_process_one_completes_a_resolved_close() -> None:
     incident = _close_incident()
     rdb = MagicMock()
     rdb.delete = AsyncMock()
+    executed_at = datetime(2026, 9, 9, 23, 58, tzinfo=UTC)
+    exchange = _exchange_confirming(2.0)
+    exchange.fetch_order = AsyncMock(
+        return_value={
+            "id": "ord-2",
+            "average": 2.0,
+            "lastTradeTimestamp": int(executed_at.timestamp() * 1000),
+        }
+    )
 
     with (
         patch(
@@ -189,12 +213,14 @@ async def test_process_one_completes_a_resolved_close() -> None:
             AsyncMock(),
         ) as mock_cas_delete,
     ):
-        await _process_one(incident, {"bybit": _exchange_confirming(2.0)}, rdb, _cfg())
+        await _process_one(incident, {"bybit": exchange}, rdb, _cfg())
 
     mock_commit.assert_called_once()
     assert mock_commit.call_args.kwargs["trade_id"] == 42
     assert mock_commit.call_args.kwargs["exit_price"] == 2.0
     assert mock_commit.call_args.kwargs["reason"] == "trailing_stop"
+    assert mock_commit.call_args.kwargs["executed_at"] == executed_at
+    assert mock_commit.call_args.kwargs["execution_time_source"] == "exchange.lastTradeTimestamp"
     mock_cas_delete.assert_called_once_with(rdb, "trade:id:bybit:BEAT", 42)
     deleted = {call.args[0] for call in rdb.delete.await_args_list}
     assert "position:opened_at:bybit:BEAT" in deleted
