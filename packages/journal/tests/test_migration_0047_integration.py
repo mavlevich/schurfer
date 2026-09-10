@@ -43,7 +43,12 @@ def _connect_or_skip() -> psycopg.Connection:
 
 def _alembic_config() -> Config:
     config = Config(str(ALEMBIC_INI))
-    config.set_main_option("sqlalchemy.url", TEST_DATABASE_URL)
+    url = TEST_DATABASE_URL
+    for prefix in ("postgresql://", "postgres://"):
+        if url.startswith(prefix):
+            url = "postgresql+psycopg://" + url[len(prefix) :]
+            break
+    config.set_main_option("sqlalchemy.url", url)
     return config
 
 
