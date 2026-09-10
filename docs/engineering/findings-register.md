@@ -643,8 +643,8 @@ verify`, `make deadcode`, `pre-commit run --all-files`, and 13 black-box tests t
   was deployed without a migration or execution-mode change. The service restarted
   cleanly, reported zero failed scanner cycles, and wrote new decisions. The corrected
   HYP-023 report retained an `inconclusive` verdict with 797 selected episodes and 288
-  visible coverage misses. HYP-027 remained readiness-only: its younger group had
-  307 episodes/129 clusters and its older group 134/83, leaving 16 episodes before the
+  visible coverage misses. HYP-027 remained readiness-only: group A had 307
+  episodes/129 clusters and group B had 134/83, leaving 16 group-B episodes before the
   declared 150-per-group formal floor. Neither result was promoted or reinterpreted.
 - **Independent arithmetic check:** the first five deterministic complete `forward_v1`
   rows by `(decision_id, horizon_minutes)` on 2026-09-10 all reproduced

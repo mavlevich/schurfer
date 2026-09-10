@@ -8,8 +8,8 @@ Update only these four lines after every merge -- this is the fast-path
 status check, not a place for narrative.
 
 ```
-Current primary: bounded existing-data extreme-mover replay; support: HYP-027 age-group readiness and HYP-015 hold12h launch readiness
-State: ENG-024/#405 deployed at e6605d1 on 2026-09-10; 26,297 production partial outcomes remain coverage-only and zero decision/horizon pairs have multiple complete resolvers; corrected HYP-023 and HYP-024 reports remain inconclusive, while HYP-027 needs 16 more older-group episodes before its one formal read
+Current primary: bounded existing-data extreme-mover replay; support: HYP-027 decision-delay-group readiness and HYP-015 hold12h launch readiness
+State: ENG-024/#405 deployed at e6605d1 on 2026-09-10; 26,297 production partial outcomes remain coverage-only and zero decision/horizon pairs have multiple complete resolvers; corrected HYP-023 and HYP-024 reports remain inconclusive, while HYP-027 group B needs 16 more episodes before its one formal read
 Next: implement and run the frozen extreme-mover replay contract, then let its stop/capture/candidate verdict decide whether any event-triggered venue capture is worth building; do not reopen the stopped delayed-short/orderflow line
 User decision required: no live-mode change is authorized; starting the HYP-015 hold12h production paper worker, deploying a future venue canary, or any live order requires separate explicit production authorization
 ```
