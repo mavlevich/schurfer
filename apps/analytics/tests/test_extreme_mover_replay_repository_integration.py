@@ -37,6 +37,7 @@ async def test_repository_preserves_selected_decisions_partial_and_resolver_vers
     base = f"XMR{uuid.uuid4().hex[:6]}".upper()
     first_id = str(uuid.uuid4())
     quality_id = str(uuid.uuid4())
+    later_id = str(uuid.uuid4())
     try:
         async with engine.begin() as connection:
             event_id = (
@@ -55,6 +56,7 @@ async def test_repository_preserves_selected_decisions_partial_and_resolver_vers
             for decision_id, offset, allowed in (
                 (first_id, 0, False),
                 (quality_id, 1, True),
+                (later_id, 2, True),
             ):
                 await connection.execute(
                     text("""
@@ -126,6 +128,7 @@ async def test_repository_preserves_selected_decisions_partial_and_resolver_vers
         repository = ExtremeMoverReplayRepository(engine)
         snapshot, decisions = await repository.load(filters)
         mine = tuple(row for row in decisions if row.base == base)
+        assert {row.decision_id for row in mine} == {first_id, quality_id}
         report = build_report(
             mine,
             dataset_since=DISCOVERY_START,
@@ -161,9 +164,9 @@ async def test_repository_preserves_selected_decisions_partial_and_resolver_vers
             await connection.execute(
                 text(
                     "DELETE FROM app.trade_decision_outcomes "
-                    "WHERE decision_id IN (:first, :quality)"
+                    "WHERE decision_id IN (:first, :quality, :later)"
                 ),
-                {"first": first_id, "quality": quality_id},
+                {"first": first_id, "quality": quality_id, "later": later_id},
             )
             await connection.execute(
                 text("DELETE FROM app.trade_decisions WHERE base = :base"),
