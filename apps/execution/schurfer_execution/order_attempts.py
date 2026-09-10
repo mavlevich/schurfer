@@ -38,6 +38,18 @@ STATUS_SUBMISSION_UNKNOWN = "submission_unknown"
 STATUS_NO_FILL = "no_fill"
 STATUS_MANUAL_REQUIRED = "manual_required"
 
+# One transaction-scoped lock serializes the short database boundary that
+# counts portfolio occupancy and inserts the next entry intent.  The lock is
+# global on purpose: MAX_POSITIONS is global across exchanges/instruments.
+_PORTFOLIO_RESERVATION_LOCK_ID = 2026091003
+
+
+@dataclass(frozen=True)
+class PortfolioCapacityReached:
+    occupied_slots: int
+    max_positions: int
+
+
 _INSERT = """
 INSERT INTO app.live_order_attempts (
     operation, client_order_id, exchange, base, symbol, native_market_id, market_type,
@@ -46,6 +58,28 @@ INSERT INTO app.live_order_attempts (
     %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s
 )
 RETURNING id
+"""
+
+_COUNT_DURABLE_ONLY_ENTRY_SLOTS = """
+WITH observed(exchange, base) AS (
+    SELECT * FROM unnest(%s::text[], %s::text[])
+), durable_slots AS (
+    SELECT DISTINCT a.exchange, upper(a.base) AS base
+    FROM app.live_order_attempts AS a
+    LEFT JOIN app.trades AS t ON t.id = a.trade_id
+    WHERE a.operation = 'entry'
+      AND (
+          a.status IN ('pending', 'accepted', 'submission_unknown', 'manual_required')
+          OR (a.status = 'completed' AND (a.trade_id IS NULL OR t.status = 'open'))
+      )
+)
+SELECT count(*)
+FROM durable_slots AS d
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM observed AS o
+    WHERE o.exchange = d.exchange AND upper(o.base) = d.base
+)
 """
 
 _INSERT_CLOSE = """
@@ -135,14 +169,59 @@ async def create_attempt(
     contract_size: float | None,
     exit_params: dict[str, float],
     setup_context: dict[str, Any],
-) -> int | None:
-    """The one fail-closed write in this module -- see the module
-    docstring. Returns None on any failure (including a full DB outage);
-    the caller must refuse to place the order in that case, not proceed as
-    if this succeeded."""
+    open_positions: list[dict[str, Any]],
+    max_positions: int,
+) -> int | PortfolioCapacityReached | None:
+    """Atomically reserve one global portfolio slot and persist entry intent.
+
+    ``open_positions`` is the caller's exchange snapshot.  Durable attempts
+    cover the race after that snapshot: under one Postgres advisory lock we
+    count attempts which may represent exposure but are not already reflected
+    by the snapshot, then insert this attempt only when capacity remains.
+
+    Returns ``None`` on any database failure, so the caller fails closed.
+    ``PortfolioCapacityReached`` is a normal admission denial, not an outage.
+    """
     try:
         aconn = await psycopg.AsyncConnection.connect(db_url)
         async with aconn, aconn.cursor() as cur:
+            await cur.execute(
+                "SELECT pg_advisory_xact_lock(%s)",
+                (_PORTFOLIO_RESERVATION_LOCK_ID,),
+            )
+            if await cur.fetchone() is None:
+                raise RuntimeError("portfolio reservation lock returned no row")
+            observed_pairs = sorted(
+                {
+                    (str(position.get("exchange", "")), str(position.get("base", "")).upper())
+                    for position in open_positions
+                    if position.get("exchange") and position.get("base")
+                }
+            )
+            await cur.execute(
+                _COUNT_DURABLE_ONLY_ENTRY_SLOTS,
+                (
+                    [exchange_name for exchange_name, _base in observed_pairs],
+                    [observed_base for _exchange_name, observed_base in observed_pairs],
+                ),
+            )
+            count_row = await cur.fetchone()
+            if count_row is None:
+                raise RuntimeError("portfolio reservation count returned no row")
+            occupied_slots = len(open_positions) + int(count_row[0])
+            if occupied_slots >= max_positions:
+                log.info(
+                    "order_attempts.portfolio_capacity_reached",
+                    occupied_slots=occupied_slots,
+                    max_positions=max_positions,
+                    exchange=exchange,
+                    base=base,
+                )
+                return PortfolioCapacityReached(
+                    occupied_slots=occupied_slots,
+                    max_positions=max_positions,
+                )
+
             await cur.execute(
                 _INSERT,
                 (

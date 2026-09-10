@@ -358,7 +358,7 @@ async def place_order(
         # convention one step earlier.
         attempt_id: int | None = None
         if db_url:
-            attempt_id = await order_attempts.create_attempt(
+            reservation = await order_attempts.create_attempt(
                 db_url,
                 client_order_id=entry_client_order_id,
                 exchange=exchange,
@@ -373,13 +373,24 @@ async def place_order(
                 contract_size=contract_size,
                 exit_params=exit_params,
                 setup_context=setup_context or {},
+                open_positions=positions,
+                max_positions=max_positions,
             )
-            if attempt_id is None:
+            if isinstance(reservation, order_attempts.PortfolioCapacityReached):
+                return {
+                    "allowed": False,
+                    "reason": (
+                        "max positions reached "
+                        f"({reservation.occupied_slots}/{reservation.max_positions})"
+                    ),
+                }
+            if reservation is None:
                 return {
                     "allowed": False,
                     "reason": "cannot durably record order intent (db unavailable) -- "
                     "refusing to place a live order that could not be tracked",
                 }
+            attempt_id = reservation
 
         is_open, current_token = worker_gate.is_open()
         if not is_open or current_token != gate_token:
