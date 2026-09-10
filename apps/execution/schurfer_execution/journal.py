@@ -26,6 +26,7 @@ log = structlog.get_logger()
 # independently-typed copies of the same string template.
 _TRADE_ID_KEY = "trade:id:{exchange}:{base}"
 _POSITION_KEY_TTL = 86400
+_OPENED_AT_KEY_TTL = 86400 * 7
 
 _STRATEGY_NAME = "pump_short"
 _STRATEGY_VERSION = "1"
@@ -161,19 +162,38 @@ ORDER BY entry_at DESC
 LIMIT 1
 """
 
+_FIND_OPEN_TRADE_ENTRY_AT = """
+SELECT entry_at FROM app.trades
+WHERE exchange = %s AND symbol = %s AND status = 'open'
+ORDER BY entry_at DESC
+LIMIT 1
+"""
+
+_FIND_TRADE_ENTRY_AT = "SELECT entry_at FROM app.trades WHERE id = %s"
+
 _INSERT_CLOSE_FILL = """
 INSERT INTO app.trade_close_fills (
     trade_id, exchange, order_id, fill_price, filled_amount,
-    requested_amount, remaining_amount, terminal, fill_source
-) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+    requested_amount, remaining_amount, terminal, fill_source,
+    executed_at, execution_time_source
+) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 ON CONFLICT (exchange, order_id) DO NOTHING
 RETURNING id
 """
 
 _SELECT_CLOSE_FILL = """
-SELECT trade_id, fill_price, filled_amount, requested_amount, remaining_amount, terminal
+SELECT trade_id, fill_price, filled_amount, requested_amount, remaining_amount, terminal,
+       executed_at, execution_time_source
 FROM app.trade_close_fills
 WHERE exchange = %s AND order_id = %s
+"""
+
+_ENRICH_CLOSE_FILL_EXECUTION_TIME = """
+UPDATE app.trade_close_fills
+SET executed_at = %s,
+    execution_time_source = %s,
+    updated_at = now()
+WHERE exchange = %s AND order_id = %s AND executed_at IS NULL
 """
 
 _AGGREGATE_CLOSE_FILLS = """
@@ -182,6 +202,14 @@ SELECT
     SUM(filled_amount)
 FROM app.trade_close_fills
 WHERE trade_id = %s
+"""
+
+_TERMINAL_CLOSE_EXECUTION_TIME = """
+SELECT executed_at, execution_time_source
+FROM app.trade_close_fills
+WHERE trade_id = %s AND terminal = true
+ORDER BY created_at DESC, id DESC
+LIMIT 1
 """
 
 _ANY_OPEN_TRADE_CLOSE_FILLS = """
@@ -367,6 +395,8 @@ async def record_close_fill(
     remaining_amount: float,
     terminal: bool,
     fill_source: str,
+    executed_at: datetime | None = None,
+    execution_time_source: str | None = None,
 ) -> float | None:
     """Append one close leg and return the trade's amount-weighted exit price.
 
@@ -400,6 +430,8 @@ async def record_close_fill(
                     remaining_amount,
                     terminal,
                     fill_source,
+                    executed_at,
+                    execution_time_source,
                 ),
             )
             inserted = await cur.fetchone()
@@ -415,6 +447,8 @@ async def record_close_fill(
                     existing_requested,
                     existing_remaining,
                     existing_terminal,
+                    existing_executed_at,
+                    _existing_time_source,
                 ) = existing
                 expected = (
                     trade_id,
@@ -444,6 +478,28 @@ async def record_close_fill(
                         order_id=order_id,
                     )
                     return None
+                if (
+                    existing_executed_at is not None
+                    and executed_at is not None
+                    and (existing_executed_at != executed_at)
+                ):
+                    log.critical(
+                        "journal.record_close_fill.execution_time_conflict",
+                        trade_id=trade_id,
+                        exchange=exchange,
+                        order_id=order_id,
+                    )
+                    return None
+                if existing_executed_at is None and executed_at is not None:
+                    # A crash may leave the append-only leg committed before
+                    # the caller closes the trade.  Recovery can then obtain
+                    # stronger timestamp evidence from a refetched terminal
+                    # order.  Enrich missing metadata only; never rewrite an
+                    # already recorded exchange time.
+                    await cur.execute(
+                        _ENRICH_CLOSE_FILL_EXECUTION_TIME,
+                        (executed_at, execution_time_source, exchange, order_id),
+                    )
 
             await cur.execute(_AGGREGATE_CLOSE_FILLS, (trade_id,))
             aggregate = await cur.fetchone()
@@ -491,6 +547,27 @@ async def aggregate_close_fill_price(db_url: str, *, trade_id: int) -> float | N
         return None
 
 
+async def terminal_close_execution_time(
+    db_url: str, *, trade_id: int
+) -> tuple[datetime | None, str | None]:
+    """Return the terminal leg's exchange time and its provenance.
+
+    ``(None, None)`` is explicit legacy/unknown evidence; callers then use a
+    locally observed time while keeping that fallback visible in logs and the
+    nullable durable close-fill fields.
+    """
+    try:
+        async with await psycopg.AsyncConnection.connect(db_url) as aconn, aconn.cursor() as cur:
+            await cur.execute(_TERMINAL_CLOSE_EXECUTION_TIME, (trade_id,))
+            row = await cur.fetchone()
+            if row is None:
+                return None, None
+            return row[0], row[1]
+    except Exception as exc:
+        log.error("journal.terminal_close_execution_time.failed", trade_id=trade_id, err=str(exc))
+        return None, None
+
+
 async def remaining_trade_amount(db_url: str, *, trade_id: int) -> float | None:
     """Infer the unclosed contracts from durable entry and close fills."""
     try:
@@ -516,6 +593,7 @@ async def open_trade(
     leverage: int,
     entry_price: float,
     setup_context: dict[str, Any],
+    entry_at: datetime | None = None,
 ) -> int | None:
     if side not in ("long", "short"):
         raise ValueError(f"invalid side: {side}")
@@ -554,7 +632,7 @@ async def open_trade(
                     size_usd,
                     leverage,
                     entry_price,
-                    datetime.now(tz=UTC),
+                    entry_at or datetime.now(tz=UTC),
                     entry_slippage_bps,
                     exit_slippage_bps,
                     accounting_version,
@@ -631,6 +709,7 @@ async def complete_open(
     entry_price: float,
     exit_params: dict[str, float],
     setup_context: dict[str, Any],
+    entry_at: datetime | None = None,
 ) -> int | None:
     """Journal a confirmed live open and set every Redis key position
     monitoring (monitor.py's _check_exit) depends on, in one place.
@@ -683,6 +762,7 @@ async def complete_open(
             leverage=leverage,
             entry_price=entry_price,
             setup_context=setup_context,
+            entry_at=entry_at,
         )
         if trade_id:
             await _safe_rdb_set(
@@ -713,15 +793,31 @@ async def complete_open(
         exchange=exchange,
         base=base,
     )
+    await _safe_rdb_set(
+        rdb,
+        f"position:opened_at:{exchange}:{base.upper()}",
+        str((entry_at or datetime.now(tz=UTC)).timestamp()),
+        exchange=exchange,
+        base=base,
+        ttl=_OPENED_AT_KEY_TTL,
+    )
     return trade_id
 
 
-async def _safe_rdb_set(rdb: Any, key: str, value: str, *, exchange: str, base: str) -> None:
+async def _safe_rdb_set(
+    rdb: Any,
+    key: str,
+    value: str,
+    *,
+    exchange: str,
+    base: str,
+    ttl: int = _POSITION_KEY_TTL,
+) -> None:
     """Each position-monitoring key is written independently -- one failing
     must not prevent the others from being attempted, and none of them may
     ever propagate out of complete_open (see its own docstring)."""
     try:
-        await rdb.set(key, value, ex=_POSITION_KEY_TTL)
+        await rdb.set(key, value, ex=ttl)
     except Exception as exc:
         log.critical(
             "journal.complete_open.redis_write_failed",
@@ -1013,6 +1109,7 @@ async def close_trade(
     exit_order_id: str | None,
     exit_price: float,
     reason: str,
+    executed_at: datetime | None = None,
     fresh_exit_slippage_bps: float | None = None,
     exit_observation: dict[str, Any] | None = None,
 ) -> CloseOutcome:
@@ -1097,7 +1194,13 @@ async def close_trade(
                     accounting_status=saved_accounting_status,
                 )
 
-            closed_at = datetime.now(tz=UTC)
+            closed_at = executed_at or datetime.now(tz=UTC)
+            if executed_at is None:
+                log.warning(
+                    "journal.close_trade.execution_time_missing",
+                    trade_id=trade_id,
+                    fallback="journal_observed_at",
+                )
             if accounting_version == PAPER_ACCOUNTING_VERSION:
                 duration_minutes = max(0.0, (closed_at - entry_at).total_seconds() / 60)
                 accounting = calculate_performance(
@@ -1260,6 +1363,35 @@ async def find_open_trade_id(db_url: str, *, exchange: str, symbol: str) -> int 
         return None
 
 
+async def find_open_trade_entry_at(db_url: str, *, exchange: str, symbol: str) -> datetime | None:
+    """Recover a missing Redis position age from the durable trade journal."""
+    try:
+        async with await psycopg.AsyncConnection.connect(db_url) as aconn, aconn.cursor() as cur:
+            await cur.execute(_FIND_OPEN_TRADE_ENTRY_AT, (exchange, symbol))
+            row = await cur.fetchone()
+            return row[0] if row else None
+    except Exception as exc:
+        log.error(
+            "journal.find_open_trade_entry_at.failed",
+            exchange=exchange,
+            symbol=symbol,
+            err=str(exc),
+        )
+        return None
+
+
+async def find_trade_entry_at(db_url: str, *, trade_id: int) -> datetime | None:
+    """Load one trade's durable entry time for paper-position recovery."""
+    try:
+        async with await psycopg.AsyncConnection.connect(db_url) as aconn, aconn.cursor() as cur:
+            await cur.execute(_FIND_TRADE_ENTRY_AT, (trade_id,))
+            row = await cur.fetchone()
+            return row[0] if row else None
+    except Exception as exc:
+        log.error("journal.find_trade_entry_at.failed", trade_id=trade_id, err=str(exc))
+        return None
+
+
 _FIND_OPEN_EPISODE_TRADES = """
 SELECT id, symbol, exchange, side, entry_price, size_usd, leverage, entry_at,
        entry_slippage_bps, exit_slippage_bps, accounting_version, setup_context, episode_id
@@ -1366,6 +1498,8 @@ async def write_pending_close(
     exit_order_id: str | None,
     exit_price: float,
     reason: str,
+    executed_at: datetime | None = None,
+    execution_time_source: str | None = None,
 ) -> None:
     """Durable marker for a close that's confirmed on the exchange but not
     yet committed to the journal. Carries everything needed to retry the
@@ -1387,6 +1521,8 @@ async def write_pending_close(
             "exit_order_id": exit_order_id,
             "exit_price": exit_price,
             "reason": reason,
+            "executed_at": executed_at.isoformat() if executed_at is not None else None,
+            "execution_time_source": execution_time_source,
         }
     )
     await rdb.set(_pending_close_key(exchange, base, trade_id), payload, ex=_PENDING_CLOSE_TTL)
@@ -1415,6 +1551,8 @@ async def try_commit_close(
     exit_order_id: str | None,
     exit_price: float,
     reason: str,
+    executed_at: datetime | None = None,
+    execution_time_source: str | None = None,
 ) -> bool:
     """Attempt to commit a close to the journal; on failure, durably records
     it as pending instead of losing it. Returns True only if committed now —
@@ -1431,6 +1569,7 @@ async def try_commit_close(
         exit_order_id=exit_order_id,
         exit_price=exit_price,
         reason=reason,
+        executed_at=executed_at,
     )
     committed = outcome.committed
     if committed:
@@ -1444,6 +1583,8 @@ async def try_commit_close(
             exit_order_id=exit_order_id,
             exit_price=exit_price,
             reason=reason,
+            executed_at=executed_at,
+            execution_time_source=execution_time_source,
         )
     return committed
 

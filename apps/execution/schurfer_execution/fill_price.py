@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import math
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 FILL_CONFIRMED = "confirmed"
@@ -33,6 +34,8 @@ class FillResolution:
     price: float | None
     source: str
     filled_amount: float | None
+    executed_at: datetime | None
+    execution_time_source: str | None
 
 
 def order_is_terminal(order: dict[str, Any]) -> bool:
@@ -63,6 +66,51 @@ def _finite_non_negative(value: Any) -> float | None:
     return parsed if math.isfinite(parsed) and parsed >= 0 else None
 
 
+def _execution_time(
+    payload: dict[str, Any], *, trade_payload: bool = False
+) -> tuple[datetime | None, str | None]:
+    """Read CCXT's unified execution timestamp without inventing one.
+
+    ``lastTradeTimestamp`` is the strongest order-level evidence.  Unified
+    trade payloads may instead expose ``timestamp``/``datetime``; their
+    weaker provenance is kept alongside the value so the journal can
+    distinguish exchange evidence from a local observation-time fallback.
+    """
+    keys = ("lastTradeTimestamp", "timestamp") if trade_payload else ("lastTradeTimestamp",)
+    for key in keys:
+        raw = payload.get(key)
+        if raw is None:
+            continue
+        try:
+            numeric = float(raw)
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(numeric) or numeric <= 0:
+            continue
+        # CCXT unified timestamps are milliseconds.  Accept seconds too for
+        # defensive compatibility with hand-written/test clients.
+        seconds = numeric / 1000 if numeric >= 100_000_000_000 else numeric
+        try:
+            return datetime.fromtimestamp(seconds, tz=UTC), f"exchange.{key}"
+        except (OverflowError, OSError, ValueError):
+            continue
+
+    # Unified trade ``timestamp``/``datetime`` is execution evidence.  For
+    # an order, those fields normally mean creation/submission time (a
+    # standing stop may fill hours later), so only lastTradeTimestamp is
+    # safe to treat as execution time above.
+    raw_datetime = payload.get("datetime") if trade_payload else None
+    if isinstance(raw_datetime, str) and raw_datetime:
+        try:
+            parsed = datetime.fromisoformat(raw_datetime.replace("Z", "+00:00"))
+        except ValueError:
+            return None, None
+        if parsed.tzinfo is None:
+            return None, None
+        return parsed.astimezone(UTC), "exchange.datetime"
+    return None, None
+
+
 def _from_order_fields(order: dict[str, Any]) -> tuple[float | None, float | None, str | None]:
     """Try average, then price, then cost/filled. Returns (price, filled_amount, source)."""
     filled = _finite_non_negative(order.get("filled"))
@@ -83,7 +131,7 @@ async def _vwap_from_trades(
     symbol: str,
     order_id: str,
     timeout_seconds: float,
-) -> tuple[float | None, float | None]:
+) -> tuple[float | None, float | None, datetime | None, str | None]:
     """Best-effort VWAP from confirmed trades tied to this order id."""
     has = exchange.has if isinstance(exchange.has, dict) else {}
     trades: Any = None
@@ -98,11 +146,13 @@ async def _vwap_from_trades(
                 timeout=timeout_seconds,
             )
     except Exception:
-        return None, None
+        return None, None, None, None
     if not isinstance(trades, list) or not trades:
-        return None, None
+        return None, None, None, None
     total_cost = 0.0
     total_amount = 0.0
+    latest_at: datetime | None = None
+    latest_source: str | None = None
     for trade in trades:
         if not isinstance(trade, dict):
             continue
@@ -112,9 +162,13 @@ async def _vwap_from_trades(
             continue
         total_cost += price * amount
         total_amount += amount
+        executed_at, time_source = _execution_time(trade, trade_payload=True)
+        if executed_at is not None and (latest_at is None or executed_at > latest_at):
+            latest_at = executed_at
+            latest_source = time_source
     if total_amount <= 0:
-        return None, None
-    return total_cost / total_amount, total_amount
+        return None, None, None, None
+    return total_cost / total_amount, total_amount, latest_at, latest_source
 
 
 def _status_for(filled_amount: float | None, requested_amount: float | None) -> str:
@@ -128,19 +182,32 @@ def _status_for(filled_amount: float | None, requested_amount: float | None) -> 
 
 
 def _resolved(
-    *, price: float, filled_amount: float | None, requested_amount: float | None, source: str
+    *,
+    price: float,
+    filled_amount: float | None,
+    requested_amount: float | None,
+    source: str,
+    executed_at: datetime | None,
+    execution_time_source: str | None,
 ) -> FillResolution:
     return FillResolution(
         status=_status_for(filled_amount, requested_amount),
         price=price,
         source=source,
         filled_amount=filled_amount,
+        executed_at=executed_at,
+        execution_time_source=execution_time_source,
     )
 
 
 def _unresolved() -> FillResolution:
     return FillResolution(
-        status=FILL_UNRESOLVED, price=None, source="unresolved", filled_amount=None
+        status=FILL_UNRESOLVED,
+        price=None,
+        source="unresolved",
+        filled_amount=None,
+        executed_at=None,
+        execution_time_source=None,
     )
 
 
@@ -169,11 +236,14 @@ async def resolve_fill_price(
     order_id = order.get("id")
     price, filled_amount, source = _from_order_fields(order)
     if price is not None and source is not None and filled_amount != 0:
+        executed_at, execution_time_source = _execution_time(order)
         return _resolved(
             price=price,
             filled_amount=filled_amount,
             requested_amount=requested_amount,
             source=source,
+            executed_at=executed_at,
+            execution_time_source=execution_time_source,
         )
 
     if order_id is None:
@@ -197,20 +267,27 @@ async def resolve_fill_price(
     if isinstance(refreshed, dict):
         refreshed_price, refreshed_filled, refreshed_source = _from_order_fields(refreshed)
         if refreshed_price is not None and refreshed_source is not None and refreshed_filled != 0:
+            executed_at, execution_time_source = _execution_time(refreshed)
             return _resolved(
                 price=refreshed_price,
                 filled_amount=refreshed_filled,
                 requested_amount=requested_amount,
                 source=f"refetch.{refreshed_source}",
+                executed_at=executed_at,
+                execution_time_source=execution_time_source,
             )
 
-    vwap, trade_amount = await _vwap_from_trades(exchange, symbol, order_id, timeout_seconds)
+    vwap, trade_amount, executed_at, execution_time_source = await _vwap_from_trades(
+        exchange, symbol, order_id, timeout_seconds
+    )
     if vwap is not None and trade_amount is not None and trade_amount > 0:
         return _resolved(
             price=vwap,
             filled_amount=trade_amount,
             requested_amount=requested_amount,
             source="trades.vwap",
+            executed_at=executed_at,
+            execution_time_source=execution_time_source,
         )
 
     # Nothing filled, positively: both the freshest order view and the trade
@@ -219,6 +296,13 @@ async def resolve_fill_price(
     # that is never going to arrive.
     latest_filled = refreshed_filled if refreshed_filled is not None else filled_amount
     if latest_filled == 0:
-        return FillResolution(status=FILL_NONE, price=None, source="no_fill", filled_amount=0.0)
+        return FillResolution(
+            status=FILL_NONE,
+            price=None,
+            source="no_fill",
+            filled_amount=0.0,
+            executed_at=None,
+            execution_time_source=None,
+        )
 
     return _unresolved()

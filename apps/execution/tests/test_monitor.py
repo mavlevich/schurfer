@@ -1,4 +1,5 @@
 import json
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -32,6 +33,10 @@ def mock_resolve_execution_instrument(monkeypatch):
     monkeypatch.setattr("schurfer_execution.symbols.resolve_execution_instrument", dummy_resolve)
     monkeypatch.setattr(
         "schurfer_execution.monitor.journal.remaining_trade_amount",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        "schurfer_execution.monitor.journal.find_open_trade_entry_at",
         AsyncMock(return_value=None),
     )
 
@@ -105,11 +110,13 @@ def _rdb_with(entries: dict[str, bytes | None]) -> MagicMock:
         return entries.get(key)
 
     rdb.get = AsyncMock(side_effect=_get)
+    rdb.set = AsyncMock()
     rdb.delete = AsyncMock()
     return rdb
 
 
 async def test_recover_terminal_close_attempt_commits_aggregate_and_cleans_up() -> None:
+    attempt_created_at = datetime(2026, 9, 9, 23, 58, tzinfo=UTC)
     attempt = CloseAttempt(
         id=7,
         client_order_id="close-client",
@@ -123,6 +130,7 @@ async def test_recover_terminal_close_attempt_commits_aggregate_and_cleans_up() 
         filled_amount=None,
         trade_id=42,
         context={"reason": "trailing_stop", "position_side": "short", "sl_order_id": "sl-1"},
+        created_at=attempt_created_at,
     )
     ex = MagicMock()
     ex.has = {"fetchOrder": True}
@@ -148,6 +156,10 @@ async def test_recover_terminal_close_attempt_commits_aggregate_and_cleans_up() 
             "schurfer_execution.monitor.journal.try_commit_close",
             AsyncMock(return_value=True),
         ) as mock_commit,
+        patch(
+            "schurfer_execution.monitor.journal.terminal_close_execution_time",
+            AsyncMock(return_value=(None, None)),
+        ),
         patch("schurfer_execution.monitor.journal.delete_trade_id_if_matches", AsyncMock()),
     ):
         blocked = await _recover_close_attempts({"bybit": ex}, rdb, cfg)
@@ -155,8 +167,11 @@ async def test_recover_terminal_close_attempt_commits_aggregate_and_cleans_up() 
     assert blocked == set()
     mock_record.assert_awaited_once()
     assert mock_record.call_args.kwargs["terminal"] is True
+    assert mock_record.call_args.kwargs["executed_at"] == attempt_created_at
+    assert mock_record.call_args.kwargs["execution_time_source"] == "local.close_attempt_created_at"
     mock_completed.assert_awaited_once()
     assert mock_commit.call_args.kwargs["exit_price"] == 102.5
+    assert mock_commit.call_args.kwargs["executed_at"] == attempt_created_at
     ex.cancel_order.assert_awaited_once_with("sl-1", "BEAT/USDT:USDT")
 
 
@@ -193,6 +208,10 @@ async def test_recover_completed_close_uses_durable_fill_without_exchange_order(
             "schurfer_execution.monitor.journal.try_commit_close",
             AsyncMock(return_value=True),
         ) as commit,
+        patch(
+            "schurfer_execution.monitor.journal.terminal_close_execution_time",
+            AsyncMock(return_value=(None, None)),
+        ),
         patch("schurfer_execution.monitor.journal.delete_trade_id_if_matches", AsyncMock()),
     ):
         blocked = await _recover_close_attempts({"bybit": ex}, rdb, _mock_cfg())
@@ -766,6 +785,37 @@ class TestReconcileOne:
         rdb.delete.assert_not_called()
 
 
+async def test_missing_opened_at_is_recovered_from_journal() -> None:
+    entry_at = datetime(2026, 9, 9, 12, 0, tzinfo=UTC)
+    position = {
+        "exchange": "bingx",
+        "base": "BEAT",
+        "symbol": "BEAT/USDT:USDT",
+        "side": "short",
+        "entry_price": 10.0,
+        "mark_price": 9.0,
+    }
+    rdb = _rdb_with({})
+
+    with (
+        patch(
+            "schurfer_execution.monitor.journal.find_open_trade_entry_at",
+            AsyncMock(return_value=entry_at),
+        ) as recover,
+        patch(
+            "schurfer_execution.monitor.exit_module.check_exit",
+            AsyncMock(return_value=None),
+        ) as check_exit,
+    ):
+        await _check_exit(position, rdb, _mock_cfg(), {"bingx": MagicMock()})
+
+    recover.assert_awaited_once_with("postgresql://x", exchange="bingx", symbol="BEAT/USDT:USDT")
+    assert check_exit.call_args.kwargs["opened_at"] == entry_at.timestamp()
+    rdb.set.assert_any_call(
+        "position:opened_at:bingx:BEAT", str(entry_at.timestamp()), ex=86400 * 7
+    )
+
+
 class TestRetryPendingCloses:
     async def test_retries_and_commits_a_pending_close(self) -> None:
         pending_payload = json.dumps(
@@ -774,6 +824,8 @@ class TestRetryPendingCloses:
                 "exit_order_id": "sl-1",
                 "exit_price": 1.2,
                 "reason": "exchange_stop_loss_triggered",
+                "executed_at": "2026-09-09T23:58:00+00:00",
+                "execution_time_source": "exchange.lastTradeTimestamp",
             }
         )
         rdb = MagicMock()
@@ -794,6 +846,10 @@ class TestRetryPendingCloses:
 
         mock_close.assert_called_once()
         assert mock_close.call_args.kwargs["trade_id"] == 42
+        assert mock_close.call_args.kwargs["executed_at"] == datetime(
+            2026, 9, 9, 23, 58, tzinfo=UTC
+        )
+        assert mock_close.call_args.kwargs["execution_time_source"] == "exchange.lastTradeTimestamp"
         mock_cas_delete.assert_called_once_with(rdb, "trade:id:bingx:BEAT", 42)
 
     async def test_still_pending_leaves_trade_id_alone(self) -> None:

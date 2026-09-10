@@ -8,25 +8,27 @@ Update only these four lines after every merge -- this is the fast-path
 status check, not a place for narrative.
 
 ```
-Current primary: ENG-022 step 3, durable portfolio reservation for concurrent live entries, in progress; support: conditional launch/delayed-short plan PR #395 in review
-State: ENG-022 step 1 merged as #347 and step 2 as #399, both fixed in code and NOT deployed; HYP-024 corrected by #397, deployed at b118019 and formally inconclusive (89 measured; 17/18 compared episodes and 28 clusters, below both floors; no held-out read); ENG-020/#343 and ENG-021/#345 remain fixed in code and NOT deployed
-Next after current primary merges: ENG-022 step 4 execution timestamps/recovery, then step 5 consumer compatibility/error summaries, ENG-023 paper fairness and ENG-024 partial-outcome consumer tracing
+Current primary: ENG-022 step 4, preserve execution timestamps and recover missing position age, in progress; support: conditional launch/delayed-short plan PR #395 in review
+State: ENG-022 steps 1-3 merged as #347/#399/#400 and NOT deployed; HYP-024 corrected by #397, deployed at b118019 and formally inconclusive (89 measured; 17/18 compared episodes and 28 clusters, below both floors; no held-out read); ENG-020/#343 and ENG-021/#345 remain fixed in code and NOT deployed
+Next after current primary merges: ENG-022 step 5 consumer compatibility/error summaries, then one explicitly authorized migration-backed ENG-022 deploy/operational validation; ENG-023 paper fairness and ENG-024 partial-outcome consumer tracing follow
 User decision required: yes before the ENG-022 migration/execution deployment or any live-mode change; no new hypothesis parameters were selected and HYP-024 earned no continuation
 ```
 
-### Active change card — ENG-022 step 3
+### Active change card — ENG-022 step 4
 
-- **Result / scope:** atomically reserve the global `MAX_POSITIONS` slot while
-  creating the existing durable entry attempt; bounded to order-attempt admission,
-  its `place_order` caller, regression tests and owning status documentation.
-- **Dependencies / owner:** builds on the `operation` semantics merged in #399;
-  Codex owns one branch and one pull request.
-- **Effort / stop condition:** no new schema or coordination subsystem. Stop when two
-  distinct concurrent entries competing for the last slot produce exactly one
-  committed attempt and at most one exchange submission, including on real PostgreSQL.
-- **Deploy / rollback:** code-only change, but part of the undeployed execution stack.
-  Roll back to the prior attempt-creation call; production remains a separate explicit
-  migration/deploy decision.
+- **Result / scope:** preserve confirmed exchange execution time separately from
+  journal write time through close-fill, incident and pending-close recovery; recover
+  a missing Redis position age from durable `trades.entry_at` without disabling
+  price/protection servicing when age evidence is unavailable.
+- **Dependencies / owner:** builds on close-fill evidence merged in #399 and the
+  portfolio reservation merged in #400; adds migration `0048` after undeployed `0047`;
+  implementation is isolated to one branch and one pull request.
+- **Effort / stop condition:** stop when delayed commit across UTC midnight preserves
+  the exchange close time, a restart retry carries the same timestamp/provenance, and
+  a missing `position:opened_at` is reconstructed from the journal under tests.
+- **Deploy / rollback:** migration-backed and part of the undeployed execution stack.
+  Prefer one full backup/migrate/deploy after step 5; production remains a separate
+  explicit user decision.
 
 ## Autonomy rules (when to just proceed, when to ask)
 

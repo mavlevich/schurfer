@@ -257,6 +257,8 @@ class TestTradeCloseFillModel:
             "remaining_amount",
             "terminal",
             "fill_source",
+            "executed_at",
+            "execution_time_source",
             "created_at",
             "updated_at",
         } == set(columns)

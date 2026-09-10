@@ -234,6 +234,8 @@ class TradeCloseFill(Base, TimestampMixin):
     remaining_amount: Mapped[Decimal] = mapped_column(Numeric(30, 14), nullable=False)
     terminal: Mapped[bool] = mapped_column(Boolean, nullable=False)
     fill_source: Mapped[str] = mapped_column(String(64), nullable=False)
+    executed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    execution_time_source: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     trade: Mapped["Trade"] = relationship("Trade", back_populates="close_fills")
 
