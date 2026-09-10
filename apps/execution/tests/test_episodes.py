@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from schurfer_execution import episodes
 
 
@@ -271,6 +272,17 @@ async def test_reap_overdue_terminates_the_three_dead_cases() -> None:
     assert "claim_attempts >= %(max_attempts)s" in third_query
     assert "expires_at > now()" in third_query
     assert third_params["max_attempts"] == 5
+
+
+async def test_reap_overdue_raises_when_summary_is_unavailable() -> None:
+    with (
+        patch(
+            "psycopg.AsyncConnection.connect",
+            AsyncMock(side_effect=OSError("database unavailable")),
+        ),
+        pytest.raises(episodes.ReapUnavailableError, match="summary unavailable"),
+    ):
+        await episodes.reap_overdue("postgresql://x")
 
 
 async def test_list_actionable_covers_armed_and_reclaimable_claimed() -> None:

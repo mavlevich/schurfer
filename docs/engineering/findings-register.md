@@ -540,7 +540,7 @@ verify`, `make deadcode`, `pre-commit run --all-files`, and 13 black-box tests t
 
 ### ENG-022 — Preserve fills, residual exposure and close accounting across recovery
 
-- **Status / priority:** steps 1-3 `fixed in code` by #347/#399/#400; step 4
+- **Status / priority:** steps 1-4 `fixed in code` by #347/#399/#400/#401; step 5
   `in progress`, `P1`; all remain undeployed. C-3/C-4/C-5/H-3/H-6/J-1/J-3,
   B04; reported EP-2 consumer behavior remains a verification subtask.
 - **Historical evidence:** before #347, `fill_price.py` accepted positive price with
@@ -560,7 +560,7 @@ verify`, `make deadcode`, `pre-commit run --all-files`, and 13 black-box tests t
 - **Small implementation steps:** (1) fill evidence and actual notional — #347;
   (2) partial-close/protection/remaining lifecycle — #399; (3) portfolio reservation using
   existing durable attempts — #400; (4) execution timestamp carried through pending-close
-  retries and recovery of missing position age; (5) strategy identity compatibility
+  retries and recovery of missing position age — #401; (5) strategy identity compatibility
   and explicit reconciliation-error summaries after consumer verification.
 - **Acceptance:** regression scenarios for zero/partial/full/unknown fills,
   contractSize, failed close after stop cancellation, restart between each external

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -32,6 +33,9 @@ _STRATEGY_NAME = "pump_short"
 _STRATEGY_VERSION = "1"
 _STRATEGY_NAME_MAX_LEN = 64
 _STRATEGY_VERSION_MAX_LEN = 16
+_COMBINED_STRATEGY_RE = re.compile(
+    r"^(?P<name>[A-Za-z0-9][A-Za-z0-9_-]*)_v(?P<version>[0-9][A-Za-z0-9_.-]*)$"
+)
 
 _UPSERT_STRATEGY = """
 INSERT INTO app.strategies (name, version, description)
@@ -315,19 +319,32 @@ def strategy_identity(setup_context: dict[str, Any]) -> tuple[str, str]:
     if strategy_value is not None and not isinstance(strategy_value, str):
         raise ValueError("strategy must be a string")
 
+    if explicit_name is not None and strategy_value is not None:
+        raise ValueError("strategy_name and combined strategy must not both be set")
+
     strategy_name = explicit_name if explicit_name is not None else _STRATEGY_NAME
     strategy_version = version_value
 
-    # New strategies pass a canonical "name_vN" value in strategy. The pump
-    # caller predates that contract and passes the same identifier in
-    # strategy_version, so parse it only when no explicit name was supplied.
+    # New strategies pass a canonical combined identifier in ``strategy``.
+    # pump_short predates that contract and may pass the same identifier in
+    # ``strategy_version``. Only recognize that legacy form by its known
+    # prefix: a bare compound version such as ``1_variant`` must remain a
+    # version, not be reinterpreted as another strategy name.
     strategy_identifier = strategy_value
-    if strategy_identifier is None and explicit_name is None and "_v" in strategy_version:
+    if (
+        strategy_identifier is None
+        and explicit_name is None
+        and strategy_version.startswith(f"{_STRATEGY_NAME}_v")
+    ):
         strategy_identifier = strategy_version
     if strategy_identifier is not None:
-        if "_v" not in strategy_identifier:
-            raise ValueError("strategy must use the name_vN format")
-        strategy_name, strategy_version = strategy_identifier.rsplit("_v", 1)
+        matched = _COMBINED_STRATEGY_RE.fullmatch(strategy_identifier)
+        if matched is None:
+            raise ValueError(
+                "strategy must use name_vN or name_vN_suffix with a numeric version prefix"
+            )
+        strategy_name = matched.group("name")
+        strategy_version = matched.group("version")
 
     strategy_name = strategy_name.strip()
     strategy_version = strategy_version.strip()
