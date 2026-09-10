@@ -854,6 +854,32 @@ async def test_trigger_tick_reaps_and_lists_actionable_even_with_no_watch_keys()
     reconcile.assert_awaited_once()
 
 
+async def test_trigger_tick_stops_when_reaper_summary_is_unavailable() -> None:
+    rdb = MagicMock()
+
+    with (
+        patch(
+            "schurfer_execution.early_momentum.episodes.reap_overdue",
+            AsyncMock(side_effect=episodes.ReapUnavailableError("summary unavailable")),
+        ),
+        patch(
+            "schurfer_execution.early_momentum.episodes.list_actionable",
+            AsyncMock(),
+        ) as listed,
+        patch(
+            "schurfer_execution.early_momentum.paper.reconcile_missing_positions",
+            new_callable=AsyncMock,
+        ) as reconcile,
+        pytest.raises(episodes.ReapUnavailableError, match="summary unavailable"),
+    ):
+        await early_momentum._trigger_tick(
+            {"bybit": _exchange()}, rdb, _cfg(), PaperBroker(_open_gate())
+        )
+
+    listed.assert_not_awaited()
+    reconcile.assert_not_awaited()
+
+
 async def test_trigger_tick_repairs_missing_watch_cache_from_actionable() -> None:
     rdb = MagicMock()
     rdb.exists = AsyncMock(return_value=False)  # cache entry missing

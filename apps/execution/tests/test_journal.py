@@ -1,5 +1,6 @@
 import json
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -1064,6 +1065,35 @@ async def test_open_trade_pump_caller_preserves_context(mock_connect) -> None:
     saved_context = json.loads(insert_call[0][1][13])
     assert saved_context["pump_pct"] == 5.0
     assert saved_context["market_quality"]["bid_impact_bps"] == 1.5
+
+
+@pytest.mark.parametrize(
+    ("setup_context", "expected"),
+    [
+        ({"strategy_version": "pump_short_v2_venue"}, ("pump_short", "2_venue")),
+        ({"strategy_version": "1_variant"}, ("pump_short", "1_variant")),
+        ({"strategy": "momentum_flow_paper_v1_hold12h"}, ("momentum_flow_paper", "1_hold12h")),
+        ({"strategy_name": "manual", "strategy_version": "1"}, ("manual", "1")),
+    ],
+)
+def test_strategy_identity_preserves_compatible_compound_versions(
+    setup_context: dict[str, Any], expected: tuple[str, str]
+) -> None:
+    assert journal.strategy_identity(setup_context) == expected
+
+
+@pytest.mark.parametrize(
+    "setup_context",
+    [
+        {"strategy": "pump_short_vbeta"},
+        {"strategy": "pump_short_v2", "strategy_name": "pump_short"},
+    ],
+)
+def test_strategy_identity_rejects_ambiguous_or_non_numeric_combined_identity(
+    setup_context: dict[str, Any],
+) -> None:
+    with pytest.raises(ValueError):
+        journal.strategy_identity(setup_context)
 
 
 @pytest.mark.asyncio

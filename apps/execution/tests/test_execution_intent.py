@@ -663,6 +663,7 @@ async def test_shadow_broker_rejects_when_db_url_missing() -> None:
         # combined "strategy_version" (journal.strategy_identity's own
         # historical convention default name is "pump_short").
         ({"strategy_version": "pump_short_v1_market_quality"}, ("pump_short", "1_market_quality")),
+        ({"strategy_version": "pump_short_v2_venue"}, ("pump_short", "2_venue")),
         ({"strategy_version": "1"}, ("pump_short", "1")),
         # early_momentum: sets a combined "strategy" key directly.
         ({"strategy": "early_momentum_v4"}, ("early_momentum", "4")),

@@ -8,27 +8,27 @@ Update only these four lines after every merge -- this is the fast-path
 status check, not a place for narrative.
 
 ```
-Current primary: ENG-022 step 4, preserve execution timestamps and recover missing position age, in progress; support: conditional launch/delayed-short plan PR #395 in review
-State: ENG-022 steps 1-3 merged as #347/#399/#400 and NOT deployed; HYP-024 corrected by #397, deployed at b118019 and formally inconclusive (89 measured; 17/18 compared episodes and 28 clusters, below both floors; no held-out read); ENG-020/#343 and ENG-021/#345 remain fixed in code and NOT deployed
-Next after current primary merges: ENG-022 step 5 consumer compatibility/error summaries, then one explicitly authorized migration-backed ENG-022 deploy/operational validation; ENG-023 paper fairness and ENG-024 partial-outcome consumer tracing follow
-User decision required: yes before the ENG-022 migration/execution deployment or any live-mode change; no new hypothesis parameters were selected and HYP-024 earned no continuation
+Current primary: ENG-022 step 5, strategy-identity compatibility and explicit reaper failure, in progress; support: conditional launch/delayed-short plan PR #395 in review
+State: ENG-022 steps 1-4 merged as #347/#399/#400/#401 and NOT deployed; HYP-024 corrected by #397, deployed at b118019 and formally inconclusive (89 measured; 17/18 compared episodes and 28 clusters, below both floors; no held-out read); ENG-020/#343 and ENG-021/#345 remain fixed in code and NOT deployed
+Next after current primary merges: user-authorized backup/migrate/deploy and operational validation of the full ENG-022 stack; ENG-023 paper fairness and ENG-024 partial-outcome consumer tracing follow
+User decision required: deployment authorized on 2026-09-10, but no live-mode change is authorized; no new hypothesis parameters were selected and HYP-024 earned no continuation
 ```
 
-### Active change card — ENG-022 step 4
+### Active change card — ENG-022 step 5
 
-- **Result / scope:** preserve confirmed exchange execution time separately from
-  journal write time through close-fill, incident and pending-close recovery; recover
-  a missing Redis position age from durable `trades.entry_at` without disabling
-  price/protection servicing when age evidence is unavailable.
-- **Dependencies / owner:** builds on close-fill evidence merged in #399 and the
-  portfolio reservation merged in #400; adds migration `0048` after undeployed `0047`;
+- **Result / scope:** make combined strategy identity parsing unambiguous while
+  preserving every active producer shape, and ensure a failed episode reaper cannot
+  return the same zero summary as a successful no-op.
+- **Dependencies / owner:** builds on the complete execution lifecycle merged through
+  #401; consumer inventory covers trader, early-momentum, liquidation-cascade, paper,
+  journal registry, API strategy FK reads, and the sole reaper caller;
   implementation is isolated to one branch and one pull request.
-- **Effort / stop condition:** stop when delayed commit across UTC midnight preserves
-  the exchange close time, a restart retry carries the same timestamp/provenance, and
-  a missing `position:opened_at` is reconstructed from the journal under tests.
-- **Deploy / rollback:** migration-backed and part of the undeployed execution stack.
-  Prefer one full backup/migrate/deploy after step 5; production remains a separate
-  explicit user decision.
+- **Effort / stop condition:** stop when `pump_short_v2_venue` resolves to
+  `pump_short`/`2_venue`, all active identity shapes have compatibility tests, and a
+  reaper DB failure reaches the worker boundary instead of reporting zeros.
+- **Deploy / rollback:** code-only completion of the migration-backed ENG-022 stack.
+  User authorized one backup/migrate/deploy on 2026-09-10; keep live trading mode
+  unchanged and execute production validation only after this step merges.
 
 ## Autonomy rules (when to just proceed, when to ask)
 
