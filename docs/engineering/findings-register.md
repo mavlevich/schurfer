@@ -540,9 +540,10 @@ verify`, `make deadcode`, `pre-commit run --all-files`, and 13 black-box tests t
 
 ### ENG-022 — Preserve fills, residual exposure and close accounting across recovery
 
-- **Status / priority:** steps 1-4 `fixed in code` by #347/#399/#400/#401; step 5
-  `in progress`, `P1`; all remain undeployed. C-3/C-4/C-5/H-3/H-6/J-1/J-3,
-  B04; reported EP-2 consumer behavior remains a verification subtask.
+- **Status / priority:** `verified in production`, completed by
+  #347/#399/#400/#401/#402 and deployed at
+  `913d8f7477a2e4029ff071fe1aa2bba31cb4c1bb` on 2026-09-10. P1 closed;
+  C-3/C-4/C-5/H-3/H-6/J-1/J-3, B04.
 - **Historical evidence:** before #347, `fill_price.py` accepted positive price with
   zero filled volume and `orders.py` journalled requested notional on partial entry.
   Before #399, it still reported a partial exit as closed and
@@ -561,7 +562,17 @@ verify`, `make deadcode`, `pre-commit run --all-files`, and 13 black-box tests t
   (2) partial-close/protection/remaining lifecycle — #399; (3) portfolio reservation using
   existing durable attempts — #400; (4) execution timestamp carried through pending-close
   retries and recovery of missing position age — #401; (5) strategy identity compatibility
-  and explicit reconciliation-error summaries after consumer verification.
+  and explicit reconciliation-error summaries after consumer verification — #402.
+- **Production verification, 2026-09-10:** verified offsite archives before mutation
+  (`db-2026-09-10T11:42:26`, plus matching research and bars archives), upgraded
+  Alembic `0046 -> 0047 -> 0048`, and kept `AUTO_TRADE=false` / `DRY_RUN=true`.
+  Execution and every supervised worker became healthy with zero post-deploy
+  restarts/failures; the gate opened normally. There were zero pending-close keys,
+  live-order attempts, fill incidents, reconciliation incidents and close-fill rows.
+  The two open Bybit paper trades (KAS/MTL) retained matching trade/episode identities,
+  and their Redis `opened_at` values matched durable PostgreSQL `entry_at` values to
+  milliseconds after startup recovery. No synthetic trade was forced, so the new
+  live close-fill timestamp columns were schema-verified but not naturally exercised.
 - **Acceptance:** regression scenarios for zero/partial/full/unknown fills,
   contractSize, failed close after stop cancellation, restart between each external
   boundary, delayed commit across UTC midnight, and concurrent distinct instruments
