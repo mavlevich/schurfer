@@ -8,11 +8,25 @@ Update only these four lines after every merge -- this is the fast-path
 status check, not a place for narrative.
 
 ```
-Current primary: ENG-022 step 2, partial-close/protection/remaining lifecycle, ready for review; support: conditional launch/delayed-short plan PR #395 in review
-State: ENG-022 step 1 already merged as #347; HYP-024 corrected by #397, deployed at b118019 and formally inconclusive (89 measured; 17/18 compared episodes and 28 clusters, below both floors; no held-out read); ENG-020/#343 and ENG-021/#345 remain fixed in code and NOT deployed
-Next after current primary merges: ENG-022 step 3 durable portfolio reservation, then its execution-timestamp/recovery step, ENG-023 paper fairness and ENG-024 partial-outcome consumer tracing
+Current primary: ENG-022 step 3, durable portfolio reservation for concurrent live entries, in progress; support: conditional launch/delayed-short plan PR #395 in review
+State: ENG-022 step 1 merged as #347 and step 2 as #399, both fixed in code and NOT deployed; HYP-024 corrected by #397, deployed at b118019 and formally inconclusive (89 measured; 17/18 compared episodes and 28 clusters, below both floors; no held-out read); ENG-020/#343 and ENG-021/#345 remain fixed in code and NOT deployed
+Next after current primary merges: ENG-022 step 4 execution timestamps/recovery, then step 5 consumer compatibility/error summaries, ENG-023 paper fairness and ENG-024 partial-outcome consumer tracing
 User decision required: yes before the ENG-022 migration/execution deployment or any live-mode change; no new hypothesis parameters were selected and HYP-024 earned no continuation
 ```
+
+### Active change card — ENG-022 step 3
+
+- **Result / scope:** atomically reserve the global `MAX_POSITIONS` slot while
+  creating the existing durable entry attempt; bounded to order-attempt admission,
+  its `place_order` caller, regression tests and owning status documentation.
+- **Dependencies / owner:** builds on the `operation` semantics merged in #399;
+  Codex owns one branch and one pull request.
+- **Effort / stop condition:** no new schema or coordination subsystem. Stop when two
+  distinct concurrent entries competing for the last slot produce exactly one
+  committed attempt and at most one exchange submission, including on real PostgreSQL.
+- **Deploy / rollback:** code-only change, but part of the undeployed execution stack.
+  Roll back to the prior attempt-creation call; production remains a separate explicit
+  migration/deploy decision.
 
 ## Autonomy rules (when to just proceed, when to ask)
 

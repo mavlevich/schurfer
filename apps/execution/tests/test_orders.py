@@ -6,6 +6,7 @@ import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
 from schurfer_execution import exit as exit_module
+from schurfer_execution import order_attempts
 from schurfer_execution.orders import close_position, place_order
 from schurfer_execution.risk import PNL_READY_KEY, TRADING_ENABLED_KEY
 from schurfer_execution.routers.orders import OrderRequest, post_order
@@ -1174,6 +1175,31 @@ class TestPreFlightDurability:
 
         assert not result["allowed"]
         assert "durably record" in result["reason"]
+        ex.create_market_order.assert_not_called()
+
+    @patch("schurfer_execution.orders.fetch_positions", return_value=([], set()))
+    @patch(
+        "schurfer_execution.orders.fetch_margin_balance",
+        return_value=[{"exchange": "bingx", "free": 1000.0, "used": 0.0, "total": 1000.0}],
+    )
+    async def test_concurrent_reservation_at_capacity_never_submits_exchange_order(
+        self, _mock_bal: MagicMock, _mock_pos: MagicMock
+    ) -> None:
+        cfg = MagicMock(db_url="postgresql://x")
+        ex = self._confirmed_exchange()
+        with patch(
+            "schurfer_execution.orders.order_attempts.create_attempt",
+            AsyncMock(
+                return_value=order_attempts.PortfolioCapacityReached(
+                    occupied_slots=5,
+                    max_positions=5,
+                )
+            ),
+        ):
+            result = await place_order(**_kwargs(exchanges={"bingx": ex}, cfg=cfg))
+
+        assert not result["allowed"]
+        assert result["reason"] == "max positions reached (5/5)"
         ex.create_market_order.assert_not_called()
 
     @patch("schurfer_execution.orders.fetch_positions", return_value=([], set()))
