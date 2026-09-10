@@ -50,6 +50,7 @@ _OUTCOME_JOIN = """
     LEFT JOIN app.trade_decision_outcomes o
       ON o.decision_id = e.decision_id
      AND o.horizon_minutes = :horizon
+     AND o.resolver_version = :resolver_version
      AND o.status = 'complete'
      AND o.short_return_pct IS NOT NULL
     ORDER BY e.pump_event_id
@@ -60,9 +61,10 @@ def episode_decision_query(*outcome_columns: str) -> str:
     """The episode's decision, with that decision's own outcome columns.
 
     `outcome_columns` are taken from `app.trade_decision_outcomes` and are NULL
-    when the chosen decision has no completed outcome. They are nullable on
-    purpose: a study must decide what to do with an incomplete episode, and
-    silently swapping in another decision is not one of the options.
+    when the chosen decision has no completed outcome from the requested
+    resolver version. They are nullable on purpose: a study must decide what to
+    do with an incomplete episode, and silently swapping in another decision or
+    resolver is not one of the options.
     """
     selected = ", ".join(f"o.{column}" for column in outcome_columns)
     return (

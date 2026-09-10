@@ -607,13 +607,11 @@ verify`, `make deadcode`, `pre-commit run --all-files`, and 13 black-box tests t
 
 ### ENG-024 — Verify coverage artifacts and trace partial-outcome consumers
 
-- **Status / priority:** fingerprint fix `fixed in code`; partial-outcome impact still
-  `reported`; E-04/M-8, B06. The audit now hashes the bytes it actually read, refuses a
-  file whose fingerprint is not the one it was built against unless that is stated
-  explicitly, validates the episode shape, and reports the verified identity and path
-  instead of a constant. The September audit's own synthetic `[]` is rejected by name in
-  the regression tests. The partial-outcome consumer tracing is untouched and remains
-  open.
+- **Status / priority:** `fixed in code`, awaiting production verification; E-04/M-8,
+  B06. The audit hashes the bytes it actually read, refuses a file whose fingerprint
+  is not the one it was built against unless that is stated explicitly, validates the
+  episode shape, and reports the verified identity and path instead of a constant. The
+  September audit's own synthetic `[]` is rejected by name in the regression tests.
 - **Evidence:** `cex_activity_path_coverage_audit.py:230` reads an arbitrary JSON and
   `render_markdown` prints `_AUDITED_ARTIFACT_FINGERPRINT` without validating that
   input. The audit accepted a synthetic unrelated `[]`. This is now merged code.
@@ -626,6 +624,21 @@ verify`, `make deadcode`, `pre-commit run --all-files`, and 13 black-box tests t
 - **Acceptance:** corrupt/unrelated/wrong-schema inputs fail closed; partial extrema
   cannot be treated as exact by formal consumers; independently recalculate a small
   pinned accounting/outcome sample. Preserve original and corrected artifact versions.
+- **Consumer trace:** production contains 26,292 `forward_v1` partial rows with a
+  non-null return, so the boundary is material. Replay-derived formal reports exclude
+  them through `accepted_outcome_statuses`; measurement performance restricts input to
+  shared measurable statuses; HYP-024 requires an exact same-venue outcome. The two
+  direct legacy episode-selection consumers already required `complete`, but omitted
+  `resolver_version`; they now bind `forward_v1`, preventing alternate-resolver
+  duplication or substitution. A real-PostgreSQL regression covers partial plus
+  alternate-resolver rows on the selected decision. Production currently contains
+  only `forward_v1` and zero `(decision_id, horizon_minutes)` pairs with multiple
+  complete resolvers, so this omission did not alter an existing result.
+- **Independent arithmetic check:** the first five deterministic complete `forward_v1`
+  rows by `(decision_id, horizon_minutes)` on 2026-09-10 all reproduced
+  `(entry_price - forward_price) / entry_price * 100`; maximum absolute difference from
+  the stored six-decimal return was 0.000000425 percentage points. Historical HYP-016
+  outcomes and artifacts were not rewritten.
 
 ### ENG-025 — Establish recovery evidence and capture continuity
 

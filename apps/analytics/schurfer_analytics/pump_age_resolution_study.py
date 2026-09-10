@@ -29,6 +29,7 @@ from statistics import median
 from typing import TYPE_CHECKING, Any
 
 from .episode_selection import episode_decision_query
+from .outcomes import RESOLVER_VERSION
 from .research_contract import ContractViolationError, validate_configuration
 from .research_contract import verdict as contract_verdict
 from .score_component_study import (
@@ -530,6 +531,7 @@ async def load_observations(db_url: str, contract: ResearchContract) -> tuple[di
                 text(episode_decision_query("short_return_pct", "mfe_pct", "mae_pct")),
                 {
                     "horizon": contract.outcome_horizon_minutes,
+                    "resolver_version": RESOLVER_VERSION,
                     "strategies": list(contract.strategy_versions),
                     "since": contract.window_since,
                     "until": contract.window_until,

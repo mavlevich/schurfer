@@ -8,30 +8,28 @@ Update only these four lines after every merge -- this is the fast-path
 status check, not a place for narrative.
 
 ```
-Current primary: ENG-023 fair momentum-paper servicing beyond the batch limit, fixed in code and awaiting production verification; support: ENG-024 partial-outcome consumer tracing
-State: ENG-020/#343, ENG-021/#345 and ENG-022/#347/#399/#400/#401/#402 deployed at 913d8f7 on 2026-09-10; migration 0048, workers, recovery and accounting queues verified healthy; HYP-024 re-run unchanged and inconclusive with no held-out read
-Next: deploy and verify ENG-023 before adding another paper sibling, then complete ENG-024; HYP-015 hold12h remains the next registered forward edge candidate but its production worker has not been started
+Current primary: ENG-024 partial-outcome consumer tracing, fixed in code and awaiting production verification; support: HYP-015 hold12h launch readiness
+State: ENG-020/#343, ENG-021/#345, ENG-022/#347/#399/#400/#401/#402 and ENG-023/#404 deployed through cd62fa0 on 2026-09-10; all 20 open baseline paper probes were serviced within 5.7 seconds after the ENG-023 deploy, with no missed outcomes, quote failures or restarts; HYP-024 re-run unchanged and inconclusive with no held-out read
+Next: merge, deploy and verify ENG-024, then decide whether to start the already registered HYP-015 hold12h forward paper worker; do not reopen the stopped delayed-short/orderflow line
 User decision required: no live-mode change is authorized; starting the HYP-015 hold12h production paper worker needs a separate explicit production authorization after ENG-023
 ```
 
-### Active change card — ENG-023 fair paper servicing
+### Active change card — ENG-024 outcome-consumer integrity
 
-- **Result / scope:** ensure every eligible open momentum-paper probe is serviced over
-  successive ticks even when the population exceeds the repository batch limit;
-  declare a maximum quote-age/deadline budget instead of allowing silent starvation.
-- **Dependencies / owner:** reuse the existing repository ordering, worker advisory
-  lock and ENG-003 venue-aware concurrency; preserve every frozen paper contract and
-  keep database work bounded to one implementation branch and pull request.
-- **Effort / stop condition:** stop when a real-repository test above the batch limit
-  proves complete fair coverage across ticks and slow/failing quotes cannot violate
-  the declared observation contract without a visible failure.
-- **Deploy / rollback:** code-only unless the solution needs a migration. Do not start
-  another paper sibling until this fairness invariant is merged and separately
-  deployed; keep live trading mode unchanged.
-- **Implementation:** eligible probes now form a durable least-recently-serviced
-  queue ordered by `updated_at`, `entry_at`, then `paper_id`. Both successful and
-  failed quote attempts advance `updated_at`; regression coverage proves a later
-  probe enters the next batch even when the oldest batch remains open.
+- **Result / scope:** prove every direct consumer of decision outcomes treats
+  `partial` as coverage rather than exact evidence; bind legacy direct joins to one
+  resolver version so another resolver cannot duplicate or substitute an outcome.
+- **Dependencies / owner:** reuse the shared replay outcome-status contract and
+  preserve frozen HYP-016/HYP-023/HYP-027 data and artifacts.
+- **Effort / stop condition:** stop after static consumer tracing, a real-PostgreSQL
+  partial/alternate-resolver regression, and an independent pinned arithmetic sample.
+- **Deploy / rollback:** analytics/report code only, with no schema, worker or live-mode
+  change. Preserve original artifacts; use a corrected artifact version only if a
+  historical result is actually affected.
+- **Implementation:** replay, measurement and HYP-024 already fail closed on partial
+  rows. The HYP-023/HYP-027 direct episode join now binds `forward_v1` as well as
+  `complete`, preventing alternate-resolver duplication while keeping partial rows in
+  the visible coverage denominator.
 
 ## Autonomy rules (when to just proceed, when to ask)
 

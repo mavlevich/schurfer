@@ -72,7 +72,7 @@ _INSERT_OUTCOME = text("""
         (decision_id, horizon_minutes, resolver_version, timeframe_minutes,
          status, short_return_pct, bars_count, expected_bars, attempt_count,
          resolved_at)
-    VALUES (:decision_id, :horizon, 'test_v1', 5, :status, :short_return_pct,
+    VALUES (:decision_id, :horizon, :resolver_version, 5, :status, :short_return_pct,
             0, 0, 1, :ts)
 """)
 
@@ -96,11 +96,14 @@ def _features(age_minutes: float) -> str:
     )
 
 
-async def test_the_episode_keeps_its_own_decision_when_that_outcome_is_unresolved() -> None:
-    """The exact shape a colleague reproduced: an episode whose first
-    `opened_paper` decision is unresolved and whose later `skipped` decision is
-    complete. The episode must come back represented by the opened one, with a
-    null outcome, rather than by the skipped one at a different age."""
+async def test_episode_selection_rejects_partial_and_alternate_resolver_outcomes() -> None:
+    """The reproduced substitution shape, plus both integrity hazards.
+
+    The first opened decision has a partial requested-resolver outcome and a
+    complete result from another resolver, while a later skipped decision is
+    complete. The episode must keep the opened decision with a null exact
+    outcome, without substitution or duplication.
+    """
     engine = await _connect_or_skip()
     episode_id = None
     opened_id, skipped_id = str(uuid.uuid4()), str(uuid.uuid4())
@@ -110,7 +113,9 @@ async def test_the_episode_keeps_its_own_decision_when_that_outcome_is_unresolve
                 await connection.execute(_INSERT_EPISODE, {"base": "EPISODESEL", "ts": _SINCE})
             ).scalar_one()
 
-            # 0.6 minutes old, opened, outcome still unresolved.
+            # 0.6 minutes old, opened. Its requested-resolver outcome is partial,
+            # while a second resolver claims a complete result. Neither may be
+            # substituted into an exact forward_v1 read.
             await connection.execute(
                 _INSERT_DECISION,
                 {
@@ -128,8 +133,20 @@ async def test_the_episode_keeps_its_own_decision_when_that_outcome_is_unresolve
                 {
                     "decision_id": opened_id,
                     "horizon": _HORIZON,
-                    "status": "pending",
-                    "short_return_pct": None,
+                    "resolver_version": "forward_v1",
+                    "status": "partial",
+                    "short_return_pct": 9.0,
+                    "ts": _SINCE,
+                },
+            )
+            await connection.execute(
+                _INSERT_OUTCOME,
+                {
+                    "decision_id": opened_id,
+                    "horizon": _HORIZON,
+                    "resolver_version": "other_v2",
+                    "status": "complete",
+                    "short_return_pct": 99.0,
                     "ts": _SINCE,
                 },
             )
@@ -151,6 +168,7 @@ async def test_the_episode_keeps_its_own_decision_when_that_outcome_is_unresolve
                 {
                     "decision_id": skipped_id,
                     "horizon": _HORIZON,
+                    "resolver_version": "forward_v1",
                     "status": "complete",
                     "short_return_pct": 3.0,
                     "ts": _SINCE,
@@ -167,6 +185,7 @@ async def test_the_episode_keeps_its_own_decision_when_that_outcome_is_unresolve
                             "since": _SINCE,
                             "until": _UNTIL,
                             "horizon": _HORIZON,
+                            "resolver_version": "forward_v1",
                         },
                     )
                 )
@@ -182,7 +201,9 @@ async def test_the_episode_keeps_its_own_decision_when_that_outcome_is_unresolve
         assert str(row["decision_id"]) == str(
             opened_id
         ), "the opened decision represents the episode even though it is unresolved"
-        assert row["short_return_pct"] is None, "and it carries no outcome, rather than another's"
+        assert (
+            row["short_return_pct"] is None
+        ), "partial and alternate-resolver outcomes stay coverage, not exact evidence"
         assert row["components"]["pump_age"]["value"] == pytest.approx(0.01)
         # The substitution this whole change exists to prevent.
         assert str(row["decision_id"]) != str(skipped_id)
