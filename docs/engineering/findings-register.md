@@ -584,7 +584,7 @@ verify`, `make deadcode`, `pre-commit run --all-files`, and 13 black-box tests t
 
 ### ENG-023 — Guarantee fair servicing beyond the momentum-paper batch limit
 
-- **Status / priority:** `fixed in code`, awaiting production verification; `P2`
+- **Status / priority:** `verified in production` on 2026-09-10 via PR #404; `P2`
   now / `P1` before scaling beyond the limit; source E-01, B05. No production
   threshold breach has been established.
 - **Evidence:** `momentum_flow_paper_repository.py:591` orders eligible open probes
@@ -604,10 +604,15 @@ verify`, `make deadcode`, `pre-commit run --all-files`, and 13 black-box tests t
   or schema change. Unit SQL coverage and a real-PostgreSQL rotation regression
   cover the selection invariant; the existing deadline expiry path keeps missed
   observations visible.
+- **Production verification:** after the analytics deploy, all 20 open baseline
+  probes were serviced within 5.7 seconds, with no missed outcomes, quote failures,
+  service restarts or scanner-cycle failures. No schema or execution-mode change was
+  made.
 
 ### ENG-024 — Verify coverage artifacts and trace partial-outcome consumers
 
-- **Status / priority:** `fixed in code`, awaiting production verification; E-04/M-8,
+- **Status / priority:** `verified in production` on 2026-09-10 via PR #405 at
+  `e6605d12eecd07f3883df6ffd58bb67689e9d31c`; E-04/M-8,
   B06. The audit hashes the bytes it actually read, refuses a file whose fingerprint
   is not the one it was built against unless that is stated explicitly, validates the
   episode shape, and reports the verified identity and path instead of a constant. The
@@ -624,7 +629,7 @@ verify`, `make deadcode`, `pre-commit run --all-files`, and 13 black-box tests t
 - **Acceptance:** corrupt/unrelated/wrong-schema inputs fail closed; partial extrema
   cannot be treated as exact by formal consumers; independently recalculate a small
   pinned accounting/outcome sample. Preserve original and corrected artifact versions.
-- **Consumer trace:** production contains 26,292 `forward_v1` partial rows with a
+- **Consumer trace:** production contains 26,297 `forward_v1` partial rows with a
   non-null return, so the boundary is material. Replay-derived formal reports exclude
   them through `accepted_outcome_statuses`; measurement performance restricts input to
   shared measurable statuses; HYP-024 requires an exact same-venue outcome. The two
@@ -634,6 +639,13 @@ verify`, `make deadcode`, `pre-commit run --all-files`, and 13 black-box tests t
   alternate-resolver rows on the selected decision. Production currently contains
   only `forward_v1` and zero `(decision_id, horizon_minutes)` pairs with multiple
   complete resolvers, so this omission did not alter an existing result.
+- **Production verification:** all application checks passed before merge; analytics
+  was deployed without a migration or execution-mode change. The service restarted
+  cleanly, reported zero failed scanner cycles, and wrote new decisions. The corrected
+  HYP-023 report retained an `inconclusive` verdict with 797 selected episodes and 288
+  visible coverage misses. HYP-027 remained readiness-only: group A had 307
+  episodes/129 clusters and group B had 134/83, leaving 16 group-B episodes before the
+  declared 150-per-group formal floor. Neither result was promoted or reinterpreted.
 - **Independent arithmetic check:** the first five deterministic complete `forward_v1`
   rows by `(decision_id, horizon_minutes)` on 2026-09-10 all reproduced
   `(entry_price - forward_price) / entry_price * 100`; maximum absolute difference from
