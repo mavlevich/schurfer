@@ -34,8 +34,10 @@ stop the corresponding direction before the minute-path PR.
 - A selected decision whose horizon ends after the frozen window is unresolved even if
   that outcome becomes available later.
 
-The input fingerprint covers the selected-window decision records and their fetched
-resolver rows. The manifest records database snapshot time, generation time, Git
+The input fingerprint covers the decision records selected for either frozen anchor
+and their fetched resolver rows. Selection is pushed into PostgreSQL with the same
+`(ts, row_id)` ordering so application memory is bounded by episodes rather than all
+scanner observations in the window. The manifest records database snapshot time, generation time, Git
 revision, dirty-tree state, selection/cost versions, bounds, floors and bootstrap seed.
 
 ## Fixed family
@@ -106,7 +108,8 @@ repository, Markdown/JSON CLI, local/production Make targets and no migration. T
 cover selection before outcome, partial/alternate-resolver exclusion, cross-venue
 exclusion, missing-liquidity cash, window straddles, long/short accounting, candidate
 and insufficient verdicts, negative-EV stop precedence, selected-anchor chronological
-risk metrics, deterministic serialization, and a real-PostgreSQL repository regression.
+risk metrics, deterministic serialization, SQL anchor pushdown, and a real-PostgreSQL
+repository regression proving later decisions cannot re-enter the bounded input.
 
 The one production run is archived after merge/deploy from clean `main`. Its result is
 viewed Discovery. Parameters cannot be edited and re-run on this window to rescue a
