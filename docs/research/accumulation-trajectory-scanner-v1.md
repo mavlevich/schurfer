@@ -208,15 +208,16 @@ a SHA-256 fingerprint of the fired-episode dataset in deterministic order.
    distinct asset clusters, `>= 4` UTC weeks, reported with base rate and daily
    false-positive count.
 5. **Discovery window and forward cutoff** (set 2026-09-11 from the frozen
-   cold-export range): the continuous frozen cold-bar days are `2026-08-10`
-   through `2026-09-08`, 30 days, no gaps. Baseline `B` therefore starts at
-   `2026-08-10`; the decision window is
-   `[2026-08-18T00:00Z, 2026-09-08T20:00Z)`, chosen so that every fired minute's
+   cold-export range, final for this discovery read): the continuous frozen
+   cold-bar days are `2026-08-10` through `2026-09-10`, 32 days, no gaps (the
+   `2026-09-09` and `2026-09-10` days were caught up on 2026-09-11, and the
+   cold-export systemd timer was installed and enabled the same day, so the range
+   no longer erodes). Baseline `B` starts at `2026-08-10`; the decision window is
+   `[2026-08-18T00:00Z, 2026-09-10T20:00Z)`, chosen so that every fired minute's
    full `24h + 7d` feature window AND its `t + 240m` forward bar fall inside the
-   frozen range. Extending the window forward requires the cold-export timer,
-   which was found `inactive` on 2026-09-11 and must be restarted before new days
-   accumulate. The scanner reads only these frozen days and records their manifest
-   SHA hashes.
+   frozen range. This window is FINAL for the discovery read: later days accrue to
+   a separate prospective cohort, never to re-extending this window after a read.
+   The scanner reads only these frozen days and records their manifest SHA hashes.
 
 ## Remaining gates before code and before the read
 
