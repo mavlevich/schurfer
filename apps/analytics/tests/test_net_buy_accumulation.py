@@ -55,9 +55,11 @@ def _episode(
 def test_adj_return_subtracts_fees_and_funding() -> None:
     ep = _episode(score=1.0, ret_pct=3.0, cluster="AAA", day="2026-08-20", week="2026-W34", idx=1)
     # ret_pct was baked in as the adjusted return.
-    assert ep.gross_return_pct is not None
-    assert abs(ep.adj_return_pct - 3.0) < 1e-9  # type: ignore[operator]
-    assert ep.gross_return_pct > ep.adj_return_pct  # costs are positive
+    gross = ep.gross_return_pct
+    adj = ep.adj_return_pct
+    assert gross is not None and adj is not None
+    assert abs(adj - 3.0) < 1e-9
+    assert gross > adj  # costs are positive
 
 
 def test_unresolved_episode_has_no_return() -> None:
