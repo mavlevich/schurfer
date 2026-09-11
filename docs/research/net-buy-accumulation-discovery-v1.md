@@ -26,15 +26,25 @@ Per-minute point-in-time inputs from `timeseries.bybit_momentum_bars_1m`:
 window W ) / ( mean daily activity over the baseline B )`. Accumulation size in
   the token's own "normal-days" units. Fires when `score_m >= THETA_M = 1.0`
   (a 24h net buy of at least one baseline-day of activity).
-- **P-SHAPE (elevated-buy breadth):** `score_s(t) = share of the W minutes whose
-  activity is above the token's own baseline AND is net-buying`, i.e.
-  `share of m in W with activity(m) > mean_perminute_activity(B) AND net_buy(m) >
-0`, where `mean_perminute_activity(B) = (sum activity over B) / (minutes in B)`.
-  This is "gradually elevated, distributed buying" -- not mere sign persistence: a
-  token drifting `+$1` in most minutes without any activity build does NOT pass,
-  because those minutes are not above baseline activity. Fires when `score_s >=
-THETA_S = 0.60` (above-baseline net buying in at least 60% of the window's
-  minutes).
+- **P-SHAPE (elevated-buy breadth):** each minute carries a fixed per-minute flag,
+  and the score is the share of the window's minutes that flag:
+
+  ```
+  elevated_buy(m) = (activity(m) > trailing7d_mean_activity(m)) AND (net_buy(m) > 0)
+  trailing7d_mean_activity(m) = mean activity over [m - 7d, m)   # m's own trailing norm
+  score_s(t) = ( count of elevated_buy over the W minutes ) / 1440
+  ```
+
+  This is gradually elevated, distributed buying -- not mere sign persistence: a
+  token drifting a dollar positive in most minutes without any activity build does
+  NOT pass, because those minutes are not above their trailing norm. Fires when
+  `score_s >= THETA_S = 0.60`. Feasibility note (2026-09-11): `elevated_buy` is
+  anchored on the minute's OWN trailing 7-day mean, not on a per-`t` baseline. An
+  earlier draft compared each `W` minute to a threshold that moved with the
+  evaluation minute `t`; over the whole universe that is a per-minute self-join
+  (tens of billions of comparisons) and is not computable on the host. The
+  per-minute anchor keeps the same meaning while reducing both scores to
+  single-pass rolling windows. `score_m`'s baseline is unchanged.
 
 `THETA_M` and `THETA_S` are frozen a priori on interpretable grounds, never tuned
 on outcomes. The two fires are independent event streams; an instrument may fire
@@ -311,7 +321,9 @@ fingerprint of the fired-episode dataset (both primaries) in deterministic order
 
 1. Two pre-registered primaries, LONG, 240m: P-MAG (`score_m`, `THETA_M = 1.0`)
    and P-SHAPE elevated-buy breadth (`score_s` = share of W minutes with
-   `activity > baseline per-minute activity AND net_buy > 0`, `THETA_S = 0.60`);
+   `elevated_buy`, where `elevated_buy(m) = activity(m) > trailing-7d-mean
+activity(m) AND net_buy(m) > 0`; `THETA_S = 0.60`; per-minute anchor for
+   feasibility);
    joint Holm across the two. Shape is a primary here because the thesis is shape;
    any further shape variant is a new versioned contract on new data.
 2. Causal fire = edge-triggered below-to-above crossing; next fire needs a reset
