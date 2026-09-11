@@ -89,3 +89,68 @@ def test_scanner_finds_the_single_crafted_p_mag_fire() -> None:
             assert fire.adj_return_pct is not None and fire.adj_return_pct > 0
     finally:
         connection.close()
+
+
+def test_report_renders_from_synthetic_cold_bars() -> None:
+    # End-to-end: generate a tz-aware fixture (real cold-bars are timestamptz),
+    # run generate_report over the cold-bars dir, and render markdown.
+    import tempfile
+    from datetime import UTC
+    from pathlib import Path
+
+    import duckdb
+    from schurfer_analytics.net_buy_accumulation_report import (
+        generate_report,
+        render_json,
+        render_markdown,
+    )
+
+    fire = datetime(2026, 8, 26, 0, 0, tzinfo=UTC)
+    ramp_start = fire - timedelta(minutes=1440)
+    exit_ts = fire + timedelta(minutes=239)
+    series_start = fire - timedelta(minutes=11520 + 2)
+    series_end = fire + timedelta(minutes=240)
+
+    connection = duckdb.connect()
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "bars-2026-08-26.parquet")
+            connection.execute(
+                """
+                COPY (
+                    SELECT 'bybit' AS exchange, 'TESTUSDT' AS symbol, 'linear' AS market_type,
+                        'v1' AS capture_version, ts AS bucket_start,
+                        CASE WHEN ts >= $ramp_start AND ts < $ramp_end THEN 2000.0 ELSE 1000.0 END
+                            AS buy_total_notional_usd,
+                        CASE WHEN ts >= $ramp_start AND ts < $ramp_end THEN 0.0 ELSE 1000.0 END
+                            AS sell_total_notional_usd,
+                        CASE WHEN ts = $exit_ts THEN 104.0 ELSE 100.0 END AS close_price,
+                        true AS trades_complete, true AS price_complete,
+                        ts + INTERVAL 30 SECOND AS last_trade_received_at
+                    FROM (SELECT unnest(range($start, $end, INTERVAL 1 MINUTE)) AS ts)
+                ) TO '{path}' (FORMAT PARQUET)
+                """.replace("{path}", path),
+                {
+                    "ramp_start": ramp_start,
+                    "ramp_end": fire,
+                    "exit_ts": exit_ts,
+                    "start": series_start,
+                    "end": series_end,
+                },
+            )
+            report = generate_report(
+                cold_bars_dir=tmp,
+                cohort_start=datetime(2026, 8, 25, tzinfo=UTC),
+                cohort_end=datetime(2026, 8, 27, tzinfo=UTC),
+                code_revision="test",
+                working_tree_dirty=True,
+            )
+    finally:
+        connection.close()
+
+    assert report.results["P-MAG"].fires == 1
+    assert report.results["P-MAG"].resolved_fires == 1
+    md = render_markdown(report)
+    assert "net-buy accumulation discovery" in md
+    assert "P-MAG" in md
+    assert render_json(report)  # serializes without error
