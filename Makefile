@@ -3,7 +3,7 @@
 .PHONY: momentum-flow-discovery-report prod-momentum-flow-discovery-report
 .PHONY: ai-rules-check
 .PHONY: early-momentum-unused-flow-features-report prod-early-momentum-unused-flow-features-report
-.PHONY: hyp-024-orderflow-report prod-hyp-024-orderflow-report
+.PHONY: hyp-024-orderflow-report prod-hyp-024-orderflow-report net-buy-accumulation-report prod-net-buy-accumulation-report
 .PHONY: cex-activity-path-coverage-audit-report prod-cex-activity-path-coverage-audit-report
 .PHONY: cex-activity-discovery-report radar-outcome-discovery-report prod-radar-outcome-discovery-report
 .PHONY: liquidation-capture-bybit-start liquidation-capture-bybit-stop liquidation-capture-bybit-health liquidation-capture-binance-start liquidation-capture-binance-stop liquidation-capture-binance-health
@@ -851,6 +851,17 @@ early-momentum-net-evidence-report:
 hyp-024-orderflow-report:
 	@DATABASE_URL="$${DATABASE_URL:-postgresql://schurfer:schurfer_dev@localhost:5432/schurfer}" \
 		uv run --package schurfer-analytics hyp-024-orderflow-report \
+		--code-revision="$$(git rev-parse HEAD)" \
+		$$(test -z "$$(git status --porcelain)" \
+			&& printf '%s' '--no-working-tree-dirty' \
+			|| printf '%s' '--working-tree-dirty') $(ARGS)
+
+# Read-only net-buy accumulation discovery scanner over the frozen cold-bar
+# Parquet. Reads FILES, not Postgres -- so it runs locally against cold-bars
+# rsync'd from the server (no DB, no prod host). ARGS must include
+# --cold-bars <dir>, e.g. ARGS="--cold-bars ./cold-bars --format markdown".
+net-buy-accumulation-report:
+	@uv run --package schurfer-analytics net-buy-accumulation-report \
 		--code-revision="$$(git rev-parse HEAD)" \
 		$$(test -z "$$(git status --porcelain)" \
 			&& printf '%s' '--no-working-tree-dirty' \
@@ -1749,6 +1760,21 @@ prod-liquidation-maker-upper-bound-report:
 prod-early-momentum-net-evidence-report:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
 	@$(_PROD) run --rm --no-deps --entrypoint early-momentum-net-evidence-report analytics \
+		--code-revision="$$(git rev-parse HEAD)" \
+		$$(test -z "$$(git status --porcelain)" \
+			&& printf '%s' '--no-working-tree-dirty' \
+			|| printf '%s' '--working-tree-dirty') $(ARGS)
+
+# Read-only net-buy accumulation scanner on the host, mounting the frozen
+# cold-bar Parquet (no Postgres). Read-only; refuses the held-out window in
+# code. Prefer running locally on rsync'd cold-bars -- this is the on-host
+# parity target.
+prod-net-buy-accumulation-report:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
+	@$(_PROD) run --rm --no-deps \
+		-v /opt/schurfer/runtime/cold-bars:/cold-bars:ro \
+		--entrypoint net-buy-accumulation-report analytics \
+		--cold-bars /cold-bars \
 		--code-revision="$$(git rev-parse HEAD)" \
 		$$(test -z "$$(git status --porcelain)" \
 			&& printf '%s' '--no-working-tree-dirty' \
