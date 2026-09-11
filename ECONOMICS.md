@@ -1,22 +1,24 @@
 # Economics and candidate feasibility
 
-Status: planning worksheet, registered 2026-09-07. Initial experiment capital
-and acceptable total loss recorded from the owner on 2026-09-09; other inputs
-remain pending.
+Status: planning worksheet, registered 2026-09-07. Owner capital, loss tolerance,
+leverage and the income stance recorded 2026-09-09 and revised 2026-09-11; a
+materiality/promotion gate and a portfolio register are now filled. Infrastructure
+cost, research budget and owner time cost remain pending (owner-absorbed infra is
+excluded from the trading break-even by decision).
 This is not a profitability claim, a new hypothesis registration or authorization
 to trade. [ROADMAP.md](ROADMAP.md) owns delivery order; existing research contracts
 and the [discovery ledger](docs/research/discovery-ledger.md) own frozen evidence.
 
 ## Owner inputs
 
-| Input                                          | Current value                                                                                                  | Decision it enables                                   |
-| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
-| Available trading capital                      | USD 50 for the initial experiment; scaling capital unspecified                                                 | Margin, liquidity reserve and feasible position sizes |
-| Maximum acceptable capital loss / drawdown     | Owner accepts losing the entire USD 50 experiment budget; operating drawdown/stop thresholds not yet specified | Risk ceiling and portfolio stop policy                |
-| Desired net monthly income and time horizon    | Owner prefers return as a percentage of invested capital; numeric target and horizon unspecified               | Whether an executable edge is economically meaningful |
-| Monthly infrastructure, storage and data cost  | Not inventoried                                                                                                | Cash break-even                                       |
-| Research budget in money and engineering hours | Not specified                                                                                                  | Stop/review boundary for the next cycle               |
-| Owner time cost / required return on effort    | Not specified                                                                                                  | Economic result including ongoing maintenance         |
+| Input                                          | Current value                                                                                                                                                                                         | Decision it enables                                   |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| Available trading capital                      | USD 300 initial test (revised up from 50 on 2026-09-11), leverage up to 5x (~USD 1,500 max exposure); willing to add capital repeatedly while consistently net-positive                               | Margin, liquidity reserve and feasible position sizes |
+| Maximum acceptable capital loss / drawdown     | Owner accepts losing the entire test budget; operating drawdown/stop thresholds not yet specified                                                                                                     | Risk ceiling and portfolio stop policy                |
+| Desired net monthly income and time horizon    | "As much as possible" -- no fixed monthly target; the gate is a consistent net-positive edge, then scale capital. Income is bounded by opportunity rate x executable capacity, not by a target number | Whether an executable edge is economically meaningful |
+| Monthly infrastructure, storage and data cost  | Not inventoried                                                                                                                                                                                       | Cash break-even                                       |
+| Research budget in money and engineering hours | Not specified                                                                                                                                                                                         | Stop/review boundary for the next cycle               |
+| Owner time cost / required return on effort    | Not specified                                                                                                                                                                                         | Economic result including ongoing maintenance         |
 
 Missing inputs do not block safety fixes, preservation of existing evidence or
 technical feasibility checks. They do prevent a defensible decision that the
@@ -56,6 +58,60 @@ trading PnL and equity return on their own, and keep owner-borne infrastructure
 cost as a separate line rather than netting it into the strategy result. None of
 this authorizes live mode or any order; income still depends on a demonstrated
 edge and a committed scaling amount, neither of which exists yet.
+
+### Owner decision -- 2026-09-11
+
+The owner revised the initial test capital to USD 300 (from 50) so operations are
+possible across several venues, with leverage up to 5x (so up to ~USD 1,500 of
+gross exposure), and restated willingness to add capital repeatedly as long as
+the account is consistently net-positive. The income goal is "as much as
+possible" -- there is no fixed monthly target. This does not authorize live mode
+or any order; it sets the sizing envelope and the promotion gate below.
+
+## Materiality and the promotion gate
+
+With no fixed income number, "maximise income" is not a target to hit but a
+constraint to respect: monthly income is, at best,
+
+`income ~= net_edge_per_trade x trades_per_month x executable_notional`
+
+so it is bounded by three things, not one. A positive edge alone earns nothing if
+the signal fires rarely or only on instruments too thin to hold size. The
+promotion gate is therefore, per candidate:
+
+1. **Consistent net-positive edge**: the frozen strategy's after-cost lower bound
+   is above zero and robust (bootstrap LB > 0, survives leave-one-out); a
+   single-window positive is not "consistent".
+2. **Opportunity rate**: enough trades per month that scaling capital produces a
+   non-trivial income (a handful of trades a month cannot).
+3. **Executable capacity**: the fired instruments are liquid enough to absorb the
+   scaled notional (USD 300 -> USD 1,500 with 5x, and beyond as capital is added)
+   without the slippage that was never measured -- which needs the L2/book-depth
+   shadow, since `capacity_unknown` is the current honest state.
+
+Only a candidate clearing all three is worth adding capital to. Reaching them in
+order also fails fast: a mature-negative edge stops at (1); a real-but-rare or
+illiquid edge stops at (2)/(3) even if (1) holds. Slippage stays unmodelled until
+the L2 shadow exists, so no result is "net proven" before then.
+
+## Portfolio register (concluded discovery lines vs the gate)
+
+None of the lines concluded so far clears the gate; the binding failure is noted
+so we do not re-spend effort by assertion.
+
+| Line                    | Result (2026-09)     | Gate failure                                                  |
+| ----------------------- | -------------------- | ------------------------------------------------------------- |
+| `early_momentum_v4`     | fail                 | (1) no gross edge before costs; net negative                  |
+| HYP-024 order-flow      | inconclusive         | underpowered (89 episodes); no edge demonstrated              |
+| extreme-mover endpoint  | stop                 | (1) negative after-cost EV at the floor                       |
+| net-buy accumulation v1 | too_rare_or_illiquid | (2)/(3): ~2 fires, one illiquid cluster, at frozen thresholds |
+
+Common thread: detection is not the problem; the recurring wall is (1) an edge
+that clears ~22 bps round-trip costs, (2) a workable opportunity rate, and (3)
+executable capacity on liquid names. Until a candidate clears all three, added
+capital has nothing to scale. This is why L2/book-depth capture (which turns
+`capacity_unknown` into a measured (3)) is the highest-value data upgrade once any
+line shows a positive, non-rare (1)/(2).
 
 ## Required candidate card
 
