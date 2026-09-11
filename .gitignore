@@ -138,3 +138,7 @@ coverage/
 # Host-side sanitized runtime telemetry consumed read-only by api-gateway.
 /runtime/*
 !/runtime/.gitkeep
+
+# local net-buy accumulation window parquet (data, not source)
+cold-bars-window/
+cold-bars/
