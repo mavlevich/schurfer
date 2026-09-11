@@ -1,8 +1,8 @@
 # Net-buy accumulation discovery v1 (frozen contract)
 
-Status: **frozen contract, two pre-registered primaries, locked 2026-09-11;
-pending a second colleague review before any code.** Green tests are not a
-substitute for that review. This document cannot promote a strategy, start a
+Status: **frozen contract, two pre-registered primaries, locked 2026-09-11 and
+revised the same day after the second review; pending a further review before any
+code.** Green tests are not a substitute for that review. This document cannot promote a strategy, start a
 worker, authorize a deploy, or place an order. Historical evaluation on this
 contract is Discovery only: a positive result nominates a hypothesis for a fresh
 prospective cohort, it never confirms an edge.
@@ -26,10 +26,15 @@ Per-minute point-in-time inputs from `timeseries.bybit_momentum_bars_1m`:
 window W ) / ( mean daily activity over the baseline B )`. Accumulation size in
   the token's own "normal-days" units. Fires when `score_m >= THETA_M = 1.0`
   (a 24h net buy of at least one baseline-day of activity).
-- **P-SHAPE (breadth):** `score_s(t) = share of minutes in W with net_buy(m) >
-0`. The "many small, distributed" shape in its purest form, independent of
-  size. Fires when `score_s >= THETA_S = 0.60` (net buying in at least 60% of the
-  window's minutes).
+- **P-SHAPE (elevated-buy breadth):** `score_s(t) = share of the W minutes whose
+  activity is above the token's own baseline AND is net-buying`, i.e.
+  `share of m in W with activity(m) > mean_perminute_activity(B) AND net_buy(m) >
+0`, where `mean_perminute_activity(B) = (sum activity over B) / (minutes in B)`.
+  This is "gradually elevated, distributed buying" -- not mere sign persistence: a
+  token drifting `+$1` in most minutes without any activity build does NOT pass,
+  because those minutes are not above baseline activity. Fires when `score_s >=
+THETA_S = 0.60` (above-baseline net buying in at least 60% of the window's
+  minutes).
 
 `THETA_M` and `THETA_S` are frozen a priori on interpretable grounds, never tuned
 on outcomes. The two fires are independent event streams; an instrument may fire
@@ -54,12 +59,18 @@ selection.
   normal.
 - **Availability (anti-look-ahead)**: a bar counts only when its trade data was
   received before `t` (`last_trade_received_at IS NOT NULL AND < t`).
-- **Completeness / minimum counts**: a bar counts only when `trades_complete`. A
-  minute is `insufficient_bars` (a counted coverage step, never a negative) unless
-  `W` has at least **1152** complete, available bars (80% of 1440) AND `B` has at
-  least **8064** (80% of 7 x 1440). A daily cold-export manifest existing does not
-  prove per-instrument continuity, so these counts are checked per instrument, not
-  per day.
+- **Completeness / minimum counts**: a bar counts only when `trades_complete`.
+  Because both scores are a sum or a share over the window, missing bars distort
+  the SIGNAL, not just the sample: a window computed on 80% of its minutes
+  understates `score_m` and mis-denominates `score_s`. So the window must be
+  near-complete: a minute is `insufficient_bars` (a counted coverage step, never a
+  negative) unless `W` has at least **1426** complete, available bars (>= 99% of 1440) AND `B` has at least **9576** (>= 95% of 7 x 1440). Both scores are then
+  computed over the full nominal window (a missing minute contributes `0` net_buy
+  and does NOT count toward `score_s`'s numerator), so a partial window can never
+  inflate breadth. A missing bar here is a capture gap, not a no-trade minute
+  (the collector writes a zero-notional bar when a universe instrument simply had
+  no trades). A daily cold-export manifest existing does not prove per-instrument
+  continuity, so these counts are checked per instrument, not per day.
 - **Near-zero baseline**: if `mean daily activity over B < BASELINE_ACTIVITY_FLOOR
 = 100000 USD`, the normalization is meaningless and the minute is
   `insufficient_baseline` (coverage, not a negative). This also removes the
@@ -69,29 +80,37 @@ selection.
 
 A "fire" is a single, causally decidable event, defined per primary:
 
-- The fire is the **earliest** eligible minute `t` (chronologically) at which that
-  primary's score crosses its frozen threshold (`score_m >= THETA_M`, or
-  `score_s >= THETA_S`). It is decidable in real time: it uses only bars before
-  `t`. It is NOT a retrospective argmax over a window (that would use future
-  minutes to choose the entry).
-- After a fire on an instrument for a given primary, a **half-open cooldown
-  `[fire, fire + 24h)`** suppresses further fires of that primary on that
-  instrument, so one slow build is one episode, not 1440. Cooldown is per
-  `(instrument, primary)`. No separate overlap-purge is needed.
+- **Edge-triggered.** The fire is a below-to-above crossing: the earliest
+  eligible minute `t` where that primary's score is at or above its frozen
+  threshold AND the score at the previous eligible minute was below it
+  (`score(t) >= THETA` and `score(t-1) < THETA`). It is decidable in real time
+  (only bars before `t`), and it is NOT a retrospective argmax over a window
+  (that would use future minutes to choose the entry).
+- **Mandatory reset + minimum gap.** After a fire on an `(instrument, primary)`,
+  the next fire requires BOTH: the score has since dropped below the threshold at
+  least once (the reset -- so a single sustained build that stays above the
+  threshold is one episode, not a re-fire every day), AND at least 24h have
+  elapsed since the last fire. Without the reset, a level that stays above
+  threshold would re-fire; with it, one slow build is exactly one signal. No
+  separate overlap-purge is needed.
 
 ## Entry and exit price semantics
 
 Scanner minutes are not real strategy decisions, so no `trade_decision_outcomes`
 row exists for them; the forward return is computed from bar prices, causally.
 
-- **Entry price** = `close_price` of the **last complete bar strictly before the
-  fire minute `t`** -- the most recent price actually observable when the fire is
-  decided. Using `close_price(t)` (the fire minute's own close, 60s later) would
-  be a one-minute look-ahead and is forbidden.
-- **Exit price** = `close_price` of the bar at `t + 240m`.
-- `price_source` is `bybit_momentum_bars_1m.close_price`; both the entry and exit
-  bars must have `price_complete` true and be inside the frozen range (exact bar
-  boundaries, no straddle past the frozen data).
+- Bars are labelled by `bucket_start`: bar `m` covers `[m, m+1)` and its
+  `close_price` is observed at time `m+1`.
+- **Entry price** = `close_price` of bar `t-1` (the bar `[t-1, t)`), whose close
+  is observed exactly at the fire time `t` -- the most recent price actually
+  observable when the fire is decided. Using bar `t`'s own close (observed at
+  `t+1`) would be a one-minute look-ahead and is forbidden.
+- **Exit price** = `close_price` of bar `t+239` (the bar `[t+239, t+240)`), whose
+  close is observed at `t+240`. Entry is effective at `t`, exit at `t+240`, so the
+  hold is **exactly 240 minutes** -- not 241.
+- `price_source` is `bybit_momentum_bars_1m.close_price`; both the entry bar
+  (`t-1`) and the exit bar (`t+239`) must have `price_complete` true and lie
+  inside the frozen range (no straddle past the frozen data).
 - **Internal-gap policy**: if the entry bar, the exit bar, or any bar needed to
   place them is missing/incomplete, the episode is `unresolved` (a counted step,
   never a negative). Forward return is `(exit - entry) / entry` for the long,
@@ -156,16 +175,21 @@ computable predicate with frozen constants; there are no un-frozen verbal
 thresholds. Evaluated per primary, then the two headline claims are Holm-adjusted
 jointly.
 
-- `insufficient_discovery`: the floor is not met (below). No constant is changed
-  to reach a verdict.
-- `stop` (mature negative): floor met and the top score quantile's median net
-  240m return `<= 0`. Does not require the diversity floor.
-- `too_rare_or_illiquid`: floor could be met on volume but the fired episodes
-  reach `< 30` per week (cannot sustain a prospective cohort in reasonable
-  calendar time), OR fewer than `30%` of the top-quantile fires fall in the
-  tradable-liquidity segment (`mean daily activity over B >= LIQUID_SEGMENT_FLOOR
-= 5,000,000 USD`). A first-class stop, equal to negative EV.
-- `discovery_candidate`: floor met AND top-quantile median net return `> 0` AND
+- `stop` (mature negative): at least `STOP_MIN_RESOLVED_FIRES = 100` resolved
+  fires AND the top score quantile's median net 240m return `<= 0`. This branch
+  requires ONLY the trade-count floor, never the cluster/week diversity floor:
+  thin diversity must not let a mature negative hide behind
+  `insufficient_discovery`.
+- `too_rare_or_illiquid`: not a mature negative, but the fired episodes reach
+  `< 30` per represented UTC week (cannot sustain a prospective cohort in
+  reasonable calendar time), OR fewer than `30%` of the top-quantile fires fall in
+  the tradable-liquidity segment (`mean daily activity over B >=
+LIQUID_SEGMENT_FLOOR = 5,000,000 USD`). A first-class stop, equal to negative EV.
+- `insufficient_discovery`: fewer than `STOP_MIN_RESOLVED_FIRES` resolved fires,
+  or the positive-candidate diversity floor (below) is unmet without a mature
+  negative. No constant is changed to reach a verdict.
+- `discovery_candidate`: the full diversity floor met AND top-quantile median net
+  return `> 0` AND
   the top-minus-bottom median net spread `>= CANDIDATE_SPREAD_PP = 1.0`
   percentage points with the long sign AND the five quantile medians are monotone
   increasing AND the joint Holm-adjusted block-bootstrap lower bound `> 0` AND the
@@ -174,15 +198,22 @@ jointly.
   distinct. Earns only a fresh prospective registration plus a narrow L2 shadow,
   never implementation or live.
 
-## Sufficiency floor (checkable without outcomes)
+## Sufficiency floors (checkable without outcomes)
 
-Per primary, frozen: `>= 150` fired episodes in **each compared quantile** (top
-and bottom), `>= 30` distinct asset clusters across the compared quantiles, and
-minimum representation in **each distinct UTC week present in the window**. The
-fired-episode and cluster counts are computable from fires alone, before any
-outcome is read. This window spans roughly 23 calendar days, so it is NOT
-presented as four full UTC weeks; the week requirement is minimum representation
-per present week, not a claim of four complete weeks.
+Two distinct floors, per primary, frozen:
+
+- **Stop floor (trade count only)**: `STOP_MIN_RESOLVED_FIRES = 100` resolved
+  fires. This is all a mature-negative `stop` needs; diversity does not gate a
+  `stop`.
+- **Candidate diversity floor**: `>= 150` fired episodes in **each compared
+  quantile** (top and bottom), `>= 30` distinct asset clusters across the compared
+  quantiles, and `>= WEEKLY_MIN_FIRES = 20` fired episodes in **each UTC week
+  represented in the window**. The fired-episode, cluster and per-week counts are
+  computable from fires alone, before any outcome is read.
+
+This window spans roughly 23 calendar days, so it is NOT presented as four full
+UTC weeks; the per-week rule is a numeric minimum in each represented week, not a
+claim of four complete weeks.
 
 ## Frozen window and forward cutoff (final for this discovery read)
 
@@ -218,21 +249,30 @@ fingerprint of the fired-episode dataset (both primaries) in deterministic order
 ## Locked decisions (2026-09-11)
 
 1. Two pre-registered primaries, LONG, 240m: P-MAG (`score_m`, `THETA_M = 1.0`)
-   and P-SHAPE breadth (`score_s`, `THETA_S = 0.60`); joint Holm across the two.
-   Shape is a primary here (not a diagnostic) because the thesis is shape; any
-   further shape variant is a new versioned contract on new data.
-2. Causal fire = earliest threshold crossing; cooldown `[fire, fire+24h)` per
+   and P-SHAPE elevated-buy breadth (`score_s` = share of W minutes with
+   `activity > baseline per-minute activity AND net_buy > 0`, `THETA_S = 0.60`);
+   joint Holm across the two. Shape is a primary here because the thesis is shape;
+   any further shape variant is a new versioned contract on new data.
+2. Causal fire = edge-triggered below-to-above crossing; next fire needs a reset
+   (score fell below threshold) AND `>= 24h` since the last fire, per
    `(instrument, primary)`.
-3. Entry = close of the last complete bar strictly before `t`; exit = close at
-   `t+240m`; both `price_complete`; gaps -> `unresolved`.
+3. Entry = close of bar `t-1` (observed at `t`); exit = close of bar `t+239`
+   (observed at `t+240`), hold exactly 240m; both `price_complete`; gaps ->
+   `unresolved`.
 4. Pooled ranking; quantiles over fired episodes; Rule 6 ties.
 5. Cluster = base (merges bybit/binance); bar join excludes `universe_version`.
-6. `BASELINE_ACTIVITY_FLOOR = 100000`; min bars `W >= 1152`, `B >= 8064`.
+6. `BASELINE_ACTIVITY_FLOOR = 100000`; near-complete windows, min bars
+   `W >= 1426` (99%), `B >= 9576` (95%); scores computed over the full nominal
+   window.
 7. Hit = 240m net return `> 0`; false-positive rate = miss share.
-8. Frozen verdict constants: `CANDIDATE_SPREAD_PP = 1.0`, `too_rare < 30
-fires/week`, `LIQUID_SEGMENT_FLOOR = 5,000,000 USD`, tradable share `>= 30%`.
-9. Floor `>= 150` fired episodes per compared quantile, `>= 30` clusters, minimum
-   representation per present UTC week (window is ~23 days, not four full weeks).
+8. Frozen verdict constants: `STOP_MIN_RESOLVED_FIRES = 100`,
+   `CANDIDATE_SPREAD_PP = 1.0`, `too_rare < 30 fires per represented week`,
+   `LIQUID_SEGMENT_FLOOR = 5,000,000 USD`, tradable share `>= 30%`,
+   `WEEKLY_MIN_FIRES = 20`.
+9. Two floors: `stop` needs only `>= 100` resolved fires (no diversity);
+   `discovery_candidate` needs `>= 150` per compared quantile, `>= 30` clusters,
+   `>= 20` fires per represented UTC week (window is ~23 days, not four full
+   weeks).
 10. Window `[2026-08-18, 2026-09-10T20:00Z)`, baseline from `2026-08-10`, final
     for discovery; capacity `capacity_unknown`, economics gross-on-proxies.
 
@@ -242,6 +282,6 @@ scanner is written; none is tuned on results.
 
 ## Remaining gate before code
 
-A second colleague review of this frozen contract. After sign-off, the
-point-in-time scanner and its tests are written against these locked decisions;
-no historical outcome is read before then.
+A further colleague review of these revisions. After sign-off, the point-in-time
+scanner and its tests are written against these locked decisions; no historical
+outcome is read before then.
