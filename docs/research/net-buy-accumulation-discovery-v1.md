@@ -1,8 +1,8 @@
 # Net-buy accumulation discovery v1 (frozen contract)
 
 Status: **frozen contract, two pre-registered primaries, locked 2026-09-11 and
-revised the same day after the second review; pending a further review before any
-code.** Green tests are not a substitute for that review. This document cannot promote a strategy, start a
+revised the same day through four review rounds; pending a further review before
+any code.** Green tests are not a substitute for that review. This document cannot promote a strategy, start a
 worker, authorize a deploy, or place an order. Historical evaluation on this
 contract is Discovery only: a positive result nominates a hypothesis for a fresh
 prospective cohort, it never confirms an edge.
@@ -113,8 +113,8 @@ row exists for them; the forward return is computed from bar prices, causally.
   inside the frozen range (no straddle past the frozen data).
 - **Internal-gap policy**: if the entry bar, the exit bar, or any bar needed to
   place them is missing/incomplete, the episode is `unresolved` (a counted step,
-  never a negative). Forward return is `(exit - entry) / entry` for the long,
-  net of costs (below).
+  never a negative). The raw return is `(exit - entry) / entry` for the long; the reported
+  figure is `adj_return` (fees+funding applied, slippage unknown; see Costs).
 
 ## Ranking, quantiles, ties
 
@@ -206,14 +206,38 @@ threshold, so quantile spread never gates a verdict.
   or the candidate diversity floor (below) is unmet without a mature negative. No
   constant is changed to reach a verdict.
 - `discovery_candidate`: the candidate diversity floor met AND the frozen
-  strategy's mean `adj_return > 0` AND its joint Holm-adjusted block-bootstrap
-  lower bound `> 0` AND it survives leave-one-out of the largest asset cluster,
-  venue and UTC week AND the tradable-liquidity share above is met. Supporting (not
+  strategy's mean `adj_return > 0` AND it passes the frozen bootstrap+Holm test
+  below (Holm-adjusted `p <= 0.05` and bootstrap lower bound `> 0`) AND it
+  survives leave-one-out of the largest asset cluster, venue and UTC week AND the
+  tradable-liquidity share above is met. Supporting (not
   gating): the five quantile medians monotone increasing and a top-minus-bottom
   spread `>= CANDIDATE_SPREAD_PP = 1.0` pp with Rule 6 adjacent boundaries
   distinct. Earns only a fresh prospective registration plus a narrow L2 shadow,
   never implementation or live -- and, because slippage is unknown, never a
   "net proven" claim.
+
+## Bootstrap and multiple-testing (frozen, reproducible)
+
+The candidate significance test is fully specified so two runs give the same
+number:
+
+- **Statistic**: the frozen strategy's mean `adj_return` over all resolved fires,
+  computed per primary.
+- **Resample**: a block bootstrap with the block = one **UTC day** (blocks
+  resampled with replacement to their original count), so intra-day correlation
+  between near-simultaneous fires does not inflate significance. The mean
+  `adj_return` is recomputed on each resample.
+- **Iterations / seed**: `BOOTSTRAP_ITERATIONS = 10000`, `BOOTSTRAP_SEED =
+20260911` (both frozen; recorded in the manifest).
+- **Per-primary one-sided p-value**: `p = share of bootstrap resamples whose mean
+adj_return <= 0`. The one-sided 95% lower bound is the 5th percentile of the
+  bootstrap means.
+- **Joint Holm**: the two primaries' p-values are Holm-adjusted across the family
+  of two. A `discovery_candidate` requires its **Holm-adjusted p <= 0.05** AND its
+  bootstrap lower bound `> 0` (the two are consistent by construction).
+- Asset-cluster and venue/week concentration are reported separately (required
+  metrics) and enter the verdict only through the leave-one-out robustness check,
+  not through this day-blocked bootstrap.
 
 ## Sufficiency floors (checkable without outcomes)
 
@@ -311,6 +335,9 @@ fingerprint of the fired-episode dataset (both primaries) in deterministic order
    `LIQUID_SEGMENT_FLOOR = 5,000,000 USD`, tradable share `>= 30%`,
    `WEEKLY_MIN_FIRES = 20` (fully-covered weeks), `RARE_RATE_MIN` on fires per
    1000 eligible instrument-days; `CANDIDATE_SPREAD_PP = 1.0` is diagnostic only.
+   Bootstrap frozen and reproducible: block = UTC day, `BOOTSTRAP_ITERATIONS =
+10000`, `BOOTSTRAP_SEED = 20260911`, one-sided; joint Holm over the two primaries,
+   candidate needs Holm-adjusted `p <= 0.05` and lower bound `> 0`.
 9. Two floors: `stop` needs only `>= 100` resolved fires (no diversity);
    `discovery_candidate` needs `>= 150` per compared quantile, `>= 30` clusters,
    `>= 20` fires per fully-covered UTC week (window ~23 days, not four full weeks).
