@@ -58,10 +58,15 @@ denominator. No outcome, price, or MFE/MAE is ever an input to the score.
   direction is fixed in advance. We do not choose long or short after seeing
   which looked better.
 - **Primary horizon: 240 minutes.** `60m` is diagnostic only and never replaces
-  the primary. Forward return is read from `trade_decision_outcomes` / the
-  forward resolver at `status = 'complete'`, same-venue (`source_exchange =
-anchor_exchange`), and its window must end at or before the frozen cutoff
-  (no straddle).
+  the primary.
+- **Forward return is computed from the bars, not from
+  `trade_decision_outcomes`.** A full-universe minute scan fires at minutes that
+  are NOT real strategy decisions, so no resolver outcome row exists for them.
+  The forward return is the `close_price` change from the decision bar `t` to the
+  bar at `t + 240m`, both required complete and available, on the same frozen
+  bars. The `t + 240m` bar must be inside the frozen window (no straddle past the
+  frozen data). A fired episode whose forward bar is missing or outside the frozen
+  range is `unresolved` (a counted step, never a negative).
 
 ## The one primary score -- LOCKED 2026-09-11
 
@@ -202,9 +207,16 @@ a SHA-256 fingerprint of the fired-episode dataset in deterministic order.
 4. **Sufficiency floor**: `>= 150` fired episodes per compared quantile, `>= 30`
    distinct asset clusters, `>= 4` UTC weeks, reported with base rate and daily
    false-positive count.
-5. **Discovery window and forward cutoff**: set from the frozen cold-export days
-   once the preservation step reports the exact continuous range; recorded here
-   before the first read.
+5. **Discovery window and forward cutoff** (set 2026-09-11 from the frozen
+   cold-export range): the continuous frozen cold-bar days are `2026-08-10`
+   through `2026-09-08`, 30 days, no gaps. Baseline `B` therefore starts at
+   `2026-08-10`; the decision window is
+   `[2026-08-18T00:00Z, 2026-09-08T20:00Z)`, chosen so that every fired minute's
+   full `24h + 7d` feature window AND its `t + 240m` forward bar fall inside the
+   frozen range. Extending the window forward requires the cold-export timer,
+   which was found `inactive` on 2026-09-11 and must be restarted before new days
+   accumulate. The scanner reads only these frozen days and records their manifest
+   SHA hashes.
 
 ## Remaining gates before code and before the read
 
