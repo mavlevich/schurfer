@@ -59,24 +59,24 @@ selection.
   normal.
 - **Availability (anti-look-ahead)**: a bar counts only when its trade data was
   received before `t` (`last_trade_received_at IS NOT NULL AND < t`).
-- **Completeness / minimum counts**: a bar counts only when `trades_complete`.
-  Because both scores are a sum or a share over the window, missing bars distort
-  the SIGNAL, not just the sample: a window computed on 80% of its minutes
-  understates `score_m` and mis-denominates `score_s`. So the window must be
-  near-complete: a minute is `insufficient_bars` (a counted coverage step, never a
-  negative) unless `W` has at least **1426** complete, available bars (>= 99% of 1440) AND `B` has at least **9576** (>= 95% of 7 x 1440). Both scores are then
-  computed over the full nominal window (a missing minute contributes `0` net_buy
-  and does NOT count toward `score_s`'s numerator), so a partial window can never
-  inflate breadth. A missing bar here is a capture gap, not a no-trade minute
-  (the collector writes a zero-notional bar when a universe instrument simply had
-  no trades). A daily cold-export manifest existing does not prove per-instrument
-  continuity, so these counts are checked per instrument, not per day.
+- **Completeness (fully present, no fabricated zeros)**: both scores are a sum or
+  a share over the window, so a missing minute cannot be filled with a `0` -- that
+  would fabricate an observation we do not have. The window is used only when it is
+  **fully present**: every minute in `W` and in `B` must have a bar that is present,
+  `trades_complete`, and (for `W`) available (`last_trade_received_at < t`). A
+  genuine no-trade minute is NOT a gap -- the collector writes a real
+  zero-notional `trades_complete` bar for a universe instrument with no trades, and
+  that real `0` is used. Only a genuinely absent/incomplete bar (a capture gap)
+  makes the minute `insufficient_bars` (a counted coverage step, never a negative,
+  and never a fabricated zero). Because a daily cold-export manifest does not prove
+  per-instrument continuity, presence is checked per instrument-minute, not per
+  day.
 - **Near-zero baseline**: if `mean daily activity over B < BASELINE_ACTIVITY_FLOOR
 = 100000 USD`, the normalization is meaningless and the minute is
   `insufficient_baseline` (coverage, not a negative). This also removes the
   divide-by-near-zero explosion in `score_m`.
 
-## Causal fire and cooldown
+## Causal fire and reset
 
 A "fire" is a single, causally decidable event, defined per primary:
 
@@ -143,7 +143,12 @@ row exists for them; the forward return is computed from bar prices, causally.
   inside the 8-day feature window does not break it; identity is still resolved at
   `t`.
 - **Cluster key** = normalized uppercase base ticker, merging the same asset on
-  bybit and binance into one cluster for the diversity floor (as in HYP-024).
+  bybit and binance into one cluster for the diversity floor (as in HYP-024). A
+  base ticker can, however, denote different assets across venues, so the report
+  runs a **mandatory collision audit**: any base that resolves to more than one
+  distinct canonical instrument (differing native identity beyond the venue) is
+  listed, and if collisions are material the cluster key falls back to the
+  canonical asset id. A silent ticker merge is not allowed.
 - **Capacity: `capacity_unknown`.** Stored minute BBO is prices, not depth or
   queue size, and binance bookTicker carries no depth. This contract reports
   spread / turnover / a coarse liquidity segment as proxies and marks executable
@@ -151,20 +156,25 @@ row exists for them; the forward return is computed from bar prices, causally.
   net-proven**, and are never presented as evidence of tradability. Real capacity
   is resolved only by an L2/book-depth shadow around live fires (a later step).
 
-## Costs
+## Costs and the adjusted return (NOT net)
 
-The shared `conservative_costs_v1`: two-sided taker fees plus funding scaled to
-the 240m hold. No per-decision slippage is invented where depth was never
-measured; the absence is named (`capacity_unknown`), not zero-filled. Costs are
-applied to every fired episode's return before any economics.
+Every economic figure in this contract is the **fee-and-funding-adjusted return,
+slippage unknown** -- written `adj_return` -- never a "net return". It applies the
+shared `conservative_costs_v1` (two-sided taker fees plus funding scaled to the
+240m hold) to the raw `close_price` path return. Slippage is deliberately NOT
+subtracted, because depth was never measured (`capacity_unknown`); it is named,
+not zero-filled. A positive `adj_return` is therefore NOT proof of net
+profitability -- unmodelled slippage can erase it -- so even a positive result is
+gross-on-proxies and earns only a prospective registration plus an L2 shadow,
+never a "net proven" claim.
 
 ## Outcome, hit, and false positive
 
-Because the ranking metric (median net return) is continuous, "false positive"
-needs a binary definition. A resolved fire is a **hit** when its 240m net return
-`> 0` (a rise after costs) and a **miss** otherwise. The **false-positive rate**
-is the miss share among resolved fires, reported per primary and per quantile
-alongside the base rate (hits / all resolved fires).
+Because the ranking metric (`adj_return`) is continuous, "false positive" needs a
+binary definition. A resolved fire is a **hit** when its 240m `adj_return > 0` and
+a **miss** otherwise. The **false-positive rate** is the miss share among resolved
+fires, reported per primary and per quantile alongside the base rate (hits / all
+resolved fires). A hit is not a profitable trade: slippage is unknown.
 
 ## Verdict rules (Discovery, frozen)
 
@@ -175,28 +185,35 @@ computable predicate with frozen constants; there are no un-frozen verbal
 thresholds. Evaluated per primary, then the two headline claims are Holm-adjusted
 jointly.
 
+The object evaluated is the **frozen strategy itself**: enter long on every fire
+(the `score >= THETA` edge crossing), hold 240m, one position per fire. The
+headline economic claim per primary is the **mean `adj_return` over ALL resolved
+fires** of that strategy, not a post-hoc quantile slice. The score quantiles
+(does `adj_return` rise with the score above the threshold) are a SUPPORTING
+diagnostic only -- trading a chosen quantile would need a second, un-frozen
+threshold, so quantile spread never gates a verdict.
+
 - `stop` (mature negative): at least `STOP_MIN_RESOLVED_FIRES = 100` resolved
-  fires AND the top score quantile's median net 240m return `<= 0`. This branch
-  requires ONLY the trade-count floor, never the cluster/week diversity floor:
-  thin diversity must not let a mature negative hide behind
-  `insufficient_discovery`.
-- `too_rare_or_illiquid`: not a mature negative, but the fired episodes reach
-  `< 30` per represented UTC week (cannot sustain a prospective cohort in
-  reasonable calendar time), OR fewer than `30%` of the top-quantile fires fall in
-  the tradable-liquidity segment (`mean daily activity over B >=
-LIQUID_SEGMENT_FLOOR = 5,000,000 USD`). A first-class stop, equal to negative EV.
+  fires AND the frozen strategy's mean `adj_return <= 0`. Requires ONLY the
+  trade-count floor, never the cluster/week diversity floor: thin diversity must
+  not let a mature negative hide behind `insufficient_discovery`.
+- `too_rare_or_illiquid`: not a mature negative, but fires are too rare (see the
+  coverage-normalized rate in the floor section) to sustain a prospective cohort,
+  OR fewer than `30%` of fires fall in the tradable-liquidity segment
+  (`mean daily activity over B >= LIQUID_SEGMENT_FLOOR = 5,000,000 USD`). A
+  first-class stop, equal to negative EV.
 - `insufficient_discovery`: fewer than `STOP_MIN_RESOLVED_FIRES` resolved fires,
-  or the positive-candidate diversity floor (below) is unmet without a mature
-  negative. No constant is changed to reach a verdict.
-- `discovery_candidate`: the full diversity floor met AND top-quantile median net
-  return `> 0` AND
-  the top-minus-bottom median net spread `>= CANDIDATE_SPREAD_PP = 1.0`
-  percentage points with the long sign AND the five quantile medians are monotone
-  increasing AND the joint Holm-adjusted block-bootstrap lower bound `> 0` AND the
-  result survives leave-one-out of the largest asset cluster, venue and UTC week
-  AND the tradable-liquidity share above is met AND Rule 6 adjacent boundaries are
+  or the candidate diversity floor (below) is unmet without a mature negative. No
+  constant is changed to reach a verdict.
+- `discovery_candidate`: the candidate diversity floor met AND the frozen
+  strategy's mean `adj_return > 0` AND its joint Holm-adjusted block-bootstrap
+  lower bound `> 0` AND it survives leave-one-out of the largest asset cluster,
+  venue and UTC week AND the tradable-liquidity share above is met. Supporting (not
+  gating): the five quantile medians monotone increasing and a top-minus-bottom
+  spread `>= CANDIDATE_SPREAD_PP = 1.0` pp with Rule 6 adjacent boundaries
   distinct. Earns only a fresh prospective registration plus a narrow L2 shadow,
-  never implementation or live.
+  never implementation or live -- and, because slippage is unknown, never a
+  "net proven" claim.
 
 ## Sufficiency floors (checkable without outcomes)
 
@@ -207,9 +224,18 @@ Two distinct floors, per primary, frozen:
   `stop`.
 - **Candidate diversity floor**: `>= 150` fired episodes in **each compared
   quantile** (top and bottom), `>= 30` distinct asset clusters across the compared
-  quantiles, and `>= WEEKLY_MIN_FIRES = 20` fired episodes in **each UTC week
-  represented in the window**. The fired-episode, cluster and per-week counts are
-  computable from fires alone, before any outcome is read.
+  quantiles, and `>= WEEKLY_MIN_FIRES = 20` fired episodes in **each fully-covered
+  UTC week** (partial boundary weeks are excluded from this per-week rule, so an
+  incomplete first/last week cannot fail it). The fired-episode, cluster and
+  per-week counts are computable from fires alone, before any outcome is read.
+- **Rarity (coverage-normalized, for `too_rare`)**: rarity is judged on a
+  coverage-invariant rate -- fires per **1000 eligible instrument-days** (an
+  eligible instrument-day is an instrument-UTC-day with any eligible minute) --
+  not on raw fires-per-calendar-week, so partial boundary weeks or uneven
+  per-instrument coverage cannot spuriously make a signal look rare. `too_rare`
+  fires below `RARE_RATE_MIN` (the equivalent of `< 30` fires per fully-covered
+  week at the window's own eligible-instrument-day count), reported with the raw
+  count.
 
 This window spans roughly 23 calendar days, so it is NOT presented as four full
 UTC weeks; the per-week rule is a numeric minimum in each represented week, not a
@@ -238,6 +264,17 @@ with manifests and SHA hashes, and the daily systemd export timer is installed
 and enabled, so the discovery range is preserved and future days keep
 accumulating.
 
+## Required result metrics
+
+Beyond the verdict, the report must always output, per primary and pooled: the
+frozen strategy's mean and median `adj_return`, profit factor, hit / false-positive
+rate, block-bootstrap CI and Holm-adjusted lower bound, max drawdown and worst
+losing streak over the fired sequence, concurrency and capital occupancy (how many
+positions and how much notional the frozen strategy would hold at once), the
+liquidity-segment breakdown, the cluster collision audit, and the concentration of
+`adj_return` by asset cluster, venue and UTC week. A single favorable aggregate is
+never reported without these.
+
 ## Reproducibility
 
 The report records: database snapshot time, generation time, git revision,
@@ -259,22 +296,27 @@ fingerprint of the fired-episode dataset (both primaries) in deterministic order
 3. Entry = close of bar `t-1` (observed at `t`); exit = close of bar `t+239`
    (observed at `t+240`), hold exactly 240m; both `price_complete`; gaps ->
    `unresolved`.
-4. Pooled ranking; quantiles over fired episodes; Rule 6 ties.
-5. Cluster = base (merges bybit/binance); bar join excludes `universe_version`.
-6. `BASELINE_ACTIVITY_FLOOR = 100000`; near-complete windows, min bars
-   `W >= 1426` (99%), `B >= 9576` (95%); scores computed over the full nominal
-   window.
-7. Hit = 240m net return `> 0`; false-positive rate = miss share.
+4. Verdict tests the FROZEN strategy (enter on every fire, hold 240m): headline =
+   mean `adj_return` over all fires. Quantile monotonicity/spread is a supporting
+   diagnostic, never a gate. Pooled ranking; Rule 6 ties on the diagnostic.
+5. Cluster = base (merges bybit/binance) WITH a mandatory collision audit (fall
+   back to canonical asset id if collisions are material); bar join excludes
+   `universe_version`.
+6. Fully-present `W` and `B` (no fabricated zeros: a missing bar is
+   `insufficient_bars`, a real no-trade zero-notional bar is used);
+   `BASELINE_ACTIVITY_FLOOR = 100000`.
+7. Return metric is `adj_return` (fees+funding only, slippage unknown), never
+   "net"; hit = 240m `adj_return > 0`; false-positive rate = miss share.
 8. Frozen verdict constants: `STOP_MIN_RESOLVED_FIRES = 100`,
-   `CANDIDATE_SPREAD_PP = 1.0`, `too_rare < 30 fires per represented week`,
    `LIQUID_SEGMENT_FLOOR = 5,000,000 USD`, tradable share `>= 30%`,
-   `WEEKLY_MIN_FIRES = 20`.
+   `WEEKLY_MIN_FIRES = 20` (fully-covered weeks), `RARE_RATE_MIN` on fires per
+   1000 eligible instrument-days; `CANDIDATE_SPREAD_PP = 1.0` is diagnostic only.
 9. Two floors: `stop` needs only `>= 100` resolved fires (no diversity);
    `discovery_candidate` needs `>= 150` per compared quantile, `>= 30` clusters,
-   `>= 20` fires per represented UTC week (window is ~23 days, not four full
-   weeks).
+   `>= 20` fires per fully-covered UTC week (window ~23 days, not four full weeks).
 10. Window `[2026-08-18, 2026-09-10T20:00Z)`, baseline from `2026-08-10`, final
-    for discovery; capacity `capacity_unknown`, economics gross-on-proxies.
+    for discovery; capacity `capacity_unknown`, economics gross-on-proxies, plus
+    the mandatory result-metrics block.
 
 All frozen constants above were chosen a priori on interpretable grounds, before
 any outcome was read. A reviewer may adjust any of them, but only before the
