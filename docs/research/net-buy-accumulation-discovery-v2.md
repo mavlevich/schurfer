@@ -1,7 +1,8 @@
 # net-buy accumulation discovery, v2 amendment (DRAFT, for review)
 
 Status: DRAFT amendment to `net-buy-accumulation-discovery-v1.md`, opened
-2026-09-12, revised twice on 2026-09-12 after review rounds 1 and 2. Not frozen.
+2026-09-12, revised through round 3 (rev.4 on 2026-09-12 after a conditional
+structure approve). Not frozen.
 This proposes the methodology changes deferred out of the coverage-funnel PR
 (#411). Nothing here is frozen or authorizes a formal run until this amendment is
 reviewed, the open decisions below are signed off with the calculations they
@@ -78,9 +79,20 @@ the fire set) below a stated tolerance. If the bias exceeds tolerance, the fract
 gate tightens toward 100% present or the family is not eligible for the
 relaxation. `[artifact pending]`
 
-**Stability check (required before freeze).** The fire set must be stable between
-the estimator on the chosen-fraction B and the 100%-present reference (fire-count
-and asset overlap within a stated tolerance). `[artifact pending]`
+**P-SHAPE trailing windows (rev.4).** `score_s`'s `elevated_buy` compares each W
+minute to its OWN trailing-7d mean, so every such trailing window needs the same
+completeness rule as B: it is usable only when it is 100% present and at least
+`B_COMPLETENESS_MIN_FRACTION` trades_complete, using the same mean-of-present
+estimator. A W minute whose own trailing-7d window fails this is not counted as
+`elevated_buy` eligible (it is a coverage miss, not a silent 0).
+
+**Reference and tolerances frozen BEFORE the run (rev.4).** The bias and stability
+checks are only meaningful against fixed targets, so before any calibration run we
+freeze: the reference `full_B` definition (a 100%-present-and-complete B window as
+the ground truth), `BASELINE_BIAS_MAX` (max acceptable relative shift in
+`baseline_daily_activity`), and `FIRESET_STABILITY_MIN` (min fire-count ratio and
+asset-overlap between chosen-fraction and reference). These are human-frozen
+constants (open decisions), not tuned on the result. `[artifact pending]`
 
 ### B. Availability as a non-backfill guard (finalization lag, W AND B)
 
@@ -89,11 +101,19 @@ store long after its minute, so it could not have been observed in real time. Th
 guard is therefore per-bar and relative to the bar's OWN minute, not to `t`:
 
 - A bar for bucket `m` is available iff it was finalized within a normal latency of
-  its own close: `created_at <= m + MAX_FINALIZATION_LAG`, where `created_at` is
-  the bar-row finalization timestamp in the cold-bar Parquet (`SELECT *` export)
-  and `MAX_FINALIZATION_LAG` is frozen from the observed lag distribution (open
-  decision; `[artifact pending]`). A backfilled bar has `created_at` far past
-  `m + lag` and is excluded.
+  its own close. The lag is measured from bucket END, not start (rev.4):
+
+  ```
+  bucket_end(m) = m + 1 minute
+  timely_bar(m) = created_at(m) <= bucket_end(m) + MAX_FINALIZATION_LAG
+  ```
+
+  `created_at` is the bar-row write-time in the cold-bar Parquet (`SELECT *`
+  export; code-confirmed as first-write / finalization, preserved on conflict) and
+  `MAX_FINALIZATION_LAG` is a delay-after-bucket-end frozen from the observed lag
+  distribution (open decision; `[artifact pending]`). A backfilled bar has
+  `created_at` far past `bucket_end + lag` and is excluded.
+
 - This is applied to both W and B (draft 1 wrongly exempted B: a B minute
   backfilled after `t` is future-known data and must be excluded too).
 - It does NOT reference `t`, so it does not nuke the last W minute (`t-1`), whose
@@ -103,12 +123,32 @@ guard is therefore per-bar and relative to the bar's OWN minute, not to `t`:
 - A NULL `last_trade_received_at` is never used as availability proof; a genuine
   no-trade minute is available iff its bar was finalized within lag like any other.
 
-W and B are eligible only when all their minutes are available by this rule. The
-finalization-lag choice and the residual timing assumption (that a bar finalized
-within `MAX_FINALIZATION_LAG` was actionable at the next minute) are stated
-explicitly and are a known limitation of minute-bar granularity, resolved properly
-only by the L2/latency shadow. No-trade, backfill, and capture-gap cases are
-separately tested.
+W and B are eligible only when all their minutes are available by this rule.
+No-trade, backfill, and capture-gap cases are separately tested.
+
+**Decision time and the entry-price timing bias (rev.4).** The signal cannot be
+acted on at `t`: the last feature bar (`t-1`) is not finalized until
+`bucket_end(t-1) + lag = t + lag`, so the real decision instant is
+
+```
+decision_at(t) = max over W,B of created_at(m)   (>= t; ~ t + finalization lag)
+```
+
+Pricing the entry at `close(t-1)` therefore has an optimistic timing bias (that
+price was chosen with a few seconds of hindsight relative to when we could act).
+With only minute bars and no executable/tick feed we cannot take "the first
+executable price after `decision_at`", so v2 freezes the honest, conservative
+choice and keeps the optimistic one only as a diagnostic:
+
+- **Economic entry (primary)**: `close` of the first bar whose `bucket_end` is at
+  or after `decision_at(t)` (the next available minute close), with the hold's
+  exit shifted to keep the 240m horizon from that entry. The realized delay is
+  reported.
+- **Diagnostic upper bound (NOT the economic result)**: the v1 `close(t-1)` entry,
+  reported side by side so we can see how much apparent edge is timing artifact.
+
+This keeps the economic number free of hindsight timing; the executable-price
+version waits on the L2/latency shadow (`capacity_unknown`).
 
 ### C. Unresolved entries: opportunity rate only, never the stop floor
 
@@ -156,28 +196,51 @@ The order matters so thin diversity can never let a mature negative hide behind
    liquidity share AND the uncertainty gate (a post-outcome criterion, not part of
    the pre-outcome floor).
 
-Bootstrap (fully specified, frozen for v2; not left implicit):
+Bootstrap (fully specified, frozen for v2; rev.4 makes it a proper null test):
 
 - Statistic: the frozen strategy's mean `adj_return` over ALL resolved fires, per
   primary.
 - Resample: block bootstrap, block = one UTC day, days resampled with replacement
   to their original count; the mean is recomputed per resample.
+- **Null-centered p-value (rev.4)**: test H0 (mean = 0) by centering the resample
+  distribution at the null (subtract the observed mean from each resample mean), so
+  `p` is the share of the null distribution at or beyond the observed statistic. The
+  v1 "share of resamples <= 0" is a CI-derived value, not a null test; v2 uses the
+  null-centered test and reports the 90% CI separately.
 - `BOOTSTRAP_ITERATIONS = 10000`; `BOOTSTRAP_SEED_V2` frozen in the contract (its
-  own seed, not reused from v1). One-sided `p` is the share of resample means at or
-  below 0; the lower bound is the 5th percentile of resample means.
-- Joint Holm across the two primaries; a candidate needs Holm-adjusted `p <= 0.05`
-  AND lower bound above 0.
-- Uncertainty gate: the 90% CI half-width at most `UNCERTAINTY_MAX_HALFWIDTH_PP`
-  (open decision 4, from the MDE calculation).
+  own seed, not reused from v1).
+- **Holm family of exactly two (rev.4)**: the family is always the two primaries,
+  `m = 2`, fixed. A primary that has not reached its resolved floor does NOT drop
+  from the family (which would loosen Holm for the other); it is a forced
+  **non-rejection** (`p = 1`), so an immature arm can never help the other pass.
+- A candidate needs Holm-adjusted `p <= 0.05` AND lower bound above 0 AND the
+  uncertainty gate: the 90% CI half-width at most `UNCERTAINTY_MAX_HALFWIDTH_PP`
+  (open decision, from the economically-meaningful MDE, NOT derivable by the
+  outcome-blind tool).
 
 The five score quantiles are a supporting diagnostic only; under-populated bins
 never gate. This replaces the 150-per-quantile (about 750) rule.
 
-## Open decisions (each needs the stated calculation before freeze)
+## Open decisions
 
-1. **`B_COMPLETENESS_MIN_FRACTION`** (rule A): candidate 0.99, acceptable only after
-   the estimator is fixed and the bias bound and the stability check pass their
-   tolerances. `[artifact pending]`
+Split by whether a human freezes them a priori or the calibration tool derives them
+mechanically (rev.4). Human-frozen constants are set before any run; derived values
+are the tool's fingerprinted output.
+
+Human-frozen (a priori, NOT tuned on the result):
+
+0. **`BASELINE_BIAS_MAX`, `FIRESET_STABILITY_MIN`** (rule A tolerances), the
+   `full_B` reference definition, the `MAX_FINALIZATION_LAG` percentile/SLA rule,
+   `SIZING_MARGIN`, `MAX_WINDOW_DAYS`, `RESEARCH_THROUGHPUT_MIN`, the
+   date-rounding/tie-break rules, and the economically-meaningful MDE +
+   `UNCERTAINTY_MAX_HALFWIDTH_PP` (from `ECONOMICS.md` or a separate outcome-seen
+   training window, never from the outcome-blind tool).
+
+Derived / partly-derived (mechanical, `[artifact pending]`):
+
+1. **`B_COMPLETENESS_MIN_FRACTION`** (rule A): chosen from a human-frozen grid
+   (candidate 0.99), accepted only if the bias bound and stability check pass their
+   (human-frozen) tolerances. `[artifact pending]`
 2. **`MAX_FINALIZATION_LAG`** (rule B): frozen from the observed
    created_at-minus-bucket_start lag distribution (e.g. a high percentile of normal
    finalization), separating normal finalization from backfill. `[artifact pending]`
@@ -207,29 +270,43 @@ own PR after this amendment's code).
 
 ## Deterministic calibration algorithm (frozen BEFORE it is run)
 
-"Thresholds frozen from outcome-blind calibration" is not enough: the selection
-must be a deterministic function of the data with no post-hoc human choice, or the
-"one final freeze" is just an adaptive pick after seeing results. So the ENTIRE
-algorithm is frozen first, then run once; its output is mechanical. Frozen inputs:
+The selection must be a deterministic function of the data with no post-hoc human
+choice. rev.4 also removes the circularity of draft 3 (a threshold chosen by fires
+"in the sizing window" while the window is itself the output): the fire rate is
+measured on a FIXED calibration window, and the prospective window length is then
+DERIVED from that rate, not assumed.
 
-- **Threshold grid**: the exact finite `THETA_M` and `THETA_S` grids to search
-  (e.g. `THETA_M` in {0.10, 0.15, 0.20, 0.25, 0.30}), fixed a priori.
-- **Objective**: pick the largest (most selective) threshold whose expected
-  deduplicated fire count over the sizing window is at least the sufficiency floor
-  times `SIZING_MARGIN`, per primary. Most-selective-that-still-clears is the rule,
-  so the objective is single-valued.
-- **Tie-breaker**: if two grid points qualify equally, take the more selective
-  (higher threshold); documented and deterministic.
-- **Fixed nuisance parameters** (not searched): cooldown 24h (from v1), edge-trigger
-  plus reset (v1), the concentration cap the candidacy uses, and the
-  `MAX_WINDOW_DAYS` ceiling beyond which the family is declared too slow.
-- **Sizing margin and window ceiling**: `SIZING_MARGIN` and `MAX_WINDOW_DAYS` are
-  frozen constants (open decision), so window length is a function of the
-  calibrated fire rate, not a hand pick.
+**Human-frozen a priori (NOT derivable from data, frozen before the run):** the
+threshold grid; `BASELINE_BIAS_MAX` and `FIRESET_STABILITY_MIN`; the
+`MAX_FINALIZATION_LAG` percentile/SLA rule; `SIZING_MARGIN`; `MAX_WINDOW_DAYS`;
+`RESEARCH_THROUGHPUT_MIN`; the economically-meaningful MDE and
+`UNCERTAINTY_MAX_HALFWIDTH_PP` (these come from `ECONOMICS.md` or a SEPARATE,
+explicitly outcome-seen training window, because the outcome-blind tool never reads
+returns and so cannot derive them); the date-rounding and tie-break rules.
 
-Running this algorithm on the fixed scanner produces the triple
-(`THETA_M`, `THETA_S`, window) mechanically, recorded with the calibration data and
-code fingerprint. There is no second look.
+**Calibration-derived (mechanical output of the frozen algorithm):** `THETA_M`,
+`THETA_S`; the chosen `B_COMPLETENESS_MIN_FRACTION` from its grid; the finalization
+-lag distribution estimate; the per-primary fire rate; the derived prospective
+window length.
+
+**Algorithm (run once, no second look):**
+
+1. Fix the calibration window and the grids (human-frozen).
+2. For each threshold, compute the deduplicated fire rate and the diversity on the
+   calibration window (outcome-blind).
+3. Convert the resolved floor to a fire target: `N_TARGET = 100 / (1 -
+expected_unresolved_rate)`, so calibration (which counts FIRES) leaves margin
+   for the resolved floor of 100 (unresolved fires do not count toward it).
+4. Choose the largest (most selective) threshold that can reach `N_TARGET` within
+   `MAX_WINDOW_DAYS` at its measured rate, with `SIZING_MARGIN`; tie-break to the
+   more selective.
+5. Compute the required prospective duration SEPARATELY per primary from its rate.
+6. Prospective window = the max of the two primaries' durations, rounded by the
+   frozen rule. If a primary cannot reach `N_TARGET` within `MAX_WINDOW_DAYS`, the
+   family is declared too slow; the window is never hand-extended.
+
+The output triple (`THETA_M`, `THETA_S`, window) is recorded with the calibration
+data and code fingerprint.
 
 ## Versioning and window plan (non-adaptive; algorithm-first)
 
