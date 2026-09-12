@@ -348,7 +348,15 @@ frozen before any calibration output is seen.
    The run must include a FIRE-LEVEL availability on/off comparison (eligible
    minutes, dedup fires, chosen theta, clusters/weeks/concentration, sizing window)
    -- a row-level backfill count does NOT establish fire-set parity, because one
-   untimely bar invalidates many overlapping W/B windows.
+   untimely bar invalidates many overlapping W/B windows. This comparison was run
+   on the calibration window (`evidence/net-buy-accumulation-v2-calibration-onoff`,
+   fingerprint `9a7ff6d6...`, 43.45M real rows with `created_at`): the dedup fire
+   count is IDENTICAL with the availability guard on (`lag=15s`) and off at every
+   grid threshold for both primaries (delta 0), and the algorithm output is the
+   same either way -- `THETA_M=0.30`, `THETA_S=0.35`, ~97-day window,
+   `too_slow=False`. So availability does not move the fires on this window (the
+   lag SLA still needs its own frozen distribution). The remaining freeze inputs
+   (bias tolerance, lag SLA, MDE/uncertainty, entry treatment) are still open.
 4. Release the final `CONTRACT_VERSION = net_buy_accumulation_discovery_v2` with
    those frozen numbers and the artifact hash. Merge before the window start.
    Feature history reaches back the full 24h + 7d; the outcome cutoff is
