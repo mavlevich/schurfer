@@ -1,11 +1,12 @@
 # net-buy accumulation discovery, v2 amendment (DRAFT, for review)
 
 Status: DRAFT amendment to `net-buy-accumulation-discovery-v1.md`, opened
-2026-09-12, revised through review round 5 (rev.6 on 2026-09-12: entry price
-corrected back to the first tradeable price after `decision_at` -- "known" is not
-"tradeable"; MAX_FINALIZATION_LAG kept a candidate pending a full distribution +
-SLA; a fire-level availability on/off comparison, not a row-level aggregate, is
-required before freeze). Not frozen.
+2026-09-12, revised through review round 6 (rev.7 on 2026-09-12: entry is the
+forward-OPEN of the first bar starting after `decision_at`, since even `close(t)`
+is "known != tradeable" shifted a minute; the diversity gate now requires >= 4
+FULLY-covered UTC weeks each with >= 20 fires per the contract, so the exploratory
+0.30/0.35 do NOT clear it; manifest provenance is verified against the parquet
+bytes, not trusted). Not frozen; 0.30/0.35/97d are EXPLORATORY candidates only.
 This proposes the methodology changes deferred out of the coverage-funnel PR
 (#411). Nothing here is frozen or authorizes a formal run until this amendment is
 reviewed, the open decisions below are signed off with the calculations they
@@ -152,18 +153,23 @@ after `t` can hold a large share of the move, so pricing the entry at `close(t-1
 reintroduces an optimistic timing bias that a 240-minute hold does NOT wash out. v2
 therefore freezes:
 
-- **Economic entry (primary)**: the first price actually available AFTER
-  `decision_at(t)`. With only minute bars and no executable/tick feed, the honest
-  proxy is `close` of the first bar whose `bucket_end >= decision_at(t)` (i.e.
-  `close(t)`, the next minute's close), exit shifted to keep the 240m horizon; the
-  realized delay is reported.
+- **Economic entry (primary), rev.7**: a price you can actually TRADE AT after
+  `decision_at`, not one already in the past when known. A bar's `close` is only
+  known when that bar ENDS, at which point it is again a past price -- so `close(t)`
+  is the same "known != tradeable" error shifted one minute, and with a lag SLA up
+  to `+135s` `decision_at` can even fall after `close(t)`. The honest minute-bar
+  proxy is the **`open` of the first bar that STARTS at or after `decision_at(t)`**
+  (its first trade is forward of the decision, hence executable), with the exit
+  shifted to keep the 240m horizon; the realized entry delay is reported. This is
+  still a proxy: the real fill is the first executable price after `decision_at`
+  from the L2/tick feed.
 - **Diagnostic upper bound (NOT the economic result)**: the v1 `close(t-1)` entry,
   reported alongside so the entry-timing artifact is visible (how much apparent
   edge is just pre-move price).
 
 The true executable price after `decision_at` needs the **L2/latency shadow**,
-which starts in PARALLEL now (not after the prospective window). `close(t)` is the
-conservative, honest stand-in until then; `capacity_unknown` still applies.
+which starts in PARALLEL now (not after the prospective window); the forward-open
+proxy is the conservative stand-in until then, and `capacity_unknown` still applies.
 
 ### C. Unresolved entries: opportunity rate only, never the stop floor
 
@@ -172,8 +178,9 @@ fire that contributes to the opportunity-rate / rarity count and nothing else. I
 is never dropped and never fabricated. It does NOT count toward the mature-negative
 stop floor, which stays at least `STOP_MIN_RESOLVED_FIRES = 100` resolved fires (a
 mature-negative judgment needs realized returns, which an unresolved fire has none
-of). A fire is resolved only with both a priceable entry (`t-1`) and a priceable
-exit (`t+239`).
+of). A fire is resolved only with both a priceable ENTRY (the forward-open bar of
+rule B, the first bar starting at or after `decision_at`) and a priceable EXIT (the
+bar 240m after that entry); either missing makes it unresolved.
 
 ### D. Rarity as a research-throughput gate (named honestly)
 
@@ -355,11 +362,16 @@ frozen before any calibration output is seen.
    on the calibration window (`evidence/net-buy-accumulation-v2-calibration-onoff`,
    fingerprint `9a7ff6d6...`, 43.45M real rows with `created_at`): the dedup fire
    count is IDENTICAL with the availability guard on (`lag=15s`) and off at every
-   grid threshold for both primaries (delta 0), and the algorithm output is the
-   same either way -- `THETA_M=0.30`, `THETA_S=0.35`, ~97-day window,
-   `too_slow=False`. So availability does not move the fires on this window (the
-   lag SLA still needs its own frozen distribution). The remaining freeze inputs
-   (bias tolerance, lag SLA, MDE/uncertainty, entry treatment) are still open.
+   grid threshold for both primaries (delta 0), so availability does not move the
+   fires on this window. NOTE (rev.7): that artifact's threshold/window SELECTION
+   (`THETA_M=0.30`, `THETA_S=0.35`, ~97d) used the pre-rev.7 diversity gate (any 4
+   ISO weeks) and is SUPERSEDED -- under the corrected gate (>= 4 FULLY-covered
+   weeks each with >= 20 fires) 0.30/0.35 do NOT clear it (they run ~15 and ~12
+   fires/week), and the 23.83-day window has only ~2 full weeks anyway, so a real
+   selection needs a calibration window of >= 4 full weeks. Only the on/off PARITY
+   result carries over; 0.30/0.35/97d are EXPLORATORY. The remaining freeze inputs
+   (bias tolerance, lag SLA, MDE/uncertainty, entry treatment, a >= 4-full-week
+   calibration window) are still open.
 4. Release the final `CONTRACT_VERSION = net_buy_accumulation_discovery_v2` with
    those frozen numbers and the artifact hash. Merge before the window start.
    Feature history reaches back the full 24h + 7d; the outcome cutoff is
@@ -370,7 +382,7 @@ frozen before any calibration output is seen.
    `formal_run`). A positive result is a Discovery candidate plus a prospective
    registration and an L2/spread shadow, never "net proven" (`capacity_unknown`).
 6. Start the **L2/latency shadow in PARALLEL now**, not after the ~97-day window:
-   it is what turns the conservative `close(t)` entry into a measured executable
+   it is what turns the conservative forward-open entry into a measured executable
    fill and `capacity_unknown` into a measured capacity, so it must accrue over the
    same period, not begin only once the prospective read is due.
 

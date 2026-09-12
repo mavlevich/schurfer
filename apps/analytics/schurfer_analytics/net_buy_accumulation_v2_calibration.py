@@ -81,7 +81,11 @@ class ThresholdCount:
     dedup_fires: int
     distinct_assets: int
     distinct_venues: int
-    distinct_weeks: int
+    distinct_weeks: int  # any ISO week touched (info only)
+    # Contract diversity (Rule E): fires per FULLY-covered UTC week, and how many of
+    # those weeks reach WEEKLY_MIN_FIRES. `covered_weeks_with_min` is the gate input.
+    fires_per_covered_week: dict[str, int]
+    covered_weeks_with_min: int
     # Concentration: the largest single-cluster share of dedup fires (0..1), a
     # coverage diagnostic that needs no outcomes.
     top_cluster_share: float
@@ -151,6 +155,10 @@ STOP_MIN_RESOLVED_FIRES = 100
 # raw fire count is not real sufficiency (rev.5, P1 from review round 4).
 CANDIDATE_MIN_CLUSTERS = 30
 CANDIDATE_MIN_COVERED_WEEKS = 4
+# Contract Rule E diversity: at least CANDIDATE_MIN_COVERED_WEEKS FULLY-covered UTC
+# weeks, each with at least WEEKLY_MIN_FIRES fires. Partial boundary weeks do not
+# count, and a covered week below the floor does not count (rev.7, P1).
+WEEKLY_MIN_FIRES = 20
 
 
 def n_target(
@@ -197,10 +205,12 @@ def select_primary(
     """Steps 2-5 for one primary: measure the fire rate per threshold on the fixed
     calibration window, then choose the LARGEST (most selective) threshold that
     BOTH can reach `n_target_fires` within `max_window_days` at its measured rate
-    AND already meets the diversity floor (>= `min_clusters` asset clusters and
-    >= `min_weeks` covered weeks) on the calibration window. A threshold with a
-    high fire count but thin diversity is not sufficiency, so it does not qualify.
-    Deterministic; no returns are read."""
+    AND meets the CONTRACT diversity floor on the calibration window: >=
+    `min_clusters` asset clusters AND >= `min_weeks` FULLY-covered UTC weeks each
+    with at least `WEEKLY_MIN_FIRES` fires (`covered_weeks_with_min`). A threshold
+    with a high raw fire count but thin diversity, or measured on a window with
+    fewer than `min_weeks` fully-covered weeks, does NOT qualify. Deterministic; no
+    returns are read."""
     if calibration_days <= 0:
         raise ValueError("calibration_days must be positive")
     best: tuple[float, float, float, int, int] | None = None
@@ -210,9 +220,9 @@ def select_primary(
         if rate <= 0:
             continue
         required_days = n_target_fires / rate
-        diversity_ok = tc.distinct_assets >= min_clusters and tc.distinct_weeks >= min_weeks
+        diversity_ok = tc.distinct_assets >= min_clusters and tc.covered_weeks_with_min >= min_weeks
         if required_days <= max_window_days and diversity_ok:
-            best = (theta, rate, required_days, tc.distinct_assets, tc.distinct_weeks)
+            best = (theta, rate, required_days, tc.distinct_assets, tc.covered_weeks_with_min)
     if best is None:
         return PrimarySelection(primary, None, None, None, None, None, too_slow=True)
     return PrimarySelection(primary, best[0], best[1], best[2], best[3], best[4], too_slow=False)
@@ -251,6 +261,21 @@ def iso_week(ts: datetime) -> str:
     return f"{iso.year}-W{iso.week:02d}"
 
 
+def fully_covered_weeks(cal_start: datetime, cal_end: datetime) -> set[str]:
+    """The ISO weeks all seven of whose UTC days fall inside `[cal_start, cal_end)`.
+    Partial boundary weeks are excluded, matching the contract's fully-covered-week
+    diversity rule."""
+    from datetime import timedelta as _td
+
+    days_per_week: dict[str, int] = {}
+    probe = cal_start
+    while probe < cal_end:
+        wk = iso_week(probe)
+        days_per_week[wk] = days_per_week.get(wk, 0) + 1
+        probe += _td(days=1)
+    return {wk for wk, n in days_per_week.items() if n >= 7}
+
+
 def dedup_cooldown(
     crossings: list[tuple[str, str, datetime]],
     *,
@@ -274,16 +299,27 @@ def summarize_threshold(
     primary: str,
     theta: float,
     raw_crossings: list[tuple[str, str, datetime]],
+    covered_weeks: set[str],
+    *,
+    weekly_min_fires: int = WEEKLY_MIN_FIRES,
 ) -> ThresholdCount:
-    """Turn raw crossing rows into a ThresholdCount (dedup + coverage). Outcome-blind."""
+    """Turn raw crossing rows into a ThresholdCount (dedup + coverage + the
+    contract's per-fully-covered-week fire counts). `covered_weeks` is the set of
+    fully-covered UTC weeks of the calibration window (see `fully_covered_weeks`).
+    Outcome-blind."""
     dedup = dedup_cooldown(raw_crossings)
     clusters: dict[str, int] = {}
     venues: set[str] = set()
     weeks: set[str] = set()
+    per_covered_week: dict[str, int] = {}
     for ex, sym, ts in dedup:
         clusters[base_cluster_of(sym)] = clusters.get(base_cluster_of(sym), 0) + 1
         venues.add(ex)
-        weeks.add(iso_week(ts))
+        wk = iso_week(ts)
+        weeks.add(wk)
+        if wk in covered_weeks:
+            per_covered_week[wk] = per_covered_week.get(wk, 0) + 1
+    covered_with_min = sum(1 for c in per_covered_week.values() if c >= weekly_min_fires)
     top_share = (max(clusters.values()) / len(dedup)) if dedup else 0.0
     return ThresholdCount(
         primary=primary,
@@ -293,6 +329,8 @@ def summarize_threshold(
         distinct_assets=len(clusters),
         distinct_venues=len(venues),
         distinct_weeks=len(weeks),
+        fires_per_covered_week=dict(sorted(per_covered_week.items())),
+        covered_weeks_with_min=covered_with_min,
         top_cluster_share=top_share,
     )
 
@@ -309,6 +347,7 @@ __all__ = [
     "PRIMARY_MAG",
     "PRIMARY_SHAPE",
     "STOP_MIN_RESOLVED_FIRES",
+    "WEEKLY_MIN_FIRES",
     "CalibrationArtifact",
     "FormalRunLockError",
     "PrimarySelection",
@@ -318,6 +357,7 @@ __all__ = [
     "base_cluster_of",
     "decide_window",
     "dedup_cooldown",
+    "fully_covered_weeks",
     "iso_week",
     "n_target",
     "select_primary",

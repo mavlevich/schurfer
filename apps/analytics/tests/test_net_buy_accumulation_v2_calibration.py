@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 from schurfer_analytics.net_buy_accumulation_v2_calibration import (
     PRIMARY_MAG,
+    WEEKLY_MIN_FIRES,
     CalibrationArtifact,
     FormalRunLockError,
     PrimarySelection,
@@ -24,6 +25,8 @@ from schurfer_analytics.net_buy_accumulation_v2_calibration import (
     assert_calibration_only,
     decide_window,
     dedup_cooldown,
+    fully_covered_weeks,
+    iso_week,
     n_target,
     select_primary,
     summarize_threshold,
@@ -56,11 +59,15 @@ def test_summarize_counts_assets_venues_weeks_and_concentration() -> None:
         ("binance", "BBBUSDT", t0 + timedelta(days=2)),
         ("bybit", "AAAUSDT", t0 + timedelta(days=2)),  # same cluster AAA again
     ]
-    tc = summarize_threshold(PRIMARY_MAG, 0.2, rows)
+    # Treat the weeks the fires fall in as fully covered.
+    covered = {iso_week(ts) for _, _, ts in rows}
+    tc = summarize_threshold(PRIMARY_MAG, 0.2, rows, covered, weekly_min_fires=2)
     assert tc.dedup_fires == 3
     assert tc.distinct_assets == 2  # AAA, BBB
     assert tc.distinct_venues == 2
     assert abs(tc.top_cluster_share - 2 / 3) < 1e-9  # AAA has 2 of 3
+    assert sum(tc.fires_per_covered_week.values()) == 3  # every fire is in a covered week
+    assert tc.covered_weeks_with_min == sum(1 for c in tc.fires_per_covered_week.values() if c >= 2)
 
 
 def test_artifact_fingerprint_is_deterministic_and_excludes_walltime() -> None:
@@ -76,7 +83,7 @@ def test_artifact_fingerprint_is_deterministic_and_excludes_walltime() -> None:
         theta_m_grid=(0.1, 0.2),
         theta_s_grid=(0.1, 0.2),
         cold_bar_manifests={"m": "h"},
-        counts=(ThresholdCount(PRIMARY_MAG, 0.2, 10, 5, 4, 1, 2, 0.4),),
+        counts=(ThresholdCount(PRIMARY_MAG, 0.2, 10, 5, 4, 1, 2, {}, 0, 0.4),),
     )
     b = dataclasses.replace(a, generated_at="2026-12-31T23:59:59Z")
     assert a.fingerprint() == b.fingerprint()  # wall clock excluded
@@ -243,13 +250,46 @@ def test_v2_p_shape_fires_on_elevated_breadth() -> None:
 def _tc(
     primary: str, theta: float, fires: int, *, assets: int = 50, weeks: int = 4
 ) -> ThresholdCount:
-    return ThresholdCount(primary, theta, fires, fires, assets, min(assets, 2), weeks, 0.05)
+    # `weeks` fully-covered weeks each meeting WEEKLY_MIN_FIRES, so the diversity
+    # gate depends on `weeks` (>= min_weeks) and `assets` (>= min_clusters).
+    per_week = {f"2026-W{34 + i:02d}": WEEKLY_MIN_FIRES for i in range(weeks)}
+    return ThresholdCount(
+        primary, theta, fires, fires, assets, min(assets, 2), weeks, per_week, weeks, 0.05
+    )
 
 
 def test_n_target_grosses_up_for_unresolved_and_margin() -> None:
     # 100 resolved / (1 - 0.05) * 1.5 = 157.9...
     t = n_target(expected_unresolved_rate=0.05, sizing_margin=1.5)
     assert abs(t - (100 / 0.95 * 1.5)) < 1e-9
+
+
+def test_fully_covered_weeks_excludes_partial_boundary_weeks() -> None:
+    # A 23-day window (like the calibration window) has only ~2 fully-covered ISO
+    # weeks -- fewer than the 4 the contract requires.
+    covered = fully_covered_weeks(
+        datetime(2026, 8, 18, tzinfo=UTC), datetime(2026, 9, 10, 20, 0, tzinfo=UTC)
+    )
+    assert len(covered) < 4
+
+
+def test_select_primary_needs_four_full_weeks_each_with_min_fires() -> None:
+    # Plenty of fires and clusters, but only 2 fully-covered weeks meet the weekly
+    # floor: fails the diversity gate (contract needs >= 4).
+    by_theta = {0.20: _tc("P-MAG", 0.20, 500, assets=100, weeks=2)}
+    sel = select_primary(
+        PRIMARY_MAG, by_theta, calibration_days=10.0, n_target_fires=150.0, max_window_days=100.0
+    )
+    assert sel.too_slow and sel.chosen_theta is None
+    # With 4 qualifying weeks it passes.
+    ok = select_primary(
+        PRIMARY_MAG,
+        {0.20: _tc("P-MAG", 0.20, 500, assets=100, weeks=4)},
+        calibration_days=10.0,
+        n_target_fires=150.0,
+        max_window_days=100.0,
+    )
+    assert ok.chosen_theta == 0.20
 
 
 def test_select_primary_picks_most_selective_that_clears() -> None:
@@ -321,7 +361,7 @@ def test_fingerprint_changes_when_algorithm_inputs_change() -> None:
         theta_m_grid=(0.1, 0.2),
         theta_s_grid=(0.1, 0.2),
         cold_bar_manifests={"m": "h"},
-        counts=(ThresholdCount(PRIMARY_MAG, 0.2, 10, 5, 40, 1, 4, 0.1),),
+        counts=(ThresholdCount(PRIMARY_MAG, 0.2, 10, 5, 40, 1, 4, {}, 4, 0.1),),
         decision={"window_days": 90},
     )
     # A different algorithm DECISION must change the fingerprint (P1: the hash pins
@@ -331,6 +371,9 @@ def test_fingerprint_changes_when_algorithm_inputs_change() -> None:
 
 
 def test_manifest_provenance_fails_closed(tmp_path: Path) -> None:
+    import hashlib
+    import json as _json
+
     from schurfer_analytics.net_buy_accumulation_v2_calibration_report import (
         CalibrationInputError,
         _manifest_hashes,
@@ -342,8 +385,28 @@ def test_manifest_provenance_fails_closed(tmp_path: Path) -> None:
     with pytest.raises(CalibrationInputError):
         _manifest_hashes(str(tmp_path))  # corrupt manifest
 
+    # A manifest whose stored sha256 does NOT match the real parquet must be
+    # rejected (the hash is verified against the bytes, not trusted).
+    (tmp_path / "bars-2026-08-10.manifest.json").unlink()
+    (tmp_path / "bars-2026-08-11.parquet").write_bytes(b"real-parquet-bytes")
+    (tmp_path / "bars-2026-08-11.manifest.json").write_text(
+        _json.dumps({"file_name": "bars-2026-08-11.parquet", "sha256": "deadbeef"})
+    )
+    with pytest.raises(CalibrationInputError):
+        _manifest_hashes(str(tmp_path))  # sha256 mismatch
+
+    # The matching hash passes.
+    real = hashlib.sha256(b"real-parquet-bytes").hexdigest()
+    (tmp_path / "bars-2026-08-11.manifest.json").write_text(
+        _json.dumps({"file_name": "bars-2026-08-11.parquet", "sha256": real})
+    )
+    assert _manifest_hashes(str(tmp_path)) == {"bars-2026-08-11.manifest.json": real}
+
 
 def test_cli_run_produces_fingerprinted_artifact_with_decision_and_coverage() -> None:
+    import hashlib
+    import json as _json
+
     import duckdb
     from schurfer_analytics.net_buy_accumulation_v2_calibration_report import run
 
@@ -352,7 +415,11 @@ def test_cli_run_produces_fingerprinted_artifact_with_decision_and_coverage() ->
         with tempfile.TemporaryDirectory() as tmp:
             path = str(Path(tmp) / "bars-2026-08-26.parquet")
             _write(con, path)
-            (Path(tmp) / "bars-2026-08-26.manifest.json").write_text('{"sha256": "abc123"}')
+            # A VERIFIED manifest: its sha256 must match the parquet bytes on disk.
+            real = hashlib.sha256(Path(path).read_bytes()).hexdigest()
+            (Path(tmp) / "bars-2026-08-26.manifest.json").write_text(
+                _json.dumps({"file_name": "bars-2026-08-26.parquet", "sha256": real})
+            )
             con.close()  # release before run() opens its own connection
             out = run(
                 cold_bars_dir=tmp,
@@ -375,4 +442,4 @@ def test_cli_run_produces_fingerprinted_artifact_with_decision_and_coverage() ->
     assert out["tool_version"] == "net_buy_accumulation_v2_calibration"
     assert "window_days" in out["decision"]  # decision folded into the fingerprinted artifact
     assert "eligible_m_minutes" in out["coverage"]  # explainable-zero coverage present
-    assert out["cold_bar_manifests"] == {"bars-2026-08-26.manifest.json": "abc123"}
+    assert out["cold_bar_manifests"] == {"bars-2026-08-26.manifest.json": real}

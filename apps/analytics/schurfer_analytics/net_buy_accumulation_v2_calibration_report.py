@@ -11,6 +11,7 @@ window ceiling) are explicit CLI inputs, not defaults chosen after the fact.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from datetime import UTC, datetime
@@ -23,10 +24,12 @@ from .net_buy_accumulation_v2_calibration import (
     CANDIDATE_MIN_COVERED_WEEKS,
     PRIMARY_MAG,
     PRIMARY_SHAPE,
+    WEEKLY_MIN_FIRES,
     CalibrationArtifact,
     ThresholdCount,
     assert_calibration_only,
     decide_window,
+    fully_covered_weeks,
     n_target,
     select_primary,
     summarize_threshold,
@@ -39,11 +42,23 @@ class CalibrationInputError(ValueError):
     fails closed rather than proceeding on a draft or nonsensical value."""
 
 
+def _sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
 def _manifest_hashes(cold_bars_dir: str) -> dict[str, str]:
-    """Input data provenance, FAIL-CLOSED (rev.5, P1): raise if there are no
-    manifests, or any manifest is unreadable / missing its hash. An empty or
-    partial provenance must never silently pass for a run we freeze numbers off."""
-    manifests = sorted(Path(cold_bars_dir).glob("bars-*.manifest.json"))
+    """Input data provenance, FAIL-CLOSED and VERIFIED (rev.7, P1): raise if there
+    are no manifests, any is unreadable / missing its hash, its Parquet is missing,
+    OR the Parquet's actual SHA-256 does not match the manifest. The manifest's
+    stored hash is NOT trusted on its own -- it is checked against the bytes on
+    disk, so a tampered or fake hash cannot silently pass for a run we freeze
+    numbers off."""
+    directory = Path(cold_bars_dir)
+    manifests = sorted(directory.glob("bars-*.manifest.json"))
     if not manifests:
         raise CalibrationInputError(f"no cold-bar manifests found in {cold_bars_dir}")
     hashes: dict[str, str] = {}
@@ -55,6 +70,16 @@ def _manifest_hashes(cold_bars_dir: str) -> dict[str, str]:
         sha = str(data.get("sha256") or data.get("payload_hash") or "")
         if not sha:
             raise CalibrationInputError(f"manifest {manifest.name} has no sha256/payload_hash")
+        default_name = manifest.name.replace(".manifest.json", ".parquet")
+        file_name = str(data.get("file_name") or default_name)
+        parquet = directory / file_name
+        if not parquet.is_file():
+            raise CalibrationInputError(f"manifest {manifest.name} references missing {file_name}")
+        actual = _sha256_file(parquet)
+        if actual != sha:
+            raise CalibrationInputError(
+                f"{file_name} sha256 {actual} does not match manifest {manifest.name} {sha}"
+            )
         hashes[manifest.name] = sha
     return hashes
 
@@ -146,8 +171,9 @@ def run(
         memory_limit=memory_limit,
         threads=threads,
     )
+    covered = fully_covered_weeks(cal_start, cal_end)
     counts: list[ThresholdCount] = [
-        summarize_threshold(primary, theta, rows) for (primary, theta), rows in raw.items()
+        summarize_threshold(primary, theta, rows, covered) for (primary, theta), rows in raw.items()
     ]
     counts.sort(key=lambda c: (c.primary, c.theta))
 
@@ -174,6 +200,8 @@ def run(
         "max_window_days": max_window_days,
         "min_clusters": CANDIDATE_MIN_CLUSTERS,
         "min_covered_weeks": CANDIDATE_MIN_COVERED_WEEKS,
+        "weekly_min_fires": WEEKLY_MIN_FIRES,
+        "calibration_fully_covered_weeks": sorted(covered),
         "calibration_days": calibration_days,
         "per_primary": [s.__dict__ for s in window.per_primary],
         "window_days": window.window_days,
