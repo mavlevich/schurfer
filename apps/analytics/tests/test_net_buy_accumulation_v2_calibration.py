@@ -21,7 +21,10 @@ from schurfer_analytics.net_buy_accumulation_v2_calibration import (
     FormalRunLockError,
     ThresholdCount,
     assert_calibration_only,
+    decide_window,
     dedup_cooldown,
+    n_target,
+    select_primary,
     summarize_threshold,
 )
 from schurfer_analytics.net_buy_accumulation_v2_repository import scan_crossings
@@ -94,13 +97,21 @@ def _write(
     *,
     backfill_all_w: bool = False,
     break_b_frac: bool = False,
+    shape_mode: bool = False,
 ) -> None:
-    # activity flat 2000/min -> baseline_daily = 2000*1440 = 2.88M. net_buy 0 before
-    # the step, 1000/min after, so score_m ramps and crosses low thetas at an
-    # eligible minute inside [_CAL_START, _CAL_END).
+    # P-MAG mode (default): activity flat 2000/min, net_buy 0 before the step and
+    # 1000/min after, so score_m ramps and crosses low thetas.
+    # shape_mode: activity 1000/min (net 200) before the step and 3000/min (net
+    # 1000) after, so post-step minutes are above their trailing-7d mean and
+    # elevated_buy -> score_s ramps and crosses low thetas.
     # created_at: normally bucket_start + 30s (timely). backfill_all_w makes every
-    # bar late (bucket + 1 day) -> timely=0 everywhere. break_b_frac marks ~3% of
-    # bars incomplete -> B completeness below 0.99.
+    # bar late (bucket + 1 day). break_b_frac marks ~3% incomplete (B below 0.99).
+    if shape_mode:
+        buy_expr = "CASE WHEN ts >= $step THEN 2000.0 ELSE 600.0 END"
+        sell_expr = "CASE WHEN ts >= $step THEN 1000.0 ELSE 400.0 END"
+    else:
+        buy_expr = "CASE WHEN ts >= $step THEN 1500.0 ELSE 1000.0 END"
+        sell_expr = "CASE WHEN ts >= $step THEN 500.0 ELSE 1000.0 END"
     created_expr = (
         "bucket_start + INTERVAL 1 DAY" if backfill_all_w else "bucket_start + INTERVAL 30 SECOND"
     )
@@ -117,8 +128,8 @@ def _write(
                 'bybit' AS exchange, 'TESTUSDT' AS symbol,
                 'linear' AS market_type, 'v1' AS capture_version,
                 ts AS bucket_start,
-                CASE WHEN ts >= $step THEN 1500.0 ELSE 1000.0 END AS buy_total_notional_usd,
-                CASE WHEN ts >= $step THEN 500.0 ELSE 1000.0 END AS sell_total_notional_usd,
+                __BUY__ AS buy_total_notional_usd,
+                __SELL__ AS sell_total_notional_usd,
                 100.0 AS close_price,
                 __COMPLETE__ AS trades_complete,
                 true AS price_complete,
@@ -128,7 +139,9 @@ def _write(
         ) TO '__PATH__' (FORMAT PARQUET)
     """
     sql = (
-        sql.replace("__COMPLETE__", complete_expr)
+        sql.replace("__BUY__", buy_expr)
+        .replace("__SELL__", sell_expr)
+        .replace("__COMPLETE__", complete_expr)
         .replace("__CREATED__", created_expr)
         .replace("__PATH__", path)
     )
@@ -192,3 +205,119 @@ def test_v2_baseline_below_fraction_blocks_fires() -> None:
             assert fires == []
     finally:
         con.close()
+
+
+def test_v2_p_shape_fires_on_elevated_breadth() -> None:
+    # In shape_mode the post-step minutes sit above their trailing-7d mean, so
+    # elevated_buy breadth (score_s) ramps and crosses a low theta. This exercises
+    # the P-SHAPE eligibility path (nested trailing-window completeness).
+    import duckdb
+
+    con = duckdb.connect()
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "bars.parquet")
+            _write(con, path, shape_mode=True)
+            # score_s ramps fast (each post-step minute adds breadth), so its low-
+            # theta crossing lands earlier than P-MAG's; widen the window to catch it.
+            fires = scan_crossings(
+                parquet_glob=path,
+                cal_start=_FIRE - timedelta(minutes=1900),
+                cal_end=_CAL_END,
+                score_col="score_s",
+                eligible_col="eligible_s",
+                theta=0.10,
+                b_completeness_min_fraction=0.99,
+                max_finalization_lag_seconds=120,
+                connection=con,
+            )
+            assert len(fires) >= 1
+    finally:
+        con.close()
+
+
+# --- deterministic calibration algorithm ------------------------------------
+
+
+def test_n_target_grosses_up_for_unresolved_and_margin() -> None:
+    # 100 resolved / (1 - 0.05) * 1.5 = 157.9...
+    t = n_target(expected_unresolved_rate=0.05, sizing_margin=1.5)
+    assert abs(t - (100 / 0.95 * 1.5)) < 1e-9
+
+
+def test_select_primary_picks_most_selective_that_clears() -> None:
+    # Over a 10-day calibration window: higher theta -> fewer fires -> slower.
+    # target 150 fires, max window 100 days. rate = fires/10.
+    by_theta = {0.10: 400, 0.20: 200, 0.30: 50}
+    sel = select_primary(
+        PRIMARY_MAG,
+        by_theta,
+        calibration_days=10.0,
+        n_target_fires=150.0,
+        max_window_days=100.0,
+    )
+    # 0.30: rate 5/day -> 30 days (<=100, ok). 0.20: 20/day -> 7.5 days. 0.10: 40/day
+    # -> 3.75 days. Most selective that clears within 100 days = 0.30.
+    assert sel.chosen_theta == 0.30
+    assert not sel.too_slow
+    assert sel.required_window_days is not None and abs(sel.required_window_days - 30.0) < 1e-9
+
+
+def test_select_primary_too_slow_when_nothing_clears() -> None:
+    by_theta = {0.30: 1}  # 0.1 fires/day -> 1500 days for 150; over the ceiling
+    sel = select_primary(
+        PRIMARY_MAG, by_theta, calibration_days=10.0, n_target_fires=150.0, max_window_days=100.0
+    )
+    assert sel.too_slow and sel.chosen_theta is None
+
+
+def test_decide_window_is_max_of_primaries_and_flags_too_slow() -> None:
+    def _sel(primary: str, fires: int, max_days: float) -> object:
+        return select_primary(
+            primary,
+            {0.2: fires},
+            calibration_days=10.0,
+            n_target_fires=150.0,
+            max_window_days=max_days,
+        )
+
+    a = _sel("P-MAG", 200, 100.0)
+    b = _sel("P-SHAPE", 100, 100.0)
+    dec = decide_window([a, b])  # type: ignore[list-item]
+    assert not dec.too_slow
+    # P-MAG 20/day -> 7.5d; P-SHAPE 10/day -> 15d; max -> ceil(15) = 15.
+    assert dec.window_days == 15
+    slow = _sel("P-SHAPE", 1, 5.0)
+    assert decide_window([a, slow]).too_slow  # type: ignore[list-item]
+
+
+def test_cli_run_produces_fingerprinted_artifact_and_decision() -> None:
+    import duckdb
+    from schurfer_analytics.net_buy_accumulation_v2_calibration_report import run
+
+    con = duckdb.connect()
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "bars-2026-08-26.parquet")
+            _write(con, path)
+            con.close()  # release before run() opens its own connection
+            out = run(
+                cold_bars_dir=tmp,
+                cal_start=_CAL_START,
+                cal_end=_CAL_END,
+                theta_m_grid=(0.10, 0.20, 0.30),
+                theta_s_grid=(0.10, 0.20),
+                b_completeness_min_fraction=0.99,
+                max_finalization_lag_seconds=120,
+                expected_unresolved_rate=0.05,
+                sizing_margin=1.5,
+                max_window_days=120.0,
+                code_revision="test",
+                memory_limit=None,
+                threads=None,
+            )
+    finally:
+        con.close()
+    assert out["artifact"]["fingerprint_sha256"]  # present and non-empty
+    assert out["artifact"]["tool_version"] == "net_buy_accumulation_v2_calibration"
+    assert "window_days" in out["algorithm"]

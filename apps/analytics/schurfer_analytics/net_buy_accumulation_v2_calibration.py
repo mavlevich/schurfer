@@ -136,6 +136,88 @@ class CalibrationArtifact:
         return json.dumps(body, indent=2, sort_keys=True, default=str)
 
 
+# --- deterministic calibration algorithm (frozen; steps 1-6 of the amendment) ---
+
+STOP_MIN_RESOLVED_FIRES = 100
+
+
+def n_target(
+    *,
+    resolved_floor: int = STOP_MIN_RESOLVED_FIRES,
+    expected_unresolved_rate: float,
+    sizing_margin: float,
+) -> float:
+    """Fire target the calibration must reach so the RESOLVED floor (100) is met
+    with margin. Calibration counts FIRES, but the floor is 100 RESOLVED, so we
+    gross up by the expected unresolved rate and apply `sizing_margin`."""
+    if not 0.0 <= expected_unresolved_rate < 1.0:
+        raise ValueError("expected_unresolved_rate must be in [0, 1)")
+    return resolved_floor / (1.0 - expected_unresolved_rate) * sizing_margin
+
+
+@dataclass(frozen=True)
+class PrimarySelection:
+    """The mechanical per-primary output of the frozen algorithm: the chosen
+    (most-selective-that-can-clear) threshold and the prospective days it needs at
+    its measured fire rate. `too_slow` means no grid threshold reaches the target
+    within `MAX_WINDOW_DAYS`."""
+
+    primary: str
+    chosen_theta: float | None
+    fire_rate_per_day: float | None
+    required_window_days: float | None
+    too_slow: bool
+
+
+def select_primary(
+    primary: str,
+    dedup_fires_by_theta: dict[float, int],
+    *,
+    calibration_days: float,
+    n_target_fires: float,
+    max_window_days: float,
+) -> PrimarySelection:
+    """Steps 2-5 for one primary: measure the fire rate per threshold on the fixed
+    calibration window, then choose the LARGEST (most selective) threshold whose
+    measured rate can reach `n_target_fires` within `max_window_days`, and report
+    the required prospective duration for it. Deterministic; no returns are read."""
+    if calibration_days <= 0:
+        raise ValueError("calibration_days must be positive")
+    best: tuple[float, float, float] | None = None  # (theta, rate, required_days)
+    for theta in sorted(dedup_fires_by_theta):  # ascending; keep the largest qualifying
+        rate = dedup_fires_by_theta[theta] / calibration_days
+        if rate <= 0:
+            continue
+        required_days = n_target_fires / rate
+        if required_days <= max_window_days:
+            best = (theta, rate, required_days)  # overwrite -> ends on the largest theta
+    if best is None:
+        return PrimarySelection(primary, None, None, None, too_slow=True)
+    return PrimarySelection(primary, best[0], best[1], best[2], too_slow=False)
+
+
+@dataclass(frozen=True)
+class WindowDecision:
+    """Step 6: the overall prospective window. `window_days` is the max of the two
+    primaries' required durations (rounded up by the frozen rule). `too_slow` is
+    set if EITHER primary cannot reach the target within the ceiling -- the window
+    is never hand-extended past it."""
+
+    per_primary: tuple[PrimarySelection, ...]
+    window_days: int | None
+    too_slow: bool
+
+
+def decide_window(selections: list[PrimarySelection]) -> WindowDecision:
+    if any(s.too_slow for s in selections):
+        return WindowDecision(tuple(selections), None, too_slow=True)
+    import math
+
+    durations = [s.required_window_days for s in selections if s.required_window_days is not None]
+    window_days = math.ceil(max(durations)) if durations else None
+    return WindowDecision(tuple(selections), window_days, too_slow=False)
+
+
 def base_cluster_of(symbol: str) -> str:
     """Cluster key: base ticker, merging bybit/binance. Collision audit lives in
     the report layer; this is only the key."""
@@ -202,12 +284,18 @@ __all__ = [
     "DEFAULT_THETA_S_GRID",
     "PRIMARY_MAG",
     "PRIMARY_SHAPE",
+    "STOP_MIN_RESOLVED_FIRES",
     "CalibrationArtifact",
     "FormalRunLockError",
+    "PrimarySelection",
     "ThresholdCount",
+    "WindowDecision",
     "assert_calibration_only",
     "base_cluster_of",
+    "decide_window",
     "dedup_cooldown",
     "iso_week",
+    "n_target",
+    "select_primary",
     "summarize_threshold",
 ]

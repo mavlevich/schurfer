@@ -3,7 +3,7 @@
 .PHONY: momentum-flow-discovery-report prod-momentum-flow-discovery-report
 .PHONY: ai-rules-check
 .PHONY: early-momentum-unused-flow-features-report prod-early-momentum-unused-flow-features-report
-.PHONY: hyp-024-orderflow-report prod-hyp-024-orderflow-report net-buy-accumulation-report prod-net-buy-accumulation-report net-buy-accumulation-coverage-funnel prod-net-buy-accumulation-coverage-funnel
+.PHONY: hyp-024-orderflow-report prod-hyp-024-orderflow-report net-buy-accumulation-report prod-net-buy-accumulation-report net-buy-accumulation-coverage-funnel prod-net-buy-accumulation-coverage-funnel net-buy-accumulation-v2-calibration prod-net-buy-accumulation-v2-calibration
 .PHONY: cex-activity-path-coverage-audit-report prod-cex-activity-path-coverage-audit-report
 .PHONY: cex-activity-discovery-report radar-outcome-discovery-report prod-radar-outcome-discovery-report
 .PHONY: liquidation-capture-bybit-start liquidation-capture-bybit-stop liquidation-capture-bybit-health liquidation-capture-binance-start liquidation-capture-binance-stop liquidation-capture-binance-health
@@ -873,6 +873,15 @@ net-buy-accumulation-report:
 # --cold-bars <dir> --cohort-start <iso> --cohort-end <iso>.
 net-buy-accumulation-coverage-funnel:
 	@uv run --package schurfer-analytics net-buy-accumulation-coverage-funnel $(ARGS)
+
+# Net-buy accumulation v2 CALIBRATION tool (outcome-blind, formal-run locked). Runs
+# the threshold grid on a fixed calibration window and emits a fingerprinted
+# artifact + the deterministic algorithm's chosen thresholds/window. Reads FILES
+# (cold-bars with created_at), not Postgres. ARGS must include --cold-bars <dir>
+# --cal-start <iso> --cal-end <iso> and the human-frozen constants.
+net-buy-accumulation-v2-calibration:
+	@uv run --package schurfer-analytics net-buy-accumulation-v2-calibration \
+		--code-revision="$$(git rev-parse HEAD)" $(ARGS)
 
 # Read-only live-probe-eligibility status for the prospective early_momentum
 # cohort (feat/early-momentum-prospective-cohort-v1) -- a genuinely fresh,
@@ -1800,6 +1809,16 @@ prod-net-buy-accumulation-coverage-funnel:
 		-v /opt/schurfer/runtime/cold-bars:/cold-bars:ro \
 		--entrypoint net-buy-accumulation-coverage-funnel analytics \
 		--cold-bars /cold-bars --memory-limit 3GB --threads 2 $(ARGS)
+
+# On-host v2 calibration run (outcome-blind), memory-bounded like the funnel. ARGS
+# must include --cal-start/--cal-end and the human-frozen constants.
+prod-net-buy-accumulation-v2-calibration:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
+	@$(_PROD) run --rm --no-deps \
+		-v /opt/schurfer/runtime/cold-bars:/cold-bars:ro \
+		--entrypoint net-buy-accumulation-v2-calibration analytics \
+		--cold-bars /cold-bars --memory-limit 3GB --threads 2 \
+		--code-revision="$$(git rev-parse HEAD)" $(ARGS)
 
 # Read-only against prod via the SSH tunnel: HYP-024 order-flow microstructure
 # report. Read-only, so the production analytics service is not restarted; the

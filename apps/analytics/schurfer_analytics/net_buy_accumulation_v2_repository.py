@@ -188,4 +188,84 @@ def scan_crossings(
             connection.close()
 
 
-__all__ = ["scan_crossings"]
+_PRIMARY_COLS = {
+    "P-MAG": ("score_m", "eligible_m"),
+    "P-SHAPE": ("score_s", "eligible_s"),
+}
+
+_CROSSING_FROM_TABLE = """
+WITH eligible AS (
+    SELECT exchange, symbol, bucket_start, {score_col} AS score
+    FROM v2_scored
+    WHERE {eligible_col}
+),
+crossings AS (
+    SELECT
+        e.*,
+        lag(score) OVER (PARTITION BY exchange, symbol ORDER BY bucket_start) AS prev_score
+    FROM eligible e
+)
+SELECT exchange, symbol, bucket_start AS fire_ts
+FROM crossings
+WHERE bucket_start >= $cal_start
+  AND bucket_start < $cal_end
+  AND score >= {theta}
+  AND prev_score < {theta}
+ORDER BY exchange, symbol, bucket_start
+"""
+
+
+def scan_calibration_grid(
+    *,
+    parquet_glob: str,
+    cal_start: datetime,
+    cal_end: datetime,
+    theta_grids: dict[str, tuple[float, ...]],
+    b_completeness_min_fraction: float,
+    max_finalization_lag_seconds: int,
+    connection: Any = None,
+    memory_limit: str | None = None,
+    threads: int | None = None,
+) -> dict[tuple[str, float], list[tuple[str, str, datetime]]]:
+    """Materialize the heavy v2 eligibility ONCE into a temp table, then run the
+    light per-threshold crossing query for each (primary, theta) in `theta_grids`.
+    Returns `{(primary, theta): [(exchange, symbol, fire_ts), ...]}` (raw, before
+    cooldown). Outcome-blind. Far cheaper than one full CTE pass per threshold."""
+    own = connection is None
+    if own:
+        import duckdb
+
+        connection = duckdb.connect()
+        if memory_limit is not None:
+            connection.execute(f"SET memory_limit='{memory_limit}'")
+        if threads is not None:
+            connection.execute(f"SET threads={int(threads)}")
+    try:
+        materialize = (
+            "CREATE TEMP TABLE v2_scored AS "  # noqa: S608 -- frozen numeric constants only
+            + _ELIGIBILITY_CTE.format(
+                market_type=BARS_MARKET_TYPE,
+                capture_version=BARS_CAPTURE_VERSION,
+                lag_seconds=int(max_finalization_lag_seconds),
+                frac=float(b_completeness_min_fraction),
+                floor=BASELINE_ACTIVITY_FLOOR_USD,
+            )
+            + " SELECT * FROM scored"
+        )
+        connection.execute(materialize, {"parquet_glob": parquet_glob})
+        out: dict[tuple[str, float], list[tuple[str, str, datetime]]] = {}
+        for primary, thetas in theta_grids.items():
+            score_col, eligible_col = _PRIMARY_COLS[primary]
+            for theta in thetas:
+                sql = _CROSSING_FROM_TABLE.format(
+                    score_col=score_col, eligible_col=eligible_col, theta=float(theta)
+                )
+                cursor = connection.execute(sql, {"cal_start": cal_start, "cal_end": cal_end})
+                out[(primary, theta)] = [(str(r[0]), str(r[1]), r[2]) for r in cursor.fetchall()]
+        return out
+    finally:
+        if own:
+            connection.close()
+
+
+__all__ = ["scan_calibration_grid", "scan_crossings"]
