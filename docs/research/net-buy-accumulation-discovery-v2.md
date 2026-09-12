@@ -258,13 +258,16 @@ Derived / partly-derived (mechanical, `[artifact pending]`):
    (candidate 0.99), accepted only if the bias bound and stability check pass their
    (human-frozen) tolerances. `[artifact pending]`
 2. **`MAX_FINALIZATION_LAG`** (rule B): a CANDIDATE, not a confirmed constant. The
-   prod measurement (2026-09-12) put normal lag at `bucket_end + 1-7s` (p999 ~63s
-   from bucket_start, max ~67s); a full-window aggregate found 365 of 35.5M bars
-   later than `bucket_end + 15s` (0.001%) and 0 later than 5 min. But 15s is a
-   guess: those 365 may be an ordinary operational tail rather than backfill, so the
-   freeze needs the FULL lag distribution, a pre-registered percentile/SLA that
-   classifies normal vs backfill, and the fingerprinted artifact, not a hand-picked
-   15s. `[artifact pending: fingerprinted distribution + SLA]`
+   full-window lag distribution is recorded in
+   `evidence/net-buy-accumulation-v2-lag-sla`: `created_at` is present on every bar
+   (0 NULL) and clustered at `bucket_end + 1-3s` (p50 ~61-62s); bybit's whole
+   distribution is inside `bucket_end + 10s`, binance has a small tail (365 of
+   17.8M bars past `bucket_end + 15s`, max ~194s = `bucket_end + 134s`), and ZERO
+   bars past `bucket_end + 5min` on either venue -- a clear gap between normal
+   finalization (<= ~194s) and real backfill (none observed). The freeze still
+   needs a PRE-REGISTERED rule separating the two (e.g. `~135s` to pass all normal,
+   or `~15s` tighter), not a hand-pick; the on/off artifact shows the choice does
+   not move the fires on this window. `[SLA rule pending; distribution recorded]`
 3. **Fire thresholds `THETA_M`, `THETA_S`**: not hand-picked; the OUTPUT of the
    frozen deterministic calibration algorithm run once on the fixed scanner,
    recorded with the calibration data and code fingerprint. 0.30 and 0.35 are
