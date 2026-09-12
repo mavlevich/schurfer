@@ -19,6 +19,7 @@ from schurfer_analytics.net_buy_accumulation_v2_calibration import (
     PRIMARY_MAG,
     CalibrationArtifact,
     FormalRunLockError,
+    PrimarySelection,
     ThresholdCount,
     assert_calibration_only,
     decide_window,
@@ -239,6 +240,12 @@ def test_v2_p_shape_fires_on_elevated_breadth() -> None:
 # --- deterministic calibration algorithm ------------------------------------
 
 
+def _tc(
+    primary: str, theta: float, fires: int, *, assets: int = 50, weeks: int = 4
+) -> ThresholdCount:
+    return ThresholdCount(primary, theta, fires, fires, assets, min(assets, 2), weeks, 0.05)
+
+
 def test_n_target_grosses_up_for_unresolved_and_margin() -> None:
     # 100 resolved / (1 - 0.05) * 1.5 = 157.9...
     t = n_target(expected_unresolved_rate=0.05, sizing_margin=1.5)
@@ -246,25 +253,35 @@ def test_n_target_grosses_up_for_unresolved_and_margin() -> None:
 
 
 def test_select_primary_picks_most_selective_that_clears() -> None:
-    # Over a 10-day calibration window: higher theta -> fewer fires -> slower.
-    # target 150 fires, max window 100 days. rate = fires/10.
-    by_theta = {0.10: 400, 0.20: 200, 0.30: 50}
+    by_theta = {
+        0.10: _tc("P-MAG", 0.10, 400),
+        0.20: _tc("P-MAG", 0.20, 200),
+        0.30: _tc("P-MAG", 0.30, 50),
+    }
     sel = select_primary(
-        PRIMARY_MAG,
-        by_theta,
-        calibration_days=10.0,
-        n_target_fires=150.0,
-        max_window_days=100.0,
+        PRIMARY_MAG, by_theta, calibration_days=10.0, n_target_fires=150.0, max_window_days=100.0
     )
-    # 0.30: rate 5/day -> 30 days (<=100, ok). 0.20: 20/day -> 7.5 days. 0.10: 40/day
-    # -> 3.75 days. Most selective that clears within 100 days = 0.30.
+    # 0.30: 5/day -> 30 days (<=100). Most selective that clears within 100 days = 0.30.
     assert sel.chosen_theta == 0.30
     assert not sel.too_slow
     assert sel.required_window_days is not None and abs(sel.required_window_days - 30.0) < 1e-9
 
 
+def test_select_primary_requires_diversity_floor() -> None:
+    # 0.30 has the most fires reaching target but only 20 clusters (< 30); it is
+    # disqualified, so the diversity-gated pick falls to 0.20 (50 clusters).
+    by_theta = {
+        0.20: _tc("P-MAG", 0.20, 200, assets=50),
+        0.30: _tc("P-MAG", 0.30, 180, assets=20),
+    }
+    sel = select_primary(
+        PRIMARY_MAG, by_theta, calibration_days=10.0, n_target_fires=150.0, max_window_days=100.0
+    )
+    assert sel.chosen_theta == 0.20  # 0.30 fails the cluster floor despite more fires
+
+
 def test_select_primary_too_slow_when_nothing_clears() -> None:
-    by_theta = {0.30: 1}  # 0.1 fires/day -> 1500 days for 150; over the ceiling
+    by_theta = {0.30: _tc("P-MAG", 0.30, 1)}  # 0.1 fires/day -> 1500 days; over ceiling
     sel = select_primary(
         PRIMARY_MAG, by_theta, calibration_days=10.0, n_target_fires=150.0, max_window_days=100.0
     )
@@ -272,10 +289,10 @@ def test_select_primary_too_slow_when_nothing_clears() -> None:
 
 
 def test_decide_window_is_max_of_primaries_and_flags_too_slow() -> None:
-    def _sel(primary: str, fires: int, max_days: float) -> object:
+    def _sel(primary: str, fires: int, max_days: float) -> PrimarySelection:
         return select_primary(
             primary,
-            {0.2: fires},
+            {0.2: _tc(primary, 0.2, fires)},
             calibration_days=10.0,
             n_target_fires=150.0,
             max_window_days=max_days,
@@ -283,15 +300,50 @@ def test_decide_window_is_max_of_primaries_and_flags_too_slow() -> None:
 
     a = _sel("P-MAG", 200, 100.0)
     b = _sel("P-SHAPE", 100, 100.0)
-    dec = decide_window([a, b])  # type: ignore[list-item]
+    dec = decide_window([a, b])
     assert not dec.too_slow
     # P-MAG 20/day -> 7.5d; P-SHAPE 10/day -> 15d; max -> ceil(15) = 15.
     assert dec.window_days == 15
     slow = _sel("P-SHAPE", 1, 5.0)
-    assert decide_window([a, slow]).too_slow  # type: ignore[list-item]
+    assert decide_window([a, slow]).too_slow
 
 
-def test_cli_run_produces_fingerprinted_artifact_and_decision() -> None:
+def test_fingerprint_changes_when_algorithm_inputs_change() -> None:
+    base = CalibrationArtifact(
+        tool_version="t",
+        generated_at="2026-01-01T00:00:00Z",
+        code_revision="rev",
+        calibration_window_start="a",
+        calibration_window_end="b",
+        b_completeness_min_fraction=0.99,
+        max_finalization_lag_seconds=15,
+        baseline_activity_floor_usd=100000.0,
+        theta_m_grid=(0.1, 0.2),
+        theta_s_grid=(0.1, 0.2),
+        cold_bar_manifests={"m": "h"},
+        counts=(ThresholdCount(PRIMARY_MAG, 0.2, 10, 5, 40, 1, 4, 0.1),),
+        decision={"window_days": 90},
+    )
+    # A different algorithm DECISION must change the fingerprint (P1: the hash pins
+    # the thing we act on, not just the counts).
+    other = dataclasses.replace(base, decision={"window_days": 91})
+    assert base.fingerprint() != other.fingerprint()
+
+
+def test_manifest_provenance_fails_closed(tmp_path: Path) -> None:
+    from schurfer_analytics.net_buy_accumulation_v2_calibration_report import (
+        CalibrationInputError,
+        _manifest_hashes,
+    )
+
+    with pytest.raises(CalibrationInputError):
+        _manifest_hashes(str(tmp_path))  # no manifests at all
+    (tmp_path / "bars-2026-08-10.manifest.json").write_text("{ not json")
+    with pytest.raises(CalibrationInputError):
+        _manifest_hashes(str(tmp_path))  # corrupt manifest
+
+
+def test_cli_run_produces_fingerprinted_artifact_with_decision_and_coverage() -> None:
     import duckdb
     from schurfer_analytics.net_buy_accumulation_v2_calibration_report import run
 
@@ -300,6 +352,7 @@ def test_cli_run_produces_fingerprinted_artifact_and_decision() -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = str(Path(tmp) / "bars-2026-08-26.parquet")
             _write(con, path)
+            (Path(tmp) / "bars-2026-08-26.manifest.json").write_text('{"sha256": "abc123"}')
             con.close()  # release before run() opens its own connection
             out = run(
                 cold_bars_dir=tmp,
@@ -308,7 +361,7 @@ def test_cli_run_produces_fingerprinted_artifact_and_decision() -> None:
                 theta_m_grid=(0.10, 0.20, 0.30),
                 theta_s_grid=(0.10, 0.20),
                 b_completeness_min_fraction=0.99,
-                max_finalization_lag_seconds=120,
+                max_finalization_lag_seconds=15,
                 expected_unresolved_rate=0.05,
                 sizing_margin=1.5,
                 max_window_days=120.0,
@@ -318,6 +371,8 @@ def test_cli_run_produces_fingerprinted_artifact_and_decision() -> None:
             )
     finally:
         con.close()
-    assert out["artifact"]["fingerprint_sha256"]  # present and non-empty
-    assert out["artifact"]["tool_version"] == "net_buy_accumulation_v2_calibration"
-    assert "window_days" in out["algorithm"]
+    assert out["fingerprint_sha256"]  # present and non-empty
+    assert out["tool_version"] == "net_buy_accumulation_v2_calibration"
+    assert "window_days" in out["decision"]  # decision folded into the fingerprinted artifact
+    assert "eligible_m_minutes" in out["coverage"]  # explainable-zero coverage present
+    assert out["cold_bar_manifests"] == {"bars-2026-08-26.manifest.json": "abc123"}

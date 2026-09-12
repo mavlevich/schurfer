@@ -105,6 +105,11 @@ class CalibrationArtifact:
     theta_s_grid: tuple[float, ...]
     cold_bar_manifests: dict[str, str]
     counts: tuple[ThresholdCount, ...]
+    # The frozen algorithm's inputs AND its decision (chosen thresholds + window).
+    # Fingerprinted, so the hash pins the thing we act on, not just the raw counts
+    # (rev.5, P1). Coverage carries per-gate counts so a zero fire count is
+    # explainable (no crossing vs everything filtered by W/B/timely/baseline).
+    decision: dict[str, Any] = field(default_factory=dict)
     coverage: dict[str, Any] = field(default_factory=dict)
 
     def fingerprint(self) -> str:
@@ -113,7 +118,8 @@ class CalibrationArtifact:
 
     def _canonical(self) -> dict[str, Any]:
         # Exclude generated_at (wall clock) from the fingerprint so the same inputs
-        # reproduce the same hash.
+        # reproduce the same hash. Everything acted on IS included, incl. the
+        # algorithm decision and the coverage.
         return {
             "tool_version": self.tool_version,
             "code_revision": self.code_revision,
@@ -126,6 +132,7 @@ class CalibrationArtifact:
             "theta_s_grid": list(self.theta_s_grid),
             "cold_bar_manifests": self.cold_bar_manifests,
             "counts": [c.__dict__ for c in self.counts],
+            "decision": self.decision,
             "coverage": self.coverage,
         }
 
@@ -139,6 +146,11 @@ class CalibrationArtifact:
 # --- deterministic calibration algorithm (frozen; steps 1-6 of the amendment) ---
 
 STOP_MIN_RESOLVED_FIRES = 100
+# Diversity floor (pre-outcome sufficiency): a chosen threshold must also show
+# enough asset clusters and covered weeks on the calibration window, or reaching a
+# raw fire count is not real sufficiency (rev.5, P1 from review round 4).
+CANDIDATE_MIN_CLUSTERS = 30
+CANDIDATE_MIN_COVERED_WEEKS = 4
 
 
 def n_target(
@@ -159,41 +171,51 @@ def n_target(
 class PrimarySelection:
     """The mechanical per-primary output of the frozen algorithm: the chosen
     (most-selective-that-can-clear) threshold and the prospective days it needs at
-    its measured fire rate. `too_slow` means no grid threshold reaches the target
-    within `MAX_WINDOW_DAYS`."""
+    its measured fire rate. `too_slow` means no grid threshold both reaches the
+    target within `MAX_WINDOW_DAYS` AND meets the diversity floor on the
+    calibration window."""
 
     primary: str
     chosen_theta: float | None
     fire_rate_per_day: float | None
     required_window_days: float | None
+    calibration_clusters: int | None
+    calibration_weeks: int | None
     too_slow: bool
 
 
 def select_primary(
     primary: str,
-    dedup_fires_by_theta: dict[float, int],
+    counts_by_theta: dict[float, ThresholdCount],
     *,
     calibration_days: float,
     n_target_fires: float,
     max_window_days: float,
+    min_clusters: int = CANDIDATE_MIN_CLUSTERS,
+    min_weeks: int = CANDIDATE_MIN_COVERED_WEEKS,
 ) -> PrimarySelection:
     """Steps 2-5 for one primary: measure the fire rate per threshold on the fixed
-    calibration window, then choose the LARGEST (most selective) threshold whose
-    measured rate can reach `n_target_fires` within `max_window_days`, and report
-    the required prospective duration for it. Deterministic; no returns are read."""
+    calibration window, then choose the LARGEST (most selective) threshold that
+    BOTH can reach `n_target_fires` within `max_window_days` at its measured rate
+    AND already meets the diversity floor (>= `min_clusters` asset clusters and
+    >= `min_weeks` covered weeks) on the calibration window. A threshold with a
+    high fire count but thin diversity is not sufficiency, so it does not qualify.
+    Deterministic; no returns are read."""
     if calibration_days <= 0:
         raise ValueError("calibration_days must be positive")
-    best: tuple[float, float, float] | None = None  # (theta, rate, required_days)
-    for theta in sorted(dedup_fires_by_theta):  # ascending; keep the largest qualifying
-        rate = dedup_fires_by_theta[theta] / calibration_days
+    best: tuple[float, float, float, int, int] | None = None
+    for theta in sorted(counts_by_theta):  # ascending; keep the largest qualifying
+        tc = counts_by_theta[theta]
+        rate = tc.dedup_fires / calibration_days
         if rate <= 0:
             continue
         required_days = n_target_fires / rate
-        if required_days <= max_window_days:
-            best = (theta, rate, required_days)  # overwrite -> ends on the largest theta
+        diversity_ok = tc.distinct_assets >= min_clusters and tc.distinct_weeks >= min_weeks
+        if required_days <= max_window_days and diversity_ok:
+            best = (theta, rate, required_days, tc.distinct_assets, tc.distinct_weeks)
     if best is None:
-        return PrimarySelection(primary, None, None, None, too_slow=True)
-    return PrimarySelection(primary, best[0], best[1], best[2], too_slow=False)
+        return PrimarySelection(primary, None, None, None, None, None, too_slow=True)
+    return PrimarySelection(primary, best[0], best[1], best[2], best[3], best[4], too_slow=False)
 
 
 @dataclass(frozen=True)
@@ -278,6 +300,8 @@ def summarize_threshold(
 __all__ = [
     "BASELINE_ACTIVITY_FLOOR_USD",
     "CALIBRATION_TOOL_VERSION",
+    "CANDIDATE_MIN_CLUSTERS",
+    "CANDIDATE_MIN_COVERED_WEEKS",
     "DEFAULT_B_COMPLETENESS_MIN_FRACTION",
     "DEFAULT_MAX_FINALIZATION_LAG_SECONDS",
     "DEFAULT_THETA_M_GRID",

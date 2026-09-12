@@ -52,6 +52,11 @@ WITH src AS (
     FROM read_parquet($parquet_glob)
     WHERE market_type = '{market_type}'
       AND capture_version = '{capture_version}'
+      -- Bound to the calibration window plus just enough history for the rolling
+      -- W (1440) + B (10080) windows (11520 minutes), so the scan does not read
+      -- the whole growing cold-bar archive (rev.5, P2).
+      AND bucket_start >= $cal_start - INTERVAL 11520 MINUTE
+      AND bucket_start < $cal_end
 ),
 per_minute AS (
     SELECT
@@ -226,11 +231,13 @@ def scan_calibration_grid(
     connection: Any = None,
     memory_limit: str | None = None,
     threads: int | None = None,
-) -> dict[tuple[str, float], list[tuple[str, str, datetime]]]:
+) -> tuple[dict[tuple[str, float], list[tuple[str, str, datetime]]], dict[str, int]]:
     """Materialize the heavy v2 eligibility ONCE into a temp table, then run the
     light per-threshold crossing query for each (primary, theta) in `theta_grids`.
-    Returns `{(primary, theta): [(exchange, symbol, fire_ts), ...]}` (raw, before
-    cooldown). Outcome-blind. Far cheaper than one full CTE pass per threshold."""
+    Returns `({(primary, theta): [(exchange, symbol, fire_ts), ...]}, coverage)`
+    where coverage carries per-gate survivor counts so a zero fire count is
+    explainable (no crossing vs everything filtered). Raw fires, before cooldown.
+    Outcome-blind."""
     own = connection is None
     if own:
         import duckdb
@@ -252,7 +259,9 @@ def scan_calibration_grid(
             )
             + " SELECT * FROM scored"
         )
-        connection.execute(materialize, {"parquet_glob": parquet_glob})
+        binds = {"parquet_glob": parquet_glob, "cal_start": cal_start, "cal_end": cal_end}
+        connection.execute(materialize, binds)
+        coverage = _coverage_counts(connection, cal_start, cal_end)
         out: dict[tuple[str, float], list[tuple[str, str, datetime]]] = {}
         for primary, thetas in theta_grids.items():
             score_col, eligible_col = _PRIMARY_COLS[primary]
@@ -262,10 +271,42 @@ def scan_calibration_grid(
                 )
                 cursor = connection.execute(sql, {"cal_start": cal_start, "cal_end": cal_end})
                 out[(primary, theta)] = [(str(r[0]), str(r[1]), r[2]) for r in cursor.fetchall()]
-        return out
+        return out, coverage
     finally:
         if own:
             connection.close()
+
+
+def _coverage_counts(connection: Any, cal_start: datetime, cal_end: datetime) -> dict[str, int]:
+    """Per-gate survivor counts over the materialized `v2_scored`, so a zero fire
+    count can be told apart from 'no minute was ever eligible'. Outcome-blind."""
+    row = connection.execute(
+        """
+        SELECT
+            count(*) FILTER (WHERE bucket_start >= $cal_start AND bucket_start < $cal_end)
+                AS minutes_in_window,
+            count(*) FILTER (WHERE eligible_m AND bucket_start >= $cal_start
+                             AND bucket_start < $cal_end) AS eligible_m_minutes,
+            count(*) FILTER (WHERE eligible_s AND bucket_start >= $cal_start
+                             AND bucket_start < $cal_end) AS eligible_s_minutes,
+            count(DISTINCT (exchange || '|' || symbol || '|' || cast(bucket_start AS DATE)))
+                FILTER (WHERE eligible_m AND bucket_start >= $cal_start
+                        AND bucket_start < $cal_end) AS eligible_m_instrument_days,
+            count(DISTINCT (exchange || '|' || symbol || '|' || cast(bucket_start AS DATE)))
+                FILTER (WHERE eligible_s AND bucket_start >= $cal_start
+                        AND bucket_start < $cal_end) AS eligible_s_instrument_days
+        FROM v2_scored
+        """,
+        {"cal_start": cal_start, "cal_end": cal_end},
+    ).fetchone()
+    keys = (
+        "minutes_in_window",
+        "eligible_m_minutes",
+        "eligible_s_minutes",
+        "eligible_m_instrument_days",
+        "eligible_s_instrument_days",
+    )
+    return {k: int(v or 0) for k, v in zip(keys, row, strict=True)}
 
 
 __all__ = ["scan_calibration_grid", "scan_crossings"]

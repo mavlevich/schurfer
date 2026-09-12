@@ -142,3 +142,6 @@ coverage/
 # local net-buy accumulation window parquet (data, not source)
 cold-bars-window/
 cold-bars/
+
+# DuckDB spill files from local analytics runs
+.tmp/

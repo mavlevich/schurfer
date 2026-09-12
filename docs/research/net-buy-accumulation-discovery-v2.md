@@ -1,8 +1,9 @@
 # net-buy accumulation discovery, v2 amendment (DRAFT, for review)
 
 Status: DRAFT amendment to `net-buy-accumulation-discovery-v1.md`, opened
-2026-09-12, revised through round 3 (rev.4 on 2026-09-12 after a conditional
-structure approve). Not frozen.
+2026-09-12, revised through review round 4 (rev.5 on 2026-09-12: single entry
+semantics reconciled with the prod lag data, achievable bias reference, diversity
+in the calibration selection, fingerprint pins the decision). Not frozen.
 This proposes the methodology changes deferred out of the coverage-funnel PR
 (#411). Nothing here is frozen or authorizes a formal run until this amendment is
 reviewed, the open decisions below are signed off with the calculations they
@@ -69,15 +70,19 @@ This avoids the ~1% deflation that `sum(activity)/7` suffers on a 99% window. Th
 W numerator stays exact (100% complete). `score_s`'s per-minute trailing-7d mean
 uses the same present-and-complete convention.
 
-**Bias (NOT assumed unbiased).** The mean-of-present estimator is unbiased only
-under missing-completely-at-random, which is unlikely (incomplete minutes may
-correlate with load-shedding during high-activity bursts). So it is an
-approximation whose bias must be empirically bounded before freeze: reconstruct
-the baseline on the full-B reference and on B with minutes dropped per the observed
-missingness pattern, and require the induced shift in the baseline (and hence in
-the fire set) below a stated tolerance. If the bias exceeds tolerance, the fraction
-gate tightens toward 100% present or the family is not eligible for the
-relaxation. `[artifact pending]`
+**Bias (NOT assumed unbiased), against an ACHIEVABLE reference (rev.5).** The
+mean-of-present estimator is unbiased only under missing-completely-at-random,
+which is unlikely (incomplete minutes may correlate with load-shedding during
+high-activity bursts). A fully-complete B does not exist in the data (that is the
+whole reason for v2), so the reference cannot be a 100%-complete B. Instead the
+bias check is a SENSITIVITY test between two achievable completeness levels: the
+chosen fraction `f` and a stricter reference fraction `f_ref` (the strictest level
+still present in the data, e.g. `>= 0.999`). Compute `baseline_daily_activity` on
+the `f`-complete B and on the `f_ref`-complete B over the same instrument-minutes,
+and require the relative shift (and the induced fire-set shift) below a stated
+tolerance. If the estimate moves too much as completeness tightens, the estimator
+is too missingness-sensitive: the fraction gate tightens or the relaxation is
+rejected. `[artifact pending]`
 
 **P-SHAPE trailing windows (rev.4).** `score_s`'s `elevated_buy` compares each W
 minute to its OWN trailing-7d mean, so every such trailing window needs the same
@@ -86,13 +91,14 @@ completeness rule as B: it is usable only when it is 100% present and at least
 estimator. A W minute whose own trailing-7d window fails this is not counted as
 `elevated_buy` eligible (it is a coverage miss, not a silent 0).
 
-**Reference and tolerances frozen BEFORE the run (rev.4).** The bias and stability
+**Reference and tolerances frozen BEFORE the run (rev.5).** The bias and stability
 checks are only meaningful against fixed targets, so before any calibration run we
-freeze: the reference `full_B` definition (a 100%-present-and-complete B window as
-the ground truth), `BASELINE_BIAS_MAX` (max acceptable relative shift in
-`baseline_daily_activity`), and `FIRESET_STABILITY_MIN` (min fire-count ratio and
-asset-overlap between chosen-fraction and reference). These are human-frozen
-constants (open decisions), not tuned on the result. `[artifact pending]`
+freeze: the reference completeness `f_ref` (the strictest ACHIEVABLE level, e.g.
+`>= 0.999`, NOT an unreachable 100%), `BASELINE_BIAS_MAX` (max acceptable relative
+shift in `baseline_daily_activity` between `f` and `f_ref`), and
+`FIRESET_STABILITY_MIN` (min fire-count ratio and asset-overlap between the two).
+These are human-frozen constants (open decisions), not tuned on the result.
+`[artifact pending]`
 
 ### B. Availability as a non-backfill guard (finalization lag, W AND B)
 
@@ -126,29 +132,29 @@ guard is therefore per-bar and relative to the bar's OWN minute, not to `t`:
 W and B are eligible only when all their minutes are available by this rule.
 No-trade, backfill, and capture-gap cases are separately tested.
 
-**Decision time and the entry-price timing bias (rev.4).** The signal cannot be
-acted on at `t`: the last feature bar (`t-1`) is not finalized until
-`bucket_end(t-1) + lag = t + lag`, so the real decision instant is
+**Decision time and entry price (rev.5, resolved with the prod lag measurement).**
+The signal cannot be acted on exactly at `t`: the last feature bar (`t-1`) is only
+finalized at `decision_at(t) = max created_at over W,B`. The prod lag measurement
+(2026-09-12, `[artifact pending: fingerprinted]`) shows the finalization lag is
+tiny and tight: `created_at - bucket_start` is ~61-67s on both venues (p999 ~63s,
+max ~67s), i.e. `bucket_end + 1-7s`, with zero NULLs and no backfilled bars in the
+sample. So:
 
 ```
-decision_at(t) = max over W,B of created_at(m)   (>= t; ~ t + finalization lag)
+decision_at(t) = max created_at over W,B  ~=  t + 2..7 seconds
 ```
 
-Pricing the entry at `close(t-1)` therefore has an optimistic timing bias (that
-price was chosen with a few seconds of hindsight relative to when we could act).
-With only minute bars and no executable/tick feed we cannot take "the first
-executable price after `decision_at`", so v2 freezes the honest, conservative
-choice and keeps the optimistic one only as a diagnostic:
-
-- **Economic entry (primary)**: `close` of the first bar whose `bucket_end` is at
-  or after `decision_at(t)` (the next available minute close), with the hold's
-  exit shifted to keep the 240m horizon from that entry. The realized delay is
-  reported.
-- **Diagnostic upper bound (NOT the economic result)**: the v1 `close(t-1)` entry,
-  reported side by side so we can see how much apparent edge is timing artifact.
-
-This keeps the economic number free of hindsight timing; the executable-price
-version waits on the L2/latency shadow (`capacity_unknown`).
+`close(t-1)` is the close of bar `[t-1, t)`, finalized at `created_at(t-1) ~ t +
+2..7s`, which is at or before `decision_at(t)`. So `close(t-1)` IS available at the
+decision instant; the timing bias is a few SECONDS against a 240-minute hold, i.e.
+negligible. v2 therefore keeps a SINGLE entry/exit semantics (no two incompatible
+definitions): **entry = `close(t-1)`, exit = `close(t+239)`, hold 240m** (the v1
+rule), now justified by the measured lag rather than by an assumption of instant
+availability. The residual ~5s and any execution latency / slippage remain
+unmeasured (`capacity_unknown`) and are resolved only by the L2/latency shadow, not
+by minute bars. This supersedes the rev.4 "next available minute close", which the
+lag data shows is unnecessarily conservative (it would delay entry a full minute
+for a ~5s effect).
 
 ### C. Unresolved entries: opportunity rate only, never the stop floor
 
@@ -230,11 +236,12 @@ are the tool's fingerprinted output.
 Human-frozen (a priori, NOT tuned on the result):
 
 0. **`BASELINE_BIAS_MAX`, `FIRESET_STABILITY_MIN`** (rule A tolerances), the
-   `full_B` reference definition, the `MAX_FINALIZATION_LAG` percentile/SLA rule,
-   `SIZING_MARGIN`, `MAX_WINDOW_DAYS`, `RESEARCH_THROUGHPUT_MIN`, the
-   date-rounding/tie-break rules, and the economically-meaningful MDE +
-   `UNCERTAINTY_MAX_HALFWIDTH_PP` (from `ECONOMICS.md` or a separate outcome-seen
-   training window, never from the outcome-blind tool).
+   `f_ref` reference-completeness level, the `MAX_FINALIZATION_LAG` percentile/SLA
+   rule, `SIZING_MARGIN`, `MAX_WINDOW_DAYS`, `RESEARCH_THROUGHPUT_MIN`,
+   `expected_unresolved_rate` (feeds `N_TARGET`; frozen with a source, not a draft
+   default), the date-rounding/tie-break rules, and the economically-meaningful MDE
+   - `UNCERTAINTY_MAX_HALFWIDTH_PP` (from `ECONOMICS.md` or a separate outcome-seen
+     training window, never from the outcome-blind tool).
 
 Derived / partly-derived (mechanical, `[artifact pending]`):
 
@@ -242,8 +249,11 @@ Derived / partly-derived (mechanical, `[artifact pending]`):
    (candidate 0.99), accepted only if the bias bound and stability check pass their
    (human-frozen) tolerances. `[artifact pending]`
 2. **`MAX_FINALIZATION_LAG`** (rule B): frozen from the observed
-   created_at-minus-bucket_start lag distribution (e.g. a high percentile of normal
-   finalization), separating normal finalization from backfill. `[artifact pending]`
+   created_at-minus-bucket_start lag distribution, separating normal finalization
+   from backfill. The prod measurement (2026-09-12) put normal lag at `bucket_end +
+1-7s` (p999 ~63s from bucket_start, max ~67s), so a candidate of **15s past
+   bucket_end** cleanly separates normal bars from backfill. Freeze with the
+   fingerprinted lag artifact. `[artifact pending: fingerprinted run]`
 3. **Fire thresholds `THETA_M`, `THETA_S`**: not hand-picked; the OUTPUT of the
    frozen deterministic calibration algorithm run once on the fixed scanner,
    recorded with the calibration data and code fingerprint. 0.30 and 0.35 are
