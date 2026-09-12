@@ -214,15 +214,15 @@ def test_eligibility_funnel_splits_venues_and_reports_b_diagnostics() -> None:
             )
             by_ex = {r["exchange"]: r for r in rows}
             assert set(by_ex) == {"binance", "bybit"}
-            # bybit clears every gate incl the baseline floor.
-            assert by_ex["bybit"]["eligible"] > 0
-            assert by_ex["bybit"]["eligible_instruments"] == 1
-            # binance is present, complete and available but thin: it drops to
-            # zero at the baseline-floor stage, not before.
-            assert by_ex["binance"]["available"] > 0
-            assert by_ex["binance"]["eligible"] == 0
+            # bybit clears the baseline-floor stage.
+            assert by_ex["bybit"]["reached_baseline_floor"] > 0
+            assert by_ex["bybit"]["reached_baseline_floor_instruments"] == 1
+            # binance is present and complete but thin: it drops to zero at the
+            # baseline-floor stage, having reached B present.
+            assert by_ex["binance"]["b_present"] > 0
+            assert by_ex["binance"]["reached_baseline_floor"] == 0
             # B-completeness is a DIAGNOSTIC: the injected incomplete bybit B bar
-            # pulls b_fully_complete below b_present without blocking eligibility.
+            # pulls b_fully_complete below b_present without affecting the stages.
             assert by_ex["bybit"]["b_fully_complete_diag"] < by_ex["bybit"]["b_present"]
     finally:
         connection.close()
