@@ -443,3 +443,32 @@ def test_cli_run_produces_fingerprinted_artifact_with_decision_and_coverage() ->
     assert "window_days" in out["decision"]  # decision folded into the fingerprinted artifact
     assert "eligible_m_minutes" in out["coverage"]  # explainable-zero coverage present
     assert out["cold_bar_manifests"] == {"bars-2026-08-26.manifest.json": real}
+
+
+def test_compare_availability_on_off_is_reproducible_in_package() -> None:
+    # The in-package comparator (P1) runs the grid at lag=15 (guard on) vs a huge
+    # lag (guard off); on the all-timely fixture the fire deltas are 0.
+    import duckdb
+    from schurfer_analytics.net_buy_accumulation_v2_calibration_report import compare
+
+    con = duckdb.connect()
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "bars-2026-08-26.parquet")
+            _write(con, path)
+            con.close()
+            out = compare(
+                cold_bars_dir=tmp,
+                cal_start=_CAL_START,
+                cal_end=_CAL_END,
+                theta_m_grid=(0.10, 0.20),
+                theta_s_grid=(0.10,),
+                base_b_fraction=0.99,
+                base_lag_seconds=15,
+                variant_b_fraction=0.99,
+                variant_lag_seconds=10**9,
+            )
+    finally:
+        con.close()
+    assert out["max_abs_delta"] == 0  # availability guard moves no fires here
+    assert all(d["delta"] == 0 for d in out["deltas"])

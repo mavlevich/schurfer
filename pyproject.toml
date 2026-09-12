@@ -35,6 +35,11 @@ members = [
 [tool.ruff]
 line-length = 100
 target-version = "py313"
+# Committed evidence generators are a verbatim record of ad-hoc research runs, not
+# maintained package code; do not lint/format them (that would alter the record).
+# force-exclude so pre-commit (which passes explicit paths) also skips them.
+extend-exclude = ["docs/research/evidence/generators"]
+force-exclude = true
 
 [tool.ruff.lint]
 select = [

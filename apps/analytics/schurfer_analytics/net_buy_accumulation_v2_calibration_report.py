@@ -228,6 +228,68 @@ def run(
     return result
 
 
+def compare(
+    *,
+    cold_bars_dir: str,
+    cal_start: datetime,
+    cal_end: datetime,
+    theta_m_grid: tuple[float, ...],
+    theta_s_grid: tuple[float, ...],
+    base_b_fraction: float,
+    base_lag_seconds: int,
+    variant_b_fraction: float,
+    variant_lag_seconds: int,
+    memory_limit: str | None = None,
+    threads: int | None = None,
+) -> dict[str, Any]:
+    """A REPRODUCIBLE, in-package comparator (review round 5, P1): run the grid at a
+    base and a variant that differ in one parameter (B-fraction for the Rule A
+    sensitivity check, or the finalization lag for the availability on/off check),
+    and return per-(primary, theta) dedup-fire deltas plus each side's coverage. It
+    reuses the maintained package SQL (`scan_calibration_grid`), not an ad-hoc
+    script, so the on/off and fraction comparisons are first-class and outcome-blind.
+    It reads no returns and is calibration-only."""
+    assert_calibration_only(formal_run=False)
+    glob = str(Path(cold_bars_dir) / "bars-*.parquet")
+    grids = {PRIMARY_MAG: theta_m_grid, PRIMARY_SHAPE: theta_s_grid}
+    covered = fully_covered_weeks(cal_start, cal_end)
+
+    def _side(frac: float, lag: int) -> dict[str, Any]:
+        raw, cov = scan_calibration_grid(
+            parquet_glob=glob,
+            cal_start=cal_start,
+            cal_end=cal_end,
+            theta_grids=grids,
+            b_completeness_min_fraction=frac,
+            max_finalization_lag_seconds=lag,
+            memory_limit=memory_limit,
+            threads=threads,
+        )
+        counts = {(p, t): summarize_threshold(p, t, rows, covered) for (p, t), rows in raw.items()}
+        return {"counts": counts, "coverage": {k: int(v) for k, v in cov.items()}}
+
+    base = _side(base_b_fraction, base_lag_seconds)
+    variant = _side(variant_b_fraction, variant_lag_seconds)
+    deltas = [
+        {
+            "primary": p,
+            "theta": t,
+            "base_dedup": base["counts"][(p, t)].dedup_fires,
+            "variant_dedup": variant["counts"][(p, t)].dedup_fires,
+            "delta": variant["counts"][(p, t)].dedup_fires - base["counts"][(p, t)].dedup_fires,
+        }
+        for (p, t) in sorted(base["counts"])
+    ]
+    return {
+        "base": {"b_fraction": base_b_fraction, "lag_seconds": base_lag_seconds},
+        "variant": {"b_fraction": variant_b_fraction, "lag_seconds": variant_lag_seconds},
+        "max_abs_delta": max((abs(d["delta"]) for d in deltas), default=0),
+        "deltas": deltas,
+        "base_coverage": base["coverage"],
+        "variant_coverage": variant["coverage"],
+    }
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--cold-bars", required=True)
@@ -265,4 +327,4 @@ def main() -> None:
     sys.stdout.write(json.dumps(out, indent=2, sort_keys=True, default=str) + "\n")
 
 
-__all__ = ["CalibrationInputError", "main", "run"]
+__all__ = ["CalibrationInputError", "compare", "main", "run"]
