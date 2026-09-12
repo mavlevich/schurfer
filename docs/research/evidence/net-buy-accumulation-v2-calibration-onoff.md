@@ -49,6 +49,17 @@ Same result ON and OFF: `THETA_M=0.30`, `THETA_S=0.35`, prospective window =
 margin), `MAX_WINDOW_DAYS=120`. Concentration 4-5%, diversity 49-417 clusters over
 4 weeks. The family is COLLECTABLE.
 
+## Superseded selection (rev.7)
+
+This artifact was generated with the pre-rev.7 diversity gate (any 4 ISO weeks, no
+per-week floor). The availability on/off PARITY it establishes (delta 0 at every
+threshold) still holds. But its threshold/window SELECTION (`THETA_M=0.30`,
+`THETA_S=0.35`, ~97d, `too_slow=False`) is SUPERSEDED: under the corrected contract
+gate (>= 4 FULLY-covered UTC weeks each with >= 20 fires) 0.30/0.35 run only ~15
+and ~12 fires/week and do NOT clear it, and this 23.83-day window has only ~2 full
+weeks. So `0.30/0.35/97d` are EXPLORATORY candidates, not a frozen result; the real
+selection needs a `>= 4`-full-week calibration window in an isolated environment.
+
 ## What this does NOT establish
 
 Not frozen. Still open before a final freeze: the `f_ref` bias tolerance and
