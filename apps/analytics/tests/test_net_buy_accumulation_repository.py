@@ -14,7 +14,10 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 from schurfer_analytics.net_buy_accumulation import PRIMARY_MAG
-from schurfer_analytics.net_buy_accumulation_repository import scan_fires
+from schurfer_analytics.net_buy_accumulation_repository import (
+    scan_eligibility_funnel,
+    scan_fires,
+)
 
 _FIRE = datetime(2026, 8, 26, 0, 0)  # the single expected P-MAG fire minute
 _RAMP_START = _FIRE - timedelta(minutes=1440)  # ramp fills W of _FIRE
@@ -154,3 +157,72 @@ def test_report_renders_from_synthetic_cold_bars() -> None:
     assert "net-buy accumulation discovery" in md
     assert "P-MAG" in md
     assert render_json(report)  # serializes without error
+
+
+# --- eligibility funnel (standalone coverage diagnostic) --------------------
+
+
+def _write_funnel_fixture(connection: object, path: str) -> None:
+    # Two instruments over the same present, complete, available series: a liquid
+    # bybit (activity 2000/min -> baseline 2.88M, clears the floor) and a thin
+    # binance (activity 60/min -> baseline 86400, below the 100000 floor). One
+    # bybit B-minute (2 days before) is marked incomplete so the B-completeness
+    # DIAGNOSTIC drops below 100% while B-presence (the gate) is unaffected.
+    connection.execute(  # type: ignore[attr-defined]
+        """
+        COPY (
+            WITH inst(exchange, symbol, act) AS (
+                VALUES ('bybit','TESTUSDT',1000.0), ('binance','TESTUSDT',30.0)
+            )
+            SELECT
+                inst.exchange AS exchange, inst.symbol AS symbol,
+                'linear' AS market_type, 'v1' AS capture_version, ts AS bucket_start,
+                inst.act AS buy_total_notional_usd,
+                inst.act AS sell_total_notional_usd,
+                100.0 AS close_price,
+                CASE WHEN inst.exchange = 'bybit' AND ts = $break_b THEN false
+                     ELSE true END AS trades_complete,
+                true AS price_complete,
+                ts + INTERVAL 30 SECOND AS last_trade_received_at
+            FROM inst, (SELECT unnest(range($start, $end, INTERVAL 1 MINUTE)) AS ts)
+        ) TO '{path}' (FORMAT PARQUET)
+        """.replace("{path}", path),
+        {
+            "start": _SERIES_START,
+            "end": _SERIES_END,
+            "break_b": _FIRE - timedelta(days=2),
+        },
+    )
+
+
+def test_eligibility_funnel_splits_venues_and_reports_b_diagnostics() -> None:
+    import tempfile
+    from pathlib import Path
+
+    import duckdb
+
+    connection = duckdb.connect()
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "bars.parquet")
+            _write_funnel_fixture(connection, path)
+            rows = scan_eligibility_funnel(
+                parquet_glob=path,
+                cohort_start=datetime(2026, 8, 25, 0, 0),
+                cohort_end=datetime(2026, 8, 27, 0, 0),
+                connection=connection,
+            )
+            by_ex = {r["exchange"]: r for r in rows}
+            assert set(by_ex) == {"binance", "bybit"}
+            # bybit clears every gate incl the baseline floor.
+            assert by_ex["bybit"]["eligible"] > 0
+            assert by_ex["bybit"]["eligible_instruments"] == 1
+            # binance is present, complete and available but thin: it drops to
+            # zero at the baseline-floor stage, not before.
+            assert by_ex["binance"]["available"] > 0
+            assert by_ex["binance"]["eligible"] == 0
+            # B-completeness is a DIAGNOSTIC: the injected incomplete bybit B bar
+            # pulls b_fully_complete below b_present without blocking eligibility.
+            assert by_ex["bybit"]["b_fully_complete_diag"] < by_ex["bybit"]["b_present"]
+    finally:
+        connection.close()

@@ -3,7 +3,7 @@
 .PHONY: momentum-flow-discovery-report prod-momentum-flow-discovery-report
 .PHONY: ai-rules-check
 .PHONY: early-momentum-unused-flow-features-report prod-early-momentum-unused-flow-features-report
-.PHONY: hyp-024-orderflow-report prod-hyp-024-orderflow-report net-buy-accumulation-report prod-net-buy-accumulation-report
+.PHONY: hyp-024-orderflow-report prod-hyp-024-orderflow-report net-buy-accumulation-report prod-net-buy-accumulation-report net-buy-accumulation-coverage-funnel prod-net-buy-accumulation-coverage-funnel
 .PHONY: cex-activity-path-coverage-audit-report prod-cex-activity-path-coverage-audit-report
 .PHONY: cex-activity-discovery-report radar-outcome-discovery-report prod-radar-outcome-discovery-report
 .PHONY: liquidation-capture-bybit-start liquidation-capture-bybit-stop liquidation-capture-bybit-health liquidation-capture-binance-start liquidation-capture-binance-stop liquidation-capture-binance-health
@@ -866,6 +866,13 @@ net-buy-accumulation-report:
 		$$(test -z "$$(git status --porcelain)" \
 			&& printf '%s' '--no-working-tree-dirty' \
 			|| printf '%s' '--working-tree-dirty') $(ARGS)
+
+# Per-exchange eligibility funnel for the net-buy accumulation scanner: a coverage
+# diagnostic (no outcomes, no verdict) that shows where each venue drops out of
+# eligibility. Reads FILES (cold-bars), not Postgres. ARGS must include
+# --cold-bars <dir> --cohort-start <iso> --cohort-end <iso>.
+net-buy-accumulation-coverage-funnel:
+	@uv run --package schurfer-analytics net-buy-accumulation-coverage-funnel $(ARGS)
 
 # Read-only live-probe-eligibility status for the prospective early_momentum
 # cohort (feat/early-momentum-prospective-cohort-v1) -- a genuinely fresh,
@@ -1779,6 +1786,15 @@ prod-net-buy-accumulation-report:
 		$$(test -z "$$(git status --porcelain)" \
 			&& printf '%s' '--no-working-tree-dirty' \
 			|| printf '%s' '--working-tree-dirty') $(ARGS)
+
+# On-host eligibility funnel (coverage diagnostic), mounting the frozen cold-bar
+# Parquet. ARGS must include --cohort-start <iso> --cohort-end <iso>.
+prod-net-buy-accumulation-coverage-funnel:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
+	@$(_PROD) run --rm --no-deps \
+		-v /opt/schurfer/runtime/cold-bars:/cold-bars:ro \
+		--entrypoint net-buy-accumulation-coverage-funnel analytics \
+		--cold-bars /cold-bars $(ARGS)
 
 # Read-only against prod via the SSH tunnel: HYP-024 order-flow microstructure
 # report. Read-only, so the production analytics service is not restarted; the
