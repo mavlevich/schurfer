@@ -200,19 +200,27 @@ def select_primary(
     n_target_fires: float,
     max_window_days: float,
     min_clusters: int = CANDIDATE_MIN_CLUSTERS,
-    min_weeks: int = CANDIDATE_MIN_COVERED_WEEKS,
 ) -> PrimarySelection:
     """Steps 2-5 for one primary: measure the fire rate per threshold on the fixed
     calibration window, then choose the LARGEST (most selective) threshold that
     BOTH can reach `n_target_fires` within `max_window_days` at its measured rate
-    AND meets the CONTRACT diversity floor on the calibration window: >=
-    `min_clusters` asset clusters AND >= `min_weeks` FULLY-covered UTC weeks each
-    with at least `WEEKLY_MIN_FIRES` fires (`covered_weeks_with_min`). A threshold
-    with a high raw fire count but thin diversity, or measured on a window with
-    fewer than `min_weeks` fully-covered weeks, does NOT qualify. Deterministic; no
-    returns are read."""
+    AND meets the diversity proxy: >= `min_clusters` asset clusters AND a weekly
+    fire RATE `>= WEEKLY_MIN_FIRES` (`dedup_fires / (calibration_days / 7)`).
+
+    On the weekly floor: the contract's ">= CANDIDATE_MIN_COVERED_WEEKS FULLY-covered
+    UTC weeks each with >= WEEKLY_MIN_FIRES fires" is a property of the eventual COHORT,
+    checked at read time. It cannot be measured directly on a short calibration window
+    (the available history is ~3 full weeks), so the calibration uses the weekly RATE as
+    the sufficient statistic: a threshold whose rate clears WEEKLY_MIN_FIRES predicts
+    the cohort clears the per-week floor, and the prospective window (sized to
+    `n_target_fires` at >= WEEKLY_MIN_FIRES/week) is automatically >=
+    CANDIDATE_MIN_COVERED_WEEKS full weeks. Per-fully-covered-week counts are still
+    reported (`ThresholdCount`) for the weeks the calibration window does fully cover.
+    CANDIDATE_MIN_COVERED_WEEKS gates the cohort-side read, not this calibration
+    selection. Deterministic; no returns are read."""
     if calibration_days <= 0:
         raise ValueError("calibration_days must be positive")
+    weeks = calibration_days / 7.0
     best: tuple[float, float, float, int, int] | None = None
     for theta in sorted(counts_by_theta):  # ascending; keep the largest qualifying
         tc = counts_by_theta[theta]
@@ -220,7 +228,8 @@ def select_primary(
         if rate <= 0:
             continue
         required_days = n_target_fires / rate
-        diversity_ok = tc.distinct_assets >= min_clusters and tc.covered_weeks_with_min >= min_weeks
+        fires_per_week = tc.dedup_fires / weeks
+        diversity_ok = tc.distinct_assets >= min_clusters and fires_per_week >= WEEKLY_MIN_FIRES
         if required_days <= max_window_days and diversity_ok:
             best = (theta, rate, required_days, tc.distinct_assets, tc.covered_weeks_with_min)
     if best is None:

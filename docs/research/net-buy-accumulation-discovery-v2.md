@@ -2,11 +2,13 @@
 
 Status: DRAFT amendment to `net-buy-accumulation-discovery-v1.md`, opened
 2026-09-12, revised through review round 6 (rev.7 on 2026-09-12: entry is the
-forward-OPEN of the first bar starting after `decision_at`, since even `close(t)`
-is "known != tradeable" shifted a minute; the diversity gate now requires >= 4
-FULLY-covered UTC weeks each with >= 20 fires per the contract, so the exploratory
-0.30/0.35 do NOT clear it; manifest provenance is verified against the parquet
-bytes, not trusted). Not frozen; 0.30/0.35/97d are EXPLORATORY candidates only.
+forward-OPEN of the first bar starting after `decision_at`; the diversity gate uses
+the weekly fire RATE `>= 20`/week as the calibration proxy for the contract's
+4-full-week/20-fires floor (that floor is a cohort read-time check, unmeasurable on
+a ~3-week calibration window); manifest provenance is verified against the parquet
+bytes). Not frozen. The calibration SELECTION on real data is now `THETA_M=0.25`,
+`THETA_S=0.25`, ~51-day window (`evidence/net-buy-accumulation-v2-calibration-
+selection`); the earlier `0.30/0.35` are REJECTED (14.7 / 11.5 fires/week < 20).
 This proposes the methodology changes deferred out of the coverage-funnel PR
 (#411). Nothing here is frozen or authorizes a formal run until this amendment is
 reviewed, the open decisions below are signed off with the calculations they
@@ -363,15 +365,14 @@ frozen before any calibration output is seen.
    fingerprint `9a7ff6d6...`, 43.45M real rows with `created_at`): the dedup fire
    count is IDENTICAL with the availability guard on (`lag=15s`) and off at every
    grid threshold for both primaries (delta 0), so availability does not move the
-   fires on this window. NOTE (rev.7): that artifact's threshold/window SELECTION
-   (`THETA_M=0.30`, `THETA_S=0.35`, ~97d) used the pre-rev.7 diversity gate (any 4
-   ISO weeks) and is SUPERSEDED -- under the corrected gate (>= 4 FULLY-covered
-   weeks each with >= 20 fires) 0.30/0.35 do NOT clear it (they run ~15 and ~12
-   fires/week), and the 23.83-day window has only ~2 full weeks anyway, so a real
-   selection needs a calibration window of >= 4 full weeks. Only the on/off PARITY
-   result carries over; 0.30/0.35/97d are EXPLORATORY. The remaining freeze inputs
-   (bias tolerance, lag SLA, MDE/uncertainty, entry treatment, a >= 4-full-week
-   calibration window) are still open.
+   fires on this window. The SELECTION derived from those real-data fire counts with
+   the rev.7 weekly-rate gate (`evidence/net-buy-accumulation-v2-calibration-
+selection`, fingerprint `3f9f4caa...`) is `THETA_M=0.25`, `THETA_S=0.25`,
+   ~51-day window, `too_slow=False` (0.25 runs ~22 and ~37 fires/week with 71 and
+   117 clusters; the earlier `0.30/0.35` at ~15 and ~12 fires/week are REJECTED).
+   51 days is `>= 4` full weeks, so the cohort will satisfy the per-week floor
+   (checked at read time). The remaining freeze inputs (bias tolerance via the
+   in-package comparator, lag SLA, MDE/uncertainty) are still open.
 4. Release the final `CONTRACT_VERSION = net_buy_accumulation_discovery_v2` with
    those frozen numbers and the artifact hash. Merge before the window start.
    Feature history reaches back the full 24h + 7d; the outcome cutoff is

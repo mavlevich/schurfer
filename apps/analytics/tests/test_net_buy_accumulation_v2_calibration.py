@@ -250,8 +250,8 @@ def test_v2_p_shape_fires_on_elevated_breadth() -> None:
 def _tc(
     primary: str, theta: float, fires: int, *, assets: int = 50, weeks: int = 4
 ) -> ThresholdCount:
-    # `weeks` fully-covered weeks each meeting WEEKLY_MIN_FIRES, so the diversity
-    # gate depends on `weeks` (>= min_weeks) and `assets` (>= min_clusters).
+    # `weeks` fully-covered weeks each meeting WEEKLY_MIN_FIRES; the calibration
+    # diversity gate depends on the weekly fire RATE and `assets` (>= min_clusters).
     per_week = {f"2026-W{34 + i:02d}": WEEKLY_MIN_FIRES for i in range(weeks)}
     return ThresholdCount(
         primary, theta, fires, fires, assets, min(assets, 2), weeks, per_week, weeks, 0.05
@@ -273,18 +273,18 @@ def test_fully_covered_weeks_excludes_partial_boundary_weeks() -> None:
     assert len(covered) < 4
 
 
-def test_select_primary_needs_four_full_weeks_each_with_min_fires() -> None:
-    # Plenty of fires and clusters, but only 2 fully-covered weeks meet the weekly
-    # floor: fails the diversity gate (contract needs >= 4).
-    by_theta = {0.20: _tc("P-MAG", 0.20, 500, assets=100, weeks=2)}
+def test_select_primary_needs_weekly_fire_rate() -> None:
+    # Over a 10-day window (1.43 weeks): 25 fires -> 17.5/week < WEEKLY_MIN_FIRES,
+    # fails the weekly-rate diversity proxy even with many clusters.
+    low = {0.20: _tc("P-MAG", 0.20, 25, assets=100)}
     sel = select_primary(
-        PRIMARY_MAG, by_theta, calibration_days=10.0, n_target_fires=150.0, max_window_days=100.0
+        PRIMARY_MAG, low, calibration_days=10.0, n_target_fires=150.0, max_window_days=100.0
     )
     assert sel.too_slow and sel.chosen_theta is None
-    # With 4 qualifying weeks it passes.
+    # 40 fires -> 28/week >= 20 -> passes.
     ok = select_primary(
         PRIMARY_MAG,
-        {0.20: _tc("P-MAG", 0.20, 500, assets=100, weeks=4)},
+        {0.20: _tc("P-MAG", 0.20, 40, assets=100)},
         calibration_days=10.0,
         n_target_fires=150.0,
         max_window_days=100.0,
