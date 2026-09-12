@@ -94,6 +94,7 @@ early-momentum-prospective-cohort-report = "schurfer_analytics.early_momentum_pr
 early-momentum-unused-flow-features-report = "schurfer_analytics.early_momentum_unused_flow_features_report:main"
 hyp-024-orderflow-report = "schurfer_analytics.orderflow_microstructure_report:main"
 net-buy-accumulation-report = "schurfer_analytics.net_buy_accumulation_report:main"
+net-buy-accumulation-coverage-funnel = "schurfer_analytics.net_buy_accumulation_coverage_report:main"
 cex-activity-path-coverage-audit-report = "schurfer_analytics.cex_activity_path_coverage_audit:main"
 
 [tool.setuptools.packages.find]

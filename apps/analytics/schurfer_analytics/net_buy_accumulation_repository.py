@@ -278,4 +278,137 @@ def _fetch(
     return [dict(zip(columns, r, strict=True)) for r in cursor.fetchall()]
 
 
-__all__ = ["BARS_CAPTURE_VERSION", "BARS_MARKET_TYPE", "scan_fires"]
+# --- eligibility funnel (STANDALONE coverage diagnostic) --------------------
+#
+# This is a self-contained diagnostic query: it shares NO SQL with the frozen v1
+# fire path above and changes no verdict, no `formal_run`, and no scanner
+# semantics. It answers only "where does each venue drop out of the coverage
+# pipeline?" -- absent capture, W/B incompleteness, or the baseline-activity floor
+# -- by counting, per exchange, the instrument-minutes and distinct instruments
+# that survive each stage over the decision window.
+#
+# The stage counts are cumulative and diagnostic; they are NOT a statement of the
+# frozen v1 eligibility rule (which is defined solely by the fire path). The
+# funnel deliberately does NOT apply any unfrozen policy: no B `trades_complete`
+# gate (surfaced only as the informational `b_fully_complete_diag` /
+# `b_ge_99pct_diag` columns) and no W availability gate (its NULL-receive-time
+# semantics are an open v2 question, so it is left out entirely rather than
+# resolved silently here). Because the 1440/10080 rolling windows need history
+# before each window-minute, `src` is bounded to
+# `[cohort_start - 11520 min, cohort_end)` rather than scanning the
+# whole Parquet.
+_FUNNEL_SQL_TEMPLATE = """
+WITH src AS (
+    SELECT
+        exchange, symbol, bucket_start,
+        (buy_total_notional_usd + sell_total_notional_usd) AS activity,
+        trades_complete,
+        last_trade_received_at
+    FROM read_parquet($parquet_glob)
+    WHERE market_type = '{market_type}'
+      AND capture_version = '{capture_version}'
+      AND bucket_start >= $cohort_start - INTERVAL 11520 MINUTE
+      AND bucket_start < $cohort_end
+),
+rolled AS (
+    SELECT
+        exchange, symbol, bucket_start,
+        count(*) OVER w AS w_count,
+        sum(CASE WHEN trades_complete THEN 1 ELSE 0 END) OVER w AS w_complete,
+        count(*) OVER b AS b_count,
+        sum(CASE WHEN trades_complete THEN 1 ELSE 0 END) OVER b AS b_complete,
+        sum(activity) OVER b AS b_activity_sum
+    FROM src
+    WINDOW
+        w AS (
+            PARTITION BY exchange, symbol ORDER BY bucket_start
+            RANGE BETWEEN INTERVAL 1440 MINUTE PRECEDING AND INTERVAL 1 MINUTE PRECEDING
+        ),
+        b AS (
+            PARTITION BY exchange, symbol ORDER BY bucket_start
+            RANGE BETWEEN INTERVAL 11520 MINUTE PRECEDING AND INTERVAL 1441 MINUTE PRECEDING
+        )
+)
+SELECT
+    exchange,
+    count(*) AS minutes_in_window,
+    count(DISTINCT symbol) AS instruments,
+    count(*) FILTER (WHERE w_count = 1440) AS w_present,
+    count(*) FILTER (WHERE w_count = 1440 AND w_complete = 1440) AS w_complete,
+    count(*) FILTER (
+        WHERE w_count = 1440 AND w_complete = 1440 AND b_count = 10080
+    ) AS b_present,
+    -- Final funnel stage: among W-complete + B-present minutes, how many clear the
+    -- baseline-activity floor. This is a DIAGNOSTIC stage count, NOT a statement
+    -- of the frozen eligibility rule: it deliberately does not apply any B
+    -- trades_complete or W availability policy (both are open v2 questions). The
+    -- B trades_complete columns below are diagnostics only.
+    count(*) FILTER (
+        WHERE w_count = 1440 AND w_complete = 1440 AND b_count = 10080
+          AND (b_activity_sum / 7.0) >= {baseline_floor}
+    ) AS reached_baseline_floor,
+    count(DISTINCT symbol) FILTER (
+        WHERE w_count = 1440 AND w_complete = 1440 AND b_count = 10080
+          AND (b_activity_sum / 7.0) >= {baseline_floor}
+    ) AS reached_baseline_floor_instruments,
+    count(*) FILTER (
+        WHERE w_count = 1440 AND w_complete = 1440 AND b_count = 10080
+          AND b_complete = 10080
+    ) AS b_fully_complete_diag,
+    count(*) FILTER (
+        WHERE w_count = 1440 AND w_complete = 1440 AND b_count = 10080
+          AND b_complete >= 0.99 * 10080
+    ) AS b_ge_99pct_diag
+FROM rolled
+WHERE bucket_start >= $cohort_start
+  AND bucket_start < $cohort_end
+GROUP BY exchange
+ORDER BY exchange
+"""
+
+
+def scan_eligibility_funnel(
+    *,
+    parquet_glob: str,
+    cohort_start: datetime,
+    cohort_end: datetime,
+    connection: Any = None,
+    memory_limit: str | None = None,
+    threads: int | None = None,
+) -> list[dict[str, Any]]:
+    """Per-exchange eligibility funnel over the decision window (see
+    `_FUNNEL_SQL_TEMPLATE`). Standalone diagnostic: reads only the Parquet, shares
+    no SQL with the frozen fire path, and changes no verdict. `connection` is an
+    open DuckDB connection (injected in tests); a fresh one is created otherwise.
+
+    `memory_limit` (e.g. "3GB") and `threads` bound DuckDB's resource use when we
+    own the connection, so a full 30-day run on the 4 GB prod host spills to disk
+    instead of being OOM-killed. They are the caller's resource preflight; when a
+    `connection` is injected the caller owns its pragmas and these are ignored."""
+    own = connection is None
+    if own:
+        import duckdb
+
+        connection = duckdb.connect()
+        if memory_limit is not None:
+            connection.execute(f"SET memory_limit='{memory_limit}'")
+        if threads is not None:
+            connection.execute(f"SET threads={int(threads)}")
+    try:
+        sql = _FUNNEL_SQL_TEMPLATE.format(
+            market_type=BARS_MARKET_TYPE,
+            capture_version=BARS_CAPTURE_VERSION,
+            baseline_floor=BASELINE_ACTIVITY_FLOOR_USD,
+        )
+        return _fetch(connection, sql, parquet_glob, cohort_start, cohort_end)
+    finally:
+        if own:
+            connection.close()
+
+
+__all__ = [
+    "BARS_CAPTURE_VERSION",
+    "BARS_MARKET_TYPE",
+    "scan_eligibility_funnel",
+    "scan_fires",
+]
