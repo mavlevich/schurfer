@@ -1,9 +1,11 @@
 # net-buy accumulation discovery, v2 amendment (DRAFT, for review)
 
 Status: DRAFT amendment to `net-buy-accumulation-discovery-v1.md`, opened
-2026-09-12, revised through review round 4 (rev.5 on 2026-09-12: single entry
-semantics reconciled with the prod lag data, achievable bias reference, diversity
-in the calibration selection, fingerprint pins the decision). Not frozen.
+2026-09-12, revised through review round 5 (rev.6 on 2026-09-12: entry price
+corrected back to the first tradeable price after `decision_at` -- "known" is not
+"tradeable"; MAX_FINALIZATION_LAG kept a candidate pending a full distribution +
+SLA; a fire-level availability on/off comparison, not a row-level aggregate, is
+required before freeze). Not frozen.
 This proposes the methodology changes deferred out of the coverage-funnel PR
 (#411). Nothing here is frozen or authorizes a formal run until this amendment is
 reviewed, the open decisions below are signed off with the calculations they
@@ -132,29 +134,36 @@ guard is therefore per-bar and relative to the bar's OWN minute, not to `t`:
 W and B are eligible only when all their minutes are available by this rule.
 No-trade, backfill, and capture-gap cases are separately tested.
 
-**Decision time and entry price (rev.5, resolved with the prod lag measurement).**
-The signal cannot be acted on exactly at `t`: the last feature bar (`t-1`) is only
-finalized at `decision_at(t) = max created_at over W,B`. The prod lag measurement
-(2026-09-12, `[artifact pending: fingerprinted]`) shows the finalization lag is
-tiny and tight: `created_at - bucket_start` is ~61-67s on both venues (p999 ~63s,
-max ~67s), i.e. `bucket_end + 1-7s`, with zero NULLs and no backfilled bars in the
-sample. So:
+**Decision time and entry price (rev.6: "known" is not "tradeable").** The signal
+cannot be acted on exactly at `t`: the last feature bar (`t-1`) is only finalized
+at `decision_at(t) = max created_at over W,B`. The prod lag measurement
+(2026-09-12, `[artifact pending: fingerprinted]`) put the finalization lag at
+`bucket_end + 1-7s` (`created_at - bucket_start` ~61-67s, p999 ~63s, max ~67s), so:
 
 ```
 decision_at(t) = max created_at over W,B  ~=  t + 2..7 seconds
 ```
 
-`close(t-1)` is the close of bar `[t-1, t)`, finalized at `created_at(t-1) ~ t +
-2..7s`, which is at or before `decision_at(t)`. So `close(t-1)` IS available at the
-decision instant; the timing bias is a few SECONDS against a 240-minute hold, i.e.
-negligible. v2 therefore keeps a SINGLE entry/exit semantics (no two incompatible
-definitions): **entry = `close(t-1)`, exit = `close(t+239)`, hold 240m** (the v1
-rule), now justified by the measured lag rather than by an assumption of instant
-availability. The residual ~5s and any execution latency / slippage remain
-unmeasured (`capacity_unknown`) and are resolved only by the L2/latency shadow, not
-by minute bars. This supersedes the rev.4 "next available minute close", which the
-lag data shows is unnecessarily conservative (it would delay entry a full minute
-for a ~5s effect).
+A rev.5 draft argued that because `close(t-1)` is KNOWN by `decision_at`, it could
+be the economic entry. That was wrong (corrected in rev.6): `close(t-1)` was the
+price at time `t`; by `decision_at ~ t + 5s` it is a PAST price we can no longer
+execute at. Known is not tradeable. For a precursor / pump signal the first seconds
+after `t` can hold a large share of the move, so pricing the entry at `close(t-1)`
+reintroduces an optimistic timing bias that a 240-minute hold does NOT wash out. v2
+therefore freezes:
+
+- **Economic entry (primary)**: the first price actually available AFTER
+  `decision_at(t)`. With only minute bars and no executable/tick feed, the honest
+  proxy is `close` of the first bar whose `bucket_end >= decision_at(t)` (i.e.
+  `close(t)`, the next minute's close), exit shifted to keep the 240m horizon; the
+  realized delay is reported.
+- **Diagnostic upper bound (NOT the economic result)**: the v1 `close(t-1)` entry,
+  reported alongside so the entry-timing artifact is visible (how much apparent
+  edge is just pre-move price).
+
+The true executable price after `decision_at` needs the **L2/latency shadow**,
+which starts in PARALLEL now (not after the prospective window). `close(t)` is the
+conservative, honest stand-in until then; `capacity_unknown` still applies.
 
 ### C. Unresolved entries: opportunity rate only, never the stop floor
 
@@ -248,12 +257,14 @@ Derived / partly-derived (mechanical, `[artifact pending]`):
 1. **`B_COMPLETENESS_MIN_FRACTION`** (rule A): chosen from a human-frozen grid
    (candidate 0.99), accepted only if the bias bound and stability check pass their
    (human-frozen) tolerances. `[artifact pending]`
-2. **`MAX_FINALIZATION_LAG`** (rule B): frozen from the observed
-   created_at-minus-bucket_start lag distribution, separating normal finalization
-   from backfill. The prod measurement (2026-09-12) put normal lag at `bucket_end +
-1-7s` (p999 ~63s from bucket_start, max ~67s), so a candidate of **15s past
-   bucket_end** cleanly separates normal bars from backfill. Freeze with the
-   fingerprinted lag artifact. `[artifact pending: fingerprinted run]`
+2. **`MAX_FINALIZATION_LAG`** (rule B): a CANDIDATE, not a confirmed constant. The
+   prod measurement (2026-09-12) put normal lag at `bucket_end + 1-7s` (p999 ~63s
+   from bucket_start, max ~67s); a full-window aggregate found 365 of 35.5M bars
+   later than `bucket_end + 15s` (0.001%) and 0 later than 5 min. But 15s is a
+   guess: those 365 may be an ordinary operational tail rather than backfill, so the
+   freeze needs the FULL lag distribution, a pre-registered percentile/SLA that
+   classifies normal vs backfill, and the fingerprinted artifact, not a hand-picked
+   15s. `[artifact pending: fingerprinted distribution + SLA]`
 3. **Fire thresholds `THETA_M`, `THETA_S`**: not hand-picked; the OUTPUT of the
    frozen deterministic calibration algorithm run once on the fixed scanner,
    recorded with the calibration data and code fingerprint. 0.30 and 0.35 are
@@ -328,15 +339,29 @@ frozen before any calibration output is seen.
 2. Build a calibration-only tool implementing the v2 rules (estimator,
    availability, unresolved, verdict order) with `formal_run` hard-locked. It reads
    no returns; it emits outcome-blind counts.
-3. Run the frozen algorithm once to get (`THETA_M`, `THETA_S`, window) plus a
-   fingerprinted artifact. This is mechanical, no human choice.
+3. Run the frozen algorithm once on the CALIBRATION window (before any prospective
+   start) to get (`THETA_M`, `THETA_S`, window) plus a fingerprinted artifact. This
+   is mechanical, no human choice, and it is the artifact that records WHY 0.30 /
+   0.35 / ~97d were chosen. The calibration input data is recoverable and already
+   snapshotted (the `db-2026-09-12` borg pg_dump holds the whole window with
+   `created_at`); restore it to an isolated environment, do NOT touch the live DB.
+   The run must include a FIRE-LEVEL availability on/off comparison (eligible
+   minutes, dedup fires, chosen theta, clusters/weeks/concentration, sizing window)
+   -- a row-level backfill count does NOT establish fire-set parity, because one
+   untimely bar invalidates many overlapping W/B windows.
 4. Release the final `CONTRACT_VERSION = net_buy_accumulation_discovery_v2` with
    those frozen numbers and the artifact hash. Merge before the window start.
    Feature history reaches back the full 24h + 7d; the outcome cutoff is
-   window_end + 240m. The window is never re-sized after this freeze.
+   window_end + 240m. The window is never re-sized after this freeze. The prospective
+   cohort gets its OWN registration/contract hash and its own input/outcome
+   artifacts; it is never calibrated after it starts.
 5. Collect prospectively; read once matured (after the mandatory metrics unlock
    `formal_run`). A positive result is a Discovery candidate plus a prospective
    registration and an L2/spread shadow, never "net proven" (`capacity_unknown`).
+6. Start the **L2/latency shadow in PARALLEL now**, not after the ~97-day window:
+   it is what turns the conservative `close(t)` entry into a measured executable
+   fill and `capacity_unknown` into a measured capacity, so it must accrue over the
+   same period, not begin only once the prospective read is due.
 
 ## Out of scope for this amendment
 
