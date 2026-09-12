@@ -1810,15 +1810,17 @@ prod-net-buy-accumulation-coverage-funnel:
 		--entrypoint net-buy-accumulation-coverage-funnel analytics \
 		--cold-bars /cold-bars --memory-limit 3GB --threads 2 $(ARGS)
 
-# On-host v2 calibration run (outcome-blind), memory-bounded like the funnel. ARGS
-# must include --cal-start/--cal-end and the human-frozen constants.
+# DELIBERATELY DISABLED (2026-09-12): the v2 calibration is a heavy multi-pass
+# DuckDB scan and MUST NOT run on the live production host. A prior run degraded
+# the box (memory pressure / disk spill contending with the live capture, DB and
+# web). The v2 amendment requires an ISOLATED restore of the `db-*` pg_dump, never
+# the live DB/host. Use the off-host / local target `net-buy-accumulation-v2-
+# calibration` against a restored parquet in an isolated environment instead.
 prod-net-buy-accumulation-v2-calibration:
-	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
-	@$(_PROD) run --rm --no-deps \
-		-v /opt/schurfer/runtime/cold-bars:/cold-bars:ro \
-		--entrypoint net-buy-accumulation-v2-calibration analytics \
-		--cold-bars /cold-bars --memory-limit 3GB --threads 2 \
-		--code-revision="$$(git rev-parse HEAD)" $(ARGS)
+	@echo "DISABLED: v2 calibration must NOT run on the live prod host (it degraded"
+	@echo "the box before). Restore the db-* pg_dump to an ISOLATED environment and"
+	@echo "run the off-host 'net-buy-accumulation-v2-calibration' target there."
+	@exit 1
 
 # Read-only against prod via the SSH tunnel: HYP-024 order-flow microstructure
 # report. Read-only, so the production analytics service is not restarted; the
