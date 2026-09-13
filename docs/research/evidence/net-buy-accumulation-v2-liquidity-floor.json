@@ -1,0 +1,146 @@
+{
+  "availability": "off (created_at absent in subset; on/off parity is delta 0)",
+  "b_completeness_min_fraction": 0.99,
+  "cal_window_utc": ["2026-08-18T00:00:00+00:00", "2026-09-10T20:00:00+00:00"],
+  "fingerprint_sha256": "dbd8f2c9aba9fe42a52b0e76510cff064d92c3c994a8b18a909a080fdde9e795",
+  "generated_at_utc": "2026-09-13T08:57:41.052362+00:00",
+  "git_dirty": true,
+  "git_rev": "2b2e4919414959c39bea94a86c71cafee8057481",
+  "per_primary": {
+    "P-MAG": {
+      "capacity_curve": [
+        {
+          "cap": 0.1,
+          "delivered_median_usd": 50.0,
+          "delivered_p25_usd": 50.0,
+          "flow_capped_fires": 0,
+          "min_economic_notional_usd": 50.0,
+          "n_fires": 74,
+          "n_tradeable": 15,
+          "primary": "P-MAG",
+          "target_notional_usd": 50.0,
+          "theta": 0.25,
+          "tradeable_rate": 0.20270270270270271,
+          "zero_flow_fires": 22
+        },
+        {
+          "cap": 0.1,
+          "delivered_median_usd": 100.0,
+          "delivered_p25_usd": 100.0,
+          "flow_capped_fires": 1,
+          "min_economic_notional_usd": 50.0,
+          "n_fires": 74,
+          "n_tradeable": 15,
+          "primary": "P-MAG",
+          "target_notional_usd": 100.0,
+          "theta": 0.25,
+          "tradeable_rate": 0.20270270270270271,
+          "zero_flow_fires": 22
+        },
+        {
+          "cap": 0.1,
+          "delivered_median_usd": 300.0,
+          "delivered_p25_usd": 158.17271043,
+          "flow_capped_fires": 7,
+          "min_economic_notional_usd": 50.0,
+          "n_fires": 74,
+          "n_tradeable": 15,
+          "primary": "P-MAG",
+          "target_notional_usd": 300.0,
+          "theta": 0.25,
+          "tradeable_rate": 0.20270270270270271,
+          "zero_flow_fires": 22
+        },
+        {
+          "cap": 0.1,
+          "delivered_median_usd": 925.7537183799998,
+          "delivered_p25_usd": 158.17271043,
+          "flow_capped_fires": 10,
+          "min_economic_notional_usd": 50.0,
+          "n_fires": 74,
+          "n_tradeable": 15,
+          "primary": "P-MAG",
+          "target_notional_usd": 1500.0,
+          "theta": 0.25,
+          "tradeable_rate": 0.20270270270270271,
+          "zero_flow_fires": 22
+        }
+      ],
+      "deduped_fires": 74,
+      "raw_crossings": 193
+    },
+    "P-SHAPE": {
+      "capacity_curve": [
+        {
+          "cap": 0.1,
+          "delivered_median_usd": 50.0,
+          "delivered_p25_usd": 50.0,
+          "flow_capped_fires": 0,
+          "min_economic_notional_usd": 50.0,
+          "n_fires": 126,
+          "n_tradeable": 80,
+          "primary": "P-SHAPE",
+          "target_notional_usd": 50.0,
+          "theta": 0.25,
+          "tradeable_rate": 0.6349206349206349,
+          "zero_flow_fires": 2
+        },
+        {
+          "cap": 0.1,
+          "delivered_median_usd": 100.0,
+          "delivered_p25_usd": 100.0,
+          "flow_capped_fires": 9,
+          "min_economic_notional_usd": 50.0,
+          "n_fires": 126,
+          "n_tradeable": 80,
+          "primary": "P-SHAPE",
+          "target_notional_usd": 100.0,
+          "theta": 0.25,
+          "tradeable_rate": 0.6349206349206349,
+          "zero_flow_fires": 2
+        },
+        {
+          "cap": 0.1,
+          "delivered_median_usd": 300.0,
+          "delivered_p25_usd": 140.934768975,
+          "flow_capped_fires": 35,
+          "min_economic_notional_usd": 50.0,
+          "n_fires": 126,
+          "n_tradeable": 80,
+          "primary": "P-SHAPE",
+          "target_notional_usd": 300.0,
+          "theta": 0.25,
+          "tradeable_rate": 0.6349206349206349,
+          "zero_flow_fires": 2
+        },
+        {
+          "cap": 0.1,
+          "delivered_median_usd": 484.2318155000001,
+          "delivered_p25_usd": 140.934768975,
+          "flow_capped_fires": 63,
+          "min_economic_notional_usd": 50.0,
+          "n_fires": 126,
+          "n_tradeable": 80,
+          "primary": "P-SHAPE",
+          "target_notional_usd": 1500.0,
+          "theta": 0.25,
+          "tradeable_rate": 0.6349206349206349,
+          "zero_flow_fires": 2
+        }
+      ],
+      "deduped_fires": 126,
+      "raw_crossings": 184
+    }
+  },
+  "sizing": {
+    "conservative_trailing_flow": "min(p25 trailing-15m, p25 trailing-60m), point-in-time (< fire minute)",
+    "method": "dynamic: min(target, cap * conservative_trailing_flow)",
+    "min_economic_notional_usd": 50.0,
+    "note": "fire-minute notional is diagnostic only; returns NOT read (outcome-blind)",
+    "participation_cap": 0.1,
+    "target_notionals_usd": [50.0, 100.0, 300.0, 1500.0]
+  },
+  "source_parquet": "cold-bars-window/bars-window.parquet",
+  "source_parquet_sha256": "cbb72f01edcf964992e2b3b4b19477c0f8b2c738c98c5024c768c582d312355f",
+  "theta": 0.25
+}

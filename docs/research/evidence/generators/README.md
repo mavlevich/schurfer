@@ -15,6 +15,12 @@ schurfer < lag_sla_query.sql`.
   sensitivity (the Rule A run; interrupted on prod for load and NOT completed --
   kept only as the intended generator; the real Rule A run belongs in an isolated
   environment).
+- `v2_liquidity_floor.py` -> `net-buy-accumulation-v2-liquidity-floor` (executability
+  participation floor at theta=0.25). Runs the AVAILABILITY-OFF eligibility on the
+  local window subset (no `created_at`; sound because on/off parity is delta 0) and
+  reduces fires with the maintained `net_buy_accumulation_v2_liquidity` package. Run:
+  `uv run --package schurfer-analytics python
+docs/research/evidence/generators/v2_liquidity_floor.py`.
 
 IMPORTANT caveats (do not treat these as the frozen tool):
 
