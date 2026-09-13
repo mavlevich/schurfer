@@ -1,6 +1,6 @@
 # Roadmap
 
-> Living document. Updated as we progress. Last refreshed 2026-09-10.
+> Living document. Updated as we progress. Last refreshed 2026-09-13.
 
 ## Current focus
 
@@ -8,10 +8,10 @@ Update only these four lines after every merge -- this is the fast-path
 status check, not a place for narrative.
 
 ```
-Current primary: ENG-024 partial-outcome consumer tracing, fixed in code and awaiting production verification; support: HYP-015 hold12h launch readiness
-State: ENG-020/#343, ENG-021/#345, ENG-022/#347/#399/#400/#401/#402 and ENG-023/#404 deployed through cd62fa0 on 2026-09-10; all 20 open baseline paper probes were serviced within 5.7 seconds after the ENG-023 deploy, with no missed outcomes, quote failures or restarts; HYP-024 re-run unchanged and inconclusive with no held-out read
-Next: merge, deploy and verify ENG-024, then decide whether to start the already registered HYP-015 hold12h forward paper worker; do not reopen the stopped delayed-short/orderflow line
-User decision required: no live-mode change is authorized; starting the HYP-015 hold12h production paper worker needs a separate explicit production authorization after ENG-023
+Current primary: ENG-024 partial-outcome consumer tracing, fixed in code and awaiting production verification; support: HYP-015 hold12h paper worker STARTED 2026-09-13 (owner-authorized), forward cohort accumulating
+State: HYP-015 hold12h paper worker live on prod from 2026-09-13 (paper only, 720min hold + real fees/funding, backlog stale-cleaned so the untouched cohort starts now); freed 10.26GB docker build cache so prod-backup is unblocked; frontier read (see state-and-plan-2026-09-13): executable pump-short confirmed negative (liquid_taker do_not_promote, -0.22%/ep CI<0), only positive candidate is HYP-012 cross-venue source-lead LONG (blocked on identity registry + forward cohort)
+Next: read the HYP-015 hold12h paired net verdict (with funding) in a few weeks; verify ENG-024 in prod; decide app-table retention (esp. pump_derivatives_context_samples 3GB) to keep backups healthy; do not reopen the stopped delayed-short/orderflow line or open new cold-probe lines
+User decision required: no live-mode change is authorized; disk/data retention policy for unbounded app tables (and whether to add a Hetzner block volume for longer hot history)
 ```
 
 ### Active change card — ENG-024 outcome-consumer integrity
