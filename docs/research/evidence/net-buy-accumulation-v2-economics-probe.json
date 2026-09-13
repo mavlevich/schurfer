@@ -1,0 +1,61 @@
+{
+  "cal_window_utc": ["2026-08-18T00:00:00+00:00", "2026-09-10T20:00:00+00:00"],
+  "direction": "long",
+  "fingerprint_sha256": "4a4ee9d32c3a176c9374b6f93eb62ae26d1039b1fdc900181870d1117a4383c7",
+  "generated_at_utc": "2026-09-13T09:20:03.990776+00:00",
+  "git_dirty": true,
+  "git_rev": "78968bc869c793c75b1cacb0f9cb59af7ad3425a",
+  "hold_minutes": 240,
+  "label": "EXPLORATORY returns probe (reads outcomes; NOT the frozen formal verdict)",
+  "per_primary": {
+    "P-MAG": {
+      "deduped_fires": 74,
+      "diagnostic_entry_close_t_minus_1": {
+        "mean_net": -0.0007269367482802412,
+        "median_net": -0.022191840065279543,
+        "n": 15,
+        "p25_net": -0.06106643050635554,
+        "p75_net": 0.016784838497033695,
+        "win_rate": 0.3333333333333333
+      },
+      "economic_entry_close_t": {
+        "mean_net": 0.0025476240459196284,
+        "median_net": -0.02899658952496944,
+        "n": 15,
+        "p25_net": -0.07422360291565412,
+        "p75_net": 0.021113586852665713,
+        "win_rate": 0.3333333333333333
+      },
+      "portfolio_dollar_pnl_at_300_equalweight": 34.076340774813765,
+      "tradeable_at_300": 15,
+      "unresolved_no_price": 0
+    },
+    "P-SHAPE": {
+      "deduped_fires": 126,
+      "diagnostic_entry_close_t_minus_1": {
+        "mean_net": -0.009056762581371475,
+        "median_net": -0.010145143085921259,
+        "n": 80,
+        "p25_net": -0.040218001325537066,
+        "p75_net": 0.021766829585356175,
+        "win_rate": 0.4
+      },
+      "economic_entry_close_t": {
+        "mean_net": -0.008013219404964014,
+        "median_net": -0.010897556207963364,
+        "n": 80,
+        "p25_net": -0.04090120882489547,
+        "p75_net": 0.018801558760894822,
+        "win_rate": 0.425
+      },
+      "portfolio_dollar_pnl_at_300_equalweight": -133.0965613505818,
+      "tradeable_at_300": 80,
+      "unresolved_no_price": 0
+    }
+  },
+  "round_trip_cost": 0.0022,
+  "source_parquet": "cold-bars-window/bars-window.parquet",
+  "source_parquet_sha256": "cbb72f01edcf964992e2b3b4b19477c0f8b2c738c98c5024c768c582d312355f",
+  "target_notional_usd": 300.0,
+  "theta": 0.25
+}
