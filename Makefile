@@ -1251,6 +1251,9 @@ prod-cold-bar-export-install:
 	@test -z "$$(git status --porcelain)" || (echo "ERROR: working tree not clean. Commit or stash first." && exit 1)
 	sudo install -m 0644 infra/systemd/schurfer-cold-bar-export.service /etc/systemd/system/schurfer-cold-bar-export.service
 	sudo install -m 0644 infra/systemd/schurfer-cold-bar-export.timer /etc/systemd/system/schurfer-cold-bar-export.timer
+	@# Create the export dir once here (interactive sudo works); the service target must
+	@# not sudo at runtime because the unit runs as deploy with NoNewPrivileges=true.
+	sudo mkdir -p /opt/schurfer/runtime/cold-bars
 	sudo systemctl daemon-reload
 	sudo systemctl enable --now schurfer-cold-bar-export.timer
 	@systemctl list-timers schurfer-cold-bar-export.timer --no-pager
@@ -1556,7 +1559,10 @@ _pump-age-resolution-study:
 
 prod-cold-bar-export:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
-	@sudo mkdir -p /opt/schurfer/runtime/cold-bars
+	@# No sudo here: the systemd service runs as deploy with NoNewPrivileges=true, which
+	@# blocks in-target sudo and fails the automated daily export. The directory is created
+	@# once (with sudo) by prod-cold-bar-export-install; this is a no-op when it exists.
+	@mkdir -p /opt/schurfer/runtime/cold-bars
 	@$(_PROD) run --rm --no-deps \
 		-v /opt/schurfer/runtime/cold-bars:/cold-bars \
 		--entrypoint cold-bar-export analytics --out-dir /cold-bars $(ARGS)
