@@ -185,6 +185,45 @@ activity feature was ~11x higher for monsters but outcome-selected, so a candida
 - **Stop:** no feature separates monsters from junk after costs/executability -> close
   monster-prediction; the pump-domain exit gate below then binds.
 
+**Result (verified_at 2026-09-14, exploratory, in-sample on the pump-covering window;
+DuckDB study on the extended parquet, not a registered run).** Onset-free design: 785k
+hourly points, strictly-past features, forward-3d monster label (fwd max >= +100%), base
+rate 0.32%. Trailing-24h ACTIVITY concentrates monsters MONOTONICALLY: P(monster) rises
+0.06% (decile 1) to 1.07% (decile 10), ~3.3x base. Acceleration is weak; net-buy SHARE is
+an inverted-U (moderate best, extremes fail), so net-buy alone is not the precursor. Two
+readings, and they diverge:
+
+- "Cut the junk" (a flag whose typical fire beats the market): FAILS. On a de-beta test
+  (3d forward return minus the same-hour cross-sectional median), high-activity longs have
+  a NEGATIVE median excess (-0.43%) and beat the market on <50% of fires (47%). No
+  pre-specified multi-feature combo (accumulation-not-yet-pumped, fresh ignition,
+  confirmed flow) flips the median positive; adding features only buys more tail at a
+  worse median. As a symmetric long that reliably beats the market, the line is dead.
+- "Diversified monster-harvest" (a positive-EV lottery portfolio): SURVIVES in-sample.
+  The MEAN excess over market is positive and broad: `confirmed flow` (activity decile >=8
+  AND net-buy share in 0..0.3 AND trailing-24h return >= +5%) = +1.86% mean excess,
+  positive in 4 of 5 UTC weeks (+1.66..+3.14%; only the first partial week negative),
+  and it SURVIVES excluding the top 25 winners (+1.86 -> +1.31%) spanning hundreds of
+  distinct tokens per week, so it is not a one or two token artifact.
+
+Decision: the CONTINUE trigger is met for the harvest reading only (real, broad, multi-week
+lift), so the line advances to a pre-registered forward cohort plus an executability check;
+the "cut-junk" reading is closed. This is NOT a promotable edge: it is a single-regime,
+in-sample, tail-dependent (win-vs-market < 50%) result, and tail means are the most
+overfit-prone number there is. The pump-domain exit gate does NOT bind yet; it binds only
+if this forward cohort also fails.
+
+- **Forward cohort (to pre-register before reading):** freeze the `confirmed flow` flag and
+  the de-beta 3d excess metric above; accrue untouched forward hourly points from a start
+  date after this study; evidence floor mirroring HYP-012 (>= 4 UTC weeks, >= 7 distinct
+  asset clusters, a minimum resolved-episode count); primary read = mean excess vs
+  contemporaneous market with the top-winner-exclusion robustness and per-week sign.
+  Continue only if the forward mean excess stays positive and broad; stop otherwise.
+- **Executability check (parallel):** for the flagged subset, is target size fillable at
+  the $50-300 bank on an implemented execution venue (binance/bybit), given only ~36% of
+  pump events are on those venues? If the harvest lives only in tokens we cannot fill, the
+  in-sample mean is illusory for us.
+
 ## Open questions (before locking PR order)
 
 1. Canonize this register and the ROADMAP first (PR0), so later changes flow from an

@@ -206,14 +206,29 @@ since the cold-bar export dir was empty):
   non-movers, but that first cut is outcome-selected (best entry sits mid-pump), so it
   is a candidate, not a clean precursor.
 
-Next (a bounded discovery, not a new platform, and outcome-blind at decision time):
-define move-onset per episode, then measure point-in-time features STRICTLY before
-onset over ALL episodes (monsters and matched controls) and report precision/recall/lift,
-never fitting to LSK. Candidate features for review: trailing activity/volume ramp,
-cross-venue breadth (how many venues are buying), OI growth, repeating net-buy bursts
-(structure, not a single spike), acceleration, liquidation cascades. Colleague input on
-which precursors to test is explicitly wanted here -- a fresh eye may see a precursor we
-do not. Confirmation still needs an untouched forward cohort; this is discovery.
+Clean study result (2026-09-14, exploratory, in-sample). Redone onset-free (785k hourly
+points, strictly-past features, forward-3d monster label, base rate 0.32%): trailing-24h
+ACTIVITY concentrates monsters monotonically ~3.3x (decile 10 P(monster) 1.07% vs 0.06%
+at decile 1); acceleration weak; net-buy share inverted-U (not the precursor alone). The
+tradeable verdict splits: as a flag whose typical fire beats the market it FAILS (de-beta
+3d median excess -0.43%, win-vs-market 47%, and no pre-specified multi-feature combo flips
+the median positive), but as a diversified positive-EV lottery portfolio it SURVIVES: the
+`confirmed flow` flag (activity decile >=8 AND net-buy share 0..0.3 AND trailing-24h return
+
+> = +5%) has +1.86% MEAN excess over the same-hour market, positive in 4 of 5 UTC weeks and
+> robust to excluding the top 25 winners (down only to +1.31%), across hundreds of tokens.
+> Full go/no-go in `docs/research/decision-register.md` (Monster-precursor discovery card).
+
+Next (the CONTINUE trigger is met for the harvest reading; confirmation is a forward
+cohort, not in-sample iteration): pre-register a forward precursor cohort that freezes the
+`confirmed flow` flag and the de-beta 3d excess metric, with a HYP-012-style evidence floor
+(>= 4 UTC weeks, >= 7 asset clusters, a minimum resolved-episode count), reading mean
+excess vs the contemporaneous market with the top-winner-exclusion robustness; and in
+parallel a minimal executability check (is target size fillable at the $50-300 bank on
+binance/bybit for the flagged subset, given only ~36% of pump events are on those venues).
+Colleague input on additional precursors (cross-venue breadth, OI growth, liquidation
+cascades) is still wanted. Do not trade in-sample; the pump-domain exit gate binds only if
+this forward cohort also fails.
 
 ### Current delivery sequence — 2026-09-07
 
