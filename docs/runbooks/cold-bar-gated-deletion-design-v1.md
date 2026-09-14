@@ -92,8 +92,14 @@ cutoff-wide call), so the set Timescale removes is provably exactly the validate
 
 ### The gated-drop job
 
-- A **separate systemd service + timer**, run AFTER the daily export and offsite backup (e.g. 05:00,
-  export 03:30, backup 04:00). NOT embedded in `prod-deploy` or in the backup script.
+- A **separate systemd service + timer** (`schurfer-cold-bar-gated-deletion.{service,timer}`,
+  Makefile `prod-cold-bar-gated-deletion-dry-run` / `-install`), run AFTER the daily export and
+  offsite backup (05:00; export 03:30, backup 04:00). NOT embedded in `prod-deploy` or the backup
+  script. The unit is hardened (`NoNewPrivileges`) and the make target uses NO in-target sudo (the
+  bug that broke the export before). **PREREQUISITE to confirm in the integration step:** the job's
+  run context (the analytics container, or the host) must be able to call `borg` against the offsite
+  repo -- borg binary + `backup.env` + the SSH identity. If the analytics container lacks borg, the
+  job runs on the host or a borg-capable image instead. PR 1 ships this DRY-RUN only.
 - **`--dry-run` by default**: it prints the candidate list and per-day verdicts and drops nothing.
   Active deletion is a separate, explicit enablement (a flag/env), turned on only after a dry-run has
   been reconciled on prod.

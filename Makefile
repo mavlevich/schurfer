@@ -1258,6 +1258,16 @@ prod-cold-bar-export-install:
 	sudo systemctl enable --now schurfer-cold-bar-export.timer
 	@systemctl list-timers schurfer-cold-bar-export.timer --no-pager
 
+prod-cold-bar-gated-deletion-install:
+	@test "$$(git branch --show-current)" = "main" || (echo "ERROR: not on main (on '$$(git branch --show-current)'). Install only from main." && exit 1)
+	@test -z "$$(git status --porcelain)" || (echo "ERROR: working tree not clean. Commit or stash first." && exit 1)
+	@# Installs the DRY-RUN timer only (PR 1): it reports and deletes nothing.
+	sudo install -m 0644 infra/systemd/schurfer-cold-bar-gated-deletion.service /etc/systemd/system/schurfer-cold-bar-gated-deletion.service
+	sudo install -m 0644 infra/systemd/schurfer-cold-bar-gated-deletion.timer /etc/systemd/system/schurfer-cold-bar-gated-deletion.timer
+	sudo systemctl daemon-reload
+	sudo systemctl enable --now schurfer-cold-bar-gated-deletion.timer
+	@systemctl list-timers schurfer-cold-bar-gated-deletion.timer --no-pager
+
 prod-offsite-backup-install:
 	@test "$$(git branch --show-current)" = "main" || (echo "ERROR: not on main (on '$$(git branch --show-current)'). Install only from main." && exit 1)
 	@test -z "$$(git status --porcelain)" || (echo "ERROR: working tree not clean. Commit or stash first." && exit 1)
@@ -1566,6 +1576,18 @@ prod-cold-bar-export:
 	@$(_PROD) run --rm --no-deps \
 		-v /opt/schurfer/runtime/cold-bars:/cold-bars \
 		--entrypoint cold-bar-export analytics --out-dir /cold-bars $(ARGS)
+
+prod-cold-bar-gated-deletion-dry-run:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
+	@# DRY-RUN ONLY (PR 1): prints which cold-bar chunks would be dropped; deletes nothing.
+	@# No in-target sudo (the systemd unit is NoNewPrivileges). PREREQUISITE to confirm:
+	@# the analytics container must be able to call borg against the offsite repo (borg
+	@# binary + backup.env + SSH identity); if it cannot, run this on the host instead.
+	@$(_PROD) run --rm --no-deps \
+		-v /opt/schurfer/runtime/cold-bars:/cold-bars \
+		-v /opt/schurfer/runtime/backup.env:/backup.env:ro \
+		--entrypoint cold-bar-gated-deletion analytics \
+		--cold-bars-dir /cold-bars --backup-env /backup.env --cutoff-days 40 $(ARGS)
 
 prod-paper-replay-reconciliation:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
