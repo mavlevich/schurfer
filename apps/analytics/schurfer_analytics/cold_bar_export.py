@@ -66,6 +66,18 @@ class ExportManifest:
     sha256: str
     data_keys: tuple[dict[str, str], ...]
     exported_at: str
+    # Whole-row fingerprints for cold-bar gated deletion. `source_fingerprint` is
+    # recomputed from the live source at drop time to prove nothing changed since
+    # export; `file_fingerprint` is recomputed by extracting the offsite Parquet to
+    # prove the archived content is intact; `fidelity_verified` records whether the
+    # two matched at export (the file faithfully captured the source). All optional
+    # so manifests written before these fields still load; the drop gate treats a
+    # missing fingerprint or unverified fidelity as "cannot prove safe" and refuses
+    # to delete (fail-closed). Fidelity is recorded, never a hard export failure, so
+    # a cross-engine serialization quirk can never break the production exporter.
+    source_fingerprint: str | None = None
+    file_fingerprint: str | None = None
+    fidelity_verified: bool | None = None
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), indent=2, sort_keys=True) + "\n"
@@ -130,18 +142,104 @@ def data_keys(connection: Any, start: datetime, until: datetime) -> tuple[dict[s
     return tuple(dict(zip(DATA_KEY_COLUMNS, map(str, row), strict=True)) for row in rows)
 
 
+# Bumped when the fingerprint's construction (columns, serialization, hash)
+# changes; a receipt carrying a different version is not comparable and must not
+# license a drop. SHA-256 (not MD5) over an order-independent aggregate of a
+# per-row hash of the WHOLE row (every column, via to_json), so ANY change --
+# including created_at, which is research-significant for availability, and
+# including columns outside payload_hash -- is detected, and a row added or
+# removed changes the aggregate. Versioned string form: "<version>:<hex>".
+FINGERPRINT_VERSION = "cbfp_v1"
+
+
+def _fingerprint_over(connection: Any, relation_sql: str, where_sql: str | None) -> str:
+    """Versioned, order-independent, whole-row SHA-256 fingerprint of a relation.
+
+    ``to_json(src)`` serializes every column of the row, so the fingerprint
+    covers the entire row rather than a subset like ``payload_hash``. Rows are
+    hashed individually and aggregated in sorted order, so scan order does not
+    matter. The same expression runs over the Postgres source and over the
+    exported Parquet, which is what lets export prove the file faithfully
+    captured the source (see ``export_day``).
+    """
+    where = f" WHERE {where_sql}" if where_sql else ""
+    row = connection.execute(
+        "SELECT to_hex(sha256(string_agg(rh, '' ORDER BY rh))) FROM ("  # noqa: S608
+        "SELECT to_hex(sha256(CAST(to_json(src) AS BLOB))) AS rh "
+        f"FROM {relation_sql} AS src{where}"
+        ")"
+    ).fetchone()
+    if row is None or row[0] is None:
+        raise ValueError("fingerprint: no rows to fingerprint")
+    return f"{FINGERPRINT_VERSION}:{row[0]}"
+
+
+def source_fingerprint(connection: Any, start: datetime, until: datetime) -> str:
+    """Whole-row fingerprint of the day's rows in the live source table.
+
+    Recorded at export and recomputed at drop time; a mismatch means a
+    backfill/repair changed the day (any column, including created_at) and blocks
+    deletion until a new versioned export supersedes the stale archive.
+    """
+    return _fingerprint_over(connection, f"pg.{SOURCE_TABLE}", _where(start, until))
+
+
+def file_fingerprint(connection: Any, parquet_path: Path) -> str:
+    """The same whole-row fingerprint computed over an exported Parquet file.
+
+    Equality with ``source_fingerprint`` at export proves the file faithfully
+    captured the source (not merely the right row count); recomputed by
+    extracting the offsite copy at drop time it proves the archived content is
+    intact, order-independently (stronger than the whole-file byte sha).
+    """
+    return _fingerprint_over(connection, f"read_parquet('{_quote(str(parquet_path))}')", None)
+
+
+def _fingerprint_fields(
+    connection: Any,
+    start: datetime,
+    until: datetime,
+    target: Path,
+    with_fingerprint: bool,
+) -> dict[str, Any]:
+    """The manifest's fingerprint fields, or all-None when fingerprinting is off.
+
+    Fidelity is RECORDED, never raised: a source/file mismatch marks the day
+    non-droppable (the gate rejects it) rather than failing the export, so a
+    cross-engine serialization quirk can never stop history from being preserved.
+    """
+    if not with_fingerprint:
+        return {"source_fingerprint": None, "file_fingerprint": None, "fidelity_verified": None}
+    src_fp = source_fingerprint(connection, start, until)
+    file_fp = file_fingerprint(connection, target)
+    return {
+        "source_fingerprint": src_fp,
+        "file_fingerprint": file_fp,
+        "fidelity_verified": src_fp == file_fp,
+    }
+
+
 def export_day(
     connection: Any,
     day: date,
     out_dir: Path,
     *,
     exported_at: datetime | None = None,
+    with_fingerprint: bool = False,
 ) -> ExportManifest:
     """Write one UTC day to Parquet and describe it in a manifest.
 
     Raises when the day holds no rows. An empty file is indistinguishable from a
     day nobody exported, and the difference matters enormously once deletion is
     driven by these manifests.
+
+    ``with_fingerprint`` is OFF by default so the whole-row fingerprint -- new,
+    unbenchmarked work that has not yet been validated against real Postgres --
+    is NOT computed by the production exporter until it is explicitly enabled
+    (after the daily-volume benchmark and the Postgres->DuckDB integration test;
+    see docs/runbooks/cold-bar-gated-deletion-design-v1.md). Gated deletion needs
+    fingerprints, but deletion is not enabled either, so keeping this off changes
+    nothing that runs today.
     """
     start, until = day_bounds(day)
     row_count = count_rows(connection, start, until)
@@ -186,6 +284,7 @@ def export_day(
         sha256=sha256_file(target),
         data_keys=data_keys(connection, start, until),
         exported_at=(exported_at or datetime.now(UTC)).isoformat(),
+        **_fingerprint_fields(connection, start, until, target, with_fingerprint),
     )
     (out_dir / f"bars-{day.isoformat()}.manifest.json").write_text(manifest.to_json())
     return manifest
@@ -306,6 +405,15 @@ def main() -> None:
         default=0,
         help="stop after this many days (0 means no limit)",
     )
+    parser.add_argument(
+        "--with-fingerprint",
+        action="store_true",
+        help=(
+            "compute the whole-row source/file fingerprints (OFF by default; only "
+            "enable after the daily-volume benchmark and the Postgres->DuckDB "
+            "integration test, per the gated-deletion runbook)"
+        ),
+    )
     args = parser.parse_args()
 
     dsn = os.getenv("DATABASE_URL")
@@ -327,7 +435,7 @@ def main() -> None:
             targets = targets[: args.max_days]
 
     for day in targets:
-        manifest = export_day(connection, day, args.out_dir)
+        manifest = export_day(connection, day, args.out_dir, with_fingerprint=args.with_fingerprint)
         verified = verify_local(args.out_dir, day)
         sys.stdout.write(
             f"{verified.day}: {verified.row_count} rows, "
