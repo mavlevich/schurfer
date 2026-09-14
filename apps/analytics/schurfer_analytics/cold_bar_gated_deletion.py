@@ -21,7 +21,7 @@ repo, or production.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 # Must match cold_bar_export.SCHEMA_VERSION; a receipt written under a different
 # schema is not proof about this format and blocks the drop.
@@ -46,7 +46,9 @@ class DropReceipt:
     manifest_sha256: str
     row_count: int
     schema_version: str
-    source_fingerprint: str
+    source_fingerprint: str  # whole-row fingerprint of the source at export
+    file_fingerprint: str  # whole-row fingerprint of the exported Parquet
+    fidelity_verified: bool  # source_fingerprint == file_fingerprint at export time
 
 
 @dataclass(frozen=True)
@@ -65,20 +67,26 @@ class DayEvidence:
     archive_present: bool  # the receipt's named Borg archive exists
     extracted_parquet_sha256: str | None  # sha of the parquet EXTRACTED from that archive
     extracted_manifest_sha256: str | None  # sha of the manifest EXTRACTED from that archive
-    recomputed_fingerprint: str | None  # fingerprint recomputed from the live source now
+    recomputed_fingerprint: str | None  # source fingerprint recomputed from the live source now
+    recomputed_file_fingerprint: str | None  # recomputed from the EXTRACTED offsite parquet
 
 
 def is_eligible(chunk_range_end: datetime, now: datetime, cutoff_days: int) -> bool:
     """A chunk is a candidate only once it is entirely older than the buffer.
 
     Cutoff is anchored to UTC midnight so it does not depend on the time of day
-    the job runs. ``chunk_range_end`` is the exclusive upper bound of the chunk's
-    time range; the whole chunk is older than the cutoff iff its end is at or
-    before it.
+    the job runs OR on the timezone of the ``now`` that is passed in. Both
+    arguments must be timezone-aware; a naive datetime is rejected rather than
+    guessed at, since guessing its zone is exactly how an off-by-one-day drop
+    slips in. ``chunk_range_end`` is the exclusive upper bound of the chunk's
+    range; the whole chunk is older than the cutoff iff its end is at or before it.
     """
-    midnight = datetime(now.year, now.month, now.day, tzinfo=now.tzinfo)
+    if now.tzinfo is None or chunk_range_end.tzinfo is None:
+        raise ValueError("is_eligible requires timezone-aware datetimes")
+    now_utc = now.astimezone(UTC)
+    midnight = datetime(now_utc.year, now_utc.month, now_utc.day, tzinfo=UTC)
     cutoff = midnight - timedelta(days=cutoff_days)
-    return chunk_range_end <= cutoff
+    return chunk_range_end.astimezone(UTC) <= cutoff
 
 
 def drop_decision(ev: DayEvidence) -> tuple[str, str]:
@@ -93,13 +101,20 @@ def drop_decision(ev: DayEvidence) -> tuple[str, str]:
         return BLOCK, "local manifest missing"
     if ev.receipt is None:
         return BLOCK, "offsite receipt missing"
+    if ev.receipt.day != ev.day:
+        return BLOCK, (
+            f"receipt is for day {ev.receipt.day!r}, not the candidate {ev.day!r} "
+            "(a receipt from another day must never license this drop)"
+        )
     if ev.receipt.schema_version != EXPECTED_SCHEMA_VERSION:
         return BLOCK, (
             f"receipt schema_version {ev.receipt.schema_version!r} "
             f"is not {EXPECTED_SCHEMA_VERSION!r}"
         )
-    if not ev.receipt.source_fingerprint:
-        return BLOCK, "receipt has no source_fingerprint (exported before fingerprints existed)"
+    if not ev.receipt.source_fingerprint or not ev.receipt.file_fingerprint:
+        return BLOCK, "receipt has no fingerprints (exported before fingerprints existed)"
+    if not ev.receipt.fidelity_verified:
+        return BLOCK, "export did not verify file/source fidelity for this day (non-droppable)"
     if not ev.receipt_offsite_confirmed:
         return BLOCK, "receipt is not itself confirmed present in an offsite archive"
     if not ev.archive_present:
@@ -112,6 +127,10 @@ def drop_decision(ev: DayEvidence) -> tuple[str, str]:
         return BLOCK, "manifest could not be extracted from the offsite archive"
     if ev.extracted_manifest_sha256 != ev.receipt.manifest_sha256:
         return BLOCK, "extracted manifest sha256 does not match the receipt"
+    if ev.recomputed_file_fingerprint is None:
+        return BLOCK, "could not recompute the file fingerprint from the extracted parquet"
+    if ev.recomputed_file_fingerprint != ev.receipt.file_fingerprint:
+        return BLOCK, "extracted parquet content changed (file fingerprint mismatch)"
     if ev.recomputed_fingerprint is None:
         return BLOCK, "could not recompute the source fingerprint"
     if ev.recomputed_fingerprint != ev.receipt.source_fingerprint:
@@ -138,10 +157,27 @@ def plan_drops(days_oldest_first: tuple[DayEvidence, ...]) -> DropPlan:
     as fast as verification does.
     """
     to_drop: list[str] = []
+    prev: date | None = None
     for index, ev in enumerate(days_oldest_first):
+        current = date.fromisoformat(ev.day)
+        # The "contiguous" property is VERIFIED, not assumed: the caller's list must
+        # be strictly ascending consecutive calendar days. A gap (a missing day) or
+        # any out-of-order day halts the frontier here, so deletion never jumps over
+        # an unconfirmed hole and never trusts an unsorted candidate list.
+        if prev is not None and current != prev + timedelta(days=1):
+            held = tuple(e.day for e in days_oldest_first[index + 1 :])
+            return DropPlan(
+                to_drop=tuple(to_drop),
+                blocked_at=(
+                    ev.day,
+                    f"not consecutive after {prev.isoformat()} (calendar gap or out-of-order)",
+                ),
+                held_after_block=held,
+            )
         decision, reason = drop_decision(ev)
         if decision == DROP:
             to_drop.append(ev.day)
+            prev = current
             continue
         held = tuple(e.day for e in days_oldest_first[index + 1 :])
         return DropPlan(to_drop=tuple(to_drop), blocked_at=(ev.day, reason), held_after_block=held)

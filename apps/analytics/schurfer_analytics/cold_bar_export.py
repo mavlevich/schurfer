@@ -66,12 +66,18 @@ class ExportManifest:
     sha256: str
     data_keys: tuple[dict[str, str], ...]
     exported_at: str
-    # Order-independent fingerprint of the day's source rows, used by cold-bar
-    # gated deletion to prove the source has not changed (backfill/repair) between
-    # export and the eventual chunk drop. Optional so manifests written before this
-    # field existed still load; a drop gate treats a missing fingerprint as
-    # "cannot prove unchanged" and refuses to delete (fail-closed).
+    # Whole-row fingerprints for cold-bar gated deletion. `source_fingerprint` is
+    # recomputed from the live source at drop time to prove nothing changed since
+    # export; `file_fingerprint` is recomputed by extracting the offsite Parquet to
+    # prove the archived content is intact; `fidelity_verified` records whether the
+    # two matched at export (the file faithfully captured the source). All optional
+    # so manifests written before these fields still load; the drop gate treats a
+    # missing fingerprint or unverified fidelity as "cannot prove safe" and refuses
+    # to delete (fail-closed). Fidelity is recorded, never a hard export failure, so
+    # a cross-engine serialization quirk can never break the production exporter.
     source_fingerprint: str | None = None
+    file_fingerprint: str | None = None
+    fidelity_verified: bool | None = None
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), indent=2, sort_keys=True) + "\n"
@@ -136,32 +142,57 @@ def data_keys(connection: Any, start: datetime, until: datetime) -> tuple[dict[s
     return tuple(dict(zip(DATA_KEY_COLUMNS, map(str, row), strict=True)) for row in rows)
 
 
-def source_fingerprint(connection: Any, start: datetime, until: datetime) -> str:
-    """An order-independent fingerprint of the day's source rows.
+# Bumped when the fingerprint's construction (columns, serialization, hash)
+# changes; a receipt carrying a different version is not comparable and must not
+# license a drop. SHA-256 (not MD5) over an order-independent aggregate of a
+# per-row hash of the WHOLE row (every column, via to_json), so ANY change --
+# including created_at, which is research-significant for availability, and
+# including columns outside payload_hash -- is detected, and a row added or
+# removed changes the aggregate. Versioned string form: "<version>:<hex>".
+FINGERPRINT_VERSION = "cbfp_v1"
 
-    Hashes the identifying columns (the primary key exchange/market_type/symbol/
-    capture_version/bucket_start, plus universe_version) together with the row's
-    `payload_hash`, per row, then aggregates those row hashes in sorted order so
-    the result does not depend on scan order. `payload_hash` already excludes
-    `created_at` (see the collector's writer), so this compares BAR DATA, not
-    ingestion metadata, and does not churn on a created_at-only rewrite; a row
-    added or removed changes the primary-key set and therefore the aggregate.
 
-    Recomputed at drop time and required to equal the value recorded at export
-    time; a mismatch means a backfill/repair changed the day and blocks deletion.
+def _fingerprint_over(connection: Any, relation_sql: str, where_sql: str | None) -> str:
+    """Versioned, order-independent, whole-row SHA-256 fingerprint of a relation.
+
+    ``to_json(src)`` serializes every column of the row, so the fingerprint
+    covers the entire row rather than a subset like ``payload_hash``. Rows are
+    hashed individually and aggregated in sorted order, so scan order does not
+    matter. The same expression runs over the Postgres source and over the
+    exported Parquet, which is what lets export prove the file faithfully
+    captured the source (see ``export_day``).
     """
+    where = f" WHERE {where_sql}" if where_sql else ""
     row = connection.execute(
-        "SELECT md5(string_agg(rh, '' ORDER BY rh)) FROM ("  # noqa: S608
-        "SELECT md5("
-        "exchange || '|' || market_type || '|' || symbol || '|' || capture_version || '|' || "
-        "universe_version || '|' || CAST(epoch_ms(bucket_start) AS BIGINT)::VARCHAR || '|' || "
-        "hex(payload_hash)"
-        f") AS rh FROM pg.{SOURCE_TABLE} WHERE {_where(start, until)}"
+        "SELECT to_hex(sha256(string_agg(rh, '' ORDER BY rh))) FROM ("  # noqa: S608
+        "SELECT to_hex(sha256(CAST(to_json(src) AS BLOB))) AS rh "
+        f"FROM {relation_sql} AS src{where}"
         ")"
     ).fetchone()
     if row is None or row[0] is None:
-        raise ValueError("source_fingerprint: no rows to fingerprint")
-    return str(row[0])
+        raise ValueError("fingerprint: no rows to fingerprint")
+    return f"{FINGERPRINT_VERSION}:{row[0]}"
+
+
+def source_fingerprint(connection: Any, start: datetime, until: datetime) -> str:
+    """Whole-row fingerprint of the day's rows in the live source table.
+
+    Recorded at export and recomputed at drop time; a mismatch means a
+    backfill/repair changed the day (any column, including created_at) and blocks
+    deletion until a new versioned export supersedes the stale archive.
+    """
+    return _fingerprint_over(connection, f"pg.{SOURCE_TABLE}", _where(start, until))
+
+
+def file_fingerprint(connection: Any, parquet_path: Path) -> str:
+    """The same whole-row fingerprint computed over an exported Parquet file.
+
+    Equality with ``source_fingerprint`` at export proves the file faithfully
+    captured the source (not merely the right row count); recomputed by
+    extracting the offsite copy at drop time it proves the archived content is
+    intact, order-independently (stronger than the whole-file byte sha).
+    """
+    return _fingerprint_over(connection, f"read_parquet('{_quote(str(parquet_path))}')", None)
 
 
 def export_day(
@@ -220,7 +251,11 @@ def export_day(
         sha256=sha256_file(target),
         data_keys=data_keys(connection, start, until),
         exported_at=(exported_at or datetime.now(UTC)).isoformat(),
-        source_fingerprint=source_fingerprint(connection, start, until),
+        source_fingerprint=(src_fp := source_fingerprint(connection, start, until)),
+        file_fingerprint=(file_fp := file_fingerprint(connection, target)),
+        # Recorded, not enforced: a mismatch marks the day non-droppable rather
+        # than failing the export (which would stop preserving history).
+        fidelity_verified=(src_fp == file_fp),
     )
     (out_dir / f"bars-{day.isoformat()}.manifest.json").write_text(manifest.to_json())
     return manifest

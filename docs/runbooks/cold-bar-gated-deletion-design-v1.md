@@ -1,8 +1,11 @@
 # Cold-bar gated deletion — design v1 (DRAFT, NOT FROZEN)
 
-> **STATUS: DESIGN DRAFT — NOT FROZEN, NO CODE YET.** Colleague verdict: approve-after-changes;
-> this revision folds in the three required corrections. It is the spec for the eventual PR, to be
-> code-reviewed together. Nothing here changes production until the delivery order below is executed.
+> **STATUS: IN PROGRESS — pure core landed and unit-tested; impure collectors, CLI, migration and
+> systemd still to come; nothing enabled in production.** The safety-critical pure decision
+> (`cold_bar_gated_deletion.py`) and the export-side fingerprint (`cold_bar_export.py`) exist with
+> tests; the delivery order below is not yet complete and deletion is NOT active anywhere. Enabling
+> deletion additionally requires the legacy fingerprint backfill, the daily-volume benchmark, and a
+> real PostgreSQL→DuckDB integration test (see Open items).
 
 ## Problem
 
@@ -53,15 +56,19 @@ exported, verified, and present in a named offsite archive, and proven unchanged
    **extracts** the specific `bars-<day>.parquet` and its manifest from the receipt's named archive
    (`borg extract` to a temp path or stream), recomputes SHA-256, and requires it to equal the receipt's
    recorded hash for BOTH files. A name/size match from `borg list` is not sufficient proof.
-4. **Source unchanged since export (P1 #2).** Between export (D+1) and drop (D+40) a backfill/repair
-   could have changed the day's rows. The fingerprint is an **order-independent aggregate over every
-   row of the day** of `(primary key, payload_hash)`. `payload_hash` already exists and, by the writer
-   (`apps/collector/internal/momentumcapture/writer.go`), **intentionally excludes `created_at`** — so
-   the fingerprint compares BAR DATA, not ingestion metadata, and does not churn on a created_at-only
-   rewrite; row additions/deletions still change the PK-set and therefore the aggregate. The gated-drop
-   **recomputes** this from the live table and requires equality with the receipt. Mismatch → the day's
-   data changed → **no drop**, emit `needs_versioned_reexport` (a new versioned export must supersede
-   the stale archive first).
+4. **Content intact + source unchanged since export (P1 #1, #4, #2-corrected).** The fingerprint is a
+   VERSIONED (`FINGERPRINT_VERSION`), SHA-256, order-independent aggregate over a per-row hash of the
+   WHOLE row (`to_json(row)`, every column) — NOT `payload_hash`, which does not cover every exported
+   column, and INCLUDING `created_at`, which is research-significant (it defines availability; see
+   `net-buy-accumulation-discovery-v2.md`). So any changed, added, or removed row is detected. Two
+   fingerprints are recorded at export: `source_fingerprint` (over the live source) and
+   `file_fingerprint` (over the exported Parquet); their equality at export (`fidelity_verified`)
+   proves the file faithfully captured the source (P1 #1) — recorded, never a hard export failure, so
+   a cross-engine serialization quirk cannot break the exporter. The drop gate requires
+   `fidelity_verified`, recomputes `file_fingerprint` from the EXTRACTED offsite parquet (content
+   intact, order-independent — stronger than the whole-file byte sha), and recomputes
+   `source_fingerprint` from the live table (unchanged since export). Any mismatch → **no drop**;
+   a source change emits `needs_versioned_reexport`.
 5. **Exact drop set (P1 #3).** `drop_chunks(older_than=X)` deletes EVERY chunk fully before `X`, not one
    named chunk, so a broad call keyed on the cutoff would also delete an unvalidated day inside the
    range. The job therefore NEVER issues a cutoff-wide `drop_chunks`. It computes the ordered candidate
@@ -125,6 +132,20 @@ First PR: **`bybit_momentum_bars_1m` only.** Do not generalize to the other rete
 6. After the first real deletion: verify DB size, remaining chunk ranges, Borg archives, manifests,
    alerts, and that a research reader still reads the boundary day.
 
+## Gates before enabling deletion (must all pass)
+
+- **Legacy fingerprint backfill.** Manifests exported before fingerprints existed have no
+  `source_fingerprint`/`file_fingerprint`, so the gate blocks their days forever and the contiguous
+  prefix can never advance past them. Before the automatic retention is removed, those in-window days
+  must be re-exported (or given a versioned receipt) so every retained day carries a fingerprint.
+- **Daily-volume benchmark.** The whole-row `to_json` fingerprint is new work added to the running
+  production exporter (~1.5M rows/day). Benchmark it on a real day and confirm it stays well within
+  the export's time budget before shipping.
+- **Real PostgreSQL→DuckDB integration test.** The current fixture is DuckDB standing in for Postgres,
+  so it cannot prove `to_json` renders a row identically when scanned from Postgres vs read from the
+  exported Parquet — exactly what `fidelity_verified` depends on. A test against real Postgres must
+  confirm `source_fingerprint == file_fingerprint` on a real day before fidelity is trusted for drops.
+
 ## Open items for review
 
 - Exact shape of the row fingerprint (PK columns + `payload_hash`); whether `payload_hash` already
@@ -133,5 +154,7 @@ First PR: **`bybit_momentum_bars_1m` only.** Do not generalize to the other rete
   `runtime/cold-bars/` is the canonical source (mirrors the manifest pattern, and is itself archived to
   Borg by the next backup so gate B can require its offsite presence). A small DB table, if added, is an
   OPTIONAL index only, never the source of truth.
-- `payload_hash` already exists per row (no new column); the fingerprint reuses it. Its deliberate
-  exclusion of `created_at` (writer.go) is a feature here, not a gap — see gate B #4.
+- The fingerprint hashes the WHOLE row via `to_json` rather than reusing `payload_hash` (which does
+  not cover every column) and deliberately INCLUDES `created_at` (research-significant for
+  availability). Row-hash serialization is `to_json`; if a future need arises for a stricter canonical
+  form (explicit per-column casts), bump `FINGERPRINT_VERSION`.

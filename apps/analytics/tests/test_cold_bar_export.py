@@ -191,3 +191,16 @@ def test_a_late_row_changes_the_manifest_rather_than_being_lost(tmp_path: Path) 
     assert second.sha256 != first.sha256
     # the late row also changes the order-independent source fingerprint
     assert second.source_fingerprint != first.source_fingerprint
+
+
+def test_export_records_matching_fidelity_and_versioned_fingerprints(tmp_path: Path) -> None:
+    from schurfer_analytics.cold_bar_export import FINGERPRINT_VERSION
+
+    manifest = export_day(_connection(3), _DAY, tmp_path)
+    # the exported file faithfully captured the source: the whole-row fingerprint
+    # computed over the Parquet equals the one computed over the source
+    assert manifest.source_fingerprint == manifest.file_fingerprint
+    assert manifest.fidelity_verified is True
+    # fingerprints are versioned so an incompatible construction is never compared
+    assert manifest.source_fingerprint is not None
+    assert manifest.source_fingerprint.startswith(f"{FINGERPRINT_VERSION}:")
