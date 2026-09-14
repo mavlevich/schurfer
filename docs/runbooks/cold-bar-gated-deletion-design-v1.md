@@ -46,15 +46,30 @@ exported, verified, and present in a named offsite archive, and proven unchanged
 **B. Before dropping a day's chunk (the gated-drop job):**
 
 1. The local manifest for that day exists.
-2. A per-day **offsite receipt** for exactly that day exists.
-3. The receipt names a specific Borg archive; that archive **exists** and **contains** the specific
-   Parquet + manifest at the recorded path with the recorded SHA-256.
-4. **Source unchanged since export.** Between export (D+1) and drop (D+40) a backfill/repair could have
-   changed the day's rows. The manifest/receipt carry a deterministic **row fingerprint** (an order-
-   independent hash over primary key + a per-row `payload_hash`), and the gated-drop **recomputes** it
-   from the live table before dropping. Mismatch → the day changed → **no drop**, emit a
-   `needs_versioned_reexport` signal (a new versioned export supersedes the stale archive).
-5. Only if every check passes → `drop_chunks` for that one day.
+2. A per-day **offsite receipt** for exactly that day exists locally **and is itself present in a named
+   offsite archive** (the receipt is archived by the backup that runs after it is written; if its
+   offsite copy is not confirmed by the time of the drop, the drop is blocked).
+3. **SHA proof by extraction, not by listing (P1 #4).** `borg list` shows names only. The job
+   **extracts** the specific `bars-<day>.parquet` and its manifest from the receipt's named archive
+   (`borg extract` to a temp path or stream), recomputes SHA-256, and requires it to equal the receipt's
+   recorded hash for BOTH files. A name/size match from `borg list` is not sufficient proof.
+4. **Source unchanged since export (P1 #2).** Between export (D+1) and drop (D+40) a backfill/repair
+   could have changed the day's rows. The fingerprint is an **order-independent aggregate over every
+   row of the day** of `(primary key, payload_hash)`. `payload_hash` already exists and, by the writer
+   (`apps/collector/internal/momentumcapture/writer.go`), **intentionally excludes `created_at`** — so
+   the fingerprint compares BAR DATA, not ingestion metadata, and does not churn on a created_at-only
+   rewrite; row additions/deletions still change the PK-set and therefore the aggregate. The gated-drop
+   **recomputes** this from the live table and requires equality with the receipt. Mismatch → the day's
+   data changed → **no drop**, emit `needs_versioned_reexport` (a new versioned export must supersede
+   the stale archive first).
+5. **Exact drop set (P1 #3).** `drop_chunks(older_than=X)` deletes EVERY chunk fully before `X`, not one
+   named chunk, so a broad call keyed on the cutoff would also delete an unvalidated day inside the
+   range. The job therefore NEVER issues a cutoff-wide `drop_chunks`. It computes the ordered candidate
+   set, validates it, and drops each passing chunk **individually and targeted**
+   (`drop_chunks(hypertable, older_than=chunk.range_end, newer_than=chunk.range_start)`), asserting the
+   affected set equals exactly that one chunk. It advances only across a **contiguous validated prefix**:
+   the first day that fails any check halts advancement, and every older validated day is dropped one by
+   one; nothing past the first failure is touched.
 
 Any failed check on any day → that day is **not dropped**, it stays in the hot DB as long as needed,
 and an explicit per-day refusal reason is recorded. Fail-closed: the worst case is disk grows (caught
@@ -62,9 +77,11 @@ by the existing disk-runway alert), never destruction of unconfirmed data.
 
 ### Cutoff
 
-Drop candidates = chunks with `range_end <= (UTC-midnight today) - 40 days`. The 40-day buffer beyond
-the 35-day export/verify window means a single failed day does not race a deadline; it waits for repair
-while the disk alert fires. Cutoff computed at UTC-midnight, deterministic.
+Eligibility = chunks with `range_end <= (UTC-midnight today) - 40 days`. The 40-day buffer beyond the
+35-day export/verify window means a single failed day does not race a deadline; it waits for repair
+while the disk alert fires. Cutoff computed at UTC-midnight, deterministic. Eligibility only makes a
+chunk a CANDIDATE; the actual drop still requires the per-day gate B and is issued per-chunk (never as a
+cutoff-wide call), so the set Timescale removes is provably exactly the validated chunks.
 
 ### The gated-drop job
 
@@ -73,6 +90,12 @@ while the disk alert fires. Cutoff computed at UTC-midnight, deterministic.
 - **`--dry-run` by default**: it prints the candidate list and per-day verdicts and drops nothing.
   Active deletion is a separate, explicit enablement (a flag/env), turned on only after a dry-run has
   been reconciled on prod.
+- **Configurable cutoff for reconciliation (P1 #1).** The dataset only began ~2026-08-10, so at a
+  40-day cutoff there are NO eligible chunks yet and a plain dry-run would validate nothing. The job
+  takes a `--cutoff-days` parameter (default 40) so a dry-run can reconcile the gate against real,
+  already-exported days at a smaller offset (e.g. 20-25d) and exercise every check — extraction, SHA,
+  fingerprint, set-equality — before the real 40-day boundary arrives. Only the ACTIVE (deleting) job
+  is pinned to 40; the reconciliation dry-run may use a smaller offset because it deletes nothing.
 - **Singleton** via a Postgres advisory lock (like the other workers) so two runs never overlap.
 - Emits, every run: the candidate day list, and for each a pass verdict or an explicit refusal reason.
 
@@ -89,7 +112,11 @@ First PR: **`bybit_momentum_bars_1m` only.** Do not generalize to the other rete
 
 ## Delivery order
 
-1. Restore Sep 11-12 [DONE].
+1. Restore Sep 11-12 [DONE, evidence]: manually backfilled 2026-09-11 (1,491,770 rows, 349.4 MB, sha256
+   381f85d40c6d2145…), 2026-09-12 (1,492,184 rows, 329.5 MB, sha256 0d978c90d7ec61e0…), 2026-09-13
+   (1,492,034 rows, 378.4 MB, sha256 f26877d2f49c9107…); confirmed in offsite archive
+   `bars-2026-09-14T18:08:31`; `offsite-backup-health.sh` returned exit 0 ("healthy; 27GB free; 35 bar
+   days exported") on 2026-09-14T18:07 UTC.
 2. Implement the validator, per-day receipts, and the gated-drop job in **dry-run**; unit-test the
    validator (fingerprint match/mismatch, missing receipt, archive-missing, reader-fail, cutoff math).
 3. Dry-run on production; reconcile chunks ↔ days ↔ receipts; confirm chunk ranges and no drift.
@@ -102,5 +129,9 @@ First PR: **`bybit_momentum_bars_1m` only.** Do not generalize to the other rete
 
 - Exact shape of the row fingerprint (PK columns + `payload_hash`); whether `payload_hash` already
   exists per row or must be added.
-- Receipt storage: a per-day JSON alongside the manifest in `runtime/cold-bars/`, itself archived to
-  Borg, vs a small DB table. Local file mirrors the manifest pattern; a DB row is queryable — decide.
+- Receipt storage: DECIDED — an **immutable, versioned per-day JSON next to the manifest** in
+  `runtime/cold-bars/` is the canonical source (mirrors the manifest pattern, and is itself archived to
+  Borg by the next backup so gate B can require its offsite presence). A small DB table, if added, is an
+  OPTIONAL index only, never the source of truth.
+- `payload_hash` already exists per row (no new column); the fingerprint reuses it. Its deliberate
+  exclusion of `created_at` (writer.go) is a feature here, not a gap — see gate B #4.
