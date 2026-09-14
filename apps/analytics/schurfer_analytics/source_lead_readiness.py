@@ -1,103 +1,157 @@
-"""Outcome-blind readiness funnel for the source-lead forward cohort (HYP-012).
+"""Outcome-blind readiness view for the source-lead forward cohort (HYP-012).
 
-It answers "is the Gate to Binance forward cohort accumulating, and where are events
-lost" WITHOUT reading any return: captured -> qualification-attempted -> qualified
-(identity + executable target) vs excluded-by-reason -> matured (enough wall-clock time
-elapsed for the outcome horizon, a timing fact, never the outcome itself). It also
-projects when the cohort could reach the registered evidence floor at the observed
-accumulation rate.
+It answers "is the frozen Gate-to-Binance cohort accumulating, and where are events
+lost" WITHOUT reading any outcome. To avoid drifting from the frozen contract it does
+NOT define its own candidate set or maturity: it consumes the SAME qualified episodes
+the formal reader uses (cohort-start-filtered, `QUALIFICATION_VERSION`, a `sampled`
+target observation) and reuses `episode_is_matured` on each episode's entry time.
 
-This exists so we can see progress and diagnose loss (identity coverage, no executable
-target, latency) without peeking at outcomes, which would break the frozen forward
-contract's freeze-before-read discipline. It promotes nothing.
+Deliberately it does NOT emit a "ready to read" verdict. Timing maturity (enough
+wall-clock time elapsed) is necessary but NOT sufficient for the formal read: that gate
+is `formal_verdict` over RESOLVED episodes with the concentration limits, which needs
+the exit-bar outcome this outcome-blind view never fetches. So this reports timing
+progress and accumulation only, and surfaces concentration so a premature "looks ready"
+is visible as still gated.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
-# The registered forward-cohort floor and outcome horizon, mirrored from
-# source_lead_forward_cohort so readiness is measured against the same bar.
-FLOOR_EPISODES = 100
-FLOOR_CLUSTERS = 7
-FLOOR_WEEKS = 4
+from .source_lead_forward_cohort import (
+    EVIDENCE_FLOOR,
+    MAX_SINGLE_ASSET_EPISODE_SHARE,
+    MAX_SINGLE_WEEK_EPISODE_SHARE,
+    episode_is_matured,
+)
+
+if TYPE_CHECKING:
+    from datetime import datetime
+
+FLOOR_EPISODES: int = EVIDENCE_FLOOR["min_resolved_episodes"]
+FLOOR_CLUSTERS: int = EVIDENCE_FLOOR["min_distinct_asset_clusters"]
+FLOOR_WEEKS: int = EVIDENCE_FLOOR["min_distinct_utc_weeks"]
 
 
 @dataclass(frozen=True)
-class ReadinessFunnel:
-    """Raw outcome-blind counts through the source-lead pipeline over a window.
+class QualifiedEpisode:
+    """One qualified cohort episode, from the formal candidate query. `entry_at` is the
+    target observation's `observed_at` (the entry time the reader resolves from), NOT
+    `qualified_at`."""
 
-    `qualified` are captures that passed identity AND got an executable target selected;
-    `excluded_by_reason` sums the excluded captures per exclusion reason.
-    `matured` counts qualified episodes whose outcome horizon has already elapsed in
-    wall-clock time (a timing fact, NOT the outcome). `qualified_clusters` is the number
-    of distinct canonical assets among qualified; `qualified_weeks` the number of
-    distinct UTC weeks with a qualified capture."""
+    entry_at: datetime
+    canonical_asset_id: str
 
-    captured: int
-    qualification_attempts: int
-    qualified: int
-    excluded: int
+
+@dataclass(frozen=True)
+class ReadinessInputs:
+    """Everything needed to build the readiness view, all outcome-blind. `episodes` are
+    the formal candidate set; `database_now` and `cohort_start` fix the exposure window;
+    `excluded_by_reason`/`captured_in_cohort` are the cohort-scoped diagnostic funnel."""
+
+    cohort_start: datetime
+    database_now: datetime
+    episodes: tuple[QualifiedEpisode, ...]
+    captured_in_cohort: int = 0
     excluded_by_reason: dict[str, int] = field(default_factory=dict)
-    qualified_clusters: int = 0
-    qualified_weeks: int = 0
-    matured: int = 0
-    span_days: float = 0.0
 
 
 @dataclass(frozen=True)
-class ReadinessSummary:
-    """Derived readiness: accumulation rate, floor gaps, and a projection. All
-    outcome-blind. `weeks_to_episode_floor` is None when the rate is zero (never
-    reaches the floor) or the floor is already met."""
+class ReadinessReport:
+    """Timing-only progress toward the evidence floor. `timing_floors_met` means the
+    three COUNT floors are met on timing alone; it is NOT the formal read gate (which
+    also needs resolved outcomes under the concentration caps). Concentration shares are
+    reported so an over-concentrated set that meets the counts is still visibly gated."""
 
+    captured_in_cohort: int
+    candidates: int
+    matured: int
+    distinct_clusters: int
+    distinct_weeks: int
+    largest_asset_share: float | None
+    largest_week_share: float | None
+    concentration_ok: bool
+    exposure_weeks: float
     qualified_per_week: float | None
-    top_exclusion_reason: str | None
-    top_exclusion_count: int
+    weeks_to_episode_floor: float | None
     meets_episode_floor: bool
     meets_cluster_floor: bool
     meets_week_floor: bool
-    ready: bool
-    weeks_to_episode_floor: float | None
+    timing_floors_met: bool
+    excluded_by_reason: dict[str, int]
 
 
-def summarize_readiness(
-    funnel: ReadinessFunnel,
+def _utc_week_key(moment: datetime) -> str:
+    iso = moment.isocalendar()
+    return f"{iso.year}-W{iso.week:02d}"
+
+
+def _largest_share(counts: list[int], total: int) -> float | None:
+    if total <= 0 or not counts:
+        return None
+    return max(counts) / total
+
+
+def build_readiness(
+    inputs: ReadinessInputs,
     *,
     floor_episodes: int = FLOOR_EPISODES,
     floor_clusters: int = FLOOR_CLUSTERS,
     floor_weeks: int = FLOOR_WEEKS,
-) -> ReadinessSummary:
-    """Reduce a funnel to readiness against the registered floor. Uses `matured` (not
-    raw qualified) for the episode floor, since only matured episodes can enter a read.
+) -> ReadinessReport:
+    """Reduce the formal candidate episodes to timing-only readiness. Maturity reuses
+    `episode_is_matured` on each episode's entry time; the rate uses the FIXED exposure
+    window (cohort_start to database_now), never the span between first and last event.
     Deterministic; reads no outcome."""
-    weeks_span = funnel.span_days / 7.0
-    rate = funnel.qualified / weeks_span if weeks_span > 0 else None
+    episodes = inputs.episodes
+    candidates = len(episodes)
+    matured = sum(1 for e in episodes if episode_is_matured(e.entry_at, inputs.database_now))
 
-    top_reason: str | None = None
-    top_count = 0
-    for reason, count in funnel.excluded_by_reason.items():
-        if count > top_count:
-            top_reason, top_count = reason, count
+    by_asset: dict[str, int] = {}
+    by_week: dict[str, int] = {}
+    for e in episodes:
+        by_asset[e.canonical_asset_id] = by_asset.get(e.canonical_asset_id, 0) + 1
+        by_week[_utc_week_key(e.entry_at)] = by_week.get(_utc_week_key(e.entry_at), 0) + 1
 
-    meets_episodes = funnel.matured >= floor_episodes
-    meets_clusters = funnel.qualified_clusters >= floor_clusters
-    meets_weeks = funnel.qualified_weeks >= floor_weeks
-    ready = meets_episodes and meets_clusters and meets_weeks
+    largest_asset_share = _largest_share(list(by_asset.values()), candidates)
+    largest_week_share = _largest_share(list(by_week.values()), candidates)
+    concentration_ok = (
+        largest_asset_share is not None
+        and largest_week_share is not None
+        and largest_asset_share <= MAX_SINGLE_ASSET_EPISODE_SHARE
+        and largest_week_share <= MAX_SINGLE_WEEK_EPISODE_SHARE
+    )
+
+    exposure_days = (inputs.database_now - inputs.cohort_start).total_seconds() / 86400.0
+    exposure_weeks = exposure_days / 7.0
+    rate = candidates / exposure_weeks if exposure_weeks > 0 else None
+
+    meets_episodes = matured >= floor_episodes
+    meets_clusters = len(by_asset) >= floor_clusters
+    meets_weeks = len(by_week) >= floor_weeks
 
     weeks_to_floor: float | None = None
     if not meets_episodes and rate and rate > 0:
-        weeks_to_floor = (floor_episodes - funnel.matured) / rate
+        weeks_to_floor = (floor_episodes - matured) / rate
 
-    return ReadinessSummary(
+    return ReadinessReport(
+        captured_in_cohort=inputs.captured_in_cohort,
+        candidates=candidates,
+        matured=matured,
+        distinct_clusters=len(by_asset),
+        distinct_weeks=len(by_week),
+        largest_asset_share=largest_asset_share,
+        largest_week_share=largest_week_share,
+        concentration_ok=concentration_ok,
+        exposure_weeks=exposure_weeks,
         qualified_per_week=rate,
-        top_exclusion_reason=top_reason,
-        top_exclusion_count=top_count,
+        weeks_to_episode_floor=weeks_to_floor,
         meets_episode_floor=meets_episodes,
         meets_cluster_floor=meets_clusters,
         meets_week_floor=meets_weeks,
-        ready=ready,
-        weeks_to_episode_floor=weeks_to_floor,
+        timing_floors_met=meets_episodes and meets_clusters and meets_weeks,
+        excluded_by_reason=dict(inputs.excluded_by_reason),
     )
 
 
@@ -105,7 +159,8 @@ __all__ = [
     "FLOOR_CLUSTERS",
     "FLOOR_EPISODES",
     "FLOOR_WEEKS",
-    "ReadinessFunnel",
-    "ReadinessSummary",
-    "summarize_readiness",
+    "QualifiedEpisode",
+    "ReadinessInputs",
+    "ReadinessReport",
+    "build_readiness",
 ]

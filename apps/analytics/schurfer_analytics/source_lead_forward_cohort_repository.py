@@ -171,3 +171,6 @@ class SourceLeadForwardCohortRepository:
                 )
             )
         return tuple(episodes)
+
+    async def close(self) -> None:
+        await self._engine.dispose()
