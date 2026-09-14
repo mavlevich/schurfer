@@ -1,0 +1,148 @@
+"""Gated deletion of cold minute-bar chunks (design: docs/runbooks/
+cold-bar-gated-deletion-design-v1.md).
+
+The automatic 35-day Timescale retention on ``timeseries.bybit_momentum_bars_1m``
+drops chunks on schedule with no check that the day was exported and safely
+offsite -- the failure that nearly lost 2026-09-11..12 when the exporter was
+silently broken. This module replaces that with a gate: a day's chunk is dropped
+only after that exact day is proven exported, present in a NAMED offsite archive
+(verified by extracting and re-hashing, not by listing), and proven UNCHANGED
+since export (an order-independent row fingerprint recomputed from the live
+source must equal the one recorded at export). It fails closed: any doubt keeps
+the data (disk grows, caught by the disk-runway alert) rather than deleting it.
+
+This file holds the PURE decision logic and its data shapes. The impure steps --
+recomputing the fingerprint from Postgres, extracting files from Borg, and the
+targeted ``drop_chunks`` call -- gather their results into a ``DayEvidence`` and
+feed it here, so every safety rule is unit-testable without a database, a Borg
+repo, or production.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+
+# Must match cold_bar_export.SCHEMA_VERSION; a receipt written under a different
+# schema is not proof about this format and blocks the drop.
+EXPECTED_SCHEMA_VERSION = "cold_bars_v1"
+
+DROP = "drop"
+BLOCK = "block"
+
+
+@dataclass(frozen=True)
+class DropReceipt:
+    """The per-day offsite receipt, written after a day is archived and verified.
+
+    Canonical form is an immutable JSON file beside the manifest (itself archived
+    to Borg on the next backup). Every field is evidence the drop gate re-checks.
+    """
+
+    day: str
+    archive_name: str
+    parquet_path: str
+    parquet_sha256: str
+    manifest_sha256: str
+    row_count: int
+    schema_version: str
+    source_fingerprint: str
+
+
+@dataclass(frozen=True)
+class DayEvidence:
+    """Everything gathered for one candidate day, handed to the pure decision.
+
+    Impure collectors populate the fields; ``None`` means "could not obtain",
+    which the gate treats as a block, never as a pass.
+    """
+
+    day: str
+    eligible: bool  # chunk range_end <= cutoff (older than the retention buffer)
+    manifest_present: bool
+    receipt: DropReceipt | None
+    receipt_offsite_confirmed: bool  # the receipt itself is present in an offsite archive
+    archive_present: bool  # the receipt's named Borg archive exists
+    extracted_parquet_sha256: str | None  # sha of the parquet EXTRACTED from that archive
+    extracted_manifest_sha256: str | None  # sha of the manifest EXTRACTED from that archive
+    recomputed_fingerprint: str | None  # fingerprint recomputed from the live source now
+
+
+def is_eligible(chunk_range_end: datetime, now: datetime, cutoff_days: int) -> bool:
+    """A chunk is a candidate only once it is entirely older than the buffer.
+
+    Cutoff is anchored to UTC midnight so it does not depend on the time of day
+    the job runs. ``chunk_range_end`` is the exclusive upper bound of the chunk's
+    time range; the whole chunk is older than the cutoff iff its end is at or
+    before it.
+    """
+    midnight = datetime(now.year, now.month, now.day, tzinfo=now.tzinfo)
+    cutoff = midnight - timedelta(days=cutoff_days)
+    return chunk_range_end <= cutoff
+
+
+def drop_decision(ev: DayEvidence) -> tuple[str, str]:
+    """Return ``(DROP, reason)`` only if EVERY gate passes, else ``(BLOCK, reason)``.
+
+    Order is chosen so the reason names the first missing proof. Every branch that
+    cannot affirmatively prove safety blocks.
+    """
+    if not ev.eligible:
+        return BLOCK, "not yet eligible (inside the retention buffer)"
+    if not ev.manifest_present:
+        return BLOCK, "local manifest missing"
+    if ev.receipt is None:
+        return BLOCK, "offsite receipt missing"
+    if ev.receipt.schema_version != EXPECTED_SCHEMA_VERSION:
+        return BLOCK, (
+            f"receipt schema_version {ev.receipt.schema_version!r} "
+            f"is not {EXPECTED_SCHEMA_VERSION!r}"
+        )
+    if not ev.receipt.source_fingerprint:
+        return BLOCK, "receipt has no source_fingerprint (exported before fingerprints existed)"
+    if not ev.receipt_offsite_confirmed:
+        return BLOCK, "receipt is not itself confirmed present in an offsite archive"
+    if not ev.archive_present:
+        return BLOCK, f"named offsite archive {ev.receipt.archive_name!r} is missing"
+    if ev.extracted_parquet_sha256 is None:
+        return BLOCK, "parquet could not be extracted from the offsite archive"
+    if ev.extracted_parquet_sha256 != ev.receipt.parquet_sha256:
+        return BLOCK, "extracted parquet sha256 does not match the receipt"
+    if ev.extracted_manifest_sha256 is None:
+        return BLOCK, "manifest could not be extracted from the offsite archive"
+    if ev.extracted_manifest_sha256 != ev.receipt.manifest_sha256:
+        return BLOCK, "extracted manifest sha256 does not match the receipt"
+    if ev.recomputed_fingerprint is None:
+        return BLOCK, "could not recompute the source fingerprint"
+    if ev.recomputed_fingerprint != ev.receipt.source_fingerprint:
+        return BLOCK, "source changed since export (fingerprint mismatch); needs_versioned_reexport"
+    return DROP, "all gates passed"
+
+
+@dataclass(frozen=True)
+class DropPlan:
+    """The outcome of evaluating an oldest-first candidate list."""
+
+    to_drop: tuple[str, ...]  # days cleared to drop, oldest first
+    blocked_at: tuple[str, str] | None  # (day, reason) that halted the prefix, if any
+    held_after_block: tuple[str, ...]  # candidates left untouched because an older day blocked
+
+
+def plan_drops(days_oldest_first: tuple[DayEvidence, ...]) -> DropPlan:
+    """Clear a CONTIGUOUS oldest-first prefix; stop at the first day that blocks.
+
+    The first day that fails any gate halts advancement: it and every candidate
+    after it are held (untouched), even if a later day would have passed on its
+    own. This keeps the set actually deleted provably equal to the validated
+    prefix and never reorders past a gap -- deletion marches forward in time only
+    as fast as verification does.
+    """
+    to_drop: list[str] = []
+    for index, ev in enumerate(days_oldest_first):
+        decision, reason = drop_decision(ev)
+        if decision == DROP:
+            to_drop.append(ev.day)
+            continue
+        held = tuple(e.day for e in days_oldest_first[index + 1 :])
+        return DropPlan(to_drop=tuple(to_drop), blocked_at=(ev.day, reason), held_after_block=held)
+    return DropPlan(to_drop=tuple(to_drop), blocked_at=None, held_after_block=())

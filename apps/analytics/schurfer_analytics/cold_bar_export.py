@@ -66,6 +66,12 @@ class ExportManifest:
     sha256: str
     data_keys: tuple[dict[str, str], ...]
     exported_at: str
+    # Order-independent fingerprint of the day's source rows, used by cold-bar
+    # gated deletion to prove the source has not changed (backfill/repair) between
+    # export and the eventual chunk drop. Optional so manifests written before this
+    # field existed still load; a drop gate treats a missing fingerprint as
+    # "cannot prove unchanged" and refuses to delete (fail-closed).
+    source_fingerprint: str | None = None
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), indent=2, sort_keys=True) + "\n"
@@ -130,6 +136,34 @@ def data_keys(connection: Any, start: datetime, until: datetime) -> tuple[dict[s
     return tuple(dict(zip(DATA_KEY_COLUMNS, map(str, row), strict=True)) for row in rows)
 
 
+def source_fingerprint(connection: Any, start: datetime, until: datetime) -> str:
+    """An order-independent fingerprint of the day's source rows.
+
+    Hashes the identifying columns (the primary key exchange/market_type/symbol/
+    capture_version/bucket_start, plus universe_version) together with the row's
+    `payload_hash`, per row, then aggregates those row hashes in sorted order so
+    the result does not depend on scan order. `payload_hash` already excludes
+    `created_at` (see the collector's writer), so this compares BAR DATA, not
+    ingestion metadata, and does not churn on a created_at-only rewrite; a row
+    added or removed changes the primary-key set and therefore the aggregate.
+
+    Recomputed at drop time and required to equal the value recorded at export
+    time; a mismatch means a backfill/repair changed the day and blocks deletion.
+    """
+    row = connection.execute(
+        "SELECT md5(string_agg(rh, '' ORDER BY rh)) FROM ("  # noqa: S608
+        "SELECT md5("
+        "exchange || '|' || market_type || '|' || symbol || '|' || capture_version || '|' || "
+        "universe_version || '|' || CAST(epoch_ms(bucket_start) AS BIGINT)::VARCHAR || '|' || "
+        "hex(payload_hash)"
+        f") AS rh FROM pg.{SOURCE_TABLE} WHERE {_where(start, until)}"
+        ")"
+    ).fetchone()
+    if row is None or row[0] is None:
+        raise ValueError("source_fingerprint: no rows to fingerprint")
+    return str(row[0])
+
+
 def export_day(
     connection: Any,
     day: date,
@@ -186,6 +220,7 @@ def export_day(
         sha256=sha256_file(target),
         data_keys=data_keys(connection, start, until),
         exported_at=(exported_at or datetime.now(UTC)).isoformat(),
+        source_fingerprint=source_fingerprint(connection, start, until),
     )
     (out_dir / f"bars-{day.isoformat()}.manifest.json").write_text(manifest.to_json())
     return manifest

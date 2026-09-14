@@ -43,15 +43,21 @@ def _connection(rows: int = 3, *, day: date = _DAY) -> Any:
             universe_version VARCHAR,
             bucket_start TIMESTAMPTZ,
             close_price DOUBLE,
-            buy_hist_counts INTEGER[]
+            buy_hist_counts INTEGER[],
+            payload_hash BLOB
         )
     """)
     start, _ = day_bounds(day)
     for index in range(rows):
         connection.execute(
             "INSERT INTO pg.timeseries.bybit_momentum_bars_1m VALUES "
-            "('bybit', 'linear', ?, 'cap_v1', 'uni_v1', ?, ?, [1, 2])",
-            [f"SYM{index}", start + timedelta(minutes=index), 100.0 + index],
+            "('bybit', 'linear', ?, 'cap_v1', 'uni_v1', ?, ?, [1, 2], ?)",
+            [
+                f"SYM{index}",
+                start + timedelta(minutes=index),
+                100.0 + index,
+                bytes([index % 256]) * 32,
+            ],
         )
     return connection
 
@@ -177,9 +183,11 @@ def test_a_late_row_changes_the_manifest_rather_than_being_lost(tmp_path: Path) 
     start, _ = day_bounds(_DAY)
     connection.execute(
         "INSERT INTO pg.timeseries.bybit_momentum_bars_1m VALUES "
-        "('bybit', 'linear', 'LATE', 'cap_v1', 'uni_v1', ?, 1.0, [1, 2])",
-        [start + timedelta(minutes=99)],
+        "('bybit', 'linear', 'LATE', 'cap_v1', 'uni_v1', ?, 1.0, [1, 2], ?)",
+        [start + timedelta(minutes=99), b"\x99" * 32],
     )
     second = export_day(connection, _DAY, tmp_path)
     assert second.row_count == first.row_count + 1
     assert second.sha256 != first.sha256
+    # the late row also changes the order-independent source fingerprint
+    assert second.source_fingerprint != first.source_fingerprint
