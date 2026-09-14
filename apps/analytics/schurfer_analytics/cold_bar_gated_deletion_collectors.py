@@ -16,7 +16,7 @@ from __future__ import annotations
 import hashlib
 import subprocess
 import tempfile
-from datetime import date, timedelta
+from datetime import UTC, date
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -24,7 +24,6 @@ from .cold_bar_export import (
     connect,
     day_bounds,
     file_fingerprint,
-    source_day_range,
     source_fingerprint,
 )
 from .cold_bar_gated_deletion_job import RECEIPT_SUFFIX, ChunkCandidate, ExtractedOffsite
@@ -34,9 +33,14 @@ if TYPE_CHECKING:
 
     from .cold_bar_gated_deletion import DropReceipt
 
-# The exporter names each day's files by this convention (see cold_bar_export).
-PARQUET_NAME = "bars-{day}.parquet"
-MANIFEST_NAME = "bars-{day}.manifest.json"
+# Files are archived under the backed-up directory's path, so a member inside an
+# archive is `runtime/cold-bars/bars-<day>.<ext>` (confirmed against a real archive),
+# NOT the bare filename. Extraction must use this full member path.
+ARCHIVE_MEMBER_PREFIX = "runtime/cold-bars/"
+PARQUET_MEMBER = ARCHIVE_MEMBER_PREFIX + "bars-{day}.parquet"
+MANIFEST_MEMBER = ARCHIVE_MEMBER_PREFIX + "bars-{day}.manifest.json"
+# Local files (in cold_bars_dir) are the bare filename, no prefix.
+LOCAL_MANIFEST_NAME = "bars-{day}.manifest.json"
 
 
 # ---------- pure helpers (unit-tested) ----------
@@ -109,25 +113,33 @@ class BorgDbCollectors:
         # most recent bars archive at run time (resolved by the CLI).
         self._newest_bars_archive = newest_bars_archive
         self._connection = connect(dsn)  # DuckDB attached to Postgres READ_ONLY
+        self._archive_names_cache: frozenset[str] | None = None
+        self._newest_members_cache: frozenset[str] | None = None
 
     # --- database ---
 
     def list_chunks(self) -> tuple[ChunkCandidate, ...]:
-        """One 1-day ChunkCandidate per complete UTC day present in the source.
-
-        Chunks are 1-day (migration 0024), so each present day maps to exactly one
-        chunk spanning [day 00:00, next day 00:00). Today is excluded (still being
-        written). Eligibility filtering happens in the runner."""
-        span = source_day_range(self._connection)
-        if span is None:
-            return ()
-        oldest, newest_complete = span
+        """The ACTUAL Timescale chunks of the source hypertable, from
+        ``timescaledb_information.chunks`` (not an inferred min..max day range), each
+        with its real range_start/range_end. Chunks are 1-day (migration 0024); the
+        integration test confirms no drift. The runner filters by eligibility, and a
+        chunk whose day cannot be verified is blocked by the gate."""
+        rows = self._connection.execute(
+            "SELECT range_start, range_end FROM postgres_query('pg', "
+            "'SELECT range_start, range_end FROM timescaledb_information.chunks "
+            "WHERE hypertable_schema = ''timeseries'' "
+            "AND hypertable_name = ''bybit_momentum_bars_1m'' ORDER BY range_start')"
+        ).fetchall()
         out: list[ChunkCandidate] = []
-        current = oldest
-        while current <= newest_complete:
-            start, until = day_bounds(current)
-            out.append(ChunkCandidate(day=current.isoformat(), range_start=start, range_end=until))
-            current += timedelta(days=1)
+        for range_start, range_end in rows:
+            start = range_start.astimezone(UTC)
+            out.append(
+                ChunkCandidate(
+                    day=start.date().isoformat(),
+                    range_start=start,
+                    range_end=range_end.astimezone(UTC),
+                )
+            )
         return tuple(out)
 
     def recompute_source_fingerprint(self, day: str) -> str | None:
@@ -146,41 +158,73 @@ class BorgDbCollectors:
     # --- files ---
 
     def manifest_present(self, day: str) -> bool:
-        return (self._dir / MANIFEST_NAME.format(day=day)).exists()
+        return (self._dir / LOCAL_MANIFEST_NAME.format(day=day)).exists()
 
     # --- borg ---
 
     def _run(self, args: list[str]) -> subprocess.CompletedProcess[bytes]:
         return subprocess.run(args, env=self._env, capture_output=True, check=True)  # noqa: S603
 
+    def _archive_names(self) -> frozenset[str]:
+        # Cached: the archive list does not change during one run, and every day
+        # would otherwise re-list the whole repo.
+        if self._archive_names_cache is None:
+            result = self._run(borg_list_archives_args(self._repo))
+            self._archive_names_cache = parse_short_list(result.stdout.decode())
+        return self._archive_names_cache
+
+    def _newest_bars_members(self) -> frozenset[str]:
+        if self._newest_members_cache is None:
+            result = self._run(borg_list_members_args(self._repo, self._newest_bars_archive))
+            self._newest_members_cache = parse_short_list(result.stdout.decode())
+        return self._newest_members_cache
+
     def archive_present(self, archive_name: str) -> bool:
-        result = self._run(borg_list_archives_args(self._repo))
-        return archive_name in parse_short_list(result.stdout.decode())
+        return archive_name in self._archive_names()
 
     def receipt_offsite_confirmed(self, day: str) -> bool:
-        result = self._run(borg_list_members_args(self._repo, self._newest_bars_archive))
-        members = parse_short_list(result.stdout.decode())
         receipt_name = f"bars-{day}{RECEIPT_SUFFIX}"
-        return any(m.endswith(receipt_name) for m in members)
+        return any(m.endswith(receipt_name) for m in self._newest_bars_members())
+
+    def _extract_to(self, archive: str, member: str, dest: Path) -> str:
+        """Stream one archive member to a file (no full-file buffering in memory) and
+        return its SHA-256, computed incrementally as it is written."""
+        digest = hashlib.sha256()
+        with dest.open("wb") as out:
+            proc = subprocess.Popen(  # noqa: S603
+                borg_extract_args(self._repo, archive, member),
+                env=self._env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+            )
+            stdout = proc.stdout
+            assert stdout is not None
+            for block in iter(lambda: stdout.read(1024 * 1024), b""):
+                out.write(block)
+                digest.update(block)
+            if proc.wait() != 0:
+                raise subprocess.CalledProcessError(proc.returncode, "borg extract")
+        return digest.hexdigest()
 
     def extract_offsite(self, receipt: DropReceipt) -> ExtractedOffsite | None:
-        try:
-            parquet_bytes = self._run(
-                borg_extract_args(self._repo, receipt.archive_name, receipt.parquet_path)
-            ).stdout
-            manifest_member = MANIFEST_NAME.format(day=receipt.day)
-            manifest_bytes = self._run(
-                borg_extract_args(self._repo, receipt.archive_name, manifest_member)
-            ).stdout
-        except subprocess.CalledProcessError:
-            return None
+        # A 350MB parquet is streamed to a temp file, never buffered whole in memory.
+        # Member paths carry the archived directory prefix (runtime/cold-bars/...).
         with tempfile.TemporaryDirectory() as tmp:
-            parquet_path = Path(tmp) / "extracted.parquet"
-            parquet_path.write_bytes(parquet_bytes)
-            file_fp = file_fingerprint(self._connection, parquet_path)
+            parquet_dest = Path(tmp) / "extracted.parquet"
+            manifest_dest = Path(tmp) / "extracted.manifest.json"
+            try:
+                parquet_sha = self._extract_to(
+                    receipt.archive_name, PARQUET_MEMBER.format(day=receipt.day), parquet_dest
+                )
+                manifest_sha = self._extract_to(
+                    receipt.archive_name, MANIFEST_MEMBER.format(day=receipt.day), manifest_dest
+                )
+            except subprocess.CalledProcessError:
+                return None
+            file_fp = file_fingerprint(self._connection, parquet_dest)
         return ExtractedOffsite(
-            parquet_sha256=hashlib.sha256(parquet_bytes).hexdigest(),
-            manifest_sha256=hashlib.sha256(manifest_bytes).hexdigest(),
+            parquet_sha256=parquet_sha,
+            manifest_sha256=manifest_sha,
             file_fingerprint=file_fp,
         )
 

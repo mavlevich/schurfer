@@ -171,6 +171,26 @@ def test_ineligible_recent_chunks_are_not_candidates(tmp_path: Path) -> None:
     assert result.plan.blocked_at is None  # no eligible candidates at all
 
 
+def test_a_raising_collector_blocks_its_day_without_crashing(tmp_path: Path) -> None:
+    days = _days("2026-07-20", 2)
+    for d in days:
+        write_receipt(tmp_path, _receipt(d))
+    c = FakeCollectors(days)
+
+    def boom(day: str) -> str | None:
+        raise RuntimeError("db exploded")
+
+    c.recompute_source_fingerprint = boom  # type: ignore[method-assign]
+    # The run must complete and block the first day with the gather error, not raise.
+    result = run_gated_deletion(
+        now=NOW, cutoff_days=40, receipts_dir=tmp_path, collectors=c, dry_run=True
+    )
+    assert result.plan.to_drop == ()
+    assert result.plan.blocked_at is not None
+    assert result.plan.blocked_at[0] == days[0]
+    assert "could not gather evidence" in result.plan.blocked_at[1]
+
+
 def test_render_plan_mentions_counts_and_halt(tmp_path: Path) -> None:
     days = _days("2026-07-20", 2)
     write_receipt(tmp_path, _receipt(days[0]))

@@ -69,6 +69,13 @@ def test_all_gates_pass_drops() -> None:
     assert decision == DROP, reason
 
 
+def test_gather_error_blocks_before_anything_else() -> None:
+    decision, reason = drop_decision(_evidence(gather_error="BorgError: boom"))
+    assert decision == BLOCK
+    assert "could not gather evidence" in reason
+    assert "boom" in reason
+
+
 @pytest.mark.parametrize(
     ("field", "value", "needle"),
     [

@@ -13,6 +13,7 @@ database required. The pure safety rules live in ``cold_bar_gated_deletion``.
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING, Protocol
 
@@ -39,14 +40,19 @@ def receipt_path(receipts_dir: Path, day: str) -> Path:
 
 
 def write_receipt(receipts_dir: Path, receipt: DropReceipt) -> Path:
-    """Write a per-day receipt as immutable JSON. Refuses to overwrite: a receipt is
-    a record of one archived export and must never be silently replaced (a changed
-    day gets a new versioned export, not a rewritten receipt)."""
-    path = receipt_path(receipts_dir, receipt.day)
-    if path.exists():
-        raise FileExistsError(f"receipt already exists and is immutable: {path}")
+    """Write a per-day receipt as immutable JSON. ATOMICALLY refuses to overwrite:
+    the file is created with O_CREAT|O_EXCL so two concurrent writers cannot both
+    pass a check-then-write and clobber a receipt (a changed day gets a new versioned
+    export, never a rewritten receipt)."""
     receipts_dir.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(asdict(receipt), indent=2, sort_keys=True) + "\n")
+    path = receipt_path(receipts_dir, receipt.day)
+    payload = json.dumps(asdict(receipt), indent=2, sort_keys=True) + "\n"
+    try:
+        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+    except FileExistsError:
+        raise FileExistsError(f"receipt already exists and is immutable: {path}") from None
+    with os.fdopen(fd, "w") as handle:
+        handle.write(payload)
     return path
 
 
@@ -120,25 +126,47 @@ def gather_evidence(
     collectors: Collectors,
 ) -> DayEvidence:
     """Assemble everything the pure gate needs for one candidate day. Anything that
-    cannot be obtained becomes None/False, which the gate treats as a block."""
-    receipt = read_receipt(receipts_dir, candidate.day)
-    extracted = collectors.extract_offsite(receipt) if receipt is not None else None
-    return DayEvidence(
-        day=candidate.day,
-        eligible=is_eligible(candidate.range_end, now, cutoff_days),
-        manifest_present=collectors.manifest_present(candidate.day),
-        receipt=receipt,
-        receipt_offsite_confirmed=(
-            collectors.receipt_offsite_confirmed(candidate.day) if receipt is not None else False
-        ),
-        archive_present=(
-            collectors.archive_present(receipt.archive_name) if receipt is not None else False
-        ),
-        extracted_parquet_sha256=extracted.parquet_sha256 if extracted is not None else None,
-        extracted_manifest_sha256=extracted.manifest_sha256 if extracted is not None else None,
-        recomputed_fingerprint=collectors.recompute_source_fingerprint(candidate.day),
-        recomputed_file_fingerprint=extracted.file_fingerprint if extracted is not None else None,
-    )
+    cannot be obtained becomes None/False, which the gate treats as a block. Any
+    EXCEPTION while gathering (bad receipt JSON, a Borg or DB error) is caught and
+    turned into a blocked evidence for THIS day, so one bad day never crashes the run."""
+    eligible = is_eligible(candidate.range_end, now, cutoff_days)
+    try:
+        receipt = read_receipt(receipts_dir, candidate.day)
+        extracted = collectors.extract_offsite(receipt) if receipt is not None else None
+        return DayEvidence(
+            day=candidate.day,
+            eligible=eligible,
+            manifest_present=collectors.manifest_present(candidate.day),
+            receipt=receipt,
+            receipt_offsite_confirmed=(
+                collectors.receipt_offsite_confirmed(candidate.day)
+                if receipt is not None
+                else False
+            ),
+            archive_present=(
+                collectors.archive_present(receipt.archive_name) if receipt is not None else False
+            ),
+            extracted_parquet_sha256=extracted.parquet_sha256 if extracted is not None else None,
+            extracted_manifest_sha256=extracted.manifest_sha256 if extracted is not None else None,
+            recomputed_fingerprint=collectors.recompute_source_fingerprint(candidate.day),
+            recomputed_file_fingerprint=(
+                extracted.file_fingerprint if extracted is not None else None
+            ),
+        )
+    except Exception as exc:  # any gather failure must block this day, not crash the run
+        return DayEvidence(
+            day=candidate.day,
+            eligible=eligible,
+            manifest_present=False,
+            receipt=None,
+            receipt_offsite_confirmed=False,
+            archive_present=False,
+            extracted_parquet_sha256=None,
+            extracted_manifest_sha256=None,
+            recomputed_fingerprint=None,
+            recomputed_file_fingerprint=None,
+            gather_error=f"{type(exc).__name__}: {exc}",
+        )
 
 
 @dataclass(frozen=True)
@@ -146,6 +174,8 @@ class RunResult:
     plan: DropPlan
     dropped: tuple[str, ...]  # days actually dropped (empty in dry-run)
     dry_run: bool
+    n_chunks: int  # total chunks the source reported
+    n_eligible: int  # chunks past the retention buffer (the candidates evaluated)
 
 
 def run_gated_deletion(
@@ -181,13 +211,26 @@ def run_gated_deletion(
         for day in plan.to_drop:
             collectors.drop_chunk(by_day[day])
             dropped.append(day)
-    return RunResult(plan=plan, dropped=tuple(dropped), dry_run=dry_run)
+    return RunResult(
+        plan=plan,
+        dropped=tuple(dropped),
+        dry_run=dry_run,
+        n_chunks=len(by_day),
+        n_eligible=len(eligible),
+    )
 
 
 def render_plan(result: RunResult) -> str:
     """A human-readable report for the job log: what would be (or was) dropped, and
     why the frontier stopped."""
-    lines = [f"gated-deletion run (dry_run={result.dry_run})"]
+    lines = [
+        f"gated-deletion run (dry_run={result.dry_run}); "
+        f"{result.n_chunks} chunk(s), {result.n_eligible} eligible past the buffer"
+    ]
+    if result.n_chunks == 0:
+        lines.append("  source reported no chunks")
+    elif result.n_eligible == 0:
+        lines.append("  no chunk is old enough to be a candidate yet")
     verb = "DROPPED" if not result.dry_run else "would drop"
     if result.plan.to_drop:
         lines.append(

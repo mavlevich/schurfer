@@ -69,6 +69,10 @@ class DayEvidence:
     extracted_manifest_sha256: str | None  # sha of the manifest EXTRACTED from that archive
     recomputed_fingerprint: str | None  # source fingerprint recomputed from the live source now
     recomputed_file_fingerprint: str | None  # recomputed from the EXTRACTED offsite parquet
+    # Set when gathering this day's evidence itself failed (bad receipt JSON, a Borg
+    # error, a DB error). A gather failure blocks THIS day with a reason instead of
+    # crashing the whole run. Default None keeps older constructions valid.
+    gather_error: str | None = None
 
 
 def is_eligible(chunk_range_end: datetime, now: datetime, cutoff_days: int) -> bool:
@@ -98,6 +102,8 @@ def drop_decision(ev: DayEvidence) -> tuple[str, str]:
     Order is chosen so the reason names the first missing proof. Every branch that
     cannot affirmatively prove safety blocks.
     """
+    if ev.gather_error is not None:
+        return BLOCK, f"could not gather evidence: {ev.gather_error}"
     if not ev.eligible:
         return BLOCK, "not yet eligible (inside the retention buffer)"
     if not ev.manifest_present:
