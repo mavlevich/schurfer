@@ -162,6 +162,29 @@ negative base (the multiple-comparison trap the ledger warns about).
   scanner is a late reactive radar; earlier detection trades precision for earliness and
   must be validated on base rates, never tuned on winners.
 
+### Monster-precursor discovery (next primary discovery line)
+
+The core money question: catch the rare monster pumps (the ones that pay) and cut the
+junk. Established on a pump-covering window (bybit/binance 1m bars Aug 10 to Sep 14,
+pulled from the prod DB): monsters ARE in capture (forward-3d best LSKUSDT +2179%,
+龙虾USDT / LONGXIA +377%, ~58 tokens above +100%); net-buy accumulation-LONG is
+net-negative at every hold even with the pumps in window and does NOT separate monsters
+from junk (so it is closed as a monster-catcher, see standing decisions); a first-cut
+activity feature was ~11x higher for monsters but outcome-selected, so a candidate only.
+
+- **Measure:** define move-onset per episode, then measure point-in-time features
+  STRICTLY before onset over ALL episodes (monsters and matched controls); report
+  precision/recall/lift. Candidate features: trailing activity/volume ramp, cross-venue
+  breadth, OI growth, repeating net-buy bursts (structure not a single spike),
+  acceleration, liquidation cascades. Survivorship-guarded; never fit to LSK.
+- **When readable:** the retrospective lift study is days (data in hand). Any
+  predictive/tradeable claim needs its own untouched forward cohort.
+- **Continue:** a feature shows real lift (monsters separable) AND plausible
+  executability at the tradeable subset -> pre-register a forward precursor cohort plus a
+  minimal execution-feasibility (depth/venue) check.
+- **Stop:** no feature separates monsters from junk after costs/executability -> close
+  monster-prediction; the pump-domain exit gate below then binds.
+
 ## Open questions (before locking PR order)
 
 1. Canonize this register and the ROADMAP first (PR0), so later changes flow from an
@@ -185,7 +208,13 @@ negative base (the multiple-comparison trap the ledger warns about).
 ## Standing stop/go decisions
 
 - Executable pump-short: CLOSED (net negative).
+- Net-buy accumulation-LONG: CLOSED as a monster-catcher (2026-09-14, net-negative at
+  every hold even on pump-covering data; does not separate monsters from junk).
 - Delayed-short / orderflow (HYP-024): stopped; do not reopen.
+- Pump-domain exit gate: if the monster-precursor discovery ALSO fails to find a
+  separating, executable precursor, then given pump-short negative, accumulation
+  negative, and HYP-012 capacity/identity-limited, step back from the pump domain and
+  seek an edge elsewhere rather than iterate more pump variants.
 - No new cold-probe screens on already-viewed windows.
 - ML: parked until there is a confirmed structural edge, clean forward data, and a known
   capacity envelope; a better predictor does not solve executability/capacity or
