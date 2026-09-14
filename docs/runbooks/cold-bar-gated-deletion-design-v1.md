@@ -148,8 +148,6 @@ First PR: **`bybit_momentum_bars_1m` only.** Do not generalize to the other rete
 
 ## Open items for review
 
-- Exact shape of the row fingerprint (PK columns + `payload_hash`); whether `payload_hash` already
-  exists per row or must be added.
 - Receipt storage: DECIDED — an **immutable, versioned per-day JSON next to the manifest** in
   `runtime/cold-bars/` is the canonical source (mirrors the manifest pattern, and is itself archived to
   Borg by the next backup so gate B can require its offsite presence). A small DB table, if added, is an

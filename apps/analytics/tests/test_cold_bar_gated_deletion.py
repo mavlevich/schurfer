@@ -31,8 +31,9 @@ def _receipt(**over: object) -> DropReceipt:
         "manifest_sha256": "mf-sha",
         "row_count": 1_000_000,
         "schema_version": EXPECTED_SCHEMA_VERSION,
-        "source_fingerprint": "cbfp_v1:src-abc",
-        "file_fingerprint": "cbfp_v1:file-abc",
+        # In the passing case fidelity holds, so source and file fingerprints are EQUAL.
+        "source_fingerprint": "cbfp_v1:fp",
+        "file_fingerprint": "cbfp_v1:fp",
         "fidelity_verified": True,
     }
     base.update(over)
@@ -56,8 +57,8 @@ def _evidence(**over: object) -> DayEvidence:
         "archive_present": True,
         "extracted_parquet_sha256": "pq-sha",
         "extracted_manifest_sha256": "mf-sha",
-        "recomputed_fingerprint": "cbfp_v1:src-abc",
-        "recomputed_file_fingerprint": "cbfp_v1:file-abc",
+        "recomputed_fingerprint": "cbfp_v1:fp",
+        "recomputed_file_fingerprint": "cbfp_v1:fp",
     }
     base.update(over)
     return DayEvidence(**base)  # type: ignore[arg-type]
@@ -111,6 +112,24 @@ def test_unverified_fidelity_blocks() -> None:
     assert "fidelity" in reason
 
 
+def test_receipt_with_mismatched_fingerprints_blocks_even_if_flag_true() -> None:
+    # The flag must never be trusted over the fingerprints themselves: source != file
+    # blocks even when fidelity_verified is (wrongly) True.
+    receipt = _receipt(
+        source_fingerprint="cbfp_v1:src",
+        file_fingerprint="cbfp_v1:DIFFERENT",
+        fidelity_verified=True,
+    )
+    ev = _evidence(
+        receipt=receipt,
+        recomputed_fingerprint="cbfp_v1:src",
+        recomputed_file_fingerprint="cbfp_v1:DIFFERENT",
+    )
+    decision, reason = drop_decision(ev)
+    assert decision == BLOCK
+    assert "fingerprints differ" in reason
+
+
 def test_fingerprint_mismatch_signals_reexport() -> None:
     decision, reason = drop_decision(_evidence(recomputed_fingerprint="fp-different"))
     assert decision == BLOCK
@@ -160,6 +179,14 @@ def test_eligibility_rejects_naive_datetimes() -> None:
         is_eligible(datetime(2026, 8, 5, 0, 0), datetime(2026, 9, 14, 3, 0, tzinfo=UTC), 40)
 
 
+def test_eligibility_rejects_non_positive_cutoff() -> None:
+    now = datetime(2026, 9, 14, 3, 0, tzinfo=UTC)
+    end = datetime(2026, 9, 14, 0, 0, tzinfo=UTC)
+    for bad in (0, -1):
+        with pytest.raises(ValueError, match="cutoff_days must be positive"):
+            is_eligible(end, now, bad)
+
+
 # --- plan_drops: contiguous prefix ----------------------------------------
 
 
@@ -197,25 +224,28 @@ def test_plan_drops_blocks_on_the_oldest_touches_nothing() -> None:
 
 
 def test_plan_drops_halts_on_a_calendar_gap() -> None:
-    # Aug 02 is missing from the candidate list; the frontier must not jump the gap.
+    # Aug 02 is missing; the ordered prefix before the gap (Aug 01) is safe to drop,
+    # but the frontier must not jump the gap.
     days = (
         _evidence(day="2026-08-01"),
-        _evidence(day="2026-08-03"),  # gap: not consecutive after Aug 01
+        _evidence(day="2026-08-03"),  # gap after Aug 01
     )
     plan = plan_drops(days)
     assert plan.to_drop == ("2026-08-01",)
     assert plan.blocked_at is not None
     assert plan.blocked_at[0] == "2026-08-03"
-    assert "not consecutive" in plan.blocked_at[1]
+    assert "calendar gap" in plan.blocked_at[1]
 
 
-def test_plan_drops_halts_on_out_of_order_days() -> None:
+def test_plan_drops_out_of_order_drops_nothing() -> None:
+    # A mis-ordered list must never let the newer day be dropped while an older one
+    # is held: order is validated up front and the whole plan drops nothing.
     days = (
         _evidence(day="2026-08-02"),
-        _evidence(day="2026-08-01"),  # out of order
+        _evidence(day="2026-08-01"),  # out of order -> reject the whole plan
     )
     plan = plan_drops(days)
-    assert plan.to_drop == ("2026-08-02",)
+    assert plan.to_drop == ()  # NOT ("2026-08-02",)
     assert plan.blocked_at is not None
     assert plan.blocked_at[0] == "2026-08-01"
-    assert "not consecutive" in plan.blocked_at[1]
+    assert "not strictly ascending" in plan.blocked_at[1]

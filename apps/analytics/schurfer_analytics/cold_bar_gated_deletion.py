@@ -83,6 +83,9 @@ def is_eligible(chunk_range_end: datetime, now: datetime, cutoff_days: int) -> b
     """
     if now.tzinfo is None or chunk_range_end.tzinfo is None:
         raise ValueError("is_eligible requires timezone-aware datetimes")
+    if cutoff_days <= 0:
+        # A zero or negative buffer would make today's (or future) chunks eligible.
+        raise ValueError("cutoff_days must be positive")
     now_utc = now.astimezone(UTC)
     midnight = datetime(now_utc.year, now_utc.month, now_utc.day, tzinfo=UTC)
     cutoff = midnight - timedelta(days=cutoff_days)
@@ -115,6 +118,11 @@ def drop_decision(ev: DayEvidence) -> tuple[str, str]:
         return BLOCK, "receipt has no fingerprints (exported before fingerprints existed)"
     if not ev.receipt.fidelity_verified:
         return BLOCK, "export did not verify file/source fidelity for this day (non-droppable)"
+    if ev.receipt.source_fingerprint != ev.receipt.file_fingerprint:
+        # Re-derive fidelity from the fingerprints themselves; never trust the flag
+        # alone. If the two recorded fingerprints differ, the file did not capture
+        # the source no matter what fidelity_verified claims.
+        return BLOCK, "receipt source and file fingerprints differ (fidelity is not real)"
     if not ev.receipt_offsite_confirmed:
         return BLOCK, "receipt is not itself confirmed present in an offsite archive"
     if not ev.archive_present:
@@ -156,22 +164,36 @@ def plan_drops(days_oldest_first: tuple[DayEvidence, ...]) -> DropPlan:
     prefix and never reorders past a gap -- deletion marches forward in time only
     as fast as verification does.
     """
+    # PRECONDITION checked up front, before anything is dropped: the whole list must
+    # be strictly ASCENDING by day. A mis-ordered list (e.g. reversed) must never let
+    # the newest day be dropped while an older one is held, so if order is violated
+    # anywhere we drop NOTHING and report the offending day. (Gaps are handled in the
+    # loop below, where the ordered prefix up to the gap is still safe to drop.)
+    parsed = [date.fromisoformat(ev.day) for ev in days_oldest_first]
+    for index in range(1, len(parsed)):
+        if parsed[index] <= parsed[index - 1]:
+            return DropPlan(
+                to_drop=(),
+                blocked_at=(
+                    days_oldest_first[index].day,
+                    f"candidate list is not strictly ascending at {days_oldest_first[index].day} "
+                    f"(after {days_oldest_first[index - 1].day}); refusing to drop anything",
+                ),
+                held_after_block=tuple(ev.day for ev in days_oldest_first),
+            )
+
     to_drop: list[str] = []
     prev: date | None = None
     for index, ev in enumerate(days_oldest_first):
-        current = date.fromisoformat(ev.day)
-        # The "contiguous" property is VERIFIED, not assumed: the caller's list must
-        # be strictly ascending consecutive calendar days. A gap (a missing day) or
-        # any out-of-order day halts the frontier here, so deletion never jumps over
-        # an unconfirmed hole and never trusts an unsorted candidate list.
+        current = parsed[index]
+        # Order is guaranteed above; here a calendar GAP (missing day) halts the
+        # frontier so deletion never jumps over an unconfirmed hole. The ordered
+        # prefix before the gap is safe to drop.
         if prev is not None and current != prev + timedelta(days=1):
             held = tuple(e.day for e in days_oldest_first[index + 1 :])
             return DropPlan(
                 to_drop=tuple(to_drop),
-                blocked_at=(
-                    ev.day,
-                    f"not consecutive after {prev.isoformat()} (calendar gap or out-of-order)",
-                ),
+                blocked_at=(ev.day, f"calendar gap after {prev.isoformat()}"),
                 held_after_block=held,
             )
         decision, reason = drop_decision(ev)
