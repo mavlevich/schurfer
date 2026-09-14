@@ -8,10 +8,10 @@ Update only these four lines after every merge -- this is the fast-path
 status check, not a place for narrative.
 
 ```
-Current primary: ENG-024 partial-outcome consumer tracing, fixed in code and awaiting production verification; support: HYP-015 hold12h launch readiness
-State: ENG-020/#343, ENG-021/#345, ENG-022/#347/#399/#400/#401/#402 and ENG-023/#404 deployed through cd62fa0 on 2026-09-10; all 20 open baseline paper probes were serviced within 5.7 seconds after the ENG-023 deploy, with no missed outcomes, quote failures or restarts; HYP-024 re-run unchanged and inconclusive with no held-out read
-Next: merge, deploy and verify ENG-024, then decide whether to start the already registered HYP-015 hold12h forward paper worker; do not reopen the stopped delayed-short/orderflow line
-User decision required: no live-mode change is authorized; starting the HYP-015 hold12h production paper worker needs a separate explicit production authorization after ENG-023
+Current primary: ENG-024 partial-outcome consumer tracing, fixed in code and awaiting production verification; support: HYP-015 hold12h paper worker STARTED 2026-09-13 (forward cohort accumulating; reader/cost model/verdict NOT yet frozen)
+State: executable pump-short confirmed negative (liquid_taker do_not_promote); HYP-012 cross-venue source-lead is the strongest historical hint but a PAIRED difference, standalone PnL unproven; #413 calibration selection not yet frozen; HYP-024 inconclusive; per-line decisions in docs/research/decision-register.md
+Next: freeze the HYP-015 reader/cost/verdict before any read and protect the cohort from the viewed probes; run source-lead readiness without reading returns; verify ENG-024; add app-table retention so backups stay healthy; do not reopen the delayed-short/pump-short lines or open new cold-probe screens
+User decision required: no live-mode change is authorized; disk/data retention policy for unbounded app tables, and whether to add a Hetzner block volume for long history
 ```
 
 ### Active change card — ENG-024 outcome-consumer integrity
@@ -148,6 +148,45 @@ dedicated documentation PR is justified for cross-cutting drift, navigation, or
 architecture cleanup, but must have an explicit file list and finish condition. UI
 work follows the same rule: one coherent user workflow per PR, with backend contracts
 defined first and no empty navigation for capabilities that do not exist yet.
+
+### Market coverage and architecture delivery — 2026-09-14
+
+This is the conditional implementation order for broader token/venue analysis,
+requested after the accumulation discussion. It supplements the delivery portfolio
+above and the [decision register](docs/research/decision-register.md); it does not
+replace due frozen readings, execution-safety fixes or active candidate decisions.
+The [target architecture](docs/architecture/target-platform-v1.md#broad-market-coverage-and-bounded-enrichment)
+defines broad radar, continuous baseline, bounded enrichment and narrow trade
+eligibility. These are collection depths, not four new services or trading stages.
+
+- [x] Record the coverage architecture, reuse boundaries and conditional queue.
+      Documentation only; implementation and production coverage are not certified.
+
+Choose the next bounded PR from this queue when its dependency is satisfied. Do not
+reserve eight consecutive engineering PRs: the primary slot remains an economic
+answer for an active candidate; coverage work normally uses the support slot.
+
+| PR-sized outcome                              | Concrete scope                                                                                                                                                                                                                                     | Completion / next-step gate                                                                                                                                                                                                                       |
+| --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1. Coverage and resource baseline             | Reuse catalog/coverage readers and health metrics to reconcile eligible, subscribed, persisted and research-ready instrument/venue pairs. Include onboarding times, gaps, source cadence, burst load and bytes/day.                                | One reproducible coverage/cost artifact identifies a real gap or bottleneck. Current catalog membership is not historical membership; runtime health needs current evidence.                                                                      |
+| 2. Deterministic universe onboarding          | Address the measured new-listing gap using existing universe/identity components. Persist catalog versions and admission times, manage subscriptions, warm-up, removals and reconnects.                                                            | Tests cover new listings, restart, delisting and ticker/multiplier collisions. Future observations qualify only under existing cohort rules; no retroactive identity approval or cohort rewrite.                                                  |
+| 3. Shared accumulation inputs                 | Reuse existing net-buy/OI/source-lead readers to define the smallest common point-in-time input slice and rolling features. Keep full eligible denominators and non-events; archive old LSK-like examples as descriptive cases.                    | Replay/online definitions agree; missing prehistory is explicit. Register any new forward test before reading it. This step must serve an identified hypothesis, not create a general feature platform.                                           |
+| 4. Early-signal economic screen               | Deliver one bounded descriptive discovery/economics artifact for the selected precursor contract, using available inputs before requesting more feeds. Report signal frequency, lead time, false positives, costs, capacity and capital occupancy. | Stop a failed lane. A surviving discovery nominates a separately registered untouched forward cohort; it does not establish profit or change an existing holdout. Due active-candidate readings take priority.                                    |
+| 5. Selective enrichment, if needed            | For a surviving candidate with a specific missing quote/depth input, extend the existing bounded hotset approach with per-venue budgets, admission history, controls and prehistory rules.                                                         | Prove useful input coverage within predeclared load/gap limits, including overload and restart behavior. Existing position management retains its resources. Skip if current data can answer the question.                                        |
+| 6. One additional venue/capability, if needed | Choose from measured missed coverage or a registered cross-venue question; implement/probe only the required feed through existing adapters and exact identity contracts.                                                                          | Additional usable observations justify cost; source semantics and rate budgets pass a bounded canary. No automatic rollout to every radar venue and no implied execution support.                                                                 |
+| 7. Candidate PAPER integration                | For the candidate that passes its research promotion gate, reuse shared features and the existing execution/accounting path with exact venue, versioned costs and observable decisions.                                                            | Untouched forward evidence, executable size/costs and declared risk gates support the next decision. A candidate already in PAPER follows its existing contract; it does not restart this sequence. Live remains separately gated and authorized. |
+| 8. Measured capacity improvement, if needed   | Fix the bottleneck observed above: incremental calculation, batching, retention workflow or off-host research before introducing new infrastructure.                                                                                               | A comparable before/after benchmark shows adequate headroom without evidence loss or execution regression. A current resource incident preempts this nominal order.                                                                               |
+
+For this lane, progress means an economic decision becomes possible or cheaper:
+newly covered opportunities, earlier usable signal, fewer uneconomic entries, or
+reliable executable-cost measurement. Token count, venue count and collected
+terabytes are supporting metrics. New hypothesis thresholds and sample floors
+belong in their registered contracts, not in this architecture plan.
+
+Older Phase 2 pilot and scaling entries below preserve their original chronology.
+Before selecting one, reconcile its status against current implementations and
+closed research decisions; a historical unchecked box is not authority to rerun a
+closed pilot or to block an already established capture lane.
 
 ### Current delivery sequence — 2026-09-07
 

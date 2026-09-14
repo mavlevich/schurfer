@@ -11,87 +11,126 @@ not a count of PRs: every line must say what it measures, when it becomes readab
 and what continue and stop each mean, so we do not spend months building good
 infrastructure without approaching a trading decision.
 
+**Scope and single source of truth.** This register holds DECISIONS and POLICY only.
+The fast-path operational status lives in `ROADMAP.md` (Current focus); the two must not
+disagree, and ROADMAP wins on status. Live operational readouts (running containers,
+disk, "latest run") belong in a dashboard/runbook, not here; where such a fact is quoted
+below it carries a `verified_at` date and its source, and is a point-in-time note, not a
+maintained truth. A "continue" here means a candidate advances to its next registered
+step; it never means a proven, promotable trading edge. Every metric is standalone
+after-cost economics unless explicitly labelled a paired difference.
+
 ## Confirmed facts (with references)
 
 - **The executable pump-short is net negative.** `app.research_report_runs`:
   `liquid_taker_candidate_v1` = 802 eligible / 151 tradeable episodes, net expectancy
   -0.224%/episode, 95% CI [-0.455%, -0.0096%] (entirely below zero);
   `liquid_taker_wider_stop_shadow_v1` = paired delta +0.084%, CI [-0.045%, +0.228%]
-  (crosses zero). Both `do_not_promote`. These are the only confirmatory runs recorded.
-- **The only positive edge candidate is HYP-012 cross-venue source-lead LONG**
-  (`discovery-ledger.md`, HYP-012): enter long on Binance/Bybit after MEXC/Gate show the
-  pump first. +1.8% to +3.4% across four routes, Holm-significant (p=0.0004-0.0016),
-  robust under leave-one-out and busiest-week exclusion. Matching was `base_symbol_v1`
-  (ticker), `identity_verified=false`. Under canonical identity v3: 9 qualified / 462
-  excluded (391 `source_identity_unapproved`) over ~6 days, so ~10 qualified leads/week
-  across 5 approved assets.
+  (crosses zero). Both `do_not_promote`. (verified_at 2026-09-13 from
+  `app.research_report_runs`; these were the only confirmatory rows then.)
+- **HYP-012 cross-venue source-lead is the strongest historical hint, NOT a proven
+  edge** (`discovery-ledger.md` HYP-012; audit `docs/engineering/audits/2026-09-06/`).
+  What is shown: on ticker-matched data (`identity_verified=false`) an EARLY entry beat a
+  post-confirmation entry by +1.8 to +3.4 percentage points across four routes,
+  Holm-significant. That is a PAIRED DIFFERENCE, not standalone profit: early -1% vs late
+  -3% is the same +2pp and still loses money. Standalone after-cost PnL is unproven. The
+  live forward test is a DIFFERENT, narrower estimand: one Gate to Binance branch,
+  `source-lead-forward-cohort-v1.md`, 14 canonical assets, 100 eligible episodes / 7
+  clusters / 4 UTC weeks. (My earlier "5 assets / 30 clusters" was wrong.)
 - **HYP-015 hold12h paper worker is live since 2026-09-13** (contract_sha256 `f280bd14`,
-  paper only). A held-out gross recheck on 3610 accumulated baseline probes: 12h hold
-  +0.199% vs 4h +0.012% (gross, funding NOT modeled).
+  paper only). A gross recheck on 3610 ALREADY-VIEWED baseline probes showed 12h +0.199%
+  vs 4h +0.012% (gross). This is EXPLORATORY only: it is a viewed window, cannot inform
+  the verdict, and its future cohort must not overlap it. Note: the paper accounting
+  models funding as a fixed 5 bps/8h prorated by hold, NOT actual per-coin settlement
+  (`packages/performance/schurfer_performance/accounting.py`), so a 12h hold is a flat
+  ~7.5 bps regardless of coin; a versioned actual-funding reconciliation is required.
 - **Data is already rich.** The cold-bar export is `COPY (SELECT * ...)` of
   `bybit_momentum_bars_1m` (OHLC, bid/ask, microstructure, created_at); OI, funding, and
   liquidations are captured in their own tables. The local 11-column window parquet is a
   hand-cut subset, not the export.
-- **#413 accumulation v2 carries a capacity warning.** Point-in-time dynamic sizing on
-  the fire set: P-SHAPE ~63% tradeable at a 300 USD target, P-MAG ~20%. No returns read.
-- **Prod disk risk.** `/` reached 69%; freed 10.26GB docker build cache to 55%.
-  Timeseries hypertables already have Timescale retention plus compression. The unbounded
-  growth is in plain `app` tables without retention, top being
-  `pump_derivatives_context_samples` at 3.0GB.
+- **#413 accumulation v2 is NOT frozen.** Its published calibration artifact leaves the
+  `0.25/0.25/51d` selection open (Rule A stability, lag SLA, economics/MDE still pending),
+  and the sizing pre-registration is a draft. A point-in-time capacity look showed P-SHAPE
+  ~63% tradeable at a 300 USD target and P-MAG ~20% (no returns read), but neither the
+  selection nor a "one pass then decide" is a registered decision yet.
+- **Prod disk (verified_at 2026-09-13, `ssh schurfer df -h /` + `docker system df`).**
+  Point-in-time note; authoritative liveness is the runbook/dashboard. `/` was at 69%;
+  freeing 10.26GB docker build cache took it to 55%. Timeseries hypertables have Timescale
+  retention plus compression; the unbounded growth is in plain `app` tables without
+  retention, top being `pump_derivatives_context_samples` at 3.0GB.
 
-## Running workers (2026-09-14)
+## Running workers (verified_at 2026-09-14, `ssh schurfer docker ps`)
 
-Collectors (bars, OI, liquidations, funding), `momentum-watch`, and the HYP-015 pair
-(`momentum_flow_paper_v1` baseline plus `hold12h`). All paper, no real money. Every
-running worker is either raw-data capture or active evidence, and no confirmed-dead
-worker is running, so there is nothing to turn off. A worker is stopped only when its
-line is confirmed dead AND it feeds no active read; negative paper P&L on a control or
-an active comparison is the measurement, not a reason to stop it.
+Point-in-time snapshot; authoritative liveness is the runbook/dashboard, not this file.
+Then running: collectors (bars, OI, liquidations, funding), `momentum-watch`, and the
+HYP-015 pair (`momentum_flow_paper_v1` baseline plus `hold12h`). All paper, no real
+money. POLICY (the durable part): a worker is stopped only when its line is confirmed
+dead AND it feeds no active read; negative paper P&L on a control or an active comparison
+is the measurement, not a reason to stop it.
 
 ## Decision cards
 
-### HYP-012 - cross-venue source-lead LONG (lead candidate)
+### HYP-012 - cross-venue source-lead LONG (strongest historical hint)
 
-- **Measure:** prospective paired early-versus-confirmation net return (delay=0,
-  horizon=+30), four routes Holm-corrected, on `identity_verified=true` leads; plus the
-  dollar path (signals/week, executable notional, fees/impact, capacity, expected PnL
-  for the 300 USD bank).
-- **When readable:** when the identity-verified forward cohort reaches at least 100
-  pairs, at least 30 clusters, at least 4 weeks. At ~10 qualified/week over 5 assets that
-  is months unless the registry is expanded (outcome-blind).
-- **Continue:** paired lower bound > 0 under leave-one-out and busiest-week exclusion,
-  AND a positive after-cost dollar path at feasible capacity.
-- **Stop:** paired delta not positive, or capacity/impact makes the dollar path
-  non-viable for the 300 USD bank.
-- **Retro-now vs forward:** the confirmation is forward-only. The dollar-path/capacity
-  read on the already-collected discovery leads is retrospective-descriptive and can be
-  produced now.
+The registered forward test (`source-lead-forward-cohort-v1.md`) asks a NARROWER, more
+honest question than the historical 4-route paired difference: does the early Gate to
+Binance entry earn STANDALONE positive net after costs on ALL eligible early events,
+including those the target venue never confirmed (so we do not select winners)?
+
+- **Measure:** standalone after-cost net return on eligible early Gate to Binance events
+  (its registered primary estimand), plus the dollar path (signals/week, executable
+  notional, fees/impact, delay-decay, capacity, expected PnL for the 300 USD bank).
+- **When readable:** when the identity-verified forward cohort reaches the contract floor
+  (100 eligible episodes / 7 clusters / 4 UTC weeks, concentration limits). At the current
+  ~10 qualified/week over 14 canonical assets that is weeks-to-months, and only if
+  identity coverage keeps admitting events (outcome-blind).
+- **Continue:** standalone net-EV lower bound > 0 under leave-one-out and busiest-week
+  exclusion, AND a viable after-cost dollar path at feasible capacity.
+- **Stop:** standalone net EV not positive, or capacity/impact/delay makes the dollar
+  path non-viable for the 300 USD bank.
+- **Retro-now vs forward:** the standalone confirmation is forward-only (the frozen v1
+  contract). The dollar-path/capacity/delay-decay READ on already-collected leads is
+  retrospective-descriptive and can be produced now. The historical +1.8-3.4% is a paired
+  difference and is NOT the standalone result.
 
 ### HYP-015 - momentum-flow hold12h (active candidate)
 
-- **Measure:** paired net return (12h vs contemporaneous `momentum_flow_paper_v1`) with
-  real fees plus funding, per episode; MFE/MAE, initial-stop survival, capital occupancy.
-- **When readable:** when the forward paper cohort (from 2026-09-13) reaches its
-  pre-registered sample. The frozen reader, cost model, and verdict logic must be
-  committed BEFORE any result is read.
-- **Continue:** paired lower bound > 0 after funding and costs on a mature sample.
-- **Stop:** paired delta <= 0 after funding (the gross +0.199% does not survive the
-  ~1.5 funding intervals of a 12h hold).
-- **Retro-now vs forward:** forward-only for the verdict. Freeze the reader now to
-  prevent fitting it to accumulated results.
+- **Measure:** paired net return (12h vs contemporaneous `momentum_flow_paper_v1`) on the
+  SHARED WATCH population (unfilled/unresolved kept in the denominator), plus standalone
+  after-cost net; MFE/MAE, initial-stop survival, capital occupancy, and signal conflicts.
+  Funding must be the versioned actual-settlement reconciliation, not only the 5 bps/8h
+  model, and entry-price differences between the two workers must be controlled so hold
+  duration is not confounded.
+- **When readable:** ONLY after a pre-registered sample floor plus reader, cost model and
+  verdict logic are committed (they are not yet); the forward cohort must not overlap the
+  already-viewed probes. No sample floor is registered today.
+- **Continue:** standalone net EV and the paired delta both > 0 after actual funding on a
+  mature, non-overlapping forward sample.
+- **Stop:** standalone net EV not positive after funding, or the duration gain vanishes
+  once entry-price and capital-occupancy confounds are controlled.
+- **Retro-now vs forward:** forward-only for the verdict. The 12h-vs-4h gross recheck on
+  viewed probes is EXPLORATORY and does not count. Freeze the reader now to prevent
+  fitting it to accumulated results.
 
-### #413 - accumulation v2 (decision owed)
+### #413 - accumulation v2 (open; contract not yet frozen)
 
-- **Measure:** ONE point-in-time sizing/economics pass on the frozen window:
+Precondition: the calibration selection (`0.25/0.25/51d`) is NOT frozen (Rule A
+stability, lag SLA, economics/MDE still open), and the sizing pre-registration is a
+draft. So the pass below is EXPLORATORY discovery, not a registered go/no-go, until those
+open items close and the sizing parameters are frozen.
+
+- **Measure:** one exploratory sizing/economics look on the calibration window:
   dynamically-sized net EV after 22 bps, break-even slippage, dollar path for 300 USD,
   split by venue and primary, on the tradeable subset.
-- **When readable:** now. This is descriptive/economic on an already-frozen window, not
-  a predictive confirmation.
-- **Continue:** at least one pre-registered size shows positive after-cost EV at viable
-  capacity, then a minimal liquidity shadow plus a prospective registration.
-- **Stop:** no pre-registered size is economically viable, then freeze/close the
-  direction.
-- **Retro-now vs forward:** retro-now. This is the pass to run first for #413.
+- **When readable:** the exploratory look is retro-now; a REGISTERED decision waits on
+  freezing Rule A, lag SLA, economics/MDE and the sizing parameters first.
+- **Continue:** only after freezing the above, if a pre-registered size shows positive
+  after-cost EV at viable capacity, advance to a minimal liquidity shadow plus a
+  prospective registration.
+- **Stop:** after freezing, if no pre-registered size is economically viable,
+  freeze/close the direction.
+- **Retro-now vs forward:** the exploratory economics is retro-now and informs whether to
+  spend effort freezing the contract; it cannot itself be the go/no-go.
 
 ### pump-short (executable) - CLOSED
 
@@ -100,6 +139,10 @@ negative base (the multiple-comparison trap the ledger warns about).
 
 ### Universe coverage (enabler, not an edge)
 
+- **Delivery:** [coverage architecture](../architecture/target-platform-v1.md#broad-market-coverage-and-bounded-enrichment)
+  and the [conditional PR queue](../../ROADMAP.md#market-coverage-and-architecture-delivery--2026-09-14)
+  separate broad observation, continuous baseline and selective enrichment. Existing
+  candidate readings keep priority; expansion is not an execution promotion gate.
 - **Measure:** the full eligible perpetual universe denominator with a deterministic
   onboarding timestamp; coverage versus where pumps actually occur (LONGXIA was not
   captured at all).
