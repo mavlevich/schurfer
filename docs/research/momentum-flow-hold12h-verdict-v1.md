@@ -3,9 +3,12 @@
 > **STATUS: DRAFT FOR REVIEW -- NOT FROZEN, NOT REGISTERED.** This document is a methodology
 > proposal for the HYP-015 hold-duration verdict. No constant here is authoritative yet; nothing
 > may read returns against it. It is published only so the design can be reviewed before any
-> contract/reader/verdict code is written. The formal cohort does not start until the eventual
-> reader/verdict PR is merged (see "Formal cohort start"). Incorporates the first review's seven
-> required fixes; open items are marked TBD.
+> contract/reader/verdict code is written. The formal cohort does not start until registration
+> (see "Formal cohort start"). Incorporates the first review's seven fixes AND the second review's
+> five P1 blockers (verdict precedence so negative EV cannot be masked; reproducible first-writer
+> registration instead of a merge timestamp; non-circular floor with a `min_analyzable_pairs` gate;
+> honest drawdown data + explicit "beats 240m" semantics; a real actual-funding contract). Open
+> numeric thresholds are marked TBD, to be frozen from a pre-start outcome-blind accrual.
 
 ## Question
 
@@ -48,11 +51,23 @@ and a floor on them gates `insufficient_data`.
 ## Costs and ACTUAL funding (fix #4)
 
 The current accounting model charges a fixed `5 bps / 8h` funding assumption, NOT real settlement
-rates (`packages/performance/schurfer_performance/accounting.py`). A 720m hold crosses ~1-2
-settlements and pumping longs often pay above 5 bps, so the fixed model is not adequate for the
-primary read. **Prerequisite before freeze:** a versioned actual-funding reconciliation
-(`ACTUAL_FUNDING_VERSION`) that charges observed per-interval settlement rates per instrument.
-The fixed model is retained as a labelled sensitivity, not the primary cost basis.
+rates (`packages/performance/schurfer_performance/accounting.py`). Funding is not "1-2 rates per
+12h": it accrues on the venue's ACTUAL settlement EVENTS. **Prerequisite before freeze -- a
+versioned funding contract (`ACTUAL_FUNDING_VERSION`), not just a sensitivity, specifying (review
+P1 #5):**
+
+- **source**: the captured funding table (`funding_rate_snapshots`) and its exact rate column;
+- **identity join**: canonical asset + instrument (venue/market_type/symbol), not a ticker string;
+- **settlement inclusion**: charge every settlement event whose settlement timestamp falls in
+  `(entry_at, exit_at]` (half-open), using each event's own observed rate, never a count-based proxy;
+- **sign**: a long pays when the funding rate is positive and receives when negative;
+- **dedup**: exactly one row per (instrument, settlement timestamp); duplicates collapsed;
+- **missingness**: if any settlement in the interval has no captured rate, the probe is
+  `accounting_incomplete` -- excluded from the analyzable pairs but kept in the funnel, never
+  silently back-filled with the fixed model.
+
+The fixed 5 bps/8h model is retained only as a clearly labelled sensitivity alongside the primary
+actual-funding read.
 
 ## Required capital-time / portfolio gate (fix #5)
 
@@ -62,43 +77,83 @@ requires a **fixed-bank portfolio replay** run identically for the 240m and 720m
 
 - same $300 bank, $50 per position, max 6 concurrent slots (TBD, tie to real min-order + fee);
 - one **deterministic** selection policy when more WATCHes arrive than free slots (frozen here);
-- report concurrency, slot occupancy, max drawdown (including floating), losing streak, and PnL
-  **over the actual window** (not %/month), for BOTH policies on the same WATCH stream.
+- report concurrency, slot occupancy, losing streak, and PnL **over the actual window**
+  (not %/month), for BOTH policies on the same WATCH stream.
 
-## Evidence floor (fix #6 -- TBD from a readiness count)
+**Drawdown data honesty (review P1 #4).** Paper storage keeps per-horizon quotes and aggregated
+MFE/MAE, NOT a synchronous mark-to-market series across all concurrently open positions, so a true
+floating portfolio drawdown is not computable from today's data. Two honest options, decided before
+freeze: (a) add a prospectively persisted portfolio mark stream, or (b) declare a **conservative
+proxy** drawdown (e.g. summing each open position's worst recorded horizon-MAE within the window)
+and label it as a proxy, never as the exact figure. The primary economics stand on window PnL and
+occupancy; drawdown is reported at whichever fidelity is declared.
 
-Do NOT copy HYP-012's 7-cluster floor (that came from its 14-asset universe). Momentum-flow's
-WATCH universe is wider. Before freezing: run an **outcome-blind readiness count** (distinct
-canonical assets and UTC weeks in the WATCH stream since the formal start, counts only, no
-returns) and set `min_distinct_asset_clusters` to a justified value, target ~20-30. Keep
-`min_distinct_utc_weeks >= 4` as an absolute minimum plus a **leave-one-week-out** sensitivity,
-and concentration caps (single-asset and single-week episode-share caps, values TBD).
+**"Beats 240m" pass semantics (review P1 #4).** Defined explicitly, not left vague: the 720m
+fixed-bank window PnL must exceed the 240m fixed-bank window PnL by at least a pre-registered
+**minimum dollar improvement** `MIN_PORTFOLIO_IMPROVEMENT_USD` (TBD, e.g. a fraction of the $300
+bank), AND the 720m policy's declared drawdown measure must not be materially worse. Where a paired
+per-decision portfolio-contribution difference is computable, its cluster-bootstrap CI lower bound
+is also reported; the frozen pass rule states whether it is point-estimate or CI-based.
 
-## Verdict outcomes (fix #7 -- differentiated, negative-EV binds first)
+## Evidence floor (fix #6 + review P1 #3 -- non-circular, includes a pairs floor)
 
-Evaluated by a pure function, once, at the first pre-defined decision-time prefix meeting the
-floor. Precedence order:
+The readiness count cannot be measured "since the formal start" (the start is after freeze) --
+that is circular. Instead size the floor from a **fixed pre-start operational window** (the
+2026-09-13-onward operational probes up to registration), counts only, NO returns read, and freeze
+all thresholds before the cohort starts:
 
-1. `insufficient_data` -- floor or missingness thresholds not met, or a bootstrap CI cannot be
-   computed.
-2. `reject_hold12h` -- the standalone mature after-cost EV of the 720m policy has a 95%
-   cluster-bootstrap CI upper/point read that is not positive (a losing strategy is rejected even
-   if it "improves" on 240m). **This binds first among the substantive outcomes.**
-3. `no_duration_improvement` -- 720m standalone EV is positive, but the paired `d(p)` CI lower
-   bound is not strictly positive, or the fixed-bank portfolio does not beat the 240m portfolio.
-4. `candidate` -- standalone 720m EV positive AND paired `d(p)` CI lower bound > 0 AND the
-   fixed-bank portfolio economics beat 240m. A candidate authorizes only the next gate (the
+- `min_analyzable_pairs` (economic maturity, Gate A) -- >= 100 (matches the earlier proposal);
+  this is the primary maturity gate and is independent of diversity.
+- `min_distinct_asset_clusters` -- a justified value from the pre-start accrual, target ~20-30
+  (do NOT copy HYP-012's 7, which came from its 14-asset universe).
+- `min_distinct_utc_weeks` >= 4 absolute minimum, plus a **leave-one-week-out** sensitivity.
+- single-asset and single-week concentration caps (values frozen from the accrual).
+- missingness ceilings on the funnel categories (rejected/stale, unresolved, accounting-incomplete)
+  above which the read is `insufficient_data`.
+
+The pre-start accrual only SIZES these numbers; they are then applied to the untouched forward
+cohort.
+
+## Verdict outcomes (fix #7 + review P1 #1 -- negative EV cannot be masked by low diversity)
+
+Evaluated by a pure function, once, at the first pre-defined decision-time prefix. Economic
+maturity is defined by a **minimum analyzable-pairs count**, SEPARATE from the diversity floor, so
+that "enough trades but few weeks/clusters, and losing" resolves to a rejection, never to
+"insufficient data." Ordered gates (first match wins):
+
+1. **Gate A -- economic maturity.** analyzable pairs `< min_analyzable_pairs` (or a bootstrap CI
+   cannot be computed) -> `insufficient_data`.
+2. **Gate B -- negative EV binds first.** economically mature AND the standalone 720m mature
+   **mean net after actual funding `<= 0`** -> `reject_hold12h`. This is checked BEFORE the
+   diversity floor, so a mature-but-narrow losing sample is a rejection, not "insufficient."
+3. **Gate C -- diversity / missingness floor.** clusters / UTC weeks / concentration caps /
+   missingness thresholds not met -> `insufficient_data` (only reachable once EV is not negative).
+4. **Gate D -- standalone significance.** standalone 720m net **95% cluster-bootstrap CI lower
+   bound not > 0** (a positive point estimate whose CI still crosses zero) -> `insufficient_evidence`
+   (NOT candidate).
+5. **Gate E -- duration improvement + portfolio.** standalone CI lower bound > 0, but the paired
+   `d(p)` CI lower bound is not strictly > 0, OR the fixed-bank portfolio does not beat 240m by the
+   pre-registered minimum dollar improvement -> `no_duration_improvement`.
+6. `candidate` -- standalone CI lower bound > 0 AND paired `d(p)` CI lower bound > 0 AND the
+   fixed-bank portfolio beats 240m by the minimum improvement. Authorizes only the next gate (the
    episode study / a real shadow), never live trading.
 
 CI method: shared `clustered_inference` (bootstrap version/iterations/seed/confidence frozen
-there), clustered by canonical asset.
+there), clustered by canonical asset. Every threshold named here (`min_analyzable_pairs` and the
+diversity/missingness/improvement values) is frozen before the cohort starts.
 
-## Formal cohort start (fix #1)
+## Formal cohort start (fix #1 + review P1 #2 -- must be reproducible and immutable)
 
-`MOMENTUM_HOLD12H_VERDICT_COHORT_START = the merge timestamp of the reader/verdict PR` (TBD at
-merge). Probes before that (including the 2026-09-13 onward operational history) are
-operational/readiness only, never evidence -- this costs a few days but removes any
-late-preregistration dispute.
+A merge timestamp cannot be frozen inside its own merge commit (it is unknown at write time and
+deploy may lag). Instead, **first-writer-wins registration**: on its first execution the reader
+persists `registered_at` (wall clock at first run) to a small immutable state file
+(`MOMENTUM_HOLD12H_VERDICT_STATE_PATH`, on the mounted `runtime/` volume), and
+`MOMENTUM_HOLD12H_VERDICT_COHORT_START` = the **next whole UTC-day boundary after `registered_at`**.
+Once written the value never changes (a differing recomputation refuses the run unless an explicit,
+logged re-baseline flag is passed), and it is emitted verbatim into every artifact so any reader
+reproduces the same cohort. (A literal pre-chosen future UTC cutoff is the acceptable alternative.)
+Probes before the cohort start -- including the 2026-09-13-onward operational history -- are
+operational/readiness only, never evidence.
 
 ## Delivery order (proposed)
 
