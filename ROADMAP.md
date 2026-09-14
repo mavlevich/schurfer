@@ -206,29 +206,26 @@ since the cold-bar export dir was empty):
   non-movers, but that first cut is outcome-selected (best entry sits mid-pump), so it
   is a candidate, not a clean precursor.
 
-Clean study result (2026-09-14, exploratory, in-sample). Redone onset-free (785k hourly
-points, strictly-past features, forward-3d monster label, base rate 0.32%): trailing-24h
-ACTIVITY concentrates monsters monotonically ~3.3x (decile 10 P(monster) 1.07% vs 0.06%
-at decile 1); acceleration weak; net-buy share inverted-U (not the precursor alone). The
-tradeable verdict splits: as a flag whose typical fire beats the market it FAILS (de-beta
-3d median excess -0.43%, win-vs-market 47%, and no pre-specified multi-feature combo flips
-the median positive), but as a diversified positive-EV lottery portfolio it SURVIVES: the
-`confirmed flow` flag (activity decile >=8 AND net-buy share 0..0.3 AND trailing-24h return
+Status (2026-09-14): PARKED -- exploratory economics unattractive; NOT a formal FAIL.
+Earlier "+3.3x lift" and "+1.86% harvest" numbers are RETRACTED (the discovery scripts had
+critical bugs: rolling windows applied after an hourly filter so 24h activity was ~1.5% of
+true, a global look-ahead rank, the headline harvest computed with no cooldown counting one
+pump as many dependent episodes, and truncated outcomes). A corrected replay (minute-level
+features, within-hour rank, 72h cooldown, independent monster label, realistic stop fills,
+point-in-time selection, path-based exit) collapsed the apparent edge: a frozen K=8 / $300
+variant returned about +4.3% / +1.3% / -3.2% over the window at 5 / 15 / 30 bps slippage
+with a ~-38% drawdown and only ~4 monster catches -- and even that simulator still has known
+defects. Conclusion: no formal out-of-sample FAIL, but the edge is not attractive enough to
+keep investing versus HYP-012 / HYP-015, so the tradeable line is parked on expected-value
+grounds. Full card in `docs/research/decision-register.md`.
 
-> = +5%) has +1.86% MEAN excess over the same-hour market, positive in 4 of 5 UTC weeks and
-> robust to excluding the top 25 winners (down only to +1.31%), across hundreds of tokens.
-> Full go/no-go in `docs/research/decision-register.md` (Monster-precursor discovery card).
-
-Next (the CONTINUE trigger is met for the harvest reading; confirmation is a forward
-cohort, not in-sample iteration): pre-register a forward precursor cohort that freezes the
-`confirmed flow` flag and the de-beta 3d excess metric, with a HYP-012-style evidence floor
-(>= 4 UTC weeks, >= 7 asset clusters, a minimum resolved-episode count), reading mean
-excess vs the contemporaneous market with the top-winner-exclusion robustness; and in
-parallel a minimal executability check (is target size fillable at the $50-300 bank on
-binance/bybit for the flagged subset, given only ~36% of pump events are on those venues).
-Colleague input on additional precursors (cross-venue breadth, OI growth, liquidation
-cascades) is still wanted. Do not trade in-sample; the pump-domain exit gate binds only if
-this forward cohort also fails.
+Kept: trailing activity as a cheap, EXPLORATORY monster RADAR (it concentrates future
+extreme moves and fires early in liquid names), never a standalone trading entry. Keep
+passively collecting the same bybit/binance bars; no L2 or execution build for this line.
+`monster-precursor-forward-cohort-v1.md` is SUPERSEDED (pre-registered against the retracted
+design) and is not to be started. Any revisit needs a new, pre-validated, unit-tested
+simulator on an untouched window -- not a replay of this Aug-Sep data. Main effort moves to
+HYP-015 and HYP-012.
 
 ### Current delivery sequence — 2026-09-07
 

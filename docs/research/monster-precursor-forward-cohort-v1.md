@@ -1,5 +1,14 @@
 # Monster-precursor forward cohort v1
 
+> **SUPERSEDED / DO NOT START (2026-09-14).** This contract was pre-registered against a
+> discovery result that was later RETRACTED: the discovery scripts had critical bugs (24h
+> activity computed over ~1.5% of the true window, a look-ahead rank, no cooldown on the
+> headline number, truncated outcomes), and a corrected replay collapsed the apparent edge to
+> roughly zero with an unacceptable drawdown. The monster tradeable line is PARKED (exploratory
+> economics unattractive, not a formal FAIL); see `decision-register.md`. This document is kept
+> only as a record of the analysis. Any future monster work must use a new, pre-validated,
+> unit-tested simulator on an UNTOUCHED window -- not this contract and not the Aug-Sep data.
+
 ## Purpose
 
 This contract answers, on bybit/binance 1m bars never touched by the discovery
