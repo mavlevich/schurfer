@@ -188,6 +188,33 @@ Before selecting one, reconcile its status against current implementations and
 closed research decisions; a historical unchecked box is not authority to rerun a
 closed pilot or to block an already established capture lane.
 
+### Monster pump precursor discovery — 2026-09-14
+
+Research idea (not a committed cohort). The question: catch the rare monster pumps
+(the ones that actually pay) and cut the junk. What we have established, on a
+pump-covering window (bybit/binance 1m bars Aug 10 to Sep 14, pulled from the prod DB
+since the cold-bar export dir was empty):
+
+- The monsters ARE in our capture: forward-3d best return LSKUSDT +2179%/+1855%,
+  龙虾USDT (LONGXIA) +377%, and ~58 tokens above +100% over the window.
+- **net-buy accumulation is NOT the monster signal.** The small-early-entry
+  accumulation-LONG (theta 0.25) is net-negative at every hold even with the pumps in
+  window (P-SHAPE 3d mean -0.71%, worse than the truncated window's +0.93% one-winner
+  artifact), and pre-move net-buy imbalance does not separate monsters from junk (both
+  slightly net-sell). So the net-buy accumulation line is parked as not-the-monster-catcher.
+- First-cut precursor signal: monsters showed ~11x higher trailing-24h ACTIVITY than
+  non-movers, but that first cut is outcome-selected (best entry sits mid-pump), so it
+  is a candidate, not a clean precursor.
+
+Next (a bounded discovery, not a new platform, and outcome-blind at decision time):
+define move-onset per episode, then measure point-in-time features STRICTLY before
+onset over ALL episodes (monsters and matched controls) and report precision/recall/lift,
+never fitting to LSK. Candidate features for review: trailing activity/volume ramp,
+cross-venue breadth (how many venues are buying), OI growth, repeating net-buy bursts
+(structure, not a single spike), acceleration, liquidation cascades. Colleague input on
+which precursors to test is explicitly wanted here -- a fresh eye may see a precursor we
+do not. Confirmation still needs an untouched forward cohort; this is discovery.
+
 ### Current delivery sequence — 2026-09-07
 
 This section supersedes older near-term ordering below, preserving their completed
