@@ -2212,7 +2212,7 @@ prod-momentum-watch-start:
 			exit 1; \
 		fi; \
 	fi
-	@$(MAKE) prod-backup
+	@sudo /opt/schurfer/infra/scripts/offsite-backup.sh
 	@$(MAKE) prod-migrate
 	$(_PROD) --profile momentum-watch up -d --build --no-deps momentum-watch
 	@$(_PROD) --profile momentum-watch ps momentum-watch
@@ -2238,7 +2238,7 @@ prod-momentum-watch-binance-start:
 			exit 1; \
 		fi; \
 	fi
-	@$(MAKE) prod-backup
+	@sudo /opt/schurfer/infra/scripts/offsite-backup.sh
 	@$(MAKE) prod-migrate
 	$(_PROD) --profile momentum-watch-binance up -d --build --no-deps momentum-watch-binance
 	@$(_PROD) --profile momentum-watch-binance ps momentum-watch-binance
@@ -2264,7 +2264,7 @@ prod-momentum-paper-start:
 			exit 1; \
 		fi; \
 	fi
-	@$(MAKE) prod-backup
+	@sudo /opt/schurfer/infra/scripts/offsite-backup.sh
 	@$(MAKE) prod-migrate
 	$(_PROD) --profile momentum-paper up -d --build --no-deps momentum-paper
 	@$(_PROD) --profile momentum-paper ps momentum-paper
@@ -2290,7 +2290,7 @@ prod-momentum-paper-binance-start:
 			exit 1; \
 		fi; \
 	fi
-	@$(MAKE) prod-backup
+	@sudo /opt/schurfer/infra/scripts/offsite-backup.sh
 	@$(MAKE) prod-migrate
 	$(_PROD) --profile momentum-paper-binance up -d --build --no-deps momentum-paper-binance
 	@$(_PROD) --profile momentum-paper-binance ps momentum-paper-binance
@@ -2316,7 +2316,7 @@ prod-momentum-paper-lev3-start:
 			exit 1; \
 		fi; \
 	fi
-	@$(MAKE) prod-backup
+	@sudo /opt/schurfer/infra/scripts/offsite-backup.sh
 	@$(MAKE) prod-migrate
 	$(_PROD) --profile momentum-paper-lev3 up -d --build --no-deps momentum-paper-lev3
 	@$(_PROD) --profile momentum-paper-lev3 ps momentum-paper-lev3
@@ -2342,7 +2342,7 @@ prod-momentum-paper-hold12h-start:
 			exit 1; \
 		fi; \
 	fi
-	@$(MAKE) prod-backup
+	@sudo /opt/schurfer/infra/scripts/offsite-backup.sh
 	@$(MAKE) prod-migrate
 	$(_PROD) --profile momentum-paper-hold12h up -d --build --no-deps momentum-paper-hold12h
 	@$(_PROD) --profile momentum-paper-hold12h ps momentum-paper-hold12h
