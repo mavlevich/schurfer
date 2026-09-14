@@ -188,6 +188,45 @@ Before selecting one, reconcile its status against current implementations and
 closed research decisions; a historical unchecked box is not authority to rerun a
 closed pilot or to block an already established capture lane.
 
+### Monster pump precursor discovery — 2026-09-14
+
+Research idea (not a committed cohort). The question: catch the rare monster pumps
+(the ones that actually pay) and cut the junk. What we have established, on a
+pump-covering window (bybit/binance 1m bars Aug 10 to Sep 14, pulled from the prod DB
+since the cold-bar export dir was empty):
+
+- The monsters ARE in our capture: forward-3d best return LSKUSDT +2179%/+1855%,
+  龙虾USDT (LONGXIA) +377%, and ~58 tokens above +100% over the window.
+- **net-buy accumulation is NOT the monster signal.** The small-early-entry
+  accumulation-LONG (theta 0.25) is net-negative at every hold even with the pumps in
+  window (P-SHAPE 3d mean -0.71%, worse than the truncated window's +0.93% one-winner
+  artifact), and pre-move net-buy imbalance does not separate monsters from junk (both
+  slightly net-sell). So the net-buy accumulation line is parked as not-the-monster-catcher.
+- First-cut precursor signal: monsters showed ~11x higher trailing-24h ACTIVITY than
+  non-movers, but that first cut is outcome-selected (best entry sits mid-pump), so it
+  is a candidate, not a clean precursor.
+
+Status (2026-09-14): PARKED -- exploratory economics unattractive; NOT a formal FAIL.
+Earlier "+3.3x lift" and "+1.86% harvest" numbers are RETRACTED (the discovery scripts had
+critical bugs: rolling windows applied after an hourly filter so 24h activity was ~1.5% of
+true, a global look-ahead rank, the headline harvest computed with no cooldown counting one
+pump as many dependent episodes, and truncated outcomes). A corrected replay (minute-level
+features, within-hour rank, 72h cooldown, independent monster label, realistic stop fills,
+point-in-time selection, path-based exit) collapsed the apparent edge: a frozen K=8 / $300
+variant returned about +4.3% / +1.3% / -3.2% over the window at 5 / 15 / 30 bps slippage
+with a ~-38% drawdown and only ~4 monster catches -- and even that simulator still has known
+defects. Conclusion: no formal out-of-sample FAIL, but the edge is not attractive enough to
+keep investing versus HYP-012 / HYP-015, so the tradeable line is parked on expected-value
+grounds. Full card in `docs/research/decision-register.md`.
+
+Kept: trailing activity as a cheap, EXPLORATORY monster RADAR (it concentrates future
+extreme moves and fires early in liquid names), never a standalone trading entry. Keep
+passively collecting the same bybit/binance bars; no L2 or execution build for this line.
+`monster-precursor-forward-cohort-v1.md` is SUPERSEDED (pre-registered against the retracted
+design) and is not to be started. Any revisit needs a new, pre-validated, unit-tested
+simulator on an untouched window -- not a replay of this Aug-Sep data. Main effort moves to
+HYP-015 and HYP-012.
+
 ### Current delivery sequence — 2026-09-07
 
 This section supersedes older near-term ordering below, preserving their completed
