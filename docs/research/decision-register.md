@@ -213,7 +213,7 @@ in-sample, tail-dependent (win-vs-market < 50%) result, and tail means are the m
 overfit-prone number there is. The pump-domain exit gate does NOT bind yet; it binds only
 if this forward cohort also fails.
 
-- **Forward cohort (to pre-register before reading):** freeze the `confirmed flow` flag and
+- **Forward cohort (pre-registered in `monster-precursor-forward-cohort-v1.md`):** freeze the `confirmed flow` flag and
   the de-beta 3d excess metric above; accrue untouched forward hourly points from a start
   date after this study; evidence floor mirroring HYP-012 (>= 4 UTC weeks, >= 7 distinct
   asset clusters, a minimum resolved-episode count); primary read = mean excess vs
