@@ -96,10 +96,15 @@ cutoff-wide call), so the set Timescale removes is provably exactly the validate
   Makefile `prod-cold-bar-gated-deletion-dry-run` / `-install`), run AFTER the daily export and
   offsite backup (05:00; export 03:30, backup 04:00). NOT embedded in `prod-deploy` or the backup
   script. The unit is hardened (`NoNewPrivileges`) and the make target uses NO in-target sudo (the
-  bug that broke the export before). **PREREQUISITE to confirm in the integration step:** the job's
-  run context (the analytics container, or the host) must be able to call `borg` against the offsite
-  repo -- borg binary + `backup.env` + the SSH identity. If the analytics container lacks borg, the
-  job runs on the host or a borg-capable image instead. PR 1 ships this DRY-RUN only.
+  bug that broke the export before). **Borg access (decided: run in the analytics container).** The
+  analytics image ships `borgbackup`; the make target MOUNTS the offsite credentials/config at their
+  same host paths (`backup.env`, `/home/deploy/.ssh/schurfer_storagebox`, `storagebox_known_hosts`,
+  `borg-passphrase`, `BORG_BASE_DIR=/opt/schurfer/runtime/borg-home`) so `BORG_RSH`/`BORG_PASSCOMMAND`
+  /`BORG_BASE_DIR` from `backup.env` resolve unchanged. This is acceptable because it is a single
+  single-tenant box under one `deploy` user (the key already lives there), the job is READ-ONLY
+  (borg list/extract; `drop_chunk` disabled until PR 2), and the offsite repo is a Hetzner Storage
+  Box **sub-account** (`-sub1`) which can be scoped/append-only-restricted. End-to-end reachability
+  (container -> storagebox) is validated the first time the job runs after deploy. PR 1 ships DRY-RUN only.
 - **`--dry-run` by default**: it prints the candidate list and per-day verdicts and drops nothing.
   Active deletion is a separate, explicit enablement (a flag/env), turned on only after a dry-run has
   been reconciled on prod.

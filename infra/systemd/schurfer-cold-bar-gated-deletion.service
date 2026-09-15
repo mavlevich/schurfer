@@ -20,11 +20,11 @@ TimeoutStartSec=1h
 NoNewPrivileges=true
 PrivateTmp=true
 
-# PREREQUISITE TO CONFIRM (integration): the run context must be able to call `borg`
-# against the offsite repo (borg binary + /opt/schurfer/runtime/backup.env + the SSH
-# identity). If the analytics container lacks borg, this job must instead run on the
-# host or in a container that has it. This is deliberately dry-run until that is
-# confirmed and PR 2 wires the actual deletion.
+# The analytics image ships borg; the make target mounts the offsite credentials/config
+# (backup.env, the SSH identity, known_hosts, the passphrase file, BORG_BASE_DIR) at their
+# same host paths so BORG_RSH/BORG_PASSCOMMAND/BORG_BASE_DIR resolve unchanged. Read-only:
+# borg list/extract only, and drop_chunk is disabled until PR 2. End-to-end reachability
+# (container -> storagebox over SSH) is validated the first time this runs after deploy.
 
 [Install]
 WantedBy=multi-user.target

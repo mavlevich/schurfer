@@ -1580,12 +1580,17 @@ prod-cold-bar-export:
 prod-cold-bar-gated-deletion-dry-run:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
 	@# DRY-RUN ONLY (PR 1): prints which cold-bar chunks would be dropped; deletes nothing.
-	@# No in-target sudo (the systemd unit is NoNewPrivileges). PREREQUISITE to confirm:
-	@# the analytics container must be able to call borg against the offsite repo (borg
-	@# binary + backup.env + SSH identity); if it cannot, run this on the host instead.
+	@# No in-target sudo (the systemd unit is NoNewPrivileges). The analytics image ships
+	@# borg; the offsite credentials/config are MOUNTED (not baked) at their same host paths
+	@# so BORG_RSH / BORG_PASSCOMMAND / BORG_BASE_DIR from backup.env resolve unchanged. The
+	@# job is read-only (borg list/extract; drop_chunk is disabled until PR 2).
 	@$(_PROD) run --rm --no-deps \
 		-v /opt/schurfer/runtime/cold-bars:/cold-bars \
 		-v /opt/schurfer/runtime/backup.env:/backup.env:ro \
+		-v /opt/schurfer/runtime/borg-home:/opt/schurfer/runtime/borg-home \
+		-v /opt/schurfer/runtime/borg-passphrase:/opt/schurfer/runtime/borg-passphrase:ro \
+		-v /opt/schurfer/runtime/storagebox_known_hosts:/opt/schurfer/runtime/storagebox_known_hosts:ro \
+		-v /home/deploy/.ssh/schurfer_storagebox:/home/deploy/.ssh/schurfer_storagebox:ro \
 		--entrypoint cold-bar-gated-deletion analytics \
 		--cold-bars-dir /cold-bars --backup-env /backup.env --cutoff-days 40 $(ARGS)
 
