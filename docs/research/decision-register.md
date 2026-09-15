@@ -162,6 +162,42 @@ negative base (the multiple-comparison trap the ledger warns about).
   scanner is a late reactive radar; earlier detection trades precision for earliness and
   must be validated on base rates, never tuned on winners.
 
+### Abnormal-flow economic screen v1 (planned bounded discovery)
+
+**Status: planned, not yet registered or run.** The owning sequence and project-level
+budget are fixed in the [near-term edge decision program](../../ROADMAP.md#near-term-edge-decision-program--2026-09-15).
+The next implementation PR may combine the frozen protocol with tested replay code,
+but it must not contain a result produced by that code. This historical read is
+discovery-only and can authorize at most one new prospective cohort.
+
+- **Question:** on the existing exact-native Bybit/Binance research paths, does one
+  predeclared abnormal-flow family predict an executable directional return beyond a
+  matched baseline and also make standalone money after conservative costs?
+- **Before any outcome read:** freeze one primary direction and horizon; feature and
+  availability timestamps; eligible-universe denominator; episode formation and
+  cooldown; entry/exit mechanics; gaps/unresolved handling; cost model; portfolio
+  policy; outcome-blind threshold/calibration procedure; and a rule that can nominate
+  at most one candidate. Source-lead remains HYP-012 and is not silently retested as a
+  second primary family here. Absorption and raw buy-flow variants remain out of scope.
+- **Required outputs:** full coverage/rejection funnel; standalone after-cost net EV;
+  matched excess; uncertainty; resolved/unresolved counts; signals/week; asset/week
+  concentration and leave-one-out controls; drawdown and losing streak; concurrency
+  and capital occupancy; executable notional/capacity; and dollar paths at the current
+  research bank plus plausible larger allocations. Report negative mature economics
+  before diversity commentary.
+- **Continue:** only if the frozen primary is positive on standalone after-cost
+  economics and incremental excess, remains viable under the predeclared robustness
+  and portfolio checks, and has an economically material capacity path. This earns one
+  separately registered untouched prospective cohort, not PAPER or live trading.
+- **Stop:** close this signal/data scope if standalone net is non-positive, the
+  incremental effect disappears, portfolio risk is unacceptable, capacity makes the
+  dollar ceiling immaterial, or opportunity throughput cannot support a decision by
+  the program checkpoint. Do not retune the same viewed window.
+- **Inference boundary:** a stop applies to the declared Bybit/Binance minute-bar
+  mechanism. It is not evidence about uncollected venues or pre-event L2. Those remain
+  untested, and may receive new collection only through the conditional coverage/L2
+  gates in the roadmap rather than by treating missingness as a positive hypothesis.
+
 ### Monster-precursor discovery (next primary discovery line)
 
 The core money question: catch the rare monster pumps (the ones that pay) and cut the
@@ -256,6 +292,12 @@ worth less than HYP-012 / HYP-015. The pump-domain exit gate is therefore NOT fo
   negative, and HYP-012 capacity/identity-limited, step back from the pump domain and
   seek an edge elsewhere rather than iterate more pump variants.
 - No new cold-probe screens on already-viewed windows.
+- Near-term edge program: finish the already-registered HYP-012/HYP-015 reads and one
+  bounded abnormal-flow discovery, then reassess once. If no line clears standalone
+  after-cost economics, incremental information, portfolio feasibility and business
+  materiality, stop strategy-specific expansion in the pump/early-flow domain. An
+  underpowered calendar checkpoint is a throughput/economic no-go, not a statistical
+  claim that every unobserved market mechanism has negative EV.
 - ML: parked until there is a confirmed structural edge, clean forward data, and a known
   capacity envelope; a better predictor does not solve executability/capacity or
   out-of-sample validity.
