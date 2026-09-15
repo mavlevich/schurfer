@@ -155,6 +155,12 @@ reproduces the same cohort. (A literal pre-chosen future UTC cutoff is the accep
 Probes before the cohort start -- including the 2026-09-13-onward operational history -- are
 operational/readiness only, never evidence.
 
+The first execution is registration-only: it persists the state and exits before querying any
+return or PnL value. A later readiness path may inspect outcome-blind counts, timestamps, presence,
+gap classifications and funding coverage, but must not load or derive returns until the frozen
+floor is met. This makes the first-writer boundary a real information barrier rather than only a
+timestamp convention.
+
 ## Delivery order (proposed)
 
 1. Review THIS draft (four questions especially: common-entry counterfactual, actual funding,
@@ -162,6 +168,7 @@ operational/readiness only, never evidence.
 2. After agreement, ONE PR: contract + reader + pure verdict + actual-funding reconciliation +
    tests (SQL against real Postgres, pairing, missingness, negative-EV precedence, deterministic
    portfolio) + the portfolio/capital-occupancy replay.
-3. Merge timestamp becomes the formal cohort start.
+3. The first reader execution persists `registered_at`; the next whole UTC-day
+   boundary becomes the immutable formal cohort start, exactly as specified above.
 4. Do not read returns until the outcome-blind floor is met.
 5. Run the reader once, at the first pre-defined decision-time prefix.
