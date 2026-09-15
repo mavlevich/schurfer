@@ -1592,7 +1592,10 @@ prod-cold-bar-gated-deletion-dry-run:
 		-v /opt/schurfer/runtime/storagebox_known_hosts:/opt/schurfer/runtime/storagebox_known_hosts:ro \
 		-v /home/deploy/.ssh/schurfer_storagebox:/home/deploy/.ssh/schurfer_storagebox:ro \
 		--entrypoint cold-bar-gated-deletion analytics \
-		--cold-bars-dir /cold-bars --backup-env /backup.env --cutoff-days 40 $(ARGS)
+		--cold-bars-dir /cold-bars --backup-env /backup.env --cutoff-days 25 $(ARGS)
+	@# cutoff 25 (< the 35-day Timescale retention) so the dry-run has real eligible
+	@# chunks to validate; PR 2 raises it to 40 once the automatic retention is removed.
+	@# Commissioning (first run) should add ARGS='--fail-if-empty' to catch a broken setup.
 
 prod-paper-replay-reconciliation:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)

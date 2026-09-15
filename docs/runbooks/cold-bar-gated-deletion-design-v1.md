@@ -143,6 +143,17 @@ First PR: **`bybit_momentum_bars_1m` only.** Do not generalize to the other rete
 6. After the first real deletion: verify DB size, remaining chunk ranges, Borg archives, manifests,
    alerts, and that a research reader still reads the boundary day.
 
+## PR 2 correctness requirement: close the fingerprint TOCTOU
+
+The dry-run recomputes the source fingerprint and (in PR 2) would then call `drop_chunks`.
+Between those two steps a late backfill/repair could change the day, so the final fingerprint
+recheck and the targeted `drop_chunks` must run **atomically** with respect to the writer -- under
+a shared Postgres advisory lock (the same lock the backfill/repair path takes) or one
+transaction/serialized protocol -- so a day cannot change in the window between "verified
+unchanged" and "dropped". PR 1 is dry-run and does not delete, so this is a PR-2 gate, but it is
+mandatory before any real deletion. (`dry_run=False` exists and is tested; the concrete
+`drop_chunk` still deliberately raises until PR 2 wires this.)
+
 ## Gates before enabling deletion (must all pass)
 
 - **Legacy fingerprint backfill.** Manifests exported before fingerprints existed have no

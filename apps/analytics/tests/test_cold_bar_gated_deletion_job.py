@@ -18,6 +18,7 @@ from schurfer_analytics.cold_bar_gated_deletion_job import (
     read_receipt,
     render_plan,
     run_gated_deletion,
+    validate_chunks,
     write_receipt,
 )
 
@@ -59,6 +60,7 @@ class FakeCollectors:
         self.manifest_ok = set(days)
         self.receipt_offsite_ok = set(days)
         self.archive_ok = True
+        self.gathered: list[str] = []
 
     def list_chunks(self) -> tuple[ChunkCandidate, ...]:
         return self._chunks
@@ -78,6 +80,7 @@ class FakeCollectors:
         )
 
     def recompute_source_fingerprint(self, day: str) -> str | None:
+        self.gathered.append(day)
         return "cbfp_v1:fp"
 
     def drop_chunk(self, candidate: ChunkCandidate) -> None:
@@ -116,7 +119,7 @@ def test_dry_run_drops_nothing(tmp_path: Path) -> None:
     result = run_gated_deletion(
         now=NOW, cutoff_days=40, receipts_dir=tmp_path, collectors=c, dry_run=True
     )
-    assert result.plan.to_drop == tuple(days)  # all would drop
+    assert result.to_drop == tuple(days)  # all would drop
     assert result.dropped == ()  # but nothing was
     assert c.dropped == []
 
@@ -143,8 +146,8 @@ def test_a_blocked_day_halts_the_frontier_and_stops_drops(tmp_path: Path) -> Non
         now=NOW, cutoff_days=40, receipts_dir=tmp_path, collectors=c, dry_run=False
     )
     assert result.dropped == (days[0],)  # only the day before the block
-    assert result.plan.blocked_at is not None
-    assert result.plan.blocked_at[0] == days[1]
+    assert result.blocked_at is not None
+    assert result.blocked_at[0] == days[1]
     assert c.dropped == [days[0]]
 
 
@@ -155,8 +158,8 @@ def test_missing_receipt_blocks_that_day(tmp_path: Path) -> None:
     result = run_gated_deletion(
         now=NOW, cutoff_days=40, receipts_dir=tmp_path, collectors=c, dry_run=True
     )
-    assert result.plan.to_drop == (days[0],)
-    assert result.plan.blocked_at[0] == days[1]  # type: ignore[index]
+    assert result.to_drop == (days[0],)
+    assert result.blocked_at[0] == days[1]  # type: ignore[index]
 
 
 def test_ineligible_recent_chunks_are_not_candidates(tmp_path: Path) -> None:
@@ -167,8 +170,8 @@ def test_ineligible_recent_chunks_are_not_candidates(tmp_path: Path) -> None:
     result = run_gated_deletion(
         now=NOW, cutoff_days=40, receipts_dir=tmp_path, collectors=c, dry_run=True
     )
-    assert result.plan.to_drop == ()
-    assert result.plan.blocked_at is None  # no eligible candidates at all
+    assert result.to_drop == ()
+    assert result.blocked_at is None  # no eligible candidates at all
 
 
 def test_a_raising_collector_blocks_its_day_without_crashing(tmp_path: Path) -> None:
@@ -185,10 +188,10 @@ def test_a_raising_collector_blocks_its_day_without_crashing(tmp_path: Path) -> 
     result = run_gated_deletion(
         now=NOW, cutoff_days=40, receipts_dir=tmp_path, collectors=c, dry_run=True
     )
-    assert result.plan.to_drop == ()
-    assert result.plan.blocked_at is not None
-    assert result.plan.blocked_at[0] == days[0]
-    assert "could not gather evidence" in result.plan.blocked_at[1]
+    assert result.to_drop == ()
+    assert result.blocked_at is not None
+    assert result.blocked_at[0] == days[0]
+    assert "could not gather evidence" in result.blocked_at[1]
 
 
 def test_render_plan_mentions_counts_and_halt(tmp_path: Path) -> None:
@@ -202,3 +205,70 @@ def test_render_plan_mentions_counts_and_halt(tmp_path: Path) -> None:
     assert "dry_run=True" in text
     assert "would drop 1 day" in text
     assert "halted at" in text
+
+
+# ---------- lazy evaluation, gaps, bounded, chunk validation ----------
+
+
+def _chunk(day: str) -> ChunkCandidate:
+    start = datetime.fromisoformat(day).replace(tzinfo=UTC)
+    return ChunkCandidate(day=day, range_start=start, range_end=start + timedelta(days=1))
+
+
+def test_evidence_is_not_gathered_past_the_first_block(tmp_path: Path) -> None:
+    days = _days("2026-07-20", 4)
+    for d in days:
+        write_receipt(tmp_path, _receipt(d))
+    c = FakeCollectors(days)
+    c.manifest_ok.discard(days[1])  # block at the 2nd day
+    run_gated_deletion(now=NOW, cutoff_days=40, receipts_dir=tmp_path, collectors=c, dry_run=True)
+    # only the cleared day and the blocking day are gathered; days 2 and 3 are not
+    assert c.gathered == [days[0], days[1]]
+
+
+def test_calendar_gap_halts_the_frontier(tmp_path: Path) -> None:
+    days = ["2026-07-20", "2026-07-22"]  # 07-21 missing
+    for d in days:
+        write_receipt(tmp_path, _receipt(d))
+    c = FakeCollectors(days)
+    result = run_gated_deletion(
+        now=NOW, cutoff_days=40, receipts_dir=tmp_path, collectors=c, dry_run=True
+    )
+    assert result.to_drop == ("2026-07-20",)
+    assert result.blocked_at is not None
+    assert "calendar gap" in result.blocked_at[1]
+
+
+def test_max_eval_days_bounds_reconciliation(tmp_path: Path) -> None:
+    days = _days("2026-07-20", 5)
+    for d in days:
+        write_receipt(tmp_path, _receipt(d))
+    c = FakeCollectors(days)
+    result = run_gated_deletion(
+        now=NOW, cutoff_days=40, receipts_dir=tmp_path, collectors=c, dry_run=True, max_eval_days=2
+    )
+    assert c.gathered == days[:2]  # stopped after 2
+    assert result.bounded_at == 2
+    assert len(result.held) == 3
+
+
+def test_validate_chunks_rejects_offset_chunk() -> None:
+    bad = ChunkCandidate(
+        day="2026-07-20",
+        range_start=datetime(2026, 7, 20, 1, 0, tzinfo=UTC),
+        range_end=datetime(2026, 7, 21, 1, 0, tzinfo=UTC),
+    )
+    with pytest.raises(ValueError, match="not a single UTC day"):
+        validate_chunks((bad,))
+
+
+def test_validate_chunks_rejects_multiday_chunk() -> None:
+    start = datetime(2026, 7, 20, tzinfo=UTC)
+    bad = ChunkCandidate(day="2026-07-20", range_start=start, range_end=start + timedelta(days=2))
+    with pytest.raises(ValueError, match="not a single UTC day"):
+        validate_chunks((bad,))
+
+
+def test_validate_chunks_rejects_duplicate_day() -> None:
+    with pytest.raises(ValueError, match="same day"):
+        validate_chunks((_chunk("2026-07-20"), _chunk("2026-07-20")))

@@ -15,14 +15,16 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import asdict, dataclass
+from datetime import UTC, date, timedelta
 from typing import TYPE_CHECKING, Protocol
 
 from .cold_bar_gated_deletion import (
+    DROP,
     DayEvidence,
-    DropPlan,
     DropReceipt,
+    drop_decision,
     is_eligible,
-    plan_drops,
+    is_single_utc_day,
 )
 
 if TYPE_CHECKING:
@@ -169,13 +171,39 @@ def gather_evidence(
         )
 
 
+def validate_chunks(chunks: tuple[ChunkCandidate, ...]) -> dict[str, ChunkCandidate]:
+    """Cheap (metadata-only) fail-closed validation before any expensive evidence
+    work: every chunk must be exactly one UTC day whose label matches its range, and
+    no two chunks may claim the same day. A malformed or duplicated chunk means the
+    hypertable's shape is not what this tool assumes (config drift), so we REFUSE the
+    whole run rather than guess -- a deletion tool must never proceed while confused."""
+    by_day: dict[str, ChunkCandidate] = {}
+    for c in chunks:
+        if not is_single_utc_day(c.range_start, c.range_end):
+            raise ValueError(
+                f"chunk {c.day!r} is not a single UTC day "
+                f"(range {c.range_start.isoformat()}..{c.range_end.isoformat()}); "
+                "refusing (Timescale chunk_time_interval drift?)"
+            )
+        if c.day != c.range_start.astimezone(UTC).date().isoformat():
+            raise ValueError(f"chunk day {c.day!r} does not match range_start {c.range_start}")
+        if c.day in by_day:
+            raise ValueError(f"two chunks claim the same day {c.day!r}; refusing")
+        by_day[c.day] = c
+    return by_day
+
+
 @dataclass(frozen=True)
 class RunResult:
-    plan: DropPlan
     dropped: tuple[str, ...]  # days actually dropped (empty in dry-run)
     dry_run: bool
     n_chunks: int  # total chunks the source reported
-    n_eligible: int  # chunks past the retention buffer (the candidates evaluated)
+    n_eligible: int  # chunks past the retention buffer
+    verdicts: tuple[tuple[str, str, str], ...]  # (day, decision, reason) actually evaluated
+    to_drop: tuple[str, ...]  # cleared oldest-first prefix
+    blocked_at: tuple[str, str] | None  # (day, reason) that halted the frontier
+    held: tuple[str, ...]  # eligible days after the halt, not evaluated
+    bounded_at: int | None  # if evaluation stopped early on max_eval_days
 
 
 def run_gated_deletion(
@@ -185,44 +213,74 @@ def run_gated_deletion(
     receipts_dir: Path,
     collectors: Collectors,
     dry_run: bool = True,
+    max_eval_days: int | None = None,
 ) -> RunResult:
-    """Compute the drop plan over eligible chunks (oldest first) and, only when
-    ``dry_run`` is False, issue the targeted per-chunk drop for each cleared day.
+    """Validate chunks cheaply, then evaluate eligible days oldest-first LAZILY --
+    gathering the expensive per-day evidence (Borg extract + fingerprint) only as far
+    as the frontier can advance, stopping at the first block. This bounds the work to
+    the cleared prefix plus one blocking day (plus ``max_eval_days`` for reconciliation
+    diagnostics), and records a per-day verdict for everything actually evaluated,
+    instead of extracting every eligible day and reporting only the first block.
 
-    Eligibility filters candidates to those past the buffer; ``plan_drops`` then
-    enforces strict ascending order and the contiguous validated prefix, so the set
-    dropped is provably exactly the cleared oldest-first prefix.
+    The per-chunk targeted drop is issued only when ``dry_run`` is False.
     """
-    by_day = {c.day: c for c in collectors.list_chunks()}
+    by_day = validate_chunks(collectors.list_chunks())
     eligible = sorted(
         (c for c in by_day.values() if is_eligible(c.range_end, now, cutoff_days)),
         key=lambda c: c.day,
     )
-    evidence = tuple(
-        gather_evidence(
+
+    verdicts: list[tuple[str, str, str]] = []
+    to_drop: list[str] = []
+    dropped: list[str] = []
+    blocked_at: tuple[str, str] | None = None
+    bounded_at: int | None = None
+    prev: date | None = None
+    stop_idx = len(eligible)
+
+    for idx, c in enumerate(eligible):
+        if max_eval_days is not None and idx >= max_eval_days:
+            bounded_at = max_eval_days
+            stop_idx = idx
+            break
+        cur = date.fromisoformat(c.day)
+        if prev is not None and cur != prev + timedelta(days=1):
+            blocked_at = (c.day, f"calendar gap after {prev.isoformat()}")
+            stop_idx = idx
+            break
+        ev = gather_evidence(
             c, now=now, cutoff_days=cutoff_days, receipts_dir=receipts_dir, collectors=collectors
         )
-        for c in eligible
-    )
-    plan = plan_drops(evidence)
+        decision, reason = drop_decision(ev)
+        verdicts.append((c.day, decision, reason))
+        if decision == DROP:
+            to_drop.append(c.day)
+            prev = cur
+            if not dry_run:
+                collectors.drop_chunk(by_day[c.day])
+                dropped.append(c.day)
+        else:
+            blocked_at = (c.day, reason)
+            stop_idx = idx + 1  # the blocking day was evaluated
+            break
 
-    dropped: list[str] = []
-    if not dry_run:
-        for day in plan.to_drop:
-            collectors.drop_chunk(by_day[day])
-            dropped.append(day)
+    held = tuple(c.day for c in eligible[stop_idx:])
     return RunResult(
-        plan=plan,
         dropped=tuple(dropped),
         dry_run=dry_run,
         n_chunks=len(by_day),
         n_eligible=len(eligible),
+        verdicts=tuple(verdicts),
+        to_drop=tuple(to_drop),
+        blocked_at=blocked_at,
+        held=held,
+        bounded_at=bounded_at,
     )
 
 
 def render_plan(result: RunResult) -> str:
-    """A human-readable report for the job log: what would be (or was) dropped, and
-    why the frontier stopped."""
+    """A human-readable report for the job log: the per-day verdicts, what would be
+    (or was) dropped, and why the frontier stopped."""
     lines = [
         f"gated-deletion run (dry_run={result.dry_run}); "
         f"{result.n_chunks} chunk(s), {result.n_eligible} eligible past the buffer"
@@ -231,16 +289,15 @@ def render_plan(result: RunResult) -> str:
         lines.append("  source reported no chunks")
     elif result.n_eligible == 0:
         lines.append("  no chunk is old enough to be a candidate yet")
+    for day, decision, reason in result.verdicts:
+        lines.append(f"  {day}: {decision} ({reason})")
     verb = "DROPPED" if not result.dry_run else "would drop"
-    if result.plan.to_drop:
-        lines.append(
-            f"  {verb} {len(result.plan.to_drop)} day(s): {', '.join(result.plan.to_drop)}"
-        )
-    else:
-        lines.append(f"  {verb} 0 days")
-    if result.plan.blocked_at is not None:
-        day, reason = result.plan.blocked_at
+    lines.append(f"  {verb} {len(result.to_drop)} day(s): {', '.join(result.to_drop) or '-'}")
+    if result.blocked_at is not None:
+        day, reason = result.blocked_at
         lines.append(f"  frontier halted at {day}: {reason}")
-        if result.plan.held_after_block:
-            lines.append(f"  held (untouched): {', '.join(result.plan.held_after_block)}")
+    if result.bounded_at is not None:
+        lines.append(f"  evaluation bounded at {result.bounded_at} day(s) (reconciliation limit)")
+    if result.held:
+        lines.append(f"  held (not evaluated): {len(result.held)} day(s)")
     return "\n".join(lines)

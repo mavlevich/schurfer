@@ -21,7 +21,7 @@ repo, or production.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 # Must match cold_bar_export.SCHEMA_VERSION; a receipt written under a different
 # schema is not proof about this format and blocks the drop.
@@ -96,6 +96,19 @@ def is_eligible(chunk_range_end: datetime, now: datetime, cutoff_days: int) -> b
     return chunk_range_end.astimezone(UTC) <= cutoff
 
 
+def is_single_utc_day(range_start: datetime, range_end: datetime) -> bool:
+    """True only if a chunk's range is exactly one UTC calendar day: both bounds are
+    timezone-aware, the start is UTC midnight, and the end is start + 1 day. Any other
+    shape (offset start, multi-day span, sub-day) means the chunk cannot be treated as
+    one day, and the caller must fail closed rather than label it by range_start alone."""
+    if range_start.tzinfo is None or range_end.tzinfo is None:
+        return False
+    start = range_start.astimezone(UTC)
+    if (start.hour, start.minute, start.second, start.microsecond) != (0, 0, 0, 0):
+        return False
+    return range_end.astimezone(UTC) == start + timedelta(days=1)
+
+
 def drop_decision(ev: DayEvidence) -> tuple[str, str]:
     """Return ``(DROP, reason)`` only if EVERY gate passes, else ``(BLOCK, reason)``.
 
@@ -150,63 +163,3 @@ def drop_decision(ev: DayEvidence) -> tuple[str, str]:
     if ev.recomputed_fingerprint != ev.receipt.source_fingerprint:
         return BLOCK, "source changed since export (fingerprint mismatch); needs_versioned_reexport"
     return DROP, "all gates passed"
-
-
-@dataclass(frozen=True)
-class DropPlan:
-    """The outcome of evaluating an oldest-first candidate list."""
-
-    to_drop: tuple[str, ...]  # days cleared to drop, oldest first
-    blocked_at: tuple[str, str] | None  # (day, reason) that halted the prefix, if any
-    held_after_block: tuple[str, ...]  # candidates left untouched because an older day blocked
-
-
-def plan_drops(days_oldest_first: tuple[DayEvidence, ...]) -> DropPlan:
-    """Clear a CONTIGUOUS oldest-first prefix; stop at the first day that blocks.
-
-    The first day that fails any gate halts advancement: it and every candidate
-    after it are held (untouched), even if a later day would have passed on its
-    own. This keeps the set actually deleted provably equal to the validated
-    prefix and never reorders past a gap -- deletion marches forward in time only
-    as fast as verification does.
-    """
-    # PRECONDITION checked up front, before anything is dropped: the whole list must
-    # be strictly ASCENDING by day. A mis-ordered list (e.g. reversed) must never let
-    # the newest day be dropped while an older one is held, so if order is violated
-    # anywhere we drop NOTHING and report the offending day. (Gaps are handled in the
-    # loop below, where the ordered prefix up to the gap is still safe to drop.)
-    parsed = [date.fromisoformat(ev.day) for ev in days_oldest_first]
-    for index in range(1, len(parsed)):
-        if parsed[index] <= parsed[index - 1]:
-            return DropPlan(
-                to_drop=(),
-                blocked_at=(
-                    days_oldest_first[index].day,
-                    f"candidate list is not strictly ascending at {days_oldest_first[index].day} "
-                    f"(after {days_oldest_first[index - 1].day}); refusing to drop anything",
-                ),
-                held_after_block=tuple(ev.day for ev in days_oldest_first),
-            )
-
-    to_drop: list[str] = []
-    prev: date | None = None
-    for index, ev in enumerate(days_oldest_first):
-        current = parsed[index]
-        # Order is guaranteed above; here a calendar GAP (missing day) halts the
-        # frontier so deletion never jumps over an unconfirmed hole. The ordered
-        # prefix before the gap is safe to drop.
-        if prev is not None and current != prev + timedelta(days=1):
-            held = tuple(e.day for e in days_oldest_first[index + 1 :])
-            return DropPlan(
-                to_drop=tuple(to_drop),
-                blocked_at=(ev.day, f"calendar gap after {prev.isoformat()}"),
-                held_after_block=held,
-            )
-        decision, reason = drop_decision(ev)
-        if decision == DROP:
-            to_drop.append(ev.day)
-            prev = current
-            continue
-        held = tuple(e.day for e in days_oldest_first[index + 1 :])
-        return DropPlan(to_drop=tuple(to_drop), blocked_at=(ev.day, reason), held_after_block=held)
-    return DropPlan(to_drop=tuple(to_drop), blocked_at=None, held_after_block=())

@@ -245,7 +245,21 @@ def main() -> None:
     parser.add_argument(
         "--backup-env", type=Path, required=True, help="path to backup.env (BORG_*)"
     )
-    parser.add_argument("--cutoff-days", type=int, default=40)
+    # PR 1 dry-run uses a RECONCILIATION cutoff below the 35-day Timescale retention
+    # so there are real eligible chunks to validate against; PR 2 raises it to 40 once
+    # the automatic retention is removed. The buffer must stay a positive integer.
+    parser.add_argument("--cutoff-days", type=int, default=25)
+    parser.add_argument(
+        "--max-eval-days",
+        type=int,
+        default=None,
+        help="bound the reconciliation work to this many oldest days (borg extracts)",
+    )
+    parser.add_argument(
+        "--fail-if-empty",
+        action="store_true",
+        help="exit non-zero if there are no eligible candidates (commissioning check)",
+    )
     args = parser.parse_args()
 
     dsn = os.getenv("DATABASE_URL")
@@ -293,8 +307,12 @@ def main() -> None:
             receipts_dir=args.cold_bars_dir,
             collectors=collectors,
             dry_run=True,  # PR 1: never deletes
+            max_eval_days=args.max_eval_days,
         )
         sys.stdout.write(render_plan(result) + "\n")
+        if args.fail_if_empty and result.n_eligible == 0:
+            sys.stdout.write("FAIL: no eligible candidates (commissioning check)\n")
+            sys.exit(1)
 
 
 __all__ = [
