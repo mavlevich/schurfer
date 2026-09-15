@@ -8,9 +8,9 @@ Update only these four lines after every merge -- this is the fast-path
 status check, not a place for narrative.
 
 ```
-Current primary: execution-venue static audit complete with owner/account confirmation open; next freeze the HYP-015 hold12h reader/cost/verdict before any read; support: cold-bar gated deletion dry-run merged in #421, with destructive deletion and retention-policy removal still separately gated
+Current primary: execution-venue static audit complete; Bybit account exists and can be funded but product/API permission remains unverified; next freeze the HYP-015 hold12h reader/cost/verdict before any read; support: cold-bar gated deletion dry-run merged in #421, with destructive deletion and retention-policy removal still separately gated
 State: production has no configured trading credentials and runs DRY_RUN with AUTO_TRADE off; pump-short and delayed-short are closed; monster harvest and net-buy accumulation are parked; HYP-012 is research-only unless its execution route is separately confirmed; no strategy has yet established a scalable after-cost edge
-Next: obtain outcome-blind owner confirmation for candidate execution venues; finish HYP-015 preregistration; let HYP-012/HYP-015 mature without peeking; then run one bounded abnormal-flow discovery on existing data under the 2026-09-15 decision program below
+Next: verify an exact account route only when a surviving candidate needs it; finish HYP-015 preregistration; let HYP-012/HYP-015 mature without peeking; then run one bounded abnormal-flow discovery on existing data under the 2026-09-15 decision program below
 User decision required: no live-mode change is authorized; no broad venue/L2 expansion is authorized before a candidate clears the economic gate; production deletion remains dry-run until its separate enablement review
 ```
 

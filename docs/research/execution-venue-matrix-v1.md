@@ -1,8 +1,9 @@
 # Execution venue matrix v1
 
-Status: static repository and production-configuration audit complete;
-owner/account capability confirmation open. Outcome-blind: no strategy returns,
-forward-cohort outcomes, balances, positions, or private exchange endpoints were read.
+Status: static repository and production-configuration audit complete; owner intent
+and Bybit account presence recorded, exact product/API capability confirmation open.
+Outcome-blind: no strategy returns, forward-cohort outcomes, balances, positions, or
+private exchange endpoints were read.
 
 As-of: 2026-09-15 UTC. Repository revision inspected:
 `820d212f8341729e1fd8d0cd5f0c4b6523081a97`.
@@ -48,6 +49,13 @@ established:
 No private exchange endpoint was called. Therefore balances, account product access,
 API-key scopes, order minima, margin mode and jurisdiction eligibility remain unknown.
 
+Owner statement recorded 2026-09-15: a Bybit account exists, its futures wallet is
+currently unfunded, and adding test capital is operationally possible. The owner is
+also willing to register and fund another venue if a surviving hypothesis requires
+it. This establishes intent and removes funding logistics as an assumed blocker; it
+does **not** establish derivatives/API permission, executable product coverage or a
+safe live route on Bybit or any other venue.
+
 The generic manual order endpoint and legacy order lifecycle exist, but the current
 mode ceiling rejects entries and there are no authenticated production clients. The
 new strategy `Broker` contract intentionally has no `LIVE_PROBE` or `LIVE_MICRO`
@@ -58,13 +66,13 @@ authorized live execution route on any venue**.
 
 | Venue / product                                                    | Public observation                                               | Continuous retained research baseline                                                                                      | Authenticated client constructor                      | Production credentials | Account/product eligibility                                                                                                      | Current decision role                                                                                              |
 | ------------------------------------------------------------------ | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| Bybit linear USDT perpetual                                        | Default broad scanner; exact public client                       | Deep 1m momentum bars/trades, ticker/BBO-derived fields, OI and liquidation paths exist; quality remains contract-specific | Yes                                                   | Empty                  | Owner confirmation required                                                                                                      | Cheapest potential execution target because data and identity foundations already exist; still not execution-ready |
+| Bybit linear USDT perpetual                                        | Default broad scanner; exact public client                       | Deep 1m momentum bars/trades, ticker/BBO-derived fields, OI and liquidation paths exist; quality remains contract-specific | Yes                                                   | Empty                  | Account exists and can be funded; futures wallet unfunded; exact product/API permission unverified                               | Cheapest potential execution target because data and identity foundations already exist; still not execution-ready |
 | Binance USD-M perpetual                                            | Default broad scanner; exact public client                       | Deep momentum capture, OI and censored liquidation paths exist with Binance-specific semantics                             | Yes                                                   | Empty                  | Internally declared unavailable for Poland residents; fresh owner/account confirmation required before relying on that statement | HYP-012 research target only today; cannot satisfy the money gate                                                  |
-| Gate linear USDT perpetual                                         | Default broad scanner and source-lead capture                    | Source-lead observations exist; no equivalent full continuous deep baseline is established                                 | Yes                                                   | Empty                  | Owner confirmation required                                                                                                      | Discovery/source venue; trading on Gate itself is untested and not execution-ready                                 |
-| MEXC linear USDT perpetual                                         | Default broad scanner and on-demand public market path           | No equivalent full continuous deep baseline is established                                                                 | Yes                                                   | Empty                  | Owner confirmation required                                                                                                      | Radar/source candidate only; no money-route claim                                                                  |
-| OKX linear USDT perpetual                                          | Default broad scanner                                            | No current deep baseline established                                                                                       | Yes, passphrase required                              | Empty                  | Owner confirmation required                                                                                                      | Public radar only until a measured coverage need and account confirmation exist                                    |
-| KuCoin futures                                                     | Default broad scanner                                            | No current deep baseline established                                                                                       | Yes, passphrase required                              | Empty                  | Owner confirmation required                                                                                                      | Public radar only                                                                                                  |
-| BingX linear perpetual                                             | Default broad scanner                                            | No current deep baseline established                                                                                       | Yes                                                   | Empty                  | Owner confirmation required                                                                                                      | Public radar only                                                                                                  |
+| Gate linear USDT perpetual                                         | Default broad scanner and source-lead capture                    | Source-lead observations exist; no equivalent full continuous deep baseline is established                                 | Yes                                                   | Empty                  | Owner willing to register/fund if selected; exact account/product/API status unverified                                          | Discovery/source venue; trading on Gate itself is untested and not execution-ready                                 |
+| MEXC linear USDT perpetual                                         | Default broad scanner and on-demand public market path           | No equivalent full continuous deep baseline is established                                                                 | Yes                                                   | Empty                  | Owner willing to register/fund if selected; exact account/product/API status unverified                                          | Radar/source candidate only; no money-route claim                                                                  |
+| OKX linear USDT perpetual                                          | Default broad scanner                                            | No current deep baseline established                                                                                       | Yes, passphrase required                              | Empty                  | Owner willing to register/fund if selected; exact account/product/API status unverified                                          | Public radar only until a measured coverage need and account confirmation exist                                    |
+| KuCoin futures                                                     | Default broad scanner                                            | No current deep baseline established                                                                                       | Yes, passphrase required                              | Empty                  | Owner willing to register/fund if selected; exact account/product/API status unverified                                          | Public radar only                                                                                                  |
+| BingX linear perpetual                                             | Default broad scanner                                            | No current deep baseline established                                                                                       | Yes                                                   | Empty                  | Owner willing to register/fund if selected; exact account/product/API status unverified                                          | Public radar only                                                                                                  |
 | Bitget, CoinEx, Phemex, Crypto.com, HTX, LBank, XT, Toobit, BloFin | Default broad scanner                                            | No current deep baseline established                                                                                       | No authenticated constructor in the execution service | Not applicable         | Not audited                                                                                                                      | Public radar only; adding execution requires a separate capability and safety decision                             |
 | BitMart historical rows                                            | Removed from current default clients after upstream CCXT removal | Historical attribution remains                                                                                             | No                                                    | Not applicable         | Not audited                                                                                                                      | Historical evidence only; not a current venue                                                                      |
 
@@ -125,13 +133,15 @@ must remain read-only until a separately reviewed execution-safety step.
 
 1. Treat Binance as research-only for HYP-012 unless the owner explicitly reverses the
    current internal restriction with fresh account evidence.
-2. Ask the owner to confirm candidate account capabilities, with Bybit first because
-   it has the smallest current data/identity gap. This is a priority, not an assertion
-   that Bybit is available.
+2. Verify Bybit's exact derivatives and API-trading capability first, only after a
+   candidate needs an execution preflight. The account and ability to fund it are
+   known; product permission and safe routing are not.
 3. Do not add a venue adapter or L2 feed from this matrix alone. A new venue requires
    measured unique coverage plus a declared source or execution role.
 4. Continue freezing HYP-015 and the abnormal-flow discovery protocol without private
    access. Do not claim a money candidate until a proposed execution venue is confirmed.
+5. Do not register or fund additional venues merely to complete this matrix. Select
+   one only after the research and coverage gates identify a concrete need.
 
 ## Repository evidence
 
