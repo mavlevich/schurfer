@@ -162,6 +162,100 @@ negative base (the multiple-comparison trap the ledger warns about).
   scanner is a late reactive radar; earlier detection trades precision for earliness and
   must be validated on base rates, never tuned on winners.
 
+### Abnormal-flow economic screen v1 (planned bounded discovery)
+
+**Status: planned, not yet registered or run.** The owning sequence and project-level
+budget are fixed in the [near-term edge decision program](../../ROADMAP.md#near-term-edge-decision-program--2026-09-15).
+The next implementation PR may combine the frozen protocol with tested replay code,
+but it must not contain a result produced by that code. This historical read is
+discovery-only and can authorize at most one new prospective cohort.
+
+- **Question:** on the existing exact-native Bybit/Binance research paths, does one
+  predeclared abnormal-flow family predict an executable directional return beyond a
+  matched baseline and also make standalone money after conservative costs?
+- **Before any outcome read:** freeze one primary direction and horizon; feature and
+  availability timestamps; eligible-universe denominator; episode formation and
+  cooldown; entry/exit mechanics; gaps/unresolved handling; cost model; portfolio
+  policy; outcome-blind threshold/calibration procedure; and a rule that can nominate
+  at most one candidate. Source-lead remains HYP-012 and is not silently retested as a
+  second primary family here. Absorption and raw buy-flow variants remain out of scope.
+- **Required outputs:** full coverage/rejection funnel; standalone after-cost net EV;
+  matched excess; uncertainty; resolved/unresolved counts; signals/week; asset/week
+  concentration and leave-one-out controls; drawdown and losing streak; concurrency
+  and capital occupancy; executable notional/capacity; and dollar paths at the current
+  research bank plus plausible larger allocations. Report negative mature economics
+  before diversity commentary.
+- **Continue:** only if the frozen primary is positive on standalone after-cost
+  economics and incremental excess, remains viable under the predeclared robustness
+  and portfolio checks, and has an economically material capacity path. This earns one
+  separately registered untouched prospective cohort, not PAPER or live trading.
+- **Stop:** close this signal/data scope if standalone net is non-positive, the
+  incremental effect disappears, portfolio risk is unacceptable, capacity makes the
+  dollar ceiling immaterial, or opportunity throughput cannot support a decision by
+  the program checkpoint. Do not retune the same viewed window.
+- **Inference boundary:** a stop applies to the declared Bybit/Binance minute-bar
+  mechanism. It is not evidence about uncollected venues or pre-event L2. Those remain
+  untested, and may receive new collection only through the conditional coverage/L2
+  gates in the roadmap rather than by treating missingness as a positive hypothesis.
+
+### Monster-precursor discovery (next primary discovery line)
+
+The core money question: catch the rare monster pumps (the ones that pay) and cut the
+junk. Established on a pump-covering window (bybit/binance 1m bars Aug 10 to Sep 14,
+pulled from the prod DB): monsters ARE in capture (forward-3d best LSKUSDT +2179%,
+龙虾USDT / LONGXIA +377%, ~58 tokens above +100%); net-buy accumulation-LONG is
+net-negative at every hold even with the pumps in window and does NOT separate monsters
+from junk (so it is closed as a monster-catcher, see standing decisions); a first-cut
+activity feature was ~11x higher for monsters but outcome-selected, so a candidate only.
+
+- **Measure:** define move-onset per episode, then measure point-in-time features
+  STRICTLY before onset over ALL episodes (monsters and matched controls); report
+  precision/recall/lift. Candidate features: trailing activity/volume ramp, cross-venue
+  breadth, OI growth, repeating net-buy bursts (structure not a single spike),
+  acceleration, liquidation cascades. Survivorship-guarded; never fit to LSK.
+- **When readable:** the retrospective lift study is days (data in hand). Any
+  predictive/tradeable claim needs its own untouched forward cohort.
+- **Continue:** a feature shows real lift (monsters separable) AND plausible
+  executability at the tradeable subset -> pre-register a forward precursor cohort plus a
+  minimal execution-feasibility (depth/venue) check.
+- **Stop:** no feature separates monsters from junk after costs/executability -> close
+  monster-prediction; the pump-domain exit gate below then binds.
+
+**Status: PARKED -- exploratory economics unattractive (2026-09-14). Not a formal FAIL.**
+
+An earlier version of this card reported a "+3.3x monster lift" and a "+1.86% diversified
+harvest, robust to excluding the top 25 winners." **Those numbers are RETRACTED**: colleague
+review found the discovery scripts had critical bugs (rolling windows applied after an hourly
+filter, so 24h activity was ~1.5% of its true value; a global look-ahead rank; the headline
+harvest number computed with no cooldown, counting one pump as dozens of dependent episodes;
+truncated forward outcomes). They are exploratory/invalidated, not evidence.
+
+A corrected replay (`path_portfolio_v2.py`: minute-level features, within-hour rank, 72h
+cooldown, independent full-72h monster label, realistic first-observed-close stop fills,
+point-in-time selection, gap control, path-based exit) reversed the optimism. On a frozen
+primary variant (K=8 slots on a $300 bank, SL -15%, trailing 35% armed at +20%, 72h
+time-stop), the window result was roughly +4.3% / +1.3% / -3.2% at 5 / 15 / 30 bps per-side
+slippage, with a ~-38% max drawdown (closed-trade only; true floating drawdown is worse), a
+16-trade losing streak, and only ~4 monster catches (underpowered). That corrected simulator
+still carries known defects (rank taken after the buyshare/ret24 filter; low-coverage and
+unresolved trades handled imperfectly; regex identity; close-only fills), so even those
+numbers are not final.
+
+Correct conclusion: after removing the most optimistic assumptions the apparent edge
+collapsed toward zero, was slippage-sensitive, and carried an unacceptable drawdown. There is
+NO formal out-of-sample FAIL and no mathematical proof that no edge exists; the decision to
+park is an EXPECTED-VALUE call -- a further month invested in a tradeable monster harvest is
+worth less than HYP-012 / HYP-015. The pump-domain exit gate is therefore NOT formally fired.
+
+- **Kept (exploratory):** trailing activity concentrates future extreme moves and the signal
+  appears early and in liquid names -- useful as a cheap RADAR / intelligence feature, marked
+  exploratory (its magnitude is not a validated number), never as a trading entry on its own.
+- **Data:** keep passively collecting the same bybit/binance bars (already automatic); no L2
+  and no execution/trading integration for this line.
+- **If ever revisited:** only with a NEW, pre-validated, unit-tested simulator on an UNTOUCHED
+  window -- never a re-tune or replay of this Aug-Sep window. `monster-precursor-forward-cohort-v1.md`
+  is SUPERSEDED (it was pre-registered against the retracted design) and is not to be started.
+
 ## Open questions (before locking PR order)
 
 1. Canonize this register and the ROADMAP first (PR0), so later changes flow from an
@@ -185,8 +279,25 @@ negative base (the multiple-comparison trap the ledger warns about).
 ## Standing stop/go decisions
 
 - Executable pump-short: CLOSED (net negative).
+- Net-buy accumulation-LONG: CLOSED as a monster-catcher (2026-09-14, net-negative at
+  every hold even on pump-covering data; does not separate monsters from junk).
+- Monster tradeable harvest: PARKED, exploratory economics unattractive (2026-09-14). Not a
+  formal FAIL; the corrected replay's apparent edge collapsed toward zero, was slippage-
+  sensitive, and had an unacceptable drawdown, so it loses on expected value to HYP-012/HYP-015.
+  Prior +3.3x / +1.86% numbers RETRACTED (buggy). Activity-as-monster-radar kept exploratory;
+  keep passively collecting the same bars; no L2 / execution build. See the discovery card above.
 - Delayed-short / orderflow (HYP-024): stopped; do not reopen.
+- Pump-domain exit gate: if the monster-precursor discovery ALSO fails to find a
+  separating, executable precursor, then given pump-short negative, accumulation
+  negative, and HYP-012 capacity/identity-limited, step back from the pump domain and
+  seek an edge elsewhere rather than iterate more pump variants.
 - No new cold-probe screens on already-viewed windows.
+- Near-term edge program: finish the already-registered HYP-012/HYP-015 reads and one
+  bounded abnormal-flow discovery, then reassess once. If no line clears standalone
+  after-cost economics, incremental information, portfolio feasibility and business
+  materiality, stop strategy-specific expansion in the pump/early-flow domain. An
+  underpowered calendar checkpoint is a throughput/economic no-go, not a statistical
+  claim that every unobserved market mechanism has negative EV.
 - ML: parked until there is a confirmed structural edge, clean forward data, and a known
   capacity envelope; a better predictor does not solve executability/capacity or
   out-of-sample validity.

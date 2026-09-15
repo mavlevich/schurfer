@@ -43,15 +43,21 @@ def _connection(rows: int = 3, *, day: date = _DAY) -> Any:
             universe_version VARCHAR,
             bucket_start TIMESTAMPTZ,
             close_price DOUBLE,
-            buy_hist_counts INTEGER[]
+            buy_hist_counts INTEGER[],
+            payload_hash BLOB
         )
     """)
     start, _ = day_bounds(day)
     for index in range(rows):
         connection.execute(
             "INSERT INTO pg.timeseries.bybit_momentum_bars_1m VALUES "
-            "('bybit', 'linear', ?, 'cap_v1', 'uni_v1', ?, ?, [1, 2])",
-            [f"SYM{index}", start + timedelta(minutes=index), 100.0 + index],
+            "('bybit', 'linear', ?, 'cap_v1', 'uni_v1', ?, ?, [1, 2], ?)",
+            [
+                f"SYM{index}",
+                start + timedelta(minutes=index),
+                100.0 + index,
+                bytes([index % 256]) * 32,
+            ],
         )
     return connection
 
@@ -173,13 +179,37 @@ def test_a_late_row_changes_the_manifest_rather_than_being_lost(tmp_path: Path) 
     checksum, which is exactly the signal a controlled deletion must refuse to
     ignore."""
     connection = _connection(3)
-    first = export_day(connection, _DAY, tmp_path)
+    first = export_day(connection, _DAY, tmp_path, with_fingerprint=True)
     start, _ = day_bounds(_DAY)
     connection.execute(
         "INSERT INTO pg.timeseries.bybit_momentum_bars_1m VALUES "
-        "('bybit', 'linear', 'LATE', 'cap_v1', 'uni_v1', ?, 1.0, [1, 2])",
-        [start + timedelta(minutes=99)],
+        "('bybit', 'linear', 'LATE', 'cap_v1', 'uni_v1', ?, 1.0, [1, 2], ?)",
+        [start + timedelta(minutes=99), b"\x99" * 32],
     )
-    second = export_day(connection, _DAY, tmp_path)
+    second = export_day(connection, _DAY, tmp_path, with_fingerprint=True)
     assert second.row_count == first.row_count + 1
     assert second.sha256 != first.sha256
+    # the late row also changes the order-independent source fingerprint
+    assert second.source_fingerprint != first.source_fingerprint
+
+
+def test_fingerprint_is_off_by_default(tmp_path: Path) -> None:
+    # The production exporter must not run the unbenchmarked fingerprint until it is
+    # explicitly enabled; default export leaves the fields unset.
+    manifest = export_day(_connection(3), _DAY, tmp_path)
+    assert manifest.source_fingerprint is None
+    assert manifest.file_fingerprint is None
+    assert manifest.fidelity_verified is None
+
+
+def test_export_records_matching_fidelity_and_versioned_fingerprints(tmp_path: Path) -> None:
+    from schurfer_analytics.cold_bar_export import FINGERPRINT_VERSION
+
+    manifest = export_day(_connection(3), _DAY, tmp_path, with_fingerprint=True)
+    # the exported file faithfully captured the source: the whole-row fingerprint
+    # computed over the Parquet equals the one computed over the source
+    assert manifest.source_fingerprint == manifest.file_fingerprint
+    assert manifest.fidelity_verified is True
+    # fingerprints are versioned so an incompatible construction is never compared
+    assert manifest.source_fingerprint is not None
+    assert manifest.source_fingerprint.startswith(f"{FINGERPRINT_VERSION}:")

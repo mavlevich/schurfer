@@ -1251,9 +1251,22 @@ prod-cold-bar-export-install:
 	@test -z "$$(git status --porcelain)" || (echo "ERROR: working tree not clean. Commit or stash first." && exit 1)
 	sudo install -m 0644 infra/systemd/schurfer-cold-bar-export.service /etc/systemd/system/schurfer-cold-bar-export.service
 	sudo install -m 0644 infra/systemd/schurfer-cold-bar-export.timer /etc/systemd/system/schurfer-cold-bar-export.timer
+	@# Create the export dir once here (interactive sudo works); the service target must
+	@# not sudo at runtime because the unit runs as deploy with NoNewPrivileges=true.
+	sudo mkdir -p /opt/schurfer/runtime/cold-bars
 	sudo systemctl daemon-reload
 	sudo systemctl enable --now schurfer-cold-bar-export.timer
 	@systemctl list-timers schurfer-cold-bar-export.timer --no-pager
+
+prod-cold-bar-gated-deletion-install:
+	@test "$$(git branch --show-current)" = "main" || (echo "ERROR: not on main (on '$$(git branch --show-current)'). Install only from main." && exit 1)
+	@test -z "$$(git status --porcelain)" || (echo "ERROR: working tree not clean. Commit or stash first." && exit 1)
+	@# Installs the DRY-RUN timer only (PR 1): it reports and deletes nothing.
+	sudo install -m 0644 infra/systemd/schurfer-cold-bar-gated-deletion.service /etc/systemd/system/schurfer-cold-bar-gated-deletion.service
+	sudo install -m 0644 infra/systemd/schurfer-cold-bar-gated-deletion.timer /etc/systemd/system/schurfer-cold-bar-gated-deletion.timer
+	sudo systemctl daemon-reload
+	sudo systemctl enable --now schurfer-cold-bar-gated-deletion.timer
+	@systemctl list-timers schurfer-cold-bar-gated-deletion.timer --no-pager
 
 prod-offsite-backup-install:
 	@test "$$(git branch --show-current)" = "main" || (echo "ERROR: not on main (on '$$(git branch --show-current)'). Install only from main." && exit 1)
@@ -1556,10 +1569,33 @@ _pump-age-resolution-study:
 
 prod-cold-bar-export:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
-	@sudo mkdir -p /opt/schurfer/runtime/cold-bars
+	@# No sudo here: the systemd service runs as deploy with NoNewPrivileges=true, which
+	@# blocks in-target sudo and fails the automated daily export. The directory is created
+	@# once (with sudo) by prod-cold-bar-export-install; this is a no-op when it exists.
+	@mkdir -p /opt/schurfer/runtime/cold-bars
 	@$(_PROD) run --rm --no-deps \
 		-v /opt/schurfer/runtime/cold-bars:/cold-bars \
 		--entrypoint cold-bar-export analytics --out-dir /cold-bars $(ARGS)
+
+prod-cold-bar-gated-deletion-dry-run:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
+	@# DRY-RUN ONLY (PR 1): prints which cold-bar chunks would be dropped; deletes nothing.
+	@# No in-target sudo (the systemd unit is NoNewPrivileges). The analytics image ships
+	@# borg; the offsite credentials/config are MOUNTED (not baked) at their same host paths
+	@# so BORG_RSH / BORG_PASSCOMMAND / BORG_BASE_DIR from backup.env resolve unchanged. The
+	@# job is read-only (borg list/extract; drop_chunk is disabled until PR 2).
+	@$(_PROD) run --rm --no-deps \
+		-v /opt/schurfer/runtime/cold-bars:/cold-bars \
+		-v /opt/schurfer/runtime/backup.env:/backup.env:ro \
+		-v /opt/schurfer/runtime/borg-home:/opt/schurfer/runtime/borg-home \
+		-v /opt/schurfer/runtime/borg-passphrase:/opt/schurfer/runtime/borg-passphrase:ro \
+		-v /opt/schurfer/runtime/storagebox_known_hosts:/opt/schurfer/runtime/storagebox_known_hosts:ro \
+		-v /home/deploy/.ssh/schurfer_storagebox:/home/deploy/.ssh/schurfer_storagebox:ro \
+		--entrypoint cold-bar-gated-deletion analytics \
+		--cold-bars-dir /cold-bars --backup-env /backup.env --cutoff-days 25 $(ARGS)
+	@# cutoff 25 (< the 35-day Timescale retention) so the dry-run has real eligible
+	@# chunks to validate; PR 2 raises it to 40 once the automatic retention is removed.
+	@# Commissioning (first run) should add ARGS='--fail-if-empty' to catch a broken setup.
 
 prod-paper-replay-reconciliation:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
@@ -2206,7 +2242,7 @@ prod-momentum-watch-start:
 			exit 1; \
 		fi; \
 	fi
-	@$(MAKE) prod-backup
+	@sudo /opt/schurfer/infra/scripts/offsite-backup.sh
 	@$(MAKE) prod-migrate
 	$(_PROD) --profile momentum-watch up -d --build --no-deps momentum-watch
 	@$(_PROD) --profile momentum-watch ps momentum-watch
@@ -2232,7 +2268,7 @@ prod-momentum-watch-binance-start:
 			exit 1; \
 		fi; \
 	fi
-	@$(MAKE) prod-backup
+	@sudo /opt/schurfer/infra/scripts/offsite-backup.sh
 	@$(MAKE) prod-migrate
 	$(_PROD) --profile momentum-watch-binance up -d --build --no-deps momentum-watch-binance
 	@$(_PROD) --profile momentum-watch-binance ps momentum-watch-binance
@@ -2258,7 +2294,7 @@ prod-momentum-paper-start:
 			exit 1; \
 		fi; \
 	fi
-	@$(MAKE) prod-backup
+	@sudo /opt/schurfer/infra/scripts/offsite-backup.sh
 	@$(MAKE) prod-migrate
 	$(_PROD) --profile momentum-paper up -d --build --no-deps momentum-paper
 	@$(_PROD) --profile momentum-paper ps momentum-paper
@@ -2284,7 +2320,7 @@ prod-momentum-paper-binance-start:
 			exit 1; \
 		fi; \
 	fi
-	@$(MAKE) prod-backup
+	@sudo /opt/schurfer/infra/scripts/offsite-backup.sh
 	@$(MAKE) prod-migrate
 	$(_PROD) --profile momentum-paper-binance up -d --build --no-deps momentum-paper-binance
 	@$(_PROD) --profile momentum-paper-binance ps momentum-paper-binance
@@ -2310,7 +2346,7 @@ prod-momentum-paper-lev3-start:
 			exit 1; \
 		fi; \
 	fi
-	@$(MAKE) prod-backup
+	@sudo /opt/schurfer/infra/scripts/offsite-backup.sh
 	@$(MAKE) prod-migrate
 	$(_PROD) --profile momentum-paper-lev3 up -d --build --no-deps momentum-paper-lev3
 	@$(_PROD) --profile momentum-paper-lev3 ps momentum-paper-lev3
@@ -2336,7 +2372,7 @@ prod-momentum-paper-hold12h-start:
 			exit 1; \
 		fi; \
 	fi
-	@$(MAKE) prod-backup
+	@sudo /opt/schurfer/infra/scripts/offsite-backup.sh
 	@$(MAKE) prod-migrate
 	$(_PROD) --profile momentum-paper-hold12h up -d --build --no-deps momentum-paper-hold12h
 	@$(_PROD) --profile momentum-paper-hold12h ps momentum-paper-hold12h
