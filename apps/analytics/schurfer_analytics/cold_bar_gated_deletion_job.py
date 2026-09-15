@@ -36,6 +36,11 @@ if TYPE_CHECKING:
 
 RECEIPT_SUFFIX = ".offsite-receipt.json"
 
+# Files are archived under the backed-up directory's path, so an archive member is
+# `runtime/cold-bars/bars-<day>.<ext>` (confirmed against a real archive), not the bare
+# filename. Defined here so both the receipt writer and the collector agree.
+ARCHIVE_MEMBER_PREFIX = "runtime/cold-bars/"
+
 
 def receipt_path(receipts_dir: Path, day: str) -> Path:
     return receipts_dir / f"bars-{day}{RECEIPT_SUFFIX}"
@@ -56,6 +61,51 @@ def write_receipt(receipts_dir: Path, receipt: DropReceipt) -> Path:
     with os.fdopen(fd, "w") as handle:
         handle.write(payload)
     return path
+
+
+def write_receipts_for_archive(cold_bars_dir: Path, archive_name: str) -> list[str]:
+    """Write a per-day receipt for each day whose Parquet is still LOCAL (so it is in
+    the archive just created) and whose manifest carries fingerprints. Returns the days
+    written.
+
+    Must run inside the offsite backup, AFTER the bars archive is verified and BEFORE
+    the local Parquet is reclaimed: a local Parquet is exactly a day contained in the
+    archive named here. A manifest without fingerprints (exported before they were
+    enabled) is skipped -- that day stays non-droppable until it is re-exported. An
+    existing receipt is immutable, so a re-run does not overwrite it.
+    """
+    from .cold_bar_export import sha256_file  # local import: keeps the export dep lazy
+
+    written: list[str] = []
+    for parquet in sorted(cold_bars_dir.glob("bars-*.parquet")):
+        day = parquet.name[len("bars-") : -len(".parquet")]
+        manifest_path = cold_bars_dir / f"bars-{day}.manifest.json"
+        if not manifest_path.exists():
+            continue
+        m = json.loads(manifest_path.read_text())
+        if (
+            not (m.get("source_fingerprint") and m.get("file_fingerprint"))
+            or m.get("fidelity_verified") is None
+        ):
+            continue  # fingerprint-less day -> cannot make a complete receipt; skip (fail-closed)
+        receipt = DropReceipt(
+            day=day,
+            archive_name=archive_name,
+            parquet_path=f"{ARCHIVE_MEMBER_PREFIX}bars-{day}.parquet",
+            parquet_sha256=m["sha256"],
+            manifest_sha256=sha256_file(manifest_path),
+            row_count=m["row_count"],
+            schema_version=m["schema_version"],
+            source_fingerprint=m["source_fingerprint"],
+            file_fingerprint=m["file_fingerprint"],
+            fidelity_verified=m["fidelity_verified"],
+        )
+        try:
+            write_receipt(cold_bars_dir, receipt)
+            written.append(day)
+        except FileExistsError:
+            pass  # already recorded; receipts are immutable
+    return written
 
 
 def read_receipt(receipts_dir: Path, day: str) -> DropReceipt | None:
@@ -301,3 +351,27 @@ def render_plan(result: RunResult) -> str:
     if result.held:
         lines.append(f"  held (not evaluated): {len(result.held)} day(s)")
     return "\n".join(lines)
+
+
+def write_receipts_main() -> None:
+    """CLI: write per-day offsite receipts for the days in a just-created bars archive.
+
+    Invoked from the offsite backup AFTER the bars archive is verified and BEFORE the
+    local Parquet is reclaimed (only then is "a local Parquet" a day in the archive).
+    Pure file operations -- no database or Borg -- so it is safe to run anywhere the
+    cold-bars directory is mounted."""
+    import argparse
+    import sys
+    from pathlib import Path as _Path
+
+    parser = argparse.ArgumentParser(description="Write cold-bar offsite receipts")
+    parser.add_argument("--cold-bars-dir", type=_Path, required=True)
+    parser.add_argument("--archive", required=True, help="the bars archive just created")
+    args = parser.parse_args()
+
+    written = write_receipts_for_archive(args.cold_bars_dir, args.archive)
+    sys.stdout.write(
+        f"wrote {len(written)} receipt(s) for {args.archive}"
+        + (": " + ", ".join(written) if written else "")
+        + "\n"
+    )

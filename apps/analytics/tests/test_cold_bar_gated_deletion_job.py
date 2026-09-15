@@ -272,3 +272,63 @@ def test_validate_chunks_rejects_multiday_chunk() -> None:
 def test_validate_chunks_rejects_duplicate_day() -> None:
     with pytest.raises(ValueError, match="same day"):
         validate_chunks((_chunk("2026-07-20"), _chunk("2026-07-20")))
+
+
+# ---------- receipt writing (from a just-created archive) ----------
+
+import json as _json  # noqa: E402
+
+
+def _write_day_files(d: Path, day: str, *, parquet: bool = True, fingerprint: bool = True) -> None:
+    if parquet:
+        (d / f"bars-{day}.parquet").write_bytes(b"parquet-bytes")
+    manifest = {
+        "schema_version": "cold_bars_v1",
+        "day": day,
+        "row_count": 1_000_000,
+        "sha256": "pq-file-sha",
+        "source_fingerprint": "cbfp_v1:fp" if fingerprint else None,
+        "file_fingerprint": "cbfp_v1:fp" if fingerprint else None,
+        "fidelity_verified": True if fingerprint else None,
+    }
+    (d / f"bars-{day}.manifest.json").write_text(_json.dumps(manifest))
+
+
+def test_write_receipts_for_days_with_local_parquet_and_fingerprints(tmp_path: Path) -> None:
+    from schurfer_analytics.cold_bar_gated_deletion_job import write_receipts_for_archive
+
+    _write_day_files(tmp_path, "2026-08-01")
+    written = write_receipts_for_archive(tmp_path, "bars-2026-08-02T04:00:00")
+    assert written == ["2026-08-01"]
+    r = read_receipt(tmp_path, "2026-08-01")
+    assert r is not None
+    assert r.archive_name == "bars-2026-08-02T04:00:00"
+    assert r.parquet_path == "runtime/cold-bars/bars-2026-08-01.parquet"
+    assert r.parquet_sha256 == "pq-file-sha"
+    assert r.source_fingerprint == "cbfp_v1:fp"
+    assert r.fidelity_verified is True
+
+
+def test_write_receipts_skips_fingerprintless_days(tmp_path: Path) -> None:
+    from schurfer_analytics.cold_bar_gated_deletion_job import write_receipts_for_archive
+
+    _write_day_files(tmp_path, "2026-08-01", fingerprint=False)
+    assert write_receipts_for_archive(tmp_path, "arc") == []
+    assert read_receipt(tmp_path, "2026-08-01") is None
+
+
+def test_write_receipts_skips_days_without_local_parquet(tmp_path: Path) -> None:
+    from schurfer_analytics.cold_bar_gated_deletion_job import write_receipts_for_archive
+
+    _write_day_files(tmp_path, "2026-08-01", parquet=False)  # manifest only (parquet reclaimed)
+    assert write_receipts_for_archive(tmp_path, "arc") == []
+
+
+def test_write_receipts_is_idempotent(tmp_path: Path) -> None:
+    from schurfer_analytics.cold_bar_gated_deletion_job import write_receipts_for_archive
+
+    _write_day_files(tmp_path, "2026-08-01")
+    assert write_receipts_for_archive(tmp_path, "arc1") == ["2026-08-01"]
+    # a second run does not overwrite the immutable receipt and re-lists nothing
+    assert write_receipts_for_archive(tmp_path, "arc2") == []
+    assert read_receipt(tmp_path, "2026-08-01").archive_name == "arc1"  # type: ignore[union-attr]
