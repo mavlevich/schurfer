@@ -3,7 +3,7 @@
 Python/FastAPI service for exchange account management and order execution.
 Uses isolated ccxt client scopes:
 
-- public market clients cover the scanner's 17 venues during `DRY_RUN`;
+- public market clients cover the scanner's 16 current venues during `DRY_RUN`;
 - authenticated trading clients exist only for exchanges with complete API credentials.
 
 Account, position, and order paths never receive public-only clients.

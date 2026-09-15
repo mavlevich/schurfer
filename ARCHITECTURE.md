@@ -233,10 +233,11 @@ squeeze-avoidance, and delayed-short results separate.
 
 Scanning is wider than trading. Data coverage does not equal tradeable venues.
 
-- Scanner (data): 17 CEX perp markets by default. binance, bybit, okx, gate, bitget,
-  mexc, kucoin, bingx, coinex, phemex, cryptocom, htx, lbank, bitmart, xt, toobit, and
-  blofin. This includes Binance. We scan it for data even though we cannot trade its
-  perps from Poland.
+- Scanner (data): 16 CEX perp markets by default. binance, bybit, okx, gate, bitget,
+  mexc, kucoin, bingx, coinex, phemex, cryptocom, htx, lbank, xt, toobit, and blofin.
+  BitMart historical attribution remains, but its current client was removed after
+  upstream CCXT support disappeared. This includes Binance. We scan it for data even
+  though we cannot trade its perps from Poland.
 - Execution (trading): only exchanges with both an API key and secret configured are
   activated at startup. Binance perps are not traded (blocked for Poland residents).
 
