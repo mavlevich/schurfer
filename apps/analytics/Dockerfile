@@ -24,6 +24,17 @@ COPY --from=builder /app/.venv /app/.venv
 
 ENV PATH="/app/.venv/bin:$PATH"
 
+# borgbackup for cold-bar gated deletion: the dry-run job extracts and lists the
+# offsite archives to verify a day is safely stored before it could be dropped. The
+# job is read-only (it never prunes; drop_chunk is disabled until PR 2), and the
+# offsite credentials are mounted at run time, not baked into the image.
+# openssh-client is REQUIRED: the repo is ssh:// via BORG_RSH, and neither
+# python:slim nor the Debian borgbackup package pulls in ssh, so borg would fail.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends borgbackup openssh-client \
+    && rm -rf /var/lib/apt/lists/* \
+    && command -v borg && command -v ssh
+
 # Bake DuckDB's postgres extension into the image. `INSTALL postgres` downloads
 # it from DuckDB's extension repository on first use, and the cold-bar export
 # runs in `docker compose run --rm` containers whose home directory does not

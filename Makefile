@@ -1258,6 +1258,16 @@ prod-cold-bar-export-install:
 	sudo systemctl enable --now schurfer-cold-bar-export.timer
 	@systemctl list-timers schurfer-cold-bar-export.timer --no-pager
 
+prod-cold-bar-gated-deletion-install:
+	@test "$$(git branch --show-current)" = "main" || (echo "ERROR: not on main (on '$$(git branch --show-current)'). Install only from main." && exit 1)
+	@test -z "$$(git status --porcelain)" || (echo "ERROR: working tree not clean. Commit or stash first." && exit 1)
+	@# Installs the DRY-RUN timer only (PR 1): it reports and deletes nothing.
+	sudo install -m 0644 infra/systemd/schurfer-cold-bar-gated-deletion.service /etc/systemd/system/schurfer-cold-bar-gated-deletion.service
+	sudo install -m 0644 infra/systemd/schurfer-cold-bar-gated-deletion.timer /etc/systemd/system/schurfer-cold-bar-gated-deletion.timer
+	sudo systemctl daemon-reload
+	sudo systemctl enable --now schurfer-cold-bar-gated-deletion.timer
+	@systemctl list-timers schurfer-cold-bar-gated-deletion.timer --no-pager
+
 prod-offsite-backup-install:
 	@test "$$(git branch --show-current)" = "main" || (echo "ERROR: not on main (on '$$(git branch --show-current)'). Install only from main." && exit 1)
 	@test -z "$$(git status --porcelain)" || (echo "ERROR: working tree not clean. Commit or stash first." && exit 1)
@@ -1566,6 +1576,26 @@ prod-cold-bar-export:
 	@$(_PROD) run --rm --no-deps \
 		-v /opt/schurfer/runtime/cold-bars:/cold-bars \
 		--entrypoint cold-bar-export analytics --out-dir /cold-bars $(ARGS)
+
+prod-cold-bar-gated-deletion-dry-run:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
+	@# DRY-RUN ONLY (PR 1): prints which cold-bar chunks would be dropped; deletes nothing.
+	@# No in-target sudo (the systemd unit is NoNewPrivileges). The analytics image ships
+	@# borg; the offsite credentials/config are MOUNTED (not baked) at their same host paths
+	@# so BORG_RSH / BORG_PASSCOMMAND / BORG_BASE_DIR from backup.env resolve unchanged. The
+	@# job is read-only (borg list/extract; drop_chunk is disabled until PR 2).
+	@$(_PROD) run --rm --no-deps \
+		-v /opt/schurfer/runtime/cold-bars:/cold-bars \
+		-v /opt/schurfer/runtime/backup.env:/backup.env:ro \
+		-v /opt/schurfer/runtime/borg-home:/opt/schurfer/runtime/borg-home \
+		-v /opt/schurfer/runtime/borg-passphrase:/opt/schurfer/runtime/borg-passphrase:ro \
+		-v /opt/schurfer/runtime/storagebox_known_hosts:/opt/schurfer/runtime/storagebox_known_hosts:ro \
+		-v /home/deploy/.ssh/schurfer_storagebox:/home/deploy/.ssh/schurfer_storagebox:ro \
+		--entrypoint cold-bar-gated-deletion analytics \
+		--cold-bars-dir /cold-bars --backup-env /backup.env --cutoff-days 25 $(ARGS)
+	@# cutoff 25 (< the 35-day Timescale retention) so the dry-run has real eligible
+	@# chunks to validate; PR 2 raises it to 40 once the automatic retention is removed.
+	@# Commissioning (first run) should add ARGS='--fail-if-empty' to catch a broken setup.
 
 prod-paper-replay-reconciliation:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)

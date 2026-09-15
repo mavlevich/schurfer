@@ -18,7 +18,7 @@ from schurfer_analytics.cold_bar_gated_deletion import (
     DropReceipt,
     drop_decision,
     is_eligible,
-    plan_drops,
+    is_single_utc_day,
 )
 
 
@@ -67,6 +67,13 @@ def _evidence(**over: object) -> DayEvidence:
 def test_all_gates_pass_drops() -> None:
     decision, reason = drop_decision(_evidence())
     assert decision == DROP, reason
+
+
+def test_gather_error_blocks_before_anything_else() -> None:
+    decision, reason = drop_decision(_evidence(gather_error="BorgError: boom"))
+    assert decision == BLOCK
+    assert "could not gather evidence" in reason
+    assert "boom" in reason
 
 
 @pytest.mark.parametrize(
@@ -187,65 +194,33 @@ def test_eligibility_rejects_non_positive_cutoff() -> None:
             is_eligible(end, now, bad)
 
 
-# --- plan_drops: contiguous prefix ----------------------------------------
+# --- is_single_utc_day (chunk shape) ---------------------------------------
 
 
-def test_plan_drops_all_pass() -> None:
-    days = tuple(_evidence(day=f"2026-08-0{n}") for n in (1, 2, 3))
-    plan = plan_drops(days)
-    assert plan.to_drop == ("2026-08-01", "2026-08-02", "2026-08-03")
-    assert plan.blocked_at is None
-    assert plan.held_after_block == ()
-
-
-def test_plan_drops_stops_at_first_block_and_holds_rest() -> None:
-    days = (
-        _evidence(day="2026-08-01"),
-        _evidence(day="2026-08-02", recomputed_fingerprint="changed"),  # blocks
-        _evidence(day="2026-08-03"),  # would pass alone, but is held
+def test_is_single_utc_day_accepts_a_clean_day() -> None:
+    assert (
+        is_single_utc_day(datetime(2026, 8, 1, tzinfo=UTC), datetime(2026, 8, 2, tzinfo=UTC))
+        is True
     )
-    plan = plan_drops(days)
-    assert plan.to_drop == ("2026-08-01",)
-    assert plan.blocked_at is not None
-    assert plan.blocked_at[0] == "2026-08-02"
-    assert "source changed" in plan.blocked_at[1]
-    assert plan.held_after_block == ("2026-08-03",)
 
 
-def test_plan_drops_blocks_on_the_oldest_touches_nothing() -> None:
-    days = (
-        _evidence(day="2026-08-01", receipt=None),  # oldest blocks
-        _evidence(day="2026-08-02"),
+def test_is_single_utc_day_rejects_offset_multiday_and_naive() -> None:
+    # start not at UTC midnight
+    assert (
+        is_single_utc_day(
+            datetime(2026, 8, 1, 1, 0, tzinfo=UTC), datetime(2026, 8, 2, 1, 0, tzinfo=UTC)
+        )
+        is False
     )
-    plan = plan_drops(days)
-    assert plan.to_drop == ()
-    assert plan.blocked_at[0] == "2026-08-01"  # type: ignore[index]
-    assert plan.held_after_block == ("2026-08-02",)
-
-
-def test_plan_drops_halts_on_a_calendar_gap() -> None:
-    # Aug 02 is missing; the ordered prefix before the gap (Aug 01) is safe to drop,
-    # but the frontier must not jump the gap.
-    days = (
-        _evidence(day="2026-08-01"),
-        _evidence(day="2026-08-03"),  # gap after Aug 01
+    # spans two days
+    assert (
+        is_single_utc_day(datetime(2026, 8, 1, tzinfo=UTC), datetime(2026, 8, 3, tzinfo=UTC))
+        is False
     )
-    plan = plan_drops(days)
-    assert plan.to_drop == ("2026-08-01",)
-    assert plan.blocked_at is not None
-    assert plan.blocked_at[0] == "2026-08-03"
-    assert "calendar gap" in plan.blocked_at[1]
-
-
-def test_plan_drops_out_of_order_drops_nothing() -> None:
-    # A mis-ordered list must never let the newer day be dropped while an older one
-    # is held: order is validated up front and the whole plan drops nothing.
-    days = (
-        _evidence(day="2026-08-02"),
-        _evidence(day="2026-08-01"),  # out of order -> reject the whole plan
+    # sub-day
+    assert (
+        is_single_utc_day(datetime(2026, 8, 1, tzinfo=UTC), datetime(2026, 8, 1, 12, tzinfo=UTC))
+        is False
     )
-    plan = plan_drops(days)
-    assert plan.to_drop == ()  # NOT ("2026-08-02",)
-    assert plan.blocked_at is not None
-    assert plan.blocked_at[0] == "2026-08-01"
-    assert "not strictly ascending" in plan.blocked_at[1]
+    # naive datetimes are not a valid UTC day
+    assert is_single_utc_day(datetime(2026, 8, 1), datetime(2026, 8, 2)) is False

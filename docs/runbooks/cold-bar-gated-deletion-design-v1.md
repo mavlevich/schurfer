@@ -92,8 +92,19 @@ cutoff-wide call), so the set Timescale removes is provably exactly the validate
 
 ### The gated-drop job
 
-- A **separate systemd service + timer**, run AFTER the daily export and offsite backup (e.g. 05:00,
-  export 03:30, backup 04:00). NOT embedded in `prod-deploy` or in the backup script.
+- A **separate systemd service + timer** (`schurfer-cold-bar-gated-deletion.{service,timer}`,
+  Makefile `prod-cold-bar-gated-deletion-dry-run` / `-install`), run AFTER the daily export and
+  offsite backup (05:00; export 03:30, backup 04:00). NOT embedded in `prod-deploy` or the backup
+  script. The unit is hardened (`NoNewPrivileges`) and the make target uses NO in-target sudo (the
+  bug that broke the export before). **Borg access (decided: run in the analytics container).** The
+  analytics image ships `borgbackup`; the make target MOUNTS the offsite credentials/config at their
+  same host paths (`backup.env`, `/home/deploy/.ssh/schurfer_storagebox`, `storagebox_known_hosts`,
+  `borg-passphrase`, `BORG_BASE_DIR=/opt/schurfer/runtime/borg-home`) so `BORG_RSH`/`BORG_PASSCOMMAND`
+  /`BORG_BASE_DIR` from `backup.env` resolve unchanged. This is acceptable because it is a single
+  single-tenant box under one `deploy` user (the key already lives there), the job is READ-ONLY
+  (borg list/extract; `drop_chunk` disabled until PR 2), and the offsite repo is a Hetzner Storage
+  Box **sub-account** (`-sub1`) which can be scoped/append-only-restricted. End-to-end reachability
+  (container -> storagebox) is validated the first time the job runs after deploy. PR 1 ships DRY-RUN only.
 - **`--dry-run` by default**: it prints the candidate list and per-day verdicts and drops nothing.
   Active deletion is a separate, explicit enablement (a flag/env), turned on only after a dry-run has
   been reconciled on prod.
@@ -131,6 +142,17 @@ First PR: **`bybit_momentum_bars_1m` only.** Do not generalize to the other rete
 5. Enable the gated timer with the 40-day cutoff.
 6. After the first real deletion: verify DB size, remaining chunk ranges, Borg archives, manifests,
    alerts, and that a research reader still reads the boundary day.
+
+## PR 2 correctness requirement: close the fingerprint TOCTOU
+
+The dry-run recomputes the source fingerprint and (in PR 2) would then call `drop_chunks`.
+Between those two steps a late backfill/repair could change the day, so the final fingerprint
+recheck and the targeted `drop_chunks` must run **atomically** with respect to the writer -- under
+a shared Postgres advisory lock (the same lock the backfill/repair path takes) or one
+transaction/serialized protocol -- so a day cannot change in the window between "verified
+unchanged" and "dropped". PR 1 is dry-run and does not delete, so this is a PR-2 gate, but it is
+mandatory before any real deletion. (`dry_run=False` exists and is tested; the concrete
+`drop_chunk` still deliberately raises until PR 2 wires this.)
 
 ## Gates before enabling deletion (must all pass)
 

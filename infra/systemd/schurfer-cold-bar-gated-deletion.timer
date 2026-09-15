@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily cold-bar gated-deletion dry-run
+
+[Timer]
+# 05:00 UTC, after the export (03:30) and the offsite backup (04:00). Dry-run only,
+# so a missed run has no deadline (it deletes nothing); no Persistent catch-up needed.
+OnCalendar=*-*-* 05:00:00
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target
