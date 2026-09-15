@@ -8,9 +8,9 @@ Update only these four lines after every merge -- this is the fast-path
 status check, not a place for narrative.
 
 ```
-Current primary: freeze the HYP-015 hold12h reader/cost/verdict before any read; support: cold-bar gated deletion dry-run merged in #421, with destructive deletion and retention-policy removal still separately gated
-State: pump-short and delayed-short are closed; monster harvest and net-buy accumulation are parked; HYP-012 is the strongest historical hint but standalone executable PnL is unproven; no strategy has yet established a scalable after-cost edge
-Next: record the outcome-blind execution-venue matrix; finish HYP-015 preregistration; let HYP-012/HYP-015 mature without peeking; then run one bounded abnormal-flow discovery on existing data under the 2026-09-15 decision program below
+Current primary: execution-venue static audit complete; Bybit account exists and can be funded but product/API permission remains unverified; next freeze the HYP-015 hold12h reader/cost/verdict before any read; support: cold-bar gated deletion dry-run merged in #421, with destructive deletion and retention-policy removal still separately gated
+State: production has no configured trading credentials and runs DRY_RUN with AUTO_TRADE off; pump-short and delayed-short are closed; monster harvest and net-buy accumulation are parked; HYP-012 is research-only unless its execution route is separately confirmed; no strategy has yet established a scalable after-cost edge
+Next: verify an exact account route only when a surviving candidate needs it; finish HYP-015 preregistration; let HYP-012/HYP-015 mature without peeking; then run one bounded abnormal-flow discovery on existing data under the 2026-09-15 decision program below
 User decision required: no live-mode change is authorized; no broad venue/L2 expansion is authorized before a candidate clears the economic gate; production deletion remains dry-run until its separate enablement review
 ```
 
@@ -212,9 +212,11 @@ Every candidate must clear all four gates; one cannot substitute for another:
 
 Use this order:
 
-1. **Execution-venue matrix (outcome-blind).** Record actual account/API ability to
-   trade spot/perpetual, long/short, minimum order, funding/borrow and operational
-   restrictions. Observation and execution venues stay separate. If HYP-012's
+1. **Execution-venue matrix (outcome-blind).** Use the static audit in
+   [`execution-venue-matrix-v1.md`](docs/research/execution-venue-matrix-v1.md) and
+   record actual account/API ability to trade spot/perpetual, long/short, minimum
+   order, funding/borrow and operational restrictions. Observation and execution
+   venues stay separate. If HYP-012's
    Binance target is not executable, its existing forward result remains mechanism
    evidence and cannot by itself satisfy the money gate; changing the target requires
    a new prospective contract, never a retrofit.
