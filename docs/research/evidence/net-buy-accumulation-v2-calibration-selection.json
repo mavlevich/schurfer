@@ -1,0 +1,35 @@
+{
+  "cal_days": 23.833,
+  "fingerprint_sha256": "3f9f4caa9923af2bfcb6ef8af013d29ca1411b57e19159997ec163d39e2e572c",
+  "gate": {
+    "max_window_days": 120,
+    "min_clusters": 30,
+    "note": "weekly RATE proxy on calibration window; 4-full-week floor is a cohort read-time check",
+    "weekly_min_fires": 20
+  },
+  "n_target_fires": 157.89473684210526,
+  "per_primary": [
+    {
+      "calibration_clusters": 71,
+      "calibration_weeks": 0,
+      "chosen_theta": 0.25,
+      "fire_rate_per_day": 3.1049385306088197,
+      "primary": "P-MAG",
+      "required_window_days": 50.852773826458034,
+      "too_slow": false
+    },
+    {
+      "calibration_clusters": 117,
+      "calibration_weeks": 0,
+      "chosen_theta": 0.25,
+      "fire_rate_per_day": 5.286787227793396,
+      "primary": "P-SHAPE",
+      "required_window_days": 29.865914786967416,
+      "too_slow": false
+    }
+  ],
+  "source_artifact": "net-buy-accumulation-v2-calibration-onoff.json",
+  "source_fingerprint": "9a7ff6d68cbb71a6a6fdd153841c77032dff9ac08818cdbfb236638531d14977",
+  "too_slow": false,
+  "window_days": 51
+}
