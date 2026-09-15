@@ -1,6 +1,6 @@
 # Roadmap
 
-> Living document. Updated as we progress. Last refreshed 2026-09-10.
+> Living document. Updated as we progress. Last refreshed 2026-09-15.
 
 ## Current focus
 
@@ -8,13 +8,16 @@ Update only these four lines after every merge -- this is the fast-path
 status check, not a place for narrative.
 
 ```
-Current primary: ENG-024 partial-outcome consumer tracing, fixed in code and awaiting production verification; support: HYP-015 hold12h paper worker STARTED 2026-09-13 (forward cohort accumulating; reader/cost model/verdict NOT yet frozen)
-State: executable pump-short confirmed negative (liquid_taker do_not_promote); HYP-012 cross-venue source-lead is the strongest historical hint but a PAIRED difference, standalone PnL unproven; #413 calibration selection not yet frozen; HYP-024 inconclusive; per-line decisions in docs/research/decision-register.md
-Next: freeze the HYP-015 reader/cost/verdict before any read and protect the cohort from the viewed probes; run source-lead readiness without reading returns; verify ENG-024; add app-table retention so backups stay healthy; do not reopen the delayed-short/pump-short lines or open new cold-probe screens
-User decision required: no live-mode change is authorized; disk/data retention policy for unbounded app tables, and whether to add a Hetzner block volume for long history
+Current primary: freeze the HYP-015 hold12h reader/cost/verdict before any read; support: cold-bar gated deletion dry-run merged in #421, with destructive deletion and retention-policy removal still separately gated
+State: pump-short and delayed-short are closed; monster harvest and net-buy accumulation are parked; HYP-012 is the strongest historical hint but standalone executable PnL is unproven; no strategy has yet established a scalable after-cost edge
+Next: record the outcome-blind execution-venue matrix; finish HYP-015 preregistration; let HYP-012/HYP-015 mature without peeking; then run one bounded abnormal-flow discovery on existing data under the 2026-09-15 decision program below
+User decision required: no live-mode change is authorized; no broad venue/L2 expansion is authorized before a candidate clears the economic gate; production deletion remains dry-run until its separate enablement review
 ```
 
-### Active change card — ENG-024 outcome-consumer integrity
+### Completed code card — ENG-024 outcome-consumer integrity
+
+Status: fixed in code; production verification remains an operational follow-up and
+does not occupy the current primary research slot.
 
 - **Result / scope:** prove every direct consumer of decision outcomes treats
   `partial` as coverage rather than exact evidence; bind legacy direct joins to one
@@ -183,12 +186,85 @@ reliable executable-cost measurement. Token count, venue count and collected
 terabytes are supporting metrics. New hypothesis thresholds and sample floors
 belong in their registered contracts, not in this architecture plan.
 
+### Near-term edge decision program — 2026-09-15
+
+The objective is not to maximize the number of signals or venues. It is to decide,
+with a bounded amount of work, whether Schurfer has an executable after-cost edge
+that can produce economically meaningful dollars at a plausible scaling path. This
+program covers the two already-active candidates (HYP-012 and HYP-015) and at most
+one new abnormal-flow discovery family. It does not reopen closed pump-short,
+delayed-short, accumulation or monster-harvest variants.
+
+Every candidate must clear all four gates; one cannot substitute for another:
+
+1. **Incremental information:** a point-in-time signal beats its predeclared matched
+   baseline or market factor, so a favorable regime is not relabelled as alpha.
+2. **Standalone economics:** the executable strategy itself has positive net return
+   after fees, spread/slippage, funding and unresolved opportunities. A positive
+   paired difference or excess return while losing money is not a money candidate.
+3. **Portfolio feasibility:** signal frequency, concurrency, capital occupancy,
+   drawdown, losing streak, asset/week concentration and conservative capacity are
+   acceptable under one frozen portfolio policy.
+4. **Business materiality:** report expected dollars and the measured capacity
+   ceiling for the current research bank and plausible larger allocations. If the
+   maximum defensible scale cannot cover data, server and operational costs, stop
+   strategy-specific engineering even if a statistical effect exists.
+
+Use this order:
+
+1. **Execution-venue matrix (outcome-blind).** Record actual account/API ability to
+   trade spot/perpetual, long/short, minimum order, funding/borrow and operational
+   restrictions. Observation and execution venues stay separate. If HYP-012's
+   Binance target is not executable, its existing forward result remains mechanism
+   evidence and cannot by itself satisfy the money gate; changing the target requires
+   a new prospective contract, never a retrofit.
+2. **Finish existing candidates.** Freeze the HYP-015 reader, actual-funding cost
+   reconciliation, common-entry comparison and verdict before reading the cohort.
+   Let HYP-012 and HYP-015 reach their registered floors without interim peeks. Their
+   passive accumulation consumes no implementation slot.
+3. **Register one bounded abnormal-flow discovery.** The protocol and tested replay
+   code may share one PR, but that PR must contain no outcome artifact or economic
+   conclusion. It freezes one primary family, direction, horizon, entry, costs,
+   episode/dedup rule, full eligible denominator, missing-data policy and candidate-
+   selection procedure before the first result is read. Exploratory secondary cells
+   are labelled and cannot nominate additional candidates post hoc.
+4. **Run one reproducible discovery read.** Start with already-retained Bybit/Binance
+   inputs and exact native paths. Require both standalone net economics and matched
+   excess, plus the portfolio and dollar-path outputs above. The historical window is
+   discovery-only because it has already been viewed; a survivor earns at most one
+   untouched prospective cohort.
+5. **Reassess once.** At the first checkpoint after HYP-012 and HYP-015 are readable
+   and the abnormal-flow discovery is complete, or on 2026-10-31 if a floor still
+   cannot accrue, choose one survivor or stop strategy-specific expansion in this
+   pump/early-flow domain. Failure to accrue enough independent opportunities by the
+   calendar checkpoint is a throughput/economic no-go, not proof of negative EV.
+
+The scope of a negative result must match the evidence. A failed Bybit/Binance
+minute-bar replay closes that declared signal and data scope; it does not prove that
+every unobserved venue or pre-event L2 mechanism lacks edge. Conversely, missing data
+does not justify building feeds speculatively. Until one candidate clears the four
+gates:
+
+- keep existing passive, integrity-checked collection and finish data durability;
+- do not add broad L2, many venue adapters, a new execution path or live trading;
+- select at most one additional venue only after a coverage/value audit shows unique
+  missed opportunities and an executable destination/source role;
+- if L2 is needed only to validate fills/capacity, add a bounded shadow after the
+  bar-level candidate survives; if pre-event book state is itself the predictor,
+  register a bounded hotset plus controls and collect its prebuffer before any forward
+  test, because that history cannot be reconstructed later.
+
+Roadmap/decision rules must merge before outcomes are read. The implementation PR may
+include the frozen contract and code; the first result and its immutable input/output
+fingerprints belong in a subsequent result PR. This prevents the plan from being
+rewritten around a favorable preliminary number.
+
 Older Phase 2 pilot and scaling entries below preserve their original chronology.
 Before selecting one, reconcile its status against current implementations and
 closed research decisions; a historical unchecked box is not authority to rerun a
 closed pilot or to block an already established capture lane.
 
-### Monster pump precursor discovery — 2026-09-14
+### Monster pump precursor discovery — parked 2026-09-14
 
 Research idea (not a committed cohort). The question: catch the rare monster pumps
 (the ones that actually pay) and cut the junk. What we have established, on a
