@@ -227,6 +227,22 @@ if [[ -d "$COLD_BARS_DIR" ]] \
                 if [[ "$(printf '%s\n' "$archived_bars" | sort)" == "$bars_files" ]]; then
                     log "bars: contents match"
                     date -Iseconds > "$BARS_STAMP"
+                    # Write the per-day offsite receipts for the days this archive
+                    # just captured, BEFORE their Parquet is reclaimed below: a
+                    # local Parquet is exactly a day contained in ${bars_archive},
+                    # and that is the fact a receipt records. NON-FATAL on purpose:
+                    # the backup itself has already succeeded, so a receipt failure
+                    # (or an older image without the entrypoint) must not fail the
+                    # job or block the reclaim. The writer is pure file ops and
+                    # no-ops on days whose manifest carries no fingerprints yet.
+                    if ! docker compose --env-file "${REPO_ROOT}/.env.prod" \
+                        -f "${REPO_ROOT}/infra/docker/docker-compose.prod.yml" \
+                        run --rm --no-deps \
+                        -v "${REPO_ROOT}/${COLD_BARS_DIR}:/cold-bars" \
+                        --entrypoint cold-bar-write-receipts analytics \
+                        --cold-bars-dir /cold-bars --archive "$bars_archive"; then
+                        log "bars: WARNING receipt writing failed (non-fatal); backup unaffected"
+                    fi
                     # Only the Parquet is reclaimed, and only what this archive
                     # was just verified to contain.
                     #
