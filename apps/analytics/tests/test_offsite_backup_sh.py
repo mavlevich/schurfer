@@ -39,9 +39,48 @@ def _write(path: Path, body: str) -> None:
     path.chmod(0o755)
 
 
-def _fake_env(tmp_path: Path, *, borg_body: str) -> tuple[Path, dict[str, str]]:
+# A stand-in for `docker compose run cold-bar-write-receipts`. It emulates only
+# the one contract the backup script depends on -- read the archived member list
+# on stdin, and write the days whose Parquet may be reclaimed (one per line) to
+# the file named by --reclaim-list -- and, like the real entrypoint, ALWAYS
+# writes that file on success, empty when nothing is reclaimable. `-v host:/cold-
+# bars` is how the container path maps back to a host path here, since this fake
+# does no real mount. The writer's own verification is unit-tested separately in
+# test_cold_bar_gated_deletion_job.py. Any other docker call (pg_dump) just emits
+# a few bytes.
+_RECEIPT_WRITER_DOCKER = """\
+    #!/usr/bin/env bash
+    args="$*"
+    if [[ "$args" != *cold-bar-write-receipts* ]]; then
+      printf 'dump'
+      exit 0
+    fi
+    reclaim=""; hostdir=""; prev=""
+    for a in "$@"; do
+      case "$prev" in
+        --reclaim-list) reclaim="$a" ;;
+        -v) hostdir="${a%%:*}" ;;
+      esac
+      prev="$a"
+    done
+    out="${hostdir}${reclaim#/cold-bars}"
+    days=$(grep -oE 'bars-[0-9]{4}-[0-9]{2}-[0-9]{2}[.]parquet$' \
+      | sed -E 's/^bars-//; s/[.]parquet$//' | sort -u)
+    if [[ -n "$days" ]]; then
+      echo "$days" > "$out"
+    else
+      : > "$out"
+    fi
+    exit 0
+    """
+
+
+def _fake_env(
+    tmp_path: Path, *, borg_body: str, docker_body: str = _RECEIPT_WRITER_DOCKER
+) -> tuple[Path, dict[str, str]]:
     """A fake repo tree, a fake `borg` whose behaviour the test controls, and a
-    `docker` that produces a few bytes for pg_dump."""
+    `docker` that stands in for both the pg_dump exec and the cold-bar receipt
+    writer (see _RECEIPT_WRITER_DOCKER)."""
     repo = tmp_path / "repo"
     for relative in (
         "runtime/market-path-cache",
@@ -64,13 +103,7 @@ def _fake_env(tmp_path: Path, *, borg_body: str) -> tuple[Path, dict[str, str]]:
     bin_dir = tmp_path / "fakebin"
     bin_dir.mkdir()
     _write(bin_dir / "borg", borg_body)
-    _write(
-        bin_dir / "docker",
-        """\
-        #!/usr/bin/env bash
-        printf 'dump'
-        """,
-    )
+    _write(bin_dir / "docker", docker_body)
     _write(bin_dir / "curl", "#!/usr/bin/env bash\nexit 0\n")
 
     # The fake tools shadow the real ones, but the rest of PATH stays: the
@@ -363,3 +396,23 @@ def test_a_run_with_nothing_left_to_reclaim_still_succeeds(tmp_path: Path) -> No
     # done, and losing it would silently re-export everything.
     archived = (tmp_path / "borg-calls.log.paths").read_text()
     assert "bars-2026-08-20.manifest.json" in archived
+
+
+def test_a_failed_receipt_writer_keeps_every_parquet(tmp_path: Path) -> None:
+    """Reclaiming a day's Parquet is gated on its offsite receipt being written
+    first. If the writer cannot run at all (an error, or an image too old to
+    carry the entrypoint) no reclaim list is produced, so nothing is reclaimed
+    and the local Parquet stays for the next backup to retry -- and, because the
+    archive itself succeeded, the job is NOT failed over it."""
+    failing_docker = """\
+        #!/usr/bin/env bash
+        [[ "$*" == *cold-bar-write-receipts* ]] && exit 1
+        printf 'dump'
+        """
+    state, env = _fake_env(tmp_path, borg_body=_HONEST_BORG, docker_body=failing_docker)
+    repo = Path(env["REPO_ROOT"])
+    result = _run(env)
+    assert result.returncode == 0, result.stderr
+    assert (state / "offsite-backup-bars.stamp").exists()
+    assert (repo / "runtime/cold-bars/bars-2026-08-20.parquet").exists()
+    assert "keeping all Parquet" in result.stdout

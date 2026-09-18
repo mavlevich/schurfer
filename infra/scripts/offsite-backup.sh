@@ -227,39 +227,48 @@ if [[ -d "$COLD_BARS_DIR" ]] \
                 if [[ "$(printf '%s\n' "$archived_bars" | sort)" == "$bars_files" ]]; then
                     log "bars: contents match"
                     date -Iseconds > "$BARS_STAMP"
-                    # Write the per-day offsite receipts for the days this archive
-                    # just captured, BEFORE their Parquet is reclaimed below: a
-                    # local Parquet is exactly a day contained in ${bars_archive},
-                    # and that is the fact a receipt records. NON-FATAL on purpose:
-                    # the backup itself has already succeeded, so a receipt failure
-                    # (or an older image without the entrypoint) must not fail the
-                    # job or block the reclaim. The writer is pure file ops and
-                    # no-ops on days whose manifest carries no fingerprints yet.
-                    if ! docker compose --env-file "${REPO_ROOT}/.env.prod" \
+                    # Write per-day offsite receipts and learn which days are SAFE to
+                    # reclaim. The writer is fed the VERIFIED archive member list on
+                    # stdin (not the live directory), so a Parquet exported concurrently
+                    # after this archive was made is never receipted or reclaimed. It
+                    # re-verifies each day's Parquet against its manifest before writing
+                    # a receipt, and reports back (via the reclaim list) only the
+                    # receipted and legacy days -- a day whose receipt FAILED keeps its
+                    # Parquet so the next backup retries it.
+                    #
+                    # NON-FATAL: the backup itself has already succeeded. On any error
+                    # (or an older image without the entrypoint) the reclaim list is not
+                    # produced and NOTHING is reclaimed this run, which is the safe side.
+                    reclaim_list="${REPO_ROOT}/${COLD_BARS_DIR}/.reclaim-list"
+                    rm -f "$reclaim_list"
+                    if ! printf '%s\n' "$archived_bars" | docker compose \
+                        --env-file "${REPO_ROOT}/.env.prod" \
                         -f "${REPO_ROOT}/infra/docker/docker-compose.prod.yml" \
-                        run --rm --no-deps \
+                        run --rm --no-deps -T \
                         -v "${REPO_ROOT}/${COLD_BARS_DIR}:/cold-bars" \
                         --entrypoint cold-bar-write-receipts analytics \
-                        --cold-bars-dir /cold-bars --archive "$bars_archive"; then
-                        log "bars: WARNING receipt writing failed (non-fatal); backup unaffected"
+                        --cold-bars-dir /cold-bars --archive "$bars_archive" \
+                        --reclaim-list /cold-bars/.reclaim-list; then
+                        log "bars: WARNING receipt writing failed (non-fatal); nothing reclaimed this run"
                     fi
-                    # Only the Parquet is reclaimed, and only what this archive
-                    # was just verified to contain.
-                    #
-                    # The list is built before the loop rather than piped into
-                    # it. Piping `grep` into `while` fails the whole job under
-                    # pipefail when grep matches nothing, and matching nothing
-                    # is the steady state: once every day has been archived and
-                    # reclaimed, only manifests remain. That blocked a deploy on
-                    # 2026-09-08, after the backup itself had entirely
-                    # succeeded.
-                    reclaimable=$(printf '%s\n' "$bars_files" | grep '\.parquet$' || true)
-                    if [[ -n "$reclaimable" ]]; then
-                        while read -r file; do
-                            rm -f "$file" && log "bars: reclaimed ${file}"
-                        done <<< "$reclaimable"
+                    # Reclaim ONLY the days the writer cleared. Built before the loop so
+                    # an empty list under pipefail does not fail the job (the steady
+                    # state once every day is local-free), the failure that blocked a
+                    # deploy on 2026-09-08 after the backup had entirely succeeded.
+                    if [[ -f "$reclaim_list" ]]; then
+                        reclaim_days=$(cat "$reclaim_list")
+                        rm -f "$reclaim_list"
+                        if [[ -n "$reclaim_days" ]]; then
+                            while read -r day; do
+                                [[ -n "$day" ]] || continue
+                                f="${REPO_ROOT}/${COLD_BARS_DIR}/bars-${day}.parquet"
+                                rm -f "$f" && log "bars: reclaimed ${f}"
+                            done <<< "$reclaim_days"
+                        else
+                            log "bars: nothing to reclaim (every archived day is already local-free)"
+                        fi
                     else
-                        log "bars: nothing to reclaim, every archived day is already local-free"
+                        log "bars: no reclaim list produced; keeping all Parquet this run"
                     fi
                 else
                     drop_archive "$bars_archive"
