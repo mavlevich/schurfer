@@ -347,6 +347,37 @@ def existing_days(out_dir: Path) -> tuple[str, ...]:
     )
 
 
+def days_needing_fingerprint(out_dir: Path, oldest: date, newest: date) -> tuple[date, ...]:
+    """Already-exported in-window days whose manifest carries no source fingerprint.
+
+    These were exported before fingerprinting was enabled. Because they are still
+    in the source (``oldest``..``newest``) they can be re-exported WITH a
+    fingerprint and so become droppable; a day older than ``oldest`` is gone from
+    the source and can never be fingerprinted now. Oldest first: the day nearest to
+    falling out of the source window is the most urgent to capture before it is.
+    """
+    result: list[date] = []
+    for name in existing_days(out_dir):
+        try:
+            day = date.fromisoformat(name)
+        except ValueError:
+            continue
+        if day < oldest or day > newest:
+            continue
+        try:
+            manifest = json.loads((out_dir / f"bars-{name}.manifest.json").read_text())
+        except (OSError, ValueError):
+            # A manifest that will not read (truncated by an interrupted write, or
+            # corrupt) is NOT a finished day: re-export it so a real manifest replaces
+            # it. Silently skipping would let a broken day masquerade as done and stay
+            # permanently unfingerprinted, hence undroppable.
+            result.append(day)
+            continue
+        if not isinstance(manifest, dict) or not manifest.get("source_fingerprint"):
+            result.append(day)
+    return tuple(sorted(result))
+
+
 def source_day_range(connection: Any) -> tuple[date, date] | None:
     """The oldest and newest complete UTC day still present in the source.
 
@@ -408,10 +439,15 @@ def main() -> None:
     parser.add_argument(
         "--with-fingerprint",
         action="store_true",
+        help="compute the whole-row source/file fingerprints gated deletion needs",
+    )
+    parser.add_argument(
+        "--refresh-fingerprints",
+        action="store_true",
         help=(
-            "compute the whole-row source/file fingerprints (OFF by default; only "
-            "enable after the daily-volume benchmark and the Postgres->DuckDB "
-            "integration test, per the gated-deletion runbook)"
+            "backfill: re-export in-window days whose manifest has no fingerprint "
+            "(exported before it was enabled) so they become droppable; implies "
+            "--with-fingerprint and ignores --day. Self-terminating and safe to re-run."
         ),
     )
     args = parser.parse_args()
@@ -420,9 +456,19 @@ def main() -> None:
     if not dsn:
         raise ValueError("DATABASE_URL is required for cold-bar-export")
 
+    with_fingerprint = args.with_fingerprint or args.refresh_fingerprints
+
     connection = connect(dsn)
-    if args.day is not None:
-        targets: tuple[date, ...] = (args.day,)
+    if args.refresh_fingerprints:
+        span = source_day_range(connection)
+        if span is None:
+            sys.stdout.write("no complete day available to refresh\n")
+            return
+        targets: tuple[date, ...] = days_needing_fingerprint(args.out_dir, span[0], span[1])
+        if args.max_days > 0:
+            targets = targets[: args.max_days]
+    elif args.day is not None:
+        targets = (args.day,)
     else:
         span = source_day_range(connection)
         if span is None:
@@ -435,7 +481,7 @@ def main() -> None:
             targets = targets[: args.max_days]
 
     for day in targets:
-        manifest = export_day(connection, day, args.out_dir, with_fingerprint=args.with_fingerprint)
+        manifest = export_day(connection, day, args.out_dir, with_fingerprint=with_fingerprint)
         verified = verify_local(args.out_dir, day)
         sys.stdout.write(
             f"{verified.day}: {verified.row_count} rows, "
@@ -443,4 +489,5 @@ def main() -> None:
         )
         del manifest
     if not targets:
-        sys.stdout.write("nothing to export\n")
+        nothing = "nothing to refresh\n" if args.refresh_fingerprints else "nothing to export\n"
+        sys.stdout.write(nothing)

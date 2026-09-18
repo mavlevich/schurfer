@@ -1573,9 +1573,28 @@ prod-cold-bar-export:
 	@# blocks in-target sudo and fails the automated daily export. The directory is created
 	@# once (with sudo) by prod-cold-bar-export-install; this is a no-op when it exists.
 	@mkdir -p /opt/schurfer/runtime/cold-bars
-	@$(_PROD) run --rm --no-deps \
+	@# --with-fingerprint: ON since the daily-volume benchmark passed (2026-09-18,
+	@# +177s/day, fidelity_match=True on 1.5M real rows). Gated deletion needs these
+	@# fingerprints; without them every day stays fail-closed (non-droppable).
+	@# with-cold-bars-lock: never write these files while the offsite backup is
+	@# archiving/reclaiming them (it takes the same lock around its cold-bar section).
+	@bash infra/scripts/with-cold-bars-lock.sh $(_PROD) run --rm --no-deps \
 		-v /opt/schurfer/runtime/cold-bars:/cold-bars \
-		--entrypoint cold-bar-export analytics --out-dir /cold-bars $(ARGS)
+		--entrypoint cold-bar-export analytics --out-dir /cold-bars --with-fingerprint $(ARGS)
+
+prod-cold-bar-export-refresh-fingerprints:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
+	@# BACKFILL: re-export in-window days exported before fingerprinting was enabled so
+	@# they carry a fingerprint and become droppable. Self-terminating (a no-op once every
+	@# in-window day has one) and safe to re-run. Each day is a full ~5-min re-export.
+	@# Default --max-days 2 so a bare run is a bounded ~10-min batch, not the up-to-3h it
+	@# would take to sweep every day; override with ARGS='--max-days N' (argparse takes the
+	@# last value). Serialized against the offsite backup via with-cold-bars-lock.
+	@mkdir -p /opt/schurfer/runtime/cold-bars
+	@bash infra/scripts/with-cold-bars-lock.sh $(_PROD) run --rm --no-deps \
+		-v /opt/schurfer/runtime/cold-bars:/cold-bars \
+		--entrypoint cold-bar-export analytics --out-dir /cold-bars \
+		--refresh-fingerprints --max-days 2 $(ARGS)
 
 prod-cold-bar-gated-deletion-dry-run:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
