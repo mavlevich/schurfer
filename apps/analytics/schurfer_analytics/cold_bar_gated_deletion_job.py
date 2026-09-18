@@ -12,6 +12,7 @@ database required. The pure safety rules live in ``cold_bar_gated_deletion``.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 from dataclasses import asdict, dataclass
@@ -28,6 +29,7 @@ from .cold_bar_gated_deletion import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
     from datetime import datetime
     from pathlib import Path
 
@@ -35,6 +37,11 @@ if TYPE_CHECKING:
 # ---------- per-day receipt I/O (canonical: immutable JSON beside the manifest) ----------
 
 RECEIPT_SUFFIX = ".offsite-receipt.json"
+
+# Files are archived under the backed-up directory's path, so an archive member is
+# `runtime/cold-bars/bars-<day>.<ext>` (confirmed against a real archive), not the bare
+# filename. Defined here so both the receipt writer and the collector agree.
+ARCHIVE_MEMBER_PREFIX = "runtime/cold-bars/"
 
 
 def receipt_path(receipts_dir: Path, day: str) -> Path:
@@ -56,6 +63,70 @@ def write_receipt(receipts_dir: Path, receipt: DropReceipt) -> Path:
     with os.fdopen(fd, "w") as handle:
         handle.write(payload)
     return path
+
+
+# Per-day outcome of the receipt writer.
+RECEIPTED = "receipted"  # a verified receipt exists -> the Parquet is safe to reclaim
+LEGACY_SKIP = "legacy-skip"  # no fingerprints (pre-fingerprint export); reclaimable, not receipted
+FAILED = "failed"  # verification or write failed -> KEEP the Parquet so the next backup retries
+
+
+def write_receipts_for_archive(
+    cold_bars_dir: Path, archive_name: str, archived_days: Iterable[str]
+) -> dict[str, str]:
+    """Write a per-day receipt for each ARCHIVED day; return ``{day: status}`` where
+    status is ``receipted`` / ``legacy-skip`` / ``failed``.
+
+    ``archived_days`` is the exact set of days the just-created archive was VERIFIED to
+    contain (NOT a listing of the live directory), so a day whose Parquet appeared
+    concurrently, after the archive was made, is never receipted or reclaimed. Before
+    trusting a manifest the day's Parquet is RE-VERIFIED against it (``verify_local``
+    re-hashes the file and checks the schema), and fidelity is re-derived strictly
+    (``fidelity_verified is True`` AND source_fingerprint == file_fingerprint); anything
+    that fails is ``failed`` (its Parquet must be kept, not reclaimed). A day without
+    fingerprints is ``legacy-skip``. An existing receipt is immutable, so a re-run leaves
+    it and still reports ``receipted``.
+
+    Must run inside the offsite backup, AFTER the bars archive is verified and BEFORE the
+    Parquet is reclaimed; only the caller then reclaims the non-``failed`` days.
+    """
+    from .cold_bar_export import sha256_file, verify_local  # local import: keeps export dep lazy
+
+    result: dict[str, str] = {}
+    for day in archived_days:
+        parquet = cold_bars_dir / f"bars-{day}.parquet"
+        manifest_path = cold_bars_dir / f"bars-{day}.manifest.json"
+        if not parquet.exists() or not manifest_path.exists():
+            result[day] = FAILED  # an archived day whose local files vanished -> anomaly; keep
+            continue
+        try:
+            m = verify_local(cold_bars_dir, date.fromisoformat(day))  # re-hash Parquet vs manifest
+        except (ValueError, OSError):
+            result[day] = FAILED
+            continue
+        if not (m.source_fingerprint and m.file_fingerprint) or m.fidelity_verified is None:
+            result[day] = LEGACY_SKIP
+            continue
+        if m.fidelity_verified is not True or m.source_fingerprint != m.file_fingerprint:
+            result[day] = FAILED  # fingerprints present but fidelity not strictly satisfied
+            continue
+        receipt = DropReceipt(
+            day=day,
+            archive_name=archive_name,
+            parquet_path=f"{ARCHIVE_MEMBER_PREFIX}bars-{day}.parquet",
+            parquet_sha256=m.sha256,
+            manifest_sha256=sha256_file(manifest_path),
+            row_count=m.row_count,
+            schema_version=m.schema_version,
+            source_fingerprint=m.source_fingerprint,
+            file_fingerprint=m.file_fingerprint,
+            fidelity_verified=m.fidelity_verified,
+        )
+        # An existing receipt is immutable; the day is still receipted (reclaimable).
+        with contextlib.suppress(FileExistsError):
+            write_receipt(cold_bars_dir, receipt)
+        result[day] = RECEIPTED
+    return result
 
 
 def read_receipt(receipts_dir: Path, day: str) -> DropReceipt | None:
@@ -301,3 +372,53 @@ def render_plan(result: RunResult) -> str:
     if result.held:
         lines.append(f"  held (not evaluated): {len(result.held)} day(s)")
     return "\n".join(lines)
+
+
+def archived_days_from_member_list(text: str) -> list[str]:
+    """Extract the days from a Borg archive member listing: the `bars-<day>.parquet`
+    members (manifests, receipts and dotfiles are ignored). This is the VERIFIED archive
+    snapshot, fed on stdin, so the writer never acts on the live directory."""
+    import re
+
+    days = []
+    for line in text.splitlines():
+        m = re.search(r"bars-(\d{4}-\d{2}-\d{2})\.parquet$", line.strip())
+        if m:
+            days.append(m.group(1))
+    return days
+
+
+def write_receipts_main() -> None:
+    """CLI: write per-day offsite receipts for a just-created bars archive.
+
+    Reads the archive's VERIFIED member listing on STDIN (so it acts only on days the
+    archive actually contains, never a concurrently-exported new day), writes a receipt
+    for each verified day, and writes the days that are SAFE TO RECLAIM (receipted or
+    legacy) to ``--reclaim-list`` -- the caller reclaims exactly those and keeps the
+    ``failed`` days' Parquet for the next backup to retry. Pure file operations."""
+    import argparse
+    import sys
+    from pathlib import Path as _Path
+
+    parser = argparse.ArgumentParser(description="Write cold-bar offsite receipts")
+    parser.add_argument("--cold-bars-dir", type=_Path, required=True)
+    parser.add_argument("--archive", required=True, help="the bars archive just created")
+    parser.add_argument(
+        "--reclaim-list",
+        type=_Path,
+        help="write the days whose Parquet is safe to reclaim (one per line) here",
+    )
+    args = parser.parse_args()
+
+    days = archived_days_from_member_list(sys.stdin.read())
+    result = write_receipts_for_archive(args.cold_bars_dir, args.archive, days)
+    counts: dict[str, int] = {}
+    for status in result.values():
+        counts[status] = counts.get(status, 0) + 1
+    sys.stdout.write(f"receipts for {args.archive}: {counts or '{}'}\n")
+    for day, status in sorted(result.items()):
+        if status == FAILED:
+            sys.stdout.write(f"  {day}: FAILED (Parquet kept for retry)\n")
+    if args.reclaim_list is not None:
+        reclaimable = sorted(d for d, s in result.items() if s in (RECEIPTED, LEGACY_SKIP))
+        args.reclaim_list.write_text("".join(f"{d}\n" for d in reclaimable))

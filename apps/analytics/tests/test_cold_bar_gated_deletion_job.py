@@ -272,3 +272,148 @@ def test_validate_chunks_rejects_multiday_chunk() -> None:
 def test_validate_chunks_rejects_duplicate_day() -> None:
     with pytest.raises(ValueError, match="same day"):
         validate_chunks((_chunk("2026-07-20"), _chunk("2026-07-20")))
+
+
+# ---------- receipt writing (from a verified archive snapshot) ----------
+
+from schurfer_analytics.cold_bar_export import ExportManifest, sha256_file  # noqa: E402
+from schurfer_analytics.cold_bar_gated_deletion_job import (  # noqa: E402
+    FAILED,
+    LEGACY_SKIP,
+    RECEIPTED,
+    archived_days_from_member_list,
+    write_receipts_for_archive,
+)
+
+
+def _make_day(
+    d: Path,
+    day: str,
+    *,
+    parquet: bool = True,
+    fingerprint: bool = True,
+    corrupt_sha: bool = False,
+    bad_fidelity: bool = False,
+) -> None:
+    """Write a real Parquet + a full manifest so verify_local can re-check them."""
+    pq = d / f"bars-{day}.parquet"
+    if parquet:
+        pq.write_bytes(b"PARQUET-" + day.encode())
+    fp = "cbfp_v1:fp" if fingerprint else None
+    manifest = ExportManifest(
+        schema_version="cold_bars_v1",
+        export_version="cold_bar_export_v1",
+        source_table="timeseries.bybit_momentum_bars_1m",
+        day=day,
+        bucket_start_from=f"{day}T00:00:00+00:00",
+        bucket_start_until=f"{day}T23:59:00+00:00",
+        row_count=1000,
+        file_name=f"bars-{day}.parquet",
+        file_bytes=pq.stat().st_size if parquet else 0,
+        sha256=("WRONG" if corrupt_sha else (sha256_file(pq) if parquet else "x")),
+        data_keys=(),
+        exported_at=f"{day}T04:00:00+00:00",
+        source_fingerprint=fp,
+        file_fingerprint=("cbfp_v1:other" if (fingerprint and bad_fidelity) else fp),
+        fidelity_verified=(True if fingerprint else None),
+    )
+    (d / f"bars-{day}.manifest.json").write_text(manifest.to_json())
+
+
+def test_receipts_written_for_verified_fingerprinted_days(tmp_path: Path) -> None:
+    _make_day(tmp_path, "2026-08-01")
+    result = write_receipts_for_archive(tmp_path, "bars-2026-08-02T04:00:00", ["2026-08-01"])
+    assert result == {"2026-08-01": RECEIPTED}
+    r = read_receipt(tmp_path, "2026-08-01")
+    assert r is not None
+    assert r.archive_name == "bars-2026-08-02T04:00:00"
+    assert r.parquet_path == "runtime/cold-bars/bars-2026-08-01.parquet"
+    assert r.source_fingerprint == "cbfp_v1:fp"
+    assert r.fidelity_verified is True
+
+
+def test_fingerprintless_day_is_legacy_skip_no_receipt(tmp_path: Path) -> None:
+    _make_day(tmp_path, "2026-08-01", fingerprint=False)
+    result = write_receipts_for_archive(tmp_path, "arc", ["2026-08-01"])
+    assert result == {"2026-08-01": LEGACY_SKIP}
+    assert read_receipt(tmp_path, "2026-08-01") is None
+
+
+def test_corrupt_sha_fails_and_writes_no_receipt(tmp_path: Path) -> None:
+    # manifest sha does not match the actual Parquet -> verify_local rejects it
+    _make_day(tmp_path, "2026-08-01", corrupt_sha=True)
+    result = write_receipts_for_archive(tmp_path, "arc", ["2026-08-01"])
+    assert result == {"2026-08-01": FAILED}
+    assert read_receipt(tmp_path, "2026-08-01") is None
+
+
+def test_bad_fidelity_fails_even_with_fingerprints(tmp_path: Path) -> None:
+    _make_day(tmp_path, "2026-08-01", bad_fidelity=True)  # source_fp != file_fp
+    result = write_receipts_for_archive(tmp_path, "arc", ["2026-08-01"])
+    assert result == {"2026-08-01": FAILED}
+    assert read_receipt(tmp_path, "2026-08-01") is None
+
+
+def test_a_concurrent_parquet_not_in_the_archive_list_is_ignored(tmp_path: Path) -> None:
+    # 08-01 was archived; 08-02 appeared AFTER the archive was made (not in the list)
+    _make_day(tmp_path, "2026-08-01")
+    _make_day(tmp_path, "2026-08-02")
+    result = write_receipts_for_archive(tmp_path, "arc", ["2026-08-01"])  # only the archived day
+    assert result == {"2026-08-01": RECEIPTED}
+    assert read_receipt(tmp_path, "2026-08-02") is None  # never receipted; not reclaimed
+
+
+def test_missing_local_files_for_an_archived_day_is_failed(tmp_path: Path) -> None:
+    result = write_receipts_for_archive(tmp_path, "arc", ["2026-08-01"])  # nothing on disk
+    assert result == {"2026-08-01": FAILED}
+
+
+def test_receipt_write_is_idempotent(tmp_path: Path) -> None:
+    _make_day(tmp_path, "2026-08-01")
+    assert write_receipts_for_archive(tmp_path, "arc1", ["2026-08-01"]) == {"2026-08-01": RECEIPTED}
+    # a second run leaves the immutable receipt and still reports receipted (reclaimable)
+    assert write_receipts_for_archive(tmp_path, "arc2", ["2026-08-01"]) == {"2026-08-01": RECEIPTED}
+    assert read_receipt(tmp_path, "2026-08-01").archive_name == "arc1"  # type: ignore[union-attr]
+
+
+def test_archived_days_from_member_list_extracts_only_parquet_days() -> None:
+    listing = "\n".join(
+        [
+            "runtime/cold-bars/bars-2026-08-01.parquet",
+            "runtime/cold-bars/bars-2026-08-01.manifest.json",
+            "runtime/cold-bars/bars-2026-08-02.parquet",
+            "runtime/cold-bars/bars-2026-08-01.offsite-receipt.json",
+            "runtime/cold-bars/collection-start",
+        ]
+    )
+    assert archived_days_from_member_list(listing) == ["2026-08-01", "2026-08-02"]
+
+
+def test_cli_reclaim_list_excludes_failed_days(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    import io
+
+    from schurfer_analytics.cold_bar_gated_deletion_job import write_receipts_main
+
+    _make_day(tmp_path, "2026-08-01")  # receipted
+    _make_day(tmp_path, "2026-08-02", fingerprint=False)  # legacy-skip
+    _make_day(tmp_path, "2026-08-03", corrupt_sha=True)  # failed -> KEEP
+    listing = "".join(
+        f"runtime/cold-bars/bars-{d}.parquet\n" for d in ("2026-08-01", "2026-08-02", "2026-08-03")
+    )
+    reclaim = tmp_path / "reclaim-list"
+    monkeypatch.setattr("sys.stdin", io.StringIO(listing))
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "cold-bar-write-receipts",
+            "--cold-bars-dir",
+            str(tmp_path),
+            "--archive",
+            "arc",
+            "--reclaim-list",
+            str(reclaim),
+        ],
+    )
+    write_receipts_main()
+    # receipted + legacy are reclaimable; the failed day is NOT (its Parquet is kept)
+    assert reclaim.read_text().split() == ["2026-08-01", "2026-08-02"]

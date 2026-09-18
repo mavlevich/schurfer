@@ -26,17 +26,20 @@ from .cold_bar_export import (
     file_fingerprint,
     source_fingerprint,
 )
-from .cold_bar_gated_deletion_job import RECEIPT_SUFFIX, ChunkCandidate, ExtractedOffsite
+from .cold_bar_gated_deletion_job import (
+    ARCHIVE_MEMBER_PREFIX,
+    RECEIPT_SUFFIX,
+    ChunkCandidate,
+    ExtractedOffsite,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from .cold_bar_gated_deletion import DropReceipt
 
-# Files are archived under the backed-up directory's path, so a member inside an
-# archive is `runtime/cold-bars/bars-<day>.<ext>` (confirmed against a real archive),
-# NOT the bare filename. Extraction must use this full member path.
-ARCHIVE_MEMBER_PREFIX = "runtime/cold-bars/"
+# Archive members carry the backed-up directory prefix (ARCHIVE_MEMBER_PREFIX, defined in
+# the job module and shared with the receipt writer), NOT the bare filename.
 PARQUET_MEMBER = ARCHIVE_MEMBER_PREFIX + "bars-{day}.parquet"
 MANIFEST_MEMBER = ARCHIVE_MEMBER_PREFIX + "bars-{day}.manifest.json"
 # Local files (in cold_bars_dir) are the bare filename, no prefix.
