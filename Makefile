@@ -1573,9 +1573,23 @@ prod-cold-bar-export:
 	@# blocks in-target sudo and fails the automated daily export. The directory is created
 	@# once (with sudo) by prod-cold-bar-export-install; this is a no-op when it exists.
 	@mkdir -p /opt/schurfer/runtime/cold-bars
+	@# --with-fingerprint: ON since the daily-volume benchmark passed (2026-09-18,
+	@# +177s/day, fidelity_match=True on 1.5M real rows). Gated deletion needs these
+	@# fingerprints; without them every day stays fail-closed (non-droppable).
 	@$(_PROD) run --rm --no-deps \
 		-v /opt/schurfer/runtime/cold-bars:/cold-bars \
-		--entrypoint cold-bar-export analytics --out-dir /cold-bars $(ARGS)
+		--entrypoint cold-bar-export analytics --out-dir /cold-bars --with-fingerprint $(ARGS)
+
+prod-cold-bar-export-refresh-fingerprints:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
+	@# BACKFILL: re-export in-window days exported before fingerprinting was enabled so
+	@# they carry a fingerprint and become droppable. Self-terminating (a no-op once every
+	@# in-window day has one) and safe to re-run. Each day is a full ~5-min re-export, so
+	@# batch with ARGS='--max-days N' and run over a few off-peak windows.
+	@mkdir -p /opt/schurfer/runtime/cold-bars
+	@$(_PROD) run --rm --no-deps \
+		-v /opt/schurfer/runtime/cold-bars:/cold-bars \
+		--entrypoint cold-bar-export analytics --out-dir /cold-bars --refresh-fingerprints $(ARGS)
 
 prod-cold-bar-gated-deletion-dry-run:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)

@@ -18,6 +18,7 @@ import pytest
 from schurfer_analytics.cold_bar_export import (
     SCHEMA_VERSION,
     day_bounds,
+    days_needing_fingerprint,
     days_to_export,
     existing_days,
     export_day,
@@ -213,3 +214,37 @@ def test_export_records_matching_fidelity_and_versioned_fingerprints(tmp_path: P
     # fingerprints are versioned so an incompatible construction is never compared
     assert manifest.source_fingerprint is not None
     assert manifest.source_fingerprint.startswith(f"{FINGERPRINT_VERSION}:")
+
+
+def test_days_needing_fingerprint_selects_only_in_window_unfingerprinted(tmp_path: Path) -> None:
+    # A day exported without a fingerprint, one exported WITH, and one out of window.
+    export_day(_connection(2, day=date(2026, 8, 20)), date(2026, 8, 20), tmp_path)
+    export_day(
+        _connection(2, day=date(2026, 8, 21)), date(2026, 8, 21), tmp_path, with_fingerprint=True
+    )
+    export_day(_connection(2, day=date(2026, 8, 10)), date(2026, 8, 10), tmp_path)
+
+    needing = days_needing_fingerprint(tmp_path, oldest=date(2026, 8, 15), newest=date(2026, 8, 25))
+    # 08-20 has no fingerprint and is in window; 08-21 already has one; 08-10 is out of window.
+    assert needing == (date(2026, 8, 20),)
+
+
+def test_days_needing_fingerprint_is_oldest_first(tmp_path: Path) -> None:
+    for day in (date(2026, 8, 22), date(2026, 8, 20), date(2026, 8, 21)):
+        export_day(_connection(2, day=day), day, tmp_path)
+    needing = days_needing_fingerprint(tmp_path, oldest=date(2026, 8, 1), newest=date(2026, 8, 31))
+    assert needing == (date(2026, 8, 20), date(2026, 8, 21), date(2026, 8, 22))
+
+
+def test_refresh_re_exports_a_day_with_a_fingerprint(tmp_path: Path) -> None:
+    # A day exported before fingerprinting: manifest has no fingerprint.
+    export_day(_connection(3, day=_DAY), _DAY, tmp_path)
+    assert verify_local(tmp_path, _DAY).source_fingerprint is None
+
+    # Re-exporting it with a fingerprint (what --refresh-fingerprints does per day)
+    # overwrites the manifest so the day becomes droppable, and it now needs no refresh.
+    export_day(_connection(3, day=_DAY), _DAY, tmp_path, with_fingerprint=True)
+    refreshed = verify_local(tmp_path, _DAY)
+    assert refreshed.source_fingerprint is not None
+    assert refreshed.fidelity_verified is True
+    assert days_needing_fingerprint(tmp_path, oldest=_DAY, newest=_DAY) == ()

@@ -156,17 +156,22 @@ mandatory before any real deletion. (`dry_run=False` exists and is tested; the c
 
 ## Gates before enabling deletion (must all pass)
 
-- **Legacy fingerprint backfill.** Manifests exported before fingerprints existed have no
-  `source_fingerprint`/`file_fingerprint`, so the gate blocks their days forever and the contiguous
-  prefix can never advance past them. Before the automatic retention is removed, those in-window days
-  must be re-exported (or given a versioned receipt) so every retained day carries a fingerprint.
-- **Daily-volume benchmark.** The whole-row `to_json` fingerprint is new work added to the running
-  production exporter (~1.5M rows/day). Benchmark it on a real day and confirm it stays well within
-  the export's time budget before shipping.
-- **Real PostgreSQL→DuckDB integration test.** The current fixture is DuckDB standing in for Postgres,
-  so it cannot prove `to_json` renders a row identically when scanned from Postgres vs read from the
-  exported Parquet — exactly what `fidelity_verified` depends on. A test against real Postgres must
-  confirm `source_fingerprint == file_fingerprint` on a real day before fidelity is trusted for drops.
+- **Daily-volume benchmark.** DONE (2026-09-18, read-only prod run). On a real day (2026-09-17,
+  1,491,376 rows / 371 MB) the whole-row `to_json` fingerprint added +177s (+134%) on top of the
+  132.6s baseline export, ~5 min total for a once-nightly job: well within budget. `--with-fingerprint`
+  is now ON in the nightly export (`make prod-cold-bar-export`).
+- **Legacy fingerprint backfill.** MECHANISM READY. Manifests exported before fingerprints existed have
+  no `source_fingerprint`, so the gate blocks their days forever and the contiguous prefix can never
+  advance past them. `cold-bar-export --refresh-fingerprints` (`make prod-cold-bar-export-refresh-
+fingerprints`, batch with `ARGS='--max-days N'`) re-exports the in-window days that lack a fingerprint,
+  oldest first; it is self-terminating and safe to re-run. Must complete for the in-window days before
+  the automatic retention is removed (PR 2).
+- **Real PostgreSQL→DuckDB integration test.** EMPIRICALLY CONFIRMED, still owed as a repeatable test.
+  The current fixture is DuckDB standing in for Postgres, so it cannot prove `to_json` renders a row
+  identically when scanned from Postgres vs read from the exported Parquet — what `fidelity_verified`
+  depends on. The daily-volume benchmark above computed both fingerprints over real Postgres and the
+  Parquet and got `source_fingerprint == file_fingerprint` (fidelity_match=True) on 1.49M real rows, so
+  the parity holds in practice; a test against real Postgres should still pin it so a regression is caught.
 
 ## Open items for review
 
