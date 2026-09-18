@@ -43,7 +43,7 @@ def _passing() -> VerdictInputs:
 
 
 def _decide(**overrides: object) -> VerdictOutcome:
-    inputs = dataclasses.replace(_passing(), **overrides)
+    inputs = dataclasses.replace(_passing(), **overrides)  # type: ignore[arg-type]
     return decide_verdict(_CONTRACT, inputs).outcome
 
 

@@ -10,6 +10,50 @@
 > honest drawdown data + explicit "beats 240m" semantics; a real actual-funding contract). Open
 > numeric thresholds are marked TBD, to be frozen from a pre-start outcome-blind accrual.
 
+## Implementation status (2026-09-18) -- DRAFT, NOT REGISTERED
+
+The verdict FORM is now built and unit-tested; the overall HYP-015 contract stays
+UNREGISTERED (provisional constants + the actual-funding prerequisite below). Modules:
+
+- `momentum_flow_hold12h_verdict.py` -- `Hold12hVerdictContract` (thresholds + sha; the
+  diversity/concentration/improvement values are PROVISIONAL, to be sized from the
+  outcome-blind pre-start accrual) and the pure ordered-gate `decide_verdict` (A-E, with
+  negative EV binding before the diversity floor). Not named FROZEN.
+- `momentum_flow_hold12h_verdict_report.py` -- the pure reader layer: `watch_id`
+  pairing, the common-entry 240m counterfactual (no look-ahead; a pre-240m exit is
+  shared), ACTUAL funding over `(entry_at, exit_at]` with the long sign, the all-WATCH
+  funnel (no complete-case dropping), the deterministic fixed-bank portfolio replay
+  (chronological drawdown proxy + losing streak), cluster-bootstrap CI assembly, the
+  first-writer cohort registration, cohort filtering, and a deterministic fingerprint.
+
+**Actual-funding source (decided 2026-09-18): prospective capture + fail-closed.** There
+is no clean per-instrument settlement series in the DB -- `funding_rate_snapshots` and
+`funding_rate_history` (in `pump_derivatives_context_samples`) are both pump-EVENT
+anchored, so using them for an arbitrary hold interval risks a biased complete-case
+sample. They are used ONLY for coverage/readiness diagnostics and calc verification,
+never primary formal evidence. The primary actual-funding source is a small prospective
+per-instrument capture for the exact HYP-015 instruments (a separate prerequisite PR):
+at probe open persist an immutable route (exchange, canonical instrument/market id,
+native + unified symbol, market_type, entry, expected exit); after the settlement/exit
+publication lag fetch the interval's funding events; store exact venue+instrument
+identity, settlement_at, rate, source/observed/fetched timestamps, native payload or
+checksum, capture/source version, and a coverage run (requested bounds + terminal
+status); DB-unique per `(exchange, instrument, settlement_at, source_version)`; no fixed
+8h -- actual timestamps + venue schedule; charge events in `(entry_at, exit_at]`, a long
+debited when the rate is positive and credited when negative; an empty set is zero
+funding ONLY with proven full coverage, else `accounting_incomplete`. Until this lands, a
+`formal_run` FAIL-CLOSES: `NoRegisteredFundingSource` makes every probe
+`accounting_incomplete`, so no return enters formal evidence.
+
+**PR ordering (three PRs).** (1) THIS verdict PR = contract/scaffolding + reader + tests,
+DRAFT / NOT FROZEN, formal fail-closed; remaining in-PR item = the SQL loader mapping the
+real Postgres rows into the reader dataclasses + its real-PostgreSQL integration test
+(the row-mapping choices -- isolating the ex-funding return, the canonical-asset identity,
+the exit semantics -- are called out for review first). (2) the funding-capture
+prerequisite PR (schema + collector/resolver + health + PG integration tests). (3) a small
+freeze PR that fixes the funding version, the final constants (from the accrual), and a
+literal future UTC cohort boundary; only data after it is formal.
+
 ## Question
 
 HYP-015 asks whether extending the momentum-flow WATCH hold from 240m to 720m (12h) is a better
