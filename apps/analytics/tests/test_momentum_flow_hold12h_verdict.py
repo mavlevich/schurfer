@@ -35,6 +35,8 @@ def _passing() -> VerdictInputs:
         rejected_stale_fraction=0.10,
         unresolved_fraction=0.05,
         accounting_incomplete_fraction=0.05,
+        identity_unresolved_fraction=0.0,
+        integrity_failure_fraction=0.0,
         portfolio_720_window_pnl_usd=40.0,
         portfolio_240_window_pnl_usd=20.0,
         portfolio_720_drawdown_usd=10.0,
@@ -57,10 +59,6 @@ def test_gate_a_too_few_pairs_is_insufficient_data() -> None:
     assert _decide(analyzable_pairs=50) is VerdictOutcome.INSUFFICIENT_DATA
 
 
-def test_gate_a_no_ci_is_insufficient_data() -> None:
-    assert _decide(ci_computable=False) is VerdictOutcome.INSUFFICIENT_DATA
-
-
 def test_gate_a_precedes_negative_ev() -> None:
     # Too few pairs AND a negative mean: with an immature sample the mean is not
     # trustworthy, so maturity binds first -> insufficient_data, not reject.
@@ -68,6 +66,33 @@ def test_gate_a_precedes_negative_ev() -> None:
         _decide(analyzable_pairs=50, standalone_720_mean_net=-0.02)
         is VerdictOutcome.INSUFFICIENT_DATA
     )
+
+
+def test_gate_0_non_finite_input_fails_closed() -> None:
+    # A NaN would pass every ">" comparison to "candidate"; it must fail-closed instead.
+    assert _decide(portfolio_720_window_pnl_usd=float("nan")) is VerdictOutcome.INSUFFICIENT_DATA
+    assert _decide(standalone_720_mean_net=float("inf")) is VerdictOutcome.INSUFFICIENT_DATA
+
+
+def test_gate_0b_any_integrity_failure_fails_closed() -> None:
+    # ANY integrity failure blocks, regardless of how small the fraction.
+    assert _decide(integrity_failure_fraction=0.0001) is VerdictOutcome.INSUFFICIENT_DATA
+
+
+def test_negative_ev_is_not_masked_by_uncomputable_ci() -> None:
+    # THE P1 fix: a mature LOSING sample too narrow to bootstrap (ci_computable False)
+    # must reject at Gate B, NOT hide as insufficient_data at Gate A.
+    result = decide_verdict(
+        _CONTRACT,
+        dataclasses.replace(_passing(), ci_computable=False, standalone_720_mean_net=-0.01),
+    )
+    assert result.outcome is VerdictOutcome.REJECT_HOLD12H
+    assert result.gate == "B"
+
+
+def test_gate_d_uncomputable_ci_is_insufficient_evidence() -> None:
+    # A profitable-mean mature sample that is too narrow to bootstrap is not yet evidence.
+    assert _decide(ci_computable=False) is VerdictOutcome.INSUFFICIENT_EVIDENCE
 
 
 @pytest.mark.parametrize("mean_net", [-0.001, 0.0])
@@ -129,6 +154,15 @@ def test_gate_e_portfolio_does_not_beat_240_by_enough() -> None:
     )
 
 
+def test_gate_e_losing_portfolio_is_not_a_candidate_even_if_it_beats_240() -> None:
+    # THE P1 fix: 720m loses ($-5) but "beats" a worse-losing 240m ($-25) by $20 -- not
+    # an edge. A profitable absolute window is required.
+    assert (
+        _decide(portfolio_720_window_pnl_usd=-5.0, portfolio_240_window_pnl_usd=-25.0)
+        is VerdictOutcome.NO_DURATION_IMPROVEMENT
+    )
+
+
 def test_gate_e_materially_worse_drawdown_is_no_duration_improvement() -> None:
     assert (
         _decide(portfolio_720_drawdown_usd=20.0, portfolio_240_drawdown_usd=10.0)
@@ -150,3 +184,9 @@ def test_contract_rejects_invalid_thresholds() -> None:
         Hold12hVerdictContract(confidence_level=1.5)
     with pytest.raises(ValueError, match="max_single_asset_fraction"):
         Hold12hVerdictContract(max_single_asset_fraction=0.0)
+
+
+def test_contract_rejects_portfolio_exceeding_the_bank() -> None:
+    # 6 x $100 = $600 cannot fit a $300 bank.
+    with pytest.raises(ValueError, match="must not exceed bank_usd"):
+        Hold12hVerdictContract(position_usd=100.0, max_concurrent_slots=6)

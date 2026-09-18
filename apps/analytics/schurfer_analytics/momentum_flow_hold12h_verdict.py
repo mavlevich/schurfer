@@ -23,10 +23,12 @@ to a rejection, never to "insufficient data" -- "less bad" is not an edge.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+import math
+from dataclasses import asdict, dataclass, fields
 from enum import StrEnum
 from hashlib import sha256
 
+from .clustered_inference import CLUSTER_BOOTSTRAP_VERSION
 from .momentum_flow_paper_contract import HOLD12H_PAPER_CONTRACT_SHA256
 
 
@@ -78,6 +80,9 @@ class Hold12hVerdictContract:
     max_rejected_stale_fraction: float = 0.50  # PROVISIONAL missingness ceiling
     max_unresolved_fraction: float = 0.20  # PROVISIONAL missingness ceiling
     max_accounting_incomplete_fraction: float = 0.20  # PROVISIONAL missingness ceiling
+    max_identity_unresolved_fraction: float = 0.05  # PROVISIONAL; unresolved identity
+    # NOTE: integrity failures have NO tolerance -- ANY of them fail-closes the verdict
+    # (see Gate 0b); a NaN/invalid row is a defect, not acceptable missingness.
 
     # Gate D/E -- significance and duration improvement.
     confidence_level: float = 0.95
@@ -86,6 +91,35 @@ class Hold12hVerdictContract:
     min_portfolio_improvement_usd: float = 15.0
     # And its drawdown must not be materially worse. PROVISIONAL tolerance.
     max_drawdown_worsening_usd: float = 5.0
+
+    # Fixed-bank portfolio parameters -- FROZEN into the sha so one contract sha means
+    # exactly one computation (otherwise the same sha could produce different results).
+    bank_usd: float = 300.0
+    position_usd: float = 50.0
+    max_concurrent_slots: int = 6
+    # Deterministic, OUTCOME-BLIND selection when slots are full: consider entries in
+    # (entry_at, watch_id) order and skip the arrival when no slot is free -- never a
+    # function of any return.
+    selection_rule: str = "entry_at_then_watch_id_skip_when_full_v1"
+    # A conservative floating-drawdown proxy: the worst SIMULTANEOUS mark-to-adverse
+    # (summing each concurrently-open position's own MAE) -- overstates, never understates,
+    # the intra-hold drawdown, unlike a realized-close series.
+    drawdown_method: str = "conservative_simultaneous_mae_v1"
+    # Whether two 720m positions of the SAME canonical asset may be open at once. FROZEN
+    # here rather than left implicit: True matches the live 360m cooldown, which permits it.
+    allow_concurrent_same_asset: bool = True
+
+    # Cluster bootstrap (clustered by canonical asset) -- FROZEN. Version is imported from
+    # the shared implementation so the contract string cannot drift from the real method.
+    bootstrap_version: str = CLUSTER_BOOTSTRAP_VERSION
+    bootstrap_iterations: int = 10_000
+    bootstrap_seed: int = 20_260_729
+
+    # The LITERAL formal cohort boundary, an ISO-8601 UTC instant. None until the freeze
+    # PR sets a concrete FUTURE instant; while None a formal_run fail-closes because the
+    # contract is not registered. Runtime first-writer registration is a DRAFT/readiness
+    # convenience only and never substitutes for this frozen literal.
+    cohort_start_iso: str | None = None
 
     def __post_init__(self) -> None:
         if self.min_analyzable_pairs <= 0:
@@ -102,6 +136,7 @@ class Hold12hVerdictContract:
             "max_rejected_stale_fraction",
             "max_unresolved_fraction",
             "max_accounting_incomplete_fraction",
+            "max_identity_unresolved_fraction",
         ):
             value = getattr(self, name)
             if not 0 < value <= 1:
@@ -110,6 +145,16 @@ class Hold12hVerdictContract:
             raise ValueError("min_portfolio_improvement_usd must be positive")
         if self.max_drawdown_worsening_usd < 0:
             raise ValueError("max_drawdown_worsening_usd must not be negative")
+        if self.bank_usd <= 0 or self.position_usd <= 0:
+            raise ValueError("bank_usd and position_usd must be positive")
+        if self.max_concurrent_slots <= 0:
+            raise ValueError("max_concurrent_slots must be positive")
+        if self.position_usd * self.max_concurrent_slots > self.bank_usd:
+            raise ValueError("position_usd * max_concurrent_slots must not exceed bank_usd")
+        if self.bootstrap_iterations < 100:
+            raise ValueError("bootstrap_iterations must be at least 100")
+        if self.bootstrap_seed < 0:
+            raise ValueError("bootstrap_seed must not be negative")
 
     def canonical_json(self) -> str:
         import json
@@ -148,6 +193,8 @@ class VerdictInputs:
     rejected_stale_fraction: float
     unresolved_fraction: float
     accounting_incomplete_fraction: float
+    identity_unresolved_fraction: float
+    integrity_failure_fraction: float
 
     # Fixed-$300-bank portfolio replay, same WATCH stream, both policies (Gate E).
     portfolio_720_window_pnl_usd: float
@@ -163,31 +210,66 @@ class VerdictResult:
     reason: str
 
 
+def _non_finite_fields(inputs: VerdictInputs) -> list[str]:
+    """Every float field of ``inputs`` that is NaN or infinite -- an integrity failure
+    that must fail-closed rather than flow into a verdict."""
+    bad: list[str] = []
+    for f in fields(inputs):
+        value = getattr(inputs, f.name)
+        if isinstance(value, float) and not math.isfinite(value):
+            bad.append(f.name)
+    return bad
+
+
 def decide_verdict(contract: Hold12hVerdictContract, inputs: VerdictInputs) -> VerdictResult:
     """The one pure decision, evaluated once at the pre-defined decision-time prefix.
 
     Ordered gates, FIRST MATCH WINS. The order encodes the pre-registration's core
     honesty guarantees:
 
-      A  economic maturity        -- too few pairs (or no CI) => insufficient_data
-      B  negative EV binds first  -- mature AND mean net <= 0  => reject_hold12h
-      C  diversity / missingness  -- floors not met            => insufficient_data
-      D  standalone significance  -- 720m net CI lower not > 0 => insufficient_evidence
-      E  duration + portfolio     -- no paired edge / no $ win => no_duration_improvement
-      -- otherwise                                             => candidate
+      0  integrity            -- any NaN/inf input          => insufficient_data (fail-closed)
+      A  economic maturity    -- too few analyzable pairs   => insufficient_data
+      B  negative EV first    -- mature AND mean net <= 0   => reject_hold12h
+      C  diversity/missingness-- floors not met             => insufficient_data
+      D  standalone signif.   -- no CI or CI lower not > 0  => insufficient_evidence
+      E  duration + portfolio -- no paired edge / not a     => no_duration_improvement
+                                  PROFITABLE $ win over 240m
+      -- otherwise                                          => candidate
     """
-    # Gate A -- economic maturity. Diversity-independent so a losing mature sample is
-    # never excused as "insufficient".
-    if inputs.analyzable_pairs < contract.min_analyzable_pairs or not inputs.ci_computable:
+    # Gate 0 -- integrity. A NaN/inf return, rate, fraction or PnL must never reach a
+    # substantive verdict (a NaN comparison is always False, so it could otherwise slip
+    # through every gate to "candidate"). Fail-closed.
+    bad = _non_finite_fields(inputs)
+    if bad:
+        return VerdictResult(
+            VerdictOutcome.INSUFFICIENT_DATA, "0", f"non-finite inputs: {', '.join(bad)}"
+        )
+
+    # Gate 0b -- integrity. ANY integrity failure (a NaN/invalid row, a non-positive
+    # notional, a duplicate settlement) blocks the verdict regardless of its fraction: a
+    # corrupt input is a defect, never acceptable missingness. Fail-closed.
+    if inputs.integrity_failure_fraction > 0:
+        return VerdictResult(
+            VerdictOutcome.INSUFFICIENT_DATA,
+            "0b",
+            f"integrity failures present ({inputs.integrity_failure_fraction:.4f} of the "
+            "denominator); a formal verdict requires zero",
+        )
+
+    # Gate A -- economic maturity, by pair COUNT alone. Deliberately independent of the
+    # CI being computable: a mature-but-narrow sample must still reach Gate B (its mean
+    # is computable without clusters), so a mature loser cannot hide as insufficient_data
+    # merely because it has too few clusters for a bootstrap.
+    if inputs.analyzable_pairs < contract.min_analyzable_pairs:
         return VerdictResult(
             VerdictOutcome.INSUFFICIENT_DATA,
             "A",
-            f"analyzable pairs {inputs.analyzable_pairs} < {contract.min_analyzable_pairs}"
-            + ("" if inputs.ci_computable else " or CI not computable"),
+            f"analyzable pairs {inputs.analyzable_pairs} < {contract.min_analyzable_pairs}",
         )
 
-    # Gate B -- negative EV binds BEFORE the diversity floor. "Less bad" is not an edge:
-    # a mature standalone mean net <= 0 is a rejection, never insufficient_data.
+    # Gate B -- negative EV binds BEFORE the diversity floor and BEFORE the CI. "Less
+    # bad" is not an edge: a mature standalone mean net <= 0 is a rejection. The mean is
+    # a plain average over the pairs, computable regardless of cluster count.
     if inputs.standalone_720_mean_net <= 0:
         return VerdictResult(
             VerdictOutcome.REJECT_HOLD12H,
@@ -228,6 +310,7 @@ def decide_verdict(contract: Hold12hVerdictContract, inputs: VerdictInputs) -> V
         ("rejected_stale_fraction", contract.max_rejected_stale_fraction),
         ("unresolved_fraction", contract.max_unresolved_fraction),
         ("accounting_incomplete_fraction", contract.max_accounting_incomplete_fraction),
+        ("identity_unresolved_fraction", contract.max_identity_unresolved_fraction),
     ):
         value = getattr(inputs, name)
         if value > ceiling:
@@ -237,8 +320,15 @@ def decide_verdict(contract: Hold12hVerdictContract, inputs: VerdictInputs) -> V
                 f"missingness {name} {value:.3f} > {ceiling}",
             )
 
-    # Gate D -- standalone significance. A positive point estimate whose CI still
-    # crosses zero is not yet evidence.
+    # Gate D -- standalone significance. Requires a computable cluster-bootstrap CI whose
+    # lower bound is > 0; a positive point estimate whose CI still crosses zero, or a
+    # sample too narrow to bootstrap at all, is not yet evidence.
+    if not inputs.ci_computable:
+        return VerdictResult(
+            VerdictOutcome.INSUFFICIENT_EVIDENCE,
+            "D",
+            "cluster-bootstrap CI not computable (too few asset clusters)",
+        )
     if not inputs.standalone_720_ci_lower > 0:
         return VerdictResult(
             VerdictOutcome.INSUFFICIENT_EVIDENCE,
@@ -246,9 +336,10 @@ def decide_verdict(contract: Hold12hVerdictContract, inputs: VerdictInputs) -> V
             f"standalone 720m net CI lower {inputs.standalone_720_ci_lower:.6f} not > 0",
         )
 
-    # Gate E -- duration improvement AND fixed-bank portfolio win. The paired effect
-    # must be significant AND the $300 bank must actually earn more dollars, by a real
-    # margin, without materially worse drawdown.
+    # Gate E -- duration improvement AND a PROFITABLE fixed-bank win. The paired effect
+    # must be significant, the 720m $300 bank must itself make money in ABSOLUTE terms
+    # (not merely lose less than 240m), and it must beat 240m by a real dollar margin
+    # without materially worse drawdown.
     portfolio_improvement = (
         inputs.portfolio_720_window_pnl_usd - inputs.portfolio_240_window_pnl_usd
     )
@@ -258,6 +349,13 @@ def decide_verdict(contract: Hold12hVerdictContract, inputs: VerdictInputs) -> V
             VerdictOutcome.NO_DURATION_IMPROVEMENT,
             "E",
             f"paired d(p) CI lower {inputs.paired_diff_ci_lower:.6f} not > 0",
+        )
+    if inputs.portfolio_720_window_pnl_usd <= 0:
+        return VerdictResult(
+            VerdictOutcome.NO_DURATION_IMPROVEMENT,
+            "E",
+            f"720m fixed-bank window PnL ${inputs.portfolio_720_window_pnl_usd:.2f}"
+            " not profitable (beating a losing 240m is not an edge)",
         )
     if portfolio_improvement < contract.min_portfolio_improvement_usd:
         return VerdictResult(
