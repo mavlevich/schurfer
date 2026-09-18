@@ -166,12 +166,18 @@ mandatory before any real deletion. (`dry_run=False` exists and is tested; the c
 fingerprints`, batch with `ARGS='--max-days N'`) re-exports the in-window days that lack a fingerprint,
   oldest first; it is self-terminating and safe to re-run. Must complete for the in-window days before
   the automatic retention is removed (PR 2).
-- **Real PostgreSQL→DuckDB integration test.** EMPIRICALLY CONFIRMED, still owed as a repeatable test.
-  The current fixture is DuckDB standing in for Postgres, so it cannot prove `to_json` renders a row
-  identically when scanned from Postgres vs read from the exported Parquet — what `fidelity_verified`
-  depends on. The daily-volume benchmark above computed both fingerprints over real Postgres and the
-  Parquet and got `source_fingerprint == file_fingerprint` (fidelity_match=True) on 1.49M real rows, so
-  the parity holds in practice; a test against real Postgres should still pin it so a regression is caught.
+- **Real PostgreSQL→DuckDB integration test.** DONE. `test_cold_bar_fingerprint_parity_integration.py`
+  builds a real Postgres table over the type mix that could serialize differently (timestamptz, double,
+  integer[], double precision[], bytea, boolean, NULLs, empty arrays), exports it to Parquet, and asserts
+  `source_fingerprint == file_fingerprint` — the cross-engine `to_json` parity `fidelity_verified` relies
+  on. It skips without a local Postgres and runs in CI (same pattern as the other `*_integration` tests).
+  The daily-volume benchmark independently confirmed the same equality on 1.49M real production rows.
+
+**Concurrency.** The exporter and the fingerprint backfill WRITE the cold-bar Parquet the offsite backup
+ARCHIVES and RECLAIMS. `infra/scripts/with-cold-bars-lock.sh` wraps both writers, and `offsite-backup.sh`
+takes the same lock around its cold-bar section, so a reclaim can never delete a day out from under an
+in-flight export. Fail-closed: a writer that cannot take the lock does not run (retried next run), and a
+backup that cannot take it skips only its bars section (archived next run), never blocking the DB dump.
 
 ## Open items for review
 

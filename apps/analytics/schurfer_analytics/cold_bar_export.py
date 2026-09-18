@@ -367,8 +367,13 @@ def days_needing_fingerprint(out_dir: Path, oldest: date, newest: date) -> tuple
         try:
             manifest = json.loads((out_dir / f"bars-{name}.manifest.json").read_text())
         except (OSError, ValueError):
+            # A manifest that will not read (truncated by an interrupted write, or
+            # corrupt) is NOT a finished day: re-export it so a real manifest replaces
+            # it. Silently skipping would let a broken day masquerade as done and stay
+            # permanently unfingerprinted, hence undroppable.
+            result.append(day)
             continue
-        if not manifest.get("source_fingerprint"):
+        if not isinstance(manifest, dict) or not manifest.get("source_fingerprint"):
             result.append(day)
     return tuple(sorted(result))
 

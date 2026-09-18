@@ -229,6 +229,24 @@ def test_days_needing_fingerprint_selects_only_in_window_unfingerprinted(tmp_pat
     assert needing == (date(2026, 8, 20),)
 
 
+def test_days_needing_fingerprint_reexports_a_corrupt_manifest(tmp_path: Path) -> None:
+    # A truncated/corrupt manifest is not a finished day: it must be re-exported, not
+    # silently treated as done (which would leave it forever unfingerprinted).
+    export_day(_connection(2, day=_DAY), _DAY, tmp_path)
+    (tmp_path / f"bars-{_DAY.isoformat()}.manifest.json").write_text("{ this is not json")
+    needing = days_needing_fingerprint(tmp_path, oldest=_DAY, newest=_DAY)
+    assert needing == (_DAY,)
+
+
+def test_days_needing_fingerprint_ignores_a_corrupt_manifest_out_of_window(tmp_path: Path) -> None:
+    # Out of the source window it cannot be re-exported (the source is gone), so it is
+    # not offered for refresh regardless of its manifest state.
+    export_day(_connection(2, day=date(2026, 8, 10)), date(2026, 8, 10), tmp_path)
+    (tmp_path / "bars-2026-08-10.manifest.json").write_text("truncated")
+    needing = days_needing_fingerprint(tmp_path, oldest=date(2026, 8, 20), newest=date(2026, 8, 25))
+    assert needing == ()
+
+
 def test_days_needing_fingerprint_is_oldest_first(tmp_path: Path) -> None:
     for day in (date(2026, 8, 22), date(2026, 8, 20), date(2026, 8, 21)):
         export_day(_connection(2, day=day), day, tmp_path)

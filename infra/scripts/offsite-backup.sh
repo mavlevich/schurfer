@@ -61,6 +61,15 @@ BARS_STAMP="${STATE_DIR}/offsite-backup-bars.stamp"
 # exported and archived here, this is the only copy that exists anywhere.
 COLD_BARS_DIR="${COLD_BARS_DIR:-runtime/cold-bars}"
 
+# Serializes this script's cold-bar section against the exporter and the
+# fingerprint backfill (infra/scripts/with-cold-bars-lock.sh), which WRITE the
+# same Parquet files this section archives and reclaims. Shared between root (here)
+# and deploy (the exporter), so it is mode 0666. If a cold-bar job is holding it
+# this run simply skips the bars section (archived next run); it never blocks the
+# database or research archives, which matter more.
+COLD_BARS_LOCK="${COLD_BARS_LOCK_FILE:-${STATE_DIR}/.cold-bars.lock}"
+COLD_BARS_LOCK_WAIT="${COLD_BARS_LOCK_WAIT_SECONDS:-60}"
+
 log() { echo "[$(date -Iseconds)] $*"; }
 
 notify() {
@@ -212,7 +221,15 @@ fi
 # and it can vanish mid-archive when that rename happens. That is not
 # hypothetical: it failed a deploy on 2026-09-08, when the backfill was still
 # running as the backup started.
-if [[ -d "$COLD_BARS_DIR" ]] \
+# Take the cold-bars lock so an exporter or fingerprint backfill cannot write these
+# files while we archive and reclaim them. 0666 so both root (here) and deploy (the
+# exporter) can lock it; created here if absent. A short wait, then skip the bars
+# section for this run rather than block the whole job -- bars are archived next run.
+[[ -e "$COLD_BARS_LOCK" ]] || (umask 0 && : > "$COLD_BARS_LOCK") 2>/dev/null || true
+exec 201>"$COLD_BARS_LOCK" 2>/dev/null || true
+if ! flock -w "$COLD_BARS_LOCK_WAIT" 201; then
+    log "bars: cold-bars lock busy (an export or backfill is running); skipping bars this run"
+elif [[ -d "$COLD_BARS_DIR" ]] \
     && bars_files=$(find "$COLD_BARS_DIR" -type f ! -name '.*' -print | sort) \
     && [[ -n "$bars_files" ]]; then
     if printf '%s' "$bars_files" | grep -q '[[:cntrl:]]'; then
@@ -286,6 +303,7 @@ if [[ -d "$COLD_BARS_DIR" ]] \
 else
     log "bars: nothing to archive"
 fi
+flock -u 201 2>/dev/null || true
 
 # --- retention --------------------------------------------------------------
 #
