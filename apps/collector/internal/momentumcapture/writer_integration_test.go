@@ -38,6 +38,10 @@ func TestWriterFlushAgainstRealPostgres(t *testing.T) {
 
 	w := NewWriter(pool, "bybit", "linear", "test-universe-hash")
 	bucket := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	// Anchor the writer's clock just after the fixed test bucket so the sample bars
+	// are "fresh" for the write-age guard (they use a fixed 2026-01-01 bucket to avoid
+	// colliding with real rows, which would otherwise be rejected as stale).
+	w.now = func() time.Time { return bucket.Add(time.Hour) }
 	price := 100.0
 	bid, ask := 99.9, 100.1
 	oi := 12345.6

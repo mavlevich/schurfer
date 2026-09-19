@@ -135,6 +135,7 @@ func (store *RedisStore) StoreHealth(ctx context.Context, health Health) error {
 		"writer_queue_depth":          health.WriterQueueDepth,
 		"writer_queue_peak":           health.WriterQueuePeak,
 		"writer_queue_drops_total":    health.WriterQueueDropsTotal,
+		"writer_stale_bars_dropped":   health.WriterStaleBarsDropped,
 		"bars_persisted_total":        health.BarsPersistedTotal,
 		"persist_errors_total":        health.PersistErrorsTotal,
 		"persist_retries_total":       health.PersistRetriesTotal,

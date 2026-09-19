@@ -102,8 +102,74 @@ func testBar(symbol string, minute int) momentum.Bar {
 	}
 }
 
+// testClock is anchored just after testBar's bucket day so the sample bars are
+// "fresh" for the write-age guard; individual tests override w.now as needed.
+func testClock() time.Time { return time.Date(2026, 8, 10, 13, 0, 0, 0, time.UTC) }
+
 func newTestWriter(db writerDB) *Writer {
-	return &Writer{db: db, exchange: "bybit", marketType: "linear", universeVersion: "universe-hash"}
+	return &Writer{
+		db:              db,
+		exchange:        "bybit",
+		marketType:      "linear",
+		universeVersion: "universe-hash",
+		now:             testClock,
+	}
+}
+
+func TestWriterEnqueueRejectsStaleBarsOutsideTheWriteAgeHorizon(t *testing.T) {
+	t.Parallel()
+	w := newTestWriter(&stubWriterDB{})
+	fresh := testBar("FRESHUSDT", 30) // 2026-08-10 12:30, within the horizon of testClock
+	stale := testBar("STALEUSDT", 0)
+	// A redelivered bar from well before the 7-day horizon (would land in the
+	// cold-bar deletion-eligible zone): must be rejected, not persisted.
+	stale.BucketStart = testClock().Add(-MaxWriteAge - time.Hour)
+
+	dropped := w.Enqueue([]momentum.Bar{stale, fresh})
+	if dropped != 0 {
+		t.Fatalf("dropped (capacity) = %d, want 0", dropped)
+	}
+	if len(w.pending) != 1 || w.pending[0].Symbol != "FRESHUSDT" {
+		t.Fatalf("pending = %v, want only the fresh bar", w.pending)
+	}
+	if got := w.Stats().StaleBarsDroppedTotal; got != 1 {
+		t.Fatalf("StaleBarsDroppedTotal = %d, want 1 (visible in Health)", got)
+	}
+	// A batch of only stale bars enqueues nothing.
+	if dropped := w.Enqueue([]momentum.Bar{stale}); dropped != 0 || len(w.pending) != 1 {
+		t.Fatalf("stale-only batch changed state: dropped=%d pending=%d", dropped, len(w.pending))
+	}
+	if got := w.Stats().StaleBarsDroppedTotal; got != 2 {
+		t.Fatalf("StaleBarsDroppedTotal = %d, want 2", got)
+	}
+}
+
+func TestWriterFlushRejectsBarsThatAgedInPendingDuringRetry(t *testing.T) {
+	t.Parallel()
+	db := &stubWriterDB{}
+	w := newTestWriter(db)
+	// Fresh at enqueue time (testClock).
+	if dropped := w.Enqueue([]momentum.Bar{testBar("AGEDUSDT", 10)}); dropped != 0 {
+		t.Fatalf("dropped = %d, want 0 (fresh at enqueue)", dropped)
+	}
+	if len(w.pending) != 1 {
+		t.Fatalf("pending = %d, want 1 after a fresh enqueue", len(w.pending))
+	}
+	// The clock advances past the horizon while the bar waits in pending through a
+	// long retry backoff. The flush-time re-check must catch it, not persist it.
+	w.now = func() time.Time { return testClock().Add(MaxWriteAge + time.Hour) }
+	if err := w.Flush(context.Background()); err != nil {
+		t.Fatalf("Flush: %v", err)
+	}
+	if len(db.batches) != 0 {
+		t.Fatalf("sent %d batch(es); a bar that aged in pending must not be persisted", len(db.batches))
+	}
+	if got := w.Stats().StaleBarsDroppedTotal; got != 1 {
+		t.Fatalf("StaleBarsDroppedTotal = %d, want 1 (caught at flush, visible in Health)", got)
+	}
+	if len(w.pending) != 0 {
+		t.Fatalf("pending = %d, want 0 (the aged bar was pruned)", len(w.pending))
+	}
 }
 
 func TestWriterEnqueueDropsOldestWhenOverCapacity(t *testing.T) {

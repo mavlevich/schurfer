@@ -1,0 +1,20 @@
+{
+  "day": "2026-08-12",
+  "audit_at": "2026-09-19T15:30:00+00:00",
+  "hypertable": "timeseries.bybit_momentum_bars_1m",
+  "source_chunk_in_pg_at_audit": false,
+  "borg_archive": "bars-2026-09-08T14:17:07",
+  "archive_member_path": "runtime/cold-bars/bars-2026-08-12.parquet",
+  "parquet_sha256_from_manifest": "a80d541280d0a2f629f22811efc4ea5b905ab68ef9a25c38e869ce706158b430",
+  "parquet_sha256_recomputed": "a80d541280d0a2f629f22811efc4ea5b905ab68ef9a25c38e869ce706158b430",
+  "sha256_match": true,
+  "manifest_row_count": 1058400,
+  "read_row_count": 1058400,
+  "read_ok": true,
+  "status": "archived_readable",
+  "source_fidelity": "unverifiable_legacy",
+  "source_fidelity_reason": "The source rows were already deleted from PG before this audit (chunk aged out under the old automatic 35-day retention), and this day was exported before per-row fingerprinting existed, so no source/file fingerprint was ever recorded. A matching Parquet SHA (recorded in the manifest) and a successful read prove the archived Parquet is an intact, readable cold copy consistent with its manifest, but they do NOT prove the file faithfully captured the now-deleted source.",
+  "receipt": null,
+  "fabricated_receipt_or_fidelity": false,
+  "research_use": "NOT admissible as formal research evidence. Provenance is unverifiable_legacy (see docs/runbooks/cold-bar-gated-deletion-design-v1.md)."
+}
