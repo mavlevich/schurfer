@@ -120,6 +120,7 @@ type Health struct {
 	WriterQueueDepth         int
 	WriterQueuePeak          int
 	WriterQueueDropsTotal    uint64
+	WriterStaleBarsDropped   uint64
 	BarsPersistedTotal       uint64
 	PersistErrorsTotal       uint64
 	PersistRetriesTotal      uint64
@@ -196,6 +197,7 @@ func ApplyWriterStats(health Health, stats WriterStats) Health {
 	health.WriterQueueDepth = stats.QueueDepth
 	health.WriterQueuePeak = stats.QueuePeak
 	health.WriterQueueDropsTotal = stats.QueueDropsTotal
+	health.WriterStaleBarsDropped = stats.StaleBarsDroppedTotal
 	health.LastPersistAt = stats.LastPersistAt
 	health.BarsPersistedTotal = stats.BarsPersistedTotal
 	health.PersistErrorsTotal = stats.PersistErrorsTotal

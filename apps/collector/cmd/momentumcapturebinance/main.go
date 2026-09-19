@@ -1260,6 +1260,7 @@ func (app *application) logHealth(ctx context.Context) {
 		"writer_queue_depth", health.WriterQueueDepth,
 		"persist_errors_total", health.PersistErrorsTotal,
 		"payload_hash_mismatch_total", health.PayloadHashMismatchTotal,
+		"writer_stale_bars_dropped", health.WriterStaleBarsDropped,
 		"open_interest_out_of_scope_total", app.stats.openInterestOutOfScopeTotal,
 		"book_ticker_accepted_total", app.stats.bookTickerAcceptedTotal,
 		"book_ticker_invalid_total", app.stats.bookTickerInvalidTotal,

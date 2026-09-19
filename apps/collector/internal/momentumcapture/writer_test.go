@@ -144,6 +144,34 @@ func TestWriterEnqueueRejectsStaleBarsOutsideTheWriteAgeHorizon(t *testing.T) {
 	}
 }
 
+func TestWriterFlushRejectsBarsThatAgedInPendingDuringRetry(t *testing.T) {
+	t.Parallel()
+	db := &stubWriterDB{}
+	w := newTestWriter(db)
+	// Fresh at enqueue time (testClock).
+	if dropped := w.Enqueue([]momentum.Bar{testBar("AGEDUSDT", 10)}); dropped != 0 {
+		t.Fatalf("dropped = %d, want 0 (fresh at enqueue)", dropped)
+	}
+	if len(w.pending) != 1 {
+		t.Fatalf("pending = %d, want 1 after a fresh enqueue", len(w.pending))
+	}
+	// The clock advances past the horizon while the bar waits in pending through a
+	// long retry backoff. The flush-time re-check must catch it, not persist it.
+	w.now = func() time.Time { return testClock().Add(MaxWriteAge + time.Hour) }
+	if err := w.Flush(context.Background()); err != nil {
+		t.Fatalf("Flush: %v", err)
+	}
+	if len(db.batches) != 0 {
+		t.Fatalf("sent %d batch(es); a bar that aged in pending must not be persisted", len(db.batches))
+	}
+	if got := w.Stats().StaleBarsDroppedTotal; got != 1 {
+		t.Fatalf("StaleBarsDroppedTotal = %d, want 1 (caught at flush, visible in Health)", got)
+	}
+	if len(w.pending) != 0 {
+		t.Fatalf("pending = %d, want 0 (the aged bar was pruned)", len(w.pending))
+	}
+}
+
 func TestWriterEnqueueDropsOldestWhenOverCapacity(t *testing.T) {
 	t.Parallel()
 	w := newTestWriter(&stubWriterDB{})

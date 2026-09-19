@@ -149,27 +149,22 @@ func NewWriter(pool *pgxpool.Pool, exchange, marketType, universeVersion string)
 	}
 }
 
-// Enqueue appends bars to the pending batch, dropping the oldest entries if
-// the bound is exceeded. Returns how many were dropped.
-//
-// It first REJECTS any bar whose bucket is older than MaxWriteAge (a stuck or
-// redelivered stale message from the queue): such a bar must never reach the
-// cold-bar deletion-eligible zone, where it could resurrect a dropped day or
-// change a day between its export and its gated drop (the drop's advisory lock
-// does not cover this writer). Rejects are counted and logged, not silently
-// inserted.
-func (w *Writer) Enqueue(bars []momentum.Bar) int {
-	if len(bars) == 0 {
-		return 0
-	}
-	w.mu.Lock()
-	defer w.mu.Unlock()
+// staleCutoff is the oldest bucket the writer will persist: bars older than this
+// are rejected. Well inside the cold-bar 40-day deletion cutoff (see MaxWriteAge).
+func (w *Writer) staleCutoff() time.Time {
 	nowFn := w.now
 	if nowFn == nil {
 		nowFn = time.Now
 	}
-	cutoff := nowFn().Add(-MaxWriteAge)
-	fresh := bars[:0:0]
+	return nowFn().Add(-MaxWriteAge)
+}
+
+// rejectStaleLocked returns only the bars within the write-age horizon, counting
+// and logging the rest as StaleBarsDroppedTotal. Caller holds mu (it mutates stats).
+// `phase` records where the reject happened (enqueue vs flush) for observability.
+func (w *Writer) rejectStaleLocked(bars []momentum.Bar, phase string) []momentum.Bar {
+	cutoff := w.staleCutoff()
+	fresh := make([]momentum.Bar, 0, len(bars))
 	for _, bar := range bars {
 		if bar.BucketStart.Before(cutoff) {
 			w.stats.StaleBarsDroppedTotal++
@@ -178,12 +173,34 @@ func (w *Writer) Enqueue(bars []momentum.Bar) int {
 				"symbol", bar.Symbol,
 				"bucket_start", bar.BucketStart,
 				"max_write_age", MaxWriteAge.String(),
+				"phase", phase,
 				"reason", "bucket older than the write-age horizon; not persisted (would enter the cold-bar deletion-eligible zone)",
 			)
 			continue
 		}
 		fresh = append(fresh, bar)
 	}
+	return fresh
+}
+
+// Enqueue appends bars to the pending batch, dropping the oldest entries if
+// the bound is exceeded. Returns how many were dropped.
+//
+// It first REJECTS any bar whose bucket is older than MaxWriteAge (a stuck or
+// redelivered stale message from the queue): such a bar must never reach the
+// cold-bar deletion-eligible zone, where it could resurrect a dropped day or
+// change a day between its export and its gated drop (the drop's advisory lock
+// does not cover this writer). The same check is repeated at flush time
+// (takeSubBatch) so a bar that ages past the horizon while sitting in pending
+// through a long retry backoff is still caught before it is written. Rejects are
+// counted (StaleBarsDroppedTotal) and logged, not silently inserted.
+func (w *Writer) Enqueue(bars []momentum.Bar) int {
+	if len(bars) == 0 {
+		return 0
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	fresh := w.rejectStaleLocked(bars, "enqueue")
 	if len(fresh) == 0 {
 		return 0
 	}
@@ -257,6 +274,10 @@ func (w *Writer) Flush(ctx context.Context) error {
 func (w *Writer) takeSubBatch() ([]momentum.Bar, bool) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	// Re-check age at write time: a bar can age past the horizon while it sits in
+	// pending across a long retry backoff. Prune the stale ones before taking the
+	// sub-batch so an aged bar is never persisted into the deletion-eligible zone.
+	w.pending = w.rejectStaleLocked(w.pending, "flush")
 	if len(w.pending) == 0 {
 		return nil, false
 	}
