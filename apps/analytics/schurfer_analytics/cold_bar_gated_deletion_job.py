@@ -183,8 +183,10 @@ class Collectors(Protocol):
     def recompute_source_fingerprint(self, day: str) -> str | None:
         """Recompute the whole-row source fingerprint from the LIVE table now."""
 
-    def drop_chunk(self, candidate: ChunkCandidate) -> None:
-        """Targeted, per-chunk drop_chunks. Called ONLY for a cleared day when not dry-run."""
+    def drop_chunk(self, candidate: ChunkCandidate, *, expected_source_fingerprint: str) -> None:
+        """Targeted, per-chunk drop_chunks. Called ONLY for a cleared day when not dry-run.
+        ``expected_source_fingerprint`` (the receipt's) is re-verified under the mutation lock
+        immediately before the drop, so a change since the gate's check aborts the drop."""
 
 
 # ---------- orchestration ----------
@@ -328,7 +330,13 @@ def run_gated_deletion(
             to_drop.append(c.day)
             prev = cur
             if not dry_run:
-                collectors.drop_chunk(by_day[c.day])
+                # The gate only returns DROP when a receipt with a source fingerprint exists;
+                # re-verify that exact fingerprint under the lock right before the drop.
+                assert ev.receipt is not None
+                collectors.drop_chunk(
+                    by_day[c.day],
+                    expected_source_fingerprint=ev.receipt.source_fingerprint,
+                )
                 dropped.append(c.day)
         else:
             blocked_at = (c.day, reason)

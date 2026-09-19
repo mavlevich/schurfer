@@ -1,11 +1,15 @@
 # Cold-bar gated deletion — design v1 (DRAFT, NOT FROZEN)
 
-> **STATUS: IN PROGRESS — pure core landed and unit-tested; impure collectors, CLI, migration and
-> systemd still to come; nothing enabled in production.** The safety-critical pure decision
-> (`cold_bar_gated_deletion.py`) and the export-side fingerprint (`cold_bar_export.py`) exist with
-> tests; the delivery order below is not yet complete and deletion is NOT active anywhere. Enabling
-> deletion additionally requires the legacy fingerprint backfill, the daily-volume benchmark, and a
-> real PostgreSQL→DuckDB integration test (see Open items).
+> **STATUS: PR2 CODE LANDED (pending review); deletion NOT yet enabled in production.** The pure
+> gate, export fingerprint, dry-run job/collectors (PR1), and now the PR2 code — migration 0050
+> removing the automatic 35-day retention, the real targeted `drop_chunk` (advisory-lock-guarded,
+> re-fingerprint-before-drop, exactly-one-chunk with rollback), the `--execute` flag, and real-PG
+> tests — are all in. Deletion stays OFF by default: the CLI is dry-run unless `--execute`, and the
+> systemd timer remains dry-run. The three enablement gates (legacy fingerprint backfill,
+> daily-volume benchmark, real Postgres→DuckDB parity test) are DONE. Turning deletion on is an
+> OPERATIONAL rollout (verified backup → migrate → confirm the old job is gone → prod dry-run → one
+> authorised canary drop → verify → enable the 40-day timer), gated separately. A read-only
+> provenance audit precedes it: docs/engineering/audits/2026-09-19/.
 
 ## Problem
 
@@ -129,8 +133,10 @@ cutoff-wide call), so the set Timescale removes is provably exactly the validate
 ### Migration
 
 - A migration **removes** the automatic 35-day retention policy from `bybit_momentum_bars_1m`.
+  [DONE: migration `0050_remove_bars_auto_retention`, `remove_retention_policy(... if_exists)`.]
 - Its **downgrade must NOT silently re-add the unsafe automatic policy** (that would re-introduce
-  ungated deletion on a rollback). Downgrade either leaves retention app-managed or fails loudly.
+  ungated deletion on a rollback). [DONE: the 0050 downgrade FAILS LOUDLY — it raises rather than
+  restoring the policy; retention is application-managed via the gated job.]
 
 ## Scope
 
@@ -144,24 +150,36 @@ First PR: **`bybit_momentum_bars_1m` only.** Do not generalize to the other rete
    (1,492,034 rows, 378.4 MB, sha256 f26877d2f49c9107…); confirmed in offsite archive
    `bars-2026-09-14T18:08:31`; `offsite-backup-health.sh` returned exit 0 ("healthy; 27GB free; 35 bar
    days exported") on 2026-09-14T18:07 UTC.
-2. Implement the validator, per-day receipts, and the gated-drop job in **dry-run**; unit-test the
-   validator (fingerprint match/mismatch, missing receipt, archive-missing, reader-fail, cutoff math).
+2. Implement the validator, per-day receipts, and the gated-drop job in **dry-run** + unit tests.
+   [DONE, PR1.]
 3. Dry-run on production; reconcile chunks ↔ days ↔ receipts; confirm chunk ranges and no drift.
-4. Migration removing the automatic 35-day policy.
-5. Enable the gated timer with the 40-day cutoff.
+   [DONE: commissioned 2026-09-15; provenance audit 2026-09-19 (docs/engineering/audits/2026-09-19/).]
+4. Migration removing the automatic 35-day policy + real targeted `drop_chunk` + `--execute` + tests.
+   [DONE, PR2 — this PR; deletion still off by default.]
+5. Enable the gated timer with the 40-day cutoff. [OPERATIONAL, after review/deploy: verified backup
+   → migrate → confirm old job gone → prod dry-run → one authorised canary drop → verify → enable.]
 6. After the first real deletion: verify DB size, remaining chunk ranges, Borg archives, manifests,
-   alerts, and that a research reader still reads the boundary day.
+   alerts, and that a research reader still reads the boundary day. [OPERATIONAL.]
 
-## PR 2 correctness requirement: close the fingerprint TOCTOU
+## PR 2 correctness requirement: close the fingerprint TOCTOU [DONE]
 
-The dry-run recomputes the source fingerprint and (in PR 2) would then call `drop_chunks`.
-Between those two steps a late backfill/repair could change the day, so the final fingerprint
-recheck and the targeted `drop_chunks` must run **atomically** with respect to the writer -- under
-a shared Postgres advisory lock (the same lock the backfill/repair path takes) or one
-transaction/serialized protocol -- so a day cannot change in the window between "verified
-unchanged" and "dropped". PR 1 is dry-run and does not delete, so this is a PR-2 gate, but it is
-mandatory before any real deletion. (`dry_run=False` exists and is tested; the concrete
-`drop_chunk` still deliberately raises until PR 2 wires this.)
+Implemented in `drop_one_chunk_under_lock` (cold_bar_gated_deletion_collectors.py). In one
+transaction the drop takes `pg_advisory_xact_lock(COLD_BAR_MUTATION_LOCK_KEY)`, re-derives the
+source fingerprint WHILE holding the lock and requires it to still equal the receipt's, then issues
+the targeted `drop_chunks` (bounded to the one chunk) and asserts exactly one chunk was removed
+(else ROLLBACK + raise). The lock auto-releases at transaction end.
+
+**Writer-protocol verification (required for the lock to mean anything).** The lock only closes the
+race if every late writer/repair of these bars takes the same key. Verified 2026-09-19: the SOLE
+writer of `timeseries.bybit_momentum_bars_1m` is the Go collector
+(`apps/collector/internal/momentumcapture/writer.go`); its INSERT is a no-op `ON CONFLICT`
+(existing rows are immutable), it appends only current-minute buckets, and gaps are RECORDED, not
+backfilled. So it can neither mutate nor insert into a chunk old enough to be a deletion candidate,
+and is exempt. There is NO historical backfill/repair path today; if one is added it MUST take
+`COLD_BAR_MUTATION_LOCK_KEY` before writing an eligible day (documented at the constant). Proven by
+real-PG tests (`test_cold_bar_gated_deletion_drop_integration.py`): a concurrent holder of the key
+blocks the drop (`LockNotAvailable`), a changed source aborts it, a multi-chunk affected set is
+rolled back, and a targeted drop removes exactly one chunk.
 
 ## Gates before enabling deletion (must all pass)
 

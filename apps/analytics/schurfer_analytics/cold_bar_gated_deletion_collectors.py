@@ -4,11 +4,12 @@ Borg, the manifest/receipt files, and the source database that the dry-run runne
 gate; this file only gathers evidence.
 
 The subprocess/DB calls here cannot be unit-tested without a real Borg repo and
-Postgres, so the parts that CAN be tested -- command construction and Borg-output
-parsing -- are pulled out as pure helpers with their own tests, and the thin
-wrappers are covered by the integration test named in the runbook. ``drop_chunk``
-deliberately raises: PR 1 is dry-run only, and actually removing a chunk is wired
-in PR 2 together with removing the automatic Timescale retention.
+Postgres, so the parts that CAN be tested -- command construction, Borg-output
+parsing, and the targeted-drop transaction (``drop_one_chunk_under_lock``) -- are
+pulled out as pure/injectable helpers with their own tests, and the thin wrappers are
+covered by the integration tests named in the runbook. ``drop_chunk`` performs a real,
+targeted, lock-guarded drop; it runs only when the gated-deletion job is invoked with
+``--execute`` (dry-run is the default and deletes nothing).
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ import subprocess
 import tempfile
 from datetime import UTC, date
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from .cold_bar_export import (
     connect,
@@ -34,9 +35,72 @@ from .cold_bar_gated_deletion_job import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Callable, Mapping
+    from datetime import datetime
 
     from .cold_bar_gated_deletion import DropReceipt
+
+# Advisory-lock namespace for cold-bar day mutation. The gated drop holds
+# pg_advisory_xact_lock(COLD_BAR_MUTATION_LOCK_KEY) across "re-verify source unchanged" and
+# "drop the chunk", so those two steps are atomic with respect to any OTHER holder of the
+# same key. The live collector (apps/collector/internal/momentumcapture/writer.go) is EXEMPT:
+# it appends only current-minute buckets and its INSERT is a no-op ON CONFLICT (rows are
+# immutable), so it can neither mutate nor insert into a chunk old enough to be a deletion
+# candidate. There is no historical backfill/repair path for these bars today; if one is ever
+# added it MUST take this same lock before writing a day at/older than the deletion cutoff, or
+# the TOCTOU guarantee is void.
+COLD_BAR_MUTATION_LOCK_KEY = 0x0C01DBA25
+
+
+class ColdBarSourceChangedError(RuntimeError):
+    """The live source fingerprint no longer matches the receipt at drop time (a change
+    slipped in since export); the drop is refused and rolled back."""
+
+
+class ColdBarDropSetError(RuntimeError):
+    """A targeted drop_chunks would have removed a number of chunks other than exactly one;
+    the transaction is rolled back and nothing is deleted."""
+
+
+def drop_one_chunk_under_lock(
+    pg_conn: Any,
+    *,
+    hypertable: str,
+    range_start: datetime,
+    range_end: datetime,
+    verify_unchanged: Callable[[], bool],
+    lock_key: int = COLD_BAR_MUTATION_LOCK_KEY,
+) -> str:
+    """Drop EXACTLY the one chunk ``[range_start, range_end)`` of ``hypertable``, atomically
+    and fail-closed. In a single transaction: take ``pg_advisory_xact_lock(lock_key)``
+    (serializing against any writer/repair that honours the same key), re-check the source is
+    unchanged via ``verify_unchanged`` WHILE HOLDING THE LOCK (closing the TOCTOU between the
+    gate's check and the drop), then issue a TARGETED ``drop_chunks`` bounded to this one chunk
+    (``older_than => range_end`` and ``newer_than => range_start``) -- never a cutoff-wide call.
+
+    If the source changed, or the targeted call would remove anything other than exactly one
+    chunk, the transaction is ROLLED BACK and it raises; nothing is deleted. Returns the
+    dropped chunk's name. ``verify_unchanged`` may read the live source over a separate session
+    because the lock blocks concurrent lock-takers (writers/repair), not readers."""
+    with pg_conn.transaction():
+        pg_conn.execute("SELECT pg_advisory_xact_lock(%s)", (lock_key,))
+        if not verify_unchanged():
+            raise ColdBarSourceChangedError(
+                f"source for chunk [{range_start.isoformat()}, {range_end.isoformat()}) "
+                "changed since export; refusing to drop"
+            )
+        rows = pg_conn.execute(
+            "SELECT drop_chunks(%s, older_than => %s, newer_than => %s)",
+            (hypertable, range_end, range_start),
+        ).fetchall()
+        if len(rows) != 1:
+            raise ColdBarDropSetError(
+                f"targeted drop_chunks for [{range_start.isoformat()}, "
+                f"{range_end.isoformat()}) would remove {len(rows)} chunk(s), expected "
+                "exactly 1; rolled back"
+            )
+        return str(rows[0][0])
+
 
 # Archive members carry the backed-up directory prefix (ARCHIVE_MEMBER_PREFIX, defined in
 # the job module and shared with the receipt writer), NOT the bare filename.
@@ -95,8 +159,9 @@ def parse_env_file(text: str) -> dict[str, str]:
 
 
 class BorgDbCollectors:
-    """Gathers gated-deletion evidence from Borg + the manifest/receipt dir + the
-    source database. Read-only everywhere; ``drop_chunk`` is not implemented in PR 1."""
+    """Gathers gated-deletion evidence from Borg + the manifest/receipt dir + the source
+    database (read-only), and performs the real targeted ``drop_chunk`` (write) when the run
+    is not dry-run."""
 
     def __init__(
         self,
@@ -152,11 +217,28 @@ class BorgDbCollectors:
         except ValueError:
             return None  # no rows -> cannot prove; the gate blocks
 
-    def drop_chunk(self, candidate: ChunkCandidate) -> None:
-        raise NotImplementedError(
-            "drop_chunk is not enabled in PR 1 (dry-run only); the write path and the "
-            "removal of the automatic Timescale retention land together in PR 2"
-        )
+    def drop_chunk(self, candidate: ChunkCandidate, *, expected_source_fingerprint: str) -> None:
+        """Targeted, per-chunk drop under the mutation lock, with a final source re-check.
+
+        Opens a dedicated Postgres WRITE connection (the DuckDB one is READ_ONLY), then defers
+        to ``drop_one_chunk_under_lock``: it re-derives the live source fingerprint WHILE
+        holding the advisory lock and drops only if it still equals the receipt's, so a late
+        repair cannot slip a change in between the gate's check and the drop. Called only for a
+        cleared day when the run is not dry-run."""
+        import psycopg
+
+        from .cold_bar_export import SOURCE_TABLE
+
+        with psycopg.connect(self._dsn, autocommit=True) as conn:
+            drop_one_chunk_under_lock(
+                conn,
+                hypertable=SOURCE_TABLE,
+                range_start=candidate.range_start,
+                range_end=candidate.range_end,
+                verify_unchanged=lambda: (
+                    self.recompute_source_fingerprint(candidate.day) == expected_source_fingerprint
+                ),
+            )
 
     # --- files ---
 
@@ -263,6 +345,13 @@ def main() -> None:
         action="store_true",
         help="exit non-zero if there are no eligible candidates (commissioning check)",
     )
+    parser.add_argument(
+        "--execute",
+        action="store_true",
+        help="ACTUALLY drop cleared chunks (default: dry-run, deletes nothing). Each drop "
+        "re-verifies the source fingerprint under the mutation lock and is targeted to one "
+        "chunk. Enable only after a dry-run has been reconciled on prod.",
+    )
     args = parser.parse_args()
 
     dsn = os.getenv("DATABASE_URL")
@@ -304,12 +393,14 @@ def main() -> None:
             borg_env=borg_env,
             newest_bars_archive=newest,
         )
+        if args.execute:
+            sys.stdout.write("EXECUTE mode: cleared chunks WILL be dropped (not a dry-run)\n")
         result = run_gated_deletion(
             now=datetime.now(UTC),
             cutoff_days=args.cutoff_days,
             receipts_dir=args.cold_bars_dir,
             collectors=collectors,
-            dry_run=True,  # PR 1: never deletes
+            dry_run=not args.execute,  # default dry-run; --execute deletes
             max_eval_days=args.max_eval_days,
         )
         sys.stdout.write(render_plan(result) + "\n")
@@ -319,10 +410,14 @@ def main() -> None:
 
 
 __all__ = [
+    "COLD_BAR_MUTATION_LOCK_KEY",
     "BorgDbCollectors",
+    "ColdBarDropSetError",
+    "ColdBarSourceChangedError",
     "borg_extract_args",
     "borg_list_archives_args",
     "borg_list_members_args",
+    "drop_one_chunk_under_lock",
     "main",
     "newest_bars_archive",
     "parse_env_file",

@@ -57,6 +57,7 @@ class FakeCollectors:
             for day in days
         )
         self.dropped: list[str] = []
+        self.drop_fps: list[str] = []
         self.manifest_ok = set(days)
         self.receipt_offsite_ok = set(days)
         self.archive_ok = True
@@ -83,8 +84,9 @@ class FakeCollectors:
         self.gathered.append(day)
         return "cbfp_v1:fp"
 
-    def drop_chunk(self, candidate: ChunkCandidate) -> None:
+    def drop_chunk(self, candidate: ChunkCandidate, *, expected_source_fingerprint: str) -> None:
         self.dropped.append(candidate.day)
+        self.drop_fps.append(expected_source_fingerprint)
 
 
 def _days(base: str, n: int) -> list[str]:
@@ -134,6 +136,8 @@ def test_live_run_drops_the_cleared_prefix(tmp_path: Path) -> None:
     )
     assert result.dropped == tuple(days)
     assert c.dropped == days
+    # The receipt's source fingerprint is forwarded to the drop for the under-lock re-check.
+    assert c.drop_fps == ["cbfp_v1:fp"] * len(days)
 
 
 def test_a_blocked_day_halts_the_frontier_and_stops_drops(tmp_path: Path) -> None:
