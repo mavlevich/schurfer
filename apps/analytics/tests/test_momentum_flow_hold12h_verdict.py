@@ -39,8 +39,6 @@ def _passing() -> VerdictInputs:
         integrity_failure_fraction=0.0,
         portfolio_720_window_pnl_usd=40.0,
         portfolio_240_window_pnl_usd=20.0,
-        portfolio_720_drawdown_usd=10.0,
-        portfolio_240_drawdown_usd=10.0,
     )
 
 
@@ -159,13 +157,6 @@ def test_gate_e_losing_portfolio_is_not_a_candidate_even_if_it_beats_240() -> No
     # an edge. A profitable absolute window is required.
     assert (
         _decide(portfolio_720_window_pnl_usd=-5.0, portfolio_240_window_pnl_usd=-25.0)
-        is VerdictOutcome.NO_DURATION_IMPROVEMENT
-    )
-
-
-def test_gate_e_materially_worse_drawdown_is_no_duration_improvement() -> None:
-    assert (
-        _decide(portfolio_720_drawdown_usd=20.0, portfolio_240_drawdown_usd=10.0)
         is VerdictOutcome.NO_DURATION_IMPROVEMENT
     )
 

@@ -178,6 +178,12 @@ def _finite(*values: float) -> bool:
     return all(math.isfinite(v) for v in values)
 
 
+class DuplicateSettlementError(ValueError):
+    """A funding settlement appears twice for the same ``(settlement_at, source_version)``.
+    This is DATA CORRUPTION, not ordinary missingness, so the caller classifies it as an
+    integrity failure (blocking the formal verdict) rather than accounting_incomplete."""
+
+
 def funding_usd_over_interval(
     coverage: FundingCoverage | None,
     *,
@@ -192,9 +198,9 @@ def funding_usd_over_interval(
     ``exit_at`` is included. A long PAYS when the rate is positive (returns a positive
     cost) and RECEIVES when negative. No fixed 8h assumption -- only the events given.
 
-    Fail-closed on a DUPLICATE settlement: two events sharing ``(settlement_at,
-    source_version)`` would be charged twice, so any such duplicate returns ``None``
-    (accounting_incomplete) rather than trusting a future table constraint.
+    RAISES ``DuplicateSettlementError`` on two events sharing ``(settlement_at,
+    source_version)`` -- that is corruption (would double-charge), an INTEGRITY failure,
+    not the ``None``/accounting_incomplete of proven-absent funding.
     """
     if coverage is None or not coverage.proven_full_coverage:
         return None
@@ -206,7 +212,10 @@ def funding_usd_over_interval(
         if entry_at < event.settlement_at <= exit_at:
             key = (event.settlement_at, event.source_version)
             if key in seen:
-                return None  # duplicate settlement -> would double-charge; fail-closed
+                raise DuplicateSettlementError(
+                    f"duplicate funding settlement at {event.settlement_at} "
+                    f"({event.source_version})"
+                )
             seen.add(key)
             cost += event.rate * notional_usd
     return cost if math.isfinite(cost) else None
@@ -253,12 +262,15 @@ def resolve_pair(
     if probe.actual_notional_usd <= 0:
         return PairResolution.INTEGRITY_FAILURE, None
 
-    funding_720 = funding_usd_over_interval(
-        funding.coverage(probe.route, probe.entry_at, probe.exit_at),
-        entry_at=probe.entry_at,
-        exit_at=probe.exit_at,
-        notional_usd=probe.actual_notional_usd,
-    )
+    try:
+        funding_720 = funding_usd_over_interval(
+            funding.coverage(probe.route, probe.entry_at, probe.exit_at),
+            entry_at=probe.entry_at,
+            exit_at=probe.exit_at,
+            notional_usd=probe.actual_notional_usd,
+        )
+    except DuplicateSettlementError:
+        return PairResolution.INTEGRITY_FAILURE, None
     if funding_720 is None:
         return PairResolution.ACCOUNTING_INCOMPLETE, None
     net_720 = _net_after_funding(
@@ -292,12 +304,15 @@ def resolve_pair(
         return PairResolution.INTEGRITY_FAILURE, None
     if outcome_240.notional_usd <= 0:
         return PairResolution.INTEGRITY_FAILURE, None
-    funding_240 = funding_usd_over_interval(
-        funding.coverage(probe.route, probe.entry_at, outcome_240.observed_at),
-        entry_at=probe.entry_at,
-        exit_at=outcome_240.observed_at,
-        notional_usd=outcome_240.notional_usd,
-    )
+    try:
+        funding_240 = funding_usd_over_interval(
+            funding.coverage(probe.route, probe.entry_at, outcome_240.observed_at),
+            entry_at=probe.entry_at,
+            exit_at=outcome_240.observed_at,
+            notional_usd=outcome_240.notional_usd,
+        )
+    except DuplicateSettlementError:
+        return PairResolution.INTEGRITY_FAILURE, None
     if funding_240 is None:
         return PairResolution.ACCOUNTING_INCOMPLETE, None
     net_240cf = _net_after_funding(
@@ -365,7 +380,8 @@ class PortfolioEntry:
     blind key that orders equal arrival times so selection never depends on any return.
     ``pnl_usd`` / ``mae_usd`` are ``None`` for a taken-but-unresolved slot, which makes the
     window non-finite (Gate 0 fail-closes). ``mae_usd`` (<= 0) is the position's worst
-    adverse mark, for the conservative simultaneous-MAE drawdown."""
+    return FROM ENTRY (what the writer stores), used for the reported adverse-excursion
+    diagnostic below."""
 
     tie_break: str
     asset: str
@@ -378,19 +394,22 @@ class PortfolioEntry:
 @dataclass(frozen=True)
 class PortfolioResult:
     window_pnl_usd: float
-    drawdown_usd: float  # conservative simultaneous-MAE proxy (see drawdown_method)
+    # A REPORTED diagnostic, NOT a gated risk metric and NOT a true drawdown: the worst
+    # simultaneous adverse-FROM-ENTRY excursion. The writer stores min-return-from-entry,
+    # not peak-to-trough, so a 100->130->110 path reads 0 here while losing ~15% from the
+    # peak; between-quote moves are also unseen. Named honestly for that reason.
+    adverse_from_entry_usd: float
     longest_losing_streak: int
     taken: int
     skipped_slots_full: int
     complete: bool  # False when a taken slot was unresolved -> not trustworthy
 
 
-def _conservative_simultaneous_mae(taken: Sequence[PortfolioEntry]) -> float:
-    """The worst SIMULTANEOUS adverse mark: the largest total ``|mae|`` of positions open
-    at the same instant. Assuming every concurrently-open position hits its own worst
-    excursion together OVERSTATES the floating drawdown, so it is a conservative upper
-    bound (unlike a realized-close series, which understates it). Evaluated at each entry
-    instant, where the open set can only grow."""
+def _worst_simultaneous_adverse_from_entry(taken: Sequence[PortfolioEntry]) -> float:
+    """The largest total adverse-from-entry excursion of positions open at one instant.
+    NOT a conservative drawdown bound: ``mae_usd`` is the worst return FROM ENTRY (the
+    only thing the writer stores), so it misses peak-to-trough drawdown and between-quote
+    moves. Reported as a diagnostic only; the verdict does NOT gate on it."""
     worst = 0.0
     for pivot in taken:
         total = 0.0
@@ -437,7 +456,7 @@ def replay_fixed_bank(entries: Sequence[PortfolioEntry], *, max_slots: int) -> P
     if incomplete:
         return PortfolioResult(
             window_pnl_usd=math.nan,
-            drawdown_usd=math.nan,
+            adverse_from_entry_usd=math.nan,
             longest_losing_streak=0,
             taken=len(taken),
             skipped_slots_full=skipped,
@@ -459,7 +478,7 @@ def replay_fixed_bank(entries: Sequence[PortfolioEntry], *, max_slots: int) -> P
             streak = 0
     return PortfolioResult(
         window_pnl_usd=running,
-        drawdown_usd=_conservative_simultaneous_mae(taken),
+        adverse_from_entry_usd=_worst_simultaneous_adverse_from_entry(taken),
         longest_losing_streak=longest_streak,
         taken=len(taken),
         skipped_slots_full=skipped,
@@ -590,8 +609,6 @@ def assemble_verdict_inputs(
         integrity_failure_fraction=funnel[ProbeClass.INTEGRITY_FAILURE] / denom,
         portfolio_720_window_pnl_usd=portfolio_720.window_pnl_usd,
         portfolio_240_window_pnl_usd=portfolio_240.window_pnl_usd,
-        portfolio_720_drawdown_usd=portfolio_720.drawdown_usd,
-        portfolio_240_drawdown_usd=portfolio_240.drawdown_usd,
     )
 
 

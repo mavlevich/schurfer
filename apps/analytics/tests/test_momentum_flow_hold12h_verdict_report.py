@@ -17,6 +17,7 @@ import pytest
 from schurfer_analytics.momentum_flow_hold12h_verdict import HOLD12H_VERDICT_CONTRACT
 from schurfer_analytics.momentum_flow_hold12h_verdict_report import (
     ActualFundingSource,
+    DuplicateSettlementError,
     FundingCoverage,
     HorizonOutcome,
     InstrumentRoute,
@@ -148,19 +149,18 @@ def test_funding_unproven_or_nonfinite_is_none() -> None:
     )
 
 
-def test_funding_duplicate_settlement_fails_closed() -> None:
-    # Two events at the same (settlement_at, source_version) would double-charge -> None.
+def test_funding_duplicate_settlement_raises_integrity() -> None:
+    # A duplicate (settlement_at, source_version) is CORRUPTION -> raises (the caller maps
+    # it to INTEGRITY_FAILURE, which fail-closes the verdict), not None/accounting.
     at = _BASE + timedelta(hours=4)
     dup = (SettlementEvent(at, 0.001, "v1"), SettlementEvent(at, 0.001, "v1"))
-    assert (
+    with pytest.raises(DuplicateSettlementError):
         funding_usd_over_interval(
             FundingCoverage(dup, proven_full_coverage=True),
             entry_at=_BASE,
             exit_at=_BASE + timedelta(hours=8),
             notional_usd=50.0,
         )
-        is None
-    )
     # But the same timestamp under a DIFFERENT source version is not a duplicate.
     ok = (SettlementEvent(at, 0.001, "v1"), SettlementEvent(at, 0.001, "v2"))
     assert (
@@ -172,6 +172,12 @@ def test_funding_duplicate_settlement_fails_closed() -> None:
         )
         is not None
     )
+
+
+def test_resolve_pair_maps_duplicate_settlement_to_integrity() -> None:
+    at = _BASE + timedelta(hours=4)
+    funding = _StubFunding((SettlementEvent(at, 0.001, "v1"), SettlementEvent(at, 0.001, "v1")))
+    assert resolve_pair(_probe("w1"), funding)[0] is PairResolution.INTEGRITY_FAILURE
 
 
 # --- resolve_pair (counterfactual, exit semantics, integrity) ------------------
@@ -328,16 +334,17 @@ def test_replay_window_and_losing_streak_are_chronological_by_exit() -> None:
     assert result.longest_losing_streak == 2
 
 
-def test_conservative_drawdown_is_worst_simultaneous_mae() -> None:
-    # Two positions overlap [0,100) and [50,150); each has MAE -$5. While both are open the
-    # conservative proxy is $10; a third, non-overlapping, alone contributes only $5.
+def test_adverse_from_entry_is_worst_simultaneous_excursion() -> None:
+    # Two positions overlap [0,100) and [50,150); each has from-entry MAE -$5. While both
+    # are open the diagnostic is $10; a third, non-overlapping, alone contributes only $5.
+    # (Reported only -- the verdict does NOT gate on this; it is not a true drawdown.)
     entries = [
         _entry("a", 0, 100, 1.0, mae=-5.0),
         _entry("b", 50, 100, 1.0, mae=-5.0),
         _entry("c", 500, 10, 1.0, mae=-5.0),
     ]
     result = replay_fixed_bank(entries, max_slots=10)
-    assert abs(result.drawdown_usd - 10.0) < 1e-9
+    assert abs(result.adverse_from_entry_usd - 10.0) < 1e-9
 
 
 def test_build_eligible_portfolio_includes_unresolved_slots() -> None:

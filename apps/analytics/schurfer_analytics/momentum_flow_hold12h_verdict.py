@@ -89,8 +89,6 @@ class Hold12hVerdictContract:
     # Gate E -- fixed-$300-bank portfolio must beat 240m by a real dollar margin, not
     # merely tie. PROVISIONAL: 5% of the $300 bank.
     min_portfolio_improvement_usd: float = 15.0
-    # And its drawdown must not be materially worse. PROVISIONAL tolerance.
-    max_drawdown_worsening_usd: float = 5.0
 
     # Fixed-bank portfolio parameters -- FROZEN into the sha so one contract sha means
     # exactly one computation (otherwise the same sha could produce different results).
@@ -101,10 +99,10 @@ class Hold12hVerdictContract:
     # (entry_at, watch_id) order and skip the arrival when no slot is free -- never a
     # function of any return.
     selection_rule: str = "entry_at_then_watch_id_skip_when_full_v1"
-    # A conservative floating-drawdown proxy: the worst SIMULTANEOUS mark-to-adverse
-    # (summing each concurrently-open position's own MAE) -- overstates, never understates,
-    # the intra-hold drawdown, unlike a realized-close series.
-    drawdown_method: str = "conservative_simultaneous_mae_v1"
+    # The REPORTED adverse-excursion diagnostic method (worst simultaneous adverse-from-
+    # entry). NOT a gated risk metric and NOT a true drawdown: the writer stores min-
+    # return-from-entry, not peak-to-trough. Named honestly; the verdict does not gate on it.
+    adverse_diagnostic_method: str = "adverse_from_entry_diagnostic_v1"
     # Whether two 720m positions of the SAME canonical asset may be open at once. FROZEN
     # here rather than left implicit: True matches the live 360m cooldown, which permits it.
     allow_concurrent_same_asset: bool = True
@@ -143,8 +141,6 @@ class Hold12hVerdictContract:
                 raise ValueError(f"{name} must be in (0, 1]")
         if self.min_portfolio_improvement_usd <= 0:
             raise ValueError("min_portfolio_improvement_usd must be positive")
-        if self.max_drawdown_worsening_usd < 0:
-            raise ValueError("max_drawdown_worsening_usd must not be negative")
         if self.bank_usd <= 0 or self.position_usd <= 0:
             raise ValueError("bank_usd and position_usd must be positive")
         if self.max_concurrent_slots <= 0:
@@ -199,8 +195,6 @@ class VerdictInputs:
     # Fixed-$300-bank portfolio replay, same WATCH stream, both policies (Gate E).
     portfolio_720_window_pnl_usd: float
     portfolio_240_window_pnl_usd: float
-    portfolio_720_drawdown_usd: float
-    portfolio_240_drawdown_usd: float
 
 
 @dataclass(frozen=True)
@@ -338,12 +332,12 @@ def decide_verdict(contract: Hold12hVerdictContract, inputs: VerdictInputs) -> V
 
     # Gate E -- duration improvement AND a PROFITABLE fixed-bank win. The paired effect
     # must be significant, the 720m $300 bank must itself make money in ABSOLUTE terms
-    # (not merely lose less than 240m), and it must beat 240m by a real dollar margin
-    # without materially worse drawdown.
+    # (not merely lose less than 240m), and it must beat 240m by a real dollar margin.
+    # (Drawdown is reported as a diagnostic but NOT gated: the stored MAE is from-entry,
+    # not peak-to-trough, so it is not a trustworthy risk bound.)
     portfolio_improvement = (
         inputs.portfolio_720_window_pnl_usd - inputs.portfolio_240_window_pnl_usd
     )
-    drawdown_worsening = inputs.portfolio_720_drawdown_usd - inputs.portfolio_240_drawdown_usd
     if not inputs.paired_diff_ci_lower > 0:
         return VerdictResult(
             VerdictOutcome.NO_DURATION_IMPROVEMENT,
@@ -363,13 +357,6 @@ def decide_verdict(contract: Hold12hVerdictContract, inputs: VerdictInputs) -> V
             "E",
             f"portfolio improvement ${portfolio_improvement:.2f}"
             f" < ${contract.min_portfolio_improvement_usd}",
-        )
-    if drawdown_worsening > contract.max_drawdown_worsening_usd:
-        return VerdictResult(
-            VerdictOutcome.NO_DURATION_IMPROVEMENT,
-            "E",
-            f"720m drawdown worse by ${drawdown_worsening:.2f}"
-            f" > ${contract.max_drawdown_worsening_usd}",
         )
 
     return VerdictResult(
