@@ -65,7 +65,21 @@ def coverage_for_interval(
     the long sign are applied later by ``funding_usd_over_interval``; here we return the
     version's events with ``proven_full_coverage=True``. An empty event tuple then means a
     proven-zero-funding interval, never an assumed one.
+
+    An ``integrity_conflict`` run (a re-fetch that returned a different rate for a stored
+    settlement) that OVERLAPS the interval invalidates any ``complete`` run: the interval is
+    ``accounting_incomplete`` until a human resolves the conflict, so a compromised rate
+    never keeps feeding the verdict.
     """
+    blocked = any(
+        run.status == "integrity_conflict"
+        and run.source_version == source_version
+        and run.requested_since <= exit_at
+        and run.requested_until >= entry_at
+        for run in runs
+    )
+    if blocked:
+        return None
     proven = any(
         run.status == "complete"
         and run.source_version == source_version

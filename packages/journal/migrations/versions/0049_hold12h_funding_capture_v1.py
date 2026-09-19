@@ -85,7 +85,8 @@ def upgrade() -> None:
         sa.Column("market_type", sa.String(length=16), nullable=False),
         sa.Column("requested_since", sa.DateTime(timezone=True), nullable=False),
         sa.Column("requested_until", sa.DateTime(timezone=True), nullable=False),
-        # Terminal status of the fetch: only 'complete' proves full coverage of the window.
+        # Terminal status of the fetch: only 'complete' proves full coverage of the window;
+        # 'integrity_conflict' BLOCKS any overlapping 'complete' run until a human resolves it.
         sa.Column("status", sa.String(length=24), nullable=False),
         sa.Column("request_count", sa.Integer(), nullable=False),
         sa.Column("settlements_written", sa.Integer(), nullable=False, server_default="0"),
@@ -100,7 +101,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
         sa.CheckConstraint(
             "status IN ('complete', 'fetch_failed', 'invalid_response', "
-            "'pagination_exhausted', 'incomplete')",
+            "'pagination_exhausted', 'incomplete', 'integrity_conflict')",
             name="ck_hold12h_funding_coverage_status",
         ),
         sa.CheckConstraint(

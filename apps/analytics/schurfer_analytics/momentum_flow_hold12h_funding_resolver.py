@@ -26,6 +26,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from itertools import pairwise
 from typing import TYPE_CHECKING, Any, Protocol
 
 from .derivatives_history import (
@@ -42,6 +43,12 @@ if TYPE_CHECKING:
     from .momentum_flow_hold12h_verdict_report import InstrumentRoute
 
 _FUNDING_METHOD = METHOD_BY_NAME["funding_rate_history"]
+
+# Prospective-capture boundary: probes that exited before this are never attempted. Venue
+# funding history has limited lookback, so ancient windows are unrecoverable and would only
+# occupy the per-run budget; this is the hold12h operational-history start. Override with
+# ``--capture-start``.
+CAPTURE_START_DEFAULT = datetime(2026, 9, 13, tzinfo=UTC)
 
 
 @dataclass(frozen=True)
@@ -102,6 +109,11 @@ class FundingRateConflictError(RuntimeError):
     left non-complete instead of silently keeping the stale first-writer value."""
 
 
+# A gap between consecutive settlements up to this multiple of the observed cadence is a
+# single settlement step (allows minor venue jitter); anything larger is a missing event.
+_GAP_TOLERANCE = 1.5
+
+
 def window_status(
     fetch: DerivativesHistoryFetch,
     settlements: Sequence[ParsedSettlement],
@@ -112,23 +124,44 @@ def window_status(
 ) -> str:
     """Terminal coverage status for one funding window, conservative by construction.
 
-    ``complete`` requires ALL of: a clean, fully-paged fetch; every fetched row parsed
-    (no silent drop); and the returned settlements demonstrably BRACKET the target
-    interval -- at least one at or before ``entry`` (proves the endpoint's history reaches
-    back across the start, so nothing just after entry was truncated) AND at least one at
-    or after ``exit_at`` (proves it reaches past the end, not that it merely hit the
-    boundary of available history). Anything doubtful -- a dropped row, or a response that
-    cannot prove both bounds -- is ``incomplete``, never a silently-assumed full coverage.
-    A proven-zero-funding window is only possible when both brackets are seen but none fall
-    inside ``(entry, exit]``."""
+    ``complete`` requires ALL of:
+
+    * a clean, fully-paged fetch (``coverage_status`` == complete);
+    * every fetched row parsed (a silent drop -> ``incomplete``);
+    * the settlements BRACKET the target interval -- one at/before ``entry`` and one
+      at/after ``exit_at`` -- so the endpoint reached across both bounds rather than merely
+      hitting the edge of available history; and
+    * the interior is GAP-FREE on the venue's own cadence. Two edge settlements do not
+      prove a 12h middle: the cadence is inferred from the smallest gap in the padded
+      response (which needs >= 3 settlements to establish a grid), and every consecutive
+      gap that overlaps ``(entry, exit]`` must be a single cadence step. A doubled gap means
+      a missing interior settlement, so the window is ``incomplete``.
+
+    Anything doubtful is ``incomplete``, never a silently-assumed full coverage. A
+    proven-zero-funding window is only possible when the padded response is dense and
+    gap-free but no settlement falls inside ``(entry, exit]``."""
     base = coverage_status(fetch)
     if base != "complete":
         return base
     if parse_failures > 0:
         return "incomplete"
-    covers_start = any(s.settlement_at <= entry for s in settlements)
-    covers_end = any(s.settlement_at >= exit_at for s in settlements)
-    return "complete" if covers_start and covers_end else "incomplete"
+    times = sorted({s.settlement_at for s in settlements})
+    # Fewer than three settlements in the padded window cannot establish the venue cadence,
+    # so the interior of a multi-hour interval cannot be proven gap-free.
+    if len(times) < 3:
+        return "incomplete"
+    if not (times[0] <= entry and times[-1] >= exit_at):
+        return "incomplete"
+    gaps = [(later - earlier).total_seconds() for earlier, later in pairwise(times)]
+    cadence = min(gaps)
+    if cadence <= 0:
+        return "incomplete"
+    for (earlier, later), gap in zip(pairwise(times), gaps, strict=True):
+        if later <= entry or earlier >= exit_at:
+            continue  # gap lies entirely outside the target interval
+        if gap > cadence * _GAP_TOLERANCE:
+            return "incomplete"  # a missing interior settlement
+    return "complete"
 
 
 class FundingWriter(Protocol):
@@ -203,9 +236,11 @@ async def resolve_window(
             route, parsed, now=now, source_version=source_version
         )
     except FundingRateConflictError as exc:
-        # A changed venue rate on re-fetch is an integrity failure: never mark the window
-        # complete, and surface the conflict on the run instead of overwriting silently.
-        status, written, error, integrity_conflict = "incomplete", 0, str(exc), True
+        # A changed venue rate on re-fetch is an integrity failure. Record a BLOCKING
+        # ``integrity_conflict`` run (not merely ``incomplete``): the reader invalidates any
+        # prior ``complete`` run overlapping this window until a human resolves it, so a
+        # changed rate never keeps silently feeding the stale value into the verdict.
+        status, written, error, integrity_conflict = "integrity_conflict", 0, str(exc), True
     await repo.write_coverage_run(
         route,
         requested_since=since,
@@ -393,15 +428,22 @@ async def pending_windows(
     source_version: str,
     cutoff: datetime,
     max_windows: int,
+    capture_start: datetime,
     app_schema: str = "app",
 ) -> tuple[tuple[InstrumentRoute, datetime, datetime], ...]:
     """Closed hold12h probe intervals with no ``complete`` coverage run of ``source_version``
-    spanning them and whose exit is older than ``cutoff`` (past the settlement lag).
+    spanning them, whose exit is older than ``cutoff`` (past the settlement lag) and not
+    before ``capture_start`` (the prospective-capture boundary -- ancient history that
+    predates capture is never attempted).
 
     Only probes with a resolved ``unified_symbol`` (the worker's exact market resolution)
     are returned -- that resolved symbol is what CCXT is queried with, keyed on the native
-    ``market_id``; the raw ``symbol`` ticker is never sent to the venue. Bounded by
-    ``max_windows`` (oldest exit first) so one run drains a finite slice of the backlog."""
+    ``market_id``; the raw ``symbol`` ticker is never sent to the venue.
+
+    Bounded by ``max_windows``, and ordered as a FAIR QUEUE so a backlog of never-succeeding
+    windows can never starve fresh ones: never-attempted intervals first (last attempt NULL),
+    then least-recently-attempted, then oldest exit. A brand-new probe is therefore always
+    within the first ``max_windows`` no matter how many stuck intervals precede it."""
     from sqlalchemy import text
 
     from .momentum_flow_hold12h_verdict_report import InstrumentRoute as _Route
@@ -413,18 +455,25 @@ async def pending_windows(
                 text(
                     f"""
                     SELECT DISTINCT p.exchange, p.market_type, p.unified_symbol, p.market_id,
-                           p.entry_at, p.exit_at
+                           p.entry_at, p.exit_at,
+                           (SELECT max(r.created_at)
+                              FROM {app_schema}.hold12h_funding_coverage_runs r
+                             WHERE r.exchange = p.exchange
+                               AND r.native_market_id = p.market_id
+                               AND r.source_version = :sv
+                               AND r.requested_since <= p.entry_at
+                               AND r.requested_until >= p.exit_at) AS last_attempt
                     FROM {app_schema}.momentum_flow_paper_probes p
                     WHERE p.paper_version = :pv AND p.position_status = 'closed'
                       AND p.entry_at IS NOT NULL AND p.exit_at IS NOT NULL
-                      AND p.exit_at <= :cutoff AND p.market_id IS NOT NULL
-                      AND p.unified_symbol IS NOT NULL
+                      AND p.exit_at <= :cutoff AND p.exit_at >= :capture_start
+                      AND p.market_id IS NOT NULL AND p.unified_symbol IS NOT NULL
                       AND NOT EXISTS (
                         SELECT 1 FROM {app_schema}.hold12h_funding_coverage_runs r
                         WHERE r.exchange = p.exchange AND r.native_market_id = p.market_id
                           AND r.source_version = :sv AND r.status = 'complete'
                           AND r.requested_since <= p.entry_at AND r.requested_until >= p.exit_at)
-                    ORDER BY p.exit_at
+                    ORDER BY last_attempt ASC NULLS FIRST, p.exit_at
                     LIMIT :max_windows
                     """
                 ),
@@ -432,6 +481,7 @@ async def pending_windows(
                     "pv": HOLD12H_PAPER_CONTRACT.paper_version,
                     "sv": source_version,
                     "cutoff": cutoff,
+                    "capture_start": capture_start,
                     "max_windows": max_windows,
                 },
             )
@@ -461,11 +511,12 @@ async def run_capture(
     settlement_lag_hours: float = 8.0,
     boundary_pad_hours: float = 12.0,
     max_windows: int = 500,
+    capture_start: datetime = CAPTURE_START_DEFAULT,
     source_version: str = ACTUAL_FUNDING_VERSION,
     app_schema: str = "app",
 ) -> dict[str, int]:
     """Capture funding for a bounded slice of pending hold12h intervals (``max_windows``,
-    oldest first). Returns a small health summary for monitoring."""
+    fair-queued so stuck windows never starve fresh ones). Returns a health summary."""
     from datetime import timedelta
 
     from sqlalchemy.ext.asyncio import create_async_engine
@@ -484,6 +535,7 @@ async def run_capture(
                 source_version=source_version,
                 cutoff=cutoff,
                 max_windows=max_windows,
+                capture_start=capture_start,
                 app_schema=app_schema,
             )
     finally:
@@ -536,9 +588,21 @@ def main() -> None:
     parser.add_argument("--settlement-lag-hours", type=float, default=8.0)
     parser.add_argument("--boundary-pad-hours", type=float, default=12.0)
     parser.add_argument("--max-windows", type=int, default=500)
+    parser.add_argument(
+        "--capture-start",
+        type=str,
+        default=None,
+        help="ISO-8601 UTC lower bound on probe exit; default is the operational start.",
+    )
     args = parser.parse_args()
     if args.max_windows < 1:
         raise ValueError("--max-windows must be at least 1")
+    capture_start = CAPTURE_START_DEFAULT
+    if args.capture_start is not None:
+        capture_start = datetime.fromisoformat(args.capture_start)
+        if capture_start.tzinfo is None:
+            raise ValueError("--capture-start must be timezone-aware (UTC)")
+        capture_start = capture_start.astimezone(UTC)
     db_url = os.getenv("DATABASE_URL")
     if not db_url:
         raise ValueError("DATABASE_URL is required for the hold12h funding capture")
@@ -548,6 +612,7 @@ def main() -> None:
             settlement_lag_hours=args.settlement_lag_hours,
             boundary_pad_hours=args.boundary_pad_hours,
             max_windows=args.max_windows,
+            capture_start=capture_start,
         )
     )
     sys.stdout.write(_json_mod.dumps(summary, sort_keys=True) + "\n")

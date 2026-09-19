@@ -83,6 +83,18 @@ def test_coverage_proven_zero_funding_is_not_assumed() -> None:
     assert cov.proven_full_coverage
 
 
+def test_coverage_blocked_by_overlapping_integrity_conflict() -> None:
+    # A complete run PLUS an overlapping integrity-conflict run -> accounting_incomplete:
+    # the compromised rate must not keep feeding the verdict until a human resolves it.
+    settlements = [_sev(4, 0.001)]
+    runs = [_run(), _run("integrity_conflict")]
+    assert coverage_for_interval(settlements, runs, entry_at=_ENTRY, exit_at=_EXIT) is None
+    # A conflict that does NOT overlap the interval does not block it.
+    far = _run("integrity_conflict", since_off=48, until_off=60)
+    cov = coverage_for_interval(settlements, [_run(), far], entry_at=_ENTRY, exit_at=_EXIT)
+    assert cov is not None and cov.proven_full_coverage
+
+
 # --- StoredFundingSource (exact-route only) ------------------------------------
 
 
@@ -150,27 +162,42 @@ def _ps(hours: float, rate: float) -> ParsedSettlement:
     return ParsedSettlement(_ENTRY + timedelta(hours=hours), rate, {"h": hours})
 
 
-def test_window_status_complete_requires_both_brackets() -> None:
-    # A settlement at/before entry and one at/after exit: coverage is proven.
-    bracketed = [_ps(-4, 0.001), _ps(6, 0.001), _ps(16, 0.001)]
-    assert window_status(_fetch(), bracketed, 0, entry=_ENTRY, exit_at=_EXIT) == "complete"
+# A dense, gap-free 8h grid over the padded [entry-12h, exit+12h] window (entry=0, exit=12).
+def _full_grid() -> list[ParsedSettlement]:
+    return [_ps(h, 0.001) for h in (-8, 0, 8, 16, 24)]
+
+
+def test_window_status_complete_on_dense_gap_free_grid() -> None:
+    assert window_status(_fetch(), _full_grid(), 0, entry=_ENTRY, exit_at=_EXIT) == "complete"
+
+
+def test_window_status_incomplete_two_edge_events_do_not_prove_interior() -> None:
+    # The reviewer's case: one settlement 4h before entry and one 16h after exit, nothing
+    # inside the 12h position. Brackets alone must NOT count as proven coverage.
+    two_edges = [_ps(-4, 0.001), _ps(16, 0.001)]
+    assert window_status(_fetch(), two_edges, 0, entry=_ENTRY, exit_at=_EXIT) == "incomplete"
+
+
+def test_window_status_incomplete_missing_interior_settlement() -> None:
+    # 8h grid with the interior (hour 8, inside the position) dropped -> a doubled gap.
+    missing = [_ps(h, 0.001) for h in (-8, 0, 16, 24)]
+    assert window_status(_fetch(), missing, 0, entry=_ENTRY, exit_at=_EXIT) == "incomplete"
 
 
 def test_window_status_incomplete_without_start_bracket() -> None:
     # Earliest settlement is after entry: could be the edge of available history.
-    no_start = [_ps(4, 0.001), _ps(16, 0.001)]
+    no_start = [_ps(4, 0.001), _ps(8, 0.001), _ps(20, 0.001)]
     assert window_status(_fetch(), no_start, 0, entry=_ENTRY, exit_at=_EXIT) == "incomplete"
 
 
 def test_window_status_incomplete_without_end_bracket() -> None:
-    no_end = [_ps(-4, 0.001), _ps(6, 0.001)]
+    no_end = [_ps(-8, 0.001), _ps(-4, 0.001), _ps(6, 0.001)]
     assert window_status(_fetch(), no_end, 0, entry=_ENTRY, exit_at=_EXIT) == "incomplete"
 
 
 def test_window_status_incomplete_on_dropped_row() -> None:
-    # Cleanly-bracketed, but a fetched row failed to parse -> not complete.
-    bracketed = [_ps(-4, 0.001), _ps(6, 0.001), _ps(16, 0.001)]
-    assert window_status(_fetch(), bracketed, 1, entry=_ENTRY, exit_at=_EXIT) == "incomplete"
+    # A dense gap-free grid, but a fetched row failed to parse -> not complete.
+    assert window_status(_fetch(), _full_grid(), 1, entry=_ENTRY, exit_at=_EXIT) == "incomplete"
 
 
 def test_window_status_propagates_fetch_error() -> None:
@@ -222,14 +249,12 @@ class _FakeRepo:
 
 
 def _bracketed_rows() -> list[dict[str, object]]:
+    # A dense, gap-free 8h grid over the padded window: brackets [entry, exit] and proves
+    # the interior is complete (hours -8, 0, 8, 16, 24; entry=0, exit=12).
     base = int(_ENTRY.timestamp() * 1000)
     hour = 3_600_000
-    return [
-        {"timestamp": base - 4 * hour, "fundingRate": 0.0003},  # before entry (start bracket)
-        {"timestamp": base + 4 * hour, "fundingRate": 0.0001},  # in window
-        {"timestamp": base + 8 * hour, "fundingRate": -0.0002},  # in window
-        {"timestamp": base + 16 * hour, "fundingRate": 0.0004},  # after exit (end bracket)
-    ]
+    rates = {-8: 0.0003, 0: 0.0001, 8: -0.0002, 16: 0.0004, 24: 0.0005}
+    return [{"timestamp": base + h * hour, "fundingRate": r} for h, r in rates.items()]
 
 
 async def test_resolve_window_fetches_parses_and_records() -> None:
@@ -237,7 +262,7 @@ async def test_resolve_window_fetches_parses_and_records() -> None:
     repo = _FakeRepo()
     capture = await resolve_window(exchange, repo, _ROUTE, entry=_ENTRY, exit_at=_EXIT, now=_ENTRY)
     assert capture.status == "complete"
-    assert capture.settlements_written == 4
+    assert capture.settlements_written == 5
     assert len(repo.runs) == 1 and repo.runs[0]["status"] == "complete"
     # Blocker 2: the resolved unified symbol is what CCXT is queried with, not the ticker.
     assert exchange.symbols and all(s == _ROUTE.unified_symbol for s in exchange.symbols)
@@ -266,15 +291,17 @@ async def test_resolve_window_incomplete_when_history_does_not_bracket() -> None
     assert repo.runs[0]["status"] == "incomplete"
 
 
-async def test_resolve_window_downgrades_on_rate_conflict() -> None:
+async def test_resolve_window_records_integrity_conflict_on_rate_conflict() -> None:
     repo = _FakeRepo(conflict=True)
     capture = await resolve_window(
         _FakeExchange(_bracketed_rows()), repo, _ROUTE, entry=_ENTRY, exit_at=_EXIT, now=_ENTRY
     )
-    assert capture.status == "incomplete"
+    # A blocking status (not merely 'incomplete') so the reader invalidates any prior
+    # 'complete' run for the window until the conflict is resolved.
+    assert capture.status == "integrity_conflict"
     assert capture.integrity_conflict is True
     assert capture.settlements_written == 0
-    assert repo.runs[0]["status"] == "incomplete"
+    assert repo.runs[0]["status"] == "integrity_conflict"
     assert "funding rate changed" in (repo.runs[0]["error"] or "")
 
 
