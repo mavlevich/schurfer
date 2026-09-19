@@ -176,10 +176,20 @@ writer of `timeseries.bybit_momentum_bars_1m` is the Go collector
 (existing rows are immutable), it appends only current-minute buckets, and gaps are RECORDED, not
 backfilled. So it can neither mutate nor insert into a chunk old enough to be a deletion candidate,
 and is exempt. There is NO historical backfill/repair path today; if one is added it MUST take
-`COLD_BAR_MUTATION_LOCK_KEY` before writing an eligible day (documented at the constant). Proven by
-real-PG tests (`test_cold_bar_gated_deletion_drop_integration.py`): a concurrent holder of the key
-blocks the drop (`LockNotAvailable`), a changed source aborts it, a multi-chunk affected set is
-rolled back, and a targeted drop removes exactly one chunk.
+`COLD_BAR_MUTATION_LOCK_KEY` before writing an eligible day (documented at the constant).
+
+**Writer age guard (mechanical closure of the queue-redelivery race).** Because the collector does
+not take the lock, a re-sent/redelivered stale bar from the queue could otherwise insert into the
+deletion-eligible zone. `Writer.Enqueue` now REJECTS (counts + logs, `StaleBarsDroppedTotal`) any bar
+whose bucket is older than `MaxWriteAge` (7 days, far inside the 40-day cutoff), so the writer is
+mechanically incapable of touching an eligible chunk regardless of queue behaviour. Live bars are
+seconds-to-minutes old; a >7-day-old bar is an anomaly, not current data.
+
+Proven by real-PG tests (`test_cold_bar_gated_deletion_drop_integration.py`, mandatory in CI under
+`REQUIRE_INTEGRATION_DB=1` -- no silent skip): a concurrent holder of the key blocks the drop
+(`LockNotAvailable`), a changed source aborts it, a multi-chunk affected set is rolled back, and a
+targeted drop removes exactly one chunk; plus a Go unit test that a stale bar is rejected. `--execute`
+is refused below the 40-day cutoff (`validate_execute_cutoff`), so real deletion always keeps the buffer.
 
 ## Gates before enabling deletion (must all pass)
 

@@ -62,6 +62,24 @@ class ColdBarDropSetError(RuntimeError):
     the transaction is rolled back and nothing is deleted."""
 
 
+# Real deletion (--execute) is only ever allowed at or beyond the 40-day retention buffer, so
+# a day that failed a check waits for repair rather than racing a deadline. A reconciliation
+# dry-run may use a smaller cutoff (it deletes nothing), but execute below this is refused.
+MIN_EXECUTE_CUTOFF_DAYS = 40
+
+
+def validate_execute_cutoff(*, execute: bool, cutoff_days: int) -> None:
+    """Guard: refuse ``--execute`` at a cutoff below the 40-day buffer. Dry-run is unbounded
+    (it deletes nothing), so a reconciliation run may use a smaller cutoff, but real deletion
+    must keep the full margin."""
+    if execute and cutoff_days < MIN_EXECUTE_CUTOFF_DAYS:
+        raise ValueError(
+            f"--execute requires --cutoff-days >= {MIN_EXECUTE_CUTOFF_DAYS} "
+            f"(got {cutoff_days}); the 40-day buffer must hold for real deletion. Use a dry-run "
+            "for reconciliation at a smaller cutoff."
+        )
+
+
 def drop_one_chunk_under_lock(
     pg_conn: Any,
     *,
@@ -315,9 +333,10 @@ class BorgDbCollectors:
 
 
 def main() -> None:
-    """CLI entrypoint. PR 1: DRY-RUN ONLY -- it computes and prints the drop plan and
-    deletes nothing (the concrete drop path is added in PR 2). A file-lock keeps a
-    single run at a time; the Postgres advisory lock lands with the write path."""
+    """CLI entrypoint. Dry-run by default (computes and prints the drop plan, deletes
+    nothing); ``--execute`` performs the real targeted drops and is refused below the 40-day
+    cutoff. A file-lock keeps a single run at a time; each real drop additionally takes the
+    Postgres mutation advisory lock."""
     import argparse
     import fcntl
     import os
@@ -353,6 +372,7 @@ def main() -> None:
         "chunk. Enable only after a dry-run has been reconciled on prod.",
     )
     args = parser.parse_args()
+    validate_execute_cutoff(execute=args.execute, cutoff_days=args.cutoff_days)
 
     dsn = os.getenv("DATABASE_URL")
     if not dsn:
@@ -411,6 +431,7 @@ def main() -> None:
 
 __all__ = [
     "COLD_BAR_MUTATION_LOCK_KEY",
+    "MIN_EXECUTE_CUTOFF_DAYS",
     "BorgDbCollectors",
     "ColdBarDropSetError",
     "ColdBarSourceChangedError",
@@ -422,4 +443,5 @@ __all__ = [
     "newest_bars_archive",
     "parse_env_file",
     "parse_short_list",
+    "validate_execute_cutoff",
 ]

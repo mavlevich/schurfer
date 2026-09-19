@@ -13,6 +13,7 @@ has no timescaledb extension); runs in CI, whose Postgres service IS the timesca
 from __future__ import annotations
 
 # ruff: noqa: S608 -- schema/hypertable are test-only constants; every value is bound.
+import os
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -33,17 +34,32 @@ _D3 = datetime(2026, 1, 3, tzinfo=UTC)
 _DAY = timedelta(days=1)
 
 
+# When REQUIRE_INTEGRATION_DB=1 (CI), an unavailable Timescale is a FAILURE, not a silent
+# skip -- so the real-PG proof cannot quietly disappear from the pipeline. Locally (unset) it
+# skips, matching the other *_integration tests.
+_REQUIRE_DB = os.getenv("REQUIRE_INTEGRATION_DB") == "1"
+
+
+def _unavailable(reason: str) -> Any:
+    if _REQUIRE_DB:
+        pytest.fail(f"REQUIRE_INTEGRATION_DB=1 but {reason}")
+    pytest.skip(reason)
+
+
 def _connect_timescale_or_skip() -> Any:
-    psycopg = pytest.importorskip("psycopg")
+    try:
+        import psycopg
+    except ImportError:
+        return _unavailable("psycopg not installed")
     try:
         conn = psycopg.connect(_PG_DSN, connect_timeout=2, autocommit=True)
     except psycopg.Error as exc:
-        pytest.skip(f"no local postgres reachable: {exc}")
+        return _unavailable(f"no postgres reachable: {exc}")
     try:
         conn.execute("CREATE EXTENSION IF NOT EXISTS timescaledb")
     except psycopg.Error as exc:
         conn.close()
-        pytest.skip(f"no timescaledb extension available: {exc}")
+        return _unavailable(f"no timescaledb extension available: {exc}")
     return conn
 
 
