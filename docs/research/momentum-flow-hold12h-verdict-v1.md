@@ -10,6 +10,50 @@
 > honest drawdown data + explicit "beats 240m" semantics; a real actual-funding contract). Open
 > numeric thresholds are marked TBD, to be frozen from a pre-start outcome-blind accrual.
 
+## Implementation status (2026-09-18) -- DRAFT, NOT REGISTERED
+
+The verdict FORM is now built and unit-tested; the overall HYP-015 contract stays
+UNREGISTERED (provisional constants + the actual-funding prerequisite below). Modules:
+
+- `momentum_flow_hold12h_verdict.py` -- `Hold12hVerdictContract` (thresholds + sha; the
+  diversity/concentration/improvement values are PROVISIONAL, to be sized from the
+  outcome-blind pre-start accrual) and the pure ordered-gate `decide_verdict` (A-E, with
+  negative EV binding before the diversity floor). Not named FROZEN.
+- `momentum_flow_hold12h_verdict_report.py` -- the pure reader layer: `watch_id`
+  pairing, the common-entry 240m counterfactual (no look-ahead; a pre-240m exit is
+  shared), ACTUAL funding over `(entry_at, exit_at]` with the long sign, the all-WATCH
+  funnel (no complete-case dropping), the deterministic fixed-bank portfolio replay
+  (chronological drawdown proxy + losing streak), cluster-bootstrap CI assembly, the
+  first-writer cohort registration, cohort filtering, and a deterministic fingerprint.
+
+**Actual-funding source (decided 2026-09-18): prospective capture + fail-closed.** There
+is no clean per-instrument settlement series in the DB -- `funding_rate_snapshots` and
+`funding_rate_history` (in `pump_derivatives_context_samples`) are both pump-EVENT
+anchored, so using them for an arbitrary hold interval risks a biased complete-case
+sample. They are used ONLY for coverage/readiness diagnostics and calc verification,
+never primary formal evidence. The primary actual-funding source is a small prospective
+per-instrument capture for the exact HYP-015 instruments (a separate prerequisite PR):
+at probe open persist an immutable route (exchange, canonical instrument/market id,
+native + unified symbol, market_type, entry, expected exit); after the settlement/exit
+publication lag fetch the interval's funding events; store exact venue+instrument
+identity, settlement_at, rate, source/observed/fetched timestamps, native payload or
+checksum, capture/source version, and a coverage run (requested bounds + terminal
+status); DB-unique per `(exchange, instrument, settlement_at, source_version)`; no fixed
+8h -- actual timestamps + venue schedule; charge events in `(entry_at, exit_at]`, a long
+debited when the rate is positive and credited when negative; an empty set is zero
+funding ONLY with proven full coverage, else `accounting_incomplete`. Until this lands, a
+`formal_run` FAIL-CLOSES: `NoRegisteredFundingSource` makes every probe
+`accounting_incomplete`, so no return enters formal evidence.
+
+**PR ordering (three PRs).** (1) THIS verdict PR = contract/scaffolding + reader + tests,
+DRAFT / NOT FROZEN, formal fail-closed; remaining in-PR item = the SQL loader mapping the
+real Postgres rows into the reader dataclasses + its real-PostgreSQL integration test
+(the row-mapping choices -- isolating the ex-funding return, the canonical-asset identity,
+the exit semantics -- are called out for review first). (2) the funding-capture
+prerequisite PR (schema + collector/resolver + health + PG integration tests). (3) a small
+freeze PR that fixes the funding version, the final constants (from the accrual), and a
+literal future UTC cohort boundary; only data after it is formal.
+
 ## Question
 
 HYP-015 asks whether extending the momentum-flow WATCH hold from 240m to 720m (12h) is a better
@@ -56,18 +100,22 @@ rates (`packages/performance/schurfer_performance/accounting.py`). Funding is no
 versioned funding contract (`ACTUAL_FUNDING_VERSION`), not just a sensitivity, specifying (review
 P1 #5):**
 
-- **source**: the captured funding table (`funding_rate_snapshots`) and its exact rate column;
-- **identity join**: canonical asset + instrument (venue/market_type/symbol), not a ticker string;
+- **source (SUPERSEDES the earlier `funding_rate_snapshots` idea -- see Implementation status)**: a
+  NEW prospective per-instrument settlement capture for the exact HYP-015 instruments. The existing
+  pump-anchored tables (`funding_rate_snapshots`, `funding_rate_history`) are diagnostics/readiness
+  and calc-verification ONLY, never primary formal evidence (their conditional coverage would bias a
+  complete-case sample);
+- **identity join**: exact venue + instrument (canonical instrument/market id), never a base/ticker;
 - **settlement inclusion**: charge every settlement event whose settlement timestamp falls in
   `(entry_at, exit_at]` (half-open), using each event's own observed rate, never a count-based proxy;
 - **sign**: a long pays when the funding rate is positive and receives when negative;
-- **dedup**: exactly one row per (instrument, settlement timestamp); duplicates collapsed;
-- **missingness**: if any settlement in the interval has no captured rate, the probe is
-  `accounting_incomplete` -- excluded from the analyzable pairs but kept in the funnel, never
-  silently back-filled with the fixed model.
+- **dedup**: exactly one row per (exchange, instrument, settlement timestamp, source version);
+- **missingness**: an empty set is zero funding ONLY with proven full coverage and no unaccounted
+  settlement boundary; otherwise the probe is `accounting_incomplete` -- excluded from the analyzable
+  pairs but kept in the funnel, never silently back-filled.
 
-The fixed 5 bps/8h model is retained only as a clearly labelled sensitivity alongside the primary
-actual-funding read.
+The fixed 5 bps/8h model is retained only as a clearly labelled DIAGNOSTIC, never the primary read; a
+`formal_run` fail-closes until the prospective capture is the registered source.
 
 ## Required capital-time / portfolio gate (fix #5)
 
@@ -75,17 +123,25 @@ Per-trade EV is insufficient: a 720m hold occupies capital ~3x longer, so it can
 lose per-$300-bank by holding slots through subsequent WATCH decisions. The verdict therefore
 requires a **fixed-bank portfolio replay** run identically for the 240m and 720m policies:
 
-- same $300 bank, $50 per position, max 6 concurrent slots (TBD, tie to real min-order + fee);
-- one **deterministic** selection policy when more WATCHes arrive than free slots (frozen here);
+- same $300 bank, $50 per position, max 6 concurrent slots -- all FROZEN in the contract sha, with
+  `position_usd * max_concurrent_slots <= bank_usd` enforced;
+- one **deterministic, OUTCOME-BLIND** selection policy: consider arrivals in `(entry_at, watch_id)`
+  order and SKIP when no slot is free (never a function of any return). The selection universe is
+  EVERY point-in-time-eligible filled probe (resolved or not), so a slot an eventually-unresolved
+  position held is never freed by hindsight; a taken-but-unresolved slot fails the window closed;
+- **same-asset concurrency is FROZEN as ALLOWED** (`allow_concurrent_same_asset = True`), matching the
+  live 360m cooldown which permits two 720m positions of one canonical asset to overlap;
 - report concurrency, slot occupancy, losing streak, and PnL **over the actual window**
   (not %/month), for BOTH policies on the same WATCH stream.
 
 **Drawdown data honesty (review P1 #4).** Paper storage keeps per-horizon quotes and aggregated
 MFE/MAE, NOT a synchronous mark-to-market series across all concurrently open positions, so a true
-floating portfolio drawdown is not computable from today's data. Two honest options, decided before
-freeze: (a) add a prospectively persisted portfolio mark stream, or (b) declare a **conservative
-proxy** drawdown (e.g. summing each open position's worst recorded horizon-MAE within the window)
-and label it as a proxy, never as the exact figure. The primary economics stand on window PnL and
+floating portfolio drawdown is not computable exactly from today's data. RESOLVED (code chose ONE):
+`drawdown_method = conservative_simultaneous_mae_v1` -- the largest total `|MAE|` of positions open at
+the same instant (assuming every concurrently-open position hits its own worst excursion together).
+This OVERSTATES the true floating drawdown, so it is a genuine conservative bound (a realized-close
+series would understate it and is NOT used). Frozen into the contract sha and used as the Gate E risk
+check. The primary economics stand on window PnL and
 occupancy; drawdown is reported at whichever fidelity is declared.
 
 **"Beats 240m" pass semantics (review P1 #4).** Defined explicitly, not left vague: the 720m
@@ -121,54 +177,51 @@ maturity is defined by a **minimum analyzable-pairs count**, SEPARATE from the d
 that "enough trades but few weeks/clusters, and losing" resolves to a rejection, never to
 "insufficient data." Ordered gates (first match wins):
 
-1. **Gate A -- economic maturity.** analyzable pairs `< min_analyzable_pairs` (or a bootstrap CI
-   cannot be computed) -> `insufficient_data`.
+0. **Gate 0 / 0b -- integrity.** any non-finite input, OR ANY integrity failure (a NaN/invalid
+   row, a non-positive notional, a duplicate settlement) regardless of fraction -> `insufficient_data`.
+1. **Gate A -- economic maturity.** analyzable pairs `< min_analyzable_pairs` -> `insufficient_data`.
+   Depends on the pair COUNT ONLY (NOT on the CI being computable), so the mean still reaches Gate B.
 2. **Gate B -- negative EV binds first.** economically mature AND the standalone 720m mature
-   **mean net after actual funding `<= 0`** -> `reject_hold12h`. This is checked BEFORE the
-   diversity floor, so a mature-but-narrow losing sample is a rejection, not "insufficient."
+   **mean net after actual funding `<= 0`** -> `reject_hold12h`. The mean needs no clusters, so this
+   is checked BEFORE the diversity floor AND before the CI: a mature-but-narrow losing sample is a
+   rejection, not "insufficient."
 3. **Gate C -- diversity / missingness floor.** clusters / UTC weeks / concentration caps /
    missingness thresholds not met -> `insufficient_data` (only reachable once EV is not negative).
-4. **Gate D -- standalone significance.** standalone 720m net **95% cluster-bootstrap CI lower
-   bound not > 0** (a positive point estimate whose CI still crosses zero) -> `insufficient_evidence`
-   (NOT candidate).
-5. **Gate E -- duration improvement + portfolio.** standalone CI lower bound > 0, but the paired
-   `d(p)` CI lower bound is not strictly > 0, OR the fixed-bank portfolio does not beat 240m by the
-   pre-registered minimum dollar improvement -> `no_duration_improvement`.
-6. `candidate` -- standalone CI lower bound > 0 AND paired `d(p)` CI lower bound > 0 AND the
-   fixed-bank portfolio beats 240m by the minimum improvement. Authorizes only the next gate (the
-   episode study / a real shadow), never live trading.
+4. **Gate D -- standalone significance.** the cluster-bootstrap CI is not computable (too few
+   clusters), OR the standalone 720m net **95% CI lower bound not > 0** -> `insufficient_evidence`.
+5. **Gate E -- duration improvement + PROFITABLE portfolio.** paired `d(p)` CI lower bound not > 0,
+   OR the 720m fixed-bank window PnL is not itself positive (beating a losing 240m is not an edge),
+   OR it does not beat 240m by the minimum dollar improvement, OR its conservative drawdown is
+   materially worse -> `no_duration_improvement`.
+6. `candidate` -- all of Gate E satisfied. Authorizes only the next gate (the episode study / a real
+   shadow), never live trading.
 
 CI method: shared `clustered_inference` (bootstrap version/iterations/seed/confidence frozen
 there), clustered by canonical asset. Every threshold named here (`min_analyzable_pairs` and the
 diversity/missingness/improvement values) is frozen before the cohort starts.
 
-## Formal cohort start (fix #1 + review P1 #2 -- must be reproducible and immutable)
+## Formal cohort start (fix #1 + review P1 #2 -- reproducible and immutable)
 
-A merge timestamp cannot be frozen inside its own merge commit (it is unknown at write time and
-deploy may lag). Instead, **first-writer-wins registration**: on its first execution the reader
-persists `registered_at` (wall clock at first run) to a small immutable state file
-(`MOMENTUM_HOLD12H_VERDICT_STATE_PATH`, on the mounted `runtime/` volume), and
-`MOMENTUM_HOLD12H_VERDICT_COHORT_START` = the **next whole UTC-day boundary after `registered_at`**.
-Once written the value never changes (a differing recomputation refuses the run unless an explicit,
-logged re-baseline flag is passed), and it is emitted verbatim into every artifact so any reader
-reproduces the same cohort. (A literal pre-chosen future UTC cutoff is the acceptable alternative.)
-Probes before the cohort start -- including the 2026-09-13-onward operational history -- are
-operational/readiness only, never evidence.
+**RESOLVED (supersedes the earlier first-writer-only wording).** The FORMAL boundary is a LITERAL,
+pre-chosen future UTC instant, frozen as `cohort_start_iso` in the contract sha by the freeze PR;
+`formal_run` fail-closes while it is unset. The formal window is the HALF-OPEN interval
+`[cohort_start, decision_prefix_end)` -- both bounds enforced. Runtime first-writer-wins registration
+(atomic `O_CREAT | O_EXCL`; the first run is registration-only and exits before reading any return)
+remains ONLY as a DRAFT/readiness convenience and never substitutes for the frozen literal. Probes
+before the boundary -- including the 2026-09-13-onward operational history -- are operational/readiness
+only, never evidence.
 
-The first execution is registration-only: it persists the state and exits before querying any
-return or PnL value. A later readiness path may inspect outcome-blind counts, timestamps, presence,
-gap classifications and funding coverage, but must not load or derive returns until the frozen
-floor is met. This makes the first-writer boundary a real information barrier rather than only a
-timestamp convention.
+## Delivery order (three PRs -- supersedes the earlier ONE-PR plan)
 
-## Delivery order (proposed)
-
-1. Review THIS draft (four questions especially: common-entry counterfactual, actual funding,
-   all-WATCH denominator, capital-time gate).
-2. After agreement, ONE PR: contract + reader + pure verdict + actual-funding reconciliation +
-   tests (SQL against real Postgres, pairing, missingness, negative-EV precedence, deterministic
-   portfolio) + the portfolio/capital-occupancy replay.
-3. The first reader execution persists `registered_at`; the next whole UTC-day
-   boundary becomes the immutable formal cohort start, exactly as specified above.
-4. Do not read returns until the outcome-blind floor is met.
-5. Run the reader once, at the first pre-defined decision-time prefix.
+1. **This verdict PR** (DRAFT / NOT FROZEN): contract + pure verdict + the pure reader layer + tests.
+   Remaining in-PR item after this method review: the SQL loader mapping real Postgres rows into the
+   reader dataclasses + its real-PostgreSQL integration test. `formal_run` fail-closes (no registered
+   funding source).
+2. **Funding prerequisite PR**: the prospective per-instrument settlement capture -- schema +
+   collector/resolver + health + PostgreSQL integration tests (exact-instrument join, `(entry,exit]`
+   boundaries, long sign, variable cadence, duplicate, pagination/incomplete window, no-event with vs
+   without proven coverage, retry/idempotency).
+3. **Freeze PR** (small): fix the funding version, the final constants (from the outcome-blind
+   pre-start accrual), and the literal future UTC `cohort_start_iso`. Only data on/after it is formal;
+   already-accrued probes stay operational/readiness. Read returns only once, at the first pre-defined
+   decision-time prefix meeting the floor.
