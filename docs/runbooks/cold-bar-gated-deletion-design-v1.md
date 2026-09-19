@@ -32,6 +32,15 @@ exported, verified, and present in a named offsite archive, and proven unchanged
   Consequence: a "does the LATEST bars archive contain day D" check cannot work, and a high-water-mark
   ("offsite ok up to date X") is unsafe — it would re-mask a single-day hole like Sep 11-12.
 
+## Provenance audit (2026-09-19)
+
+A read-only per-day reconciliation before PR2 arms deletion:
+[docs/engineering/audits/2026-09-19/](../engineering/audits/2026-09-19/README.md). Result: 2026-08-14
+provable now; 2026-08-15..09-18 provable after the next backup (cycle-2 receipt timing, not
+corruption); 2026-08-10/11/12 are `unverifiable_legacy` (readable manifest-consistent cold copy, but
+source gone and no fingerprint ever recorded). The legacy days are **NOT admissible as formal research
+evidence** and must never get a backfilled receipt or `fidelity_verified`. No `data_missing` day found.
+
 ## Design
 
 ### Two distinct gate points
