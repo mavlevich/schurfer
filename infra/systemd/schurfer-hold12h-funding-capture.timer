@@ -1,0 +1,15 @@
+[Unit]
+Description=Periodic capture of HYP-015 hold12h actual funding
+
+[Timer]
+# Four times a day. Probes close on a rolling basis and funding settles a few hours
+# later; a newly-eligible window (exit past the settlement lag) is picked up within
+# hours, well before the cohort could be declared prospectively funded.
+OnCalendar=*-*-* 01,07,13,19:20:00
+# A missed run is not a data-loss event (the capture is idempotent and re-selects any
+# still-pending window), but persist so a backlog after downtime drains promptly.
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

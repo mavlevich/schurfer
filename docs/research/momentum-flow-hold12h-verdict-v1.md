@@ -113,6 +113,24 @@ P1 #5):**
 - **missingness**: an empty set is zero funding ONLY with proven full coverage and no unaccounted
   settlement boundary; otherwise the probe is `accounting_incomplete` -- excluded from the analyzable
   pairs but kept in the funnel, never silently back-filled.
+- **proven coverage (capture side, review #428)**: a window is recorded `complete` ONLY when the
+  fetch was clean and fully paged, EVERY fetched row parsed (a dropped/invalid row downgrades to
+  `incomplete`), the returned settlements BRACKET the interval (at least one at/before `entry_at`
+  and one at/after `exit_at`), AND the interior is GAP-FREE on the venue's own cadence. Two edge
+  settlements do not prove a 12h middle: the cadence is inferred from the padded response (which
+  needs >= 3 settlements) and any consecutive gap overlapping `(entry, exit]` larger than one
+  cadence step means a missing interior settlement -> `incomplete`. The request window is padded by
+  > = one funding cadence each side so both bracketing and cadence inference are possible.
+- **rate-change integrity (blocking)**: a re-fetch returning a different rate for a stored
+  settlement records a `integrity_conflict` coverage run; the reader treats any `integrity_conflict`
+  run OVERLAPPING an interval as invalidating every `complete` run there, so the interval is
+  `accounting_incomplete` until a human resolves it. The stored value is never overwritten.
+- **capture identity + scheduling**: CCXT is queried with the probe's resolved `unified_symbol`,
+  keyed on the native `market_id` (never the raw ticker). Runs on a bounded systemd timer
+  (`prod-hold12h-funding-capture-*`, `--max-windows`) with a `--capture-start` boundary (ancient,
+  unrecoverable history is never attempted) and a FAIR QUEUE (never-attempted then
+  least-recently-attempted first) so a backlog of stuck windows can never starve fresh ones. Emits
+  a JSON health summary (`pending`/`complete`/`incomplete`/`integrity_conflicts`).
 
 The fixed 5 bps/8h model is retained only as a clearly labelled DIAGNOSTIC, never the primary read; a
 `formal_run` fail-closes until the prospective capture is the registered source.
@@ -213,14 +231,15 @@ only, never evidence.
 
 ## Delivery order (three PRs -- supersedes the earlier ONE-PR plan)
 
-1. **This verdict PR** (DRAFT / NOT FROZEN): contract + pure verdict + the pure reader layer + tests.
-   Remaining in-PR item after this method review: the SQL loader mapping real Postgres rows into the
-   reader dataclasses + its real-PostgreSQL integration test. `formal_run` fail-closes (no registered
-   funding source).
-2. **Funding prerequisite PR**: the prospective per-instrument settlement capture -- schema +
-   collector/resolver + health + PostgreSQL integration tests (exact-instrument join, `(entry,exit]`
-   boundaries, long sign, variable cadence, duplicate, pagination/incomplete window, no-event with vs
-   without proven coverage, retry/idempotency).
+1. **Verdict PR #427 (merged; method NOT FROZEN)**: contract, pure verdict, reader, SQL loader and
+   real-PostgreSQL integration test. `formal_run` remains fail-closed without a registered funding
+   source and a frozen cohort boundary.
+2. **Funding prerequisite PR** (#428): the prospective per-instrument settlement capture -- schema +
+   collector/resolver + bounded systemd timer/health + PostgreSQL integration tests (exact-instrument
+   join, `(entry,exit]` boundaries, long sign, variable cadence, duplicate, pagination/incomplete
+   window, boundary-bracket + interior-gap proof, blocking rate-conflict integrity failure that
+   invalidates a prior `complete`, fair-queue that never starves a fresh window, retry/idempotency).
+   Coverage is proven, never assumed (see the capture-side rule above).
 3. **Freeze PR** (small): fix the funding version, the final constants (from the outcome-blind
    pre-start accrual), and the literal future UTC `cohort_start_iso`. Only data on/after it is formal;
    already-accrued probes stay operational/readiness. Read returns only once, at the first pre-defined
