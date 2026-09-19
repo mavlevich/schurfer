@@ -231,10 +231,9 @@ only, never evidence.
 
 ## Delivery order (three PRs -- supersedes the earlier ONE-PR plan)
 
-1. **This verdict PR** (DRAFT / NOT FROZEN): contract + pure verdict + the pure reader layer + tests.
-   Remaining in-PR item after this method review: the SQL loader mapping real Postgres rows into the
-   reader dataclasses + its real-PostgreSQL integration test. `formal_run` fail-closes (no registered
-   funding source).
+1. **Verdict PR #427 (merged; method NOT FROZEN)**: contract, pure verdict, reader, SQL loader and
+   real-PostgreSQL integration test. `formal_run` remains fail-closed without a registered funding
+   source and a frozen cohort boundary.
 2. **Funding prerequisite PR** (#428): the prospective per-instrument settlement capture -- schema +
    collector/resolver + bounded systemd timer/health + PostgreSQL integration tests (exact-instrument
    join, `(entry,exit]` boundaries, long sign, variable cadence, duplicate, pagination/incomplete
