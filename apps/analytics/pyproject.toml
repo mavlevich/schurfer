@@ -100,6 +100,7 @@ net-buy-accumulation-report = "schurfer_analytics.net_buy_accumulation_report:ma
 net-buy-accumulation-coverage-funnel = "schurfer_analytics.net_buy_accumulation_coverage_report:main"
 cex-activity-path-coverage-audit-report = "schurfer_analytics.cex_activity_path_coverage_audit:main"
 hold12h-verdict-reader = "schurfer_analytics.momentum_flow_hold12h_verdict_reader:main"
+hold12h-funding-capture = "schurfer_analytics.momentum_flow_hold12h_funding_resolver:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
