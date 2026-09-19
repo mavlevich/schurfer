@@ -113,6 +113,16 @@ P1 #5):**
 - **missingness**: an empty set is zero funding ONLY with proven full coverage and no unaccounted
   settlement boundary; otherwise the probe is `accounting_incomplete` -- excluded from the analyzable
   pairs but kept in the funnel, never silently back-filled.
+- **proven coverage (capture side, review #428)**: a window is recorded `complete` ONLY when the
+  fetch was clean and fully paged, EVERY fetched row parsed (a dropped/invalid row downgrades to
+  `incomplete`), AND the returned settlements BRACKET the interval -- at least one at/before
+  `entry_at` and one at/after `exit_at`. The request window is padded by >= one funding cadence on
+  each side so bracketing is achievable; a response that only reaches the edge of available history
+  cannot prove the boundary and is `incomplete`. Idempotent writes are conflict-checked: a re-fetch
+  returning a different rate for a stored settlement is a hard integrity failure, not a silent
+  overwrite. CCXT is queried with the probe's resolved `unified_symbol`, keyed on the native
+  `market_id`. Runs on a bounded systemd timer (`prod-hold12h-funding-capture-*`, `--max-windows`),
+  emitting a JSON health summary (`pending`/`complete`/`incomplete`/`integrity_conflicts`).
 
 The fixed 5 bps/8h model is retained only as a clearly labelled DIAGNOSTIC, never the primary read; a
 `formal_run` fail-closes until the prospective capture is the registered source.
@@ -217,10 +227,11 @@ only, never evidence.
    Remaining in-PR item after this method review: the SQL loader mapping real Postgres rows into the
    reader dataclasses + its real-PostgreSQL integration test. `formal_run` fail-closes (no registered
    funding source).
-2. **Funding prerequisite PR**: the prospective per-instrument settlement capture -- schema +
-   collector/resolver + health + PostgreSQL integration tests (exact-instrument join, `(entry,exit]`
-   boundaries, long sign, variable cadence, duplicate, pagination/incomplete window, no-event with vs
-   without proven coverage, retry/idempotency).
+2. **Funding prerequisite PR** (#428): the prospective per-instrument settlement capture -- schema +
+   collector/resolver + bounded systemd timer/health + PostgreSQL integration tests (exact-instrument
+   join, `(entry,exit]` boundaries, long sign, variable cadence, duplicate, pagination/incomplete
+   window, boundary-bracket proof, rate-conflict integrity failure, no-event with vs without proven
+   coverage, retry/idempotency). Coverage is proven, never assumed (see the capture-side rule above).
 3. **Freeze PR** (small): fix the funding version, the final constants (from the outcome-blind
    pre-start accrual), and the literal future UTC `cohort_start_iso`. Only data on/after it is formal;
    already-accrued probes stay operational/readiness. Read returns only once, at the first pre-defined

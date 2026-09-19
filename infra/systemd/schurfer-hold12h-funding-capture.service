@@ -1,0 +1,22 @@
+[Unit]
+Description=Capture actual funding settlements for closed HYP-015 hold12h probes
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=deploy
+Group=deploy
+WorkingDirectory=/opt/schurfer
+ExecStart=/usr/bin/make prod-hold12h-funding-capture
+
+# Bounded: one pass drains at most --max-windows intervals, each a few bounded CCXT
+# pages. A run wedged on a stalled venue call fails and alerts rather than hanging.
+TimeoutStartSec=45min
+Nice=10
+
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

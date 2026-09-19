@@ -140,7 +140,7 @@ async def load_stored_funding(
                             SELECT exchange, native_market_id, settlement_at, funding_rate,
                                    source_version
                             FROM {app_schema}.hold12h_funding_settlements
-                            WHERE exchange = ANY(:ex) AND native_market_id = ANY(:mid)
+                            WHERE exchange IN :ex AND native_market_id IN :mid
                               AND source_version = :sv
                             """
                         ).bindparams(
@@ -160,7 +160,7 @@ async def load_stored_funding(
                             SELECT exchange, native_market_id, requested_since, requested_until,
                                    status, source_version
                             FROM {app_schema}.hold12h_funding_coverage_runs
-                            WHERE exchange = ANY(:ex) AND native_market_id = ANY(:mid)
+                            WHERE exchange IN :ex AND native_market_id IN :mid
                               AND source_version = :sv
                             """
                         ).bindparams(

@@ -16,6 +16,7 @@ from schurfer_analytics.momentum_flow_hold12h_funding import (
     load_stored_funding,
 )
 from schurfer_analytics.momentum_flow_hold12h_funding_resolver import (
+    FundingRateConflictError,
     Hold12hFundingRepository,
     ParsedSettlement,
 )
@@ -26,6 +27,9 @@ _SCHEMA = "hold12h_funding_it"
 _ENTRY = datetime(2026, 10, 1, 0, 0, tzinfo=UTC)
 _EXIT = _ENTRY + timedelta(hours=12)
 _ROUTE = InstrumentRoute("bybit", "linear", "FOOUSDT", "FOO/USDT:USDT")
+# A second venue + market id so the loader's IN-list is exercised with >1 element
+# (a tuple-shaped ANY(...) would silently match nothing on real PostgreSQL).
+_ROUTE_2 = InstrumentRoute("binance", "linear", "BARUSDT", "BAR/USDT:USDT")
 
 _SETUP = f"""
 DROP SCHEMA IF EXISTS {_SCHEMA} CASCADE;
@@ -76,23 +80,72 @@ async def test_capture_write_is_idempotent_and_loads_back() -> None:
             )
             assert n1 == 2
             assert n2 == 0  # idempotent on the unique key
-            await repo.write_coverage_run(
-                _ROUTE,
-                requested_since=_ENTRY - timedelta(hours=1),
-                requested_until=_EXIT + timedelta(hours=1),
-                status="complete",
-                request_count=1,
-                settlements_written=2,
-                error=None,
+            # A second venue/market id so the loader's IN-list carries >1 element.
+            await repo.write_settlements(
+                _ROUTE_2,
+                [ParsedSettlement(_ENTRY + timedelta(hours=6), 0.0005, {"t": 9})],
+                now=_ENTRY,
                 source_version=ACTUAL_FUNDING_VERSION,
             )
+            for route, written in ((_ROUTE, 2), (_ROUTE_2, 1)):
+                await repo.write_coverage_run(
+                    route,
+                    requested_since=_ENTRY - timedelta(hours=1),
+                    requested_until=_EXIT + timedelta(hours=1),
+                    status="complete",
+                    request_count=1,
+                    settlements_written=written,
+                    error=None,
+                    source_version=ACTUAL_FUNDING_VERSION,
+                )
+        finally:
+            await repo.dispose()
+
+        source = await load_stored_funding(_PG_DSN, [_ROUTE, _ROUTE_2], app_schema=_SCHEMA)
+        cov = source.coverage(_ROUTE, _ENTRY, _EXIT)
+        assert cov is not None and cov.proven_full_coverage
+        assert sorted(e.rate for e in cov.events) == [-0.0002, 0.0001]
+        # The second venue/market id loaded too: proves the IN-list matched >1 key
+        # (a tuple-shaped ANY(...) would match neither on real PostgreSQL).
+        cov2 = source.coverage(_ROUTE_2, _ENTRY, _EXIT)
+        assert cov2 is not None and [e.rate for e in cov2.events] == [0.0005]
+    finally:
+        with conn.cursor() as cur:
+            cur.execute(f"DROP SCHEMA IF EXISTS {_SCHEMA} CASCADE")
+        conn.close()
+
+
+async def test_changed_rate_on_refetch_is_an_integrity_conflict() -> None:
+    conn = _psycopg_or_skip()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(_SETUP)
+
+        repo = Hold12hFundingRepository.from_url(_PG_DSN, app_schema=_SCHEMA)
+        try:
+            await repo.write_settlements(
+                _ROUTE, _settlements(), now=_ENTRY, source_version=ACTUAL_FUNDING_VERSION
+            )
+            # Identical repeat is silently idempotent (no conflict).
+            n_same = await repo.write_settlements(
+                _ROUTE, _settlements(), now=_ENTRY, source_version=ACTUAL_FUNDING_VERSION
+            )
+            assert n_same == 0
+            # Same key, different rate -> hard integrity failure, stale value kept.
+            changed = [ParsedSettlement(_ENTRY + timedelta(hours=4), 0.9999, {"t": 1})]
+            with pytest.raises(FundingRateConflictError):
+                await repo.write_settlements(
+                    _ROUTE, changed, now=_ENTRY, source_version=ACTUAL_FUNDING_VERSION
+                )
         finally:
             await repo.dispose()
 
         source = await load_stored_funding(_PG_DSN, [_ROUTE], app_schema=_SCHEMA)
         cov = source.coverage(_ROUTE, _ENTRY, _EXIT)
-        assert cov is not None and cov.proven_full_coverage
-        assert sorted(e.rate for e in cov.events) == [-0.0002, 0.0001]
+        assert cov is not None
+        # The original rate is still stored; the conflicting write did not overwrite it.
+        assert 0.9999 not in {e.rate for e in cov.events}
+        assert 0.0001 in {e.rate for e in cov.events}
     finally:
         with conn.cursor() as cur:
             cur.execute(f"DROP SCHEMA IF EXISTS {_SCHEMA} CASCADE")
