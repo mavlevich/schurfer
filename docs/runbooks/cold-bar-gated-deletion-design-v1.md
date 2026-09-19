@@ -134,9 +134,10 @@ cutoff-wide call), so the set Timescale removes is provably exactly the validate
 
 - A migration **removes** the automatic 35-day retention policy from `bybit_momentum_bars_1m`.
   [DONE: migration `0050_remove_bars_auto_retention`, `remove_retention_policy(... if_exists)`.]
-- Its **downgrade must NOT silently re-add the unsafe automatic policy** (that would re-introduce
-  ungated deletion on a rollback). [DONE: the 0050 downgrade FAILS LOUDLY — it raises rather than
-  restoring the policy; retention is application-managed via the gated job.]
+- Its **downgrade must NOT re-add the unsafe automatic policy** (that would re-introduce ungated
+  deletion on a rollback). [DONE: the 0050 downgrade is a deliberate NO-OP — it leaves the policy
+  removed (retention app-managed via the gated job) rather than restoring it. A raising downgrade
+  was rejected because it would also block every migration-chain downgrade stepping through 0050.]
 
 ## Scope
 

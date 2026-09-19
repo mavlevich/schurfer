@@ -10,11 +10,14 @@ exported and confirmed offsite. Gated deletion (cold_bar_gated_deletion*) replac
 day's chunk is dropped only after that exact day is proven exported, offsite, and unchanged.
 This migration removes the automatic policy so the two never race.
 
-DOWNGRADE FAILS LOUDLY. Re-adding the unconditional policy would reintroduce ungated
-deletion that could drop an unexported/unconfirmed day (the failure this whole line of work
-exists to prevent), so the downgrade refuses rather than silently restoring it. Retention is
-now application-managed via the gated-deletion job; if the automatic policy is ever truly
-wanted again it must be added deliberately, not resurrected by a schema rollback.
+DOWNGRADE IS A DELIBERATE NO-OP. It does NOT re-add the automatic policy: re-adding it would
+reintroduce ungated deletion that could drop an unexported/unconfirmed day (the failure this
+whole line of work exists to prevent). Retention is now application-managed via the
+gated-deletion job, so a rollback simply leaves the automatic policy removed rather than
+restoring the unsafe behaviour. If the automatic policy is ever genuinely wanted again it must
+be added deliberately in a new migration, never resurrected by a schema rollback. (A raising
+downgrade was rejected: it would also block every migration-chain downgrade that steps through
+this revision.)
 """
 
 from collections.abc import Sequence
@@ -36,10 +39,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    raise RuntimeError(
-        "Refusing to downgrade 0050: re-adding the automatic 35-day retention policy on "
-        f"{_TABLE} would reintroduce UNGATED deletion that can drop an unexported or "
-        "unconfirmed day. Retention is now application-managed via cold-bar gated deletion. "
-        "If the automatic policy is genuinely wanted again, add it deliberately in a new "
-        "migration, do not roll back into it."
-    )
+    # Intentionally does NOT restore the automatic retention policy (that would reintroduce
+    # ungated deletion). Retention stays application-managed by cold-bar gated deletion.
+    pass
