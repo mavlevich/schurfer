@@ -1,12 +1,14 @@
 """Outcome-blind replay engine for the abnormal-flow economic screen.
 
 PRE-REGISTRATION INVARIANT. Reading forward returns is gated behind a fully frozen
-contract: every function that consumes a post-decision price is only reachable
-through :class:`FormalReplay`, whose ``run`` calls ``contract.require_frozen()``
-before anything reads an outcome. Scanning inputs, computing the pre-decision
-features, applying eligibility and the primary/ablation cells, and forming episodes
-are all outcome-blind and never touch a forward price. This module therefore cannot
-tune a threshold to, or peek at, the returns it will later score.
+contract AND the exact frozen dataset: :class:`FormalReplay.run` calls
+``contract.require_frozen()``, then refuses unless the loader's observed input
+fingerprint equals the pinned one and every decision falls inside the registered UTC
+window, all before any outcome reader is invoked. Scanning inputs, computing the
+pre-decision features, applying eligibility and the primary/ablation cells, forming
+episodes, and selecting matched controls are all outcome-blind and never touch a
+forward price. This module therefore cannot tune a threshold to, score a window it
+did not pin, or peek at the returns it will later score.
 
 The decision logic (feature assembly, OI->USD conversion, participation, eligibility,
 the primary and ablation cells, episode formation, control matching, the priced-proxy
@@ -54,6 +56,18 @@ def _finite(x: float | None) -> bool:
 # --- Outcome-blind decision record -------------------------------------------------
 
 
+class FreezeMismatchError(RuntimeError):
+    """The data handed to a formal run does not match the frozen contract: the input
+    fingerprint differs, or a decision falls outside the registered UTC window. Reading
+    returns is refused, so the scored dataset can never drift from the pinned one."""
+
+
+# A candidate's exact native route + decision instant. Includes the exchange, market
+# type and native market id so a Bybit and a Binance row that happen to share a symbol
+# and minute are never conflated into one outcome.
+RouteKey = tuple[str, str, str, datetime]
+
+
 @dataclass(frozen=True)
 class DecisionFeatures:
     """Everything known at (and only at) the decision instant. Contains NO forward
@@ -61,6 +75,8 @@ class DecisionFeatures:
     pre-decision close (used for the Binance OI->USD conversion and nothing forward)."""
 
     exchange: str
+    market_type: str
+    native_market_id: str
     symbol: str
     canonical_asset: str
     decision_at: datetime
@@ -74,6 +90,9 @@ class DecisionFeatures:
     iso_week: str
     unavailable_reason: str | None = None
 
+    def route_key(self) -> RouteKey:
+        return (self.exchange, self.market_type, self.native_market_id, self.decision_at)
+
 
 @dataclass(frozen=True)
 class Outcome:
@@ -81,10 +100,15 @@ class Outcome:
     run: entry is the next-bar open priced proxy, exit the horizon-bar close proxy."""
 
     exchange: str
+    market_type: str
+    native_market_id: str
     symbol: str
     decision_at: datetime
     entry_price: float | None
     exit_price: float | None
+
+    def route_key(self) -> RouteKey:
+        return (self.exchange, self.market_type, self.native_market_id, self.decision_at)
 
 
 # --- Outcome-blind minute bar + feature assembly -----------------------------------
@@ -96,6 +120,8 @@ class MinuteBar:
     before the bar's finalization are carried; no forward price appears here."""
 
     exchange: str
+    market_type: str
+    native_market_id: str
     symbol: str
     canonical_asset: str
     bucket_start: datetime
@@ -109,6 +135,7 @@ class MinuteBar:
     open_interest: float | None
     open_interest_value: float | None
     open_interest_observed_at: datetime | None
+    last_trade_received_at: datetime | None
     price_complete: bool
     trades_complete: bool
     open_interest_complete: bool
@@ -119,11 +146,22 @@ def _iso_week(moment: datetime) -> str:
     return f"{year:04d}-W{week:02d}"
 
 
+def _oi_fresh(bar: MinuteBar, freshness: timedelta, decision_at: datetime) -> bool:
+    """The OI observation backing ``bar`` is usable: present, not observed after the
+    decision, and not older than ``freshness`` before the bar it belongs to."""
+    observed = bar.open_interest_observed_at
+    if observed is None or observed > decision_at:
+        return False
+    return observed >= bar.bucket_start - freshness
+
+
 def _unavailable_decision(end: MinuteBar, decision_at: datetime, reason: str) -> DecisionFeatures:
     """A decision whose feature window could not be used, with the rejection reason
     recorded (never a fabricated feature). Carries only outcome-blind identity."""
     return DecisionFeatures(
         exchange=end.exchange,
+        market_type=end.market_type,
+        native_market_id=end.native_market_id,
         symbol=end.symbol,
         canonical_asset=end.canonical_asset,
         decision_at=decision_at,
@@ -139,20 +177,40 @@ def _unavailable_decision(end: MinuteBar, decision_at: datetime, reason: str) ->
     )
 
 
+def oi_freshness_limit_for(contract: AbnormalFlowContract, exchange: str) -> int | None:
+    """The registered per-venue OI freshness ceiling (seconds), or ``None`` for an
+    unknown venue (which is then never accepted)."""
+    ex = exchange.lower()
+    if ex == "bybit":
+        return contract.oi_freshness_limit_seconds_bybit
+    if ex == "binance":
+        return contract.oi_freshness_limit_seconds_binance
+    return None
+
+
 def assemble_decisions(
-    bars: Sequence[MinuteBar], *, scan_lag_minutes: int, entry_execution_window_minutes: int
+    bars: Sequence[MinuteBar],
+    *,
+    scan_lag_minutes: int,
+    entry_execution_window_minutes: int,
+    oi_freshness_limit_seconds: int,
 ) -> list[DecisionFeatures]:
     """Turn one instrument's ordered, outcome-blind minute bars into per-minute
     :class:`DecisionFeatures` using the frozen feature forms.
 
     The decision at bar ``i`` is timed AFTER that bar finalizes plus the registered
     scan lag; the 60m feature window is ``bars[i-60 .. i]``, which must be contiguous,
-    fully complete, and finalized/observed at or before the decision instant. A window
-    that is short, gapped, incomplete, or not yet finalized yields a decision marked
-    ``unavailable_reason`` rather than a fabricated feature. No forward bar is read."""
+    fully complete, and finalized/observed at or before the decision instant. Both the
+    window-start and window-end OI observations must be no older than
+    ``oi_freshness_limit_seconds`` before their bar (not just "not in the future"), and
+    every bar's last trade must have been received by the decision instant. A window
+    that is short, gapped, incomplete, not finalized, resting on stale OI, or missing a
+    timely trade yields a decision marked ``unavailable_reason`` rather than a
+    fabricated feature. No forward bar is read."""
     ordered = sorted(bars, key=lambda b: b.bucket_start)
     out: list[DecisionFeatures] = []
     window = LOOKBACK_MINUTES
+    freshness = timedelta(seconds=oi_freshness_limit_seconds)
     for i in range(window, len(ordered)):
         end = ordered[i]
         start = ordered[i - window]
@@ -174,10 +232,14 @@ def assemble_decisions(
         if any(b.created_at > decision_at for b in span):
             out.append(_unavailable_decision(end, decision_at, "not_finalized_by_decision"))
             continue
-        if start.open_interest_observed_at is None or start.open_interest_observed_at > decision_at:
-            out.append(_unavailable_decision(end, decision_at, "stale_oi"))
+        if any(
+            b.last_trade_received_at is None or b.last_trade_received_at > decision_at for b in span
+        ):
+            out.append(_unavailable_decision(end, decision_at, "late_or_missing_trades"))
             continue
-        if end.open_interest_observed_at is None or end.open_interest_observed_at > decision_at:
+        if not _oi_fresh(start, freshness, decision_at) or not _oi_fresh(
+            end, freshness, decision_at
+        ):
             out.append(_unavailable_decision(end, decision_at, "stale_oi"))
             continue
 
@@ -201,6 +263,8 @@ def assemble_decisions(
         out.append(
             DecisionFeatures(
                 exchange=end.exchange,
+                market_type=end.market_type,
+                native_market_id=end.native_market_id,
                 symbol=end.symbol,
                 canonical_asset=end.canonical_asset,
                 decision_at=decision_at,
@@ -448,6 +512,17 @@ class Funnel:
         self.reasons[reason] = self.reasons.get(reason, 0) + 1
 
 
+def _decision_eligible(contract: AbnormalFlowContract, d: DecisionFeatures) -> bool:
+    """Outcome-blind eligibility of one decision under the contract's floor."""
+    if d.unavailable_reason is not None:
+        return False
+    oi_usd = oi_notional_usd(
+        d.exchange, d.oi_native_amount, d.oi_native_value_usd, d.decision_price
+    )
+    part = participation_frac(contract.position_usd, d.pre_decision_turnover_usd)
+    return is_eligible(contract, oi_usd, part)
+
+
 def build_funnel(contract: AbnormalFlowContract, decisions: Iterable[DecisionFeatures]) -> Funnel:
     """Outcome-blind: classify each decision into the funnel and form episodes. Reads
     no forward price, so it is safe to run during discovery. It does NOT require a
@@ -461,11 +536,7 @@ def build_funnel(contract: AbnormalFlowContract, decisions: Iterable[DecisionFea
             funnel.unavailable_feature += 1
             funnel.note(d.unavailable_reason)
             continue
-        oi_usd = oi_notional_usd(
-            d.exchange, d.oi_native_amount, d.oi_native_value_usd, d.decision_price
-        )
-        part = participation_frac(contract.position_usd, d.pre_decision_turnover_usd)
-        if not is_eligible(contract, oi_usd, part):
+        if not _decision_eligible(contract, d):
             funnel.ineligible += 1
             funnel.note("below_eligibility_floor")
             continue
@@ -491,15 +562,26 @@ class ReplayResult:
     funnel: Funnel
     resolved_episodes: int
     unresolved_episodes: int
+    episodes_with_matched_control: int
+    resolved_controls: int
+    unresolved_controls: int
     mean_net_return: float | None
     mean_control_return: float | None
     mean_excess_over_control: float | None
 
 
+def _window_bounds(contract: AbnormalFlowContract) -> tuple[datetime, datetime]:
+    assert contract.window_start_utc is not None and contract.window_end_utc is not None
+    start = datetime.fromisoformat(contract.window_start_utc.replace("Z", "+00:00"))
+    end = datetime.fromisoformat(contract.window_end_utc.replace("Z", "+00:00"))
+    return start, end
+
+
 class FormalReplay:
     """Runs the returns-reading replay. Construction is harmless; ``run`` is the only
-    entry that reads outcomes, and it fail-closes on an unfrozen contract BEFORE any
-    outcome reader is invoked."""
+    entry that reads outcomes, and it fail-closes BEFORE any outcome reader is invoked:
+    the contract must be frozen, the loader's observed input fingerprint must equal the
+    pinned one, and every decision must fall inside the registered UTC window."""
 
     def __init__(self, contract: AbnormalFlowContract) -> None:
         self._contract = contract
@@ -507,86 +589,109 @@ class FormalReplay:
     def run(
         self,
         decisions: Sequence[DecisionFeatures],
-        read_outcomes: Callable[[Sequence[DecisionFeatures]], dict[tuple[str, datetime], Outcome]],
+        read_outcomes: Callable[[Sequence[DecisionFeatures]], dict[RouteKey, Outcome]],
+        *,
+        observed_input_fingerprint: str,
     ) -> ReplayResult:
-        # Fail-closed BEFORE any outcome is read: a formal run over an unfrozen
-        # contract raises, so returns can never be read against unpinned parameters.
+        # Fail-closed BEFORE any outcome is read.
         self._contract.require_frozen()
         contract = self._contract
+
+        # Bind the freeze to the data actually being scored: the loader's reproduced
+        # fingerprint must match the pinned one, and no decision may fall outside the
+        # registered window. Either mismatch refuses the run instead of reading returns
+        # against a dataset the contract never pinned.
+        if observed_input_fingerprint != contract.input_fingerprint:
+            raise FreezeMismatchError(
+                "observed input fingerprint does not match the frozen contract; "
+                f"expected {contract.input_fingerprint!r}, got {observed_input_fingerprint!r}"
+            )
+        window_start, window_end = _window_bounds(contract)
+        for d in decisions:
+            if not (window_start <= d.decision_at < window_end):
+                raise FreezeMismatchError(
+                    f"decision at {d.decision_at.isoformat()} is outside the registered "
+                    f"window [{contract.window_start_utc}, {contract.window_end_utc})"
+                )
 
         funnel = build_funnel(contract, decisions)
         primary = [
             d
             for d in decisions
-            if d.unavailable_reason is None
-            and is_eligible(
-                contract,
-                oi_notional_usd(
-                    d.exchange, d.oi_native_amount, d.oi_native_value_usd, d.decision_price
-                ),
-                participation_frac(contract.position_usd, d.pre_decision_turnover_usd),
-            )
-            and primary_cell_fires(contract, d)
+            if _decision_eligible(contract, d) and primary_cell_fires(contract, d)
         ]
         episodes = form_episodes(primary, contract.cooldown_minutes)
-
-        # The single returns read, only now that the contract is proven frozen.
-        outcomes = read_outcomes(episodes)
 
         eligible_pool = [
             d
             for d in decisions
-            if d.unavailable_reason is None
-            and is_eligible(
-                contract,
-                oi_notional_usd(
-                    d.exchange, d.oi_native_amount, d.oi_native_value_usd, d.decision_price
-                ),
-                participation_frac(contract.position_usd, d.pre_decision_turnover_usd),
-            )
-            and not primary_cell_fires(contract, d)
+            if _decision_eligible(contract, d) and not primary_cell_fires(contract, d)
         ]
+
+        # Select controls BEFORE reading returns, then request outcomes for both groups
+        # in one read keyed by the exact native route. A reader that returns only what
+        # it was asked for is enough; the excess is no longer hidden by over-returning.
+        controls_by_episode: dict[RouteKey, list[DecisionFeatures]] = {}
+        controls_per_episode = contract.controls_per_episode or 1
+        for ep in episodes:
+            controls_by_episode[ep.route_key()] = match_controls(
+                ep, eligible_pool, max_controls=controls_per_episode
+            )
+
+        requested: dict[RouteKey, DecisionFeatures] = {}
+        for ep in episodes:
+            requested[ep.route_key()] = ep
+        for controls in controls_by_episode.values():
+            for c in controls:
+                requested[c.route_key()] = c
+
+        # The single returns read, only now that every freeze gate has passed.
+        outcomes = read_outcomes(list(requested.values()))
+
+        def _return_for(d: DecisionFeatures) -> float | None:
+            outcome = outcomes.get(d.route_key())
+            if outcome is None:
+                return None
+            return proxy_net_return(contract, outcome.entry_price, outcome.exit_price)
 
         net_returns: list[float] = []
         excesses: list[float] = []
-        control_returns: list[float] = []
-        unresolved = 0
-        max_slots = contract.portfolio_max_slots or 1
+        control_means: list[float] = []
+        unresolved_episodes = 0
+        episodes_with_matched_control = 0
+        resolved_controls = 0
+        unresolved_controls = 0
         for ep in episodes:
-            outcome = outcomes.get((ep.symbol, ep.decision_at))
-            r = (
-                proxy_net_return(contract, outcome.entry_price, outcome.exit_price)
-                if outcome is not None
-                else None
-            )
+            r = _return_for(ep)
             if r is None:
-                unresolved += 1
+                unresolved_episodes += 1
                 continue
             net_returns.append(r)
-            controls = match_controls(ep, eligible_pool, max_controls=max_slots)
-            control_rs = []
-            for c in controls:
-                c_outcome = outcomes.get((c.symbol, c.decision_at))
-                cr = (
-                    proxy_net_return(contract, c_outcome.entry_price, c_outcome.exit_price)
-                    if c_outcome is not None
-                    else None
-                )
-                if cr is not None:
+            control_rs: list[float] = []
+            for c in controls_by_episode[ep.route_key()]:
+                cr = _return_for(c)
+                if cr is None:
+                    unresolved_controls += 1
+                else:
+                    resolved_controls += 1
                     control_rs.append(cr)
             if control_rs:
+                episodes_with_matched_control += 1
                 control_mean = sum(control_rs) / len(control_rs)
-                control_returns.append(control_mean)
+                control_means.append(control_mean)
                 excesses.append(r - control_mean)
 
         return ReplayResult(
             replay_version=REPLAY_VERSION,
             funnel=funnel,
             resolved_episodes=len(net_returns),
-            unresolved_episodes=unresolved,
+            unresolved_episodes=unresolved_episodes,
+            episodes_with_matched_control=episodes_with_matched_control,
+            resolved_controls=resolved_controls,
+            unresolved_controls=unresolved_controls,
             mean_net_return=(sum(net_returns) / len(net_returns)) if net_returns else None,
             mean_control_return=(
-                (sum(control_returns) / len(control_returns)) if control_returns else None
+                (sum(control_means) / len(control_means)) if control_means else None
             ),
             mean_excess_over_control=(sum(excesses) / len(excesses)) if excesses else None,
         )

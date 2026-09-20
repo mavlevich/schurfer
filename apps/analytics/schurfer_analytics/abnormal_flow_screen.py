@@ -150,6 +150,11 @@ class AbnormalFlowContract:
     # of this many minutes ENDING at the decision (a realistic short fill period), not
     # the whole 60m lookback and never the future entry minute. Must be < the lookback.
     entry_execution_window_minutes: int | None = None
+    # OI freshness ceilings (seconds): the OI observation backing a decision must be no
+    # older than this, per venue, so a decision never rests on a day-old OI print.
+    # Separate per venue because Bybit and Binance publish OI on different cadences.
+    oi_freshness_limit_seconds_bybit: int | None = None
+    oi_freshness_limit_seconds_binance: int | None = None
 
     # Registered run specification the formal run must satisfy in full. The rule fields
     # are versioned identifiers from the registries above, not free text.
@@ -159,6 +164,9 @@ class AbnormalFlowContract:
     entry_reference: str | None = None
     exit_reference: str | None = None
     matching_rule: str | None = None
+    # Matched controls requested per fired episode. Distinct from portfolio_max_slots:
+    # this sizes the control group, the portfolio slot count sizes concurrent capital.
+    controls_per_episode: int | None = None
     portfolio_bank_usd: float | None = None
     portfolio_max_slots: int | None = None
 
@@ -262,6 +270,8 @@ class AbnormalFlowContract:
         num("position_usd", low=0.0, inclusive_low=False)
         num("max_participation_frac", low=0.0, high=1.0, inclusive_low=False)
         integer("entry_execution_window_minutes", low=1)
+        integer("oi_freshness_limit_seconds_bybit", low=1)
+        integer("oi_freshness_limit_seconds_binance", low=1)
         if (
             isinstance(self.entry_execution_window_minutes, int)
             and not isinstance(self.entry_execution_window_minutes, bool)
@@ -277,6 +287,7 @@ class AbnormalFlowContract:
         registered("entry_reference", ENTRY_REFERENCES)
         registered("exit_reference", EXIT_REFERENCES)
         registered("matching_rule", MATCHING_RULES)
+        integer("controls_per_episode", low=1)
         num("portfolio_bank_usd", low=0.0, inclusive_low=False)
         integer("portfolio_max_slots", low=1)
         num("entry_cost_bps", low=0.0)

@@ -1,9 +1,10 @@
 """Tests for the abnormal-flow replay engine.
 
-The load-bearing test is that no forward return can be read until the contract is
-frozen; the rest pin the pure decision logic (OI->USD per venue, participation,
-eligibility, primary/ablation cells, episode cooldown, control matching, priced-proxy
-economics) and the outcome-blind feature assembly, all with synthetic rows.
+The load-bearing tests are that no forward return can be read until the contract is
+frozen AND the scored data matches the freeze (fingerprint + registered window); the
+rest pin the pure decision logic (OI->USD per venue, participation, eligibility,
+primary/ablation cells, episode cooldown, control matching, priced-proxy economics,
+route-keyed outcomes) and the outcome-blind feature assembly, all with synthetic rows.
 """
 
 from __future__ import annotations
@@ -14,8 +15,10 @@ import pytest
 from schurfer_analytics.abnormal_flow_replay import (
     DecisionFeatures,
     FormalReplay,
+    FreezeMismatchError,
     MinuteBar,
     Outcome,
+    RouteKey,
     ablation_cell_fires,
     assemble_decisions,
     control_band_key,
@@ -30,6 +33,7 @@ from schurfer_analytics.abnormal_flow_replay import (
 from schurfer_analytics.abnormal_flow_screen import AbnormalFlowContract, NotFrozenError
 
 _T0 = datetime(2026, 8, 20, 0, 0, tzinfo=UTC)
+_FINGERPRINT = "a" * 64
 
 
 def _frozen_contract(**overrides: object) -> AbnormalFlowContract:
@@ -42,12 +46,15 @@ def _frozen_contract(**overrides: object) -> AbnormalFlowContract:
         position_usd=300.0,
         max_participation_frac=0.1,
         entry_execution_window_minutes=5,
+        oi_freshness_limit_seconds_bybit=120,
+        oi_freshness_limit_seconds_binance=300,
         calibration_rule="fixed_percentiles_on_prestart_window_v1",
         calibration_window_days=14,
         scan_lag_minutes=2,
         entry_reference="next_bar_open_priced_proxy_v1",
         exit_reference="horizon_bar_close_priced_proxy_v1",
         matching_rule="same_venue_regime_liquidity_pricemove_band_v1",
+        controls_per_episode=5,
         portfolio_bank_usd=300.0,
         portfolio_max_slots=3,
         entry_cost_bps=5.0,
@@ -59,7 +66,7 @@ def _frozen_contract(**overrides: object) -> AbnormalFlowContract:
         min_excess_over_control_pct=0.0,
         window_start_utc="2026-08-14T00:00:00+00:00",
         window_end_utc="2026-09-14T00:00:00+00:00",
-        input_fingerprint="a" * 64,
+        input_fingerprint=_FINGERPRINT,
     )
     base.update(overrides)
     return AbnormalFlowContract(**base)  # type: ignore[arg-type]
@@ -68,6 +75,8 @@ def _frozen_contract(**overrides: object) -> AbnormalFlowContract:
 def _decision(**overrides: object) -> DecisionFeatures:
     base = dict(
         exchange="bybit",
+        market_type="linear",
+        native_market_id="FOOUSDT",
         symbol="FOOUSDT",
         canonical_asset="FOO",
         decision_at=_T0,
@@ -85,41 +94,121 @@ def _decision(**overrides: object) -> DecisionFeatures:
     return DecisionFeatures(**base)  # type: ignore[arg-type]
 
 
-# --- The load-bearing invariant ----------------------------------------------------
+def _outcome(d: DecisionFeatures, *, entry: float | None, exit_: float | None) -> Outcome:
+    return Outcome(
+        exchange=d.exchange,
+        market_type=d.market_type,
+        native_market_id=d.native_market_id,
+        symbol=d.symbol,
+        decision_at=d.decision_at,
+        entry_price=entry,
+        exit_price=exit_,
+    )
+
+
+def _reader_from(prices: dict[str, tuple[float, float]]):
+    """A well-behaved reader: it returns an outcome ONLY for the rows it was asked for,
+    keyed by the exact native route, using per-native-market-id (entry, exit) prices."""
+
+    def reader(requested: object) -> dict[RouteKey, Outcome]:
+        out: dict[RouteKey, Outcome] = {}
+        for d in requested:  # type: ignore[attr-defined]
+            entry, exit_ = prices[d.native_market_id]
+            out[d.route_key()] = _outcome(d, entry=entry, exit_=exit_)
+        return out
+
+    return reader
+
+
+# --- The load-bearing invariants ---------------------------------------------------
 
 
 def test_formal_run_refuses_to_read_returns_before_freeze() -> None:
     called = False
 
-    def reader(_eps: object) -> dict[tuple[str, datetime], Outcome]:
+    def reader(_req: object) -> dict[RouteKey, Outcome]:
         nonlocal called
         called = True  # pragma: no cover - must never run
         return {}
 
     replay = FormalReplay(AbnormalFlowContract())  # default: not frozen
     with pytest.raises(NotFrozenError):
-        replay.run([_decision()], reader)
+        replay.run([_decision()], reader, observed_input_fingerprint=_FINGERPRINT)
     assert called is False, "returns were read against an unfrozen contract"
 
 
-def test_frozen_run_reads_returns_and_scores_excess() -> None:
+def test_formal_run_refuses_on_fingerprint_mismatch() -> None:
+    called = False
+
+    def reader(_req: object) -> dict[RouteKey, Outcome]:
+        nonlocal called
+        called = True  # pragma: no cover - must never run
+        return {}
+
+    with pytest.raises(FreezeMismatchError):
+        FormalReplay(_frozen_contract()).run(
+            [_decision()], reader, observed_input_fingerprint="b" * 64
+        )
+    assert called is False
+
+
+def test_formal_run_refuses_a_decision_outside_the_registered_window() -> None:
+    called = False
+
+    def reader(_req: object) -> dict[RouteKey, Outcome]:
+        nonlocal called
+        called = True  # pragma: no cover - must never run
+        return {}
+
+    # A decision dated before window_start must not be scored under this window.
+    early = _decision(decision_at=datetime(2026, 8, 1, tzinfo=UTC))
+    with pytest.raises(FreezeMismatchError):
+        FormalReplay(_frozen_contract()).run(
+            [early], reader, observed_input_fingerprint=_FINGERPRINT
+        )
+    assert called is False
+
+
+def test_frozen_run_scores_excess_with_a_reader_that_returns_only_requested() -> None:
     ep = _decision()
-    control = _decision(
-        symbol="BARUSDT", canonical_asset="BAR", buy_pressure=0.4
-    )  # eligible non-fire
+    control = _decision(  # eligible, same band, non-firing
+        symbol="BARUSDT", native_market_id="BARUSDT", canonical_asset="BAR", buy_pressure=0.4
+    )
+    reader = _reader_from({"FOOUSDT": (100.0, 110.0), "BARUSDT": (100.0, 101.0)})
 
-    def reader(_eps: object) -> dict[tuple[str, datetime], Outcome]:
-        return {
-            ("FOOUSDT", _T0): Outcome("bybit", "FOOUSDT", _T0, entry_price=100.0, exit_price=110.0),
-            ("BARUSDT", _T0): Outcome("bybit", "BARUSDT", _T0, entry_price=100.0, exit_price=101.0),
-        }
-
-    result = FormalReplay(_frozen_contract()).run([ep, control], reader)
+    result = FormalReplay(_frozen_contract()).run(
+        [ep, control], reader, observed_input_fingerprint=_FINGERPRINT
+    )
     assert result.resolved_episodes == 1
-    assert result.mean_net_return is not None and result.mean_net_return > 0
-    assert result.mean_excess_over_control is not None
-    # FOO gained 10% gross, BAR (matched control) 1%; excess is clearly positive.
-    assert result.mean_excess_over_control > 0.05
+    assert result.episodes_with_matched_control == 1
+    assert result.resolved_controls == 1
+    assert result.mean_excess_over_control is not None and result.mean_excess_over_control > 0.05
+
+
+def test_outcome_lookup_does_not_conflate_venues_sharing_a_symbol() -> None:
+    # Same symbol + minute on two venues must resolve to two distinct outcomes.
+    on_bybit = _decision(exchange="bybit", native_market_id="XUSDT", symbol="XUSDT")
+    on_binance = _decision(
+        exchange="binance",
+        native_market_id="XUSDT",
+        symbol="XUSDT",
+        oi_native_value_usd=None,  # Binance has no USD OI value; amount x price is used
+    )
+
+    # Give each venue a different exit, keyed on the exact native route.
+    def route_reader(requested: object) -> dict[RouteKey, Outcome]:
+        out: dict[RouteKey, Outcome] = {}
+        for d in requested:  # type: ignore[attr-defined]
+            exit_ = 110.0 if d.exchange == "bybit" else 90.0
+            out[d.route_key()] = _outcome(d, entry=100.0, exit_=exit_)
+        return out
+
+    result = FormalReplay(_frozen_contract()).run(
+        [on_bybit, on_binance], route_reader, observed_input_fingerprint=_FINGERPRINT
+    )
+    assert result.resolved_episodes == 2  # neither overwrote the other
+    # One venue up 10%, the other down 10%; the mean reflects both, not a single dupe.
+    assert result.mean_net_return is not None and abs(result.mean_net_return) < 0.02
 
 
 # --- OI -> USD per venue -----------------------------------------------------------
@@ -127,15 +216,12 @@ def test_frozen_run_reads_returns_and_scores_excess() -> None:
 
 def test_oi_notional_usd_uses_native_value_on_bybit() -> None:
     assert oi_notional_usd("bybit", 1200.0, 120_000.0, 100.0) == pytest.approx(120_000.0)
-    # Bybit without its native USD value is unavailable, not amount x price.
     assert oi_notional_usd("bybit", 1200.0, None, 100.0) is None
 
 
 def test_oi_notional_usd_uses_amount_times_price_on_binance() -> None:
     assert oi_notional_usd("binance", 1200.0, None, 100.0) == pytest.approx(120_000.0)
-    # Binance without a decision price cannot be converted.
     assert oi_notional_usd("binance", 1200.0, None, None) is None
-    # An unknown venue is never guessed.
     assert oi_notional_usd("okx", 1200.0, 1.0, 100.0) is None
 
 
@@ -144,8 +230,8 @@ def test_participation_and_eligibility() -> None:
     assert participation_frac(300.0, 0.0) is None
     c = _frozen_contract()
     assert is_eligible(c, 120_000.0, 0.06) is True
-    assert is_eligible(c, 10.0, 0.06) is False  # below OI floor
-    assert is_eligible(c, 120_000.0, 0.5) is False  # over participation cap
+    assert is_eligible(c, 10.0, 0.06) is False
+    assert is_eligible(c, 120_000.0, 0.5) is False
     assert is_eligible(c, None, 0.06) is False
 
 
@@ -154,23 +240,23 @@ def test_participation_and_eligibility() -> None:
 
 def test_primary_and_ablation_cells() -> None:
     c = _frozen_contract()
-    fires = _decision()
-    assert primary_cell_fires(c, fires) is True
-    assert ablation_cell_fires(c, fires) is True
-    # Low OI growth fails the primary but the ablation (OI-growth removed) still fires.
+    assert primary_cell_fires(c, _decision()) is True
+    assert ablation_cell_fires(c, _decision()) is True
     low_oi = _decision(oi_growth_pct=1.0)
     assert primary_cell_fires(c, low_oi) is False
     assert ablation_cell_fires(c, low_oi) is True
-    # An unavailable feature never counts as a pass.
     assert primary_cell_fires(c, _decision(buy_pressure=None)) is False
 
 
 def test_form_episodes_enforces_cooldown_per_asset() -> None:
     a0 = _decision(decision_at=_T0)
-    a1 = _decision(decision_at=_T0 + timedelta(minutes=60))  # within 720m cooldown -> dropped
-    a2 = _decision(decision_at=_T0 + timedelta(minutes=800))  # after cooldown -> kept
+    a1 = _decision(decision_at=_T0 + timedelta(minutes=60))
+    a2 = _decision(decision_at=_T0 + timedelta(minutes=800))
     other = _decision(
-        symbol="BARUSDT", canonical_asset="BAR", decision_at=_T0 + timedelta(minutes=5)
+        symbol="BARUSDT",
+        native_market_id="BARUSDT",
+        canonical_asset="BAR",
+        decision_at=_T0 + timedelta(minutes=5),
     )
     kept = form_episodes([a1, a0, a2, other], cooldown_minutes=720)
     kept_keys = {(k.canonical_asset, k.decision_at) for k in kept}
@@ -187,13 +273,16 @@ def test_form_episodes_enforces_cooldown_per_asset() -> None:
 def test_control_band_key_and_matching() -> None:
     fired = _decision()
     same = _decision(
-        symbol="BAZUSDT", canonical_asset="BAZ", decision_at=_T0 + timedelta(minutes=3)
+        symbol="BAZUSDT",
+        native_market_id="BAZUSDT",
+        canonical_asset="BAZ",
+        decision_at=_T0 + timedelta(minutes=3),
     )
-    other_week = _decision(symbol="QUXUSDT", iso_week="2026-W40")
+    other_week = _decision(symbol="QUXUSDT", native_market_id="QUXUSDT", iso_week="2026-W40")
     assert control_band_key(fired) == control_band_key(same)
     assert control_band_key(fired) != control_band_key(other_week)
     controls = match_controls(fired, [same, other_week], max_controls=3)
-    assert [c.symbol for c in controls] == ["BAZUSDT"]  # only same-band, other week excluded
+    assert [c.symbol for c in controls] == ["BAZUSDT"]
 
 
 # --- Priced-proxy economics --------------------------------------------------------
@@ -201,10 +290,9 @@ def test_control_band_key_and_matching() -> None:
 
 def test_proxy_net_return_charges_costs_and_flags_unresolved() -> None:
     c = _frozen_contract()
-    # 10% gross long, minus (5 + 10 + 2*5 + funding) bps of cost.
     r = proxy_net_return(c, 100.0, 110.0)
     assert r is not None and r == pytest.approx(0.10 - (5 + 10 + 10 + 3 * 2) / 10_000.0)
-    assert proxy_net_return(c, None, 110.0) is None  # unresolved outcome, not filled in
+    assert proxy_net_return(c, None, 110.0) is None
     assert proxy_net_return(c, 100.0, 0.0) is None
 
 
@@ -220,6 +308,8 @@ def _series() -> list[MinuteBar]:
         bars.append(
             MinuteBar(
                 exchange="bybit",
+                market_type="linear",
+                native_market_id="FOOUSDT",
                 symbol="FOOUSDT",
                 canonical_asset="FOO",
                 bucket_start=bucket,
@@ -233,6 +323,7 @@ def _series() -> list[MinuteBar]:
                 open_interest=oi,
                 open_interest_value=oi * 100.0,
                 open_interest_observed_at=bucket,
+                last_trade_received_at=bucket + timedelta(seconds=20),
                 price_complete=True,
                 trades_complete=True,
                 open_interest_complete=True,
@@ -241,8 +332,14 @@ def _series() -> list[MinuteBar]:
     return bars
 
 
+def _assemble(bars: list[MinuteBar]):
+    return assemble_decisions(
+        bars, scan_lag_minutes=2, entry_execution_window_minutes=5, oi_freshness_limit_seconds=120
+    )
+
+
 def test_assemble_decisions_computes_frozen_feature_forms() -> None:
-    decisions = assemble_decisions(_series(), scan_lag_minutes=2, entry_execution_window_minutes=5)
+    decisions = _assemble(_series())
     assert len(decisions) == 1
     d = decisions[0]
     assert d.unavailable_reason is None
@@ -250,41 +347,39 @@ def test_assemble_decisions_computes_frozen_feature_forms() -> None:
     assert d.buy_pressure == pytest.approx(0.7)
     assert d.containment == pytest.approx(0.005)
     assert d.decision_price == pytest.approx(100.0)
-    assert d.pre_decision_turnover_usd == pytest.approx(5_000.0)  # 5 bars x 1000 turnover
-    # Decision is timed after the last feature bar finalizes plus scan lag.
+    assert d.pre_decision_turnover_usd == pytest.approx(5_000.0)
+    assert d.native_market_id == "FOOUSDT"
     assert d.decision_at == _T0 + timedelta(minutes=61 + 2)
 
 
 def test_assemble_decisions_marks_unavailable_windows() -> None:
-    # A gap in the lookback.
     gapped = _series()
     gapped[30] = MinuteBar(
         **{**gapped[30].__dict__, "bucket_start": gapped[30].bucket_start + timedelta(minutes=5)}
     )
-    assert assemble_decisions(gapped, scan_lag_minutes=2, entry_execution_window_minutes=5)[
-        0
-    ].unavailable_reason in {
-        "lookback_gap",
-    }
+    assert _assemble(gapped)[0].unavailable_reason == "lookback_gap"
 
-    # An incomplete bar.
     incomplete = _series()
     incomplete[40] = MinuteBar(**{**incomplete[40].__dict__, "open_interest_complete": False})
-    assert (
-        assemble_decisions(incomplete, scan_lag_minutes=2, entry_execution_window_minutes=5)[
-            0
-        ].unavailable_reason
-        == "incomplete_lookback"
-    )
+    assert _assemble(incomplete)[0].unavailable_reason == "incomplete_lookback"
 
-    # OI observed after the decision (stale).
-    stale = _series()
-    stale[0] = MinuteBar(
-        **{**stale[0].__dict__, "open_interest_observed_at": _T0 + timedelta(hours=5)}
+    # OI observed after the decision (future).
+    future_oi = _series()
+    future_oi[0] = MinuteBar(
+        **{**future_oi[0].__dict__, "open_interest_observed_at": _T0 + timedelta(hours=5)}
     )
-    assert (
-        assemble_decisions(stale, scan_lag_minutes=2, entry_execution_window_minutes=5)[
-            0
-        ].unavailable_reason
-        == "stale_oi"
+    assert _assemble(future_oi)[0].unavailable_reason == "stale_oi"
+
+    # OI observed far too long BEFORE its bar (the colleague's day-old OI repro).
+    old_oi = _series()
+    old_oi[60] = MinuteBar(
+        **{**old_oi[60].__dict__, "open_interest_observed_at": _T0 - timedelta(days=1)}
     )
+    assert _assemble(old_oi)[0].unavailable_reason == "stale_oi"
+
+    # A bar whose last trade was not received by the decision instant.
+    late_trade = _series()
+    late_trade[45] = MinuteBar(
+        **{**late_trade[45].__dict__, "last_trade_received_at": _T0 + timedelta(hours=5)}
+    )
+    assert _assemble(late_trade)[0].unavailable_reason == "late_or_missing_trades"
