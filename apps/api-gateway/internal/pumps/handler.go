@@ -392,6 +392,39 @@ func (h *Handler) dbTokenFallback(ctx context.Context, base string) (*pumpEntry,
 	}, nil
 }
 
+// ohlcvSource is the exact, explicit chart source: which venue, its native market
+// id, the market type actually queried, and whether that market is a proxy (LBank
+// spot standing in for the perpetual). Surfaced so the UI shows the source and
+// never presents a spot proxy as the swap without a marker.
+type ohlcvSource struct {
+	Exchange   string `json:"exchange"`
+	MarketID   string `json:"market_id"`
+	MarketType string `json:"market_type"`
+	IsProxy    bool   `json:"is_proxy"`
+}
+
+// ohlcvResponse carries the candles plus the RESOLVED source, a status that
+// distinguishes a load error from genuinely absent history, and the full ordered
+// list of candidate sources so the UI can offer the user another one.
+type ohlcvResponse struct {
+	Base     string        `json:"base"`
+	Interval int           `json:"interval"`
+	Source   *ohlcvSource  `json:"source"`
+	Status   string        `json:"status"` // "ok" | "no_history" | "error"
+	Candles  []Candle      `json:"candles"`
+	Sources  []ohlcvSource `json:"sources"`
+}
+
+func sourceOf(c exchangeCandidate) ohlcvSource {
+	kind := ohlcvSourceKinds[c.Exchange]
+	return ohlcvSource{
+		Exchange:   c.Exchange,
+		MarketID:   c.MarketID,
+		MarketType: kind.marketType,
+		IsProxy:    kind.isProxy,
+	}
+}
+
 func (h *Handler) OHLCV(w http.ResponseWriter, r *http.Request) {
 	base := strings.ToUpper(chi.URLParam(r, "base"))
 	if !isValidBase(base) {
@@ -412,13 +445,38 @@ func (h *Handler) OHLCV(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	exchanges := h.rankedExchanges(r.Context(), base)
-	if len(exchanges) == 0 {
+	// Deterministic candidate order (same live and historical -- see
+	// rankExchangeEntries). This is what the UI's source picker lists.
+	candidates := h.rankedExchanges(r.Context(), base)
+	if len(candidates) == 0 {
 		http.Error(w, "no supported exchange for OHLCV", http.StatusNotFound)
 		return
 	}
+	sources := make([]ohlcvSource, len(candidates))
+	for i, c := range candidates {
+		sources[i] = sourceOf(c)
+	}
 
+	// An explicit ?exchange= pins the source (the user picked it): use exactly
+	// that candidate with no silent fall-through to another venue. It must be one
+	// of the token's own candidates, never an arbitrary exchange.
 	cacheKey := fmt.Sprintf("ohlcv:%s:%d:%d", base, interval, limit)
+	if requested := r.URL.Query().Get("exchange"); requested != "" {
+		idx := -1
+		for i, c := range candidates {
+			if c.Exchange == requested {
+				idx = i
+				break
+			}
+		}
+		if idx < 0 {
+			http.Error(w, "requested exchange is not a source for this token", http.StatusNotFound)
+			return
+		}
+		candidates = candidates[idx : idx+1]
+		cacheKey += ":" + requested
+	}
+
 	if cached, err := h.rdb.Get(r.Context(), cacheKey).Bytes(); err == nil {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(cached)
@@ -432,35 +490,54 @@ func (h *Handler) OHLCV(w http.ResponseWriter, r *http.Request) {
 		goodEnough = 20
 	}
 	var bestCandles []Candle
-	var bestExchange string
-	for _, ex := range exchanges {
-		candles, err := fetchOHLCV(r.Context(), ex.Exchange, ex.MarketID, base, interval, limit)
+	var bestSource *ohlcvSource
+	anyFetched := false // at least one candidate returned (possibly zero) candles without error
+	for _, c := range candidates {
+		candles, err := fetchOHLCV(r.Context(), c.Exchange, c.MarketID, base, interval, limit)
 		if err != nil {
 			slog.Warn("pumps.ohlcv.fetch",
-				"exchange", ex.Exchange, "market_id", ex.MarketID, "base", base, "err", err)
+				"exchange", c.Exchange, "market_id", c.MarketID, "base", base, "err", err)
 			continue
 		}
+		anyFetched = true
 		if len(candles) > len(bestCandles) {
 			bestCandles = candles
-			bestExchange = ex.Exchange
+			s := sourceOf(c)
+			bestSource = &s
 		}
-		if len(candles) >= goodEnough {
+		if len(bestCandles) >= goodEnough {
 			break
 		}
 	}
 
+	status := "ok"
 	if len(bestCandles) == 0 {
-		http.Error(w, "no OHLCV data available", http.StatusNotFound)
-		return
+		// Distinguish a genuine no-history from every candidate erroring, and pin
+		// the resolved source to the top (or requested) candidate so the UI can
+		// say exactly which source has nothing and offer the others.
+		if anyFetched {
+			status = "no_history"
+		} else {
+			status = "error"
+		}
+		s := sourceOf(candidates[0])
+		bestSource = &s
+		bestCandles = []Candle{}
 	}
 
-	payload, _ := json.Marshal(map[string]any{
-		"base":     base,
-		"exchange": bestExchange,
-		"interval": interval,
-		"candles":  bestCandles,
+	payload, _ := json.Marshal(ohlcvResponse{
+		Base:     base,
+		Interval: interval,
+		Source:   bestSource,
+		Status:   status,
+		Candles:  bestCandles,
+		Sources:  sources,
 	})
-	_ = h.rdb.Set(r.Context(), cacheKey, payload, 60*time.Second).Err()
+	// Only cache a successful result; an error/no-history may be transient and
+	// must not be pinned for 60s.
+	if status == "ok" {
+		_ = h.rdb.Set(r.Context(), cacheKey, payload, 60*time.Second).Err()
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(payload)
@@ -1405,8 +1482,7 @@ var supportedOHLCV = map[string]bool{
 	"lbank":   true,
 }
 
-// ohlcvPriority is a tie-breaker when volumes are equal (e.g. DB fallback
-// where all volumes are 0). Lower index = higher priority.
+// ohlcvPriority orders exchanges deterministically. Lower index = higher priority.
 var ohlcvPriority = map[string]int{
 	"binance": 0,
 	"bybit":   1,
@@ -1418,34 +1494,49 @@ var ohlcvPriority = map[string]int{
 	"lbank":   7,
 }
 
-// rankExchangeEntries filters entries to supportedOHLCV, sorts by volume
-// descending, and uses ohlcvPriority as a deterministic tie-breaker.
-// Pure function — extracted for testability.
+// ohlcvSourceKind records what each exchange's OHLCV fetcher actually returns:
+// the market type it queries and whether that is a PROXY for the real perpetual.
+// Every fetcher hits the venue's USDT perpetual/futures endpoint EXCEPT fetchLBank,
+// which has no perpetual-history endpoint and queries the SPOT kline endpoint as a
+// stand-in (see fetchOHLCV's doc comment). So spot candles from lbank are a proxy
+// and must never be presented as the swap without a marker.
+type ohlcvSourceKind struct {
+	marketType string
+	isProxy    bool
+}
+
+var ohlcvSourceKinds = map[string]ohlcvSourceKind{
+	"binance": {"linear", false},
+	"bybit":   {"linear", false},
+	"okx":     {"swap", false},
+	"gate":    {"swap", false},
+	"bingx":   {"swap", false},
+	"mexc":    {"swap", false},
+	"xt":      {"swap", false},
+	"lbank":   {"spot", true},
+}
+
+// rankExchangeEntries filters entries to supportedOHLCV and returns them in a
+// STABLE, deterministic order: real futures routes before spot proxies, then by
+// fixed exchange priority. Volume is deliberately NOT used: it is only present in
+// the live pumps:latest snapshot and absent in the DB (history) fallback, so
+// ranking by it made the chart's source flip when a token aged from the live radar
+// into history, and let a high-volume spot proxy (LBank) outrank the real futures
+// route. The same order now applies live and historical. Pure function.
 func rankExchangeEntries(entries []exchangeEntry) []string {
-	type exVol struct {
-		exchange string
-		volume   float64
-	}
-	var ranked []exVol
+	var out []string
 	for _, ex := range entries {
 		if supportedOHLCV[ex.Exchange] {
-			volume := 0.0
-			if ex.Volume24hUSD != nil && *ex.Volume24hUSD > 0 {
-				volume = *ex.Volume24hUSD
-			}
-			ranked = append(ranked, exVol{ex.Exchange, volume})
+			out = append(out, ex.Exchange)
 		}
 	}
-	sort.Slice(ranked, func(i, j int) bool {
-		if ranked[i].volume != ranked[j].volume {
-			return ranked[i].volume > ranked[j].volume
+	sort.SliceStable(out, func(i, j int) bool {
+		pi, pj := ohlcvSourceKinds[out[i]].isProxy, ohlcvSourceKinds[out[j]].isProxy
+		if pi != pj {
+			return !pi // real futures routes before spot proxies
 		}
-		return ohlcvPriority[ranked[i].exchange] < ohlcvPriority[ranked[j].exchange]
+		return ohlcvPriority[out[i]] < ohlcvPriority[out[j]]
 	})
-	out := make([]string, len(ranked))
-	for i, e := range ranked {
-		out[i] = e.exchange
-	}
 	return out
 }
 

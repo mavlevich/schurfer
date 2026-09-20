@@ -102,11 +102,30 @@ export interface Candle {
   volume: number;
 }
 
+// OHLCVSource is the explicit chart source: the venue, its native market id, the
+// market type actually queried, and whether that is a proxy (LBank spot standing in
+// for the perpetual). is_proxy candles must be shown with a visible marker.
+export interface OHLCVSource {
+  exchange: string;
+  market_id: string;
+  market_type: string;
+  is_proxy: boolean;
+}
+
+export type OHLCVStatus = 'ok' | 'no_history' | 'error';
+
 export interface OHLCVResponse {
   base: string;
-  exchange: string;
   interval: number;
+  // The resolved source actually used (or, when candles is empty, the source that
+  // was tried). Null only for malformed responses.
+  source: OHLCVSource | null;
+  // Distinguishes a real load error from genuinely absent history for the source.
+  status: OHLCVStatus;
   candles: Candle[];
+  // Every candidate source, in the server's deterministic order, so the UI can let
+  // the user switch to another one.
+  sources: OHLCVSource[];
 }
 
 export interface SignalComponent {

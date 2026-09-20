@@ -16,14 +16,20 @@ export function getInterval(minutes: number) {
   return INTERVALS.find((i) => i.minutes === minutes) ?? INTERVALS[1];
 }
 
-export function useOHLCV(base: string | undefined, minutes: number) {
+// useOHLCV fetches candles for base at the given interval. Pass exchange to pin a
+// specific source (the user picked it from the response's `sources`); omit it to
+// let the server resolve the deterministic default (real futures route first).
+export function useOHLCV(base: string | undefined, minutes: number, exchange?: string) {
   const iv = getInterval(minutes);
   return useQuery({
-    queryKey: ['ohlcv', base, minutes],
+    queryKey: ['ohlcv', base, minutes, exchange ?? ''],
     queryFn: async () => {
-      const res = await fetch(
-        `/api/pumps/${encodeURIComponent(base!)}/ohlcv?interval=${iv.minutes}&limit=${iv.limit}`,
-      );
+      const params = new URLSearchParams({
+        interval: String(iv.minutes),
+        limit: String(iv.limit),
+      });
+      if (exchange) params.set('exchange', exchange);
+      const res = await fetch(`/api/pumps/${encodeURIComponent(base!)}/ohlcv?${params.toString()}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return res.json() as Promise<OHLCVResponse>;
     },

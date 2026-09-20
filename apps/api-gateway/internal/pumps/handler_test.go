@@ -1500,7 +1500,9 @@ func TestParseMEXC(t *testing.T) {
 // ---- TestRankExchangeEntries ----
 
 func TestRankExchangeEntries(t *testing.T) {
-	t.Run("sorts by volume descending and filters unsupported", func(t *testing.T) {
+	t.Run("orders by fixed priority regardless of volume and filters unsupported", func(t *testing.T) {
+		// Volume must NOT drive the order: it is only present live, so ranking by
+		// it flipped the chart source on radar->history. Order is fixed priority.
 		entries := []exchangeEntry{
 			{Exchange: "mexc", Volume24hUSD: fptr(1_000_000)},
 			{Exchange: "gate", Volume24hUSD: fptr(900_000)},
@@ -1508,7 +1510,22 @@ func TestRankExchangeEntries(t *testing.T) {
 			{Exchange: "bingx", Volume24hUSD: fptr(500_000)},
 		}
 		got := rankExchangeEntries(entries)
-		want := []string{"mexc", "gate", "bingx"}
+		want := []string{"gate", "bingx", "mexc"} // priority 3,4,5 -- volume ignored
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("want %v, got %v", want, got)
+		}
+	})
+
+	t.Run("spot-proxy (lbank) always ranks after real futures routes", func(t *testing.T) {
+		// Even with the largest volume and listed first, the spot proxy must not
+		// outrank a real futures route (the B2 bug: LBank spot won on volume).
+		entries := []exchangeEntry{
+			{Exchange: "lbank", Volume24hUSD: fptr(99_000_000)},
+			{Exchange: "bybit", Volume24hUSD: fptr(1_000)},
+			{Exchange: "binance", Volume24hUSD: fptr(1_000)},
+		}
+		got := rankExchangeEntries(entries)
+		want := []string{"binance", "bybit", "lbank"}
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("want %v, got %v", want, got)
 		}
@@ -1633,6 +1650,169 @@ func TestRankedExchangesCarriesMarketIDFromDBFallback(t *testing.T) {
 	want := []exchangeCandidate{{Exchange: "gate", MarketID: "HFT_USDT"}}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("rankedExchanges = %+v, want %+v", got, want)
+	}
+}
+
+// callOHLCV invokes the OHLCV handler for the B2 token with an optional raw query
+// string (e.g. "?exchange=bybit"), returning the HTTP status and decoded response.
+func callOHLCV(t *testing.T, h *Handler, rawQuery string) (int, ohlcvResponse) {
+	t.Helper()
+	const base = "B2"
+	req := httptest.NewRequest(http.MethodGet, "/pumps/"+base+"/ohlcv"+rawQuery, nil)
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("base", base)
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	rec := httptest.NewRecorder()
+	h.OHLCV(rec, req)
+	var resp ohlcvResponse
+	if rec.Code == http.StatusOK {
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("decode: %v (body=%s)", err, rec.Body.String())
+		}
+	}
+	return rec.Code, resp
+}
+
+func aCandle(price float64) Candle {
+	return Candle{Time: 1, Open: price, High: price, Low: price, Close: price, Volume: 1}
+}
+
+// TestOHLCVSourceStableAcrossRadarToHistory is the B2 regression: the chart source
+// must not silently change when a token drops from the live radar into history (and
+// after the cache expires), and a spot proxy must never win over a real futures
+// route. NOTE: mutates the package-level fetchOHLCV, so not parallel.
+func TestOHLCVSourceStableAcrossRadarToHistory(t *testing.T) {
+	orig := fetchOHLCV
+	t.Cleanup(func() { fetchOHLCV = orig })
+	// binance (futures) has candles; bybit has none; lbank (spot proxy) has candles.
+	fetchOHLCV = func(_ context.Context, exchange, _ /*marketID*/, _ /*base*/ string, _, _ int) ([]Candle, error) {
+		switch exchange {
+		case "binance":
+			return []Candle{aCandle(10)}, nil
+		case "lbank":
+			return []Candle{aCandle(20)}, nil
+		default:
+			return nil, nil // bybit: fetch ok, no history
+		}
+	}
+
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+
+	// B2 on lbank (biggest volume, spot proxy), bybit, and binance (futures).
+	routes := []exchangeEntry{
+		{Exchange: "lbank", MarketID: "B2USDT", Volume24hUSD: fptr(99_000_000)},
+		{Exchange: "bybit", MarketID: "B2USDT", Volume24hUSD: fptr(5_000_000)},
+		{Exchange: "binance", MarketID: "B2USDT", Volume24hUSD: fptr(3_000_000)},
+	}
+	livePayload, _ := json.Marshal(pumpsPayload{Count: 1, Pumps: []pumpEntry{{Base: "B2", Exchanges: routes}}})
+	if err := mr.Set("pumps:latest", string(livePayload)); err != nil {
+		t.Fatal(err)
+	}
+
+	// DB fallback (history) returns the same routes with no volume.
+	dbJSON, _ := json.Marshal(routes)
+	pool := &stubQuerier{onQueryRow: func(_ context.Context, _ string, _ ...any) pgxRow {
+		return &stubRow{vals: []any{dbJSON}}
+	}}
+	h := &Handler{rdb: rdb, pool: pool}
+
+	// LIVE: resolved source is the real futures route, not the higher-volume proxy.
+	code, live := callOHLCV(t, h, "")
+	if code != http.StatusOK {
+		t.Fatalf("live status %d", code)
+	}
+	if live.Source == nil || live.Source.Exchange != "binance" ||
+		live.Source.IsProxy || live.Source.MarketType != "linear" {
+		t.Fatalf("live source = %+v, want binance/linear/non-proxy", live.Source)
+	}
+	if live.Status != "ok" || len(live.Candles) == 0 {
+		t.Fatalf("live status/candles = %q/%d", live.Status, len(live.Candles))
+	}
+	var lbank *ohlcvSource
+	for i := range live.Sources {
+		if live.Sources[i].Exchange == "lbank" {
+			lbank = &live.Sources[i]
+		}
+	}
+	if lbank == nil || !lbank.IsProxy || lbank.MarketType != "spot" {
+		t.Fatalf("lbank must be offered as an explicitly-marked spot proxy, got %+v", lbank)
+	}
+
+	// Radar -> history + cache expiry: drop the live snapshot and flush the cache,
+	// forcing a fresh selection through the DB fallback. The source must NOT flip.
+	mr.Del("pumps:latest")
+	mr.FlushDB()
+	code, hist := callOHLCV(t, h, "")
+	if code != http.StatusOK {
+		t.Fatalf("history status %d", code)
+	}
+	if hist.Source == nil || hist.Source.Exchange != live.Source.Exchange || hist.Source.IsProxy {
+		t.Fatalf("source flipped radar->history: live=%+v history=%+v", live.Source, hist.Source)
+	}
+}
+
+// TestOHLCVStatusDistinguishesErrorFromNoHistoryAndHonoursExplicitSource covers the
+// other half of the fix: a load error vs genuine no-history are distinct, and an
+// explicit ?exchange= pins the source with no silent fall-through.
+func TestOHLCVStatusDistinguishesErrorFromNoHistoryAndHonoursExplicitSource(t *testing.T) {
+	orig := fetchOHLCV
+	t.Cleanup(func() { fetchOHLCV = orig })
+
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+	routes := []exchangeEntry{
+		{Exchange: "binance", MarketID: "B2USDT"},
+		{Exchange: "bybit", MarketID: "B2USDT"},
+	}
+	payload, _ := json.Marshal(pumpsPayload{Count: 1, Pumps: []pumpEntry{{Base: "B2", Exchanges: routes}}})
+	reset := func() {
+		mr.FlushDB()
+		if err := mr.Set("pumps:latest", string(payload)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h := &Handler{rdb: rdb}
+
+	// Every candidate fetches cleanly but has no candles -> no_history, source pinned
+	// to the deterministic top candidate (binance) so the UI can name it.
+	reset()
+	fetchOHLCV = func(_ context.Context, _, _, _ string, _, _ int) ([]Candle, error) { return nil, nil }
+	_, resp := callOHLCV(t, h, "")
+	if resp.Status != "no_history" || resp.Source == nil || resp.Source.Exchange != "binance" {
+		t.Fatalf("no-history case = status %q source %+v", resp.Status, resp.Source)
+	}
+
+	// Every candidate errors -> error (not conflated with no_history).
+	reset()
+	fetchOHLCV = func(_ context.Context, _, _, _ string, _, _ int) ([]Candle, error) {
+		return nil, fmt.Errorf("venue down")
+	}
+	_, resp = callOHLCV(t, h, "")
+	if resp.Status != "error" {
+		t.Fatalf("all-error case status = %q, want error", resp.Status)
+	}
+
+	// Explicit ?exchange=bybit pins bybit even though binance ranks first.
+	reset()
+	fetchOHLCV = func(_ context.Context, exchange, _, _ string, _, _ int) ([]Candle, error) {
+		if exchange == "bybit" {
+			return []Candle{aCandle(1)}, nil
+		}
+		return []Candle{aCandle(2)}, nil
+	}
+	_, resp = callOHLCV(t, h, "?exchange=bybit")
+	if resp.Status != "ok" || resp.Source == nil || resp.Source.Exchange != "bybit" {
+		t.Fatalf("explicit source = status %q source %+v, want ok/bybit", resp.Status, resp.Source)
+	}
+
+	// An exchange that is not one of the token's candidates is rejected, not fetched.
+	reset()
+	code, _ := callOHLCV(t, h, "?exchange=okx")
+	if code != http.StatusNotFound {
+		t.Fatalf("unknown explicit exchange code = %d, want 404", code)
 	}
 }
 
