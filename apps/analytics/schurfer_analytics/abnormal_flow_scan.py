@@ -635,8 +635,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--provenance-dir", type=Path, default=None)
     parser.add_argument("--identity-snapshot", type=Path, required=True)
     parser.add_argument("--contract-json", type=Path, required=True)
-    parser.add_argument(
-        "--borg-repo", required=True, help="Borg repository verifying offsite archives"
+    verifier_group = parser.add_mutually_exclusive_group(required=True)
+    verifier_group.add_argument(
+        "--staging-json",
+        type=Path,
+        help="Staging artifact from abnormal-flow-stage (verify provenance without local borg)",
+    )
+    verifier_group.add_argument(
+        "--borg-repo", help="Local Borg repo (only when borg runs on this host)"
     )
     parser.add_argument("--out-root", type=Path, default=DEFAULT_EVIDENCE_ROOT)
     parser.add_argument("--start-day", type=date.fromisoformat, default=DEFAULT_START)
@@ -646,9 +652,14 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    from .abnormal_flow_stage import make_staging_verifier
+
     args: Any = build_parser().parse_args()
     contract = AbnormalFlowContract(**json.loads(Path(args.contract_json).read_text()))
-    verify_archive = make_borg_verifier(args.borg_repo, args.provenance_dir)
+    if args.staging_json is not None:
+        verify_archive = make_staging_verifier(json.loads(Path(args.staging_json).read_text()))
+    else:
+        verify_archive = make_borg_verifier(args.borg_repo, args.provenance_dir)
     artifact_dir = run_scan(
         cold_bars_dir=args.cold_bars_dir,
         provenance_dir=args.provenance_dir,
