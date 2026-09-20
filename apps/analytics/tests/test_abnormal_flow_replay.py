@@ -14,21 +14,29 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from schurfer_analytics.abnormal_flow_replay import (
     DecisionFeatures,
+    EpisodeRecord,
     FormalReplay,
     FreezeMismatchError,
     MinuteBar,
     Outcome,
     RouteKey,
     ablation_cell_fires,
+    assemble_all,
     assemble_decisions,
+    build_report,
     control_band_key,
     form_episodes,
+    input_fingerprint_for,
     is_eligible,
+    load_minute_bars_from_parquet,
     match_controls,
     oi_notional_usd,
+    parquet_outcome_reader,
     participation_frac,
     primary_cell_fires,
     proxy_net_return,
+    render_verdict,
+    simulate_portfolio,
 )
 from schurfer_analytics.abnormal_flow_screen import AbnormalFlowContract, NotFrozenError
 
@@ -383,3 +391,251 @@ def test_assemble_decisions_marks_unavailable_windows() -> None:
         **{**late_trade[45].__dict__, "last_trade_received_at": _T0 + timedelta(hours=5)}
     )
     assert _assemble(late_trade)[0].unavailable_reason == "late_or_missing_trades"
+
+
+# --- Portfolio simulation, verdict, and economics report ---------------------------
+
+
+def test_simulate_portfolio_respects_slots_and_measures_drawdown() -> None:
+    c = _frozen_contract(portfolio_max_slots=1)  # one slot, $300 position
+    # ep2 arrives while the slot is still held by ep1 (720m horizon) -> skipped.
+    winners = simulate_portfolio(
+        c,
+        [
+            (_T0, 0.10),
+            (_T0 + timedelta(minutes=5), -0.05),  # slot busy -> capacity skip
+            (_T0 + timedelta(minutes=800), 0.20),  # slot free again -> taken
+        ],
+    )
+    assert winners.taken_trades == 2
+    assert winners.skipped_capacity == 1
+    assert winners.max_concurrency == 1
+    assert winners.total_pnl_usd == pytest.approx(300 * 0.10 + 300 * 0.20)
+
+    losers = simulate_portfolio(c, [(_T0, -0.10), (_T0 + timedelta(minutes=800), -0.05)])
+    assert losers.longest_losing_streak == 2
+    assert losers.max_drawdown_usd == pytest.approx(300 * 0.10 + 300 * 0.05)
+
+
+def test_render_verdict_is_a_pre_registered_ladder() -> None:
+    c = _frozen_contract(min_resolved_episodes=1, min_excess_over_control_pct=0.0)
+    # Underpowered.
+    assert (
+        render_verdict(
+            c,
+            resolved_episodes=0,
+            unresolved_episodes=0,
+            mean_net_return=0.1,
+            mean_excess_over_control=0.1,
+        )
+        == "INSUFFICIENT_EVIDENCE"
+    )
+    # Too incomplete.
+    incomplete = _frozen_contract(min_resolved_episodes=1, max_missing_fraction=0.2)
+    assert (
+        render_verdict(
+            incomplete,
+            resolved_episodes=1,
+            unresolved_episodes=1,  # missing = 0.5 > 0.2
+            mean_net_return=0.1,
+            mean_excess_over_control=0.1,
+        )
+        == "INSUFFICIENT_EVIDENCE"
+    )
+    # Non-positive net, or missing/insufficient excess -> FAIL.
+    assert (
+        render_verdict(
+            c,
+            resolved_episodes=1,
+            unresolved_episodes=0,
+            mean_net_return=-0.01,
+            mean_excess_over_control=0.1,
+        )
+        == "FAIL"
+    )
+    assert (
+        render_verdict(
+            c,
+            resolved_episodes=1,
+            unresolved_episodes=0,
+            mean_net_return=0.05,
+            mean_excess_over_control=None,
+        )
+        == "FAIL"
+    )
+    floored = _frozen_contract(min_resolved_episodes=1, min_excess_over_control_pct=2.0)
+    assert (
+        render_verdict(
+            floored,
+            resolved_episodes=1,
+            unresolved_episodes=0,
+            mean_net_return=0.05,
+            mean_excess_over_control=0.01,  # 1% < 2% floor
+        )
+        == "FAIL"
+    )
+    # Positive net AND sufficient excess -> discovery pass (never live).
+    assert (
+        render_verdict(
+            c,
+            resolved_episodes=1,
+            unresolved_episodes=0,
+            mean_net_return=0.05,
+            mean_excess_over_control=0.03,
+        )
+        == "PASS_DISCOVERY"
+    )
+
+
+def test_build_report_computes_weekly_and_leave_one_out() -> None:
+    c = _frozen_contract(min_resolved_episodes=1, min_excess_over_control_pct=0.0)
+    records = [
+        EpisodeRecord("AAA", "2026-W34", _T0, 0.10, 0.06),
+        EpisodeRecord("BBB", "2026-W34", _T0 + timedelta(minutes=5), 0.02, 0.01),
+        EpisodeRecord("AAA", "2026-W35", _T0 + timedelta(days=8), 0.04, 0.03),
+    ]
+    report = build_report(c, records, unresolved_episodes=0)
+    assert report.resolved_episodes == 3
+    assert report.n_weeks == 2
+    assert report.weekly_clustered_se is not None
+    assert report.mean_net_return == pytest.approx((0.10 + 0.02 + 0.04) / 3)
+    # Drop AAA -> only BBB's 0.01; drop BBB -> AAA's mean(0.06, 0.03) = 0.045.
+    assert report.leave_one_out_excess_min == pytest.approx(0.01)
+    assert report.leave_one_out_excess_max == pytest.approx(0.045)
+    assert report.break_even_extra_cost_bps == pytest.approx(report.mean_net_return * 10_000)
+    assert report.verdict == "PASS_DISCOVERY"
+
+
+def test_frozen_run_populates_the_report() -> None:
+    c = _frozen_contract(min_resolved_episodes=1)
+    ep = _decision()
+    control = _decision(
+        symbol="BARUSDT", native_market_id="BARUSDT", canonical_asset="BAR", buy_pressure=0.4
+    )
+    reader = _reader_from({"FOOUSDT": (100.0, 110.0), "BARUSDT": (100.0, 101.0)})
+    result = FormalReplay(c).run([ep, control], reader, observed_input_fingerprint=_FINGERPRINT)
+    assert result.report.resolved_episodes == 1
+    assert result.report.portfolio.taken_trades == 1
+    assert result.report.verdict in {"INSUFFICIENT_EVIDENCE", "FAIL", "PASS_DISCOVERY"}
+    assert len(result.episode_records) == 1
+
+
+# --- Parquet end-to-end (synthetic data; proves the full dataset code path) ---------
+
+
+def _e2e_bars(n: int) -> list[MinuteBar]:
+    bars: list[MinuteBar] = []
+    for i in range(n):
+        bucket = _T0 + timedelta(minutes=i)
+        price = 100.0 * (1 + 0.0002 * i)  # gentle uptrend
+        oi = 1000.0 + i
+        bars.append(
+            MinuteBar(
+                exchange="bybit",
+                market_type="linear",
+                native_market_id="ZUSDT",
+                symbol="ZUSDT",
+                canonical_asset="Z",
+                bucket_start=bucket,
+                created_at=bucket + timedelta(seconds=30),
+                open_price=price,
+                high_price=price * 1.0005,
+                low_price=price * 0.9995,
+                close_price=price,
+                buy_notional_usd=700.0,
+                sell_notional_usd=300.0,
+                open_interest=oi,
+                open_interest_value=oi * price,
+                open_interest_observed_at=bucket,
+                last_trade_received_at=bucket + timedelta(seconds=20),
+                price_complete=True,
+                trades_complete=True,
+                open_interest_complete=True,
+            )
+        )
+    return bars
+
+
+def _write_parquet(path: str, bars: list[MinuteBar]) -> None:
+    import duckdb
+
+    con = duckdb.connect()
+    try:
+        con.execute(
+            """CREATE TABLE bars(
+                exchange VARCHAR, market_type VARCHAR, symbol VARCHAR,
+                bucket_start TIMESTAMPTZ, created_at TIMESTAMPTZ,
+                open_price DOUBLE, high_price DOUBLE, low_price DOUBLE, close_price DOUBLE,
+                buy_total_notional_usd DOUBLE, sell_total_notional_usd DOUBLE,
+                open_interest DOUBLE, open_interest_value DOUBLE,
+                open_interest_observed_at TIMESTAMPTZ, last_trade_received_at TIMESTAMPTZ,
+                price_complete BOOLEAN, trades_complete BOOLEAN, open_interest_complete BOOLEAN)"""
+        )
+        con.executemany(
+            "INSERT INTO bars VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            [
+                (
+                    b.exchange,
+                    b.market_type,
+                    b.symbol,
+                    b.bucket_start,
+                    b.created_at,
+                    b.open_price,
+                    b.high_price,
+                    b.low_price,
+                    b.close_price,
+                    b.buy_notional_usd,
+                    b.sell_notional_usd,
+                    b.open_interest,
+                    b.open_interest_value,
+                    b.open_interest_observed_at,
+                    b.last_trade_received_at,
+                    b.price_complete,
+                    b.trades_complete,
+                    b.open_interest_complete,
+                )
+                for b in bars
+            ],
+        )
+        con.execute(f"COPY bars TO '{path}' (FORMAT PARQUET)")
+    finally:
+        con.close()
+
+
+def test_parquet_end_to_end_pipeline(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    path = str(tmp_path / "bars.parquet")
+    _write_parquet(path, _e2e_bars(785))
+    window_start = datetime(2026, 8, 14, tzinfo=UTC)
+    window_end = datetime(2026, 9, 14, tzinfo=UTC)
+
+    loaded = load_minute_bars_from_parquet(path, window_start=window_start, window_end=window_end)
+    assert len(loaded) == 785
+    assert loaded[0].canonical_asset == "Z"  # loader resolved the placeholder canonical
+
+    fingerprint = input_fingerprint_for(loaded)
+    contract = _frozen_contract(min_resolved_episodes=1, input_fingerprint=fingerprint)
+    decisions = assemble_all(loaded, contract)
+    reader = parquet_outcome_reader(path, outcome_horizon_minutes=contract.outcome_horizon_minutes)
+
+    result = FormalReplay(contract).run(decisions, reader, observed_input_fingerprint=fingerprint)
+    assert result.resolved_episodes == 1  # one episode after the 720m cooldown
+    assert result.report.portfolio.taken_trades == 1
+    assert result.mean_net_return is not None and result.mean_net_return > 0
+
+
+def test_parquet_end_to_end_refuses_on_a_tampered_fingerprint(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    path = str(tmp_path / "bars.parquet")
+    _write_parquet(path, _e2e_bars(200))
+    loaded = load_minute_bars_from_parquet(
+        path,
+        window_start=datetime(2026, 8, 14, tzinfo=UTC),
+        window_end=datetime(2026, 9, 14, tzinfo=UTC),
+    )
+    contract = _frozen_contract(
+        min_resolved_episodes=1, input_fingerprint=input_fingerprint_for(loaded)
+    )
+    decisions = assemble_all(loaded, contract)
+    reader = parquet_outcome_reader(path, outcome_horizon_minutes=contract.outcome_horizon_minutes)
+    # A loader that read a different dataset (wrong fingerprint) is refused.
+    with pytest.raises(FreezeMismatchError):
+        FormalReplay(contract).run(decisions, reader, observed_input_fingerprint="deadbeef" * 8)

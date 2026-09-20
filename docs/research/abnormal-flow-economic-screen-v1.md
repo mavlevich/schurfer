@@ -181,6 +181,23 @@ abnormal-flow-input-audit --cold-bars-dir <restored-cold-bars-dir> \
   --start-day <YYYY-MM-DD> --end-day <YYYY-MM-DD-exclusive>
 ```
 
+## Implemented replay engine (tested; no returns read)
+
+`abnormal_flow_replay` holds the engine. A loader reads outcome-blind minute bars
+from frozen Parquet and reproduces an input fingerprint; `assemble_all` builds
+per-instrument decisions with the registered scan lag, execution window, and
+per-venue OI freshness; `FormalReplay.run` fail-closes unless the contract is
+frozen, the observed fingerprint equals the pinned one, and every decision is
+inside the registered UTC window, all before the single returns read. It then
+scores the priced-proxy net return and matched excess, keying outcomes by the
+exact native route, and produces the funnel, week-clustered uncertainty,
+leave-one-out excess, a fixed-bank slot-limited portfolio (dollar PnL, drawdown,
+losing streak, concurrency), a break-even cost figure, and the one-shot verdict
+(INSUFFICIENT_EVIDENCE / FAIL / PASS_DISCOVERY). The whole path is unit-tested on
+synthetic rows, including a synthetic-Parquet end-to-end test; no production return
+has been read, and running it for real still requires the separate outcome-blind
+threshold and window freeze.
+
 ## Open decisions before registration
 
 1. Owner approval of the one primary mechanism, 60-minute lookback, long

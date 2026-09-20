@@ -23,10 +23,12 @@ touch the dataset, and the forward prices are read solely by the frozen-gated ru
 
 from __future__ import annotations
 
+import hashlib
 import math
+from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from .abnormal_flow_screen import (
     LOOKBACK_MINUTES,
@@ -553,6 +555,210 @@ def build_funnel(contract: AbnormalFlowContract, decisions: Iterable[DecisionFea
     return funnel
 
 
+# --- Economics, portfolio, verdict (RETURNS-BEARING; pure over resolved episodes) ---
+
+
+@dataclass(frozen=True)
+class EpisodeRecord:
+    """One resolved episode's returns-bearing summary, used for the aggregate report.
+    Produced only inside the frozen-gated run."""
+
+    canonical_asset: str
+    iso_week: str
+    decision_at: datetime
+    net_return: float
+    excess: float | None  # None when the episode had no resolved control
+
+
+@dataclass(frozen=True)
+class PortfolioResult:
+    """Fixed-bank, slot-limited portfolio outcome over the resolved episodes. A signal
+    arriving while every slot is occupied for the horizon is dropped (capacity), not
+    silently stacked, so the dollar path reflects real concurrency limits."""
+
+    taken_trades: int
+    skipped_capacity: int
+    total_pnl_usd: float
+    max_drawdown_usd: float
+    longest_losing_streak: int
+    max_concurrency: int
+
+
+@dataclass(frozen=True)
+class EconomicsReport:
+    """The one-shot pre-registered report. Every figure is after-cost; nothing here is
+    read or computed until the freeze gates in :meth:`FormalReplay.run` have passed."""
+
+    resolved_episodes: int
+    unresolved_episodes: int
+    missing_fraction: float | None
+    n_weeks: int
+    mean_net_return: float | None
+    weekly_clustered_se: float | None
+    mean_excess_over_control: float | None
+    leave_one_out_excess_min: float | None
+    leave_one_out_excess_max: float | None
+    break_even_extra_cost_bps: float | None
+    portfolio: PortfolioResult
+    verdict: str
+
+
+def simulate_portfolio(
+    contract: AbnormalFlowContract, episodes: Sequence[tuple[datetime, float]]
+) -> PortfolioResult:
+    """Slot-limited fixed-bank simulation. ``episodes`` are ``(decision_at, net_return)``
+    for resolved episodes; each taken trade holds one slot for the outcome horizon and
+    earns ``position_usd * net_return``. Drawdown and losing streak are measured on the
+    realized dollar path in entry order."""
+    slots = contract.portfolio_max_slots or 1
+    position_usd = float(contract.position_usd)  # type: ignore[arg-type]
+    horizon = timedelta(minutes=contract.outcome_horizon_minutes)
+    active_ends: list[datetime] = []
+    taken = 0
+    skipped = 0
+    pnls: list[float] = []
+    max_concurrency = 0
+    for decision_at, ret in sorted(episodes, key=lambda e: e[0]):
+        active_ends = [t for t in active_ends if t > decision_at]
+        if len(active_ends) >= slots:
+            skipped += 1
+            continue
+        active_ends.append(decision_at + horizon)
+        max_concurrency = max(max_concurrency, len(active_ends))
+        taken += 1
+        pnls.append(position_usd * ret)
+    peak = 0.0
+    cum = 0.0
+    max_dd = 0.0
+    streak = 0
+    longest = 0
+    for p in pnls:
+        cum += p
+        peak = max(peak, cum)
+        max_dd = max(max_dd, peak - cum)
+        if p < 0:
+            streak += 1
+            longest = max(longest, streak)
+        else:
+            streak = 0
+    return PortfolioResult(
+        taken_trades=taken,
+        skipped_capacity=skipped,
+        total_pnl_usd=sum(pnls),
+        max_drawdown_usd=max_dd,
+        longest_losing_streak=longest,
+        max_concurrency=max_concurrency,
+    )
+
+
+def _weekly_clustered_se(records: Sequence[EpisodeRecord]) -> tuple[int, float | None]:
+    """Week count and the standard error of the equal-weighted weekly mean net return,
+    treating each ISO week as a cluster. ``None`` SE with fewer than two weeks (a single
+    cluster carries no cross-week uncertainty)."""
+    by_week: dict[str, list[float]] = defaultdict(list)
+    for r in records:
+        by_week[r.iso_week].append(r.net_return)
+    weekly_means = [sum(v) / len(v) for v in by_week.values()]
+    n = len(weekly_means)
+    if n < 2:
+        return n, None
+    mean = sum(weekly_means) / n
+    variance = sum((m - mean) ** 2 for m in weekly_means) / (n - 1)
+    return n, math.sqrt(variance / n)
+
+
+def _leave_one_out_excess(
+    records: Sequence[EpisodeRecord],
+) -> tuple[float | None, float | None]:
+    """Min and max mean excess when each canonical asset is dropped in turn, so a single
+    asset cannot carry the excess. ``None`` when fewer than two assets have a resolved
+    control excess."""
+    with_excess = [(r.canonical_asset, r.excess) for r in records if r.excess is not None]
+    assets = {a for a, _ in with_excess}
+    if len(assets) < 2:
+        return None, None
+    means: list[float] = []
+    for drop in assets:
+        kept = [e for a, e in with_excess if a != drop]
+        if kept:
+            means.append(sum(kept) / len(kept))
+    if not means:
+        return None, None
+    return min(means), max(means)
+
+
+def render_verdict(
+    contract: AbnormalFlowContract,
+    *,
+    resolved_episodes: int,
+    unresolved_episodes: int,
+    mean_net_return: float | None,
+    mean_excess_over_control: float | None,
+) -> str:
+    """The pre-registered one-shot verdict. Underpowered or too-incomplete evidence is
+    INSUFFICIENT_EVIDENCE (not a pass); a non-positive net or an excess below the
+    registered floor is FAIL; only positive after-cost net AND sufficient matched excess
+    is PASS_DISCOVERY (which authorizes at most a separate forward cohort, never live)."""
+    total = resolved_episodes + unresolved_episodes
+    missing = (unresolved_episodes / total) if total else None
+    if contract.min_resolved_episodes is None or resolved_episodes < contract.min_resolved_episodes:
+        return "INSUFFICIENT_EVIDENCE"
+    if (
+        contract.max_missing_fraction is not None
+        and missing is not None
+        and missing > contract.max_missing_fraction
+    ):
+        return "INSUFFICIENT_EVIDENCE"
+    if mean_net_return is None or mean_net_return <= 0:
+        return "FAIL"
+    floor = (contract.min_excess_over_control_pct or 0.0) / 100.0
+    if mean_excess_over_control is None or mean_excess_over_control < floor:
+        return "FAIL"
+    return "PASS_DISCOVERY"
+
+
+def build_report(
+    contract: AbnormalFlowContract,
+    records: Sequence[EpisodeRecord],
+    *,
+    unresolved_episodes: int,
+) -> EconomicsReport:
+    """Assemble the one-shot economics report from resolved episode records. Pure and
+    deterministic; every input is already after-cost."""
+    resolved = len(records)
+    total = resolved + unresolved_episodes
+    missing = (unresolved_episodes / total) if total else None
+    net_returns = [r.net_return for r in records]
+    excesses = [r.excess for r in records if r.excess is not None]
+    mean_net = (sum(net_returns) / len(net_returns)) if net_returns else None
+    mean_excess = (sum(excesses) / len(excesses)) if excesses else None
+    n_weeks, se = _weekly_clustered_se(records)
+    loo_min, loo_max = _leave_one_out_excess(records)
+    break_even = (mean_net * 10_000.0) if (mean_net is not None and mean_net > 0) else 0.0
+    portfolio = simulate_portfolio(contract, [(r.decision_at, r.net_return) for r in records])
+    verdict = render_verdict(
+        contract,
+        resolved_episodes=resolved,
+        unresolved_episodes=unresolved_episodes,
+        mean_net_return=mean_net,
+        mean_excess_over_control=mean_excess,
+    )
+    return EconomicsReport(
+        resolved_episodes=resolved,
+        unresolved_episodes=unresolved_episodes,
+        missing_fraction=missing,
+        n_weeks=n_weeks,
+        mean_net_return=mean_net,
+        weekly_clustered_se=se,
+        mean_excess_over_control=mean_excess,
+        leave_one_out_excess_min=loo_min,
+        leave_one_out_excess_max=loo_max,
+        break_even_extra_cost_bps=break_even,
+        portfolio=portfolio,
+        verdict=verdict,
+    )
+
+
 # --- Formal run (RETURNS-BEARING; require_frozen fail-closed) -----------------------
 
 
@@ -568,6 +774,8 @@ class ReplayResult:
     mean_net_return: float | None
     mean_control_return: float | None
     mean_excess_over_control: float | None
+    report: EconomicsReport
+    episode_records: tuple[EpisodeRecord, ...]
 
 
 def _window_bounds(contract: AbnormalFlowContract) -> tuple[datetime, datetime]:
@@ -657,6 +865,7 @@ class FormalReplay:
         net_returns: list[float] = []
         excesses: list[float] = []
         control_means: list[float] = []
+        records: list[EpisodeRecord] = []
         unresolved_episodes = 0
         episodes_with_matched_control = 0
         resolved_controls = 0
@@ -675,12 +884,24 @@ class FormalReplay:
                 else:
                     resolved_controls += 1
                     control_rs.append(cr)
+            excess: float | None = None
             if control_rs:
                 episodes_with_matched_control += 1
                 control_mean = sum(control_rs) / len(control_rs)
                 control_means.append(control_mean)
-                excesses.append(r - control_mean)
+                excess = r - control_mean
+                excesses.append(excess)
+            records.append(
+                EpisodeRecord(
+                    canonical_asset=ep.canonical_asset,
+                    iso_week=ep.iso_week,
+                    decision_at=ep.decision_at,
+                    net_return=r,
+                    excess=excess,
+                )
+            )
 
+        report = build_report(contract, records, unresolved_episodes=unresolved_episodes)
         return ReplayResult(
             replay_version=REPLAY_VERSION,
             funnel=funnel,
@@ -694,4 +915,187 @@ class FormalReplay:
                 (sum(control_means) / len(control_means)) if control_means else None
             ),
             mean_excess_over_control=(sum(excesses) / len(excesses)) if excesses else None,
+            report=report,
+            episode_records=tuple(records),
         )
+
+
+# --- Dataset edges: Parquet loader + priced-proxy outcome reader --------------------
+#
+# These are the only functions that touch the frozen cold-bar Parquet. The loader and
+# the fingerprint are outcome-blind (they read no forward price). The outcome reader is
+# returns-bearing and is only ever invoked by the frozen-gated run.
+
+_INPUT_COLUMNS_SQL = """
+SELECT exchange, market_type, symbol, bucket_start, created_at,
+       open_price, high_price, low_price, close_price,
+       buy_total_notional_usd, sell_total_notional_usd,
+       open_interest, open_interest_value, open_interest_observed_at,
+       last_trade_received_at, price_complete, trades_complete, open_interest_complete
+FROM read_parquet(?)
+WHERE bucket_start >= ? AND bucket_start < ?
+ORDER BY exchange, market_type, symbol, bucket_start
+"""
+
+_OUTCOME_COLUMNS_SQL = """
+SELECT exchange, market_type, symbol, bucket_start, open_price, close_price
+FROM read_parquet(?)
+WHERE bucket_start >= ? AND bucket_start < ?
+"""
+
+
+def _canonical_asset(symbol: str) -> str:
+    """Placeholder canonical-asset resolver: strip a trailing quote suffix so the same
+    base clusters across venues. The registered study will replace this with the
+    point-in-time identity resolver; kept deterministic and documented until then."""
+    upper = symbol.upper()
+    for quote in ("USDT", "USDC", "USD"):
+        if upper.endswith(quote) and len(upper) > len(quote):
+            return upper[: -len(quote)]
+    return upper
+
+
+def input_fingerprint_for(bars: Sequence[MinuteBar]) -> str:
+    """Deterministic SHA-256 over the outcome-blind input rows the loader read, so a
+    run can prove it is scoring exactly the frozen dataset. Namespaced to match the
+    contract's ``input_fingerprint`` format."""
+    hasher = hashlib.sha256()
+    for b in sorted(bars, key=lambda b: (b.exchange, b.market_type, b.symbol, b.bucket_start)):
+        hasher.update(
+            "|".join(
+                str(x)
+                for x in (
+                    b.exchange,
+                    b.market_type,
+                    b.symbol,
+                    b.bucket_start.isoformat(),
+                    b.open_price,
+                    b.high_price,
+                    b.low_price,
+                    b.close_price,
+                    b.buy_notional_usd,
+                    b.sell_notional_usd,
+                    b.open_interest,
+                    b.open_interest_value,
+                    b.price_complete,
+                    b.trades_complete,
+                    b.open_interest_complete,
+                )
+            ).encode()
+        )
+        hasher.update(b"\n")
+    return "abnormal_flow_input_v1:" + hasher.hexdigest()
+
+
+def _row_to_bar(row: tuple[Any, ...]) -> MinuteBar:
+    symbol = str(row[2])
+    return MinuteBar(
+        exchange=str(row[0]),
+        market_type=str(row[1]),
+        native_market_id=symbol,
+        symbol=symbol,
+        canonical_asset=_canonical_asset(symbol),
+        bucket_start=row[3],
+        created_at=row[4],
+        open_price=row[5],
+        high_price=row[6],
+        low_price=row[7],
+        close_price=row[8],
+        buy_notional_usd=float(row[9] or 0.0),
+        sell_notional_usd=float(row[10] or 0.0),
+        open_interest=row[11],
+        open_interest_value=row[12],
+        open_interest_observed_at=row[13],
+        last_trade_received_at=row[14],
+        price_complete=bool(row[15]),
+        trades_complete=bool(row[16]),
+        open_interest_complete=bool(row[17]),
+    )
+
+
+def load_minute_bars_from_parquet(
+    path: str, *, window_start: datetime, window_end: datetime
+) -> list[MinuteBar]:
+    """Read outcome-blind minute bars for the window from one cold-bar Parquet. Reads no
+    forward price. (Fidelity/manifest verification is the caller's responsibility; see
+    ``abnormal_flow_input_audit``.)"""
+    import duckdb
+
+    connection = duckdb.connect()
+    try:
+        rows = connection.execute(_INPUT_COLUMNS_SQL, [path, window_start, window_end]).fetchall()
+    finally:
+        connection.close()
+    return [_row_to_bar(row) for row in rows]
+
+
+def assemble_all(
+    bars: Sequence[MinuteBar], contract: AbnormalFlowContract
+) -> list[DecisionFeatures]:
+    """Group bars by exact native route and assemble decisions per instrument using the
+    contract's registered scan lag, execution window, and per-venue OI freshness. A
+    venue without a registered freshness ceiling is skipped (never silently accepted)."""
+    by_route: dict[tuple[str, str, str], list[MinuteBar]] = defaultdict(list)
+    for b in bars:
+        by_route[(b.exchange, b.market_type, b.native_market_id)].append(b)
+    out: list[DecisionFeatures] = []
+    scan_lag = contract.scan_lag_minutes
+    exec_window = contract.entry_execution_window_minutes
+    assert scan_lag is not None and exec_window is not None
+    for (exchange, _mt, _mid), group in by_route.items():
+        freshness = oi_freshness_limit_for(contract, exchange)
+        if freshness is None:
+            continue
+        out.extend(
+            assemble_decisions(
+                group,
+                scan_lag_minutes=scan_lag,
+                entry_execution_window_minutes=exec_window,
+                oi_freshness_limit_seconds=freshness,
+            )
+        )
+    return out
+
+
+def parquet_outcome_reader(
+    path: str, *, outcome_horizon_minutes: int
+) -> Callable[[Sequence[DecisionFeatures]], dict[RouteKey, Outcome]]:
+    """Build a returns-bearing reader over one Parquet: entry is the priced-proxy open
+    of the decision minute's bar, exit the close of the bar ``outcome_horizon_minutes``
+    later, on the exact native route. Missing legs stay unresolved (never filled in)."""
+    import duckdb
+
+    def reader(requested: Sequence[DecisionFeatures]) -> dict[RouteKey, Outcome]:
+        if not requested:
+            return {}
+        starts = [d.decision_at for d in requested]
+        horizon = timedelta(minutes=outcome_horizon_minutes)
+        lo = min(starts)
+        hi = max(starts) + horizon + timedelta(minutes=1)
+        connection = duckdb.connect()
+        try:
+            rows = connection.execute(_OUTCOME_COLUMNS_SQL, [path, lo, hi]).fetchall()
+        finally:
+            connection.close()
+        opens: dict[tuple[str, str, str, datetime], float | None] = {}
+        closes: dict[tuple[str, str, str, datetime], float | None] = {}
+        for row in rows:
+            key = (str(row[0]), str(row[1]), str(row[2]), row[3])
+            opens[key] = row[4]
+            closes[key] = row[5]
+        out: dict[RouteKey, Outcome] = {}
+        for d in requested:
+            entry_key = (d.exchange, d.market_type, d.native_market_id, d.decision_at)
+            exit_key = (d.exchange, d.market_type, d.native_market_id, d.decision_at + horizon)
+            out[d.route_key()] = Outcome(
+                exchange=d.exchange,
+                market_type=d.market_type,
+                native_market_id=d.native_market_id,
+                symbol=d.symbol,
+                decision_at=d.decision_at,
+                entry_price=opens.get(entry_key),
+                exit_price=closes.get(exit_key),
+            )
+        return out
+
+    return reader
