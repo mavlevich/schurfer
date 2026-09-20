@@ -1,0 +1,354 @@
+{
+  "chosen_end_day": "2026-09-18",
+  "days": [
+    {
+      "archive_verified": true,
+      "borg_archive": "bars-2026-09-19T04:30:16",
+      "day": "2026-08-16",
+      "fidelity_verified": true,
+      "file_name": "bars-2026-08-16.parquet",
+      "sha256": "cb40bf31df63ac336b896724f74d1ea2b1c3790160aa25a635cc6a9106119b8b",
+      "source_fingerprint": "cbfp_v1:39376161343561336532366664353837363238373261356364366332623266323666626633383337633963626562653836303462623135373531323730633863",
+      "status": "fully_verified"
+    },
+    {
+      "archive_verified": true,
+      "borg_archive": "bars-2026-09-19T04:30:16",
+      "day": "2026-08-17",
+      "fidelity_verified": true,
+      "file_name": "bars-2026-08-17.parquet",
+      "sha256": "b2aaf289c7852acf3348bb6b7001f08d10f44898a1cbab562754d2406f8362b1",
+      "source_fingerprint": "cbfp_v1:36623661303235333436346661326632663030313332353966333066363134306264336132386137306233356332396566363235373131363836306566303461",
+      "status": "fully_verified"
+    },
+    {
+      "archive_verified": true,
+      "borg_archive": "bars-2026-09-19T04:30:16",
+      "day": "2026-08-18",
+      "fidelity_verified": true,
+      "file_name": "bars-2026-08-18.parquet",
+      "sha256": "acd9ae2353aa1691287958117bb75d12c3883c5586611ec8fecbfe8b8b555ec0",
+      "source_fingerprint": "cbfp_v1:38623661313134346163633464666661353435313439336565396334616335356163643066303062313730656338333363646236666139616363653561323134",
+      "status": "fully_verified"
+    },
+    {
+      "archive_verified": true,
+      "borg_archive": "bars-2026-09-19T04:30:16",
+      "day": "2026-08-19",
+      "fidelity_verified": true,
+      "file_name": "bars-2026-08-19.parquet",
+      "sha256": "a1869059b55fd9c8d4c0933477ada818f40dd2dca093c648a3ae6a0599bb31e1",
+      "source_fingerprint": "cbfp_v1:64616432326339303365663134356366376334353164656632316437656436653731363564323238636539623036666430383138636662326366383834333934",
+      "status": "fully_verified"
+    },
+    {
+      "archive_verified": true,
+      "borg_archive": "bars-2026-09-19T04:30:16",
+      "day": "2026-08-20",
+      "fidelity_verified": true,
+      "file_name": "bars-2026-08-20.parquet",
+      "sha256": "1c4e118849a5c9e6d9e5d67afa9b36353126f75cf85d7309e6bae14f01eccab2",
+      "source_fingerprint": "cbfp_v1:32323831653334306230643563653139363932633530373463383964323833626634613562306134336266323234626165636465393366306466653132396439",
+      "status": "fully_verified"
+    },
+    {
+      "archive_verified": true,
+      "borg_archive": "bars-2026-09-19T04:30:16",
+      "day": "2026-08-21",
+      "fidelity_verified": true,
+      "file_name": "bars-2026-08-21.parquet",
+      "sha256": "28a4c8cd40ebb08eba418bd0d0cfe2d9dc8ff988b3e97a010813662a2f438b9f",
+      "source_fingerprint": "cbfp_v1:65396665306262303334353730633661316133636433396566326130623937376437376638333439313339663336663062346661303566353730303838666365",
+      "status": "fully_verified"
+    },
+    {
+      "archive_verified": true,
+      "borg_archive": "bars-2026-09-19T04:30:16",
+      "day": "2026-08-22",
+      "fidelity_verified": true,
+      "file_name": "bars-2026-08-22.parquet",
+      "sha256": "58ad2bfa20e73ee253552b1f4437f95c61efef28d0aeb205ec87b222229ad5e0",
+      "source_fingerprint": "cbfp_v1:38343831653039333361393864643130643765356135646139666365323664323631646563346235353865653639366362343663303935363133313563333634",
+      "status": "fully_verified"
+    },
+    {
+      "archive_verified": true,
+      "borg_archive": "bars-2026-09-19T04:30:16",
+      "day": "2026-08-23",
+      "fidelity_verified": true,
+      "file_name": "bars-2026-08-23.parquet",
+      "sha256": "de908fb55e68efb0bf0f6ebfddd4d1602846a6c7aaf2cd5161ee8aa0be828330",
+      "source_fingerprint": "cbfp_v1:65393863633031343039343337363834616638363833316230326232663434343637343061353066613130333063383031633836343766373036376662373635",
+      "status": "fully_verified"
+    },
+    {
+      "archive_verified": true,
+      "borg_archive": "bars-2026-09-19T04:30:16",
+      "day": "2026-08-24",
+      "fidelity_verified": true,
+      "file_name": "bars-2026-08-24.parquet",
+      "sha256": "891483bbc75703b568d62d0d7e5fc9b70067df0ed44c6e87a293febda3d1fc22",
+      "source_fingerprint": "cbfp_v1:64363035653038353630316465653633333536346435366161343863326339633338386339663061653863326133373130383637653337393039633736366133",
+      "status": "fully_verified"
+    },
+    {
+      "archive_verified": true,
+      "borg_archive": "bars-2026-09-19T04:30:16",
+      "day": "2026-08-25",
+      "fidelity_verified": true,
+      "file_name": "bars-2026-08-25.parquet",
+      "sha256": "1727d31c93e1146e1bb8a57f0d90f42ba92ab027e7c042ad25a473731411b099",
+      "source_fingerprint": "cbfp_v1:31353636376430313736373565386135323837313431613661643364656638336165316330376162643363383739666532333366623133343761663265663361",
+      "status": "fully_verified"
+    },
+    {
+      "archive_verified": true,
+      "borg_archive": "bars-2026-09-19T04:30:16",
+      "day": "2026-08-26",
+      "fidelity_verified": true,
+      "file_name": "bars-2026-08-26.parquet",
+      "sha256": "89d8883f99100e1b84f2736d8370b51b0413f2e28a9fe2e062cd12f37d0741c7",
+      "source_fingerprint": "cbfp_v1:64303637386664363236336230666336353466633138653033323261633134633963383634356430386263383136626137626336613365633834306136326166",
+      "status": "fully_verified"
+    },
+    {
+      "archive_verified": true,
+      "borg_archive": "bars-2026-09-19T04:30:16",
+      "day": "2026-08-27",
+      "fidelity_verified": true,
+      "file_name": "bars-2026-08-27.parquet",
+      "sha256": "496c0e69c93ea64c4eb9e1bf10a6d8ef7dec43062cd9c1bbadf78f650cb36a24",
+      "source_fingerprint": "cbfp_v1:36663439653765333266306639353165656234336363363031336433316339376431343937383839366534326532393230393231333431653035376638656438",
+      "status": "fully_verified"
+    },
+    {
+      "archive_verified": true,
+      "borg_archive": "bars-2026-09-19T04:30:16",
+      "day": "2026-08-28",
+      "fidelity_verified": true,
+      "file_name": "bars-2026-08-28.parquet",
+      "sha256": "26df2b61f81bcc11ac0178be7e07f8a68794463cd3c9907438a243b044dba84a",
+      "source_fingerprint": "cbfp_v1:62613634316533326438396630383436636439613265306435343163333866326432363162316236656332633035626536343362383033386565353935616161",
+      "status": "fully_verified"
+    },
+    {
+      "archive_verified": true,
+      "borg_archive": "bars-2026-09-19T04:30:16",
+      "day": "2026-08-29",
+      "fidelity_verified": true,
+      "file_name": "bars-2026-08-29.parquet",
+      "sha256": "d69da9a9240e9624e087eb017784a3ee473278926fb43efb60d888ceb9626ea3",
+      "source_fingerprint": "cbfp_v1:63326665316462626564353265363331373938326534373337356433653532323635303636363934613433313035323862636339323264623361373738383633",
+      "status": "fully_verified"
+    },
+    {
+      "archive_verified": true,
+      "borg_archive": "bars-2026-09-19T04:30:16",
+      "day": "2026-08-30",
+      "fidelity_verified": true,
+      "file_name": "bars-2026-08-30.parquet",
+      "sha256": "f6d4fd74b117eca3b65af87af31e4b71ab391dd785f3fa26cd5fb0cb0bb89bcf",
+      "source_fingerprint": "cbfp_v1:33663831383461333936646332353337346664366338613031316165653635653936386235313633643731646265336366376230663863643064613731333535",
+      "status": "fully_verified"
+    },
+    {
+      "archive_verified": true,
+      "borg_archive": "bars-2026-09-19T04:30:16",
+      "day": "2026-08-31",
+      "fidelity_verified": true,
+      "file_name": "bars-2026-08-31.parquet",
+      "sha256": "62110a60b3c112bc5fcb2cf982f1e20195d16614472ca5c07a5764d9152ad1f8",
+      "source_fingerprint": "cbfp_v1:30306136323331633165376139643466393565326562643236323733353262393739633764653932633539323734396431623164303537376234626666363266",
+      "status": "fully_verified"
+    },
+    {
+      "archive_verified": true,
+      "borg_archive": "bars-2026-09-19T04:30:16",
+      "day": "2026-09-01",
+      "fidelity_verified": true,
+      "file_name": "bars-2026-09-01.parquet",
+      "sha256": "03ada944921814c1a7d378d7b1937059e1a9014e7234b70f1a1d29a6783f45f1",
+      "source_fingerprint": "cbfp_v1:34643134366632323337393835303933663062336239643139353336656637346434373463653564363137383364626230383234633836316637653965663432",
+      "status": "fully_verified"
+    },
+    {
+      "archive_verified": true,
+      "borg_archive": "bars-2026-09-19T04:30:16",
+      "day": "2026-09-02",
+      "fidelity_verified": true,
+      "file_name": "bars-2026-09-02.parquet",
+      "sha256": "d9fd73e5323d7ef959c22f65743d991b3b6e4f24859fa90ac2287e54bd420177",
+      "source_fingerprint": "cbfp_v1:31626365326331366331326364373031383234363531376539633532323334313135353763663639373438663666653133353538643234373831303033356331",
+      "status": "fully_verified"
+    },
+    {
+      "archive_verified": true,
+      "borg_archive": "bars-2026-09-19T04:30:16",
+      "day": "2026-09-03",
+      "fidelity_verified": true,
+      "file_name": "bars-2026-09-03.parquet",
+      "sha256": "0c656caf020c826ef4b748aaca47e037c328e2f362cb8f0694aaa3e9ed85c20f",
+      "source_fingerprint": "cbfp_v1:64306637363536373337303765653932663034333266363661663564633163363737336435633136336135613965323432323137386432373865363936363661",
+      "status": "fully_verified"
+    },
+    {
+      "archive_verified": true,
+      "borg_archive": "bars-2026-09-19T04:30:16",
+      "day": "2026-09-04",
+      "fidelity_verified": true,
+      "file_name": "bars-2026-09-04.parquet",
+      "sha256": "f70d9ce61bf25e58f51cb66add35cf2129ff4ebba3ac3680f21b77276b320140",
+      "source_fingerprint": "cbfp_v1:31663762616338353234623530326631356335396531383762613931353262323039333637396336383833323833396439346131663365646263363136383031",
+      "status": "fully_verified"
+    },
+    {
+      "archive_verified": true,
+      "borg_archive": "bars-2026-09-19T04:30:16",
+      "day": "2026-09-05",
+      "fidelity_verified": true,
+      "file_name": "bars-2026-09-05.parquet",
+      "sha256": "d061c8ae8cfb3992b6159a3045f1d7886311f40d21b95a7363b00f71d6090a97",
+      "source_fingerprint": "cbfp_v1:65656535646237623632386337316234333933386437666366633331373765326137393966316439383234383334633835393139613963326339396630303561",
+      "status": "fully_verified"
+    },
+    {
+      "archive_verified": true,
+      "borg_archive": "bars-2026-09-19T04:30:16",
+      "day": "2026-09-06",
+      "fidelity_verified": true,
+      "file_name": "bars-2026-09-06.parquet",
+      "sha256": "389830c7934a030af9af6fd27234ed694dee95b7ed02dacdd10c96809dd327d6",
+      "source_fingerprint": "cbfp_v1:30623434336134356165383632363234306330356239656339623934303634396462373636343463326438306537346531666638653166626231616330333865",
+      "status": "fully_verified"
+    },
+    {
+      "archive_verified": true,
+      "borg_archive": "bars-2026-09-19T04:30:16",
+      "day": "2026-09-07",
+      "fidelity_verified": true,
+      "file_name": "bars-2026-09-07.parquet",
+      "sha256": "6d0900d3628349cedd4955cca56dc7ef9142db26043127aa60525d4fb0779ff7",
+      "source_fingerprint": "cbfp_v1:39363563326161353063363739633130633535313530613737656338353334363837343737396664313334656431356538326531356566373961666661656339",
+      "status": "fully_verified"
+    },
+    {
+      "archive_verified": true,
+      "borg_archive": "bars-2026-09-19T04:30:16",
+      "day": "2026-09-08",
+      "fidelity_verified": true,
+      "file_name": "bars-2026-09-08.parquet",
+      "sha256": "51048e1050b68ea1d1b6803eab2bb454d523328697b99df48c1212ff1f453cb1",
+      "source_fingerprint": "cbfp_v1:64383264383866373831653566356261316630636466656166613231653435343462346434323537386563353237616131336330376134356538303833313234",
+      "status": "fully_verified"
+    },
+    {
+      "archive_verified": true,
+      "borg_archive": "bars-2026-09-19T04:30:16",
+      "day": "2026-09-09",
+      "fidelity_verified": true,
+      "file_name": "bars-2026-09-09.parquet",
+      "sha256": "c3052d4a80104c8543b052e374c5ef16a08a3c2cc777a4da839e494fe857473d",
+      "source_fingerprint": "cbfp_v1:31336161343263653565653233636462626333653731316530396566383461653638613561393061343134336232633932633238663539373035303736356261",
+      "status": "fully_verified"
+    },
+    {
+      "archive_verified": true,
+      "borg_archive": "bars-2026-09-19T04:30:16",
+      "day": "2026-09-10",
+      "fidelity_verified": true,
+      "file_name": "bars-2026-09-10.parquet",
+      "sha256": "0c2e63d2d266662c8b4a8b125e7db18101507e7fb4d2952379ada4b66341ce43",
+      "source_fingerprint": "cbfp_v1:65333837626637656439646264336334666136656165393332383465346535396635333366323065326165356631633030623364396363633637313062373063",
+      "status": "fully_verified"
+    },
+    {
+      "archive_verified": true,
+      "borg_archive": "bars-2026-09-19T04:30:16",
+      "day": "2026-09-11",
+      "fidelity_verified": true,
+      "file_name": "bars-2026-09-11.parquet",
+      "sha256": "381f85d40c6d214520d322d9367eea7526cad81d9a0e79cd25b3070e0bc3d759",
+      "source_fingerprint": "cbfp_v1:65613032653932313236353263343664333632376664663939336636616539343537343561363135636137653761653563646362373339303333633933323263",
+      "status": "fully_verified"
+    },
+    {
+      "archive_verified": true,
+      "borg_archive": "bars-2026-09-19T04:30:16",
+      "day": "2026-09-12",
+      "fidelity_verified": true,
+      "file_name": "bars-2026-09-12.parquet",
+      "sha256": "0d978c90d7ec61e0ac98301c091ae47fbf0e045380f0c08eafbb77a9eef7ae22",
+      "source_fingerprint": "cbfp_v1:30356439633431373735623039313964376136336635623235623562616331386531396233666430316630623935646563646533656437666535386631303461",
+      "status": "fully_verified"
+    },
+    {
+      "archive_verified": true,
+      "borg_archive": "bars-2026-09-19T04:30:16",
+      "day": "2026-09-13",
+      "fidelity_verified": true,
+      "file_name": "bars-2026-09-13.parquet",
+      "sha256": "f2a9e2c4816c431adce1340101235857de16c5010014402b63215a52370a0b40",
+      "source_fingerprint": "cbfp_v1:34396134383330643462353236663961323837643032326364366239386336346232373064626162396333356662616635333831633037346137343534333039",
+      "status": "fully_verified"
+    },
+    {
+      "archive_verified": true,
+      "borg_archive": "bars-2026-09-19T04:30:16",
+      "day": "2026-09-14",
+      "fidelity_verified": true,
+      "file_name": "bars-2026-09-14.parquet",
+      "sha256": "00c62a1e37c23b44d2b06691a3558d6c232f5cba46ab3f478099a9cd7a103dd6",
+      "source_fingerprint": "cbfp_v1:33626438363364393533663761343036646539633564333863376362333163373132616262663163393162336164386366336230383162633134633834633163",
+      "status": "fully_verified"
+    },
+    {
+      "archive_verified": true,
+      "borg_archive": "bars-2026-09-19T04:30:16",
+      "day": "2026-09-15",
+      "fidelity_verified": true,
+      "file_name": "bars-2026-09-15.parquet",
+      "sha256": "5e7995be7d9d3e13162ae69df5423115449c3f70199fa619987b9578f53d1727",
+      "source_fingerprint": "cbfp_v1:64313464623935666165376430346263376362313766626132653666396230343961666233306535363261326261613563633434373130303530303366623234",
+      "status": "fully_verified"
+    },
+    {
+      "archive_verified": true,
+      "borg_archive": "bars-2026-09-19T04:30:16",
+      "day": "2026-09-16",
+      "fidelity_verified": true,
+      "file_name": "bars-2026-09-16.parquet",
+      "sha256": "dbefbf0b37ec66e49ccc1db6d615ef2c502d5448f9b995c39dae7a600ae68df0",
+      "source_fingerprint": "cbfp_v1:38393930313532313639303830346536333535386266656666643466613762313635653365376436653430643261343664306337313565303064366333306231",
+      "status": "fully_verified"
+    },
+    {
+      "archive_verified": true,
+      "borg_archive": "bars-2026-09-19T04:30:16",
+      "day": "2026-09-17",
+      "fidelity_verified": true,
+      "file_name": "bars-2026-09-17.parquet",
+      "sha256": "73cfedfae6429d5f0cb3b93c8ff68ce5bfb01f387531c03ecc3ce748d4bca90b",
+      "source_fingerprint": "cbfp_v1:39313935613662313563336262303236363065313232653633306435353631343235646235643038643762376662663530366432626664356661653161626635",
+      "status": "fully_verified"
+    },
+    {
+      "archive_verified": true,
+      "borg_archive": "bars-2026-09-19T04:30:16",
+      "day": "2026-09-18",
+      "fidelity_verified": true,
+      "file_name": "bars-2026-09-18.parquet",
+      "sha256": "d770e4368ee538dc0a1a614df85dd9f1494056db5ff2b30f359d04678a91ab7b",
+      "source_fingerprint": "cbfp_v1:65616430323834343465363339303538346231643430393739356132663633313131306262396365346638376136353334383833393165653463366635646233",
+      "status": "fully_verified"
+    }
+  ],
+  "gap": null,
+  "identity_snapshot": {
+    "path": "/private/tmp/claude-501/-Users-mavlevich-Desktop-Projects-schurfer/fe8306c1-3a80-4b69-b6da-b68d0fd33fb6/scratchpad/fullrun/identity.json",
+    "sha256": "sha256:899bd16d46ccec58010eb7fc098d5570f73bef3d44402e63dafadf6ba5b61f23"
+  },
+  "requested_end_day": "2026-09-18",
+  "revision": "876c037d84c2c12aa294a3b6bcb539ebd0a82bf9",
+  "scan_version": "abnormal_flow_scan_v1",
+  "start_day": "2026-08-16"
+}
