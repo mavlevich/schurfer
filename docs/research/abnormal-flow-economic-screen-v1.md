@@ -265,6 +265,48 @@ slice the thresholds were read on. After you review the actual scan distribution
 pick the percentile knobs (or replace this rule) and register the window and parameters
 for the separate economic run.
 
+## Point-in-time identity schema (pinned; export + scan consume it)
+
+Identity has TWO SEPARATE layers so a cross-venue guess can never inflate independent
+evidence:
+
+1. Per-route identity (authoritative). For each `(exchange, market_type,
+native_market_id)` and each snapshot interval, an `identity_key` taken from THAT
+   venue's `momentum_universe_instruments` snapshot. EVERY instrument gets one,
+   including single-venue instruments. It is a per-route key, never a cross-venue
+   cluster. Each record carries `valid_from` = snapshot `captured_at`, `valid_to` =
+   the next snapshot's `captured_at` (or null), and `snapshot_captured_at` so the
+   snapshot age at a decision is known. `valid_to` is an interval boundary only: it
+   does NOT assert the universe was provably complete across a long gap between
+   snapshots.
+2. Cross-venue correspondence (separate, advisory). A separate table maps identity_keys
+   across venues with the classifier status: `matched` / `candidate` / `conflict` /
+   `unmatched`. Only `matched` is treated as the same underlying asset. `candidate`,
+   `conflict`, and unknown are NEVER silently merged.
+
+Export rules: emit only snapshots whose `captured_at <= decision time` (the resolver
+picks the nearest snapshot at or before the decision; no look-ahead). The artifact
+records per day/venue coverage and the snapshot age used. Between snapshots the gap can
+be large; membership is "as of the last snapshot", and a decision far past its snapshot
+is flagged by its snapshot age, not assumed complete.
+
+Scanner counting when the cross-venue link is unknown:
+
+- Episodes are formed per `(exchange, identity_key)` (per route), so Bybit ABC and
+  Binance ABC are two separate episodes regardless of cross-venue status; the cooldown
+  dedups only within a route.
+- The independent asset count collapses ONLY `matched` cross-venue groups into one
+  asset; every `candidate`/`conflict`/`unmatched` identity_key counts separately. The
+  artifact reports `cross_venue_matched_groups`, `cross_venue_candidate`,
+  `cross_venue_conflict`, and `cross_venue_unmatched` so the reader sees how much
+  identity is uncertain. Cross-venue confirmed overlap is reported for portfolio
+  concentration, never multiplied into independent evidence.
+
+The export runs read-only ON PROD (localhost DB, not a PG tunnel) reusing the existing
+`momentum_universe_identity_repository` (`window_coverage` / `instruments_as_of`) and
+`momentum_universe_identity_classifier`; the small JSON is fetched over SSH. It is
+unit-tested locally against a fake repository before the prod run.
+
 ## Open decisions before registration
 
 1. Owner approval of the one primary mechanism, 60-minute lookback, long
