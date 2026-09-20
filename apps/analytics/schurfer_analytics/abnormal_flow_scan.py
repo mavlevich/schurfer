@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING, Any
 
 from .abnormal_flow_input_audit import AUDIT_VERSION, audit_directory, verified_input
 from .abnormal_flow_replay import (
+    _decision_eligible,
     ablation_cell_fires,
     form_episodes,
     is_eligible,
@@ -316,6 +317,71 @@ def _accumulate_instrument(
 # --- Orchestration -----------------------------------------------------------------
 
 
+_OI_AGE_SQL = """
+WITH b AS (
+    SELECT exchange,
+        open_interest_observed_at AS oi_at,
+        date_diff('second', open_interest_observed_at, bucket_start) AS age_s
+    FROM read_parquet(?)
+    WHERE bucket_start >= ? AND bucket_start < ?
+)
+SELECT exchange,
+    count(*) AS bars,
+    count(*) FILTER (WHERE oi_at IS NULL) AS oi_null,
+    round(median(age_s)) AS age_median_s,
+    round(quantile_cont(age_s, 0.90)) AS age_p90_s,
+    round(quantile_cont(age_s, 0.99)) AS age_p99_s,
+    max(age_s) AS age_max_s,
+    count(*) FILTER (
+        WHERE oi_at IS NOT NULL
+          AND age_s > (CASE WHEN exchange = 'bybit' THEN ? ELSE ? END)
+    ) AS beyond_freshness
+FROM b
+GROUP BY 1 ORDER BY 1
+"""
+
+
+def oi_age_summary(
+    paths: list[str],
+    *,
+    window_start: datetime,
+    window_end: datetime,
+    bybit_freshness_s: int,
+    binance_freshness_s: int,
+) -> list[dict[str, Any]]:
+    """Per-venue OI-age distribution and the share of bars whose OI is older than the
+    per-venue freshness ceiling. Positive age = OI observed BEFORE the bar (stale);
+    negative = observed within the minute. Outcome-blind (reads no forward price)."""
+    import duckdb
+
+    connection = duckdb.connect()
+    try:
+        rows = connection.execute(
+            _OI_AGE_SQL,
+            [paths, window_start, window_end, bybit_freshness_s, binance_freshness_s],
+        ).fetchall()
+    finally:
+        connection.close()
+    out: list[dict[str, Any]] = []
+    for r in rows:
+        bars = int(r[1])
+        beyond = int(r[7])
+        out.append(
+            {
+                "exchange": str(r[0]),
+                "bars": bars,
+                "oi_null": int(r[2]),
+                "age_median_s": None if r[3] is None else float(r[3]),
+                "age_p90_s": None if r[4] is None else float(r[4]),
+                "age_p99_s": None if r[5] is None else float(r[5]),
+                "age_max_s": None if r[6] is None else float(r[6]),
+                "beyond_freshness": beyond,
+                "pct_beyond_freshness": round(100.0 * beyond / bars, 3) if bars else None,
+            }
+        )
+    return out
+
+
 def _git_revision() -> str:
     git_executable = shutil.which("git")
     if git_executable is None:  # pragma: no cover - git absence is not a scan failure
@@ -531,7 +597,12 @@ def run_scan(
     ablation_fires: list[DecisionFeatures] = []
     eligible_assets: set[str] = set()
     eligible_weeks: set[str] = set()
-    per_venue_available: dict[str, int] = {}
+    per_venue: dict[str, dict[str, Any]] = {}
+
+    def _pv(exchange: str) -> dict[str, Any]:
+        return per_venue.setdefault(
+            exchange, {"scanned": 0, "available": 0, "eligible": 0, "reasons": {}}
+        )
 
     for d in _iter_decisions(
         paths,
@@ -540,8 +611,18 @@ def run_scan(
         contract=contract,
         resolver=resolver,
     ):
-        if d.unavailable_reason is None:
-            per_venue_available[d.exchange] = per_venue_available.get(d.exchange, 0) + 1
+        pv = _pv(d.exchange)
+        pv["scanned"] += 1
+        if d.unavailable_reason is not None:
+            pv["reasons"][d.unavailable_reason] = pv["reasons"].get(d.unavailable_reason, 0) + 1
+        else:
+            pv["available"] += 1
+            if _decision_eligible(contract, d):
+                pv["eligible"] += 1
+            else:
+                pv["reasons"]["below_eligibility_floor"] = (
+                    pv["reasons"].get("below_eligibility_floor", 0) + 1
+                )
         _accumulate_instrument(
             contract,
             [d],
@@ -571,6 +652,14 @@ def run_scan(
         knobs=knobs,
     )
 
+    oi_age = oi_age_summary(
+        paths,
+        window_start=window_start,
+        window_end=window_end,
+        bybit_freshness_s=contract.oi_freshness_limit_seconds_bybit or 0,
+        binance_freshness_s=contract.oi_freshness_limit_seconds_binance or 0,
+    )
+
     scan_json = {
         "scan_version": SCAN_VERSION,
         "audit_version": AUDIT_VERSION,
@@ -578,7 +667,8 @@ def run_scan(
         "window": {"start": window_start.isoformat(), "end": window_end.isoformat()},
         "provisional_contract": {k: v for k, v in asdict(contract).items() if v is not None},
         "coverage": [asdict(c) for c in audit.coverage],
-        "per_venue_available_decisions": per_venue_available,
+        "per_venue": per_venue,
+        "oi_age": oi_age,
         "counts": asdict(counts),
         "distributions": {name: hist.as_json() for name, hist in histograms.items()},
         "primary_episodes": len(primary_episodes),

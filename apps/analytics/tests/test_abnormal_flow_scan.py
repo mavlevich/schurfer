@@ -220,7 +220,10 @@ def test_scan_produces_a_full_outcome_blind_artifact(tmp_path) -> None:  # type:
     assert scan["counts"]["eligible"] > 0
     assert scan["primary_episodes"] >= 1
     assert scan["distinct_eligible_assets"] == 1  # only canonical "Z"
-    assert scan["per_venue_available_decisions"]["bybit"] > 0
+    assert scan["per_venue"]["bybit"]["available"] > 0
+    assert scan["per_venue"]["bybit"]["eligible"] > 0
+    oi_age = {row["exchange"]: row for row in scan["oi_age"]}
+    assert "bybit" in oi_age and oi_age["bybit"]["bars"] > 0
     assert sum(scan["distributions"]["buy_pressure"]["counts"]) > 0
     # The deterministic freeze proposal is present and non-circular.
     freeze = scan["proposed_freeze"]["proposed_thresholds"]
