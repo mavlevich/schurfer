@@ -392,20 +392,23 @@ func (h *Handler) dbTokenFallback(ctx context.Context, base string) (*pumpEntry,
 	}, nil
 }
 
-// ohlcvSource is the exact, explicit chart source: which venue, its native market
-// id, the market type actually queried, and whether that market is a proxy (LBank
-// spot standing in for the perpetual). Surfaced so the UI shows the source and
-// never presents a spot proxy as the swap without a marker.
+// ohlcvSource is the exact, explicit chart source: which venue, the market id its
+// candles were ACTUALLY requested from, the market type of that request, and
+// whether it is a proxy (LBank spot standing in for the perpetual). For a proxy,
+// MarketID is the real queried market (the spot symbol) and ProxyForMarketID names
+// the perpetual it stands in for -- so the "exact source" is never a market we did
+// not query.
 type ohlcvSource struct {
-	Exchange   string `json:"exchange"`
-	MarketID   string `json:"market_id"`
-	MarketType string `json:"market_type"`
-	IsProxy    bool   `json:"is_proxy"`
+	Exchange         string `json:"exchange"`
+	MarketID         string `json:"market_id"`
+	MarketType       string `json:"market_type"`
+	IsProxy          bool   `json:"is_proxy"`
+	ProxyForMarketID string `json:"proxy_for_market_id,omitempty"`
 }
 
 // ohlcvResponse carries the candles plus the RESOLVED source, a status that
-// distinguishes a load error from genuinely absent history, and the full ordered
-// list of candidate sources so the UI can offer the user another one.
+// distinguishes a load error from genuinely absent history for THAT source, and
+// the full ordered list of candidate sources so the UI can offer another one.
 type ohlcvResponse struct {
 	Base     string        `json:"base"`
 	Interval int           `json:"interval"`
@@ -415,14 +418,23 @@ type ohlcvResponse struct {
 	Sources  []ohlcvSource `json:"sources"`
 }
 
-func sourceOf(c exchangeCandidate) ohlcvSource {
+// sourceOf builds the explicit source descriptor for a candidate. For the LBank
+// spot proxy the fetcher queries the spot symbol (lowercase base_usdt), NOT the
+// captured perpetual market id, so MarketID reflects the real request and the
+// perpetual id is carried separately as ProxyForMarketID.
+func sourceOf(c exchangeCandidate, base string) ohlcvSource {
 	kind := ohlcvSourceKinds[c.Exchange]
-	return ohlcvSource{
+	s := ohlcvSource{
 		Exchange:   c.Exchange,
 		MarketID:   c.MarketID,
 		MarketType: kind.marketType,
 		IsProxy:    kind.isProxy,
 	}
+	if c.Exchange == "lbank" {
+		s.MarketID = strings.ToLower(base) + "_usdt" // the spot symbol actually queried
+		s.ProxyForMarketID = c.MarketID              // the perpetual it stands in for
+	}
+	return s
 }
 
 func (h *Handler) OHLCV(w http.ResponseWriter, r *http.Request) {
@@ -454,13 +466,17 @@ func (h *Handler) OHLCV(w http.ResponseWriter, r *http.Request) {
 	}
 	sources := make([]ohlcvSource, len(candidates))
 	for i, c := range candidates {
-		sources[i] = sourceOf(c)
+		sources[i] = sourceOf(c, base)
 	}
 
-	// An explicit ?exchange= pins the source (the user picked it): use exactly
-	// that candidate with no silent fall-through to another venue. It must be one
-	// of the token's own candidates, never an arbitrary exchange.
-	cacheKey := fmt.Sprintf("ohlcv:%s:%d:%d", base, interval, limit)
+	// Resolve EXACTLY ONE source and query only it. The default is the first
+	// candidate (the top futures route); an explicit ?exchange= lets the user pick
+	// another. The source is NEVER chosen by how many candles a venue returns, so a
+	// spot proxy that happens to have more history can't override the futures route
+	// and the chart's source never changes without the user asking. If the resolved
+	// source is unavailable or empty we report exactly that and the UI offers the
+	// others; automatic fall-through is deliberately not done here.
+	selected := candidates[0]
 	if requested := r.URL.Query().Get("exchange"); requested != "" {
 		idx := -1
 		for i, c := range candidates {
@@ -473,64 +489,38 @@ func (h *Handler) OHLCV(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "requested exchange is not a source for this token", http.StatusNotFound)
 			return
 		}
-		candidates = candidates[idx : idx+1]
-		cacheKey += ":" + requested
+		selected = candidates[idx]
 	}
+	resolved := sourceOf(selected, base)
 
+	// The cache key includes the RESOLVED exchange and the market id actually
+	// queried, so switching the route never returns another route's cached candles.
+	cacheKey := fmt.Sprintf("ohlcv:%s:%d:%d:%s:%s", base, interval, limit, resolved.Exchange, resolved.MarketID)
 	if cached, err := h.rdb.Get(r.Context(), cacheKey).Bytes(); err == nil {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(cached)
 		return
 	}
 
-	// Stop trying once we have 80% of the requested candles; 20 is the
-	// absolute floor so a nearly-empty response doesn't prematurely win.
-	goodEnough := limit * 4 / 5
-	if goodEnough < 20 {
-		goodEnough = 20
-	}
-	var bestCandles []Candle
-	var bestSource *ohlcvSource
-	anyFetched := false // at least one candidate returned (possibly zero) candles without error
-	for _, c := range candidates {
-		candles, err := fetchOHLCV(r.Context(), c.Exchange, c.MarketID, base, interval, limit)
-		if err != nil {
-			slog.Warn("pumps.ohlcv.fetch",
-				"exchange", c.Exchange, "market_id", c.MarketID, "base", base, "err", err)
-			continue
-		}
-		anyFetched = true
-		if len(candles) > len(bestCandles) {
-			bestCandles = candles
-			s := sourceOf(c)
-			bestSource = &s
-		}
-		if len(bestCandles) >= goodEnough {
-			break
-		}
-	}
-
+	candles, err := fetchOHLCV(r.Context(), selected.Exchange, selected.MarketID, base, interval, limit)
 	status := "ok"
-	if len(bestCandles) == 0 {
-		// Distinguish a genuine no-history from every candidate erroring, and pin
-		// the resolved source to the top (or requested) candidate so the UI can
-		// say exactly which source has nothing and offer the others.
-		if anyFetched {
-			status = "no_history"
-		} else {
-			status = "error"
-		}
-		s := sourceOf(candidates[0])
-		bestSource = &s
-		bestCandles = []Candle{}
+	switch {
+	case err != nil:
+		slog.Warn("pumps.ohlcv.fetch",
+			"exchange", selected.Exchange, "market_id", selected.MarketID, "base", base, "err", err)
+		status = "error"
+		candles = []Candle{}
+	case len(candles) == 0:
+		status = "no_history"
+		candles = []Candle{}
 	}
 
 	payload, _ := json.Marshal(ohlcvResponse{
 		Base:     base,
 		Interval: interval,
-		Source:   bestSource,
+		Source:   &resolved,
 		Status:   status,
-		Candles:  bestCandles,
+		Candles:  candles,
 		Sources:  sources,
 	})
 	// Only cache a successful result; an error/no-history may be transient and

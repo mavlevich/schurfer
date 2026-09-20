@@ -1816,6 +1816,82 @@ func TestOHLCVStatusDistinguishesErrorFromNoHistoryAndHonoursExplicitSource(t *t
 	}
 }
 
+// TestOHLCVDoesNotSelectSourceByCandleCount is the P1 regression: a spot proxy with
+// more candles must not override the resolved futures route. Only the resolved
+// source is queried; candle counts never pick the source.
+func TestOHLCVDoesNotSelectSourceByCandleCount(t *testing.T) {
+	orig := fetchOHLCV
+	t.Cleanup(func() { fetchOHLCV = orig })
+	fetched := map[string]bool{}
+	fetchOHLCV = func(_ context.Context, exchange, _, _ string, _, _ int) ([]Candle, error) {
+		fetched[exchange] = true
+		if exchange == "lbank" {
+			many := make([]Candle, 900) // more candles, but must NOT win
+			for i := range many {
+				many[i] = aCandle(2)
+			}
+			return many, nil
+		}
+		return []Candle{aCandle(1)}, nil // binance: few
+	}
+
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+	routes := []exchangeEntry{
+		{Exchange: "lbank", MarketID: "B2USDT"},   // spot proxy, listed first
+		{Exchange: "binance", MarketID: "B2USDT"}, // real futures
+	}
+	payload, _ := json.Marshal(pumpsPayload{Count: 1, Pumps: []pumpEntry{{Base: "B2", Exchanges: routes}}})
+	if err := mr.Set("pumps:latest", string(payload)); err != nil {
+		t.Fatal(err)
+	}
+	h := &Handler{rdb: rdb}
+
+	_, resp := callOHLCV(t, h, "")
+	if resp.Source == nil || resp.Source.Exchange != "binance" {
+		t.Fatalf("resolved source = %+v, want binance (candle count must not select)", resp.Source)
+	}
+	if fetched["lbank"] {
+		t.Fatal("lbank must not be queried when binance is the resolved source")
+	}
+}
+
+// TestOHLCVLBankSourceNamesTheSpotMarketActuallyQueried is the P2 regression: the
+// LBank source must report the spot symbol it really queries, with the perpetual id
+// carried separately -- not the perpetual id it never requests.
+func TestOHLCVLBankSourceNamesTheSpotMarketActuallyQueried(t *testing.T) {
+	orig := fetchOHLCV
+	t.Cleanup(func() { fetchOHLCV = orig })
+	fetchOHLCV = func(_ context.Context, _, _, _ string, _, _ int) ([]Candle, error) {
+		return []Candle{aCandle(1)}, nil
+	}
+
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+	routes := []exchangeEntry{
+		{Exchange: "binance", MarketID: "B2USDT"},
+		{Exchange: "lbank", MarketID: "B2USDT"},
+	}
+	payload, _ := json.Marshal(pumpsPayload{Count: 1, Pumps: []pumpEntry{{Base: "B2", Exchanges: routes}}})
+	if err := mr.Set("pumps:latest", string(payload)); err != nil {
+		t.Fatal(err)
+	}
+	h := &Handler{rdb: rdb}
+
+	_, resp := callOHLCV(t, h, "?exchange=lbank")
+	if resp.Source == nil || resp.Source.Exchange != "lbank" {
+		t.Fatalf("source = %+v, want lbank", resp.Source)
+	}
+	if resp.Source.MarketID != "b2_usdt" || resp.Source.MarketType != "spot" || !resp.Source.IsProxy {
+		t.Fatalf("lbank source = %+v, want market_id=b2_usdt / spot / proxy", resp.Source)
+	}
+	if resp.Source.ProxyForMarketID != "B2USDT" {
+		t.Fatalf("proxy_for_market_id = %q, want B2USDT (the perpetual it stands in for)", resp.Source.ProxyForMarketID)
+	}
+}
+
 func TestExchangeEntryPreservesUnavailableVolumeMetadata(t *testing.T) {
 	raw := []byte(`{
 		"exchange": "lbank",

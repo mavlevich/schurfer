@@ -334,6 +334,10 @@ export function TokenChart({ base }: { base: string }) {
               {buckets.truncated && (
                 <span className="text-amber-500"> · truncated, older candles not shown</span>
               )}
+              {/* Decisions are aggregated by ticker across every venue, while the
+                  candles above are from one resolved source; say so until a later
+                  PR filters decisions to the selected market. */}
+              <span className="opacity-60"> · decisions across all venues</span>
             </span>
           ) : null}
         </div>
