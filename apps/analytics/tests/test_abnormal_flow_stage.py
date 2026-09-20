@@ -41,13 +41,14 @@ def _setup(tmp_path: Path, *, corrupt: bool = False) -> tuple[_StubTransport, Pa
     sha = sha256_file(source)
     remote_dir = "/prod/cold-bars"
     manifest = {"file_name": f"{base}.parquet", "sha256": ("0" * 64 if corrupt else sha)}
-    provenance = {
-        "borg_archive": "bars-2026-09-19T04:30:00",
-        "archive_member_path": f"runtime/cold-bars/{base}.parquet",
+    receipt = {
+        "archive_name": "bars-2026-09-19T04:30:16",
+        "parquet_path": f"runtime/cold-bars/{base}.parquet",
+        "parquet_sha256": sha,
     }
     texts = {
         f"{remote_dir}/{base}.manifest.json": json.dumps(manifest),
-        f"{remote_dir}/{base}.provenance.json": json.dumps(provenance),
+        f"{remote_dir}/{base}.offsite-receipt.json": json.dumps(receipt),
     }
     return _StubTransport(texts, source), source
 
@@ -69,7 +70,7 @@ def test_stage_days_fetches_and_verifies_sha_locally(tmp_path: Path) -> None:
     assert len(artifact["days"]) == 1
     rec = artifact["days"][0]
     assert rec["verified"] is True
-    assert rec["archive"] == "bars-2026-09-19T04:30:00"
+    assert rec["archive"] == "bars-2026-09-19T04:30:16"
     assert rec["file_bytes"] > 0
 
 

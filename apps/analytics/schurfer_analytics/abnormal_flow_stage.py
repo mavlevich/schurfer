@@ -13,6 +13,7 @@ are the only source; the live database is never used in their place.
 from __future__ import annotations
 
 import json
+import shlex
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -40,9 +41,13 @@ class RemoteTransport(Protocol):
 @dataclass(frozen=True)
 class SshBorgTransport:
     """Runs `cat` and `borg extract --stdout` on the prod host over SSH. Borg secrets
-    never leave prod; only bytes and small JSON come back."""
+    never leave prod: when ``env_file`` is set it is sourced ON PROD (repo, passphrase,
+    RSH), so only bytes and small JSON come back. ``sudo`` wraps commands for root-owned
+    files, and an empty ``borg_repo`` uses the repo from the sourced env (``::archive``)."""
 
     host: str
+    sudo: bool = False
+    env_file: str | None = None
 
     def _ssh(self) -> str:
         ssh = shutil.which("ssh")
@@ -50,9 +55,16 @@ class SshBorgTransport:
             raise RuntimeError("ssh executable not found on PATH")
         return ssh
 
+    def _remote(self, inner: str) -> str:
+        # Wrap the remote command so it runs under one login shell with prod's env; the
+        # inner command is a single shell-quoted token, avoiding SSH re-splitting.
+        return (
+            f"sudo bash -c {shlex.quote(inner)}" if self.sudo else f"bash -c {shlex.quote(inner)}"
+        )
+
     def read_text(self, remote_path: str) -> str:
-        proc = subprocess.run(  # noqa: S603 -- fixed argv, resolved executable, no shell
-            [self._ssh(), self.host, "cat", "--", remote_path],
+        proc = subprocess.run(  # noqa: S603 -- resolved executable, single remote token
+            [self._ssh(), self.host, self._remote(f"cat -- {shlex.quote(remote_path)}")],
             capture_output=True,
             text=True,
             check=True,
@@ -60,17 +72,13 @@ class SshBorgTransport:
         return proc.stdout
 
     def extract_member(self, borg_repo: str, archive: str, member: str, dest: Path) -> None:
+        repo_spec = f"{borg_repo}::{archive}" if borg_repo else f"::{archive}"
+        cmd = f"borg extract --stdout {shlex.quote(repo_spec)} {shlex.quote(member)}"
+        if self.env_file:
+            cmd = f"set -a; . {shlex.quote(self.env_file)}; set +a; {cmd}"
         with dest.open("wb") as handle:
-            subprocess.run(  # noqa: S603 -- fixed argv, resolved executable, no shell
-                [
-                    self._ssh(),
-                    self.host,
-                    "borg",
-                    "extract",
-                    "--stdout",
-                    f"{borg_repo}::{archive}",
-                    member,
-                ],
+            subprocess.run(  # noqa: S603 -- resolved executable, single remote token
+                [self._ssh(), self.host, self._remote(cmd)],
                 stdout=handle,
                 check=True,
             )
@@ -84,6 +92,19 @@ class StagedDay:
     sha256: str
     file_bytes: int
     verified: bool
+
+
+def _read_receipt(
+    transport: RemoteTransport, remote_manifest_dir: str, base: str
+) -> dict[str, Any]:
+    """Per-day archive proof: prod's ``offsite-receipt.json`` (archive_name +
+    parquet_path), falling back to an audit-style ``provenance.json``."""
+    for suffix in ("offsite-receipt", "provenance"):
+        try:
+            return json.loads(transport.read_text(f"{remote_manifest_dir}/{base}.{suffix}.json"))  # type: ignore[no-any-return]
+        except subprocess.CalledProcessError:
+            continue
+    raise ValueError(f"{base}: no offsite-receipt.json or provenance.json found")
 
 
 def stage_days(
@@ -105,13 +126,15 @@ def stage_days(
     while day <= end:
         base = f"bars-{day.isoformat()}"
         manifest = json.loads(transport.read_text(f"{remote_manifest_dir}/{base}.manifest.json"))
-        provenance = json.loads(
-            transport.read_text(f"{remote_manifest_dir}/{base}.provenance.json")
+        receipt = _read_receipt(transport, remote_manifest_dir, base)
+        archive = receipt.get("archive_name") or receipt.get("borg_archive")
+        member = (
+            receipt.get("parquet_path")
+            or receipt.get("archive_member_path")
+            or f"runtime/cold-bars/{base}.parquet"
         )
-        archive = provenance.get("borg_archive")
-        member = provenance.get("archive_member_path") or f"runtime/cold-bars/{base}.parquet"
         if not archive:
-            raise ValueError(f"{day.isoformat()}: provenance has no borg_archive")
+            raise ValueError(f"{day.isoformat()}: receipt has no archive name")
         dest = local_dir / f"{base}.parquet"
         transport.extract_member(borg_repo, str(archive), str(member), dest)
         actual_sha = sha256_file(dest)
@@ -120,7 +143,7 @@ def stage_days(
                 f"{day.isoformat()}: local SHA {actual_sha} != manifest {manifest['sha256']}"
             )
         (local_dir / f"{base}.manifest.json").write_text(json.dumps(manifest))
-        (local_dir / f"{base}.provenance.json").write_text(json.dumps(provenance))
+        (local_dir / f"{base}.offsite-receipt.json").write_text(json.dumps(receipt))
         staged.append(
             StagedDay(
                 day=day.isoformat(),
@@ -163,11 +186,17 @@ def build_parser() -> Any:
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", required=True, help="SSH host alias for prod (e.g. schurfer)")
-    parser.add_argument("--borg-repo", required=True, help="Borg repo path ON PROD")
+    parser.add_argument(
+        "--borg-repo", default="", help="Borg repo; empty = use env file's BORG_REPO"
+    )
+    parser.add_argument(
+        "--env-file", default=None, help="Env file sourced ON PROD before borg (secrets stay there)"
+    )
+    parser.add_argument("--sudo", action="store_true", help="Run remote cat/borg under sudo")
     parser.add_argument(
         "--remote-manifest-dir",
         required=True,
-        help="Prod dir with per-day manifest+provenance JSON",
+        help="Prod dir with per-day manifest + offsite-receipt JSON",
     )
     parser.add_argument(
         "--local-dir", type=Path, required=True, help="Local staging dir on the Mac"
@@ -181,7 +210,7 @@ def main() -> None:
     import sys
 
     args: Any = build_parser().parse_args()
-    transport = SshBorgTransport(host=args.host)
+    transport = SshBorgTransport(host=args.host, sudo=args.sudo, env_file=args.env_file)
     artifact = stage_days(
         transport,
         remote_manifest_dir=args.remote_manifest_dir,
