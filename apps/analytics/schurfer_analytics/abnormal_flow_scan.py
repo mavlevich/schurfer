@@ -232,14 +232,17 @@ class IdentityResolver:
     identity came from so the scan can measure snapshot age. The current catalog is never
     used retroactively; an instant not covered by any snapshot resolves to ``None``."""
 
-    def __init__(self, index: dict[tuple[str, str, str], list[_IdentitySpan]], sha: str) -> None:
+    def __init__(self, index: dict[tuple[str, str], list[_IdentitySpan]], sha: str) -> None:
         self._index = index
         self.sha = sha
 
     def _span(
         self, exchange: str, market_type: str, native_market_id: str, at: datetime
     ) -> _IdentitySpan | None:
-        for span in self._index.get((exchange, market_type, native_market_id), []):
+        # Keyed by (exchange, native_market_id): the identity source records a canonical
+        # market type (e.g. linear_usdt_perpetual) that differs from the bars' 'linear',
+        # while native_market_id is unique per venue in this dataset.
+        for span in self._index.get((exchange, native_market_id), []):
             if at >= span.valid_from and (span.valid_to is None or at < span.valid_to):
                 return span
         return None
@@ -276,9 +279,9 @@ def load_identity_resolver(path: Path) -> tuple[IdentityResolver, str]:
     raw = path.read_bytes()
     parsed = json.loads(raw)
     records = parsed["records"] if isinstance(parsed, dict) else parsed
-    index: dict[tuple[str, str, str], list[_IdentitySpan]] = {}
+    index: dict[tuple[str, str], list[_IdentitySpan]] = {}
     for rec in records:
-        key = (rec["exchange"], rec["market_type"], rec["native_market_id"])
+        key = (rec["exchange"], rec["native_market_id"])
         valid_from = datetime.fromisoformat(str(rec["valid_from"]).replace("Z", "+00:00"))
         valid_to_raw = rec.get("valid_to")
         valid_to = (
