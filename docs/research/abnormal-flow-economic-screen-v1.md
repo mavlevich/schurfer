@@ -181,27 +181,31 @@ abnormal-flow-input-audit --cold-bars-dir <restored-cold-bars-dir> \
   --start-day <YYYY-MM-DD> --end-day <YYYY-MM-DD-exclusive>
 ```
 
-## Implemented replay engine (tested; no returns read)
+## Implemented outcome-blind scanner (counts-only; returns reading disabled)
 
-`abnormal_flow_replay` holds the engine. `load_verified_minute_bars` verifies each
-day's cold-bar manifest (bytes, sha256, identity/bounds, proven source fidelity)
-before reading any outcome-blind row, and `input_fingerprint_for` reproduces the
-input fingerprint; `assemble_all` builds per-instrument decisions with the
-registered scan lag, execution window, and per-venue OI freshness, and an
-unresolved canonical identity is counted in the funnel rather than treated as its
-own ticker. `FormalReplay.run` fail-closes unless the contract is frozen, the
-observed fingerprint equals the pinned one, and every decision is inside the
-registered UTC window, all before the single returns read. It then scores the
-priced-proxy net return and matched excess, keying outcomes by the exact native
-route, and produces the funnel, week-clustered uncertainty, leave-one-out excess, a
-fixed-bank slot-limited portfolio (dollar PnL, drawdown, losing streak,
-concurrency), a break-even cost figure, and the one-shot verdict
-(INSUFFICIENT_EVIDENCE / FAIL / PASS_DISCOVERY). The whole path is unit-tested on
-synthetic rows, including a synthetic-Parquet end-to-end test; no production return
-has been read, and running it for real still requires the separate outcome-blind
-threshold and window freeze. The canonical-asset resolver is a documented
-placeholder (quote-suffix stripping, `None` when unresolved) pending the
-point-in-time identity resolver.
+This module ships as a CALIBRATION / COUNTS-ONLY scanner. `abnormal_flow_replay`
+holds it. `load_verified_minute_bars` verifies each day's cold-bar manifest (bytes,
+sha256, identity/bounds, proven source fidelity) before reading any outcome-blind
+row; `assemble_all` groups bars by native route AND `capture_version` (so a feature
+window never spans a capture regime change) and builds per-instrument decisions with
+the registered scan lag, execution window, and per-venue OI freshness. Canonical
+identity is resolved point-in-time by an injected resolver (the caller supplies the
+existing one); an unresolved identity is counted in the funnel, never treated as its
+own ticker. A healthy no-trade minute (NULL trade-receive time on a trade-complete,
+finalized bar) stays available; only a trade received after the decision is late. The
+scanner output is the funnel of counts (scanned / eligible / primary and ablation
+fires / episodes) by rejection reason.
+
+Reading forward returns is HARD-DISABLED in this release: `FORMAL_RETURNS_RUN_ENABLED`
+is `False` and `FormalReplay.run` raises `ReturnsRunDisabledError` unconditionally,
+even for a fully frozen contract, before any freeze check or outcome read (covered by
+test). The returns-path logic it guards (freeze fingerprint/window binding,
+route-keyed priced-proxy outcomes, matched excess, week-clustered uncertainty,
+leave-one-out, fixed-bank portfolio, and the one-shot verdict) is present and unit
+tested but inert. Enabling it, a full registered input fingerprint, the OI ablation
+economics, the portfolio, and the verdict are the NEXT PR, still before any returns
+are read. The canonical resolver here is a documented heuristic fallback
+(quote-suffix stripping) for tests; production passes the point-in-time resolver.
 
 ## Open decisions before registration
 

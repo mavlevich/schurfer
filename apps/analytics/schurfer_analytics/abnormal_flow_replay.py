@@ -1,14 +1,21 @@
-"""Outcome-blind replay engine for the abnormal-flow economic screen.
+"""Outcome-blind scanner for the abnormal-flow economic screen.
 
-PRE-REGISTRATION INVARIANT. Reading forward returns is gated behind a fully frozen
-contract AND the exact frozen dataset: :class:`FormalReplay.run` calls
-``contract.require_frozen()``, then refuses unless the loader's observed input
-fingerprint equals the pinned one and every decision falls inside the registered UTC
-window, all before any outcome reader is invoked. Scanning inputs, computing the
-pre-decision features, applying eligibility and the primary/ablation cells, forming
-episodes, and selecting matched controls are all outcome-blind and never touch a
-forward price. This module therefore cannot tune a threshold to, score a window it
-did not pin, or peek at the returns it will later score.
+THIS RELEASE IS A COUNTS-ONLY SCANNER (calibration, not an economic result). The
+returns-reading path exists but is HARD-DISABLED: ``FORMAL_RETURNS_RUN_ENABLED`` is
+False and :class:`FormalReplay.run` raises :class:`ReturnsRunDisabledError`
+unconditionally, even for a fully frozen contract, so no forward return can be read.
+Enabling it, a full registered input fingerprint, the OI ablation, the portfolio
+simulation, and the one-shot verdict are a later PR, still before any returns are read.
+
+PRE-REGISTRATION INVARIANT (for when the run is later enabled). Reading forward returns
+is gated behind a fully frozen contract AND the exact frozen dataset: the run would call
+``contract.require_frozen()``, then refuse unless the loader's observed input fingerprint
+equals the pinned one and every decision falls inside the registered UTC window, all
+before any outcome reader is invoked. Scanning inputs, computing the pre-decision
+features, applying eligibility and the primary/ablation cells, forming episodes, and
+selecting matched controls are all outcome-blind and never touch a forward price. This
+module therefore cannot tune a threshold to, score a window it did not pin, or peek at
+the returns it will later score.
 
 The decision logic (feature assembly, OI->USD conversion, participation, eligibility,
 the primary and ablation cells, episode formation, control matching, the priced-proxy
@@ -43,7 +50,19 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
     from pathlib import Path
 
+    # A point-in-time canonical-identity resolver: given a route and a decision instant
+    # it returns the canonical asset live at that instant, or ``None`` if it cannot be
+    # resolved. The scanner never invents identity; the caller supplies the existing
+    # resolver, and an unresolved route is counted in the funnel.
+    CanonicalResolver = Callable[[str, str, str, str, datetime], "str | None"]
+
 REPLAY_VERSION = "abnormal_flow_replay_v1"
+
+# This release ships an OUTCOME-BLIND SCANNER only. Reading forward returns is disabled
+# at the hardest level: FormalReplay.run refuses unconditionally, even for a fully
+# frozen contract, so no returns can be read before the separate outcome-blind threshold
+# and window freeze (a later PR). Flipping this flag is a deliberate, reviewed change.
+FORMAL_RETURNS_RUN_ENABLED = False
 
 # Conservative funding charge for the registered ``conservative_8h_v1`` model: a
 # worst-case cost is applied for every 8h settlement the 720m hold can cross. It is a
@@ -66,21 +85,30 @@ class FreezeMismatchError(RuntimeError):
     returns is refused, so the scored dataset can never drift from the pinned one."""
 
 
+class ReturnsRunDisabledError(RuntimeError):
+    """A formal returns-reading run was attempted while this outcome-blind scanner
+    release has returns reading disabled (``FORMAL_RETURNS_RUN_ENABLED`` is False). It
+    is raised unconditionally, even for a fully frozen contract, before any freeze
+    check or outcome read."""
+
+
 # A candidate's exact native route + decision instant. Includes the exchange, market
-# type and native market id so a Bybit and a Binance row that happen to share a symbol
-# and minute are never conflated into one outcome.
-RouteKey = tuple[str, str, str, datetime]
+# type, native market id, and capture_version so rows that share a symbol and minute
+# across venues OR across capture regimes are never conflated into one outcome.
+RouteKey = tuple[str, str, str, str, datetime]
 
 
 @dataclass(frozen=True)
 class DecisionFeatures:
     """Everything known at (and only at) the decision instant. Contains NO forward
     price: it is the outcome-blind half of a candidate. ``decision_price`` is the last
-    pre-decision close (used for the Binance OI->USD conversion and nothing forward)."""
+    pre-decision close (used for the Binance OI->USD conversion and nothing forward).
+    ``canonical_asset`` is the point-in-time resolved identity, empty when unresolved."""
 
     exchange: str
     market_type: str
     native_market_id: str
+    capture_version: str
     symbol: str
     canonical_asset: str
     decision_at: datetime
@@ -95,7 +123,13 @@ class DecisionFeatures:
     unavailable_reason: str | None = None
 
     def route_key(self) -> RouteKey:
-        return (self.exchange, self.market_type, self.native_market_id, self.decision_at)
+        return (
+            self.exchange,
+            self.market_type,
+            self.native_market_id,
+            self.capture_version,
+            self.decision_at,
+        )
 
 
 @dataclass(frozen=True)
@@ -106,13 +140,20 @@ class Outcome:
     exchange: str
     market_type: str
     native_market_id: str
+    capture_version: str
     symbol: str
     decision_at: datetime
     entry_price: float | None
     exit_price: float | None
 
     def route_key(self) -> RouteKey:
-        return (self.exchange, self.market_type, self.native_market_id, self.decision_at)
+        return (
+            self.exchange,
+            self.market_type,
+            self.native_market_id,
+            self.capture_version,
+            self.decision_at,
+        )
 
 
 # --- Outcome-blind minute bar + feature assembly -----------------------------------
@@ -126,8 +167,8 @@ class MinuteBar:
     exchange: str
     market_type: str
     native_market_id: str
+    capture_version: str
     symbol: str
-    canonical_asset: str
     bucket_start: datetime
     created_at: datetime
     open_price: float | None
@@ -159,15 +200,18 @@ def _oi_fresh(bar: MinuteBar, freshness: timedelta, decision_at: datetime) -> bo
     return observed >= bar.bucket_start - freshness
 
 
-def _unavailable_decision(end: MinuteBar, decision_at: datetime, reason: str) -> DecisionFeatures:
+def _unavailable_decision(
+    end: MinuteBar, decision_at: datetime, reason: str, *, canonical: str = ""
+) -> DecisionFeatures:
     """A decision whose feature window could not be used, with the rejection reason
     recorded (never a fabricated feature). Carries only outcome-blind identity."""
     return DecisionFeatures(
         exchange=end.exchange,
         market_type=end.market_type,
         native_market_id=end.native_market_id,
+        capture_version=end.capture_version,
         symbol=end.symbol,
-        canonical_asset=end.canonical_asset,
+        canonical_asset=canonical,
         decision_at=decision_at,
         oi_growth_pct=None,
         buy_pressure=None,
@@ -198,19 +242,26 @@ def assemble_decisions(
     scan_lag_minutes: int,
     entry_execution_window_minutes: int,
     oi_freshness_limit_seconds: int,
+    resolve_canonical: Callable[[datetime], str | None],
 ) -> list[DecisionFeatures]:
     """Turn one instrument's ordered, outcome-blind minute bars into per-minute
-    :class:`DecisionFeatures` using the frozen feature forms.
+    :class:`DecisionFeatures` using the frozen feature forms. All bars must share one
+    capture_version (see :func:`assemble_all`), so a feature window never spans a
+    capture regime change.
 
     The decision at bar ``i`` is timed AFTER that bar finalizes plus the registered
     scan lag; the 60m feature window is ``bars[i-60 .. i]``, which must be contiguous,
     fully complete, and finalized/observed at or before the decision instant. Both the
     window-start and window-end OI observations must be no older than
-    ``oi_freshness_limit_seconds`` before their bar (not just "not in the future"), and
-    every bar's last trade must have been received by the decision instant. A window
-    that is short, gapped, incomplete, not finalized, resting on stale OI, or missing a
-    timely trade yields a decision marked ``unavailable_reason`` rather than a
-    fabricated feature. No forward bar is read."""
+    ``oi_freshness_limit_seconds`` before their bar (not just "not in the future").
+    Trade timing is checked by feed health: a bar whose last trade was RECEIVED after
+    the decision is late; a healthy no-trade minute (``last_trade_received_at`` is NULL
+    but the bar is trade-complete and finalized) stays available. Canonical identity is
+    resolved point-in-time via ``resolve_canonical(decision_at)``; an unresolved one is
+    counted (``unresolved_identity``), never treated as its own ticker. A window that is
+    short, gapped, incomplete, not finalized, resting on stale OI, holding a late trade,
+    or of unresolved identity yields a decision marked ``unavailable_reason`` rather than
+    a fabricated feature. No forward bar is read."""
     ordered = sorted(bars, key=lambda b: b.bucket_start)
     out: list[DecisionFeatures] = []
     window = LOOKBACK_MINUTES
@@ -221,9 +272,11 @@ def assemble_decisions(
         decision_at = end.bucket_start + timedelta(minutes=1 + scan_lag_minutes)
         span = ordered[i - window : i + 1]
 
-        if not end.canonical_asset:
-            # Identity could not be resolved: count it in the funnel, never let it pass
-            # as its own distinct ticker asset (it would break dedup and clustering).
+        canonical = resolve_canonical(decision_at)
+        if not canonical:
+            # Identity could not be resolved point-in-time: count it in the funnel,
+            # never let it pass as its own distinct ticker (it would break dedup and
+            # clustering).
             out.append(_unavailable_decision(end, decision_at, "unresolved_identity"))
             continue
 
@@ -232,25 +285,35 @@ def assemble_decisions(
             for j in range(1, len(span))
         )
         if not contiguous:
-            out.append(_unavailable_decision(end, decision_at, "lookback_gap"))
+            out.append(_unavailable_decision(end, decision_at, "lookback_gap", canonical=canonical))
             continue
         if any(
             not (b.price_complete and b.trades_complete and b.open_interest_complete) for b in span
         ):
-            out.append(_unavailable_decision(end, decision_at, "incomplete_lookback"))
+            out.append(
+                _unavailable_decision(end, decision_at, "incomplete_lookback", canonical=canonical)
+            )
             continue
         if any(b.created_at > decision_at for b in span):
-            out.append(_unavailable_decision(end, decision_at, "not_finalized_by_decision"))
+            out.append(
+                _unavailable_decision(
+                    end, decision_at, "not_finalized_by_decision", canonical=canonical
+                )
+            )
             continue
+        # A NULL last_trade_received_at is a healthy no-trade minute (the bar is
+        # trade-complete and finalized), not a missing trade; only a trade RECEIVED
+        # after the decision is late.
         if any(
-            b.last_trade_received_at is None or b.last_trade_received_at > decision_at for b in span
+            b.last_trade_received_at is not None and b.last_trade_received_at > decision_at
+            for b in span
         ):
-            out.append(_unavailable_decision(end, decision_at, "late_or_missing_trades"))
+            out.append(_unavailable_decision(end, decision_at, "late_trades", canonical=canonical))
             continue
         if not _oi_fresh(start, freshness, decision_at) or not _oi_fresh(
             end, freshness, decision_at
         ):
-            out.append(_unavailable_decision(end, decision_at, "stale_oi"))
+            out.append(_unavailable_decision(end, decision_at, "stale_oi", canonical=canonical))
             continue
 
         flow_bars = span[1:]  # the 60 bars within the hour
@@ -275,8 +338,9 @@ def assemble_decisions(
                 exchange=end.exchange,
                 market_type=end.market_type,
                 native_market_id=end.native_market_id,
+                capture_version=end.capture_version,
                 symbol=end.symbol,
-                canonical_asset=end.canonical_asset,
+                canonical_asset=canonical,
                 decision_at=decision_at,
                 oi_growth_pct=oi_growth_pct_60m(start.open_interest, end.open_interest),  # type: ignore[arg-type]
                 buy_pressure=buy_pressure_ratio_60m(buy_sum, sell_sum),
@@ -809,6 +873,13 @@ class FormalReplay:
         *,
         observed_input_fingerprint: str,
     ) -> ReplayResult:
+        # Hardest gate FIRST: this scanner release does not read returns at all. Refuse
+        # unconditionally, even for a fully frozen contract, before touching the reader.
+        if not FORMAL_RETURNS_RUN_ENABLED:
+            raise ReturnsRunDisabledError(
+                "formal returns-reading run is disabled in this outcome-blind scanner "
+                "release; it lands in a later PR after the separate threshold/window freeze"
+            )
         # Fail-closed BEFORE any outcome is read.
         self._contract.require_frozen()
         contract = self._contract
@@ -935,30 +1006,31 @@ class FormalReplay:
 # returns-bearing and is only ever invoked by the frozen-gated run.
 
 _INPUT_COLUMNS_SQL = """
-SELECT exchange, market_type, symbol, bucket_start, created_at,
+SELECT exchange, market_type, symbol, capture_version, bucket_start, created_at,
        open_price, high_price, low_price, close_price,
        buy_total_notional_usd, sell_total_notional_usd,
        open_interest, open_interest_value, open_interest_observed_at,
        last_trade_received_at, price_complete, trades_complete, open_interest_complete
 FROM read_parquet(?)
 WHERE bucket_start >= ? AND bucket_start < ?
-ORDER BY exchange, market_type, symbol, bucket_start
+ORDER BY exchange, market_type, symbol, capture_version, bucket_start
 """
 
 _OUTCOME_COLUMNS_SQL = """
-SELECT exchange, market_type, symbol, bucket_start, open_price, close_price
+SELECT exchange, market_type, symbol, capture_version, bucket_start, open_price, close_price
 FROM read_parquet(?)
 WHERE bucket_start >= ? AND bucket_start < ?
 """
 
 
-def resolve_canonical_asset(symbol: str) -> str | None:
-    """Placeholder canonical-asset resolver: strip a recognized quote suffix so the
-    same base clusters across venues. Returns ``None`` when the symbol has no known
-    quote suffix, so an UNRESOLVED identity is surfaced (and later counted in the
-    funnel) rather than silently treated as its own distinct ticker asset. The
-    registered study replaces this with the point-in-time identity resolver."""
-    upper = symbol.upper()
+def quote_suffix_canonical_resolver(
+    exchange: str, market_type: str, native_market_id: str, capture_version: str, at: datetime
+) -> str | None:
+    """A heuristic FALLBACK resolver (strip a recognized quote suffix). It is NOT the
+    production identity source: the real run passes the existing point-in-time resolver.
+    Returns ``None`` when the symbol has no known quote suffix, so it never invents an
+    identity. Exposed for tests and offline exploration only."""
+    upper = native_market_id.upper()
     for quote in ("USDT", "USDC", "USD"):
         if upper.endswith(quote) and len(upper) > len(quote):
             return upper[: -len(quote)]
@@ -968,9 +1040,12 @@ def resolve_canonical_asset(symbol: str) -> str | None:
 def input_fingerprint_for(bars: Sequence[MinuteBar]) -> str:
     """Deterministic SHA-256 over the outcome-blind input rows the loader read, so a
     run can prove it is scoring exactly the frozen dataset. Namespaced to match the
-    contract's ``input_fingerprint`` format."""
+    contract's ``input_fingerprint`` format. (A fuller, registered fingerprint is a
+    next-PR item; this pins the exact rows the scanner assembled.)"""
     hasher = hashlib.sha256()
-    for b in sorted(bars, key=lambda b: (b.exchange, b.market_type, b.symbol, b.bucket_start)):
+    for b in sorted(
+        bars, key=lambda b: (b.exchange, b.market_type, b.symbol, b.capture_version, b.bucket_start)
+    ):
         hasher.update(
             "|".join(
                 str(x)
@@ -978,6 +1053,7 @@ def input_fingerprint_for(bars: Sequence[MinuteBar]) -> str:
                     b.exchange,
                     b.market_type,
                     b.symbol,
+                    b.capture_version,
                     b.bucket_start.isoformat(),
                     b.open_price,
                     b.high_price,
@@ -1003,23 +1079,23 @@ def _row_to_bar(row: tuple[Any, ...]) -> MinuteBar:
         exchange=str(row[0]),
         market_type=str(row[1]),
         native_market_id=symbol,
+        capture_version=str(row[3]),
         symbol=symbol,
-        canonical_asset=resolve_canonical_asset(symbol) or "",
-        bucket_start=row[3],
-        created_at=row[4],
-        open_price=row[5],
-        high_price=row[6],
-        low_price=row[7],
-        close_price=row[8],
-        buy_notional_usd=float(row[9] or 0.0),
-        sell_notional_usd=float(row[10] or 0.0),
-        open_interest=row[11],
-        open_interest_value=row[12],
-        open_interest_observed_at=row[13],
-        last_trade_received_at=row[14],
-        price_complete=bool(row[15]),
-        trades_complete=bool(row[16]),
-        open_interest_complete=bool(row[17]),
+        bucket_start=row[4],
+        created_at=row[5],
+        open_price=row[6],
+        high_price=row[7],
+        low_price=row[8],
+        close_price=row[9],
+        buy_notional_usd=float(row[10] or 0.0),
+        sell_notional_usd=float(row[11] or 0.0),
+        open_interest=row[12],
+        open_interest_value=row[13],
+        open_interest_observed_at=row[14],
+        last_trade_received_at=row[15],
+        price_complete=bool(row[16]),
+        trades_complete=bool(row[17]),
+        open_interest_complete=bool(row[18]),
     )
 
 
@@ -1062,28 +1138,45 @@ def load_verified_minute_bars(cold_bars_dir: Path, *, start: date, end: date) ->
 
 
 def assemble_all(
-    bars: Sequence[MinuteBar], contract: AbnormalFlowContract
+    bars: Sequence[MinuteBar],
+    contract: AbnormalFlowContract,
+    *,
+    resolve_canonical: CanonicalResolver,
 ) -> list[DecisionFeatures]:
-    """Group bars by exact native route and assemble decisions per instrument using the
-    contract's registered scan lag, execution window, and per-venue OI freshness. A
-    venue without a registered freshness ceiling is skipped (never silently accepted)."""
-    by_route: dict[tuple[str, str, str], list[MinuteBar]] = defaultdict(list)
+    """Group bars by exact native route AND capture_version, then assemble decisions per
+    instrument using the contract's registered scan lag, execution window, and per-venue
+    OI freshness. Grouping by capture_version means a feature window never spans a
+    capture regime change. Canonical identity is resolved point-in-time per decision via
+    ``resolve_canonical``; a venue without a registered freshness ceiling is skipped
+    (never silently accepted)."""
+    by_route: dict[tuple[str, str, str, str], list[MinuteBar]] = defaultdict(list)
     for b in bars:
-        by_route[(b.exchange, b.market_type, b.native_market_id)].append(b)
+        by_route[(b.exchange, b.market_type, b.native_market_id, b.capture_version)].append(b)
     out: list[DecisionFeatures] = []
     scan_lag = contract.scan_lag_minutes
     exec_window = contract.entry_execution_window_minutes
     assert scan_lag is not None and exec_window is not None
-    for (exchange, _mt, _mid), group in by_route.items():
+    for (exchange, market_type, native_market_id, capture_version), group in by_route.items():
         freshness = oi_freshness_limit_for(contract, exchange)
         if freshness is None:
             continue
+
+        def _resolve(
+            at: datetime,
+            _ex: str = exchange,
+            _mt: str = market_type,
+            _mid: str = native_market_id,
+            _cv: str = capture_version,
+        ) -> str | None:
+            return resolve_canonical(_ex, _mt, _mid, _cv, at)
+
         out.extend(
             assemble_decisions(
                 group,
                 scan_lag_minutes=scan_lag,
                 entry_execution_window_minutes=exec_window,
                 oi_freshness_limit_seconds=freshness,
+                resolve_canonical=_resolve,
             )
         )
     return out
@@ -1109,20 +1202,33 @@ def parquet_outcome_reader(
             rows = connection.execute(_OUTCOME_COLUMNS_SQL, [path, lo, hi]).fetchall()
         finally:
             connection.close()
-        opens: dict[tuple[str, str, str, datetime], float | None] = {}
-        closes: dict[tuple[str, str, str, datetime], float | None] = {}
+        opens: dict[tuple[str, str, str, str, datetime], float | None] = {}
+        closes: dict[tuple[str, str, str, str, datetime], float | None] = {}
         for row in rows:
-            key = (str(row[0]), str(row[1]), str(row[2]), row[3])
-            opens[key] = row[4]
-            closes[key] = row[5]
+            key = (str(row[0]), str(row[1]), str(row[2]), str(row[3]), row[4])
+            opens[key] = row[5]
+            closes[key] = row[6]
         out: dict[RouteKey, Outcome] = {}
         for d in requested:
-            entry_key = (d.exchange, d.market_type, d.native_market_id, d.decision_at)
-            exit_key = (d.exchange, d.market_type, d.native_market_id, d.decision_at + horizon)
+            entry_key = (
+                d.exchange,
+                d.market_type,
+                d.native_market_id,
+                d.capture_version,
+                d.decision_at,
+            )
+            exit_key = (
+                d.exchange,
+                d.market_type,
+                d.native_market_id,
+                d.capture_version,
+                d.decision_at + horizon,
+            )
             out[d.route_key()] = Outcome(
                 exchange=d.exchange,
                 market_type=d.market_type,
                 native_market_id=d.native_market_id,
+                capture_version=d.capture_version,
                 symbol=d.symbol,
                 decision_at=d.decision_at,
                 entry_price=opens.get(entry_key),
