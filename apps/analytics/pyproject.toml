@@ -102,6 +102,7 @@ cex-activity-path-coverage-audit-report = "schurfer_analytics.cex_activity_path_
 hold12h-verdict-reader = "schurfer_analytics.momentum_flow_hold12h_verdict_reader:main"
 hold12h-funding-capture = "schurfer_analytics.momentum_flow_hold12h_funding_resolver:main"
 abnormal-flow-input-audit = "schurfer_analytics.abnormal_flow_input_audit:main"
+abnormal-flow-scan = "schurfer_analytics.abnormal_flow_scan:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

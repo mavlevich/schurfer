@@ -47,7 +47,7 @@ from .abnormal_flow_screen import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Sequence
+    from collections.abc import Callable, Iterable, Iterator, Sequence
     from pathlib import Path
 
     # A point-in-time canonical-identity resolver: given a route and a decision instant
@@ -1113,6 +1113,39 @@ def load_minute_bars_from_parquet(
     finally:
         connection.close()
     return [_row_to_bar(row) for row in rows]
+
+
+def iter_instrument_bars(
+    paths: Sequence[str], *, window_start: datetime, window_end: datetime
+) -> Iterator[list[MinuteBar]]:
+    """Stream outcome-blind minute bars grouped by native route + capture_version, one
+    instrument at a time, from the given Parquet file(s). DuckDB does the ordered scan
+    (out-of-core if needed) and Python holds only the current instrument's bars, so a
+    full month never materializes as one list. Reads no forward price."""
+    import duckdb
+
+    connection = duckdb.connect()
+    try:
+        cursor = connection.execute(_INPUT_COLUMNS_SQL, [list(paths), window_start, window_end])
+        current: tuple[str, str, str, str] | None = None
+        buffer: list[MinuteBar] = []
+        while True:
+            rows = cursor.fetchmany(20_000)
+            if not rows:
+                break
+            for row in rows:
+                bar = _row_to_bar(row)
+                key = (bar.exchange, bar.market_type, bar.native_market_id, bar.capture_version)
+                if key != current:
+                    if buffer:
+                        yield buffer
+                    buffer = []
+                    current = key
+                buffer.append(bar)
+        if buffer:
+            yield buffer
+    finally:
+        connection.close()
 
 
 def load_verified_minute_bars(cold_bars_dir: Path, *, start: date, end: date) -> list[MinuteBar]:
