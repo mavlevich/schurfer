@@ -40,7 +40,10 @@ type Candle struct {
 // limitation, CCXT-003) which requires the spot-style "base_usdt" form
 // instead; confirmed directly against the live endpoint before this change
 // (a real BTC/USDT request succeeds with "btc_usdt", 404s with "BTCUSDT").
-func fetchOHLCV(ctx context.Context, exchange, marketID, base string, interval, limit int) ([]Candle, error) {
+// fetchOHLCV is a package var (not a plain func) so the handler's OHLCV
+// source-selection can be regression-tested with a stub fetcher instead of live
+// exchange HTTP calls. Production wiring is unchanged.
+var fetchOHLCV = func(ctx context.Context, exchange, marketID, base string, interval, limit int) ([]Candle, error) {
 	switch exchange {
 	case "binance":
 		return fetchBinance(ctx, marketID, base, interval, limit)
