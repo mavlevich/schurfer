@@ -31,7 +31,11 @@ export function TokenChart({ base }: { base: string }) {
   const [chartInterval, setChartInterval] = useState(15);
   const [visibility, setVisibility] = useState<MarkerVisibility>(ALL_MARKERS_VISIBLE);
   const [hover, setHover] = useState<HoverState | null>(null);
-  const { data: ohlcv, isFetching } = useOHLCV(base, chartInterval);
+  // The user's explicit source pick (undefined = let the server resolve the
+  // deterministic default). Reset when the token changes so a pick never leaks
+  // across tokens.
+  const [selectedSource, setSelectedSource] = useState<string | undefined>(undefined);
+  const { data: ohlcv, isFetching } = useOHLCV(base, chartInterval, selectedSource);
   const { data: episodes } = useTokenEpisodes(base);
 
   const candleTimes = useMemo(() => (ohlcv?.candles ?? []).map((candle) => candle.time), [ohlcv]);
@@ -203,6 +207,11 @@ export function TokenChart({ base }: { base: string }) {
     setHover(null);
   }, [base, chartInterval]);
 
+  // A source pick belongs to one token; switching tokens returns to the default.
+  useEffect(() => {
+    setSelectedSource(undefined);
+  }, [base]);
+
   const evaluated = alignedBuckets.reduce((sum, bucket) => sum + bucket.count, 0);
 
   return (
@@ -211,7 +220,7 @@ export function TokenChart({ base }: { base: string }) {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
             Price chart
-            {ohlcv && ` · ${ohlcv.exchange}`}
+            {ohlcv?.source && ` · ${ohlcv.source.exchange}`}
             {` · ${selectedInterval.label} · ${selectedInterval.range}`}
             {isFetching && <span className="ml-1 opacity-40">↻</span>}
           </CardTitle>
@@ -232,6 +241,56 @@ export function TokenChart({ base }: { base: string }) {
             ))}
           </div>
         </div>
+        {ohlcv?.source && (
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pt-1 text-xs">
+            <span className="text-muted-foreground">Source</span>
+            <span className="font-mono text-foreground">
+              {ohlcv.source.exchange}
+              {ohlcv.source.market_id ? ` · ${ohlcv.source.market_id}` : ''}
+              {` · ${ohlcv.source.market_type}`}
+            </span>
+            {ohlcv.source.is_proxy && (
+              <span
+                className="rounded bg-amber-500/20 px-1 font-mono text-amber-500"
+                title="Spot candles shown as a proxy: this venue has no perpetual OHLCV history endpoint"
+              >
+                spot proxy
+              </span>
+            )}
+            {ohlcv.status === 'no_history' && (
+              <span className="font-mono text-amber-500">no candle history for this source</span>
+            )}
+            {ohlcv.status === 'error' && (
+              <span className="font-mono text-amber-500">failed to load from this source</span>
+            )}
+            {ohlcv.sources.length > 1 && (
+              <span className="flex flex-wrap items-center gap-1">
+                <span className="text-muted-foreground">·</span>
+                {ohlcv.sources.map((s) => {
+                  const active = s.exchange === ohlcv.source?.exchange;
+                  return (
+                    <button
+                      key={s.exchange}
+                      type="button"
+                      // Clicking the active source returns to the auto default; clicking
+                      // another pins it. The pin is sent to the server as ?exchange=.
+                      onClick={() => setSelectedSource(active ? undefined : s.exchange)}
+                      title={`${s.exchange} · ${s.market_type}${s.is_proxy ? ' (spot proxy)' : ''}`}
+                      className={`rounded px-1 font-mono transition-colors ${
+                        active
+                          ? 'bg-primary text-primary-foreground'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      {s.exchange}
+                      {s.is_proxy ? '*' : ''}
+                    </button>
+                  );
+                })}
+              </span>
+            )}
+          </div>
+        )}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-1 text-xs text-muted-foreground">
           <MarkerToggle
             label="Pump starts"
@@ -275,6 +334,10 @@ export function TokenChart({ base }: { base: string }) {
               {buckets.truncated && (
                 <span className="text-amber-500"> · truncated, older candles not shown</span>
               )}
+              {/* Decisions are aggregated by ticker across every venue, while the
+                  candles above are from one resolved source; say so until a later
+                  PR filters decisions to the selected market. */}
+              <span className="opacity-60"> · decisions across all venues</span>
             </span>
           ) : null}
         </div>
@@ -302,8 +365,12 @@ export function TokenChart({ base }: { base: string }) {
             </div>
           )}
           {!isFetching && !ohlcv?.candles.length && (
-            <p className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
-              Chart unavailable
+            <p className="absolute inset-0 flex items-center justify-center px-4 text-center text-sm text-muted-foreground">
+              {ohlcv?.status === 'error'
+                ? `Failed to load candles${ohlcv.source ? ` from ${ohlcv.source.exchange}` : ''}. Pick another source above.`
+                : ohlcv?.status === 'no_history'
+                  ? `No candle history${ohlcv.source ? ` on ${ohlcv.source.exchange} (${ohlcv.source.market_type})` : ''}. Pick another source above.`
+                  : 'Chart unavailable'}
             </p>
           )}
         </div>

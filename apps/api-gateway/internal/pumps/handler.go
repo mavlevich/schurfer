@@ -392,6 +392,51 @@ func (h *Handler) dbTokenFallback(ctx context.Context, base string) (*pumpEntry,
 	}, nil
 }
 
+// ohlcvSource is the exact, explicit chart source: which venue, the market id its
+// candles were ACTUALLY requested from, the market type of that request, and
+// whether it is a proxy (LBank spot standing in for the perpetual). For a proxy,
+// MarketID is the real queried market (the spot symbol) and ProxyForMarketID names
+// the perpetual it stands in for -- so the "exact source" is never a market we did
+// not query.
+type ohlcvSource struct {
+	Exchange         string `json:"exchange"`
+	MarketID         string `json:"market_id"`
+	MarketType       string `json:"market_type"`
+	IsProxy          bool   `json:"is_proxy"`
+	ProxyForMarketID string `json:"proxy_for_market_id,omitempty"`
+}
+
+// ohlcvResponse carries the candles plus the RESOLVED source, a status that
+// distinguishes a load error from genuinely absent history for THAT source, and
+// the full ordered list of candidate sources so the UI can offer another one.
+type ohlcvResponse struct {
+	Base     string        `json:"base"`
+	Interval int           `json:"interval"`
+	Source   *ohlcvSource  `json:"source"`
+	Status   string        `json:"status"` // "ok" | "no_history" | "error"
+	Candles  []Candle      `json:"candles"`
+	Sources  []ohlcvSource `json:"sources"`
+}
+
+// sourceOf builds the explicit source descriptor for a candidate. For the LBank
+// spot proxy the fetcher queries the spot symbol (lowercase base_usdt), NOT the
+// captured perpetual market id, so MarketID reflects the real request and the
+// perpetual id is carried separately as ProxyForMarketID.
+func sourceOf(c exchangeCandidate, base string) ohlcvSource {
+	kind := ohlcvSourceKinds[c.Exchange]
+	s := ohlcvSource{
+		Exchange:   c.Exchange,
+		MarketID:   c.MarketID,
+		MarketType: kind.marketType,
+		IsProxy:    kind.isProxy,
+	}
+	if c.Exchange == "lbank" {
+		s.MarketID = strings.ToLower(base) + "_usdt" // the spot symbol actually queried
+		s.ProxyForMarketID = c.MarketID              // the perpetual it stands in for
+	}
+	return s
+}
+
 func (h *Handler) OHLCV(w http.ResponseWriter, r *http.Request) {
 	base := strings.ToUpper(chi.URLParam(r, "base"))
 	if !isValidBase(base) {
@@ -412,55 +457,77 @@ func (h *Handler) OHLCV(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	exchanges := h.rankedExchanges(r.Context(), base)
-	if len(exchanges) == 0 {
+	// Deterministic candidate order (same live and historical -- see
+	// rankExchangeEntries). This is what the UI's source picker lists.
+	candidates := h.rankedExchanges(r.Context(), base)
+	if len(candidates) == 0 {
 		http.Error(w, "no supported exchange for OHLCV", http.StatusNotFound)
 		return
 	}
+	sources := make([]ohlcvSource, len(candidates))
+	for i, c := range candidates {
+		sources[i] = sourceOf(c, base)
+	}
 
-	cacheKey := fmt.Sprintf("ohlcv:%s:%d:%d", base, interval, limit)
+	// Resolve EXACTLY ONE source and query only it. The default is the first
+	// candidate (the top futures route); an explicit ?exchange= lets the user pick
+	// another. The source is NEVER chosen by how many candles a venue returns, so a
+	// spot proxy that happens to have more history can't override the futures route
+	// and the chart's source never changes without the user asking. If the resolved
+	// source is unavailable or empty we report exactly that and the UI offers the
+	// others; automatic fall-through is deliberately not done here.
+	selected := candidates[0]
+	if requested := r.URL.Query().Get("exchange"); requested != "" {
+		idx := -1
+		for i, c := range candidates {
+			if c.Exchange == requested {
+				idx = i
+				break
+			}
+		}
+		if idx < 0 {
+			http.Error(w, "requested exchange is not a source for this token", http.StatusNotFound)
+			return
+		}
+		selected = candidates[idx]
+	}
+	resolved := sourceOf(selected, base)
+
+	// The cache key includes the RESOLVED exchange and the market id actually
+	// queried, so switching the route never returns another route's cached candles.
+	cacheKey := fmt.Sprintf("ohlcv:%s:%d:%d:%s:%s", base, interval, limit, resolved.Exchange, resolved.MarketID)
 	if cached, err := h.rdb.Get(r.Context(), cacheKey).Bytes(); err == nil {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(cached)
 		return
 	}
 
-	// Stop trying once we have 80% of the requested candles; 20 is the
-	// absolute floor so a nearly-empty response doesn't prematurely win.
-	goodEnough := limit * 4 / 5
-	if goodEnough < 20 {
-		goodEnough = 20
-	}
-	var bestCandles []Candle
-	var bestExchange string
-	for _, ex := range exchanges {
-		candles, err := fetchOHLCV(r.Context(), ex.Exchange, ex.MarketID, base, interval, limit)
-		if err != nil {
-			slog.Warn("pumps.ohlcv.fetch",
-				"exchange", ex.Exchange, "market_id", ex.MarketID, "base", base, "err", err)
-			continue
-		}
-		if len(candles) > len(bestCandles) {
-			bestCandles = candles
-			bestExchange = ex.Exchange
-		}
-		if len(candles) >= goodEnough {
-			break
-		}
+	candles, err := fetchOHLCV(r.Context(), selected.Exchange, selected.MarketID, base, interval, limit)
+	status := "ok"
+	switch {
+	case err != nil:
+		slog.Warn("pumps.ohlcv.fetch",
+			"exchange", selected.Exchange, "market_id", selected.MarketID, "base", base, "err", err)
+		status = "error"
+		candles = []Candle{}
+	case len(candles) == 0:
+		status = "no_history"
+		candles = []Candle{}
 	}
 
-	if len(bestCandles) == 0 {
-		http.Error(w, "no OHLCV data available", http.StatusNotFound)
-		return
-	}
-
-	payload, _ := json.Marshal(map[string]any{
-		"base":     base,
-		"exchange": bestExchange,
-		"interval": interval,
-		"candles":  bestCandles,
+	payload, _ := json.Marshal(ohlcvResponse{
+		Base:     base,
+		Interval: interval,
+		Source:   &resolved,
+		Status:   status,
+		Candles:  candles,
+		Sources:  sources,
 	})
-	_ = h.rdb.Set(r.Context(), cacheKey, payload, 60*time.Second).Err()
+	// Only cache a successful result; an error/no-history may be transient and
+	// must not be pinned for 60s.
+	if status == "ok" {
+		_ = h.rdb.Set(r.Context(), cacheKey, payload, 60*time.Second).Err()
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(payload)
@@ -1405,8 +1472,7 @@ var supportedOHLCV = map[string]bool{
 	"lbank":   true,
 }
 
-// ohlcvPriority is a tie-breaker when volumes are equal (e.g. DB fallback
-// where all volumes are 0). Lower index = higher priority.
+// ohlcvPriority orders exchanges deterministically. Lower index = higher priority.
 var ohlcvPriority = map[string]int{
 	"binance": 0,
 	"bybit":   1,
@@ -1418,34 +1484,49 @@ var ohlcvPriority = map[string]int{
 	"lbank":   7,
 }
 
-// rankExchangeEntries filters entries to supportedOHLCV, sorts by volume
-// descending, and uses ohlcvPriority as a deterministic tie-breaker.
-// Pure function — extracted for testability.
+// ohlcvSourceKind records what each exchange's OHLCV fetcher actually returns:
+// the market type it queries and whether that is a PROXY for the real perpetual.
+// Every fetcher hits the venue's USDT perpetual/futures endpoint EXCEPT fetchLBank,
+// which has no perpetual-history endpoint and queries the SPOT kline endpoint as a
+// stand-in (see fetchOHLCV's doc comment). So spot candles from lbank are a proxy
+// and must never be presented as the swap without a marker.
+type ohlcvSourceKind struct {
+	marketType string
+	isProxy    bool
+}
+
+var ohlcvSourceKinds = map[string]ohlcvSourceKind{
+	"binance": {"linear", false},
+	"bybit":   {"linear", false},
+	"okx":     {"swap", false},
+	"gate":    {"swap", false},
+	"bingx":   {"swap", false},
+	"mexc":    {"swap", false},
+	"xt":      {"swap", false},
+	"lbank":   {"spot", true},
+}
+
+// rankExchangeEntries filters entries to supportedOHLCV and returns them in a
+// STABLE, deterministic order: real futures routes before spot proxies, then by
+// fixed exchange priority. Volume is deliberately NOT used: it is only present in
+// the live pumps:latest snapshot and absent in the DB (history) fallback, so
+// ranking by it made the chart's source flip when a token aged from the live radar
+// into history, and let a high-volume spot proxy (LBank) outrank the real futures
+// route. The same order now applies live and historical. Pure function.
 func rankExchangeEntries(entries []exchangeEntry) []string {
-	type exVol struct {
-		exchange string
-		volume   float64
-	}
-	var ranked []exVol
+	var out []string
 	for _, ex := range entries {
 		if supportedOHLCV[ex.Exchange] {
-			volume := 0.0
-			if ex.Volume24hUSD != nil && *ex.Volume24hUSD > 0 {
-				volume = *ex.Volume24hUSD
-			}
-			ranked = append(ranked, exVol{ex.Exchange, volume})
+			out = append(out, ex.Exchange)
 		}
 	}
-	sort.Slice(ranked, func(i, j int) bool {
-		if ranked[i].volume != ranked[j].volume {
-			return ranked[i].volume > ranked[j].volume
+	sort.SliceStable(out, func(i, j int) bool {
+		pi, pj := ohlcvSourceKinds[out[i]].isProxy, ohlcvSourceKinds[out[j]].isProxy
+		if pi != pj {
+			return !pi // real futures routes before spot proxies
 		}
-		return ohlcvPriority[ranked[i].exchange] < ohlcvPriority[ranked[j].exchange]
+		return ohlcvPriority[out[i]] < ohlcvPriority[out[j]]
 	})
-	out := make([]string, len(ranked))
-	for i, e := range ranked {
-		out[i] = e.exchange
-	}
 	return out
 }
 
