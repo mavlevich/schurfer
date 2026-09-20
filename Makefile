@@ -2510,6 +2510,7 @@ verify-docker: verify
 	docker run --rm --entrypoint early-momentum-net-evidence-report schurfer-analytics:ci --help
 	docker run --rm --entrypoint hyp-024-orderflow-report schurfer-analytics:ci --help
 	docker run --rm --entrypoint hold12h-funding-capture schurfer-analytics:ci --help
+	docker run --rm --entrypoint abnormal-flow-input-audit schurfer-analytics:ci --help
 	@docker rmi schurfer-analytics:ci --force > /dev/null
 	@echo "=== Docker: execution build + import check ==="
 	docker build -f apps/execution/Dockerfile -t schurfer-execution:ci . -q
