@@ -27,9 +27,10 @@ import hashlib
 import math
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
+from .abnormal_flow_input_audit import verified_input
 from .abnormal_flow_screen import (
     LOOKBACK_MINUTES,
     AbnormalFlowContract,
@@ -40,6 +41,7 @@ from .abnormal_flow_screen import (
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
+    from pathlib import Path
 
 REPLAY_VERSION = "abnormal_flow_replay_v1"
 
@@ -218,6 +220,12 @@ def assemble_decisions(
         start = ordered[i - window]
         decision_at = end.bucket_start + timedelta(minutes=1 + scan_lag_minutes)
         span = ordered[i - window : i + 1]
+
+        if not end.canonical_asset:
+            # Identity could not be resolved: count it in the funnel, never let it pass
+            # as its own distinct ticker asset (it would break dedup and clustering).
+            out.append(_unavailable_decision(end, decision_at, "unresolved_identity"))
+            continue
 
         contiguous = all(
             (span[j].bucket_start - span[j - 1].bucket_start) == timedelta(minutes=1)
@@ -944,15 +952,17 @@ WHERE bucket_start >= ? AND bucket_start < ?
 """
 
 
-def _canonical_asset(symbol: str) -> str:
-    """Placeholder canonical-asset resolver: strip a trailing quote suffix so the same
-    base clusters across venues. The registered study will replace this with the
-    point-in-time identity resolver; kept deterministic and documented until then."""
+def resolve_canonical_asset(symbol: str) -> str | None:
+    """Placeholder canonical-asset resolver: strip a recognized quote suffix so the
+    same base clusters across venues. Returns ``None`` when the symbol has no known
+    quote suffix, so an UNRESOLVED identity is surfaced (and later counted in the
+    funnel) rather than silently treated as its own distinct ticker asset. The
+    registered study replaces this with the point-in-time identity resolver."""
     upper = symbol.upper()
     for quote in ("USDT", "USDC", "USD"):
         if upper.endswith(quote) and len(upper) > len(quote):
             return upper[: -len(quote)]
-    return upper
+    return None
 
 
 def input_fingerprint_for(bars: Sequence[MinuteBar]) -> str:
@@ -994,7 +1004,7 @@ def _row_to_bar(row: tuple[Any, ...]) -> MinuteBar:
         market_type=str(row[1]),
         native_market_id=symbol,
         symbol=symbol,
-        canonical_asset=_canonical_asset(symbol),
+        canonical_asset=resolve_canonical_asset(symbol) or "",
         bucket_start=row[3],
         created_at=row[4],
         open_price=row[5],
@@ -1027,6 +1037,28 @@ def load_minute_bars_from_parquet(
     finally:
         connection.close()
     return [_row_to_bar(row) for row in rows]
+
+
+def load_verified_minute_bars(cold_bars_dir: Path, *, start: date, end: date) -> list[MinuteBar]:
+    """The production loader: for every UTC day in ``[start, end)`` it verifies the
+    cold-bar manifest (file bytes + sha256, identity/bounds, and proven source
+    fidelity) via ``verified_input`` BEFORE reading a single row, then reads that day's
+    outcome-blind bars. A day whose manifest is missing, mismatched, or whose fidelity
+    was never proven raises instead of silently shrinking the sample."""
+    if end <= start:
+        raise ValueError("end day must be after start day")
+    bars: list[MinuteBar] = []
+    day = start
+    while day < end:
+        path, _manifest = verified_input(cold_bars_dir, day)
+        day_start = datetime(day.year, day.month, day.day, tzinfo=UTC)
+        bars.extend(
+            load_minute_bars_from_parquet(
+                str(path), window_start=day_start, window_end=day_start + timedelta(days=1)
+            )
+        )
+        day += timedelta(days=1)
+    return bars
 
 
 def assemble_all(

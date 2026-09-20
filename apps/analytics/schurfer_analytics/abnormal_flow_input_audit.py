@@ -72,7 +72,10 @@ def _days(start: date, end: date) -> tuple[date, ...]:
     return tuple(result)
 
 
-def _verified_input(out_dir: Path, day: date) -> tuple[Path, ExportManifest]:
+def verified_input(out_dir: Path, day: date) -> tuple[Path, ExportManifest]:
+    """Verify one day's cold-bar Parquet and return its path + manifest. Checks the
+    file (bytes + sha256 via ``verify_local``), the manifest identity/bounds, and that
+    source fidelity was proven at export. Raises rather than reading an unverified day."""
     manifest = verify_local(out_dir, day)
     start = datetime(day.year, day.month, day.day, tzinfo=UTC)
     if (
@@ -129,7 +132,7 @@ def audit_directory(out_dir: Path, *, start: date, end: date) -> InputAudit:
     """Verify every UTC day, then read only input availability from its Parquet."""
     import duckdb
 
-    verified = tuple(_verified_input(out_dir, day) for day in _days(start, end))
+    verified = tuple(verified_input(out_dir, day) for day in _days(start, end))
     paths = [str(path.resolve()) for path, _ in verified]
     window_start = datetime(start.year, start.month, start.day, tzinfo=UTC)
     window_end = datetime(end.year, end.month, end.day, tzinfo=UTC)

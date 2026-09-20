@@ -23,12 +23,14 @@ from schurfer_analytics.abnormal_flow_replay import (
     ablation_cell_fires,
     assemble_all,
     assemble_decisions,
+    build_funnel,
     build_report,
     control_band_key,
     form_episodes,
     input_fingerprint_for,
     is_eligible,
     load_minute_bars_from_parquet,
+    load_verified_minute_bars,
     match_controls,
     oi_notional_usd,
     parquet_outcome_reader,
@@ -36,9 +38,16 @@ from schurfer_analytics.abnormal_flow_replay import (
     primary_cell_fires,
     proxy_net_return,
     render_verdict,
+    resolve_canonical_asset,
     simulate_portfolio,
 )
 from schurfer_analytics.abnormal_flow_screen import AbnormalFlowContract, NotFrozenError
+from schurfer_analytics.cold_bar_export import (
+    EXPORT_VERSION,
+    SCHEMA_VERSION,
+    SOURCE_TABLE,
+    sha256_file,
+)
 
 _T0 = datetime(2026, 8, 20, 0, 0, tzinfo=UTC)
 _FINGERPRINT = "a" * 64
@@ -639,3 +648,74 @@ def test_parquet_end_to_end_refuses_on_a_tampered_fingerprint(tmp_path) -> None:
     # A loader that read a different dataset (wrong fingerprint) is refused.
     with pytest.raises(FreezeMismatchError):
         FormalReplay(contract).run(decisions, reader, observed_input_fingerprint="deadbeef" * 8)
+
+
+# --- Canonical identity resolution + funnel accounting -----------------------------
+
+
+def test_resolve_canonical_asset_admits_failure() -> None:
+    assert resolve_canonical_asset("FOOUSDT") == "FOO"
+    assert resolve_canonical_asset("BARUSDC") == "BAR"
+    # No recognized quote suffix -> unresolved (None), not a silent distinct asset.
+    assert resolve_canonical_asset("WEIRD") is None
+    assert resolve_canonical_asset("USDT") is None  # nothing but the quote
+
+
+def test_unresolved_identity_is_counted_and_never_fires() -> None:
+    # A full, otherwise-firing series whose symbol has no canonical identity.
+    bars = [MinuteBar(**{**b.__dict__, "canonical_asset": ""}) for b in _series()]
+    decisions = _assemble(bars)
+    assert len(decisions) == 1
+    assert decisions[0].unavailable_reason == "unresolved_identity"
+    funnel = build_funnel(_frozen_contract(), decisions)
+    assert funnel.reasons.get("unresolved_identity") == 1
+    assert funnel.eligible == 0
+
+
+# --- Verified (manifest-checking) loader -------------------------------------------
+
+
+def _write_day(directory, day, bars: list[MinuteBar], *, fidelity: bool = True) -> None:  # type: ignore[no-untyped-def]
+    import json
+
+    parquet = directory / f"bars-{day.isoformat()}.parquet"
+    _write_parquet(str(parquet), bars)
+    day_start = datetime(day.year, day.month, day.day, tzinfo=UTC)
+    fp = "cbfp_deadbeef"
+    manifest = {
+        "schema_version": SCHEMA_VERSION,
+        "export_version": EXPORT_VERSION,
+        "source_table": SOURCE_TABLE,
+        "day": day.isoformat(),
+        "bucket_start_from": day_start.isoformat(),
+        "bucket_start_until": (day_start + timedelta(days=1)).isoformat(),
+        "row_count": len(bars),
+        "file_name": parquet.name,
+        "file_bytes": parquet.stat().st_size,
+        "sha256": sha256_file(parquet),
+        "data_keys": [],
+        "exported_at": day_start.isoformat(),
+        "source_fingerprint": fp,
+        "file_fingerprint": fp if fidelity else "cbfp_tampered",
+        "fidelity_verified": fidelity,
+    }
+    (directory / f"bars-{day.isoformat()}.manifest.json").write_text(json.dumps(manifest))
+
+
+def test_load_verified_minute_bars_reads_a_proven_day(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    from datetime import date
+
+    day = date(2026, 8, 20)
+    _write_day(tmp_path, day, _e2e_bars(200))
+    bars = load_verified_minute_bars(tmp_path, start=day, end=date(2026, 8, 21))
+    assert len(bars) == 200
+    assert bars[0].canonical_asset == "Z"
+
+
+def test_load_verified_minute_bars_refuses_unproven_fidelity(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    from datetime import date
+
+    day = date(2026, 8, 20)
+    _write_day(tmp_path, day, _e2e_bars(120), fidelity=False)
+    with pytest.raises(ValueError):
+        load_verified_minute_bars(tmp_path, start=day, end=date(2026, 8, 21))
