@@ -219,7 +219,10 @@ def test_scan_produces_a_full_outcome_blind_artifact(tmp_path) -> None:  # type:
     assert scan["stopped"] is False
     assert scan["counts"]["eligible"] > 0
     assert scan["primary_episodes"] >= 1
-    assert scan["distinct_eligible_assets"] == 1  # only canonical "Z"
+    assert (
+        scan["identity"]["eligible_identity_keys_per_venue"]["bybit"] == 1
+    )  # only identity_key "Z"
+    assert "bybit" in scan["identity"]["snapshot_age_seconds_per_venue"]
     assert scan["per_venue"]["bybit"]["available"] > 0
     assert scan["per_venue"]["bybit"]["eligible"] > 0
     oi_age = {row["exchange"]: row for row in scan["oi_age"]}

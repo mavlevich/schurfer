@@ -49,6 +49,9 @@ if TYPE_CHECKING:
 SCAN_VERSION = "abnormal_flow_scan_v1"
 DEFAULT_START = date(2026, 8, 14)  # first fidelity-provable day; earlier = unverifiable_legacy
 DEFAULT_EVIDENCE_ROOT = Path("docs/research/evidence/abnormal-flow-v1")
+# Snapshot-age bins (seconds): 1h, 6h, 1d, 3d, 7d, 14d -- snapshots are written rarely,
+# so a decision can sit far from its snapshot; a large age is a coverage caveat.
+_SNAPSHOT_AGE_EDGES = (3600.0, 21600.0, 86400.0, 259200.0, 604800.0, 1209600.0)
 
 
 # --- Feature distributions (fixed bins; outcome-blind) -----------------------------
@@ -215,15 +218,65 @@ def inventory_window(
 # --- Point-in-time identity resolver from a snapshot -------------------------------
 
 
-def load_identity_resolver(path: Path) -> tuple[Callable[..., str | None], str]:
-    """Load a point-in-time identity snapshot and return (resolver, sha256). Each record
-    is ``{exchange, market_type, native_market_id, valid_from, valid_to, canonical_asset}``
-    (UTC ISO instants, ``valid_to`` exclusive; ``null`` means open-ended). The resolver
-    returns the canonical asset live at the decision instant, or ``None`` if none covers
-    it -- the current catalog is never used retroactively."""
+@dataclass(frozen=True)
+class _IdentitySpan:
+    valid_from: datetime
+    valid_to: datetime | None
+    identity_key: str
+    snapshot_captured_at: datetime
+
+
+class IdentityResolver:
+    """Point-in-time per-route identity: for a route and a decision instant it returns
+    the ``identity_key`` live then (never a cross-venue cluster), plus the snapshot the
+    identity came from so the scan can measure snapshot age. The current catalog is never
+    used retroactively; an instant not covered by any snapshot resolves to ``None``."""
+
+    def __init__(self, index: dict[tuple[str, str, str], list[_IdentitySpan]], sha: str) -> None:
+        self._index = index
+        self.sha = sha
+
+    def _span(
+        self, exchange: str, market_type: str, native_market_id: str, at: datetime
+    ) -> _IdentitySpan | None:
+        for span in self._index.get((exchange, market_type, native_market_id), []):
+            if at >= span.valid_from and (span.valid_to is None or at < span.valid_to):
+                return span
+        return None
+
+    def identity_key(
+        self,
+        exchange: str,
+        market_type: str,
+        native_market_id: str,
+        _capture_version: str,
+        at: datetime,
+    ) -> str | None:
+        span = self._span(exchange, market_type, native_market_id, at)
+        return span.identity_key if span is not None else None
+
+    def snapshot_captured_at(
+        self,
+        exchange: str,
+        market_type: str,
+        native_market_id: str,
+        _capture_version: str,
+        at: datetime,
+    ) -> datetime | None:
+        span = self._span(exchange, market_type, native_market_id, at)
+        return span.snapshot_captured_at if span is not None else None
+
+
+def load_identity_resolver(path: Path) -> tuple[IdentityResolver, str]:
+    """Load a point-in-time identity export and return (resolver, sha256). Accepts either
+    the identity-export object (``{"records": [...]}``) or a bare record list. Each record
+    is ``{exchange, market_type, native_market_id, valid_from, valid_to, canonical_asset,
+    snapshot_captured_at}`` (UTC ISO; ``valid_to`` exclusive, ``null`` = open-ended).
+    ``canonical_asset`` is the per-route ``identity_key``."""
     raw = path.read_bytes()
-    records = json.loads(raw)
-    index: dict[tuple[str, str, str], list[tuple[datetime, datetime | None, str]]] = {}
+    parsed = json.loads(raw)
+    records = parsed["records"] if isinstance(parsed, dict) else parsed
+    index: dict[tuple[str, str, str], list[_IdentitySpan]] = {}
     for rec in records:
         key = (rec["exchange"], rec["market_type"], rec["native_market_id"])
         valid_from = datetime.fromisoformat(str(rec["valid_from"]).replace("Z", "+00:00"))
@@ -233,21 +286,16 @@ def load_identity_resolver(path: Path) -> tuple[Callable[..., str | None], str]:
             if valid_to_raw
             else None
         )
-        index.setdefault(key, []).append((valid_from, valid_to, str(rec["canonical_asset"])))
+        snap_raw = rec.get("snapshot_captured_at") or rec["valid_from"]
+        snapshot_at = datetime.fromisoformat(str(snap_raw).replace("Z", "+00:00"))
+        index.setdefault(key, []).append(
+            _IdentitySpan(valid_from, valid_to, str(rec["canonical_asset"]), snapshot_at)
+        )
     for spans in index.values():
-        spans.sort(key=lambda s: s[0])
-
-    def resolve(
-        exchange: str, market_type: str, native_market_id: str, _capture_version: str, at: datetime
-    ) -> str | None:
-        for valid_from, valid_to, canonical in index.get(
-            (exchange, market_type, native_market_id), []
-        ):
-            if at >= valid_from and (valid_to is None or at < valid_to):
-                return canonical
-        return None
-
-    return resolve, "sha256:" + hashlib.sha256(raw).hexdigest()
+        spans.sort(key=lambda s: s.valid_from)
+    return IdentityResolver(index, "sha256:" + hashlib.sha256(raw).hexdigest()), (
+        "sha256:" + hashlib.sha256(raw).hexdigest()
+    )
 
 
 # --- Accumulated counts ------------------------------------------------------------
@@ -598,6 +646,8 @@ def run_scan(
     eligible_assets: set[str] = set()
     eligible_weeks: set[str] = set()
     per_venue: dict[str, dict[str, Any]] = {}
+    per_venue_identity_keys: dict[str, set[str]] = {}
+    per_venue_snapshot_age: dict[str, Histogram] = {}
 
     def _pv(exchange: str) -> dict[str, Any]:
         return per_venue.setdefault(
@@ -609,7 +659,7 @@ def run_scan(
         window_start=window_start,
         window_end=window_end,
         contract=contract,
-        resolver=resolver,
+        resolver=resolver.identity_key,
     ):
         pv = _pv(d.exchange)
         pv["scanned"] += 1
@@ -617,8 +667,17 @@ def run_scan(
             pv["reasons"][d.unavailable_reason] = pv["reasons"].get(d.unavailable_reason, 0) + 1
         else:
             pv["available"] += 1
+            snap_at = resolver.snapshot_captured_at(
+                d.exchange, d.market_type, d.native_market_id, d.capture_version, d.decision_at
+            )
+            if snap_at is not None:
+                age_hist = per_venue_snapshot_age.setdefault(
+                    d.exchange, Histogram(_SNAPSHOT_AGE_EDGES)
+                )
+                age_hist.add((d.decision_at - snap_at).total_seconds())
             if _decision_eligible(contract, d):
                 pv["eligible"] += 1
+                per_venue_identity_keys.setdefault(d.exchange, set()).add(d.canonical_asset)
             else:
                 pv["reasons"]["below_eligibility_floor"] = (
                     pv["reasons"].get("below_eligibility_floor", 0) + 1
@@ -648,7 +707,7 @@ def run_scan(
         calib_start=window_start,
         calib_end=calib_end,
         contract=contract,
-        resolver=resolver,
+        resolver=resolver.identity_key,
         knobs=knobs,
     )
 
@@ -669,11 +728,24 @@ def run_scan(
         "coverage": [asdict(c) for c in audit.coverage],
         "per_venue": per_venue,
         "oi_age": oi_age,
+        "identity": {
+            "note": (
+                "Per-route identity_key only; cross-venue merge deferred (recompute per "
+                "historical boundary, candidate/conflict not merged). Per-venue eligible "
+                "identity_key counts are NOT summed into a cross-venue unique-asset total."
+            ),
+            "eligible_identity_keys_per_venue": {
+                venue: len(keys) for venue, keys in sorted(per_venue_identity_keys.items())
+            },
+            "snapshot_age_seconds_per_venue": {
+                venue: per_venue_snapshot_age[venue].as_json()
+                for venue in sorted(per_venue_snapshot_age)
+            },
+        },
         "counts": asdict(counts),
         "distributions": {name: hist.as_json() for name, hist in histograms.items()},
         "primary_episodes": len(primary_episodes),
         "ablation_episodes": len(ablation_episodes),
-        "distinct_eligible_assets": len(eligible_assets),
         "distinct_eligible_weeks": len(eligible_weeks),
         "proposed_freeze": proposed_freeze,
     }
