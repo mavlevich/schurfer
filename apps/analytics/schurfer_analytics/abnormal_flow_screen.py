@@ -20,13 +20,33 @@ registered ablation, and no incremental OI benefit closes the mechanism.
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
 CONTRACT_VERSION = "abnormal_flow_screen_v1"
+
+# --- Registered executable rules ---------------------------------------------------
+# The formal run may only be pinned to a rule whose behaviour is implemented and
+# reviewed here. A free-text label is NOT an executable rule: it lets a run silently
+# claim a spec (direction=short, a negative floor, an unbuilt conversion) that the
+# code never enforces. Each spec field must be one of these versioned identifiers, so
+# the frozen contract names exactly the code path the replay will execute.
+CALIBRATION_RULES = frozenset({"fixed_percentiles_on_prestart_window_v1"})
+OI_USD_CONVERSION_RULES = frozenset({"bybit_native_value_binance_amount_x_decision_price_v1"})
+ENTRY_REFERENCES = frozenset({"next_bar_open_priced_proxy_v1"})
+EXIT_REFERENCES = frozenset({"horizon_bar_close_priced_proxy_v1"})
+MATCHING_RULES = frozenset({"same_venue_regime_liquidity_pricemove_band_v1"})
+FUNDING_MODELS = frozenset({"conservative_8h_v1"})
+
+# An input fingerprint pins the exact frozen dataset the replay is allowed to read:
+# the audit's aggregate output hash, optionally namespaced (``algo:<64 hex>`` or a
+# bare 64-hex SHA-256). A run whose live inputs hash to anything else must refuse.
+_FINGERPRINT_RE = re.compile(r"^(?:[a-z0-9_.-]+:)?[0-9a-f]{64}$")
 
 # --- Frozen FORMS (not thresholds) -------------------------------------------------
 
@@ -116,15 +136,23 @@ class AbnormalFlowContract:
     max_price_containment: float | None = None
 
     # Eligibility floor. min_oi_notional_usd needs a per-venue native-OI -> USD rule at
-    # a point-in-time price (Binance has no OI-value field); participation is against
-    # pre-decision turnover, never the future entry minute.
+    # a point-in-time price. Verified per venue: Bybit publishes both native OI amount
+    # and a USD open-interest value (use the native USD value); Binance publishes only
+    # the base-asset OI amount with no USD value, so its USD OI is amount x the
+    # decision-time price. The single registered rule that does exactly this is
+    # ``bybit_native_value_binance_amount_x_decision_price_v1``; no venue is ever
+    # treated as zero or given an unversioned conversion.
     min_oi_notional_usd: float | None = None
     oi_usd_conversion_rule: str | None = None
     position_usd: float | None = None
     max_participation_frac: float | None = None
-    participation_turnover_window_minutes: int | None = None
+    # Participation = position_usd / turnover accumulated over the pre-decision window
+    # of this many minutes ENDING at the decision (a realistic short fill period), not
+    # the whole 60m lookback and never the future entry minute. Must be < the lookback.
+    entry_execution_window_minutes: int | None = None
 
-    # Registered run specification the formal run must satisfy in full.
+    # Registered run specification the formal run must satisfy in full. The rule fields
+    # are versioned identifiers from the registries above, not free text.
     calibration_rule: str | None = None
     calibration_window_days: int | None = None
     scan_lag_minutes: int | None = None
@@ -133,6 +161,14 @@ class AbnormalFlowContract:
     matching_rule: str | None = None
     portfolio_bank_usd: float | None = None
     portfolio_max_slots: int | None = None
+
+    # Literal UTC window the replay is registered to read, and the input fingerprint it
+    # must reproduce. Both boundaries are tz-aware UTC ISO-8601 with start < end; the
+    # fingerprint is the outcome-blind audit's aggregate hash. A run over any other
+    # window or dataset must refuse, so the scored window cannot be chosen from results.
+    window_start_utc: str | None = None
+    window_end_utc: str | None = None
+    input_fingerprint: str | None = None
 
     # Conservative execution/cost model (priced-proxy entry/exit).
     entry_cost_bps: float | None = None
@@ -193,34 +229,74 @@ class AbnormalFlowContract:
             elif not isinstance(v, int) or isinstance(v, bool) or v < low:
                 issues.append(f"{name} must be an integer >= {low}")
 
-        def text(name: str) -> None:
+        def registered(name: str, registry: frozenset[str]) -> None:
             v = getattr(self, name)
             if not isinstance(v, str) or not v:
                 issues.append(f"{name} is not set")
+            elif v not in registry:
+                issues.append(
+                    f"{name} must be a registered executable rule, one of "
+                    f"{sorted(registry)}; free text is not a spec"
+                )
+
+        def utc_boundary(name: str) -> datetime | None:
+            v = getattr(self, name)
+            if not isinstance(v, str) or not v:
+                issues.append(f"{name} is not set")
+                return None
+            try:
+                parsed = datetime.fromisoformat(v.replace("Z", "+00:00"))
+            except ValueError:
+                issues.append(f"{name} must be an ISO-8601 datetime")
+                return None
+            if parsed.tzinfo is None or parsed.utcoffset() != timedelta(0):
+                issues.append(f"{name} must be an explicit UTC instant")
+                return None
+            return parsed
 
         num("min_oi_growth_pct", low=0.0, inclusive_low=False)
         num("min_buy_pressure_ratio", low=0.5, high=1.0, inclusive_low=False)
         num("max_price_containment", low=0.0, inclusive_low=False)
         num("min_oi_notional_usd", low=0.0, inclusive_low=False)
-        text("oi_usd_conversion_rule")
+        registered("oi_usd_conversion_rule", OI_USD_CONVERSION_RULES)
         num("position_usd", low=0.0, inclusive_low=False)
         num("max_participation_frac", low=0.0, high=1.0, inclusive_low=False)
-        integer("participation_turnover_window_minutes", low=1)
-        text("calibration_rule")
+        integer("entry_execution_window_minutes", low=1)
+        if (
+            isinstance(self.entry_execution_window_minutes, int)
+            and not isinstance(self.entry_execution_window_minutes, bool)
+            and self.entry_execution_window_minutes >= self.lookback_minutes
+        ):
+            issues.append(
+                "entry_execution_window_minutes must be < lookback_minutes "
+                "(participation uses a short pre-decision window, not the whole hour)"
+            )
+        registered("calibration_rule", CALIBRATION_RULES)
         integer("calibration_window_days", low=1)
         integer("scan_lag_minutes", low=0)
-        text("entry_reference")
-        text("exit_reference")
-        text("matching_rule")
+        registered("entry_reference", ENTRY_REFERENCES)
+        registered("exit_reference", EXIT_REFERENCES)
+        registered("matching_rule", MATCHING_RULES)
         num("portfolio_bank_usd", low=0.0, inclusive_low=False)
         integer("portfolio_max_slots", low=1)
         num("entry_cost_bps", low=0.0)
         num("slippage_bps", low=0.0)
         num("fee_bps", low=0.0)
-        text("funding_model")
+        registered("funding_model", FUNDING_MODELS)
         integer("min_resolved_episodes", low=1)
         num("max_missing_fraction", low=0.0, high=1.0)
         num("min_excess_over_control_pct", low=0.0)
+
+        start = utc_boundary("window_start_utc")
+        end = utc_boundary("window_end_utc")
+        if start is not None and end is not None and start >= end:
+            issues.append("window_start_utc must be strictly before window_end_utc")
+        fp = self.input_fingerprint
+        if not isinstance(fp, str) or not fp:
+            issues.append("input_fingerprint is not set")
+        elif not _FINGERPRINT_RE.match(fp):
+            issues.append("input_fingerprint must be a sha256 hex, optionally 'algo:'-prefixed")
+
         return tuple(issues)
 
     def is_frozen(self) -> bool:

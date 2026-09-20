@@ -68,15 +68,15 @@ def _frozen_contract(**overrides: object) -> AbnormalFlowContract:
         min_buy_pressure_ratio=0.6,
         max_price_containment=0.1,
         min_oi_notional_usd=250_000.0,
-        oi_usd_conversion_rule="native_oi_amount_x_point_in_time_mark_v1",
+        oi_usd_conversion_rule="bybit_native_value_binance_amount_x_decision_price_v1",
         position_usd=300.0,
         max_participation_frac=0.01,
-        participation_turnover_window_minutes=60,
+        entry_execution_window_minutes=5,
         calibration_rule="fixed_percentiles_on_prestart_window_v1",
         calibration_window_days=14,
         scan_lag_minutes=2,
-        entry_reference="next_bar_open_priced_proxy",
-        exit_reference="horizon_bar_close_priced_proxy",
+        entry_reference="next_bar_open_priced_proxy_v1",
+        exit_reference="horizon_bar_close_priced_proxy_v1",
         matching_rule="same_venue_regime_liquidity_pricemove_band_v1",
         portfolio_bank_usd=300.0,
         portfolio_max_slots=3,
@@ -87,6 +87,9 @@ def _frozen_contract(**overrides: object) -> AbnormalFlowContract:
         min_resolved_episodes=100,
         max_missing_fraction=0.2,
         min_excess_over_control_pct=0.0,
+        window_start_utc="2026-08-14T00:00:00+00:00",
+        window_end_utc="2026-09-14T00:00:00+00:00",
+        input_fingerprint="abnormal_flow_input_audit_v1:" + "a" * 64,
     )
     base.update(overrides)
     return AbnormalFlowContract(**base)  # type: ignore[arg-type]
@@ -145,3 +148,66 @@ def test_buy_pressure_threshold_must_indicate_dominance() -> None:
     # "buy dominating sell" means > 0.5; a 0.5 or lower threshold is rejected.
     assert not _frozen_contract(min_buy_pressure_ratio=0.5).is_frozen()
     assert _frozen_contract(min_buy_pressure_ratio=0.55).is_frozen()
+
+
+def test_rule_fields_must_be_registered_executable_rules_not_free_text() -> None:
+    # A plausible-sounding but unregistered label is not an executable rule: the code
+    # path it names does not exist, so the run would silently do something else.
+    for field in (
+        "oi_usd_conversion_rule",
+        "calibration_rule",
+        "entry_reference",
+        "exit_reference",
+        "matching_rule",
+        "funding_model",
+    ):
+        bad = _frozen_contract(**{field: "sounds_official_v9"})
+        assert not bad.is_frozen()
+        joined = "; ".join(bad.problems())
+        assert f"{field} must be a registered executable rule" in joined
+        with pytest.raises(NotFrozenError):
+            bad.require_frozen()
+
+
+def test_window_boundaries_must_be_ordered_explicit_utc() -> None:
+    # Naive (no timezone) instant is rejected: "UTC" must be literal, not assumed.
+    naive = _frozen_contract(window_start_utc="2026-08-14T00:00:00")
+    assert not naive.is_frozen()
+    assert "window_start_utc must be an explicit UTC instant" in "; ".join(naive.problems())
+
+    # A non-UTC offset is not a UTC boundary.
+    offset = _frozen_contract(window_start_utc="2026-08-14T00:00:00+02:00")
+    assert "window_start_utc must be an explicit UTC instant" in "; ".join(offset.problems())
+
+    # end <= start is rejected.
+    reversed_window = _frozen_contract(
+        window_start_utc="2026-09-14T00:00:00+00:00",
+        window_end_utc="2026-08-14T00:00:00+00:00",
+    )
+    assert "window_start_utc must be strictly before window_end_utc" in "; ".join(
+        reversed_window.problems()
+    )
+
+
+def test_input_fingerprint_must_be_present_and_a_sha256() -> None:
+    missing = _frozen_contract(input_fingerprint=None)
+    assert "input_fingerprint is not set" in "; ".join(missing.problems())
+    with pytest.raises(NotFrozenError):
+        missing.require_frozen()
+
+    malformed = _frozen_contract(input_fingerprint="not-a-hash")
+    assert "input_fingerprint must be a sha256 hex" in "; ".join(malformed.problems())
+
+    # A bare 64-hex SHA-256 (no namespace prefix) is accepted.
+    assert _frozen_contract(input_fingerprint="b" * 64).is_frozen()
+
+
+def test_participation_window_must_be_a_short_pre_decision_period() -> None:
+    # The whole 60m lookback is NOT a realistic fill window; participation must use a
+    # short pre-decision window strictly shorter than the lookback.
+    whole_hour = _frozen_contract(entry_execution_window_minutes=60)
+    assert not whole_hour.is_frozen()
+    assert "entry_execution_window_minutes must be < lookback_minutes" in "; ".join(
+        whole_hour.problems()
+    )
+    assert _frozen_contract(entry_execution_window_minutes=5).is_frozen()

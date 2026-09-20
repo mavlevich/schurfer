@@ -48,12 +48,24 @@ registered before replaying returns. Do not select them from endpoint results.
   are explicitly unavailable for the ratio.
 - Eligibility floor (frozen with the thresholds, `min_oi_notional_usd` +
   participation). Native OI is converted to USD by ONE registered per-venue rule
-  at a point-in-time price at or before the decision (native OI amount x the
-  decision-time mark/close price); Binance's USD OI is that conversion, never a
-  zero or an unversioned substitute. Participation divides the fixed position by
-  PRE-DECISION turnover over a frozen window (`participation_turnover_window_minutes`),
-  never the future entry minute. A venue/day below the floor is ineligible, so the
-  signal is not a small-cap noise detector and is at least nominally tradeable.
+  (`bybit_native_value_binance_amount_x_decision_price_v1`), verified against the
+  collector: Bybit publishes both a native OI amount and a native USD
+  open-interest value, so its USD OI is that native value; Binance publishes only
+  the base-asset OI amount and no USD value, so its USD OI is that amount times the
+  decision-time price. No venue is treated as zero or given an unversioned
+  substitute. Participation divides the fixed position by PRE-DECISION turnover
+  accumulated over a short frozen window ending at the decision
+  (`entry_execution_window_minutes`, strictly shorter than the 60m lookback), a
+  realistic fill period -- never the whole hour and never the future entry minute.
+  A venue/day below the floor is ineligible, so the signal is not a small-cap noise
+  detector and is at least nominally tradeable.
+- The formal run is pinned to versioned executable rules, not free-text labels:
+  the calibration, OI-USD conversion, entry, exit, matching, and funding fields
+  must each name a rule implemented and reviewed in the contract module, and the
+  run also pins literal tz-aware UTC window boundaries and an input fingerprint
+  (the audit's aggregate hash) it must reproduce. A run over any other window,
+  dataset, or unregistered rule refuses, so neither the scored window nor the
+  operationalization can be chosen from results.
 - Buy/sell USD semantics differ by venue and must be verified against the writer
   and real rows before use: Bybit sums individual trades, Binance sums aggTrades;
   both flow through price x size but are not identical. Describe and test this; if
