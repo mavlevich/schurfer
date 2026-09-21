@@ -207,6 +207,106 @@ economics, the portfolio, and the verdict are the NEXT PR, still before any retu
 are read. The canonical resolver here is a documented heuristic fallback
 (quote-suffix stripping) for tests; production passes the point-in-time resolver.
 
+## Reproducible calibration scan (`abnormal-flow-scan`)
+
+`abnormal_flow_scan` is the reproducible, outcome-blind counts/calibration command
+(no scratch script). It inventories each day from a fixed start (2026-08-14, the first
+fidelity-provable day; earlier days are `unverifiable_legacy`), verifying the manifest,
+proven source fidelity, the specific Borg archive, and that the receipt is offsite, and
+selects ONE continuous window from the start to the last FULLY VERIFIED day. It never
+compares windows by signal count; a missing day, or a verified day after an unverified
+one, records a gap and stops rather than silently narrowing. It then streams bars one
+instrument at a time (bounded memory), resolves identity point-in-time from a supplied
+snapshot, and writes an artifact under `docs/research/evidence/abnormal-flow-v1/<run-id>/`:
+a README (exact command, revision, bounds), a manifest (per-day archive/hash/fidelity/
+receipt + identity-snapshot hash), and `scan.json` (coverage by day/venue, rejection
+reasons, feature distributions of OI growth / buy pressure / containment / participation
+/ OI-notional, and counts of fires, independent episodes, assets and weeks). It reads no
+forward price, PnL, or verdict. Raw Parquet is never committed.
+
+```bash
+abnormal-flow-scan --cold-bars-dir <restored> --provenance-dir <prov> \
+  --borg-repo <borg-repo> --identity-snapshot <point-in-time-identity.json> \
+  --contract-json <provisional-contract.json> \
+  --start-day 2026-08-14 --end-day <last-fully-verified-day>
+```
+
+### Resource estimate and environment (run off live prod)
+
+`timeseries.bybit_momentum_bars_1m` is a historical name for the SHARED bars table; it
+holds BOTH venues, distinguished by the `exchange` column (the 2026-09-18 audit shows
+Bybit and Binance), so this is a two-venue scan, not Bybit-only. Per-day/per-venue
+counts come from the scan's own coverage (`per_venue_available_decisions` plus the
+per-venue coverage rows); the estimate below is refined by that first run. Order of
+magnitude: roughly 1.5M rows/day across both venues (the earlier one-day preflight saw
+Bybit ~741,600 and Binance ~750,405), so 2026-08-14 .. 09-18 is on the order of 50M+
+rows. The naive loader that builds one Python list of every bar would need tens of GB
+of RAM and must not be run blind; the scan avoids this by streaming one instrument at a
+time (each instrument-month is tens of MB), so peak RAM is a single instrument plus
+DuckDB's out-of-core ordered scan. Recommended isolated environment: an EXISTING
+non-prod host with the restored cold-bars if one is suitable (no new paid environment
+yet), DuckDB local, on the order of 8 GB RAM and ~20 GB free disk for sort spill,
+minutes to low tens of minutes of CPU. Do the first real run as a one-day slice to
+measure actual RAM/disk/time and the real per-venue counts before the full window. The
+unit test drives the whole path on a synthetic two-day dataset as a correctness proof.
+
+## Proposed deterministic threshold freeze (one rule, for review)
+
+Proposed, not yet registered: `fixed_percentiles_on_prestart_window_v1`. Split the one
+verified window into a CALIBRATION slice (the first 14 days) and a disjoint EVALUATION
+remainder. On the calibration slice only, over the ELIGIBLE decisions, freeze the three
+thresholds at fixed pre-declared percentiles of the scan distributions: OI growth at the
+80th percentile, buy pressure at the 70th, and containment at the 50th (a cap, so lower
+is more restrained). Freeze the eligibility floor `min_oi_notional_usd` at the 25th
+percentile of calibration-slice OI-notional so the signal is at least nominally
+tradeable. All percentiles come from outcome-blind distributions; none is chosen after
+seeing returns, and the evaluation window the economics later score is disjoint from the
+slice the thresholds were read on. After you review the actual scan distributions we
+pick the percentile knobs (or replace this rule) and register the window and parameters
+for the separate economic run.
+
+## Point-in-time identity schema (pinned; export + scan consume it)
+
+Identity has TWO SEPARATE layers so a cross-venue guess can never inflate independent
+evidence:
+
+1. Per-route identity (authoritative). For each `(exchange, market_type,
+native_market_id)` and each snapshot interval, an `identity_key` taken from THAT
+   venue's `momentum_universe_instruments` snapshot. EVERY instrument gets one,
+   including single-venue instruments. It is a per-route key, never a cross-venue
+   cluster. Each record carries `valid_from` = snapshot `captured_at`, `valid_to` =
+   the next snapshot's `captured_at` (or null), and `snapshot_captured_at` so the
+   snapshot age at a decision is known. `valid_to` is an interval boundary only: it
+   does NOT assert the universe was provably complete across a long gap between
+   snapshots.
+2. Cross-venue correspondence (separate, advisory). A separate table maps identity_keys
+   across venues with the classifier status: `matched` / `candidate` / `conflict` /
+   `unmatched`. Only `matched` is treated as the same underlying asset. `candidate`,
+   `conflict`, and unknown are NEVER silently merged.
+
+Export rules: emit only snapshots whose `captured_at <= decision time` (the resolver
+picks the nearest snapshot at or before the decision; no look-ahead). The artifact
+records per day/venue coverage and the snapshot age used. Between snapshots the gap can
+be large; membership is "as of the last snapshot", and a decision far past its snapshot
+is flagged by its snapshot age, not assumed complete.
+
+Scanner counting when the cross-venue link is unknown:
+
+- Episodes are formed per `(exchange, identity_key)` (per route), so Bybit ABC and
+  Binance ABC are two separate episodes regardless of cross-venue status; the cooldown
+  dedups only within a route.
+- The independent asset count collapses ONLY `matched` cross-venue groups into one
+  asset; every `candidate`/`conflict`/`unmatched` identity_key counts separately. The
+  artifact reports `cross_venue_matched_groups`, `cross_venue_candidate`,
+  `cross_venue_conflict`, and `cross_venue_unmatched` so the reader sees how much
+  identity is uncertain. Cross-venue confirmed overlap is reported for portfolio
+  concentration, never multiplied into independent evidence.
+
+The export runs read-only ON PROD (localhost DB, not a PG tunnel) reusing the existing
+`momentum_universe_identity_repository` (`window_coverage` / `instruments_as_of`) and
+`momentum_universe_identity_classifier`; the small JSON is fetched over SSH. It is
+unit-tested locally against a fake repository before the prod run.
+
 ## Open decisions before registration
 
 1. Owner approval of the one primary mechanism, 60-minute lookback, long
