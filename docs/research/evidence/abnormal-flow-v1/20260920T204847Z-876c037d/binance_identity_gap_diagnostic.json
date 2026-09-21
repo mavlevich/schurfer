@@ -1,0 +1,41 @@
+{
+  "note": "Outcome-blind diagnostic of the v1 identity DEFECT (partial 2026-08-18 Binance snapshots), measured on the SUPERSEDED run with provisional thresholds. Not an economic result; no returns read. Fixed by export v2 (persist-until-changed).",
+  "root_cause": "Binance capture-warmup on 2026-08-18 wrote partial universe snapshots (6/50/150 instruments vs ~525); v1 full-replacement semantics delisted ~375 liquid routes for 2026-08-18..2026-08-27.",
+  "binance_snapshot_instrument_counts": {
+    "2026-08-15": 525,
+    "2026-08-18a": 6,
+    "2026-08-18b": 50,
+    "2026-08-18c": 150,
+    "2026-08-27": 522,
+    "2026-09-19": 526
+  },
+  "binance_missing_fraction_v1": {
+    "overall_pct": 19.06,
+    "by_iso_week_pct": {
+      "2026-W33": 0.0,
+      "2026-W34": 53.04,
+      "2026-W35": 39.7,
+      "2026-W36": 0.0,
+      "2026-W37": 0.0,
+      "2026-W38": 0.0
+    }
+  },
+  "binance_missing_fraction_v2_after_fix": {
+    "overall_pct": 0.0,
+    "by_iso_week_pct": {
+      "2026-W33": 0.0,
+      "2026-W34": 0.0,
+      "2026-W35": 0.0,
+      "2026-W36": 0.0,
+      "2026-W37": 0.0,
+      "2026-W38": 0.0
+    }
+  },
+  "lost_signal_count_v1": {
+    "binance_eligible_total_routeall": 14808404,
+    "binance_eligible_lost_to_unresolved": 2888364,
+    "binance_primary_fires_total_routeall": 2473,
+    "binance_primary_fires_lost_to_unresolved": 423,
+    "binance_lost_route_episodes": 41
+  }
+}

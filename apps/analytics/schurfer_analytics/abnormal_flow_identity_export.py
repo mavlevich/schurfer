@@ -28,7 +28,7 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
-IDENTITY_EXPORT_VERSION = "abnormal_flow_identity_export_v1"
+IDENTITY_EXPORT_VERSION = "abnormal_flow_identity_export_v2"  # v2: persist-until-changed intervals
 
 
 @dataclass(frozen=True)
@@ -47,44 +47,53 @@ def build_identity_records(
     rows: list[SnapshotInstrumentRow], *, window_start: datetime, window_end: datetime
 ) -> list[dict[str, Any]]:
     """Turn snapshot rows into point-in-time per-route identity records overlapping
-    ``[window_start, window_end)``. ``valid_to`` is the venue's next snapshot boundary
-    (or null); ``snapshot_captured_at`` is kept so the scan can measure snapshot age. A
-    snapshot replaces the whole universe, so a route absent from a later snapshot simply
-    has no record covering that later interval (it is delisted at that boundary)."""
-    # Per venue, the ordered set of snapshot boundaries.
-    boundaries: dict[str, list[datetime]] = {}
-    for row in rows:
-        boundaries.setdefault(row.exchange, [])
-    for exchange in boundaries:
-        seen = sorted({r.captured_at for r in rows if r.exchange == exchange})
-        boundaries[exchange] = seen
+    ``[window_start, window_end)`` using PERSIST-UNTIL-CHANGED semantics.
 
-    def next_boundary(exchange: str, captured_at: datetime) -> datetime | None:
-        after = [b for b in boundaries[exchange] if b > captured_at]
-        return after[0] if after else None
+    Each route ``(exchange, native_market_id)`` has its own record history. An interval
+    starts when a snapshot first states a ``(identity_key, market_type, identity_status)``
+    for the route and ends ONLY at the next record FOR THAT SAME ROUTE whose tuple
+    differs (or is open-ended if none). Absence of the route from an intervening snapshot
+    (e.g. a partial capture-warmup snapshot) does NOT end the interval: identity persists
+    from the last snapshot that stated it. Nothing is backfilled before a route's first
+    appearance, and no current/future value fills the past. ``snapshot_captured_at`` is
+    the snapshot that established the interval, so the scan can measure snapshot age."""
+    by_route: dict[tuple[str, str], list[SnapshotInstrumentRow]] = {}
+    for row in rows:
+        by_route.setdefault((row.exchange, row.native_market_id), []).append(row)
 
     records: list[dict[str, Any]] = []
-    for row in rows:
-        valid_from = row.captured_at
-        valid_to = next_boundary(row.exchange, row.captured_at)
-        # Keep only intervals that overlap the requested window.
-        if valid_from >= window_end:
-            continue
-        if valid_to is not None and valid_to <= window_start:
-            continue
-        records.append(
-            {
-                "exchange": row.exchange,
-                "market_type": row.market_type,
-                "native_market_id": row.native_market_id,
-                # per-route identity_key (never a cross-venue cluster)
-                "canonical_asset": row.identity_key,
-                "identity_status": row.identity_status,
-                "snapshot_captured_at": valid_from.isoformat(),
-                "valid_from": valid_from.isoformat(),
-                "valid_to": None if valid_to is None else valid_to.isoformat(),
-            }
-        )
+    for (exchange, native_market_id), route_rows in by_route.items():
+        route_rows.sort(key=lambda r: r.captured_at)
+        # Collapse consecutive-identical states into runs; a run begins only when the
+        # (identity_key, market_type, identity_status) tuple changes.
+        runs: list[SnapshotInstrumentRow] = []
+        for row in route_rows:
+            if not runs or (
+                runs[-1].identity_key,
+                runs[-1].market_type,
+                runs[-1].identity_status,
+            ) != (row.identity_key, row.market_type, row.identity_status):
+                runs.append(row)
+        for i, run in enumerate(runs):
+            valid_from = run.captured_at
+            valid_to = runs[i + 1].captured_at if i + 1 < len(runs) else None
+            if valid_from >= window_end:
+                continue
+            if valid_to is not None and valid_to <= window_start:
+                continue
+            records.append(
+                {
+                    "exchange": exchange,
+                    "market_type": run.market_type,
+                    "native_market_id": native_market_id,
+                    # per-route identity_key (never a cross-venue cluster)
+                    "canonical_asset": run.identity_key,
+                    "identity_status": run.identity_status,
+                    "snapshot_captured_at": valid_from.isoformat(),
+                    "valid_from": valid_from.isoformat(),
+                    "valid_to": None if valid_to is None else valid_to.isoformat(),
+                }
+            )
     records.sort(key=lambda r: (r["exchange"], r["native_market_id"], r["valid_from"]))
     return records
 

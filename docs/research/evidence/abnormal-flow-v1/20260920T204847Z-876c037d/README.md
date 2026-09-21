@@ -1,3 +1,14 @@
+# SUPERSEDED — do not use for calibration
+
+This run used identity export v1 (full-universe-replacement interval semantics), which
+was DEFECTIVE: partial Binance capture-warmup snapshots on 2026-08-18 (6/50/150 vs ~525
+instruments) wrongly delisted ~375 liquid Binance routes for 08-18..08-27, producing a
+spurious ~19% Binance unresolved_identity (weeks W34/W35 only). Fixed by persist-until-
+changed semantics (export v2); superseded by the re-run. Kept for the before/after
+comparison only.
+
+---
+
 # Abnormal-flow outcome-blind scan — 2026-08-16 .. 2026-09-18
 
 Read-only calibration/coverage run. NO forward price, PnL, or verdict was read.

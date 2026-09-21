@@ -1,0 +1,52 @@
+{
+  "note": "Outcome-blind funding SOURCE representativeness check (funding rates, not returns). Decides whether a captured source can be the PRIMARY conservative funding proxy per the freeze rules (full/unconditional Bybit+Binance linear OR exact eligible universe, per venue, P95 of max(rate,0)).",
+  "venues_in_scope": ["bybit", "binance"],
+  "calibration_window": {
+    "start": "2026-08-16T00:00:00+00:00",
+    "end": "2026-08-30T00:00:00+00:00"
+  },
+  "captured_sources": {
+    "app.hold12h_funding_settlements": {
+      "coverage": {
+        "exchanges": ["bybit"],
+        "instruments": 374,
+        "min": "2026-09-13",
+        "max": "2026-09-21"
+      },
+      "conditionality": "HYP-015 WATCH probe instrument-windows only",
+      "verdict": "NOT usable as primary proxy: Bybit-only, starts AFTER the calibration slice, conditional. Stress/diagnostic only."
+    },
+    "app.funding_rate_snapshots": {
+      "coverage": {
+        "exchanges": [
+          "bybit",
+          "coinex",
+          "gate",
+          "htx",
+          "kucoin",
+          "lbank",
+          "mexc",
+          "okx",
+          "toobit",
+          "xt"
+        ],
+        "binance_present": false,
+        "min": "2026-07-17",
+        "max": "2026-09-21"
+      },
+      "conditionality": "pump-event-anchored (event_id); ~260 Bybit assets in calibration window, not the full/eligible universe",
+      "verdict": "NOT usable as primary proxy: NO Binance, and event-conditional. Stress/diagnostic only.",
+      "bybit_stress_percentiles_calibration_max_rate_0": {
+        "rows": 104676,
+        "assets": 260,
+        "p50": 0.00005,
+        "p90": 0.00046678,
+        "p95": 0.00077268,
+        "p99": 0.00159747,
+        "max_raw_rate": 0.025,
+        "unit": "per-settlement funding rate (fraction); P95 ~7.7 bps/settlement"
+      }
+    }
+  },
+  "conclusion": "No captured DB source satisfies the primary-proxy spec (there is NO Binance funding capture at all; both sources are conditional). Primary proxy must be a fresh outcome-blind CCXT funding_rate_history pull for the EXACT eligible universe (Bybit + Binance linear) over the calibration window, per venue, P95 of max(rate,0), with source/version/window/coverage/hash fixed. funding_rate_snapshots (Bybit, pump-anchored) is kept as a conservative STRESS cross-check only. Current 3 bps/8h proxy is confirmed too low (Bybit stress P95 ~7.7 bps/settlement)."
+}
