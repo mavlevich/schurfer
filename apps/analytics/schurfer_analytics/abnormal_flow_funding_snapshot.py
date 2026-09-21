@@ -1,0 +1,399 @@
+"""Outcome-blind funding-rate snapshot for the abnormal-flow freeze contract.
+
+Builds the PRIMARY conservative funding proxy from a fresh, durable pull of actual
+per-instrument funding-settlement history (CCXT ``fetchFundingRateHistory``) for the
+EXACT eligible universe (Bybit + Binance linear), strictly over the calibration window,
+PER VENUE. It reads funding rates only -- never a forward price or PnL. The baseline is
+``P95`` of ``max(funding_rate, 0)`` (long-only conservative) per venue; ``P99`` is kept
+for the mandatory sensitivity test. The captured DB tables (hold12h_funding_settlements,
+funding_rate_snapshots) are NOT used here: neither is unconditional/full-universe (no
+Binance capture at all), so they are stress/diagnostic only.
+
+The snapshot fixes source, version, window, coverage, and a content hash so the freeze
+run reproduces the same numbers. The CCXT edge is injectable so the pure percentile /
+coverage logic is unit-tested without the network.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import sys
+from dataclasses import dataclass
+from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Protocol
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+FUNDING_SNAPSHOT_VERSION = "abnormal_flow_funding_snapshot_v1"
+_PERCENTILES = (0.50, 0.90, 0.95, 0.99)
+
+
+@dataclass(frozen=True)
+class FundingSettlement:
+    exchange: str
+    native_market_id: str
+    settlement_at: datetime
+    funding_rate: float
+
+
+class FundingClient(Protocol):
+    """The venue edge. ``unified_symbol`` maps a native market id to the CCXT unified
+    symbol (or ``None`` if it is not a resolvable linear instrument); ``funding_history``
+    returns ``(settlement_ms, rate)`` for that symbol within ``[since_ms, until_ms)``."""
+
+    def unified_symbol(self, native_market_id: str) -> str | None: ...
+
+    def funding_history(
+        self, unified_symbol: str, since_ms: int, until_ms: int
+    ) -> list[tuple[int, float]]: ...
+
+
+def _sha256_file(path: Path) -> str:
+    import hashlib
+
+    digest = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return "sha256:" + digest.hexdigest()
+
+
+def _percentile(sorted_values: list[float], p: float) -> float | None:
+    """Linear-interpolated p-quantile of a pre-sorted list. ``None`` when empty."""
+    if not sorted_values:
+        return None
+    if len(sorted_values) == 1:
+        return sorted_values[0]
+    rank = p * (len(sorted_values) - 1)
+    lo = int(rank)
+    frac = rank - lo
+    if lo + 1 >= len(sorted_values):
+        return sorted_values[-1]
+    return sorted_values[lo] + (sorted_values[lo + 1] - sorted_values[lo]) * frac
+
+
+def funding_percentiles_cadence_aware(
+    settlements: list[FundingSettlement],
+    grid_start: datetime,
+    grid_end: datetime,
+    hold_minutes: int = 720,
+    grid_step_minutes: int = 60,
+) -> dict[str, dict[str, Any]]:
+    """Cadence-aware sliding window funding.
+    For each t in grid, for each instrument, if the window (t, t+hold] is framed
+    by settlements (one <= t and one >= t+hold), sum max(rate, 0) inside the window.
+    """
+    from collections import defaultdict
+
+    by_inst: dict[str, dict[str, list[FundingSettlement]]] = defaultdict(lambda: defaultdict(list))
+    for s in settlements:
+        by_inst[s.exchange][s.native_market_id].append(s)
+
+    for venue in by_inst:
+        for inst in by_inst[venue]:
+            by_inst[venue][inst].sort(key=lambda s: s.settlement_at)
+
+    out: dict[str, dict[str, Any]] = {}
+
+    grid = []
+    curr = grid_start
+    while curr < grid_end:
+        grid.append(curr)
+        curr += timedelta(minutes=grid_step_minutes)
+
+    for venue, inst_map in by_inst.items():
+        valid_sums = []
+        incomplete_count = 0
+        for t in grid:
+            t_end = t + timedelta(minutes=hold_minutes)
+            for _inst, s_list in inst_map.items():
+                # Check framing
+                if not s_list or s_list[0].settlement_at > t or s_list[-1].settlement_at < t_end:
+                    incomplete_count += 1
+                    continue
+                # It is framed. Sum inside (t, t_end]
+                window_sum = 0.0
+                for s in s_list:
+                    if t < s.settlement_at <= t_end:
+                        window_sum += max(s.funding_rate, 0.0)
+                valid_sums.append(window_sum)
+
+        valid_sums.sort()
+        out[venue] = {
+            "valid_windows": len(valid_sums),
+            "incomplete_windows": incomplete_count,
+            "instruments": len(inst_map),
+            "hold_minutes": hold_minutes,
+            "max_rate_0_percentiles": {
+                f"p{int(p * 100)}" if p != 0.975 else "p97.5": _percentile(valid_sums, p)
+                for p in _PERCENTILES
+            },
+        }
+    return out
+
+
+def old_funding_percentiles(settlements: Iterable[FundingSettlement]) -> dict[str, dict[str, Any]]:
+    """Per-venue percentiles of ``max(funding_rate, 0)`` (long-only conservative). Returns
+    per venue: settlement count, distinct instruments, and P50/P90/P95/P99."""
+    by_venue: dict[str, list[float]] = {}
+    instruments: dict[str, set[str]] = {}
+    for s in settlements:
+        by_venue.setdefault(s.exchange, []).append(max(s.funding_rate, 0.0))
+        instruments.setdefault(s.exchange, set()).add(s.native_market_id)
+    out: dict[str, dict[str, Any]] = {}
+    for venue, values in by_venue.items():
+        values.sort()
+        out[venue] = {
+            "settlements": len(values),
+            "instruments": len(instruments[venue]),
+            "max_rate_0_percentiles": {
+                f"p{int(p * 100)}": _percentile(values, p) for p in _PERCENTILES
+            },
+        }
+    return out
+
+
+def _content_hash(settlements: list[FundingSettlement]) -> str:
+    hasher = hashlib.sha256()
+    for s in sorted(settlements, key=lambda s: (s.exchange, s.native_market_id, s.settlement_at)):
+        hasher.update(
+            f"{s.exchange}|{s.native_market_id}|{s.settlement_at.isoformat()}|{s.funding_rate!r}".encode()
+        )
+    return "sha256:" + hasher.hexdigest()
+
+
+def fetch_settlements(
+    client: FundingClient,
+    exchange: str,
+    native_market_ids: list[str],
+    *,
+    fetch_start: datetime,
+    fetch_end: datetime,
+) -> tuple[list[FundingSettlement], dict[str, Any]]:
+    """Pull funding settlements for one venue's instruments over ``[window_start,
+    window_end)``. Returns (settlements, coverage). An instrument with no resolvable
+    unified symbol or no settlements is recorded, not silently dropped."""
+    since_ms = int(fetch_start.timestamp() * 1000)
+    until_ms = int(fetch_end.timestamp() * 1000)
+    settlements: list[FundingSettlement] = []
+    covered: set[str] = set()
+    unresolved: list[str] = []
+    for native in native_market_ids:
+        symbol = client.unified_symbol(native)
+        if symbol is None:
+            unresolved.append(native)
+            continue
+        for ts_ms, rate in client.funding_history(symbol, since_ms, until_ms):
+            if ts_ms < since_ms or ts_ms >= until_ms:
+                continue
+            settlements.append(
+                FundingSettlement(
+                    exchange=exchange,
+                    native_market_id=native,
+                    settlement_at=datetime.fromtimestamp(ts_ms / 1000, tz=UTC),
+                    funding_rate=float(rate),
+                )
+            )
+            covered.add(native)
+    coverage = {
+        "requested_instruments": len(native_market_ids),
+        "covered_instruments": len(covered),
+        "unresolved_symbols": len(unresolved),
+        "unresolved_symbols_list": unresolved,
+        "no_settlement_instruments": sorted(set(native_market_ids) - covered - set(unresolved)),
+    }
+    return settlements, coverage
+
+
+def build_snapshot(
+    settlements: list[FundingSettlement],
+    *,
+    window_start: datetime,
+    window_end: datetime,
+    coverage_by_venue: dict[str, dict[str, Any]],
+    source: dict[str, Any],
+    raw_artifact_filename: str,
+    raw_artifact_sha: str,
+    universe_sha: str,
+    content_hash: str,
+) -> dict[str, Any]:
+    """Assemble the durable funding snapshot artifact (percentiles + coverage + source +
+    content hash). P95 is the primary proxy; P99 is the sensitivity input."""
+    return {
+        "funding_snapshot_version": FUNDING_SNAPSHOT_VERSION,
+        "source": source,
+        "window": {"start": window_start.isoformat(), "end": window_end.isoformat()},
+        "conservative_rule": "720m cumulative funding (positive only); P99 sensitivity",
+        "coverage": coverage_by_venue,
+        "percentiles": funding_percentiles_cadence_aware(
+            settlements, grid_start=window_start, grid_end=window_end
+        ),
+        "raw_artifact_filename": raw_artifact_filename,
+        "row_count": len(settlements),
+        "raw_artifact_sha": raw_artifact_sha,
+        "universe_sha": universe_sha,
+        "content_hash": content_hash,
+        "total_settlements": len(settlements),
+    }
+
+
+# --- CCXT edge (network; not unit-tested) ------------------------------------------
+
+
+class CcxtFundingClient:
+    """Wraps a CCXT exchange for one venue: maps native ids to unified linear symbols and
+    pages funding history. Constructed via :meth:`create`."""
+
+    def __init__(self, exchange: Any) -> None:
+        self._ex = exchange
+        self._ex.load_markets()
+
+    @classmethod
+    def create(cls, exchange_id: str) -> CcxtFundingClient:
+        import ccxt
+
+        klass = getattr(ccxt, exchange_id)
+        return cls(klass({"enableRateLimit": True, "options": {"defaultType": "swap"}}))
+
+    def unified_symbol(self, native_market_id: str) -> str | None:
+        market = self._ex.markets_by_id.get(native_market_id)
+        if not market:
+            return None
+        candidates = market if isinstance(market, list) else [market]
+        for m in candidates:
+            if m.get("swap") and m.get("linear") and m.get("settle") == "USDT":
+                return str(m["symbol"])
+        return None
+
+    def funding_history(
+        self, unified_symbol: str, since_ms: int, until_ms: int
+    ) -> list[tuple[int, float]]:
+        out: list[tuple[int, float]] = []
+        cursor = since_ms
+        while cursor < until_ms:
+            batch = self._ex.fetch_funding_rate_history(unified_symbol, since=cursor, limit=200)
+            if not batch:
+                break
+            for row in batch:
+                ts = int(row["timestamp"])
+                rate = row.get("fundingRate")
+                if rate is not None:
+                    out.append((ts, float(rate)))
+            last = int(batch[-1]["timestamp"])
+            if last <= cursor:
+                break
+            cursor = last + 1
+            if last >= until_ms:
+                break
+        return out
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--universe-json", type=Path, required=True, help="{venue: [native_ids]}")
+    parser.add_argument("--start-day", type=date.fromisoformat, required=True)
+    parser.add_argument("--end-day", type=date.fromisoformat, required=True, help="exclusive")
+    parser.add_argument("--out", type=Path, required=True, help="durable snapshot JSON")
+    parser.add_argument(
+        "--settlements-out", type=Path, required=True, help="raw settlements JSON.gz to write"
+    )
+    return parser
+
+
+def main() -> None:
+    import ccxt
+
+    args: Any = build_parser().parse_args()
+    universe: dict[str, list[str]] = json.loads(args.universe_json.read_text())
+    window_start = datetime(
+        args.start_day.year, args.start_day.month, args.start_day.day, tzinfo=UTC
+    )
+    window_end = datetime(args.end_day.year, args.end_day.month, args.end_day.day, tzinfo=UTC)
+    fetch_start = window_start - timedelta(minutes=720)
+    fetch_end = window_end + timedelta(minutes=720)
+
+    all_settlements: list[FundingSettlement] = []
+    coverage_by_venue: dict[str, dict[str, Any]] = {}
+    exchange_versions: dict[str, str] = {}
+    for venue, natives in sorted(universe.items()):
+        client = CcxtFundingClient.create(venue)
+        exchange_versions[venue] = str(getattr(client._ex, "version", "unknown"))
+        settlements, coverage = fetch_settlements(
+            client, venue, natives, fetch_start=fetch_start, fetch_end=fetch_end
+        )
+        all_settlements.extend(settlements)
+        coverage_by_venue[venue] = coverage
+        sys.stderr.write(f"{venue}: {len(settlements)} settlements, coverage={coverage}")
+
+    source = {
+        "method": "ccxt.fetchFundingRateHistory",
+        "ccxt_version": ccxt.__version__,
+        "exchange_api_versions": exchange_versions,
+        "universe_source": str(args.universe_json),
+    }
+    # Canonical serialization
+    settlements_data = [
+        {
+            "exchange": s.exchange,
+            "funding_rate": s.funding_rate,
+            "native_market_id": s.native_market_id,
+            "settlement_at": s.settlement_at.isoformat(),
+        }
+        for s in all_settlements
+    ]
+    raw_content = json.dumps(settlements_data, separators=(",", ":"), sort_keys=True).encode(
+        "utf-8"
+    )
+
+    import gzip
+    import tempfile
+
+    # Deterministic gzip
+    tmp_dir = args.settlements_out.parent
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(dir=tmp_dir, delete=False, suffix=".gz") as tmp_f:
+        try:
+            with gzip.GzipFile(filename="", fileobj=tmp_f, mode="wb", mtime=0) as gz:
+                gz.write(raw_content)
+            tmp_name = tmp_f.name
+        except Exception:
+            Path(tmp_f.name).unlink()
+            raise
+    Path(tmp_name).replace(args.settlements_out)
+
+    raw_sha = _sha256_file(args.settlements_out)
+    univ_sha = _sha256_file(args.universe_json)
+    c_hash = _content_hash(all_settlements)
+
+    snapshot = build_snapshot(
+        all_settlements,
+        window_start=window_start,
+        window_end=window_end,
+        coverage_by_venue=coverage_by_venue,
+        source=source,
+        raw_artifact_filename=args.settlements_out.name,
+        raw_artifact_sha=raw_sha,
+        universe_sha=univ_sha,
+        content_hash=c_hash,
+    )
+
+    with tempfile.NamedTemporaryFile(
+        dir=args.out.parent, mode="w", delete=False, suffix=".json"
+    ) as tmp_out:
+        try:
+            tmp_out.write(json.dumps(snapshot, indent=2, sort_keys=True) + "\n")
+            tmp_out_name = tmp_out.name
+        except Exception:
+            Path(tmp_out.name).unlink()
+            raise
+    Path(tmp_out_name).replace(args.out)
+
+    sys.stdout.write(f"{args.out}")
+
+
+if __name__ == "__main__":
+    main()

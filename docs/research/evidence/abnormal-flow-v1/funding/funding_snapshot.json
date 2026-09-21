@@ -1,0 +1,74 @@
+{
+  "conservative_rule": "720m cumulative funding (positive only); P99 sensitivity",
+  "content_hash": "sha256:94615ec9ca7c6c5a638bf8388238c28e91adc3d46f703b3016a6685fc4a3e353",
+  "coverage": {
+    "binance": {
+      "covered_instruments": 525,
+      "no_settlement_instruments": [],
+      "requested_instruments": 525,
+      "unresolved_symbols": 0,
+      "unresolved_symbols_list": []
+    },
+    "bybit": {
+      "covered_instruments": 508,
+      "no_settlement_instruments": ["B3USDT", "ONGUSDT", "SKRUSDT"],
+      "requested_instruments": 517,
+      "unresolved_symbols": 6,
+      "unresolved_symbols_list": [
+        "ACXUSDT",
+        "ASPUSDT",
+        "HFTUSDT",
+        "ICXUSDT",
+        "SCRTUSDT",
+        "VINEUSDT"
+      ]
+    }
+  },
+  "funding_snapshot_version": "abnormal_flow_funding_snapshot_v2",
+  "percentiles": {
+    "binance": {
+      "hold_minutes": 720,
+      "incomplete_fraction": 0.010527210884353742,
+      "incomplete_windows": 1857,
+      "instruments": 525,
+      "max_rate_0_percentiles": {
+        "p50": 0.00015000000000000001,
+        "p90": 0.0003237,
+        "p95": 0.0006032300000000001,
+        "p99": 0.0013305003999999952
+      },
+      "valid_windows": 174543
+    },
+    "bybit": {
+      "hold_minutes": 720,
+      "incomplete_fraction": 0.019626452943382076,
+      "incomplete_windows": 3350,
+      "instruments": 508,
+      "max_rate_0_percentiles": {
+        "p50": 0.00015000000000000001,
+        "p90": 0.00020701600000000385,
+        "p95": 0.0005742159999999998,
+        "p99": 0.0015529761000000067
+      },
+      "valid_windows": 167338
+    }
+  },
+  "raw_artifact_filename": "funding_settlements.json.gz",
+  "raw_artifact_sha": "sha256:b4fb338622152886ae5a51a1f16af7352dd6289b31d368a938b2c9b4232926d4",
+  "row_count": 81268,
+  "source": {
+    "ccxt_version": "4.5.77",
+    "exchange_api_versions": {
+      "binance": "None",
+      "bybit": "v5"
+    },
+    "method": "ccxt.fetchFundingRateHistory",
+    "universe_source": "docs/research/evidence/abnormal-flow-v1/funding/universe.json"
+  },
+  "total_settlements": 81268,
+  "universe_sha": "sha256:0fb122a8e1fcb2d465313b31bac7a3dd88f7d206d3b56221d82a8bdfa832e25f",
+  "window": {
+    "end": "2026-08-30T00:00:00+00:00",
+    "start": "2026-08-16T00:00:00+00:00"
+  }
+}

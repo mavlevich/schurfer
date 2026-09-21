@@ -1,0 +1,12 @@
+{
+  "min_oi_growth_pct": 5.0,
+  "min_buy_pressure_ratio": 0.6,
+  "max_price_containment": 0.1,
+  "min_oi_notional_usd": 50000.0,
+  "position_usd": 300.0,
+  "max_participation_frac": 0.1,
+  "entry_execution_window_minutes": 5,
+  "oi_freshness_limit_seconds_bybit": 120,
+  "oi_freshness_limit_seconds_binance": 300,
+  "scan_lag_minutes": 2
+}
