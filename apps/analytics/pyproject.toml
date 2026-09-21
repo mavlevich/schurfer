@@ -106,6 +106,7 @@ abnormal-flow-scan = "schurfer_analytics.abnormal_flow_scan:main"
 abnormal-flow-stage = "schurfer_analytics.abnormal_flow_stage:main"
 abnormal-flow-identity-export = "schurfer_analytics.abnormal_flow_identity_export:main"
 abnormal-flow-funding-snapshot = "schurfer_analytics.abnormal_flow_funding_snapshot:main"
+abnormal-flow-candidate-table = "schurfer_analytics.abnormal_flow_candidate_table:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
