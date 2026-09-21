@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from schurfer_analytics.abnormal_flow_funding_snapshot import (
     FundingSettlement,
     build_snapshot,
     fetch_settlements,
-    funding_percentiles,
+    funding_percentiles_cadence_aware,
+    old_funding_percentiles,
 )
 
 _WS = datetime(2026, 8, 16, tzinfo=UTC)
@@ -29,7 +30,7 @@ def test_funding_percentiles_use_max_rate_zero_per_venue() -> None:
         _s("bybit", "BUSDT", _WS, 0.001),
         _s("binance", "AUSDT", _WS, 0.0005),
     ]
-    p = funding_percentiles(settlements)
+    p = old_funding_percentiles(settlements)
     assert p["bybit"]["settlements"] == 3
     assert p["bybit"]["instruments"] == 2
     # values (clamped, sorted) = [0, 0, 0.001]; P95 interpolates near the top.
@@ -97,3 +98,50 @@ def test_build_snapshot_has_source_coverage_and_stable_hash() -> None:
         source={},
     )
     assert snap["content_hash"] == snap2["content_hash"]
+
+
+def test_funding_cadence_aware_8h_4h_1h() -> None:
+    # 8h cadence
+    s_8h = []
+    for i in range(-12, 48, 8):
+        s_8h.append(_s("bybit", "8H", _WS + timedelta(hours=i), 0.001))
+
+    # 4h cadence
+    s_4h = []
+    for i in range(-12, 48, 4):
+        s_4h.append(_s("bybit", "4H", _WS + timedelta(hours=i), 0.001))
+
+    # 1h cadence
+    s_1h = []
+    for i in range(-12, 48, 1):
+        s_1h.append(_s("bybit", "1H", _WS + timedelta(hours=i), 0.001))
+
+    p = funding_percentiles_cadence_aware(
+        s_8h + s_4h + s_1h,
+        grid_start=_WS,
+        grid_end=_WS + timedelta(hours=24),
+        hold_minutes=720,
+        grid_step_minutes=60,
+    )
+
+    assert p["bybit"]["instruments"] == 3
+    # Check max rates (at 8h cadence, max is 2 settlements in 12h)
+    assert 0.001 <= p["bybit"]["max_rate_0_percentiles"]["p95"] <= 0.0121
+
+
+def test_funding_cadence_aware_truncated_history() -> None:
+    # Listed at WS + 6h. No settlement before WS.
+    s_trunc = []
+    for i in range(8, 48, 8):
+        s_trunc.append(_s("binance", "TRUNC", _WS + timedelta(hours=i), 0.001))
+
+    p = funding_percentiles_cadence_aware(
+        s_trunc,
+        grid_start=_WS,
+        grid_end=_WS + timedelta(hours=24),
+        hold_minutes=720,
+        grid_step_minutes=60,
+    )
+    # The first few hours of grid [WS, WS+6h) should be marked incomplete.
+    assert p["binance"]["incomplete_windows"] > 0
+    assert p["binance"]["valid_windows"] > 0

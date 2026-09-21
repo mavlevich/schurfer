@@ -6,7 +6,7 @@
   },
   "candidate_table_version": "abnormal_flow_candidate_table_v1",
   "eligible_calibration_decisions": 7931257,
-  "eval_scorable_days": 19.49861111111111,
+  "eval_scorable_days": 18.49861111111111,
   "fixed_percentiles": {
     "buy_pressure_pct": 0.9,
     "buy_pressure_threshold": 0.5899762964448008,
@@ -19,7 +19,13 @@
     "calibration_manifest_count": 14,
     "calibration_manifest_set": "sha256:9e8272703ff8383ea66b028b7d8053ad7c08f2f7e4eec8d8ef243f2d026ac74b",
     "contract_json": "sha256:8a26f1f2a76f5ede232aab704b4ff5d2de8c60dbbfbdfd9d56e92982bd8f974f",
-    "identity_snapshot": "sha256:313306fd480451858d14b2d27358fc6f37163e119b022275335c4c23cb7d92d9"
+    "identity_snapshot": "sha256:62e2a7363acfa375fb0b3fbe2de43854f26ac54b606bafe82d37724292de064e"
+  },
+  "metadata": {
+    "command": "./.venv/bin/abnormal-flow-candidate-table --cold-bars-dir /private/tmp/claude-501/-Users-mavlevich-Desktop-Projects-schurfer/fe8306c1-3a80-4b69-b6da-b68d0fd33fb6/scratchpad/fullrun/cold --identity-snapshot docs/research/evidence/abnormal-flow-v1/freeze/identity_snapshot.json --contract-json docs/research/evidence/abnormal-flow-v1/freeze/provisional_contract.json --calib-start 2026-08-16 --calib-end 2026-08-30 --data-end 2026-09-18 --out docs/research/evidence/abnormal-flow-v1/freeze/candidate_table.json",
+    "dirty_tree": false,
+    "revision": "unknown",
+    "tool_version": "abnormal_flow_candidate_table_v1"
   },
   "min_projected_episodes": 150.0,
   "note": "Power-floor rule: highest OI percentile whose PROJECTED evaluation episodes clear 150.0. 150 is a power FLOOR, not sufficiency (cluster-robust SE + leave-one-out still govern). No returns read.",
@@ -49,7 +55,7 @@
       "oi_growth_threshold_pct": 0.9140242268679615,
       "oi_percentile": 0.9,
       "passes_power_floor": true,
-      "projected_evaluation_episodes": 1887.2,
+      "projected_evaluation_episodes": 1790.4,
       "venues": ["binance", "bybit"],
       "weeks": ["2026-W34", "2026-W35"]
     },
@@ -76,7 +82,7 @@
       "oi_growth_threshold_pct": 1.6166257619247206,
       "oi_percentile": 0.95,
       "passes_power_floor": true,
-      "projected_evaluation_episodes": 711.7,
+      "projected_evaluation_episodes": 675.2,
       "venues": ["binance", "bybit"],
       "weeks": ["2026-W34", "2026-W35"]
     },
@@ -103,7 +109,7 @@
       "oi_growth_threshold_pct": 2.6350760613721547,
       "oi_percentile": 0.975,
       "passes_power_floor": true,
-      "projected_evaluation_episodes": 243.7,
+      "projected_evaluation_episodes": 231.2,
       "venues": ["binance", "bybit"],
       "weeks": ["2026-W34", "2026-W35"]
     },
@@ -130,7 +136,7 @@
       "oi_growth_threshold_pct": 4.689781515580728,
       "oi_percentile": 0.99,
       "passes_power_floor": false,
-      "projected_evaluation_episodes": 51.5,
+      "projected_evaluation_episodes": 48.9,
       "venues": ["binance", "bybit"],
       "weeks": ["2026-W34", "2026-W35"]
     }

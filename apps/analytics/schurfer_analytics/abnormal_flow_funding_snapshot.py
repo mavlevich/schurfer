@@ -21,7 +21,7 @@ import hashlib
 import json
 import sys
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
@@ -66,7 +66,67 @@ def _percentile(sorted_values: list[float], p: float) -> float | None:
     return sorted_values[lo] + (sorted_values[lo + 1] - sorted_values[lo]) * frac
 
 
-def funding_percentiles(settlements: Iterable[FundingSettlement]) -> dict[str, dict[str, Any]]:
+def funding_percentiles_cadence_aware(
+    settlements: list[FundingSettlement],
+    grid_start: datetime,
+    grid_end: datetime,
+    hold_minutes: int = 720,
+    grid_step_minutes: int = 60,
+) -> dict[str, dict[str, Any]]:
+    """Cadence-aware sliding window funding.
+    For each t in grid, for each instrument, if the window (t, t+hold] is framed
+    by settlements (one <= t and one >= t+hold), sum max(rate, 0) inside the window.
+    """
+    from collections import defaultdict
+
+    by_inst: dict[str, dict[str, list[FundingSettlement]]] = defaultdict(lambda: defaultdict(list))
+    for s in settlements:
+        by_inst[s.exchange][s.native_market_id].append(s)
+
+    for venue in by_inst:
+        for inst in by_inst[venue]:
+            by_inst[venue][inst].sort(key=lambda s: s.settlement_at)
+
+    out: dict[str, dict[str, Any]] = {}
+
+    grid = []
+    curr = grid_start
+    while curr < grid_end:
+        grid.append(curr)
+        curr += timedelta(minutes=grid_step_minutes)
+
+    for venue, inst_map in by_inst.items():
+        valid_sums = []
+        incomplete_count = 0
+        for t in grid:
+            t_end = t + timedelta(minutes=hold_minutes)
+            for _inst, s_list in inst_map.items():
+                # Check framing
+                if not s_list or s_list[0].settlement_at > t or s_list[-1].settlement_at < t_end:
+                    incomplete_count += 1
+                    continue
+                # It is framed. Sum inside (t, t_end]
+                window_sum = 0.0
+                for s in s_list:
+                    if t < s.settlement_at <= t_end:
+                        window_sum += max(s.funding_rate, 0.0)
+                valid_sums.append(window_sum)
+
+        valid_sums.sort()
+        out[venue] = {
+            "valid_windows": len(valid_sums),
+            "incomplete_windows": incomplete_count,
+            "instruments": len(inst_map),
+            "hold_minutes": hold_minutes,
+            "max_rate_0_percentiles": {
+                f"p{int(p * 100)}" if p != 0.975 else "p97.5": _percentile(valid_sums, p)
+                for p in _PERCENTILES
+            },
+        }
+    return out
+
+
+def old_funding_percentiles(settlements: Iterable[FundingSettlement]) -> dict[str, dict[str, Any]]:
     """Per-venue percentiles of ``max(funding_rate, 0)`` (long-only conservative). Returns
     per venue: settlement count, distinct instruments, and P50/P90/P95/P99."""
     by_venue: dict[str, list[float]] = {}
@@ -91,7 +151,7 @@ def _content_hash(settlements: list[FundingSettlement]) -> str:
     hasher = hashlib.sha256()
     for s in sorted(settlements, key=lambda s: (s.exchange, s.native_market_id, s.settlement_at)):
         hasher.update(
-            f"{s.exchange}|{s.native_market_id}|{s.settlement_at.isoformat()}|{s.funding_rate!r}\n".encode()
+            f"{s.exchange}|{s.native_market_id}|{s.settlement_at.isoformat()}|{s.funding_rate!r}".encode()
         )
     return "sha256:" + hasher.hexdigest()
 
@@ -133,6 +193,7 @@ def fetch_settlements(
         "requested_instruments": len(native_market_ids),
         "covered_instruments": len(covered),
         "unresolved_symbols": len(unresolved),
+        "unresolved_symbols_list": unresolved,
         "no_settlement_instruments": sorted(set(native_market_ids) - covered - set(unresolved)),
     }
     return settlements, coverage
@@ -154,7 +215,9 @@ def build_snapshot(
         "window": {"start": window_start.isoformat(), "end": window_end.isoformat()},
         "conservative_rule": "P95 of max(funding_rate,0) per venue (long); P99 sensitivity",
         "coverage": coverage_by_venue,
-        "percentiles": funding_percentiles(settlements),
+        "percentiles": funding_percentiles_cadence_aware(
+            settlements, grid_start=window_start, grid_end=window_end
+        ),
         "content_hash": _content_hash(settlements),
         "total_settlements": len(settlements),
     }
@@ -244,7 +307,7 @@ def main() -> None:
         )
         all_settlements.extend(settlements)
         coverage_by_venue[venue] = coverage
-        sys.stderr.write(f"{venue}: {len(settlements)} settlements, coverage={coverage}\n")
+        sys.stderr.write(f"{venue}: {len(settlements)} settlements, coverage={coverage}")
 
     source = {
         "method": "ccxt.fetchFundingRateHistory",
@@ -259,7 +322,7 @@ def main() -> None:
         coverage_by_venue=coverage_by_venue,
         source=source,
     )
-    args.out.write_text(json.dumps(snapshot, indent=2, sort_keys=True) + "\n")
+    args.out.write_text(json.dumps(snapshot, indent=2, sort_keys=True) + "")
     if args.settlements_out is not None:
         args.settlements_out.write_text(
             json.dumps(
@@ -274,7 +337,7 @@ def main() -> None:
                 ]
             )
         )
-    sys.stdout.write(f"{args.out}\n")
+    sys.stdout.write(f"{args.out}")
 
 
 if __name__ == "__main__":

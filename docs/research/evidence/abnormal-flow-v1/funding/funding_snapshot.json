@@ -1,48 +1,55 @@
 {
   "conservative_rule": "P95 of max(funding_rate,0) per venue (long); P99 sensitivity",
-  "content_hash": "sha256:e6656030b03658a324f963a482e97715c6b09c95f7da6382b9a60b5e8197d641",
+  "content_hash": "sha256:41de5ab3c72f02ce78993024840e168f4627325c84a4f29993c53af6eb302a71",
   "coverage": {
     "binance": {
       "covered_instruments": 525,
       "no_settlement_instruments": [],
       "requested_instruments": 525,
-      "unresolved_symbols": 0
+      "unresolved_symbols": 0,
+      "unresolved_symbols_list": []
     },
     "bybit": {
       "covered_instruments": 508,
       "no_settlement_instruments": ["B3USDT", "ONGUSDT", "SKRUSDT"],
       "requested_instruments": 517,
-      "unresolved_symbols": 6
+      "unresolved_symbols": 6,
+      "unresolved_symbols_list": [
+        "ACXUSDT",
+        "ASPUSDT",
+        "HFTUSDT",
+        "ICXUSDT",
+        "SCRTUSDT",
+        "VINEUSDT"
+      ]
     }
   },
   "funding_snapshot_version": "abnormal_flow_funding_snapshot_v1",
   "percentiles": {
     "binance": {
+      "hold_minutes": 720,
+      "incomplete_windows": 8553,
       "instruments": 525,
       "max_rate_0_percentiles": {
-        "p50": 5e-5,
-        "p90": 0.0001,
-        "p95": 0.00022679999999999998,
-        "p99": 0.0005364120000000013
+        "p50": 0.00015000000000000001,
+        "p90": 0.00032166000000000003,
+        "p95": 0.0005992669999999999,
+        "p99": 0.00130188
       },
-      "settlements": 39886
+      "valid_windows": 167847
     },
     "bybit": {
+      "hold_minutes": 720,
+      "incomplete_windows": 11507,
       "instruments": 508,
       "max_rate_0_percentiles": {
-        "p50": 5e-5,
-        "p90": 0.0001,
-        "p95": 0.0002054894999999996,
-        "p99": 0.0006547207999999967
+        "p50": 0.00015000000000000001,
+        "p90": 0.00020846,
+        "p95": 0.00057425,
+        "p99": 0.00153718
       },
-      "settlements": 35924
+      "valid_windows": 159181
     }
-  },
-  "raw_artifact": {
-    "compression": "gzip",
-    "file": "funding_settlements.json.gz",
-    "rows": 75810,
-    "sha256": "sha256:66e694d35283fbff558d1084eb1c08333a12c040b9189a5cf1783bdeccd6b8aa"
   },
   "source": {
     "ccxt_version": "4.5.77",
@@ -51,9 +58,9 @@
       "bybit": "v5"
     },
     "method": "ccxt.fetchFundingRateHistory",
-    "universe_source": "/private/tmp/claude-501/-Users-mavlevich-Desktop-Projects-schurfer/fe8306c1-3a80-4b69-b6da-b68d0fd33fb6/scratchpad/fullrun/calib_universe.json"
+    "universe_source": "docs/research/evidence/abnormal-flow-v1/funding/universe.json"
   },
-  "total_settlements": 75810,
+  "total_settlements": 75807,
   "window": {
     "end": "2026-08-30T00:00:00+00:00",
     "start": "2026-08-16T00:00:00+00:00"

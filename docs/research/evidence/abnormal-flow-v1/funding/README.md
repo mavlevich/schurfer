@@ -14,15 +14,15 @@ window, per-venue coverage, and a content hash of the raw settlements.
   The summary also pins the canonical logical-row `content_hash`, so both the
   compressed artifact and its decoded observations are integrity-checkable.
 
-Baseline (P95 of max(funding_rate, 0), long-only conservative, per venue):
+Baseline (P95 and P99 of sum(max(funding_rate, 0)) over a sliding 720m hold window):
 
-- Binance P95 = 2.27e-4 (~2.27 bps/settlement); P99 = 5.36e-4 (~5.36 bps).
-- Bybit P95 = 2.05e-4 (~2.05 bps/settlement); P99 = 6.55e-4 (~6.55 bps).
+- Binance P95 = ~6.43 bps / 720m; P99 = ~17.8 bps / 720m.
+- Bybit P95 = ~5.90 bps / 720m; P99 = ~25.2 bps / 720m.
 
-Freeze rule: charge the MAX settlement boundaries crossable in the 720m hold. 8h funding
-intervals -> a 720m window crosses at most 2 boundaries, so the primary conservative
-funding = 2 x P95_venue (Binance ~4.5 bps, Bybit ~4.1 bps over the hold). P99 is the
-mandatory sensitivity input. This unconditional per-venue P95 (~2.1-2.3 bps) is far below
-the pump-anchored stress source (~7.7 bps), so a flat stress constant would understate EV;
-the captured DB tables stay stress/diagnostic only. The primary calibration rows are
-stored beside this summary rather than left in session scratch.
+Freeze rule: charge the cadence-aware P95 per-venue funding sum over a 720m hold window.
+Instead of multiplying a flat rate by 2 (assuming 8h cadence), this model calculates the
+exact sum of positive funding events that fall within every possible 720m window across
+a continuous 60m grid. This correctly models mixed 8h, 4h, and 1h cadences found in the raw evidence.
+Incomplete or unframed windows are excluded rather than zero-padded. P99 is the
+mandatory sensitivity input. The primary calibration rows and reproducible inputs are
+stored beside this summary.

@@ -63,21 +63,54 @@ def _sha256_file(path: Path) -> str:
     return "sha256:" + digest.hexdigest()
 
 
-def _calibration_manifest_fingerprint(paths: list[str]) -> tuple[str, int]:
-    """Pin the ordered manifest set without re-hashing multi-GB Parquet inputs.
+def _calibration_manifest_fingerprint(
+    paths: list[str], expected_start: datetime, expected_end: datetime
+) -> tuple[str, int]:
+    """Pin the ordered manifest set and VERIFY Parquet fidelity."""
+    import json
 
-    Each cold-bar manifest already pins its Parquet SHA and source fingerprint. Hashing
-    the exact manifest bytes therefore pins the candidate table to the same verified
-    calibration inputs while keeping this finalization step cheap.
-    """
     digest = hashlib.sha256()
+
+    # Check consecutive dates
+    expected_dates = []
+    curr = expected_start
+    while curr < expected_end:
+        expected_dates.append(curr.strftime("%Y-%m-%d"))
+        curr += timedelta(days=1)
+
+    actual_dates = []
     for raw_path in sorted(paths):
         parquet = Path(raw_path)
+        date_str = parquet.name[5:15]
+        actual_dates.append(date_str)
+
         manifest = parquet.with_name(parquet.name.replace(".parquet", ".manifest.json"))
         if not manifest.exists():
             raise FileNotFoundError(f"missing cold-bar manifest: {manifest}")
+
+        manifest_data = json.loads(manifest.read_text())
+        if not manifest_data.get("fidelity_verified"):
+            raise ValueError(f"fidelity_verified != true in {manifest}")
+
+        expected_parquet_sha = manifest_data.get("sha256")
+        if not expected_parquet_sha:
+            raise ValueError(f"missing sha256 in {manifest}")
+        if not expected_parquet_sha.startswith("sha256:"):
+            expected_parquet_sha = "sha256:" + expected_parquet_sha
+
+        actual_parquet_sha = _sha256_file(parquet)
+        if actual_parquet_sha != expected_parquet_sha:
+            raise ValueError(
+                f"Parquet hash mismatch for {parquet}. "
+                f"Expected {expected_parquet_sha}, got {actual_parquet_sha}"
+            )
+
         manifest_sha = _sha256_file(manifest)
         digest.update(f"{manifest.name}|{manifest_sha}\n".encode())
+
+    if actual_dates != expected_dates:
+        raise ValueError(f"Missing or extra dates. Expected: {expected_dates}, Got: {actual_dates}")
+
     return "sha256:" + digest.hexdigest(), len(paths)
 
 
@@ -296,6 +329,9 @@ def main() -> None:
         for f in args.cold_bars_dir.glob("bars-*.parquet")
         if args.calib_start.isoformat() <= f.name[5:15] < args.calib_end.isoformat()
     )
+    manifests_sha, manifest_count = _calibration_manifest_fingerprint(
+        calib_files, calib_start, calib_end
+    )
     table = build_candidate_table(
         calib_files,
         calib_start=calib_start,
@@ -306,7 +342,15 @@ def main() -> None:
         min_projected=args.min_projected,
         progress=report_progress,
     )
-    manifests_sha, manifest_count = _calibration_manifest_fingerprint(calib_files)
+
+    import os
+
+    table["metadata"] = {
+        "revision": os.getenv("SCHURFER_GIT_SHA", "unknown"),
+        "dirty_tree": os.getenv("SCHURFER_GIT_DIRTY", "false") == "true",
+        "command": " ".join(sys.argv),
+        "tool_version": CANDIDATE_TABLE_VERSION,
+    }
     table["input_fingerprints"] = {
         "identity_snapshot": _sha256_file(args.identity_snapshot),
         "contract_json": _sha256_file(args.contract_json),
