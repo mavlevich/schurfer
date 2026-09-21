@@ -55,6 +55,28 @@ def _linspace(lo: float, hi: float, n: int) -> tuple[float, ...]:
     return tuple(lo + (hi - lo) * i / n for i in range(1, n))
 
 
+def _get_git_info() -> tuple[str, bool]:
+    import subprocess
+
+    try:
+        rev = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()  # noqa: S603, S607, RUF100
+        dirty = bool(subprocess.check_output(["git", "status", "--porcelain"], text=True).strip())  # noqa: S603, S607, RUF100
+        return rev, dirty
+    except Exception:
+        return "unknown", False
+
+
+def _clean_args(args: Any) -> list[str]:
+    # Scrub /private/tmp or absolute paths if possible
+    clean = []
+    for arg in sys.argv:
+        if "/private/tmp/" in arg:
+            clean.append("<scratch_path>")
+        else:
+            clean.append(arg)
+    return clean
+
+
 def _sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -112,6 +134,31 @@ def _calibration_manifest_fingerprint(
         raise ValueError(f"Missing or extra dates. Expected: {expected_dates}, Got: {actual_dates}")
 
     return "sha256:" + digest.hexdigest(), len(paths)
+
+
+def finalize_candidate_table(
+    rows: list[dict[str, Any]],
+    eval_scorable_days: float,
+    calib_days: float,
+    min_episodes: float,
+) -> dict[str, Any]:
+    """Project evaluation episodes and select the optimal OI percentile."""
+    for r in rows:
+        r["projected_evaluation_episodes"] = round(
+            r["calibration_episodes"] * eval_scorable_days / calib_days, 1
+        )
+        r["passes_power_floor"] = r["projected_evaluation_episodes"] >= min_episodes
+
+    selected = None
+    for r in reversed(rows):  # lowest percentile first (highest OI pct)
+        if r["passes_power_floor"]:
+            selected = r["oi_percentile"]
+            break
+
+    return {
+        "rows": rows,
+        "selected_oi_percentile": selected,
+    }
 
 
 def build_candidate_table(
@@ -302,6 +349,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--data-end", type=date.fromisoformat, required=True, help="exclusive last data day"
     )
+
+    parser.add_argument(
+        "--reproject-from", type=Path, help="Reproject existing JSON without full scan"
+    )
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--min-projected", type=float, default=150.0)
     return parser
@@ -324,6 +375,34 @@ def main() -> None:
     horizon = timedelta(minutes=contract.outcome_horizon_minutes)
     last_scorable = data_end - horizon - timedelta(minutes=2)  # entry + exit bar allowance
     eval_scorable_days = max(0.0, (last_scorable - calib_end).total_seconds() / 86400.0)
+
+    if args.reproject_from:
+        import sys
+
+        table = json.loads(args.reproject_from.read_text())
+
+        calib_days = (calib_end - calib_start).total_seconds() / 86400.0
+        finalized = finalize_candidate_table(
+            table["rows"],
+            eval_scorable_days,
+            calib_days,
+            table.get("min_projected_episodes", 150.0),
+        )
+        table.update(finalized)
+        table["eval_scorable_days"] = eval_scorable_days
+
+        rev, dirty = _get_git_info()
+        table["metadata"]["revision"] = rev
+        table["metadata"]["dirty_tree"] = dirty
+        table["metadata"]["command"] = " ".join(_clean_args(None))
+        table["metadata"]["tool_version"] = "abnormal_flow_candidate_table_v2"
+        table["metadata"]["generator_source_sha"] = _sha256_file(Path(__file__))
+
+        with args.out.open("w") as f:
+            json.dump(table, f, indent=2, sort_keys=True)
+            f.write("\n")
+        sys.exit(0)
+
     calib_files = sorted(
         str(f)
         for f in args.cold_bars_dir.glob("bars-*.parquet")
@@ -343,13 +422,13 @@ def main() -> None:
         progress=report_progress,
     )
 
-    import os
-
+    rev, dirty = _get_git_info()
     table["metadata"] = {
-        "revision": os.getenv("SCHURFER_GIT_SHA", "unknown"),
-        "dirty_tree": os.getenv("SCHURFER_GIT_DIRTY", "false") == "true",
-        "command": " ".join(sys.argv),
-        "tool_version": CANDIDATE_TABLE_VERSION,
+        "command": " ".join(_clean_args(None)),
+        "revision": rev,
+        "dirty_tree": dirty,
+        "tool_version": "abnormal_flow_candidate_table_v2",
+        "generator_source_sha": _sha256_file(Path(__file__)),
     }
     table["input_fingerprints"] = {
         "identity_snapshot": _sha256_file(args.identity_snapshot),

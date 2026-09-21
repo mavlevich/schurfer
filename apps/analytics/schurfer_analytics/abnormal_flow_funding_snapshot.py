@@ -52,6 +52,16 @@ class FundingClient(Protocol):
     ) -> list[tuple[int, float]]: ...
 
 
+def _sha256_file(path: Path) -> str:
+    import hashlib
+
+    digest = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return "sha256:" + digest.hexdigest()
+
+
 def _percentile(sorted_values: list[float], p: float) -> float | None:
     """Linear-interpolated p-quantile of a pre-sorted list. ``None`` when empty."""
     if not sorted_values:
@@ -161,14 +171,14 @@ def fetch_settlements(
     exchange: str,
     native_market_ids: list[str],
     *,
-    window_start: datetime,
-    window_end: datetime,
+    fetch_start: datetime,
+    fetch_end: datetime,
 ) -> tuple[list[FundingSettlement], dict[str, Any]]:
     """Pull funding settlements for one venue's instruments over ``[window_start,
     window_end)``. Returns (settlements, coverage). An instrument with no resolvable
     unified symbol or no settlements is recorded, not silently dropped."""
-    since_ms = int(window_start.timestamp() * 1000)
-    until_ms = int(window_end.timestamp() * 1000)
+    since_ms = int(fetch_start.timestamp() * 1000)
+    until_ms = int(fetch_end.timestamp() * 1000)
     settlements: list[FundingSettlement] = []
     covered: set[str] = set()
     unresolved: list[str] = []
@@ -206,6 +216,10 @@ def build_snapshot(
     window_end: datetime,
     coverage_by_venue: dict[str, dict[str, Any]],
     source: dict[str, Any],
+    raw_artifact_filename: str,
+    raw_artifact_sha: str,
+    universe_sha: str,
+    content_hash: str,
 ) -> dict[str, Any]:
     """Assemble the durable funding snapshot artifact (percentiles + coverage + source +
     content hash). P95 is the primary proxy; P99 is the sensitivity input."""
@@ -213,12 +227,16 @@ def build_snapshot(
         "funding_snapshot_version": FUNDING_SNAPSHOT_VERSION,
         "source": source,
         "window": {"start": window_start.isoformat(), "end": window_end.isoformat()},
-        "conservative_rule": "P95 of max(funding_rate,0) per venue (long); P99 sensitivity",
+        "conservative_rule": "720m cumulative funding (positive only); P99 sensitivity",
         "coverage": coverage_by_venue,
         "percentiles": funding_percentiles_cadence_aware(
             settlements, grid_start=window_start, grid_end=window_end
         ),
-        "content_hash": _content_hash(settlements),
+        "raw_artifact_filename": raw_artifact_filename,
+        "row_count": len(settlements),
+        "raw_artifact_sha": raw_artifact_sha,
+        "universe_sha": universe_sha,
+        "content_hash": content_hash,
         "total_settlements": len(settlements),
     }
 
@@ -281,7 +299,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--end-day", type=date.fromisoformat, required=True, help="exclusive")
     parser.add_argument("--out", type=Path, required=True, help="durable snapshot JSON")
     parser.add_argument(
-        "--settlements-out", type=Path, default=None, help="optional raw settlements JSON"
+        "--settlements-out", type=Path, required=True, help="raw settlements JSON.gz to write"
     )
     return parser
 
@@ -295,6 +313,8 @@ def main() -> None:
         args.start_day.year, args.start_day.month, args.start_day.day, tzinfo=UTC
     )
     window_end = datetime(args.end_day.year, args.end_day.month, args.end_day.day, tzinfo=UTC)
+    fetch_start = window_start - timedelta(minutes=720)
+    fetch_end = window_end + timedelta(minutes=720)
 
     all_settlements: list[FundingSettlement] = []
     coverage_by_venue: dict[str, dict[str, Any]] = {}
@@ -303,7 +323,7 @@ def main() -> None:
         client = CcxtFundingClient.create(venue)
         exchange_versions[venue] = str(getattr(client._ex, "version", "unknown"))
         settlements, coverage = fetch_settlements(
-            client, venue, natives, window_start=window_start, window_end=window_end
+            client, venue, natives, fetch_start=fetch_start, fetch_end=fetch_end
         )
         all_settlements.extend(settlements)
         coverage_by_venue[venue] = coverage
@@ -315,28 +335,63 @@ def main() -> None:
         "exchange_api_versions": exchange_versions,
         "universe_source": str(args.universe_json),
     }
+    # Canonical serialization
+    settlements_data = [
+        {
+            "exchange": s.exchange,
+            "funding_rate": s.funding_rate,
+            "native_market_id": s.native_market_id,
+            "settlement_at": s.settlement_at.isoformat(),
+        }
+        for s in all_settlements
+    ]
+    raw_content = json.dumps(settlements_data, separators=(",", ":"), sort_keys=True).encode(
+        "utf-8"
+    )
+
+    import gzip
+    import tempfile
+
+    # Deterministic gzip
+    tmp_dir = args.settlements_out.parent
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(dir=tmp_dir, delete=False, suffix=".gz") as tmp_f:
+        try:
+            with gzip.GzipFile(filename="", fileobj=tmp_f, mode="wb", mtime=0) as gz:
+                gz.write(raw_content)
+            tmp_name = tmp_f.name
+        except Exception:
+            Path(tmp_f.name).unlink()
+            raise
+    Path(tmp_name).replace(args.settlements_out)
+
+    raw_sha = _sha256_file(args.settlements_out)
+    univ_sha = _sha256_file(args.universe_json)
+    c_hash = _content_hash(all_settlements)
+
     snapshot = build_snapshot(
         all_settlements,
         window_start=window_start,
         window_end=window_end,
         coverage_by_venue=coverage_by_venue,
         source=source,
+        raw_artifact_filename=args.settlements_out.name,
+        raw_artifact_sha=raw_sha,
+        universe_sha=univ_sha,
+        content_hash=c_hash,
     )
-    args.out.write_text(json.dumps(snapshot, indent=2, sort_keys=True) + "")
-    if args.settlements_out is not None:
-        args.settlements_out.write_text(
-            json.dumps(
-                [
-                    {
-                        "exchange": s.exchange,
-                        "native_market_id": s.native_market_id,
-                        "settlement_at": s.settlement_at.isoformat(),
-                        "funding_rate": s.funding_rate,
-                    }
-                    for s in all_settlements
-                ]
-            )
-        )
+
+    with tempfile.NamedTemporaryFile(
+        dir=args.out.parent, mode="w", delete=False, suffix=".json"
+    ) as tmp_out:
+        try:
+            tmp_out.write(json.dumps(snapshot, indent=2, sort_keys=True) + "\n")
+            tmp_out_name = tmp_out.name
+        except Exception:
+            Path(tmp_out.name).unlink()
+            raise
+    Path(tmp_out_name).replace(args.out)
+
     sys.stdout.write(f"{args.out}")
 
 

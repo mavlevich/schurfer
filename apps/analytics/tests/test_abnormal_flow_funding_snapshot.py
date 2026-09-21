@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from pathlib import Path  # noqa: TC003
+from typing import Any
 
 import pytest
 from schurfer_analytics.abnormal_flow_funding_snapshot import (
@@ -67,7 +69,7 @@ def test_fetch_settlements_records_coverage_and_filters_window() -> None:
         },
     )
     settlements, coverage = fetch_settlements(
-        client, "bybit", ["AUSDT", "BUSDT", "WEIRD"], window_start=_WS, window_end=_WE
+        client, "bybit", ["AUSDT", "BUSDT", "WEIRD"], fetch_start=_WS, fetch_end=_WE
     )
     assert len(settlements) == 1 and settlements[0].native_market_id == "AUSDT"
     assert coverage["requested_instruments"] == 3
@@ -84,9 +86,13 @@ def test_build_snapshot_has_source_coverage_and_stable_hash() -> None:
         window_end=_WE,
         coverage_by_venue={"bybit": {"covered_instruments": 1}},
         source={"method": "ccxt.fetchFundingRateHistory", "ccxt_version": "4.5.77"},
+        raw_artifact_filename="dummy.json.gz",
+        raw_artifact_sha="sha256:dummy",
+        universe_sha="sha256:univ",
+        content_hash="sha256:content",
     )
     assert snap["funding_snapshot_version"].startswith("abnormal_flow_funding_snapshot")
-    assert snap["content_hash"].startswith("sha256:")
+    assert snap["raw_artifact_sha"].startswith("sha256:")
     assert snap["total_settlements"] == 2
     assert "bybit" in snap["percentiles"] and "binance" in snap["percentiles"]
     # Hash is deterministic for the same content.
@@ -96,8 +102,12 @@ def test_build_snapshot_has_source_coverage_and_stable_hash() -> None:
         window_end=_WE,
         coverage_by_venue={},
         source={},
+        raw_artifact_filename="dummy.json.gz",
+        raw_artifact_sha="sha256:dummy",
+        universe_sha="sha256:univ",
+        content_hash="sha256:content",
     )
-    assert snap["content_hash"] == snap2["content_hash"]
+    assert snap["raw_artifact_sha"] == snap2["raw_artifact_sha"]
 
 
 def test_funding_cadence_aware_8h_4h_1h() -> None:
@@ -145,3 +155,76 @@ def test_funding_cadence_aware_truncated_history() -> None:
     # The first few hours of grid [WS, WS+6h) should be marked incomplete.
     assert p["binance"]["incomplete_windows"] > 0
     assert p["binance"]["valid_windows"] > 0
+
+
+def test_main_writes_canonical_gzip_and_calculates_sha(tmp_path: Path, monkeypatch: Any) -> None:
+    import json
+
+    from schurfer_analytics.abnormal_flow_funding_snapshot import main
+
+    universe = tmp_path / "universe.json"
+    universe.write_text(json.dumps({"binance": ["BTCUSDT"]}))
+
+    out_json = tmp_path / "out.json"
+    settlements_out = tmp_path / "settlements.json.gz"
+
+    # Mock sys.argv
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "abnormal_flow_funding_snapshot.py",
+            "--universe-json",
+            str(universe),
+            "--start-day",
+            "2026-08-16",
+            "--end-day",
+            "2026-08-17",
+            "--out",
+            str(out_json),
+            "--settlements-out",
+            str(settlements_out),
+        ],
+    )
+
+    # Mock ccxt client
+    class DummyClient:
+        @classmethod
+        def create(cls, venue: str) -> DummyClient:
+            return cls()
+
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            self._ex = type("Ex", (), {"version": "1.0", "load_markets": lambda: None})()
+
+        def unified_symbol(self, native: str) -> str | None:
+            return "BTC/USDT:USDT" if native == "BTCUSDT" else None
+
+        def funding_history(self, symbol: str, since: int, until: int) -> list[tuple[int, float]]:
+            return [(since + 3600000, 0.001)]
+
+    monkeypatch.setattr(
+        "schurfer_analytics.abnormal_flow_funding_snapshot.CcxtFundingClient", DummyClient
+    )
+
+    # Run once (no gzip exists)
+    main()
+
+    assert out_json.exists()
+    assert settlements_out.exists()
+
+    snap1 = json.loads(out_json.read_text())
+
+    # Read gzip directly and check sha
+    import hashlib
+
+    with settlements_out.open("rb") as f:
+        real_sha = "sha256:" + hashlib.sha256(f.read()).hexdigest()
+
+    assert snap1["raw_artifact_sha"] == real_sha
+
+    # Run again with a bad gzip
+    settlements_out.write_bytes(b"bad data")
+    main()
+
+    snap2 = json.loads(out_json.read_text())
+    assert snap1["raw_artifact_sha"] == snap2["raw_artifact_sha"]
+    assert snap2["raw_artifact_sha"] == real_sha
