@@ -38,6 +38,12 @@
       "settlements": 35924
     }
   },
+  "raw_artifact": {
+    "compression": "gzip",
+    "file": "funding_settlements.json.gz",
+    "rows": 75810,
+    "sha256": "sha256:66e694d35283fbff558d1084eb1c08333a12c040b9189a5cf1783bdeccd6b8aa"
+  },
   "source": {
     "ccxt_version": "4.5.77",
     "exchange_api_versions": {

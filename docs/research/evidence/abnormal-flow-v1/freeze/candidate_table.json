@@ -1,0 +1,139 @@
+{
+  "calibration_days": 14.0,
+  "calibration_window": {
+    "end": "2026-08-30T00:00:00+00:00",
+    "start": "2026-08-16T00:00:00+00:00"
+  },
+  "candidate_table_version": "abnormal_flow_candidate_table_v1",
+  "eligible_calibration_decisions": 7931257,
+  "eval_scorable_days": 19.49861111111111,
+  "fixed_percentiles": {
+    "buy_pressure_pct": 0.9,
+    "buy_pressure_threshold": 0.5899762964448008,
+    "containment_pct": 0.25,
+    "containment_threshold": 0.008436929648241207,
+    "oi_notional_floor": 1296533.1054042869,
+    "oi_notional_floor_pct": 0.25
+  },
+  "input_fingerprints": {
+    "calibration_manifest_count": 14,
+    "calibration_manifest_set": "sha256:9e8272703ff8383ea66b028b7d8053ad7c08f2f7e4eec8d8ef243f2d026ac74b",
+    "contract_json": "sha256:8a26f1f2a76f5ede232aab704b4ff5d2de8c60dbbfbdfd9d56e92982bd8f974f",
+    "identity_snapshot": "sha256:313306fd480451858d14b2d27358fc6f37163e119b022275335c4c23cb7d92d9"
+  },
+  "min_projected_episodes": 150.0,
+  "note": "Power-floor rule: highest OI percentile whose PROJECTED evaluation episodes clear 150.0. 150 is a power FLOOR, not sufficiency (cluster-robust SE + leave-one-out still govern). No returns read.",
+  "participation_rejections": 3422670,
+  "projection": "projected = calibration_episodes * eval_scorable_days / calibration_days (calib rate; NO evaluation read)",
+  "rows": [
+    {
+      "calibration_episodes": 1355,
+      "calibration_episodes_by_venue": {
+        "binance": 430,
+        "bybit": 925
+      },
+      "calibration_episodes_by_week": {
+        "2026-W34": 771,
+        "2026-W35": 584
+      },
+      "calibration_fires": 15584,
+      "calibration_fires_by_venue": {
+        "binance": 5108,
+        "bybit": 10476
+      },
+      "distinct_identity_keys": 473,
+      "identity_keys_by_venue": {
+        "binance": 220,
+        "bybit": 253
+      },
+      "oi_growth_threshold_pct": 0.9140242268679615,
+      "oi_percentile": 0.9,
+      "passes_power_floor": true,
+      "projected_evaluation_episodes": 1887.2,
+      "venues": ["binance", "bybit"],
+      "weeks": ["2026-W34", "2026-W35"]
+    },
+    {
+      "calibration_episodes": 511,
+      "calibration_episodes_by_venue": {
+        "binance": 108,
+        "bybit": 403
+      },
+      "calibration_episodes_by_week": {
+        "2026-W34": 305,
+        "2026-W35": 206
+      },
+      "calibration_fires": 5523,
+      "calibration_fires_by_venue": {
+        "binance": 1460,
+        "bybit": 4063
+      },
+      "distinct_identity_keys": 256,
+      "identity_keys_by_venue": {
+        "binance": 73,
+        "bybit": 183
+      },
+      "oi_growth_threshold_pct": 1.6166257619247206,
+      "oi_percentile": 0.95,
+      "passes_power_floor": true,
+      "projected_evaluation_episodes": 711.7,
+      "venues": ["binance", "bybit"],
+      "weeks": ["2026-W34", "2026-W35"]
+    },
+    {
+      "calibration_episodes": 175,
+      "calibration_episodes_by_venue": {
+        "binance": 24,
+        "bybit": 151
+      },
+      "calibration_episodes_by_week": {
+        "2026-W34": 101,
+        "2026-W35": 74
+      },
+      "calibration_fires": 1528,
+      "calibration_fires_by_venue": {
+        "binance": 332,
+        "bybit": 1196
+      },
+      "distinct_identity_keys": 113,
+      "identity_keys_by_venue": {
+        "binance": 21,
+        "bybit": 92
+      },
+      "oi_growth_threshold_pct": 2.6350760613721547,
+      "oi_percentile": 0.975,
+      "passes_power_floor": true,
+      "projected_evaluation_episodes": 243.7,
+      "venues": ["binance", "bybit"],
+      "weeks": ["2026-W34", "2026-W35"]
+    },
+    {
+      "calibration_episodes": 37,
+      "calibration_episodes_by_venue": {
+        "binance": 5,
+        "bybit": 32
+      },
+      "calibration_episodes_by_week": {
+        "2026-W34": 17,
+        "2026-W35": 20
+      },
+      "calibration_fires": 364,
+      "calibration_fires_by_venue": {
+        "binance": 108,
+        "bybit": 256
+      },
+      "distinct_identity_keys": 32,
+      "identity_keys_by_venue": {
+        "binance": 5,
+        "bybit": 27
+      },
+      "oi_growth_threshold_pct": 4.689781515580728,
+      "oi_percentile": 0.99,
+      "passes_power_floor": false,
+      "projected_evaluation_episodes": 51.5,
+      "venues": ["binance", "bybit"],
+      "weeks": ["2026-W34", "2026-W35"]
+    }
+  ],
+  "selected_oi_percentile": 0.975
+}

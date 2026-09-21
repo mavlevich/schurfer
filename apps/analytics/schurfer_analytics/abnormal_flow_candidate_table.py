@@ -14,14 +14,16 @@ the floor+participation-eligible decisions. Reads funding? No -- funding is sepa
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
-from dataclasses import dataclass
+from collections import Counter
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from .abnormal_flow_replay import (
+    DecisionFeatures,
     form_episodes,
     oi_notional_usd,
     participation_frac,
@@ -34,15 +36,6 @@ if TYPE_CHECKING:
 
 CANDIDATE_TABLE_VERSION = "abnormal_flow_candidate_table_v1"
 _OI_PERCENTILES = (0.90, 0.95, 0.975, 0.99)
-
-
-@dataclass(frozen=True)
-class _Fire:
-    exchange: str
-    identity_key: str
-    decision_at: datetime
-    iso_week: str
-    oi_growth: float
 
 
 def select_oi_percentile(rows: list[dict[str, Any]], min_projected: float) -> float | None:
@@ -62,6 +55,32 @@ def _linspace(lo: float, hi: float, n: int) -> tuple[float, ...]:
     return tuple(lo + (hi - lo) * i / n for i in range(1, n))
 
 
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return "sha256:" + digest.hexdigest()
+
+
+def _calibration_manifest_fingerprint(paths: list[str]) -> tuple[str, int]:
+    """Pin the ordered manifest set without re-hashing multi-GB Parquet inputs.
+
+    Each cold-bar manifest already pins its Parquet SHA and source fingerprint. Hashing
+    the exact manifest bytes therefore pins the candidate table to the same verified
+    calibration inputs while keeping this finalization step cheap.
+    """
+    digest = hashlib.sha256()
+    for raw_path in sorted(paths):
+        parquet = Path(raw_path)
+        manifest = parquet.with_name(parquet.name.replace(".parquet", ".manifest.json"))
+        if not manifest.exists():
+            raise FileNotFoundError(f"missing cold-bar manifest: {manifest}")
+        manifest_sha = _sha256_file(manifest)
+        digest.update(f"{manifest.name}|{manifest_sha}\n".encode())
+    return "sha256:" + digest.hexdigest(), len(paths)
+
+
 def build_candidate_table(
     paths: list[str],
     *,
@@ -75,6 +94,7 @@ def build_candidate_table(
     floor_pct: float = 0.25,
     oi_pcts: tuple[float, ...] = _OI_PERCENTILES,
     min_projected: float = 150.0,
+    progress: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
     calib_days = (calib_end - calib_start).total_seconds() / 86400.0
     cap = contract.max_participation_frac
@@ -100,11 +120,17 @@ def build_candidate_table(
         if oi_usd is not None:
             oi_notional.add(oi_usd)
     floor = oi_notional.quantile(floor_pct)
+    if floor is None:
+        raise ValueError("calibration slice has no available OI-notional observations")
+    if progress is not None:
+        progress("candidate-table pass 1/3 complete (OI-notional floor)")
 
     # Pass 2: feature percentiles over floor+participation-eligible decisions.
     buy_h = Histogram(_linspace(0.5, 1.0, 500))
     cont_h = Histogram(_linspace(0.0, 1.0, 1000))
-    oi_h = Histogram(_linspace(-100.0, 1000.0, 1100))
+    # 0.1 percentage-point bins keep the tail thresholds materially more precise than
+    # the coarse 1pp discovery histogram while remaining tiny and deterministic.
+    oi_h = Histogram(_linspace(-100.0, 1000.0, 11_000))
     eligible = 0
     participation_rejections = 0
     for d in _iter():
@@ -113,7 +139,7 @@ def build_candidate_table(
         oi_usd = oi_notional_usd(
             d.exchange, d.oi_native_amount, d.oi_native_value_usd, d.decision_price
         )
-        if oi_usd is None or floor is None or oi_usd < floor:
+        if oi_usd is None or oi_usd < floor:
             continue
         part = participation_frac(position_usd, d.pre_decision_turnover_usd)
         if part is None or (cap is not None and part > cap):
@@ -129,44 +155,57 @@ def build_candidate_table(
     buy_thr = buy_h.quantile(buy_pct)
     cont_thr = cont_h.quantile(containment_pct)
     oi_thr = {p: oi_h.quantile(p) for p in oi_pcts}
-    oi_thr_min = min(v for v in oi_thr.values() if v is not None)
+    if buy_thr is None or cont_thr is None or any(value is None for value in oi_thr.values()):
+        raise ValueError("calibration slice has insufficient eligible feature observations")
+    oi_thr_min = min(value for value in oi_thr.values() if value is not None)
+    if progress is not None:
+        progress("candidate-table pass 2/3 complete (feature thresholds)")
 
     # Pass 3: collect fires (eligible + buy>=buy_thr + cont<=cont_thr + oi>=lowest OI thr).
-    fires: list[_Fire] = []
+    fires: list[DecisionFeatures] = []
     for d in _iter():
         if d.unavailable_reason is not None:
             continue
         oi_usd = oi_notional_usd(
             d.exchange, d.oi_native_amount, d.oi_native_value_usd, d.decision_price
         )
-        if oi_usd is None or floor is None or oi_usd < floor:
+        if oi_usd is None or oi_usd < floor:
             continue
         part = participation_frac(position_usd, d.pre_decision_turnover_usd)
         if part is None or (cap is not None and part > cap):
             continue
-        if (
-            d.buy_pressure is None
-            or d.containment is None
-            or d.oi_growth_pct is None
-            or buy_thr is None
-            or cont_thr is None
-        ):
+        if d.buy_pressure is None or d.containment is None or d.oi_growth_pct is None:
             continue
         if (
             d.buy_pressure >= buy_thr
             and d.containment <= cont_thr
             and d.oi_growth_pct >= oi_thr_min
         ):
-            fires.append(
-                _Fire(d.exchange, d.canonical_asset, d.decision_at, d.iso_week, d.oi_growth_pct)
-            )
+            fires.append(d)
+    if progress is not None:
+        progress("candidate-table pass 3/3 complete (candidate fires)")
 
     cooldown = contract.cooldown_minutes
     rows: list[dict[str, Any]] = []
     for p in oi_pcts:
         threshold = oi_thr[p]
-        subset = [f for f in fires if threshold is not None and f.oi_growth >= threshold]
-        episodes = form_episodes(subset, cooldown)  # type: ignore[arg-type]
+        subset = [
+            f
+            for f in fires
+            if threshold is not None
+            and f.oi_growth_pct is not None
+            and f.oi_growth_pct >= threshold
+        ]
+        episodes = form_episodes(subset, cooldown)
+        fires_by_venue = Counter(f.exchange for f in subset)
+        episodes_by_venue = Counter(episode.exchange for episode in episodes)
+        episodes_by_week = Counter(episode.iso_week for episode in episodes)
+        identity_keys_by_venue = {
+            venue: len(
+                {episode.canonical_asset for episode in episodes if episode.exchange == venue}
+            )
+            for venue in sorted(episodes_by_venue)
+        }
         projected = len(episodes) * (eval_scorable_days / calib_days) if calib_days > 0 else 0.0
         rows.append(
             {
@@ -174,9 +213,15 @@ def build_candidate_table(
                 "oi_growth_threshold_pct": threshold,
                 "calibration_fires": len(subset),
                 "calibration_episodes": len(episodes),
-                "distinct_identity_keys": len({(f.exchange, f.identity_key) for f in subset}),
-                "venues": sorted({f.exchange for f in subset}),
-                "weeks": sorted({f.iso_week for f in subset}),
+                "calibration_fires_by_venue": dict(sorted(fires_by_venue.items())),
+                "calibration_episodes_by_venue": dict(sorted(episodes_by_venue.items())),
+                "calibration_episodes_by_week": dict(sorted(episodes_by_week.items())),
+                "distinct_identity_keys": len(
+                    {(episode.exchange, episode.canonical_asset) for episode in episodes}
+                ),
+                "identity_keys_by_venue": identity_keys_by_venue,
+                "venues": sorted(episodes_by_venue),
+                "weeks": sorted(episodes_by_week),
                 "projected_evaluation_episodes": round(projected, 1),
                 "passes_power_floor": projected >= min_projected,
             }
@@ -231,6 +276,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args: Any = build_parser().parse_args()
+
+    def report_progress(message: str) -> None:
+        sys.stderr.write(message + "\n")
+
     contract = AbnormalFlowContract(**json.loads(args.contract_json.read_text()))
     resolver, _ = load_identity_resolver(args.identity_snapshot)
     calib_start = datetime(
@@ -255,7 +304,15 @@ def main() -> None:
         contract=contract,
         resolver=resolver.identity_key,
         min_projected=args.min_projected,
+        progress=report_progress,
     )
+    manifests_sha, manifest_count = _calibration_manifest_fingerprint(calib_files)
+    table["input_fingerprints"] = {
+        "identity_snapshot": _sha256_file(args.identity_snapshot),
+        "contract_json": _sha256_file(args.contract_json),
+        "calibration_manifest_set": manifests_sha,
+        "calibration_manifest_count": manifest_count,
+    }
     args.out.write_text(json.dumps(table, indent=2, sort_keys=True) + "\n")
     sys.stdout.write(f"{args.out}\n")
 
