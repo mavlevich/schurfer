@@ -1,10 +1,4 @@
-# Abnormal-flow economic screen v1 -- DRAFT
-
-> **Not registered; no outcome read authorized.** This is the proposed third and
-> final near-term discovery family in the [edge decision program](../../ROADMAP.md#near-term-edge-decision-program--2026-09-15).
-> HYP-012 and HYP-015 keep their own prospective cohorts. This document does not
-> change their contracts, enable trading, or revive the closed pump-short,
-> accumulation, or monster-harvest strategies.
+# Abnormal-flow economic screen v1
 
 ## Decision this study may support
 
@@ -15,10 +9,10 @@ it can nominate at most one separately registered forward cohort, not PAPER or
 live trading. A historical failure closes only this declared bar-level
 Bybit/Binance mechanism. It says nothing about uncollected venues or L2 state.
 
-The primary candidate is _proposed_, not frozen: 60-minute feature lookback,
+The primary candidate is frozen: 60-minute feature lookback,
 long-only, 720-minute outcome horizon. The numerical OI, buy-pressure, and
-price-containment thresholds, entry cost, and portfolio policy must be
-registered before replaying returns. Do not select them from endpoint results.
+price-containment thresholds, entry cost, missingness controls, and portfolio
+policy are registered and immutable for the evaluation window.
 
 ## Population and information boundary
 
@@ -265,6 +259,10 @@ slice the thresholds were read on. After you review the actual scan distribution
 pick the percentile knobs (or replace this rule) and register the window and parameters
 for the separate economic run.
 
+**NOTE**: Diagnostic metrics, parameter ablation analysis, MAE/MFE tracking, and stress limits
+have been explicitly removed from the frozen formal contract. The formal evaluation only supports
+a single registered deterministic pass with strict portfolio gates and the registered verdict.
+
 ## Point-in-time identity schema (pinned; export + scan consume it)
 
 Identity has TWO SEPARATE layers so a cross-venue guess can never inflate independent
@@ -306,19 +304,3 @@ The export runs read-only ON PROD (localhost DB, not a PG tunnel) reusing the ex
 `momentum_universe_identity_repository` (`window_coverage` / `instruments_as_of`) and
 `momentum_universe_identity_classifier`; the small JSON is fetched over SSH. It is
 unit-tested locally against a fake repository before the prod run.
-
-## Open decisions before registration
-
-1. Owner approval of the one primary mechanism, 60-minute lookback, long
-   direction, and 720-minute horizon.
-2. One outcome-blind threshold-selection rule and its window; scan lag and
-   strict OI freshness by venue; historical window and source manifest.
-3. Fixed entry/exit proxy, fee/funding/slippage assumptions, the matched
-   control, episode cooldown, fixed-bank portfolio, evidence/missingness
-   floors, and the one-shot verdict.
-4. A repeatable input coverage artifact, plus tests proving the real query
-   path respects availability, native route, gaps, deduplication, and no
-   outcome read during calibration.
-
-Until these are resolved this document remains **DRAFT** and the replay must
-refuse a formal or promotion-labelled run.

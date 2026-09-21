@@ -179,15 +179,23 @@ class AbnormalFlowContract:
     input_fingerprint: str | None = None
 
     # Conservative execution/cost model (priced-proxy entry/exit).
-    entry_cost_bps: float | None = None
-    slippage_bps: float | None = None
-    fee_bps: float | None = None
-    funding_model: str | None = None
+    taker_fee_bps: float | None = None
+    entry_slippage_bps: float | None = None
+    exit_slippage_bps: float | None = None
+    funding_bps_720m_binance: float | None = None
+    funding_bps_720m_bybit: float | None = None
 
     # Evidence / missingness gates and the one-shot verdict inputs.
     min_resolved_episodes: int | None = None
     max_missing_fraction: float | None = None
     min_excess_over_control_pct: float | None = None
+    min_distinct_assets: int | None = None
+    min_utc_weeks: int | None = None
+    max_episodes_per_asset_frac: float | None = None
+    max_episodes_per_week_frac: float | None = None
+    min_control_coverage_frac: float | None = None
+
+    # Diagnostics-only (v2 nomination, excluded from PASS v1)
 
     def problems(self) -> tuple[str, ...]:
         """Every reason this contract is not a valid frozen spec: unset fields, frozen
@@ -290,10 +298,35 @@ class AbnormalFlowContract:
         integer("controls_per_episode", low=1)
         num("portfolio_bank_usd", low=0.0, inclusive_low=False)
         integer("portfolio_max_slots", low=1)
-        num("entry_cost_bps", low=0.0)
-        num("slippage_bps", low=0.0)
-        num("fee_bps", low=0.0)
-        registered("funding_model", FUNDING_MODELS)
+
+        num("min_resolved_episodes", low=1.0, inclusive_low=True)
+        num("max_missing_fraction", low=0.0, high=1.0, inclusive_low=True, inclusive_high=True)
+        num("min_excess_over_control_pct", low=0.0, inclusive_low=True)
+        integer("min_distinct_assets", low=1)
+        integer("min_utc_weeks", low=1)
+        num(
+            "max_episodes_per_asset_frac",
+            low=0.0,
+            high=1.0,
+            inclusive_low=False,
+            inclusive_high=True,
+        )
+        num(
+            "max_episodes_per_week_frac",
+            low=0.0,
+            high=1.0,
+            inclusive_low=False,
+            inclusive_high=True,
+        )
+        num(
+            "min_control_coverage_frac", low=0.0, high=1.0, inclusive_low=False, inclusive_high=True
+        )
+
+        num("taker_fee_bps", low=0.0)
+        num("entry_slippage_bps", low=0.0)
+        num("exit_slippage_bps", low=0.0)
+        num("funding_bps_720m_binance", low=0.0)
+        num("funding_bps_720m_bybit", low=0.0)
         integer("min_resolved_episodes", low=1)
         num("max_missing_fraction", low=0.0, high=1.0)
         num("min_excess_over_control_pct", low=0.0)
@@ -323,6 +356,41 @@ class AbnormalFlowContract:
                 "abnormal-flow contract is not a valid frozen spec; refusing a formal "
                 "run until the pre-declared outcome-blind rule pins/repairs: " + "; ".join(problems)
             )
+
+    def compute_hash(self) -> str:
+        """Canonical SHA-256 hash of the fully frozen contract configuration."""
+        import dataclasses
+        import hashlib
+        import json
+
+        d = dataclasses.asdict(self)
+        d.pop("contract_hash", None)
+        encoded = json.dumps(d, separators=(",", ":"), sort_keys=True).encode("utf-8")
+        return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
+
+    def to_json(self) -> str:
+        """Serialize this contract to JSON, including its self-computed hash."""
+        import dataclasses
+        import json
+
+        d = dataclasses.asdict(self)
+        d["contract_hash"] = self.compute_hash()
+        return json.dumps(d, indent=2, sort_keys=True) + "\n"
+
+    @classmethod
+    def from_json(cls, json_str: str) -> AbnormalFlowContract:
+        """Deserialize from JSON and verify the canonical hash."""
+        import json
+
+        d = json.loads(json_str)
+        expected_hash = d.pop("contract_hash", None)
+        obj = cls(**d)
+        if expected_hash is not None and obj.compute_hash() != expected_hash:
+            raise ValueError(
+                f"Contract hash mismatch: expected {expected_hash}, got {obj.compute_hash()}"
+            )
+
+        return obj
 
 
 class NotFrozenError(RuntimeError):

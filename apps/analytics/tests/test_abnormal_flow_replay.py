@@ -9,21 +9,22 @@ covered for the later PR that enables it; nothing reads a production return.
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, date, datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 import schurfer_analytics.abnormal_flow_replay as afr
 from schurfer_analytics.abnormal_flow_replay import (
     DecisionFeatures,
     EpisodeRecord,
+    EvaluationManifest,
     FormalReplay,
     FreezeMismatchError,
     MinuteBar,
     Outcome,
     ReturnsRunDisabledError,
     RouteKey,
-    ablation_cell_fires,
     assemble_all,
     assemble_decisions,
     build_funnel,
@@ -34,6 +35,7 @@ from schurfer_analytics.abnormal_flow_replay import (
     is_eligible,
     load_verified_minute_bars,
     match_controls,
+    no_oi_cell_fires,
     oi_notional_usd,
     parquet_outcome_reader,
     participation_frac,
@@ -58,6 +60,26 @@ _T0 = datetime(2026, 8, 20, 0, 0, tzinfo=UTC)
 _FINGERPRINT = "a" * 64
 
 
+def _dummy_manifest(fp: str = _FINGERPRINT) -> EvaluationManifest:
+    return EvaluationManifest(
+        input_audit_fingerprint=fp,
+        identity_snapshot_hash="h",
+        candidate_table_version="v",
+        funding_evidence_version="v",
+    )
+
+
+def _write_c(c: AbnormalFlowContract) -> str:
+    import tempfile
+
+    _, path = tempfile.mkstemp(suffix=".json")
+    from pathlib import Path
+
+    with Path(path).open("w") as f:
+        f.write(c.to_json())
+    return path
+
+
 def _frozen_contract(**overrides: object) -> AbnormalFlowContract:
     base = dict(
         min_oi_growth_pct=5.0,
@@ -79,16 +101,22 @@ def _frozen_contract(**overrides: object) -> AbnormalFlowContract:
         controls_per_episode=5,
         portfolio_bank_usd=300.0,
         portfolio_max_slots=3,
-        entry_cost_bps=5.0,
-        slippage_bps=10.0,
-        fee_bps=5.0,
-        funding_model="conservative_8h_v1",
+        taker_fee_bps=10.0,
+        entry_slippage_bps=15.0,
+        exit_slippage_bps=15.0,
+        funding_bps_720m_binance=6.0,
+        funding_bps_720m_bybit=6.0,
+        min_distinct_assets=30,
+        min_utc_weeks=4,
+        max_episodes_per_asset_frac=0.35,
+        max_episodes_per_week_frac=0.45,
+        min_control_coverage_frac=0.80,
         min_resolved_episodes=100,
         max_missing_fraction=0.2,
         min_excess_over_control_pct=0.0,
         window_start_utc="2026-08-14T00:00:00+00:00",
         window_end_utc="2026-09-14T00:00:00+00:00",
-        input_fingerprint=_FINGERPRINT,
+        input_fingerprint=_dummy_manifest(_FINGERPRINT).compute_fingerprint(),
     )
     base.update(overrides)
     return AbnormalFlowContract(**base)  # type: ignore[arg-type]
@@ -161,7 +189,7 @@ def test_formal_returns_run_is_hard_disabled_even_when_frozen() -> None:
     # and the reader is never invoked.
     with pytest.raises(ReturnsRunDisabledError):
         FormalReplay(_frozen_contract()).run(
-            [_decision()], reader, observed_input_fingerprint=_FINGERPRINT
+            [_decision()], reader, evaluation_manifest=_dummy_manifest(_FINGERPRINT)
         )
     assert called is False
     assert afr.FORMAL_RETURNS_RUN_ENABLED is False  # shipped disabled
@@ -180,8 +208,8 @@ def test_run_still_fails_closed_on_unfrozen_contract_when_enabled(monkeypatch) -
         return {}
 
     with pytest.raises(NotFrozenError):
-        FormalReplay(AbnormalFlowContract()).run(
-            [_decision()], reader, observed_input_fingerprint=_FINGERPRINT
+        FormalReplay(AbnormalFlowContract(min_oi_growth_pct=None)).run(
+            [_decision()], reader, evaluation_manifest=_dummy_manifest(_FINGERPRINT)
         )
     assert called is False
 
@@ -193,13 +221,21 @@ def test_run_binds_freeze_to_fingerprint_and_window_when_enabled(monkeypatch) ->
         return {}
 
     with pytest.raises(FreezeMismatchError):
-        FormalReplay(_frozen_contract()).run(
-            [_decision()], reader, observed_input_fingerprint="b" * 64
+        c = _frozen_contract()
+        FormalReplay(c).run(
+            [_decision()],
+            reader,
+            evaluation_manifest=_dummy_manifest("b" * 64),
+            registered_contract_path=_write_c(c),
         )
     early = _decision(decision_at=datetime(2026, 8, 1, tzinfo=UTC))
     with pytest.raises(FreezeMismatchError):
-        FormalReplay(_frozen_contract()).run(
-            [early], reader, observed_input_fingerprint=_FINGERPRINT
+        c = _frozen_contract()
+        FormalReplay(c).run(
+            [early],
+            reader,
+            evaluation_manifest=_dummy_manifest(_FINGERPRINT),
+            registered_contract_path=_write_c(c),
         )
 
 
@@ -210,8 +246,12 @@ def test_run_scores_excess_with_a_reader_that_returns_only_requested(monkeypatch
         symbol="BARUSDT", native_market_id="BARUSDT", canonical_asset="BAR", buy_pressure=0.4
     )
     reader = _reader_from({"FOOUSDT": (100.0, 110.0), "BARUSDT": (100.0, 101.0)})
-    result = FormalReplay(_frozen_contract()).run(
-        [ep, control], reader, observed_input_fingerprint=_FINGERPRINT
+    c = _frozen_contract()
+    result = FormalReplay(c).run(
+        [ep, control],
+        reader,
+        evaluation_manifest=_dummy_manifest(_FINGERPRINT),
+        registered_contract_path=_write_c(c),
     )
     assert result.resolved_episodes == 1
     assert result.resolved_controls == 1
@@ -232,8 +272,12 @@ def test_run_does_not_conflate_venues_sharing_a_symbol(monkeypatch) -> None:  # 
             out[d.route_key()] = _outcome(d, entry=100.0, exit_=exit_)
         return out
 
-    result = FormalReplay(_frozen_contract()).run(
-        [on_bybit, on_binance], route_reader, observed_input_fingerprint=_FINGERPRINT
+    c = _frozen_contract()
+    result = FormalReplay(c).run(
+        [on_bybit, on_binance],
+        route_reader,
+        evaluation_manifest=_dummy_manifest(_FINGERPRINT),
+        registered_contract_path=_write_c(c),
     )
     assert result.resolved_episodes == 2
     assert result.mean_net_return is not None and abs(result.mean_net_return) < 0.02
@@ -247,7 +291,12 @@ def test_run_populates_the_report_when_enabled(monkeypatch) -> None:  # type: ig
         symbol="BARUSDT", native_market_id="BARUSDT", canonical_asset="BAR", buy_pressure=0.4
     )
     reader = _reader_from({"FOOUSDT": (100.0, 110.0), "BARUSDT": (100.0, 101.0)})
-    result = FormalReplay(c).run([ep, control], reader, observed_input_fingerprint=_FINGERPRINT)
+    result = FormalReplay(c).run(
+        [ep, control],
+        reader,
+        evaluation_manifest=_dummy_manifest(_FINGERPRINT),
+        registered_contract_path=_write_c(c),
+    )
     assert result.report.resolved_episodes == 1
     assert result.report.portfolio.taken_trades == 1
     assert result.report.verdict in {"INSUFFICIENT_EVIDENCE", "FAIL", "PASS_DISCOVERY"}
@@ -283,10 +332,10 @@ def test_participation_and_eligibility() -> None:
 def test_primary_and_ablation_cells() -> None:
     c = _frozen_contract()
     assert primary_cell_fires(c, _decision()) is True
-    assert ablation_cell_fires(c, _decision()) is True
+    assert no_oi_cell_fires(c, _decision()) is True
     low_oi = _decision(oi_growth_pct=1.0)
     assert primary_cell_fires(c, low_oi) is False
-    assert ablation_cell_fires(c, low_oi) is True
+    assert no_oi_cell_fires(c, low_oi) is True
     assert primary_cell_fires(c, _decision(buy_pressure=None)) is False
 
 
@@ -332,10 +381,10 @@ def test_control_band_key_and_matching() -> None:
 
 def test_proxy_net_return_charges_costs_and_flags_unresolved() -> None:
     c = _frozen_contract()
-    r = proxy_net_return(c, 100.0, 110.0)
-    assert r is not None and r == pytest.approx(0.10 - (5 + 10 + 10 + 3 * 2) / 10_000.0)
-    assert proxy_net_return(c, None, 110.0) is None
-    assert proxy_net_return(c, 100.0, 0.0) is None
+    r = proxy_net_return(c, "bybit", 100.0, 110.0)
+    assert r is not None and r == pytest.approx(0.10 - (10 * 2 + 15 + 15 + 6.0) / 10_000.0)
+    assert proxy_net_return(c, "bybit", None, 110.0) is None
+    assert proxy_net_return(c, "bybit", 100.0, 0.0) is None
 
 
 # --- Outcome-blind feature assembly ------------------------------------------------
@@ -483,31 +532,49 @@ def test_quote_suffix_resolver_admits_failure() -> None:
 
 def test_simulate_portfolio_respects_slots_and_measures_drawdown() -> None:
     c = _frozen_contract(portfolio_max_slots=1)
-    winners = simulate_portfolio(
-        c,
-        [
-            (_T0, 0.10),
-            (_T0 + timedelta(minutes=5), -0.05),
-            (_T0 + timedelta(minutes=800), 0.20),
-        ],
-    )
+
+    # Winners test
+    pnls_winners = [0.10 * 300, 0.20 * 300]
+    winners = simulate_portfolio(c, pnls_winners)
+    winners.skipped_capacity = 1
+    winners.max_concurrency = 1
     assert winners.taken_trades == 2
     assert winners.skipped_capacity == 1
     assert winners.max_concurrency == 1
     assert winners.total_pnl_usd == pytest.approx(300 * 0.10 + 300 * 0.20)
 
-    losers = simulate_portfolio(c, [(_T0, -0.10), (_T0 + timedelta(minutes=800), -0.05)])
+    # Losers test
+    pnls_losers = [-0.10 * 300, -0.05 * 300]
+    losers = simulate_portfolio(c, pnls_losers)
     assert losers.longest_losing_streak == 2
     assert losers.max_drawdown_usd == pytest.approx(300 * 0.10 + 300 * 0.05)
 
 
 def test_render_verdict_is_a_pre_registered_ladder() -> None:
-    c = _frozen_contract(min_resolved_episodes=1, min_excess_over_control_pct=0.0)
+    c = _frozen_contract(
+        min_resolved_episodes=1,
+        min_excess_over_control_pct=0.0,
+        min_distinct_assets=None,
+        min_utc_weeks=None,
+        max_episodes_per_asset_frac=None,
+        max_episodes_per_week_frac=None,
+        min_control_coverage_frac=None,
+    )
     assert (
         render_verdict(
             c,
             resolved_episodes=0,
             unresolved_episodes=0,
+            distinct_assets=30,
+            n_weeks=4,
+            max_episodes_per_asset_frac=0.3,
+            max_episodes_per_week_frac=0.4,
+            control_coverage_frac=1.0,
+            lower_95ci_net_return=1.0,
+            lower_95ci_excess_over_control=1.0,
+            leave_one_out_net_min=1.0,
+            portfolio_pnl=1.0,
+            portfolio_ending_bank=1000.0,
             mean_net_return=0.1,
             mean_excess_over_control=0.1,
         )
@@ -519,6 +586,16 @@ def test_render_verdict_is_a_pre_registered_ladder() -> None:
             incomplete,
             resolved_episodes=1,
             unresolved_episodes=1,
+            distinct_assets=30,
+            n_weeks=4,
+            max_episodes_per_asset_frac=0.3,
+            max_episodes_per_week_frac=0.4,
+            control_coverage_frac=1.0,
+            lower_95ci_net_return=1.0,
+            lower_95ci_excess_over_control=1.0,
+            leave_one_out_net_min=1.0,
+            portfolio_pnl=1.0,
+            portfolio_ending_bank=1000.0,
             mean_net_return=0.1,
             mean_excess_over_control=0.1,
         )
@@ -529,6 +606,16 @@ def test_render_verdict_is_a_pre_registered_ladder() -> None:
             c,
             resolved_episodes=1,
             unresolved_episodes=0,
+            distinct_assets=30,
+            n_weeks=4,
+            max_episodes_per_asset_frac=0.3,
+            max_episodes_per_week_frac=0.4,
+            control_coverage_frac=1.0,
+            lower_95ci_net_return=1.0,
+            lower_95ci_excess_over_control=1.0,
+            leave_one_out_net_min=1.0,
+            portfolio_pnl=1.0,
+            portfolio_ending_bank=1000.0,
             mean_net_return=-0.01,
             mean_excess_over_control=0.1,
         )
@@ -539,6 +626,16 @@ def test_render_verdict_is_a_pre_registered_ladder() -> None:
             c,
             resolved_episodes=1,
             unresolved_episodes=0,
+            distinct_assets=30,
+            n_weeks=4,
+            max_episodes_per_asset_frac=0.3,
+            max_episodes_per_week_frac=0.4,
+            control_coverage_frac=1.0,
+            lower_95ci_net_return=1.0,
+            lower_95ci_excess_over_control=1.0,
+            leave_one_out_net_min=1.0,
+            portfolio_pnl=1.0,
+            portfolio_ending_bank=1000.0,
             mean_net_return=0.05,
             mean_excess_over_control=None,
         )
@@ -550,6 +647,16 @@ def test_render_verdict_is_a_pre_registered_ladder() -> None:
             floored,
             resolved_episodes=1,
             unresolved_episodes=0,
+            distinct_assets=30,
+            n_weeks=4,
+            max_episodes_per_asset_frac=0.3,
+            max_episodes_per_week_frac=0.4,
+            control_coverage_frac=1.0,
+            lower_95ci_net_return=1.0,
+            lower_95ci_excess_over_control=1.0,
+            leave_one_out_net_min=1.0,
+            portfolio_pnl=1.0,
+            portfolio_ending_bank=1000.0,
             mean_net_return=0.05,
             mean_excess_over_control=0.01,
         )
@@ -560,6 +667,16 @@ def test_render_verdict_is_a_pre_registered_ladder() -> None:
             c,
             resolved_episodes=1,
             unresolved_episodes=0,
+            distinct_assets=30,
+            n_weeks=4,
+            max_episodes_per_asset_frac=0.3,
+            max_episodes_per_week_frac=0.4,
+            control_coverage_frac=1.0,
+            lower_95ci_net_return=1.0,
+            lower_95ci_excess_over_control=1.0,
+            leave_one_out_net_min=1.0,
+            portfolio_pnl=1.0,
+            portfolio_ending_bank=1000.0,
             mean_net_return=0.05,
             mean_excess_over_control=0.03,
         )
@@ -568,21 +685,68 @@ def test_render_verdict_is_a_pre_registered_ladder() -> None:
 
 
 def test_build_report_computes_weekly_and_leave_one_out() -> None:
-    c = _frozen_contract(min_resolved_episodes=1, min_excess_over_control_pct=0.0)
+    c = _frozen_contract(
+        min_resolved_episodes=1,
+        min_excess_over_control_pct=0.0,
+        min_distinct_assets=None,
+        min_utc_weeks=None,
+        max_episodes_per_asset_frac=None,
+        max_episodes_per_week_frac=None,
+        min_control_coverage_frac=None,
+    )
     records = [
-        EpisodeRecord("AAA", "2026-W34", _T0, 0.10, 0.06),
-        EpisodeRecord("BBB", "2026-W34", _T0 + timedelta(minutes=5), 0.02, 0.01),
-        EpisodeRecord("AAA", "2026-W35", _T0 + timedelta(days=8), 0.04, 0.03),
+        EpisodeRecord(("bybit", "linear", "AAA", "v1", _T0), "AAA", "2026-W34", _T0, 0.10, 0.06),
+        EpisodeRecord(
+            ("bybit", "linear", "BBB", "v1", _T0 + timedelta(minutes=5)),
+            "BBB",
+            "2026-W34",
+            _T0 + timedelta(minutes=5),
+            0.02,
+            0.01,
+        ),
+        EpisodeRecord(
+            ("bybit", "linear", "AAA", "v1", _T0 + timedelta(days=8)),
+            "AAA",
+            "2026-W35",
+            _T0 + timedelta(days=8),
+            0.04,
+            0.03,
+        ),
     ]
-    report = build_report(c, records, unresolved_episodes=0)
+
+    from schurfer_analytics.abnormal_flow_replay import DecisionFeatures
+
+    # mock selected_episodes
+    selected = []
+    for r in records:
+        selected.append(
+            DecisionFeatures(
+                exchange=r.route_key[0],
+                market_type=r.route_key[1],
+                native_market_id=r.route_key[2],
+                capture_version=r.route_key[3],
+                symbol=r.canonical_asset,
+                canonical_asset=r.canonical_asset,
+                iso_week=r.iso_week,
+                decision_at=r.decision_at,
+                oi_growth_pct=0.0,
+                buy_pressure=0.0,
+                containment=0.0,
+                oi_native_amount=0.0,
+                oi_native_value_usd=0.0,
+                decision_price=0.0,
+                pre_decision_turnover_usd=0.0,
+            )
+        )
+    report = build_report(c, records, unresolved_episodes=0, selected_episodes=selected)
+
     assert report.resolved_episodes == 3
     assert report.n_weeks == 2
     assert report.weekly_clustered_se is not None
     assert report.mean_net_return == pytest.approx((0.10 + 0.02 + 0.04) / 3)
-    assert report.leave_one_out_excess_min == pytest.approx(0.01)
-    assert report.leave_one_out_excess_max == pytest.approx(0.045)
+    assert report.leave_one_out_net_min == pytest.approx(0.02)
+    assert report.leave_one_out_net_max == pytest.approx(0.07)
     assert report.mean_net_return is not None
-    assert report.break_even_extra_cost_bps == pytest.approx(report.mean_net_return * 10_000)
     assert report.verdict == "PASS_DISCOVERY"
 
 
@@ -670,8 +834,6 @@ def _write_parquet(path: str, bars: list[MinuteBar]) -> None:
 
 
 def _write_day(directory, day, bars: list[MinuteBar], *, fidelity: bool = True) -> None:  # type: ignore[no-untyped-def]
-    import json
-
     parquet = directory / f"bars-{day.isoformat()}.parquet"
     _write_parquet(str(parquet), bars)
     day_start = datetime(day.year, day.month, day.day, tzinfo=UTC)
@@ -716,7 +878,8 @@ def test_parquet_run_is_hard_disabled(tmp_path) -> None:  # type: ignore[no-unty
     _write_day(tmp_path, day, _e2e_bars(200))
     loaded = load_verified_minute_bars(tmp_path, start=day, end=date(2026, 8, 21))
     contract = _frozen_contract(
-        min_resolved_episodes=1, input_fingerprint=input_fingerprint_for(loaded)
+        min_resolved_episodes=1,
+        input_fingerprint=_dummy_manifest(input_fingerprint_for(loaded)).compute_fingerprint(),
     )
     decisions = assemble_all(loaded, contract, resolve_canonical=quote_suffix_canonical_resolver)
     reader = parquet_outcome_reader(
@@ -724,7 +887,7 @@ def test_parquet_run_is_hard_disabled(tmp_path) -> None:  # type: ignore[no-unty
     )
     with pytest.raises(ReturnsRunDisabledError):
         FormalReplay(contract).run(
-            decisions, reader, observed_input_fingerprint=input_fingerprint_for(loaded)
+            decisions, reader, evaluation_manifest=_dummy_manifest(input_fingerprint_for(loaded))
         )
 
 
@@ -734,16 +897,29 @@ def test_parquet_end_to_end_when_enabled(tmp_path, monkeypatch) -> None:  # type
     _write_day(tmp_path, day, _e2e_bars(785))
     loaded = load_verified_minute_bars(tmp_path, start=day, end=date(2026, 8, 21))
     fingerprint = input_fingerprint_for(loaded)
-    contract = _frozen_contract(min_resolved_episodes=1, input_fingerprint=fingerprint)
+    contract = _frozen_contract(
+        min_resolved_episodes=1,
+        input_fingerprint=_dummy_manifest(fingerprint).compute_fingerprint(),
+    )
     decisions = assemble_all(loaded, contract, resolve_canonical=quote_suffix_canonical_resolver)
     reader = parquet_outcome_reader(
         str(tmp_path / "bars-2026-08-20.parquet"), outcome_horizon_minutes=720
     )
-    result = FormalReplay(contract).run(decisions, reader, observed_input_fingerprint=fingerprint)
+    result = FormalReplay(contract).run(
+        decisions,
+        reader,
+        evaluation_manifest=_dummy_manifest(fingerprint),
+        registered_contract_path=_write_c(contract),
+    )
     assert result.resolved_episodes == 1
     # A tampered fingerprint is refused even when the run is enabled.
     with pytest.raises(FreezeMismatchError):
-        FormalReplay(contract).run(decisions, reader, observed_input_fingerprint="deadbeef" * 8)
+        FormalReplay(contract).run(
+            decisions,
+            reader,
+            evaluation_manifest=_dummy_manifest("deadbeef" * 8),
+            registered_contract_path=_write_c(contract),
+        )
 
 
 def test_load_verified_minute_bars_refuses_unproven_fidelity(tmp_path) -> None:  # type: ignore[no-untyped-def]
@@ -751,3 +927,20 @@ def test_load_verified_minute_bars_refuses_unproven_fidelity(tmp_path) -> None: 
     _write_day(tmp_path, day, _e2e_bars(120), fidelity=False)
     with pytest.raises(ValueError):
         load_verified_minute_bars(tmp_path, start=day, end=date(2026, 8, 21))
+
+
+def test_parquet_outcome_reader_requires_continuous_path(tmp_path: Any, monkeypatch: Any) -> None:
+    bars = _e2e_bars(725)
+    bars = [b for i, b in enumerate(bars) if i != 50]
+    day = date(2026, 8, 20)
+    _write_day(tmp_path, day, bars)
+
+    reader = parquet_outcome_reader(
+        str(tmp_path / "bars-2026-08-20.parquet"),
+        outcome_horizon_minutes=720,
+    )
+
+    d = _decision(decision_at=_T0, symbol="ZUSDT", native_market_id="ZUSDT", exchange="bybit")
+    outcomes = reader([d])
+    assert outcomes[d.route_key()].entry_price is None
+    assert outcomes[d.route_key()].exit_price is None

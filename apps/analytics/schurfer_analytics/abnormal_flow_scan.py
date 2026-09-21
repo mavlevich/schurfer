@@ -30,10 +30,10 @@ from typing import TYPE_CHECKING, Any
 from .abnormal_flow_input_audit import AUDIT_VERSION, audit_directory, verified_input
 from .abnormal_flow_replay import (
     _decision_eligible,
-    ablation_cell_fires,
     form_episodes,
     is_eligible,
     iter_instrument_bars,
+    no_oi_cell_fires,
     oi_freshness_limit_for,
     oi_notional_usd,
     participation_frac,
@@ -360,7 +360,7 @@ def _accumulate_instrument(
         if primary_cell_fires(contract, d):
             counts.primary_fires += 1
             primary_fires.append(d)
-        if ablation_cell_fires(contract, d):
+        if no_oi_cell_fires(contract, d):
             counts.ablation_fires += 1
             ablation_fires.append(d)
 

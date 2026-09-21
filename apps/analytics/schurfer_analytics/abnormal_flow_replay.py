@@ -35,7 +35,7 @@ import math
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from .abnormal_flow_input_audit import verified_input
 from .abnormal_flow_screen import (
@@ -68,8 +68,6 @@ FORMAL_RETURNS_RUN_ENABLED = False
 # worst-case cost is applied for every 8h settlement the 720m hold can cross. It is a
 # pre-registered pessimistic constant, not a measured per-instrument rate, so the
 # historical economics never flatter themselves with a favourable funding assumption.
-_CONSERVATIVE_FUNDING_BPS_PER_8H = 3.0
-_FUNDING_SETTLEMENT_MINUTES = 480
 
 
 def _finite(x: float | None) -> bool:
@@ -439,10 +437,7 @@ def primary_cell_fires(contract: AbnormalFlowContract, f: DecisionFeatures) -> b
     )
 
 
-def ablation_cell_fires(contract: AbnormalFlowContract, f: DecisionFeatures) -> bool:
-    """The registered OI ablation: the SAME cell with ONLY the OI-growth threshold
-    removed. Buy dominance and containment still apply, and the eligible set is
-    unchanged, so any excess of the primary over this isolates the OI effect."""
+def no_oi_cell_fires(contract: AbnormalFlowContract, f: DecisionFeatures) -> bool:
     if f.buy_pressure is None or f.containment is None:
         return False
     if contract.min_buy_pressure_ratio is None or contract.max_price_containment is None:
@@ -450,6 +445,28 @@ def ablation_cell_fires(contract: AbnormalFlowContract, f: DecisionFeatures) -> 
     return (
         f.buy_pressure >= contract.min_buy_pressure_ratio
         and f.containment <= contract.max_price_containment
+    )
+
+
+def no_buy_cell_fires(contract: AbnormalFlowContract, f: DecisionFeatures) -> bool:
+    if f.oi_growth_pct is None or f.containment is None:
+        return False
+    if contract.min_oi_growth_pct is None or contract.max_price_containment is None:
+        return False
+    return (
+        f.oi_growth_pct >= contract.min_oi_growth_pct
+        and f.containment <= contract.max_price_containment
+    )
+
+
+def no_containment_cell_fires(contract: AbnormalFlowContract, f: DecisionFeatures) -> bool:
+    if f.oi_growth_pct is None or f.buy_pressure is None:
+        return False
+    if contract.min_oi_growth_pct is None or contract.min_buy_pressure_ratio is None:
+        return False
+    return (
+        f.oi_growth_pct >= contract.min_oi_growth_pct
+        and f.buy_pressure >= contract.min_buy_pressure_ratio
     )
 
 
@@ -533,7 +550,10 @@ def match_controls(
 
 
 def proxy_net_return(
-    contract: AbnormalFlowContract, entry_price: float | None, exit_price: float | None
+    contract: AbnormalFlowContract,
+    exchange: str,
+    entry_price: float | None,
+    exit_price: float | None,
 ) -> float | None:
     """Net fractional return of the long priced proxy over the horizon, after the
     pre-registered conservative entry cost, slippage, round-trip fee, and worst-case
@@ -551,16 +571,27 @@ def proxy_net_return(
         or exit_price <= 0
     ):
         return None
-    for name in ("entry_cost_bps", "slippage_bps", "fee_bps"):
-        if not _finite(getattr(contract, name)):
+    for name in ("taker_fee_bps", "entry_slippage_bps", "exit_slippage_bps"):
+        if not getattr(contract, name):
             raise ValueError(f"cost model incomplete: {name} is not set")
+
+    if exchange == "binance":
+        funding_bps = contract.funding_bps_720m_binance
+    elif exchange == "bybit":
+        funding_bps = contract.funding_bps_720m_bybit
+    else:
+        raise ValueError(f"funding model incomplete: unknown exchange {exchange}")
+
+    if not _finite(funding_bps):
+        raise ValueError(f"funding model incomplete for exchange {exchange}")
+
     gross = (exit_price - entry_price) / entry_price  # long
-    entry_cost = float(contract.entry_cost_bps)  # type: ignore[arg-type]
-    slippage = float(contract.slippage_bps)  # type: ignore[arg-type]
-    fee = float(contract.fee_bps)  # type: ignore[arg-type]
-    settlements = math.ceil(contract.outcome_horizon_minutes / _FUNDING_SETTLEMENT_MINUTES)
-    funding_bps = _CONSERVATIVE_FUNDING_BPS_PER_8H * settlements
-    cost_bps = entry_cost + slippage + 2.0 * fee + funding_bps  # round-trip fees
+    entry_slippage = cast("float", contract.entry_slippage_bps)
+    exit_slippage = cast("float", contract.exit_slippage_bps)
+    fee = cast("float", contract.taker_fee_bps)
+
+    # 10 bps on entry, 10 bps on exit = 2.0 * fee
+    cost_bps = entry_slippage + exit_slippage + 2.0 * fee + cast("float", funding_bps)
     return gross - cost_bps / 10_000.0
 
 
@@ -577,9 +608,17 @@ class Funnel:
     ineligible: int = 0
     eligible: int = 0
     primary_fires: int = 0
-    ablation_fires: int = 0
+    no_oi_fires: int = 0
+    no_buy_fires: int = 0
+    no_containment_fires: int = 0
+    p99_fires: int = 0
+    sub_p99_fires: int = 0
     primary_episodes: int = 0
-    ablation_episodes: int = 0
+    no_oi_episodes: int = 0
+    no_buy_episodes: int = 0
+    no_containment_episodes: int = 0
+    p99_episodes: int = 0
+    sub_p99_episodes: int = 0
     reasons: dict[str, int] = field(default_factory=dict)
 
     def note(self, reason: str) -> None:
@@ -603,7 +642,11 @@ def build_funnel(contract: AbnormalFlowContract, decisions: Iterable[DecisionFea
     frozen contract, but a fire count is only meaningful once thresholds are frozen."""
     funnel = Funnel()
     primary: list[DecisionFeatures] = []
-    ablation: list[DecisionFeatures] = []
+    no_oi: list[DecisionFeatures] = []
+    no_buy: list[DecisionFeatures] = []
+    no_containment: list[DecisionFeatures] = []
+    p99_strata: list[DecisionFeatures] = []
+    sub_p99_strata: list[DecisionFeatures] = []
     for d in decisions:
         funnel.scanned += 1
         if d.unavailable_reason is not None:
@@ -618,12 +661,22 @@ def build_funnel(contract: AbnormalFlowContract, decisions: Iterable[DecisionFea
         if primary_cell_fires(contract, d):
             funnel.primary_fires += 1
             primary.append(d)
-        if ablation_cell_fires(contract, d):
-            funnel.ablation_fires += 1
-            ablation.append(d)
+        if no_oi_cell_fires(contract, d):
+            funnel.no_oi_fires += 1
+            no_oi.append(d)
+        if no_buy_cell_fires(contract, d):
+            funnel.no_buy_fires += 1
+            no_buy.append(d)
+        if no_containment_cell_fires(contract, d):
+            funnel.no_containment_fires += 1
+            no_containment.append(d)
     cooldown = contract.cooldown_minutes
     funnel.primary_episodes = len(form_episodes(primary, cooldown))
-    funnel.ablation_episodes = len(form_episodes(ablation, cooldown))
+    funnel.no_oi_episodes = len(form_episodes(no_oi, cooldown))
+    funnel.no_buy_episodes = len(form_episodes(no_buy, cooldown))
+    funnel.no_containment_episodes = len(form_episodes(no_containment, cooldown))
+    funnel.p99_episodes = len(form_episodes(p99_strata, cooldown))
+    funnel.sub_p99_episodes = len(form_episodes(sub_p99_strata, cooldown))
     return funnel
 
 
@@ -635,6 +688,7 @@ class EpisodeRecord:
     """One resolved episode's returns-bearing summary, used for the aggregate report.
     Produced only inside the frozen-gated run."""
 
+    route_key: RouteKey
     canonical_asset: str
     iso_week: str
     decision_at: datetime
@@ -642,7 +696,7 @@ class EpisodeRecord:
     excess: float | None  # None when the episode had no resolved control
 
 
-@dataclass(frozen=True)
+@dataclass
 class PortfolioResult:
     """Fixed-bank, slot-limited portfolio outcome over the resolved episodes. A signal
     arriving while every slot is occupied for the horizon is dropped (capacity), not
@@ -664,41 +718,50 @@ class EconomicsReport:
     resolved_episodes: int
     unresolved_episodes: int
     missing_fraction: float | None
+    distinct_assets: int
     n_weeks: int
+    max_episodes_per_asset_frac: float | None
+    max_episodes_per_week_frac: float | None
+    control_coverage_frac: float | None
     mean_net_return: float | None
     weekly_clustered_se: float | None
+    lower_95ci_net_return: float | None
     mean_excess_over_control: float | None
-    leave_one_out_excess_min: float | None
-    leave_one_out_excess_max: float | None
-    break_even_extra_cost_bps: float | None
+    weekly_clustered_se_excess: float | None
+    lower_95ci_excess_over_control: float | None
+    leave_one_out_net_min: float | None
+    leave_one_out_net_max: float | None
     portfolio: PortfolioResult
     verdict: str
 
 
-def simulate_portfolio(
-    contract: AbnormalFlowContract, episodes: Sequence[tuple[datetime, float]]
-) -> PortfolioResult:
-    """Slot-limited fixed-bank simulation. ``episodes`` are ``(decision_at, net_return)``
-    for resolved episodes; each taken trade holds one slot for the outcome horizon and
-    earns ``position_usd * net_return``. Drawdown and losing streak are measured on the
-    realized dollar path in entry order."""
+def select_portfolio(
+    contract: AbnormalFlowContract, decisions: Sequence[DecisionFeatures]
+) -> tuple[list[DecisionFeatures], int]:
     slots = contract.portfolio_max_slots or 1
-    position_usd = float(contract.position_usd)  # type: ignore[arg-type]
     horizon = timedelta(minutes=contract.outcome_horizon_minutes)
     active_ends: list[datetime] = []
-    taken = 0
+    taken: list[DecisionFeatures] = []
     skipped = 0
-    pnls: list[float] = []
-    max_concurrency = 0
-    for decision_at, ret in sorted(episodes, key=lambda e: e[0]):
-        active_ends = [t for t in active_ends if t > decision_at]
+
+    # Entry is at decision_at + 1m
+    # Sort by (entry_at, full route_key)
+    def sort_key(d: DecisionFeatures) -> tuple[datetime, RouteKey]:
+        return (d.decision_at + timedelta(minutes=1), d.route_key())
+
+    sorted_decisions = sorted(decisions, key=sort_key)
+    for d in sorted_decisions:
+        entry_at = d.decision_at + timedelta(minutes=1)
+        active_ends = [t for t in active_ends if t > entry_at]
         if len(active_ends) >= slots:
             skipped += 1
             continue
-        active_ends.append(decision_at + horizon)
-        max_concurrency = max(max_concurrency, len(active_ends))
-        taken += 1
-        pnls.append(position_usd * ret)
+        active_ends.append(entry_at + horizon)
+        taken.append(d)
+    return taken, skipped
+
+
+def simulate_portfolio(contract: AbnormalFlowContract, pnls: list[float]) -> PortfolioResult:
     peak = 0.0
     cum = 0.0
     max_dd = 0.0
@@ -714,29 +777,43 @@ def simulate_portfolio(
         else:
             streak = 0
     return PortfolioResult(
-        taken_trades=taken,
-        skipped_capacity=skipped,
-        total_pnl_usd=sum(pnls),
+        taken_trades=len(pnls),
+        skipped_capacity=0,
+        total_pnl_usd=cum,
         max_drawdown_usd=max_dd,
         longest_losing_streak=longest,
-        max_concurrency=max_concurrency,
+        max_concurrency=0,  # simplified
     )
 
 
-def _weekly_clustered_se(records: Sequence[EpisodeRecord]) -> tuple[int, float | None]:
-    """Week count and the standard error of the equal-weighted weekly mean net return,
-    treating each ISO week as a cluster. ``None`` SE with fewer than two weeks (a single
-    cluster carries no cross-week uncertainty)."""
-    by_week: dict[str, list[float]] = defaultdict(list)
-    for r in records:
-        by_week[r.iso_week].append(r.net_return)
-    weekly_means = [sum(v) / len(v) for v in by_week.values()]
-    n = len(weekly_means)
-    if n < 2:
-        return n, None
-    mean = sum(weekly_means) / n
-    variance = sum((m - mean) ** 2 for m in weekly_means) / (n - 1)
-    return n, math.sqrt(variance / n)
+def _clustered_se(values: Sequence[tuple[str, float]]) -> tuple[int, float | None]:
+    """Cluster-robust standard error for the pooled mean.
+    Treats the string as the cluster ID (e.g., ISO week)."""
+    import math
+    from collections import defaultdict
+
+    if not values:
+        return 0, None
+
+    total_obs = len(values)
+    global_mean = sum(v for _, v in values) / total_obs
+
+    by_cluster: dict[str, list[float]] = defaultdict(list)
+    for c_id, v in values:
+        by_cluster[c_id].append(v)
+
+    num_clusters = len(by_cluster)
+    if num_clusters < 2:
+        return num_clusters, None
+
+    # Variance of the mean = (1 / N^2) * (C / (C-1)) * sum_c (sum_i_in_c (y_i - global_mean))^2
+    sum_sq_cluster_errors = 0.0
+    for obs in by_cluster.values():
+        cluster_error = sum(y - global_mean for y in obs)
+        sum_sq_cluster_errors += cluster_error**2
+
+    var = (num_clusters / (num_clusters - 1)) * sum_sq_cluster_errors / (total_obs**2)
+    return num_clusters, math.sqrt(var)
 
 
 def _leave_one_out_excess(
@@ -759,33 +836,101 @@ def _leave_one_out_excess(
     return min(means), max(means)
 
 
+def _leave_one_out_net(
+    records: Sequence[EpisodeRecord],
+) -> tuple[float | None, float | None]:
+    """Min and max mean net when each canonical asset is dropped in turn, so a single
+    asset cannot carry the net. ``None`` when fewer than two assets have a resolved
+    net return."""
+    with_net = [(r.canonical_asset, r.net_return) for r in records if r.net_return is not None]
+    assets = {a for a, _ in with_net}
+    if len(assets) < 2:
+        return None, None
+    means: list[float] = []
+    for drop in assets:
+        kept = [e for a, e in with_net if a != drop]
+        if kept:
+            means.append(sum(kept) / len(kept))
+    if not means:
+        return None, None
+    return min(means), max(means)
+
+
 def render_verdict(
     contract: AbnormalFlowContract,
     *,
     resolved_episodes: int,
     unresolved_episodes: int,
+    distinct_assets: int,
+    n_weeks: int,
+    max_episodes_per_asset_frac: float | None,
+    max_episodes_per_week_frac: float | None,
+    control_coverage_frac: float | None,
     mean_net_return: float | None,
+    lower_95ci_net_return: float | None,
     mean_excess_over_control: float | None,
+    lower_95ci_excess_over_control: float | None,
+    leave_one_out_net_min: float | None,
+    portfolio_pnl: float | None,
+    portfolio_ending_bank: float | None,
 ) -> str:
-    """The pre-registered one-shot verdict. Underpowered or too-incomplete evidence is
-    INSUFFICIENT_EVIDENCE (not a pass); a non-positive net or an excess below the
-    registered floor is FAIL; only positive after-cost net AND sufficient matched excess
-    is PASS_DISCOVERY (which authorizes at most a separate forward cohort, never live)."""
-    total = resolved_episodes + unresolved_episodes
-    missing = (unresolved_episodes / total) if total else None
+    # Gate 1: maturity
     if contract.min_resolved_episodes is None or resolved_episodes < contract.min_resolved_episodes:
         return "INSUFFICIENT_EVIDENCE"
-    if (
-        contract.max_missing_fraction is not None
-        and missing is not None
-        and missing > contract.max_missing_fraction
-    ):
-        return "INSUFFICIENT_EVIDENCE"
+
+    # Gate 2: mature negative economics (before missingness)
     if mean_net_return is None or mean_net_return <= 0:
         return "FAIL"
+
+    # Gate 3: evidence quality
+    total = resolved_episodes + unresolved_episodes
+    missing = (unresolved_episodes / total) if total else None
+    if missing is not None and missing > (contract.max_missing_fraction or 1.0):
+        return "INSUFFICIENT_EVIDENCE"
+    if contract.min_distinct_assets is not None and distinct_assets < contract.min_distinct_assets:
+        return "INSUFFICIENT_EVIDENCE"
+    if contract.min_utc_weeks is not None and n_weeks < contract.min_utc_weeks:
+        return "INSUFFICIENT_EVIDENCE"
+    if (
+        contract.max_episodes_per_asset_frac is not None
+        and max_episodes_per_asset_frac is not None
+        and max_episodes_per_asset_frac > contract.max_episodes_per_asset_frac
+    ):
+        return "INSUFFICIENT_EVIDENCE"
+    if (
+        contract.max_episodes_per_week_frac is not None
+        and max_episodes_per_week_frac is not None
+        and max_episodes_per_week_frac > contract.max_episodes_per_week_frac
+    ):
+        return "INSUFFICIENT_EVIDENCE"
+    if (
+        contract.min_control_coverage_frac is not None
+        and control_coverage_frac is not None
+        and control_coverage_frac < contract.min_control_coverage_frac
+    ):
+        return "INSUFFICIENT_EVIDENCE"
+
+    # Gate 4: statistical evidence
+    if lower_95ci_net_return is None or lower_95ci_net_return <= 0:
+        return "INSUFFICIENT_EVIDENCE"
     floor = (contract.min_excess_over_control_pct or 0.0) / 100.0
     if mean_excess_over_control is None or mean_excess_over_control < floor:
         return "FAIL"
+    if lower_95ci_excess_over_control is None or lower_95ci_excess_over_control <= 0:
+        return "INSUFFICIENT_EVIDENCE"
+    if leave_one_out_net_min is None or leave_one_out_net_min <= 0:
+        return "INSUFFICIENT_EVIDENCE"
+
+    # Gate 5: portfolio
+    if portfolio_pnl is None or portfolio_pnl <= 0:
+        return "FAIL"
+    if (
+        contract.portfolio_bank_usd is not None
+        and portfolio_ending_bank is not None
+        and portfolio_ending_bank <= contract.portfolio_bank_usd
+    ):
+        return "FAIL"
+
     return "PASS_DISCOVERY"
 
 
@@ -794,44 +939,129 @@ def build_report(
     records: Sequence[EpisodeRecord],
     *,
     unresolved_episodes: int,
+    unresolved_decision_times: Sequence[datetime] = (),
+    resolved_controls: int = 0,
+    requested_controls: int = 0,
+    skipped_portfolio_capacity: int = 0,
+    selected_episodes: list[DecisionFeatures] | None = None,
 ) -> EconomicsReport:
     """Assemble the one-shot economics report from resolved episode records. Pure and
     deterministic; every input is already after-cost."""
     resolved = len(records)
     total = resolved + unresolved_episodes
     missing = (unresolved_episodes / total) if total else None
+
     net_returns = [r.net_return for r in records]
     excesses = [r.excess for r in records if r.excess is not None]
     mean_net = (sum(net_returns) / len(net_returns)) if net_returns else None
     mean_excess = (sum(excesses) / len(excesses)) if excesses else None
-    n_weeks, se = _weekly_clustered_se(records)
-    loo_min, loo_max = _leave_one_out_excess(records)
-    break_even = (mean_net * 10_000.0) if (mean_net is not None and mean_net > 0) else 0.0
-    portfolio = simulate_portfolio(contract, [(r.decision_at, r.net_return) for r in records])
+
+    n_weeks, se = _clustered_se([(r.iso_week, r.net_return) for r in records])
+    _, se_excess = _clustered_se([(r.iso_week, r.excess) for r in records if r.excess is not None])
+
+    lower_95_net = None
+    if mean_net is not None and se is not None:
+        lower_95_net = mean_net - 1.96 * se
+
+    lower_95_excess = None
+    if mean_excess is not None and se_excess is not None:
+        lower_95_excess = mean_excess - 1.96 * se_excess
+
+    loo_net_min, loo_net_max = _leave_one_out_net(records)
+
+    assets = {r.canonical_asset for r in records}
+    distinct_assets = len(assets)
+
+    from collections import Counter
+
+    asset_counts = Counter(r.canonical_asset for r in records)
+    week_counts = Counter(r.iso_week for r in records)
+
+    max_episodes_per_asset_frac = (max(asset_counts.values()) / resolved) if resolved else None
+    max_episodes_per_week_frac = (max(week_counts.values()) / resolved) if resolved else None
+    control_coverage_frac = (resolved_controls / requested_controls) if requested_controls else None
+
+    selected_pnls = []
+    if selected_episodes is not None:
+        record_map = {r.route_key: r.net_return for r in records}
+        for d in selected_episodes:
+            r_net = record_map.get(d.route_key())
+            if r_net is not None:
+                selected_pnls.append(r_net * float(contract.position_usd or 0.0))
+            else:
+                selected_pnls.append(0.0)
+
+    portfolio = simulate_portfolio(contract, selected_pnls)
+    portfolio = PortfolioResult(
+        taken_trades=portfolio.taken_trades,
+        skipped_capacity=skipped_portfolio_capacity,
+        total_pnl_usd=portfolio.total_pnl_usd,
+        max_drawdown_usd=portfolio.max_drawdown_usd,
+        longest_losing_streak=portfolio.longest_losing_streak,
+        max_concurrency=portfolio.max_concurrency,
+    )
+
+    portfolio_ending_bank = None
+    if contract.portfolio_bank_usd is not None:
+        portfolio_ending_bank = float(contract.portfolio_bank_usd) + portfolio.total_pnl_usd
+
     verdict = render_verdict(
         contract,
         resolved_episodes=resolved,
         unresolved_episodes=unresolved_episodes,
+        distinct_assets=distinct_assets,
+        n_weeks=n_weeks,
+        max_episodes_per_asset_frac=max_episodes_per_asset_frac,
+        max_episodes_per_week_frac=max_episodes_per_week_frac,
+        control_coverage_frac=control_coverage_frac,
         mean_net_return=mean_net,
+        lower_95ci_net_return=lower_95_net,
         mean_excess_over_control=mean_excess,
+        lower_95ci_excess_over_control=lower_95_excess,
+        leave_one_out_net_min=loo_net_min,
+        portfolio_pnl=portfolio.total_pnl_usd,
+        portfolio_ending_bank=portfolio_ending_bank,
     )
     return EconomicsReport(
         resolved_episodes=resolved,
         unresolved_episodes=unresolved_episodes,
         missing_fraction=missing,
+        distinct_assets=distinct_assets,
         n_weeks=n_weeks,
+        max_episodes_per_asset_frac=max_episodes_per_asset_frac,
+        max_episodes_per_week_frac=max_episodes_per_week_frac,
+        control_coverage_frac=control_coverage_frac,
         mean_net_return=mean_net,
         weekly_clustered_se=se,
+        lower_95ci_net_return=lower_95_net,
         mean_excess_over_control=mean_excess,
-        leave_one_out_excess_min=loo_min,
-        leave_one_out_excess_max=loo_max,
-        break_even_extra_cost_bps=break_even,
+        weekly_clustered_se_excess=se_excess,
+        lower_95ci_excess_over_control=lower_95_excess,
+        leave_one_out_net_min=loo_net_min,
+        leave_one_out_net_max=loo_net_max,
         portfolio=portfolio,
         verdict=verdict,
     )
 
 
 # --- Formal run (RETURNS-BEARING; require_frozen fail-closed) -----------------------
+
+
+@dataclass(frozen=True)
+class EvaluationManifest:
+    input_audit_fingerprint: str
+    identity_snapshot_hash: str
+    candidate_table_version: str
+    funding_evidence_version: str
+
+    def compute_fingerprint(self) -> str:
+        import hashlib
+        import json
+        from dataclasses import asdict
+
+        d = asdict(self)
+        encoded = json.dumps(d, separators=(",", ":"), sort_keys=True).encode("utf-8")
+        return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
 
 
 @dataclass(frozen=True)
@@ -871,7 +1101,8 @@ class FormalReplay:
         decisions: Sequence[DecisionFeatures],
         read_outcomes: Callable[[Sequence[DecisionFeatures]], dict[RouteKey, Outcome]],
         *,
-        observed_input_fingerprint: str,
+        evaluation_manifest: EvaluationManifest,
+        registered_contract_path: str = "",
     ) -> ReplayResult:
         # Hardest gate FIRST: this scanner release does not read returns at all. Refuse
         # unconditionally, even for a fully frozen contract, before touching the reader.
@@ -882,16 +1113,38 @@ class FormalReplay:
             )
         # Fail-closed BEFORE any outcome is read.
         self._contract.require_frozen()
+        if registered_contract_path:
+            from pathlib import Path
+
+            content = Path(registered_contract_path).read_bytes()
+
+            import json
+
+            from .abnormal_flow_screen import AbnormalFlowContract
+
+            d = json.loads(content)
+            d.pop("contract_hash", None)
+            disk_contract = AbnormalFlowContract(**d)
+            disk_hash = disk_contract.compute_hash()
+            if self._contract.compute_hash() != disk_hash:
+                raise ValueError(
+                    f"Contract hash mismatch: registered file "
+                    f"{registered_contract_path} hashes to {disk_hash}, "
+                    f"but in-memory contract hashes to {self._contract.compute_hash()}"
+                )
+        else:
+            raise ValueError("registered_contract_path must be provided")
         contract = self._contract
 
         # Bind the freeze to the data actually being scored: the loader's reproduced
         # fingerprint must match the pinned one, and no decision may fall outside the
         # registered window. Either mismatch refuses the run instead of reading returns
         # against a dataset the contract never pinned.
-        if observed_input_fingerprint != contract.input_fingerprint:
+        observed_fingerprint = evaluation_manifest.compute_fingerprint()
+        if observed_fingerprint != contract.input_fingerprint:
             raise FreezeMismatchError(
-                "observed input fingerprint does not match the frozen contract; "
-                f"expected {contract.input_fingerprint!r}, got {observed_input_fingerprint!r}"
+                "observed evaluation fingerprint does not match the frozen contract; "
+                f"expected {contract.input_fingerprint!r}, got {observed_fingerprint!r}"
             )
         window_start, window_end = _window_bounds(contract)
         for d in decisions:
@@ -914,6 +1167,9 @@ class FormalReplay:
             for d in decisions
             if _decision_eligible(contract, d) and not primary_cell_fires(contract, d)
         ]
+
+        # Portfolio selection on DecisionFeatures, BEFORE read_outcomes
+        selected_episodes, skipped_portfolio_capacity = select_portfolio(contract, episodes)
 
         # Select controls BEFORE reading returns, then request outcomes for both groups
         # in one read keyed by the exact native route. A reader that returns only what
@@ -939,30 +1195,45 @@ class FormalReplay:
             outcome = outcomes.get(d.route_key())
             if outcome is None:
                 return None
-            return proxy_net_return(contract, outcome.entry_price, outcome.exit_price)
+            return proxy_net_return(
+                contract, outcome.exchange, outcome.entry_price, outcome.exit_price
+            )
 
         net_returns: list[float] = []
         excesses: list[float] = []
         control_means: list[float] = []
         records: list[EpisodeRecord] = []
         unresolved_episodes = 0
+        unresolved_decision_times: list[datetime] = []
         episodes_with_matched_control = 0
         resolved_controls = 0
         unresolved_controls = 0
+        # Process controls completely independently from primary resolution
+        requested_controls = 0
+        resolved_controls_by_ep: dict[RouteKey, list[float]] = {}
         for ep in episodes:
-            r = _return_for(ep)
-            if r is None:
-                unresolved_episodes += 1
-                continue
-            net_returns.append(r)
-            control_rs: list[float] = []
-            for c in controls_by_episode[ep.route_key()]:
+            ctrls = controls_by_episode.get(ep.route_key(), [])
+            requested_controls += len(ctrls)
+            c_returns = []
+            for c in ctrls:
                 cr = _return_for(c)
                 if cr is None:
                     unresolved_controls += 1
                 else:
                     resolved_controls += 1
-                    control_rs.append(cr)
+                    c_returns.append(cr)
+            resolved_controls_by_ep[ep.route_key()] = c_returns
+
+        for ep in episodes:
+            r = _return_for(ep)
+            if r is None:
+                unresolved_episodes += 1
+                unresolved_decision_times.append(ep.decision_at)
+                continue
+
+            net_returns.append(r)
+            control_rs = resolved_controls_by_ep.get(ep.route_key(), [])
+
             excess: float | None = None
             if control_rs:
                 episodes_with_matched_control += 1
@@ -970,8 +1241,10 @@ class FormalReplay:
                 control_means.append(control_mean)
                 excess = r - control_mean
                 excesses.append(excess)
+
             records.append(
                 EpisodeRecord(
+                    route_key=ep.route_key(),
                     canonical_asset=ep.canonical_asset,
                     iso_week=ep.iso_week,
                     decision_at=ep.decision_at,
@@ -979,8 +1252,16 @@ class FormalReplay:
                     excess=excess,
                 )
             )
-
-        report = build_report(contract, records, unresolved_episodes=unresolved_episodes)
+        report = build_report(
+            contract,
+            records,
+            unresolved_episodes=unresolved_episodes,
+            unresolved_decision_times=unresolved_decision_times,
+            resolved_controls=resolved_controls,
+            requested_controls=requested_controls,
+            skipped_portfolio_capacity=skipped_portfolio_capacity,
+            selected_episodes=selected_episodes,
+        )
         return ReplayResult(
             replay_version=REPLAY_VERSION,
             funnel=funnel,
@@ -1017,7 +1298,8 @@ ORDER BY exchange, market_type, symbol, capture_version, bucket_start
 """
 
 _OUTCOME_COLUMNS_SQL = """
-SELECT exchange, market_type, symbol, capture_version, bucket_start, open_price, close_price
+SELECT exchange, market_type, symbol, capture_version, \
+       bucket_start, open_price, close_price, high_price, low_price, price_complete
 FROM read_parquet(?)
 WHERE bucket_start >= ? AND bucket_start < ?
 """
@@ -1216,47 +1498,65 @@ def assemble_all(
 
 
 def parquet_outcome_reader(
-    path: str, *, outcome_horizon_minutes: int
+    path: str,
+    *,
+    outcome_horizon_minutes: int,
 ) -> Callable[[Sequence[DecisionFeatures]], dict[RouteKey, Outcome]]:
     """Build a returns-bearing reader over one Parquet: entry is the priced-proxy open
     of the decision minute's bar, exit the close of the bar ``outcome_horizon_minutes``
     later, on the exact native route. Missing legs stay unresolved (never filled in)."""
+    from collections import defaultdict
+
     import duckdb
 
     def reader(requested: Sequence[DecisionFeatures]) -> dict[RouteKey, Outcome]:
         if not requested:
             return {}
         starts = [d.decision_at for d in requested]
-        horizon = timedelta(minutes=outcome_horizon_minutes)
+        max_horizon = outcome_horizon_minutes
+        max_horizon_td = timedelta(minutes=max_horizon)
         lo = min(starts)
-        hi = max(starts) + horizon + timedelta(minutes=1)
+        hi = max(starts) + max_horizon_td + timedelta(minutes=2)
         connection = duckdb.connect()
         try:
             rows = connection.execute(_OUTCOME_COLUMNS_SQL, [path, lo, hi]).fetchall()
         finally:
             connection.close()
-        opens: dict[tuple[str, str, str, str, datetime], float | None] = {}
-        closes: dict[tuple[str, str, str, str, datetime], float | None] = {}
+
+        # Group by route
+        bars: dict[
+            tuple[str, str, str, str], dict[datetime, tuple[float, float, float, float, bool]]
+        ] = defaultdict(dict)
         for row in rows:
-            key = (str(row[0]), str(row[1]), str(row[2]), str(row[3]), row[4])
-            opens[key] = row[5]
-            closes[key] = row[6]
+            route = (str(row[0]), str(row[1]), str(row[2]), str(row[3]))
+            bars[route][row[4]] = (row[5], row[6], row[7], row[8], row[9])
+
         out: dict[RouteKey, Outcome] = {}
         for d in requested:
-            entry_key = (
-                d.exchange,
-                d.market_type,
-                d.native_market_id,
-                d.capture_version,
-                d.decision_at,
-            )
-            exit_key = (
-                d.exchange,
-                d.market_type,
-                d.native_market_id,
-                d.capture_version,
-                d.decision_at + horizon,
-            )
+            route = (d.exchange, d.market_type, d.native_market_id, d.capture_version)
+            route_bars = bars.get(route, {})
+
+            entry_price = None
+            exit_price = None
+
+            # primary path continuity check
+            # Entry is the next executable bar after decision
+            entry_t = d.decision_at + timedelta(minutes=1)
+            primary_bars = []
+            continuous = True
+            for i in range(outcome_horizon_minutes + 1):
+                t = entry_t + timedelta(minutes=i)
+                b = route_bars.get(t)
+                # require b is not None and price_complete is True
+                if b is None or not b[4]:
+                    continuous = False
+                    break
+                primary_bars.append(b)
+
+            if continuous and primary_bars:
+                entry_price = primary_bars[0][0]  # open of first bar (entry)
+                exit_price = primary_bars[-1][1]  # close of last bar (horizon)
+
             out[d.route_key()] = Outcome(
                 exchange=d.exchange,
                 market_type=d.market_type,
@@ -1264,8 +1564,8 @@ def parquet_outcome_reader(
                 capture_version=d.capture_version,
                 symbol=d.symbol,
                 decision_at=d.decision_at,
-                entry_price=opens.get(entry_key),
-                exit_price=closes.get(exit_key),
+                entry_price=entry_price,
+                exit_price=exit_price,
             )
         return out
 

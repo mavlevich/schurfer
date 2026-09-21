@@ -83,10 +83,16 @@ def _frozen_contract(**overrides: object) -> AbnormalFlowContract:
         controls_per_episode=5,
         portfolio_bank_usd=300.0,
         portfolio_max_slots=3,
-        entry_cost_bps=5.0,
-        slippage_bps=10.0,
-        fee_bps=5.0,
-        funding_model="conservative_8h_v1",
+        taker_fee_bps=10.0,
+        entry_slippage_bps=15.0,
+        exit_slippage_bps=15.0,
+        funding_bps_720m_binance=6.0,
+        funding_bps_720m_bybit=6.0,
+        min_distinct_assets=30,
+        min_utc_weeks=4,
+        max_episodes_per_asset_frac=0.35,
+        max_episodes_per_week_frac=0.45,
+        min_control_coverage_frac=0.80,
         min_resolved_episodes=100,
         max_missing_fraction=0.2,
         min_excess_over_control_pct=0.0,
@@ -98,8 +104,8 @@ def _frozen_contract(**overrides: object) -> AbnormalFlowContract:
     return AbnormalFlowContract(**base)  # type: ignore[arg-type]
 
 
-def test_default_contract_is_not_frozen_and_a_formal_run_fails_closed() -> None:
-    c = AbnormalFlowContract()
+def test_unfilled_contract_is_not_frozen_and_a_formal_run_fails_closed() -> None:
+    c = AbnormalFlowContract(min_oi_growth_pct=None, calibration_rule=None, matching_rule=None)
     assert not c.is_frozen()
     with pytest.raises(NotFrozenError) as exc:
         c.require_frozen()
@@ -110,7 +116,7 @@ def test_default_contract_is_not_frozen_and_a_formal_run_fails_closed() -> None:
 
 
 def test_partially_frozen_contract_still_fails_closed() -> None:
-    c = AbnormalFlowContract(min_oi_growth_pct=5.0)  # one set, the rest unset
+    c = AbnormalFlowContract(min_buy_pressure_ratio=None)  # one unset
     assert not c.is_frozen()
     with pytest.raises(NotFrozenError):
         c.require_frozen()
@@ -162,7 +168,6 @@ def test_rule_fields_must_be_registered_executable_rules_not_free_text() -> None
         "entry_reference",
         "exit_reference",
         "matching_rule",
-        "funding_model",
     ):
         bad = _frozen_contract(**{field: "sounds_official_v9"})
         assert not bad.is_frozen()
@@ -214,3 +219,31 @@ def test_participation_window_must_be_a_short_pre_decision_period() -> None:
         whole_hour.problems()
     )
     assert _frozen_contract(entry_execution_window_minutes=5).is_frozen()
+
+
+def test_frozen_artifact_loads_and_hashes_correctly() -> None:
+    import hashlib
+    import json
+    from pathlib import Path
+
+    from schurfer_analytics.abnormal_flow_screen import AbnormalFlowContract
+
+    path = (
+        Path(__file__).resolve().parent.parent.parent.parent
+        / "docs/research/evidence/abnormal-flow-v1/formal/contract.json"
+    )
+    content = path.read_bytes()
+    file_sha = hashlib.sha256(content).hexdigest()
+
+    # Must be valid json
+    d = json.loads(content)
+
+    # Check that it loads
+    contract = AbnormalFlowContract.from_json(content.decode("utf-8"))
+
+    # Check internal hash matches what's registered
+    assert contract.compute_hash() == d["contract_hash"]
+
+    # File SHA must match what's reported (for safety, though it will change if formatted)
+    assert file_sha == "28469aafdd66b2d8870983db221eb1abb5043fd0a3597383207f070858e3748d"
+    contract.require_frozen()
