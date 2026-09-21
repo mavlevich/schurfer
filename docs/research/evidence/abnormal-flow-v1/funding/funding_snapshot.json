@@ -1,0 +1,55 @@
+{
+  "conservative_rule": "P95 of max(funding_rate,0) per venue (long); P99 sensitivity",
+  "content_hash": "sha256:e6656030b03658a324f963a482e97715c6b09c95f7da6382b9a60b5e8197d641",
+  "coverage": {
+    "binance": {
+      "covered_instruments": 525,
+      "no_settlement_instruments": [],
+      "requested_instruments": 525,
+      "unresolved_symbols": 0
+    },
+    "bybit": {
+      "covered_instruments": 508,
+      "no_settlement_instruments": ["B3USDT", "ONGUSDT", "SKRUSDT"],
+      "requested_instruments": 517,
+      "unresolved_symbols": 6
+    }
+  },
+  "funding_snapshot_version": "abnormal_flow_funding_snapshot_v1",
+  "percentiles": {
+    "binance": {
+      "instruments": 525,
+      "max_rate_0_percentiles": {
+        "p50": 5e-5,
+        "p90": 0.0001,
+        "p95": 0.00022679999999999998,
+        "p99": 0.0005364120000000013
+      },
+      "settlements": 39886
+    },
+    "bybit": {
+      "instruments": 508,
+      "max_rate_0_percentiles": {
+        "p50": 5e-5,
+        "p90": 0.0001,
+        "p95": 0.0002054894999999996,
+        "p99": 0.0006547207999999967
+      },
+      "settlements": 35924
+    }
+  },
+  "source": {
+    "ccxt_version": "4.5.77",
+    "exchange_api_versions": {
+      "binance": "None",
+      "bybit": "v5"
+    },
+    "method": "ccxt.fetchFundingRateHistory",
+    "universe_source": "/private/tmp/claude-501/-Users-mavlevich-Desktop-Projects-schurfer/fe8306c1-3a80-4b69-b6da-b68d0fd33fb6/scratchpad/fullrun/calib_universe.json"
+  },
+  "total_settlements": 75810,
+  "window": {
+    "end": "2026-08-30T00:00:00+00:00",
+    "start": "2026-08-16T00:00:00+00:00"
+  }
+}
