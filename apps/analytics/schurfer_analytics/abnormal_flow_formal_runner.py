@@ -38,12 +38,12 @@ class RealGitState(GitStateProvider):
     def get_revision(self) -> str:
         import subprocess
 
-        return subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()  # noqa: S603, S607
+        return subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()  # noqa
 
     def is_dirty(self) -> bool:
         import subprocess
 
-        return bool(subprocess.check_output(["git", "status", "--porcelain"], text=True).strip())  # noqa: S603, S607
+        return bool(subprocess.check_output(["git", "status", "--porcelain"], text=True).strip())  # noqa
 
 
 def merge_funnels(a: Funnel, b: Funnel) -> Funnel:
