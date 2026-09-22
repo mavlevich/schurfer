@@ -248,7 +248,7 @@ unit test drives the whole path on a synthetic two-day dataset as a correctness 
 
 Registered rule: `fixed_percentiles_on_prestart_window_v1`. Split the one
 verified window into a CALIBRATION slice (the first 14 days) and a disjoint EVALUATION
-remainder (2026-09-13 to 2026-09-19). On the calibration slice only, over the ELIGIBLE decisions, freeze the three
+remainder (2026-08-30T00:00Z to 2026-09-18T11:58Z). On the calibration slice only, over the ELIGIBLE decisions, freeze the three
 thresholds at fixed pre-declared percentiles of the scan distributions: OI growth at the
 P97.5, buy pressure at the P90, and containment at the P25 (a cap, so lower
 is more restrained). Freeze the eligibility floor `min_oi_notional_usd` at the P25

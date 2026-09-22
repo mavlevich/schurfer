@@ -65,7 +65,8 @@ def _dummy_manifest(fp: str = _FINGERPRINT) -> EvaluationManifest:
         input_audit_fingerprint=fp,
         identity_snapshot_hash="h",
         candidate_table_version="v",
-        funding_evidence_version="v",
+        funding_snapshot_hash="s",
+        funding_settlements_hash="s",
     )
 
 
@@ -560,7 +561,7 @@ def test_simulate_portfolio_respects_slots_and_measures_drawdown() -> None:
         )
 
     # Winners test
-    pnls_winners = [0.10 * 300, 0.20 * 300]
+    pnls_winners = [0.10, 0.20]
     winners, _ = simulate_portfolio(c, [(df(i), p) for i, p in enumerate(pnls_winners)])
     winners.skipped_capacity = 1
     winners.max_concurrency = 1
@@ -570,7 +571,7 @@ def test_simulate_portfolio_respects_slots_and_measures_drawdown() -> None:
     assert winners.total_pnl_usd == pytest.approx(300 * 0.10 + 300 * 0.20)
 
     # Losers test
-    pnls_losers = [-0.10 * 300, -0.05 * 300]
+    pnls_losers = [-0.10, -0.05]
     losers, _ = simulate_portfolio(c, [(df(i), p) for i, p in enumerate(pnls_losers)])
     assert losers.longest_losing_streak == 2
     assert losers.max_drawdown_usd == pytest.approx(300 * 0.10 + 300 * 0.05)
@@ -1023,3 +1024,113 @@ def test_parquet_outcome_reader_exact_path(tmp_path: Any) -> None:
     outcomes = reader([d])
     assert len(outcomes) == 1
     assert outcomes[d.route_key()].exit_price is not None
+
+
+def test_control_coverage_denominator_and_insufficient_evidence() -> None:
+    # 2 episodes, 5 controls per episode requested. 10 controls needed.
+    # Suppose we only found 7.
+    # coverage = 7 / 10 = 0.7
+    # If contract needs 0.8 -> INSUFFICIENT_EVIDENCE
+    contract = AbnormalFlowContract(
+        window_start_utc="2026-08-30T00:00:00+00:00",
+        window_end_utc="2026-09-18T11:58:00+00:00",
+        direction="long",
+        lookback_minutes=60,
+        outcome_horizon_minutes=720,
+        entry_execution_window_minutes=5,
+        cooldown_minutes=720,
+        controls_per_episode=5,
+        portfolio_bank_usd=1000.0,
+        portfolio_max_slots=2,
+        position_usd=100.0,
+        inference_rule="student_t_df_weeks_minus_one_v1",
+        min_resolved_episodes=2,
+        min_utc_weeks=1,
+        min_control_coverage_frac=0.8,
+    )
+
+    t1 = datetime(2026, 9, 10, 10, 0, tzinfo=UTC)
+    t2 = datetime(2026, 9, 12, 10, 0, tzinfo=UTC)
+    d1 = _decision(symbol="A", canonical_asset="A", decision_at=t1)
+    d2 = _decision(symbol="B", canonical_asset="B", decision_at=t2)
+
+    records = [
+        EpisodeRecord(
+            route_key=d1.route_key(),
+            canonical_asset="A",
+            iso_week="2026-W37",
+            decision_at=t1,
+            net_return=0.05,
+            excess=0.01,
+        ),
+        EpisodeRecord(
+            route_key=d2.route_key(),
+            canonical_asset="B",
+            iso_week="2026-W37",
+            decision_at=t2,
+            net_return=0.05,
+            excess=0.01,
+        ),
+    ]
+
+    report = afr.build_report(
+        contract,
+        records,
+        unresolved_episodes=0,
+        resolved_controls=7,
+        requested_controls=10,  # 2 episodes * 5 controls = 10
+        skipped_portfolio_capacity=0,
+        selected_episodes=[d1, d2],
+    )
+    assert report.control_coverage_frac == 0.7
+    assert report.verdict == "INSUFFICIENT_EVIDENCE"
+
+
+def test_portfolio_capacity_defaults_sizing_and_skips() -> None:
+    contract = AbnormalFlowContract(
+        window_start_utc="2026-08-30T00:00:00+00:00",
+        window_end_utc="2026-09-18T11:58:00+00:00",
+        direction="long",
+        lookback_minutes=60,
+        outcome_horizon_minutes=720,
+        entry_execution_window_minutes=5,
+        cooldown_minutes=720,
+        controls_per_episode=5,
+        portfolio_bank_usd=300.0,
+        portfolio_max_slots=2,
+        position_usd=300.0,
+    )
+
+    t1 = datetime(2026, 9, 10, 10, 0, tzinfo=UTC)
+    t2 = datetime(2026, 9, 12, 10, 0, tzinfo=UTC)  # Beyond 720m from t1, so slots available
+    d1 = _decision(symbol="A", canonical_asset="A", decision_at=t1)
+    d2 = _decision(symbol="B", canonical_asset="B", decision_at=t2)
+
+    # 1st trade: bank=300, pos=300 -> actual_pos=300, pnl=-0.1 -> bank=270
+    # 2nd trade: bank=270, pos=300 -> actual_pos=270, pnl=0.1 -> bank=297
+    # 3rd trade: bank=297, pos=300 -> actual_pos=297, pnl=0.0 -> bank=297
+    # Wait, if pnl was large negative, maybe we skip. Let's do large negative.
+    # 1st: bank=300, pnl=-0.5 -> bank=150
+    # 2nd: bank=150, pos=150, pnl=+1.0 -> bank=300
+
+    selected_pnls = [
+        (d1, -0.5),  # -150
+        (d2, 1.0),  # +150
+    ]
+
+    res, unresolved = afr.simulate_portfolio(contract, selected_pnls)
+    assert not unresolved
+    assert res.taken_trades == 2
+    assert res.skipped_capacity == 0
+    # Total PnL = -150 + 150 = 0
+    assert res.total_pnl_usd == 0.0
+
+    # Let's test a capacity skip (bank drops to 0)
+    selected_pnls2 = [
+        (d1, -1.0),  # bank=0
+        (d2, 0.5),  # skipped
+    ]
+    res2, _ = afr.simulate_portfolio(contract, selected_pnls2)
+    assert res2.taken_trades == 1
+    assert res2.skipped_capacity == 1
+    assert res2.total_pnl_usd == -300.0

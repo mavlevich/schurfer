@@ -794,7 +794,8 @@ def simulate_portfolio(
             skipped += 1
             continue
 
-        if current_capital < position:
+        actual_position = min(position, current_capital)
+        if actual_position <= 0:
             skipped += 1
             continue
 
@@ -805,8 +806,10 @@ def simulate_portfolio(
         if pnl is None:
             unresolved_in_portfolio = True
         else:
-            cum_pnl += pnl
-            current_capital += pnl
+            # pnl is the net_return (percentage/fraction), we need actual USD
+            actual_pnl_usd = actual_position * pnl
+            cum_pnl += actual_pnl_usd
+            current_capital += actual_pnl_usd
 
             peak = max(peak, current_capital)
             max_dd = max(max_dd, peak - current_capital)
@@ -1000,15 +1003,19 @@ def build_report(
     mean_excess = (sum(excesses) / len(excesses)) if excesses else None
 
     n_weeks, se = _clustered_se([(r.iso_week, r.net_return) for r in records])
-    _, se_excess = _clustered_se([(r.iso_week, r.excess) for r in records if r.excess is not None])
+    n_excess_weeks, se_excess = _clustered_se(
+        [(r.iso_week, r.excess) for r in records if r.excess is not None]
+    )
 
     def _critical_value(rule: str | None, clusters: int) -> float:
         if not rule or rule == "normal_1_96_v1":
             return 1.96
         if rule == "student_t_df_weeks_minus_one_v1":
+            if clusters < 2:
+                # If we have less than 2 clusters, t is not well-defined, fall back very wide
+                return 12.706
             df = clusters - 1
-            if df < 1:
-                return float("inf")
+            # Standard t-distribution critical values for 95% two-sided (or 97.5% one-sided)
             t_table = {
                 1: 12.706,
                 2: 4.303,
@@ -1051,7 +1058,7 @@ def build_report(
     if mean_net is not None and se is not None:
         lower_95_net = mean_net - cv_net * se
 
-    cv_excess = _critical_value(contract.inference_rule, n_weeks)
+    cv_excess = _critical_value(contract.inference_rule, n_excess_weeks)
     lower_95_excess = None
     if mean_excess is not None and se_excess is not None:
         lower_95_excess = mean_excess - cv_excess * se_excess
@@ -1077,14 +1084,14 @@ def build_report(
         for d in selected_episodes:
             r_net = record_map.get(d.route_key())
             if r_net is not None:
-                selected_pnls.append((d, r_net * float(contract.position_usd or 0.0)))
+                selected_pnls.append((d, r_net))
             else:
                 selected_pnls.append((d, None))
 
     portfolio, unresolved_in_portfolio = simulate_portfolio(contract, selected_pnls)
     portfolio = PortfolioResult(
         taken_trades=portfolio.taken_trades,
-        skipped_capacity=portfolio.skipped_capacity,
+        skipped_capacity=skipped_portfolio_capacity,
         total_pnl_usd=portfolio.total_pnl_usd,
         max_drawdown_usd=portfolio.max_drawdown_usd,
         longest_losing_streak=portfolio.longest_losing_streak,
@@ -1143,7 +1150,8 @@ class EvaluationManifest:
     input_audit_fingerprint: str
     identity_snapshot_hash: str
     candidate_table_version: str
-    funding_evidence_version: str
+    funding_snapshot_hash: str
+    funding_settlements_hash: str
 
     def compute_fingerprint(self) -> str:
         import hashlib
@@ -1300,11 +1308,10 @@ class FormalReplay:
         resolved_controls = 0
         unresolved_controls = 0
         # Process controls completely independently from primary resolution
-        requested_controls = 0
+        requested_controls = len(episodes) * contract.controls_per_episode
         resolved_controls_by_ep: dict[RouteKey, list[float]] = {}
         for ep in episodes:
             ctrls = controls_by_episode.get(ep.route_key(), [])
-            requested_controls += len(ctrls)
             c_returns = []
             for c in ctrls:
                 cr = _return_for(c)

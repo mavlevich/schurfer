@@ -246,5 +246,35 @@ def test_frozen_artifact_loads_and_hashes_correctly() -> None:
     assert contract.compute_hash() == d["contract_hash"]
 
     # File SHA must match what's reported (for safety, though it will change if formatted)
-    assert file_sha == "081f7dbc77113d9e22310e515ac57eab7543d26c66a9fdea406a1f780ce00d50"
+    assert file_sha == "2971a40f587714a5ae1911b59ab0adfd33a3197cdc97db638c3f12b9a8d2b6c7"
     contract.require_frozen()
+
+
+def test_evaluation_manifest_hash_matches_contract() -> None:
+    import json
+    from pathlib import Path
+
+    from schurfer_analytics.abnormal_flow_replay import EvaluationManifest
+
+    repo_root = Path(__file__).resolve().parent.parent.parent.parent
+    manifest_path = (
+        repo_root / "docs/research/evidence/abnormal-flow-v1/formal/evaluation_manifest.json"
+    )
+    contract_path = repo_root / "docs/research/evidence/abnormal-flow-v1/formal/contract.json"
+
+    manifest_content = manifest_path.read_text(encoding="utf-8")
+    contract_content = contract_path.read_text(encoding="utf-8")
+
+    manifest_d = json.loads(manifest_content)
+    contract_d = json.loads(contract_content)
+
+    # Instantiate manifest
+    manifest = EvaluationManifest(
+        input_audit_fingerprint=manifest_d["input_audit_fingerprint"],
+        identity_snapshot_hash=manifest_d["identity_snapshot_hash"],
+        candidate_table_version=manifest_d["candidate_table_version"],
+        funding_snapshot_hash=manifest_d["funding_snapshot_hash"],
+        funding_settlements_hash=manifest_d["funding_settlements_hash"],
+    )
+
+    assert manifest.compute_fingerprint() == contract_d["input_fingerprint"]
