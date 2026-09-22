@@ -57,6 +57,16 @@ class InputAudit:
     days: tuple[DayInput, ...]
     coverage: tuple[VenueDayCoverage, ...]
 
+    def compute_fingerprint(self) -> str:
+        """Canonical SHA-256 fingerprint of the audit."""
+        import hashlib
+        import json
+        from dataclasses import asdict
+
+        d = asdict(self)
+        encoded = json.dumps(d, separators=(",", ":"), sort_keys=True).encode("utf-8")
+        return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
+
     def to_json(self) -> str:
         return json.dumps(asdict(self), indent=2, sort_keys=True) + "\n"
 

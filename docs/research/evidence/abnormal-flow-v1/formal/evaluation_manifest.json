@@ -1,0 +1,7 @@
+{
+  "candidate_table_version": "sha256:40fb647f8f5ce60350c6d5df7349b0f2ebc378102a4fac1451e37c82b2c4589c",
+  "funding_settlements_hash": "sha256:b4fb338622152886ae5a51a1f16af7352dd6289b31d368a938b2c9b4232926d4",
+  "funding_snapshot_hash": "sha256:871d61984ee70ae9e0f8039d69ec2d9a5c7879fd41675027bc9825df8e6c2cd6",
+  "identity_snapshot_hash": "sha256:62e2a7363acfa375fb0b3fbe2de43854f26ac54b606bafe82d37724292de064e",
+  "input_audit_fingerprint": "sha256:ce4b5b9a95d78aaa43925641b30ff2e036ca5d64d7f4a59f6fe559e5e27d7153"
+}

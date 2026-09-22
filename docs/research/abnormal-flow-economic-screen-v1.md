@@ -1,10 +1,4 @@
-# Abnormal-flow economic screen v1 -- DRAFT
-
-> **Not registered; no outcome read authorized.** This is the proposed third and
-> final near-term discovery family in the [edge decision program](../../ROADMAP.md#near-term-edge-decision-program--2026-09-15).
-> HYP-012 and HYP-015 keep their own prospective cohorts. This document does not
-> change their contracts, enable trading, or revive the closed pump-short,
-> accumulation, or monster-harvest strategies.
+# Abnormal-flow economic screen v1
 
 ## Decision this study may support
 
@@ -15,10 +9,10 @@ it can nominate at most one separately registered forward cohort, not PAPER or
 live trading. A historical failure closes only this declared bar-level
 Bybit/Binance mechanism. It says nothing about uncollected venues or L2 state.
 
-The primary candidate is _proposed_, not frozen: 60-minute feature lookback,
+The primary candidate is frozen: 60-minute feature lookback,
 long-only, 720-minute outcome horizon. The numerical OI, buy-pressure, and
-price-containment thresholds, entry cost, and portfolio policy must be
-registered before replaying returns. Do not select them from endpoint results.
+price-containment thresholds, entry cost, missingness controls, and portfolio
+policy are registered and immutable for the evaluation window.
 
 ## Population and information boundary
 
@@ -75,7 +69,7 @@ registered before replaying returns. Do not select them from endpoint results.
   and duplicate control. An unresolved identity is counted in the funnel and
   cannot be silently treated as a distinct ticker asset.
 
-## Proposed signal and control
+## Frozen signal and control
 
 The **one primary** screen requires (a) positive within-instrument OI growth
 over the prior hour (percent of native OI amount), (b) aggressive taker-buy
@@ -250,20 +244,24 @@ minutes to low tens of minutes of CPU. Do the first real run as a one-day slice 
 measure actual RAM/disk/time and the real per-venue counts before the full window. The
 unit test drives the whole path on a synthetic two-day dataset as a correctness proof.
 
-## Proposed deterministic threshold freeze (one rule, for review)
+## Frozen deterministic thresholds
 
-Proposed, not yet registered: `fixed_percentiles_on_prestart_window_v1`. Split the one
+Registered rule: `fixed_percentiles_on_prestart_window_v1`. Split the one
 verified window into a CALIBRATION slice (the first 14 days) and a disjoint EVALUATION
-remainder. On the calibration slice only, over the ELIGIBLE decisions, freeze the three
+remainder (2026-08-30T00:00Z to 2026-09-18T11:58Z). On the calibration slice only, over the ELIGIBLE decisions, freeze the three
 thresholds at fixed pre-declared percentiles of the scan distributions: OI growth at the
-80th percentile, buy pressure at the 70th, and containment at the 50th (a cap, so lower
-is more restrained). Freeze the eligibility floor `min_oi_notional_usd` at the 25th
-percentile of calibration-slice OI-notional so the signal is at least nominally
-tradeable. All percentiles come from outcome-blind distributions; none is chosen after
-seeing returns, and the evaluation window the economics later score is disjoint from the
-slice the thresholds were read on. After you review the actual scan distributions we
-pick the percentile knobs (or replace this rule) and register the window and parameters
-for the separate economic run.
+P97.5, buy pressure at the P90, and containment at the P25 (a cap, so lower
+is more restrained). Freeze the eligibility floor `min_oi_notional_usd` at the P25
+percentile of calibration-slice OI-notional.
+
+The inference rule is frozen as `student_t_df_weeks_minus_one_v1` to correct for the small number of weekly clusters.
+The portfolio simulator enforces fixed-bank rules: sequential capital updates, exit-timing capacity limits, and $300 maximum allocation per slot. If any selected signal is unresolved, the verdict fail-closes.
+
+The OI-ablation metric (same buy/price thresholds on same assets, just without the OI-growth requirement) acts as an outcome-blind funnel diagnostic. It does not gate the formal PASS/FAIL verdict, but records whether the OI filter actually isolated different flows.
+
+The frozen artifact `contract.json` embeds its own hash and references the full `evaluation_manifest.json` fingerprint covering the candidate tables, identity snapshots, and raw funding records used.
+The formal evaluation only supports
+a single registered deterministic pass with strict portfolio gates and the registered verdict.
 
 ## Point-in-time identity schema (pinned; export + scan consume it)
 
@@ -306,19 +304,3 @@ The export runs read-only ON PROD (localhost DB, not a PG tunnel) reusing the ex
 `momentum_universe_identity_repository` (`window_coverage` / `instruments_as_of`) and
 `momentum_universe_identity_classifier`; the small JSON is fetched over SSH. It is
 unit-tested locally against a fake repository before the prod run.
-
-## Open decisions before registration
-
-1. Owner approval of the one primary mechanism, 60-minute lookback, long
-   direction, and 720-minute horizon.
-2. One outcome-blind threshold-selection rule and its window; scan lag and
-   strict OI freshness by venue; historical window and source manifest.
-3. Fixed entry/exit proxy, fee/funding/slippage assumptions, the matched
-   control, episode cooldown, fixed-bank portfolio, evidence/missingness
-   floors, and the one-shot verdict.
-4. A repeatable input coverage artifact, plus tests proving the real query
-   path respects availability, native route, gaps, deduplication, and no
-   outcome read during calibration.
-
-Until these are resolved this document remains **DRAFT** and the replay must
-refuse a formal or promotion-labelled run.
