@@ -64,7 +64,7 @@ def _dummy_manifest(fp: str = _FINGERPRINT) -> EvaluationManifest:
     return EvaluationManifest(
         input_audit_fingerprint=fp,
         identity_snapshot_hash="h",
-        candidate_table_version="v",
+        candidate_table_hash="v",
         funding_snapshot_hash="s",
         funding_settlements_hash="s",
     )

@@ -26,21 +26,21 @@ class MockGitState(GitStateProvider):
         return self.dirty
 
 
-def test_import_does_not_enable_returns():
+def test_import_does_not_enable_returns() -> None:
     import schurfer_analytics.abnormal_flow_replay as replay
 
     assert not replay.FORMAL_RETURNS_RUN_ENABLED
 
 
-def test_runner_requires_capability(tmp_path: Path):
+def test_runner_requires_capability(tmp_path: Path) -> None:
     runner = FormalRunner(MockGitState(dirty=False))
     p = tmp_path / "f"
     p.touch()
     with pytest.raises(ValueError, match="FormalCapability required"):
-        runner.run(None, p, p, p, p, p, p, p, p)
+        runner.run(None, p, p, p, p, p, p, p, p)  # type: ignore
 
 
-def test_runner_dirty_tree_rejected(tmp_path: Path):
+def test_runner_dirty_tree_rejected(tmp_path: Path) -> None:
     runner = FormalRunner(MockGitState(dirty=True))
     p = tmp_path / "f"
     p.touch()
@@ -199,14 +199,14 @@ def run_env(tmp_path: Path) -> dict[str, Any]:
     return env
 
 
-def test_runner_deterministic_underpowered(run_env: dict[str, Any]):
+def test_runner_deterministic_underpowered(run_env: dict[str, Any]) -> None:
     runner = FormalRunner(MockGitState(dirty=False))
 
     class MockManifest:
         sha256 = "fake"
         source_fingerprint = "fake"
 
-    def _verified(d, day):
+    def _verified(d: Any, day: Any) -> Any:
         return d / f"bars-{day.isoformat()}.parquet", MockManifest()
 
     from schurfer_analytics.abnormal_flow_replay import DecisionFeatures
@@ -274,7 +274,7 @@ def test_runner_deterministic_underpowered(run_env: dict[str, Any]):
     assert report["economics"]["verdict"] == "INSUFFICIENT_EVIDENCE"
 
 
-def test_runner_mismatches_rejected(run_env: dict[str, Any]):
+def test_runner_mismatches_rejected(run_env: dict[str, Any]) -> None:
     runner = FormalRunner(MockGitState(dirty=False))
 
     # modify ident file to change its hash
@@ -294,7 +294,7 @@ def test_runner_mismatches_rejected(run_env: dict[str, Any]):
         )
 
 
-def test_runner_exception_leaves_terminal_failure(run_env: dict[str, Any]):
+def test_runner_exception_leaves_terminal_failure(run_env: dict[str, Any]) -> None:
     runner = FormalRunner(MockGitState(dirty=False))
 
     with (
