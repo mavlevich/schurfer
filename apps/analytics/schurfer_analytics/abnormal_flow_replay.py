@@ -1149,7 +1149,7 @@ def build_report(
 class EvaluationManifest:
     input_audit_fingerprint: str
     identity_snapshot_hash: str
-    candidate_table_version: str
+    candidate_table_hash: str
     funding_snapshot_hash: str
     funding_settlements_hash: str
 
@@ -1184,6 +1184,99 @@ def _window_bounds(contract: AbnormalFlowContract) -> tuple[datetime, datetime]:
     start = datetime.fromisoformat(contract.window_start_utc.replace("Z", "+00:00"))
     end = datetime.fromisoformat(contract.window_end_utc.replace("Z", "+00:00"))
     return start, end
+
+
+def evaluate_outcomes(
+    contract: AbnormalFlowContract,
+    episodes: Sequence[DecisionFeatures],
+    controls_by_episode: dict[RouteKey, list[DecisionFeatures]],
+    outcomes: dict[RouteKey, Outcome],
+    selected_episodes: list[DecisionFeatures],
+    skipped_portfolio_capacity: int,
+    funnel: Funnel,
+) -> tuple[ReplayResult, list[EpisodeRecord]]:
+    def _return_for(d: DecisionFeatures) -> float | None:
+        outcome = outcomes.get(d.route_key())
+        if outcome is None:
+            return None
+        return proxy_net_return(contract, outcome.exchange, outcome.entry_price, outcome.exit_price)
+
+    net_returns: list[float] = []
+    excesses: list[float] = []
+    control_means: list[float] = []
+    records: list[EpisodeRecord] = []
+    unresolved_episodes = 0
+    unresolved_decision_times: list[datetime] = []
+    episodes_with_matched_control = 0
+    resolved_controls = 0
+    unresolved_controls = 0
+    # Process controls completely independently from primary resolution
+    requested_controls = len(episodes) * (contract.controls_per_episode or 0)
+    resolved_controls_by_ep: dict[RouteKey, list[float]] = {}
+    for ep in episodes:
+        ctrls = controls_by_episode.get(ep.route_key(), [])
+        c_returns = []
+        for c in ctrls:
+            cr = _return_for(c)
+            if cr is None:
+                unresolved_controls += 1
+            else:
+                resolved_controls += 1
+                c_returns.append(cr)
+        resolved_controls_by_ep[ep.route_key()] = c_returns
+
+    for ep in episodes:
+        r = _return_for(ep)
+        if r is None:
+            unresolved_episodes += 1
+            unresolved_decision_times.append(ep.decision_at)
+            continue
+
+        net_returns.append(r)
+        control_rs = resolved_controls_by_ep.get(ep.route_key(), [])
+
+        excess: float | None = None
+        if control_rs:
+            episodes_with_matched_control += 1
+            control_mean = sum(control_rs) / len(control_rs)
+            control_means.append(control_mean)
+            excess = r - control_mean
+            excesses.append(excess)
+
+        records.append(
+            EpisodeRecord(
+                route_key=ep.route_key(),
+                canonical_asset=ep.canonical_asset,
+                iso_week=ep.iso_week,
+                decision_at=ep.decision_at,
+                net_return=r,
+                excess=excess,
+            )
+        )
+    report = build_report(
+        contract,
+        records,
+        unresolved_episodes=unresolved_episodes,
+        unresolved_decision_times=unresolved_decision_times,
+        resolved_controls=resolved_controls,
+        requested_controls=requested_controls,
+        skipped_portfolio_capacity=skipped_portfolio_capacity,
+        selected_episodes=selected_episodes,
+    )
+    return ReplayResult(
+        replay_version=REPLAY_VERSION,
+        funnel=funnel,
+        resolved_episodes=len(net_returns),
+        unresolved_episodes=unresolved_episodes,
+        episodes_with_matched_control=episodes_with_matched_control,
+        resolved_controls=resolved_controls,
+        unresolved_controls=unresolved_controls,
+        mean_net_return=(sum(net_returns) / len(net_returns)) if net_returns else None,
+        mean_control_return=((sum(control_means) / len(control_means)) if control_means else None),
+        mean_excess_over_control=(sum(excesses) / len(excesses)) if excesses else None,
+        report=report,
+        episode_records=tuple(records),
+    ), records
 
 
 class FormalReplay:
@@ -1290,92 +1383,16 @@ class FormalReplay:
         # The single returns read, only now that every freeze gate has passed.
         outcomes = read_outcomes(list(requested.values()))
 
-        def _return_for(d: DecisionFeatures) -> float | None:
-            outcome = outcomes.get(d.route_key())
-            if outcome is None:
-                return None
-            return proxy_net_return(
-                contract, outcome.exchange, outcome.entry_price, outcome.exit_price
-            )
-
-        net_returns: list[float] = []
-        excesses: list[float] = []
-        control_means: list[float] = []
-        records: list[EpisodeRecord] = []
-        unresolved_episodes = 0
-        unresolved_decision_times: list[datetime] = []
-        episodes_with_matched_control = 0
-        resolved_controls = 0
-        unresolved_controls = 0
-        # Process controls completely independently from primary resolution
-        requested_controls = len(episodes) * (contract.controls_per_episode or 0)
-        resolved_controls_by_ep: dict[RouteKey, list[float]] = {}
-        for ep in episodes:
-            ctrls = controls_by_episode.get(ep.route_key(), [])
-            c_returns = []
-            for c in ctrls:
-                cr = _return_for(c)
-                if cr is None:
-                    unresolved_controls += 1
-                else:
-                    resolved_controls += 1
-                    c_returns.append(cr)
-            resolved_controls_by_ep[ep.route_key()] = c_returns
-
-        for ep in episodes:
-            r = _return_for(ep)
-            if r is None:
-                unresolved_episodes += 1
-                unresolved_decision_times.append(ep.decision_at)
-                continue
-
-            net_returns.append(r)
-            control_rs = resolved_controls_by_ep.get(ep.route_key(), [])
-
-            excess: float | None = None
-            if control_rs:
-                episodes_with_matched_control += 1
-                control_mean = sum(control_rs) / len(control_rs)
-                control_means.append(control_mean)
-                excess = r - control_mean
-                excesses.append(excess)
-
-            records.append(
-                EpisodeRecord(
-                    route_key=ep.route_key(),
-                    canonical_asset=ep.canonical_asset,
-                    iso_week=ep.iso_week,
-                    decision_at=ep.decision_at,
-                    net_return=r,
-                    excess=excess,
-                )
-            )
-        report = build_report(
+        res, _ = evaluate_outcomes(
             contract,
-            records,
-            unresolved_episodes=unresolved_episodes,
-            unresolved_decision_times=unresolved_decision_times,
-            resolved_controls=resolved_controls,
-            requested_controls=requested_controls,
-            skipped_portfolio_capacity=skipped_portfolio_capacity,
-            selected_episodes=selected_episodes,
+            episodes,
+            controls_by_episode,
+            outcomes,
+            selected_episodes,
+            skipped_portfolio_capacity,
+            funnel,
         )
-        return ReplayResult(
-            replay_version=REPLAY_VERSION,
-            funnel=funnel,
-            resolved_episodes=len(net_returns),
-            unresolved_episodes=unresolved_episodes,
-            episodes_with_matched_control=episodes_with_matched_control,
-            resolved_controls=resolved_controls,
-            unresolved_controls=unresolved_controls,
-            mean_net_return=(sum(net_returns) / len(net_returns)) if net_returns else None,
-            mean_control_return=(
-                (sum(control_means) / len(control_means)) if control_means else None
-            ),
-            mean_excess_over_control=(sum(excesses) / len(excesses)) if excesses else None,
-            report=report,
-            episode_records=tuple(records),
-        )
+        return res
 
 
 # --- Dataset edges: Parquet loader + priced-proxy outcome reader --------------------
@@ -1393,13 +1410,6 @@ SELECT exchange, market_type, symbol, capture_version, bucket_start, created_at,
 FROM read_parquet(?)
 WHERE bucket_start >= ? AND bucket_start < ?
 ORDER BY exchange, market_type, symbol, capture_version, bucket_start
-"""
-
-_OUTCOME_COLUMNS_SQL = """
-SELECT exchange, market_type, symbol, capture_version, \
-       bucket_start, open_price, close_price, high_price, low_price, price_complete
-FROM read_parquet(?)
-WHERE bucket_start >= ? AND bucket_start < ?
 """
 
 
@@ -1600,12 +1610,8 @@ def parquet_outcome_reader(
     *,
     outcome_horizon_minutes: int,
 ) -> Callable[[Sequence[DecisionFeatures]], dict[RouteKey, Outcome]]:
-    """Build a returns-bearing reader over one Parquet: entry is the priced-proxy open
-    of the decision minute's bar, exit the close of the bar ``outcome_horizon_minutes``
-    later, on the exact native route. Missing legs stay unresolved (never filled in)."""
     from collections import defaultdict
-
-    import duckdb
+    from datetime import timedelta
 
     def reader(requested: Sequence[DecisionFeatures]) -> dict[RouteKey, Outcome]:
         if not requested:
@@ -1615,56 +1621,82 @@ def parquet_outcome_reader(
         max_horizon_td = timedelta(minutes=max_horizon)
         lo = min(starts)
         hi = max(starts) + max_horizon_td + timedelta(minutes=2)
-        connection = duckdb.connect()
-        try:
-            rows = connection.execute(_OUTCOME_COLUMNS_SQL, [path, lo, hi]).fetchall()
-        finally:
-            connection.close()
 
-        # Group by route
         bars: dict[
-            tuple[str, str, str, str], dict[datetime, tuple[float, float, float, float, bool]]
+            tuple[str, str, str, str],
+            dict[datetime, tuple[float | None, float | None, float | None, float | None, bool]],
         ] = defaultdict(dict)
-        for row in rows:
-            route = (str(row[0]), str(row[1]), str(row[2]), str(row[3]))
-            bars[route][row[4]] = (row[5], row[6], row[7], row[8], row[9])
+
+        # Determine unique exchanges to fetch freshness
+        {req.exchange for req in requested}
+
+        for chunk in iter_instrument_bars(path, window_start=lo, window_end=hi):
+            if not chunk:
+                continue
+            first = chunk[0]
+            route = (
+                first.exchange,
+                first.market_type,
+                first.native_market_id,
+                first.capture_version,
+            )
+
+            # Optimization: only store bars for routes we requested
+            if not any(
+                r.exchange == route[0]
+                and r.market_type == route[1]
+                and r.native_market_id == route[2]
+                and r.capture_version == route[3]
+                for r in requested
+            ):
+                continue
+
+            for b in chunk:
+                # b is InstrumentColdBars
+                # we need open_price, close_price, high_price, low_price, price_complete
+                bars[route][b.bucket_start] = (
+                    b.open_price,
+                    b.close_price,
+                    b.high_price,
+                    b.low_price,
+                    b.price_complete,
+                )
 
         out: dict[RouteKey, Outcome] = {}
         for d in requested:
             route = (d.exchange, d.market_type, d.native_market_id, d.capture_version)
             route_bars = bars.get(route, {})
 
-            entry_price = None
-            exit_price = None
-
-            # primary path continuity check
-            # Entry is the next executable bar after decision
             entry_t = d.decision_at + timedelta(minutes=1)
-            primary_bars = []
+            primary_bars: list[
+                tuple[float | None, float | None, float | None, float | None, bool]
+            ] = []
             continuous = True
             for i in range(outcome_horizon_minutes + 1):
                 t = entry_t + timedelta(minutes=i)
-                b = route_bars.get(t)
-                # require b is not None and price_complete is True
-                if b is None or not b[4]:
+                route_b = route_bars.get(t)
+                if route_b is None or not route_b[4]:
                     continuous = False
                     break
-                primary_bars.append(b)
+                primary_bars.append(route_b)
 
-            if continuous and primary_bars:
-                entry_price = primary_bars[0][0]  # open of first bar (entry)
-                exit_price = primary_bars[-1][1]  # close of last bar (horizon)
+            if not continuous:
+                continue
 
-            out[d.route_key()] = Outcome(
-                exchange=d.exchange,
-                market_type=d.market_type,
-                native_market_id=d.native_market_id,
-                capture_version=d.capture_version,
-                symbol=d.symbol,
-                decision_at=d.decision_at,
-                entry_price=entry_price,
-                exit_price=exit_price,
-            )
+            entry_price = primary_bars[0][0]
+            exit_price = primary_bars[-1][1]
+
+            if entry_price is not None and exit_price is not None:
+                out[d.route_key()] = Outcome(
+                    exchange=d.exchange,
+                    symbol=d.symbol,
+                    market_type=d.market_type,
+                    capture_version=d.capture_version,
+                    native_market_id=d.native_market_id,
+                    decision_at=d.decision_at,
+                    entry_price=entry_price,
+                    exit_price=exit_price,
+                )
         return out
 
     return reader

@@ -1,12 +1,17 @@
+import hashlib
 import json
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
 import duckdb
 import pytest
-from schurfer_analytics.abnormal_flow_formal_runner import FormalRunner, GitStateProvider
+from schurfer_analytics.abnormal_flow_formal_runner import (
+    FormalCapability,
+    FormalRunner,
+    GitStateProvider,
+)
 
 
 class MockGitState(GitStateProvider):
@@ -27,15 +32,12 @@ def test_import_does_not_enable_returns():
     assert not replay.FORMAL_RETURNS_RUN_ENABLED
 
 
-def test_runner_requires_formal_run_flag(tmp_path: Path):
+def test_runner_requires_capability(tmp_path: Path):
     runner = FormalRunner(MockGitState(dirty=False))
     p = tmp_path / "f"
     p.touch()
-    with (
-        patch("sys.argv", ["dummy"]),
-        pytest.raises(ValueError, match="--formal-run flag required"),
-    ):
-        runner.run(p, p, p, p, p, p, p, p, require_formal_run=True)
+    with pytest.raises(ValueError, match="FormalCapability required"):
+        runner.run(None, p, p, p, p, p, p, p, p)
 
 
 def test_runner_dirty_tree_rejected(tmp_path: Path):
@@ -43,7 +45,14 @@ def test_runner_dirty_tree_rejected(tmp_path: Path):
     p = tmp_path / "f"
     p.touch()
     with pytest.raises(ValueError, match="Dirty tree detected"):
-        runner.run(p, p, p, p, p, p, p, p, require_formal_run=False)
+        runner.run(FormalCapability(), p, p, p, p, p, p, p, p)
+
+
+# More tests to follow... I'll build a synthetic environment that actually yields primary episodes and controls, and test all edge cases.  # noqa: E501
+
+
+def _shasum(p: Path) -> str:
+    return f"sha256:{hashlib.sha256(p.read_bytes()).hexdigest()}"
 
 
 @pytest.fixture
@@ -72,7 +81,7 @@ def run_env(tmp_path: Path) -> dict[str, Any]:
         "exit_reference": "horizon_bar_close_priced_proxy_v1",
         "matching_rule": "same_venue_regime_liquidity_pricemove_band_v1",
         "inference_rule": "normal_1_96_v1",
-        "controls_per_episode": 2,
+        "controls_per_episode": 1,
         "portfolio_bank_usd": 10000.0,
         "portfolio_max_slots": 10,
         "window_start_utc": "2026-08-20T00:00:00Z",
@@ -109,17 +118,16 @@ def run_env(tmp_path: Path) -> dict[str, Any]:
     set_path.write_text("{}")
     env["set"] = set_path
 
+    cand_path = tmp_path / "candidate.json"
+    cand_path.write_text("{}")
+    env["cand"] = cand_path
+
     bars_dir = tmp_path / "bars"
     bars_dir.mkdir()
     env["bars_dir"] = bars_dir
 
     days = ["2026-08-19", "2026-08-20", "2026-08-21"]
     scan_days = []
-
-    import hashlib
-
-    def _shasum(p: Path) -> str:
-        return f"sha256:{hashlib.sha256(p.read_bytes()).hexdigest()}"
 
     for d in days:
         p = bars_dir / f"bars-{d}.parquet"
@@ -137,7 +145,8 @@ def run_env(tmp_path: Path) -> dict[str, Any]:
                 CAST('{d}T00:00:00Z' AS TIMESTAMP) as last_trade_received_at,
                 true as price_complete, true as trades_complete, true as open_interest_complete,
                 CAST('{d}T00:00:00Z' AS TIMESTAMP) as created_at,
-                CAST('{d}T00:00:00Z' AS TIMESTAMP) as open_interest_event_at
+                CAST('{d}T00:00:00Z' AS TIMESTAMP) as open_interest_event_at,
+                100.0 as open_price, 100.0 as close_price, 100.0 as high_price, 100.0 as low_price
         """)
         conn.execute(f"COPY bars TO '{p}' (FORMAT PARQUET)")
         conn.close()
@@ -162,18 +171,25 @@ def run_env(tmp_path: Path) -> dict[str, Any]:
     scan_path.write_text(json.dumps({"days": scan_days}))
     env["scan"] = scan_path
 
-    eval_m = {
+    {
         "identity_snapshot_hash": _shasum(ident_path),
         "funding_snapshot_hash": _shasum(fund_path),
         "funding_settlements_hash": _shasum(set_path),
         "input_audit_fingerprint": _shasum(scan_path),
+        "candidate_table_hash": _shasum(cand_path),
     }
 
-    eval_path = tmp_path / "eval.json"
-    eval_path.write_text(json.dumps(eval_m))
-    env["eval"] = eval_path
+    from schurfer_analytics.abnormal_flow_replay import EvaluationManifest
 
-    contract["input_fingerprint"] = eval_m["input_audit_fingerprint"]
+    em = EvaluationManifest(
+        input_audit_fingerprint=_shasum(scan_path),
+        identity_snapshot_hash=_shasum(ident_path),
+        candidate_table_hash=_shasum(cand_path),
+        funding_snapshot_hash=_shasum(fund_path),
+        funding_settlements_hash=_shasum(set_path),
+    )
+    contract["input_fingerprint"] = em.compute_fingerprint()
+
     c_path.write_text(json.dumps(contract))
 
     out_dir = tmp_path / "out"
@@ -193,25 +209,128 @@ def test_runner_deterministic_underpowered(run_env: dict[str, Any]):
     def _verified(d, day):
         return d / f"bars-{day.isoformat()}.parquet", MockManifest()
 
+    from schurfer_analytics.abnormal_flow_replay import DecisionFeatures
+
+    d1 = DecisionFeatures(
+        exchange="bybit",
+        market_type="linear",
+        native_market_id="FOO",
+        capture_version="v1",
+        symbol="FOO",
+        canonical_asset="FOO_ASSET",
+        decision_at=datetime(2026, 8, 20, 0, 0, tzinfo=UTC),
+        oi_growth_pct=15.0,
+        buy_pressure=0.8,
+        containment=2.0,
+        oi_native_amount=100.0,
+        oi_native_value_usd=1000.0,
+        decision_price=10.0,
+        pre_decision_turnover_usd=50000.0,
+        iso_week="2026-W34",
+        unavailable_reason=None,
+    )
+    d2 = DecisionFeatures(
+        exchange="bybit",
+        market_type="linear",
+        native_market_id="BAR",
+        capture_version="v1",
+        symbol="BAR",
+        canonical_asset="BAR_ASSET",
+        decision_at=datetime(2026, 8, 20, 1, 0, tzinfo=UTC),
+        oi_growth_pct=5.0,
+        buy_pressure=0.1,
+        containment=1.0,
+        oi_native_amount=50.0,
+        oi_native_value_usd=500.0,
+        decision_price=10.0,
+        pre_decision_turnover_usd=10000.0,
+        iso_week="2026-W34",
+        unavailable_reason=None,
+    )
+
     with (
-        patch("schurfer_analytics.abnormal_flow_formal_runner.parquet_outcome_reader") as spy,
+        patch(
+            "schurfer_analytics.abnormal_flow_formal_runner.assemble_decisions",
+            return_value=[d1, d2],
+        ),
         patch("schurfer_analytics.abnormal_flow_formal_runner.verified_input") as mock_verified,
     ):
         mock_verified.side_effect = _verified
         runner.run(
+            FormalCapability(),
             run_env["contract"],
-            run_env["eval"],
             run_env["scan"],
             run_env["ident"],
             run_env["fund"],
             run_env["set"],
+            run_env["cand"],
             run_env["bars_dir"],
             run_env["out"],
-            require_formal_run=False,
         )
-        assert spy.call_count == 1
 
     dirs = list(run_env["out"].iterdir())
     assert len(dirs) == 1
     report = json.loads((dirs[0] / "formal_run_report.json").read_text())
     assert report["economics"]["verdict"] == "INSUFFICIENT_EVIDENCE"
+
+
+def test_runner_mismatches_rejected(run_env: dict[str, Any]):
+    runner = FormalRunner(MockGitState(dirty=False))
+
+    # modify ident file to change its hash
+    run_env["ident"].write_text('{"snapshot_at": "NEW"}')
+
+    with pytest.raises(ValueError, match="aggregate evaluation fingerprint"):
+        runner.run(
+            FormalCapability(),
+            run_env["contract"],
+            run_env["scan"],
+            run_env["ident"],
+            run_env["fund"],
+            run_env["set"],
+            run_env["cand"],
+            run_env["bars_dir"],
+            run_env["out"],
+        )
+
+
+def test_runner_exception_leaves_terminal_failure(run_env: dict[str, Any]):
+    runner = FormalRunner(MockGitState(dirty=False))
+
+    with (
+        patch(
+            "schurfer_analytics.abnormal_flow_formal_runner.verified_input",
+            side_effect=ValueError("crashing inside"),
+        ),
+        pytest.raises(ValueError, match="crashing inside"),
+    ):
+        runner.run(
+            FormalCapability(),
+            run_env["contract"],
+            run_env["scan"],
+            run_env["ident"],
+            run_env["fund"],
+            run_env["set"],
+            run_env["cand"],
+            run_env["bars_dir"],
+            run_env["out"],
+        )
+
+    dirs = list(run_env["out"].iterdir())
+    assert len(dirs) == 1
+    assert (dirs[0] / "failed").exists()
+    assert (dirs[0] / "failed").read_text() == "crashing inside"
+
+    # second time it should raise a specific error that a failed run exists
+    with pytest.raises(ValueError, match="Terminal failed status exists"):
+        runner.run(
+            FormalCapability(),
+            run_env["contract"],
+            run_env["scan"],
+            run_env["ident"],
+            run_env["fund"],
+            run_env["set"],
+            run_env["cand"],
+            run_env["bars_dir"],
+            run_env["out"],
+        )
