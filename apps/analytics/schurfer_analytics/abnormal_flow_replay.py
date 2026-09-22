@@ -1,11 +1,10 @@
 """Outcome-blind scanner for the abnormal-flow economic screen.
 
-THIS RELEASE IS A COUNTS-ONLY SCANNER (calibration, not an economic result). The
-returns-reading path exists but is HARD-DISABLED: ``FORMAL_RETURNS_RUN_ENABLED`` is
-False and :class:`FormalReplay.run` raises :class:`ReturnsRunDisabledError`
-unconditionally, even for a fully frozen contract, so no forward return can be read.
-Enabling it, a full registered input fingerprint, the OI ablation, the portfolio
-simulation, and the one-shot verdict are a later PR, still before any returns are read.
+The module remains outcome-blind by default. ``FORMAL_RETURNS_RUN_ENABLED`` starts
+False, and both :class:`FormalReplay` and the Parquet outcome reader refuse access
+until the one-shot formal CLI has verified the frozen contract, registered artifacts,
+clean revision, cold-bar fidelity, and claimed the terminal run id. The CLI enables
+the flag only around the single returns read and restores it in ``finally``.
 
 PRE-REGISTRATION INVARIANT (for when the run is later enabled). Reading forward returns
 is gated behind a fully frozen contract AND the exact frozen dataset: the run would call
@@ -58,10 +57,8 @@ if TYPE_CHECKING:
 
 REPLAY_VERSION = "abnormal_flow_replay_v1"
 
-# This release ships an OUTCOME-BLIND SCANNER only. Reading forward returns is disabled
-# at the hardest level: FormalReplay.run refuses unconditionally, even for a fully
-# frozen contract, so no returns can be read before the separate outcome-blind threshold
-# and window freeze (a later PR). Flipping this flag is a deliberate, reviewed change.
+# Outcome access is disabled by default. The formal runner temporarily enables it only
+# after every frozen-input and one-shot gate passes, then resets it in ``finally``.
 FORMAL_RETURNS_RUN_ENABLED = False
 
 # Conservative funding charge for the registered ``conservative_8h_v1`` model: a
@@ -1149,7 +1146,7 @@ def build_report(
 class EvaluationManifest:
     input_audit_fingerprint: str
     identity_snapshot_hash: str
-    candidate_table_hash: str
+    candidate_table_version: str
     funding_snapshot_hash: str
     funding_settlements_hash: str
 
@@ -1296,12 +1293,11 @@ class FormalReplay:
         evaluation_manifest: EvaluationManifest,
         registered_contract_path: str = "",
     ) -> ReplayResult:
-        # Hardest gate FIRST: this scanner release does not read returns at all. Refuse
-        # unconditionally, even for a fully frozen contract, before touching the reader.
+        # Hardest gate first: only the authorized formal runner may enable outcome
+        # access, and it does so after verifying the complete registered input chain.
         if not FORMAL_RETURNS_RUN_ENABLED:
             raise ReturnsRunDisabledError(
-                "formal returns-reading run is disabled in this outcome-blind scanner "
-                "release; it lands in a later PR after the separate threshold/window freeze"
+                "formal returns-reading is disabled outside the authorized one-shot runner"
             )
         # Fail-closed BEFORE any outcome is read.
         self._contract.require_frozen()
@@ -1506,7 +1502,7 @@ def load_minute_bars_from_parquet(
 
 
 def iter_instrument_bars(
-    paths: Sequence[str], *, window_start: datetime, window_end: datetime
+    paths: str | Sequence[str], *, window_start: datetime, window_end: datetime
 ) -> Iterator[list[MinuteBar]]:
     """Stream outcome-blind minute bars grouped by native route + capture_version, one
     instrument at a time, from the given Parquet file(s). DuckDB does the ordered scan
@@ -1516,7 +1512,8 @@ def iter_instrument_bars(
 
     connection = duckdb.connect()
     try:
-        cursor = connection.execute(_INPUT_COLUMNS_SQL, [list(paths), window_start, window_end])
+        paths_list = [paths] if isinstance(paths, str) else list(paths)
+        cursor = connection.execute(_INPUT_COLUMNS_SQL, [paths_list, window_start, window_end])
         current: tuple[str, str, str, str] | None = None
         buffer: list[MinuteBar] = []
         while True:
@@ -1614,6 +1611,10 @@ def parquet_outcome_reader(
     from datetime import timedelta
 
     def reader(requested: Sequence[DecisionFeatures]) -> dict[RouteKey, Outcome]:
+        if not FORMAL_RETURNS_RUN_ENABLED:
+            raise ReturnsRunDisabledError(
+                "Parquet outcomes are available only inside the authorized formal run"
+            )
         if not requested:
             return {}
         starts = [d.decision_at for d in requested]
@@ -1627,8 +1628,10 @@ def parquet_outcome_reader(
             dict[datetime, tuple[float | None, float | None, float | None, float | None, bool]],
         ] = defaultdict(dict)
 
-        # Determine unique exchanges to fetch freshness
-        {req.exchange for req in requested}
+        requested_routes = {
+            (req.exchange, req.market_type, req.native_market_id, req.capture_version)
+            for req in requested
+        }
 
         for chunk in iter_instrument_bars(path, window_start=lo, window_end=hi):
             if not chunk:
@@ -1642,13 +1645,7 @@ def parquet_outcome_reader(
             )
 
             # Optimization: only store bars for routes we requested
-            if not any(
-                r.exchange == route[0]
-                and r.market_type == route[1]
-                and r.native_market_id == route[2]
-                and r.capture_version == route[3]
-                for r in requested
-            ):
+            if route not in requested_routes:
                 continue
 
             for b in chunk:

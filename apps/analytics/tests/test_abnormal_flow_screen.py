@@ -272,7 +272,7 @@ def test_evaluation_manifest_hash_matches_contract() -> None:
     manifest = EvaluationManifest(
         input_audit_fingerprint=manifest_d["input_audit_fingerprint"],
         identity_snapshot_hash=manifest_d["identity_snapshot_hash"],
-        candidate_table_hash=manifest_d["candidate_table_hash"],
+        candidate_table_version=manifest_d["candidate_table_version"],
         funding_snapshot_hash=manifest_d["funding_snapshot_hash"],
         funding_settlements_hash=manifest_d["funding_settlements_hash"],
     )

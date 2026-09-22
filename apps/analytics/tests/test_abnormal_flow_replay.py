@@ -64,7 +64,7 @@ def _dummy_manifest(fp: str = _FINGERPRINT) -> EvaluationManifest:
     return EvaluationManifest(
         input_audit_fingerprint=fp,
         identity_snapshot_hash="h",
-        candidate_table_hash="v",
+        candidate_table_version="v",
         funding_snapshot_hash="s",
         funding_settlements_hash="s",
     )
@@ -191,7 +191,10 @@ def test_formal_returns_run_is_hard_disabled_even_when_frozen() -> None:
     # and the reader is never invoked.
     with pytest.raises(ReturnsRunDisabledError):
         FormalReplay(_frozen_contract()).run(
-            [_decision()], reader, evaluation_manifest=_dummy_manifest(_FINGERPRINT)
+            [_decision()],
+            reader,
+            evaluation_manifest=_dummy_manifest(_FINGERPRINT),
+            registered_contract_path=_write_c(_frozen_contract()),
         )
     assert called is False
     assert afr.FORMAL_RETURNS_RUN_ENABLED is False  # shipped disabled
@@ -210,8 +213,12 @@ def test_run_still_fails_closed_on_unfrozen_contract_when_enabled(monkeypatch) -
         return {}
 
     with pytest.raises(NotFrozenError):
-        FormalReplay(AbnormalFlowContract(min_oi_growth_pct=None)).run(
-            [_decision()], reader, evaluation_manifest=_dummy_manifest(_FINGERPRINT)
+        c_ab = AbnormalFlowContract(min_oi_growth_pct=None)
+        FormalReplay(c_ab).run(
+            [_decision()],
+            reader,
+            evaluation_manifest=_dummy_manifest(_FINGERPRINT),
+            registered_contract_path=_write_c(c_ab),
         )
     assert called is False
 
@@ -914,7 +921,10 @@ def test_parquet_run_is_hard_disabled(tmp_path) -> None:  # type: ignore[no-unty
     )
     with pytest.raises(ReturnsRunDisabledError):
         FormalReplay(contract).run(
-            decisions, reader, evaluation_manifest=_dummy_manifest(input_fingerprint_for(loaded))
+            decisions,
+            reader,
+            evaluation_manifest=_dummy_manifest(input_fingerprint_for(loaded)),
+            registered_contract_path=_write_c(contract),
         )
 
 
@@ -957,6 +967,7 @@ def test_load_verified_minute_bars_refuses_unproven_fidelity(tmp_path) -> None: 
 
 
 def test_parquet_outcome_reader_requires_continuous_path(tmp_path: Any, monkeypatch: Any) -> None:
+    monkeypatch.setattr(afr, "FORMAL_RETURNS_RUN_ENABLED", True)
     bars = _e2e_bars(725)
     bars = [b for i, b in enumerate(bars) if i != 50]
     day = date(2026, 8, 20)
@@ -969,38 +980,35 @@ def test_parquet_outcome_reader_requires_continuous_path(tmp_path: Any, monkeypa
 
     d = _decision(decision_at=_T0, symbol="ZUSDT", native_market_id="ZUSDT", exchange="bybit")
     outcomes = reader([d])
-    assert outcomes[d.route_key()].entry_price is None
-    assert outcomes[d.route_key()].exit_price is None
+    assert d.route_key() not in outcomes
 
 
-def test_parquet_outcome_reader_exact_path(tmp_path: Any) -> None:
+def test_parquet_outcome_reader_is_disabled_by_default() -> None:
+    reader = parquet_outcome_reader("unused.parquet", outcome_horizon_minutes=720)
+    with pytest.raises(ReturnsRunDisabledError):
+        reader([_decision()])
+
+
+def test_parquet_outcome_reader_exact_path(tmp_path: Any, monkeypatch: Any) -> None:
+    monkeypatch.setattr(afr, "FORMAL_RETURNS_RUN_ENABLED", True)
     from datetime import UTC, datetime
 
     import duckdb
 
     decision_at = datetime(2026, 8, 20, 10, 0, tzinfo=UTC)
     path = str(tmp_path / "exact.parquet")
-
-    # We will just write a parquet using duckdb directly
     con = duckdb.connect()
     con.execute(
-        "CREATE TABLE bars (exchange VARCHAR, market_type VARCHAR, "
-        "native_market_id VARCHAR, capture_version VARCHAR, symbol VARCHAR, "
-        "bucket_start TIMESTAMP WITH TIME ZONE, open_price DOUBLE, "
-        "high_price DOUBLE, low_price DOUBLE, close_price DOUBLE, price_complete BOOLEAN)"
+        "CREATE TABLE bars (exchange VARCHAR, market_type VARCHAR, symbol VARCHAR, capture_version VARCHAR, bucket_start TIMESTAMP WITH TIME ZONE, created_at TIMESTAMP WITH TIME ZONE, open_price DOUBLE, high_price DOUBLE, low_price DOUBLE, close_price DOUBLE, buy_total_notional_usd DOUBLE, sell_total_notional_usd DOUBLE, open_interest DOUBLE, open_interest_value DOUBLE, open_interest_observed_at TIMESTAMP WITH TIME ZONE, last_trade_received_at TIMESTAMP WITH TIME ZONE, price_complete BOOLEAN, trades_complete BOOLEAN, open_interest_complete BOOLEAN)"  # noqa: E501
     )
-
     for i in range(722):
         t = decision_at + timedelta(minutes=i)
         con.execute(
-            "INSERT INTO bars VALUES ('binance', 'spot', 'BTC_USDT', "
-            "'v1', 'BTC_USDT', ?, 100.0, 100.0, 100.0, 100.0, true)",
-            [t],
+            "INSERT INTO bars VALUES ('binance', 'spot', 'BTC_USDT', 'v1', ?, ?, 100.0, 100.0, 100.0, 100.0, 1.0, 1.0, 0.0, 0.0, ?, ?, true, true, true)",  # noqa: E501
+            [t, t, t, t],
         )
-
     con.execute(f"COPY bars TO '{path}' (FORMAT PARQUET)")
     con.close()
-
     d = DecisionFeatures(
         exchange="binance",
         market_type="spot",
@@ -1023,7 +1031,6 @@ def test_parquet_outcome_reader_exact_path(tmp_path: Any) -> None:
     reader = parquet_outcome_reader(path, outcome_horizon_minutes=720)
     outcomes = reader([d])
     assert len(outcomes) == 1
-    assert outcomes[d.route_key()].exit_price is not None
 
 
 def test_control_coverage_denominator_and_insufficient_evidence() -> None:
@@ -1134,6 +1141,22 @@ def test_portfolio_capacity_defaults_sizing_and_skips() -> None:
     assert res2.taken_trades == 1
     assert res2.skipped_capacity == 1
     assert res2.total_pnl_usd == -300.0
+
+
+def test_unresolved_position_occupies_portfolio_slot() -> None:
+    contract = _frozen_contract(portfolio_max_slots=1)
+    first = _decision(symbol="A", decision_at=_T0)
+    overlapping = _decision(symbol="B", decision_at=_T0 + timedelta(minutes=10))
+
+    result, unresolved = simulate_portfolio(
+        contract,
+        [(first, None), (overlapping, 0.5)],
+    )
+
+    assert unresolved is True
+    assert result.taken_trades == 1
+    assert result.skipped_capacity == 1
+    assert result.total_pnl_usd == 0.0
 
 
 def test_build_report_combines_skipped_capacities() -> None:
