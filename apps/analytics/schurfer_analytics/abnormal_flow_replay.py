@@ -1274,7 +1274,7 @@ class FormalReplay:
         # in one read keyed by the exact native route. A reader that returns only what
         # it was asked for is enough; the excess is no longer hidden by over-returning.
         controls_by_episode: dict[RouteKey, list[DecisionFeatures]] = {}
-        controls_per_episode = contract.controls_per_episode or 1
+        controls_per_episode = (contract.controls_per_episode or 0) or 1
         for ep in episodes:
             controls_by_episode[ep.route_key()] = match_controls(
                 ep, eligible_pool, max_controls=controls_per_episode
@@ -1308,7 +1308,7 @@ class FormalReplay:
         resolved_controls = 0
         unresolved_controls = 0
         # Process controls completely independently from primary resolution
-        requested_controls = len(episodes) * contract.controls_per_episode
+        requested_controls = len(episodes) * (contract.controls_per_episode or 0)
         resolved_controls_by_ep: dict[RouteKey, list[float]] = {}
         for ep in episodes:
             ctrls = controls_by_episode.get(ep.route_key(), [])

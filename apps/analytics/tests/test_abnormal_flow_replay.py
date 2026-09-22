@@ -1113,7 +1113,7 @@ def test_portfolio_capacity_defaults_sizing_and_skips() -> None:
     # 1st: bank=300, pnl=-0.5 -> bank=150
     # 2nd: bank=150, pos=150, pnl=+1.0 -> bank=300
 
-    selected_pnls = [
+    selected_pnls: list[tuple[DecisionFeatures, float | None]] = [
         (d1, -0.5),  # -150
         (d2, 1.0),  # +150
     ]
@@ -1126,7 +1126,7 @@ def test_portfolio_capacity_defaults_sizing_and_skips() -> None:
     assert res.total_pnl_usd == 0.0
 
     # Let's test a capacity skip (bank drops to 0)
-    selected_pnls2 = [
+    selected_pnls2: list[tuple[DecisionFeatures, float | None]] = [
         (d1, -1.0),  # bank=0
         (d2, 0.5),  # skipped
     ]
