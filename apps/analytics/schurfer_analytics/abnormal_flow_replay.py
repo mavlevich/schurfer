@@ -1596,7 +1596,7 @@ def assemble_all(
 
 
 def parquet_outcome_reader(
-    path: str,
+    path: str | list[str],
     *,
     outcome_horizon_minutes: int,
 ) -> Callable[[Sequence[DecisionFeatures]], dict[RouteKey, Outcome]]:
