@@ -1,7 +1,7 @@
 {
   "calibration_rule": "fixed_percentiles_on_prestart_window_v1",
   "calibration_window_days": 14,
-  "contract_hash": "sha256:656bac9c8ae9aa24dca45e5b172ada870806faa7c6150107ab0b0ca4cf2676cf",
+  "contract_hash": "sha256:9d0b7c2be7241882765528b8c3634ff65bcc91843724c5f235be59e9f4ebfa02",
   "contract_version": "abnormal_flow_screen_v1",
   "controls_per_episode": 5,
   "cooldown_minutes": 720,
@@ -14,7 +14,7 @@
   "funding_bps_720m_binance": 6.0323,
   "funding_bps_720m_bybit": 5.74216,
   "inference_rule": "student_t_df_weeks_minus_one_v1",
-  "input_fingerprint": "sha256:cf6dace7b865beceecfd7bce563065399fd033e681a18f2c5731f39b69fefc26",
+  "input_fingerprint": "sha256:df2759be1fddf8fffc7d74d0d665852ffca4c1509153e1f202fec89d16d45d9e",
   "lookback_minutes": 60,
   "matching_rule": "same_venue_regime_liquidity_pricemove_band_v1",
   "max_episodes_per_asset_frac": 0.35,

@@ -246,7 +246,7 @@ def test_frozen_artifact_loads_and_hashes_correctly() -> None:
     assert contract.compute_hash() == d["contract_hash"]
 
     # File SHA must match what's reported (for safety, though it will change if formatted)
-    assert file_sha == "2971a40f587714a5ae1911b59ab0adfd33a3197cdc97db638c3f12b9a8d2b6c7"
+    assert file_sha == "36502eeb4ffb63cb2d0eead5e81c97947c97130a85ac046e6d2759459e492256"
     contract.require_frozen()
 
 
@@ -278,3 +278,29 @@ def test_evaluation_manifest_hash_matches_contract() -> None:
     )
 
     assert manifest.compute_fingerprint() == contract_d["input_fingerprint"]
+
+
+def test_evaluation_manifest_hashes_match_actual_files() -> None:
+    import hashlib
+    import json
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parent.parent.parent.parent
+    manifest_path = (
+        repo_root / "docs/research/evidence/abnormal-flow-v1/formal/evaluation_manifest.json"
+    )
+
+    snapshot_path = (
+        repo_root / "docs/research/evidence/abnormal-flow-v1/funding/funding_snapshot.json"
+    )
+    settlements_path = (
+        repo_root / "docs/research/evidence/abnormal-flow-v1/funding/funding_settlements.json.gz"
+    )
+
+    manifest_d = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    snapshot_hash = "sha256:" + hashlib.sha256(snapshot_path.read_bytes()).hexdigest()
+    settlements_hash = "sha256:" + hashlib.sha256(settlements_path.read_bytes()).hexdigest()
+
+    assert snapshot_hash == manifest_d["funding_snapshot_hash"]
+    assert settlements_hash == manifest_d["funding_settlements_hash"]

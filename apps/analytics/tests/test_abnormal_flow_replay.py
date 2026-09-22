@@ -1134,3 +1134,53 @@ def test_portfolio_capacity_defaults_sizing_and_skips() -> None:
     assert res2.taken_trades == 1
     assert res2.skipped_capacity == 1
     assert res2.total_pnl_usd == -300.0
+
+
+def test_build_report_combines_skipped_capacities() -> None:
+    from datetime import UTC, datetime
+
+    from schurfer_analytics.abnormal_flow_replay import build_report
+
+    c = _frozen_contract(portfolio_max_slots=1, portfolio_bank_usd=300.0, position_usd=300.0)
+
+    t1 = datetime(2026, 9, 10, 10, 0, tzinfo=UTC)
+    t2 = datetime(2026, 9, 12, 10, 0, tzinfo=UTC)
+
+    d1 = _decision(symbol="A", canonical_asset="A", decision_at=t1)
+    d2 = _decision(symbol="B", canonical_asset="B", decision_at=t2)
+
+    # 2 selected episodes. One of them will blow up the bank (e.g. -1.0 return).
+    # The next one will be skipped by `simulate_portfolio` because bank is 0.
+
+    # We pass skipped_portfolio_capacity=3 (from select_portfolio)
+    # simulate_portfolio will skip d2, adding 1 more.
+    # Total should be 4.
+
+    rec1 = EpisodeRecord(
+        route_key=d1.route_key(),
+        canonical_asset="A",
+        iso_week="2026-W37",
+        decision_at=t1,
+        net_return=-1.0,
+        excess=0.0,
+    )
+    rec2 = EpisodeRecord(
+        route_key=d2.route_key(),
+        canonical_asset="B",
+        iso_week="2026-W37",
+        decision_at=t2,
+        net_return=0.5,
+        excess=0.0,
+    )
+
+    report = build_report(
+        c,
+        [rec1, rec2],
+        unresolved_episodes=0,
+        skipped_portfolio_capacity=3,
+        selected_episodes=[d1, d2],
+    )
+
+    assert report.portfolio is not None
+    assert report.portfolio.taken_trades == 1
+    assert report.portfolio.skipped_capacity == 4

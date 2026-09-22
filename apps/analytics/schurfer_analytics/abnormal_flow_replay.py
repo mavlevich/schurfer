@@ -1091,7 +1091,7 @@ def build_report(
     portfolio, unresolved_in_portfolio = simulate_portfolio(contract, selected_pnls)
     portfolio = PortfolioResult(
         taken_trades=portfolio.taken_trades,
-        skipped_capacity=skipped_portfolio_capacity,
+        skipped_capacity=skipped_portfolio_capacity + portfolio.skipped_capacity,
         total_pnl_usd=portfolio.total_pnl_usd,
         max_drawdown_usd=portfolio.max_drawdown_usd,
         longest_losing_streak=portfolio.longest_losing_streak,
