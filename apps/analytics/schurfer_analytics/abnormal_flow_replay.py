@@ -761,29 +761,69 @@ def select_portfolio(
     return taken, skipped
 
 
-def simulate_portfolio(contract: AbnormalFlowContract, pnls: list[float]) -> PortfolioResult:
-    peak = 0.0
-    cum = 0.0
+def simulate_portfolio(
+    contract: AbnormalFlowContract, selected: list[tuple[DecisionFeatures, float | None]]
+) -> tuple[PortfolioResult, bool]:
+    from datetime import timedelta
+
+    bank = float(contract.portfolio_bank_usd or 0.0)
+    position = float(contract.position_usd or 0.0)
+    slots = int(contract.portfolio_max_slots or 1)
+
+    current_capital = bank
+    active_positions: list[datetime] = []
+
+    taken = 0
+    skipped = 0
+    max_concurrency = 0
+    cum_pnl = 0.0
+    peak = bank
     max_dd = 0.0
     streak = 0
     longest = 0
-    for p in pnls:
-        cum += p
-        peak = max(peak, cum)
-        max_dd = max(max_dd, peak - cum)
-        if p < 0:
-            streak += 1
-            longest = max(longest, streak)
+
+    unresolved_in_portfolio = False
+
+    for feat, pnl in sorted(selected, key=lambda x: x[0].decision_at):
+        decision_time = feat.decision_at
+
+        still_active = [ext for ext in active_positions if ext > decision_time]
+        active_positions = still_active
+
+        if len(active_positions) >= slots:
+            skipped += 1
+            continue
+
+        if current_capital < position:
+            skipped += 1
+            continue
+
+        taken += 1
+        active_positions.append(decision_time + timedelta(minutes=contract.outcome_horizon_minutes))
+        max_concurrency = max(max_concurrency, len(active_positions))
+
+        if pnl is None:
+            unresolved_in_portfolio = True
         else:
-            streak = 0
+            cum_pnl += pnl
+            current_capital += pnl
+
+            peak = max(peak, current_capital)
+            max_dd = max(max_dd, peak - current_capital)
+            if pnl < 0:
+                streak += 1
+                longest = max(longest, streak)
+            else:
+                streak = 0
+
     return PortfolioResult(
-        taken_trades=len(pnls),
-        skipped_capacity=0,
-        total_pnl_usd=cum,
+        taken_trades=taken,
+        skipped_capacity=skipped,
+        total_pnl_usd=cum_pnl,
         max_drawdown_usd=max_dd,
         longest_losing_streak=longest,
-        max_concurrency=0,  # simplified
-    )
+        max_concurrency=max_concurrency,
+    ), unresolved_in_portfolio
 
 
 def _clustered_se(values: Sequence[tuple[str, float]]) -> tuple[int, float | None]:
@@ -873,7 +913,10 @@ def render_verdict(
     leave_one_out_net_min: float | None,
     portfolio_pnl: float | None,
     portfolio_ending_bank: float | None,
+    unresolved_in_portfolio: bool = False,
 ) -> str:
+    if unresolved_in_portfolio:
+        return "INSUFFICIENT_EVIDENCE"
     # Gate 1: maturity
     if contract.min_resolved_episodes is None or resolved_episodes < contract.min_resolved_episodes:
         return "INSUFFICIENT_EVIDENCE"
@@ -959,13 +1002,59 @@ def build_report(
     n_weeks, se = _clustered_se([(r.iso_week, r.net_return) for r in records])
     _, se_excess = _clustered_se([(r.iso_week, r.excess) for r in records if r.excess is not None])
 
+    def _critical_value(rule: str | None, clusters: int) -> float:
+        if not rule or rule == "normal_1_96_v1":
+            return 1.96
+        if rule == "student_t_df_weeks_minus_one_v1":
+            df = clusters - 1
+            if df < 1:
+                return float("inf")
+            t_table = {
+                1: 12.706,
+                2: 4.303,
+                3: 3.182,
+                4: 2.776,
+                5: 2.571,
+                6: 2.447,
+                7: 2.365,
+                8: 2.306,
+                9: 2.262,
+                10: 2.228,
+                11: 2.201,
+                12: 2.179,
+                13: 2.160,
+                14: 2.145,
+                15: 2.131,
+                16: 2.120,
+                17: 2.110,
+                18: 2.101,
+                19: 2.093,
+                20: 2.086,
+                21: 2.080,
+                22: 2.074,
+                23: 2.069,
+                24: 2.064,
+                25: 2.060,
+                26: 2.056,
+                27: 2.052,
+                28: 2.048,
+                29: 2.045,
+                30: 2.042,
+            }
+            if df in t_table:
+                return t_table[df]
+            return 1.96 + 2.4 / df
+        return 1.96
+
+    cv_net = _critical_value(contract.inference_rule, n_weeks)
     lower_95_net = None
     if mean_net is not None and se is not None:
-        lower_95_net = mean_net - 1.96 * se
+        lower_95_net = mean_net - cv_net * se
 
+    cv_excess = _critical_value(contract.inference_rule, n_weeks)
     lower_95_excess = None
     if mean_excess is not None and se_excess is not None:
-        lower_95_excess = mean_excess - 1.96 * se_excess
+        lower_95_excess = mean_excess - cv_excess * se_excess
 
     loo_net_min, loo_net_max = _leave_one_out_net(records)
 
@@ -981,20 +1070,21 @@ def build_report(
     max_episodes_per_week_frac = (max(week_counts.values()) / resolved) if resolved else None
     control_coverage_frac = (resolved_controls / requested_controls) if requested_controls else None
 
-    selected_pnls = []
+    selected_pnls: list[tuple[DecisionFeatures, float | None]] = []
+    unresolved_in_portfolio = False
     if selected_episodes is not None:
         record_map = {r.route_key: r.net_return for r in records}
         for d in selected_episodes:
             r_net = record_map.get(d.route_key())
             if r_net is not None:
-                selected_pnls.append(r_net * float(contract.position_usd or 0.0))
+                selected_pnls.append((d, r_net * float(contract.position_usd or 0.0)))
             else:
-                selected_pnls.append(0.0)
+                selected_pnls.append((d, None))
 
-    portfolio = simulate_portfolio(contract, selected_pnls)
+    portfolio, unresolved_in_portfolio = simulate_portfolio(contract, selected_pnls)
     portfolio = PortfolioResult(
         taken_trades=portfolio.taken_trades,
-        skipped_capacity=skipped_portfolio_capacity,
+        skipped_capacity=portfolio.skipped_capacity,
         total_pnl_usd=portfolio.total_pnl_usd,
         max_drawdown_usd=portfolio.max_drawdown_usd,
         longest_losing_streak=portfolio.longest_losing_streak,
@@ -1021,6 +1111,7 @@ def build_report(
         leave_one_out_net_min=loo_net_min,
         portfolio_pnl=portfolio.total_pnl_usd,
         portfolio_ending_bank=portfolio_ending_bank,
+        unresolved_in_portfolio=unresolved_in_portfolio,
     )
     return EconomicsReport(
         resolved_episodes=resolved,

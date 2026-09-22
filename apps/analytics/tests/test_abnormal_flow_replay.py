@@ -82,6 +82,7 @@ def _write_c(c: AbnormalFlowContract) -> str:
 
 def _frozen_contract(**overrides: object) -> AbnormalFlowContract:
     base = dict(
+        inference_rule="normal_1_96_v1",
         min_oi_growth_pct=5.0,
         min_buy_pressure_ratio=0.6,
         max_price_containment=0.1,
@@ -531,11 +532,36 @@ def test_quote_suffix_resolver_admits_failure() -> None:
 
 
 def test_simulate_portfolio_respects_slots_and_measures_drawdown() -> None:
-    c = _frozen_contract(portfolio_max_slots=1)
+    c = _frozen_contract(portfolio_max_slots=1, portfolio_bank_usd=100000.0)
+    from datetime import UTC, datetime
+
+    def df(i: int) -> Any:
+        from schurfer_analytics.abnormal_flow_replay import DecisionFeatures
+
+        return DecisionFeatures(
+            exchange="binance",
+            market_type="spot",
+            native_market_id="1",
+            capture_version="v1",
+            symbol="sym",
+            canonical_asset="asset",
+            decision_at=datetime(2026, 1, 1, tzinfo=UTC)
+            + __import__("datetime").timedelta(
+                minutes=i * 1000
+            ),  # spread out so they don't overlap if slots=1
+            oi_growth_pct=1.0,
+            buy_pressure=1.0,
+            containment=1.0,
+            oi_native_amount=1.0,
+            oi_native_value_usd=1.0,
+            decision_price=1.0,
+            pre_decision_turnover_usd=1.0,
+            iso_week="W1",
+        )
 
     # Winners test
     pnls_winners = [0.10 * 300, 0.20 * 300]
-    winners = simulate_portfolio(c, pnls_winners)
+    winners, _ = simulate_portfolio(c, [(df(i), p) for i, p in enumerate(pnls_winners)])
     winners.skipped_capacity = 1
     winners.max_concurrency = 1
     assert winners.taken_trades == 2
@@ -545,7 +571,7 @@ def test_simulate_portfolio_respects_slots_and_measures_drawdown() -> None:
 
     # Losers test
     pnls_losers = [-0.10 * 300, -0.05 * 300]
-    losers = simulate_portfolio(c, pnls_losers)
+    losers, _ = simulate_portfolio(c, [(df(i), p) for i, p in enumerate(pnls_losers)])
     assert losers.longest_losing_streak == 2
     assert losers.max_drawdown_usd == pytest.approx(300 * 0.10 + 300 * 0.05)
 
@@ -944,3 +970,56 @@ def test_parquet_outcome_reader_requires_continuous_path(tmp_path: Any, monkeypa
     outcomes = reader([d])
     assert outcomes[d.route_key()].entry_price is None
     assert outcomes[d.route_key()].exit_price is None
+
+
+def test_parquet_outcome_reader_exact_path(tmp_path: Any) -> None:
+    from datetime import UTC, datetime
+
+    import duckdb
+
+    decision_at = datetime(2026, 8, 20, 10, 0, tzinfo=UTC)
+    path = str(tmp_path / "exact.parquet")
+
+    # We will just write a parquet using duckdb directly
+    con = duckdb.connect()
+    con.execute(
+        "CREATE TABLE bars (exchange VARCHAR, market_type VARCHAR, "
+        "native_market_id VARCHAR, capture_version VARCHAR, symbol VARCHAR, "
+        "bucket_start TIMESTAMP WITH TIME ZONE, open_price DOUBLE, "
+        "high_price DOUBLE, low_price DOUBLE, close_price DOUBLE, price_complete BOOLEAN)"
+    )
+
+    for i in range(722):
+        t = decision_at + timedelta(minutes=i)
+        con.execute(
+            "INSERT INTO bars VALUES ('binance', 'spot', 'BTC_USDT', "
+            "'v1', 'BTC_USDT', ?, 100.0, 100.0, 100.0, 100.0, true)",
+            [t],
+        )
+
+    con.execute(f"COPY bars TO '{path}' (FORMAT PARQUET)")
+    con.close()
+
+    d = DecisionFeatures(
+        exchange="binance",
+        market_type="spot",
+        native_market_id="BTC_USDT",
+        capture_version="v1",
+        symbol="BTC_USDT",
+        canonical_asset="BTC",
+        decision_at=decision_at,
+        oi_growth_pct=10.0,
+        buy_pressure=0.9,
+        containment=0.001,
+        oi_native_amount=1000.0,
+        oi_native_value_usd=100000.0,
+        decision_price=100.0,
+        pre_decision_turnover_usd=2e6,
+        iso_week="2026W33",
+    )
+    from schurfer_analytics.abnormal_flow_replay import parquet_outcome_reader
+
+    reader = parquet_outcome_reader(path, outcome_horizon_minutes=720)
+    outcomes = reader([d])
+    assert len(outcomes) == 1
+    assert outcomes[d.route_key()].exit_price is not None

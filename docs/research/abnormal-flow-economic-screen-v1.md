@@ -69,7 +69,7 @@ policy are registered and immutable for the evaluation window.
   and duplicate control. An unresolved identity is counted in the funnel and
   cannot be silently treated as a distinct ticker asset.
 
-## Proposed signal and control
+## Frozen signal and control
 
 The **one primary** screen requires (a) positive within-instrument OI growth
 over the prior hour (percent of native OI amount), (b) aggressive taker-buy
@@ -244,23 +244,23 @@ minutes to low tens of minutes of CPU. Do the first real run as a one-day slice 
 measure actual RAM/disk/time and the real per-venue counts before the full window. The
 unit test drives the whole path on a synthetic two-day dataset as a correctness proof.
 
-## Proposed deterministic threshold freeze (one rule, for review)
+## Frozen deterministic thresholds
 
-Proposed, not yet registered: `fixed_percentiles_on_prestart_window_v1`. Split the one
+Registered rule: `fixed_percentiles_on_prestart_window_v1`. Split the one
 verified window into a CALIBRATION slice (the first 14 days) and a disjoint EVALUATION
-remainder. On the calibration slice only, over the ELIGIBLE decisions, freeze the three
+remainder (2026-09-13 to 2026-09-19). On the calibration slice only, over the ELIGIBLE decisions, freeze the three
 thresholds at fixed pre-declared percentiles of the scan distributions: OI growth at the
-80th percentile, buy pressure at the 70th, and containment at the 50th (a cap, so lower
-is more restrained). Freeze the eligibility floor `min_oi_notional_usd` at the 25th
-percentile of calibration-slice OI-notional so the signal is at least nominally
-tradeable. All percentiles come from outcome-blind distributions; none is chosen after
-seeing returns, and the evaluation window the economics later score is disjoint from the
-slice the thresholds were read on. After you review the actual scan distributions we
-pick the percentile knobs (or replace this rule) and register the window and parameters
-for the separate economic run.
+P97.5, buy pressure at the P90, and containment at the P25 (a cap, so lower
+is more restrained). Freeze the eligibility floor `min_oi_notional_usd` at the P25
+percentile of calibration-slice OI-notional.
 
-**NOTE**: Diagnostic metrics, parameter ablation analysis, MAE/MFE tracking, and stress limits
-have been explicitly removed from the frozen formal contract. The formal evaluation only supports
+The inference rule is frozen as `student_t_df_weeks_minus_one_v1` to correct for the small number of weekly clusters.
+The portfolio simulator enforces fixed-bank rules: sequential capital updates, exit-timing capacity limits, and $300 maximum allocation per slot. If any selected signal is unresolved, the verdict fail-closes.
+
+The OI-ablation metric (same buy/price thresholds on same assets, just without the OI-growth requirement) acts as an outcome-blind funnel diagnostic. It does not gate the formal PASS/FAIL verdict, but records whether the OI filter actually isolated different flows.
+
+The frozen artifact `contract.json` embeds its own hash and references the full `evaluation_manifest.json` fingerprint covering the candidate tables, identity snapshots, and raw funding records used.
+The formal evaluation only supports
 a single registered deterministic pass with strict portfolio gates and the registered verdict.
 
 ## Point-in-time identity schema (pinned; export + scan consume it)

@@ -42,6 +42,7 @@ ENTRY_REFERENCES = frozenset({"next_bar_open_priced_proxy_v1"})
 EXIT_REFERENCES = frozenset({"horizon_bar_close_priced_proxy_v1"})
 MATCHING_RULES = frozenset({"same_venue_regime_liquidity_pricemove_band_v1"})
 FUNDING_MODELS = frozenset({"conservative_8h_v1"})
+INFERENCE_RULES = frozenset({"student_t_df_weeks_minus_one_v1", "normal_1_96_v1"})
 
 # An input fingerprint pins the exact frozen dataset the replay is allowed to read:
 # the audit's aggregate output hash, optionally namespaced (``algo:<64 hex>`` or a
@@ -169,6 +170,7 @@ class AbnormalFlowContract:
     controls_per_episode: int | None = None
     portfolio_bank_usd: float | None = None
     portfolio_max_slots: int | None = None
+    inference_rule: str | None = None
 
     # Literal UTC window the replay is registered to read, and the input fingerprint it
     # must reproduce. Both boundaries are tz-aware UTC ISO-8601 with start < end; the
@@ -295,6 +297,7 @@ class AbnormalFlowContract:
         registered("entry_reference", ENTRY_REFERENCES)
         registered("exit_reference", EXIT_REFERENCES)
         registered("matching_rule", MATCHING_RULES)
+        registered("inference_rule", INFERENCE_RULES)
         integer("controls_per_episode", low=1)
         num("portfolio_bank_usd", low=0.0, inclusive_low=False)
         integer("portfolio_max_slots", low=1)

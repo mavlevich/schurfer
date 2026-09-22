@@ -68,6 +68,7 @@ def _frozen_contract(**overrides: object) -> AbnormalFlowContract:
         min_buy_pressure_ratio=0.6,
         max_price_containment=0.1,
         min_oi_notional_usd=250_000.0,
+        inference_rule="student_t_df_weeks_minus_one_v1",
         oi_usd_conversion_rule="bybit_native_value_binance_amount_x_decision_price_v1",
         position_usd=300.0,
         max_participation_frac=0.01,
@@ -245,5 +246,5 @@ def test_frozen_artifact_loads_and_hashes_correctly() -> None:
     assert contract.compute_hash() == d["contract_hash"]
 
     # File SHA must match what's reported (for safety, though it will change if formatted)
-    assert file_sha == "28469aafdd66b2d8870983db221eb1abb5043fd0a3597383207f070858e3748d"
+    assert file_sha == "081f7dbc77113d9e22310e515ac57eab7543d26c66a9fdea406a1f780ce00d50"
     contract.require_frozen()
