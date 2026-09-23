@@ -8,10 +8,10 @@ Update only these four lines after every merge -- this is the fast-path
 status check, not a place for narrative.
 
 ```
-Current primary: abnormal-flow v1 completed as a diagnostic (inconclusive, window burned), preparing post-hoc missingness/control-coverage diagnostic; HYP-015 verdict method and funding capture code are merged and accumulating
-State: production has no configured trading credentials and runs DRY_RUN with AUTO_TRADE off; pump-short and delayed-short are closed; monster harvest and net-buy accumulation are parked; abnormal-flow v1 did not graduate; HYP-012 is research-only; no strategy has yet established a scalable after-cost edge
-Next: post-hoc missingness/control-coverage diagnostic on the burned v1 window (no promotion claims); pivot to v2 discovery (not yet frozen); prepare performance support PR for outcome-blind materialized artifacts
-User decision required: no live-mode or broad venue/L2 expansion is authorized; production cold-bar deletion remains dry-run until its separate canary/enablement review then implement one abnormal-flow discovery on existing exact-native Bybit/Binance data; let HYP-012/HYP-015 mature without peeking
+Current primary: HYP-015 outcome-blind readiness/freeze; abnormal-flow v1 recorded as an inconclusive diagnostic on a burned window
+State: live mode is not authorized; no strategy has yet established a scalable after-cost edge
+Next: HYP-015 readiness/freeze in primary and portfolio-engine correctness in support; then abnormal-flow missingness/control diagnostics, then performance
+User decision required: prior to freeze, align on future v2 mechanism/portfolio policy; broad venue/L2/live not authorized; cold-bar canary separately then implement one abnormal-flow discovery on existing exact-native Bybit/Binance data; let HYP-012/HYP-015 mature without peeking
 User decision required: approve the proposed abnormal-flow primary mechanism/horizon before it is frozen; no live-mode or broad venue/L2 expansion is authorized; production cold-bar deletion remains dry-run until its separate canary/enablement review
 ```
 

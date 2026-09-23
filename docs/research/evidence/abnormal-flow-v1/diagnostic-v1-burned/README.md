@@ -6,18 +6,26 @@ This directory contains the results of an inconclusive diagnostic run executed o
 
 ## Why this is a diagnostic result (Burned Window)
 
-The formal runner (`#436`) was not yet merged into `main`. To generate these results, an unversioned, remote scratch-script with monkeypatches (`FORMAL_RETURNS_RUN_ENABLED = True`) was used. During execution, the pipeline suffered multiple failures, and outcomes were read repeatedly. Because the formal process requires a strict, single-pass outcome-blind execution, the window is now considered burned.
+The formal runner (PR #436) was not yet merged into `main`. To generate these results, an unversioned, remote scratch-script with monkeypatches (`FORMAL_RETURNS_RUN_ENABLED = True`) was used. During execution, the pipeline suffered multiple failures, and outcomes were read repeatedly. Because the formal process requires a strict, single-pass outcome-blind execution, the window is now considered burned and the results diagnostic.
 
 ## Ledger of Attempts
 
-1. **Attempt 1** (~00:55 UTC): Failed after 50m of loading 29 million bars due to a `TypeError` in the scratch script calling `assemble_decisions` with two positional arguments instead of kwargs. Outcomes were NOT read. Scratch code for this attempt is unrecoverable.
-2. **Attempt 2** (~02:18 UTC): Failed after 1h 45m due to `TypeError: '<=' not supported between instances of 'str' and 'datetime.datetime'` when validating the execution window bounds against the string `contract.window_start_utc`. Outcomes were NOT read.
-3. **Attempt 3** (~04:18 UTC): Failed after 1h 45m on the final JSON serialization step (`AttributeError: 'EconomicsReport' object has no attribute 'as_json'`). Outcomes WERE read by DuckDB, but the result object was lost in memory.
-4. **Attempt 4** (~04:57 UTC): Successful execution and JSON serialization using a custom `EnhancedJSONEncoder`. Outcomes WERE read.
+| Attempt | UTC Date/Time        | Revision   | Command/Script                                              | Failure Stage                       | Outcomes Read | Artifact Created |
+| :------ | :------------------- | :--------- | :---------------------------------------------------------- | :---------------------------------- | :------------ | :--------------- |
+| 1       | 2026-09-22T20:55:09Z | `19430c04` | `uv run python /tmp/run_formal.py` (unknown/unrecoverable)  | Assembly `TypeError`                | No            | No               |
+| 2       | 2026-09-22T23:29:16Z | `47dca46e` | `uv run python /tmp/run_formal4.py` (unknown/unrecoverable) | Window bounds `TypeError`           | No            | No               |
+| 3       | 2026-09-23T04:18:05Z | `47dca46e` | `uv run python /tmp/run_formal5.py` (unknown/unrecoverable) | JSON serialization `AttributeError` | Yes           | No               |
+| 4       | 2026-09-23T04:57:05Z | `47dca46e` | `uv run python /tmp/run_formal6.py` (unknown/unrecoverable) | Success                             | Yes           | Yes              |
 
-**Known Git Revision during attempts:** `47dca46e66c38ffcb56c3cc3283cdf4a51e420d2`
+_Note: We do not claim the integrity pipeline passed entirely, as it was bypassed via monkeypatches._
 
-_Note: We do not claim the integrity pipeline passed entirely, as it was bypassed via monkeypatches and scratch scripts._
+## Artifacts and Provenance
+
+The input configuration is correctly frozen in the sibling directory `../formal/`.
+
+- Frozen Contract (`../formal/contract.json`): SHA-256 `36502eeb4ffb63cb2d0eead5e81c97947c97130a85ac046e6d2759459e492256`
+- Evaluation Manifest (`../formal/evaluation_manifest.json`): SHA-256 `7f4d3f58044d84898b40c2c5bcedc90a6173340a93f3d6e07e09c3e5cf6f2b8d`
+- Diagnostic Report (`formal_run_report.json`): SHA-256 `08be4b11642eb540975f60c22ad9cc4f8962529feaaa1dda4d67a5c0b561ae2e`
 
 ## Numerical Report (Diagnostic only)
 
@@ -31,9 +39,3 @@ The numerical report (`formal_run_report.json`) is preserved exactly as emitted 
 - **week concentration**: 52%
 - **CI lower bounds**: negative (net return lower bound -1.74%, excess lower bound -0.95%)
 - **portfolio simulation**: +$4.25 / maxDD $17.15
-
-## Artifacts
-
-- `contract.json`: The frozen decision rules and thresholds.
-- `evaluation_manifest.json`: The integrity gates.
-- `formal_run_report.json`: The outcome-bearing diagnostic results.
