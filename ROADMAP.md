@@ -8,9 +8,10 @@ Update only these four lines after every merge -- this is the fast-path
 status check, not a place for narrative.
 
 ```
-Current primary: HYP-015 verdict method and funding capture code are merged; actual-funding capture is now accumulating but the verdict is NOT frozen; one bounded abnormal-flow/OI economic-screen contract is in draft for the next discovery slot
-State: production has no configured trading credentials and runs DRY_RUN with AUTO_TRADE off; pump-short and delayed-short are closed; monster harvest and net-buy accumulation are parked; HYP-012 is research-only unless its execution route is separately confirmed; no strategy has yet established a scalable after-cost edge
-Next: finish outcome-blind HYP-015 funding/readiness checks and freeze before reading returns; review then implement one abnormal-flow discovery on existing exact-native Bybit/Binance data; let HYP-012/HYP-015 mature without peeking
+Current primary: abnormal-flow v1 completed as a diagnostic (inconclusive, window burned), preparing post-hoc missingness/control-coverage diagnostic; HYP-015 verdict method and funding capture code are merged and accumulating
+State: production has no configured trading credentials and runs DRY_RUN with AUTO_TRADE off; pump-short and delayed-short are closed; monster harvest and net-buy accumulation are parked; abnormal-flow v1 did not graduate; HYP-012 is research-only; no strategy has yet established a scalable after-cost edge
+Next: post-hoc missingness/control-coverage diagnostic on the burned v1 window (no promotion claims); pivot to v2 discovery (not yet frozen); prepare performance support PR for outcome-blind materialized artifacts
+User decision required: no live-mode or broad venue/L2 expansion is authorized; production cold-bar deletion remains dry-run until its separate canary/enablement review then implement one abnormal-flow discovery on existing exact-native Bybit/Binance data; let HYP-012/HYP-015 mature without peeking
 User decision required: approve the proposed abnormal-flow primary mechanism/horizon before it is frozen; no live-mode or broad venue/L2 expansion is authorized; production cold-bar deletion remains dry-run until its separate canary/enablement review
 ```
 

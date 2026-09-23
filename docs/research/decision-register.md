@@ -22,6 +22,7 @@ after-cost economics unless explicitly labelled a paired difference.
 
 ## Confirmed facts (with references)
 
+- **Abnormal-flow v1 is an inconclusive diagnostic result.** The prospective window (2026-08-30 to 2026-09-18) was burned due to multiple reads and monkeypatched execution without the formal runner (`docs/research/evidence/abnormal-flow-v1/diagnostic-v1-burned/README.md`). Mean net +0.61%, excess +0.45%, resolved 125/252, missingness 50.4%, control coverage 53%, week concentration 52%, CI lower bounds negative, portfolio +$4.25 / maxDD $17.15. The result is non-promotional and v1 does not advance to live execution. Next step: post-hoc missingness/control-coverage diagnostic on the burned window without promotion claims.
 - **The executable pump-short is net negative.** `app.research_report_runs`:
   `liquid_taker_candidate_v1` = 802 eligible / 151 tradeable episodes, net expectancy
   -0.224%/episode, 95% CI [-0.455%, -0.0096%] (entirely below zero);
