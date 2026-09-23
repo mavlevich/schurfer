@@ -175,7 +175,7 @@ abnormal-flow-input-audit --cold-bars-dir <restored-cold-bars-dir> \
   --start-day <YYYY-MM-DD> --end-day <YYYY-MM-DD-exclusive>
 ```
 
-## Implemented outcome-blind scanner (counts-only; returns reading disabled)
+## Implemented scanner and one-shot formal runner
 
 This module ships as a CALIBRATION / COUNTS-ONLY scanner. `abnormal_flow_replay`
 holds it. `load_verified_minute_bars` verifies each day's cold-bar manifest (bytes,
@@ -190,16 +190,34 @@ finalized bar) stays available; only a trade received after the decision is late
 scanner output is the funnel of counts (scanned / eligible / primary and ablation
 fires / episodes) by rejection reason.
 
-Reading forward returns is HARD-DISABLED in this release: `FORMAL_RETURNS_RUN_ENABLED`
-is `False` and `FormalReplay.run` raises `ReturnsRunDisabledError` unconditionally,
-even for a fully frozen contract, before any freeze check or outcome read (covered by
-test). The returns-path logic it guards (freeze fingerprint/window binding,
-route-keyed priced-proxy outcomes, matched excess, week-clustered uncertainty,
-leave-one-out, fixed-bank portfolio, and the one-shot verdict) is present and unit
-tested but inert. Enabling it, a full registered input fingerprint, the OI ablation
-economics, the portfolio, and the verdict are the NEXT PR, still before any returns
-are read. The canonical resolver here is a documented heuristic fallback
-(quote-suffix stripping) for tests; production passes the point-in-time resolver.
+Forward returns remain disabled by default. `abnormal-flow-formal-runner` is the only
+supported activation path: it requires explicit `--formal-run`, a clean unchanged Git
+revision, the exact contract and evaluation-manifest file hashes frozen in PR #435,
+the physical hashes of the registered scan/identity/candidate/funding artifacts, and
+verified cold-bar manifests for every lookback and outcome dependency day. It claims a
+terminal run id before reading outcomes, streams features and controls in two bounded
+passes, enables the returns reader only around the single read, and atomically writes
+either `formal_run_report.json` or `formal_run_failed.json`. A success or failure cannot
+be silently overwritten or retried under the same contract and evaluation fingerprint.
+
+The runner uses the production point-in-time identity resolver on the exact native
+route, requires a continuous price-complete path from next-bar entry through the 720m
+exit bar, and delegates economics, portfolio accounting and verdict construction to
+the same pure core used by `FormalReplay`. The heuristic quote-suffix resolver remains
+tests/exploration-only.
+
+```bash
+abnormal-flow-formal-runner --formal-run \
+  --contract docs/research/evidence/abnormal-flow-v1/formal/contract.json \
+  --evaluation-manifest docs/research/evidence/abnormal-flow-v1/formal/evaluation_manifest.json \
+  --scan-manifest docs/research/evidence/abnormal-flow-v1/20260921T062152Z-96acbc87/manifest.json \
+  --identity-snapshot docs/research/evidence/abnormal-flow-v1/freeze/identity_snapshot.json \
+  --candidate-table docs/research/evidence/abnormal-flow-v1/freeze/candidate_table.json \
+  --funding-snapshot docs/research/evidence/abnormal-flow-v1/funding/funding_snapshot.json \
+  --funding-settlements docs/research/evidence/abnormal-flow-v1/funding/funding_settlements.json.gz \
+  --cold-bars-dir <restored-cold-bars> \
+  --output-dir <outside-worktree-or-gitignored-evidence-root>
+```
 
 ## Reproducible calibration scan (`abnormal-flow-scan`)
 
