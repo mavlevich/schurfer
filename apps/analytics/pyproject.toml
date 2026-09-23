@@ -108,6 +108,7 @@ abnormal-flow-identity-export = "schurfer_analytics.abnormal_flow_identity_expor
 abnormal-flow-funding-snapshot = "schurfer_analytics.abnormal_flow_funding_snapshot:main"
 abnormal-flow-candidate-table = "schurfer_analytics.abnormal_flow_candidate_table:main"
 abnormal-flow-formal-runner = "schurfer_analytics.abnormal_flow_formal_runner:main"
+abnormal-flow-snapshot = "schurfer_analytics.abnormal_flow_snapshot_pipeline:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

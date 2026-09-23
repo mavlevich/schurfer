@@ -1,111 +1,179 @@
-from datetime import UTC, datetime, timedelta
+from __future__ import annotations
 
+from dataclasses import replace
+from datetime import UTC, datetime, timedelta
+from typing import Any
+
+import pytest
 from schurfer_analytics.portfolio_engine_v2 import (
     PortfolioPosition,
     TradeDirection,
     simulate_portfolio_v2,
 )
 
-UTC = UTC
 
-
-def _pos(
-    did: str, asset: str, d: int, t_entry: int, t_exit: int | None, ret: float | None = 0.1
+def _position(
+    decision_id: str,
+    asset: str,
+    *,
+    entry_minute: int,
+    exit_minute: int | None,
+    gross_return: float | None = 0.1,
+    direction: TradeDirection = TradeDirection.LONG,
+    costs_bps: float = 0.0,
 ) -> PortfolioPosition:
-    entry = datetime(2026, 1, 1, tzinfo=UTC) + timedelta(minutes=t_entry)
-    exit = (
-        datetime(2026, 1, 1, tzinfo=UTC) + timedelta(minutes=t_exit) if t_exit is not None else None
-    )
+    start = datetime(2026, 1, 1, tzinfo=UTC)
     return PortfolioPosition(
-        decision_id=did,
+        decision_id=decision_id,
         canonical_asset=asset,
-        direction=TradeDirection.LONG if d > 0 else TradeDirection.SHORT,
-        entry_at=entry,
-        exit_at=exit,
-        gross_return=ret,
-        entry_slippage_bps=0.0,
+        direction=direction,
+        entry_at=start + timedelta(minutes=entry_minute),
+        exit_at=start + timedelta(minutes=exit_minute) if exit_minute is not None else None,
+        gross_return=gross_return if exit_minute is not None else None,
+        entry_slippage_bps=costs_bps,
         exit_slippage_bps=0.0,
         fees_bps=0.0,
         funding_bps=0.0,
-        net_return=ret,
-        unresolved_reason="missing" if t_exit is None else None,
+        net_return=(gross_return - costs_bps / 10_000.0)
+        if exit_minute is not None and gross_return is not None
+        else None,
+        unresolved_reason="missing_exit" if exit_minute is None else None,
     )
 
 
-def test_k_slots() -> None:
-    p1 = _pos("1", "A", 1, 0, 10)
-    p2 = _pos("2", "B", 1, 1, 11)
-    p3 = _pos("3", "C", 1, 2, 12)
-
-    m = simulate_portfolio_v2([p1, p2, p3], initial_capital=100.0, k_slots=2)
-    assert m.total_trades == 2
-    assert m.rejections_max_concurrent == 1
-    assert m.rejected_entries[0] == ("3", "max_concurrent_positions")
-    assert m.max_concurrent_positions == 2
-
-
-def test_insufficient_capital() -> None:
-    # Two overlapping total-loss trades drain all cash before p3 tries to enter.
-    # k=2, initial=100 → position_usd=50.
-    # p1 enters at 0: cash=50. p2 enters at 1: cash=0.
-    # p1 exits at 10, ret=-1.0: cash=0+50-50=0. p2 exits at 11, ret=-1.0: cash=0+50-50=0.
-    # p3 at 20: cash(0) < position_usd(50) → rejected.
-    p1 = _pos("1", "A", 1, 0, 10, ret=-1.0)
-    p2 = _pos("2", "B", 1, 1, 11, ret=-1.0)
-    p3 = _pos("3", "C", 1, 20, 30)
-
-    m = simulate_portfolio_v2([p1, p2, p3], initial_capital=100.0, k_slots=2)
-    assert m.total_trades == 2
-    assert m.rejections_insufficient_capital == 1
-    assert m.rejected_entries[0] == ("3", "insufficient_capital")
+@pytest.mark.parametrize("slots", [2, 4, 6, 8])
+def test_fixed_k_slot_scaling(slots: int) -> None:
+    positions = [
+        _position(str(index), f"asset-{index}", entry_minute=index, exit_minute=100 + index)
+        for index in range(slots + 1)
+    ]
+    metrics = simulate_portfolio_v2(positions, initial_capital=300.0, k_slots=slots)
+    assert metrics.total_trades == slots
+    assert metrics.rejection_counts == {"max_concurrent_positions": 1}
+    assert metrics.max_concurrent_positions == slots
+    assert metrics.peak_gross_exposure == pytest.approx(300.0)
 
 
-def test_unresolved_fail_closed() -> None:
-    p1 = _pos("1", "A", 1, 0, None)
-    m = simulate_portfolio_v2([p1], initial_capital=100.0, k_slots=2)
-    assert m.unresolved_fail_closed == 1
-    assert m.total_trades == 0
-    assert m.available_cash == 50.0
-    assert m.reserved_capital == 50.0
-    assert m.net_exposure == 50.0
-    assert m.gross_exposure == 50.0
+def test_insufficient_capital_rejects_without_partial_allocation() -> None:
+    positions = [
+        _position("1", "A", entry_minute=0, exit_minute=10, gross_return=-1.0),
+        _position("2", "B", entry_minute=1, exit_minute=11, gross_return=-1.0),
+        _position("3", "C", entry_minute=20, exit_minute=30),
+    ]
+    metrics = simulate_portfolio_v2(positions, initial_capital=100.0, k_slots=2)
+    assert metrics.total_trades == 2
+    assert metrics.rejection_counts == {"insufficient_capital": 1}
+    assert metrics.rejected_entries[0].decision_id == "3"
 
 
-def test_identical_timestamp_same_asset() -> None:
-    p1 = _pos("B", "A", 1, 0, 10)
-    p2 = _pos("A", "A", 1, 0, 10)
-
-    m = simulate_portfolio_v2([p1, p2], initial_capital=100.0, k_slots=2, max_positions_per_asset=1)
-    assert m.total_trades == 1
-    assert m.rejections_max_per_asset == 1
-    assert m.rejected_entries[0] == ("B", "max_positions_per_asset")
-
-
-def test_reversed_input_equivalence() -> None:
-    p1 = _pos("1", "A", 1, 0, 10)
-    p2 = _pos("2", "B", 1, 5, 15)
-    p3 = _pos("3", "C", 1, 8, 20)
-
-    m1 = simulate_portfolio_v2([p1, p2, p3], initial_capital=100.0, k_slots=2)
-    m2 = simulate_portfolio_v2([p3, p2, p1], initial_capital=100.0, k_slots=2)
-
-    assert m1 == m2
+def test_unresolved_position_remains_reserved_and_marks_incomplete() -> None:
+    position = _position("1", "A", entry_minute=0, exit_minute=None)
+    metrics = simulate_portfolio_v2([position], initial_capital=100.0, k_slots=2)
+    assert metrics.unresolved_fail_closed == 1
+    assert metrics.total_trades == 0
+    assert metrics.available_cash == 50.0
+    assert metrics.reserved_capital == 50.0
+    assert metrics.notional_exposure == 50.0
+    assert metrics.accounting_complete is False
 
 
-def test_exit_before_entry() -> None:
-    p1 = _pos("1", "A", 1, 0, 10)
-    p2 = _pos("2", "B", 1, 10, 20)
+def test_same_timestamp_uses_exit_then_stable_entry_order() -> None:
+    first = _position("A", "same", entry_minute=0, exit_minute=10)
+    later = _position("B", "same", entry_minute=10, exit_minute=20)
+    rejected = _position("C", "same", entry_minute=10, exit_minute=20)
+    forward = simulate_portfolio_v2(
+        [first, rejected, later],
+        initial_capital=100.0,
+        k_slots=1,
+        max_positions_per_asset=1,
+    )
+    reverse = simulate_portfolio_v2(
+        [later, rejected, first],
+        initial_capital=100.0,
+        k_slots=1,
+        max_positions_per_asset=1,
+    )
+    assert forward == reverse
+    assert forward.total_trades == 2
+    assert forward.rejected_entries[0].decision_id == "C"
 
-    m = simulate_portfolio_v2([p1, p2], initial_capital=100.0, k_slots=1)
-    assert m.total_trades == 2
-    assert m.rejections_max_concurrent == 0
+
+@pytest.mark.parametrize(
+    ("kwargs", "reason"),
+    [
+        ({"max_gross_exposure_usd": 49.0}, "max_gross_exposure"),
+        ({"max_abs_net_exposure_usd": 49.0}, "max_abs_net_exposure"),
+        ({"leverage": 2.0, "max_leverage": 0.9}, "max_leverage"),
+    ],
+)
+def test_exposure_and_leverage_limits_reject(kwargs: dict[str, Any], reason: str) -> None:
+    position = _position("1", "A", entry_minute=0, exit_minute=10)
+    metrics = simulate_portfolio_v2([position], initial_capital=100.0, k_slots=2, **kwargs)
+    assert metrics.total_trades == 0
+    assert metrics.rejection_counts == {reason: 1}
 
 
-def test_exposure_leverage_limits() -> None:
-    p1 = _pos("1", "A", 1, 0, None)
-    p2 = _pos("2", "B", -1, 1, None)
+def test_long_short_open_positions_report_net_exposure() -> None:
+    positions = [
+        _position("1", "A", entry_minute=0, exit_minute=None),
+        _position(
+            "2",
+            "B",
+            entry_minute=1,
+            exit_minute=None,
+            direction=TradeDirection.SHORT,
+        ),
+    ]
+    metrics = simulate_portfolio_v2(positions, initial_capital=100.0, k_slots=2)
+    assert metrics.gross_exposure == 100.0
+    assert metrics.net_exposure == 0.0
+    assert metrics.leverage == 1.0
 
-    m = simulate_portfolio_v2([p1, p2], initial_capital=100.0, k_slots=4)
-    assert m.gross_exposure == 50.0
-    assert m.net_exposure == 0.0
-    assert m.leverage == 50.0 / 100.0
+
+@pytest.mark.parametrize("k_slots", [0, -1])
+def test_invalid_k_fails_closed(k_slots: int) -> None:
+    with pytest.raises(ValueError, match="k_slots"):
+        simulate_portfolio_v2([], k_slots=k_slots)
+
+
+def test_duplicate_ids_fail_closed() -> None:
+    position = _position("same", "A", entry_minute=0, exit_minute=10)
+    with pytest.raises(ValueError, match="unique"):
+        simulate_portfolio_v2([position, replace(position, canonical_asset="B")])
+
+
+def test_resolved_position_requires_complete_economics() -> None:
+    position = replace(
+        _position("1", "A", entry_minute=0, exit_minute=10),
+        net_return=None,
+    )
+    with pytest.raises(ValueError, match="gross and net returns"):
+        simulate_portfolio_v2([position])
+
+
+def test_net_return_must_match_cost_provenance() -> None:
+    position = replace(
+        _position("1", "A", entry_minute=0, exit_minute=10, costs_bps=10.0),
+        net_return=0.1,
+    )
+    with pytest.raises(ValueError, match="cost provenance"):
+        simulate_portfolio_v2([position])
+
+
+def test_exit_before_entry_fails_closed() -> None:
+    position = replace(
+        _position("1", "A", entry_minute=10, exit_minute=20),
+        exit_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    with pytest.raises(ValueError, match="must not precede"):
+        simulate_portfolio_v2([position])
+
+
+def test_unresolved_position_cannot_claim_returns() -> None:
+    position = replace(
+        _position("1", "A", entry_minute=0, exit_minute=None),
+        gross_return=0.1,
+        net_return=0.1,
+    )
+    with pytest.raises(ValueError, match="cannot have returns"):
+        simulate_portfolio_v2([position])
