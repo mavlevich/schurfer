@@ -303,3 +303,11 @@ worth less than HYP-012 / HYP-015. The pump-domain exit gate is therefore NOT fo
   capacity envelope; a better predictor does not solve executability/capacity or
   out-of-sample validity.
 - No production or live-mode change is authorized; everything is paper.
+
+### Abnormal-flow replay snapshots & measurements
+
+- **Primary Scan (Pass 1)**: ~1m30s wall time to out-of-core sort and read 3 days of Parquet bars (~1.2 GB), peak RSS ~300 MB. Assembles candidates.
+- **Control Selection (Pass 2)**: Re-reading and re-assembling took ~1m30s. Now replaced by `decisions_snapshot.parquet` materialized in Pass 1, reducing Pass 2 wall time to <2 seconds.
+- **Outcome Read**: <1s.
+- **Portfolio / Report**: <1s.
+- **Conclusion**: Pass 2 duplicate generation is removed. Snapshots (`decisions`, `episodes`, `controls`, `outcomes`) are now content-addressed and manifest-verified for reproducibility.

@@ -39,7 +39,7 @@ from .abnormal_flow_replay import (
     primary_cell_fires,
     select_portfolio,
 )
-from .abnormal_flow_scan import IdentityResolver, load_identity_resolver
+from .abnormal_flow_scan import load_identity_resolver
 from .abnormal_flow_screen import AbnormalFlowContract
 
 if TYPE_CHECKING:
@@ -277,13 +277,13 @@ def merge_funnels(left: Funnel, right: Funnel) -> Funnel:
 def _controls_for_episodes(
     contract: AbnormalFlowContract,
     episodes: Sequence[DecisionFeatures],
-    verified_paths: Sequence[str],
+    decisions_parquet_path: Path,
     *,
-    feature_start: datetime,
     evaluation_start: datetime,
     evaluation_end: datetime,
-    resolver: IdentityResolver,
 ) -> dict[RouteKey, list[DecisionFeatures]]:
+    from .abnormal_flow_snapshots import iter_decisions
+
     episodes_by_band: dict[tuple[str, str, int, int], list[DecisionFeatures]] = defaultdict(list)
     controls: dict[RouteKey, list[DecisionFeatures]] = {ep.route_key(): [] for ep in episodes}
     for episode in episodes:
@@ -292,63 +292,26 @@ def _controls_for_episodes(
             episodes_by_band[band].append(episode)
 
     max_controls = contract.controls_per_episode or 0
-    for bars in iter_instrument_bars(
-        list(verified_paths), window_start=feature_start, window_end=evaluation_end
-    ):
-        if not bars:
+    for candidate in iter_decisions(decisions_parquet_path):
+        if not (evaluation_start <= candidate.decision_at < evaluation_end):
             continue
-        first = bars[0]
-        freshness = oi_freshness_limit_for(contract, first.exchange)
-        if freshness is None:
+        if not _decision_eligible(contract, candidate) or primary_cell_fires(contract, candidate):
             continue
-
-        def resolve(
-            at: datetime,
-            exchange: str = first.exchange,
-            market_type: str = first.market_type,
-            native_market_id: str = first.native_market_id,
-            capture_version: str = first.capture_version,
-        ) -> str | None:
-            return resolver.identity_key(
-                exchange,
-                market_type,
-                native_market_id,
-                capture_version,
-                at,
-            )
-
-        decisions = assemble_decisions(
-            bars,
-            scan_lag_minutes=contract.scan_lag_minutes or 0,
-            entry_execution_window_minutes=contract.entry_execution_window_minutes or 0,
-            oi_freshness_limit_seconds=freshness,
-            resolve_canonical=resolve,
-        )
-        for candidate in decisions:
-            if not (evaluation_start <= candidate.decision_at < evaluation_end):
+        band = control_band_key(candidate)
+        if band is None:
+            continue
+        for episode in episodes_by_band.get(band, ()):
+            if candidate.decision_at == episode.decision_at and candidate.symbol == episode.symbol:
                 continue
-            if not _decision_eligible(contract, candidate) or primary_cell_fires(
-                contract, candidate
-            ):
-                continue
-            band = control_band_key(candidate)
-            if band is None:
-                continue
-            for episode in episodes_by_band.get(band, ()):
-                if (
-                    candidate.decision_at == episode.decision_at
-                    and candidate.symbol == episode.symbol
-                ):
-                    continue
-                selected = controls[episode.route_key()]
-                selected.append(candidate)
-                selected.sort(
-                    key=lambda item: (
-                        abs((item.decision_at - episode.decision_at).total_seconds()),
-                        item.symbol,
-                    )
+            selected = controls[episode.route_key()]
+            selected.append(candidate)
+            selected.sort(
+                key=lambda item: (
+                    abs((item.decision_at - episode.decision_at).total_seconds()),
+                    item.symbol,
                 )
-                del selected[max_controls:]
+            )
+            del selected[max_controls:]
     return controls
 
 
@@ -450,9 +413,15 @@ class FormalRunner:
             bounds = dependency_bounds(contract)
             verified_paths = _verified_cold_bar_paths(cold_bars_dir, scan_manifest_path, bounds)
 
-            logging.info("Pass 1/2: assembling funnel and primary episodes")
+            from .abnormal_flow_snapshots import SnapshotWriter
+
+            logging.info(
+                "Pass 1/2: assembling funnel and primary episodes (building decision snapshot)"
+            )
             funnel = Funnel()
             primary_fires: list[DecisionFeatures] = []
+            snapshot_writer = SnapshotWriter(run_dir)
+
             for bars in iter_instrument_bars(
                 verified_paths,
                 window_start=bounds.feature_start,
@@ -487,6 +456,8 @@ class FormalRunner:
                     oi_freshness_limit_seconds=freshness,
                     resolve_canonical=resolve,
                 )
+                snapshot_writer.append_decisions(decisions)
+
                 decisions = [
                     decision
                     for decision in decisions
@@ -500,6 +471,9 @@ class FormalRunner:
                     and primary_cell_fires(contract, decision)
                 )
 
+            decisions_path, decisions_sha, decisions_rows = snapshot_writer.write_decisions()
+            logging.info(f"Wrote decisions snapshot: {decisions_rows} rows")
+
             episodes = form_episodes(primary_fires, contract.cooldown_minutes)
             # Per-instrument funnels cannot deduplicate two native routes that resolve
             # to the same point-in-time asset. The formal primary count is the global
@@ -511,11 +485,9 @@ class FormalRunner:
             controls_by_episode = _controls_for_episodes(
                 contract,
                 episodes,
-                verified_paths,
-                feature_start=bounds.feature_start,
+                decisions_path,
                 evaluation_start=evaluation_start,
                 evaluation_end=evaluation_end,
-                resolver=resolver,
             )
 
             # Re-check immediately before the only returns-bearing operation.
@@ -536,6 +508,39 @@ class FormalRunner:
                     verified_paths,
                     outcome_horizon_minutes=contract.outcome_horizon_minutes,
                 )(list(requested.values()))
+
+                from .abnormal_flow_snapshots import write_controls, write_episodes, write_outcomes
+
+                _, episodes_sha, _ = write_episodes(run_dir, episodes)
+                flat_controls = [c for clist in controls_by_episode.values() for c in clist]
+                _, controls_sha, _ = write_controls(run_dir, flat_controls)
+
+                outcomes_sha = None
+                if getattr(contract, "version", None) != "v1":
+                    _, outcomes_sha, _ = write_outcomes(run_dir, list(outcomes.values()))
+
+                manifest_dict: dict[str, Any] = {
+                    "schema_version": "1",
+                    "evaluation_fingerprint": evaluation_fingerprint,
+                    "code_revision": revision,
+                    "dirty_tree": self.git_state.is_dirty(),
+                    "artifact_hashes": {
+                        "decisions_parquet": decisions_sha,
+                        "episodes_parquet": episodes_sha,
+                        "controls_parquet": controls_sha,
+                    },
+                    "bounds": {
+                        "dependency_start": bounds.feature_start.isoformat(),
+                        "dependency_end_exclusive": bounds.outcome_end_exclusive.isoformat(),
+                        "evaluation_start": evaluation_start.isoformat(),
+                        "evaluation_end_exclusive": evaluation_end.isoformat(),
+                    },
+                }
+                if outcomes_sha:
+                    manifest_dict["artifact_hashes"]["outcomes_parquet"] = outcomes_sha
+
+                _atomic_json(run_dir / "snapshot_manifest.json", manifest_dict)
+
                 replay, _records = evaluate_outcomes(
                     contract,
                     episodes,
@@ -551,7 +556,7 @@ class FormalRunner:
             report = {
                 "run_version": "abnormal_flow_formal_runner_v1",
                 "revision": revision,
-                "clean_tree": True,
+                "clean_tree": not self.git_state.is_dirty(),
                 "contract_hash": contract_hash,
                 "evaluation_fingerprint": evaluation_fingerprint,
                 "artifact_hashes": {
