@@ -1,0 +1,1809 @@
+{
+  "replay_version": "abnormal_flow_replay_v1",
+  "funnel": {
+    "scanned": 11817738,
+    "unavailable_feature": 0,
+    "ineligible": 0,
+    "eligible": 11817738,
+    "primary_fires": 2396,
+    "no_oi_fires": 408766,
+    "no_buy_fires": 7251,
+    "no_containment_fires": 27520,
+    "p99_fires": 0,
+    "sub_p99_fires": 0,
+    "primary_episodes": 252,
+    "no_oi_episodes": 14621,
+    "no_buy_episodes": 697,
+    "no_containment_episodes": 1479,
+    "p99_episodes": 0,
+    "sub_p99_episodes": 0,
+    "reasons": {}
+  },
+  "resolved_episodes": 125,
+  "unresolved_episodes": 127,
+  "episodes_with_matched_control": 120,
+  "resolved_controls": 668,
+  "unresolved_controls": 592,
+  "mean_net_return": 0.006103531693479925,
+  "mean_control_return": 0.0019827604056888537,
+  "mean_excess_over_control": 0.004458694567663401,
+  "report": {
+    "resolved_episodes": 125,
+    "unresolved_episodes": 127,
+    "missing_fraction": 0.503968253968254,
+    "distinct_assets": 87,
+    "n_weeks": 4,
+    "max_episodes_per_asset_frac": 0.048,
+    "max_episodes_per_week_frac": 0.52,
+    "control_coverage_frac": 0.5301587301587302,
+    "mean_net_return": 0.006103531693479925,
+    "weekly_clustered_se": 0.007395434866978001,
+    "lower_95ci_net_return": -0.017428742053244073,
+    "mean_excess_over_control": 0.004458694567663401,
+    "weekly_clustered_se_excess": 0.004373614980478937,
+    "lower_95ci_excess_over_control": -0.009458148300220577,
+    "leave_one_out_net_min": 0.004424763298616458,
+    "leave_one_out_net_max": 0.007059358217099862,
+    "portfolio": {
+      "taken_trades": 34,
+      "skipped_capacity": 218,
+      "total_pnl_usd": 4.250492802769695,
+      "max_drawdown_usd": 17.149984163032855,
+      "longest_losing_streak": 3,
+      "max_concurrency": 1
+    },
+    "verdict": "INSUFFICIENT_EVIDENCE"
+  },
+  "episode_records": [
+    {
+      "route_key": [
+        "binance",
+        "linear",
+        "1000FLOKIUSDT",
+        "v1",
+        "2026-09-05T09:33:00+02:00"
+      ],
+      "canonical_asset": "binance:linear_usdt_perpetual:1000FLOKIUSDT:1683331200000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-05T09:33:00+02:00",
+      "net_return": 0.022089077692307765,
+      "excess": -0.005106439453870713
+    },
+    {
+      "route_key": [
+        "binance",
+        "linear",
+        "ALGOUSDT",
+        "v1",
+        "2026-09-17T02:22:00+02:00"
+      ],
+      "canonical_asset": "binance:linear_usdt_perpetual:ALGOUSDT:1592298000000",
+      "iso_week": "2026-W38",
+      "decision_at": "2026-09-17T02:22:00+02:00",
+      "net_return": 0.014929952076006715,
+      "excess": 0.00371401928263421
+    },
+    {
+      "route_key": [
+        "binance",
+        "linear",
+        "ATOMUSDT",
+        "v1",
+        "2026-09-02T14:24:00+02:00"
+      ],
+      "canonical_asset": "binance:linear_usdt_perpetual:ATOMUSDT:1581077400000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-02T14:24:00+02:00",
+      "net_return": -0.004913098875086342,
+      "excess": -0.007624471968289283
+    },
+    {
+      "route_key": [
+        "binance",
+        "linear",
+        "BSVUSDT",
+        "v1",
+        "2026-09-03T04:34:00+02:00"
+      ],
+      "canonical_asset": "binance:linear_usdt_perpetual:BSVUSDT:1697805000000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-03T04:34:00+02:00",
+      "net_return": -0.0018995262962961555,
+      "excess": -0.009243481653666338
+    },
+    {
+      "route_key": [
+        "binance",
+        "linear",
+        "GASUSDT",
+        "v1",
+        "2026-09-13T06:11:00+02:00"
+      ],
+      "canonical_asset": "binance:linear_usdt_perpetual:GASUSDT:1698201900000",
+      "iso_week": "2026-W37",
+      "decision_at": "2026-09-13T06:11:00+02:00",
+      "net_return": -0.01690692253956285,
+      "excess": -0.013142246637960863
+    },
+    {
+      "route_key": [
+        "binance",
+        "linear",
+        "HOLOUSDT",
+        "v1",
+        "2026-09-06T05:07:00+02:00"
+      ],
+      "canonical_asset": "binance:linear_usdt_perpetual:HOLOUSDT:1757592000000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-06T05:07:00+02:00",
+      "net_return": -0.010810788399047807,
+      "excess": 0.018750418160131146
+    },
+    {
+      "route_key": [
+        "binance",
+        "linear",
+        "KAIAUSDT",
+        "v1",
+        "2026-09-01T08:24:00+02:00"
+      ],
+      "canonical_asset": "binance:linear_usdt_perpetual:KAIAUSDT:1733320800000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-01T08:24:00+02:00",
+      "net_return": -0.02657042648292185,
+      "excess": -0.017208955580181963
+    },
+    {
+      "route_key": [
+        "binance",
+        "linear",
+        "LUNA2USDT",
+        "v1",
+        "2026-09-02T03:15:00+02:00"
+      ],
+      "canonical_asset": "binance:linear_usdt_perpetual:LUNA2USDT:1662706800000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-02T03:15:00+02:00",
+      "net_return": -0.00969879313993173,
+      "excess": 0.004154083509490819
+    },
+    {
+      "route_key": [
+        "binance",
+        "linear",
+        "PAXGUSDT",
+        "v1",
+        "2026-09-18T06:57:00+02:00"
+      ],
+      "canonical_asset": "binance:linear_usdt_perpetual:PAXGUSDT:1743071400000",
+      "iso_week": "2026-W38",
+      "decision_at": "2026-09-18T06:57:00+02:00",
+      "net_return": -0.003608360319270753,
+      "excess": -0.04931960539107757
+    },
+    {
+      "route_key": [
+        "binance",
+        "linear",
+        "SCRUSDT",
+        "v1",
+        "2026-09-03T12:06:00+02:00"
+      ],
+      "canonical_asset": "binance:linear_usdt_perpetual:SCRUSDT:1729591200000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-03T12:06:00+02:00",
+      "net_return": -0.0026270395238094974,
+      "excess": -0.03208883194462278
+    },
+    {
+      "route_key": [
+        "binance",
+        "linear",
+        "WLDUSDT",
+        "v1",
+        "2026-09-17T02:43:00+02:00"
+      ],
+      "canonical_asset": "binance:linear_usdt_perpetual:WLDUSDT:1690200000000",
+      "iso_week": "2026-W38",
+      "decision_at": "2026-09-17T02:43:00+02:00",
+      "net_return": -0.006934433407880725,
+      "excess": -0.025246947737241288
+    },
+    {
+      "route_key": [
+        "binance",
+        "linear",
+        "XAUTUSDT",
+        "v1",
+        "2026-09-01T16:12:00+02:00"
+      ],
+      "canonical_asset": "binance:linear_usdt_perpetual:XAUTUSDT:1774533600000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-01T16:12:00+02:00",
+      "net_return": -0.020050312028875764,
+      "excess": 0.013905469399670543
+    },
+    {
+      "route_key": [
+        "binance",
+        "linear",
+        "XLMUSDT",
+        "v1",
+        "2026-09-01T19:30:00+02:00"
+      ],
+      "canonical_asset": "binance:linear_usdt_perpetual:XLMUSDT:1579507200000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-01T19:30:00+02:00",
+      "net_return": -0.011703201759390144,
+      "excess": 0.008391666468619201
+    },
+    {
+      "route_key": [
+        "binance",
+        "linear",
+        "XLMUSDT",
+        "v1",
+        "2026-09-09T05:21:00+02:00"
+      ],
+      "canonical_asset": "binance:linear_usdt_perpetual:XLMUSDT:1579507200000",
+      "iso_week": "2026-W37",
+      "decision_at": "2026-09-09T05:21:00+02:00",
+      "net_return": -0.021355480321474486,
+      "excess": 0.003984394215506018
+    },
+    {
+      "route_key": [
+        "binance",
+        "linear",
+        "ZENUSDT",
+        "v1",
+        "2026-09-06T02:36:00+02:00"
+      ],
+      "canonical_asset": "binance:linear_usdt_perpetual:ZENUSDT:1606201200000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-06T02:36:00+02:00",
+      "net_return": 0.013237558149000336,
+      "excess": 0.0167791824119994
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "1000FLOKIUSDT",
+        "v1",
+        "2026-09-03T07:10:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:1000FLOKIUSDT:1677228986000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-03T07:10:00+02:00",
+      "net_return": 0.059419613699712125,
+      "excess": 0.03587104482402045
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "1000FLOKIUSDT",
+        "v1",
+        "2026-09-04T07:16:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:1000FLOKIUSDT:1677228986000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-04T07:16:00+02:00",
+      "net_return": -0.02868428258832747,
+      "excess": -0.007391877842572128
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "1000FLOKIUSDT",
+        "v1",
+        "2026-09-05T18:30:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:1000FLOKIUSDT:1677228986000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-05T18:30:00+02:00",
+      "net_return": -0.01754578352712311,
+      "excess": -0.028130987953969015
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "1000FLOKIUSDT",
+        "v1",
+        "2026-09-11T08:55:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:1000FLOKIUSDT:1677228986000",
+      "iso_week": "2026-W37",
+      "decision_at": "2026-09-11T08:55:00+02:00",
+      "net_return": 0.0002204859867548743,
+      "excess": 0.0333500436653284
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "1000NEIROCTOUSDT",
+        "v1",
+        "2026-09-17T20:42:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:1000NEIROCTOUSDT:1726480024000",
+      "iso_week": "2026-W38",
+      "decision_at": "2026-09-17T20:42:00+02:00",
+      "net_return": 0.047969280570809715,
+      "excess": 0.02545021176009068
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "ACEUSDT",
+        "v1",
+        "2026-09-04T05:21:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:ACEUSDT:1702882175000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-04T05:21:00+02:00",
+      "net_return": -0.03258515028602357,
+      "excess": -0.03511845471790481
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "ACEUSDT",
+        "v1",
+        "2026-09-09T00:11:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:ACEUSDT:1702882175000",
+      "iso_week": "2026-W37",
+      "decision_at": "2026-09-09T00:11:00+02:00",
+      "net_return": 0.03494307651942815,
+      "excess": 0.034091715601970406
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "ADAUSDT",
+        "v1",
+        "2026-08-31T00:32:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:ADAUSDT:1610668800000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-08-31T00:32:00+02:00",
+      "net_return": -0.01768319682744695,
+      "excess": -0.001961466375851241
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "AEROUSDT",
+        "v1",
+        "2026-09-03T11:44:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:AEROUSDT:1721034308000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-03T11:44:00+02:00",
+      "net_return": 0.05559544715354404,
+      "excess": 0.010002677432330104
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "AEROUSDT",
+        "v1",
+        "2026-09-05T14:09:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:AEROUSDT:1721034308000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-05T14:09:00+02:00",
+      "net_return": 0.053102198005386625,
+      "excess": 0.04814448492926347
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "AEROUSDT",
+        "v1",
+        "2026-09-16T07:54:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:AEROUSDT:1721034308000",
+      "iso_week": "2026-W38",
+      "decision_at": "2026-09-16T07:54:00+02:00",
+      "net_return": -0.016660273872980115,
+      "excess": 0.00795000335309732
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "AGLDUSDT",
+        "v1",
+        "2026-08-30T20:49:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:AGLDUSDT:1650608721000",
+      "iso_week": "2026-W35",
+      "decision_at": "2026-08-30T20:49:00+02:00",
+      "net_return": -0.0361624512941177,
+      "excess": 0.009294880642398036
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "APTUSDT",
+        "v1",
+        "2026-09-04T18:07:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:APTUSDT:1666107272000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-04T18:07:00+02:00",
+      "net_return": 0.010554816258064474,
+      "excess": 0.01263967716813489
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "ARUSDT",
+        "v1",
+        "2026-09-02T15:31:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:ARUSDT:1639978762000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-02T15:31:00+02:00",
+      "net_return": 0.08284589171992801,
+      "excess": 0.04413164895008377
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "AUSDT",
+        "v1",
+        "2026-09-02T19:50:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:AUSDT:1748420402000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-02T19:50:00+02:00",
+      "net_return": -0.0014355714061044895,
+      "excess": -0.04115060769072452
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "AVAXUSDT",
+        "v1",
+        "2026-09-05T16:28:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:AVAXUSDT:1631664000000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-05T16:28:00+02:00",
+      "net_return": 0.008966431719761987,
+      "excess": 0.005513729251526763
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "AXSUSDT",
+        "v1",
+        "2026-08-31T03:32:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:AXSUSDT:1628726400000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-08-31T03:32:00+02:00",
+      "net_return": 0.010562147636363626,
+      "excess": 0.0012822643174905026
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "AXSUSDT",
+        "v1",
+        "2026-09-02T12:33:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:AXSUSDT:1628726400000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-02T12:33:00+02:00",
+      "net_return": -0.0016164323588389977,
+      "excess": 0.005388555624978041
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "BANKUSDT",
+        "v1",
+        "2026-09-09T04:26:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:BANKUSDT:1746694311000",
+      "iso_week": "2026-W37",
+      "decision_at": "2026-09-09T04:26:00+02:00",
+      "net_return": -0.004687691177305103,
+      "excess": 0.0075345564090146125
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "BANKUSDT",
+        "v1",
+        "2026-09-16T09:26:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:BANKUSDT:1746694311000",
+      "iso_week": "2026-W38",
+      "decision_at": "2026-09-16T09:26:00+02:00",
+      "net_return": -0.011140078708719883,
+      "excess": -0.0003487268516425505
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "BERAUSDT",
+        "v1",
+        "2026-09-05T19:35:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:BERAUSDT:1738847788000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-05T19:35:00+02:00",
+      "net_return": 0.005728259780409143,
+      "excess": 0.01575049713395918
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "BICOUSDT",
+        "v1",
+        "2026-08-31T08:37:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:BICOUSDT:1638445217000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-08-31T08:37:00+02:00",
+      "net_return": 0.0771712558779791,
+      "excess": 0.040734043667557465
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "BICOUSDT",
+        "v1",
+        "2026-09-17T11:27:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:BICOUSDT:1638445217000",
+      "iso_week": "2026-W38",
+      "decision_at": "2026-09-17T11:27:00+02:00",
+      "net_return": 0.009575705094160973,
+      "excess": 0.004161800102628805
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "BNBUSDT",
+        "v1",
+        "2026-09-17T15:14:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:BNBUSDT:1624951080000",
+      "iso_week": "2026-W38",
+      "decision_at": "2026-09-17T15:14:00+02:00",
+      "net_return": 0.013122512072587328,
+      "excess": -0.0015187496222524629
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "BRETTUSDT",
+        "v1",
+        "2026-08-30T16:05:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:BRETTUSDT:1714119444000",
+      "iso_week": "2026-W35",
+      "decision_at": "2026-08-30T16:05:00+02:00",
+      "net_return": -0.060833738399842255,
+      "excess": -0.032256890383590656
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "BROCCOLIUSDT",
+        "v1",
+        "2026-09-04T09:44:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:BROCCOLIUSDT:1739535111000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-04T09:44:00+02:00",
+      "net_return": 0.07939691288700523,
+      "excess": 0.08969874985261285
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "BSBUSDT",
+        "v1",
+        "2026-09-17T12:40:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:BSBUSDT:1774500541000",
+      "iso_week": "2026-W38",
+      "decision_at": "2026-09-17T12:40:00+02:00",
+      "net_return": 0.01052849317201605,
+      "excess": 0.0016374776656513726
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "BSVUSDT",
+        "v1",
+        "2026-09-13T06:51:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:BSVUSDT:1639105708000",
+      "iso_week": "2026-W37",
+      "decision_at": "2026-09-13T06:51:00+02:00",
+      "net_return": 0.024780112410483893,
+      "excess": 0.031678822602842986
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "BTWUSDT",
+        "v1",
+        "2026-09-10T15:42:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:BTWUSDT:1780646878000",
+      "iso_week": "2026-W37",
+      "decision_at": "2026-09-10T15:42:00+02:00",
+      "net_return": 0.05386324710196507,
+      "excess": 0.06809671854949845
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "CAKEUSDT",
+        "v1",
+        "2026-08-30T23:48:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:CAKEUSDT:1699005636000",
+      "iso_week": "2026-W35",
+      "decision_at": "2026-08-30T23:48:00+02:00",
+      "net_return": 0.007462177264530159,
+      "excess": 0.03729733207879492
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "CAKEUSDT",
+        "v1",
+        "2026-09-04T05:42:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:CAKEUSDT:1699005636000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-04T05:42:00+02:00",
+      "net_return": -0.029915994440139062,
+      "excess": -0.02780204504015249
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "CAKEUSDT",
+        "v1",
+        "2026-09-16T11:08:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:CAKEUSDT:1699005636000",
+      "iso_week": "2026-W38",
+      "decision_at": "2026-09-16T11:08:00+02:00",
+      "net_return": 0.03267463192626737,
+      "excess": 0.03224825239033735
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "COMPUSDT",
+        "v1",
+        "2026-09-02T16:57:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:COMPUSDT:1628726400000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-02T16:57:00+02:00",
+      "net_return": 0.012217516077446356,
+      "excess": -0.003218673850942903
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "CVCUSDT",
+        "v1",
+        "2026-09-17T18:48:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:CVCUSDT:1638285651000",
+      "iso_week": "2026-W38",
+      "decision_at": "2026-09-17T18:48:00+02:00",
+      "net_return": 0.013708468149633512,
+      "excess": -0.01348367598891911
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "DASHUSDT",
+        "v1",
+        "2026-09-03T19:48:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:DASHUSDT:1633996800000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-03T19:48:00+02:00",
+      "net_return": 0.06362318096312358,
+      "excess": 0.07580583840205662
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "DEXEUSDT",
+        "v1",
+        "2026-09-18T06:31:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:DEXEUSDT:1721898539000",
+      "iso_week": "2026-W38",
+      "decision_at": "2026-09-18T06:31:00+02:00",
+      "net_return": 0.008556218782608708,
+      "excess": -0.00811317001462377
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "DOGEUSDT",
+        "v1",
+        "2026-09-18T04:03:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:DOGEUSDT:1622630640000",
+      "iso_week": "2026-W38",
+      "decision_at": "2026-09-18T04:03:00+02:00",
+      "net_return": 0.05253569544000974,
+      "excess": 0.0245850287885925
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "EGLDUSDT",
+        "v1",
+        "2026-09-13T11:05:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:EGLDUSDT:1637596800000",
+      "iso_week": "2026-W37",
+      "decision_at": "2026-09-13T11:05:00+02:00",
+      "net_return": 0.010722430197449208,
+      "excess": 0.007018582170954388
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "EIGENUSDT",
+        "v1",
+        "2026-09-02T09:45:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:EIGENUSDT:1722915813000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-02T09:45:00+02:00",
+      "net_return": -0.0145472967577268,
+      "excess": 0.008793706350329437
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "ENAUSDT",
+        "v1",
+        "2026-09-08T17:34:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:ENAUSDT:1712050966000",
+      "iso_week": "2026-W37",
+      "decision_at": "2026-09-08T17:34:00+02:00",
+      "net_return": -0.02016914488064317,
+      "excess": 0.0008853958367589579
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "ETHBTCUSDT",
+        "v1",
+        "2026-08-30T20:23:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:ETHBTCUSDT:1717749178000",
+      "iso_week": "2026-W35",
+      "decision_at": "2026-08-30T20:23:00+02:00",
+      "net_return": -0.022235643224143217,
+      "excess": 0.024520357821152604
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "ETHBTCUSDT",
+        "v1",
+        "2026-09-05T22:49:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:ETHBTCUSDT:1717749178000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-05T22:49:00+02:00",
+      "net_return": -0.00139549533140464,
+      "excess": -0.008551713265769714
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "ETHBTCUSDT",
+        "v1",
+        "2026-09-08T10:09:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:ETHBTCUSDT:1717749178000",
+      "iso_week": "2026-W37",
+      "decision_at": "2026-09-08T10:09:00+02:00",
+      "net_return": -0.0027225049733840363,
+      "excess": 0.005626806559192854
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "ETHBTCUSDT",
+        "v1",
+        "2026-09-10T17:22:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:ETHBTCUSDT:1717749178000",
+      "iso_week": "2026-W37",
+      "decision_at": "2026-09-10T17:22:00+02:00",
+      "net_return": 0.002337176405063297,
+      "excess": 0.03178454401739188
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "ETHBTCUSDT",
+        "v1",
+        "2026-09-11T15:38:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:ETHBTCUSDT:1717749178000",
+      "iso_week": "2026-W37",
+      "decision_at": "2026-09-11T15:38:00+02:00",
+      "net_return": 0.002168119088262627,
+      "excess": null
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "ETHBTCUSDT",
+        "v1",
+        "2026-09-17T09:20:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:ETHBTCUSDT:1717749178000",
+      "iso_week": "2026-W38",
+      "decision_at": "2026-09-17T09:20:00+02:00",
+      "net_return": -0.0068203219190030645,
+      "excess": -0.01843152248315247
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "EULUSDT",
+        "v1",
+        "2026-09-18T05:53:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:EULUSDT:1760430633000",
+      "iso_week": "2026-W38",
+      "decision_at": "2026-09-18T05:53:00+02:00",
+      "net_return": 0.005117749966418185,
+      "excess": -0.01622920372722722
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "GALAUSDT",
+        "v1",
+        "2026-09-03T18:20:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:GALAUSDT:1636416000000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-03T18:20:00+02:00",
+      "net_return": -0.021095280301552125,
+      "excess": -0.009529688393941879
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "GMTUSDT",
+        "v1",
+        "2026-08-31T05:56:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:GMTUSDT:1647667511000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-08-31T05:56:00+02:00",
+      "net_return": 0.007538668834663637,
+      "excess": 0.01308601638221209
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "GMTUSDT",
+        "v1",
+        "2026-09-03T10:03:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:GMTUSDT:1647667511000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-03T10:03:00+02:00",
+      "net_return": 0.005084175797085817,
+      "excess": -0.03622029330570837
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "GMTUSDT",
+        "v1",
+        "2026-09-05T21:43:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:GMTUSDT:1647667511000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-05T21:43:00+02:00",
+      "net_return": -0.006911650800053559,
+      "excess": -0.02289500633598037
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "HMSTRUSDT",
+        "v1",
+        "2026-08-31T09:40:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:HMSTRUSDT:1726034896000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-08-31T09:40:00+02:00",
+      "net_return": -0.007844363559591429,
+      "excess": -0.0020662845961566785
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "IDUSDT",
+        "v1",
+        "2026-09-09T01:48:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:IDUSDT:1679639388000",
+      "iso_week": "2026-W37",
+      "decision_at": "2026-09-09T01:48:00+02:00",
+      "net_return": -0.007903182521106163,
+      "excess": 0.00029977395823567454
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "INJUSDT",
+        "v1",
+        "2026-08-30T19:17:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:INJUSDT:1660694400000",
+      "iso_week": "2026-W35",
+      "decision_at": "2026-08-30T19:17:00+02:00",
+      "net_return": -0.06667170798566846,
+      "excess": -0.01666202662691879
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "INJUSDT",
+        "v1",
+        "2026-09-06T10:08:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:INJUSDT:1660694400000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-06T10:08:00+02:00",
+      "net_return": 0.005584750327329755,
+      "excess": 0.02311929102188727
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "IOSTUSDT",
+        "v1",
+        "2026-09-13T11:14:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:IOSTUSDT:1633996800000",
+      "iso_week": "2026-W37",
+      "decision_at": "2026-09-13T11:14:00+02:00",
+      "net_return": -0.05823758114071745,
+      "excess": -0.06835016582666921
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "JELLYJELLYUSDT",
+        "v1",
+        "2026-09-15T13:48:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:JELLYJELLYUSDT:1738219511000",
+      "iso_week": "2026-W38",
+      "decision_at": "2026-09-15T13:48:00+02:00",
+      "net_return": -0.018644941156669554,
+      "excess": 0.011067707335120098
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "KITEUSDT",
+        "v1",
+        "2026-09-02T04:43:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:KITEUSDT:1761739367000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-02T04:43:00+02:00",
+      "net_return": 0.10871843141567572,
+      "excess": 0.11177185315408399
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "KITEUSDT",
+        "v1",
+        "2026-09-05T21:55:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:KITEUSDT:1761739367000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-05T21:55:00+02:00",
+      "net_return": 0.021399049436028043,
+      "excess": 0.019125737021793463
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "LAUSDT",
+        "v1",
+        "2026-09-11T09:14:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:LAUSDT:1749100801000",
+      "iso_week": "2026-W37",
+      "decision_at": "2026-09-11T09:14:00+02:00",
+      "net_return": 0.004898649756902473,
+      "excess": 0.03338223153629954
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "LPTUSDT",
+        "v1",
+        "2026-09-03T16:15:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:LPTUSDT:1639357959000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-03T16:15:00+02:00",
+      "net_return": 0.061204356471172026,
+      "excess": null
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "LTCUSDT",
+        "v1",
+        "2026-09-17T22:28:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:LTCUSDT:1514764800000",
+      "iso_week": "2026-W38",
+      "decision_at": "2026-09-17T22:28:00+02:00",
+      "net_return": 0.02260001940315099,
+      "excess": 0.002580163834396007
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "MANAUSDT",
+        "v1",
+        "2026-08-30T05:15:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:MANAUSDT:1636329600000",
+      "iso_week": "2026-W35",
+      "decision_at": "2026-08-30T05:15:00+02:00",
+      "net_return": 0.015304308945770059,
+      "excess": 0.02747657192386455
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "NEOUSDT",
+        "v1",
+        "2026-09-09T11:46:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:NEOUSDT:1643509229000",
+      "iso_week": "2026-W37",
+      "decision_at": "2026-09-09T11:46:00+02:00",
+      "net_return": -0.03476483961786832,
+      "excess": null
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "NIGHTUSDT",
+        "v1",
+        "2026-09-12T10:51:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:NIGHTUSDT:1765275695000",
+      "iso_week": "2026-W37",
+      "decision_at": "2026-09-12T10:51:00+02:00",
+      "net_return": -0.024941244814359973,
+      "excess": -0.012781241785978836
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "NOTUSDT",
+        "v1",
+        "2026-08-31T01:15:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:NOTUSDT:1715874083000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-08-31T01:15:00+02:00",
+      "net_return": 0.12383754870588232,
+      "excess": 0.13393208934833617
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "OKBUSDT",
+        "v1",
+        "2026-09-06T04:08:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:OKBUSDT:1757591356000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-06T04:08:00+02:00",
+      "net_return": -0.02247196296707108,
+      "excess": -0.05681142206427569
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "OPUSDT",
+        "v1",
+        "2026-08-30T18:35:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:OPUSDT:1654059063000",
+      "iso_week": "2026-W35",
+      "decision_at": "2026-08-30T18:35:00+02:00",
+      "net_return": -0.042809444539576316,
+      "excess": -0.0135981348033038
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "OPUSDT",
+        "v1",
+        "2026-09-03T15:50:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:OPUSDT:1654059063000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-03T15:50:00+02:00",
+      "net_return": 0.006992927001925662,
+      "excess": 0.0023757314441679635
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "OPUSDT",
+        "v1",
+        "2026-09-08T21:51:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:OPUSDT:1654059063000",
+      "iso_week": "2026-W37",
+      "decision_at": "2026-09-08T21:51:00+02:00",
+      "net_return": -0.0012745790804510595,
+      "excess": -0.0225615089865469
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "ORCAUSDT",
+        "v1",
+        "2026-09-05T18:04:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:ORCAUSDT:1711963329000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-05T18:04:00+02:00",
+      "net_return": 0.07888206729677227,
+      "excess": 0.05956069480184659
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "PAXGUSDT",
+        "v1",
+        "2026-08-31T06:42:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:PAXGUSDT:1647245226000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-08-31T06:42:00+02:00",
+      "net_return": -0.0010449227962044524,
+      "excess": -0.0008424728220650295
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "PEOPLEUSDT",
+        "v1",
+        "2026-09-02T22:45:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:PEOPLEUSDT:1640749024000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-02T22:45:00+02:00",
+      "net_return": 0.012513963876899892,
+      "excess": -0.020587173412806557
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "PIPPINUSDT",
+        "v1",
+        "2026-09-16T07:24:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:PIPPINUSDT:1737103122000",
+      "iso_week": "2026-W38",
+      "decision_at": "2026-09-16T07:24:00+02:00",
+      "net_return": -0.027584923911957097,
+      "excess": -0.01579201708136397
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "RENDERUSDT",
+        "v1",
+        "2026-09-06T07:49:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:RENDERUSDT:1721982407000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-06T07:49:00+02:00",
+      "net_return": 0.009240598814814678,
+      "excess": -0.03559267084772684
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "RENDERUSDT",
+        "v1",
+        "2026-09-11T11:26:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:RENDERUSDT:1721982407000",
+      "iso_week": "2026-W37",
+      "decision_at": "2026-09-11T11:26:00+02:00",
+      "net_return": -0.009869133680744456,
+      "excess": -0.009910152902598054
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "RENDERUSDT",
+        "v1",
+        "2026-09-16T11:30:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:RENDERUSDT:1721982407000",
+      "iso_week": "2026-W38",
+      "decision_at": "2026-09-16T11:30:00+02:00",
+      "net_return": 0.021473697446676907,
+      "excess": 0.005904333019777759
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "REUSDT",
+        "v1",
+        "2026-08-31T03:24:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:REUSDT:1781792305000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-08-31T03:24:00+02:00",
+      "net_return": 0.011490630416382267,
+      "excess": 0.019410979972207233
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "REUSDT",
+        "v1",
+        "2026-08-31T17:15:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:REUSDT:1781792305000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-08-31T17:15:00+02:00",
+      "net_return": 0.00988860967252695,
+      "excess": 0.01782824689463666
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "REUSDT",
+        "v1",
+        "2026-09-02T10:02:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:REUSDT:1781792305000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-02T10:02:00+02:00",
+      "net_return": -0.004717317970865442,
+      "excess": -0.004297313931243488
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "REUSDT",
+        "v1",
+        "2026-09-03T06:09:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:REUSDT:1781792305000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-03T06:09:00+02:00",
+      "net_return": -0.004040137542844545,
+      "excess": -0.028238721243247798
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "REUSDT",
+        "v1",
+        "2026-09-04T15:55:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:REUSDT:1781792305000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-04T15:55:00+02:00",
+      "net_return": -0.01073348024405556,
+      "excess": -0.007126921517516907
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "RIVERUSDT",
+        "v1",
+        "2026-08-31T08:31:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:RIVERUSDT:1761136287000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-08-31T08:31:00+02:00",
+      "net_return": -0.05669896037627824,
+      "excess": -0.06555879168964017
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "ROBOUSDT",
+        "v1",
+        "2026-09-08T14:15:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:ROBOUSDT:1772011862000",
+      "iso_week": "2026-W37",
+      "decision_at": "2026-09-08T14:15:00+02:00",
+      "net_return": -0.11241895723539233,
+      "excess": -0.13305134081080938
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "SAHARAUSDT",
+        "v1",
+        "2026-09-17T05:09:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:SAHARAUSDT:1750417893000",
+      "iso_week": "2026-W38",
+      "decision_at": "2026-09-17T05:09:00+02:00",
+      "net_return": 0.0031609760545650532,
+      "excess": -0.017833597921530293
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "SANDUSDT",
+        "v1",
+        "2026-09-14T11:09:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:SANDUSDT:1635724800000",
+      "iso_week": "2026-W38",
+      "decision_at": "2026-09-14T11:09:00+02:00",
+      "net_return": 0.006579543185980774,
+      "excess": 0.008535824242243042
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "SEIUSDT",
+        "v1",
+        "2026-09-02T11:31:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:SEIUSDT:1692156527000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-02T11:31:00+02:00",
+      "net_return": 0.03620792000511611,
+      "excess": 0.06330057427747002
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "SHIB1000USDT",
+        "v1",
+        "2026-09-12T13:41:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:SHIB1000USDT:1634688000000",
+      "iso_week": "2026-W37",
+      "decision_at": "2026-09-12T13:41:00+02:00",
+      "net_return": -0.016793363344801825,
+      "excess": -0.004400869167939601
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "SHIB1000USDT",
+        "v1",
+        "2026-09-17T22:44:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:SHIB1000USDT:1634688000000",
+      "iso_week": "2026-W38",
+      "decision_at": "2026-09-17T22:44:00+02:00",
+      "net_return": 0.03788709758409669,
+      "excess": 0.00763980856481794
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "SNXUSDT",
+        "v1",
+        "2026-09-03T13:55:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:SNXUSDT:1639357278000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-03T13:55:00+02:00",
+      "net_return": 0.006234947911195098,
+      "excess": 0.021732807119369063
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "STRKUSDT",
+        "v1",
+        "2026-09-08T19:41:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:STRKUSDT:1708436526000",
+      "iso_week": "2026-W37",
+      "decision_at": "2026-09-08T19:41:00+02:00",
+      "net_return": 0.020058383408478573,
+      "excess": 0.028939579361988182
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "SUNUSDT",
+        "v1",
+        "2026-09-02T21:54:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:SUNUSDT:1645166314000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-02T21:54:00+02:00",
+      "net_return": 0.005050784000000001,
+      "excess": -0.009347855498909704
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "SUSHIUSDT",
+        "v1",
+        "2026-08-31T10:17:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:SUSHIUSDT:1638230400000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-08-31T10:17:00+02:00",
+      "net_return": -0.01584642966204418,
+      "excess": 0.004747548998185101
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "SUSHIUSDT",
+        "v1",
+        "2026-09-05T10:37:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:SUSHIUSDT:1638230400000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-05T10:37:00+02:00",
+      "net_return": 0.27315562270967736,
+      "excess": 0.2281687387580516
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "SUSHIUSDT",
+        "v1",
+        "2026-09-11T00:13:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:SUSHIUSDT:1638230400000",
+      "iso_week": "2026-W37",
+      "decision_at": "2026-09-11T00:13:00+02:00",
+      "net_return": -0.029394646600091535,
+      "excess": -0.008407151034803974
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "SUSHIUSDT",
+        "v1",
+        "2026-09-15T04:49:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:SUSHIUSDT:1638230400000",
+      "iso_week": "2026-W38",
+      "decision_at": "2026-09-15T04:49:00+02:00",
+      "net_return": -0.04071060065094774,
+      "excess": -0.02021105011803371
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "SUSHIUSDT",
+        "v1",
+        "2026-09-17T15:24:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:SUSHIUSDT:1638230400000",
+      "iso_week": "2026-W38",
+      "decision_at": "2026-09-17T15:24:00+02:00",
+      "net_return": 0.04476592005442176,
+      "excess": 0.023976547461096447
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "SYRUPUSDT",
+        "v1",
+        "2026-08-31T11:05:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:SYRUPUSDT:1747640186000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-08-31T11:05:00+02:00",
+      "net_return": 0.037891789186605,
+      "excess": 0.03396380552674222
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "TIAUSDT",
+        "v1",
+        "2026-08-30T11:38:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:TIAUSDT:1698768749000",
+      "iso_week": "2026-W35",
+      "decision_at": "2026-08-30T11:38:00+02:00",
+      "net_return": -0.003493359876337592,
+      "excess": 0.004650296570794819
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "TIAUSDT",
+        "v1",
+        "2026-08-31T07:23:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:TIAUSDT:1698768749000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-08-31T07:23:00+02:00",
+      "net_return": -0.01046718236085624,
+      "excess": 0.0032126867928175644
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "TIAUSDT",
+        "v1",
+        "2026-09-12T13:54:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:TIAUSDT:1698768749000",
+      "iso_week": "2026-W37",
+      "decision_at": "2026-09-12T13:54:00+02:00",
+      "net_return": -0.03439106277195905,
+      "excess": -0.0202967859185345
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "TUSDT",
+        "v1",
+        "2026-09-03T19:08:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:TUSDT:1678087595000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-03T19:08:00+02:00",
+      "net_return": -0.04412896374179331,
+      "excess": null
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "XPLUSDT",
+        "v1",
+        "2026-09-03T11:20:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:XPLUSDT:1755854834000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-03T11:20:00+02:00",
+      "net_return": 0.0735326062621185,
+      "excess": 0.04212153765072641
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "ZAMAUSDT",
+        "v1",
+        "2026-09-05T13:16:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:ZAMAUSDT:1767953327000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-05T13:16:00+02:00",
+      "net_return": -0.027831146886372553,
+      "excess": -0.03255407557522572
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "ZAMAUSDT",
+        "v1",
+        "2026-09-12T12:25:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:ZAMAUSDT:1767953327000",
+      "iso_week": "2026-W37",
+      "decision_at": "2026-09-12T12:25:00+02:00",
+      "net_return": 0.0054881926829471045,
+      "excess": null
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "ZAMAUSDT",
+        "v1",
+        "2026-09-13T10:28:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:ZAMAUSDT:1767953327000",
+      "iso_week": "2026-W37",
+      "decision_at": "2026-09-13T10:28:00+02:00",
+      "net_return": 0.004794925435089184,
+      "excess": -0.08414599378561924
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "ZILUSDT",
+        "v1",
+        "2026-09-06T10:58:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:ZILUSDT:1643480306000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-06T10:58:00+02:00",
+      "net_return": 0.0038072989409312415,
+      "excess": 0.0005576069409659848
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "ZKPUSDT",
+        "v1",
+        "2026-09-10T10:18:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:ZKPUSDT:1766382658000",
+      "iso_week": "2026-W37",
+      "decision_at": "2026-09-10T10:18:00+02:00",
+      "net_return": -0.04010397520036333,
+      "excess": -0.02886315154313345
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "ZKUSDT",
+        "v1",
+        "2026-09-03T16:20:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:ZKUSDT:1718849280000",
+      "iso_week": "2026-W36",
+      "decision_at": "2026-09-03T16:20:00+02:00",
+      "net_return": 0.025682662714505783,
+      "excess": -0.05014906254022562
+    },
+    {
+      "route_key": [
+        "bybit",
+        "linear",
+        "ZORAUSDT",
+        "v1",
+        "2026-09-17T22:18:00+02:00"
+      ],
+      "canonical_asset": "bybit:linear_usdt_perpetual:ZORAUSDT:1745572650000",
+      "iso_week": "2026-W38",
+      "decision_at": "2026-09-17T22:18:00+02:00",
+      "net_return": 0.020023276490531653,
+      "excess": -0.0067024288979564035
+    }
+  ]
+}

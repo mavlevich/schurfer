@@ -304,3 +304,22 @@ The export runs read-only ON PROD (localhost DB, not a PG tunnel) reusing the ex
 `momentum_universe_identity_repository` (`window_coverage` / `instruments_as_of`) and
 `momentum_universe_identity_classifier`; the small JSON is fetched over SSH. It is
 unit-tested locally against a fake repository before the prod run.
+
+## Formal returns run (v1)
+
+**Verdict:** `INSUFFICIENT_EVIDENCE`
+
+### Interpretation
+
+The prospective formal run (2026-08-30 to 2026-09-18) failed to meet the rigorous promotion gates required for live trading, concluding with `INSUFFICIENT_EVIDENCE`.
+
+*   The `mean_net_return` was weakly positive (+0.6%), but the `lower_95ci_net_return` was -1.7%, demonstrating a negative bound.
+*   The `mean_excess_over_control` was +0.44%, but its lower 95% CI bound was -0.94%, falling significantly short of the >0% minimum.
+*   The strategy took only 34 trades out of 252 primary episodes, with a total simulated portfolio PnL of $4.25 and a max drawdown of $17.14.
+
+### Roadmap
+
+Since the v1 formal evaluation did not pass, the hypothesis does not graduate to live execution. The required next steps are:
+1. Preserve the artifact and the `INSUFFICIENT_EVIDENCE` outcome. No further adjustments to the v1 parameters or thresholds will be tested on this dataset (to avoid dataset burn).
+2. Archive v1 and pivot back to the discovery phase for v2.
+3. Next iteration (v2) must rely on a newly gathered validation cohort.
