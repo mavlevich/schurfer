@@ -322,3 +322,28 @@ The export runs read-only ON PROD (localhost DB, not a PG tunnel) reusing the ex
 `momentum_universe_identity_repository` (`window_coverage` / `instruments_as_of`) and
 `momentum_universe_identity_classifier`; the small JSON is fetched over SSH. It is
 unit-tested locally against a fake repository before the prod run.
+
+## Diagnostic validation (v1 - burned window)
+
+**Verdict:** `INSUFFICIENT_EVIDENCE` (Diagnostic)
+
+The result was obtained via an unmerged scratch script with monkeypatching rather than the frozen runner. The outcomes were read multiple times due to a serialization failure during execution. Furthermore, the report lacks full provenance as the integrity pipeline was bypassed. Therefore, this window ([2026-08-30T00:00:00Z, 2026-09-18T11:58:00Z)) is **burned**. The numerical results are recorded purely as diagnostic evidence, not a formal prospective result.
+
+### Numerical Summary
+
+- **mean net return**: +0.61%
+- **mean excess over control**: +0.45%
+- **resolved episodes**: 125 out of 252 primary episodes
+- **missingness fraction**: 50.4%
+- **control coverage**: 53%
+- **week concentration**: 52%
+- **CI lower bounds**: negative (net return lower bound -1.74%, excess lower bound -0.95%)
+- **portfolio simulation**: +$4.25 / maxDD $17.15
+
+### Status
+
+The v1 hypothesis does not advance to live execution. Because this was run on a burned window, it is not declared a strict negative-EV FAIL, but an inconclusive diagnostic result.
+
+### Next Step
+
+Execute a **post-hoc missingness/control-coverage diagnostic** on this same burned window. This will evaluate why missingness was 50.4% and control coverage was only 53%, without making any new promotional claims.

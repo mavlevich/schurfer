@@ -8,10 +8,10 @@ Update only these four lines after every merge -- this is the fast-path
 status check, not a place for narrative.
 
 ```
-Current primary: HYP-015 verdict method and funding capture code are merged; actual-funding capture is now accumulating but the verdict is NOT frozen; one bounded abnormal-flow/OI economic-screen contract is in draft for the next discovery slot
-State: production has no configured trading credentials and runs DRY_RUN with AUTO_TRADE off; pump-short and delayed-short are closed; monster harvest and net-buy accumulation are parked; HYP-012 is research-only unless its execution route is separately confirmed; no strategy has yet established a scalable after-cost edge
-Next: finish outcome-blind HYP-015 funding/readiness checks and freeze before reading returns; review then implement one abnormal-flow discovery on existing exact-native Bybit/Binance data; let HYP-012/HYP-015 mature without peeking
-User decision required: approve the proposed abnormal-flow primary mechanism/horizon before it is frozen; no live-mode or broad venue/L2 expansion is authorized; production cold-bar deletion remains dry-run until its separate canary/enablement review
+Current primary: HYP-015 outcome-blind readiness/freeze; actual-funding capture is accumulating; abnormal-flow v1 is recorded as an inconclusive diagnostic on a burned window
+State: production has no configured trading credentials and runs DRY_RUN with AUTO_TRADE off; abnormal-flow v1 did not graduate; no strategy has established a scalable after-cost edge
+Next: HYP-015 readiness/freeze in primary and portfolio-engine correctness in support; then abnormal-flow missingness/control diagnostics; performance only after a measured benchmark; let HYP-012/HYP-015 mature without peeking
+User decision required: approve any future abnormal-flow v2 mechanism and portfolio policy before freeze; broad venue/L2/live expansion is not authorized; cold-bar canary remains a separate operational task
 ```
 
 ### Completed code card — ENG-024 outcome-consumer integrity
