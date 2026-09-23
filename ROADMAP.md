@@ -8,11 +8,10 @@ Update only these four lines after every merge -- this is the fast-path
 status check, not a place for narrative.
 
 ```
-Current primary: HYP-015 outcome-blind readiness/freeze; abnormal-flow v1 recorded as an inconclusive diagnostic on a burned window
-State: live mode is not authorized; no strategy has yet established a scalable after-cost edge
-Next: HYP-015 readiness/freeze in primary and portfolio-engine correctness in support; then abnormal-flow missingness/control diagnostics, then performance
-User decision required: prior to freeze, align on future v2 mechanism/portfolio policy; broad venue/L2/live not authorized; cold-bar canary separately then implement one abnormal-flow discovery on existing exact-native Bybit/Binance data; let HYP-012/HYP-015 mature without peeking
-User decision required: approve the proposed abnormal-flow primary mechanism/horizon before it is frozen; no live-mode or broad venue/L2 expansion is authorized; production cold-bar deletion remains dry-run until its separate canary/enablement review
+Current primary: HYP-015 outcome-blind readiness/freeze; actual-funding capture is accumulating; abnormal-flow v1 is recorded as an inconclusive diagnostic on a burned window
+State: production has no configured trading credentials and runs DRY_RUN with AUTO_TRADE off; abnormal-flow v1 did not graduate; no strategy has established a scalable after-cost edge
+Next: HYP-015 readiness/freeze in primary and portfolio-engine correctness in support; then abnormal-flow missingness/control diagnostics; performance only after a measured benchmark; let HYP-012/HYP-015 mature without peeking
+User decision required: approve any future abnormal-flow v2 mechanism and portfolio policy before freeze; broad venue/L2/live expansion is not authorized; cold-bar canary remains a separate operational task
 ```
 
 ### Completed code card — ENG-024 outcome-consumer integrity
