@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -85,6 +86,28 @@ def test_snapshot_write_read_equivalence(tmp_path: Path) -> None:
     assert reader.load_controls() == {}
     assert reader.load_outcomes() == {}
     assert reader.manifest.identity["contract_hash"] == _identity().contract_hash
+
+
+def test_bulk_decision_stage_preserves_null_and_empty_string(tmp_path: Path) -> None:
+    identity = _identity()
+    missing = replace(_decision("MISSING"), oi_native_value_usd=None, unavailable_reason=None)
+    empty = replace(_decision("EMPTY"), unavailable_reason="")
+    with SnapshotWriter(
+        tmp_path,
+        identity,
+        code_revision="deadbeef",
+        working_tree_dirty=False,
+    ) as writer:
+        writer.append_decisions([missing, empty])
+        assert list(writer.iter_decisions()) == [empty, missing]
+        with pytest.raises(SnapshotInputError, match="after the decision stage is sealed"):
+            writer.append_decisions([_decision("LATE")])
+        result = writer.publish()
+
+    assert list(SnapshotReader(result.directory, identity.fingerprint()).iter_decisions()) == [
+        empty,
+        missing,
+    ]
 
 
 def test_fingerprint_changes_with_any_registered_input() -> None:

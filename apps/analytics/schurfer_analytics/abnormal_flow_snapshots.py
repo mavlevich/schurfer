@@ -8,6 +8,7 @@ optional, separately populated table; the outcome-blind builder never writes it.
 from __future__ import annotations
 
 import contextlib
+import csv
 import hashlib
 import json
 import math
@@ -32,6 +33,8 @@ SNAPSHOT_SCHEMA_VERSION: Final = "abnormal_flow_replay_snapshot_v3"
 _FINGERPRINT_RE = re.compile(r"^[0-9a-f]{64}$")
 _MANIFEST_FILE = "snapshot_manifest.json"
 _MANIFEST_HASH_FILE = "snapshot_manifest.sha256"
+_DECISION_STAGE_FILE = ".decisions.csv"
+_CSV_NULL = "__SCHURFER_SNAPSHOT_NULL__"
 _TABLES: Final = ("decisions", "episodes", "controls", "outcomes")
 
 
@@ -176,6 +179,10 @@ def _decision_row(decision: DecisionFeatures) -> tuple[Any, ...]:
     )
 
 
+def _csv_row(row: tuple[Any, ...]) -> tuple[Any, ...]:
+    return tuple(_CSV_NULL if value is None else value for value in row)
+
+
 _DECISION_COLUMNS = """
     decision_id VARCHAR,
     exchange VARCHAR,
@@ -196,9 +203,6 @@ _DECISION_COLUMNS = """
     unavailable_reason VARCHAR
 """
 
-_DECISION_INSERT = (
-    "INSERT INTO decisions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-)
 _EPISODE_INSERT = "INSERT INTO episodes VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 _CONTROL_INSERT = (
     "INSERT INTO controls VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
@@ -255,6 +259,10 @@ class SnapshotWriter:
             )
             """
         )
+        self._decision_stage_path = self._staging_dir / _DECISION_STAGE_FILE
+        self._decision_stage = self._decision_stage_path.open("x", newline="")
+        self._decision_csv = csv.writer(self._decision_stage, lineterminator="\n")
+        self._decisions_loaded = False
 
     def __enter__(self) -> SnapshotWriter:
         return self
@@ -264,14 +272,30 @@ class SnapshotWriter:
 
     def close(self) -> None:
         with contextlib.suppress(Exception):
+            self._decision_stage.close()
+        with contextlib.suppress(Exception):
             self._db.close()
         if not self._published:
             shutil.rmtree(self._staging_dir, ignore_errors=True)
 
     def append_decisions(self, decisions: Iterable[DecisionFeatures]) -> None:
-        rows = [_decision_row(decision) for decision in decisions]
-        if rows:
-            self._db.executemany(_DECISION_INSERT, rows)
+        if self._decisions_loaded:
+            raise SnapshotInputError("cannot append decisions after the decision stage is sealed")
+        self._decision_csv.writerows(_csv_row(_decision_row(decision)) for decision in decisions)
+
+    def _load_decisions(self) -> None:
+        if self._decisions_loaded:
+            return
+        self._decision_stage.flush()
+        os.fsync(self._decision_stage.fileno())
+        self._decision_stage.close()
+        self._db.execute(
+            "COPY decisions FROM ? "
+            "(FORMAT CSV, HEADER FALSE, NULL '__SCHURFER_SNAPSHOT_NULL__')",
+            [str(self._decision_stage_path)],
+        )
+        self._decision_stage_path.unlink()
+        self._decisions_loaded = True
 
     def append_episodes(self, episodes: Iterable[DecisionFeatures]) -> None:
         rows = [_decision_row(episode) for episode in episodes]
@@ -317,6 +341,7 @@ class SnapshotWriter:
         )
 
     def iter_decisions(self) -> Iterator[DecisionFeatures]:
+        self._load_decisions()
         cursor = self._db.execute(
             "SELECT * FROM decisions ORDER BY exchange, market_type, native_market_id, "
             "capture_version, decision_at"
@@ -386,6 +411,7 @@ class SnapshotWriter:
     def publish(self) -> SnapshotPublishResult:
         if self._published:
             raise RuntimeError("snapshot writer has already published")
+        self._load_decisions()
         self._validate()
         orders = {
             "decisions": "exchange, market_type, native_market_id, capture_version, decision_at",
