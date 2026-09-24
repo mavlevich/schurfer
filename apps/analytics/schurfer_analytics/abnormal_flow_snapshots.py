@@ -36,6 +36,32 @@ _MANIFEST_HASH_FILE = "snapshot_manifest.sha256"
 _DECISION_STAGE_FILE = ".decisions.csv"
 _CSV_NULL = "__SCHURFER_SNAPSHOT_NULL__"
 _TABLES: Final = ("decisions", "episodes", "controls", "outcomes")
+_DECISION_PAYLOAD_COLUMNS: Final = (
+    "exchange",
+    "market_type",
+    "native_market_id",
+    "capture_version",
+    "symbol",
+    "canonical_asset",
+    "decision_at",
+    "oi_growth_pct",
+    "buy_pressure",
+    "containment",
+    "oi_native_amount",
+    "oi_native_value_usd",
+    "decision_price",
+    "pre_decision_turnover_usd",
+    "iso_week",
+    "unavailable_reason",
+)
+_OUTCOME_DECISION_COLUMNS: Final = (
+    "exchange",
+    "market_type",
+    "native_market_id",
+    "capture_version",
+    "symbol",
+    "decision_at",
+)
 
 
 class SnapshotCorruptError(RuntimeError):
@@ -124,6 +150,28 @@ def _sha256_file(path: Path) -> str:
 def _validate_fingerprint(fingerprint: str) -> None:
     if _FINGERPRINT_RE.fullmatch(fingerprint) is None:
         raise ValueError("snapshot fingerprint must be 64 lowercase hexadecimal characters")
+
+
+def _distinct_columns(left: str, right: str, columns: tuple[str, ...]) -> str:
+    """Return a fixed-schema SQL predicate for null-safe row comparison."""
+
+    return " OR ".join(f"{left}.{column} IS DISTINCT FROM {right}.{column}" for column in columns)
+
+
+def _payload_mismatch_query(
+    source_table: str,
+    source_alias: str,
+    decision_table: str,
+    decision_alias: str,
+    columns: tuple[str, ...],
+) -> str:
+    # Every identifier comes from the fixed schema registry above; no caller or
+    # artifact value is interpolated into this SQL.
+    return (
+        f"SELECT count(*) FROM {source_table} {source_alias} "  # noqa: S608
+        f"JOIN {decision_table} {decision_alias} USING (decision_id) WHERE "
+        + _distinct_columns(source_alias, decision_alias, columns)
+    )
 
 
 def snapshot_directory(root: Path, fingerprint: str) -> Path:
@@ -290,8 +338,7 @@ class SnapshotWriter:
         os.fsync(self._decision_stage.fileno())
         self._decision_stage.close()
         self._db.execute(
-            "COPY decisions FROM ? "
-            "(FORMAT CSV, HEADER FALSE, NULL '__SCHURFER_SNAPSHOT_NULL__')",
+            "COPY decisions FROM ? (FORMAT CSV, HEADER FALSE, NULL '__SCHURFER_SNAPSHOT_NULL__')",
             [str(self._decision_stage_path)],
         )
         self._decision_stage_path.unlink()
@@ -385,11 +432,29 @@ class SnapshotWriter:
                 "SELECT decision_id FROM episodes UNION SELECT decision_id FROM controls"
                 ") r USING (decision_id) WHERE r.decision_id IS NULL"
             ),
+            "episode payload differs from decision": _payload_mismatch_query(
+                "episodes", "e", "decisions", "d", _DECISION_PAYLOAD_COLUMNS
+            ),
+            "control payload differs from decision": _payload_mismatch_query(
+                "controls", "c", "decisions", "d", _DECISION_PAYLOAD_COLUMNS
+            ),
+            "outcome payload differs from decision": _payload_mismatch_query(
+                "outcomes", "o", "decisions", "d", _OUTCOME_DECISION_COLUMNS
+            ),
+            "outcome role does not match requested decision": (
+                "SELECT count(*) FROM outcomes o WHERE "
+                "(o.role = 'primary' AND NOT EXISTS ("
+                "SELECT 1 FROM episodes e WHERE e.decision_id = o.decision_id)) OR "
+                "(o.role = 'control' AND NOT EXISTS ("
+                "SELECT 1 FROM controls c WHERE c.decision_id = o.decision_id)) OR "
+                "o.role IS NULL OR o.role NOT IN ('primary', 'control')"
+            ),
             "ambiguous outcome completeness": (
                 "SELECT count(*) FROM outcomes WHERE "
                 "((entry_price IS NULL OR exit_price IS NULL) AND unresolved_reason IS NULL) "
                 "OR (entry_price IS NOT NULL AND exit_price IS NOT NULL "
-                "AND unresolved_reason IS NOT NULL)"
+                "AND unresolved_reason IS NOT NULL) OR "
+                "(entry_price IS NULL AND exit_price IS NOT NULL)"
             ),
         }
         for label, query in relation_queries.items():
@@ -577,26 +642,69 @@ class SnapshotReader:
                 if row is not None and int(row[0]):
                     raise SnapshotCorruptError(f"duplicate identity in {table}")
 
-            relation_queries = (
-                "SELECT count(*) FROM verify_episodes e LEFT JOIN verify_decisions d "
-                "USING (decision_id) WHERE d.decision_id IS NULL",
-                "SELECT count(*) FROM verify_controls c LEFT JOIN verify_decisions d "
-                "USING (decision_id) WHERE d.decision_id IS NULL",
-                "SELECT count(*) FROM verify_controls c LEFT JOIN verify_episodes e "
-                "ON c.primary_decision_id=e.decision_id WHERE e.decision_id IS NULL",
-                "SELECT count(*) FROM verify_outcomes o LEFT JOIN ("
-                "SELECT decision_id FROM verify_episodes UNION "
-                "SELECT decision_id FROM verify_controls) r USING (decision_id) "
-                "WHERE r.decision_id IS NULL",
-                "SELECT count(*) FROM verify_outcomes WHERE "
-                "((entry_price IS NULL OR exit_price IS NULL) AND unresolved_reason IS NULL) "
-                "OR (entry_price IS NOT NULL AND exit_price IS NOT NULL "
-                "AND unresolved_reason IS NOT NULL)",
-            )
-            for query in relation_queries:
+            relation_queries = {
+                "episode without decision": (
+                    "SELECT count(*) FROM verify_episodes e LEFT JOIN verify_decisions d "
+                    "USING (decision_id) WHERE d.decision_id IS NULL"
+                ),
+                "control without decision": (
+                    "SELECT count(*) FROM verify_controls c LEFT JOIN verify_decisions d "
+                    "USING (decision_id) WHERE d.decision_id IS NULL"
+                ),
+                "control without primary episode": (
+                    "SELECT count(*) FROM verify_controls c LEFT JOIN verify_episodes e "
+                    "ON c.primary_decision_id=e.decision_id WHERE e.decision_id IS NULL"
+                ),
+                "outcome without requested decision": (
+                    "SELECT count(*) FROM verify_outcomes o LEFT JOIN ("
+                    "SELECT decision_id FROM verify_episodes UNION "
+                    "SELECT decision_id FROM verify_controls) r USING (decision_id) "
+                    "WHERE r.decision_id IS NULL"
+                ),
+                "episode payload differs from decision": _payload_mismatch_query(
+                    "verify_episodes",
+                    "e",
+                    "verify_decisions",
+                    "d",
+                    _DECISION_PAYLOAD_COLUMNS,
+                ),
+                "control payload differs from decision": _payload_mismatch_query(
+                    "verify_controls",
+                    "c",
+                    "verify_decisions",
+                    "d",
+                    _DECISION_PAYLOAD_COLUMNS,
+                ),
+                "outcome payload differs from decision": _payload_mismatch_query(
+                    "verify_outcomes",
+                    "o",
+                    "verify_decisions",
+                    "d",
+                    _OUTCOME_DECISION_COLUMNS,
+                ),
+                "outcome role does not match requested decision": (
+                    "SELECT count(*) FROM verify_outcomes o WHERE "
+                    "(o.role = 'primary' AND NOT EXISTS ("
+                    "SELECT 1 FROM verify_episodes e "
+                    "WHERE e.decision_id = o.decision_id)) OR "
+                    "(o.role = 'control' AND NOT EXISTS ("
+                    "SELECT 1 FROM verify_controls c "
+                    "WHERE c.decision_id = o.decision_id)) OR "
+                    "o.role IS NULL OR o.role NOT IN ('primary', 'control')"
+                ),
+                "ambiguous outcome completeness": (
+                    "SELECT count(*) FROM verify_outcomes WHERE "
+                    "((entry_price IS NULL OR exit_price IS NULL) "
+                    "AND unresolved_reason IS NULL) OR "
+                    "(entry_price IS NOT NULL AND exit_price IS NOT NULL "
+                    "AND unresolved_reason IS NOT NULL) OR "
+                    "(entry_price IS NULL AND exit_price IS NOT NULL)"
+                ),
+            }
+            for label, query in relation_queries.items():
                 row = db.execute(query).fetchone()
                 if row is not None and int(row[0]):
-                    raise SnapshotCorruptError("snapshot relational integrity failure")
+                    raise SnapshotCorruptError(label)
 
     def iter_decisions(self) -> Iterator[DecisionFeatures]:
         path = self.snapshot_dir / self.manifest.artifacts["decisions"].file_name

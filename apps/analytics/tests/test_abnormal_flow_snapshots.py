@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+import duckdb
 import pytest
-from schurfer_analytics.abnormal_flow_replay import DecisionFeatures
+from schurfer_analytics.abnormal_flow_replay import DecisionFeatures, Outcome
 from schurfer_analytics.abnormal_flow_snapshots import (
     ColdBarInput,
     SnapshotCorruptError,
@@ -60,6 +63,27 @@ def _identity(*, contract_hash: str = "sha256:contract") -> SnapshotIdentity:
             ),
         ),
     )
+
+
+def _outcome(decision: DecisionFeatures) -> Outcome:
+    return Outcome(
+        exchange=decision.exchange,
+        market_type=decision.market_type,
+        native_market_id=decision.native_market_id,
+        capture_version=decision.capture_version,
+        symbol=decision.symbol,
+        decision_at=decision.decision_at,
+        entry_price=10.0,
+        exit_price=11.0,
+    )
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _publish(root: Path, identity: SnapshotIdentity | None = None) -> tuple[Path, str]:
@@ -159,6 +183,121 @@ def test_control_requires_published_primary_episode(tmp_path: Path) -> None:
         writer.append_decisions([primary, control])
         writer.append_controls(primary, [control])
         writer.publish()
+
+
+def test_episode_payload_must_match_decision(tmp_path: Path) -> None:
+    identity = _identity()
+    decision = _decision()
+    with (
+        SnapshotWriter(
+            tmp_path,
+            identity,
+            code_revision="deadbeef",
+            working_tree_dirty=False,
+        ) as writer,
+        pytest.raises(SnapshotInputError, match="episode payload differs"),
+    ):
+        writer.append_decisions([decision])
+        writer.append_episodes([replace(decision, canonical_asset="asset:WRONG")])
+        writer.publish()
+
+
+def test_control_payload_must_match_decision(tmp_path: Path) -> None:
+    identity = _identity()
+    primary = _decision("BTCUSDT")
+    control = _decision("ETHUSDT")
+    with (
+        SnapshotWriter(
+            tmp_path,
+            identity,
+            code_revision="deadbeef",
+            working_tree_dirty=False,
+        ) as writer,
+        pytest.raises(SnapshotInputError, match="control payload differs"),
+    ):
+        writer.append_decisions([primary, control])
+        writer.append_episodes([primary])
+        writer.append_controls(primary, [replace(control, symbol="WRONG")])
+        writer.publish()
+
+
+def test_outcome_payload_and_role_must_match_requested_decision(tmp_path: Path) -> None:
+    identity = _identity()
+    decision = _decision()
+    mismatched = replace(decision, symbol="WRONG")
+    with (
+        SnapshotWriter(
+            tmp_path / "payload",
+            identity,
+            code_revision="deadbeef",
+            working_tree_dirty=False,
+        ) as writer,
+        pytest.raises(SnapshotInputError, match="outcome payload differs"),
+    ):
+        writer.append_decisions([decision])
+        writer.append_episodes([decision])
+        writer.append_outcome(mismatched, "primary", _outcome(mismatched), None)
+        writer.publish()
+
+    with (
+        SnapshotWriter(
+            tmp_path / "role",
+            identity,
+            code_revision="deadbeef",
+            working_tree_dirty=False,
+        ) as writer,
+        pytest.raises(SnapshotInputError, match="outcome role does not match"),
+    ):
+        writer.append_decisions([decision])
+        writer.append_episodes([decision])
+        writer.append_outcome(decision, "control", _outcome(decision), None)
+        writer.publish()
+
+
+def test_outcome_cannot_have_exit_without_entry(tmp_path: Path) -> None:
+    identity = _identity()
+    decision = _decision()
+    with (
+        SnapshotWriter(
+            tmp_path,
+            identity,
+            code_revision="deadbeef",
+            working_tree_dirty=False,
+        ) as writer,
+        pytest.raises(SnapshotInputError, match="ambiguous outcome completeness"),
+    ):
+        writer.append_decisions([decision])
+        writer.append_episodes([decision])
+        writer.append_outcome(
+            decision,
+            "primary",
+            replace(_outcome(decision), entry_price=None),
+            "missing_entry",
+        )
+        writer.publish()
+
+
+def test_reader_rejects_rehashed_episode_with_mismatched_payload(tmp_path: Path) -> None:
+    directory, fingerprint = _publish(tmp_path)
+    episodes_path = directory / "episodes_snapshot.parquet"
+    replacement = directory / "episodes-replacement.parquet"
+    with duckdb.connect() as db:
+        db.execute("CREATE TABLE episodes AS SELECT * FROM read_parquet(?)", [str(episodes_path)])
+        db.execute("UPDATE episodes SET canonical_asset = 'asset:WRONG'")
+        db.execute("COPY episodes TO ? (FORMAT PARQUET, COMPRESSION ZSTD)", [str(replacement)])
+    replacement.replace(episodes_path)
+
+    manifest_path = directory / "snapshot_manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["artifacts"]["episodes"]["sha256"] = _sha256(episodes_path)
+    manifest_json = json.dumps(manifest, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    manifest_path.write_text(manifest_json)
+    (directory / "snapshot_manifest.sha256").write_text(
+        hashlib.sha256(manifest_json.encode()).hexdigest()
+    )
+
+    with pytest.raises(SnapshotCorruptError, match="episode payload differs"):
+        SnapshotReader(directory, fingerprint)
 
 
 def test_first_writer_wins_and_second_reads_winner(tmp_path: Path) -> None:

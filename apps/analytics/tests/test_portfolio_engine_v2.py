@@ -41,7 +41,7 @@ def _position(
     )
 
 
-@pytest.mark.parametrize("slots", [2, 4, 6, 8])
+@pytest.mark.parametrize("slots", [1, 2, 4, 6, 8, 10, 20])
 def test_fixed_k_slot_scaling(slots: int) -> None:
     positions = [
         _position(str(index), f"asset-{index}", entry_minute=index, exit_minute=100 + index)
@@ -96,6 +96,23 @@ def test_same_timestamp_uses_exit_then_stable_entry_order() -> None:
     assert forward == reverse
     assert forward.total_trades == 2
     assert forward.rejected_entries[0].decision_id == "C"
+
+
+def test_simultaneous_exits_measure_drawdown_after_the_complete_batch() -> None:
+    loss_first = [
+        _position("loss", "A", entry_minute=0, exit_minute=10, gross_return=-1.0),
+        _position("win", "B", entry_minute=0, exit_minute=10, gross_return=1.0),
+    ]
+    win_first = [
+        replace(loss_first[0], canonical_asset="B"),
+        replace(loss_first[1], canonical_asset="A"),
+    ]
+
+    for positions in (loss_first, win_first):
+        metrics = simulate_portfolio_v2(positions, initial_capital=100.0, k_slots=2)
+        assert metrics.final_equity == pytest.approx(100.0)
+        assert metrics.max_drawdown_pct == 0.0
+        assert metrics.total_trades == 2
 
 
 @pytest.mark.parametrize(
@@ -165,7 +182,13 @@ def test_exit_before_entry_fails_closed() -> None:
         _position("1", "A", entry_minute=10, exit_minute=20),
         exit_at=datetime(2026, 1, 1, tzinfo=UTC),
     )
-    with pytest.raises(ValueError, match="must not precede"):
+    with pytest.raises(ValueError, match="must be after"):
+        simulate_portfolio_v2([position])
+
+
+def test_exit_at_entry_timestamp_fails_closed() -> None:
+    position = _position("1", "A", entry_minute=0, exit_minute=0)
+    with pytest.raises(ValueError, match="must be after"):
         simulate_portfolio_v2([position])
 
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import enum
+import itertools
 import math
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
@@ -149,8 +150,8 @@ def _validate_inputs(
                 raise ValueError(f"{position.decision_id}: unresolved position needs a reason")
             continue
 
-        if position.exit_at.tzinfo is None or position.exit_at < position.entry_at:
-            raise ValueError(f"{position.decision_id}: exit_at must not precede entry_at")
+        if position.exit_at.tzinfo is None or position.exit_at <= position.entry_at:
+            raise ValueError(f"{position.decision_id}: exit_at must be after entry_at")
         if position.unresolved_reason is not None:
             raise ValueError(f"{position.decision_id}: resolved position has unresolved_reason")
         if position.gross_return is None or position.net_return is None:
@@ -238,9 +239,49 @@ def simulate_portfolio_v2(
         metrics.peak_abs_net_exposure = max(metrics.peak_abs_net_exposure, abs(net))
         metrics.peak_leverage = max(metrics.peak_leverage, current_leverage)
 
-    for event in events:
-        position = event.position
-        if event.event_type is EventType.ENTRY:
+    for _at, timestamp_events_iter in itertools.groupby(events, key=lambda event: event.at):
+        timestamp_events = list(timestamp_events_iter)
+
+        # Settle the whole timestamp before measuring equity. Serially measuring exits
+        # that occurred at the same instant makes drawdown depend on the lexical asset
+        # tie-break rather than on the portfolio path.
+        settled_exit = False
+        for event in timestamp_events:
+            if event.event_type is not EventType.EXIT:
+                continue
+            position = event.position
+            active_position = active.pop(position.decision_id, None)
+            if active_position is None:
+                continue
+            asset_counts[position.canonical_asset] -= 1
+            assert position.gross_return is not None
+            assert position.net_return is not None
+            gross_pnl = active_position.notional * position.gross_return
+            net_pnl = active_position.notional * position.net_return
+            available_cash += active_position.margin + net_pnl
+            metrics.total_trades += 1
+            metrics.winning_trades += int(net_pnl > 0)
+            metrics.losing_trades += int(net_pnl <= 0)
+            metrics.gross_pnl += gross_pnl
+            metrics.net_pnl += net_pnl
+            settled_exit = True
+
+        if settled_exit:
+            _, _, equity, _ = exposures()
+            peak_equity = max(peak_equity, equity)
+            if peak_equity > 0:
+                metrics.max_drawdown_pct = max(
+                    metrics.max_drawdown_pct,
+                    (peak_equity - equity) / peak_equity,
+                )
+            update_peaks()
+
+        # Events are already deterministically ordered; processing entries after the
+        # complete exit batch lets capital released at this timestamp be reused.
+        for event in timestamp_events:
+            if event.event_type is not EventType.ENTRY:
+                continue
+            position = event.position
             if len(active) >= k_slots:
                 reject(position, "max_concurrent_positions")
                 continue
@@ -281,30 +322,6 @@ def simulate_portfolio_v2(
                 metrics.unresolved_fail_closed += 1
                 metrics.accounting_complete = False
             update_peaks()
-            continue
-
-        active_position = active.pop(position.decision_id, None)
-        if active_position is None:
-            continue
-        asset_counts[position.canonical_asset] -= 1
-        assert position.gross_return is not None
-        assert position.net_return is not None
-        gross_pnl = active_position.notional * position.gross_return
-        net_pnl = active_position.notional * position.net_return
-        available_cash += active_position.margin + net_pnl
-        metrics.total_trades += 1
-        metrics.winning_trades += int(net_pnl > 0)
-        metrics.losing_trades += int(net_pnl <= 0)
-        metrics.gross_pnl += gross_pnl
-        metrics.net_pnl += net_pnl
-        _, _, equity, _ = exposures()
-        peak_equity = max(peak_equity, equity)
-        if peak_equity > 0:
-            metrics.max_drawdown_pct = max(
-                metrics.max_drawdown_pct,
-                (peak_equity - equity) / peak_equity,
-            )
-        update_peaks()
 
     gross, net, equity, current_leverage = exposures()
     metrics.available_cash = available_cash
