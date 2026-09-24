@@ -1,0 +1,334 @@
+"""Deterministic research-only portfolio accounting for settled positions."""
+
+from __future__ import annotations
+
+import enum
+import itertools
+import math
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+    from datetime import datetime
+
+
+class TradeDirection(enum.IntEnum):
+    LONG = 1
+    SHORT = -1
+
+
+@dataclass(frozen=True)
+class PortfolioPosition:
+    """One normalized position candidate.
+
+    ``gross_return`` and ``net_return`` are direction-aware returns on notional.
+    For a resolved position, ``net_return`` must equal gross return less the recorded
+    slippage, fee, and funding costs. An unresolved position has no exit or returns and
+    remains reserved through the end of the simulation.
+    """
+
+    decision_id: str
+    canonical_asset: str
+    direction: TradeDirection
+    entry_at: datetime
+    exit_at: datetime | None
+    gross_return: float | None
+    entry_slippage_bps: float
+    exit_slippage_bps: float
+    fees_bps: float
+    funding_bps: float
+    net_return: float | None
+    unresolved_reason: str | None = None
+
+
+class EventType(enum.IntEnum):
+    EXIT = 0
+    ENTRY = 1
+
+
+@dataclass(order=True, frozen=True)
+class Event:
+    at: datetime
+    event_type: EventType
+    canonical_asset: str
+    decision_id: str
+    position: PortfolioPosition = field(compare=False)
+
+
+@dataclass(frozen=True)
+class RejectedEntry:
+    decision_id: str
+    reason: str
+
+
+@dataclass
+class PortfolioMetrics:
+    total_trades: int = 0
+    winning_trades: int = 0
+    losing_trades: int = 0
+    gross_pnl: float = 0.0
+    net_pnl: float = 0.0
+    final_equity: float = 0.0
+    max_drawdown_pct: float = 0.0
+    max_concurrent_positions: int = 0
+    unresolved_fail_closed: int = 0
+    available_cash: float = 0.0
+    reserved_capital: float = 0.0
+    notional_exposure: float = 0.0
+    gross_exposure: float = 0.0
+    net_exposure: float = 0.0
+    leverage: float = 0.0
+    peak_gross_exposure: float = 0.0
+    peak_abs_net_exposure: float = 0.0
+    peak_leverage: float = 0.0
+    accounting_complete: bool = True
+    rejection_counts: dict[str, int] = field(default_factory=dict)
+    rejected_entries: list[RejectedEntry] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class _ActivePosition:
+    position: PortfolioPosition
+    margin: float
+    notional: float
+
+
+def _finite(value: float) -> bool:
+    return isinstance(value, int | float) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def _validate_inputs(
+    positions: Sequence[PortfolioPosition],
+    *,
+    initial_capital: float,
+    k_slots: int,
+    leverage: float,
+    max_positions_per_asset: int,
+    max_gross_exposure_usd: float | None,
+    max_abs_net_exposure_usd: float | None,
+    max_leverage: float | None,
+) -> None:
+    if not _finite(initial_capital) or initial_capital <= 0:
+        raise ValueError("initial_capital must be finite and positive")
+    if k_slots <= 0:
+        raise ValueError("k_slots must be positive")
+    if max_positions_per_asset <= 0:
+        raise ValueError("max_positions_per_asset must be positive")
+    if not _finite(leverage) or leverage <= 0:
+        raise ValueError("leverage must be finite and positive")
+    for name, limit in (
+        ("max_gross_exposure_usd", max_gross_exposure_usd),
+        ("max_abs_net_exposure_usd", max_abs_net_exposure_usd),
+        ("max_leverage", max_leverage),
+    ):
+        if limit is not None and (not _finite(limit) or limit <= 0):
+            raise ValueError(f"{name} must be finite and positive when provided")
+
+    ids = [position.decision_id for position in positions]
+    if any(not decision_id for decision_id in ids) or len(set(ids)) != len(ids):
+        raise ValueError("decision_id values must be non-empty and unique")
+
+    for position in positions:
+        if position.entry_at.tzinfo is None:
+            raise ValueError(f"{position.decision_id}: entry_at must be timezone-aware")
+        costs = (
+            position.entry_slippage_bps,
+            position.exit_slippage_bps,
+            position.fees_bps,
+            position.funding_bps,
+        )
+        if not all(_finite(cost) for cost in costs):
+            raise ValueError(f"{position.decision_id}: costs must be finite")
+        if any(cost < 0 for cost in costs[:3]):
+            raise ValueError(f"{position.decision_id}: slippage and fees cannot be negative")
+
+        if position.exit_at is None:
+            if position.gross_return is not None or position.net_return is not None:
+                raise ValueError(f"{position.decision_id}: unresolved position cannot have returns")
+            if not position.unresolved_reason:
+                raise ValueError(f"{position.decision_id}: unresolved position needs a reason")
+            continue
+
+        if position.exit_at.tzinfo is None or position.exit_at <= position.entry_at:
+            raise ValueError(f"{position.decision_id}: exit_at must be after entry_at")
+        if position.unresolved_reason is not None:
+            raise ValueError(f"{position.decision_id}: resolved position has unresolved_reason")
+        if position.gross_return is None or position.net_return is None:
+            raise ValueError(
+                f"{position.decision_id}: resolved position needs gross and net returns"
+            )
+        if not _finite(position.gross_return) or not _finite(position.net_return):
+            raise ValueError(f"{position.decision_id}: returns must be finite")
+        total_cost_bps = sum(costs)
+        expected_net = position.gross_return - total_cost_bps / 10_000.0
+        if not math.isclose(position.net_return, expected_net, rel_tol=0.0, abs_tol=1e-12):
+            raise ValueError(
+                f"{position.decision_id}: net_return does not match registered cost provenance"
+            )
+
+
+def simulate_portfolio_v2(
+    positions: Sequence[PortfolioPosition],
+    *,
+    initial_capital: float = 300.0,
+    k_slots: int = 8,
+    max_positions_per_asset: int = 1,
+    leverage: float = 1.0,
+    max_gross_exposure_usd: float | None = None,
+    max_abs_net_exposure_usd: float | None = None,
+    max_leverage: float | None = None,
+) -> PortfolioMetrics:
+    """Run a fixed-slot chronological simulation without partial allocations."""
+
+    _validate_inputs(
+        positions,
+        initial_capital=initial_capital,
+        k_slots=k_slots,
+        leverage=leverage,
+        max_positions_per_asset=max_positions_per_asset,
+        max_gross_exposure_usd=max_gross_exposure_usd,
+        max_abs_net_exposure_usd=max_abs_net_exposure_usd,
+        max_leverage=max_leverage,
+    )
+    events: list[Event] = []
+    for position in positions:
+        events.append(
+            Event(
+                position.entry_at,
+                EventType.ENTRY,
+                position.canonical_asset,
+                position.decision_id,
+                position,
+            )
+        )
+        if position.exit_at is not None:
+            events.append(
+                Event(
+                    position.exit_at,
+                    EventType.EXIT,
+                    position.canonical_asset,
+                    position.decision_id,
+                    position,
+                )
+            )
+    events.sort()
+
+    metrics = PortfolioMetrics(available_cash=initial_capital, final_equity=initial_capital)
+    available_cash = initial_capital
+    peak_equity = initial_capital
+    margin_per_position = initial_capital / k_slots
+    notional_per_position = margin_per_position * leverage
+    active: dict[str, _ActivePosition] = {}
+    asset_counts: dict[str, int] = {}
+
+    def exposures() -> tuple[float, float, float, float]:
+        gross = sum(item.notional for item in active.values())
+        net = sum(item.notional * item.position.direction.value for item in active.values())
+        equity = available_cash + sum(item.margin for item in active.values())
+        current_leverage = gross / equity if equity > 0 else math.inf
+        return gross, net, equity, current_leverage
+
+    def reject(position: PortfolioPosition, reason: str) -> None:
+        metrics.rejection_counts[reason] = metrics.rejection_counts.get(reason, 0) + 1
+        metrics.rejected_entries.append(RejectedEntry(position.decision_id, reason))
+
+    def update_peaks() -> None:
+        gross, net, _, current_leverage = exposures()
+        metrics.peak_gross_exposure = max(metrics.peak_gross_exposure, gross)
+        metrics.peak_abs_net_exposure = max(metrics.peak_abs_net_exposure, abs(net))
+        metrics.peak_leverage = max(metrics.peak_leverage, current_leverage)
+
+    for _at, timestamp_events_iter in itertools.groupby(events, key=lambda event: event.at):
+        timestamp_events = list(timestamp_events_iter)
+
+        # Settle the whole timestamp before measuring equity. Serially measuring exits
+        # that occurred at the same instant makes drawdown depend on the lexical asset
+        # tie-break rather than on the portfolio path.
+        settled_exit = False
+        for event in timestamp_events:
+            if event.event_type is not EventType.EXIT:
+                continue
+            position = event.position
+            active_position = active.pop(position.decision_id, None)
+            if active_position is None:
+                continue
+            asset_counts[position.canonical_asset] -= 1
+            assert position.gross_return is not None
+            assert position.net_return is not None
+            gross_pnl = active_position.notional * position.gross_return
+            net_pnl = active_position.notional * position.net_return
+            available_cash += active_position.margin + net_pnl
+            metrics.total_trades += 1
+            metrics.winning_trades += int(net_pnl > 0)
+            metrics.losing_trades += int(net_pnl <= 0)
+            metrics.gross_pnl += gross_pnl
+            metrics.net_pnl += net_pnl
+            settled_exit = True
+
+        if settled_exit:
+            _, _, equity, _ = exposures()
+            peak_equity = max(peak_equity, equity)
+            if peak_equity > 0:
+                metrics.max_drawdown_pct = max(
+                    metrics.max_drawdown_pct,
+                    (peak_equity - equity) / peak_equity,
+                )
+            update_peaks()
+
+        # Events are already deterministically ordered; processing entries after the
+        # complete exit batch lets capital released at this timestamp be reused.
+        for event in timestamp_events:
+            if event.event_type is not EventType.ENTRY:
+                continue
+            position = event.position
+            if len(active) >= k_slots:
+                reject(position, "max_concurrent_positions")
+                continue
+            if asset_counts.get(position.canonical_asset, 0) >= max_positions_per_asset:
+                reject(position, "max_positions_per_asset")
+                continue
+            if available_cash < margin_per_position:
+                reject(position, "insufficient_capital")
+                continue
+            gross, net, equity, _ = exposures()
+            proposed_gross = gross + notional_per_position
+            proposed_net = net + notional_per_position * position.direction.value
+            proposed_leverage = proposed_gross / equity if equity > 0 else math.inf
+            if max_gross_exposure_usd is not None and proposed_gross > max_gross_exposure_usd:
+                reject(position, "max_gross_exposure")
+                continue
+            if (
+                max_abs_net_exposure_usd is not None
+                and abs(proposed_net) > max_abs_net_exposure_usd
+            ):
+                reject(position, "max_abs_net_exposure")
+                continue
+            if max_leverage is not None and proposed_leverage > max_leverage:
+                reject(position, "max_leverage")
+                continue
+
+            available_cash -= margin_per_position
+            active[position.decision_id] = _ActivePosition(
+                position=position,
+                margin=margin_per_position,
+                notional=notional_per_position,
+            )
+            asset_counts[position.canonical_asset] = (
+                asset_counts.get(position.canonical_asset, 0) + 1
+            )
+            metrics.max_concurrent_positions = max(metrics.max_concurrent_positions, len(active))
+            if position.exit_at is None:
+                metrics.unresolved_fail_closed += 1
+                metrics.accounting_complete = False
+            update_peaks()
+
+    gross, net, equity, current_leverage = exposures()
+    metrics.available_cash = available_cash
+    metrics.reserved_capital = sum(item.margin for item in active.values())
+    metrics.notional_exposure = gross
+    metrics.gross_exposure = gross
+    metrics.net_exposure = net
+    metrics.leverage = current_leverage
+    metrics.final_equity = equity
+    return metrics

@@ -29,6 +29,10 @@ Entrypoints:
 - `derivatives-context-report` — runs a bounded, read-only CCXT conformance and
   recoverability probe for funding, open interest, mark/index/premium candles,
   long/short ratios, and liquidations around recent pump episodes.
+- `abnormal-flow-snapshot` — verifies frozen cold-bar and identity inputs, then
+  materializes outcome-blind decisions, episodes, and matched controls as an immutable
+  Parquet bundle. Repeating the exact input fingerprint verifies and reuses the bundle;
+  this command never reads forward prices or produces a verdict.
 
 Run against the local development database:
 
