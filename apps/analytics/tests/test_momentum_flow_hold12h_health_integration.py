@@ -92,12 +92,37 @@ def _seed(cur: Any) -> None:
                     None if stale else decision_at + timedelta(hours=12),
                 ),
             )
-        if index < 2:  # funding proven for two of the three closed hold12h positions
+        if index < 2:  # a complete run for two of the three closed hold12h positions
             cur.execute(
                 f"INSERT INTO {_SCHEMA}.hold12h_funding_coverage_runs VALUES "
                 "(%s,%s,%s,'complete',%s,%s)",
                 (_EX, market_id, _FV, decision_at - timedelta(hours=1), _D + timedelta(days=1)),
             )
+        if index == 1:  # ...but an overlapping integrity conflict invalidates the second
+            cur.execute(
+                f"INSERT INTO {_SCHEMA}.hold12h_funding_coverage_runs VALUES "
+                "(%s,%s,%s,'integrity_conflict',%s,%s)",
+                (_EX, market_id, _FV, decision_at, decision_at + timedelta(hours=2)),
+            )
+    # A WATCH the baseline claimed but hold12h never saw (a stopped hold12h worker).
+    orphan = str(uuid.uuid4())
+    cur.execute(
+        f"INSERT INTO {_SCHEMA}.momentum_flow_watch_evaluations_1m "
+        "VALUES (%s,%s,'watch',%s,%s,%s,'FOOUSDT',%s)",
+        (orphan, _D + timedelta(minutes=10), _WV, _EX, _MT, str(uuid.uuid4())),
+    )
+    cur.execute(
+        f"INSERT INTO {_SCHEMA}.momentum_flow_paper_probes VALUES "
+        "(%s,%s,%s,'ORPHANUSDT','opened','open',NULL,%s,%s,%s,NULL)",
+        (
+            orphan,
+            FROZEN_PAPER_CONTRACT.paper_version,
+            _EX,
+            _D + timedelta(minutes=10),
+            _D + timedelta(minutes=10, seconds=9),
+            _D + timedelta(minutes=10, seconds=10),
+        ),
+    )
 
 
 async def test_health_checkpoint_counts_shared_watches_outcome_blind() -> None:
@@ -112,14 +137,16 @@ async def test_health_checkpoint_counts_shared_watches_outcome_blind() -> None:
             funding_version=_FV,
             schemas=_SCHEMAS,
         )
-        assert checkpoint.shared_watches == 4
+        assert checkpoint.eligible_watches == 5
+        assert checkpoint.baseline_unclaimed == 0
         assert checkpoint.baseline_stale == 0
+        assert checkpoint.hold12h_unclaimed == 1
         assert checkpoint.hold12h_stale == 1
         assert checkpoint.hold12h_claim_p50_seconds == pytest.approx(15.0)
         assert checkpoint.closed_positions_past_lag == 3
-        assert checkpoint.funding_covered == 2
+        assert checkpoint.funding_covered == 1  # the conflicted window does not count
         assert checkpoint.accounting_complete == 3
-        # 25% stale on hold12h vs 0% baseline breaches both parts of the rule.
+        # 40% lost on hold12h (stale + never claimed) vs 0% baseline breaches both parts.
         assert len(health_breaches(checkpoint)) == 2
     finally:
         with conn.cursor() as cur:

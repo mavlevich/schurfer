@@ -94,13 +94,17 @@ def test_portfolio_summary_reports_capital_time() -> None:
     assert summary["window_pnl_zero_funding_sensitivity_usd"] == 12.5
 
 
-def _checkpoint(shared: int, baseline_stale: int, hold_stale: int) -> HealthCheckpoint:
+def _checkpoint(
+    eligible: int, baseline_lost: int, hold_lost: int, *, hold_unclaimed: int = 0
+) -> HealthCheckpoint:
     return HealthCheckpoint(
         since=_START,
         until=_START + timedelta(hours=48),
-        shared_watches=shared,
-        baseline_stale=baseline_stale,
-        hold12h_stale=hold_stale,
+        eligible_watches=eligible,
+        baseline_unclaimed=0,
+        baseline_stale=baseline_lost,
+        hold12h_unclaimed=hold_unclaimed,
+        hold12h_stale=hold_lost - hold_unclaimed,
         hold12h_claim_p50_seconds=12.0,
         hold12h_claim_p90_seconds=20.0,
         closed_positions_past_lag=100,
@@ -115,13 +119,18 @@ def test_health_rule_allows_two_points_of_excess_within_five_percent() -> None:
 
 def test_health_rule_flags_excess_over_baseline() -> None:
     (breach,) = health_breaches(_checkpoint(1000, 0, 25))  # 0% vs 2.5%
-    assert "exceeds baseline" in breach
+    assert "exceed baseline" in breach
 
 
 def test_health_rule_flags_the_absolute_cap_even_when_baseline_is_also_high() -> None:
     (breach,) = health_breaches(_checkpoint(1000, 50, 60))  # 5% vs 6%
-    assert "stale fraction" in breach
+    assert "lost-entry fraction" in breach
 
 
-def test_health_rule_without_shared_watches_is_a_breach() -> None:
-    assert health_breaches(_checkpoint(0, 0, 0)) == ["no shared WATCH rows in the window"]
+def test_health_rule_counts_never_claimed_watches_as_lost() -> None:
+    """A stopped hold12h worker leaves WATCH rows unclaimed; they must breach the rule."""
+    assert len(health_breaches(_checkpoint(1000, 0, 400, hold_unclaimed=400))) == 2
+
+
+def test_health_rule_without_eligible_watches_is_a_breach() -> None:
+    assert health_breaches(_checkpoint(0, 0, 0)) == ["no eligible WATCH rows in the window"]

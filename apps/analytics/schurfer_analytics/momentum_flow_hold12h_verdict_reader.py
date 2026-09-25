@@ -256,10 +256,11 @@ async def load_readiness(
     )
 
 
-# Operational health rule, registered before the cohort (colleague review): on the same
-# WATCH rows, the hold12h stale fraction may exceed the baseline worker's by at most 2
-# percentage points, and never exceed 5% absolute. Checked outcome-blind on a fixed
-# schedule; a breach is logged, never a reason to change thresholds or restart the cohort.
+# Operational health rule, registered before the cohort (colleague review): over every
+# eligible WATCH, the hold12h lost-entry fraction (stale or never claimed) may exceed the
+# baseline worker's by at most 2 percentage points, and never exceed 5% absolute. Checked
+# outcome-blind on a fixed schedule; a breach is logged, never a reason to change
+# thresholds or restart the cohort.
 HEALTH_MAX_STALE_EXCESS = 0.02
 HEALTH_MAX_STALE_FRACTION = 0.05
 # Funding for a closed position is only expected once the settlement lag has passed.
@@ -268,12 +269,16 @@ HEALTH_FUNDING_LAG = timedelta(hours=8)
 
 @dataclass(frozen=True)
 class HealthCheckpoint:
-    """Outcome-blind operational counts for one window. NO return/fee/PnL column is read."""
+    """Outcome-blind operational counts for one window over EVERY eligible WATCH (the
+    verdict denominator), per worker. A WATCH a worker never claimed counts as lost, so a
+    stopped worker cannot drop out of the check. NO return/fee/PnL column is read."""
 
     since: datetime
     until: datetime
-    shared_watches: int
+    eligible_watches: int
+    baseline_unclaimed: int
     baseline_stale: int
+    hold12h_unclaimed: int
     hold12h_stale: int
     hold12h_claim_p50_seconds: float | None
     hold12h_claim_p90_seconds: float | None
@@ -281,13 +286,16 @@ class HealthCheckpoint:
     funding_covered: int
     accounting_complete: int
 
-    @property
-    def baseline_stale_fraction(self) -> float:
-        return self.baseline_stale / self.shared_watches if self.shared_watches else 0.0
+    def _fraction(self, count: int) -> float:
+        return count / self.eligible_watches if self.eligible_watches else 0.0
 
     @property
-    def hold12h_stale_fraction(self) -> float:
-        return self.hold12h_stale / self.shared_watches if self.shared_watches else 0.0
+    def baseline_lost_fraction(self) -> float:
+        return self._fraction(self.baseline_unclaimed + self.baseline_stale)
+
+    @property
+    def hold12h_lost_fraction(self) -> float:
+        return self._fraction(self.hold12h_unclaimed + self.hold12h_stale)
 
     @property
     def funding_covered_fraction(self) -> float:
@@ -297,16 +305,16 @@ class HealthCheckpoint:
 
 
 def health_breaches(checkpoint: HealthCheckpoint) -> list[str]:
-    """The registered stale rule; an empty list means the worker is healthy. A window with
-    no shared WATCH rows is itself a breach: the rule cannot be shown to hold."""
-    if checkpoint.shared_watches == 0:
-        return ["no shared WATCH rows in the window"]
+    """The registered rule on LOST entries (stale or never claimed); an empty list means
+    healthy. A window with no eligible WATCH rows is itself a breach."""
+    if checkpoint.eligible_watches == 0:
+        return ["no eligible WATCH rows in the window"]
     breaches: list[str] = []
-    excess = checkpoint.hold12h_stale_fraction - checkpoint.baseline_stale_fraction
+    excess = checkpoint.hold12h_lost_fraction - checkpoint.baseline_lost_fraction
     if excess > HEALTH_MAX_STALE_EXCESS:
-        breaches.append(f"hold12h stale exceeds baseline by {excess:.4f}")
-    if checkpoint.hold12h_stale_fraction > HEALTH_MAX_STALE_FRACTION:
-        breaches.append(f"hold12h stale fraction {checkpoint.hold12h_stale_fraction:.4f}")
+        breaches.append(f"hold12h lost entries exceed baseline by {excess:.4f}")
+    if checkpoint.hold12h_lost_fraction > HEALTH_MAX_STALE_FRACTION:
+        breaches.append(f"hold12h lost-entry fraction {checkpoint.hold12h_lost_fraction:.4f}")
     return breaches
 
 
@@ -335,36 +343,54 @@ async def load_health_checkpoint(
     engine = create_async_engine(async_database_url(db_url), pool_pre_ping=True, pool_size=1)
     try:
         async with engine.connect() as conn:
-            stale = (
+            entries = (
                 (
                     await conn.execute(
                         text(
                             f"""
                             WITH w AS (SELECT w.watch_id {_watch_filter_sql(ts)}),
-                            shared AS (
-                                SELECT p.watch_id FROM {app}.momentum_flow_paper_probes p
-                                JOIN w ON w.watch_id = p.watch_id
-                                WHERE p.paper_version IN (:base, :hold)
-                                GROUP BY p.watch_id
-                                HAVING count(DISTINCT p.paper_version) = 2
+                            per AS (
+                                SELECT w.watch_id,
+                                    coalesce(bool_or(p.paper_version = :base), false) AS b_seen,
+                                    coalesce(bool_or(p.paper_version = :base
+                                        AND p.entry_status = 'rejected_stale'), false) AS b_stale,
+                                    coalesce(bool_or(p.paper_version = :hold), false) AS h_seen,
+                                    coalesce(bool_or(p.paper_version = :hold
+                                        AND p.entry_status = 'rejected_stale'), false) AS h_stale
+                                FROM w
+                                LEFT JOIN {app}.momentum_flow_paper_probes p
+                                  ON p.watch_id = w.watch_id
+                                 AND p.paper_version IN (:base, :hold)
+                                GROUP BY w.watch_id
                             )
+                            SELECT count(*) AS eligible,
+                                count(*) FILTER (WHERE NOT b_seen) AS baseline_unclaimed,
+                                count(*) FILTER (WHERE b_stale) AS baseline_stale,
+                                count(*) FILTER (WHERE NOT h_seen) AS hold12h_unclaimed,
+                                count(*) FILTER (WHERE h_stale) AS hold12h_stale
+                            FROM per
+                            """
+                        ),
+                        params,
+                    )
+                )
+                .mappings()
+                .one()
+            )
+            latency = (
+                (
+                    await conn.execute(
+                        text(
+                            f"""
+                            WITH w AS (SELECT w.watch_id {_watch_filter_sql(ts)})
                             SELECT
-                                (SELECT count(*) FROM shared) AS shared_watches,
-                                count(*) FILTER (
-                                    WHERE p.paper_version = :base
-                                      AND p.entry_status = 'rejected_stale') AS baseline_stale,
-                                count(*) FILTER (
-                                    WHERE p.paper_version = :hold
-                                      AND p.entry_status = 'rejected_stale') AS hold12h_stale,
-                                percentile_cont(0.5) WITHIN GROUP (
-                                    ORDER BY extract(epoch FROM p.claimed_at - p.watch_decision_at)
-                                ) FILTER (WHERE p.paper_version = :hold) AS claim_p50,
-                                percentile_cont(0.9) WITHIN GROUP (
-                                    ORDER BY extract(epoch FROM p.claimed_at - p.watch_decision_at)
-                                ) FILTER (WHERE p.paper_version = :hold) AS claim_p90
+                                percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(
+                                    epoch FROM p.claimed_at - p.watch_decision_at)) AS p50,
+                                percentile_cont(0.9) WITHIN GROUP (ORDER BY extract(
+                                    epoch FROM p.claimed_at - p.watch_decision_at)) AS p90
                             FROM {app}.momentum_flow_paper_probes p
-                            JOIN shared ON shared.watch_id = p.watch_id
-                            WHERE p.paper_version IN (:base, :hold)
+                            JOIN w ON w.watch_id = p.watch_id
+                            WHERE p.paper_version = :hold
                             """
                         ),
                         params,
@@ -386,7 +412,15 @@ async def load_health_checkpoint(
                                       AND r.native_market_id = p.market_id
                                       AND r.source_version = :fv AND r.status = 'complete'
                                       AND r.requested_since <= p.entry_at
-                                      AND r.requested_until >= p.exit_at)) AS covered,
+                                      AND r.requested_until >= p.exit_at)
+                                  AND NOT EXISTS (
+                                    SELECT 1 FROM {app}.hold12h_funding_coverage_runs c
+                                    WHERE c.exchange = p.exchange
+                                      AND c.native_market_id = p.market_id
+                                      AND c.source_version = :fv
+                                      AND c.status = 'integrity_conflict'
+                                      AND c.requested_since < p.exit_at
+                                      AND c.requested_until > p.entry_at)) AS covered,
                                 count(*) FILTER (
                                     WHERE p.accounting_status = 'complete') AS accounting_complete
                             FROM {app}.momentum_flow_paper_probes p
@@ -410,11 +444,13 @@ async def load_health_checkpoint(
     return HealthCheckpoint(
         since=since,
         until=until,
-        shared_watches=int(stale["shared_watches"] or 0),
-        baseline_stale=int(stale["baseline_stale"] or 0),
-        hold12h_stale=int(stale["hold12h_stale"] or 0),
-        hold12h_claim_p50_seconds=_seconds(stale["claim_p50"]),
-        hold12h_claim_p90_seconds=_seconds(stale["claim_p90"]),
+        eligible_watches=int(entries["eligible"] or 0),
+        baseline_unclaimed=int(entries["baseline_unclaimed"] or 0),
+        baseline_stale=int(entries["baseline_stale"] or 0),
+        hold12h_unclaimed=int(entries["hold12h_unclaimed"] or 0),
+        hold12h_stale=int(entries["hold12h_stale"] or 0),
+        hold12h_claim_p50_seconds=_seconds(latency["p50"]),
+        hold12h_claim_p90_seconds=_seconds(latency["p90"]),
         closed_positions_past_lag=int(funding["closed"] or 0),
         funding_covered=int(funding["covered"] or 0),
         accounting_complete=int(funding["accounting_complete"] or 0),
@@ -655,8 +691,8 @@ def formal_read_window(
 
 
 def claim_formal_output(output_dir: Path) -> None:
-    """First-writer-wins claim, taken BEFORE any return is read: a second formal run (or a
-    retry after a crash) finds the directory and is refused, so the read happens once."""
+    """Exclusive local artifact directory, so a run never overwrites another's artifact.
+    Not the one-read guarantee: that is the durable database claim below."""
     output_dir.parent.mkdir(parents=True, exist_ok=True)
     try:
         output_dir.mkdir()
@@ -664,6 +700,56 @@ def claim_formal_output(output_dir: Path) -> None:
         raise SystemExit(
             f"formal-run refused: {output_dir} exists; the single formal read was already claimed"
         ) from exc
+
+
+async def claim_formal_read(
+    db_url: str,
+    contract: Hold12hVerdictContract,
+    *,
+    cohort_start: datetime,
+    decision_prefix_end: datetime,
+    code_revision: str,
+    working_tree_dirty: bool,
+    output_dir: Path,
+    schemas: Schemas = _DEFAULT_SCHEMAS,
+) -> None:
+    """The durable one-read claim, committed BEFORE any return is read. Unique per cohort
+    (contract version + both frozen bounds) rather than per contract sha, so neither another
+    output directory nor an edited contract can read the same cohort twice."""
+    from sqlalchemy import text
+    from sqlalchemy.exc import IntegrityError
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from .outcome_repository import async_database_url
+
+    engine = create_async_engine(async_database_url(db_url), pool_pre_ping=True, pool_size=1)
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(
+                text(
+                    f"""
+                    INSERT INTO {schemas.app}.hold12h_formal_read_claims
+                        (contract_version, contract_sha256, cohort_start, decision_prefix_end,
+                         code_revision, working_tree_dirty, output_dir)
+                    VALUES (:cv, :sha, :start, :end, :rev, :dirty, :out)
+                    """
+                ),
+                {
+                    "cv": contract.contract_version,
+                    "sha": contract.sha256_hex(),
+                    "start": cohort_start,
+                    "end": decision_prefix_end,
+                    "rev": code_revision[:64],
+                    "dirty": working_tree_dirty,
+                    "out": str(output_dir),
+                },
+            )
+    except IntegrityError as exc:
+        raise SystemExit(
+            "formal-run refused: this cohort's single formal read was already claimed"
+        ) from exc
+    finally:
+        await engine.dispose()
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -718,8 +804,8 @@ async def _run(args: argparse.Namespace) -> str:
                     key: value.isoformat() if isinstance(value, datetime) else value
                     for key, value in checkpoint.__dict__.items()
                 },
-                "baseline_stale_fraction": checkpoint.baseline_stale_fraction,
-                "hold12h_stale_fraction": checkpoint.hold12h_stale_fraction,
+                "baseline_lost_fraction": checkpoint.baseline_lost_fraction,
+                "hold12h_lost_fraction": checkpoint.hold12h_lost_fraction,
                 "funding_covered_fraction": checkpoint.funding_covered_fraction,
                 "healthy": not breaches,
                 "breaches": breaches,
@@ -747,6 +833,17 @@ async def _run(args: argparse.Namespace) -> str:
         now=datetime.now(UTC),
     )
     output_dir: Path = args.output_dir
+    if output_dir.exists():
+        raise SystemExit(f"formal-run refused: {output_dir} already exists")
+    await claim_formal_read(
+        db_url,
+        contract,
+        cohort_start=cohort_start,
+        decision_prefix_end=prefix_end,
+        code_revision=args.code_revision,
+        working_tree_dirty=args.working_tree_dirty,
+        output_dir=output_dir,
+    )
     claim_formal_output(output_dir)
 
     from .momentum_flow_hold12h_funding import load_stored_funding

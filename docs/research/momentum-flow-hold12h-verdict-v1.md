@@ -249,15 +249,23 @@ only, never evidence.
 - The contract freezes BOTH `cohort_start_iso` and `decision_prefix_end_iso` (four full ISO weeks,
   Monday 00:00 UTC to Monday 00:00 UTC). The formal CLI refuses an unregistered contract, any other
   prefix, and any read earlier than `decision_prefix_end + min_read_delay_hours` (36h: the last
-  720m positions close and the funding capture passes its lag and queue). It claims its output
-  directory exclusively BEFORE reading a return, so the read happens once; a floor not met there is
+  720m positions close and the funding capture passes its lag and one queue cycle; a schedule
+  margin, not a guarantee under a capture backlog).
+- The single read is enforced by a DURABLE claim in `app.hold12h_formal_read_claims` (migration
+  0051), inserted and committed BEFORE any return is read. It is unique per cohort (contract
+  version + both frozen bounds), not per chosen output directory and not per contract sha, so
+  neither another directory nor an edited contract can read the same cohort again. The local
+  artifact directory is additionally created exclusively. A floor not met at the prefix is
   `insufficient_data`, never a later, friendlier prefix.
 - Outcome-blind health checkpoints (`hold12h-verdict-reader --health-since ... --decision-prefix-end
 ...`) run every Monday of the cohort and once over a fixed 48h window after the worker fix is
   deployed (before the cohort boundary is frozen). They read statuses, claim latency, funding
-  coverage and accounting status only. Registered rule: on the same WATCH rows the hold12h stale
-  fraction exceeds the baseline worker's by at most 2 percentage points and never exceeds 5%. A
-  breach is logged; thresholds are never changed and the cohort is never restarted because of it.
+  coverage and accounting status only. The denominator is EVERY eligible WATCH; per worker, a WATCH
+  that is stale or was never claimed is a lost entry, so a stopped worker cannot drop out of the
+  check. Registered rule: the hold12h lost-entry fraction exceeds the baseline worker's by at most
+  2 percentage points and never exceeds 5%. Funding coverage is counted as in the formal rule (a
+  `complete` v2 run spanning the interval and no overlapping `integrity_conflict`). A breach is
+  logged; thresholds are never changed and the cohort is never restarted because of it.
 
 ## Delivery order (three PRs -- supersedes the earlier ONE-PR plan)
 
