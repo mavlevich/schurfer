@@ -755,3 +755,144 @@ async def test_process_tick_prevents_starvation_and_prioritizes_fresh() -> None:
     ]
     assert result.watches_seen == 1 + config.watch_batch_size
     assert result.entries_stale_cleaned == config.watch_batch_size
+
+
+class _SimClock:
+    def __init__(self, start: datetime) -> None:
+        self.now = start
+
+    def __call__(self) -> datetime:
+        return self.now
+
+
+@dataclass
+class _TimedMarket:
+    """Every quote costs ``quote_seconds`` of simulated time, like a venue round trip."""
+
+    clock: _SimClock
+    quote_seconds: float
+    entry_requested_at: list[datetime]
+
+    async def quote(self, symbol: str, side: str) -> ExecutableQuote:
+        requested_at = self.clock.now
+        self.clock.now += timedelta(seconds=self.quote_seconds)
+        if side == FROZEN_PAPER_CONTRACT.entry_quote_side:
+            self.entry_requested_at.append(requested_at)
+        quote = _quote(observed_at=self.clock.now, side=side)
+        return ExecutableQuote(
+            **{
+                **{f.name: getattr(quote, f.name) for f in fields(quote)},
+                "symbol": symbol,
+                "requested_at": requested_at,
+            }
+        )
+
+
+class _ArrivingWatchStore(FakeStore):
+    """Candidates become visible at their decision time and are claimable once."""
+
+    def __init__(self, clock: _SimClock, candidates: tuple[WatchCandidate, ...]) -> None:
+        super().__init__(candidates)
+        self.clock = clock
+        self.claimed_watch_ids: set[UUID] = set()
+
+    async def due_fresh_watches(self, **_: Any) -> tuple[WatchCandidate, ...]:
+        return tuple(
+            candidate
+            for candidate in self.candidates
+            if candidate.decision_at <= self.clock.now
+            and candidate.watch_id not in self.claimed_watch_ids
+        )
+
+    async def claim_watch(self, candidate: WatchCandidate, **kwargs: Any) -> UUID:
+        self.claimed_watch_ids.add(candidate.watch_id)
+        return await super().claim_watch(candidate, **kwargs)
+
+
+def _open_probes(count: int) -> tuple[PaperProbe, ...]:
+    return tuple(PaperProbe(uuid4(), "ERAUSDT", T0, 10, "open", 0, 0) for _ in range(count))
+
+
+def _active_run() -> PaperRun:
+    return PaperRun(
+        FROZEN_PAPER_CONTRACT.paper_version, "hash", {}, T0 - timedelta(hours=1), "active"
+    )
+
+
+async def test_watch_arriving_mid_book_is_quoted_before_the_deadline() -> None:
+    """Regression: with ~100 open positions quoted serially at ~0.27s each, a WATCH that
+    appeared just after the tick's entry phase used to wait the whole book (~27s) plus
+    the poll sleep and miss the 30s watch-to-quote deadline."""
+    clock = _SimClock(T0)
+    arriving = _candidate(decision_at=T0 + timedelta(seconds=10))
+    store = _ArrivingWatchStore(clock, (arriving,))
+    store.probes = _open_probes(100)
+    entry_requested_at: list[datetime] = []
+    config = PaperWorkerConfig("postgresql://test", "redis:6379")
+
+    result = await process_tick(
+        store=store,
+        market=_TimedMarket(clock, 0.27, entry_requested_at),
+        run=_active_run(),
+        config=config,
+        clock=clock,
+    )
+
+    assert result.entries_opened == 1
+    assert result.entries_stale == 0
+    (requested_at,) = entry_requested_at
+    wait = (requested_at - arriving.decision_at).total_seconds()
+    # Bounded by one chunk (count or time budget) plus one quote, far inside 30s.
+    assert wait <= config.probe_chunk_seconds + 0.27
+    assert result.probes_quoted == 100
+
+
+async def test_continuous_entries_do_not_starve_open_positions() -> None:
+    clock = _SimClock(T0)
+    # A fresh WATCH becomes visible every second across the whole book.
+    arrivals = tuple(_candidate(decision_at=T0 + timedelta(seconds=s)) for s in range(1, 40))
+    store = _ArrivingWatchStore(clock, arrivals)
+    store.probes = _open_probes(100)
+
+    result = await process_tick(
+        store=store,
+        market=_TimedMarket(clock, 0.27, []),
+        run=_active_run(),
+        config=PaperWorkerConfig("postgresql://test", "redis:6379"),
+        clock=clock,
+    )
+
+    assert result.probes_quoted == 100
+    assert len(store.applied) == 100
+    assert result.entries_opened > 0
+    assert result.entries_stale == 0
+
+
+async def test_slow_quotes_close_a_chunk_by_time_not_only_by_count() -> None:
+    clock = _SimClock(T0)
+    arriving = _candidate(decision_at=T0 + timedelta(seconds=0.5))
+    store = _ArrivingWatchStore(clock, (arriving,))
+    store.probes = _open_probes(10)
+    entry_requested_at: list[datetime] = []
+    config = PaperWorkerConfig(
+        "postgresql://test", "redis:6379", probe_chunk_size=10, probe_chunk_seconds=3.0
+    )
+
+    await process_tick(
+        store=store,
+        market=_TimedMarket(clock, 2.0, entry_requested_at),
+        run=_active_run(),
+        config=config,
+        clock=clock,
+    )
+
+    # Two 2s quotes exhaust the 3s budget, so the entry runs after probe 2 (t=4s),
+    # not after all ten slow probes (t=20s).
+    (requested_at,) = entry_requested_at
+    assert requested_at == T0 + timedelta(seconds=4)
+
+
+@pytest.mark.parametrize("overrides", [{"probe_chunk_size": 0}, {"probe_chunk_seconds": 0.0}])
+def test_probe_chunk_bounds_must_be_positive(overrides: dict[str, Any]) -> None:
+    with pytest.raises(ValueError, match="limits must be positive"):
+        PaperWorkerConfig("postgresql://test", "redis:6379", **overrides)
