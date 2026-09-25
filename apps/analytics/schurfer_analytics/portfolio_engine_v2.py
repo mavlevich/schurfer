@@ -23,14 +23,28 @@ class PositionSizingPolicy(enum.Enum):
     CURRENT_EQUITY_EQUAL_WEIGHT = "current_equity_equal_weight"
 
 
+class UnresolvedCapitalPolicy(enum.Enum):
+    """How long an accepted unresolved position keeps its capital.
+
+    ``HOLD_TO_END`` is the original fail-closed behavior: the slot is never released.
+    ``PLANNED_EXIT`` releases the slot at the position's ``planned_exit_at`` and books
+    an explicit, caller-supplied gross-return assumption. Either way the run remains
+    ``accounting_complete=False``; the assumption is a scenario, never an outcome.
+    """
+
+    HOLD_TO_END = "hold_to_end"
+    PLANNED_EXIT = "planned_exit"
+
+
 @dataclass(frozen=True)
 class PortfolioPosition:
     """One normalized position candidate.
 
     ``gross_return`` and ``net_return`` are direction-aware returns on notional.
     For a resolved position, ``net_return`` must equal gross return less the recorded
-    slippage, fee, and funding costs. An unresolved position has no exit or returns and
-    remains reserved through the end of the simulation.
+    slippage, fee, and funding costs. An unresolved position has no exit or returns.
+    Its ``planned_exit_at`` is when the strategy would have exited; it is used only by
+    ``UnresolvedCapitalPolicy.PLANNED_EXIT``.
     """
 
     decision_id: str
@@ -45,6 +59,7 @@ class PortfolioPosition:
     funding_bps: float
     net_return: float | None
     unresolved_reason: str | None = None
+    planned_exit_at: datetime | None = None
 
 
 class EventType(enum.IntEnum):
@@ -79,6 +94,8 @@ class PortfolioMetrics:
     max_drawdown_pct: float = 0.0
     max_concurrent_positions: int = 0
     unresolved_fail_closed: int = 0
+    unresolved_released: int = 0
+    unresolved_assumed_net_pnl: float = 0.0
     available_cash: float = 0.0
     reserved_capital: float = 0.0
     notional_exposure: float = 0.0
@@ -115,6 +132,8 @@ def _validate_inputs(
     leverage: float,
     max_positions_per_asset: int,
     sizing_policy: PositionSizingPolicy,
+    unresolved_policy: UnresolvedCapitalPolicy,
+    unresolved_gross_return: float | None,
     max_gross_exposure_usd: float | None,
     max_abs_net_exposure_usd: float | None,
     max_leverage: float | None,
@@ -127,6 +146,13 @@ def _validate_inputs(
         raise ValueError("max_positions_per_asset must be positive")
     if not isinstance(sizing_policy, PositionSizingPolicy):
         raise ValueError("sizing_policy must be a PositionSizingPolicy")
+    if not isinstance(unresolved_policy, UnresolvedCapitalPolicy):
+        raise ValueError("unresolved_policy must be an UnresolvedCapitalPolicy")
+    planned_exit = unresolved_policy is UnresolvedCapitalPolicy.PLANNED_EXIT
+    if planned_exit and (unresolved_gross_return is None or not _finite(unresolved_gross_return)):
+        raise ValueError("planned_exit needs an explicit finite unresolved_gross_return")
+    if not planned_exit and unresolved_gross_return is not None:
+        raise ValueError("unresolved_gross_return applies only to planned_exit")
     if not _finite(leverage) or leverage <= 0:
         raise ValueError("leverage must be finite and positive")
     for name, limit in (
@@ -160,6 +186,14 @@ def _validate_inputs(
                 raise ValueError(f"{position.decision_id}: unresolved position cannot have returns")
             if not position.unresolved_reason:
                 raise ValueError(f"{position.decision_id}: unresolved position needs a reason")
+            if planned_exit and (
+                position.planned_exit_at is None
+                or position.planned_exit_at.tzinfo is None
+                or position.planned_exit_at <= position.entry_at
+            ):
+                raise ValueError(
+                    f"{position.decision_id}: planned_exit needs a planned_exit_at after entry"
+                )
             continue
 
         if position.exit_at.tzinfo is None or position.exit_at <= position.entry_at:
@@ -187,6 +221,8 @@ def simulate_portfolio_v2(
     k_slots: int = 8,
     max_positions_per_asset: int = 1,
     sizing_policy: PositionSizingPolicy = PositionSizingPolicy.FIXED_INITIAL_EQUITY,
+    unresolved_policy: UnresolvedCapitalPolicy = UnresolvedCapitalPolicy.HOLD_TO_END,
+    unresolved_gross_return: float | None = None,
     leverage: float = 1.0,
     max_gross_exposure_usd: float | None = None,
     max_abs_net_exposure_usd: float | None = None,
@@ -198,6 +234,11 @@ def simulate_portfolio_v2(
     recomputes one slot as current realized equity divided by K immediately before each
     entry, so losses do not permanently strand a slot merely because its old fixed
     notional is no longer affordable.
+
+    Under ``PLANNED_EXIT`` an unresolved position is settled at ``planned_exit_at`` with
+    ``unresolved_gross_return`` less its recorded costs. That scenario PnL is reported in
+    ``unresolved_assumed_net_pnl`` and in equity, never in realized trade counts or
+    ``net_pnl``.
     """
 
     _validate_inputs(
@@ -207,10 +248,13 @@ def simulate_portfolio_v2(
         leverage=leverage,
         max_positions_per_asset=max_positions_per_asset,
         sizing_policy=sizing_policy,
+        unresolved_policy=unresolved_policy,
+        unresolved_gross_return=unresolved_gross_return,
         max_gross_exposure_usd=max_gross_exposure_usd,
         max_abs_net_exposure_usd=max_abs_net_exposure_usd,
         max_leverage=max_leverage,
     )
+    planned_exit = unresolved_policy is UnresolvedCapitalPolicy.PLANNED_EXIT
     events: list[Event] = []
     for position in positions:
         events.append(
@@ -222,10 +266,13 @@ def simulate_portfolio_v2(
                 position,
             )
         )
-        if position.exit_at is not None:
+        release_at = position.exit_at
+        if release_at is None and planned_exit:
+            release_at = position.planned_exit_at
+        if release_at is not None:
             events.append(
                 Event(
-                    position.exit_at,
+                    release_at,
                     EventType.EXIT,
                     position.canonical_asset,
                     position.decision_id,
@@ -273,6 +320,22 @@ def simulate_portfolio_v2(
             if active_position is None:
                 continue
             asset_counts[position.canonical_asset] -= 1
+            settled_exit = True
+            if position.exit_at is None:
+                assert unresolved_gross_return is not None
+                costs_bps = (
+                    position.entry_slippage_bps
+                    + position.exit_slippage_bps
+                    + position.fees_bps
+                    + position.funding_bps
+                )
+                assumed_pnl = active_position.notional * (
+                    unresolved_gross_return - costs_bps / 10_000.0
+                )
+                available_cash += active_position.margin + assumed_pnl
+                metrics.unresolved_released += 1
+                metrics.unresolved_assumed_net_pnl += assumed_pnl
+                continue
             assert position.gross_return is not None
             assert position.net_return is not None
             gross_pnl = active_position.notional * position.gross_return
@@ -283,7 +346,6 @@ def simulate_portfolio_v2(
             metrics.losing_trades += int(net_pnl <= 0)
             metrics.gross_pnl += gross_pnl
             metrics.net_pnl += net_pnl
-            settled_exit = True
 
         if settled_exit:
             _, _, equity, _ = exposures()

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -16,8 +17,10 @@ from schurfer_analytics.abnormal_flow_portfolio_diagnostic import (
     build_positions,
     bundle_fingerprint,
     outcomes_fingerprint,
+    peak_planned_concurrency,
     portfolio_frontier,
     run_diagnostic,
+    scenario_frontiers,
     write_outcome_rows,
 )
 from schurfer_analytics.abnormal_flow_portfolio_rescore import rescore_bundle
@@ -181,15 +184,13 @@ def test_bundle_is_immutable_and_contains_reusable_positions(tmp_path: Path) -> 
         [decision],
         {decision.route_key(): _outcome(decision, 110.0)},
     )
-    report: dict[str, Any] = {
-        "portfolio_frontier": portfolio_frontier(
-            positions,
-            initial_capital=300.0,
-            k_values=(1, 20),
-            max_positions_per_asset=1,
-            sizing_policy=PositionSizingPolicy.CURRENT_EQUITY_EQUAL_WEIGHT,
-        )
-    }
+    report: dict[str, Any] = scenario_frontiers(
+        positions,
+        initial_capital=300.0,
+        k_values=(1, 20),
+        max_positions_per_asset=1,
+        sizing_policy=PositionSizingPolicy.CURRENT_EQUITY_EQUAL_WEIGHT,
+    )
     output = tmp_path / "result"
     rows = build_outcome_rows(
         _contract(), [decision], {decision.route_key(): _outcome(decision, 110.0)}
@@ -234,7 +235,7 @@ def test_rescore_uses_saved_positions_without_market_data(
         "policy": {"initial_capital": 300.0, "max_positions_per_asset": 1},
         "coverage": {"episodes": 2, "resolved": 2, "unresolved": 0},
         "provenance": {"snapshot_fingerprint": "a" * 64},
-        "portfolio_frontier": portfolio_frontier(
+        **scenario_frontiers(
             positions,
             initial_capital=300.0,
             k_values=(1,),
@@ -326,3 +327,62 @@ def test_fingerprints_are_stable_across_reruns_and_order() -> None:
 )
 def test_parse_k_values(raw: str, expected: tuple[int, ...]) -> None:
     assert _parse_k_values(raw) == expected
+
+
+def test_scenarios_bracket_unresolved_and_take_every_signal() -> None:
+    win = _decision("WIN", 0)
+    loss = _decision("LOSS", 1)
+    missing = _decision("MISSING", 2)
+    positions = build_positions(
+        _contract(),
+        [win, loss, missing],
+        {win.route_key(): _outcome(win, 110.0), loss.route_key(): _outcome(loss, 80.0)},
+    )
+    assert positions[0].exit_at is not None
+    assert positions[2].planned_exit_at == positions[0].exit_at + timedelta(minutes=2)
+
+    result = scenario_frontiers(
+        positions,
+        initial_capital=300.0,
+        k_values=(1, 3),
+        max_positions_per_asset=1,
+        sizing_policy=PositionSizingPolicy.FIXED_INITIAL_EQUITY,
+    )
+    scenarios = result["scenarios"]
+    assert list(scenarios) == [
+        "hold_to_end",
+        "planned_exit_worst_resolved",
+        "planned_exit_zero_gross",
+        "planned_exit_mean_resolved",
+    ]
+    assert scenarios["planned_exit_worst_resolved"]["unresolved_gross_return"] == pytest.approx(
+        -0.2
+    )
+    assert scenarios["planned_exit_mean_resolved"]["unresolved_gross_return"] == pytest.approx(
+        -0.05
+    )
+    # Three overlapping 721-minute paths: every signal needs three slots of $100.
+    assert result["take_every_signal_k"] == 3
+    take_all = result["take_every_signal"]["planned_exit_zero_gross"]
+    assert take_all["accepted_entries"] == 3
+    assert take_all["rejection_counts"] == {}
+    assert take_all["initial_position_usd"] == pytest.approx(100.0)
+    # Worst case books the unresolved leg at the worst resolved return, after costs.
+    worst = result["take_every_signal"]["planned_exit_worst_resolved"]
+    assert worst["unresolved_assumed_net_pnl"] == pytest.approx(100.0 * (-0.2 - 0.0055))
+    assert worst["accounting_complete"] is False
+
+
+def test_peak_concurrency_releases_before_entries_at_the_same_instant() -> None:
+    decision = _decision("A", 0)
+    (first,) = build_positions(
+        _contract(), [decision], {decision.route_key(): _outcome(decision, 100.0)}
+    )
+    assert first.exit_at is not None
+    later = replace(
+        first,
+        decision_id="B",
+        entry_at=first.exit_at,
+        exit_at=first.exit_at + timedelta(hours=1),
+    )
+    assert peak_planned_concurrency([first, later]) == 1

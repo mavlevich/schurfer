@@ -18,6 +18,7 @@ from .abnormal_flow_portfolio_diagnostic import (
     _write_bundle,
     load_positions,
     portfolio_frontier,
+    scenario_frontiers,
 )
 from .portfolio_engine_v2 import PositionSizingPolicy
 
@@ -54,7 +55,7 @@ def rescore_bundle(
     max_positions_per_asset = int(policy["max_positions_per_asset"])
     positions = load_positions(positions_path)
     resolved_positions = [position for position in positions if position.exit_at is not None]
-    full_frontier = portfolio_frontier(
+    frontiers = scenario_frontiers(
         positions,
         initial_capital=initial_capital,
         k_values=k_values,
@@ -87,10 +88,12 @@ def rescore_bundle(
             "k_values": sorted(k_values),
             "max_positions_per_asset": max_positions_per_asset,
             "sizing": sizing_policy.value,
-            "unresolved_outcomes": "fail_closed_and_reserve_capital",
+            "unresolved_outcomes": (
+                "never_scored_as_observed; bracketed by hold_to_end and planned_exit scenarios"
+            ),
         },
         "coverage": source_report.get("coverage"),
-        "portfolio_frontier": full_frontier,
+        **frontiers,
         "resolved_only_sensitivity": {
             "classification": "conditional_on_resolved_outcomes_not_evidence",
             "positions": len(resolved_positions),

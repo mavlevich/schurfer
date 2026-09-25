@@ -43,6 +43,7 @@ from .portfolio_engine_v2 import (
     PortfolioPosition,
     PositionSizingPolicy,
     TradeDirection,
+    UnresolvedCapitalPolicy,
     simulate_portfolio_v2,
 )
 
@@ -164,6 +165,7 @@ def build_outcome_rows(
                     funding_bps=funding_bps,
                     net_return=None,
                     unresolved_reason=UNRESOLVED_REASON,
+                    planned_exit_at=exit_at,
                 ),
                 episode,
                 None,
@@ -199,6 +201,7 @@ def build_outcome_rows(
                 funding_bps=funding_bps,
                 net_return=net_return,
                 unresolved_reason=None,
+                planned_exit_at=exit_at,
             ),
             episode,
             outcome,
@@ -221,6 +224,8 @@ def portfolio_frontier(
     k_values: Sequence[int],
     max_positions_per_asset: int,
     sizing_policy: PositionSizingPolicy,
+    unresolved_policy: UnresolvedCapitalPolicy = UnresolvedCapitalPolicy.HOLD_TO_END,
+    unresolved_gross_return: float | None = None,
 ) -> list[dict[str, Any]]:
     if not k_values or any(k <= 0 for k in k_values) or len(set(k_values)) != len(k_values):
         raise ValueError("K values must be unique positive integers")
@@ -232,12 +237,105 @@ def portfolio_frontier(
             k_slots=k_slots,
             max_positions_per_asset=max_positions_per_asset,
             sizing_policy=sizing_policy,
+            unresolved_policy=unresolved_policy,
+            unresolved_gross_return=unresolved_gross_return,
         )
         row = asdict(metrics)
         row["k_slots"] = k_slots
         row["initial_position_usd"] = initial_capital / k_slots
+        row["total_net_pnl_incl_assumed"] = metrics.final_equity - initial_capital
         rows.append(row)
     return rows
+
+
+def unresolved_scenarios(positions: Sequence[PortfolioPosition]) -> dict[str, dict[str, Any]]:
+    """Declared bracket for unresolved outcomes; none of these is an observed result.
+
+    ``hold_to_end`` is the fail-closed engine default. The planned-exit scenarios free
+    the slot when the strategy would have exited and book one explicit gross return.
+    ``mean_resolved`` assumes missingness is unrelated to outcome and is optimistic.
+    """
+
+    resolved = [item.gross_return for item in positions if item.gross_return is not None]
+    scenarios: dict[str, dict[str, Any]] = {
+        "hold_to_end": {
+            "unresolved_policy": UnresolvedCapitalPolicy.HOLD_TO_END.value,
+            "unresolved_gross_return": None,
+        }
+    }
+    if resolved:
+        for name, value in (
+            ("planned_exit_worst_resolved", min(resolved)),
+            ("planned_exit_zero_gross", 0.0),
+            ("planned_exit_mean_resolved", sum(resolved) / len(resolved)),
+        ):
+            scenarios[name] = {
+                "unresolved_policy": UnresolvedCapitalPolicy.PLANNED_EXIT.value,
+                "unresolved_gross_return": value,
+            }
+    return scenarios
+
+
+def peak_planned_concurrency(positions: Sequence[PortfolioPosition]) -> int:
+    """Most positions that overlap if every signal is taken and held to its plan."""
+
+    edges: list[tuple[datetime, int]] = []
+    for item in positions:
+        end = item.exit_at or item.planned_exit_at
+        if end is None:
+            raise ValueError(f"{item.decision_id}: no exit or planned exit")
+        edges.extend(((item.entry_at, 1), (end, -1)))
+    # Exits sort before entries at the same instant, matching the engine.
+    edges.sort(key=lambda edge: (edge[0], edge[1]))
+    current = peak = 0
+    for _at, delta in edges:
+        current += delta
+        peak = max(peak, current)
+    return peak
+
+
+def scenario_frontiers(
+    positions: Sequence[PortfolioPosition],
+    *,
+    initial_capital: float,
+    k_values: Sequence[int],
+    max_positions_per_asset: int,
+    sizing_policy: PositionSizingPolicy,
+) -> dict[str, Any]:
+    """K frontier per unresolved scenario plus the take-every-signal policy."""
+
+    scenarios = unresolved_scenarios(positions)
+    take_all_k = peak_planned_concurrency(positions) if positions else 1
+    result: dict[str, Any] = {"scenarios": {}, "take_every_signal": {}}
+    for name, scenario in scenarios.items():
+        policy = UnresolvedCapitalPolicy(scenario["unresolved_policy"])
+        assumption = scenario["unresolved_gross_return"]
+        result["scenarios"][name] = {
+            **scenario,
+            "frontier": portfolio_frontier(
+                positions,
+                initial_capital=initial_capital,
+                k_values=k_values,
+                max_positions_per_asset=max_positions_per_asset,
+                sizing_policy=sizing_policy,
+                unresolved_policy=policy,
+                unresolved_gross_return=assumption,
+            ),
+        }
+        if policy is UnresolvedCapitalPolicy.PLANNED_EXIT:
+            # No per-asset cap and K at peak overlap: every signal gets a slot.
+            (row,) = portfolio_frontier(
+                positions,
+                initial_capital=initial_capital,
+                k_values=(take_all_k,),
+                max_positions_per_asset=max(len(positions), 1),
+                sizing_policy=sizing_policy,
+                unresolved_policy=policy,
+                unresolved_gross_return=assumption,
+            )
+            result["take_every_signal"][name] = row
+    result["take_every_signal_k"] = take_all_k
+    return result
 
 
 def _read_outcomes_once(
@@ -268,14 +366,16 @@ _OUTCOME_COLUMNS: Final = (
     "funding_bps DOUBLE, net_return DOUBLE, unresolved_reason VARCHAR, "
     "exchange VARCHAR, market_type VARCHAR, native_market_id VARCHAR, "
     "capture_version VARCHAR, decision_at TIMESTAMPTZ, entry_price DOUBLE, "
-    "exit_price DOUBLE, path_provenance VARCHAR"
+    "exit_price DOUBLE, path_provenance VARCHAR, planned_exit_at TIMESTAMPTZ"
 )
 _POSITION_COLUMNS: Final = (
     "decision_id, canonical_asset, direction, entry_at, exit_at, gross_return, "
     "entry_slippage_bps, exit_slippage_bps, fees_bps, funding_bps, net_return, "
-    "unresolved_reason"
+    "unresolved_reason, planned_exit_at"
 )
 _FRONTIER_FIELDS: Final = (
+    "scenario",
+    "unresolved_gross_return",
     "k_slots",
     "initial_position_usd",
     "accepted_entries",
@@ -284,6 +384,9 @@ _FRONTIER_FIELDS: Final = (
     "losing_trades",
     "gross_pnl",
     "net_pnl",
+    "unresolved_released",
+    "unresolved_assumed_net_pnl",
+    "total_net_pnl_incl_assumed",
     "final_equity",
     "max_drawdown_pct",
     "max_concurrent_positions",
@@ -324,6 +427,7 @@ def _outcome_row_tuple(row: EpisodeOutcomeRow) -> tuple[Any, ...]:
         row.entry_price,
         row.exit_price,
         row.path_provenance,
+        item.planned_exit_at,
     )
 
 
@@ -370,6 +474,7 @@ def load_positions(path: Path) -> list[PortfolioPosition]:
             funding_bps=float(row[9]),
             net_return=float(row[10]) if row[10] is not None else None,
             unresolved_reason=str(row[11]) if row[11] is not None else None,
+            planned_exit_at=row[12],
         )
         for row in rows
     ]
@@ -409,10 +514,16 @@ def _write_bundle(
         with frontier_path.open("x", newline="") as stream:
             writer = csv.DictWriter(stream, fieldnames=_FRONTIER_FIELDS, extrasaction="ignore")
             writer.writeheader()
-            for row in report["portfolio_frontier"]:
-                writer.writerow(
-                    {**row, "rejection_counts": json.dumps(row["rejection_counts"], sort_keys=True)}
-                )
+            for name, scenario in report["scenarios"].items():
+                for row in scenario["frontier"]:
+                    writer.writerow(
+                        {
+                            **row,
+                            "scenario": name,
+                            "unresolved_gross_return": scenario["unresolved_gross_return"],
+                            "rejection_counts": json.dumps(row["rejection_counts"], sort_keys=True),
+                        }
+                    )
 
         report["artifacts"] = {
             "portfolio_positions.parquet": _hash_file(positions_path),
@@ -521,7 +632,7 @@ def run_diagnostic(
     assert contract.portfolio_bank_usd is not None
     initial_capital = float(contract.portfolio_bank_usd)
     announce(f"simulating {len(k_values)} K-slot policies")
-    frontier = portfolio_frontier(
+    frontiers = scenario_frontiers(
         positions,
         initial_capital=initial_capital,
         k_values=k_values,
@@ -553,7 +664,9 @@ def run_diagnostic(
             "k_values": sorted(k_values),
             "max_positions_per_asset": max_positions_per_asset,
             "sizing": sizing_policy.value,
-            "unresolved_outcomes": "fail_closed_and_reserve_capital",
+            "unresolved_outcomes": (
+                "never_scored_as_observed; bracketed by hold_to_end and planned_exit scenarios"
+            ),
         },
         "coverage": {
             "episodes": len(positions),
@@ -561,7 +674,7 @@ def run_diagnostic(
             "unresolved": len(positions) - resolved,
             "resolved_fraction": resolved / len(positions) if positions else 0.0,
         },
-        "portfolio_frontier": frontier,
+        **frontiers,
     }
     announce("publishing immutable diagnostic bundle")
     _write_bundle(
