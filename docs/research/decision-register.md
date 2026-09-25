@@ -22,6 +22,17 @@ after-cost economics unless explicitly labelled a paired difference.
 
 ## Confirmed facts (with references)
 
+- **HYP-012 v4 identity approval policy (2026-09-25).** Binance futures are not
+  available to the owner (Poland), so v4 makes Bybit the primary execution venue and keeps
+  Binance as a descriptive comparison (estimand registered in PR D). Identity for v4 is
+  decided by one written rule (`source_lead_identity_rule_v4`, see
+  `source-lead-identity-registry-v4.md`), fixed before any route was decided and applied
+  per route to a hashed candidate snapshot (window end 2026-09-25T20:00:00Z). The v3
+  checklist item "a second person independently confirmed the link" is replaced for v4:
+  there is no second person, so the owner confirms the rule and the full decision list
+  once, and the reviewer independently re-derives every approved route from the raw
+  evidence. `build-registry` refuses without an approval that names the exact
+  `decisions_sha256`.
 - **Abnormal-flow v1 is an inconclusive diagnostic result.** The prospective window ([2026-08-30T00:00:00Z, 2026-09-18T11:58:00Z)) was burned due to multiple reads and monkeypatched execution without the formal runner (`docs/research/evidence/abnormal-flow-v1/diagnostic-v1-burned/README.md`). Mean net +0.61%, excess +0.45%, resolved 125/252, missingness 50.4%, control coverage 53%, week concentration 52%, CI lower bounds negative, portfolio +$4.25 / maxDD $17.15. The result is non-promotional and v1 does not advance to live execution. Next step: post-hoc missingness/control-coverage diagnostic on the burned window without promotion claims.
 - **Abnormal-flow v1 post-hoc follow-up (2026-09-25): the apparent edge was missingness
   selection; v2 is deprioritised.** The unresolved-reason taxonomy (#443) found that all 127

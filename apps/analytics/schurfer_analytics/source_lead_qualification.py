@@ -272,15 +272,22 @@ def verify_registry_against_evidence(
     except EvidenceIntegrityError as exc:
         raise ValueError(f"identity registry evidence verification failed: {exc}") from exc
 
-    bundle_by_base_exchange = {}
+    # Registry v4 can hold two bundles per base (gate->bybit, gate->binance),
+    # both vouching for the Gate side; the link's own evidence_sha256 picks
+    # which one. With one bundle per base (v2/v3) this is the old lookup.
+    bundles_by_base_exchange: dict[tuple[str, str], list[EvidenceBundle]] = {}
     for evidence_bundle in bundles:
         base = evidence_bundle.base.upper()
-        bundle_by_base_exchange[(base, evidence_bundle.source_exchange.lower())] = evidence_bundle
-        bundle_by_base_exchange[(base, evidence_bundle.target_exchange.lower())] = evidence_bundle
+        for side in (evidence_bundle.source_exchange, evidence_bundle.target_exchange):
+            bundles_by_base_exchange.setdefault((base, side.lower()), []).append(evidence_bundle)
 
     for link in links.values():
         base = _asset_base(link.canonical_asset_id)
-        bundle = bundle_by_base_exchange.get((base, link.exchange))
+        candidates = bundles_by_base_exchange.get((base, link.exchange), [])
+        bundle = next(
+            (b for b in candidates if b.bundle_sha256 == link.evidence_sha256),
+            candidates[0] if candidates else None,
+        )
         if bundle is None:
             raise ValueError(
                 f"identity registry link {link.canonical_asset_id}/{link.exchange} has no "
