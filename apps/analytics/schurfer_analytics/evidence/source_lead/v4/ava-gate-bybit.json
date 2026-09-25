@@ -1,0 +1,465 @@
+{
+  "base": "AVA",
+  "bundle_sha256": "b501c304e8db76a885c6b8118925b766a09ceefd6d4de5d0c5df40408cb86ca6",
+  "captured_at": "2026-09-25T21:12:14.582826+00:00",
+  "code_revision": "a916f3f4dcef31e0aaed508c0e8f72d094e76800",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/concierge-io?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-09-25T21:12:14.579124+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "ethereum",
+      "block_time_in_minutes": 0,
+      "categories": [
+        "Tourism",
+        "Solana Ecosystem",
+        "Ethereum Ecosystem",
+        "Energi Ecosystem",
+        "YZi Labs (Prev. Binance Labs) Portfolio"
+      ],
+      "contract_address": "0xa6c0c097741d55ecd9a3a7def3a8253fd022ceb9",
+      "country_origin": "VN",
+      "description": {
+        "en": "What is the project about? AVA plans to tokenise the concept of loyalty reward programs using blockchain technology. The AVA token functions as the key to accessing web3 loyalty programs and provides perks to end users, such as AVA payment discounts, AVA loyalty rewards, gated access benefits, and more. Launched in 2017, the AVA Foundation says their overarching mission is to create a decentralised and self-sufficient blockchain-based loyalty ecosystem with AVA at its core. What’s next for your project? AVA is a web3 loyalty program token designed for projects across all industries. From discounts to loyalty rewards, AVA powers blockchain-based loyalty programs via a plug-and-play approach. What can your token be used for? Travel Bookings: AVA can be used to book more than 3 million travel products on Travala, including hotels, homes, flights, and activities in over 230 countries. Discounts &amp; Rewards: Travel bookings paid with AVA receive a discount of up to 3% on the total booking price, as well as a cashback of up to 2% in AVA. Loyalty Program: AVA unlocks further benefits via the Smart Loyalty Program, which provides users with discounts of up to 10% on travel bookings. Travel NFTs: AVA paired with Travel Tiger NFTs unlocks the Diamond membership, with exclusive benefits such as Travel Credits, Airport Lounges, VIP Concierge, and Travel Drops (unique travel experience giveaways). Open Passport: With AVA, users can access the Open Passport to collect digital NFT stamps for every travel booking. Each NFT serves as “proof of travel” and, in the future, will unlock rewards and discounts. Voting: AVA grants voting rights to users based on their Smart loyalty membership level to have a say on how funds in the AVA Community Pool are spent. Payments: AVA use cases extend to other platforms, allowing users to shop and spend with AVA at millions of merchants via Binance Pay and Simplex or pay bills. Governance: As the AVA ecosystem becomes more decentralised, AVA will be the governance token needed to vote for future changes and improvements to the ecosystem. AVA Deals: Travala will launch a new travel offer initiative named “AVA Deals”, with thousands of travel products at heavily discounted prices (up to 70% off) bookable exclusively with AVA."
+      },
+      "detail_platforms": {
+        "energi": {
+          "contract_address": "0x8476d1c07cbc7e2dd9e97ffbd9850836835ee7a8",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/nrg/tokens/0x8476d1c07cbc7e2dd9e97ffbd9850836835ee7a8"
+        },
+        "ethereum": {
+          "contract_address": "0xa6c0c097741d55ecd9a3a7def3a8253fd022ceb9",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/eth/tokens/0xa6c0c097741d55ecd9a3a7def3a8253fd022ceb9"
+        },
+        "solana": {
+          "contract_address": "G8LfyGVsjsLzetJ5RWZVAhMo4H9cb58ET1Z6gEZJQdPM",
+          "decimal_place": 8,
+          "geckoterminal_url": "https://www.geckoterminal.com/solana/tokens/G8LfyGVsjsLzetJ5RWZVAhMo4H9cb58ET1Z6gEZJQdPM"
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": false,
+      "hashing_algorithm": null,
+      "ico_data": {
+        "accepting_currencies": "NEO",
+        "amount_for_sale": "45000000.0",
+        "base_pre_sale_amount": "1023.0",
+        "base_public_sale_amount": 1.0,
+        "bounty_detail_url": "",
+        "country_origin": "VN",
+        "description": "",
+        "hardcap_amount": "10000000.0",
+        "hardcap_currency": "USD",
+        "ico_end_date": "2018-04-30T00:00:00.000Z",
+        "ico_start_date": "2018-03-31T00:00:00.000Z",
+        "kyc_required": true,
+        "links": {},
+        "pre_sale_available": true,
+        "pre_sale_end_date": "2018-02-14T13:30:00.000Z",
+        "pre_sale_ended": true,
+        "pre_sale_start_date": "2018-02-14T09:00:00.000Z",
+        "quote_pre_sale_amount": "1.0",
+        "quote_pre_sale_currency": "NEO",
+        "quote_public_sale_amount": 0.35,
+        "quote_public_sale_currency": "USD",
+        "short_desc": "Travel Booking Marketplace Built on NEO",
+        "softcap_amount": null,
+        "softcap_currency": "",
+        "total_raised": "2640110.0",
+        "total_raised_currency": "USD",
+        "whitelist_available": true,
+        "whitelist_end_date": null,
+        "whitelist_start_date": null,
+        "whitelist_url": "https://token.concierge.io/"
+      },
+      "id": "concierge-io",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/3014/large/AVA_Logo_160x160px_Black.png?1696503750",
+        "small": "https://coin-images.coingecko.com/coins/images/3014/small/AVA_Logo_160x160px_Black.png?1696503750",
+        "thumb": "https://coin-images.coingecko.com/coins/images/3014/thumb/AVA_Logo_160x160px_Black.png?1696503750"
+      },
+      "last_updated": "2026-09-25T21:09:30.000Z",
+      "links": {
+        "announcement_url": [],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://etherscan.io/token/0xa6c0c097741d55ecd9a3a7def3a8253fd022ceb9",
+          "https://intel.arkm.com/explorer/token/concierge-io",
+          "https://ethplorer.io/address/0xa6c0c097741d55ecd9a3a7def3a8253fd022ceb9",
+          "https://explorer.energi.network/token/0x8476d1c07cbc7e2dd9e97ffbd9850836835ee7a8",
+          "https://solscan.io/token/G8LfyGVsjsLzetJ5RWZVAhMo4H9cb58ET1Z6gEZJQdPM"
+        ],
+        "chat_url": ["https://t.me/s/travala", "https://mirror.xyz/avafoundation.eth"],
+        "facebook_username": "travala",
+        "homepage": [
+          "https://www.travala.com",
+          "https://travala.com/blog",
+          "https://www.avafoundation.org"
+        ],
+        "official_forum_url": [
+          "https://blog.travala.com/",
+          "https://twitter.com/travalacom",
+          "https://www.linkedin.com/company/avafoundation-org/"
+        ],
+        "repos_url": {
+          "bitbucket": [],
+          "github": ["https://github.com/AVA-Foundation"]
+        },
+        "snapshot_url": null,
+        "subreddit_url": "https://www.reddit.com/r/Travala",
+        "telegram_channel_identifier": "avafoundation",
+        "twitter_screen_name": "AVAFoundation",
+        "whitepaper": "https://www.avafoundation.org/ava-2-0-whitepaper/"
+      },
+      "listing_currency": null,
+      "listing_price": null,
+      "listing_source": null,
+      "listing_source_url": null,
+      "listing_timestamp": null,
+      "market_cap_rank": 916,
+      "market_cap_rank_with_rehypothecated": 1146,
+      "name": "AVA (Travala)",
+      "platforms": {
+        "energi": "0x8476d1c07cbc7e2dd9e97ffbd9850836835ee7a8",
+        "ethereum": "0xa6c0c097741d55ecd9a3a7def3a8253fd022ceb9",
+        "solana": "G8LfyGVsjsLzetJ5RWZVAhMo4H9cb58ET1Z6gEZJQdPM"
+      },
+      "preview_listing": false,
+      "public_notice": null,
+      "sentiment_votes_down_percentage": 0.0,
+      "sentiment_votes_up_percentage": 100.0,
+      "status_updates": [],
+      "symbol": "ava",
+      "watchlist_portfolio_users": 27510,
+      "web_slug": "ava-travala"
+    },
+    "raw_sha256": "45291403e7693effb62559b2862a90076b61f7bf25211bd82813034555ad87a3",
+    "source": "https://api.coingecko.com/api/v3/coins/concierge-io",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v4",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-09-25T21:12:14.579547+00:00",
+    "payload": {
+      "active": true,
+      "code": "AVA",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "AVA",
+      "info": {
+        "category": [],
+        "chain": "ETH",
+        "chains": [
+          {
+            "addr": "0xa6c0c097741d55ecd9a3a7def3a8253fd022ceb9",
+            "deposit_disabled": false,
+            "name": "ETH",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          {
+            "addr": "0xd9483EA7214FCfd89B4Fb8f513B544920E315A52",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "AVA",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "19582638.127899997",
+        "name": "AVA",
+        "total_supply": "100000000",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "AVA",
+      "networks": {
+        "BEP20": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "BSC",
+          "info": {
+            "addr": "0xd9483EA7214FCfd89B4Fb8f513B544920E315A52",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "BEP20",
+          "precision": 0.0001,
+          "withdraw": true
+        },
+        "ERC20": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "ETH",
+          "info": {
+            "addr": "0xa6c0c097741d55ecd9a3a7def3a8253fd022ceb9",
+            "deposit_disabled": false,
+            "name": "ETH",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "ERC20",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "a63642b2adb262dc69688b846048c17dc3014962a7fb67ed276cabf7e25d5c6b",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "exact_contract",
+  "source_contract": {
+    "block_hash": "0xf9188f6d0b68dc91f8d8a51f1d04666c2dc83311f5886dcbf6ee71af4f3c6b90",
+    "block_number": 26057068,
+    "chain": "ethereum",
+    "chain_id": 1,
+    "contract_address": "0xa6c0c097741d55ecd9a3a7def3a8253fd022ceb9",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://ethereum-rpc.publicnode.com",
+      "observed_at": "2026-09-25T21:12:07.031866+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "a0cfb5a1c696cf1b33c6808f77538ba8fbf89fc8515499513d43ce204d7a457a",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "source_market_evidence": {
+    "exchange": "gate",
+    "inference_basis": "gate futures contract payload has no base_asset/quote_asset/settle_asset fields; base/quote split parsed from the reported native_market_id ('AVA_USDT') on its '_' separator, settle asset inferred from the /futures/usdt/ endpoint family",
+    "inferred_base_asset": "AVA",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "AVA_USDT",
+    "onboarded_at_ms": 1734026028000,
+    "raw_evidence": {
+      "endpoint": "https://api.gateio.ws/api/v4/futures/usdt/contracts/AVA_USDT",
+      "observed_at": "2026-09-25T21:12:08.227394+00:00",
+      "payload": {
+        "config_change_time": 1789975677,
+        "contract_type": "",
+        "create_time": 1734026028,
+        "cross_leverage_default": "10",
+        "enable_bonus": true,
+        "enable_circuit_breaker": false,
+        "enable_credit": true,
+        "enable_decimal": false,
+        "funding_cap_ratio": "2",
+        "funding_impact_value": "5000",
+        "funding_interval": 14400,
+        "funding_next_apply": 1790380800,
+        "funding_offset": 0,
+        "funding_rate": "0.00005",
+        "funding_rate_indicative": "0.00005",
+        "funding_rate_limit": "0.02",
+        "in_delisting": false,
+        "index_price": "0.2648",
+        "interest_rate": "0.0003",
+        "is_pre_market": false,
+        "last_price": "0.2651",
+        "launch_time": 1734026028,
+        "leverage_max": "20",
+        "leverage_min": "1",
+        "long_users": 146,
+        "maintenance_rate": "0.04",
+        "maker_fee_rate": "-0.0001",
+        "mark_price": "0.2648",
+        "mark_price_round": "0.0001",
+        "mark_type": "index",
+        "market_order_size_max": "95000",
+        "market_order_slip_ratio": "0.05",
+        "name": "AVA_USDT",
+        "order_price_deviate": "0.2",
+        "order_price_round": "0.0001",
+        "order_size_max": 150000,
+        "order_size_min": 1,
+        "orderbook_id": 541697806,
+        "orders_limit": 100,
+        "position_size": 514311,
+        "quanto_multiplier": "1",
+        "ref_discount_rate": "0",
+        "ref_rebate_rate": "0.2",
+        "risk_limit_base": "5000",
+        "risk_limit_max": "2500000",
+        "risk_limit_step": "2495000",
+        "short_users": 111,
+        "status": "trading",
+        "taker_fee_rate": "0.00075",
+        "trade_id": 2003805,
+        "trade_size": 594115944,
+        "type": "direct",
+        "voucher_leverage": "0"
+      },
+      "raw_sha256": "d28b89016a9ca8eb99831bf3eae495b30b78f2801c058b7358d5227ee40e553a",
+      "source": "https://api.gateio.ws/api/v4/futures/usdt/contracts/AVA_USDT",
+      "wire_exact": true
+    },
+    "reported_base_asset": null,
+    "reported_quote_asset": null,
+    "reported_settle_asset": null,
+    "status": "trading"
+  },
+  "target_catalog_evidence": {
+    "endpoint": "https://api.bybit.com/v5/asset/coin/query-info",
+    "observed_at": "2026-09-25T21:11:12.322830+00:00",
+    "payload": {
+      "chain": "ethereum",
+      "chains": [
+        {
+          "chain": "ETH",
+          "chainType": "Ethereum",
+          "contractAddress": "0xa6C0c097741D55ECd9a3A7DeF3A8253fD022ceB9"
+        }
+      ],
+      "coin": "AVA",
+      "contractAddress": "0xa6c0c097741d55ecd9a3a7def3a8253fd022ceb9",
+      "name": "AVA",
+      "response_sha256": "cf17ebc9ede4686f290f01e48524fd2eed52a33b4039157a3f42fc4d82984448"
+    },
+    "raw_sha256": "7d0be036d8165adb40003919edac404d04696a511a82d5ea778e03e377508eb3",
+    "source": "bybit:coin_info_entry",
+    "wire_exact": false
+  },
+  "target_contract": {
+    "block_hash": "0xf9188f6d0b68dc91f8d8a51f1d04666c2dc83311f5886dcbf6ee71af4f3c6b90",
+    "block_number": 26057068,
+    "chain": "ethereum",
+    "chain_id": 1,
+    "contract_address": "0xa6c0c097741d55ecd9a3a7def3a8253fd022ceb9",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://ethereum-rpc.publicnode.com",
+      "observed_at": "2026-09-25T21:12:07.031866+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "a0cfb5a1c696cf1b33c6808f77538ba8fbf89fc8515499513d43ce204d7a457a",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "target_exchange": "bybit",
+  "target_market_evidence": {
+    "exchange": "bybit",
+    "inference_basis": "copied verbatim from bybit v5 instruments-info's own baseCoin/quoteCoin/settleCoin fields -- genuinely reported, not parsed",
+    "inferred_base_asset": "AVA",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "AVAUSDT",
+    "onboarded_at_ms": 1734343893000,
+    "raw_evidence": {
+      "endpoint": "https://api.bybit.com/v5/market/instruments-info",
+      "observed_at": "2026-09-25T21:11:11.303123+00:00",
+      "payload": {
+        "baseCoin": "AVA",
+        "contractType": "LinearPerpetual",
+        "copyTrading": "none",
+        "deliveryFeeRate": "",
+        "deliveryTime": "0",
+        "displayName": "AVAUSDT",
+        "forbidUplWithdrawal": false,
+        "fullName": "Travala.com",
+        "fundingInterval": 240,
+        "isPreListing": false,
+        "launchTime": "1734343893000",
+        "leverageFilter": {
+          "leverageStep": "0.01",
+          "maxLeverage": "5.00",
+          "minLeverage": "1"
+        },
+        "lotSizeFilter": {
+          "maxMktOrderQty": "10000.0",
+          "maxOrderQty": "50000.0",
+          "minNotionalValue": "5",
+          "minOrderQty": "0.1",
+          "postOnlyMaxOrderQty": "50000.0",
+          "qtyStep": "0.1"
+        },
+        "lowerFundingRate": "-0.025",
+        "marketRegion": "",
+        "preListingInfo": null,
+        "priceFilter": {
+          "maxPrice": "1999.9998",
+          "minPrice": "0.0001",
+          "tickSize": "0.0001"
+        },
+        "priceScale": "4",
+        "quoteCoin": "USDT",
+        "riskParameters": {
+          "priceLimitRatioX": "0.15",
+          "priceLimitRatioY": "0.3"
+        },
+        "settleCoin": "USDT",
+        "status": "Trading",
+        "symbol": "AVAUSDT",
+        "symbolId": 698,
+        "symbolType": "",
+        "underlyingTicker": "",
+        "unifiedMarginTrade": true,
+        "upperFundingRate": "0.025"
+      },
+      "raw_sha256": "8314e19d4889bf3384ce2603fc7e625ead6c7170a0cf1ea64d649b6934980426",
+      "source": "bybit:instruments_info_entry",
+      "wire_exact": false
+    },
+    "reported_base_asset": "AVA",
+    "reported_quote_asset": "USDT",
+    "reported_settle_asset": "USDT",
+    "status": "Trading"
+  },
+  "working_tree_dirty": false
+}

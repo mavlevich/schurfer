@@ -1,0 +1,400 @@
+{
+  "base": "BANK",
+  "bundle_sha256": "d58fbb4081e039d7e33e6bc58cb7f9cd85e41ca9a637b4acf7bfc049c329ac06",
+  "captured_at": "2026-09-25T21:12:46.373991+00:00",
+  "code_revision": "a916f3f4dcef31e0aaed508c0e8f72d094e76800",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/lorenzo-protocol?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-09-25T21:12:46.370241+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "binance-smart-chain",
+      "block_time_in_minutes": 0,
+      "categories": [
+        "BNB Chain Ecosystem",
+        "YZi Labs (Prev. Binance Labs) Portfolio",
+        "Liquid Staking",
+        "BTCfi Protocol"
+      ],
+      "contract_address": "0x3aee7602b612de36088f3ffed8c8f10e86ebf2bf",
+      "country_origin": "",
+      "description": {
+        "en": ""
+      },
+      "detail_platforms": {
+        "binance-smart-chain": {
+          "contract_address": "0x3aee7602b612de36088f3ffed8c8f10e86ebf2bf",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/bsc/tokens/0x3aee7602b612de36088f3ffed8c8f10e86ebf2bf"
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": true,
+      "hashing_algorithm": null,
+      "id": "lorenzo-protocol",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/55250/large/lorenzo.jpg?1744963693",
+        "small": "https://coin-images.coingecko.com/coins/images/55250/small/lorenzo.jpg?1744963693",
+        "thumb": "https://coin-images.coingecko.com/coins/images/55250/thumb/lorenzo.jpg?1744963693"
+      },
+      "last_updated": "2026-09-25T21:10:40.000Z",
+      "links": {
+        "announcement_url": [],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://bscscan.com/token/0x3AeE7602b612de36088F3ffEd8c8f10E86EbF2bF",
+          "https://binplorer.com/address/0x3AeE7602b612de36088F3ffEd8c8f10E86EbF2bF"
+        ],
+        "chat_url": ["https://www.youtube.com/@LorenzoProtocol"],
+        "facebook_username": "",
+        "homepage": ["https://lorenzo-protocol.xyz/"],
+        "official_forum_url": [
+          "https://discord.com/invite/lorenzoprotocol",
+          "https://medium.com/@lorenzoprotocol",
+          "https://www.linkedin.com/company/lorenzoprotocolxyz/"
+        ],
+        "repos_url": {
+          "bitbucket": [],
+          "github": []
+        },
+        "snapshot_url": null,
+        "subreddit_url": null,
+        "telegram_channel_identifier": "LorenzoProtocol",
+        "twitter_screen_name": "LorenzoProtocol",
+        "whitepaper": "https://docs.lorenzo-protocol.xyz/"
+      },
+      "listing_currency": null,
+      "listing_price": null,
+      "listing_source": null,
+      "listing_source_url": null,
+      "listing_timestamp": null,
+      "market_cap_rank": 764,
+      "market_cap_rank_with_rehypothecated": 967,
+      "name": "Lorenzo Protocol",
+      "platforms": {
+        "binance-smart-chain": "0x3aee7602b612de36088f3ffed8c8f10e86ebf2bf"
+      },
+      "preview_listing": false,
+      "public_notice": null,
+      "sentiment_votes_down_percentage": 36.36,
+      "sentiment_votes_up_percentage": 63.64,
+      "status_updates": [],
+      "symbol": "bank",
+      "watchlist_portfolio_users": 3722,
+      "web_slug": "lorenzo-protocol"
+    },
+    "raw_sha256": "4904fa3741636a96e2f3c79718b2e52cb93df4a2697aba2cd1bab5792cf74c52",
+    "source": "https://api.coingecko.com/api/v3/coins/lorenzo-protocol",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v4",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-09-25T21:12:46.370410+00:00",
+    "payload": {
+      "active": true,
+      "code": "BANK",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "BANK",
+      "info": {
+        "category": [],
+        "chain": "BSC",
+        "chains": [
+          {
+            "addr": "0x3aee7602b612de36088f3ffed8c8f10e86ebf2bf",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "BANK",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "14649862.5",
+        "name": "Lorenzo Protocol",
+        "total_supply": "2100000000",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "Lorenzo Protocol",
+      "networks": {
+        "BEP20": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "BSC",
+          "info": {
+            "addr": "0x3aee7602b612de36088f3ffed8c8f10e86ebf2bf",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "BEP20",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "75e03a020f0b0326153d27b9b7b99e8af4c9ee04eee0f5f86a35b09dc7a2d3a2",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "exact_contract",
+  "source_contract": {
+    "block_hash": "0x47e7f390fc22b87bd0d35a01eb72b080fbd32488ade8ca20ec1d4f97a6dbab76",
+    "block_number": 124018801,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0x3aee7602b612de36088f3ffed8c8f10e86ebf2bf",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-09-25T21:12:38.624298+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "8e73d72cca28014c8646f2033e87ec712fc9eb6dbc2664092e1cf446ce4e6937",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "source_market_evidence": {
+    "exchange": "gate",
+    "inference_basis": "gate futures contract payload has no base_asset/quote_asset/settle_asset fields; base/quote split parsed from the reported native_market_id ('BANK_USDT') on its '_' separator, settle asset inferred from the /futures/usdt/ endpoint family",
+    "inferred_base_asset": "BANK",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "BANK_USDT",
+    "onboarded_at_ms": 1744996477000,
+    "raw_evidence": {
+      "endpoint": "https://api.gateio.ws/api/v4/futures/usdt/contracts/BANK_USDT",
+      "observed_at": "2026-09-25T21:12:39.893044+00:00",
+      "payload": {
+        "config_change_time": 1790227770,
+        "contract_type": "",
+        "create_time": 1744996477,
+        "cross_leverage_default": "10",
+        "enable_bonus": true,
+        "enable_circuit_breaker": false,
+        "enable_credit": true,
+        "enable_decimal": false,
+        "funding_cap_ratio": "2",
+        "funding_impact_value": "5000",
+        "funding_interval": 14400,
+        "funding_next_apply": 1790380800,
+        "funding_offset": 0,
+        "funding_rate": "0.000147",
+        "funding_rate_indicative": "0.000147",
+        "funding_rate_limit": "0.02",
+        "in_delisting": false,
+        "index_price": "0.03441",
+        "interest_rate": "0.0003",
+        "is_pre_market": false,
+        "last_price": "0.03446",
+        "launch_time": 1744996477,
+        "leverage_max": "10",
+        "leverage_min": "1",
+        "long_users": 265,
+        "maintenance_rate": "0.08",
+        "maker_fee_rate": "-0.0001",
+        "mark_price": "0.03445",
+        "mark_price_round": "0.00001",
+        "mark_type": "index",
+        "market_order_size_max": "15000",
+        "market_order_slip_ratio": "0.035",
+        "name": "BANK_USDT",
+        "order_price_deviate": "0.1",
+        "order_price_round": "0.00001",
+        "order_size_max": 23000,
+        "order_size_min": 1,
+        "orderbook_id": 3183752113,
+        "orders_limit": 100,
+        "position_size": 96081,
+        "quanto_multiplier": "100",
+        "ref_discount_rate": "0",
+        "ref_rebate_rate": "0.2",
+        "risk_limit_base": "5000",
+        "risk_limit_max": "2500000",
+        "risk_limit_step": "2495000",
+        "short_users": 150,
+        "status": "trading",
+        "taker_fee_rate": "0.00075",
+        "trade_id": 14166782,
+        "trade_size": 139119873,
+        "type": "direct",
+        "voucher_leverage": "0"
+      },
+      "raw_sha256": "d75ff70322c54426a02d4360e301f72d793cbb21689282c1f3288303e1d4460f",
+      "source": "https://api.gateio.ws/api/v4/futures/usdt/contracts/BANK_USDT",
+      "wire_exact": true
+    },
+    "reported_base_asset": null,
+    "reported_quote_asset": null,
+    "reported_settle_asset": null,
+    "status": "trading"
+  },
+  "target_catalog_evidence": {
+    "endpoint": "https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list",
+    "observed_at": "2026-09-25T21:11:10.354414+00:00",
+    "payload": {
+      "chainId": "56",
+      "chainName": "BSC",
+      "contractAddress": "0x3aee7602b612de36088f3ffed8c8f10e86ebf2bf",
+      "decimals": 18,
+      "name": "Lorenzo Governance Token",
+      "offline": true,
+      "response_sha256": "9dd15864069cf396f07b8d8727e2661081fe0cd15063af0bdb910d2aa4696b35",
+      "symbol": "BANK"
+    },
+    "raw_sha256": "3a6942a575c849b7e01b7fea97d67c41955eb849ae5523e43c3117d0ed992018",
+    "source": "binance:alpha_catalog_entry",
+    "wire_exact": false
+  },
+  "target_contract": {
+    "block_hash": "0x47e7f390fc22b87bd0d35a01eb72b080fbd32488ade8ca20ec1d4f97a6dbab76",
+    "block_number": 124018801,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0x3aee7602b612de36088f3ffed8c8f10e86ebf2bf",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-09-25T21:12:38.624298+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "8e73d72cca28014c8646f2033e87ec712fc9eb6dbc2664092e1cf446ce4e6937",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "target_exchange": "binance",
+  "target_market_evidence": {
+    "exchange": "binance",
+    "inference_basis": "copied verbatim from binance futures exchangeInfo's own baseAsset/quoteAsset/marginAsset fields -- genuinely reported, not parsed",
+    "inferred_base_asset": "BANK",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "BANKUSDT",
+    "onboarded_at_ms": 1745001000000,
+    "raw_evidence": {
+      "endpoint": "https://fapi.binance.com/fapi/v1/exchangeInfo",
+      "observed_at": "2026-09-25T21:11:10.755208+00:00",
+      "payload": {
+        "baseAsset": "BANK",
+        "baseAssetPrecision": 8,
+        "contractType": "PERPETUAL",
+        "deliveryDate": 4133404800000,
+        "filters": [
+          {
+            "filterType": "PRICE_FILTER",
+            "maxPrice": "200",
+            "minPrice": "0.0000100",
+            "tickSize": "0.0000100"
+          },
+          {
+            "filterType": "LOT_SIZE",
+            "maxQty": "20000000",
+            "minQty": "1",
+            "stepSize": "1"
+          },
+          {
+            "filterType": "MARKET_LOT_SIZE",
+            "maxQty": "2000000",
+            "minQty": "1",
+            "stepSize": "1"
+          },
+          {
+            "filterType": "MAX_NUM_ORDERS",
+            "limit": 200
+          },
+          {
+            "filterType": "MIN_NOTIONAL",
+            "notional": "5"
+          },
+          {
+            "filterType": "PERCENT_PRICE",
+            "multiplierDecimal": "4",
+            "multiplierDown": "0.8500",
+            "multiplierUp": "1.1500"
+          },
+          {
+            "filterType": "POSITION_RISK_CONTROL",
+            "positionControlSide": "NONE"
+          }
+        ],
+        "liquidationFee": "0.020000",
+        "maintMarginPercent": "2.5000",
+        "marginAsset": "USDT",
+        "marketTakeBound": "0.15",
+        "maxMoveOrderLimit": 10000,
+        "onboardDate": 1745001000000,
+        "orderTypes": [
+          "LIMIT",
+          "MARKET",
+          "STOP",
+          "STOP_MARKET",
+          "TAKE_PROFIT",
+          "TAKE_PROFIT_MARKET",
+          "TRAILING_STOP_MARKET"
+        ],
+        "pair": "BANKUSDT",
+        "permissionSets": ["GRID", "COPY", "DCA", "PSB"],
+        "pricePrecision": 7,
+        "quantityPrecision": 0,
+        "quoteAsset": "USDT",
+        "quotePrecision": 8,
+        "requiredMarginPercent": "5.0000",
+        "status": "TRADING",
+        "symbol": "BANKUSDT",
+        "timeInForce": ["GTC", "IOC", "FOK", "GTX", "GTD"],
+        "triggerProtect": "0.1500",
+        "underlyingSubType": ["Meme", "Crypto"],
+        "underlyingType": "COIN"
+      },
+      "raw_sha256": "0da3b0f6f87cee4101fa7e20bf774aa7b3b509d15512f85fd201a891856930dd",
+      "source": "binance:futures_exchange_info_entry",
+      "wire_exact": false
+    },
+    "reported_base_asset": "BANK",
+    "reported_quote_asset": "USDT",
+    "reported_settle_asset": "USDT",
+    "status": "TRADING"
+  },
+  "working_tree_dirty": false
+}

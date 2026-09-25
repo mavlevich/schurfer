@@ -1,0 +1,401 @@
+{
+  "base": "OPG",
+  "bundle_sha256": "c7576f5ab3a3bd8a5b37272581079c89b7aa448ff6eeac48d2823fbb6d4efdc7",
+  "captured_at": "2026-09-25T21:17:44.462705+00:00",
+  "code_revision": "a916f3f4dcef31e0aaed508c0e8f72d094e76800",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/opengradient?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-09-25T21:17:44.460669+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "base",
+      "block_time_in_minutes": 0,
+      "categories": [
+        "Artificial Intelligence (AI)",
+        "Infrastructure",
+        "BNB Chain Ecosystem",
+        "Mantle Ecosystem",
+        "Base Ecosystem",
+        "Binance Alpha Spotlight",
+        "Binance Wallet IDO"
+      ],
+      "contract_address": "0xfbc2051ae2265686a469421b2c5a2d5462fbf5eb",
+      "country_origin": "",
+      "description": {
+        "en": "OpenGradient is the Network for Open Intelligence — a decentralized infrastructure network designed to host, inference, and verify AI models at scale. Rather than functioning as a standalone blockchain, OpenGradient operates as a specialized AI coprocessor: it enables applications, blockchains, and autonomous agents to outsource computationally-heavy AI tasks to a dedicated network of GPU and Trusted Execution Environment (TEE) nodes. The validator set verifies every computational proof (TEE attestation or zkML proof) at the consensus level before it is committed on-chain, enabling trustless usage of AI from any network or application."
+      },
+      "detail_platforms": {
+        "base": {
+          "contract_address": "0xfbc2051ae2265686a469421b2c5a2d5462fbf5eb",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/base/tokens/0xfbc2051ae2265686a469421b2c5a2d5462fbf5eb"
+        },
+        "binance-smart-chain": {
+          "contract_address": "0x5feccd17c393caf1001d18164236a37e731fcb9d",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/bsc/tokens/0x5feccd17c393caf1001d18164236a37e731fcb9d"
+        },
+        "mantle": {
+          "contract_address": "0x45db70e1c808dae42f9c4dfea74ba5e6a113bdc1",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/mantle/tokens/0x45db70e1c808dae42f9c4dfea74ba5e6a113bdc1"
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": false,
+      "hashing_algorithm": null,
+      "id": "opengradient",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/102172863/large/coingecko_logo.png?1776349115",
+        "small": "https://coin-images.coingecko.com/coins/images/102172863/small/coingecko_logo.png?1776349115",
+        "thumb": "https://coin-images.coingecko.com/coins/images/102172863/thumb/coingecko_logo.png?1776349115"
+      },
+      "last_updated": "2026-09-25T21:15:40.000Z",
+      "links": {
+        "announcement_url": [],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://basescan.org/address/0xFbC2051AE2265686a469421b2C5A2D5462FbF5eB",
+          "https://intel.arkm.com/explorer/token/",
+          "https://basescan.org/token/0xFbC2051AE2265686a469421b2C5A2D5462FbF5eB",
+          "https://intel.arkm.com/explorer/token/opengradient",
+          "https://bscscan.com/token/0x5feccd17c393caf1001d18164236a37e731fcb9d",
+          "https://binplorer.com/address/0x5feccd17c393caf1001d18164236a37e731fcb9d",
+          "https://mantlescan.xyz/token/0x45db70e1C808daE42f9C4dfEa74ba5e6a113bdc1"
+        ],
+        "chat_url": ["https://opengradient.medium.com/", "https://www.youtube.com/@OpenGradientOG"],
+        "facebook_username": "",
+        "homepage": ["https://www.opengradient.ai/", "https://opengradient.foundation/"],
+        "official_forum_url": [],
+        "repos_url": {
+          "bitbucket": [],
+          "github": ["https://github.com/OpenGradient"]
+        },
+        "snapshot_url": null,
+        "subreddit_url": null,
+        "telegram_channel_identifier": "",
+        "twitter_screen_name": "OpenGradient",
+        "whitepaper": "https://opengradient.foundation/whitepaper"
+      },
+      "listing_currency": null,
+      "listing_price": null,
+      "listing_source": null,
+      "listing_source_url": null,
+      "listing_timestamp": null,
+      "market_cap_rank": 719,
+      "market_cap_rank_with_rehypothecated": 915,
+      "name": "OpenGradient",
+      "platforms": {
+        "base": "0xfbc2051ae2265686a469421b2c5a2d5462fbf5eb",
+        "binance-smart-chain": "0x5feccd17c393caf1001d18164236a37e731fcb9d",
+        "mantle": "0x45db70e1c808dae42f9c4dfea74ba5e6a113bdc1"
+      },
+      "preview_listing": false,
+      "public_notice": null,
+      "sentiment_votes_down_percentage": 30.0,
+      "sentiment_votes_up_percentage": 70.0,
+      "status_updates": [],
+      "symbol": "opg",
+      "watchlist_portfolio_users": 2373,
+      "web_slug": "opengradient"
+    },
+    "raw_sha256": "dd368e47bc5c8fc53f3f09b5e028790f05bfcd05e721014e63d2645b18a32813",
+    "source": "https://api.coingecko.com/api/v3/coins/opengradient",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v4",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-09-25T21:17:44.460831+00:00",
+    "payload": {
+      "active": true,
+      "code": "OPG",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "OPG",
+      "info": {
+        "category": [],
+        "chain": "BASEEVM",
+        "chains": [
+          {
+            "addr": "0xfbc2051ae2265686a469421b2c5a2d5462fbf5eb",
+            "deposit_disabled": false,
+            "name": "BASEEVM",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "OPG",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "23917200.0",
+        "name": "OpenGradient",
+        "total_supply": "1000000000",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "OpenGradient",
+      "networks": {
+        "BASE": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "BASEEVM",
+          "info": {
+            "addr": "0xfbc2051ae2265686a469421b2c5a2d5462fbf5eb",
+            "deposit_disabled": false,
+            "name": "BASEEVM",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "BASE",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "fd4307620759e3af519d6cd39d7667d025e82b7141593f6574428a7be43cf3c5",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "exact_contract",
+  "source_contract": {
+    "block_hash": "0x2b894cd0e59d4444fa310f217d4900cd19e7684bd58b3dd7e457c986687e75bc",
+    "block_number": 51790854,
+    "chain": "base",
+    "chain_id": 8453,
+    "contract_address": "0xfbc2051ae2265686a469421b2c5a2d5462fbf5eb",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://mainnet.base.org",
+      "observed_at": "2026-09-25T21:17:36.882160+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "69640378441910e713ebf1ec0431af5fd0a4658949332e49d674b3ddf1b12877",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "source_market_evidence": {
+    "exchange": "gate",
+    "inference_basis": "gate futures contract payload has no base_asset/quote_asset/settle_asset fields; base/quote split parsed from the reported native_market_id ('OPG_USDT') on its '_' separator, settle asset inferred from the /futures/usdt/ endpoint family",
+    "inferred_base_asset": "OPG",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "OPG_USDT",
+    "onboarded_at_ms": 1776773400000,
+    "raw_evidence": {
+      "endpoint": "https://api.gateio.ws/api/v4/futures/usdt/contracts/OPG_USDT",
+      "observed_at": "2026-09-25T21:17:38.031882+00:00",
+      "payload": {
+        "config_change_time": 1789377732,
+        "contract_type": "",
+        "create_time": 1776759087,
+        "cross_leverage_default": "10",
+        "enable_bonus": true,
+        "enable_circuit_breaker": false,
+        "enable_credit": true,
+        "enable_decimal": false,
+        "funding_cap_ratio": "0.75",
+        "funding_impact_value": "5000",
+        "funding_interval": 14400,
+        "funding_next_apply": 1790380800,
+        "funding_offset": 0,
+        "funding_rate": "0.00005",
+        "funding_rate_indicative": "0.00005",
+        "funding_rate_limit": "0.02",
+        "in_delisting": false,
+        "index_price": "0.12851",
+        "interest_rate": "0.0003",
+        "is_pre_market": false,
+        "last_price": "0.1287",
+        "launch_time": 1776773400,
+        "leverage_max": "20",
+        "leverage_min": "1",
+        "long_users": 201,
+        "maintenance_rate": "0.025",
+        "maker_fee_rate": "-0.0001",
+        "mark_price": "0.1285",
+        "mark_price_round": "0.0001",
+        "mark_type": "index",
+        "market_order_size_max": "15000",
+        "market_order_slip_ratio": "0.05",
+        "name": "OPG_USDT",
+        "order_price_deviate": "0.15",
+        "order_price_round": "0.0001",
+        "order_size_max": 23000,
+        "order_size_min": 1,
+        "orderbook_id": 345302471,
+        "orders_limit": 100,
+        "position_size": 92164,
+        "quanto_multiplier": "10",
+        "ref_discount_rate": "0",
+        "ref_rebate_rate": "0.2",
+        "risk_limit_base": "5000",
+        "risk_limit_max": "2000000",
+        "risk_limit_step": "1995000",
+        "short_users": 78,
+        "status": "trading",
+        "taker_fee_rate": "0.00075",
+        "trade_id": 3396679,
+        "trade_size": 118198534,
+        "type": "direct",
+        "voucher_leverage": "0"
+      },
+      "raw_sha256": "472e0eec2956d34db85467ad43b004db30ca4f0dbd135f4894bcfe614550ecdd",
+      "source": "https://api.gateio.ws/api/v4/futures/usdt/contracts/OPG_USDT",
+      "wire_exact": true
+    },
+    "reported_base_asset": null,
+    "reported_quote_asset": null,
+    "reported_settle_asset": null,
+    "status": "trading"
+  },
+  "target_catalog_evidence": {
+    "endpoint": "https://api.bybit.com/v5/asset/coin/query-info",
+    "observed_at": "2026-09-25T21:11:12.322830+00:00",
+    "payload": {
+      "chain": "base",
+      "chains": [
+        {
+          "chain": "BASE",
+          "chainType": "Base Mainnet",
+          "contractAddress": "0xFbC2051AE2265686a469421b2C5A2D5462FbF5eB"
+        },
+        {
+          "chain": "MANTLE",
+          "chainType": "Mantle Network",
+          "contractAddress": "0x45db70e1C808daE42f9C4dfEa74ba5e6a113bdc1"
+        }
+      ],
+      "coin": "OPG",
+      "contractAddress": "0xfbc2051ae2265686a469421b2c5a2d5462fbf5eb",
+      "name": "OPG",
+      "response_sha256": "cf17ebc9ede4686f290f01e48524fd2eed52a33b4039157a3f42fc4d82984448"
+    },
+    "raw_sha256": "737389fff61519e72c8c867847d6dec69ea8a453e3754b3d45b3bdff95afd185",
+    "source": "bybit:coin_info_entry",
+    "wire_exact": false
+  },
+  "target_contract": {
+    "block_hash": "0x2b894cd0e59d4444fa310f217d4900cd19e7684bd58b3dd7e457c986687e75bc",
+    "block_number": 51790854,
+    "chain": "base",
+    "chain_id": 8453,
+    "contract_address": "0xfbc2051ae2265686a469421b2c5a2d5462fbf5eb",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://mainnet.base.org",
+      "observed_at": "2026-09-25T21:17:36.882160+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "69640378441910e713ebf1ec0431af5fd0a4658949332e49d674b3ddf1b12877",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "target_exchange": "bybit",
+  "target_market_evidence": {
+    "exchange": "bybit",
+    "inference_basis": "copied verbatim from bybit v5 instruments-info's own baseCoin/quoteCoin/settleCoin fields -- genuinely reported, not parsed",
+    "inferred_base_asset": "OPG",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "OPGUSDT",
+    "onboarded_at_ms": 1776923521000,
+    "raw_evidence": {
+      "endpoint": "https://api.bybit.com/v5/market/instruments-info",
+      "observed_at": "2026-09-25T21:11:11.303123+00:00",
+      "payload": {
+        "baseCoin": "OPG",
+        "contractType": "LinearPerpetual",
+        "copyTrading": "none",
+        "deliveryFeeRate": "",
+        "deliveryTime": "0",
+        "displayName": "OPGUSDT",
+        "forbidUplWithdrawal": false,
+        "fullName": "OpenGradient",
+        "fundingInterval": 240,
+        "isPreListing": false,
+        "launchTime": "1776923521000",
+        "leverageFilter": {
+          "leverageStep": "0.01",
+          "maxLeverage": "20.00",
+          "minLeverage": "1"
+        },
+        "lotSizeFilter": {
+          "maxMktOrderQty": "190000",
+          "maxOrderQty": "380000",
+          "minNotionalValue": "5",
+          "minOrderQty": "1",
+          "postOnlyMaxOrderQty": "380000",
+          "qtyStep": "1"
+        },
+        "lowerFundingRate": "-0.025",
+        "marketRegion": "",
+        "preListingInfo": null,
+        "priceFilter": {
+          "maxPrice": "199.99998",
+          "minPrice": "0.00001",
+          "tickSize": "0.00001"
+        },
+        "priceScale": "5",
+        "quoteCoin": "USDT",
+        "riskParameters": {
+          "priceLimitRatioX": "0.15",
+          "priceLimitRatioY": "0.3"
+        },
+        "settleCoin": "USDT",
+        "status": "Trading",
+        "symbol": "OPGUSDT",
+        "symbolId": 2646,
+        "symbolType": "innovation",
+        "underlyingTicker": "",
+        "unifiedMarginTrade": true,
+        "upperFundingRate": "0.025"
+      },
+      "raw_sha256": "5faa81484afd84432d6a6a6c724d6cab455639d565d981b7d40e6cca76219124",
+      "source": "bybit:instruments_info_entry",
+      "wire_exact": false
+    },
+    "reported_base_asset": "OPG",
+    "reported_quote_asset": "USDT",
+    "reported_settle_asset": "USDT",
+    "status": "Trading"
+  },
+  "working_tree_dirty": false
+}

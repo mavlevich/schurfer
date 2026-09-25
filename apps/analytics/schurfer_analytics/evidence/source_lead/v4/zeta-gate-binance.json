@@ -1,0 +1,445 @@
+{
+  "base": "ZETA",
+  "bundle_sha256": "bae2d3fe66851fdb08636cebad6164b726956b51efa5fe38dd04fd823e691179",
+  "captured_at": "2026-09-25T21:21:42.446898+00:00",
+  "code_revision": "a916f3f4dcef31e0aaed508c0e8f72d094e76800",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/zetachain?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-09-25T21:21:42.443698+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "ethereum",
+      "block_time_in_minutes": 0,
+      "categories": [
+        "Smart Contract Platform",
+        "BNB Chain Ecosystem",
+        "Layer 1 (L1)",
+        "Ethereum Ecosystem",
+        "ZetaChain Ecosystem",
+        "Cross-chain Communication",
+        "Binance Alpha Spotlight",
+        "Made in USA",
+        "Chain Abstraction"
+      ],
+      "contract_address": "0xf091867ec603a6628ed83d274e835539d82e9cc8",
+      "country_origin": "",
+      "description": {
+        "en": "What Is ZetaChain (ZETA)?\nZetaChain is a universal Layer 1 blockchain designed to help developers build applications that operate across both blockchains and AI models. Originally created to solve fragmentation in Web3 through universal apps, ZetaChain now extends that same interoperability thesis to AI with an AI interoperability stack that enables cross-model experiences with private, user-controlled context. ZetaChain provides native connectivity across major blockchain ecosystems and supports global execution, permissions, and settlement for applications and agents.\n\nWhat Makes ZetaChain Unique?\nZetaChain combines universal blockchain interoperability with an AI interoperability layer, allowing developers to build once and reach users across chains and models. ZetaChain introduces an AI Portal for routing and execution across multiple AI model providers without lock-in, and a Private Memory Layer designed to keep user context encrypted and permissioned while remaining portable across models and applications. Together, these components let developers ship privacy-first apps and agents with persistent memory, cross-chain execution, and global monetization without assembling complex backend infrastructure."
+      },
+      "detail_platforms": {
+        "binance-smart-chain": {
+          "contract_address": "0x0000028a2eb8346cd5c0267856ab7594b7a55308",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/bsc/tokens/0x0000028a2eb8346cd5c0267856ab7594b7a55308"
+        },
+        "ethereum": {
+          "contract_address": "0xf091867ec603a6628ed83d274e835539d82e9cc8",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/eth/tokens/0xf091867ec603a6628ed83d274e835539d82e9cc8"
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": false,
+      "hashing_algorithm": null,
+      "id": "zetachain",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/26718/large/Twitter_icon.png?1696525788",
+        "small": "https://coin-images.coingecko.com/coins/images/26718/small/Twitter_icon.png?1696525788",
+        "thumb": "https://coin-images.coingecko.com/coins/images/26718/thumb/Twitter_icon.png?1696525788"
+      },
+      "last_updated": "2026-09-25T21:19:30.000Z",
+      "links": {
+        "announcement_url": [],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://explorer.zetachain.com/",
+          "https://intel.arkm.com/explorer/token/zetachain ",
+          "https://etherscan.io/token/0xf091867ec603a6628ed83d274e835539d82e9cc8",
+          "https://ethplorer.io/address/0xf091867ec603a6628ed83d274e835539d82e9cc8",
+          "https://bscscan.com/token/0x0000028a2eb8346cd5c0267856ab7594b7a55308",
+          "https://binplorer.com/address/0x0000028a2eb8346cd5c0267856ab7594b7a55308",
+          "https://intel.arkm.com/explorer/token/zetachain"
+        ],
+        "chat_url": ["https://discord.com/invite/zetachain", "https://blog.zetachain.com/"],
+        "facebook_username": "",
+        "homepage": ["https://www.zetachain.com/"],
+        "official_forum_url": ["https://www.linkedin.com/company/zetablockchain/"],
+        "repos_url": {
+          "bitbucket": [],
+          "github": ["https://github.com/zeta-chain"]
+        },
+        "snapshot_url": null,
+        "subreddit_url": null,
+        "telegram_channel_identifier": "zetachainofficial",
+        "twitter_screen_name": "zetablockchain",
+        "whitepaper": "https://www.zetachain.com/whitepaper.pdf"
+      },
+      "listing_currency": null,
+      "listing_price": null,
+      "listing_source": null,
+      "listing_source_url": null,
+      "listing_timestamp": null,
+      "market_cap_rank": 318,
+      "market_cap_rank_with_rehypothecated": 445,
+      "name": "ZetaChain",
+      "platforms": {
+        "binance-smart-chain": "0x0000028a2eb8346cd5c0267856ab7594b7a55308",
+        "ethereum": "0xf091867ec603a6628ed83d274e835539d82e9cc8"
+      },
+      "preview_listing": false,
+      "public_notice": null,
+      "sentiment_votes_down_percentage": 0.0,
+      "sentiment_votes_up_percentage": 100.0,
+      "status_updates": [],
+      "symbol": "zeta",
+      "watchlist_portfolio_users": 38849,
+      "web_slug": "zetachain"
+    },
+    "raw_sha256": "2c86799217a65602942dacbf62a31f02ac1c2dd7cc9bb0f9f76d1c481c9ffdf2",
+    "source": "https://api.coingecko.com/api/v3/coins/zetachain",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v4",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-09-25T21:21:42.443849+00:00",
+    "payload": {
+      "active": true,
+      "code": "ZETA",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "ZETA",
+      "info": {
+        "category": [],
+        "chain": "ZETA",
+        "chains": [
+          {
+            "addr": "",
+            "deposit_disabled": false,
+            "name": "ZETA",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          {
+            "addr": "0xf091867ec603a6628ed83d274e835539d82e9cc8",
+            "deposit_disabled": false,
+            "name": "ETH",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "ZETA",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "85625399.98224",
+        "name": "ZetaChain",
+        "total_supply": "2100000000",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "ZetaChain",
+      "networks": {
+        "ERC20": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "ETH",
+          "info": {
+            "addr": "0xf091867ec603a6628ed83d274e835539d82e9cc8",
+            "deposit_disabled": false,
+            "name": "ETH",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "ERC20",
+          "precision": 0.0001,
+          "withdraw": true
+        },
+        "ZETA": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "ZETA",
+          "info": {
+            "addr": "",
+            "deposit_disabled": false,
+            "name": "ZETA",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "ZETA",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "aaee242742e40864009106a1ccd019b14a88cd79bb67ee3423611037410e4340",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "exact_contract",
+  "source_contract": {
+    "block_hash": "0x8c9c46a0d352b7a6d68fffe4370de6700f60281a4efec419327b808299894393",
+    "block_number": 26057115,
+    "chain": "ethereum",
+    "chain_id": 1,
+    "contract_address": "0xf091867ec603a6628ed83d274e835539d82e9cc8",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://ethereum-rpc.publicnode.com",
+      "observed_at": "2026-09-25T21:21:34.873302+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "a0cfb5a1c696cf1b33c6808f77538ba8fbf89fc8515499513d43ce204d7a457a",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "source_market_evidence": {
+    "exchange": "gate",
+    "inference_basis": "gate futures contract payload has no base_asset/quote_asset/settle_asset fields; base/quote split parsed from the reported native_market_id ('ZETA_USDT') on its '_' separator, settle asset inferred from the /futures/usdt/ endpoint family",
+    "inferred_base_asset": "ZETA",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "ZETA_USDT",
+    "onboarded_at_ms": 1706758407000,
+    "raw_evidence": {
+      "endpoint": "https://api.gateio.ws/api/v4/futures/usdt/contracts/ZETA_USDT",
+      "observed_at": "2026-09-25T21:21:36.038951+00:00",
+      "payload": {
+        "config_change_time": 1790228039,
+        "contract_type": "",
+        "create_time": 1706758407,
+        "cross_leverage_default": "10",
+        "enable_bonus": true,
+        "enable_circuit_breaker": false,
+        "enable_credit": true,
+        "enable_decimal": false,
+        "funding_cap_ratio": "2",
+        "funding_impact_value": "7000",
+        "funding_interval": 14400,
+        "funding_next_apply": 1790380800,
+        "funding_offset": 0,
+        "funding_rate": "0.00005",
+        "funding_rate_indicative": "0.00005",
+        "funding_rate_limit": "0.02",
+        "in_delisting": false,
+        "index_price": "0.05414",
+        "interest_rate": "0.0003",
+        "is_pre_market": false,
+        "last_price": "0.05412",
+        "launch_time": 1706758407,
+        "leverage_max": "25",
+        "leverage_min": "1",
+        "long_users": 186,
+        "maintenance_rate": "0.025",
+        "maker_fee_rate": "-0.0001",
+        "mark_price": "0.05412",
+        "mark_price_round": "0.00001",
+        "mark_type": "index",
+        "market_order_size_max": "2000000",
+        "market_order_slip_ratio": "0.04",
+        "name": "ZETA_USDT",
+        "order_price_deviate": "0.15",
+        "order_price_round": "0.00001",
+        "order_size_max": 3000000,
+        "order_size_min": 1,
+        "orderbook_id": 2039855516,
+        "orders_limit": 100,
+        "position_size": 4337096,
+        "quanto_multiplier": "1",
+        "ref_discount_rate": "0",
+        "ref_rebate_rate": "0.2",
+        "risk_limit_base": "5000",
+        "risk_limit_max": "2500000",
+        "risk_limit_step": "2495000",
+        "short_users": 179,
+        "status": "trading",
+        "taker_fee_rate": "0.00075",
+        "trade_id": 7524908,
+        "trade_size": 2653741330,
+        "type": "direct",
+        "voucher_leverage": "0"
+      },
+      "raw_sha256": "f9ed01e5de79c7ad38e3b628bdd889dc4626eb6452862edbcde17205a28099ee",
+      "source": "https://api.gateio.ws/api/v4/futures/usdt/contracts/ZETA_USDT",
+      "wire_exact": true
+    },
+    "reported_base_asset": null,
+    "reported_quote_asset": null,
+    "reported_settle_asset": null,
+    "status": "trading"
+  },
+  "target_catalog_evidence": {
+    "endpoint": "https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list",
+    "observed_at": "2026-09-25T21:11:10.354414+00:00",
+    "payload": {
+      "chainId": "1",
+      "chainName": "Ethereum",
+      "contractAddress": "0xf091867ec603a6628ed83d274e835539d82e9cc8",
+      "decimals": 18,
+      "name": "Zeta",
+      "offline": false,
+      "response_sha256": "9dd15864069cf396f07b8d8727e2661081fe0cd15063af0bdb910d2aa4696b35",
+      "symbol": "ZETA"
+    },
+    "raw_sha256": "cba67edbb16a880c3677b40b7ba74440a6b92dc29bb14df0a871380deb298652",
+    "source": "binance:alpha_catalog_entry",
+    "wire_exact": false
+  },
+  "target_contract": {
+    "block_hash": "0x8c9c46a0d352b7a6d68fffe4370de6700f60281a4efec419327b808299894393",
+    "block_number": 26057115,
+    "chain": "ethereum",
+    "chain_id": 1,
+    "contract_address": "0xf091867ec603a6628ed83d274e835539d82e9cc8",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://ethereum-rpc.publicnode.com",
+      "observed_at": "2026-09-25T21:21:34.873302+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "a0cfb5a1c696cf1b33c6808f77538ba8fbf89fc8515499513d43ce204d7a457a",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "target_exchange": "binance",
+  "target_market_evidence": {
+    "exchange": "binance",
+    "inference_basis": "copied verbatim from binance futures exchangeInfo's own baseAsset/quoteAsset/marginAsset fields -- genuinely reported, not parsed",
+    "inferred_base_asset": "ZETA",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "ZETAUSDT",
+    "onboarded_at_ms": 1706862600000,
+    "raw_evidence": {
+      "endpoint": "https://fapi.binance.com/fapi/v1/exchangeInfo",
+      "observed_at": "2026-09-25T21:11:10.755208+00:00",
+      "payload": {
+        "baseAsset": "ZETA",
+        "baseAssetPrecision": 8,
+        "contractType": "PERPETUAL",
+        "deliveryDate": 4133404800000,
+        "filters": [
+          {
+            "filterType": "PRICE_FILTER",
+            "maxPrice": "200",
+            "minPrice": "0.000010",
+            "tickSize": "0.000010"
+          },
+          {
+            "filterType": "LOT_SIZE",
+            "maxQty": "20000000",
+            "minQty": "1",
+            "stepSize": "1"
+          },
+          {
+            "filterType": "MARKET_LOT_SIZE",
+            "maxQty": "2000000",
+            "minQty": "1",
+            "stepSize": "1"
+          },
+          {
+            "filterType": "MAX_NUM_ORDERS",
+            "limit": 200
+          },
+          {
+            "filterType": "MIN_NOTIONAL",
+            "notional": "5"
+          },
+          {
+            "filterType": "PERCENT_PRICE",
+            "multiplierDecimal": "4",
+            "multiplierDown": "0.8500",
+            "multiplierUp": "1.1500"
+          },
+          {
+            "filterType": "POSITION_RISK_CONTROL",
+            "positionControlSide": "NONE"
+          }
+        ],
+        "liquidationFee": "0.020000",
+        "maintMarginPercent": "2.5000",
+        "marginAsset": "USDT",
+        "marketTakeBound": "0.15",
+        "maxMoveOrderLimit": 10000,
+        "onboardDate": 1706862600000,
+        "orderTypes": [
+          "LIMIT",
+          "MARKET",
+          "STOP",
+          "STOP_MARKET",
+          "TAKE_PROFIT",
+          "TAKE_PROFIT_MARKET",
+          "TRAILING_STOP_MARKET"
+        ],
+        "pair": "ZETAUSDT",
+        "permissionSets": ["GRID", "COPY", "DCA", "PSB"],
+        "pricePrecision": 6,
+        "quantityPrecision": 0,
+        "quoteAsset": "USDT",
+        "quotePrecision": 8,
+        "requiredMarginPercent": "5.0000",
+        "status": "TRADING",
+        "symbol": "ZETAUSDT",
+        "timeInForce": ["GTC", "IOC", "FOK", "GTX", "GTD"],
+        "triggerProtect": "0.1500",
+        "underlyingSubType": ["Layer-1", "Crypto"],
+        "underlyingType": "COIN"
+      },
+      "raw_sha256": "9925b8b62ea6daf676ac391d815d6a407d3fa195ce6f30e13a8bf0064d26c1ce",
+      "source": "binance:futures_exchange_info_entry",
+      "wire_exact": false
+    },
+    "reported_base_asset": "ZETA",
+    "reported_quote_asset": "USDT",
+    "reported_settle_asset": "USDT",
+    "status": "TRADING"
+  },
+  "working_tree_dirty": false
+}

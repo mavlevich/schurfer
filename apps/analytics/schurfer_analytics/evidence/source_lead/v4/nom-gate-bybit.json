@@ -1,0 +1,377 @@
+{
+  "base": "NOM",
+  "bundle_sha256": "a65a9aa34d51c29d2053b66b97dd827ee4b35be2f58daaf22c5a99fc659230a2",
+  "captured_at": "2026-09-25T21:17:20.631421+00:00",
+  "code_revision": "a916f3f4dcef31e0aaed508c0e8f72d094e76800",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/nomina?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-09-25T21:17:20.628683+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "ethereum",
+      "block_time_in_minutes": 0,
+      "categories": [
+        "Smart Contract Platform",
+        "Decentralized Finance (DeFi)",
+        "Perpetuals",
+        "Ethereum Ecosystem"
+      ],
+      "contract_address": "0x6e6f6d696e61decd6605bd4a57836c5db6923340",
+      "country_origin": "",
+      "description": {
+        "en": "$NOM is the primary network token of the Nomina, a unified trading platform built to execute complex trading strategies across DEXs."
+      },
+      "detail_platforms": {
+        "ethereum": {
+          "contract_address": "0x6e6f6d696e61decd6605bd4a57836c5db6923340",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/eth/tokens/0x6e6f6d696e61decd6605bd4a57836c5db6923340"
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": false,
+      "hashing_algorithm": null,
+      "id": "nomina",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/69687/large/nomina_400x400.jpg?1759312531",
+        "small": "https://coin-images.coingecko.com/coins/images/69687/small/nomina_400x400.jpg?1759312531",
+        "thumb": "https://coin-images.coingecko.com/coins/images/69687/thumb/nomina_400x400.jpg?1759312531"
+      },
+      "last_updated": "2026-09-25T21:14:30.000Z",
+      "links": {
+        "announcement_url": [],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://etherscan.io/token/0x6e6F6d696e61decd6605bD4a57836c5DB6923340",
+          "https://intel.arkm.com/explorer/token/nomina",
+          "https://ethplorer.io/address/0x6e6F6d696e61decd6605bD4a57836c5DB6923340"
+        ],
+        "chat_url": ["https://discord.com/invite/nomina"],
+        "facebook_username": "",
+        "homepage": ["https://www.nomina.io/"],
+        "official_forum_url": [],
+        "repos_url": {
+          "bitbucket": [],
+          "github": []
+        },
+        "snapshot_url": null,
+        "subreddit_url": null,
+        "telegram_channel_identifier": "nominaannouncements",
+        "twitter_screen_name": "nomina",
+        "whitepaper": ""
+      },
+      "listing_currency": null,
+      "listing_price": null,
+      "listing_source": null,
+      "listing_source_url": null,
+      "listing_timestamp": null,
+      "market_cap_rank": 1618,
+      "market_cap_rank_with_rehypothecated": 1944,
+      "name": "Nomina",
+      "platforms": {
+        "ethereum": "0x6e6f6d696e61decd6605bd4a57836c5db6923340"
+      },
+      "preview_listing": false,
+      "public_notice": "Omni Network (OMNI) has been rebranded to Nomina (NOM). They migrated to a <a href=\"https://etherscan.io/token/0x6e6F6d696e61decd6605bD4a57836c5DB6923340\" target=\"_blank\">new contract</a>. For more information, please visit this <a href=\"https://x.com/Nomina/status/1967549734626980024\" target=\"_blank\">post</a> and visit the old token page <a href=\"https://www.coingecko.com/en/coins/omni-network-old\" target=\"_blank\">here</a>.<br>",
+      "sentiment_votes_down_percentage": 66.67,
+      "sentiment_votes_up_percentage": 33.33,
+      "status_updates": [],
+      "symbol": "nom",
+      "watchlist_portfolio_users": 1767,
+      "web_slug": "nomina"
+    },
+    "raw_sha256": "fe143e561dbab4deec3c712ed4ec8beca7514868acf2c71418b0163e45461264",
+    "source": "https://api.coingecko.com/api/v3/coins/nomina",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v4",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-09-25T21:17:20.628864+00:00",
+    "payload": {
+      "active": true,
+      "code": "NOM",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "NOM",
+      "info": {
+        "category": [],
+        "chain": "ETH",
+        "chains": [
+          {
+            "addr": "0x6e6f6d696e61decd6605bd4a57836c5db6923340",
+            "deposit_disabled": false,
+            "name": "ETH",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "NOM",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "6153800.000000001",
+        "name": "Nomina",
+        "total_supply": "7500000000",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "Nomina",
+      "networks": {
+        "ERC20": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "ETH",
+          "info": {
+            "addr": "0x6e6f6d696e61decd6605bd4a57836c5db6923340",
+            "deposit_disabled": false,
+            "name": "ETH",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "ERC20",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "78cceaf91fe19402207bcf4b1b66fe1a35a227e0a753c954b8ac90700c691f80",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "exact_contract",
+  "source_contract": {
+    "block_hash": "0x6f6d6ae1863f2cdbcbf1d27c9fc7311215f301bc628b444025089af5df3225c0",
+    "block_number": 26057093,
+    "chain": "ethereum",
+    "chain_id": 1,
+    "contract_address": "0x6e6f6d696e61decd6605bd4a57836c5db6923340",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://ethereum-rpc.publicnode.com",
+      "observed_at": "2026-09-25T21:17:13.205833+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "a0cfb5a1c696cf1b33c6808f77538ba8fbf89fc8515499513d43ce204d7a457a",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "source_market_evidence": {
+    "exchange": "gate",
+    "inference_basis": "gate futures contract payload has no base_asset/quote_asset/settle_asset fields; base/quote split parsed from the reported native_market_id ('NOM_USDT') on its '_' separator, settle asset inferred from the /futures/usdt/ endpoint family",
+    "inferred_base_asset": "NOM",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "NOM_USDT",
+    "onboarded_at_ms": 1759304807000,
+    "raw_evidence": {
+      "endpoint": "https://api.gateio.ws/api/v4/futures/usdt/contracts/NOM_USDT",
+      "observed_at": "2026-09-25T21:17:14.347830+00:00",
+      "payload": {
+        "config_change_time": 1790227926,
+        "contract_type": "",
+        "create_time": 1759304807,
+        "cross_leverage_default": "10",
+        "enable_bonus": true,
+        "enable_circuit_breaker": false,
+        "enable_credit": true,
+        "enable_decimal": false,
+        "funding_cap_ratio": "0.75",
+        "funding_impact_value": "7000",
+        "funding_interval": 14400,
+        "funding_next_apply": 1790380800,
+        "funding_offset": 0,
+        "funding_rate": "0.000079",
+        "funding_rate_indicative": "0.000079",
+        "funding_rate_limit": "0.02",
+        "in_delisting": false,
+        "index_price": "0.00212345",
+        "interest_rate": "0.0003",
+        "is_pre_market": false,
+        "last_price": "0.002122",
+        "launch_time": 1759304807,
+        "leverage_max": "10",
+        "leverage_min": "1",
+        "long_users": 202,
+        "maintenance_rate": "0.06",
+        "maker_fee_rate": "-0.0001",
+        "mark_price": "0.002123",
+        "mark_price_round": "0.000001",
+        "mark_type": "index",
+        "market_order_size_max": "90000",
+        "market_order_slip_ratio": "0.05",
+        "name": "NOM_USDT",
+        "order_price_deviate": "0.2",
+        "order_price_round": "0.000001",
+        "order_size_max": 140000,
+        "order_size_min": 1,
+        "orderbook_id": 701784631,
+        "orders_limit": 100,
+        "position_size": 866305,
+        "quanto_multiplier": "100",
+        "ref_discount_rate": "0",
+        "ref_rebate_rate": "0.2",
+        "risk_limit_base": "10000",
+        "risk_limit_max": "2500000",
+        "risk_limit_step": "2490000",
+        "short_users": 228,
+        "status": "trading",
+        "taker_fee_rate": "0.00075",
+        "trade_id": 4460380,
+        "trade_size": 802527500,
+        "type": "direct",
+        "voucher_leverage": "0"
+      },
+      "raw_sha256": "1d09e52324007b885bc481b8c6adf713708f604d326c3746704cb472e724d3e1",
+      "source": "https://api.gateio.ws/api/v4/futures/usdt/contracts/NOM_USDT",
+      "wire_exact": true
+    },
+    "reported_base_asset": null,
+    "reported_quote_asset": null,
+    "reported_settle_asset": null,
+    "status": "trading"
+  },
+  "target_catalog_evidence": {
+    "endpoint": "https://api.bybit.com/v5/asset/coin/query-info",
+    "observed_at": "2026-09-25T21:11:12.322830+00:00",
+    "payload": {
+      "chain": "ethereum",
+      "chains": [
+        {
+          "chain": "ETH",
+          "chainType": "Ethereum ",
+          "contractAddress": "0x6e6F6d696e61decd6605bD4a57836c5DB6923340"
+        }
+      ],
+      "coin": "NOM",
+      "contractAddress": "0x6e6f6d696e61decd6605bd4a57836c5db6923340",
+      "name": "NOM",
+      "response_sha256": "cf17ebc9ede4686f290f01e48524fd2eed52a33b4039157a3f42fc4d82984448"
+    },
+    "raw_sha256": "544affd630d22c4aec09dfff824cd2d4d8932bc204b095e914b9cc6a483f887f",
+    "source": "bybit:coin_info_entry",
+    "wire_exact": false
+  },
+  "target_contract": {
+    "block_hash": "0x6f6d6ae1863f2cdbcbf1d27c9fc7311215f301bc628b444025089af5df3225c0",
+    "block_number": 26057093,
+    "chain": "ethereum",
+    "chain_id": 1,
+    "contract_address": "0x6e6f6d696e61decd6605bd4a57836c5db6923340",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://ethereum-rpc.publicnode.com",
+      "observed_at": "2026-09-25T21:17:13.205833+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "a0cfb5a1c696cf1b33c6808f77538ba8fbf89fc8515499513d43ce204d7a457a",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "target_exchange": "bybit",
+  "target_market_evidence": {
+    "exchange": "bybit",
+    "inference_basis": "copied verbatim from bybit v5 instruments-info's own baseCoin/quoteCoin/settleCoin fields -- genuinely reported, not parsed",
+    "inferred_base_asset": "NOM",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "NOMUSDT",
+    "onboarded_at_ms": 1759306658000,
+    "raw_evidence": {
+      "endpoint": "https://api.bybit.com/v5/market/instruments-info",
+      "observed_at": "2026-09-25T21:11:11.303123+00:00",
+      "payload": {
+        "baseCoin": "NOM",
+        "contractType": "LinearPerpetual",
+        "copyTrading": "both",
+        "deliveryFeeRate": "",
+        "deliveryTime": "0",
+        "displayName": "NOMUSDT",
+        "forbidUplWithdrawal": false,
+        "fullName": "Nomina",
+        "fundingInterval": 240,
+        "isPreListing": false,
+        "launchTime": "1759306658000",
+        "leverageFilter": {
+          "leverageStep": "0.01",
+          "maxLeverage": "25.00",
+          "minLeverage": "1"
+        },
+        "lotSizeFilter": {
+          "maxMktOrderQty": "3000000",
+          "maxOrderQty": "15000000",
+          "minNotionalValue": "5",
+          "minOrderQty": "10",
+          "postOnlyMaxOrderQty": "15000000",
+          "qtyStep": "10"
+        },
+        "lowerFundingRate": "-0.02",
+        "marketRegion": "",
+        "preListingInfo": null,
+        "priceFilter": {
+          "maxPrice": "19.999998",
+          "minPrice": "0.000001",
+          "tickSize": "0.000001"
+        },
+        "priceScale": "6",
+        "quoteCoin": "USDT",
+        "riskParameters": {
+          "priceLimitRatioX": "0.15",
+          "priceLimitRatioY": "0.3"
+        },
+        "settleCoin": "USDT",
+        "status": "Trading",
+        "symbol": "NOMUSDT",
+        "symbolId": 2461,
+        "symbolType": "",
+        "underlyingTicker": "",
+        "unifiedMarginTrade": true,
+        "upperFundingRate": "0.02"
+      },
+      "raw_sha256": "b0718b4d4ab85761418e21a623d75e8b3effb27a63717aff1669fb52d28d562a",
+      "source": "bybit:instruments_info_entry",
+      "wire_exact": false
+    },
+    "reported_base_asset": "NOM",
+    "reported_quote_asset": "USDT",
+    "reported_settle_asset": "USDT",
+    "status": "Trading"
+  },
+  "working_tree_dirty": false
+}

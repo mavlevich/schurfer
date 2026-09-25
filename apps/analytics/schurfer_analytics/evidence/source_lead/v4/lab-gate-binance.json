@@ -1,0 +1,401 @@
+{
+  "base": "LAB",
+  "bundle_sha256": "55e694bb80bac4c4970b1aa7306a1060e451fb306cbf8d1ebb72de25ea9194fe",
+  "captured_at": "2026-09-25T21:16:25.939925+00:00",
+  "code_revision": "a916f3f4dcef31e0aaed508c0e8f72d094e76800",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/lab?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-09-25T21:16:25.936164+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "binance-smart-chain",
+      "block_time_in_minutes": 0,
+      "categories": [
+        "Decentralized Finance (DeFi)",
+        "Analytics",
+        "BNB Chain Ecosystem",
+        "Launchpad",
+        "Binance Alpha Spotlight",
+        "Echo Launchpad"
+      ],
+      "contract_address": "0x7ec43cf65f1663f820427c62a5780b8f2e25593a",
+      "country_origin": "",
+      "description": {
+        "en": "LAB is the first all-in-one trading ecosystem, enabling faster execution, the lowest market fees, and a viral incentive layer powered by $LAB. Integrated with existing trading platforms it allows to tap into an established network while creating a unified environment for a new trading experience. LAB brings together trading, analytics, asset management, and community tools for the modern trader. It goes beyond traditional trading by forming a connected ecosystem – delivering a powerful, unified experience for both new and experienced traders."
+      },
+      "detail_platforms": {
+        "binance-smart-chain": {
+          "contract_address": "0x7ec43cf65f1663f820427c62a5780b8f2e25593a",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/bsc/tokens/0x7ec43cf65f1663f820427c62a5780b8f2e25593a"
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": true,
+      "hashing_algorithm": null,
+      "id": "lab",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/70014/large/lab.png?1760352822",
+        "small": "https://coin-images.coingecko.com/coins/images/70014/small/lab.png?1760352822",
+        "thumb": "https://coin-images.coingecko.com/coins/images/70014/thumb/lab.png?1760352822"
+      },
+      "last_updated": "2026-09-25T21:14:30.000Z",
+      "links": {
+        "announcement_url": [],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://bscscan.com/token/0x7ec43Cf65F1663F820427C62A5780b8f2E25593A",
+          "https://binplorer.com/address/0x7ec43Cf65F1663F820427C62A5780b8f2E25593A"
+        ],
+        "chat_url": [],
+        "facebook_username": "",
+        "homepage": ["https://lab.pro/"],
+        "official_forum_url": [
+          "https://discord.com/invite/memeslab",
+          "https://www.linkedin.com/company/memes-lab/"
+        ],
+        "repos_url": {
+          "bitbucket": [],
+          "github": []
+        },
+        "snapshot_url": null,
+        "subreddit_url": null,
+        "telegram_channel_identifier": "lab_trade",
+        "twitter_screen_name": "LABtrade_",
+        "whitepaper": "https://docs.lab.pro/"
+      },
+      "listing_currency": null,
+      "listing_price": null,
+      "listing_source": null,
+      "listing_source_url": null,
+      "listing_timestamp": null,
+      "market_cap_rank": 533,
+      "market_cap_rank_with_rehypothecated": 701,
+      "name": "LAB",
+      "platforms": {
+        "binance-smart-chain": "0x7ec43cf65f1663f820427c62a5780b8f2e25593a"
+      },
+      "preview_listing": false,
+      "public_notice": null,
+      "sentiment_votes_down_percentage": 50.0,
+      "sentiment_votes_up_percentage": 50.0,
+      "status_updates": [],
+      "symbol": "lab",
+      "watchlist_portfolio_users": 16331,
+      "web_slug": "lab"
+    },
+    "raw_sha256": "fe98ca812f5cdf06ec3a0e96622ff07efbff3f3fe7f04592f5baa7cef3872526",
+    "source": "https://api.coingecko.com/api/v3/coins/lab",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v4",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-09-25T21:16:25.936377+00:00",
+    "payload": {
+      "active": true,
+      "code": "LAB",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "LAB",
+      "info": {
+        "category": [],
+        "chain": "BSC",
+        "chains": [
+          {
+            "addr": "0x7ec43cf65f1663f820427c62a5780b8f2e25593a",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "LAB",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "13443840.0",
+        "name": "LAB",
+        "total_supply": "1000000000",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "LAB",
+      "networks": {
+        "BEP20": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "BSC",
+          "info": {
+            "addr": "0x7ec43cf65f1663f820427c62a5780b8f2e25593a",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "BEP20",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "29b09616cf90c1475ddf7b3fd290f0b24bb278b454f09a41159a9197dd3334b7",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "exact_contract",
+  "source_contract": {
+    "block_hash": "0x8b9b2193fbe855c17b66e79ebc8eacffab95d4f0d35e2de40e7f9f216d0443e6",
+    "block_number": 124019289,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0x7ec43cf65f1663f820427c62a5780b8f2e25593a",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-09-25T21:16:18.496848+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "8e73d72cca28014c8646f2033e87ec712fc9eb6dbc2664092e1cf446ce4e6937",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "source_market_evidence": {
+    "exchange": "gate",
+    "inference_basis": "gate futures contract payload has no base_asset/quote_asset/settle_asset fields; base/quote split parsed from the reported native_market_id ('LAB_USDT') on its '_' separator, settle asset inferred from the /futures/usdt/ endpoint family",
+    "inferred_base_asset": "LAB",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "LAB_USDT",
+    "onboarded_at_ms": 1760443800000,
+    "raw_evidence": {
+      "endpoint": "https://api.gateio.ws/api/v4/futures/usdt/contracts/LAB_USDT",
+      "observed_at": "2026-09-25T21:16:19.633518+00:00",
+      "payload": {
+        "config_change_time": 1789377743,
+        "contract_type": "",
+        "create_time": 1760423217,
+        "cross_leverage_default": "10",
+        "enable_bonus": true,
+        "enable_circuit_breaker": false,
+        "enable_credit": true,
+        "enable_decimal": true,
+        "funding_cap_ratio": "0.75",
+        "funding_impact_value": "5000",
+        "funding_interval": 14400,
+        "funding_next_apply": 1790380800,
+        "funding_offset": 0,
+        "funding_rate": "0.000462",
+        "funding_rate_indicative": "0.000462",
+        "funding_rate_limit": "0.02",
+        "in_delisting": false,
+        "index_price": "0.058304",
+        "interest_rate": "0.0003",
+        "is_pre_market": false,
+        "last_price": "0.05837",
+        "launch_time": 1760443800,
+        "leverage_max": "20",
+        "leverage_min": "1",
+        "long_users": 1005,
+        "maintenance_rate": "0.04",
+        "maker_fee_rate": "-0.0001",
+        "mark_price": "0.0584",
+        "mark_price_round": "0.00001",
+        "mark_type": "index",
+        "market_order_size_max": "1500",
+        "market_order_slip_ratio": "0.05",
+        "name": "LAB_USDT",
+        "order_price_deviate": "0.2",
+        "order_price_round": "0.00001",
+        "order_size_max": 2000,
+        "order_size_min": 0,
+        "orderbook_id": 6966166749,
+        "orders_limit": 100,
+        "position_size": 287494,
+        "quanto_multiplier": "100",
+        "ref_discount_rate": "0",
+        "ref_rebate_rate": "0.2",
+        "risk_limit_base": "5000",
+        "risk_limit_max": "2500000",
+        "risk_limit_step": "2495000",
+        "short_users": 301,
+        "status": "trading",
+        "taker_fee_rate": "0.00075",
+        "trade_id": 34179135,
+        "trade_size": 80426986,
+        "type": "direct",
+        "voucher_leverage": "0"
+      },
+      "raw_sha256": "897d2bc4987a7e663424ce43159a7baa60b7e63ef274cac31f9e7a183f4ff9c3",
+      "source": "https://api.gateio.ws/api/v4/futures/usdt/contracts/LAB_USDT",
+      "wire_exact": true
+    },
+    "reported_base_asset": null,
+    "reported_quote_asset": null,
+    "reported_settle_asset": null,
+    "status": "trading"
+  },
+  "target_catalog_evidence": {
+    "endpoint": "https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list",
+    "observed_at": "2026-09-25T21:11:10.354414+00:00",
+    "payload": {
+      "chainId": "56",
+      "chainName": "BSC",
+      "contractAddress": "0x7ec43cf65f1663f820427c62a5780b8f2e25593a",
+      "decimals": 18,
+      "name": "LAB",
+      "offline": false,
+      "response_sha256": "9dd15864069cf396f07b8d8727e2661081fe0cd15063af0bdb910d2aa4696b35",
+      "symbol": "LAB"
+    },
+    "raw_sha256": "3dde9076b52c81d5447b5076e4432f71707f0ddfae05c46d26866e70d46b8a50",
+    "source": "binance:alpha_catalog_entry",
+    "wire_exact": false
+  },
+  "target_contract": {
+    "block_hash": "0x8b9b2193fbe855c17b66e79ebc8eacffab95d4f0d35e2de40e7f9f216d0443e6",
+    "block_number": 124019289,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0x7ec43cf65f1663f820427c62a5780b8f2e25593a",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-09-25T21:16:18.496848+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "8e73d72cca28014c8646f2033e87ec712fc9eb6dbc2664092e1cf446ce4e6937",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "target_exchange": "binance",
+  "target_market_evidence": {
+    "exchange": "binance",
+    "inference_basis": "copied verbatim from binance futures exchangeInfo's own baseAsset/quoteAsset/marginAsset fields -- genuinely reported, not parsed",
+    "inferred_base_asset": "LAB",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "LABUSDT",
+    "onboarded_at_ms": 1760711400000,
+    "raw_evidence": {
+      "endpoint": "https://fapi.binance.com/fapi/v1/exchangeInfo",
+      "observed_at": "2026-09-25T21:11:10.755208+00:00",
+      "payload": {
+        "baseAsset": "LAB",
+        "baseAssetPrecision": 8,
+        "contractType": "PERPETUAL",
+        "deliveryDate": 4133404800000,
+        "filters": [
+          {
+            "filterType": "PRICE_FILTER",
+            "maxPrice": "20",
+            "minPrice": "0.0000100",
+            "tickSize": "0.0000100"
+          },
+          {
+            "filterType": "LOT_SIZE",
+            "maxQty": "13000000",
+            "minQty": "1",
+            "stepSize": "1"
+          },
+          {
+            "filterType": "MARKET_LOT_SIZE",
+            "maxQty": "1100000",
+            "minQty": "1",
+            "stepSize": "1"
+          },
+          {
+            "filterType": "MAX_NUM_ORDERS",
+            "limit": 200
+          },
+          {
+            "filterType": "MIN_NOTIONAL",
+            "notional": "5"
+          },
+          {
+            "filterType": "PERCENT_PRICE",
+            "multiplierDecimal": "4",
+            "multiplierDown": "0.8500",
+            "multiplierUp": "1.1500"
+          },
+          {
+            "filterType": "POSITION_RISK_CONTROL",
+            "positionControlSide": "NONE"
+          }
+        ],
+        "liquidationFee": "0.020000",
+        "maintMarginPercent": "2.5000",
+        "marginAsset": "USDT",
+        "marketTakeBound": "0.15",
+        "maxMoveOrderLimit": 10000,
+        "onboardDate": 1760711400000,
+        "orderTypes": [
+          "LIMIT",
+          "MARKET",
+          "STOP",
+          "STOP_MARKET",
+          "TAKE_PROFIT",
+          "TAKE_PROFIT_MARKET",
+          "TRAILING_STOP_MARKET"
+        ],
+        "pair": "LABUSDT",
+        "permissionSets": ["GRID", "COPY", "DCA", "PSB"],
+        "pricePrecision": 7,
+        "quantityPrecision": 0,
+        "quoteAsset": "USDT",
+        "quotePrecision": 8,
+        "requiredMarginPercent": "5.0000",
+        "status": "TRADING",
+        "symbol": "LABUSDT",
+        "timeInForce": ["GTC", "IOC", "FOK", "GTX", "GTD"],
+        "triggerProtect": "0.1500",
+        "underlyingSubType": ["Alpha", "Crypto"],
+        "underlyingType": "COIN"
+      },
+      "raw_sha256": "e027a7db8b60334edc5731204cb186cc2e68be53461c6299d981c8f3cb514822",
+      "source": "binance:futures_exchange_info_entry",
+      "wire_exact": false
+    },
+    "reported_base_asset": "LAB",
+    "reported_quote_asset": "USDT",
+    "reported_settle_asset": "USDT",
+    "status": "TRADING"
+  },
+  "working_tree_dirty": false
+}

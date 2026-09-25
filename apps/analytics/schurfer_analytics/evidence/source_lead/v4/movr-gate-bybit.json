@@ -1,0 +1,399 @@
+{
+  "base": "MOVR",
+  "bundle_sha256": "b26a708484bba93848de7f48c7836aa1e33a1aaf63b61f198ce823d27a604a1c",
+  "captured_at": "2026-09-25T21:16:49.383823+00:00",
+  "code_revision": "a916f3f4dcef31e0aaed508c0e8f72d094e76800",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/moonriver?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-09-25T21:16:49.382307+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "moonriver",
+      "block_time_in_minutes": 0,
+      "categories": [
+        "Smart Contract Platform",
+        "Layer 1 (L1)",
+        "Moonriver Ecosystem",
+        "Base Ecosystem",
+        "YZi Labs (Prev. Binance Labs) Portfolio",
+        "Meter Ecosystem"
+      ],
+      "contract_address": "0x98878b06940ae243284ca214f92bb71a2b032b8a",
+      "country_origin": "",
+      "description": {
+        "en": "Moonriver is a fully Ethereum-compatible smart contract parachain on Kusama. Due to this Ethereum-like design and developer-friendly approach, Moonriver has attracted dozens of projects to build on it: https://moonbeam.network/community/projects/. It does this by providing a full EVM implementation, a Web3-compatible API, and bridges that connect Moonriver to existing Ethereum networks. This allows developers to deploy existing Solidity/Vyper smart contracts and DApp frontends to Moonriver with minimal changes.\n\nIt is intended to be a companion network to Moonbeam (on Polkadot), where it will provide a permanently incentivized canary network. New code will ship to Moonriver first, where it can be tested and verified under real economic conditions. Once proven, the same code will ship to Moonbeam on Polkadot."
+      },
+      "detail_platforms": {
+        "base": {
+          "contract_address": "0x43feb74608334dda8c1a6500d185cfc3ea962b83",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/base/tokens/0x43feb74608334dda8c1a6500d185cfc3ea962b83"
+        },
+        "meter": {
+          "contract_address": "0xb158870beb809ad955bf56065c5c10d7fd957cc0",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/mtr/tokens/0xb158870beb809ad955bf56065c5c10d7fd957cc0"
+        },
+        "moonriver": {
+          "contract_address": "0x98878b06940ae243284ca214f92bb71a2b032b8a",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/movr/tokens/0x98878b06940ae243284ca214f92bb71a2b032b8a"
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": false,
+      "hashing_algorithm": null,
+      "id": "moonriver",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/17984/large/Moonriver_MOVR_ICON.png?1716647589",
+        "small": "https://coin-images.coingecko.com/coins/images/17984/small/Moonriver_MOVR_ICON.png?1716647589",
+        "thumb": "https://coin-images.coingecko.com/coins/images/17984/thumb/Moonriver_MOVR_ICON.png?1716647589"
+      },
+      "last_updated": "2026-09-25T21:14:30.000Z",
+      "links": {
+        "announcement_url": ["https://medium.com/moonbeam-network"],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://moonriver.subscan.io/",
+          "https://intel.arkm.com/explorer/token/moonriver",
+          "https://blockscout.moonriver.moonbeam.network/",
+          "https://moonriver.moonscan.io/",
+          "https://moonriver.moonscan.io/token/0x98878b06940ae243284ca214f92bb71a2b032b8a",
+          "https://scan.meter.io/address/0xb158870beb809ad955bf56065c5c10d7fd957cc0",
+          "https://movr.tokenview.io/",
+          "https://basescan.org/token/0x43fEB74608334DDa8c1a6500D185cFC3Ea962B83"
+        ],
+        "chat_url": [],
+        "facebook_username": "",
+        "homepage": [
+          "https://moonbeam.network/networks/moonriver/",
+          "https://moonbeam.foundation/moonriver-token/"
+        ],
+        "official_forum_url": [],
+        "repos_url": {
+          "bitbucket": [],
+          "github": ["https://github.com/PureStake/moonbeam/"]
+        },
+        "snapshot_url": null,
+        "subreddit_url": "https://www.reddit.com/r/moonbeam/",
+        "telegram_channel_identifier": "Moonbeam_Official",
+        "twitter_screen_name": "MoonriverNW",
+        "whitepaper": ""
+      },
+      "listing_currency": "",
+      "listing_price": null,
+      "listing_source": "",
+      "listing_source_url": "",
+      "listing_timestamp": null,
+      "market_cap_rank": 1153,
+      "market_cap_rank_with_rehypothecated": 1426,
+      "name": "Moonriver",
+      "platforms": {
+        "base": "0x43feb74608334dda8c1a6500d185cfc3ea962b83",
+        "meter": "0xb158870beb809ad955bf56065c5c10d7fd957cc0",
+        "moonriver": "0x98878b06940ae243284ca214f92bb71a2b032b8a"
+      },
+      "preview_listing": false,
+      "public_notice": "Moonriver (MOVR) has recently migrated from their <a href=\"https://moonriver.moonscan.io/token/0x98878b06940ae243284ca214f92bb71a2b032b8a\" target=\"_blank\">old contract</a> to a <a href=\"https://basescan.org/token/0x43fEB74608334DDa8c1a6500D185cFC3Ea962B83\" target=\"_blank\">new contract</a>. For more information, please visit this <a href=\"https://moonbeam.network/news/moonriver-strategic-update-movr-is-migrating-to-base/\" target=\"_blank\">post</a>.<br>",
+      "sentiment_votes_down_percentage": 0.0,
+      "sentiment_votes_up_percentage": 100.0,
+      "status_updates": [],
+      "symbol": "movr",
+      "watchlist_portfolio_users": 73602,
+      "web_slug": "moonriver"
+    },
+    "raw_sha256": "2b804e314c052dd95b3fc7f32fdcbd623ac6f06b2effddf5af30da084a7ab848",
+    "source": "https://api.coingecko.com/api/v3/coins/moonriver",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v4",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-09-25T21:16:49.382562+00:00",
+    "payload": {
+      "active": true,
+      "code": "MOVR",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "MOVR",
+      "info": {
+        "category": [],
+        "chain": "BASEEVM",
+        "chains": [
+          {
+            "addr": "0x43feb74608334dda8c1a6500d185cfc3ea962b83",
+            "deposit_disabled": false,
+            "name": "BASEEVM",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "MOVR",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "12475382.921400001",
+        "name": "Moonriver",
+        "total_supply": "∞",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "Moonriver",
+      "networks": {
+        "BASE": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "BASEEVM",
+          "info": {
+            "addr": "0x43feb74608334dda8c1a6500d185cfc3ea962b83",
+            "deposit_disabled": false,
+            "name": "BASEEVM",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "BASE",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "a27b055db376fb4a7e6cda3e6719a74bb16d1d09abe3adf5640671cd6a949618",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "exact_contract",
+  "source_contract": {
+    "block_hash": "0x7989a387416349aee3e7b7b7a44388f8c5d1d2b61a2a97549752cbee35dd946e",
+    "block_number": 51790827,
+    "chain": "base",
+    "chain_id": 8453,
+    "contract_address": "0x43feb74608334dda8c1a6500d185cfc3ea962b83",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://mainnet.base.org",
+      "observed_at": "2026-09-25T21:16:41.907103+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "69640378441910e713ebf1ec0431af5fd0a4658949332e49d674b3ddf1b12877",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "source_market_evidence": {
+    "exchange": "gate",
+    "inference_basis": "gate futures contract payload has no base_asset/quote_asset/settle_asset fields; base/quote split parsed from the reported native_market_id ('MOVR_USDT') on its '_' separator, settle asset inferred from the /futures/usdt/ endpoint family",
+    "inferred_base_asset": "MOVR",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "MOVR_USDT",
+    "onboarded_at_ms": 1631232000000,
+    "raw_evidence": {
+      "endpoint": "https://api.gateio.ws/api/v4/futures/usdt/contracts/MOVR_USDT",
+      "observed_at": "2026-09-25T21:16:43.059517+00:00",
+      "payload": {
+        "config_change_time": 1789354389,
+        "contract_type": "",
+        "create_time": 1631232000,
+        "cross_leverage_default": "10",
+        "enable_bonus": true,
+        "enable_circuit_breaker": false,
+        "enable_credit": true,
+        "enable_decimal": false,
+        "funding_cap_ratio": "1",
+        "funding_impact_value": "2000",
+        "funding_interval": 28800,
+        "funding_next_apply": 1790380800,
+        "funding_offset": 0,
+        "funding_rate": "0.000619",
+        "funding_rate_indicative": "0.000619",
+        "funding_rate_limit": "0.02",
+        "in_delisting": false,
+        "index_price": "0.982",
+        "interest_rate": "0.0003",
+        "is_pre_market": false,
+        "last_price": "0.983",
+        "launch_time": 1631232000,
+        "leverage_max": "25",
+        "leverage_min": "1",
+        "long_users": 314,
+        "maintenance_rate": "0.02",
+        "maker_fee_rate": "-0.0001",
+        "mark_price": "0.983",
+        "mark_price_round": "0.001",
+        "mark_type": "index",
+        "market_order_size_max": "9000000",
+        "market_order_slip_ratio": "0.035",
+        "name": "MOVR_USDT",
+        "order_price_deviate": "0.1",
+        "order_price_round": "0.001",
+        "order_size_max": 14000000,
+        "order_size_min": 1,
+        "orderbook_id": 1914984452,
+        "orders_limit": 50,
+        "position_size": 46589557,
+        "quanto_multiplier": "0.01",
+        "ref_discount_rate": "0",
+        "ref_rebate_rate": "0.2",
+        "risk_limit_base": "5000",
+        "risk_limit_max": "10000000",
+        "risk_limit_step": "9995000",
+        "short_users": 183,
+        "status": "trading",
+        "taker_fee_rate": "0.00075",
+        "trade_id": 10036612,
+        "trade_size": 14592101052,
+        "type": "direct",
+        "voucher_leverage": "0"
+      },
+      "raw_sha256": "5025ea14de76c5368ffdd0d31ca32ed67daa0d75a4d10352bf93e65e2c453134",
+      "source": "https://api.gateio.ws/api/v4/futures/usdt/contracts/MOVR_USDT",
+      "wire_exact": true
+    },
+    "reported_base_asset": null,
+    "reported_quote_asset": null,
+    "reported_settle_asset": null,
+    "status": "trading"
+  },
+  "target_catalog_evidence": {
+    "endpoint": "https://api.bybit.com/v5/asset/coin/query-info",
+    "observed_at": "2026-09-25T21:11:12.322830+00:00",
+    "payload": {
+      "chain": "base",
+      "chains": [
+        {
+          "chain": "BASE",
+          "chainType": "Base Mainnet",
+          "contractAddress": "0x43fEB74608334DDa8c1a6500D185cFC3Ea962B83"
+        }
+      ],
+      "coin": "MOVR",
+      "contractAddress": "0x43feb74608334dda8c1a6500d185cfc3ea962b83",
+      "name": "MOVR",
+      "response_sha256": "cf17ebc9ede4686f290f01e48524fd2eed52a33b4039157a3f42fc4d82984448"
+    },
+    "raw_sha256": "58b9074a286add7f5ed93c3520dc942af23d1ef7e1ba850ff6d4b13ba8c062a9",
+    "source": "bybit:coin_info_entry",
+    "wire_exact": false
+  },
+  "target_contract": {
+    "block_hash": "0x7989a387416349aee3e7b7b7a44388f8c5d1d2b61a2a97549752cbee35dd946e",
+    "block_number": 51790827,
+    "chain": "base",
+    "chain_id": 8453,
+    "contract_address": "0x43feb74608334dda8c1a6500d185cfc3ea962b83",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://mainnet.base.org",
+      "observed_at": "2026-09-25T21:16:41.907103+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "69640378441910e713ebf1ec0431af5fd0a4658949332e49d674b3ddf1b12877",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "target_exchange": "bybit",
+  "target_market_evidence": {
+    "exchange": "bybit",
+    "inference_basis": "copied verbatim from bybit v5 instruments-info's own baseCoin/quoteCoin/settleCoin fields -- genuinely reported, not parsed",
+    "inferred_base_asset": "MOVR",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "MOVRUSDT",
+    "onboarded_at_ms": 1700719762000,
+    "raw_evidence": {
+      "endpoint": "https://api.bybit.com/v5/market/instruments-info",
+      "observed_at": "2026-09-25T21:11:11.303123+00:00",
+      "payload": {
+        "baseCoin": "MOVR",
+        "contractType": "LinearPerpetual",
+        "copyTrading": "both",
+        "deliveryFeeRate": "",
+        "deliveryTime": "0",
+        "displayName": "MOVRUSDT",
+        "forbidUplWithdrawal": false,
+        "fullName": "Moonriver",
+        "fundingInterval": 240,
+        "isPreListing": false,
+        "launchTime": "1700719762000",
+        "leverageFilter": {
+          "leverageStep": "0.01",
+          "maxLeverage": "20.00",
+          "minLeverage": "1"
+        },
+        "lotSizeFilter": {
+          "maxMktOrderQty": "12000.0",
+          "maxOrderQty": "60000.0",
+          "minNotionalValue": "5",
+          "minOrderQty": "0.1",
+          "postOnlyMaxOrderQty": "60000.0",
+          "qtyStep": "0.1"
+        },
+        "lowerFundingRate": "-0.025",
+        "marketRegion": "",
+        "preListingInfo": null,
+        "priceFilter": {
+          "maxPrice": "19999.9980",
+          "minPrice": "0.0010",
+          "tickSize": "0.0010"
+        },
+        "priceScale": "4",
+        "quoteCoin": "USDT",
+        "riskParameters": {
+          "priceLimitRatioX": "0.15",
+          "priceLimitRatioY": "0.3"
+        },
+        "settleCoin": "USDT",
+        "status": "Trading",
+        "symbol": "MOVRUSDT",
+        "symbolId": 395,
+        "symbolType": "",
+        "underlyingTicker": "",
+        "unifiedMarginTrade": true,
+        "upperFundingRate": "0.025"
+      },
+      "raw_sha256": "7e88608f752bc12c5cede2599e0b9e299eaec2d0b7e3d91f3257b068f8db83cc",
+      "source": "bybit:instruments_info_entry",
+      "wire_exact": false
+    },
+    "reported_base_asset": "MOVR",
+    "reported_quote_asset": "USDT",
+    "reported_settle_asset": "USDT",
+    "status": "Trading"
+  },
+  "working_tree_dirty": false
+}

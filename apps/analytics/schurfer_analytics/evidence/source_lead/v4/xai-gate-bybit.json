@@ -1,0 +1,419 @@
+{
+  "base": "XAI",
+  "bundle_sha256": "b22a4dc4ec9e6ecfb7f7328073d1da47d63066f534d9c47fa159abb7ce4e28f1",
+  "captured_at": "2026-09-25T21:20:55.443546+00:00",
+  "code_revision": "a916f3f4dcef31e0aaed508c0e8f72d094e76800",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/xai-blockchain?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-09-25T21:20:55.441485+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "arbitrum-one",
+      "block_time_in_minutes": 0,
+      "categories": [
+        "Smart Contract Platform",
+        "Gaming (GameFi)",
+        "NFT",
+        "Binance Launchpool",
+        "Arbitrum Ecosystem",
+        "Layer 3 (L3)",
+        "XAI Ecosystem",
+        "Gaming Blockchains",
+        "Outlier Ventures Portfolio"
+      ],
+      "contract_address": "0x4cb9a7ae498cedcbb5eae9f25736ae7d428c9d66",
+      "country_origin": "",
+      "description": {
+        "en": "Xai was developed to enable real economies and open trade in the next generation of video games. With Xai, potentially billions of traditional gamers can own and trade valuable in-game items in their favorite games for the first time, without the need to use crypto-wallets. Anyone can support the Xai network by operating a node which allows them to receive network rewards and participate in governance. Xai is developed by Offchain Labs leveraging Arbitrum technology."
+      },
+      "detail_platforms": {
+        "arbitrum-one": {
+          "contract_address": "0x4cb9a7ae498cedcbb5eae9f25736ae7d428c9d66",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/arbitrum/tokens/0x4cb9a7ae498cedcbb5eae9f25736ae7d428c9d66"
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": true,
+      "hashing_algorithm": null,
+      "id": "xai-blockchain",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/34258/large/round_icon_2048_px.png?1719523838",
+        "small": "https://coin-images.coingecko.com/coins/images/34258/small/round_icon_2048_px.png?1719523838",
+        "thumb": "https://coin-images.coingecko.com/coins/images/34258/thumb/round_icon_2048_px.png?1719523838"
+      },
+      "last_updated": "2026-09-25T21:17:40.000Z",
+      "links": {
+        "announcement_url": [],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://arbiscan.io/token/0x4cb9a7ae498cedcbb5eae9f25736ae7d428c9d66",
+          "https://intel.arkm.com/explorer/token/xai-blockchain"
+        ],
+        "chat_url": ["https://discord.com/invite/xaigames"],
+        "facebook_username": "",
+        "homepage": ["https://xai.games/"],
+        "official_forum_url": [],
+        "repos_url": {
+          "bitbucket": [],
+          "github": []
+        },
+        "snapshot_url": null,
+        "subreddit_url": null,
+        "telegram_channel_identifier": "XaiSentryNodes",
+        "twitter_screen_name": "XAI_GAMES",
+        "whitepaper": "https://xai-foundation.gitbook.io/xai-network/xai-blockchain/welcome-to-xai"
+      },
+      "listing_currency": null,
+      "listing_price": null,
+      "listing_source": null,
+      "listing_source_url": null,
+      "listing_timestamp": null,
+      "market_cap_rank": 916,
+      "market_cap_rank_with_rehypothecated": 1146,
+      "name": "Xai",
+      "platforms": {
+        "arbitrum-one": "0x4cb9a7ae498cedcbb5eae9f25736ae7d428c9d66"
+      },
+      "preview_listing": false,
+      "public_notice": null,
+      "sentiment_votes_down_percentage": 16.67,
+      "sentiment_votes_up_percentage": 83.33,
+      "status_updates": [],
+      "symbol": "xai",
+      "watchlist_portfolio_users": 42152,
+      "web_slug": "xai"
+    },
+    "raw_sha256": "a431af97527e172a8589b4e4c07b03ecf7b2dabb82c1f6b9d0bf775e41699211",
+    "source": "https://api.coingecko.com/api/v3/coins/xai-blockchain",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v4",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-09-25T21:20:55.441636+00:00",
+    "payload": {
+      "active": true,
+      "code": "XAI",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "XAI",
+      "info": {
+        "category": [],
+        "chain": "XAI",
+        "chains": [
+          {
+            "addr": "",
+            "deposit_disabled": false,
+            "name": "XAI",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          {
+            "addr": "0x4Cb9a7AE498CEDcBb5EAe9f25736aE7d428C9D66",
+            "deposit_disabled": false,
+            "name": "ARBEVM",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "XAI",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "19059508.73480295",
+        "name": "Xai",
+        "total_supply": "2500000000",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "Xai",
+      "networks": {
+        "ARBITRUM": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "ARBEVM",
+          "info": {
+            "addr": "0x4Cb9a7AE498CEDcBb5EAe9f25736aE7d428C9D66",
+            "deposit_disabled": false,
+            "name": "ARBEVM",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "ARBITRUM",
+          "precision": 0.0001,
+          "withdraw": true
+        },
+        "XAI": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "XAI",
+          "info": {
+            "addr": "",
+            "deposit_disabled": false,
+            "name": "XAI",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "XAI",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "40452e6d4df819e889ffa334dcf028b8fa385caf091154f308826cbd219bd125",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "exact_contract",
+  "source_contract": {
+    "block_hash": "0x120a98339e06783314d0d352dbf9375433b4ec87bc799642fb36fe291c09e796",
+    "block_number": 508884861,
+    "chain": "arbitrum",
+    "chain_id": 42161,
+    "contract_address": "0x4cb9a7ae498cedcbb5eae9f25736ae7d428c9d66",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://arb1.arbitrum.io/rpc",
+      "observed_at": "2026-09-25T21:20:47.538463+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "a0cfb5a1c696cf1b33c6808f77538ba8fbf89fc8515499513d43ce204d7a457a",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "source_market_evidence": {
+    "exchange": "gate",
+    "inference_basis": "gate futures contract payload has no base_asset/quote_asset/settle_asset fields; base/quote split parsed from the reported native_market_id ('XAI_USDT') on its '_' separator, settle asset inferred from the /futures/usdt/ endpoint family",
+    "inferred_base_asset": "XAI",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "XAI_USDT",
+    "onboarded_at_ms": 1704938527000,
+    "raw_evidence": {
+      "endpoint": "https://api.gateio.ws/api/v4/futures/usdt/contracts/XAI_USDT",
+      "observed_at": "2026-09-25T21:20:48.987003+00:00",
+      "payload": {
+        "config_change_time": 1789354388,
+        "contract_type": "",
+        "create_time": 1704938527,
+        "cross_leverage_default": "10",
+        "enable_bonus": true,
+        "enable_circuit_breaker": false,
+        "enable_credit": true,
+        "enable_decimal": false,
+        "funding_cap_ratio": "2",
+        "funding_impact_value": "7000",
+        "funding_interval": 14400,
+        "funding_next_apply": 1790380800,
+        "funding_offset": 0,
+        "funding_rate": "-0.002128",
+        "funding_rate_indicative": "-0.002128",
+        "funding_rate_limit": "0.02",
+        "in_delisting": false,
+        "index_price": "0.00933",
+        "interest_rate": "0.0003",
+        "is_pre_market": false,
+        "last_price": "0.00932",
+        "launch_time": 1704938527,
+        "leverage_max": "50",
+        "leverage_min": "1",
+        "long_users": 248,
+        "maintenance_rate": "0.01",
+        "maker_fee_rate": "-0.0001",
+        "mark_price": "0.009316",
+        "mark_price_round": "0.000001",
+        "mark_type": "index",
+        "market_order_size_max": "7500000",
+        "market_order_slip_ratio": "0.05",
+        "name": "XAI_USDT",
+        "order_price_deviate": "0.2",
+        "order_price_round": "0.000001",
+        "order_size_max": 12000000,
+        "order_size_min": 1,
+        "orderbook_id": 2181951146,
+        "orders_limit": 100,
+        "position_size": 26658059,
+        "quanto_multiplier": "1",
+        "ref_discount_rate": "0",
+        "ref_rebate_rate": "0.2",
+        "risk_limit_base": "10000",
+        "risk_limit_max": "1000000",
+        "risk_limit_step": "990000",
+        "short_users": 214,
+        "status": "trading",
+        "taker_fee_rate": "0.00075",
+        "trade_id": 9656390,
+        "trade_size": 16118461675,
+        "type": "direct",
+        "voucher_leverage": "0"
+      },
+      "raw_sha256": "eb23b7ddad17eb1e09a697d17bb0b3e0e9409e3f7db23fd0b950e77bd9559e42",
+      "source": "https://api.gateio.ws/api/v4/futures/usdt/contracts/XAI_USDT",
+      "wire_exact": true
+    },
+    "reported_base_asset": null,
+    "reported_quote_asset": null,
+    "reported_settle_asset": null,
+    "status": "trading"
+  },
+  "target_catalog_evidence": {
+    "endpoint": "https://api.bybit.com/v5/asset/coin/query-info",
+    "observed_at": "2026-09-25T21:11:12.322830+00:00",
+    "payload": {
+      "chain": "arbitrum",
+      "chains": [
+        {
+          "chain": "ARBI",
+          "chainType": "Arbitrum One",
+          "contractAddress": "0x4Cb9a7AE498CEDcBb5EAe9f25736aE7d428C9D66"
+        },
+        {
+          "chain": "XAI",
+          "chainType": "XAI",
+          "contractAddress": ""
+        }
+      ],
+      "coin": "XAI",
+      "contractAddress": "0x4cb9a7ae498cedcbb5eae9f25736ae7d428c9d66",
+      "name": "XAI",
+      "response_sha256": "cf17ebc9ede4686f290f01e48524fd2eed52a33b4039157a3f42fc4d82984448"
+    },
+    "raw_sha256": "efb150393b69af77893cc8ec43ddeb291b43dfbe2191f89787c357cc9286c528",
+    "source": "bybit:coin_info_entry",
+    "wire_exact": false
+  },
+  "target_contract": {
+    "block_hash": "0x120a98339e06783314d0d352dbf9375433b4ec87bc799642fb36fe291c09e796",
+    "block_number": 508884861,
+    "chain": "arbitrum",
+    "chain_id": 42161,
+    "contract_address": "0x4cb9a7ae498cedcbb5eae9f25736ae7d428c9d66",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://arb1.arbitrum.io/rpc",
+      "observed_at": "2026-09-25T21:20:47.538463+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "a0cfb5a1c696cf1b33c6808f77538ba8fbf89fc8515499513d43ce204d7a457a",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "target_exchange": "bybit",
+  "target_market_evidence": {
+    "exchange": "bybit",
+    "inference_basis": "copied verbatim from bybit v5 instruments-info's own baseCoin/quoteCoin/settleCoin fields -- genuinely reported, not parsed",
+    "inferred_base_asset": "XAI",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "XAIUSDT",
+    "onboarded_at_ms": 1704879965000,
+    "raw_evidence": {
+      "endpoint": "https://api.bybit.com/v5/market/instruments-info",
+      "observed_at": "2026-09-25T21:11:11.303123+00:00",
+      "payload": {
+        "baseCoin": "XAI",
+        "contractType": "LinearPerpetual",
+        "copyTrading": "both",
+        "deliveryFeeRate": "",
+        "deliveryTime": "0",
+        "displayName": "XAIUSDT",
+        "forbidUplWithdrawal": false,
+        "fullName": "Xai",
+        "fundingInterval": 240,
+        "isPreListing": false,
+        "launchTime": "1704879965000",
+        "leverageFilter": {
+          "leverageStep": "0.01",
+          "maxLeverage": "25.00",
+          "minLeverage": "1"
+        },
+        "lotSizeFilter": {
+          "maxMktOrderQty": "1300000",
+          "maxOrderQty": "6500000",
+          "minNotionalValue": "5",
+          "minOrderQty": "1",
+          "postOnlyMaxOrderQty": "6500000",
+          "qtyStep": "1"
+        },
+        "lowerFundingRate": "-0.02",
+        "marketRegion": "",
+        "preListingInfo": null,
+        "priceFilter": {
+          "maxPrice": "19.999998",
+          "minPrice": "0.000001",
+          "tickSize": "0.000001"
+        },
+        "priceScale": "6",
+        "quoteCoin": "USDT",
+        "riskParameters": {
+          "priceLimitRatioX": "0.15",
+          "priceLimitRatioY": "0.3"
+        },
+        "settleCoin": "USDT",
+        "status": "Trading",
+        "symbol": "XAIUSDT",
+        "symbolId": 417,
+        "symbolType": "",
+        "underlyingTicker": "",
+        "unifiedMarginTrade": true,
+        "upperFundingRate": "0.02"
+      },
+      "raw_sha256": "95e6c8a5daab718b185e99fc1a35fd201cd2bfb1804ea0e02ee51e0e05766b04",
+      "source": "bybit:instruments_info_entry",
+      "wire_exact": false
+    },
+    "reported_base_asset": "XAI",
+    "reported_quote_asset": "USDT",
+    "reported_settle_asset": "USDT",
+    "status": "Trading"
+  },
+  "working_tree_dirty": false
+}

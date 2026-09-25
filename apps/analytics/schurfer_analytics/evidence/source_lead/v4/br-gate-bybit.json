@@ -1,0 +1,406 @@
+{
+  "base": "BR",
+  "bundle_sha256": "56fcf392fadc7f75d3a7d29187aa8d8ec38ee42fc3377cc6f2950792d68c36ff",
+  "captured_at": "2026-09-25T21:13:25.469865+00:00",
+  "code_revision": "a916f3f4dcef31e0aaed508c0e8f72d094e76800",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/bedrock-token?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-09-25T21:13:25.467539+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "binance-smart-chain",
+      "block_time_in_minutes": 0,
+      "categories": [
+        "Decentralized Finance (DeFi)",
+        "BNB Chain Ecosystem",
+        "Ethereum Ecosystem",
+        "Liquid Staking Governance Tokens",
+        "Base Ecosystem",
+        "Berachain Ecosystem",
+        "BTCfi Protocol",
+        "Binance Alpha Spotlight",
+        "Binance Wallet IDO"
+      ],
+      "contract_address": "0xff7d6a96ae471bbcd7713af9cb1feeb16cf56b41",
+      "country_origin": "",
+      "description": {
+        "en": "Bedrock DAO is a governance framework for managing decisions within the Bedrock ecosystem. It enables BR token holders to participate in governance by converting BR into veBR, a voting escrow token. Governance decisions include protocol parameters, incentive structures, and liquidity allocation.\nThe governance system is based on veBR, which is obtained by locking BR tokens at a 1:1 ratio. The longer the lock duration, the greater the voting power. veBR holders vote on governance proposals, including gauge allocations that determine incentive distribution across liquidity pools."
+      },
+      "detail_platforms": {
+        "base": {
+          "contract_address": "0xd6122ddada244913521f3d62006eaf756c157660",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/base/tokens/0xd6122ddada244913521f3d62006eaf756c157660"
+        },
+        "berachain": {
+          "contract_address": "0xd352dc6e5f0c45e2f2b38eb5565eb286a1ea4087",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/berachain/tokens/0xd352dc6e5f0c45e2f2b38eb5565eb286a1ea4087"
+        },
+        "binance-smart-chain": {
+          "contract_address": "0xff7d6a96ae471bbcd7713af9cb1feeb16cf56b41",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/bsc/tokens/0xff7d6a96ae471bbcd7713af9cb1feeb16cf56b41"
+        },
+        "ethereum": {
+          "contract_address": "0x9b61879e91a0b1322f3d61c23aaf936231882096",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/eth/tokens/0x9b61879e91a0b1322f3d61c23aaf936231882096"
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": true,
+      "hashing_algorithm": null,
+      "id": "bedrock-token",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/54908/large/BR_200px.png?1742453499",
+        "small": "https://coin-images.coingecko.com/coins/images/54908/small/BR_200px.png?1742453499",
+        "thumb": "https://coin-images.coingecko.com/coins/images/54908/thumb/BR_200px.png?1742453499"
+      },
+      "last_updated": "2026-09-25T21:11:30.000Z",
+      "links": {
+        "announcement_url": [],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://bscscan.com/token/0xff7d6a96ae471bbcd7713af9cb1feeb16cf56b41",
+          "https://intel.arkm.com/explorer/token/bedrock-token ",
+          "https://binplorer.com/address/0xff7d6a96ae471bbcd7713af9cb1feeb16cf56b41",
+          "https://berascan.com/token/0xd352dc6e5f0c45e2f2b38eb5565eb286a1ea4087",
+          "https://etherscan.io/token/0x9B61879e91a0b1322F3d61c23Aaf936231882096",
+          "https://ethplorer.io/address/0x9B61879e91a0b1322F3d61c23Aaf936231882096",
+          "https://basescan.org/token/0xd6122ddADa244913521F3d62006eaF756c157660",
+          "https://intel.arkm.com/explorer/token/bedrock-token",
+          "https://intel.arkm.com/explorer/token/<api_symbol>"
+        ],
+        "chat_url": [],
+        "facebook_username": "",
+        "homepage": ["https://bedrockdao.com/"],
+        "official_forum_url": [],
+        "repos_url": {
+          "bitbucket": [],
+          "github": ["https://github.com/Bedrock-Technology"]
+        },
+        "snapshot_url": null,
+        "subreddit_url": null,
+        "telegram_channel_identifier": "Bedrock_Official",
+        "twitter_screen_name": "Bedrock_DeFi",
+        "whitepaper": ""
+      },
+      "listing_currency": null,
+      "listing_price": null,
+      "listing_source": null,
+      "listing_source_url": null,
+      "listing_timestamp": null,
+      "market_cap_rank": 161,
+      "market_cap_rank_with_rehypothecated": 229,
+      "name": "Bedrock",
+      "platforms": {
+        "base": "0xd6122ddada244913521f3d62006eaf756c157660",
+        "berachain": "0xd352dc6e5f0c45e2f2b38eb5565eb286a1ea4087",
+        "binance-smart-chain": "0xff7d6a96ae471bbcd7713af9cb1feeb16cf56b41",
+        "ethereum": "0x9b61879e91a0b1322f3d61c23aaf936231882096"
+      },
+      "preview_listing": false,
+      "public_notice": null,
+      "sentiment_votes_down_percentage": 25.0,
+      "sentiment_votes_up_percentage": 75.0,
+      "status_updates": [],
+      "symbol": "br",
+      "watchlist_portfolio_users": 1951,
+      "web_slug": "bedrock"
+    },
+    "raw_sha256": "e4f585dacbfe704607736c86917e40587862dae50ebc556412a92e72a8b159f5",
+    "source": "https://api.coingecko.com/api/v3/coins/bedrock-token",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v4",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-09-25T21:13:25.467895+00:00",
+    "payload": {
+      "active": true,
+      "code": "BR",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "BR",
+      "info": {
+        "category": [],
+        "chain": "BSC",
+        "chains": [
+          {
+            "addr": "0xff7d6a96ae471bbcd7713af9cb1feeb16cf56b41",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "BR",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "271297882.73377997",
+        "name": "Bedrock",
+        "total_supply": "1000000000",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "Bedrock",
+      "networks": {
+        "BEP20": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "BSC",
+          "info": {
+            "addr": "0xff7d6a96ae471bbcd7713af9cb1feeb16cf56b41",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "BEP20",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "cfc4b843beba1843066bdf4ac99f46941cd82514b85c39de5d8236c630212f96",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "exact_contract",
+  "source_contract": {
+    "block_hash": "0x6c78cf0e2594399c688fc7f7b1238086335745af2cf82e1e37500357ca7a5ac5",
+    "block_number": 124018888,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0xff7d6a96ae471bbcd7713af9cb1feeb16cf56b41",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-09-25T21:13:18.027860+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "8e73d72cca28014c8646f2033e87ec712fc9eb6dbc2664092e1cf446ce4e6937",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "source_market_evidence": {
+    "exchange": "gate",
+    "inference_basis": "gate futures contract payload has no base_asset/quote_asset/settle_asset fields; base/quote split parsed from the reported native_market_id ('BR_USDT') on its '_' separator, settle asset inferred from the /futures/usdt/ endpoint family",
+    "inferred_base_asset": "BR",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "BR_USDT",
+    "onboarded_at_ms": 1742475642000,
+    "raw_evidence": {
+      "endpoint": "https://api.gateio.ws/api/v4/futures/usdt/contracts/BR_USDT",
+      "observed_at": "2026-09-25T21:13:19.178798+00:00",
+      "payload": {
+        "config_change_time": 1789975708,
+        "contract_type": "",
+        "create_time": 1742475642,
+        "cross_leverage_default": "10",
+        "enable_bonus": true,
+        "enable_circuit_breaker": false,
+        "enable_credit": true,
+        "enable_decimal": false,
+        "funding_cap_ratio": "2",
+        "funding_impact_value": "5000",
+        "funding_interval": 14400,
+        "funding_next_apply": 1790380800,
+        "funding_offset": 0,
+        "funding_rate": "0.001375",
+        "funding_rate_indicative": "0.001375",
+        "funding_rate_limit": "0.02",
+        "in_delisting": false,
+        "index_price": "0.899145",
+        "interest_rate": "0.0003",
+        "is_pre_market": false,
+        "last_price": "0.90354",
+        "launch_time": 1742475642,
+        "leverage_max": "20",
+        "leverage_min": "1",
+        "long_users": 271,
+        "maintenance_rate": "0.04",
+        "maker_fee_rate": "-0.0001",
+        "mark_price": "0.90331",
+        "mark_price_round": "0.00001",
+        "mark_type": "index",
+        "market_order_size_max": "90000",
+        "market_order_slip_ratio": "0.04",
+        "name": "BR_USDT",
+        "order_price_deviate": "0.15",
+        "order_price_round": "0.00001",
+        "order_size_max": 140000,
+        "order_size_min": 1,
+        "orderbook_id": 2273291798,
+        "orders_limit": 100,
+        "position_size": 156842,
+        "quanto_multiplier": "10",
+        "ref_discount_rate": "0",
+        "ref_rebate_rate": "0.2",
+        "risk_limit_base": "5000",
+        "risk_limit_max": "2500000",
+        "risk_limit_step": "2495000",
+        "short_users": 730,
+        "status": "trading",
+        "taker_fee_rate": "0.00075",
+        "trade_id": 9671727,
+        "trade_size": 875265391,
+        "type": "direct",
+        "voucher_leverage": "0"
+      },
+      "raw_sha256": "ae72f9fa58494f2accdcc4d86330ad5df3e4870c9ead9a8114b006aa968d63a8",
+      "source": "https://api.gateio.ws/api/v4/futures/usdt/contracts/BR_USDT",
+      "wire_exact": true
+    },
+    "reported_base_asset": null,
+    "reported_quote_asset": null,
+    "reported_settle_asset": null,
+    "status": "trading"
+  },
+  "target_catalog_evidence": {
+    "endpoint": "https://api.bybit.com/v5/asset/coin/query-info",
+    "observed_at": "2026-09-25T21:11:12.322830+00:00",
+    "payload": {
+      "chain": "bsc",
+      "chains": [
+        {
+          "chain": "BSC",
+          "chainType": "BNB Smart Chain",
+          "contractAddress": "0xFf7d6A96ae471BbCD7713aF9CB1fEeB16cf56B41"
+        }
+      ],
+      "coin": "BR",
+      "contractAddress": "0xff7d6a96ae471bbcd7713af9cb1feeb16cf56b41",
+      "name": "BR",
+      "response_sha256": "cf17ebc9ede4686f290f01e48524fd2eed52a33b4039157a3f42fc4d82984448"
+    },
+    "raw_sha256": "77b424d89d84662934712a566b84fb5e662bbc81f9464dd55cb0ec7bd6b1efad",
+    "source": "bybit:coin_info_entry",
+    "wire_exact": false
+  },
+  "target_contract": {
+    "block_hash": "0x6c78cf0e2594399c688fc7f7b1238086335745af2cf82e1e37500357ca7a5ac5",
+    "block_number": 124018888,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0xff7d6a96ae471bbcd7713af9cb1feeb16cf56b41",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-09-25T21:13:18.027860+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "8e73d72cca28014c8646f2033e87ec712fc9eb6dbc2664092e1cf446ce4e6937",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "target_exchange": "bybit",
+  "target_market_evidence": {
+    "exchange": "bybit",
+    "inference_basis": "copied verbatim from bybit v5 instruments-info's own baseCoin/quoteCoin/settleCoin fields -- genuinely reported, not parsed",
+    "inferred_base_asset": "BR",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "BRUSDT",
+    "onboarded_at_ms": 1742476788000,
+    "raw_evidence": {
+      "endpoint": "https://api.bybit.com/v5/market/instruments-info",
+      "observed_at": "2026-09-25T21:11:11.303123+00:00",
+      "payload": {
+        "baseCoin": "BR",
+        "contractType": "LinearPerpetual",
+        "copyTrading": "none",
+        "deliveryFeeRate": "",
+        "deliveryTime": "0",
+        "displayName": "BRUSDT",
+        "forbidUplWithdrawal": false,
+        "fullName": "Bedrock",
+        "fundingInterval": 240,
+        "isPreListing": false,
+        "launchTime": "1742476788000",
+        "leverageFilter": {
+          "leverageStep": "0.01",
+          "maxLeverage": "5.00",
+          "minLeverage": "1"
+        },
+        "lotSizeFilter": {
+          "maxMktOrderQty": "90000",
+          "maxOrderQty": "450000",
+          "minNotionalValue": "5",
+          "minOrderQty": "1",
+          "postOnlyMaxOrderQty": "450000",
+          "qtyStep": "1"
+        },
+        "lowerFundingRate": "-0.05",
+        "marketRegion": "",
+        "preListingInfo": null,
+        "priceFilter": {
+          "maxPrice": "199.99998",
+          "minPrice": "0.00001",
+          "tickSize": "0.00001"
+        },
+        "priceScale": "5",
+        "quoteCoin": "USDT",
+        "riskParameters": {
+          "priceLimitRatioX": "0.15",
+          "priceLimitRatioY": "0.3"
+        },
+        "settleCoin": "USDT",
+        "status": "Trading",
+        "symbol": "BRUSDT",
+        "symbolId": 2265,
+        "symbolType": "innovation",
+        "underlyingTicker": "",
+        "unifiedMarginTrade": true,
+        "upperFundingRate": "0.05"
+      },
+      "raw_sha256": "6eb7314d7c82ed17276ea85d10f367db99587c69d6b1744821910647d35363fa",
+      "source": "bybit:instruments_info_entry",
+      "wire_exact": false
+    },
+    "reported_base_asset": "BR",
+    "reported_quote_asset": "USDT",
+    "reported_settle_asset": "USDT",
+    "status": "Trading"
+  },
+  "working_tree_dirty": false
+}

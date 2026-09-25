@@ -1,0 +1,404 @@
+{
+  "base": "CTR",
+  "bundle_sha256": "3580edf29995eff34a8baa70ebd8c584fb7c8815f48567698907d07af2deac38",
+  "captured_at": "2026-09-25T21:14:12.863999+00:00",
+  "code_revision": "a916f3f4dcef31e0aaed508c0e8f72d094e76800",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/citrea?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-09-25T21:14:12.861245+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "citrea",
+      "block_time_in_minutes": 0,
+      "categories": [
+        "Smart Contract Platform",
+        "Layer 2 (L2)",
+        "Base Ecosystem",
+        "Binance Alpha Spotlight",
+        "Citrea Ecosystem"
+      ],
+      "contract_address": "0x547afd93b9c47d552059feb556909e017f8a9b25",
+      "country_origin": "",
+      "description": {
+        "en": "Citrea is the first ZK rollup that settles directly on Bitcoin, verifies zero-knowledge proofs on-chain through BitVM, and preserves Bitcoin-level security while enabling fully programmable smart contracts through its in-house Type 2 zkEVM. The platform fosters a composable ecosystem of Bitcoin applications (₿apps) and features a compliant stablecoin, ctUSD, issued by MoonPay, alongside the first trust-minimized BTC bridge, Clementine.\nCitrea is backed by Founders Fund, Galaxy, Naval Ravikant, Balaji Srinivasan, Erik Voorhees, Eric Wall, Maven11, Delphi, and more."
+      },
+      "detail_platforms": {
+        "base": {
+          "contract_address": "0x11030f79109269d796fd0fb956d6244e502757f7",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/base/tokens/0x11030f79109269d796fd0fb956d6244e502757f7"
+        },
+        "citrea": {
+          "contract_address": "0x547afd93b9c47d552059feb556909e017f8a9b25",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/citrea/tokens/0x547afd93b9c47d552059feb556909e017f8a9b25"
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": false,
+      "hashing_algorithm": null,
+      "id": "citrea",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/102173169/large/CTR.png?1778226916",
+        "small": "https://coin-images.coingecko.com/coins/images/102173169/small/CTR.png?1778226916",
+        "thumb": "https://coin-images.coingecko.com/coins/images/102173169/thumb/CTR.png?1778226916"
+      },
+      "last_updated": "2026-09-25T21:11:30.000Z",
+      "links": {
+        "announcement_url": [],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://explorer.mainnet.citrea.xyz/token/0x547AfD93B9c47D552059FEb556909e017f8a9b25",
+          "https://intel.arkm.com/explorer/token/citrea",
+          "https://basescan.org/token/0x11030f79109269d796fd0FB956D6244e502757f7"
+        ],
+        "chat_url": [],
+        "facebook_username": "",
+        "homepage": ["https://citrea.xyz/"],
+        "official_forum_url": [],
+        "repos_url": {
+          "bitbucket": [],
+          "github": ["https://github.com/chainwayxyz/citrea"]
+        },
+        "snapshot_url": null,
+        "subreddit_url": null,
+        "telegram_channel_identifier": "",
+        "twitter_screen_name": "citrea_xyz",
+        "whitepaper": ""
+      },
+      "listing_currency": null,
+      "listing_price": null,
+      "listing_source": null,
+      "listing_source_url": null,
+      "listing_timestamp": null,
+      "market_cap_rank": 962,
+      "market_cap_rank_with_rehypothecated": 1202,
+      "name": "Citrea",
+      "platforms": {
+        "base": "0x11030f79109269d796fd0fb956d6244e502757f7",
+        "citrea": "0x547afd93b9c47d552059feb556909e017f8a9b25"
+      },
+      "preview_listing": false,
+      "public_notice": null,
+      "sentiment_votes_down_percentage": 100.0,
+      "sentiment_votes_up_percentage": 0.0,
+      "status_updates": [],
+      "symbol": "ctr",
+      "watchlist_portfolio_users": 665,
+      "web_slug": "citrea"
+    },
+    "raw_sha256": "3a7ac6a52498899a6cc6bac9a8638fda1e5ebc53ec1be5b235899094c8d0f704",
+    "source": "https://api.coingecko.com/api/v3/coins/citrea",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v4",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-09-25T21:14:12.861421+00:00",
+    "payload": {
+      "active": true,
+      "code": "CTR",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "CTR",
+      "info": {
+        "category": [],
+        "chain": "BASEEVM",
+        "chains": [
+          {
+            "addr": "0x11030f79109269d796fd0fb956d6244e502757f7",
+            "deposit_disabled": false,
+            "name": "BASEEVM",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "CTR",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "14149200.0",
+        "name": "Citrea",
+        "total_supply": "10000000000",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "Citrea",
+      "networks": {
+        "BASE": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "BASEEVM",
+          "info": {
+            "addr": "0x11030f79109269d796fd0fb956d6244e502757f7",
+            "deposit_disabled": false,
+            "name": "BASEEVM",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "BASE",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "ba373e2a44c90d9da2c6e31b4ce279f38a9fad07fb83a9dc4aed316e6e45f171",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "exact_contract",
+  "source_contract": {
+    "block_hash": "0x8c2605cba9843bd21b235c6fb1f0000b134bd3f50081250163c860940c0882b9",
+    "block_number": 51790749,
+    "chain": "base",
+    "chain_id": 8453,
+    "contract_address": "0x11030f79109269d796fd0fb956d6244e502757f7",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://mainnet.base.org",
+      "observed_at": "2026-09-25T21:14:05.397613+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "69640378441910e713ebf1ec0431af5fd0a4658949332e49d674b3ddf1b12877",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "source_market_evidence": {
+    "exchange": "gate",
+    "inference_basis": "gate futures contract payload has no base_asset/quote_asset/settle_asset fields; base/quote split parsed from the reported native_market_id ('CTR_USDT') on its '_' separator, settle asset inferred from the /futures/usdt/ endpoint family",
+    "inferred_base_asset": "CTR",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "CTR_USDT",
+    "onboarded_at_ms": 1779801000000,
+    "raw_evidence": {
+      "endpoint": "https://api.gateio.ws/api/v4/futures/usdt/contracts/CTR_USDT",
+      "observed_at": "2026-09-25T21:14:06.550794+00:00",
+      "payload": {
+        "config_change_time": 1789377886,
+        "contract_type": "",
+        "create_time": 1779769824,
+        "cross_leverage_default": "10",
+        "enable_bonus": true,
+        "enable_circuit_breaker": false,
+        "enable_credit": true,
+        "enable_decimal": false,
+        "funding_cap_ratio": "0.75",
+        "funding_impact_value": "5000",
+        "funding_interval": 14400,
+        "funding_next_apply": 1790380800,
+        "funding_offset": 0,
+        "funding_rate": "0.00005",
+        "funding_rate_indicative": "0.00005",
+        "funding_rate_limit": "0.02",
+        "in_delisting": false,
+        "index_price": "0.011795",
+        "interest_rate": "0.0003",
+        "is_pre_market": false,
+        "last_price": "0.01183",
+        "launch_time": 1779801000,
+        "leverage_max": "20",
+        "leverage_min": "1",
+        "long_users": 86,
+        "maintenance_rate": "0.025",
+        "maker_fee_rate": "-0.0001",
+        "mark_price": "0.01182",
+        "mark_price_round": "0.00001",
+        "mark_type": "index",
+        "market_order_size_max": "800000",
+        "market_order_slip_ratio": "0.04",
+        "name": "CTR_USDT",
+        "order_price_deviate": "0.2",
+        "order_price_round": "0.00001",
+        "order_size_max": 1000000,
+        "order_size_min": 1,
+        "orderbook_id": 98719462,
+        "orders_limit": 100,
+        "position_size": 51581,
+        "quanto_multiplier": "100",
+        "ref_discount_rate": "0",
+        "ref_rebate_rate": "0.2",
+        "risk_limit_base": "5000",
+        "risk_limit_max": "2000000",
+        "risk_limit_step": "1995000",
+        "short_users": 158,
+        "status": "trading",
+        "taker_fee_rate": "0.00075",
+        "trade_id": 617471,
+        "trade_size": 23021780,
+        "type": "direct",
+        "voucher_leverage": "0"
+      },
+      "raw_sha256": "acdab34fd9a0fe8cb79562a5de65729bc799d6567138252dac66fed2e0ecd7dd",
+      "source": "https://api.gateio.ws/api/v4/futures/usdt/contracts/CTR_USDT",
+      "wire_exact": true
+    },
+    "reported_base_asset": null,
+    "reported_quote_asset": null,
+    "reported_settle_asset": null,
+    "status": "trading"
+  },
+  "target_catalog_evidence": {
+    "endpoint": "https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list",
+    "observed_at": "2026-09-25T21:11:10.354414+00:00",
+    "payload": {
+      "chainId": "8453",
+      "chainName": "Base",
+      "contractAddress": "0x11030f79109269d796fd0fb956d6244e502757f7",
+      "decimals": 18,
+      "name": "Citrea",
+      "offline": false,
+      "response_sha256": "9dd15864069cf396f07b8d8727e2661081fe0cd15063af0bdb910d2aa4696b35",
+      "symbol": "CTR"
+    },
+    "raw_sha256": "e87619417934ae83d866bd7671dda2b010c6e76b9986c511e0b1db5dcf6c14ca",
+    "source": "binance:alpha_catalog_entry",
+    "wire_exact": false
+  },
+  "target_contract": {
+    "block_hash": "0x8c2605cba9843bd21b235c6fb1f0000b134bd3f50081250163c860940c0882b9",
+    "block_number": 51790749,
+    "chain": "base",
+    "chain_id": 8453,
+    "contract_address": "0x11030f79109269d796fd0fb956d6244e502757f7",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://mainnet.base.org",
+      "observed_at": "2026-09-25T21:14:05.397613+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "69640378441910e713ebf1ec0431af5fd0a4658949332e49d674b3ddf1b12877",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "target_exchange": "binance",
+  "target_market_evidence": {
+    "exchange": "binance",
+    "inference_basis": "copied verbatim from binance futures exchangeInfo's own baseAsset/quoteAsset/marginAsset fields -- genuinely reported, not parsed",
+    "inferred_base_asset": "CTR",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "CTRUSDT",
+    "onboarded_at_ms": 1779960600000,
+    "raw_evidence": {
+      "endpoint": "https://fapi.binance.com/fapi/v1/exchangeInfo",
+      "observed_at": "2026-09-25T21:11:10.755208+00:00",
+      "payload": {
+        "baseAsset": "CTR",
+        "baseAssetPrecision": 8,
+        "contractType": "PERPETUAL",
+        "deliveryDate": 4133404800000,
+        "filters": [
+          {
+            "filterType": "PRICE_FILTER",
+            "maxPrice": "200",
+            "minPrice": "0.0000010",
+            "tickSize": "0.0000010"
+          },
+          {
+            "filterType": "LOT_SIZE",
+            "maxQty": "70000000",
+            "minQty": "1",
+            "stepSize": "1"
+          },
+          {
+            "filterType": "MARKET_LOT_SIZE",
+            "maxQty": "7000000",
+            "minQty": "1",
+            "stepSize": "1"
+          },
+          {
+            "filterType": "MAX_NUM_ORDERS",
+            "limit": 200
+          },
+          {
+            "filterType": "MIN_NOTIONAL",
+            "notional": "5"
+          },
+          {
+            "filterType": "PERCENT_PRICE",
+            "multiplierDecimal": "4",
+            "multiplierDown": "0.8500",
+            "multiplierUp": "1.1500"
+          },
+          {
+            "filterType": "POSITION_RISK_CONTROL",
+            "positionControlSide": "NONE"
+          }
+        ],
+        "liquidationFee": "0.020000",
+        "maintMarginPercent": "2.5000",
+        "marginAsset": "USDT",
+        "marketTakeBound": "0.15",
+        "maxMoveOrderLimit": 10000,
+        "onboardDate": 1779960600000,
+        "orderTypes": [
+          "LIMIT",
+          "MARKET",
+          "STOP",
+          "STOP_MARKET",
+          "TAKE_PROFIT",
+          "TAKE_PROFIT_MARKET",
+          "TRAILING_STOP_MARKET"
+        ],
+        "pair": "CTRUSDT",
+        "permissionSets": ["GRID", "COPY", "RPI", "DCA", "PSB"],
+        "pricePrecision": 7,
+        "quantityPrecision": 0,
+        "quoteAsset": "USDT",
+        "quotePrecision": 8,
+        "requiredMarginPercent": "5.0000",
+        "status": "TRADING",
+        "symbol": "CTRUSDT",
+        "timeInForce": ["GTC", "IOC", "FOK", "GTX", "GTD"],
+        "triggerProtect": "0.1500",
+        "underlyingSubType": ["Crypto"],
+        "underlyingType": "COIN"
+      },
+      "raw_sha256": "a588ec5899c6064a08a4ac6c901117961b531d9ddbe62dd64755f137bb432f8a",
+      "source": "binance:futures_exchange_info_entry",
+      "wire_exact": false
+    },
+    "reported_base_asset": "CTR",
+    "reported_quote_asset": "USDT",
+    "reported_settle_asset": "USDT",
+    "status": "TRADING"
+  },
+  "working_tree_dirty": false
+}

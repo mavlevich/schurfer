@@ -1,0 +1,390 @@
+{
+  "base": "ONDO",
+  "bundle_sha256": "d75c2e204ac0d770a153b3a28c4dfbe3366e16b364cdd1488472ad1297dcbb1c",
+  "captured_at": "2026-09-25T21:17:36.417940+00:00",
+  "code_revision": "a916f3f4dcef31e0aaed508c0e8f72d094e76800",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/ondo-finance?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-09-25T21:17:36.416958+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "ethereum",
+      "block_time_in_minutes": 0,
+      "categories": [
+        "Decentralized Finance (DeFi)",
+        "Ethereum Ecosystem",
+        "Real World Assets (RWA)",
+        "Coinbase Ventures Portfolio",
+        "Pantera Capital Portfolio",
+        "GMCI DeFi Index",
+        "RWA Protocol",
+        "GMCI Index",
+        "World Liberty Financial Portfolio",
+        "Binance Alpha Spotlight",
+        "Made in USA",
+        "CoinList Launchpad"
+      ],
+      "contract_address": "0xfaba6f8e4a5e8ab82f62fe7c39859fa577269be3",
+      "country_origin": "",
+      "description": {
+        "en": "The Ondo Foundation was founded in 2022 as an independently governed and nonprofit Cayman Islands Foundation Company with no beneficial owners. The Ondo Foundation assisted in the launch of the Ondo DAO, which deployed and currently governs Flux Finance, the first lending protocol supporting tokenized securities as collateral.\n\nONDO token holders are entrusted with shaping the future of the Ondo DAO so that it continues to pursue its mission to democratize access to institutional-grade finance. The Ondo DAO gives ONDO holders specific rights pertaining to Flux Finance, which is currently governed by the Ondo DAO."
+      },
+      "detail_platforms": {
+        "ethereum": {
+          "contract_address": "0xfaba6f8e4a5e8ab82f62fe7c39859fa577269be3",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/eth/tokens/0xfaba6f8e4a5e8ab82f62fe7c39859fa577269be3"
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": false,
+      "hashing_algorithm": null,
+      "id": "ondo-finance",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/26580/large/ONDO.png?1696525656",
+        "small": "https://coin-images.coingecko.com/coins/images/26580/small/ONDO.png?1696525656",
+        "thumb": "https://coin-images.coingecko.com/coins/images/26580/thumb/ONDO.png?1696525656"
+      },
+      "last_updated": "2026-09-25T21:15:40.000Z",
+      "links": {
+        "announcement_url": [],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://etherscan.io/address/0xfaba6f8e4a5e8ab82f62fe7c39859fa577269be3",
+          "https://intel.arkm.com/explorer/token/ondo-finance",
+          "https://etherscan.io/token/0xfaba6f8e4a5e8ab82f62fe7c39859fa577269be3",
+          "https://ethplorer.io/address/0xfaba6f8e4a5e8ab82f62fe7c39859fa577269be3"
+        ],
+        "chat_url": ["https://blog.ondo.foundation/"],
+        "facebook_username": "",
+        "homepage": [
+          "https://ondo.foundation/",
+          "https://ondo.finance/",
+          "https://fluxfinance.com/"
+        ],
+        "official_forum_url": ["https://discord.com/invite/YzhZaFbB92"],
+        "repos_url": {
+          "bitbucket": [],
+          "github": ["https://github.com/ondoprotocol/ondo-protocol"]
+        },
+        "snapshot_url": null,
+        "subreddit_url": null,
+        "telegram_channel_identifier": "+eKZJ60fBbd1hNzQx",
+        "twitter_screen_name": "OndoFoundation",
+        "whitepaper": "https://blog.ondo.foundation/unlocking-ondo-a-proposal-from-the-ondo-foundation/"
+      },
+      "listing_currency": null,
+      "listing_price": null,
+      "listing_source": null,
+      "listing_source_url": null,
+      "listing_timestamp": null,
+      "market_cap_rank": 42,
+      "market_cap_rank_with_rehypothecated": 55,
+      "name": "Ondo",
+      "platforms": {
+        "ethereum": "0xfaba6f8e4a5e8ab82f62fe7c39859fa577269be3"
+      },
+      "preview_listing": false,
+      "public_notice": null,
+      "sentiment_votes_down_percentage": 5.05,
+      "sentiment_votes_up_percentage": 94.95,
+      "status_updates": [],
+      "symbol": "ondo",
+      "watchlist_portfolio_users": 224785,
+      "web_slug": "ondo"
+    },
+    "raw_sha256": "6387a8a2fe5f746f72be8371278018da524478877c60635bfa8f4ff886d7fe86",
+    "source": "https://api.coingecko.com/api/v3/coins/ondo-finance",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v4",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-09-25T21:17:36.417080+00:00",
+    "payload": {
+      "active": true,
+      "code": "ONDO",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "ONDO",
+      "info": {
+        "category": ["ondo-stocks"],
+        "chain": "ETH",
+        "chains": [
+          {
+            "addr": "0xfaba6f8e4a5e8ab82f62fe7c39859fa577269be3",
+            "deposit_disabled": false,
+            "name": "ETH",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "ONDO",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "2638690277.6093",
+        "name": "Ondo Finance",
+        "total_supply": "10000000000",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "Ondo Finance",
+      "networks": {
+        "ERC20": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "ETH",
+          "info": {
+            "addr": "0xfaba6f8e4a5e8ab82f62fe7c39859fa577269be3",
+            "deposit_disabled": false,
+            "name": "ETH",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "ERC20",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "de431412ddf243afee42ce6715e761e53b4f311ce786dec5265f05a9f6602e2d",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "exact_contract",
+  "source_contract": {
+    "block_hash": "0x0d13c9835b819f8ab498407601f8a337213945f454451945c897e5a99d82e9c1",
+    "block_number": 26057095,
+    "chain": "ethereum",
+    "chain_id": 1,
+    "contract_address": "0xfaba6f8e4a5e8ab82f62fe7c39859fa577269be3",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://ethereum-rpc.publicnode.com",
+      "observed_at": "2026-09-25T21:17:28.790105+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "a0cfb5a1c696cf1b33c6808f77538ba8fbf89fc8515499513d43ce204d7a457a",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "source_market_evidence": {
+    "exchange": "gate",
+    "inference_basis": "gate futures contract payload has no base_asset/quote_asset/settle_asset fields; base/quote split parsed from the reported native_market_id ('ONDO_USDT') on its '_' separator, settle asset inferred from the /futures/usdt/ endpoint family",
+    "inferred_base_asset": "ONDO",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "ONDO_USDT",
+    "onboarded_at_ms": 1705663271000,
+    "raw_evidence": {
+      "endpoint": "https://api.gateio.ws/api/v4/futures/usdt/contracts/ONDO_USDT",
+      "observed_at": "2026-09-25T21:17:30.121048+00:00",
+      "payload": {
+        "config_change_time": 1789976065,
+        "contract_type": "",
+        "create_time": 1705663271,
+        "cross_leverage_default": "10",
+        "enable_bonus": true,
+        "enable_circuit_breaker": false,
+        "enable_credit": true,
+        "enable_decimal": false,
+        "funding_cap_ratio": "2",
+        "funding_impact_value": "7000",
+        "funding_interval": 14400,
+        "funding_next_apply": 1790380800,
+        "funding_offset": 0,
+        "funding_rate": "0.00005",
+        "funding_rate_indicative": "0.00005",
+        "funding_rate_limit": "0.02",
+        "in_delisting": false,
+        "index_price": "0.540237",
+        "interest_rate": "0.0003",
+        "is_pre_market": false,
+        "last_price": "0.5398",
+        "launch_time": 1705663271,
+        "leverage_max": "50",
+        "leverage_min": "1",
+        "long_users": 1067,
+        "maintenance_rate": "0.01",
+        "maker_fee_rate": "-0.0001",
+        "mark_price": "0.54",
+        "mark_price_round": "0.0001",
+        "mark_type": "index",
+        "market_order_size_max": "3500000",
+        "market_order_slip_ratio": "0.02",
+        "name": "ONDO_USDT",
+        "order_price_deviate": "0.05",
+        "order_price_round": "0.0001",
+        "order_size_max": 5300000,
+        "order_size_min": 1,
+        "orderbook_id": 5534845656,
+        "orders_limit": 100,
+        "position_size": 53584866,
+        "quanto_multiplier": "1",
+        "ref_discount_rate": "0",
+        "ref_rebate_rate": "0.2",
+        "risk_limit_base": "50000",
+        "risk_limit_max": "250000000",
+        "risk_limit_step": "249950000",
+        "short_users": 593,
+        "status": "trading",
+        "taker_fee_rate": "0.00075",
+        "trade_id": 33339361,
+        "trade_size": 13408756982,
+        "type": "direct",
+        "voucher_leverage": "0"
+      },
+      "raw_sha256": "b9994612f33c63d891e5150eec1f1a1558a5e93e1274eefc8e70ba15a885f7c4",
+      "source": "https://api.gateio.ws/api/v4/futures/usdt/contracts/ONDO_USDT",
+      "wire_exact": true
+    },
+    "reported_base_asset": null,
+    "reported_quote_asset": null,
+    "reported_settle_asset": null,
+    "status": "trading"
+  },
+  "target_catalog_evidence": {
+    "endpoint": "https://api.bybit.com/v5/asset/coin/query-info",
+    "observed_at": "2026-09-25T21:11:12.322830+00:00",
+    "payload": {
+      "chain": "ethereum",
+      "chains": [
+        {
+          "chain": "ETH",
+          "chainType": "Ethereum",
+          "contractAddress": "0xfAbA6f8e4a5E8Ab82F62fe7C39859FA577269BE3"
+        }
+      ],
+      "coin": "ONDO",
+      "contractAddress": "0xfaba6f8e4a5e8ab82f62fe7c39859fa577269be3",
+      "name": "ONDO",
+      "response_sha256": "cf17ebc9ede4686f290f01e48524fd2eed52a33b4039157a3f42fc4d82984448"
+    },
+    "raw_sha256": "956bcdca029628ac98dc978197267802dca45752a02230dddbdcc1cc72bf7bad",
+    "source": "bybit:coin_info_entry",
+    "wire_exact": false
+  },
+  "target_contract": {
+    "block_hash": "0x0d13c9835b819f8ab498407601f8a337213945f454451945c897e5a99d82e9c1",
+    "block_number": 26057095,
+    "chain": "ethereum",
+    "chain_id": 1,
+    "contract_address": "0xfaba6f8e4a5e8ab82f62fe7c39859fa577269be3",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://ethereum-rpc.publicnode.com",
+      "observed_at": "2026-09-25T21:17:28.790105+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "a0cfb5a1c696cf1b33c6808f77538ba8fbf89fc8515499513d43ce204d7a457a",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "target_exchange": "bybit",
+  "target_market_evidence": {
+    "exchange": "bybit",
+    "inference_basis": "copied verbatim from bybit v5 instruments-info's own baseCoin/quoteCoin/settleCoin fields -- genuinely reported, not parsed",
+    "inferred_base_asset": "ONDO",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "ONDOUSDT",
+    "onboarded_at_ms": 1705919392000,
+    "raw_evidence": {
+      "endpoint": "https://api.bybit.com/v5/market/instruments-info",
+      "observed_at": "2026-09-25T21:11:11.303123+00:00",
+      "payload": {
+        "baseCoin": "ONDO",
+        "contractType": "LinearPerpetual",
+        "copyTrading": "both",
+        "deliveryFeeRate": "",
+        "deliveryTime": "0",
+        "displayName": "ONDOUSDT",
+        "forbidUplWithdrawal": false,
+        "fullName": "Ondo",
+        "fundingInterval": 240,
+        "isPreListing": false,
+        "launchTime": "1705919392000",
+        "leverageFilter": {
+          "leverageStep": "0.01",
+          "maxLeverage": "50.00",
+          "minLeverage": "1"
+        },
+        "lotSizeFilter": {
+          "maxMktOrderQty": "900000",
+          "maxOrderQty": "4500000",
+          "minNotionalValue": "5",
+          "minOrderQty": "1",
+          "postOnlyMaxOrderQty": "4500000",
+          "qtyStep": "1"
+        },
+        "lowerFundingRate": "-0.008",
+        "marketRegion": "",
+        "preListingInfo": null,
+        "priceFilter": {
+          "maxPrice": "1999.9998",
+          "minPrice": "0.0001",
+          "tickSize": "0.0001"
+        },
+        "priceScale": "4",
+        "quoteCoin": "USDT",
+        "riskParameters": {
+          "priceLimitRatioX": "0.05",
+          "priceLimitRatioY": "0.1"
+        },
+        "settleCoin": "USDT",
+        "status": "Trading",
+        "symbol": "ONDOUSDT",
+        "symbolId": 424,
+        "symbolType": "",
+        "underlyingTicker": "",
+        "unifiedMarginTrade": true,
+        "upperFundingRate": "0.008"
+      },
+      "raw_sha256": "9bb63082136f4988de54f329a714c5ca87f57e2e5ea55d111896866d3b8581f0",
+      "source": "bybit:instruments_info_entry",
+      "wire_exact": false
+    },
+    "reported_base_asset": "ONDO",
+    "reported_quote_asset": "USDT",
+    "reported_settle_asset": "USDT",
+    "status": "Trading"
+  },
+  "working_tree_dirty": false
+}

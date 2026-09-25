@@ -1,0 +1,400 @@
+{
+  "base": "TRADOOR",
+  "bundle_sha256": "36f70767a9062806a047405ca51a607f5591dbc87065f637b86365b3774f413f",
+  "captured_at": "2026-09-25T21:19:51.202145+00:00",
+  "code_revision": "a916f3f4dcef31e0aaed508c0e8f72d094e76800",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/tradoor?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-09-25T21:19:51.198579+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "binance-smart-chain",
+      "block_time_in_minutes": 0,
+      "categories": [
+        "Decentralized Finance (DeFi)",
+        "BNB Chain Ecosystem",
+        "Derivatives",
+        "Perpetuals",
+        "Telegram Apps",
+        "Binance Alpha Spotlight",
+        "Binance Wallet IDO",
+        "Trading Bots"
+      ],
+      "contract_address": "0x9123400446a56176eb1b6be9ee5cf703e409f492",
+      "country_origin": "",
+      "description": {
+        "en": "Tradoor is the industry’s first NDMM exchange - using smart math and safety measures to allow people to trade with confidence - protecting traders, LPs, and the protocol from unexpected market changes.\n\nTradoor offers up to 100x leverage on its Bitcoin and Ethereum Perpetuals, designed with advanced mathematics to ensure scientific pricing, thus protecting traders, liquidity providers (LPs), and the protocol itself.\n\nRisk control of liquidation for both traders and LPs, alongside a battle-tested Auto Deleveraging (ADL) system, acting as a fail-safe for extreme market conditions. This ensures the protocol remains free from counterparty risk and maintains insolvency resistance.\n\nTradoor is available on multiple platforms, providing complete trading functionality on any device. Telegram's Wallet is pre-integrated for easy on-boarding for over 700 million users.\n\nTradoor is a safe, efficient, and cost-effective decentralized finance app, utilizing The Open Network (TON) blockchain's capabilities for mass adoption via fast finality, sub-cent gas fees, and massive scalability."
+      },
+      "detail_platforms": {
+        "binance-smart-chain": {
+          "contract_address": "0x9123400446a56176eb1b6be9ee5cf703e409f492",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/bsc/tokens/0x9123400446a56176eb1b6be9ee5cf703e409f492"
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": false,
+      "hashing_algorithm": null,
+      "id": "tradoor",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/68862/large/tradoor.png?1756809006",
+        "small": "https://coin-images.coingecko.com/coins/images/68862/small/tradoor.png?1756809006",
+        "thumb": "https://coin-images.coingecko.com/coins/images/68862/thumb/tradoor.png?1756809006"
+      },
+      "last_updated": "2026-09-25T21:17:40.000Z",
+      "links": {
+        "announcement_url": [],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://bscscan.com/token/0x9123400446a56176eb1b6be9ee5cf703e409f492",
+          "https://binplorer.com/address/0x9123400446a56176Eb1B6BE9ee5CF703e409F492"
+        ],
+        "chat_url": [],
+        "facebook_username": "",
+        "homepage": ["https://tradoor.io/"],
+        "official_forum_url": ["https://www.linkedin.com/company/tradoor/"],
+        "repos_url": {
+          "bitbucket": [],
+          "github": []
+        },
+        "snapshot_url": null,
+        "subreddit_url": null,
+        "telegram_channel_identifier": "tradoor_io_chat",
+        "twitter_screen_name": "tradoor_io",
+        "whitepaper": "https://docs.tradoor.io/"
+      },
+      "listing_currency": null,
+      "listing_price": null,
+      "listing_source": null,
+      "listing_source_url": null,
+      "listing_timestamp": null,
+      "market_cap_rank": 1289,
+      "market_cap_rank_with_rehypothecated": 1579,
+      "name": "Tradoor",
+      "platforms": {
+        "binance-smart-chain": "0x9123400446a56176eb1b6be9ee5cf703e409f492"
+      },
+      "preview_listing": false,
+      "public_notice": null,
+      "sentiment_votes_down_percentage": 0.0,
+      "sentiment_votes_up_percentage": 100.0,
+      "status_updates": [],
+      "symbol": "tradoor",
+      "watchlist_portfolio_users": 1923,
+      "web_slug": "tradoor"
+    },
+    "raw_sha256": "792b788f4b95797cbc66c22dbbdec9d95d031095c9fb7eac9fe9ea464573b87a",
+    "source": "https://api.coingecko.com/api/v3/coins/tradoor",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v4",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-09-25T21:19:51.198766+00:00",
+    "payload": {
+      "active": true,
+      "code": "TRADOOR",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "TRADOOR",
+      "info": {
+        "category": [],
+        "chain": "BSC",
+        "chains": [
+          {
+            "addr": "0x9123400446a56176eb1b6be9ee5cf703e409f492",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "TRADOOR",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "9975424.8",
+        "name": "Tradoor",
+        "total_supply": "60000000",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "Tradoor",
+      "networks": {
+        "BEP20": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "BSC",
+          "info": {
+            "addr": "0x9123400446a56176eb1b6be9ee5cf703e409f492",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "BEP20",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "2a0c2f67c8cce51c271f36c6be31c5b23ef029bc2248fd190f5cc3ccbc932ce6",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "exact_contract",
+  "source_contract": {
+    "block_hash": "0x54993efebfebf0d8d33b3ad7e8b53f72577c81ec8b8bdb8f3e1de1e348495c86",
+    "block_number": 124019744,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0x9123400446a56176eb1b6be9ee5cf703e409f492",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-09-25T21:19:43.329611+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "8e73d72cca28014c8646f2033e87ec712fc9eb6dbc2664092e1cf446ce4e6937",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "source_market_evidence": {
+    "exchange": "gate",
+    "inference_basis": "gate futures contract payload has no base_asset/quote_asset/settle_asset fields; base/quote split parsed from the reported native_market_id ('TRADOOR_USDT') on its '_' separator, settle asset inferred from the /futures/usdt/ endpoint family",
+    "inferred_base_asset": "TRADOOR",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "TRADOOR_USDT",
+    "onboarded_at_ms": 1758284536000,
+    "raw_evidence": {
+      "endpoint": "https://api.gateio.ws/api/v4/futures/usdt/contracts/TRADOOR_USDT",
+      "observed_at": "2026-09-25T21:19:44.882897+00:00",
+      "payload": {
+        "config_change_time": 1789354398,
+        "contract_type": "",
+        "create_time": 1758284536,
+        "cross_leverage_default": "10",
+        "enable_bonus": true,
+        "enable_circuit_breaker": false,
+        "enable_credit": true,
+        "enable_decimal": false,
+        "funding_cap_ratio": "2",
+        "funding_impact_value": "5000",
+        "funding_interval": 28800,
+        "funding_next_apply": 1790380800,
+        "funding_offset": 0,
+        "funding_rate": "0.0001",
+        "funding_rate_indicative": "0.0001",
+        "funding_rate_limit": "0.02",
+        "in_delisting": false,
+        "index_price": "0.69696",
+        "interest_rate": "0.0003",
+        "is_pre_market": false,
+        "last_price": "0.7",
+        "launch_time": 1758284536,
+        "leverage_max": "20",
+        "leverage_min": "1",
+        "long_users": 165,
+        "maintenance_rate": "0.025",
+        "maker_fee_rate": "-0.0001",
+        "mark_price": "0.699",
+        "mark_price_round": "0.001",
+        "mark_type": "index",
+        "market_order_size_max": "6500",
+        "market_order_slip_ratio": "0.05",
+        "name": "TRADOOR_USDT",
+        "order_price_deviate": "0.2",
+        "order_price_round": "0.001",
+        "order_size_max": 9800,
+        "order_size_min": 1,
+        "orderbook_id": 631669203,
+        "orders_limit": 100,
+        "position_size": 271838,
+        "quanto_multiplier": "1",
+        "ref_discount_rate": "0",
+        "ref_rebate_rate": "0.2",
+        "risk_limit_base": "5000",
+        "risk_limit_max": "5000000",
+        "risk_limit_step": "4995000",
+        "short_users": 99,
+        "status": "trading",
+        "taker_fee_rate": "0.00075",
+        "trade_id": 5938194,
+        "trade_size": 419485434,
+        "type": "direct",
+        "voucher_leverage": "0"
+      },
+      "raw_sha256": "c85a4ffceb4c82a3f967083315b1abe89e7b5b3abc75e63aea0535b704bd1aa5",
+      "source": "https://api.gateio.ws/api/v4/futures/usdt/contracts/TRADOOR_USDT",
+      "wire_exact": true
+    },
+    "reported_base_asset": null,
+    "reported_quote_asset": null,
+    "reported_settle_asset": null,
+    "status": "trading"
+  },
+  "target_catalog_evidence": {
+    "endpoint": "https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list",
+    "observed_at": "2026-09-25T21:11:10.354414+00:00",
+    "payload": {
+      "chainId": "56",
+      "chainName": "BSC",
+      "contractAddress": "0x9123400446a56176eb1b6be9ee5cf703e409f492",
+      "decimals": 18,
+      "name": "Tradoor",
+      "offline": false,
+      "response_sha256": "9dd15864069cf396f07b8d8727e2661081fe0cd15063af0bdb910d2aa4696b35",
+      "symbol": "TRADOOR"
+    },
+    "raw_sha256": "e80a85fe0a5b02f7184657312c824af29fb9f8ce0634da7aba030435d2356925",
+    "source": "binance:alpha_catalog_entry",
+    "wire_exact": false
+  },
+  "target_contract": {
+    "block_hash": "0x54993efebfebf0d8d33b3ad7e8b53f72577c81ec8b8bdb8f3e1de1e348495c86",
+    "block_number": 124019744,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0x9123400446a56176eb1b6be9ee5cf703e409f492",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-09-25T21:19:43.329611+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "8e73d72cca28014c8646f2033e87ec712fc9eb6dbc2664092e1cf446ce4e6937",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "target_exchange": "binance",
+  "target_market_evidence": {
+    "exchange": "binance",
+    "inference_basis": "copied verbatim from binance futures exchangeInfo's own baseAsset/quoteAsset/marginAsset fields -- genuinely reported, not parsed",
+    "inferred_base_asset": "TRADOOR",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "TRADOORUSDT",
+    "onboarded_at_ms": 1758285000000,
+    "raw_evidence": {
+      "endpoint": "https://fapi.binance.com/fapi/v1/exchangeInfo",
+      "observed_at": "2026-09-25T21:11:10.755208+00:00",
+      "payload": {
+        "baseAsset": "TRADOOR",
+        "baseAssetPrecision": 8,
+        "contractType": "PERPETUAL",
+        "deliveryDate": 4133404800000,
+        "filters": [
+          {
+            "filterType": "PRICE_FILTER",
+            "maxPrice": "200",
+            "minPrice": "0.0001000",
+            "tickSize": "0.0001000"
+          },
+          {
+            "filterType": "LOT_SIZE",
+            "maxQty": "1100000",
+            "minQty": "1",
+            "stepSize": "1"
+          },
+          {
+            "filterType": "MARKET_LOT_SIZE",
+            "maxQty": "110000",
+            "minQty": "1",
+            "stepSize": "1"
+          },
+          {
+            "filterType": "MAX_NUM_ORDERS",
+            "limit": 200
+          },
+          {
+            "filterType": "MIN_NOTIONAL",
+            "notional": "5"
+          },
+          {
+            "filterType": "PERCENT_PRICE",
+            "multiplierDecimal": "4",
+            "multiplierDown": "0.7500",
+            "multiplierUp": "1.2500"
+          },
+          {
+            "filterType": "POSITION_RISK_CONTROL",
+            "positionControlSide": "NONE"
+          }
+        ],
+        "liquidationFee": "0.020000",
+        "maintMarginPercent": "2.5000",
+        "marginAsset": "USDT",
+        "marketTakeBound": "0.25",
+        "maxMoveOrderLimit": 10000,
+        "onboardDate": 1758285000000,
+        "orderTypes": [
+          "LIMIT",
+          "MARKET",
+          "STOP",
+          "STOP_MARKET",
+          "TAKE_PROFIT",
+          "TAKE_PROFIT_MARKET",
+          "TRAILING_STOP_MARKET"
+        ],
+        "pair": "TRADOORUSDT",
+        "permissionSets": ["GRID", "COPY", "DCA", "PSB"],
+        "pricePrecision": 7,
+        "quantityPrecision": 0,
+        "quoteAsset": "USDT",
+        "quotePrecision": 8,
+        "requiredMarginPercent": "5.0000",
+        "status": "TRADING",
+        "symbol": "TRADOORUSDT",
+        "timeInForce": ["GTC", "IOC", "FOK", "GTX", "GTD"],
+        "triggerProtect": "0.25",
+        "underlyingSubType": ["Alpha", "Crypto"],
+        "underlyingType": "COIN"
+      },
+      "raw_sha256": "873b6899cf586bc25277386aa83705cb1b4178944529304baf8b6959ac3e8ea8",
+      "source": "binance:futures_exchange_info_entry",
+      "wire_exact": false
+    },
+    "reported_base_asset": "TRADOOR",
+    "reported_quote_asset": "USDT",
+    "reported_settle_asset": "USDT",
+    "status": "TRADING"
+  },
+  "working_tree_dirty": false
+}

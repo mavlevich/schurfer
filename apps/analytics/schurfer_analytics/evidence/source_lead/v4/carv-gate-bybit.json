@@ -1,0 +1,420 @@
+{
+  "base": "CARV",
+  "bundle_sha256": "5519727c62d29dfb0d839a2e67bdbc5249f17f56b1c776d67e5424dc08e68f81",
+  "captured_at": "2026-09-25T21:13:49.148944+00:00",
+  "code_revision": "a916f3f4dcef31e0aaed508c0e8f72d094e76800",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/carv?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-09-25T21:13:49.146699+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "base",
+      "block_time_in_minutes": 0,
+      "categories": [
+        "Artificial Intelligence (AI)",
+        "Infrastructure",
+        "Gaming (GameFi)",
+        "NFT",
+        "BNB Chain Ecosystem",
+        "Solana Ecosystem",
+        "Arbitrum Ecosystem",
+        "Impossible Finance Launchpad",
+        "Ethereum Ecosystem",
+        "Animoca Brands Portfolio",
+        "Base Ecosystem",
+        "Binance Alpha Spotlight",
+        "Base Native"
+      ],
+      "contract_address": "0xc08cd26474722ce93f4d0c34d16201461c10aa8c",
+      "country_origin": "",
+      "description": {
+        "en": "CARV is where Sovereign AI Beings live, learn, and evolve.\nWhat are AI Beings? They are sovereign intelligences born natively on-chain. AI Beings are designed with purpose, autonomy, and the capacity for growth. They possess memory, identity, and the ability to perceive and interact with their environment, not just to execute tasks, but to make independent decisions, adapt over time, and pursue self-defined goals.\n\nAnchored by its proprietary CARV SVM Chain, D.A.T.A. Framework, and CARV ID/Agent ID system (ERC-7231), CARV enables verifiable, consent-based AI Beings that learn, adapt, and co-create with users. Driven by CARV’s AI-first stack, consumer AI apps incubated through CARV Labs launched on Google Play, App Store and beyond, reaching billions of people, bringing agent-powered experiences and real-world incentives into mainstream digital life.\n\nWith 8M+ CARV IDs issued, 60K+ verifier nodes, and 1,000+ integrated games, CARV bridges AI agents, Web3 infrastructure, and real-world utility, fueling the rise of agent-driven economies. At its core, $CARV token powers staking, governance, and coordination across this stack, making CARV the operating system for AI Beings on Web3."
+      },
+      "detail_platforms": {
+        "arbitrum-one": {
+          "contract_address": "0xc08cd26474722ce93f4d0c34d16201461c10aa8c",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/arbitrum/tokens/0xc08cd26474722ce93f4d0c34d16201461c10aa8c"
+        },
+        "base": {
+          "contract_address": "0xc08cd26474722ce93f4d0c34d16201461c10aa8c",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/base/tokens/0xc08cd26474722ce93f4d0c34d16201461c10aa8c"
+        },
+        "binance-smart-chain": {
+          "contract_address": "0xc08cd26474722ce93f4d0c34d16201461c10aa8c",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/bsc/tokens/0xc08cd26474722ce93f4d0c34d16201461c10aa8c"
+        },
+        "ethereum": {
+          "contract_address": "0xc08cd26474722ce93f4d0c34d16201461c10aa8c",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/eth/tokens/0xc08cd26474722ce93f4d0c34d16201461c10aa8c"
+        },
+        "solana": {
+          "contract_address": "AFJtnuqGMaj5jAo6Pwxo28r1f7XAXXTSA8q3rG3q8b4A",
+          "decimal_place": 6,
+          "geckoterminal_url": "https://www.geckoterminal.com/solana/tokens/AFJtnuqGMaj5jAo6Pwxo28r1f7XAXXTSA8q3rG3q8b4A"
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": false,
+      "hashing_algorithm": null,
+      "id": "carv",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/37689/large/CARV_%281%29.png?1728418485",
+        "small": "https://coin-images.coingecko.com/coins/images/37689/small/CARV_%281%29.png?1728418485",
+        "thumb": "https://coin-images.coingecko.com/coins/images/37689/thumb/CARV_%281%29.png?1728418485"
+      },
+      "last_updated": "2026-09-25T21:11:30.000Z",
+      "links": {
+        "announcement_url": [],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://basescan.org/token/0xc08cd26474722ce93f4d0c34d16201461c10aa8c",
+          "https://intel.arkm.com/explorer/token/carv ",
+          "https://arbiscan.io/token/0xc08cd26474722ce93f4d0c34d16201461c10aa8c",
+          "https://etherscan.io/token/0xc08cd26474722ce93f4d0c34d16201461c10aa8c",
+          "https://ethplorer.io/address/0xc08cd26474722ce93f4d0c34d16201461c10aa8c",
+          "https://solscan.io/token/AFJtnuqGMaj5jAo6Pwxo28r1f7XAXXTSA8q3rG3q8b4A",
+          "https://bscscan.com/token/0xc08Cd26474722cE93F4D0c34D16201461c10AA8C",
+          "https://binplorer.com/address/0xc08Cd26474722cE93F4D0c34D16201461c10AA8C",
+          "https://intel.arkm.com/explorer/token/carv"
+        ],
+        "chat_url": [
+          "https://discord.com/invite/carv",
+          "https://medium.com/@Carv",
+          "https://www.youtube.com/channel/UCU9MzSdeEKLYUXnM6SfXFTQ"
+        ],
+        "facebook_username": "",
+        "homepage": ["https://carv.io", "https://play.carv.io/", "https://protocol.carv.io/"],
+        "official_forum_url": ["https://newsletter.carv.io/", "https://link3.to/carvofficial"],
+        "repos_url": {
+          "bitbucket": [],
+          "github": []
+        },
+        "snapshot_url": null,
+        "subreddit_url": null,
+        "telegram_channel_identifier": "",
+        "twitter_screen_name": "carv_official",
+        "whitepaper": "https://docs.carv.io"
+      },
+      "listing_currency": null,
+      "listing_price": null,
+      "listing_source": null,
+      "listing_source_url": null,
+      "listing_timestamp": null,
+      "market_cap_rank": 735,
+      "market_cap_rank_with_rehypothecated": 932,
+      "name": "CARV",
+      "platforms": {
+        "arbitrum-one": "0xc08cd26474722ce93f4d0c34d16201461c10aa8c",
+        "base": "0xc08cd26474722ce93f4d0c34d16201461c10aa8c",
+        "binance-smart-chain": "0xc08cd26474722ce93f4d0c34d16201461c10aa8c",
+        "ethereum": "0xc08cd26474722ce93f4d0c34d16201461c10aa8c",
+        "solana": "AFJtnuqGMaj5jAo6Pwxo28r1f7XAXXTSA8q3rG3q8b4A"
+      },
+      "preview_listing": false,
+      "public_notice": null,
+      "sentiment_votes_down_percentage": 33.33,
+      "sentiment_votes_up_percentage": 66.67,
+      "status_updates": [],
+      "symbol": "carv",
+      "watchlist_portfolio_users": 7466,
+      "web_slug": "carv"
+    },
+    "raw_sha256": "3fd46eb0a9635e5f24f79fc9996d1e62d47b7e61bc34777c70e6e49d1d6de836",
+    "source": "https://api.coingecko.com/api/v3/coins/carv",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v4",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-09-25T21:13:49.146961+00:00",
+    "payload": {
+      "active": true,
+      "code": "CARV",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "CARV",
+      "info": {
+        "category": [],
+        "chain": "BASEEVM",
+        "chains": [
+          {
+            "addr": "0xc08Cd26474722cE93F4D0c34D16201461c10AA8C",
+            "deposit_disabled": false,
+            "name": "BASEEVM",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "CARV",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "28589924.51708",
+        "name": "CARV",
+        "total_supply": "1000000000",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "CARV",
+      "networks": {
+        "BASE": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "BASEEVM",
+          "info": {
+            "addr": "0xc08Cd26474722cE93F4D0c34D16201461c10AA8C",
+            "deposit_disabled": false,
+            "name": "BASEEVM",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "BASE",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "99c844aff75c2a42d169be14d42a3ad8e768097131f4f90c04858944c660c3ce",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "exact_contract",
+  "source_contract": {
+    "block_hash": "0x3d53afd25abc06a8b7bc4e55c050c6e3381ca7a259f733cfe7c5d78b075f056c",
+    "block_number": 51790737,
+    "chain": "base",
+    "chain_id": 8453,
+    "contract_address": "0xc08cd26474722ce93f4d0c34d16201461c10aa8c",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://mainnet.base.org",
+      "observed_at": "2026-09-25T21:13:41.563150+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "69640378441910e713ebf1ec0431af5fd0a4658949332e49d674b3ddf1b12877",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "source_market_evidence": {
+    "exchange": "gate",
+    "inference_basis": "gate futures contract payload has no base_asset/quote_asset/settle_asset fields; base/quote split parsed from the reported native_market_id ('CARV_USDT') on its '_' separator, settle asset inferred from the /futures/usdt/ endpoint family",
+    "inferred_base_asset": "CARV",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "CARV_USDT",
+    "onboarded_at_ms": 1728548178000,
+    "raw_evidence": {
+      "endpoint": "https://api.gateio.ws/api/v4/futures/usdt/contracts/CARV_USDT",
+      "observed_at": "2026-09-25T21:13:42.865474+00:00",
+      "payload": {
+        "config_change_time": 1789354383,
+        "contract_type": "",
+        "create_time": 1728548178,
+        "cross_leverage_default": "10",
+        "enable_bonus": true,
+        "enable_circuit_breaker": false,
+        "enable_credit": true,
+        "enable_decimal": false,
+        "funding_cap_ratio": "2",
+        "funding_impact_value": "5000",
+        "funding_interval": 14400,
+        "funding_next_apply": 1790380800,
+        "funding_offset": 0,
+        "funding_rate": "0.00005",
+        "funding_rate_indicative": "0.00005",
+        "funding_rate_limit": "0.02",
+        "in_delisting": false,
+        "index_price": "0.04329",
+        "interest_rate": "0.0003",
+        "is_pre_market": false,
+        "last_price": "0.04338",
+        "launch_time": 1728548178,
+        "leverage_max": "20",
+        "leverage_min": "1",
+        "long_users": 104,
+        "maintenance_rate": "0.04",
+        "maker_fee_rate": "-0.0001",
+        "mark_price": "0.04329",
+        "mark_price_round": "0.00001",
+        "mark_type": "index",
+        "market_order_size_max": "90000",
+        "market_order_slip_ratio": "0.05",
+        "name": "CARV_USDT",
+        "order_price_deviate": "0.2",
+        "order_price_round": "0.00001",
+        "order_size_max": 140000,
+        "order_size_min": 1,
+        "orderbook_id": 605160745,
+        "orders_limit": 100,
+        "position_size": 89579,
+        "quanto_multiplier": "10",
+        "ref_discount_rate": "0",
+        "ref_rebate_rate": "0.2",
+        "risk_limit_base": "5000",
+        "risk_limit_max": "2500000",
+        "risk_limit_step": "2495000",
+        "short_users": 87,
+        "status": "trading",
+        "taker_fee_rate": "0.00075",
+        "trade_id": 2679228,
+        "trade_size": 117921483,
+        "type": "direct",
+        "voucher_leverage": "0"
+      },
+      "raw_sha256": "95cc3c744dec9ede044c447de8ee21103345e86f8cbc9e4d6d656a5e5730c293",
+      "source": "https://api.gateio.ws/api/v4/futures/usdt/contracts/CARV_USDT",
+      "wire_exact": true
+    },
+    "reported_base_asset": null,
+    "reported_quote_asset": null,
+    "reported_settle_asset": null,
+    "status": "trading"
+  },
+  "target_catalog_evidence": {
+    "endpoint": "https://api.bybit.com/v5/asset/coin/query-info",
+    "observed_at": "2026-09-25T21:11:12.322830+00:00",
+    "payload": {
+      "chain": "base",
+      "chains": [
+        {
+          "chain": "BASE",
+          "chainType": "Base Mainnet",
+          "contractAddress": "0xc08Cd26474722cE93F4D0c34D16201461c10AA8C"
+        }
+      ],
+      "coin": "CARV",
+      "contractAddress": "0xc08cd26474722ce93f4d0c34d16201461c10aa8c",
+      "name": "CARV",
+      "response_sha256": "cf17ebc9ede4686f290f01e48524fd2eed52a33b4039157a3f42fc4d82984448"
+    },
+    "raw_sha256": "d640a0b10aa1b85182d8019399170fdc26c70faca05afeafb998e1fe9be8ce0e",
+    "source": "bybit:coin_info_entry",
+    "wire_exact": false
+  },
+  "target_contract": {
+    "block_hash": "0x3d53afd25abc06a8b7bc4e55c050c6e3381ca7a259f733cfe7c5d78b075f056c",
+    "block_number": 51790737,
+    "chain": "base",
+    "chain_id": 8453,
+    "contract_address": "0xc08cd26474722ce93f4d0c34d16201461c10aa8c",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://mainnet.base.org",
+      "observed_at": "2026-09-25T21:13:41.563150+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "69640378441910e713ebf1ec0431af5fd0a4658949332e49d674b3ddf1b12877",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "target_exchange": "bybit",
+  "target_market_evidence": {
+    "exchange": "bybit",
+    "inference_basis": "copied verbatim from bybit v5 instruments-info's own baseCoin/quoteCoin/settleCoin fields -- genuinely reported, not parsed",
+    "inferred_base_asset": "CARV",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "CARVUSDT",
+    "onboarded_at_ms": 1729068075000,
+    "raw_evidence": {
+      "endpoint": "https://api.bybit.com/v5/market/instruments-info",
+      "observed_at": "2026-09-25T21:11:11.303123+00:00",
+      "payload": {
+        "baseCoin": "CARV",
+        "contractType": "LinearPerpetual",
+        "copyTrading": "both",
+        "deliveryFeeRate": "",
+        "deliveryTime": "0",
+        "displayName": "CARVUSDT",
+        "forbidUplWithdrawal": false,
+        "fullName": "CARV",
+        "fundingInterval": 240,
+        "isPreListing": false,
+        "launchTime": "1729068075000",
+        "leverageFilter": {
+          "leverageStep": "0.01",
+          "maxLeverage": "20.00",
+          "minLeverage": "1"
+        },
+        "lotSizeFilter": {
+          "maxMktOrderQty": "250000",
+          "maxOrderQty": "1250000",
+          "minNotionalValue": "5",
+          "minOrderQty": "1",
+          "postOnlyMaxOrderQty": "1250000",
+          "qtyStep": "1"
+        },
+        "lowerFundingRate": "-0.025",
+        "marketRegion": "",
+        "preListingInfo": null,
+        "priceFilter": {
+          "maxPrice": "199.99998",
+          "minPrice": "0.00001",
+          "tickSize": "0.00001"
+        },
+        "priceScale": "5",
+        "quoteCoin": "USDT",
+        "riskParameters": {
+          "priceLimitRatioX": "0.2",
+          "priceLimitRatioY": "0.4"
+        },
+        "settleCoin": "USDT",
+        "status": "Trading",
+        "symbol": "CARVUSDT",
+        "symbolId": 636,
+        "symbolType": "",
+        "underlyingTicker": "",
+        "unifiedMarginTrade": true,
+        "upperFundingRate": "0.025"
+      },
+      "raw_sha256": "9eae24a667927397921e0435cd0dbda4e84c5a03abfd077df4373307f8a30c8f",
+      "source": "bybit:instruments_info_entry",
+      "wire_exact": false
+    },
+    "reported_base_asset": "CARV",
+    "reported_quote_asset": "USDT",
+    "reported_settle_asset": "USDT",
+    "status": "Trading"
+  },
+  "working_tree_dirty": false
+}

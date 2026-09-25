@@ -1,0 +1,396 @@
+{
+  "base": "B",
+  "bundle_sha256": "bb09abab873700476d3e641a73fe5d2f8522ada34480eeff62027c5e6668e15a",
+  "captured_at": "2026-09-25T21:12:30.291491+00:00",
+  "code_revision": "a916f3f4dcef31e0aaed508c0e8f72d094e76800",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/build-on?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-09-25T21:12:30.289672+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "binance-smart-chain",
+      "block_time_in_minutes": 0,
+      "categories": [
+        "BNB Chain Ecosystem",
+        "Meme",
+        "World Liberty Financial Portfolio",
+        "Binance Alpha Spotlight"
+      ],
+      "contract_address": "0x6bdcce4a559076e37755a78ce0c06214e59e4444",
+      "country_origin": "",
+      "description": {
+        "en": ""
+      },
+      "detail_platforms": {
+        "binance-smart-chain": {
+          "contract_address": "0x6bdcce4a559076e37755a78ce0c06214e59e4444",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/bsc/tokens/0x6bdcce4a559076e37755a78ce0c06214e59e4444"
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": false,
+      "hashing_algorithm": null,
+      "id": "build-on",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/55974/large/T7asvmCb_400x400.jpg?1747902862",
+        "small": "https://coin-images.coingecko.com/coins/images/55974/small/T7asvmCb_400x400.jpg?1747902862",
+        "thumb": "https://coin-images.coingecko.com/coins/images/55974/thumb/T7asvmCb_400x400.jpg?1747902862"
+      },
+      "last_updated": "2026-09-25T21:10:40.000Z",
+      "links": {
+        "announcement_url": [],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://bscscan.com/token/0x6bdcCe4A559076e37755a78Ce0c06214E59e4444",
+          "https://binplorer.com/address/0x6bdcCe4A559076e37755a78Ce0c06214E59e4444"
+        ],
+        "chat_url": [],
+        "facebook_username": "",
+        "homepage": ["https://buildon.online/"],
+        "official_forum_url": [],
+        "repos_url": {
+          "bitbucket": [],
+          "github": []
+        },
+        "snapshot_url": null,
+        "subreddit_url": null,
+        "telegram_channel_identifier": "BUILDonBsc_AI",
+        "twitter_screen_name": "BUILDonBsc_AI",
+        "whitepaper": ""
+      },
+      "listing_currency": null,
+      "listing_price": null,
+      "listing_source": null,
+      "listing_source_url": null,
+      "listing_timestamp": null,
+      "market_cap_rank": 192,
+      "market_cap_rank_with_rehypothecated": 278,
+      "name": "BUILDon",
+      "platforms": {
+        "binance-smart-chain": "0x6bdcce4a559076e37755a78ce0c06214e59e4444"
+      },
+      "preview_listing": false,
+      "public_notice": null,
+      "sentiment_votes_down_percentage": null,
+      "sentiment_votes_up_percentage": null,
+      "status_updates": [],
+      "symbol": "b",
+      "watchlist_portfolio_users": 2460,
+      "web_slug": "build-on"
+    },
+    "raw_sha256": "bf891e0c0b828970429ccee2b8ee08aa9908079d388ce6a71a9e090c9576cc1b",
+    "source": "https://api.coingecko.com/api/v3/coins/build-on",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v4",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-09-25T21:12:30.289764+00:00",
+    "payload": {
+      "active": true,
+      "code": "B",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "B",
+      "info": {
+        "category": [],
+        "chain": "BSC",
+        "chains": [
+          {
+            "addr": "0x6bdcce4a559076e37755a78ce0c06214e59e4444",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "B",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "200100000.0",
+        "name": "BUILDon",
+        "total_supply": "1000000000",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "BUILDon",
+      "networks": {
+        "BEP20": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "BSC",
+          "info": {
+            "addr": "0x6bdcce4a559076e37755a78ce0c06214e59e4444",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "BEP20",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "a0c34db10c2516e4f4a512496f55661b5c9062ff28fdd052c4230d15fdf07d88",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "exact_contract",
+  "source_contract": {
+    "block_hash": "0x93a38e8d4e6505d5af0754fa467abdc028855af119f31286f69f2d2374e60f65",
+    "block_number": 124018765,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0x6bdcce4a559076e37755a78ce0c06214e59e4444",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-09-25T21:12:22.652381+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "8e73d72cca28014c8646f2033e87ec712fc9eb6dbc2664092e1cf446ce4e6937",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "source_market_evidence": {
+    "exchange": "gate",
+    "inference_basis": "gate futures contract payload has no base_asset/quote_asset/settle_asset fields; base/quote split parsed from the reported native_market_id ('B_USDT') on its '_' separator, settle asset inferred from the /futures/usdt/ endpoint family",
+    "inferred_base_asset": "B",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "B_USDT",
+    "onboarded_at_ms": 1747902719000,
+    "raw_evidence": {
+      "endpoint": "https://api.gateio.ws/api/v4/futures/usdt/contracts/B_USDT",
+      "observed_at": "2026-09-25T21:12:23.839856+00:00",
+      "payload": {
+        "config_change_time": 1789975684,
+        "contract_type": "",
+        "create_time": 1747902719,
+        "cross_leverage_default": "10",
+        "enable_bonus": true,
+        "enable_circuit_breaker": false,
+        "enable_credit": true,
+        "enable_decimal": false,
+        "funding_cap_ratio": "2",
+        "funding_impact_value": "5000",
+        "funding_interval": 14400,
+        "funding_next_apply": 1790380800,
+        "funding_offset": 0,
+        "funding_rate": "0.000482",
+        "funding_rate_indicative": "0.000482",
+        "funding_rate_limit": "0.02",
+        "in_delisting": false,
+        "index_price": "0.19688",
+        "interest_rate": "0.0003",
+        "is_pre_market": false,
+        "last_price": "0.1973",
+        "launch_time": 1747902719,
+        "leverage_max": "20",
+        "leverage_min": "1",
+        "long_users": 282,
+        "maintenance_rate": "0.025",
+        "maker_fee_rate": "-0.0001",
+        "mark_price": "0.1971",
+        "mark_price_round": "0.0001",
+        "mark_type": "index",
+        "market_order_size_max": "35000",
+        "market_order_slip_ratio": "0.05",
+        "name": "B_USDT",
+        "order_price_deviate": "0.2",
+        "order_price_round": "0.0001",
+        "order_size_max": 53000,
+        "order_size_min": 1,
+        "orderbook_id": 1140733576,
+        "orders_limit": 100,
+        "position_size": 847809,
+        "quanto_multiplier": "10",
+        "ref_discount_rate": "0",
+        "ref_rebate_rate": "0.2",
+        "risk_limit_base": "5000",
+        "risk_limit_max": "5000000",
+        "risk_limit_step": "4995000",
+        "short_users": 226,
+        "status": "trading",
+        "taker_fee_rate": "0.00075",
+        "trade_id": 7905804,
+        "trade_size": 430582276,
+        "type": "direct",
+        "voucher_leverage": "0"
+      },
+      "raw_sha256": "fcab465eaf27772ee013d8f804fa9ffec96a392eaa65f3f1a19af8fe5e81b1e1",
+      "source": "https://api.gateio.ws/api/v4/futures/usdt/contracts/B_USDT",
+      "wire_exact": true
+    },
+    "reported_base_asset": null,
+    "reported_quote_asset": null,
+    "reported_settle_asset": null,
+    "status": "trading"
+  },
+  "target_catalog_evidence": {
+    "endpoint": "https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list",
+    "observed_at": "2026-09-25T21:11:10.354414+00:00",
+    "payload": {
+      "chainId": "56",
+      "chainName": "BSC",
+      "contractAddress": "0x6bdcce4a559076e37755a78ce0c06214e59e4444",
+      "decimals": 18,
+      "name": "BUILDon",
+      "offline": false,
+      "response_sha256": "9dd15864069cf396f07b8d8727e2661081fe0cd15063af0bdb910d2aa4696b35",
+      "symbol": "B"
+    },
+    "raw_sha256": "d9e29ec1161c1374cd9692ea30fc50c6be4dae673addf8cbecc6bca5a8615dc8",
+    "source": "binance:alpha_catalog_entry",
+    "wire_exact": false
+  },
+  "target_contract": {
+    "block_hash": "0x93a38e8d4e6505d5af0754fa467abdc028855af119f31286f69f2d2374e60f65",
+    "block_number": 124018765,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0x6bdcce4a559076e37755a78ce0c06214e59e4444",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-09-25T21:12:22.652381+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "8e73d72cca28014c8646f2033e87ec712fc9eb6dbc2664092e1cf446ce4e6937",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "target_exchange": "binance",
+  "target_market_evidence": {
+    "exchange": "binance",
+    "inference_basis": "copied verbatim from binance futures exchangeInfo's own baseAsset/quoteAsset/marginAsset fields -- genuinely reported, not parsed",
+    "inferred_base_asset": "B",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "BUSDT",
+    "onboarded_at_ms": 1747931400000,
+    "raw_evidence": {
+      "endpoint": "https://fapi.binance.com/fapi/v1/exchangeInfo",
+      "observed_at": "2026-09-25T21:11:10.755208+00:00",
+      "payload": {
+        "baseAsset": "B",
+        "baseAssetPrecision": 8,
+        "contractType": "PERPETUAL",
+        "deliveryDate": 4133404800000,
+        "filters": [
+          {
+            "filterType": "PRICE_FILTER",
+            "maxPrice": "200",
+            "minPrice": "0.0001000",
+            "tickSize": "0.0001000"
+          },
+          {
+            "filterType": "LOT_SIZE",
+            "maxQty": "4000000",
+            "minQty": "1",
+            "stepSize": "1"
+          },
+          {
+            "filterType": "MARKET_LOT_SIZE",
+            "maxQty": "800000",
+            "minQty": "1",
+            "stepSize": "1"
+          },
+          {
+            "filterType": "MAX_NUM_ORDERS",
+            "limit": 200
+          },
+          {
+            "filterType": "MIN_NOTIONAL",
+            "notional": "5"
+          },
+          {
+            "filterType": "PERCENT_PRICE",
+            "multiplierDecimal": "4",
+            "multiplierDown": "0.8500",
+            "multiplierUp": "1.1500"
+          },
+          {
+            "filterType": "POSITION_RISK_CONTROL",
+            "positionControlSide": "NONE"
+          }
+        ],
+        "liquidationFee": "0.020000",
+        "maintMarginPercent": "2.5000",
+        "marginAsset": "USDT",
+        "marketTakeBound": "0.15",
+        "maxMoveOrderLimit": 10000,
+        "onboardDate": 1747931400000,
+        "orderTypes": [
+          "LIMIT",
+          "MARKET",
+          "STOP",
+          "STOP_MARKET",
+          "TAKE_PROFIT",
+          "TAKE_PROFIT_MARKET",
+          "TRAILING_STOP_MARKET"
+        ],
+        "pair": "BUSDT",
+        "permissionSets": ["GRID", "COPY", "DCA", "PSB"],
+        "pricePrecision": 7,
+        "quantityPrecision": 0,
+        "quoteAsset": "USDT",
+        "quotePrecision": 8,
+        "requiredMarginPercent": "5.0000",
+        "status": "TRADING",
+        "symbol": "BUSDT",
+        "timeInForce": ["GTC", "IOC", "FOK", "GTX", "GTD"],
+        "triggerProtect": "0.1500",
+        "underlyingSubType": ["Meme", "Crypto"],
+        "underlyingType": "COIN"
+      },
+      "raw_sha256": "8124c356af3f7b9f4d0c2366aaa0af38e8af980a0e444ff6ad29098bf05dd379",
+      "source": "binance:futures_exchange_info_entry",
+      "wire_exact": false
+    },
+    "reported_base_asset": "B",
+    "reported_quote_asset": "USDT",
+    "reported_settle_asset": "USDT",
+    "status": "TRADING"
+  },
+  "working_tree_dirty": false
+}
