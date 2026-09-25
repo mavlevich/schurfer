@@ -791,3 +791,52 @@ async def test_worker_failure_is_abandoned_without_stopping_next_batch(monkeypat
     assert abandon_call is not None
     assert abandon_call.args[1] == first
     assert abandon_call.args[2].startswith("capture_worker_failed: RuntimeError")
+
+
+async def test_target_capture_records_book_timing_and_contract_size_source() -> None:
+    exchange = _Exchange()
+    exchange.fetch_order_book = AsyncMock(
+        return_value={
+            "bids": [[1.99, 100]],
+            "asks": [[2.01, 100]],
+            "timestamp": 1_785_628_799_500,
+            "nonce": 4242,
+        }
+    )
+    result = await capture_target_observation(
+        "binance",
+        exchange,
+        _candidate(),
+        target_usd=50.0,
+        timeout_seconds=1.0,
+        registry=_abc_registry(),
+    )
+
+    liquidity = result.liquidity
+    assert liquidity["book_nonce"] == 4242
+    assert liquidity["book_timestamp"].startswith("2026-")
+    assert liquidity["ticker_timestamp"] is not None
+    assert liquidity["book_age_ms"] is not None
+    assert liquidity["contract_size_source"] == "instrument"
+    assert liquidity["quote_requested_at"] <= liquidity["quote_received_at"]
+
+
+async def test_target_capture_marks_a_defaulted_contract_size_without_changing_v3() -> None:
+    """The v3 computation still uses 1.0 for an unknown size; only the source is new."""
+    exchange = _Exchange()
+    del exchange.markets["ABC/USDT:USDT"]["contractSize"]
+    result = await capture_target_observation(
+        "binance",
+        exchange,
+        _candidate(),
+        target_usd=50.0,
+        timeout_seconds=1.0,
+        registry=_abc_registry(),
+    )
+
+    assert result.status == "sampled"
+    assert result.liquidity["contract_size_source"] == "defaulted"
+    assert result.liquidity["ask_filled_notional_usd"] == 50.0
+    # No venue timestamp on this book: the age stays unknown, never invented.
+    assert result.liquidity["book_timestamp"] is None
+    assert result.liquidity["book_age_ms"] is None
