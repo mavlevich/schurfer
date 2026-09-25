@@ -1,6 +1,6 @@
 # Roadmap
 
-> Living document. Updated as we progress. Last refreshed 2026-09-19.
+> Living document. Updated as we progress. Last refreshed 2026-09-25.
 
 ## Current focus
 
@@ -9,8 +9,8 @@ status check, not a place for narrative.
 
 ```
 Current primary: HYP-015 outcome-blind readiness/freeze; actual-funding capture is accumulating; abnormal-flow v1 is recorded as an inconclusive diagnostic on a burned window
-State: production has no configured trading credentials and runs DRY_RUN with AUTO_TRADE off; abnormal-flow v1 did not graduate; no strategy has established a scalable after-cost edge
-Next: HYP-015 readiness/freeze in primary and portfolio-engine correctness in support; then abnormal-flow missingness/control diagnostics; performance only after a measured benchmark; let HYP-012/HYP-015 mature without peeking
+State: production has no configured trading credentials and runs DRY_RUN with AUTO_TRADE off; portfolio engine v2 and replay snapshots merged (#438); no strategy has established a scalable after-cost edge
+Next: HYP-015 readiness/freeze in primary; support: abnormal-flow outcome adapter + K=1..20 portfolio/coverage diagnostic (burned window, non-promotional); then exit/path diagnostics and durable research cache; let HYP-012/HYP-015 mature without peeking
 User decision required: approve any future abnormal-flow v2 mechanism and portfolio policy before freeze; broad venue/L2/live expansion is not authorized; cold-bar canary remains a separate operational task
 ```
 

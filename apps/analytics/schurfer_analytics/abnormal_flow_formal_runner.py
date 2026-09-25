@@ -43,7 +43,7 @@ from .abnormal_flow_scan import IdentityResolver, load_identity_resolver
 from .abnormal_flow_screen import AbnormalFlowContract
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
     from .abnormal_flow_replay import DecisionFeatures
 
@@ -228,9 +228,12 @@ def _verified_cold_bar_paths(
     cold_bars_dir: Path,
     scan_manifest_path: Path,
     bounds: DependencyBounds,
+    *,
+    progress: Callable[[int, int, date], None] | None = None,
 ) -> list[str]:
     scan_days = _parse_scan_days(scan_manifest_path)
     verified_paths: list[str] = []
+    total_days = (bounds.day_end_exclusive - bounds.first_day).days
     day = bounds.first_day
     while day < bounds.day_end_exclusive:
         expected = scan_days.get(day.isoformat())
@@ -242,6 +245,8 @@ def _verified_cold_bar_paths(
         if manifest.source_fingerprint != expected.get("source_fingerprint"):
             raise ValueError(f"cold-bar source fingerprint mismatch for {day}")
         verified_paths.append(str(path))
+        if progress is not None:
+            progress(len(verified_paths), total_days, day)
         day += timedelta(days=1)
     return verified_paths
 

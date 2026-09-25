@@ -420,7 +420,7 @@ class MomentumFlowPaperRepository:
                 _watch_evaluations.c.decision_at >= cutoff,
                 _watch_evaluations.c.decision_at <= _utc(now),
             )
-            .order_by(_watch_evaluations.c.decision_at)
+            .order_by(_watch_evaluations.c.decision_at, _watch_evaluations.c.watch_id)
             .limit(limit)
         )
         result = await self._execute(statement)
@@ -439,7 +439,7 @@ class MomentumFlowPaperRepository:
         statement = (
             self._base_due_watches_statement(contract, cohort_started_at)
             .where(_watch_evaluations.c.decision_at < cutoff)
-            .order_by(_watch_evaluations.c.decision_at)
+            .order_by(_watch_evaluations.c.decision_at, _watch_evaluations.c.watch_id)
             .limit(limit)
         )
         result = await self._execute(statement)

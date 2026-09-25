@@ -53,7 +53,9 @@ def _setup(tmp_path: Path, *, corrupt: bool = False) -> tuple[_StubTransport, Pa
     return _StubTransport(texts, source), source
 
 
-def test_stage_days_fetches_and_verifies_sha_locally(tmp_path: Path) -> None:
+def test_stage_days_fetches_and_verifies_sha_locally(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     transport, _ = _setup(tmp_path)
     local = tmp_path / "local"
     artifact = stage_days(
@@ -72,6 +74,9 @@ def test_stage_days_fetches_and_verifies_sha_locally(tmp_path: Path) -> None:
     assert rec["verified"] is True
     assert rec["archive"] == "bars-2026-09-19T04:30:16"
     assert rec["file_bytes"] > 0
+    progress = capsys.readouterr().err
+    assert "[stage 1/1] 2026-09-18: fetching archive member" in progress
+    assert "[stage 1/1] 2026-09-18: verified" in progress
 
 
 def test_stage_days_rejects_a_sha_mismatch(tmp_path: Path) -> None:

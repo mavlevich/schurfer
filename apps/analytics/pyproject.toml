@@ -109,6 +109,9 @@ abnormal-flow-funding-snapshot = "schurfer_analytics.abnormal_flow_funding_snaps
 abnormal-flow-candidate-table = "schurfer_analytics.abnormal_flow_candidate_table:main"
 abnormal-flow-formal-runner = "schurfer_analytics.abnormal_flow_formal_runner:main"
 abnormal-flow-snapshot = "schurfer_analytics.abnormal_flow_snapshot_pipeline:main"
+abnormal-flow-portfolio-diagnostic = "schurfer_analytics.abnormal_flow_portfolio_diagnostic:main"
+abnormal-flow-portfolio-rescore = "schurfer_analytics.abnormal_flow_portfolio_rescore:main"
+abnormal-flow-coverage-diagnostic = "schurfer_analytics.abnormal_flow_coverage_diagnostic:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

@@ -1,10 +1,10 @@
 """Outcome-blind scanner for the abnormal-flow economic screen.
 
-The module remains outcome-blind by default. ``FORMAL_RETURNS_RUN_ENABLED`` starts
-False, and both :class:`FormalReplay` and the Parquet outcome reader refuse access
-until the one-shot formal CLI has verified the frozen contract, registered artifacts,
-clean revision, cold-bar fidelity, and claimed the terminal run id. The CLI enables
-the flag only around the single returns read and restores it in ``finally``.
+The module remains outcome-blind by default. ``FORMAL_RETURNS_RUN_ENABLED`` and
+``BURNED_DIAGNOSTIC_RETURNS_RUN_ENABLED`` start False. :class:`FormalReplay` remains
+available only to the one-shot formal CLI. The lower-level Parquet reader additionally
+accepts the explicitly labelled burned-window diagnostic capability, after that CLI
+has verified its frozen inputs. Both capabilities are reset in ``finally``.
 
 PRE-REGISTRATION INVARIANT (for when the run is later enabled). Reading forward returns
 is gated behind a fully frozen contract AND the exact frozen dataset: the run would call
@@ -60,6 +60,9 @@ REPLAY_VERSION = "abnormal_flow_replay_v1"
 # Outcome access is disabled by default. The formal runner temporarily enables it only
 # after every frozen-input and one-shot gate passes, then resets it in ``finally``.
 FORMAL_RETURNS_RUN_ENABLED = False
+# Separate capability for post-hoc diagnostics on an already burned window. It must
+# never authorize FormalReplay or turn a diagnostic into a promotion claim.
+BURNED_DIAGNOSTIC_RETURNS_RUN_ENABLED = False
 
 # Conservative funding charge for the registered ``conservative_8h_v1`` model: a
 # worst-case cost is applied for every 8h settlement the 720m hold can cross. It is a
@@ -91,6 +94,22 @@ class ReturnsRunDisabledError(RuntimeError):
 # type, native market id, and capture_version so rows that share a symbol and minute
 # across venues OR across capture regimes are never conflated into one outcome.
 RouteKey = tuple[str, str, str, str, datetime]
+
+
+def priced_proxy_path_times(
+    decision_at: datetime, outcome_horizon_minutes: int
+) -> tuple[datetime, datetime, datetime]:
+    """Return ``(entry_at, exit_bar_start, exit_at)`` for the v1 priced proxy path.
+
+    Entry is the open of the bar after the decision. The path spans
+    ``outcome_horizon_minutes + 1`` one-minute bars and exits at the close of the
+    last one, so the realized exit is one minute after that bar's start. The outcome
+    reader and every outcome consumer must derive timing from here, never from
+    ``decision_at + horizon``.
+    """
+    entry_at = decision_at + timedelta(minutes=1)
+    exit_bar_start = entry_at + timedelta(minutes=outcome_horizon_minutes)
+    return entry_at, exit_bar_start, exit_bar_start + timedelta(minutes=1)
 
 
 @dataclass(frozen=True)
@@ -1606,14 +1625,15 @@ def parquet_outcome_reader(
     path: str | list[str],
     *,
     outcome_horizon_minutes: int,
+    progress: Callable[[int, int], None] | None = None,
 ) -> Callable[[Sequence[DecisionFeatures]], dict[RouteKey, Outcome]]:
     from collections import defaultdict
     from datetime import timedelta
 
     def reader(requested: Sequence[DecisionFeatures]) -> dict[RouteKey, Outcome]:
-        if not FORMAL_RETURNS_RUN_ENABLED:
+        if not (FORMAL_RETURNS_RUN_ENABLED or BURNED_DIAGNOSTIC_RETURNS_RUN_ENABLED):
             raise ReturnsRunDisabledError(
-                "Parquet outcomes are available only inside the authorized formal run"
+                "Parquet outcomes require an authorized formal or burned diagnostic run"
             )
         if not requested:
             return {}
@@ -1633,9 +1653,12 @@ def parquet_outcome_reader(
             for req in requested
         }
 
+        scanned_streams = 0
+        matched_routes: set[tuple[str, str, str, str]] = set()
         for chunk in iter_instrument_bars(path, window_start=lo, window_end=hi):
             if not chunk:
                 continue
+            scanned_streams += 1
             first = chunk[0]
             route = (
                 first.exchange,
@@ -1646,7 +1669,10 @@ def parquet_outcome_reader(
 
             # Optimization: only store bars for routes we requested
             if route not in requested_routes:
+                if progress is not None and scanned_streams % 100 == 0:
+                    progress(scanned_streams, len(matched_routes))
                 continue
+            matched_routes.add(route)
 
             for b in chunk:
                 # b is InstrumentColdBars
@@ -1658,13 +1684,20 @@ def parquet_outcome_reader(
                     b.low_price,
                     b.price_complete,
                 )
+            if progress is not None and scanned_streams % 100 == 0:
+                progress(scanned_streams, len(matched_routes))
+
+        if progress is not None:
+            progress(scanned_streams, len(matched_routes))
 
         out: dict[RouteKey, Outcome] = {}
         for d in requested:
             route = (d.exchange, d.market_type, d.native_market_id, d.capture_version)
             route_bars = bars.get(route, {})
 
-            entry_t = d.decision_at + timedelta(minutes=1)
+            entry_t, _exit_bar_start, _exit_at = priced_proxy_path_times(
+                d.decision_at, outcome_horizon_minutes
+            )
             primary_bars: list[
                 tuple[float | None, float | None, float | None, float | None, bool]
             ] = []
