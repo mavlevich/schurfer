@@ -58,3 +58,20 @@ The two-bar rule recovers a final priced-proxy return for a fixed-horizon exit. 
 recover the path inside the position, so it says nothing about drawdown during the hold,
 stop/take-profit/trailing behaviour, or whether the position was executable during the
 incomplete minutes.
+
+## Result (read 2026-09-25, run `329d936`, clean tree)
+
+Bundle `abnormal-flow-v1-portfolio-entry-exit-20260925-r2` (report
+`sha256:e0c11b2e3cea601262fadd1e9516cc1ae5e7c85a8aadfb8180e54ec03d6aad57`), compared against
+the registered baseline above.
+
+- Coverage: 251/252 resolved (baseline 125/252).
+- Per trade: mean net -0.06%, median -0.36%, 43% winners; mean gross +0.50%. The 126
+  episodes the old rule left unresolved average -0.72% net, so the old 125 (+0.61%) were a
+  completeness-selected subsample. The taxonomy does not prove the selection mechanism
+  (for example liquidity).
+- Portfolio: total net PnL is negative for every K = 1..20 and every scenario, both with the
+  baseline's fixed unresolved assumptions (-$2.1 to -$43.7) and with this run's recomputed
+  ones (-$2.2 to -$43.7).
+- Registered meaning: this may lower the priority of an abnormal-flow v2. It does not
+  establish a negative EV for a prospective v2.
