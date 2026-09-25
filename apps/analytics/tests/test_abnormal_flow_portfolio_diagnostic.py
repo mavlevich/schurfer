@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -16,6 +17,7 @@ from schurfer_analytics.abnormal_flow_portfolio_diagnostic import (
     build_outcome_rows,
     build_positions,
     bundle_fingerprint,
+    compare_to_baseline,
     outcomes_fingerprint,
     peak_planned_concurrency,
     portfolio_frontier,
@@ -386,3 +388,137 @@ def test_peak_concurrency_releases_before_entries_at_the_same_instant() -> None:
         exit_at=first.exit_at + timedelta(hours=1),
     )
     assert peak_planned_concurrency([first, later]) == 1
+
+
+def _report_for(positions: list[Any], *, path_rule: str) -> dict[str, Any]:
+    resolved = sum(p.exit_at is not None for p in positions)
+    return {
+        "provenance": {
+            "snapshot_fingerprint": "snap",
+            "contract_hash": "c",
+            "scan_manifest_hash": "s",
+        },
+        "policy": {
+            "initial_capital": 300.0,
+            "k_values": [1, 2],
+            "max_positions_per_asset": 1,
+            "sizing": "fixed_initial_equity",
+            "path_rule": path_rule,
+        },
+        "coverage": {"episodes": len(positions), "resolved": resolved},
+        **scenario_frontiers(
+            positions,
+            initial_capital=300.0,
+            k_values=(1, 2),
+            max_positions_per_asset=1,
+            sizing_policy=PositionSizingPolicy.FIXED_INITIAL_EQUITY,
+        ),
+    }
+
+
+def _compare(
+    report: dict[str, Any], baseline: dict[str, Any], positions: Any, baseline_positions: Any
+) -> dict[str, Any]:
+    return compare_to_baseline(
+        report,
+        baseline,
+        positions,
+        baseline_positions,
+        max_positions_per_asset=1,
+        sizing_policy=PositionSizingPolicy.FIXED_INITIAL_EQUITY,
+    )
+
+
+def _strict_and_relaxed() -> tuple[list[Any], list[Any]]:
+    win, loss, lost = _decision("WIN", 0), _decision("LOSS", 1), _decision("LOST", 2)
+    known = {win.route_key(): _outcome(win, 110.0), loss.route_key(): _outcome(loss, 95.0)}
+    strict = build_positions(_contract(), [win, loss, lost], known)
+    relaxed = build_positions(
+        _contract(), [win, loss, lost], {**known, lost.route_key(): _outcome(lost, 104.0)}
+    )
+    return strict, relaxed
+
+
+def test_comparison_holds_the_baseline_assumptions_fixed() -> None:
+    """Review P1: worst/mean assumptions are recomputed from the resolved rows, so a raw
+    delta would mix the rule change with an assumption change."""
+    strict, relaxed = _strict_and_relaxed()
+    baseline = _report_for(strict, path_rule="every_minute_v1")
+    report = _report_for(relaxed, path_rule="entry_exit_bars_v1")
+    comparison = _compare(report, baseline, relaxed, strict)
+
+    worst = comparison["scenarios"]["planned_exit_worst_resolved"]
+    assert worst["fixed_unresolved_gross_return"] == pytest.approx(-0.05)
+    assert worst["this_run_recomputed_gross_return"] == pytest.approx(-0.05)
+    mean = comparison["scenarios"]["planned_exit_mean_resolved"]
+    assert mean["fixed_unresolved_gross_return"] == pytest.approx(0.025)
+    assert mean["this_run_recomputed_gross_return"] == pytest.approx(0.03)
+    k2 = comparison["scenarios"]["hold_to_end"]["by_k"][1]
+    assert k2["k_slots"] == 2
+    pnl = k2["total_net_pnl_incl_assumed"]
+    assert pnl["delta"] == pytest.approx(pnl["this_run"] - pnl["baseline"])
+    assert comparison["coverage"]["this_run"]["resolved"] == 3
+
+
+def test_comparison_refuses_a_baseline_that_differs_in_more_than_the_rule() -> None:
+    strict, relaxed = _strict_and_relaxed()
+    report = _report_for(relaxed, path_rule="entry_exit_bars_v1")
+    other_snapshot = _report_for(strict, path_rule="every_minute_v1")
+    other_snapshot["provenance"]["snapshot_fingerprint"] = "other"
+    with pytest.raises(ValueError, match="snapshot_fingerprint"):
+        _compare(report, other_snapshot, relaxed, strict)
+    other_sizing = _report_for(strict, path_rule="every_minute_v1")
+    other_sizing["policy"]["sizing"] = "current_equity_equal_weight"
+    with pytest.raises(ValueError, match="policy sizing"):
+        _compare(report, other_sizing, relaxed, strict)
+
+
+def test_comparison_requires_the_same_scenarios_and_k_values() -> None:
+    """Review P1: a missing scenario or K must fail, not be skipped silently."""
+    strict, relaxed = _strict_and_relaxed()
+    report = _report_for(relaxed, path_rule="entry_exit_bars_v1")
+    fewer = _report_for(strict, path_rule="every_minute_v1")
+    del fewer["scenarios"]["planned_exit_zero_gross"]
+    with pytest.raises(ValueError, match="different scenarios"):
+        _compare(report, fewer, relaxed, strict)
+    short_k = _report_for(strict, path_rule="every_minute_v1")
+    short_k["scenarios"]["hold_to_end"]["frontier"] = short_k["scenarios"]["hold_to_end"][
+        "frontier"
+    ][:1]
+    with pytest.raises(ValueError, match="different K values"):
+        _compare(report, short_k, relaxed, strict)
+
+
+def test_comparison_refuses_a_changed_baseline_resolved_position() -> None:
+    strict, relaxed = _strict_and_relaxed()
+    report = _report_for(relaxed, path_rule="entry_exit_bars_v1")
+    baseline = _report_for(strict, path_rule="every_minute_v1")
+    tampered = [replace(relaxed[0], net_return=0.5, gross_return=0.5055), *relaxed[1:]]
+    with pytest.raises(ValueError, match="baseline-resolved position"):
+        _compare(report, baseline, tampered, strict)
+
+
+def test_baseline_must_be_the_registered_report(tmp_path: Path) -> None:
+    bundle = tmp_path / "baseline"
+    bundle.mkdir()
+    (bundle / "diagnostic_report.json").write_text("{}")
+    digest = "sha256:" + hashlib.sha256(b"{}").hexdigest()
+    (bundle / "diagnostic_report.sha256").write_text(digest + "\n")
+    assert diagnostic_module._load_verified_report(bundle, expected_sha256=digest) == {}
+    with pytest.raises(ValueError, match="is not the registered"):
+        diagnostic_module._load_verified_report(bundle, expected_sha256="sha256:" + "0" * 64)
+
+
+def test_the_burned_flag_is_checked_before_any_baseline_is_opened(tmp_path: Path) -> None:
+    """Review P2: the baseline carries PnL, so it must not be read without the flag."""
+    with pytest.raises(ValueError, match="--burned-window-diagnostic"):
+        run_diagnostic(
+            snapshot_dir=tmp_path / "missing",
+            contract_path=tmp_path / "missing",
+            evaluation_manifest_path=tmp_path / "missing",
+            scan_manifest_path=tmp_path / "missing",
+            cold_bars_dir=tmp_path / "missing",
+            output_dir=tmp_path / "out",
+            baseline_bundle=tmp_path / "no-such-baseline",
+            baseline_sha256="sha256:" + "0" * 64,
+        )

@@ -33,6 +33,8 @@ from .abnormal_flow_formal_runner import (
     dependency_bounds,
 )
 from .abnormal_flow_replay import (
+    PATH_RULE_EVERY_MINUTE,
+    PATH_RULES,
     Outcome,
     parquet_outcome_reader,
     priced_proxy_path_times,
@@ -344,6 +346,7 @@ def _read_outcomes_once(
     *,
     outcome_horizon_minutes: int,
     progress: Callable[[int, int], None] | None = None,
+    path_rule: str = PATH_RULE_EVERY_MINUTE,
 ) -> dict[RouteKey, Outcome]:
     if replay_module.BURNED_DIAGNOSTIC_RETURNS_RUN_ENABLED:
         raise RuntimeError("returns reader is already enabled in this process")
@@ -353,6 +356,7 @@ def _read_outcomes_once(
             paths,
             outcome_horizon_minutes=outcome_horizon_minutes,
             progress=progress,
+            path_rule=path_rule,
         )
         return reader(episodes)
     finally:
@@ -558,16 +562,28 @@ def run_diagnostic(
     max_positions_per_asset: int = 1,
     sizing_policy: PositionSizingPolicy = PositionSizingPolicy.FIXED_INITIAL_EQUITY,
     burned_window_diagnostic: bool = False,
+    path_rule: str = PATH_RULE_EVERY_MINUTE,
+    baseline_bundle: Path | None = None,
+    baseline_sha256: str | None = None,
 ) -> dict[str, Any]:
     started_at = time.monotonic()
+    if not burned_window_diagnostic:
+        raise ValueError("refusing returns read without --burned-window-diagnostic")
+    if path_rule not in PATH_RULES:
+        raise ValueError(f"unknown path rule {path_rule!r}")
+    if (baseline_bundle is None) != (baseline_sha256 is None):
+        raise ValueError("--baseline-bundle and --baseline-sha256 are given together")
+    baseline = (
+        _load_verified_report(baseline_bundle, expected_sha256=baseline_sha256)
+        if baseline_bundle is not None and baseline_sha256 is not None
+        else None
+    )
 
     def announce(message: str) -> None:
         elapsed = time.monotonic() - started_at
         sys.stderr.write(f"[portfolio +{elapsed:.1f}s] {message}\n")
         sys.stderr.flush()
 
-    if not burned_window_diagnostic:
-        raise ValueError("refusing returns read without --burned-window-diagnostic")
     if output_dir.exists():
         raise FileExistsError(f"refusing to overwrite diagnostic bundle: {output_dir}")
 
@@ -623,6 +639,7 @@ def run_diagnostic(
         episodes,
         outcome_horizon_minutes=contract.outcome_horizon_minutes,
         progress=outcome_progress,
+        path_rule=path_rule,
     )
     announce(f"outcomes resolved for {len(outcomes)}/{len(episodes)} episodes")
     outcome_rows = build_outcome_rows(contract, episodes, outcomes)
@@ -664,6 +681,7 @@ def run_diagnostic(
             "k_values": sorted(k_values),
             "max_positions_per_asset": max_positions_per_asset,
             "sizing": sizing_policy.value,
+            "path_rule": path_rule,
             "unresolved_outcomes": (
                 "never_scored_as_observed; bracketed by hold_to_end and planned_exit scenarios"
             ),
@@ -676,6 +694,23 @@ def run_diagnostic(
         },
         **frontiers,
     }
+    if path_rule != PATH_RULE_EVERY_MINUTE:
+        report["interpretation_rule"] = BOUNDARY_SENSITIVITY_INTERPRETATION
+    if baseline is not None and baseline_bundle is not None:
+        baseline_positions_path = baseline_bundle / "portfolio_positions.parquet"
+        if _hash_file(baseline_positions_path) != baseline["artifacts"].get(
+            "portfolio_positions.parquet"
+        ):
+            raise ValueError("baseline position artifact hash mismatch")
+        report["comparison_to_baseline"] = compare_to_baseline(
+            report,
+            baseline,
+            positions,
+            load_positions(baseline_positions_path),
+            max_positions_per_asset=max_positions_per_asset,
+            sizing_policy=sizing_policy,
+        )
+        report["provenance"]["baseline_report_sha256"] = baseline_sha256
     announce("publishing immutable diagnostic bundle")
     _write_bundle(
         output_dir,
@@ -683,6 +718,117 @@ def run_diagnostic(
         report=report,
     )
     announce(f"complete: {output_dir}")
+    return report
+
+
+# Registered before the entry/exit-bars read (colleague review): what each outcome of the
+# sensitivity may and may not support. Written into every such report.
+BOUNDARY_SENSITIVITY_INTERPRETATION: Final = (
+    "post-hoc sensitivity on an already-read burned window, not evidence; the path rule was "
+    "chosen from the outcome-blind taxonomy before this read. Negative total net PnL for "
+    "every K and scenario may lower the priority of v2; positive for every K and scenario "
+    "is grounds to design a prospective v2, not a confirmation of its economics; a sign "
+    "that depends on K, scenario or the remaining unresolved rows leaves the question open. "
+    "No K is selected from this result."
+)
+_COMPARED_FIELDS: Final = (
+    "accepted_entries",
+    "total_trades",
+    "unresolved_released",
+    "net_pnl",
+    "total_net_pnl_incl_assumed",
+    "max_drawdown_pct",
+)
+
+
+def compare_to_baseline(
+    report: Mapping[str, Any],
+    baseline: Mapping[str, Any],
+    positions: Sequence[PortfolioPosition],
+    baseline_positions: Sequence[PortfolioPosition],
+    *,
+    max_positions_per_asset: int,
+    sizing_policy: PositionSizingPolicy,
+) -> dict[str, Any]:
+    """Per scenario and K, this run next to a baseline of the SAME episodes, bank, sizing,
+    costs and scenario set, re-simulated with the BASELINE's numeric unresolved
+    assumptions so the delta isolates the path rule. The change in each scenario's own
+    recomputed assumption is reported separately and is not attributed to the rule."""
+    for name in ("snapshot_fingerprint", "contract_hash", "scan_manifest_hash"):
+        if report["provenance"][name] != baseline["provenance"].get(name):
+            raise ValueError(f"baseline differs in {name}")
+    for name in ("initial_capital", "k_values", "max_positions_per_asset", "sizing"):
+        if report["policy"][name] != baseline["policy"].get(name):
+            raise ValueError(f"baseline differs in policy {name}")
+    if set(report["scenarios"]) != set(baseline.get("scenarios", {})):
+        raise ValueError("baseline and this run declare different scenarios")
+    k_values = sorted(report["policy"]["k_values"])
+    for name, scenario in baseline["scenarios"].items():
+        if sorted(row["k_slots"] for row in scenario["frontier"]) != k_values:
+            raise ValueError(f"baseline scenario {name} covers different K values")
+
+    # Every position the baseline resolved must be identical here: only rows the old rule
+    # left unresolved may change.
+    current = {item.decision_id: item for item in positions}
+    if set(current) != {item.decision_id for item in baseline_positions}:
+        raise ValueError("baseline and this run cover different episodes")
+    for item in baseline_positions:
+        if item.exit_at is not None and current[item.decision_id] != item:
+            raise ValueError(f"baseline-resolved position {item.decision_id} changed")
+
+    initial_capital = float(report["policy"]["initial_capital"])
+    scenarios: dict[str, Any] = {}
+    for name, base_scenario in baseline["scenarios"].items():
+        policy = UnresolvedCapitalPolicy(base_scenario["unresolved_policy"])
+        assumption = base_scenario["unresolved_gross_return"]
+        fixed = portfolio_frontier(
+            positions,
+            initial_capital=initial_capital,
+            k_values=k_values,
+            max_positions_per_asset=max_positions_per_asset,
+            sizing_policy=sizing_policy,
+            unresolved_policy=policy,
+            unresolved_gross_return=assumption,
+        )
+        base_rows = {row["k_slots"]: row for row in base_scenario["frontier"]}
+        scenarios[name] = {
+            "fixed_unresolved_gross_return": assumption,
+            "this_run_recomputed_gross_return": report["scenarios"][name][
+                "unresolved_gross_return"
+            ],
+            "by_k": [
+                {
+                    "k_slots": row["k_slots"],
+                    **{
+                        field: {
+                            "baseline": base_rows[row["k_slots"]][field],
+                            "this_run": row[field],
+                            "delta": row[field] - base_rows[row["k_slots"]][field],
+                        }
+                        for field in _COMPARED_FIELDS
+                    },
+                }
+                for row in fixed
+            ],
+        }
+    return {
+        "baseline_path_rule": baseline["policy"].get("path_rule", PATH_RULE_EVERY_MINUTE),
+        "delta_isolates": "path rule only (baseline numeric assumptions held fixed)",
+        "coverage": {"baseline": baseline["coverage"], "this_run": report["coverage"]},
+        "scenarios": scenarios,
+    }
+
+
+def _load_verified_report(bundle: Path, *, expected_sha256: str) -> dict[str, Any]:
+    """The baseline report, only when it is the pre-registered one (its SHA-256 is written
+    in the sensitivity doc before the read), not merely a self-consistent bundle."""
+    report_path = bundle / "diagnostic_report.json"
+    observed = _hash_file(report_path)
+    if observed != expected_sha256:
+        raise ValueError(f"baseline report {observed} is not the registered {expected_sha256}")
+    if (bundle / "diagnostic_report.sha256").read_text().strip() != observed:
+        raise ValueError(f"baseline report hash mismatch in {bundle}")
+    report: dict[str, Any] = json.loads(report_path.read_text())
     return report
 
 
@@ -734,6 +880,18 @@ def build_parser() -> argparse.ArgumentParser:
         default=PositionSizingPolicy.FIXED_INITIAL_EQUITY,
     )
     parser.add_argument("--burned-window-diagnostic", action="store_true")
+    parser.add_argument("--path-rule", choices=PATH_RULES, default=PATH_RULE_EVERY_MINUTE)
+    parser.add_argument(
+        "--baseline-bundle",
+        type=Path,
+        default=None,
+        help="a verified earlier bundle of the same episodes to compare per scenario and K",
+    )
+    parser.add_argument(
+        "--baseline-sha256",
+        default=None,
+        help="the pre-registered SHA-256 of the baseline diagnostic_report.json",
+    )
     return parser
 
 
@@ -750,6 +908,9 @@ def main() -> None:
         max_positions_per_asset=args.max_positions_per_asset,
         sizing_policy=args.sizing_policy,
         burned_window_diagnostic=args.burned_window_diagnostic,
+        path_rule=args.path_rule,
+        baseline_bundle=args.baseline_bundle,
+        baseline_sha256=args.baseline_sha256,
     )
     summary = {
         "output_dir": str(args.output_dir),
