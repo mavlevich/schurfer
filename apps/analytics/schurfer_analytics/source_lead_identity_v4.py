@@ -142,6 +142,8 @@ _COINGECKO_DELAY_SECONDS = 6.0
 # 429 is waited out, never recorded as a rule rejection.
 _COINGECKO_RETRY_SECONDS = 65.0
 _COINGECKO_MAX_ATTEMPTS = 6
+_RPC_ATTEMPTS = 4
+_RPC_RETRY_SECONDS = 3.0
 
 CANDIDATE_SQL = """\
 SELECT base
@@ -162,22 +164,39 @@ def candidate_sql(window_end: datetime) -> str:
     )
 
 
-def build_candidate_snapshot(bases: Sequence[str], window_end: datetime) -> dict[str, Any]:
-    """The fixed candidate list. Window end must be an exact UTC instant
-    after the start; the hash covers the window and the sorted list."""
+def v3_registry_bases() -> list[str]:
+    """Every asset already in registry v3, so v4 never silently drops one
+    that simply had no lead inside the window. Same rule applies to them."""
+    payload = json.loads(
+        (REGISTRY_DIR / "source_lead_identity_registry_v3.json").read_text(encoding="utf-8")
+    )
+    return sorted(
+        {str(link["canonical_asset_id"]).split(":", 1)[1].upper() for link in payload["links"]}
+    )
+
+
+def build_candidate_snapshot(
+    bases: Sequence[str], window_end: datetime, *, carried_over: Sequence[str] = ()
+) -> dict[str, Any]:
+    """The fixed candidate list: window bases plus `carried_over` (the v3
+    registry assets). Window end must be an exact UTC instant after the
+    start; the hash covers the window, both inputs and the merged list."""
     if window_end.tzinfo is None:
         raise ValueError("window_end must be timezone-aware")
     if window_end <= CANDIDATE_WINDOW_START:
         raise ValueError("window_end must be after the candidate window start")
-    cleaned = sorted({base.strip() for base in bases if base.strip()})
-    if not cleaned:
+    window_bases = sorted({base.strip() for base in bases if base.strip()})
+    if not window_bases:
         raise ValueError("candidate list is empty")
+    carried = sorted({base.strip() for base in carried_over if base.strip()})
     body = {
         "version": CANDIDATES_VERSION,
         "window_start": CANDIDATE_WINDOW_START.isoformat(),
         "window_end": window_end.astimezone(UTC).isoformat(),
         "query": candidate_sql(window_end),
-        "bases": cleaned,
+        "window_bases": window_bases,
+        "carried_over_from_v3": carried,
+        "bases": sorted(set(window_bases) | set(carried)),
     }
     return {**body, "candidates_sha256": _sha256_canonical(body)}
 
@@ -609,6 +628,21 @@ async def _fetch_coingecko_with_retry(client: Any, coingecko_id: str) -> RawFetc
     return await _retry_429(coingecko_id, lambda: fetch_coingecko_coin(client, coingecko_id))
 
 
+async def _decimals_with_retry(
+    client: Any, chain: str, contract_address: str
+) -> ChainContractEvidence:
+    """Public RPC nodes sometimes return null for a block they just
+    reported. Retried; a result still unusable after that is a rejection."""
+    for attempt in range(1, _RPC_ATTEMPTS + 1):
+        try:
+            return await fetch_onchain_decimals(client, chain, contract_address)
+        except ValueError:
+            if attempt == _RPC_ATTEMPTS:
+                raise
+            await asyncio.sleep(_RPC_RETRY_SECONDS)
+    raise AssertionError("unreachable")
+
+
 async def capture_route_bundle(
     *,
     client: Any,
@@ -626,7 +660,7 @@ async def capture_route_bundle(
     assert decision.coingecko_id is not None
     key = (decision.chain, decision.contract_address)
     if key not in decimals_cache:
-        decimals_cache[key] = await fetch_onchain_decimals(client, *key)
+        decimals_cache[key] = await _decimals_with_retry(client, *key)
     contract = decimals_cache[key]
     if decision.base not in gate_market_cache:
         gate_market_cache[decision.base] = await fetch_gate_futures_contract(client, decision.base)
@@ -961,7 +995,9 @@ def main() -> None:
         sys.stdout.write(candidate_sql(args.window_end) + "\n")
         return
     if args.command == "candidates":
-        snapshot = build_candidate_snapshot(sys.stdin.read().splitlines(), args.window_end)
+        snapshot = build_candidate_snapshot(
+            sys.stdin.read().splitlines(), args.window_end, carried_over=v3_registry_bases()
+        )
         _write_json(CANDIDATES_PATH, snapshot)
         sys.stdout.write(
             f"{len(snapshot['bases'])} candidates, sha256 {snapshot['candidates_sha256']}\n"

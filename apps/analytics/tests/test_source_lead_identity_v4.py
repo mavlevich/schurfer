@@ -28,6 +28,7 @@ from schurfer_analytics.source_lead_identity_v4 import (
     gate_contracts,
     load_candidate_snapshot,
     revalidate_v4_bundle,
+    v3_registry_bases,
 )
 from schurfer_analytics.source_lead_qualification import (
     parse_identity_registry,
@@ -210,6 +211,12 @@ def test_coingecko_index_maps_platforms_to_rule_chains() -> None:
 def test_candidate_snapshot_is_hashed_and_tamper_evident(tmp_path: Path) -> None:
     snapshot = build_candidate_snapshot(["ZED", "ABC", "ABC", " "], T0)
     assert snapshot["bases"] == ["ABC", "ZED"]
+    carried = build_candidate_snapshot(["ABC"], T0, carried_over=["OLD", "ABC"])
+    assert carried["bases"] == ["ABC", "OLD"]
+    assert carried["carried_over_from_v3"] == ["ABC", "OLD"]
+    assert (
+        carried["candidates_sha256"] != build_candidate_snapshot(["ABC"], T0)["candidates_sha256"]
+    )
     assert snapshot == build_candidate_snapshot(["ABC", "ZED"], T0)
     path = tmp_path / "candidates.json"
     path.write_text(json.dumps({**snapshot, "bases": ["ABC"]}))
@@ -365,3 +372,9 @@ def test_registry_v4_refuses_an_approval_for_a_different_decisions_file() -> Non
             },
             evidence_commit="c0ffee",
         )
+
+
+def test_v3_registry_assets_are_carried_over() -> None:
+    bases = v3_registry_bases()
+    assert len(bases) == 14
+    assert {"BAS", "EDEN", "HOME", "SKYAI"} <= set(bases)

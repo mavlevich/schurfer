@@ -29,6 +29,10 @@ snapshot is `registry/source_lead_identity_v4_candidates.json`, and its
 first capture comes later are not covered by v4; readiness reports count them as
 uncovered.
 
+The 14 registry v3 assets are always added as candidates (`carried_over_from_v3`), so v4
+never drops an asset only because it had no lead inside the window. They face the
+same rule.
+
 ## The rule (`source_lead_identity_rule_v4`)
 
 A route is one (base, target venue) pair. It is approved only if every check passes;
