@@ -113,20 +113,29 @@ P1 #5):**
 - **missingness**: an empty set is zero funding ONLY with proven full coverage and no unaccounted
   settlement boundary; otherwise the probe is `accounting_incomplete` -- excluded from the analyzable
   pairs but kept in the funnel, never silently back-filled.
-- **proven coverage (capture side, review #428)**: a window is recorded `complete` ONLY when the
-  fetch was clean and fully paged, EVERY fetched row parsed (a dropped/invalid row downgrades to
-  `incomplete`), the returned settlements BRACKET the interval (at least one at/before `entry_at`
-  and one at/after `exit_at`), AND the interior is GAP-FREE on the venue's own cadence. Two edge
-  settlements do not prove a 12h middle: the cadence is inferred from the padded response (which
-  needs >= 3 settlements) and any consecutive gap overlapping `(entry, exit]` larger than one
-  cadence step means a missing interior settlement -> `incomplete`. The request window is padded by
-  > = one funding cadence each side so both bracketing and cadence inference are possible.
+- **coverage (capture side, `hold12h_actual_funding_v2`)**: a window is recorded `complete` when
+  the exact NATIVE market id was queried on the Bybit v5 funding history, every page returned
+  cleanly for the requested bounds and pagination was not truncated, EVERY fetched row parsed and
+  its raw item is stored, the settlements reach across both bounds (at least one at/before
+  `entry_at` and one at/after `exit_at`), and a re-fetch does not contradict a stored rate. A gap
+  overlapping `(entry, exit]` longer than 8h (the longest standard Bybit interval) is an anomaly
+  -> `incomplete`. The request window is padded on each side so bracketing is possible.
+- **residual risk (documented assumption, not a proof)**: `complete` assumes a fully fetched v5
+  history lists every settlement in range. Bybit changes the cadence without notice (for example
+  to hourly when the rate hits its cap, then back), and the endpoint returns events that
+  happened, not the schedule. No cadence rule can both accept a real 4h -> 8h transition and
+  detect one missing event inside an equally long gap, so a missing 04:00 on a 4h schedule would
+  pass. v1 (#428) inferred one global cadence from the smallest gap and marked every real
+  transition as a hole; on production data this made exactly the extreme-funding windows
+  (IOST/MTL/B3) falsely `incomplete`, a missingness biased toward the cost it is meant to measure.
+  v1 and v2 runs are never mixed: v2 is a new source version and every window is re-captured.
 - **rate-change integrity (blocking)**: a re-fetch returning a different rate for a stored
   settlement records a `integrity_conflict` coverage run; the reader treats any `integrity_conflict`
   run OVERLAPPING an interval as invalidating every `complete` run there, so the interval is
   `accounting_incomplete` until a human resolves it. The stored value is never overwritten.
-- **capture identity + scheduling**: CCXT is queried with the probe's resolved `unified_symbol`,
-  keyed on the native `market_id` (never the raw ticker). Runs on a bounded systemd timer
+- **capture identity + scheduling**: the v5 endpoint is queried by the probe's native `market_id`
+  with its market category, never through a CCXT market lookup (v1 used the unified symbol, so an
+  instrument delisted after the position closed, such as ICXUSDT, could not be fetched at all). Runs on a bounded systemd timer
   (`prod-hold12h-funding-capture-*`, `--max-windows`) with a `--capture-start` boundary (ancient,
   unrecoverable history is never attempted) and a FAIR QUEUE (never-attempted then
   least-recently-attempted first) so a backlog of stuck windows can never starve fresh ones. Emits

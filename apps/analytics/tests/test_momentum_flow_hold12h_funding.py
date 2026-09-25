@@ -16,6 +16,7 @@ from schurfer_analytics.momentum_flow_hold12h_funding_resolver import (
     FundingRateConflictError,
     ParsedSettlement,
     coverage_status,
+    fetch_bybit_native_funding,
     parse_settlement,
     resolve_window,
     window_status,
@@ -172,14 +173,14 @@ def test_window_status_complete_on_dense_gap_free_grid() -> None:
 
 
 def test_window_status_incomplete_two_edge_events_do_not_prove_interior() -> None:
-    # The reviewer's case: one settlement 4h before entry and one 16h after exit, nothing
-    # inside the 12h position. Brackets alone must NOT count as proven coverage.
+    # One settlement 4h before entry and one 16h after exit, nothing inside the 12h
+    # position: the 20h gap exceeds the 8h maximum interval and is an anomaly.
     two_edges = [_ps(-4, 0.001), _ps(16, 0.001)]
     assert window_status(_fetch(), two_edges, 0, entry=_ENTRY, exit_at=_EXIT) == "incomplete"
 
 
 def test_window_status_incomplete_missing_interior_settlement() -> None:
-    # 8h grid with the interior (hour 8, inside the position) dropped -> a doubled gap.
+    # 8h grid with the interior (hour 8, inside the position) dropped -> a 16h gap.
     missing = [_ps(h, 0.001) for h in (-8, 0, 16, 24)]
     assert window_status(_fetch(), missing, 0, entry=_ENTRY, exit_at=_EXIT) == "incomplete"
 
@@ -200,6 +201,36 @@ def test_window_status_incomplete_on_dropped_row() -> None:
     assert window_status(_fetch(), _full_grid(), 1, entry=_ENTRY, exit_at=_EXIT) == "incomplete"
 
 
+def _hours(*values: float) -> list[ParsedSettlement]:
+    return [_ps(h, 0.0001) for h in values]
+
+
+def test_window_status_accepts_real_cadence_switches() -> None:
+    """Real Bybit v5 sequences that v1 wrongly marked incomplete. Bybit changes the funding
+    cadence without notice, so a v1-style global minimum cadence called every legitimate
+    transition a hole. Hours are relative to each position's entry."""
+    # IOSTUSDT, entry 09-15 23:32: hourly until 18:00, then the 8h grid (00, 08, 16).
+    iost = _hours(-11.5, -10.5, -9.5, -8.5, -7.5, -6.5, -5.5, 0.5, 8.5, 16.5)
+    assert window_status(_fetch(), iost, 0, entry=_ENTRY, exit_at=_EXIT) == "complete"
+    # MTLUSDT, entry 09-18 23:43: one 4h step, then 8h.
+    mtl = _hours(-11.7, -7.7, 0.3, 8.3, 16.3)
+    assert window_status(_fetch(), mtl, 0, entry=_ENTRY, exit_at=_EXIT) == "complete"
+    # B3USDT, entry 09-18 16:56: hourly, then 4h.
+    b3 = _hours(*range(-12, -4), -1, 3, 7, 11, 15, 19, 23)
+    assert window_status(_fetch(), b3, 0, entry=_ENTRY, exit_at=_EXIT) == "complete"
+
+
+def test_window_status_cannot_detect_a_missing_event_inside_a_legal_gap() -> None:
+    """Documents the residual risk of v2, not a guarantee: on a 4h schedule with the 04:00
+    event missing, the remaining 00:00 -> 08:00 gap is a legal 8h interval, so the window
+    is still complete. Completeness rests on the v5 history listing every settlement."""
+    four_hourly_missing_one = _hours(-8, -4, 0, 8, 12, 16)
+    assert (
+        window_status(_fetch(), four_hourly_missing_one, 0, entry=_ENTRY, exit_at=_EXIT)
+        == "complete"
+    )
+
+
 def test_window_status_propagates_fetch_error() -> None:
     assert (
         window_status(_fetch(error_status="fetch_failed"), [], 0, entry=_ENTRY, exit_at=_EXIT)
@@ -214,18 +245,41 @@ def test_window_status_propagates_fetch_error() -> None:
 # --- resolve_window orchestration (fake exchange + fake repo, no DB) ------------
 
 
+def _v5(rows: list[dict[str, object]], symbol: str = "FOOUSDT") -> dict[str, Any]:
+    """Bybit v5 envelope, newest first, with string fields as the venue sends them."""
+    items = [
+        {
+            "symbol": symbol,
+            "fundingRate": str(row["fundingRate"]),
+            "fundingRateTimestamp": str(row["timestamp"]),
+        }
+        for row in sorted(rows, key=lambda row: int(str(row["timestamp"])), reverse=True)
+    ]
+    return {"retCode": 0, "retMsg": "OK", "result": {"category": "linear", "list": items}}
+
+
 class _FakeExchange:
+    """Answers ``public_get_v5_market_funding_history`` from a fixed row set, honoring
+    ``startTime``/``endTime``/``limit`` like the venue (newest first)."""
+
     id = "bybit"
 
-    def __init__(self, rows: list[dict[str, object]]) -> None:
+    def __init__(self, rows: list[dict[str, object]], *, symbol: str = "FOOUSDT") -> None:
         self._rows = rows
+        self._symbol = symbol
         self.calls = 0
-        self.symbols: list[object] = []
+        self.params: list[dict[str, Any]] = []
 
-    async def fetch_funding_rate_history(self, *args: object, **kwargs: object) -> list[Any]:
+    async def public_get_v5_market_funding_history(self, params: dict[str, Any]) -> Any:
         self.calls += 1
-        self.symbols.append(args[0] if args else kwargs.get("symbol"))
-        return list(self._rows) if self.calls == 1 else []
+        self.params.append(dict(params))
+        in_range = [
+            row
+            for row in self._rows
+            if params["startTime"] <= int(str(row["timestamp"])) <= params["endTime"]
+        ]
+        newest_first = sorted(in_range, key=lambda row: int(str(row["timestamp"])), reverse=True)
+        return _v5(newest_first[: params["limit"]], self._symbol)
 
 
 class _FakeRepo:
@@ -264,8 +318,9 @@ async def test_resolve_window_fetches_parses_and_records() -> None:
     assert capture.status == "complete"
     assert capture.settlements_written == 5
     assert len(repo.runs) == 1 and repo.runs[0]["status"] == "complete"
-    # Blocker 2: the resolved unified symbol is what CCXT is queried with, not the ticker.
-    assert exchange.symbols and all(s == _ROUTE.unified_symbol for s in exchange.symbols)
+    # The venue is queried by the exact native market id, never via a CCXT market lookup.
+    assert exchange.params and all(p["symbol"] == _ROUTE.market_id for p in exchange.params)
+    assert all(p["category"] == "linear" for p in exchange.params)
     # The recorded request window is padded on both sides of the target interval.
     assert repo.runs[0]["requested_since"] < _ENTRY
     assert repo.runs[0]["requested_until"] > _EXIT
@@ -309,7 +364,7 @@ async def test_resolve_window_records_fetch_failure_without_complete() -> None:
     class _BrokenExchange:
         id = "bybit"
 
-        async def fetch_funding_rate_history(self, *args: object, **kwargs: object) -> list[Any]:
+        async def public_get_v5_market_funding_history(self, params: dict[str, Any]) -> Any:
             raise RuntimeError("venue down")
 
     repo = _FakeRepo()
@@ -318,4 +373,103 @@ async def test_resolve_window_records_fetch_failure_without_complete() -> None:
     )
     assert capture.status == "fetch_failed"
     assert capture.settlements_written == 0
+    assert repo.runs[0]["status"] == "fetch_failed"
+
+
+# --- native v5 fetch -----------------------------------------------------------
+
+
+def _hourly_rows(count: int) -> list[dict[str, object]]:
+    base = int(_ENTRY.timestamp() * 1000)
+    return [{"timestamp": base + h * 3_600_000, "fundingRate": 0.0001} for h in range(count)]
+
+
+async def test_native_fetch_pages_backwards_until_a_short_page() -> None:
+    exchange = _FakeExchange(_hourly_rows(25))
+    since = int(_ENTRY.timestamp() * 1000)
+    fetch = await fetch_bybit_native_funding(
+        exchange,
+        "FOOUSDT",
+        category="linear",
+        since_ms=since,
+        until_ms=since + 30 * 3_600_000,
+        limit=10,
+    )
+    assert fetch.error_status is None and not fetch.pagination_exhausted
+    assert exchange.calls == 3
+    assert sorted(int(row["timestamp"]) for row in fetch.rows) == sorted(
+        int(str(row["timestamp"])) for row in _hourly_rows(25)
+    )
+    # Raw venue item is kept for the stored native payload.
+    assert fetch.rows[0]["info"]["symbol"] == "FOOUSDT"
+
+
+async def test_native_fetch_reports_truncation_when_pages_run_out() -> None:
+    exchange = _FakeExchange(_hourly_rows(25))
+    since = int(_ENTRY.timestamp() * 1000)
+    fetch = await fetch_bybit_native_funding(
+        exchange,
+        "FOOUSDT",
+        category="linear",
+        since_ms=since,
+        until_ms=since + 30 * 3_600_000,
+        limit=10,
+        max_pages=2,
+    )
+    assert fetch.pagination_exhausted
+    assert coverage_status(fetch) == "pagination_exhausted"
+
+
+async def test_native_fetch_rejects_rows_for_another_symbol() -> None:
+    exchange = _FakeExchange(_hourly_rows(3), symbol="BARUSDT")
+    since = int(_ENTRY.timestamp() * 1000)
+    fetch = await fetch_bybit_native_funding(
+        exchange, "FOOUSDT", category="linear", since_ms=since, until_ms=since + 5 * 3_600_000
+    )
+    assert fetch.error_status == "invalid_response"
+
+
+async def test_native_fetch_maps_a_venue_error_code_to_fetch_failed() -> None:
+    class _ErrorExchange:
+        async def public_get_v5_market_funding_history(self, params: dict[str, Any]) -> Any:
+            return {"retCode": 10001, "retMsg": "params error", "result": {}}
+
+    since = int(_ENTRY.timestamp() * 1000)
+    fetch = await fetch_bybit_native_funding(
+        _ErrorExchange(), "FOOUSDT", category="linear", since_ms=since, until_ms=since + 1
+    )
+    assert fetch.error_status == "fetch_failed"
+    assert "params error" in (fetch.error or "")
+
+
+async def test_delisted_instrument_is_captured_by_native_id() -> None:
+    """ICXUSDT was delisted on 2026-09-18 and CCXT no longer lists it, but the v5 history
+    still answers by native id. Real settlements around the 09-14 position."""
+    icx = InstrumentRoute("bybit", "linear", "ICXUSDT", "ICX/USDT:USDT")
+    entry = datetime(2026, 9, 13, 22, 27, tzinfo=UTC)
+    exit_at = datetime(2026, 9, 14, 10, 27, tzinfo=UTC)
+    settlements = (
+        (datetime(2026, 9, 13, 16, tzinfo=UTC), 0.0001),
+        (datetime(2026, 9, 14, 0, tzinfo=UTC), -0.0000397),
+        (datetime(2026, 9, 14, 8, tzinfo=UTC), 0.0001),
+        (datetime(2026, 9, 14, 16, tzinfo=UTC), 0.0001),
+    )
+    rows: list[dict[str, object]] = [
+        {"timestamp": int(at.timestamp() * 1000), "fundingRate": rate} for at, rate in settlements
+    ]
+    exchange = _FakeExchange(rows, symbol="ICXUSDT")
+    repo = _FakeRepo()
+    capture = await resolve_window(exchange, repo, icx, entry=entry, exit_at=exit_at, now=exit_at)
+    assert capture.status == "complete"
+    assert {p["symbol"] for p in exchange.params} == {"ICXUSDT"}
+    assert repo.runs[0]["source_version"] == ACTUAL_FUNDING_VERSION == "hold12h_actual_funding_v2"
+
+
+async def test_unsupported_route_is_never_complete() -> None:
+    route = InstrumentRoute("binance", "linear", "FOOUSDT", "FOO/USDT:USDT")
+    repo = _FakeRepo()
+    capture = await resolve_window(
+        _FakeExchange(_bracketed_rows()), repo, route, entry=_ENTRY, exit_at=_EXIT, now=_ENTRY
+    )
+    assert capture.status == "fetch_failed"
     assert repo.runs[0]["status"] == "fetch_failed"

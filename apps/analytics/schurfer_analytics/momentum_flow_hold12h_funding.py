@@ -19,6 +19,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from .momentum_flow_hold12h_verdict import ACTUAL_FUNDING_VERSION as ACTUAL_FUNDING_VERSION
 from .momentum_flow_hold12h_verdict_report import (
     FundingCoverage,
     InstrumentRoute,
@@ -28,10 +29,6 @@ from .momentum_flow_hold12h_verdict_report import (
 if TYPE_CHECKING:
     from collections.abc import Sequence
     from datetime import datetime
-
-# The frozen funding construction this source produces. Bumped only with the verdict
-# contract's actual_funding_version when the capture semantics change.
-ACTUAL_FUNDING_VERSION = "hold12h_actual_funding_v1"
 
 
 @dataclass(frozen=True)
