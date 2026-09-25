@@ -90,10 +90,44 @@ def render_markdown(report: dict[str, Any]) -> str:
         "| stage | count |",
         "| ----- | ----- |",
         f"| captured since cohort start | {r['captured_in_cohort']} |",
-        f"| qualified candidates | {r['candidates']} |",
+        f"| excluded at capture (expected) | {r['capture_excluded']} |",
+        f"| still collecting | {r['capture_in_flight']} |",
+        f"| abandoned by the capture process | {r['capture_abandoned']} |",
+        f"| pipeline errors (complete or unknown, never qualified) | {r['pipeline_errors']} |",
+        f"| reached qualification | {r['qualification_rows']} |",
+        f"| excluded at qualification | {sum(r['excluded_by_reason'].values())} |",
+        f"| qualified | {r['qualified_rows']} |",
+        f"| qualified without a formal episode | "
+        f"{sum(r['qualified_without_episode_by_status'].values())} |",
+        f"| formal candidates | {r['candidates']} |",
         f"| timing-matured | {r['matured']} |",
         "",
-        "## Exclusion reasons",
+        *(
+            [f"> WARNING: {r['pipeline_errors']} captures never reached qualification.", ""]
+            if r["pipeline_errors"]
+            else []
+        ),
+        *(
+            ["> WARNING: qualified rows do not reconcile with formal candidates.", ""]
+            if not r["lower_funnel_reconciles"]
+            else []
+        ),
+        "## Stopped before qualification (capture status:reason)",
+        "",
+        "| status:reason | count |",
+        "| ------------- | ----- |",
+        *[f"| {reason} | {count} |" for reason, count in r["pre_qualification_by_reason"].items()],
+        "",
+        "## Qualified without a formal episode (selected target status)",
+        "",
+        "| status | count |",
+        "| ------ | ----- |",
+        *[
+            f"| {status} | {count} |"
+            for status, count in r["qualified_without_episode_by_status"].items()
+        ],
+        "",
+        "## Excluded at qualification",
         "",
         "| reason | count |",
         "| ------ | ----- |",
