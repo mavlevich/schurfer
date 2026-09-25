@@ -3783,6 +3783,18 @@ net performance suitable for tax or risk accounting.
 - Rate limiting on api-gateway before any public exposure.
 - `gitleaks` plus the existing `make security` in CI (Phase 1). CodeQL or Semgrep
   later.
+- **Option, not scheduled (2026-09-25): local key storage and rotation.** Research keys
+  (read-only Bybit, CoinGecko demo) expire silently; the v4 identity run hit an expired
+  Bybit key and CoinGecko rate limits.
+  - **Storage:** one file per provider in `~/.config/schurfer/*.env`, mode 600, never
+    in the repo. Production keys stay in `.env.prod` on the host.
+  - **Check:** `make keys-check` pings each key and reports whether it works, its
+    permissions and the days to expiry (Bybit `query-api` returns `expiredAt`). It warns
+    when fewer than 14 days remain.
+  - **Rotation:** create the new key, replace it in the file, run `keys-check`, then
+    delete the old key at the provider.
+
+  Deferred behind getting HYP-012 v4 to a real-money decision.
 
 ## Tech debt and DX (opportunistic)
 
