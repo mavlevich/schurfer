@@ -896,3 +896,23 @@ async def test_slow_quotes_close_a_chunk_by_time_not_only_by_count() -> None:
 def test_probe_chunk_bounds_must_be_positive(overrides: dict[str, Any]) -> None:
     with pytest.raises(ValueError, match="limits must be positive"):
         PaperWorkerConfig("postgresql://test", "redis:6379", **overrides)
+
+
+async def test_disallowed_entries_skip_every_interleaved_check() -> None:
+    clock = _SimClock(T0)
+    arrivals = tuple(_candidate(decision_at=T0 + timedelta(seconds=s)) for s in range(0, 30))
+    store = _ArrivingWatchStore(clock, arrivals)
+    store.probes = _open_probes(50)  # five chunks -> four interleave points
+
+    result = await process_tick(
+        store=store,
+        market=_TimedMarket(clock, 0.27, []),
+        run=_active_run(),
+        config=PaperWorkerConfig("postgresql://test", "redis:6379"),
+        clock=clock,
+        allow_new_entries=False,
+    )
+
+    assert store.claimed == []
+    assert result.watches_seen == 0
+    assert result.probes_quoted == 50
