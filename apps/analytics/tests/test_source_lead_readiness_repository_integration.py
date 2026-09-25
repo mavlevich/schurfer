@@ -39,7 +39,14 @@ async def _connect_or_skip() -> AsyncEngine:
     return engine
 
 
-async def _insert_capture(engine: AsyncEngine, *, base: str, observed_at: datetime) -> int:
+async def _insert_capture(
+    engine: AsyncEngine,
+    *,
+    base: str,
+    observed_at: datetime,
+    status: str = "complete",
+    eligibility_reason: str = "eligible",
+) -> int:
     async with engine.begin() as connection:
         event_id = (
             await connection.execute(
@@ -61,7 +68,7 @@ async def _insert_capture(engine: AsyncEngine, *, base: str, observed_at: dateti
                     ) VALUES (
                         :event_id, 'test_capture_v1', 'gate', :base, :symbol,
                         :observed_at, :observed_at, :observed_at,
-                        :observed_at, 'complete', 'eligible', 20.0, '[]'::jsonb, '{}'::jsonb
+                        :observed_at, :status, :eligibility_reason, 20.0, '[]'::jsonb, '{}'::jsonb
                     ) RETURNING id
                 """),
                 {
@@ -69,6 +76,8 @@ async def _insert_capture(engine: AsyncEngine, *, base: str, observed_at: dateti
                     "base": base,
                     "symbol": f"{base}_USDT",
                     "observed_at": observed_at,
+                    "status": status,
+                    "eligibility_reason": eligibility_reason,
                 },
             )
         ).scalar_one()
@@ -157,6 +166,8 @@ async def test_readiness_candidate_set_matches_formal_repository() -> None:
         "READYEXCL",  # excluded qualification
         "READYNOTSAMPLED",  # qualified but target observation not sampled
         "READYTOOOLD",  # qualified + sampled but before cohort start
+        "READYNOTFIRST",  # excluded at capture: never reaches qualification
+        "READYSTUCK",  # completed eligible but never qualified: a pipeline error
     )
     try:
         await _seed_candidate(engine, base="READYGOOD1", observed_at=old)
@@ -174,6 +185,14 @@ async def test_readiness_candidate_set_matches_formal_repository() -> None:
         await _seed_candidate(
             engine, base="READYTOOOLD", observed_at=_COHORT_START - timedelta(days=1)
         )
+        await _insert_capture(
+            engine,
+            base="READYNOTFIRST",
+            observed_at=old,
+            status="excluded",
+            eligibility_reason="gate_not_unique_first_source",
+        )
+        await _insert_capture(engine, base="READYSTUCK", observed_at=old)
 
         inputs = await load_readiness_inputs(
             _RAW_DB_URL, qualification_version=_QV, cohort_start=_COHORT_START
@@ -197,6 +216,15 @@ async def test_readiness_candidate_set_matches_formal_repository() -> None:
         assert report.matured == 1
         # The excluded qualification appears in the cohort-scoped diagnostic.
         assert report.excluded_by_reason.get("source_identity_unapproved") == 1
+        # Captures stopped before qualification are counted with their capture reason, so
+        # the funnel reconciles exactly: nothing is left unaccounted.
+        assert report.pre_qualification_by_reason.get("excluded:gate_not_unique_first_source") == 1
+        # A completed eligible capture without a qualification is surfaced as an error.
+        assert report.pipeline_errors >= 1
+        # The qualified-but-fetch_failed row is explained, so the lower funnel reconciles.
+        assert report.qualified_without_episode_by_status == {"fetch_failed": 1}
+        assert report.qualified_rows == 3
+        assert report.lower_funnel_reconciles
         # Accrual uses the fixed exposure window, not the event span.
         exposure_weeks = (inputs.database_now - _COHORT_START).total_seconds() / 86400.0 / 7.0
         assert report.qualified_per_week == pytest.approx(2 / exposure_weeks)

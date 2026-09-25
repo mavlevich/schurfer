@@ -44,6 +44,46 @@ _EXCLUDED_REASONS = text(
 )
 
 
+_PRE_QUALIFICATION = text(
+    """
+    SELECT c.status AS status, coalesce(c.eligibility_reason, 'none') AS reason, count(*) AS n
+    FROM app.source_lead_captures c
+    WHERE c.source_first_observed_at >= :since
+      AND NOT EXISTS (
+        SELECT 1 FROM app.source_lead_qualifications q
+        WHERE q.capture_id = c.id AND q.qualification_version = :qv
+      )
+    GROUP BY c.status, coalesce(c.eligibility_reason, 'none')
+    ORDER BY n DESC
+    """
+)
+
+_QUALIFICATION_ROWS = text(
+    """
+    SELECT count(*) AS n
+    FROM app.source_lead_qualifications q
+    JOIN app.source_lead_captures c ON c.id = q.capture_id
+    WHERE q.qualification_version = :qv AND c.source_first_observed_at >= :since
+    """
+)
+
+
+_QUALIFIED_WITHOUT_EPISODE = text(
+    """
+    SELECT coalesce(t.status, 'missing') AS status, count(*) AS n
+    FROM app.source_lead_qualifications q
+    JOIN app.source_lead_captures c ON c.id = q.capture_id
+    LEFT JOIN app.source_lead_target_observations t
+      ON t.capture_id = q.capture_id AND t.target_exchange = q.selected_target_exchange
+    WHERE q.status = 'qualified' AND q.qualification_version = :qv
+      AND c.source_first_observed_at >= :since
+      AND t.status IS DISTINCT FROM 'sampled'
+    GROUP BY coalesce(t.status, 'missing')
+    ORDER BY n DESC
+    """
+)
+
+
 async def load_readiness_inputs(
     db_url: str,
     *,
@@ -92,6 +132,32 @@ async def load_readiness_inputs(
                     .mappings()
                     .all()
                 )
+                pre_rows = (
+                    (
+                        await connection.execute(
+                            _PRE_QUALIFICATION,
+                            {"qv": qualification_version, "since": cohort_start},
+                        )
+                    )
+                    .mappings()
+                    .all()
+                )
+                qualification_rows = (
+                    await connection.execute(
+                        _QUALIFICATION_ROWS,
+                        {"qv": qualification_version, "since": cohort_start},
+                    )
+                ).scalar_one()
+                without_episode_rows = (
+                    (
+                        await connection.execute(
+                            _QUALIFIED_WITHOUT_EPISODE,
+                            {"qv": qualification_version, "since": cohort_start},
+                        )
+                    )
+                    .mappings()
+                    .all()
+                )
     finally:
         await engine.dispose()
 
@@ -101,6 +167,11 @@ async def load_readiness_inputs(
         episodes=episodes,
         captured_in_cohort=int(captured),
         excluded_by_reason={str(r["reason"]): int(r["n"]) for r in reason_rows},
+        pre_qualification_by_reason={f"{r['status']}:{r['reason']}": int(r["n"]) for r in pre_rows},
+        qualification_rows=int(qualification_rows),
+        qualified_without_episode_by_status={
+            str(r["status"]): int(r["n"]) for r in without_episode_rows
+        },
     )
 
 
