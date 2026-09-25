@@ -112,6 +112,7 @@ abnormal-flow-snapshot = "schurfer_analytics.abnormal_flow_snapshot_pipeline:mai
 abnormal-flow-portfolio-diagnostic = "schurfer_analytics.abnormal_flow_portfolio_diagnostic:main"
 abnormal-flow-portfolio-rescore = "schurfer_analytics.abnormal_flow_portfolio_rescore:main"
 abnormal-flow-coverage-diagnostic = "schurfer_analytics.abnormal_flow_coverage_diagnostic:main"
+abnormal-flow-unresolved-taxonomy = "schurfer_analytics.abnormal_flow_unresolved_taxonomy:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
