@@ -11,30 +11,36 @@ re-writes nothing. Idempotency only covers identical rows -- a re-fetch that ret
 different rate for a stored settlement raises ``FundingRateConflictError`` (a hard
 integrity failure) rather than keeping the stale value.
 
-A window is recorded ``complete`` ONLY when the fetch succeeded, was not truncated by
-pagination, EVERY fetched row parsed, and the returned settlements bracket the target
-interval (proving the endpoint reached across both bounds, not merely the edge of
-available history). The request window is padded on each side so that bracketing is
-achievable. Anything doubtful is a non-complete status that leaves the interval
-accounting_incomplete downstream, never a silently-assumed full coverage. It captures the
-COST side only -- it never reads a probe return.
+Settlements are fetched from the Bybit v5 funding history by the exact NATIVE market id,
+never through a CCXT market lookup, so an instrument delisted after the position closed is
+still queryable.
+
+``complete`` (``hold12h_actual_funding_v2``) means SOURCE completeness: the exact native
+symbol was queried, every page returned cleanly for the requested bounds, pagination was
+not truncated, every row parsed, the raw row is stored, the settlements reach across both
+the entry and the exit, and a re-fetch does not contradict a stored rate. It rests on one
+DOCUMENTED ASSUMPTION: a fully fetched v5 history lists every settlement in the range.
+Bybit may change the funding cadence without notice (for example to hourly when the rate
+hits its cap), and the endpoint returns events that happened, not the schedule, so no
+cadence rule can both accept a real 4h->8h transition and detect one missing event inside
+an equal gap. A gap longer than ``MAX_SETTLEMENT_GAP`` (8h, the longest standard Bybit
+interval) or a settlement off the hour is still treated as an anomaly and left incomplete,
+but passing those checks is NOT proof of completeness. Anything doubtful stays
+non-complete and becomes accounting_incomplete downstream. It captures the COST side only --
+it never reads a probe return.
 """
 
 from __future__ import annotations
 
 # ruff: noqa: S608 -- the app schema is a constant; every value is bound.
+import asyncio
 import math
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from itertools import pairwise
 from typing import TYPE_CHECKING, Any, Protocol
 
-from .derivatives_history import (
-    METHOD_BY_NAME,
-    DerivativesHistoryFetch,
-    fetch_derivatives_history,
-    source_timestamp_ms,
-)
+from .derivatives_history import DerivativesHistoryFetch, source_timestamp_ms
 from .momentum_flow_hold12h_funding import ACTUAL_FUNDING_VERSION
 
 if TYPE_CHECKING:
@@ -42,7 +48,11 @@ if TYPE_CHECKING:
 
     from .momentum_flow_hold12h_verdict_report import InstrumentRoute
 
-_FUNDING_METHOD = METHOD_BY_NAME["funding_rate_history"]
+# Longest standard Bybit funding interval. A longer gap inside the position is an anomaly
+# (left incomplete); a shorter one is accepted on the source-completeness assumption.
+MAX_SETTLEMENT_GAP = timedelta(hours=8)
+BYBIT_FUNDING_PAGE_LIMIT = 200
+_BYBIT_CATEGORIES = frozenset({"linear", "inverse"})
 
 # Prospective-capture boundary: probes that exited before this are never attempted. Venue
 # funding history has limited lookback, so ancient windows are unrecoverable and would only
@@ -109,11 +119,6 @@ class FundingRateConflictError(RuntimeError):
     left non-complete instead of silently keeping the stale first-writer value."""
 
 
-# A gap between consecutive settlements up to this multiple of the observed cadence is a
-# single settlement step (allows minor venue jitter); anything larger is a missing event.
-_GAP_TOLERANCE = 1.5
-
-
 def window_status(
     fetch: DerivativesHistoryFetch,
     settlements: Sequence[ParsedSettlement],
@@ -122,46 +127,131 @@ def window_status(
     entry: datetime,
     exit_at: datetime,
 ) -> str:
-    """Terminal coverage status for one funding window, conservative by construction.
+    """Terminal coverage status for one funding window under ``hold12h_actual_funding_v2``.
 
-    ``complete`` requires ALL of:
+    ``complete`` requires ALL of: a clean, fully-paged fetch; every fetched row parsed; a
+    settlement at/before ``entry`` and one at/after ``exit_at`` (the history reached across
+    both bounds, not the edge of what the venue keeps); every settlement on the hour; and
+    no gap overlapping ``(entry, exit]`` longer than ``MAX_SETTLEMENT_GAP``.
 
-    * a clean, fully-paged fetch (``coverage_status`` == complete);
-    * every fetched row parsed (a silent drop -> ``incomplete``);
-    * the settlements BRACKET the target interval -- one at/before ``entry`` and one
-      at/after ``exit_at`` -- so the endpoint reached across both bounds rather than merely
-      hitting the edge of available history; and
-    * the interior is GAP-FREE on the venue's own cadence. Two edge settlements do not
-      prove a 12h middle: the cadence is inferred from the smallest gap in the padded
-      response (which needs >= 3 settlements to establish a grid), and every consecutive
-      gap that overlaps ``(entry, exit]`` must be a single cadence step. A doubled gap means
-      a missing interior settlement, so the window is ``incomplete``.
-
-    Anything doubtful is ``incomplete``, never a silently-assumed full coverage. A
-    proven-zero-funding window is only possible when the padded response is dense and
-    gap-free but no settlement falls inside ``(entry, exit]``."""
+    The hour and gap checks only catch anomalies. Cadence changes are legitimate (Bybit switches to
+    hourly at the rate cap and back without notice), so a missing event inside an equal or
+    shorter gap is NOT detectable here: completeness rests on the documented assumption
+    that a fully fetched v5 history lists every settlement in range."""
     base = coverage_status(fetch)
     if base != "complete":
         return base
     if parse_failures > 0:
         return "incomplete"
     times = sorted({s.settlement_at for s in settlements})
-    # Fewer than three settlements in the padded window cannot establish the venue cadence,
-    # so the interior of a multi-hour interval cannot be proven gap-free.
-    if len(times) < 3:
+    if not times or not (times[0] <= entry and times[-1] >= exit_at):
         return "incomplete"
-    if not (times[0] <= entry and times[-1] >= exit_at):
+    # Bybit settles on the hour; an off-hour timestamp is a unit/parsing anomaly. Like the
+    # gap check this only catches anomalies -- being on the hour proves nothing about
+    # completeness.
+    if any(t.minute or t.second or t.microsecond for t in times):
         return "incomplete"
-    gaps = [(later - earlier).total_seconds() for earlier, later in pairwise(times)]
-    cadence = min(gaps)
-    if cadence <= 0:
-        return "incomplete"
-    for (earlier, later), gap in zip(pairwise(times), gaps, strict=True):
+    for earlier, later in pairwise(times):
         if later <= entry or earlier >= exit_at:
             continue  # gap lies entirely outside the target interval
-        if gap > cadence * _GAP_TOLERANCE:
-            return "incomplete"  # a missing interior settlement
+        if later - earlier > MAX_SETTLEMENT_GAP:
+            return "incomplete"
     return "complete"
+
+
+def _bybit_row(item: Any, native_market_id: str) -> dict[str, Any] | None:
+    """One v5 list item as a CCXT-shaped row that keeps the raw item under ``info``.
+    ``None`` when the item is not for the exact requested native symbol."""
+    if not isinstance(item, dict) or item.get("symbol") != native_market_id:
+        return None
+    raw_ts = item.get("fundingRateTimestamp")
+    raw_rate = item.get("fundingRate")
+    try:
+        timestamp: Any = int(str(raw_ts))
+    except ValueError:
+        timestamp = raw_ts
+    try:
+        rate: Any = float(str(raw_rate))
+    except ValueError:
+        rate = raw_rate
+    return {"timestamp": timestamp, "fundingRate": rate, "info": dict(item)}
+
+
+async def fetch_bybit_native_funding(
+    exchange: Any,
+    native_market_id: str,
+    *,
+    category: str,
+    since_ms: int,
+    until_ms: int,
+    limit: int = BYBIT_FUNDING_PAGE_LIMIT,
+    max_pages: int = 10,
+    timeout_seconds: float = 30.0,
+) -> DerivativesHistoryFetch:
+    """Page backwards through Bybit v5 ``/v5/market/funding/history`` for one native symbol.
+
+    The venue returns newest first, at most ``limit`` rows per page. A short page ends the
+    range; a full page moves ``endTime`` just before its oldest row. Hitting ``max_pages``
+    with a full page is reported as pagination truncation, never as complete."""
+    if since_ms >= until_ms:
+        raise ValueError("funding history since must be earlier than until")
+    rows: list[dict[str, Any]] = []
+    end_ms = until_ms
+    for page_number in range(max_pages):
+        params = {
+            "category": category,
+            "symbol": native_market_id,
+            "startTime": since_ms,
+            "endTime": end_ms,
+            "limit": limit,
+        }
+        try:
+            response = await asyncio.wait_for(
+                exchange.public_get_v5_market_funding_history(params), timeout=timeout_seconds
+            )
+        except Exception as exc:
+            return DerivativesHistoryFetch(
+                tuple(rows), page_number + 1, error_status="fetch_failed", error=str(exc)[:1000]
+            )
+        if not isinstance(response, dict) or str(response.get("retCode")) != "0":
+            message = response.get("retMsg") if isinstance(response, dict) else None
+            return DerivativesHistoryFetch(
+                tuple(rows),
+                page_number + 1,
+                error_status="fetch_failed",
+                error=f"bybit v5 funding history error: {message!r}"[:1000],
+            )
+        result = response.get("result")
+        items = result.get("list") if isinstance(result, dict) else None
+        if not isinstance(items, list):
+            return DerivativesHistoryFetch(
+                tuple(rows),
+                page_number + 1,
+                error_status="invalid_response",
+                error="bybit v5 funding history has no result.list",
+            )
+        page: list[dict[str, Any]] = []
+        for item in items:
+            row = _bybit_row(item, native_market_id)
+            if row is None:
+                return DerivativesHistoryFetch(
+                    tuple(rows),
+                    page_number + 1,
+                    error_status="invalid_response",
+                    error=f"row not for requested symbol {native_market_id}",
+                )
+            page.append(row)
+        rows.extend(page)
+        if len(page) < limit:
+            return DerivativesHistoryFetch(tuple(rows), page_number + 1)
+        oldest = min(
+            (row["timestamp"] for row in page if isinstance(row["timestamp"], int)),
+            default=None,
+        )
+        if oldest is None or oldest - 1 < since_ms:
+            return DerivativesHistoryFetch(tuple(rows), page_number + 1)
+        end_ms = oldest - 1
+    return DerivativesHistoryFetch(tuple(rows), max_pages, pagination_exhausted=True)
 
 
 class FundingWriter(Protocol):
@@ -201,7 +291,7 @@ async def resolve_window(
     now: datetime,
     boundary_pad_hours: float = 12.0,
     source_version: str = ACTUAL_FUNDING_VERSION,
-    limit: int = 200,
+    limit: int = BYBIT_FUNDING_PAGE_LIMIT,
     max_pages: int = 10,
     timeout_seconds: float = 30.0,
 ) -> WindowCapture:
@@ -210,22 +300,27 @@ async def resolve_window(
     each side (>= one funding cadence) so a ``complete`` run can PROVE it bracketed the
     target interval rather than stopping at the boundary of available history. The run is
     recorded last so a crash mid-write leaves it non-complete (fail-closed)."""
-    from datetime import timedelta
-
     pad = timedelta(hours=boundary_pad_hours)
     since = entry - pad
     until = exit_at + pad
-    fetch = await fetch_derivatives_history(
-        exchange,
-        _FUNDING_METHOD,
-        route.unified_symbol,
-        timeframe=None,
-        since_ms=int(since.timestamp() * 1000),
-        until_ms=int(until.timestamp() * 1000),
-        limit=limit,
-        max_pages=max_pages,
-        timeout_seconds=timeout_seconds,
-    )
+    if route.exchange != "bybit" or route.market_type not in _BYBIT_CATEGORIES:
+        fetch = DerivativesHistoryFetch(
+            (),
+            0,
+            error_status="fetch_failed",
+            error=f"unsupported funding route {route.exchange}/{route.market_type}",
+        )
+    else:
+        fetch = await fetch_bybit_native_funding(
+            exchange,
+            route.market_id,
+            category=route.market_type,
+            since_ms=int(since.timestamp() * 1000),
+            until_ms=int(until.timestamp() * 1000),
+            limit=limit,
+            max_pages=max_pages,
+            timeout_seconds=timeout_seconds,
+        )
     parsed = [p for row in fetch.rows if (p := parse_settlement(row)) is not None]
     parse_failures = len(fetch.rows) - len(parsed)
     status = window_status(fetch, parsed, parse_failures, entry=entry, exit_at=exit_at)
@@ -517,8 +612,6 @@ async def run_capture(
 ) -> dict[str, int]:
     """Capture funding for a bounded slice of pending hold12h intervals (``max_windows``,
     fair-queued so stuck windows never starve fresh ones). Returns a health summary."""
-    from datetime import timedelta
-
     from sqlalchemy.ext.asyncio import create_async_engine
 
     from .exchange_registry import EXCHANGE_FACTORIES

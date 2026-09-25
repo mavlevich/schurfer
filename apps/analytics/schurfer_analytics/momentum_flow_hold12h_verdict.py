@@ -48,8 +48,11 @@ class VerdictOutcome(StrEnum):
 CONTRACT_VERSION = "hold12h_verdict_v1"
 
 # The actual-funding contract the reader must satisfy (see the report module). Named
-# here so the verdict artifact records which funding construction produced its net.
-ACTUAL_FUNDING_VERSION = "hold12h_actual_funding_v1"
+# here so the verdict artifact records which funding construction produced its net, and
+# the single source for the capture and the stored source. v2 changed what ``complete``
+# means (source-completeness of the Bybit v5 history queried by native id; see the
+# resolver), so v1 and v2 coverage runs are never mixed under one identifier.
+ACTUAL_FUNDING_VERSION = "hold12h_actual_funding_v2"
 
 
 @dataclass(frozen=True)
