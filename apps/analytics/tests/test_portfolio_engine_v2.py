@@ -7,7 +7,9 @@ from typing import Any
 import pytest
 from schurfer_analytics.portfolio_engine_v2 import (
     PortfolioPosition,
+    PositionSizingPolicy,
     TradeDirection,
+    UnresolvedCapitalPolicy,
     simulate_portfolio_v2,
 )
 
@@ -66,6 +68,46 @@ def test_insufficient_capital_rejects_without_partial_allocation() -> None:
     assert metrics.rejected_entries[0].decision_id == "3"
 
 
+def test_current_equity_sizing_reinvests_after_a_loss() -> None:
+    positions = [
+        _position("loss", "A", entry_minute=0, exit_minute=10, gross_return=-0.1),
+        _position("win", "B", entry_minute=11, exit_minute=20, gross_return=0.1),
+    ]
+    fixed = simulate_portfolio_v2(positions, initial_capital=100.0, k_slots=1)
+    dynamic = simulate_portfolio_v2(
+        positions,
+        initial_capital=100.0,
+        k_slots=1,
+        sizing_policy=PositionSizingPolicy.CURRENT_EQUITY_EQUAL_WEIGHT,
+    )
+
+    assert fixed.total_trades == 1
+    assert fixed.rejection_counts == {"insufficient_capital": 1}
+    assert dynamic.total_trades == 2
+    assert dynamic.final_equity == pytest.approx(99.0)
+    assert dynamic.min_entry_margin == pytest.approx(90.0)
+    assert dynamic.max_entry_margin == pytest.approx(100.0)
+    assert dynamic.average_entry_margin == pytest.approx(95.0)
+
+
+def test_current_equity_sizing_uses_one_weight_for_simultaneous_entries() -> None:
+    positions = [
+        _position("A", "A", entry_minute=0, exit_minute=10),
+        _position("B", "B", entry_minute=0, exit_minute=10),
+    ]
+    metrics = simulate_portfolio_v2(
+        positions,
+        initial_capital=100.0,
+        k_slots=2,
+        sizing_policy=PositionSizingPolicy.CURRENT_EQUITY_EQUAL_WEIGHT,
+    )
+
+    assert metrics.accepted_entries == 2
+    assert metrics.min_entry_margin == pytest.approx(50.0)
+    assert metrics.max_entry_margin == pytest.approx(50.0)
+    assert metrics.final_equity == pytest.approx(110.0)
+
+
 def test_unresolved_position_remains_reserved_and_marks_incomplete() -> None:
     position = _position("1", "A", entry_minute=0, exit_minute=None)
     metrics = simulate_portfolio_v2([position], initial_capital=100.0, k_slots=2)
@@ -75,6 +117,80 @@ def test_unresolved_position_remains_reserved_and_marks_incomplete() -> None:
     assert metrics.reserved_capital == 50.0
     assert metrics.notional_exposure == 50.0
     assert metrics.accounting_complete is False
+
+
+def _unresolved_with_plan(decision_id: str, asset: str, *, entry: int, planned: int) -> Any:
+    start = datetime(2026, 1, 1, tzinfo=UTC)
+    return replace(
+        _position(decision_id, asset, entry_minute=entry, exit_minute=None, costs_bps=50.0),
+        planned_exit_at=start + timedelta(minutes=planned),
+    )
+
+
+def test_hold_to_end_strands_the_slot_for_later_entries() -> None:
+    positions = [
+        _unresolved_with_plan("U", "A", entry=0, planned=10),
+        _position("R", "B", entry_minute=20, exit_minute=30),
+    ]
+    metrics = simulate_portfolio_v2(positions, initial_capital=100.0, k_slots=1)
+    assert metrics.rejection_counts == {"max_concurrent_positions": 1}
+    assert metrics.total_trades == 0
+
+
+def test_planned_exit_releases_the_slot_and_books_the_scenario_separately() -> None:
+    positions = [
+        _unresolved_with_plan("U", "A", entry=0, planned=10),
+        _position("R", "B", entry_minute=20, exit_minute=30),
+    ]
+    metrics = simulate_portfolio_v2(
+        positions,
+        initial_capital=100.0,
+        k_slots=1,
+        unresolved_policy=UnresolvedCapitalPolicy.PLANNED_EXIT,
+        unresolved_gross_return=-0.1,
+    )
+    # Unresolved: 100 * (-0.1 - 0.005) = -10.5; then 89.5 cannot fund a fixed 100 slot.
+    assert metrics.unresolved_released == 1
+    assert metrics.unresolved_assumed_net_pnl == pytest.approx(-10.5)
+    assert metrics.rejection_counts == {"insufficient_capital": 1}
+    assert metrics.net_pnl == 0.0
+    assert metrics.total_trades == 0
+    assert metrics.accounting_complete is False
+    assert metrics.final_equity == pytest.approx(89.5)
+
+
+def test_planned_exit_with_a_neutral_assumption_lets_the_next_trade_run() -> None:
+    positions = [
+        _unresolved_with_plan("U", "A", entry=0, planned=10),
+        _position("R", "B", entry_minute=10, exit_minute=30),
+    ]
+    metrics = simulate_portfolio_v2(
+        positions,
+        initial_capital=100.0,
+        k_slots=1,
+        sizing_policy=PositionSizingPolicy.CURRENT_EQUITY_EQUAL_WEIGHT,
+        unresolved_policy=UnresolvedCapitalPolicy.PLANNED_EXIT,
+        unresolved_gross_return=0.0,
+    )
+    # Release at minute 10 happens before the entry at the same timestamp.
+    assert metrics.total_trades == 1
+    assert metrics.unresolved_assumed_net_pnl == pytest.approx(-0.5)
+    assert metrics.net_pnl == pytest.approx(99.5 * 0.1)
+
+
+def test_planned_exit_requires_an_explicit_assumption_and_plan() -> None:
+    unresolved = _unresolved_with_plan("U", "A", entry=0, planned=10)
+    with pytest.raises(ValueError, match="explicit finite unresolved_gross_return"):
+        simulate_portfolio_v2([unresolved], unresolved_policy=UnresolvedCapitalPolicy.PLANNED_EXIT)
+    with pytest.raises(ValueError, match="applies only to planned_exit"):
+        simulate_portfolio_v2([unresolved], unresolved_gross_return=0.0)
+    without_plan = _position("V", "A", entry_minute=0, exit_minute=None)
+    with pytest.raises(ValueError, match="planned_exit_at after entry"):
+        simulate_portfolio_v2(
+            [without_plan],
+            unresolved_policy=UnresolvedCapitalPolicy.PLANNED_EXIT,
+            unresolved_gross_return=0.0,
+        )
 
 
 def test_same_timestamp_uses_exit_then_stable_entry_order() -> None:

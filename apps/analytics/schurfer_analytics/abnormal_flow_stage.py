@@ -16,6 +16,8 @@ import json
 import shlex
 import shutil
 import subprocess
+import sys
+import time
 from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
@@ -122,9 +124,17 @@ def stage_days(
     left as a usable input."""
     local_dir.mkdir(parents=True, exist_ok=True)
     staged: list[StagedDay] = []
+    total_days = (end - start).days + 1
+    started_at = time.monotonic()
     day = start
+    day_number = 0
     while day <= end:
+        day_number += 1
         base = f"bars-{day.isoformat()}"
+        sys.stderr.write(
+            f"[stage {day_number}/{total_days}] {day.isoformat()}: fetching archive member\n"
+        )
+        sys.stderr.flush()
         manifest = json.loads(transport.read_text(f"{remote_manifest_dir}/{base}.manifest.json"))
         receipt = _read_receipt(transport, remote_manifest_dir, base)
         archive = receipt.get("archive_name") or receipt.get("borg_archive")
@@ -144,16 +154,23 @@ def stage_days(
             )
         (local_dir / f"{base}.manifest.json").write_text(json.dumps(manifest))
         (local_dir / f"{base}.offsite-receipt.json").write_text(json.dumps(receipt))
+        file_bytes = dest.stat().st_size
         staged.append(
             StagedDay(
                 day=day.isoformat(),
                 archive=str(archive),
                 member=str(member),
                 sha256=actual_sha,
-                file_bytes=dest.stat().st_size,
+                file_bytes=file_bytes,
                 verified=True,
             )
         )
+        elapsed = time.monotonic() - started_at
+        sys.stderr.write(
+            f"[stage {day_number}/{total_days}] {day.isoformat()}: verified "
+            f"{file_bytes / (1024 * 1024):.1f} MiB; elapsed {elapsed:.1f}s\n"
+        )
+        sys.stderr.flush()
         day += timedelta(days=1)
     artifact = {
         "staging_version": STAGING_VERSION,
