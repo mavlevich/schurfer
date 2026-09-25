@@ -249,7 +249,7 @@ def test_rescore_uses_saved_positions_without_market_data(
     output = tmp_path / "rescored"
     report = rescore_bundle(source, output, k_values=(1, 2))
 
-    assert report["policy"]["sizing"] == "current_equity_equal_weight"
+    assert report["policy"]["sizing"] == "fixed_initial_equity"
     assert report["resolved_only_sensitivity"]["positions"] == 2
     assert (output / "diagnostic_report.json").is_file()
     # The provenance-bearing position artifact is carried over byte for byte.

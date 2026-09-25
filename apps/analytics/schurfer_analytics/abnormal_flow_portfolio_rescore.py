@@ -28,7 +28,7 @@ def rescore_bundle(
     source_bundle: Path,
     output_dir: Path,
     *,
-    sizing_policy: PositionSizingPolicy = PositionSizingPolicy.CURRENT_EQUITY_EQUAL_WEIGHT,
+    sizing_policy: PositionSizingPolicy = PositionSizingPolicy.FIXED_INITIAL_EQUITY,
     k_values: tuple[int, ...] = DEFAULT_K_VALUES,
 ) -> dict[str, Any]:
     if output_dir.exists():
@@ -114,7 +114,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--sizing-policy",
         type=PositionSizingPolicy,
         choices=tuple(PositionSizingPolicy),
-        default=PositionSizingPolicy.CURRENT_EQUITY_EQUAL_WEIGHT,
+        metavar="{" + ",".join(policy.value for policy in PositionSizingPolicy) + "}",
+        default=PositionSizingPolicy.FIXED_INITIAL_EQUITY,
     )
     return parser
 

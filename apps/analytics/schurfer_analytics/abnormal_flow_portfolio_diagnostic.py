@@ -445,7 +445,7 @@ def run_diagnostic(
     output_dir: Path,
     k_values: Sequence[int] = DEFAULT_K_VALUES,
     max_positions_per_asset: int = 1,
-    sizing_policy: PositionSizingPolicy = PositionSizingPolicy.CURRENT_EQUITY_EQUAL_WEIGHT,
+    sizing_policy: PositionSizingPolicy = PositionSizingPolicy.FIXED_INITIAL_EQUITY,
     burned_window_diagnostic: bool = False,
 ) -> dict[str, Any]:
     started_at = time.monotonic()
@@ -617,7 +617,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--sizing-policy",
         type=PositionSizingPolicy,
         choices=tuple(PositionSizingPolicy),
-        default=PositionSizingPolicy.CURRENT_EQUITY_EQUAL_WEIGHT,
+        metavar="{" + ",".join(policy.value for policy in PositionSizingPolicy) + "}",
+        default=PositionSizingPolicy.FIXED_INITIAL_EQUITY,
     )
     parser.add_argument("--burned-window-diagnostic", action="store_true")
     return parser
