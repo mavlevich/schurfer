@@ -45,6 +45,7 @@ pump-recurrence-integrity-report = "schurfer_analytics.pump_recurrence_integrity
 exchange-source-economics-report = "schurfer_analytics.exchange_source_economics_report:main"
 source-lead-report = "schurfer_analytics.source_lead_report:main"
 source-lead-readiness-report = "schurfer_analytics.source_lead_readiness_report:main"
+source-lead-bybit-canary = "schurfer_analytics.source_lead_bybit_canary:main"
 source-lead-identity-report = "schurfer_analytics.source_lead_identity_report:main"
 gate-identity-candidate-tooling = "schurfer_analytics.gate_identity_candidate_tooling:main"
 source-lead-identity-evidence = "schurfer_analytics.source_lead_identity_evidence:main"
