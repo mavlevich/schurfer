@@ -74,24 +74,34 @@ class Hold12hVerdictContract:
     # Gate A -- economic maturity (primary, diversity-independent).
     min_analyzable_pairs: int = 100
 
-    # Gate C -- diversity / concentration / missingness floor. PROVISIONAL: sizes from
-    # the pre-start accrual; do NOT copy HYP-012's 7 (that came from a 14-asset universe).
-    min_distinct_asset_clusters: int = 20  # PROVISIONAL (target ~20-30, from accrual)
+    # Gate C -- diversity / concentration / missingness floor, sized from the outcome-
+    # blind pre-start accrual (2026-09-13..25: ~130 fills/day, 515 assets, top asset
+    # 1.2%, funding coverage ~99% of mature windows; counts only, no returns read).
+    min_distinct_asset_clusters: int = 30
     min_distinct_utc_weeks: int = 4
-    max_single_asset_fraction: float = 0.25  # PROVISIONAL concentration cap
-    max_single_week_fraction: float = 0.40  # PROVISIONAL concentration cap
-    max_rejected_stale_fraction: float = 0.50  # PROVISIONAL missingness ceiling
-    max_unresolved_fraction: float = 0.20  # PROVISIONAL missingness ceiling
-    max_accounting_incomplete_fraction: float = 0.20  # PROVISIONAL missingness ceiling
-    max_identity_unresolved_fraction: float = 0.05  # PROVISIONAL; unresolved identity
+    max_single_asset_fraction: float = 0.10
+    max_single_week_fraction: float = 0.40
+    max_rejected_stale_fraction: float = 0.15
+    max_unresolved_fraction: float = 0.10
+    max_accounting_incomplete_fraction: float = 0.10
+    max_identity_unresolved_fraction: float = 0.05
+    # Taken portfolio slots without a complete result, worst of the two policies.
+    max_portfolio_incomplete_slot_fraction: float = 0.05
     # NOTE: integrity failures have NO tolerance -- ANY of them fail-closes the verdict
     # (see Gate 0b); a NaN/invalid row is a defect, not acceptable missingness.
 
     # Gate D/E -- significance and duration improvement.
     confidence_level: float = 0.95
     # Gate E -- fixed-$300-bank portfolio must beat 240m by a real dollar margin, not
-    # merely tie. PROVISIONAL: 5% of the $300 bank.
+    # merely tie: 5% of the $300 bank.
     min_portfolio_improvement_usd: float = 15.0
+    # No verifiable bound on unproven funding exists (Bybit changes rate caps and cadence
+    # without notice), so a taken slot without proven funding leaves the window PnL
+    # undetermined and Gate E cannot pass; zero funding is a reported sensitivity only.
+    funding_bound_rule: str = "no_registered_bound_v1"
+    # An incomplete 240m slot releases at its observed 240m mark (or an earlier actual
+    # stop), else the nominal 240m bound -- never at the 720m exit.
+    portfolio_240_release_rule: str = "240m_mark_or_earlier_stop_else_nominal_v1"
 
     # Fixed-bank portfolio parameters -- FROZEN into the sha so one contract sha means
     # exactly one computation (otherwise the same sha could produce different results).
@@ -121,6 +131,13 @@ class Hold12hVerdictContract:
     # contract is not registered. Runtime first-writer registration is a DRAFT/readiness
     # convenience only and never substitutes for this frozen literal.
     cohort_start_iso: str | None = None
+    # The ONE pre-declared decision-time prefix (exclusive upper bound) at which the
+    # economic read happens. A formal run with any other prefix is refused; if the floor
+    # is not met there the result is insufficient_data, never a later, friendlier prefix.
+    decision_prefix_end_iso: str | None = None
+    # A formal read is refused until this long after the prefix: the last 720m positions
+    # must close and the funding capture must pass its settlement lag and queue.
+    min_read_delay_hours: float = 36.0
 
     def __post_init__(self) -> None:
         if self.min_analyzable_pairs <= 0:
@@ -138,6 +155,7 @@ class Hold12hVerdictContract:
             "max_unresolved_fraction",
             "max_accounting_incomplete_fraction",
             "max_identity_unresolved_fraction",
+            "max_portfolio_incomplete_slot_fraction",
         ):
             value = getattr(self, name)
             if not 0 < value <= 1:
@@ -154,6 +172,10 @@ class Hold12hVerdictContract:
             raise ValueError("bootstrap_iterations must be at least 100")
         if self.bootstrap_seed < 0:
             raise ValueError("bootstrap_seed must not be negative")
+        if self.min_read_delay_hours < 0:
+            raise ValueError("min_read_delay_hours must not be negative")
+        if (self.cohort_start_iso is None) != (self.decision_prefix_end_iso is None):
+            raise ValueError("cohort_start_iso and decision_prefix_end_iso are set together")
 
     def canonical_json(self) -> str:
         import json
@@ -195,9 +217,14 @@ class VerdictInputs:
     identity_unresolved_fraction: float
     integrity_failure_fraction: float
 
-    # Fixed-$300-bank portfolio replay, same WATCH stream, both policies (Gate E).
-    portfolio_720_window_pnl_usd: float
-    portfolio_240_window_pnl_usd: float
+    # Fixed-$300-bank portfolio replay, same WATCH stream, both policies (Gate E). None
+    # when a taken slot has no complete result: with no registered funding bound the
+    # window PnL is undetermined, so Gate E cannot pass. None is deliberately NOT a
+    # non-finite value, so it never trips Gate 0 ahead of the negative-EV rejection.
+    portfolio_720_window_pnl_usd: float | None
+    portfolio_240_window_pnl_usd: float | None
+    # Taken slots without a complete result, worst of the two policies (Gate C).
+    portfolio_incomplete_slot_fraction: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -231,6 +258,7 @@ def decide_verdict(contract: Hold12hVerdictContract, inputs: VerdictInputs) -> V
       D  standalone signif.   -- no CI or CI lower not > 0  => insufficient_evidence
       E  duration + portfolio -- no paired edge / not a     => no_duration_improvement
                                   PROFITABLE $ win over 240m
+                                  (window PnL undetermined => insufficient_data)
       -- otherwise                                          => candidate
     """
     # Gate 0 -- integrity. A NaN/inf return, rate, fraction or PnL must never reach a
@@ -304,6 +332,7 @@ def decide_verdict(contract: Hold12hVerdictContract, inputs: VerdictInputs) -> V
             f" > {contract.max_single_week_fraction}",
         )
     for name, ceiling in (
+        ("portfolio_incomplete_slot_fraction", contract.max_portfolio_incomplete_slot_fraction),
         ("rejected_stale_fraction", contract.max_rejected_stale_fraction),
         ("unresolved_fraction", contract.max_unresolved_fraction),
         ("accounting_incomplete_fraction", contract.max_accounting_incomplete_fraction),
@@ -338,15 +367,24 @@ def decide_verdict(contract: Hold12hVerdictContract, inputs: VerdictInputs) -> V
     # (not merely lose less than 240m), and it must beat 240m by a real dollar margin.
     # (Drawdown is reported as a diagnostic but NOT gated: the stored MAE is from-entry,
     # not peak-to-trough, so it is not a trustworthy risk bound.)
-    portfolio_improvement = (
-        inputs.portfolio_720_window_pnl_usd - inputs.portfolio_240_window_pnl_usd
-    )
     if not inputs.paired_diff_ci_lower > 0:
         return VerdictResult(
             VerdictOutcome.NO_DURATION_IMPROVEMENT,
             "E",
             f"paired d(p) CI lower {inputs.paired_diff_ci_lower:.6f} not > 0",
         )
+    # No registered bound on unproven funding: a taken slot without a complete result
+    # leaves the window PnL undetermined, which can support neither a pass nor a fail.
+    if inputs.portfolio_720_window_pnl_usd is None or inputs.portfolio_240_window_pnl_usd is None:
+        return VerdictResult(
+            VerdictOutcome.INSUFFICIENT_DATA,
+            "E",
+            "fixed-bank window PnL undetermined: a taken slot has no complete result and "
+            "no funding bound is registered",
+        )
+    portfolio_improvement = (
+        inputs.portfolio_720_window_pnl_usd - inputs.portfolio_240_window_pnl_usd
+    )
     if inputs.portfolio_720_window_pnl_usd <= 0:
         return VerdictResult(
             VerdictOutcome.NO_DURATION_IMPROVEMENT,

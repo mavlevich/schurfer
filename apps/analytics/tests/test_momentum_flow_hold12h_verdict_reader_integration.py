@@ -18,7 +18,11 @@ from typing import Any
 
 import pytest
 from schurfer_analytics.momentum_flow_hold12h_verdict import HOLD12H_VERDICT_CONTRACT
-from schurfer_analytics.momentum_flow_hold12h_verdict_reader import Schemas, run_formal_for_test
+from schurfer_analytics.momentum_flow_hold12h_verdict_reader import (
+    Schemas,
+    load_cohort,
+    run_formal_for_test,
+)
 from schurfer_analytics.momentum_flow_hold12h_verdict_report import (
     FundingCoverage,
     InstrumentRoute,
@@ -58,7 +62,8 @@ CREATE TABLE {_SCHEMA}.momentum_flow_watch_evaluations_1m (
     exchange TEXT, market_type TEXT, symbol TEXT, episode_id UUID);
 CREATE TABLE {_SCHEMA}.momentum_flow_paper_probes (
     paper_id UUID, watch_id UUID, paper_version TEXT, exchange TEXT, market_type TEXT,
-    symbol TEXT, market_id TEXT, entry_status TEXT, position_status TEXT, exit_reason TEXT,
+    symbol TEXT, unified_symbol TEXT, market_id TEXT, entry_status TEXT,
+    position_status TEXT, exit_reason TEXT,
     entry_at TIMESTAMPTZ, exit_at TIMESTAMPTZ, gross_return_pct DOUBLE PRECISION,
     fees_usd DOUBLE PRECISION, max_adverse_return_pct DOUBLE PRECISION,
     entry_filled_notional_usd DOUBLE PRECISION);
@@ -100,7 +105,8 @@ def _seed(cur: Any) -> tuple[str, str]:
     entry_at = _D + timedelta(minutes=5)
     cur.execute(
         f"INSERT INTO {_SCHEMA}.momentum_flow_paper_probes VALUES "
-        "(%s,%s,%s,%s,%s,'BTCUSDT','BTCUSDT','opened','closed','max_hold',%s,%s,2.5,0.5,-1.0,50.0)",
+        "(%s,%s,%s,%s,%s,'BTCUSDT','BTC/USDT:USDT','BTCUSDT','opened','closed','max_hold',"
+        "%s,%s,2.5,0.5,-1.0,50.0)",
         (
             paper_id,
             w_ok,
@@ -144,6 +150,18 @@ async def test_reader_maps_real_rows_into_the_pure_pipeline() -> None:
         assert pair.canonical_asset == "BTC-canon"
         assert abs(pair.net_720 - 1.5) < 1e-9  # 2.5 - 0.5/50*100, zero funding
         assert abs(pair.net_240cf - 0.5) < 1e-9  # 1.5 - 0.5/50*100
+        # The route carries the exact resolved unified symbol, not the raw ticker.
+        _watches, probes = await load_cohort(
+            _PG_DSN,
+            cohort_start=_D - timedelta(days=1),
+            decision_prefix_end=_D + timedelta(days=1),
+            schemas=_SCHEMAS,
+        )
+        (route,) = {probe.route for probe in probes.values()}
+        assert route.unified_symbol == "BTC/USDT:USDT"
+        assert route.market_id == "BTCUSDT"
+        assert artifact["portfolio"]["720m"]["taken"] == 1
+        assert artifact["portfolio"]["240m"]["skipped_slots_full"] == 0
         assert artifact["mode"] == "formal"
         assert len(artifact["fingerprint"]) == 64
     finally:

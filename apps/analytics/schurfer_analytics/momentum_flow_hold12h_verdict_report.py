@@ -389,20 +389,35 @@ class PortfolioEntry:
     exit_at: datetime
     pnl_usd: float | None
     mae_usd: float | None
+    # PnL with funding set to ZERO for a slot whose actual funding is not proven. Only a
+    # labelled sensitivity, never the verdict value; None when the price leg is unknown.
+    pnl_zero_funding_usd: float | None = None
 
 
 @dataclass(frozen=True)
 class PortfolioResult:
-    window_pnl_usd: float
+    # None when ANY taken slot lacks a complete result: no funding bound is registered,
+    # so the window PnL is not determined (Gate E then cannot pass), but it never becomes
+    # a NaN that would trip the integrity gate ahead of the negative-EV rejection.
+    window_pnl_usd: float | None
     # A REPORTED diagnostic, NOT a gated risk metric and NOT a true drawdown: the worst
-    # simultaneous adverse-FROM-ENTRY excursion. The writer stores min-return-from-entry,
-    # not peak-to-trough, so a 100->130->110 path reads 0 here while losing ~15% from the
-    # peak; between-quote moves are also unseen. Named honestly for that reason.
+    # simultaneous adverse-FROM-ENTRY excursion over taken slots with a known MAE. The
+    # writer stores min-return-from-entry, not peak-to-trough, so a 100->130->110 path
+    # reads 0 here while losing ~15% from the peak; between-quote moves are also unseen.
     adverse_from_entry_usd: float
     longest_losing_streak: int
     taken: int
     skipped_slots_full: int
-    complete: bool  # False when a taken slot was unresolved -> not trustworthy
+    complete: bool  # False when a taken slot has no complete result
+    incomplete_taken: int = 0
+    # Sum of taken slots' occupied hours; occupancy = slot_hours / (slots * window hours).
+    slot_hours: float = 0.0
+    # Window PnL with unproven funding set to zero (labelled sensitivity, never gated).
+    window_pnl_zero_funding_sensitivity_usd: float | None = None
+
+    @property
+    def incomplete_taken_fraction(self) -> float:
+        return self.incomplete_taken / self.taken if self.taken else 0.0
 
 
 def _worst_simultaneous_adverse_from_entry(taken: Sequence[PortfolioEntry]) -> float:
@@ -414,8 +429,8 @@ def _worst_simultaneous_adverse_from_entry(taken: Sequence[PortfolioEntry]) -> f
     for pivot in taken:
         total = 0.0
         for other in taken:
-            if other.entry_at <= pivot.entry_at < other.exit_at:
-                total += -(other.mae_usd or 0.0)  # mae_usd <= 0 -> add its magnitude
+            if other.entry_at <= pivot.entry_at < other.exit_at and other.mae_usd is not None:
+                total += -other.mae_usd  # mae_usd <= 0 -> add its magnitude
         worst = max(worst, total)
     return worst
 
@@ -428,9 +443,9 @@ def replay_fixed_bank(entries: Sequence[PortfolioEntry], *, max_slots: int) -> P
     its slot once ``exit_at <= `` the next arrival, and an arrival that finds no free slot
     is SKIPPED. Every FILLED probe is passed in (resolved or not), so a slot a later-
     unresolved position occupied is present and never freed by hindsight. If a TAKEN slot
-    is unresolved (``pnl_usd`` / ``mae_usd`` None) the window is incomplete and its
-    PnL/drawdown are non-finite so the verdict fail-closes. Drawdown is the conservative
-    simultaneous-MAE proxy; the losing streak is over closed trades in exit order.
+    has no complete result (``pnl_usd`` / ``mae_usd`` None) the window PnL is None (not
+    determined; no funding bound is registered) and the count is reported. The losing
+    streak is over complete closed trades in exit order.
     """
     if max_slots <= 0:
         raise ValueError("max_slots must be positive")
@@ -446,30 +461,36 @@ def replay_fixed_bank(entries: Sequence[PortfolioEntry], *, max_slots: int) -> P
         open_exits.append(entry.exit_at)
         taken.append(entry)
 
-    incomplete = any(
-        e.pnl_usd is None
+    incomplete = [
+        e
+        for e in taken
+        if e.pnl_usd is None
         or e.mae_usd is None
         or not math.isfinite(e.pnl_usd)
         or not math.isfinite(e.mae_usd)
-        for e in taken
-    )
-    if incomplete:
-        return PortfolioResult(
-            window_pnl_usd=math.nan,
-            adverse_from_entry_usd=math.nan,
-            longest_losing_streak=0,
-            taken=len(taken),
-            skipped_slots_full=skipped,
-            complete=False,
+    ]
+    incomplete_ids = {e.tie_break for e in incomplete}
+    slot_hours = sum((e.exit_at - e.entry_at).total_seconds() / 3600.0 for e in taken)
+    zero_funding: float | None = 0.0
+    for entry in taken:
+        value = (
+            entry.pnl_usd if entry.tie_break not in incomplete_ids else entry.pnl_zero_funding_usd
         )
+        if value is None or not math.isfinite(value) or zero_funding is None:
+            zero_funding = None
+        else:
+            zero_funding += value
 
-    by_exit = sorted(taken, key=lambda e: (e.exit_at, e.tie_break))
+    by_exit = sorted(
+        (e for e in taken if e.tie_break not in incomplete_ids),
+        key=lambda e: (e.exit_at, e.tie_break),
+    )
     running = 0.0
     streak = 0
     longest_streak = 0
     for position in by_exit:
         pnl = position.pnl_usd
-        assert pnl is not None  # guarded above
+        assert pnl is not None  # incomplete slots are excluded above
         running += pnl
         if pnl < 0:
             streak += 1
@@ -477,12 +498,15 @@ def replay_fixed_bank(entries: Sequence[PortfolioEntry], *, max_slots: int) -> P
         else:
             streak = 0
     return PortfolioResult(
-        window_pnl_usd=running,
+        window_pnl_usd=None if incomplete else running,
         adverse_from_entry_usd=_worst_simultaneous_adverse_from_entry(taken),
         longest_losing_streak=longest_streak,
         taken=len(taken),
         skipped_slots_full=skipped,
-        complete=True,
+        complete=not incomplete,
+        incomplete_taken=len(incomplete),
+        slot_hours=slot_hours,
+        window_pnl_zero_funding_sensitivity_usd=zero_funding,
     )
 
 
@@ -525,17 +549,48 @@ def build_eligible_portfolio(
                 )
             )
         else:
+            exit_at, gross_pct = _incomplete_policy_exit(
+                probe, policy_720=policy_720, nominal_exit=nominal_exit
+            )
             entries.append(
                 PortfolioEntry(
                     tie_break=watch.watch_id,
                     asset=watch.canonical_asset,
                     entry_at=probe.entry_at,
-                    exit_at=probe.exit_at or nominal_exit,
+                    exit_at=exit_at,
                     pnl_usd=None,
                     mae_usd=None,
+                    pnl_zero_funding_usd=None
+                    if gross_pct is None or not math.isfinite(gross_pct)
+                    else (gross_pct / 100.0) * position_usd,
                 )
             )
     return tuple(entries)
+
+
+def _incomplete_policy_exit(
+    probe: ProbeRecord, *, policy_720: bool, nominal_exit: datetime
+) -> tuple[datetime, float | None]:
+    """Slot release time and ex-funding return (PERCENT) of a filled probe whose pair did
+    not resolve. The 240m policy releases at its own observed 240m mark (or an actual stop
+    that fired before it), never at the 720m exit; unknown marks fall back to the nominal
+    bound of THAT policy. Never used for a pair that resolved."""
+    if policy_720:
+        return probe.exit_at or nominal_exit, probe.actual_gross_return_pct
+    outcome_240 = probe.horizons.get(HORIZON_240)
+    mark = outcome_240.observed_at if outcome_240 is not None else None
+    stopped_first = (
+        probe.exit_reason == _STOP_LOSS_REASON
+        and probe.exit_at is not None
+        and (mark is None or probe.exit_at <= mark)
+        and probe.exit_at <= nominal_exit
+    )
+    if stopped_first:
+        assert probe.exit_at is not None
+        return probe.exit_at, probe.actual_gross_return_pct
+    if mark is not None:
+        return mark, outcome_240.gross_return_pct if outcome_240 is not None else None
+    return nominal_exit, None
 
 
 def _iso_week(moment: datetime) -> tuple[int, int]:
@@ -609,6 +664,9 @@ def assemble_verdict_inputs(
         integrity_failure_fraction=funnel[ProbeClass.INTEGRITY_FAILURE] / denom,
         portfolio_720_window_pnl_usd=portfolio_720.window_pnl_usd,
         portfolio_240_window_pnl_usd=portfolio_240.window_pnl_usd,
+        portfolio_incomplete_slot_fraction=max(
+            portfolio_720.incomplete_taken_fraction, portfolio_240.incomplete_taken_fraction
+        ),
     )
 
 
@@ -737,6 +795,20 @@ def formal_cohort_start(contract: Hold12hVerdictContract) -> datetime | None:
         raise ValueError(
             "cohort_start_iso must be an explicit UTC instant (offset +00:00), "
             f"got {contract.cohort_start_iso!r}"
+        )
+    return moment.astimezone(UTC)
+
+
+def formal_decision_prefix_end(contract: Hold12hVerdictContract) -> datetime | None:
+    """The ONE frozen decision-time prefix, or ``None`` when not registered. Same explicit-
+    UTC rule as ``formal_cohort_start``."""
+    if contract.decision_prefix_end_iso is None:
+        return None
+    moment = datetime.fromisoformat(contract.decision_prefix_end_iso)
+    if moment.tzinfo is None or moment.utcoffset() != timedelta(0):
+        raise ValueError(
+            "decision_prefix_end_iso must be an explicit UTC instant (offset +00:00), "
+            f"got {contract.decision_prefix_end_iso!r}"
         )
     return moment.astimezone(UTC)
 

@@ -161,22 +161,26 @@ requires a **fixed-bank portfolio replay** run identically for the 240m and 720m
 - report concurrency, slot occupancy, losing streak, and PnL **over the actual window**
   (not %/month), for BOTH policies on the same WATCH stream.
 
-**Drawdown data honesty (review P1 #4).** Paper storage keeps per-horizon quotes and aggregated
-MFE/MAE, NOT a synchronous mark-to-market series across all concurrently open positions, so a true
-floating portfolio drawdown is not computable exactly from today's data. RESOLVED (code chose ONE):
-`drawdown_method = conservative_simultaneous_mae_v1` -- the largest total `|MAE|` of positions open at
-the same instant (assuming every concurrently-open position hits its own worst excursion together).
-This OVERSTATES the true floating drawdown, so it is a genuine conservative bound (a realized-close
-series would understate it and is NOT used). Frozen into the contract sha and used as the Gate E risk
-check. The primary economics stand on window PnL and
-occupancy; drawdown is reported at whichever fidelity is declared.
+**Adverse excursion is a diagnostic, not a gate.** Paper storage keeps per-horizon quotes and the
+minimum return FROM ENTRY, not a synchronous mark-to-market series or peak-to-trough, so no honest
+drawdown bound exists. The report shows `adverse_from_entry_diagnostic_v1` (worst simultaneous
+from-entry excursion); the verdict does NOT gate on it. The primary economics are window PnL,
+displacement (`skipped_slots_full`) and slot occupancy for both policies.
 
-**"Beats 240m" pass semantics (review P1 #4).** Defined explicitly, not left vague: the 720m
-fixed-bank window PnL must exceed the 240m fixed-bank window PnL by at least a pre-registered
-**minimum dollar improvement** `MIN_PORTFOLIO_IMPROVEMENT_USD` (TBD, e.g. a fraction of the $300
-bank), AND the 720m policy's declared drawdown measure must not be materially worse. Where a paired
-per-decision portfolio-contribution difference is computable, its cluster-bootstrap CI lower bound
-is also reported; the frozen pass rule states whether it is point-estimate or CI-based.
+**"Beats 240m" pass semantics.** The 720m fixed-bank window PnL must be positive AND exceed the 240m
+window PnL by at least `min_portfolio_improvement_usd` ($15, 5% of the bank), after the paired
+`d(p)` cluster-bootstrap CI lower bound is already > 0.
+
+**Incomplete taken slots (freeze review).** A taken slot whose pair did not resolve keeps its slot
+until its policy's own exit: the 720m slot until the actual or nominal 720m exit, the 240m slot
+until its observed 240m mark (or an earlier actual stop), else the nominal 240m bound -- never the
+720m exit. Unproven funding cannot be bounded verifiably (Bybit changes rate caps and cadence
+without notice), so `funding_bound_rule = no_registered_bound_v1`: any such slot leaves that
+policy's window PnL undetermined, Gate E cannot pass, and the result is `insufficient_data` at
+Gate E. Zero funding for those slots is reported only as a labelled sensitivity. Undetermined is
+deliberately not NaN: a NaN would trip the integrity gate BEFORE Gate B and hide a mature negative
+EV. Taken slots without a complete result above 5% (worst of the two policies) are
+`insufficient_data` at Gate C. This is an honest limit of the standard and is recorded as such.
 
 ## Evidence floor (fix #6 + review P1 #3 -- non-circular, includes a pairs floor)
 
@@ -218,8 +222,9 @@ that "enough trades but few weeks/clusters, and losing" resolves to a rejection,
    clusters), OR the standalone 720m net **95% CI lower bound not > 0** -> `insufficient_evidence`.
 5. **Gate E -- duration improvement + PROFITABLE portfolio.** paired `d(p)` CI lower bound not > 0,
    OR the 720m fixed-bank window PnL is not itself positive (beating a losing 240m is not an edge),
-   OR it does not beat 240m by the minimum dollar improvement, OR its conservative drawdown is
-   materially worse -> `no_duration_improvement`.
+   OR it does not beat 240m by the minimum dollar improvement -> `no_duration_improvement`. A window
+   PnL left undetermined by an incomplete taken slot -> `insufficient_data` (Gate E). Adverse
+   excursion is reported, never gated.
 6. `candidate` -- all of Gate E satisfied. Authorizes only the next gate (the episode study / a real
    shadow), never live trading.
 
@@ -237,6 +242,21 @@ pre-chosen future UTC instant, frozen as `cohort_start_iso` in the contract sha 
 remains ONLY as a DRAFT/readiness convenience and never substitutes for the frozen literal. Probes
 before the boundary -- including the 2026-09-13-onward operational history -- are operational/readiness
 only, never evidence.
+
+## One read and operational checkpoints (freeze review)
+
+- The contract freezes BOTH `cohort_start_iso` and `decision_prefix_end_iso` (four full ISO weeks,
+  Monday 00:00 UTC to Monday 00:00 UTC). The formal CLI refuses an unregistered contract, any other
+  prefix, and any read earlier than `decision_prefix_end + min_read_delay_hours` (36h: the last
+  720m positions close and the funding capture passes its lag and queue). It claims its output
+  directory exclusively BEFORE reading a return, so the read happens once; a floor not met there is
+  `insufficient_data`, never a later, friendlier prefix.
+- Outcome-blind health checkpoints (`hold12h-verdict-reader --health-since ... --decision-prefix-end
+...`) run every Monday of the cohort and once over a fixed 48h window after the worker fix is
+  deployed (before the cohort boundary is frozen). They read statuses, claim latency, funding
+  coverage and accounting status only. Registered rule: on the same WATCH rows the hold12h stale
+  fraction exceeds the baseline worker's by at most 2 percentage points and never exceeds 5%. A
+  breach is logged; thresholds are never changed and the cohort is never restarted because of it.
 
 ## Delivery order (three PRs -- supersedes the earlier ONE-PR plan)
 
