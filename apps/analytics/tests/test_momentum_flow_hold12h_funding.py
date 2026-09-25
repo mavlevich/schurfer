@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import pytest
 from schurfer_analytics.derivatives_history import DerivativesHistoryFetch
 from schurfer_analytics.momentum_flow_hold12h_funding import (
     ACTUAL_FUNDING_VERSION,
@@ -205,19 +206,91 @@ def _hours(*values: float) -> list[ParsedSettlement]:
     return [_ps(h, 0.0001) for h in values]
 
 
-def test_window_status_accepts_real_cadence_switches() -> None:
-    """Real Bybit v5 sequences that v1 wrongly marked incomplete. Bybit changes the funding
-    cadence without notice, so a v1-style global minimum cadence called every legitimate
-    transition a hole. Hours are relative to each position's entry."""
-    # IOSTUSDT, entry 09-15 23:32: hourly until 18:00, then the 8h grid (00, 08, 16).
-    iost = _hours(-11.5, -10.5, -9.5, -8.5, -7.5, -6.5, -5.5, 0.5, 8.5, 16.5)
-    assert window_status(_fetch(), iost, 0, entry=_ENTRY, exit_at=_EXIT) == "complete"
-    # MTLUSDT, entry 09-18 23:43: one 4h step, then 8h.
-    mtl = _hours(-11.7, -7.7, 0.3, 8.3, 16.3)
-    assert window_status(_fetch(), mtl, 0, entry=_ENTRY, exit_at=_EXIT) == "complete"
-    # B3USDT, entry 09-18 16:56: hourly, then 4h.
-    b3 = _hours(*range(-12, -4), -1, 3, 7, 11, 15, 19, 23)
-    assert window_status(_fetch(), b3, 0, entry=_ENTRY, exit_at=_EXIT) == "complete"
+def _utc(text: str) -> datetime:
+    return datetime.fromisoformat(text).replace(tzinfo=UTC)
+
+
+def _real(*stamps: str) -> list[ParsedSettlement]:
+    return [ParsedSettlement(_utc(stamp), 0.0001, {"t": stamp}) for stamp in stamps]
+
+
+@pytest.mark.parametrize(
+    ("entry", "exit_at", "settlements"),
+    [
+        # IOSTUSDT: hourly until 09-15 18:00, then back to the 00/08/16 grid.
+        (
+            "2026-09-15T23:32:48",
+            "2026-09-16T11:32:58",
+            (
+                "2026-09-15T12:00",
+                "2026-09-15T13:00",
+                "2026-09-15T14:00",
+                "2026-09-15T15:00",
+                "2026-09-15T16:00",
+                "2026-09-15T17:00",
+                "2026-09-15T18:00",
+                "2026-09-16T00:00",
+                "2026-09-16T08:00",
+                "2026-09-16T16:00",
+            ),
+        ),
+        # MTLUSDT: one 4h step, then 8h.
+        (
+            "2026-09-18T23:43:56",
+            "2026-09-19T11:43:59",
+            (
+                "2026-09-18T12:00",
+                "2026-09-18T16:00",
+                "2026-09-19T00:00",
+                "2026-09-19T08:00",
+                "2026-09-19T16:00",
+            ),
+        ),
+        # B3USDT: hourly, then 4h.
+        (
+            "2026-09-18T16:56:36",
+            "2026-09-19T04:56:48",
+            (
+                "2026-09-18T05:00",
+                "2026-09-18T06:00",
+                "2026-09-18T07:00",
+                "2026-09-18T08:00",
+                "2026-09-18T09:00",
+                "2026-09-18T10:00",
+                "2026-09-18T11:00",
+                "2026-09-18T12:00",
+                "2026-09-18T16:00",
+                "2026-09-18T20:00",
+                "2026-09-19T00:00",
+                "2026-09-19T04:00",
+                "2026-09-19T08:00",
+                "2026-09-19T12:00",
+                "2026-09-19T16:00",
+            ),
+        ),
+    ],
+    ids=["IOSTUSDT", "MTLUSDT", "B3USDT"],
+)
+def test_window_status_accepts_real_cadence_switches(
+    entry: str, exit_at: str, settlements: tuple[str, ...]
+) -> None:
+    """Real Bybit v5 settlement timestamps (UTC, as the venue returned them) around real
+    hold12h positions that v1 wrongly marked incomplete: a v1-style global minimum cadence
+    called every legitimate cadence transition a hole."""
+    status = window_status(
+        _fetch(), _real(*settlements), 0, entry=_utc(entry), exit_at=_utc(exit_at)
+    )
+    assert status == "complete"
+
+
+def test_window_status_flags_a_settlement_off_the_hour() -> None:
+    """Bybit settles on the hour. An off-hour timestamp is an anomaly (unit or parsing
+    fault), left incomplete; being on the hour is NOT a completeness proof."""
+    off_hour = [_ps(h, 0.0001) for h in (-8, 0)] + [
+        ParsedSettlement(_ENTRY + timedelta(hours=8, minutes=30), 0.0001, {}),
+        _ps(16, 0.0001),
+    ]
+    assert window_status(_fetch(), off_hour, 0, entry=_ENTRY, exit_at=_EXIT) == "incomplete"
 
 
 def test_window_status_cannot_detect_a_missing_event_inside_a_legal_gap() -> None:

@@ -24,10 +24,10 @@ Bybit may change the funding cadence without notice (for example to hourly when 
 hits its cap), and the endpoint returns events that happened, not the schedule, so no
 cadence rule can both accept a real 4h->8h transition and detect one missing event inside
 an equal gap. A gap longer than ``MAX_SETTLEMENT_GAP`` (8h, the longest standard Bybit
-interval) is still treated as an anomaly and left incomplete, but passing that check is NOT
-proof of completeness. Anything doubtful stays non-complete and becomes
-accounting_incomplete downstream. It captures the COST side only -- it never reads a probe
-return.
+interval) or a settlement off the hour is still treated as an anomaly and left incomplete,
+but passing those checks is NOT proof of completeness. Anything doubtful stays
+non-complete and becomes accounting_incomplete downstream. It captures the COST side only --
+it never reads a probe return.
 """
 
 from __future__ import annotations
@@ -131,10 +131,10 @@ def window_status(
 
     ``complete`` requires ALL of: a clean, fully-paged fetch; every fetched row parsed; a
     settlement at/before ``entry`` and one at/after ``exit_at`` (the history reached across
-    both bounds, not the edge of what the venue keeps); and no gap overlapping
-    ``(entry, exit]`` longer than ``MAX_SETTLEMENT_GAP``.
+    both bounds, not the edge of what the venue keeps); every settlement on the hour; and
+    no gap overlapping ``(entry, exit]`` longer than ``MAX_SETTLEMENT_GAP``.
 
-    The gap check only catches anomalies. Cadence changes are legitimate (Bybit switches to
+    The hour and gap checks only catch anomalies. Cadence changes are legitimate (Bybit switches to
     hourly at the rate cap and back without notice), so a missing event inside an equal or
     shorter gap is NOT detectable here: completeness rests on the documented assumption
     that a fully fetched v5 history lists every settlement in range."""
@@ -145,6 +145,11 @@ def window_status(
         return "incomplete"
     times = sorted({s.settlement_at for s in settlements})
     if not times or not (times[0] <= entry and times[-1] >= exit_at):
+        return "incomplete"
+    # Bybit settles on the hour; an off-hour timestamp is a unit/parsing anomaly. Like the
+    # gap check this only catches anomalies -- being on the hour proves nothing about
+    # completeness.
+    if any(t.minute or t.second or t.microsecond for t in times):
         return "incomplete"
     for earlier, later in pairwise(times):
         if later <= entry or earlier >= exit_at:

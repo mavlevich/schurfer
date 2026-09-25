@@ -118,8 +118,9 @@ P1 #5):**
   cleanly for the requested bounds and pagination was not truncated, EVERY fetched row parsed and
   its raw item is stored, the settlements reach across both bounds (at least one at/before
   `entry_at` and one at/after `exit_at`), and a re-fetch does not contradict a stored rate. A gap
-  overlapping `(entry, exit]` longer than 8h (the longest standard Bybit interval) is an anomaly
-  -> `incomplete`. The request window is padded on each side so bracketing is possible.
+  overlapping `(entry, exit]` longer than 8h (the longest standard Bybit interval) or a settlement
+  off the hour is an anomaly -> `incomplete`; passing these anomaly checks proves nothing about
+  completeness. The request window is padded on each side so bracketing is possible.
 - **residual risk (documented assumption, not a proof)**: `complete` assumes a fully fetched v5
   history lists every settlement in range. Bybit changes the cadence without notice (for example
   to hourly when the rate hits its cap, then back), and the endpoint returns events that
