@@ -137,7 +137,11 @@ APPROVAL_PATH = REGISTRY_DIR / "source_lead_identity_v4_approval.json"
 REGISTRY_PATH_V4 = REGISTRY_DIR / "source_lead_identity_registry_v4.json"
 
 _HTTP_TIMEOUT_SECONDS = 20.0
-_COINGECKO_DELAY_SECONDS = 2.5
+_COINGECKO_DELAY_SECONDS = 6.0
+# CoinGecko's keyless tier answers 429 after a handful of calls a minute; a
+# 429 is waited out, never recorded as a rule rejection.
+_COINGECKO_RETRY_SECONDS = 65.0
+_COINGECKO_MAX_ATTEMPTS = 6
 
 CANDIDATE_SQL = """\
 SELECT base
@@ -587,6 +591,20 @@ def revalidate_v4_bundle(bundle: EvidenceBundle) -> None:
         raise ValueError(f"{bundle.base}: coingecko does not list the chosen contract")
 
 
+async def _fetch_coingecko_with_retry(client: Any, coingecko_id: str) -> RawFetch:
+    import httpx
+
+    for attempt in range(1, _COINGECKO_MAX_ATTEMPTS + 1):
+        try:
+            return await fetch_coingecko_coin(client, coingecko_id)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code != 429 or attempt == _COINGECKO_MAX_ATTEMPTS:
+                raise
+            sys.stderr.write(f"coingecko 429 on {coingecko_id}, waiting\n")
+            await asyncio.sleep(_COINGECKO_RETRY_SECONDS)
+    raise AssertionError("unreachable")
+
+
 async def capture_route_bundle(
     *,
     client: Any,
@@ -610,7 +628,7 @@ async def capture_route_bundle(
         gate_market_cache[decision.base] = await fetch_gate_futures_contract(client, decision.base)
     if decision.coingecko_id not in coingecko_cache:
         await asyncio.sleep(_COINGECKO_DELAY_SECONDS)
-        coingecko_cache[decision.coingecko_id] = await fetch_coingecko_coin(
+        coingecko_cache[decision.coingecko_id] = await _fetch_coingecko_with_retry(
             client, decision.coingecko_id
         )
     currency = sources.gate_currencies[decision.base]
