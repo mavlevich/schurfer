@@ -134,6 +134,28 @@ async def test_fresh_selection_excludes_future_decisions() -> None:
     assert "decision_at <=" in sql
 
 
+@pytest.mark.parametrize("method", ["due_fresh_watches", "due_expired_watches"])
+async def test_due_watch_selection_breaks_decision_ties_by_watch_id(method: str) -> None:
+    """With a LIMIT, equal decision_at rows must be picked in a stable order."""
+    repository = _StatementRepository()
+
+    await getattr(repository, method)(
+        contract=FROZEN_PAPER_CONTRACT,
+        cohort_started_at=T0 - timedelta(hours=1),
+        now=T0,
+        limit=20,
+    )
+
+    sql = str(
+        repository.statement.compile(
+            dialect=postgresql.dialect(),  # type: ignore[no-untyped-call]
+            compile_kwargs={"literal_binds": True},
+        )
+    )
+    order_by = sql.split("ORDER BY", maxsplit=1)[1]
+    assert order_by.index("decision_at") < order_by.index("watch_id")
+
+
 async def test_monitored_probe_selection_is_least_recently_serviced_first() -> None:
     repository = _StatementRepository()
 

@@ -162,11 +162,25 @@ class PaperWorkerConfig:
     poll_interval_seconds: float = FROZEN_PAPER_CONTRACT.poll_interval_seconds
     watch_batch_size: int = 20
     probe_batch_size: int = 100
+    # Open positions are quoted in bounded chunks and fresh WATCH candidates are
+    # re-checked between chunks, so a long position book cannot hold a new entry past
+    # the watch-to-quote deadline. A chunk ends at whichever bound is hit first.
+    probe_chunk_size: int = 10
+    probe_chunk_seconds: float = 3.0
 
     def __post_init__(self) -> None:
         if not self.database_url:
             raise ValueError("DATABASE_URL is required")
-        if min(self.poll_interval_seconds, self.watch_batch_size, self.probe_batch_size) <= 0:
+        if (
+            min(
+                self.poll_interval_seconds,
+                self.watch_batch_size,
+                self.probe_batch_size,
+                self.probe_chunk_size,
+                self.probe_chunk_seconds,
+            )
+            <= 0
+        ):
             raise ValueError("momentum paper worker limits must be positive")
 
     @classmethod
@@ -309,30 +323,33 @@ async def process_tick(
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     allow_new_entries: bool = True,
 ) -> TickResult:
-    now = clock()
+    watches_seen = 0
+    entry_results: list[str] = []
 
-    # 1. Process fresh candidates.
-    fresh_candidates = (
-        await store.due_fresh_watches(
+    async def process_fresh_entries() -> None:
+        nonlocal watches_seen
+        if not allow_new_entries:
+            return
+        candidates = await store.due_fresh_watches(
             contract=contract,
             cohort_started_at=run.cohort_started_at,
-            now=now,
+            now=clock(),
             limit=config.watch_batch_size,
         )
-        if allow_new_entries
-        else ()
-    )
-    entry_results: list[str] = []
-    for candidate in fresh_candidates:
-        entry_results.append(
-            await _process_entry(
-                candidate,
-                store=store,
-                market=market,
-                contract=contract,
-                clock=clock,
+        watches_seen += len(candidates)
+        for candidate in candidates:
+            entry_results.append(
+                await _process_entry(
+                    candidate,
+                    store=store,
+                    market=market,
+                    contract=contract,
+                    clock=clock,
+                )
             )
-        )
+
+    # 1. Process fresh candidates.
+    await process_fresh_entries()
 
     # 2. Service existing positions before backlog cleanup. Refresh the
     # scheduling clock after entry quotes so a slow venue call cannot make
@@ -349,7 +366,9 @@ async def process_tick(
     probes_quoted = 0
     quote_failures = 0
     positions_closed = 0
-    for probe in probes:
+    chunk_started = clock()
+    chunk_count = 0
+    for index, probe in enumerate(probes):
         quoted, closed = await _process_probe(
             probe,
             store=store,
@@ -359,6 +378,17 @@ async def process_tick(
         probes_quoted += int(quoted)
         quote_failures += int(not quoted)
         positions_closed += int(closed)
+        chunk_count += 1
+        chunk_elapsed = (clock() - chunk_started).total_seconds()
+        more_probes = index + 1 < len(probes)
+        if more_probes and (
+            chunk_count >= config.probe_chunk_size or chunk_elapsed >= config.probe_chunk_seconds
+        ):
+            # Entries first between chunks; every fetched probe is still serviced this
+            # tick, so exits cannot starve behind a stream of new entries.
+            await process_fresh_entries()
+            chunk_started = clock()
+            chunk_count = 0
 
     # 3. Clean up one bounded batch in one transaction.
     cleanup_now = clock()
@@ -383,7 +413,7 @@ async def process_tick(
     )
 
     return TickResult(
-        watches_seen=len(fresh_candidates) + len(expired_candidates),
+        watches_seen=watches_seen + len(expired_candidates),
         entries_opened=entry_results.count("opened"),
         entries_stale=entry_results.count("stale"),
         entries_stale_cleaned=stale_cleaned,
