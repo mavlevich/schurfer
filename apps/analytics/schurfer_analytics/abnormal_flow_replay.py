@@ -34,7 +34,7 @@ import math
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Final, cast
 
 from .abnormal_flow_input_audit import verified_input
 from .abnormal_flow_screen import (
@@ -1621,12 +1621,26 @@ def assemble_all(
     return out
 
 
+# Path completeness rules for the priced-proxy outcome. ``every_minute_v1`` is the frozen
+# v1 rule (all horizon+1 bars present and price_complete). ``entry_exit_bars_v1`` checks
+# only the two bars the price comes from; it is a post-hoc sensitivity for a fixed-horizon
+# exit and says nothing about the path, risk or executability inside the position.
+PATH_RULE_EVERY_MINUTE: Final = "every_minute_v1"
+PATH_RULE_ENTRY_EXIT: Final = "entry_exit_bars_v1"
+PATH_RULES: Final = (PATH_RULE_EVERY_MINUTE, PATH_RULE_ENTRY_EXIT)
+
+
 def parquet_outcome_reader(
     path: str | list[str],
     *,
     outcome_horizon_minutes: int,
     progress: Callable[[int, int], None] | None = None,
+    path_rule: str = PATH_RULE_EVERY_MINUTE,
 ) -> Callable[[Sequence[DecisionFeatures]], dict[RouteKey, Outcome]]:
+    if path_rule not in PATH_RULES:
+        raise ValueError(f"unknown path rule {path_rule!r}")
+    if path_rule != PATH_RULE_EVERY_MINUTE and FORMAL_RETURNS_RUN_ENABLED:
+        raise ReturnsRunDisabledError("the formal run uses only the frozen every-minute rule")
     from collections import defaultdict
     from datetime import timedelta
 
@@ -1635,6 +1649,9 @@ def parquet_outcome_reader(
             raise ReturnsRunDisabledError(
                 "Parquet outcomes require an authorized formal or burned diagnostic run"
             )
+        # Re-checked at call time: a reader built earlier must not serve a formal run.
+        if path_rule != PATH_RULE_EVERY_MINUTE and FORMAL_RETURNS_RUN_ENABLED:
+            raise ReturnsRunDisabledError("the formal run uses only the frozen every-minute rule")
         if not requested:
             return {}
         starts = [d.decision_at for d in requested]
@@ -1702,7 +1719,12 @@ def parquet_outcome_reader(
                 tuple[float | None, float | None, float | None, float | None, bool]
             ] = []
             continuous = True
-            for i in range(outcome_horizon_minutes + 1):
+            offsets = (
+                range(outcome_horizon_minutes + 1)
+                if path_rule == PATH_RULE_EVERY_MINUTE
+                else (0, outcome_horizon_minutes)
+            )
+            for i in offsets:
                 t = entry_t + timedelta(minutes=i)
                 route_b = route_bars.get(t)
                 if route_b is None or not route_b[4]:

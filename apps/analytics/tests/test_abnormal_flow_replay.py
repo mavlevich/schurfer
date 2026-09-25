@@ -9,6 +9,7 @@ covered for the later PR that enables it; nothing reads a production return.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from datetime import UTC, date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
@@ -1207,3 +1208,77 @@ def test_build_report_combines_skipped_capacities() -> None:
     assert report.portfolio is not None
     assert report.portfolio.taken_trades == 1
     assert report.portfolio.skipped_capacity == 4
+
+
+@pytest.mark.parametrize(
+    ("mutate", "every_minute_resolves", "entry_exit_resolves"),
+    [
+        # A missing interior bar and an incomplete interior bar only break the v1 rule.
+        (lambda bars: [b for i, b in enumerate(bars) if i != 50], False, True),
+        (
+            lambda bars: [
+                dataclasses.replace(b, price_complete=False) if i == 300 else b
+                for i, b in enumerate(bars)
+            ],
+            False,
+            True,
+        ),
+        # An incomplete exit bar (index 721 = entry + 720m) breaks both rules.
+        (
+            lambda bars: [
+                dataclasses.replace(b, price_complete=False) if i == 721 else b
+                for i, b in enumerate(bars)
+            ],
+            False,
+            False,
+        ),
+        (lambda bars: bars, True, True),
+    ],
+    ids=["interior_gap", "interior_incomplete", "exit_incomplete", "complete"],
+)
+def test_entry_exit_path_rule_only_needs_the_two_priced_bars(
+    tmp_path: Any,
+    monkeypatch: Any,
+    mutate: Any,
+    every_minute_resolves: bool,
+    entry_exit_resolves: bool,
+) -> None:
+    monkeypatch.setattr(afr, "BURNED_DIAGNOSTIC_RETURNS_RUN_ENABLED", True)
+    _write_day(tmp_path, date(2026, 8, 20), mutate(_e2e_bars(725)))
+    path = str(tmp_path / "bars-2026-08-20.parquet")
+    d = _decision(decision_at=_T0, symbol="ZUSDT", native_market_id="ZUSDT", exchange="bybit")
+
+    strict = parquet_outcome_reader(path, outcome_horizon_minutes=720)([d])
+    relaxed = parquet_outcome_reader(
+        path, outcome_horizon_minutes=720, path_rule=afr.PATH_RULE_ENTRY_EXIT
+    )([d])
+
+    assert (d.route_key() in strict) is every_minute_resolves
+    assert (d.route_key() in relaxed) is entry_exit_resolves
+    if entry_exit_resolves:
+        outcome = relaxed[d.route_key()]
+        # Same prices as the every-minute rule: entry-bar open and horizon-bar close.
+        assert outcome.entry_price == pytest.approx(100.0 * (1 + 0.0002 * 1))
+        assert outcome.exit_price == pytest.approx(100.0 * (1 + 0.0002 * 721))
+
+
+def test_the_formal_run_refuses_any_path_rule_but_the_frozen_one(monkeypatch: Any) -> None:
+    monkeypatch.setattr(afr, "FORMAL_RETURNS_RUN_ENABLED", True)
+    with pytest.raises(ReturnsRunDisabledError, match="frozen every-minute rule"):
+        parquet_outcome_reader(
+            "unused.parquet", outcome_horizon_minutes=720, path_rule=afr.PATH_RULE_ENTRY_EXIT
+        )
+    with pytest.raises(ValueError, match="unknown path rule"):
+        parquet_outcome_reader("unused.parquet", outcome_horizon_minutes=720, path_rule="x")
+
+
+def test_a_prebuilt_relaxed_reader_refuses_once_the_formal_flag_is_on(
+    tmp_path: Any, monkeypatch: Any
+) -> None:
+    """Review P2: the rule is re-checked at call time, not only at construction."""
+    reader = parquet_outcome_reader(
+        "unused.parquet", outcome_horizon_minutes=720, path_rule=afr.PATH_RULE_ENTRY_EXIT
+    )
+    monkeypatch.setattr(afr, "FORMAL_RETURNS_RUN_ENABLED", True)
+    with pytest.raises(ReturnsRunDisabledError, match="frozen every-minute rule"):
+        reader([_decision()])

@@ -23,6 +23,17 @@ after-cost economics unless explicitly labelled a paired difference.
 ## Confirmed facts (with references)
 
 - **Abnormal-flow v1 is an inconclusive diagnostic result.** The prospective window ([2026-08-30T00:00:00Z, 2026-09-18T11:58:00Z)) was burned due to multiple reads and monkeypatched execution without the formal runner (`docs/research/evidence/abnormal-flow-v1/diagnostic-v1-burned/README.md`). Mean net +0.61%, excess +0.45%, resolved 125/252, missingness 50.4%, control coverage 53%, week concentration 52%, CI lower bounds negative, portfolio +$4.25 / maxDD $17.15. The result is non-promotional and v1 does not advance to live execution. Next step: post-hoc missingness/control-coverage diagnostic on the burned window without promotion claims.
+- **Abnormal-flow v1 post-hoc follow-up (2026-09-25): the apparent edge was missingness
+  selection; v2 is deprioritised.** The unresolved-reason taxonomy (#443) found that all 127
+  unresolved primaries had complete entry and exit bars: v1 lost them only to its rule that
+  all 721 path minutes be `price_complete`. The registered entry/exit-bars sensitivity
+  (`abnormal-flow-v1-boundary-sensitivity.md`, interpretation fixed before the read) resolves
+  251/252 episodes: mean net -0.06%, median -0.36%, 43% winners (gross +0.50% vs ~0.55%
+  costs); the 126 newly resolved average -0.72%, so the earlier +0.61% came from a
+  completeness-selected subsample. Portfolio net PnL is negative for every K = 1..20 and
+  every scenario ($300 bank). Post-hoc on a burned window, not a formal FAIL; per the
+  registered meaning it lowers the priority of an abnormal-flow v2. If the family is
+  revisited, its contract must use a bounded entry/exit-bars path rule.
 - **The executable pump-short is net negative.** `app.research_report_runs`:
   `liquid_taker_candidate_v1` = 802 eligible / 151 tradeable episodes, net expectancy
   -0.224%/episode, 95% CI [-0.455%, -0.0096%] (entirely below zero);
