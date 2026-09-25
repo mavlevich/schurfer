@@ -18,6 +18,11 @@ class TradeDirection(enum.IntEnum):
     SHORT = -1
 
 
+class PositionSizingPolicy(enum.Enum):
+    FIXED_INITIAL_EQUITY = "fixed_initial_equity"
+    CURRENT_EQUITY_EQUAL_WEIGHT = "current_equity_equal_weight"
+
+
 @dataclass(frozen=True)
 class PortfolioPosition:
     """One normalized position candidate.
@@ -64,6 +69,7 @@ class RejectedEntry:
 
 @dataclass
 class PortfolioMetrics:
+    accepted_entries: int = 0
     total_trades: int = 0
     winning_trades: int = 0
     losing_trades: int = 0
@@ -82,6 +88,9 @@ class PortfolioMetrics:
     peak_gross_exposure: float = 0.0
     peak_abs_net_exposure: float = 0.0
     peak_leverage: float = 0.0
+    min_entry_margin: float | None = None
+    max_entry_margin: float | None = None
+    average_entry_margin: float | None = None
     accounting_complete: bool = True
     rejection_counts: dict[str, int] = field(default_factory=dict)
     rejected_entries: list[RejectedEntry] = field(default_factory=list)
@@ -105,6 +114,7 @@ def _validate_inputs(
     k_slots: int,
     leverage: float,
     max_positions_per_asset: int,
+    sizing_policy: PositionSizingPolicy,
     max_gross_exposure_usd: float | None,
     max_abs_net_exposure_usd: float | None,
     max_leverage: float | None,
@@ -115,6 +125,8 @@ def _validate_inputs(
         raise ValueError("k_slots must be positive")
     if max_positions_per_asset <= 0:
         raise ValueError("max_positions_per_asset must be positive")
+    if not isinstance(sizing_policy, PositionSizingPolicy):
+        raise ValueError("sizing_policy must be a PositionSizingPolicy")
     if not _finite(leverage) or leverage <= 0:
         raise ValueError("leverage must be finite and positive")
     for name, limit in (
@@ -174,12 +186,19 @@ def simulate_portfolio_v2(
     initial_capital: float = 300.0,
     k_slots: int = 8,
     max_positions_per_asset: int = 1,
+    sizing_policy: PositionSizingPolicy = PositionSizingPolicy.FIXED_INITIAL_EQUITY,
     leverage: float = 1.0,
     max_gross_exposure_usd: float | None = None,
     max_abs_net_exposure_usd: float | None = None,
     max_leverage: float | None = None,
 ) -> PortfolioMetrics:
-    """Run a fixed-slot chronological simulation without partial allocations."""
+    """Run a chronological K-slot simulation without partial allocations.
+
+    Fixed sizing preserves the original v2 behavior. Current-equity equal weighting
+    recomputes one slot as current realized equity divided by K immediately before each
+    entry, so losses do not permanently strand a slot merely because its old fixed
+    notional is no longer affordable.
+    """
 
     _validate_inputs(
         positions,
@@ -187,6 +206,7 @@ def simulate_portfolio_v2(
         k_slots=k_slots,
         leverage=leverage,
         max_positions_per_asset=max_positions_per_asset,
+        sizing_policy=sizing_policy,
         max_gross_exposure_usd=max_gross_exposure_usd,
         max_abs_net_exposure_usd=max_abs_net_exposure_usd,
         max_leverage=max_leverage,
@@ -217,8 +237,7 @@ def simulate_portfolio_v2(
     metrics = PortfolioMetrics(available_cash=initial_capital, final_equity=initial_capital)
     available_cash = initial_capital
     peak_equity = initial_capital
-    margin_per_position = initial_capital / k_slots
-    notional_per_position = margin_per_position * leverage
+    fixed_margin_per_position = initial_capital / k_slots
     active: dict[str, _ActivePosition] = {}
     asset_counts: dict[str, int] = {}
 
@@ -288,10 +307,16 @@ def simulate_portfolio_v2(
             if asset_counts.get(position.canonical_asset, 0) >= max_positions_per_asset:
                 reject(position, "max_positions_per_asset")
                 continue
+            gross, net, equity, _ = exposures()
+            margin_per_position = (
+                equity / k_slots
+                if sizing_policy is PositionSizingPolicy.CURRENT_EQUITY_EQUAL_WEIGHT
+                else fixed_margin_per_position
+            )
+            notional_per_position = margin_per_position * leverage
             if available_cash < margin_per_position:
                 reject(position, "insufficient_capital")
                 continue
-            gross, net, equity, _ = exposures()
             proposed_gross = gross + notional_per_position
             proposed_net = net + notional_per_position * position.direction.value
             proposed_leverage = proposed_gross / equity if equity > 0 else math.inf
@@ -317,6 +342,23 @@ def simulate_portfolio_v2(
             asset_counts[position.canonical_asset] = (
                 asset_counts.get(position.canonical_asset, 0) + 1
             )
+            metrics.accepted_entries += 1
+            metrics.min_entry_margin = (
+                margin_per_position
+                if metrics.min_entry_margin is None
+                else min(metrics.min_entry_margin, margin_per_position)
+            )
+            metrics.max_entry_margin = (
+                margin_per_position
+                if metrics.max_entry_margin is None
+                else max(metrics.max_entry_margin, margin_per_position)
+            )
+            if metrics.average_entry_margin is None:
+                metrics.average_entry_margin = margin_per_position
+            else:
+                metrics.average_entry_margin += (
+                    margin_per_position - metrics.average_entry_margin
+                ) / metrics.accepted_entries
             metrics.max_concurrent_positions = max(metrics.max_concurrent_positions, len(active))
             if position.exit_at is None:
                 metrics.unresolved_fail_closed += 1

@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 from schurfer_analytics.portfolio_engine_v2 import (
     PortfolioPosition,
+    PositionSizingPolicy,
     TradeDirection,
     simulate_portfolio_v2,
 )
@@ -64,6 +65,46 @@ def test_insufficient_capital_rejects_without_partial_allocation() -> None:
     assert metrics.total_trades == 2
     assert metrics.rejection_counts == {"insufficient_capital": 1}
     assert metrics.rejected_entries[0].decision_id == "3"
+
+
+def test_current_equity_sizing_reinvests_after_a_loss() -> None:
+    positions = [
+        _position("loss", "A", entry_minute=0, exit_minute=10, gross_return=-0.1),
+        _position("win", "B", entry_minute=11, exit_minute=20, gross_return=0.1),
+    ]
+    fixed = simulate_portfolio_v2(positions, initial_capital=100.0, k_slots=1)
+    dynamic = simulate_portfolio_v2(
+        positions,
+        initial_capital=100.0,
+        k_slots=1,
+        sizing_policy=PositionSizingPolicy.CURRENT_EQUITY_EQUAL_WEIGHT,
+    )
+
+    assert fixed.total_trades == 1
+    assert fixed.rejection_counts == {"insufficient_capital": 1}
+    assert dynamic.total_trades == 2
+    assert dynamic.final_equity == pytest.approx(99.0)
+    assert dynamic.min_entry_margin == pytest.approx(90.0)
+    assert dynamic.max_entry_margin == pytest.approx(100.0)
+    assert dynamic.average_entry_margin == pytest.approx(95.0)
+
+
+def test_current_equity_sizing_uses_one_weight_for_simultaneous_entries() -> None:
+    positions = [
+        _position("A", "A", entry_minute=0, exit_minute=10),
+        _position("B", "B", entry_minute=0, exit_minute=10),
+    ]
+    metrics = simulate_portfolio_v2(
+        positions,
+        initial_capital=100.0,
+        k_slots=2,
+        sizing_policy=PositionSizingPolicy.CURRENT_EQUITY_EQUAL_WEIGHT,
+    )
+
+    assert metrics.accepted_entries == 2
+    assert metrics.min_entry_margin == pytest.approx(50.0)
+    assert metrics.max_entry_margin == pytest.approx(50.0)
+    assert metrics.final_equity == pytest.approx(110.0)
 
 
 def test_unresolved_position_remains_reserved_and_marks_incomplete() -> None:
