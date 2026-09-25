@@ -102,7 +102,7 @@ from .source_lead_identity_evidence import (
 from .source_lead_qualification import parse_identity_registry, verify_registry_against_evidence
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Awaitable, Callable, Mapping, Sequence
 
 IDENTITY_RULE_VERSION = "source_lead_identity_rule_v4"
 CANDIDATES_VERSION = "source_lead_identity_v4_candidates"
@@ -591,18 +591,22 @@ def revalidate_v4_bundle(bundle: EvidenceBundle) -> None:
         raise ValueError(f"{bundle.base}: coingecko does not list the chosen contract")
 
 
-async def _fetch_coingecko_with_retry(client: Any, coingecko_id: str) -> RawFetch:
+async def _retry_429(label: str, fetch: Callable[[], Awaitable[RawFetch]]) -> RawFetch:
     import httpx
 
     for attempt in range(1, _COINGECKO_MAX_ATTEMPTS + 1):
         try:
-            return await fetch_coingecko_coin(client, coingecko_id)
+            return await fetch()
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code != 429 or attempt == _COINGECKO_MAX_ATTEMPTS:
                 raise
-            sys.stderr.write(f"coingecko 429 on {coingecko_id}, waiting\n")
+            sys.stderr.write(f"coingecko 429 on {label}, waiting\n")
             await asyncio.sleep(_COINGECKO_RETRY_SECONDS)
     raise AssertionError("unreachable")
+
+
+async def _fetch_coingecko_with_retry(client: Any, coingecko_id: str) -> RawFetch:
+    return await _retry_429(coingecko_id, lambda: fetch_coingecko_coin(client, coingecko_id))
 
 
 async def capture_route_bundle(
@@ -809,10 +813,13 @@ async def _load_sources(client: Any, gate: Any, credentials: tuple[str, str]) ->
     binance = await _http_get_json(client, "https://fapi.binance.com/fapi/v1/exchangeInfo")
     bybit_instruments = await fetch_bybit_instruments(client)
     bybit_coins = await fetch_bybit_coin_info(client, credentials)
-    coingecko = await _http_get_json(
-        client,
-        "https://api.coingecko.com/api/v3/coins/list",
-        params={"include_platform": "true"},
+    coingecko = await _retry_429(
+        "coins/list",
+        lambda: _http_get_json(
+            client,
+            "https://api.coingecko.com/api/v3/coins/list",
+            params={"include_platform": "true"},
+        ),
     )
     return RunSources(
         gate_currencies=currencies,
