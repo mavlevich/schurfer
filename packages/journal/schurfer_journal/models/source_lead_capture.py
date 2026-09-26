@@ -356,6 +356,10 @@ class FormalReadClaim(Base):
     cohort_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     database_now: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     candidate_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    candidate_ids: Mapped[list[int]] = mapped_column(JSONB, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="claimed")
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    result_fingerprint: Mapped[str | None] = mapped_column(String(128), nullable=True)
     candidate_ids_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     code_revision: Mapped[str] = mapped_column(String(64), nullable=False)
     working_tree_dirty: Mapped[bool] = mapped_column(Boolean, nullable=False)
@@ -368,5 +372,11 @@ class FormalReadClaim(Base):
             "study_id", "contract_version", "cohort_start", name="uq_formal_read_claim_cohort"
         ),
         CheckConstraint("candidate_count >= 0", name="ck_formal_read_claim_count"),
+        CheckConstraint(
+            "(status = 'claimed' AND completed_at IS NULL) OR "
+            "(status = 'completed' AND completed_at IS NOT NULL "
+            "AND result_fingerprint IS NOT NULL)",
+            name="ck_formal_read_claim_status",
+        ),
         {"schema": "app"},
     )

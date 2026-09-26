@@ -65,19 +65,28 @@ timestamp (`quote_timing.book_age_ms`), is refused as `target_book_stale`. A boo
 timestamp is refused as `target_book_timestamp_missing`. 2000 ms is the limit the Bybit
 canary used, under which 98.2% of Bybit books were fresh.
 
-## One formal read, claimed before any outcome
+## One formal read, claimed before any return
 
-`source-lead-forward-cohort-report` computes returns, so it is the formal read itself.
+`source-lead-forward-cohort-report` computes returns, so it is the formal read itself. The
+claim lives in `app.formal_read_claims` (migration 0054), unique per (study, contract
+version, cohort start). A run goes through these steps:
 
-- **Claim before outcomes.** Before any exit bar is fetched, it commits a row in
-  `app.formal_read_claims` (migration 0054), unique per (study, contract version, cohort
-  start). The row records the database time, the number of candidates and a SHA-256 of
-  their capture ids.
-- **One run only.** A second run refuses, so late qualification rows can never produce a
-  second verdict.
-- **No early claim.** It refuses to claim at all until the outcome-blind timing floors
-  (episodes, clusters, weeks) are met, so an early run cannot burn the cohort. Use
-  `source-lead-readiness-report` until then.
+1. **Timing pre-check.** With fewer than 100 matured episodes, or fewer than 4 UTC weeks
+   among them, it refuses before fetching anything.
+2. **Find the checkpoint without returns.** It fetches the exit bars and finds the
+   registered checkpoint from resolution status alone: the first 100 resolved episodes over
+   4 weeks. Resolution depends on the exit bar's presence and gap, never on the return, and
+   no return is aggregated or shown. If the checkpoint is not reached, it refuses and
+   claims nothing, so a later run can try again.
+3. **Claim the prefix, then compute.** It commits a claim storing the exact ordered capture
+   ids of that checkpoint prefix, and only then computes the verdict on exactly those ids.
+   Clusters and concentration are judged at that single checkpoint: a shortfall is a
+   permanent `insufficient_data` and never a reason to wait.
+4. **Complete.** Once the checkpoint artifact is written, the claim is marked `completed`
+   with its fingerprint. Every later run refuses.
+
+A run that fails after claiming (an exit-bar timeout, a cache error, an artifact write)
+resumes the same claim on the stored ids. It never searches for a new prefix.
 
 ## Exit-book diagnostic (not part of the verdict)
 
