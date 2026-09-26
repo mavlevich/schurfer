@@ -67,11 +67,12 @@ type Notifier struct {
 	sourceLeadHealth sourceLeadHealthReader
 	momentumFlow     momentumFlowReader
 	consumer         *StreamConsumer
+	heartbeats       []serviceHeartbeat
 }
 
 func New(ctx context.Context, cfg Config) (*Notifier, error) {
 	rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr})
-	notifier := &Notifier{cfg: cfg, rdb: rdb}
+	notifier := &Notifier{cfg: cfg, rdb: rdb, heartbeats: serviceHeartbeatsFromEnv()}
 	if cfg.DatabaseURL != "" {
 		postgresRecorder, err := newPostgresAlertRecorder(ctx, cfg.DatabaseURL)
 		if err != nil {
@@ -209,6 +210,7 @@ func (n *Notifier) tick(ctx context.Context) error {
 	_ = n.rdb.Set(ctx, redisKeyHeartbeat, time.Now().Unix(), 3*n.cfg.Interval).Err()
 	n.drainAlertOutbox(ctx)
 	n.reportSourceLeadHealth(ctx)
+	n.reportServiceHeartbeats(ctx)
 	n.reportMomentumFlow(ctx)
 
 	// A silently dead, stuck, or garbage-producing scanner is the main way the
