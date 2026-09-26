@@ -20,7 +20,10 @@ import (
 //
 // Configured by SERVICE_HEARTBEATS="name=redis_key@max_age_seconds,...".
 
-const serviceHeartbeatRecoveryHold = 60 * time.Second
+const (
+	serviceHeartbeatRecoveryHold = 60 * time.Second
+	heartbeatFutureTolerance     = 5 * time.Second
+)
 
 type serviceHeartbeat struct {
 	Name   string
@@ -71,6 +74,11 @@ func heartbeatProblem(fields map[string]string, maxAge time.Duration, now time.T
 		return "heartbeat has no valid generated_at"
 	}
 	age := now.Sub(generatedAt)
+	// Same tolerance the scanner monitor uses: a timestamp from the future
+	// (clock skew or junk) must not read as fresh for the length of the skew.
+	if age < -heartbeatFutureTolerance {
+		return fmt.Sprintf("heartbeat %ds in the future", int(-age.Seconds()))
+	}
 	if age > maxAge {
 		return fmt.Sprintf("heartbeat %ds old", int(age.Seconds()))
 	}
@@ -166,4 +174,15 @@ func (n *Notifier) checkServiceHeartbeat(ctx context.Context, spec serviceHeartb
 
 func serviceHeartbeatsFromEnv() []serviceHeartbeat {
 	return parseServiceHeartbeats(os.Getenv("SERVICE_HEARTBEATS"))
+}
+
+// sourceLeadCaptureEnabledFromEnv reads the same flag and default (true) as the
+// analytics service's SOURCE_LEAD_CAPTURE_ENABLED.
+func sourceLeadCaptureEnabledFromEnv() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("SOURCE_LEAD_CAPTURE_ENABLED"))) {
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return true
+	}
 }

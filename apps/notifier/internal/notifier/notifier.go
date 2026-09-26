@@ -68,11 +68,19 @@ type Notifier struct {
 	momentumFlow     momentumFlowReader
 	consumer         *StreamConsumer
 	heartbeats       []serviceHeartbeat
+	// Mirrors the analytics SOURCE_LEAD_CAPTURE_ENABLED flag so an intentionally
+	// disabled capture never raises the quiet warning.
+	sourceLeadCaptureEnabled bool
 }
 
 func New(ctx context.Context, cfg Config) (*Notifier, error) {
 	rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr})
-	notifier := &Notifier{cfg: cfg, rdb: rdb, heartbeats: serviceHeartbeatsFromEnv()}
+	notifier := &Notifier{
+		cfg:                      cfg,
+		rdb:                      rdb,
+		heartbeats:               serviceHeartbeatsFromEnv(),
+		sourceLeadCaptureEnabled: sourceLeadCaptureEnabledFromEnv(),
+	}
 	if cfg.DatabaseURL != "" {
 		postgresRecorder, err := newPostgresAlertRecorder(ctx, cfg.DatabaseURL)
 		if err != nil {

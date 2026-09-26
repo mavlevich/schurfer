@@ -2,6 +2,8 @@ package notifier
 
 import (
 	"context"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -41,6 +43,8 @@ func TestHeartbeatProblem(t *testing.T) {
 		{"stale", map[string]string{"generated_at": now.Add(-2 * time.Minute).Format(time.RFC3339Nano), "status": "ok"}, "heartbeat 120s old"},
 		{"degraded", map[string]string{"generated_at": fresh, "status": "degraded", "last_error": "boom"}, "status=degraded (boom)"},
 		{"ok", map[string]string{"generated_at": fresh, "status": "ok"}, ""},
+		{"future", map[string]string{"generated_at": now.Add(time.Minute).Format(time.RFC3339Nano), "status": "ok"}, "heartbeat 60s in the future"},
+		{"slight skew", map[string]string{"generated_at": now.Add(4 * time.Second).Format(time.RFC3339Nano), "status": "ok"}, ""},
 		{"starting", map[string]string{"generated_at": fresh, "status": "starting"}, ""},
 		// Python writes isoformat with a +00:00 offset.
 		{"python offset", map[string]string{"generated_at": "2026-09-26T11:59:55.123456+00:00", "status": "ok"}, ""},
@@ -136,6 +140,7 @@ func TestServiceHeartbeatMaintenanceSuppressesOnlyThatService(t *testing.T) {
 func TestSourceLeadQuietWarnsOnlyWhileTheScannerIsFresh(t *testing.T) {
 	mr := miniredis.RunT(t)
 	n := newTestNotifier(t, mr, "tok", "cid")
+	n.sourceLeadCaptureEnabled = true
 	ctx := context.Background()
 	sevenHours := (7 * time.Hour).Seconds()
 	oneHour := time.Hour.Seconds()
@@ -146,18 +151,74 @@ func TestSourceLeadQuietWarnsOnlyWhileTheScannerIsFresh(t *testing.T) {
 		t.Fatal("no quiet warning while the scanner itself is stale")
 	}
 
-	setPumpsPayload(t, mr, payload{Scanned: []string{"gate"}})
+	setPumpsPayload(t, mr, payload{Scanned: []string{"gate", "bybit"}})
 	n.reportSourceLeadQuiet(ctx, &sevenHours)
 	n.reportSourceLeadQuiet(ctx, &sevenHours)
 	if outboxLen(t, n) != 1 {
 		t.Fatalf("quiet warnings = %d, want 1", outboxLen(t, n))
 	}
+	// Rows vanishing is not a recovery; only a new row is.
+	n.reportSourceLeadQuiet(ctx, nil)
+	if outboxLen(t, n) != 1 {
+		t.Fatal("no row at all must never send a recovery")
+	}
 	n.reportSourceLeadQuiet(ctx, &oneHour)
 	if outboxLen(t, n) != 2 {
 		t.Fatalf("after resume = %d, want 2 (one recovery)", outboxLen(t, n))
 	}
+}
+
+func TestSourceLeadQuietCountsAnEmptyTableFromFirstObservation(t *testing.T) {
+	mr := miniredis.RunT(t)
+	n := newTestNotifier(t, mr, "tok", "cid")
+	n.sourceLeadCaptureEnabled = true
+	ctx := context.Background()
+	setPumpsPayload(t, mr, payload{Scanned: []string{"gate"}})
+
 	n.reportSourceLeadQuiet(ctx, nil)
-	if outboxLen(t, n) != 2 {
-		t.Fatal("no rows at all is not a quiet warning")
+	if outboxLen(t, n) != 0 {
+		t.Fatal("an empty table is not quiet yet on first sight")
+	}
+	started := time.Now().Add(-7 * time.Hour).Unix()
+	if err := mr.Set(redisKeySourceLeadEmptySince, strconv.FormatInt(started, 10)); err != nil {
+		t.Fatal(err)
+	}
+	n.reportSourceLeadQuiet(ctx, nil)
+	if outboxLen(t, n) != 1 {
+		t.Fatal("no capture ever for 7 h must warn")
+	}
+}
+
+func TestSourceLeadQuietIsSilentWhenCaptureIsDisabled(t *testing.T) {
+	mr := miniredis.RunT(t)
+	n := newTestNotifier(t, mr, "tok", "cid")
+	n.sourceLeadCaptureEnabled = false
+	setPumpsPayload(t, mr, payload{Scanned: []string{"gate"}})
+	sevenHours := (7 * time.Hour).Seconds()
+	n.reportSourceLeadQuiet(context.Background(), &sevenHours)
+	if outboxLen(t, n) != 0 {
+		t.Fatal("intentionally disabled capture must not warn")
+	}
+}
+
+func TestSourceLeadQuietNamesAMissingGateScan(t *testing.T) {
+	mr := miniredis.RunT(t)
+	n := newTestNotifier(t, mr, "tok", "cid")
+	n.sourceLeadCaptureEnabled = true
+	setPumpsPayload(t, mr, payload{Scanned: []string{"bybit"}})
+	sevenHours := (7 * time.Hour).Seconds()
+	n.reportSourceLeadQuiet(context.Background(), &sevenHours)
+	entries := n.rdb.XRange(context.Background(), StreamOutboxV1, "-", "+").Val()
+	if len(entries) != 1 || !strings.Contains(entries[0].Values["data"].(string), "Gate is missing") {
+		t.Fatalf("want a Gate-specific quiet warning, got %v", entries)
+	}
+}
+
+func TestSourceLeadCaptureEnabledFromEnvMatchesAnalytics(t *testing.T) {
+	for value, want := range map[string]bool{"": true, "true": true, "1": true, "false": false, "OFF": false, "no": false} {
+		t.Setenv("SOURCE_LEAD_CAPTURE_ENABLED", value)
+		if got := sourceLeadCaptureEnabledFromEnv(); got != want {
+			t.Errorf("%q: got %v, want %v", value, got, want)
+		}
 	}
 }

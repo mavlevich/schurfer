@@ -849,6 +849,8 @@ services:
       LIQUIDATION_CAPTURE_MONITORED_EXCHANGES: ${LIQUIDATION_CAPTURE_MONITORED_EXCHANGES:-}
       # name=redis_key@max_age_seconds (service_heartbeat.go).
       SERVICE_HEARTBEATS: ${SERVICE_HEARTBEATS:-source-lead-exit-capture=market:sourceleadexit:health:source_lead_exit_book_v1@60}
+      # Same flag and default as the analytics service: no quiet warning when off.
+      SOURCE_LEAD_CAPTURE_ENABLED: ${SOURCE_LEAD_CAPTURE_ENABLED:-true}
       LIQUIDATION_CAPTURE_MONITOR_START_GRACE_SECONDS: ${LIQUIDATION_CAPTURE_MONITOR_START_GRACE_SECONDS:-90}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
