@@ -119,6 +119,7 @@ from typing import TYPE_CHECKING, Any
 
 from .clustered_inference import ClusterObservation, cluster_bootstrap_mean
 from .exchange_registry import EXCHANGE_FACTORIES
+from .formal_read_claims import claim_formal_read
 from .market_path_cache import MarketPathCacheCorruptError
 from .momentum_flow_bidirectional_burst_study import utc_week_key
 from .ohlcv import fetch_symbol_candles
@@ -164,6 +165,7 @@ from .source_lead_forward_cohort_repository import (
     RawQualifiedEpisode,
     SourceLeadForwardCohortRepository,
 )
+from .source_lead_readiness import QualifiedEpisode, ReadinessInputs, build_readiness
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -626,6 +628,9 @@ def aggregate_cohort(
     )
 
 
+FORMAL_READ_STUDY_ID = "HYP-012"
+
+
 async def generate_report(args: argparse.Namespace) -> SourceLeadForwardCohortReport:
     if args.since != SOURCE_LEAD_FORWARD_COHORT_START:
         raise ValueError(
@@ -643,6 +648,35 @@ async def generate_report(args: argparse.Namespace) -> SourceLeadForwardCohortRe
     )
     check_qualified_episode_count(len(raw_episodes), args.max_qualified_episodes)
     check_tradable_venues(raw_episodes)
+    # One formal read per cohort, claimed BEFORE any exit bar (outcome) is fetched,
+    # and only once the outcome-blind timing floors are met, so an early run can
+    # neither peek at returns nor burn the cohort.
+    readiness = build_readiness(
+        ReadinessInputs(
+            cohort_start=SOURCE_LEAD_FORWARD_COHORT_START,
+            database_now=database_now,
+            episodes=tuple(
+                QualifiedEpisode(entry_at=e.observed_at, canonical_asset_id=e.canonical_asset_id)
+                for e in raw_episodes
+            ),
+        )
+    )
+    if not readiness.timing_floors_met:
+        raise ValueError(
+            "formal read refused before claiming: the outcome-blind timing count floors are "
+            f"not met ({readiness.matured} matured, {readiness.distinct_clusters} clusters, "
+            f"{readiness.distinct_weeks} weeks); run source-lead-readiness-report instead"
+        )
+    await claim_formal_read(
+        os.environ["DATABASE_URL"],
+        study_id=FORMAL_READ_STUDY_ID,
+        contract_version=CONTRACT_VERSION,
+        cohort_start=SOURCE_LEAD_FORWARD_COHORT_START,
+        database_now=database_now,
+        candidate_ids=[e.capture_id for e in raw_episodes],
+        code_revision=code_revision,
+        working_tree_dirty=args.working_tree_dirty,
+    )
 
     matured = [
         episode for episode in raw_episodes if episode_is_matured(episode.observed_at, database_now)

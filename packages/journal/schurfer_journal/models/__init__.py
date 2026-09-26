@@ -28,6 +28,7 @@ from .pump_event_source import PumpEventSource
 from .research_cohort_registration import ResearchCohortRegistration
 from .research_report import ResearchReportRun
 from .source_lead_capture import (
+    FormalReadClaim,
     SourceLeadCapture,
     SourceLeadExitObservation,
     SourceLeadQualification,
@@ -42,6 +43,7 @@ __all__ = [
     "EarlyMomentumEpisode",
     "Exchange",
     "FillResolutionIncident",
+    "FormalReadClaim",
     "FundingRateSnapshot",
     "LiveOrderAttempt",
     "LiveReconciliationIncident",

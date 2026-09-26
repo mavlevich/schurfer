@@ -65,6 +65,20 @@ timestamp (`quote_timing.book_age_ms`), is refused as `target_book_stale`. A boo
 timestamp is refused as `target_book_timestamp_missing`. 2000 ms is the limit the Bybit
 canary used, under which 98.2% of Bybit books were fresh.
 
+## One formal read, claimed before any outcome
+
+`source-lead-forward-cohort-report` computes returns, so it is the formal read itself.
+
+- **Claim before outcomes.** Before any exit bar is fetched, it commits a row in
+  `app.formal_read_claims` (migration 0054), unique per (study, contract version, cohort
+  start). The row records the database time, the number of candidates and a SHA-256 of
+  their capture ids.
+- **One run only.** A second run refuses, so late qualification rows can never produce a
+  second verdict.
+- **No early claim.** It refuses to claim at all until the outcome-blind timing floors
+  (episodes, clusters, weeks) are met, so an early run cannot burn the cohort. Use
+  `source-lead-readiness-report` until then.
+
 ## Exit-book diagnostic (not part of the verdict)
 
 `source-lead-exit-capture`, a separate service writing to `app.source_lead_exit_observations`
