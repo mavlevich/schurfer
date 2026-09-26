@@ -1,0 +1,392 @@
+{
+  "base": "FF",
+  "bundle_sha256": "599516c9f4d969f4420b2b215642023ed3ba252e02620d86bb6b851272db7405",
+  "captured_at": "2026-09-26T06:55:34.368857+00:00",
+  "code_revision": "4111a1661e333849fe6d0d7a5e4504bf4e8bad9d",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/falcon-finance-ff?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-09-26T06:55:34.368223+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "ethereum",
+      "block_time_in_minutes": 0,
+      "categories": [
+        "Decentralized Exchange (DEX)",
+        "Exchange-based Tokens",
+        "Decentralized Finance (DeFi)",
+        "BNB Chain Ecosystem",
+        "Ethereum Ecosystem",
+        "Binance HODLer Airdrops",
+        "Binance Alpha Spotlight",
+        "Buidlpad Launchpad"
+      ],
+      "contract_address": "0xfa1c09fc8b491b6a4d3ff53a10cad29381b3f949",
+      "country_origin": "",
+      "description": {
+        "en": "Falcon Finance is pioneering the first universal collateralization infrastructure, designed to transform how liquidity and yield are created onchain. The protocol accepts liquid assets, including digital tokens and tokenized real world assets, to be deposited as collateral for issuing USDf, an overcollateralized synthetic dollar. USDf provides users with stable and accessible onchain liquidity without requiring the liquidation of their holdings.\n\nTo complement this, users can stake USDf to mint sUSDf, a yield-bearing token that is powered by diversified institutional-grade trading strategies. These strategies extend beyond traditional basis spread arbitrage and are designed to deliver performance across all market conditions.\n\nBy bridging the gap between traditional finance and decentralized finance, Falcon Finance offers institutions, protocols, and individuals a transparent and secure way to unlock the full potential of their assets. The platform combines innovation, yield generation, and robust risk management into a scalable infrastructure that redefines how collateral, liquidity, and asset ownership interact across financial domains.\n\n$FF is the native token that captures the growth of Falcon Finance. As more assets are deposited and USDf adoption expands, $FF becomes the core asset tied to the protocol’s scale and success.\n\nFalcon is building infrastructure designed for trillions in assets. $FF is the way to get exposure to that future."
+      },
+      "detail_platforms": {
+        "binance-smart-chain": {
+          "contract_address": "0xac23b90a79504865d52b49b327328411a23d4db2",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/bsc/tokens/0xac23b90a79504865d52b49b327328411a23d4db2"
+        },
+        "ethereum": {
+          "contract_address": "0xfa1c09fc8b491b6a4d3ff53a10cad29381b3f949",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/eth/tokens/0xfa1c09fc8b491b6a4d3ff53a10cad29381b3f949"
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": true,
+      "hashing_algorithm": null,
+      "id": "falcon-finance-ff",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/69121/large/ff.png?1757573403",
+        "small": "https://coin-images.coingecko.com/coins/images/69121/small/ff.png?1757573403",
+        "thumb": "https://coin-images.coingecko.com/coins/images/69121/thumb/ff.png?1757573403"
+      },
+      "last_updated": "2026-09-26T06:53:40.000Z",
+      "links": {
+        "announcement_url": [],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://etherscan.io/token/0xFA1C09fC8B491B6A4d3Ff53A10CAd29381b3F949",
+          "https://intel.arkm.com/explorer/token/falcon-finance-ff",
+          "https://ethplorer.io/address/0xFA1C09fC8B491B6A4d3Ff53A10CAd29381b3F949",
+          "https://bscscan.com/token/0xac23b90a79504865d52b49b327328411a23d4db2",
+          "https://binplorer.com/address/0xac23b90a79504865d52b49b327328411a23d4db2"
+        ],
+        "chat_url": [],
+        "facebook_username": "",
+        "homepage": ["https://falcon.finance/"],
+        "official_forum_url": [
+          "https://discord.com/invite/falconfinance",
+          "https://www.linkedin.com/company/falconstable"
+        ],
+        "repos_url": {
+          "bitbucket": [],
+          "github": []
+        },
+        "snapshot_url": null,
+        "subreddit_url": null,
+        "telegram_channel_identifier": "FalconFinanceTG",
+        "twitter_screen_name": "FalconStable",
+        "whitepaper": "https://falcon.finance/whitepaper-v2.pdf"
+      },
+      "listing_currency": null,
+      "listing_price": null,
+      "listing_source": null,
+      "listing_source_url": null,
+      "listing_timestamp": null,
+      "market_cap_rank": 128,
+      "market_cap_rank_with_rehypothecated": 180,
+      "name": "Falcon Finance",
+      "platforms": {
+        "binance-smart-chain": "0xac23b90a79504865d52b49b327328411a23d4db2",
+        "ethereum": "0xfa1c09fc8b491b6a4d3ff53a10cad29381b3f949"
+      },
+      "preview_listing": false,
+      "public_notice": null,
+      "sentiment_votes_down_percentage": null,
+      "sentiment_votes_up_percentage": null,
+      "status_updates": [],
+      "symbol": "ff",
+      "watchlist_portfolio_users": 3442,
+      "web_slug": "falcon-finance-ff"
+    },
+    "raw_sha256": "a3efb037359c555f56b34a72941a95e669282a25e7efbf89fad14bd52f295504",
+    "source": "https://api.coingecko.com/api/v3/coins/falcon-finance-ff",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v4",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-09-26T06:51:16.758270+00:00",
+    "payload": {
+      "active": true,
+      "code": "FF",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "FF",
+      "info": {
+        "category": [],
+        "chain": "ETH",
+        "chains": [
+          {
+            "addr": "0xfa1c09fc8b491b6a4d3ff53a10cad29381b3f949",
+            "deposit_disabled": false,
+            "name": "ETH",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "FF",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "310728600.0",
+        "name": "Falcon Finance",
+        "total_supply": "10000000000",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "Falcon Finance",
+      "networks": {
+        "ERC20": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "ETH",
+          "info": {
+            "addr": "0xfa1c09fc8b491b6a4d3ff53a10cad29381b3f949",
+            "deposit_disabled": false,
+            "name": "ETH",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "ERC20",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "ccda23c83bfa780deb4b11275f686888d3cb1cd1f31256673063b4d05cdc29c5",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "exact_contract",
+  "source_contract": {
+    "block_hash": "0xc09d8671cc363ec84c460c8371f8cc9c628f19ec61f8f7927f66c32151f90f9d",
+    "block_number": 26059970,
+    "chain": "ethereum",
+    "chain_id": 1,
+    "contract_address": "0xfa1c09fc8b491b6a4d3ff53a10cad29381b3f949",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://ethereum-rpc.publicnode.com",
+      "observed_at": "2026-09-26T06:55:26.908694+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "a0cfb5a1c696cf1b33c6808f77538ba8fbf89fc8515499513d43ce204d7a457a",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "source_market_evidence": {
+    "exchange": "gate",
+    "inference_basis": "gate futures contract payload has no base_asset/quote_asset/settle_asset fields; base/quote split parsed from the reported native_market_id ('FF_USDT') on its '_' separator, settle asset inferred from the /futures/usdt/ endpoint family",
+    "inferred_base_asset": "FF",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "FF_USDT",
+    "onboarded_at_ms": 1759151400000,
+    "raw_evidence": {
+      "endpoint": "https://api.gateio.ws/api/v4/futures/usdt/contracts/FF_USDT",
+      "observed_at": "2026-09-26T06:55:28.060139+00:00",
+      "payload": {
+        "config_change_time": 1789378043,
+        "contract_type": "",
+        "create_time": 1759114833,
+        "cross_leverage_default": "10",
+        "enable_bonus": true,
+        "enable_circuit_breaker": false,
+        "enable_credit": true,
+        "enable_decimal": false,
+        "funding_cap_ratio": "4",
+        "funding_impact_value": "5000",
+        "funding_interval": 14400,
+        "funding_next_apply": 1790409600,
+        "funding_offset": 0,
+        "funding_rate": "0.000244",
+        "funding_rate_indicative": "0.000244",
+        "funding_rate_limit": "0.02",
+        "in_delisting": false,
+        "index_price": "0.13126",
+        "interest_rate": "0.0003",
+        "is_pre_market": false,
+        "last_price": "0.13145",
+        "launch_time": 1759151400,
+        "leverage_max": "50",
+        "leverage_min": "1",
+        "long_users": 226,
+        "maintenance_rate": "0.01",
+        "maker_fee_rate": "-0.0001",
+        "mark_price": "0.13143",
+        "mark_price_round": "0.00001",
+        "mark_type": "index",
+        "market_order_size_max": "200000",
+        "market_order_slip_ratio": "0.025",
+        "name": "FF_USDT",
+        "order_price_deviate": "0.15",
+        "order_price_round": "0.00001",
+        "order_size_max": 300000,
+        "order_size_min": 1,
+        "orderbook_id": 1050701302,
+        "orders_limit": 100,
+        "position_size": 10536044,
+        "quanto_multiplier": "10",
+        "ref_discount_rate": "0",
+        "ref_rebate_rate": "0.2",
+        "risk_limit_base": "5000",
+        "risk_limit_max": "2500000",
+        "risk_limit_step": "2495000",
+        "short_users": 561,
+        "status": "trading",
+        "taker_fee_rate": "0.00075",
+        "trade_id": 6216276,
+        "trade_size": 481978034,
+        "type": "direct",
+        "voucher_leverage": "0"
+      },
+      "raw_sha256": "d14c16d792a6dfea4c3624656d70b7de7cfe4cf1fb5244f221664a29604bf835",
+      "source": "https://api.gateio.ws/api/v4/futures/usdt/contracts/FF_USDT",
+      "wire_exact": true
+    },
+    "reported_base_asset": null,
+    "reported_quote_asset": null,
+    "reported_settle_asset": null,
+    "status": "trading"
+  },
+  "target_catalog_evidence": {
+    "endpoint": "https://api.bybit.com/v5/asset/coin/query-info (authenticated, all coins)",
+    "observed_at": "2026-09-26T06:51:20.869167+00:00",
+    "payload": {
+      "chains": [
+        {
+          "chain": "ETH",
+          "chainType": "Ethereum",
+          "contractAddress": "0xFA1C09fC8B491B6A4d3Ff53A10CAd29381b3F949"
+        }
+      ],
+      "coin": "FF",
+      "contractAddress": "0xFA1C09fC8B491B6A4d3Ff53A10CAd29381b3F949",
+      "name": "FF",
+      "response_sha256": "dcbb785d22323ba31ec4687e0fd25bfec51cf316dfe4d779b0815cd34bc3e7dd",
+      "selected_chain": "ETH"
+    },
+    "raw_sha256": "300a993b8b6ff95276d943dcbb3ba8c2af53ecef33e62668b93b62001a43efde",
+    "source": "bybit:coin_info_entry",
+    "wire_exact": false
+  },
+  "target_contract": {
+    "block_hash": "0xc09d8671cc363ec84c460c8371f8cc9c628f19ec61f8f7927f66c32151f90f9d",
+    "block_number": 26059970,
+    "chain": "ethereum",
+    "chain_id": 1,
+    "contract_address": "0xfa1c09fc8b491b6a4d3ff53a10cad29381b3f949",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://ethereum-rpc.publicnode.com",
+      "observed_at": "2026-09-26T06:55:26.908694+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "a0cfb5a1c696cf1b33c6808f77538ba8fbf89fc8515499513d43ce204d7a457a",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "target_exchange": "bybit",
+  "target_market_evidence": {
+    "exchange": "bybit",
+    "inference_basis": "copied verbatim from bybit v5 instruments-info's own baseCoin/quoteCoin/settleCoin fields -- genuinely reported, not parsed",
+    "inferred_base_asset": "FF",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "FFUSDT",
+    "onboarded_at_ms": 1759155773000,
+    "raw_evidence": {
+      "endpoint": "https://api.bybit.com/v5/market/instruments-info?category=linear (every cursor page)",
+      "observed_at": "2026-09-26T06:51:20.579476+00:00",
+      "payload": {
+        "baseCoin": "FF",
+        "contractType": "LinearPerpetual",
+        "copyTrading": "both",
+        "deliveryFeeRate": "",
+        "deliveryTime": "0",
+        "displayName": "FFUSDT",
+        "forbidUplWithdrawal": false,
+        "fullName": "Falcon Finance",
+        "fundingInterval": 240,
+        "isPreListing": false,
+        "launchTime": "1759155773000",
+        "leverageFilter": {
+          "leverageStep": "0.01",
+          "maxLeverage": "20.00",
+          "minLeverage": "1"
+        },
+        "lotSizeFilter": {
+          "maxMktOrderQty": "450000",
+          "maxOrderQty": "2250000",
+          "minNotionalValue": "5",
+          "minOrderQty": "1",
+          "postOnlyMaxOrderQty": "2250000",
+          "qtyStep": "1"
+        },
+        "lowerFundingRate": "-0.025",
+        "marketRegion": "",
+        "preListingInfo": null,
+        "priceFilter": {
+          "maxPrice": "199.99998",
+          "minPrice": "0.00001",
+          "tickSize": "0.00001"
+        },
+        "priceScale": "5",
+        "quoteCoin": "USDT",
+        "riskParameters": {
+          "priceLimitRatioX": "0.15",
+          "priceLimitRatioY": "0.3"
+        },
+        "settleCoin": "USDT",
+        "status": "Trading",
+        "symbol": "FFUSDT",
+        "symbolId": 2464,
+        "symbolType": "",
+        "underlyingTicker": "",
+        "unifiedMarginTrade": true,
+        "upperFundingRate": "0.025"
+      },
+      "raw_sha256": "20cdf08936e8b64b75ded438401278f46c9562892c81e63e6ccce8b2cc25c2a9",
+      "source": "bybit:instruments_info_entry",
+      "wire_exact": false
+    },
+    "reported_base_asset": "FF",
+    "reported_quote_asset": "USDT",
+    "reported_settle_asset": "USDT",
+    "status": "Trading"
+  },
+  "working_tree_dirty": false
+}

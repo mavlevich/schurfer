@@ -1,0 +1,392 @@
+{
+  "base": "BB",
+  "bundle_sha256": "3d92260acf45e134fad9db3c4e273809cd3726decc313e5bcffb3df3c9c1732d",
+  "captured_at": "2026-09-26T06:53:12.410910+00:00",
+  "code_revision": "4111a1661e333849fe6d0d7a5e4504bf4e8bad9d",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/bouncebit?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-09-26T06:53:12.408549+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "binance-smart-chain",
+      "block_time_in_minutes": 0,
+      "categories": [
+        "Smart Contract Platform",
+        "BNB Chain Ecosystem",
+        "Layer 1 (L1)",
+        "Restaking",
+        "Proof of Stake (PoS)",
+        "DeFiance Capital Portfolio",
+        "YZi Labs (Prev. Binance Labs) Portfolio",
+        "Binance Megadrop",
+        "Blockchain Capital Portfolio",
+        "OKX Ventures Portfolio"
+      ],
+      "contract_address": "0xe0620abea429a66ba69d9a0cde9ab93dc15bb9c4",
+      "country_origin": "",
+      "description": {
+        "en": "BounceBit is a CeDeFi infrastructure project and EVM-compatible Layer 1 blockchain focused on bringing tokenized real-world assets (RWAs) into crypto markets. Through BounceBit Prime, the platform connects Franklin Templeton’s Benji and BlackRock’s BUIDL via Securitize with regulated custody and onchain execution, allowing yield-bearing institutional assets to be used as productive collateral across trading, treasury, and structured yield strategies."
+      },
+      "detail_platforms": {
+        "binance-smart-chain": {
+          "contract_address": "0xe0620abea429a66ba69d9a0cde9ab93dc15bb9c4",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/bsc/tokens/0xe0620abea429a66ba69d9a0cde9ab93dc15bb9c4"
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": false,
+      "hashing_algorithm": null,
+      "id": "bouncebit",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/37144/large/bb.jpeg?1713439092",
+        "small": "https://coin-images.coingecko.com/coins/images/37144/small/bb.jpeg?1713439092",
+        "thumb": "https://coin-images.coingecko.com/coins/images/37144/thumb/bb.jpeg?1713439092"
+      },
+      "last_updated": "2026-09-26T06:50:40.000Z",
+      "links": {
+        "announcement_url": [],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://bscscan.com/token/0xe0620aBeA429A66Ba69d9a0cdE9aB93dc15bB9c4",
+          "https://intel.arkm.com/explorer/token/bouncebit",
+          "https://binplorer.com/address/0xe0620aBeA429A66Ba69d9a0cdE9aB93dc15bB9c4"
+        ],
+        "chat_url": ["https://discord.com/invite/bouncebit", "https://medium.com/@bouncebit"],
+        "facebook_username": "",
+        "homepage": [
+          "https://bouncebit.io/",
+          "https://prime.bouncebit.io/",
+          "https://portal.bouncebit.io/"
+        ],
+        "official_forum_url": ["https://www.linkedin.com/company/bouncebit"],
+        "repos_url": {
+          "bitbucket": [],
+          "github": ["https://github.com/BounceBit-Labs"]
+        },
+        "snapshot_url": null,
+        "subreddit_url": null,
+        "telegram_channel_identifier": null,
+        "twitter_screen_name": "bouncebit",
+        "whitepaper": "https://docs.bouncebit.io/"
+      },
+      "listing_currency": "",
+      "listing_price": null,
+      "listing_source": "",
+      "listing_source_url": "",
+      "listing_timestamp": null,
+      "market_cap_rank": null,
+      "market_cap_rank_with_rehypothecated": null,
+      "name": "BounceBit",
+      "platforms": {
+        "binance-smart-chain": "0xe0620abea429a66ba69d9a0cde9ab93dc15bb9c4"
+      },
+      "preview_listing": false,
+      "public_notice": "Between 21:02 UTC on August 19 and 01:54 UTC on August 20, 2026, an attacker exploited an authorization flaw in one of BounceBit Chain's built-in protocol features. For more information, kindly refer to their official announcement <a href=https://x.com/bouncebit/status/2090785561800061430>here</a>.<br><br>\r\nBounceBit (BB) has recently migrated from their <a href=\"https://explorer.bouncebit.io/\" target=\"_blank\">old contract</a> to a <a href=\"https://bscscan.com/token/0xe0620aBeA429A66Ba69d9a0cdE9aB93dc15bB9c4\" target=\"_blank\">new contract</a>. For more information, please visit this <a href=\"https://x.com/bouncebit/status/2091189143531593901\" target=\"_blank\">post</a>.<br>",
+      "sentiment_votes_down_percentage": null,
+      "sentiment_votes_up_percentage": null,
+      "status_updates": [],
+      "symbol": "bb",
+      "watchlist_portfolio_users": 11920,
+      "web_slug": "bouncebit"
+    },
+    "raw_sha256": "aef5b18c04a2ab4d53c5023d18875615a2876f1583d3343ab16dc2f4045b669d",
+    "source": "https://api.coingecko.com/api/v3/coins/bouncebit",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v4",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-09-26T06:51:16.758270+00:00",
+    "payload": {
+      "active": true,
+      "code": "BB",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "BB",
+      "info": {
+        "category": [],
+        "chain": "BSC",
+        "chains": [
+          {
+            "addr": "0xe0620abea429a66ba69d9a0cde9ab93dc15bb9c4",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "BB",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "12861175.057962",
+        "name": "BounceBit",
+        "total_supply": "2100000000",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "BounceBit",
+      "networks": {
+        "BEP20": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "BSC",
+          "info": {
+            "addr": "0xe0620abea429a66ba69d9a0cde9ab93dc15bb9c4",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "BEP20",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "61ebe86d3d7f5bb410bc703615f9b593050ebf91eaa9ab96204399653381c80a",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "exact_contract",
+  "source_contract": {
+    "block_hash": "0x40bb47625f8682b91478db35a7ae494fa30c572ffb65f2bcdd3842d6e1a4a788",
+    "block_number": 124096162,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0xe0620abea429a66ba69d9a0cde9ab93dc15bb9c4",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-09-26T06:53:02.845886+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "8e73d72cca28014c8646f2033e87ec712fc9eb6dbc2664092e1cf446ce4e6937",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "source_market_evidence": {
+    "exchange": "gate",
+    "inference_basis": "gate futures contract payload has no base_asset/quote_asset/settle_asset fields; base/quote split parsed from the reported native_market_id ('BB_USDT') on its '_' separator, settle asset inferred from the /futures/usdt/ endpoint family",
+    "inferred_base_asset": "BB",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "BB_USDT",
+    "onboarded_at_ms": 1715599180000,
+    "raw_evidence": {
+      "endpoint": "https://api.gateio.ws/api/v4/futures/usdt/contracts/BB_USDT",
+      "observed_at": "2026-09-26T06:53:05.996619+00:00",
+      "payload": {
+        "config_change_time": 1789354385,
+        "contract_type": "",
+        "create_time": 1715599180,
+        "cross_leverage_default": "10",
+        "enable_bonus": true,
+        "enable_circuit_breaker": false,
+        "enable_credit": true,
+        "enable_decimal": false,
+        "funding_cap_ratio": "2",
+        "funding_impact_value": "7000",
+        "funding_interval": 14400,
+        "funding_next_apply": 1790409600,
+        "funding_offset": 0,
+        "funding_rate": "0.00005",
+        "funding_rate_indicative": "0.00005",
+        "funding_rate_limit": "0.02",
+        "in_delisting": false,
+        "index_price": "0.0105",
+        "interest_rate": "0.0003",
+        "is_pre_market": false,
+        "last_price": "0.0105",
+        "launch_time": 1715599180,
+        "leverage_max": "50",
+        "leverage_min": "1",
+        "long_users": 145,
+        "maintenance_rate": "0.01",
+        "maker_fee_rate": "-0.0001",
+        "mark_price": "0.0105",
+        "mark_price_round": "0.00001",
+        "mark_type": "index",
+        "market_order_size_max": "250000",
+        "market_order_slip_ratio": "0.05",
+        "name": "BB_USDT",
+        "order_price_deviate": "0.2",
+        "order_price_round": "0.00001",
+        "order_size_max": 380000,
+        "order_size_min": 1,
+        "orderbook_id": 1445532707,
+        "orders_limit": 100,
+        "position_size": 664917,
+        "quanto_multiplier": "10",
+        "ref_discount_rate": "0",
+        "ref_rebate_rate": "0.2",
+        "risk_limit_base": "5000",
+        "risk_limit_max": "2500000",
+        "risk_limit_step": "2495000",
+        "short_users": 165,
+        "status": "trading",
+        "taker_fee_rate": "0.00075",
+        "trade_id": 5664486,
+        "trade_size": 735989130,
+        "type": "direct",
+        "voucher_leverage": "0"
+      },
+      "raw_sha256": "97b6cc598972186beaefb6c18dec60c3388730211210ad7c6f8803c50c74102c",
+      "source": "https://api.gateio.ws/api/v4/futures/usdt/contracts/BB_USDT",
+      "wire_exact": true
+    },
+    "reported_base_asset": null,
+    "reported_quote_asset": null,
+    "reported_settle_asset": null,
+    "status": "trading"
+  },
+  "target_catalog_evidence": {
+    "endpoint": "https://api.bybit.com/v5/asset/coin/query-info (authenticated, all coins)",
+    "observed_at": "2026-09-26T06:51:20.869167+00:00",
+    "payload": {
+      "chains": [
+        {
+          "chain": "BOUNCEBIT",
+          "chainType": "BounceBit",
+          "contractAddress": ""
+        },
+        {
+          "chain": "BSC",
+          "chainType": "BNB Smart Chain",
+          "contractAddress": "0xe0620aBeA429A66Ba69d9a0cdE9aB93dc15bB9c4"
+        }
+      ],
+      "coin": "BB",
+      "contractAddress": "0xe0620aBeA429A66Ba69d9a0cdE9aB93dc15bB9c4",
+      "name": "BB",
+      "response_sha256": "dcbb785d22323ba31ec4687e0fd25bfec51cf316dfe4d779b0815cd34bc3e7dd",
+      "selected_chain": "BSC"
+    },
+    "raw_sha256": "a2df58e260215b05d97adf2db84038ae61a61e3c7473fb9ddc3f3c7ee98ecdf0",
+    "source": "bybit:coin_info_entry",
+    "wire_exact": false
+  },
+  "target_contract": {
+    "block_hash": "0x40bb47625f8682b91478db35a7ae494fa30c572ffb65f2bcdd3842d6e1a4a788",
+    "block_number": 124096162,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0xe0620abea429a66ba69d9a0cde9ab93dc15bb9c4",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-09-26T06:53:02.845886+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "8e73d72cca28014c8646f2033e87ec712fc9eb6dbc2664092e1cf446ce4e6937",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "target_exchange": "bybit",
+  "target_market_evidence": {
+    "exchange": "bybit",
+    "inference_basis": "copied verbatim from bybit v5 instruments-info's own baseCoin/quoteCoin/settleCoin fields -- genuinely reported, not parsed",
+    "inferred_base_asset": "BB",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "BBUSDT",
+    "onboarded_at_ms": 1715686860000,
+    "raw_evidence": {
+      "endpoint": "https://api.bybit.com/v5/market/instruments-info?category=linear (every cursor page)",
+      "observed_at": "2026-09-26T06:51:20.579476+00:00",
+      "payload": {
+        "baseCoin": "BB",
+        "contractType": "LinearPerpetual",
+        "copyTrading": "both",
+        "deliveryFeeRate": "",
+        "deliveryTime": "0",
+        "displayName": "BBUSDT",
+        "forbidUplWithdrawal": false,
+        "fullName": "BounceBit",
+        "fundingInterval": 240,
+        "isPreListing": false,
+        "launchTime": "1715686860000",
+        "leverageFilter": {
+          "leverageStep": "0.01",
+          "maxLeverage": "25.00",
+          "minLeverage": "1"
+        },
+        "lotSizeFilter": {
+          "maxMktOrderQty": "120000",
+          "maxOrderQty": "600000",
+          "minNotionalValue": "5",
+          "minOrderQty": "1",
+          "postOnlyMaxOrderQty": "600000",
+          "qtyStep": "1"
+        },
+        "lowerFundingRate": "-0.02",
+        "marketRegion": "",
+        "preListingInfo": null,
+        "priceFilter": {
+          "maxPrice": "19.999998",
+          "minPrice": "0.000001",
+          "tickSize": "0.000001"
+        },
+        "priceScale": "6",
+        "quoteCoin": "USDT",
+        "riskParameters": {
+          "priceLimitRatioX": "0.15",
+          "priceLimitRatioY": "0.3"
+        },
+        "settleCoin": "USDT",
+        "status": "Trading",
+        "symbol": "BBUSDT",
+        "symbolId": 500,
+        "symbolType": "",
+        "underlyingTicker": "",
+        "unifiedMarginTrade": true,
+        "upperFundingRate": "0.02"
+      },
+      "raw_sha256": "bd17d2f64fdf437a399c7e76e9eb19d1664e84cc61acd39d71eaae4e70b4e8e9",
+      "source": "bybit:instruments_info_entry",
+      "wire_exact": false
+    },
+    "reported_base_asset": "BB",
+    "reported_quote_asset": "USDT",
+    "reported_settle_asset": "USDT",
+    "status": "Trading"
+  },
+  "working_tree_dirty": false
+}

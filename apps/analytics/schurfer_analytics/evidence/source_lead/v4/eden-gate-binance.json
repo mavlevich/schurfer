@@ -1,0 +1,440 @@
+{
+  "base": "EDEN",
+  "bundle_sha256": "54146c3dfc8359bc802ec07fa38427298be0e634a077c9fdd3e07da7f610aa22",
+  "captured_at": "2026-09-26T06:54:38.942072+00:00",
+  "code_revision": "4111a1661e333849fe6d0d7a5e4504bf4e8bad9d",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/openeden?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-09-26T06:54:38.939479+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "binance-smart-chain",
+      "block_time_in_minutes": 0,
+      "categories": [
+        "BNB Chain Ecosystem",
+        "Ethereum Ecosystem",
+        "Real World Assets (RWA)",
+        "RWA Protocol"
+      ],
+      "contract_address": "0x235b6fe22b4642ada16d311855c49ce7de260841",
+      "country_origin": "",
+      "description": {
+        "en": "OpenEden offers 24/7, on-chain access to tokenized US Treasury securities for Web3 CFOs, DAO treasury managers, and buy-side institutional investors seeking low-risk, highly liquid crypto cash management solutions.\n\nWe are the first tokenized real-world asset (RWA) issuer to receive a Moody's \"A-bf\" bond fund rating. Since launching in early 2023, OpenEden has already become the largest issuer of tokenied US Treasuries in Asia and Europe.\n\nAs part of our end-to-end tokenization stack, OpenEden is directly involved through its licensed investment management entity which manages its BVI-registered professional fund, which issues the $TBILL tokens and custodises the underlying assets with licensed third party custodians.  "
+      },
+      "detail_platforms": {
+        "binance-smart-chain": {
+          "contract_address": "0x235b6fe22b4642ada16d311855c49ce7de260841",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/bsc/tokens/0x235b6fe22b4642ada16d311855c49ce7de260841"
+        },
+        "ethereum": {
+          "contract_address": "0x24a3d725c37a8d1a66eb87f0e5d07fe67c120035",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/eth/tokens/0x24a3d725c37a8d1a66eb87f0e5d07fe67c120035"
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": false,
+      "hashing_algorithm": null,
+      "id": "openeden",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/68283/large/eden.png?1755242478",
+        "small": "https://coin-images.coingecko.com/coins/images/68283/small/eden.png?1755242478",
+        "thumb": "https://coin-images.coingecko.com/coins/images/68283/thumb/eden.png?1755242478"
+      },
+      "last_updated": "2026-09-26T06:52:40.000Z",
+      "links": {
+        "announcement_url": [],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://bscscan.com/token/0x235B6fe22B4642aDa16D311855c49Ce7DE260841",
+          "https://intel.arkm.com/explorer/token/openeden",
+          "https://binplorer.com/address/0x235B6fe22B4642aDa16D311855c49Ce7DE260841",
+          "https://etherscan.io/token/0x24a3d725c37a8d1a66eb87f0e5d07fe67c120035",
+          "https://ethplorer.io/address/0x24a3d725c37a8d1a66eb87f0e5d07fe67c120035"
+        ],
+        "chat_url": [],
+        "facebook_username": "",
+        "homepage": ["https://openeden.com/"],
+        "official_forum_url": ["https://www.linkedin.com/company/openeden/"],
+        "repos_url": {
+          "bitbucket": [],
+          "github": []
+        },
+        "snapshot_url": null,
+        "subreddit_url": null,
+        "telegram_channel_identifier": "openeden",
+        "twitter_screen_name": "OpenEden_X",
+        "whitepaper": "https://docs.openeden.com/"
+      },
+      "listing_currency": null,
+      "listing_price": null,
+      "listing_source": null,
+      "listing_source_url": null,
+      "listing_timestamp": null,
+      "market_cap_rank": 772,
+      "market_cap_rank_with_rehypothecated": 976,
+      "name": "OpenEden",
+      "platforms": {
+        "binance-smart-chain": "0x235b6fe22b4642ada16d311855c49ce7de260841",
+        "ethereum": "0x24a3d725c37a8d1a66eb87f0e5d07fe67c120035"
+      },
+      "preview_listing": false,
+      "public_notice": null,
+      "sentiment_votes_down_percentage": 50.0,
+      "sentiment_votes_up_percentage": 50.0,
+      "status_updates": [],
+      "symbol": "eden",
+      "watchlist_portfolio_users": 2202,
+      "web_slug": "openeden"
+    },
+    "raw_sha256": "daf7e9f9f02f05603a31562b5512ca4c87fcb34a2b657b80bc77999e85eb0e10",
+    "source": "https://api.coingecko.com/api/v3/coins/openeden",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v4",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-09-26T06:51:16.758270+00:00",
+    "payload": {
+      "active": true,
+      "code": "EDEN",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "EDEN",
+      "info": {
+        "category": [],
+        "chain": "ETH",
+        "chains": [
+          {
+            "addr": "0x24a3d725c37a8d1a66eb87f0e5d07fe67c120035",
+            "deposit_disabled": false,
+            "name": "ETH",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          {
+            "addr": "0x235b6fe22b4642ada16d311855c49ce7de260841",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "EDEN",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "11561745.600000001",
+        "name": "OpenEden",
+        "total_supply": "1000000000",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "OpenEden",
+      "networks": {
+        "BEP20": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "BSC",
+          "info": {
+            "addr": "0x235b6fe22b4642ada16d311855c49ce7de260841",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "BEP20",
+          "precision": 0.0001,
+          "withdraw": true
+        },
+        "ERC20": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "ETH",
+          "info": {
+            "addr": "0x24a3d725c37a8d1a66eb87f0e5d07fe67c120035",
+            "deposit_disabled": false,
+            "name": "ETH",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "ERC20",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "16af3cb0b0ce0e2badaf713a9bf20e3676a7ac9dba8c3a02851cd0313c29cae3",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "exact_contract",
+  "source_contract": {
+    "block_hash": "0xa6d923a7226de5086c6a387d177163e0f9e503c10597242f373ec1560fc4f56c",
+    "block_number": 124096359,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0x235b6fe22b4642ada16d311855c49ce7de260841",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-09-26T06:54:31.514529+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "8e73d72cca28014c8646f2033e87ec712fc9eb6dbc2664092e1cf446ce4e6937",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "source_market_evidence": {
+    "exchange": "gate",
+    "inference_basis": "gate futures contract payload has no base_asset/quote_asset/settle_asset fields; base/quote split parsed from the reported native_market_id ('EDEN_USDT') on its '_' separator, settle asset inferred from the /futures/usdt/ endpoint family",
+    "inferred_base_asset": "EDEN",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "EDEN_USDT",
+    "onboarded_at_ms": 1759230600000,
+    "raw_evidence": {
+      "endpoint": "https://api.gateio.ws/api/v4/futures/usdt/contracts/EDEN_USDT",
+      "observed_at": "2026-09-26T06:54:32.657765+00:00",
+      "payload": {
+        "config_change_time": 1789975835,
+        "contract_type": "",
+        "create_time": 1759202899,
+        "cross_leverage_default": "10",
+        "enable_bonus": true,
+        "enable_circuit_breaker": false,
+        "enable_credit": true,
+        "enable_decimal": false,
+        "funding_cap_ratio": "2",
+        "funding_impact_value": "5000",
+        "funding_interval": 28800,
+        "funding_next_apply": 1790409600,
+        "funding_offset": 0,
+        "funding_rate": "0.0001",
+        "funding_rate_indicative": "0.0001",
+        "funding_rate_limit": "0.02",
+        "in_delisting": false,
+        "index_price": "0.06243",
+        "interest_rate": "0.0003",
+        "is_pre_market": false,
+        "last_price": "0.06234",
+        "launch_time": 1759230600,
+        "leverage_max": "20",
+        "leverage_min": "1",
+        "long_users": 190,
+        "maintenance_rate": "0.025",
+        "maker_fee_rate": "-0.0001",
+        "mark_price": "0.06235",
+        "mark_price_round": "0.00001",
+        "mark_type": "index",
+        "market_order_size_max": "150000",
+        "market_order_slip_ratio": "0.04",
+        "name": "EDEN_USDT",
+        "order_price_deviate": "0.15",
+        "order_price_round": "0.00001",
+        "order_size_max": 230000,
+        "order_size_min": 1,
+        "orderbook_id": 780943925,
+        "orders_limit": 100,
+        "position_size": 162975,
+        "quanto_multiplier": "10",
+        "ref_discount_rate": "0",
+        "ref_rebate_rate": "0.2",
+        "risk_limit_base": "5000",
+        "risk_limit_max": "5000000",
+        "risk_limit_step": "4995000",
+        "short_users": 107,
+        "status": "trading",
+        "taker_fee_rate": "0.00075",
+        "trade_id": 4570746,
+        "trade_size": 587920417,
+        "type": "direct",
+        "voucher_leverage": "0"
+      },
+      "raw_sha256": "79ca59aa7aa2720245dfc26c433c2397e4438dc6fe5f7f42b2ac1e6eba0fb754",
+      "source": "https://api.gateio.ws/api/v4/futures/usdt/contracts/EDEN_USDT",
+      "wire_exact": true
+    },
+    "reported_base_asset": null,
+    "reported_quote_asset": null,
+    "reported_settle_asset": null,
+    "status": "trading"
+  },
+  "target_catalog_evidence": {
+    "endpoint": "https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list",
+    "observed_at": "2026-09-26T06:51:19.811887+00:00",
+    "payload": {
+      "chainId": "56",
+      "chainName": "BSC",
+      "contractAddress": "0x235b6fe22b4642ada16d311855c49ce7de260841",
+      "decimals": 18,
+      "fullyDelisted": true,
+      "listingCex": true,
+      "name": "OpenEden",
+      "offline": true,
+      "response_sha256": "dbbe5652ba9a3ab0a09f5ee929182c884c90a35921796bd8ecd155a82c8fa73c",
+      "symbol": "EDEN"
+    },
+    "raw_sha256": "0db584959702c272e929cfbbcabd0a8662ba73a6275c0aef37cae67242c320da",
+    "source": "binance:alpha_catalog_entry",
+    "wire_exact": false
+  },
+  "target_contract": {
+    "block_hash": "0xa6d923a7226de5086c6a387d177163e0f9e503c10597242f373ec1560fc4f56c",
+    "block_number": 124096359,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0x235b6fe22b4642ada16d311855c49ce7de260841",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-09-26T06:54:31.514529+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "8e73d72cca28014c8646f2033e87ec712fc9eb6dbc2664092e1cf446ce4e6937",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "target_exchange": "binance",
+  "target_market_evidence": {
+    "exchange": "binance",
+    "inference_basis": "copied verbatim from binance futures exchangeInfo's own baseAsset/quoteAsset/marginAsset fields -- genuinely reported, not parsed",
+    "inferred_base_asset": "EDEN",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "EDENUSDT",
+    "onboarded_at_ms": 1759230000000,
+    "raw_evidence": {
+      "endpoint": "https://fapi.binance.com/fapi/v1/exchangeInfo",
+      "observed_at": "2026-09-26T06:51:20.198689+00:00",
+      "payload": {
+        "baseAsset": "EDEN",
+        "baseAssetPrecision": 8,
+        "contractType": "PERPETUAL",
+        "deliveryDate": 4133404800000,
+        "filters": [
+          {
+            "filterType": "PRICE_FILTER",
+            "maxPrice": "200",
+            "minPrice": "0.0000100",
+            "tickSize": "0.0000100"
+          },
+          {
+            "filterType": "LOT_SIZE",
+            "maxQty": "14000000",
+            "minQty": "1",
+            "stepSize": "1"
+          },
+          {
+            "filterType": "MARKET_LOT_SIZE",
+            "maxQty": "1400000",
+            "minQty": "1",
+            "stepSize": "1"
+          },
+          {
+            "filterType": "MAX_NUM_ORDERS",
+            "limit": 200
+          },
+          {
+            "filterType": "MIN_NOTIONAL",
+            "notional": "5"
+          },
+          {
+            "filterType": "PERCENT_PRICE",
+            "multiplierDecimal": "4",
+            "multiplierDown": "0.8500",
+            "multiplierUp": "1.1500"
+          },
+          {
+            "filterType": "POSITION_RISK_CONTROL",
+            "positionControlSide": "NONE"
+          }
+        ],
+        "liquidationFee": "0.015000",
+        "maintMarginPercent": "2.5000",
+        "marginAsset": "USDT",
+        "marketTakeBound": "0.15",
+        "maxMoveOrderLimit": 10000,
+        "onboardDate": 1759230000000,
+        "orderTypes": [
+          "LIMIT",
+          "MARKET",
+          "STOP",
+          "STOP_MARKET",
+          "TAKE_PROFIT",
+          "TAKE_PROFIT_MARKET",
+          "TRAILING_STOP_MARKET"
+        ],
+        "pair": "EDENUSDT",
+        "permissionSets": ["GRID", "COPY", "DCA", "PSB"],
+        "pricePrecision": 7,
+        "quantityPrecision": 0,
+        "quoteAsset": "USDT",
+        "quotePrecision": 8,
+        "requiredMarginPercent": "5.0000",
+        "status": "TRADING",
+        "symbol": "EDENUSDT",
+        "timeInForce": ["GTC", "IOC", "FOK", "GTX", "GTD"],
+        "triggerProtect": "0.1500",
+        "underlyingSubType": ["DeFi", "Crypto"],
+        "underlyingType": "COIN"
+      },
+      "raw_sha256": "ac7f393a94ec8ec6d106232fcb75b299966fcbcf1619fca8e504ba35935ccc19",
+      "source": "binance:futures_exchange_info_entry",
+      "wire_exact": false
+    },
+    "reported_base_asset": "EDEN",
+    "reported_quote_asset": "USDT",
+    "reported_settle_asset": "USDT",
+    "status": "TRADING"
+  },
+  "working_tree_dirty": false
+}

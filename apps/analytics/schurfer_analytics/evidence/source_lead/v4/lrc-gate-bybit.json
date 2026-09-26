@@ -1,0 +1,437 @@
+{
+  "base": "LRC",
+  "bundle_sha256": "ad7eb0cffac27c011736362e6c5173ce4b71b10390be71d6d55858581a8477e7",
+  "captured_at": "2026-09-26T06:56:44.773049+00:00",
+  "code_revision": "4111a1661e333849fe6d0d7a5e4504bf4e8bad9d",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/loopring?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-09-26T06:56:44.771668+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "ethereum",
+      "block_time_in_minutes": 0,
+      "categories": [
+        "Decentralized Exchange (DEX)",
+        "Smart Contract Platform",
+        "Exchange-based Tokens",
+        "Decentralized Finance (DeFi)",
+        "Arbitrum Ecosystem",
+        "Ethereum Ecosystem",
+        "Layer 2 (L2)",
+        "Zero Knowledge (ZK)",
+        "Loopring Ecosystem",
+        "Rollup",
+        "Energi Ecosystem",
+        "Governance"
+      ],
+      "contract_address": "0xbbbbca6a901c926f240b89eacb641d8aec7aeafd",
+      "country_origin": "CN",
+      "description": {
+        "en": "Loopring is a Decentralized Exchange (DEX) built on an Ethereum Layer-2 (L2) solution called zkRollup. It has both Automated Market Maker (AMM)-based and orderbook-based exchanges.&nbsp;\n\nzkRollup is an Ethereum L2 scaling solution that migrates computations off the blockchain. Loopring protocol only uses the underlying Ethereum blockchain as a data layer and a verification layer. As a result, Loopring's throughput is as high as 2,025 trades per second compared to Ethereum’s current throughput of 15 transactions per second. The result is that the cost per trade settlement is as small as $0.00015.\n\nLoopring's performance is sufficient for professional traders and market makers to deploy algorithmic strategies and other automated trading bots. This was not previously possible on any DEX as it was prohibitively slow and expensive. By building on top of Loopring 3.0, orderbook-based DEXs can be commercially viable for the first time. Loopring expects non-custodial exchanges can begin to outcompete and displace many centralized counterparts."
+      },
+      "detail_platforms": {
+        "arbitrum-one": {
+          "contract_address": "0x46d0ce7de6247b0a95f67b43b589b4041bae7fbe",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/arbitrum/tokens/0x46d0ce7de6247b0a95f67b43b589b4041bae7fbe"
+        },
+        "energi": {
+          "contract_address": "0x193da10f8a969d4c081b9097b15337b1488cbbec",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/nrg/tokens/0x193da10f8a969d4c081b9097b15337b1488cbbec"
+        },
+        "ethereum": {
+          "contract_address": "0xbbbbca6a901c926f240b89eacb641d8aec7aeafd",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/eth/tokens/0xbbbbca6a901c926f240b89eacb641d8aec7aeafd"
+        }
+      },
+      "genesis_date": "2017-08-01",
+      "has_supply_breakdown": true,
+      "hashing_algorithm": null,
+      "ico_data": {
+        "accepting_currencies": "",
+        "amount_for_sale": "13950760545239.0",
+        "base_pre_sale_amount": null,
+        "base_public_sale_amount": 1.0,
+        "bounty_detail_url": "",
+        "country_origin": "CN",
+        "description": "",
+        "hardcap_amount": "120000.0",
+        "hardcap_currency": "ETH",
+        "ico_end_date": "2017-08-16T00:00:00.000Z",
+        "ico_start_date": "2017-08-01T00:00:00.000Z",
+        "kyc_required": true,
+        "links": {},
+        "pre_sale_available": null,
+        "pre_sale_end_date": null,
+        "pre_sale_ended": false,
+        "pre_sale_start_date": null,
+        "quote_pre_sale_amount": null,
+        "quote_pre_sale_currency": "",
+        "quote_public_sale_amount": 0.06,
+        "quote_public_sale_currency": "USD",
+        "short_desc": "Decentralized Exchange and Open Protocol",
+        "softcap_amount": "50000.0",
+        "softcap_currency": "ETH",
+        "total_raised": "45000000.0",
+        "total_raised_currency": "USD",
+        "whitelist_available": null,
+        "whitelist_end_date": null,
+        "whitelist_start_date": null,
+        "whitelist_url": ""
+      },
+      "id": "loopring",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/913/large/LRC.png?1696502034",
+        "small": "https://coin-images.coingecko.com/coins/images/913/small/LRC.png?1696502034",
+        "thumb": "https://coin-images.coingecko.com/coins/images/913/thumb/LRC.png?1696502034"
+      },
+      "last_updated": "2026-09-26T06:54:40.000Z",
+      "links": {
+        "announcement_url": ["https://medium.com/loopring-protocol"],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://etherscan.io/token/0xbbbbca6a901c926f240b89eacb641d8aec7aeafd",
+          "https://intel.arkm.com/explorer/token/loopring",
+          "https://ethplorer.io/address/0xbbbbca6a901c926f240b89eacb641d8aec7aeafd",
+          "https://arbiscan.io/token/0x46d0ce7de6247b0a95f67b43b589b4041bae7fbe",
+          "https://explorer.energi.network/token/0x193da10f8a969d4c081b9097b15337b1488cbbec"
+        ],
+        "chat_url": ["https://discord.com/invite/KkYccYp", "https://medium.com/loopring-protocol"],
+        "facebook_username": "",
+        "homepage": ["https://loopring.io", "https://defi.loopring.io/", "https://loopring.org/"],
+        "official_forum_url": ["https://www.instagram.com/loopring.eth/"],
+        "repos_url": {
+          "bitbucket": [],
+          "github": [
+            "https://github.com/Loopring/protocols",
+            "https://github.com/Loopring/relay",
+            "https://github.com/Loopring/lightcone",
+            "https://github.com/Loopring/loopr",
+            "https://github.com/Loopring/protocol2"
+          ]
+        },
+        "snapshot_url": null,
+        "subreddit_url": "https://www.reddit.com/r/loopringorg/",
+        "telegram_channel_identifier": "loopring_en",
+        "twitter_screen_name": "loopringorg",
+        "whitepaper": ""
+      },
+      "listing_currency": null,
+      "listing_price": null,
+      "listing_source": null,
+      "listing_source_url": null,
+      "listing_timestamp": null,
+      "market_cap_rank": 1113,
+      "market_cap_rank_with_rehypothecated": 1381,
+      "name": "Loopring",
+      "platforms": {
+        "arbitrum-one": "0x46d0ce7de6247b0a95f67b43b589b4041bae7fbe",
+        "energi": "0x193da10f8a969d4c081b9097b15337b1488cbbec",
+        "ethereum": "0xbbbbca6a901c926f240b89eacb641d8aec7aeafd"
+      },
+      "preview_listing": false,
+      "public_notice": "Loopring Smart Wallets were compromised and they have temporarily suspended Guardian-related and 2FA-related operations as reported <a href=\"https://x.com/loopringorg/status/1799791898296451515\" target=\"_blank\">here</a>. For further updates, please refer to their official social media channel.<br><br>Ethereum zkRollup project Loopring has announced that Loopring DEX will cease all trading services, effective immediately. For more information, please refer to the official announcement <a href=\"https://x.com/loopringorg/status/2071253250725322987\" target=\"_blank\">here</a>.",
+      "sentiment_votes_down_percentage": null,
+      "sentiment_votes_up_percentage": null,
+      "status_updates": [],
+      "symbol": "lrc",
+      "watchlist_portfolio_users": 98205,
+      "web_slug": "loopring"
+    },
+    "raw_sha256": "29c4653675b1f40fcf376c8178030fad1cb8bf7af8c24370c45e3e2f9513bb90",
+    "source": "https://api.coingecko.com/api/v3/coins/loopring",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v4",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-09-26T06:51:16.758270+00:00",
+    "payload": {
+      "active": true,
+      "code": "LRC",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "LRC",
+      "info": {
+        "category": [],
+        "chain": "ETH",
+        "chains": [
+          {
+            "addr": "0xBBbbCA6A901c926F240b89EacB641d8Aec7AEafD",
+            "deposit_disabled": false,
+            "name": "ETH",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "LRC",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "13484567.395897716",
+        "name": "Loopring",
+        "total_supply": "1374513896",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "Loopring",
+      "networks": {
+        "ERC20": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "ETH",
+          "info": {
+            "addr": "0xBBbbCA6A901c926F240b89EacB641d8Aec7AEafD",
+            "deposit_disabled": false,
+            "name": "ETH",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "ERC20",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "1527f3004e09700c0f970b28ff286e6e8eb721b6adab7db2e095593d9b33a9e8",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "exact_contract",
+  "source_contract": {
+    "block_hash": "0x97bc26c272c0d381fd880fc4cb9f957eb094daa69e7b14ab0ee145f5142b30d7",
+    "block_number": 26059975,
+    "chain": "ethereum",
+    "chain_id": 1,
+    "contract_address": "0xbbbbca6a901c926f240b89eacb641d8aec7aeafd",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://ethereum-rpc.publicnode.com",
+      "observed_at": "2026-09-26T06:56:37.328780+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "a0cfb5a1c696cf1b33c6808f77538ba8fbf89fc8515499513d43ce204d7a457a",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "source_market_evidence": {
+    "exchange": "gate",
+    "inference_basis": "gate futures contract payload has no base_asset/quote_asset/settle_asset fields; base/quote split parsed from the reported native_market_id ('LRC_USDT') on its '_' separator, settle asset inferred from the /futures/usdt/ endpoint family",
+    "inferred_base_asset": "LRC",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "LRC_USDT",
+    "onboarded_at_ms": 1609804800000,
+    "raw_evidence": {
+      "endpoint": "https://api.gateio.ws/api/v4/futures/usdt/contracts/LRC_USDT",
+      "observed_at": "2026-09-26T06:56:38.470632+00:00",
+      "payload": {
+        "config_change_time": 1789354382,
+        "contract_type": "",
+        "create_time": 1609804800,
+        "cross_leverage_default": "10",
+        "enable_bonus": true,
+        "enable_circuit_breaker": false,
+        "enable_credit": true,
+        "enable_decimal": false,
+        "funding_cap_ratio": "2",
+        "funding_impact_value": "5000",
+        "funding_interval": 14400,
+        "funding_next_apply": 1790409600,
+        "funding_offset": 0,
+        "funding_rate": "0.00005",
+        "funding_rate_indicative": "0.00005",
+        "funding_rate_limit": "0.02",
+        "in_delisting": false,
+        "index_price": "0.009847",
+        "interest_rate": "0.0003",
+        "is_pre_market": false,
+        "last_price": "0.00976",
+        "launch_time": 1609804800,
+        "leverage_max": "25",
+        "leverage_min": "1",
+        "long_users": 118,
+        "maintenance_rate": "0.025",
+        "maker_fee_rate": "-0.0001",
+        "mark_price": "0.00978",
+        "mark_price_round": "0.00001",
+        "mark_type": "index",
+        "market_order_size_max": "1500000",
+        "market_order_slip_ratio": "0.05",
+        "name": "LRC_USDT",
+        "order_price_deviate": "0.2",
+        "order_price_round": "0.00001",
+        "order_size_max": 2300000,
+        "order_size_min": 1,
+        "orderbook_id": 6795834137,
+        "orders_limit": 100,
+        "position_size": 3377641,
+        "quanto_multiplier": "1",
+        "ref_discount_rate": "0",
+        "ref_rebate_rate": "0.2",
+        "risk_limit_base": "5000",
+        "risk_limit_max": "2500000",
+        "risk_limit_step": "2495000",
+        "short_users": 99,
+        "status": "trading",
+        "taker_fee_rate": "0.00075",
+        "trade_id": 12716509,
+        "trade_size": 9249433068,
+        "type": "direct",
+        "voucher_leverage": "0"
+      },
+      "raw_sha256": "70b7ccaa215e9b26776095b8522632c071233429f36266c235d8a981077d8c59",
+      "source": "https://api.gateio.ws/api/v4/futures/usdt/contracts/LRC_USDT",
+      "wire_exact": true
+    },
+    "reported_base_asset": null,
+    "reported_quote_asset": null,
+    "reported_settle_asset": null,
+    "status": "trading"
+  },
+  "target_catalog_evidence": {
+    "endpoint": "https://api.bybit.com/v5/asset/coin/query-info (authenticated, all coins)",
+    "observed_at": "2026-09-26T06:51:20.869167+00:00",
+    "payload": {
+      "chains": [
+        {
+          "chain": "ETH",
+          "chainType": "Ethereum",
+          "contractAddress": "0xbbbbca6a901c926f240b89eacb641d8aec7aeafd"
+        }
+      ],
+      "coin": "LRC",
+      "contractAddress": "0xbbbbca6a901c926f240b89eacb641d8aec7aeafd",
+      "name": "LRC",
+      "response_sha256": "dcbb785d22323ba31ec4687e0fd25bfec51cf316dfe4d779b0815cd34bc3e7dd",
+      "selected_chain": "ETH"
+    },
+    "raw_sha256": "000d026c2b9a0f0c713f1482880a339350fb5e362116b6753b9daf55f34dd230",
+    "source": "bybit:coin_info_entry",
+    "wire_exact": false
+  },
+  "target_contract": {
+    "block_hash": "0x97bc26c272c0d381fd880fc4cb9f957eb094daa69e7b14ab0ee145f5142b30d7",
+    "block_number": 26059975,
+    "chain": "ethereum",
+    "chain_id": 1,
+    "contract_address": "0xbbbbca6a901c926f240b89eacb641d8aec7aeafd",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://ethereum-rpc.publicnode.com",
+      "observed_at": "2026-09-26T06:56:37.328780+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "a0cfb5a1c696cf1b33c6808f77538ba8fbf89fc8515499513d43ce204d7a457a",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "target_exchange": "bybit",
+  "target_market_evidence": {
+    "exchange": "bybit",
+    "inference_basis": "copied verbatim from bybit v5 instruments-info's own baseCoin/quoteCoin/settleCoin fields -- genuinely reported, not parsed",
+    "inferred_base_asset": "LRC",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "LRCUSDT",
+    "onboarded_at_ms": 1636588800000,
+    "raw_evidence": {
+      "endpoint": "https://api.bybit.com/v5/market/instruments-info?category=linear (every cursor page)",
+      "observed_at": "2026-09-26T06:51:20.579476+00:00",
+      "payload": {
+        "baseCoin": "LRC",
+        "contractType": "LinearPerpetual",
+        "copyTrading": "both",
+        "deliveryFeeRate": "",
+        "deliveryTime": "0",
+        "displayName": "LRCUSDT",
+        "forbidUplWithdrawal": false,
+        "fullName": "Loopring",
+        "fundingInterval": 480,
+        "isPreListing": false,
+        "launchTime": "1636588800000",
+        "leverageFilter": {
+          "leverageStep": "0.01",
+          "maxLeverage": "25.00",
+          "minLeverage": "1"
+        },
+        "lotSizeFilter": {
+          "maxMktOrderQty": "140000.0",
+          "maxOrderQty": "680000.0",
+          "minNotionalValue": "5",
+          "minOrderQty": "0.1",
+          "postOnlyMaxOrderQty": "680000.0",
+          "qtyStep": "0.1"
+        },
+        "lowerFundingRate": "-0.02",
+        "marketRegion": "",
+        "preListingInfo": null,
+        "priceFilter": {
+          "maxPrice": "199.999980",
+          "minPrice": "0.000010",
+          "tickSize": "0.000010"
+        },
+        "priceScale": "6",
+        "quoteCoin": "USDT",
+        "riskParameters": {
+          "priceLimitRatioX": "0.1",
+          "priceLimitRatioY": "0.3"
+        },
+        "settleCoin": "USDT",
+        "status": "Trading",
+        "symbol": "LRCUSDT",
+        "symbolId": 102,
+        "symbolType": "",
+        "underlyingTicker": "",
+        "unifiedMarginTrade": true,
+        "upperFundingRate": "0.02"
+      },
+      "raw_sha256": "35ad92f6ea0d670fc5f69b04a32d08b4e2e3ba93819c2540e44fb16afe5e6b29",
+      "source": "bybit:instruments_info_entry",
+      "wire_exact": false
+    },
+    "reported_base_asset": "LRC",
+    "reported_quote_asset": "USDT",
+    "reported_settle_asset": "USDT",
+    "status": "Trading"
+  },
+  "working_tree_dirty": false
+}

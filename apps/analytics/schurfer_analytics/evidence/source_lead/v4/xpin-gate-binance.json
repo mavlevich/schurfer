@@ -1,0 +1,393 @@
+{
+  "base": "XPIN",
+  "bundle_sha256": "852426497628d7b87cc9e6addf008590c95d9ffec4bbac3eacefca0ca0775574",
+  "captured_at": "2026-09-26T07:01:28.024694+00:00",
+  "code_revision": "4111a1661e333849fe6d0d7a5e4504bf4e8bad9d",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/xpin-network?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-09-26T07:01:28.023089+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "binance-smart-chain",
+      "block_time_in_minutes": 0,
+      "categories": ["Communication", "BNB Chain Ecosystem", "DePIN", "Binance Alpha Spotlight"],
+      "contract_address": "0xd955c9ba56fb1ab30e34766e252a97ccce3d31a6",
+      "country_origin": "",
+      "description": {
+        "en": "XPIN Network is a revolutionary Decentralized Wireless Network Platform designed to redefine global connectivity. By leveraging cutting-edge blockchain technology, XPIN Network provides secure, private, and encrypted communication solutions, empowering users to connect seamlessly worldwide without relying on traditional telecom infrastructure."
+      },
+      "detail_platforms": {
+        "binance-smart-chain": {
+          "contract_address": "0xd955c9ba56fb1ab30e34766e252a97ccce3d31a6",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/bsc/tokens/0xd955c9ba56fb1ab30e34766e252a97ccce3d31a6"
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": true,
+      "hashing_algorithm": null,
+      "id": "xpin-network",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/68422/large/xpin.png?1755704500",
+        "small": "https://coin-images.coingecko.com/coins/images/68422/small/xpin.png?1755704500",
+        "thumb": "https://coin-images.coingecko.com/coins/images/68422/thumb/xpin.png?1755704500"
+      },
+      "last_updated": "2026-09-26T06:59:40.000Z",
+      "links": {
+        "announcement_url": [],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://bscscan.com/token/0xD955c9bA56Fb1AB30e34766e252A97ccCE3D31A6",
+          "https://binplorer.com/address/0xD955c9bA56Fb1AB30e34766e252A97ccCE3D31A6"
+        ],
+        "chat_url": [],
+        "facebook_username": "",
+        "homepage": ["https://www.xpin.network/"],
+        "official_forum_url": ["https://www.xpin.network/Blog", "https://medium.com/@xpinnetwork"],
+        "repos_url": {
+          "bitbucket": [],
+          "github": ["https://github.com/x-pin/dorahacks"]
+        },
+        "snapshot_url": null,
+        "subreddit_url": null,
+        "telegram_channel_identifier": "XPIN_Offical_Bot/XPIN",
+        "twitter_screen_name": "XPINNetwork",
+        "whitepaper": "https://docs.xpin.network/"
+      },
+      "listing_currency": null,
+      "listing_price": null,
+      "listing_source": null,
+      "listing_source_url": null,
+      "listing_timestamp": null,
+      "market_cap_rank": 596,
+      "market_cap_rank_with_rehypothecated": 773,
+      "name": "XPIN Network",
+      "platforms": {
+        "binance-smart-chain": "0xd955c9ba56fb1ab30e34766e252a97ccce3d31a6"
+      },
+      "preview_listing": false,
+      "public_notice": null,
+      "sentiment_votes_down_percentage": 100.0,
+      "sentiment_votes_up_percentage": 0.0,
+      "status_updates": [],
+      "symbol": "xpin",
+      "watchlist_portfolio_users": 3818,
+      "web_slug": "xpin-network"
+    },
+    "raw_sha256": "a8294159ce57b553ac706184d448403a4f3c451716c33338405c9e0610c9000a",
+    "source": "https://api.coingecko.com/api/v3/coins/xpin-network",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v4",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-09-26T06:51:16.758270+00:00",
+    "payload": {
+      "active": true,
+      "code": "XPIN",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "XPIN",
+      "info": {
+        "category": [],
+        "chain": "BSC",
+        "chains": [
+          {
+            "addr": "0xd955c9ba56fb1ab30e34766e252a97ccce3d31a6",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "XPIN",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "38489231.94560512",
+        "name": "XPIN Network",
+        "total_supply": "100000000000",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "XPIN Network",
+      "networks": {
+        "BEP20": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "BSC",
+          "info": {
+            "addr": "0xd955c9ba56fb1ab30e34766e252a97ccce3d31a6",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "BEP20",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "b6c4c839b46743fd68250d38d9e3f9e28b76291c9d9f3534d026a30ffaa7b169",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "exact_contract",
+  "source_contract": {
+    "block_hash": "0x3bec21b002c03d4d2bb6b639092422c2ece764e90e61828e44bf5b5347accc4a",
+    "block_number": 124097267,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0xd955c9ba56fb1ab30e34766e252a97ccce3d31a6",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-09-26T07:01:20.519534+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "8e73d72cca28014c8646f2033e87ec712fc9eb6dbc2664092e1cf446ce4e6937",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "source_market_evidence": {
+    "exchange": "gate",
+    "inference_basis": "gate futures contract payload has no base_asset/quote_asset/settle_asset fields; base/quote split parsed from the reported native_market_id ('XPIN_USDT') on its '_' separator, settle asset inferred from the /futures/usdt/ endpoint family",
+    "inferred_base_asset": "XPIN",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "XPIN_USDT",
+    "onboarded_at_ms": 1757660446000,
+    "raw_evidence": {
+      "endpoint": "https://api.gateio.ws/api/v4/futures/usdt/contracts/XPIN_USDT",
+      "observed_at": "2026-09-26T07:01:21.674883+00:00",
+      "payload": {
+        "config_change_time": 1789116339,
+        "contract_type": "",
+        "create_time": 1757660446,
+        "cross_leverage_default": "10",
+        "enable_bonus": true,
+        "enable_circuit_breaker": false,
+        "enable_credit": true,
+        "enable_decimal": false,
+        "funding_cap_ratio": "2",
+        "funding_impact_value": "3000",
+        "funding_interval": 28800,
+        "funding_next_apply": 1790409600,
+        "funding_offset": 0,
+        "funding_rate": "0.0001",
+        "funding_rate_indicative": "0.0001",
+        "funding_rate_limit": "0.02",
+        "in_delisting": false,
+        "index_price": "0.00092757",
+        "interest_rate": "0.0003",
+        "is_pre_market": false,
+        "last_price": "0.0009257",
+        "launch_time": 1757660446,
+        "leverage_max": "50",
+        "leverage_min": "1",
+        "long_users": 311,
+        "maintenance_rate": "0.01",
+        "maker_fee_rate": "-0.0001",
+        "mark_price": "0.0009275",
+        "mark_price_round": "0.0000001",
+        "mark_type": "index",
+        "market_order_size_max": "35000",
+        "market_order_slip_ratio": "0.04",
+        "name": "XPIN_USDT",
+        "order_price_deviate": "0.15",
+        "order_price_round": "0.0000001",
+        "order_size_max": 53000,
+        "order_size_min": 1,
+        "orderbook_id": 1280528344,
+        "orders_limit": 100,
+        "position_size": 754409,
+        "quanto_multiplier": "1000",
+        "ref_discount_rate": "0",
+        "ref_rebate_rate": "0.2",
+        "risk_limit_base": "5000",
+        "risk_limit_max": "2500000",
+        "risk_limit_step": "2495000",
+        "short_users": 170,
+        "status": "trading",
+        "taker_fee_rate": "0.00075",
+        "trade_id": 6849908,
+        "trade_size": 303249357,
+        "type": "direct",
+        "voucher_leverage": "0"
+      },
+      "raw_sha256": "619306f57915e7b59a2551fe9a43f72d296ea29177cf5b15d27e35cd2a6364de",
+      "source": "https://api.gateio.ws/api/v4/futures/usdt/contracts/XPIN_USDT",
+      "wire_exact": true
+    },
+    "reported_base_asset": null,
+    "reported_quote_asset": null,
+    "reported_settle_asset": null,
+    "status": "trading"
+  },
+  "target_catalog_evidence": {
+    "endpoint": "https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list",
+    "observed_at": "2026-09-26T06:51:19.811887+00:00",
+    "payload": {
+      "chainId": "56",
+      "chainName": "BSC",
+      "contractAddress": "0xd955c9ba56fb1ab30e34766e252a97ccce3d31a6",
+      "decimals": 18,
+      "fullyDelisted": false,
+      "listingCex": false,
+      "name": "XPIN Network",
+      "offline": false,
+      "response_sha256": "dbbe5652ba9a3ab0a09f5ee929182c884c90a35921796bd8ecd155a82c8fa73c",
+      "symbol": "XPIN"
+    },
+    "raw_sha256": "45edf09500d598cb3fb642483a2e3d83cbc378d7f7663a476222f08692d2e004",
+    "source": "binance:alpha_catalog_entry",
+    "wire_exact": false
+  },
+  "target_contract": {
+    "block_hash": "0x3bec21b002c03d4d2bb6b639092422c2ece764e90e61828e44bf5b5347accc4a",
+    "block_number": 124097267,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0xd955c9ba56fb1ab30e34766e252a97ccce3d31a6",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-09-26T07:01:20.519534+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "8e73d72cca28014c8646f2033e87ec712fc9eb6dbc2664092e1cf446ce4e6937",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "target_exchange": "binance",
+  "target_market_evidence": {
+    "exchange": "binance",
+    "inference_basis": "copied verbatim from binance futures exchangeInfo's own baseAsset/quoteAsset/marginAsset fields -- genuinely reported, not parsed",
+    "inferred_base_asset": "XPIN",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "XPINUSDT",
+    "onboarded_at_ms": 1757664000000,
+    "raw_evidence": {
+      "endpoint": "https://fapi.binance.com/fapi/v1/exchangeInfo",
+      "observed_at": "2026-09-26T06:51:20.198689+00:00",
+      "payload": {
+        "baseAsset": "XPIN",
+        "baseAssetPrecision": 8,
+        "contractType": "PERPETUAL",
+        "deliveryDate": 4133404800000,
+        "filters": [
+          {
+            "filterType": "PRICE_FILTER",
+            "maxPrice": "200",
+            "minPrice": "0.0000010",
+            "tickSize": "0.0000010"
+          },
+          {
+            "filterType": "LOT_SIZE",
+            "maxQty": "700000000",
+            "minQty": "1",
+            "stepSize": "1"
+          },
+          {
+            "filterType": "MARKET_LOT_SIZE",
+            "maxQty": "70000000",
+            "minQty": "1",
+            "stepSize": "1"
+          },
+          {
+            "filterType": "MAX_NUM_ORDERS",
+            "limit": 200
+          },
+          {
+            "filterType": "MIN_NOTIONAL",
+            "notional": "5"
+          },
+          {
+            "filterType": "PERCENT_PRICE",
+            "multiplierDecimal": "4",
+            "multiplierDown": "0.8500",
+            "multiplierUp": "1.1500"
+          },
+          {
+            "filterType": "POSITION_RISK_CONTROL",
+            "positionControlSide": "NONE"
+          }
+        ],
+        "liquidationFee": "0.020000",
+        "maintMarginPercent": "2.5000",
+        "marginAsset": "USDT",
+        "marketTakeBound": "0.15",
+        "maxMoveOrderLimit": 10000,
+        "onboardDate": 1757664000000,
+        "orderTypes": [
+          "LIMIT",
+          "MARKET",
+          "STOP",
+          "STOP_MARKET",
+          "TAKE_PROFIT",
+          "TAKE_PROFIT_MARKET",
+          "TRAILING_STOP_MARKET"
+        ],
+        "pair": "XPINUSDT",
+        "permissionSets": ["GRID", "COPY", "DCA", "PSB"],
+        "pricePrecision": 7,
+        "quantityPrecision": 0,
+        "quoteAsset": "USDT",
+        "quotePrecision": 8,
+        "requiredMarginPercent": "5.0000",
+        "status": "TRADING",
+        "symbol": "XPINUSDT",
+        "timeInForce": ["GTC", "IOC", "FOK", "GTX", "GTD"],
+        "triggerProtect": "0.1500",
+        "underlyingSubType": ["Alpha", "Crypto"],
+        "underlyingType": "COIN"
+      },
+      "raw_sha256": "abff63fffe5bd3949ab00301d9a19178da6068453886bbd052f6ec24ad290735",
+      "source": "binance:futures_exchange_info_entry",
+      "wire_exact": false
+    },
+    "reported_base_asset": "XPIN",
+    "reported_quote_asset": "USDT",
+    "reported_settle_asset": "USDT",
+    "status": "TRADING"
+  },
+  "working_tree_dirty": false
+}

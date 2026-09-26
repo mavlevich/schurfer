@@ -1,0 +1,423 @@
+{
+  "base": "FLOCK",
+  "bundle_sha256": "042e595a13dfcb003da0ba3ecd355767787ca3f1a286cc439ed50d3f862ae046",
+  "captured_at": "2026-09-26T06:55:42.300028+00:00",
+  "code_revision": "4111a1661e333849fe6d0d7a5e4504bf4e8bad9d",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/flock-2?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-09-26T06:55:42.297684+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "base",
+      "block_time_in_minutes": 0,
+      "categories": [
+        "Artificial Intelligence (AI)",
+        "BNB Chain Ecosystem",
+        "Solana Ecosystem",
+        "Ethereum Ecosystem",
+        "Base Ecosystem",
+        "AI Applications",
+        "Binance Alpha Spotlight",
+        "HyperEVM Ecosystem",
+        "x402 Ecosystem",
+        "Base Native",
+        "Robinhood Ecosystem"
+      ],
+      "contract_address": "0x5ab3d4c385b400f3abb49e80de2faf6a88a7b691",
+      "country_origin": "",
+      "description": {
+        "en": "FLock.io is a decentralised AI model training and validation network. It breaks down the walled gardens of model creation and development from the few tech companies by making compute, data contribution, and training composable. The team consists of cutting-edge researchers, including several CS PhDs from the University of Oxford. It is backed by leading investors: DCG, Lightspeed Faction, Volt, Tagus, OKX Ventures, etc."
+      },
+      "detail_platforms": {
+        "base": {
+          "contract_address": "0x5ab3d4c385b400f3abb49e80de2faf6a88a7b691",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/base/tokens/0x5ab3d4c385b400f3abb49e80de2faf6a88a7b691"
+        },
+        "binance-smart-chain": {
+          "contract_address": "0x5ab3d4c385b400f3abb49e80de2faf6a88a7b691",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/bsc/tokens/0x5ab3d4c385b400f3abb49e80de2faf6a88a7b691"
+        },
+        "ethereum": {
+          "contract_address": "0x5ab3d4c385b400f3abb49e80de2faf6a88a7b691",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/eth/tokens/0x5ab3d4c385b400f3abb49e80de2faf6a88a7b691"
+        },
+        "hyperevm": {
+          "contract_address": "0x5ab3d4c385b400f3abb49e80de2faf6a88a7b691",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/hyperevm/tokens/0x5ab3d4c385b400f3abb49e80de2faf6a88a7b691"
+        },
+        "robinhood": {
+          "contract_address": "0x5ab3d4c385b400f3abb49e80de2faf6a88a7b691",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/robinhood/tokens/0x5ab3d4c385b400f3abb49e80de2faf6a88a7b691"
+        },
+        "solana": {
+          "contract_address": "FmysnoAQ7ifx3La6C7D9cM5tcpoTxEnakbnZPhrC2pJi",
+          "decimal_place": 9,
+          "geckoterminal_url": "https://www.geckoterminal.com/solana/tokens/FmysnoAQ7ifx3La6C7D9cM5tcpoTxEnakbnZPhrC2pJi"
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": false,
+      "hashing_algorithm": null,
+      "id": "flock-2",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/53178/large/FLock_Token_Logo.png?1735561398",
+        "small": "https://coin-images.coingecko.com/coins/images/53178/small/FLock_Token_Logo.png?1735561398",
+        "thumb": "https://coin-images.coingecko.com/coins/images/53178/thumb/FLock_Token_Logo.png?1735561398"
+      },
+      "last_updated": "2026-09-26T06:53:40.000Z",
+      "links": {
+        "announcement_url": [],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://basescan.org/token/0x5aB3D4c385B400F3aBB49e80DE2fAF6a88A7B691",
+          "https://intel.arkm.com/explorer/token/flock-2",
+          "https://bscscan.com/token/0x5aB3D4c385B400F3aBB49e80DE2fAF6a88A7B691",
+          "https://binplorer.com/address/0x5aB3D4c385B400F3aBB49e80DE2fAF6a88A7B691",
+          "https://etherscan.io/token/0x5aB3D4c385B400F3aBB49e80DE2fAF6a88A7B691",
+          "https://ethplorer.io/address/0x5aB3D4c385B400F3aBB49e80DE2fAF6a88A7B691",
+          "https://hyperliquid.cloud.blockscout.com/token/0x5aB3D4c385B400F3aBB49e80DE2fAF6a88A7B691",
+          "https://hyperevmscan.io/token/0x5aB3D4c385B400F3aBB49e80DE2fAF6a88A7B691",
+          "https://robinhoodchain.blockscout.com/token/0x5aB3D4c385B400F3aBB49e80DE2fAF6a88A7B691"
+        ],
+        "chat_url": ["https://flock-io.medium.com/", "https://www.youtube.com/@flock-io"],
+        "facebook_username": "",
+        "homepage": ["https://flock.io/"],
+        "official_forum_url": [
+          "https://discord.com/invite/ay8MnJCg2W",
+          "https://www.linkedin.com/company/flock-io/people/"
+        ],
+        "repos_url": {
+          "bitbucket": [],
+          "github": ["https://github.com/FLock-io"]
+        },
+        "snapshot_url": null,
+        "subreddit_url": null,
+        "telegram_channel_identifier": "flock_io_community",
+        "twitter_screen_name": "flock_io",
+        "whitepaper": "https://docs.flock.io/resources/whitepaper"
+      },
+      "listing_currency": null,
+      "listing_price": null,
+      "listing_source": null,
+      "listing_source_url": null,
+      "listing_timestamp": null,
+      "market_cap_rank": 624,
+      "market_cap_rank_with_rehypothecated": 806,
+      "name": "FLOCK",
+      "platforms": {
+        "base": "0x5ab3d4c385b400f3abb49e80de2faf6a88a7b691",
+        "binance-smart-chain": "0x5ab3d4c385b400f3abb49e80de2faf6a88a7b691",
+        "ethereum": "0x5ab3d4c385b400f3abb49e80de2faf6a88a7b691",
+        "hyperevm": "0x5ab3d4c385b400f3abb49e80de2faf6a88a7b691",
+        "robinhood": "0x5ab3d4c385b400f3abb49e80de2faf6a88a7b691",
+        "solana": "FmysnoAQ7ifx3La6C7D9cM5tcpoTxEnakbnZPhrC2pJi"
+      },
+      "preview_listing": false,
+      "public_notice": null,
+      "sentiment_votes_down_percentage": 50.0,
+      "sentiment_votes_up_percentage": 50.0,
+      "status_updates": [],
+      "symbol": "flock",
+      "watchlist_portfolio_users": 5116,
+      "web_slug": "flock-2"
+    },
+    "raw_sha256": "8d6cd99181330e075c08715b380017e1f408af9a63a2243862cb057d20fcacc1",
+    "source": "https://api.coingecko.com/api/v3/coins/flock-2",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v4",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-09-26T06:51:16.758270+00:00",
+    "payload": {
+      "active": true,
+      "code": "FLOCK",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "FLOCK",
+      "info": {
+        "category": [],
+        "chain": "BASEEVM",
+        "chains": [
+          {
+            "addr": "0x5ab3d4c385b400f3abb49e80de2faf6a88a7b691",
+            "deposit_disabled": false,
+            "name": "BASEEVM",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "FLOCK",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "35127938.51076494",
+        "name": "Flock.io",
+        "total_supply": "1000000000",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "Flock.io",
+      "networks": {
+        "BASE": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "BASEEVM",
+          "info": {
+            "addr": "0x5ab3d4c385b400f3abb49e80de2faf6a88a7b691",
+            "deposit_disabled": false,
+            "name": "BASEEVM",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "BASE",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "fc6288ee82cc85bbed40d1821c3800005fc6e42787d7e8bd14b2782bc921271a",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "exact_contract",
+  "source_contract": {
+    "block_hash": "0x3e0ee6379343867e5b88a0a8c6d08c1ce7bf276557964f4093b6fca1e029689c",
+    "block_number": 51808193,
+    "chain": "base",
+    "chain_id": 8453,
+    "contract_address": "0x5ab3d4c385b400f3abb49e80de2faf6a88a7b691",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://mainnet.base.org",
+      "observed_at": "2026-09-26T06:55:34.840299+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "69640378441910e713ebf1ec0431af5fd0a4658949332e49d674b3ddf1b12877",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "source_market_evidence": {
+    "exchange": "gate",
+    "inference_basis": "gate futures contract payload has no base_asset/quote_asset/settle_asset fields; base/quote split parsed from the reported native_market_id ('FLOCK_USDT') on its '_' separator, settle asset inferred from the /futures/usdt/ endpoint family",
+    "inferred_base_asset": "FLOCK",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "FLOCK_USDT",
+    "onboarded_at_ms": 1735646790000,
+    "raw_evidence": {
+      "endpoint": "https://api.gateio.ws/api/v4/futures/usdt/contracts/FLOCK_USDT",
+      "observed_at": "2026-09-26T06:55:36.033704+00:00",
+      "payload": {
+        "config_change_time": 1789975850,
+        "contract_type": "",
+        "create_time": 1735646790,
+        "cross_leverage_default": "10",
+        "enable_bonus": true,
+        "enable_circuit_breaker": false,
+        "enable_credit": true,
+        "enable_decimal": false,
+        "funding_cap_ratio": "2",
+        "funding_impact_value": "2000",
+        "funding_interval": 28800,
+        "funding_next_apply": 1790409600,
+        "funding_offset": 0,
+        "funding_rate": "-0.001763",
+        "funding_rate_indicative": "-0.001763",
+        "funding_rate_limit": "0.02",
+        "in_delisting": false,
+        "index_price": "0.07655",
+        "interest_rate": "0.0003",
+        "is_pre_market": false,
+        "last_price": "0.07618",
+        "launch_time": 1735646790,
+        "leverage_max": "50",
+        "leverage_min": "1",
+        "long_users": 262,
+        "maintenance_rate": "0.01",
+        "maker_fee_rate": "-0.0001",
+        "mark_price": "0.07635",
+        "mark_price_round": "0.00001",
+        "mark_type": "index",
+        "market_order_size_max": "1500000",
+        "market_order_slip_ratio": "0.035",
+        "name": "FLOCK_USDT",
+        "order_price_deviate": "0.1",
+        "order_price_round": "0.00001",
+        "order_size_max": 2300000,
+        "order_size_min": 1,
+        "orderbook_id": 1506922182,
+        "orders_limit": 100,
+        "position_size": 6034316,
+        "quanto_multiplier": "1",
+        "ref_discount_rate": "0",
+        "ref_rebate_rate": "0.2",
+        "risk_limit_base": "10000",
+        "risk_limit_max": "2500000",
+        "risk_limit_step": "2490000",
+        "short_users": 158,
+        "status": "trading",
+        "taker_fee_rate": "0.00075",
+        "trade_id": 11084938,
+        "trade_size": 6571433276,
+        "type": "direct",
+        "voucher_leverage": "0"
+      },
+      "raw_sha256": "43ab9d55bbe0a117e511bb9fc17eb5986a3b8a555339eefdbc9664d89a9df8e6",
+      "source": "https://api.gateio.ws/api/v4/futures/usdt/contracts/FLOCK_USDT",
+      "wire_exact": true
+    },
+    "reported_base_asset": null,
+    "reported_quote_asset": null,
+    "reported_settle_asset": null,
+    "status": "trading"
+  },
+  "target_catalog_evidence": {
+    "endpoint": "https://api.bybit.com/v5/asset/coin/query-info (authenticated, all coins)",
+    "observed_at": "2026-09-26T06:51:20.869167+00:00",
+    "payload": {
+      "chains": [
+        {
+          "chain": "BASE",
+          "chainType": "Base Mainnet",
+          "contractAddress": "0x5aB3D4c385B400F3aBB49e80DE2fAF6a88A7B691"
+        }
+      ],
+      "coin": "FLOCK",
+      "contractAddress": "0x5aB3D4c385B400F3aBB49e80DE2fAF6a88A7B691",
+      "name": "FLOCK",
+      "response_sha256": "dcbb785d22323ba31ec4687e0fd25bfec51cf316dfe4d779b0815cd34bc3e7dd",
+      "selected_chain": "BASE"
+    },
+    "raw_sha256": "6d875b8eab23883350b89c261468693a79e9ae616bd0b161431475e434f8ab23",
+    "source": "bybit:coin_info_entry",
+    "wire_exact": false
+  },
+  "target_contract": {
+    "block_hash": "0x3e0ee6379343867e5b88a0a8c6d08c1ce7bf276557964f4093b6fca1e029689c",
+    "block_number": 51808193,
+    "chain": "base",
+    "chain_id": 8453,
+    "contract_address": "0x5ab3d4c385b400f3abb49e80de2faf6a88a7b691",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://mainnet.base.org",
+      "observed_at": "2026-09-26T06:55:34.840299+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "69640378441910e713ebf1ec0431af5fd0a4658949332e49d674b3ddf1b12877",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "target_exchange": "bybit",
+  "target_market_evidence": {
+    "exchange": "bybit",
+    "inference_basis": "copied verbatim from bybit v5 instruments-info's own baseCoin/quoteCoin/settleCoin fields -- genuinely reported, not parsed",
+    "inferred_base_asset": "FLOCK",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "FLOCKUSDT",
+    "onboarded_at_ms": 1736412607000,
+    "raw_evidence": {
+      "endpoint": "https://api.bybit.com/v5/market/instruments-info?category=linear (every cursor page)",
+      "observed_at": "2026-09-26T06:51:20.579476+00:00",
+      "payload": {
+        "baseCoin": "FLOCK",
+        "contractType": "LinearPerpetual",
+        "copyTrading": "both",
+        "deliveryFeeRate": "",
+        "deliveryTime": "0",
+        "displayName": "FLOCKUSDT",
+        "forbidUplWithdrawal": false,
+        "fullName": "FLOCK",
+        "fundingInterval": 240,
+        "isPreListing": false,
+        "launchTime": "1736412607000",
+        "leverageFilter": {
+          "leverageStep": "0.01",
+          "maxLeverage": "20.00",
+          "minLeverage": "1"
+        },
+        "lotSizeFilter": {
+          "maxMktOrderQty": "220000",
+          "maxOrderQty": "1100000",
+          "minNotionalValue": "5",
+          "minOrderQty": "1",
+          "postOnlyMaxOrderQty": "1100000",
+          "qtyStep": "1"
+        },
+        "lowerFundingRate": "-0.025",
+        "marketRegion": "",
+        "preListingInfo": null,
+        "priceFilter": {
+          "maxPrice": "199.99998",
+          "minPrice": "0.00001",
+          "tickSize": "0.00001"
+        },
+        "priceScale": "5",
+        "quoteCoin": "USDT",
+        "riskParameters": {
+          "priceLimitRatioX": "0.15",
+          "priceLimitRatioY": "0.3"
+        },
+        "settleCoin": "USDT",
+        "status": "Trading",
+        "symbol": "FLOCKUSDT",
+        "symbolId": 665,
+        "symbolType": "innovation",
+        "underlyingTicker": "",
+        "unifiedMarginTrade": true,
+        "upperFundingRate": "0.025"
+      },
+      "raw_sha256": "fd119f0274f70ac60f88251c46500166951743a9e575a7c2073be01037fe5158",
+      "source": "bybit:instruments_info_entry",
+      "wire_exact": false
+    },
+    "reported_base_asset": "FLOCK",
+    "reported_quote_asset": "USDT",
+    "reported_settle_asset": "USDT",
+    "status": "Trading"
+  },
+  "working_tree_dirty": false
+}

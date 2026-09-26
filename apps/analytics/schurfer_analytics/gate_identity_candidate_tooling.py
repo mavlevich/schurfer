@@ -31,6 +31,11 @@ Human review checklist (apply this manually before ever approving a
 - the evidence predates the event it is being used to justify (not gathered
   only after the fact to rationalize a link)
 - a second person independently confirmed the link
+
+Registry v4 replaces this manual checklist with a written rule applied to every
+candidate (`source_lead_identity_v4.py`), one owner confirmation of the whole
+decision list and an independent technical re-check (decision register,
+2026-09-25). The checklist above still governs any hand-approved registry.
 """
 
 from __future__ import annotations
@@ -78,6 +83,7 @@ NETWORK_TO_CHAIN: dict[str, str] = {
     "TRC20": "tron",
     "POLYGON": "polygon",
     "ARBITRUM": "arbitrum",
+    "BASE": "base",
     "OPTIMISM": "optimism",
     "AVAXC": "avalanche",
     "SOL": "solana",
@@ -90,6 +96,7 @@ COINGECKO_PLATFORM_TO_CHAIN: dict[str, str] = {
     "tron": "tron",
     "polygon-pos": "polygon",
     "arbitrum-one": "arbitrum",
+    "base": "base",
     "optimistic-ethereum": "optimism",
     "avalanche": "avalanche",
     "solana": "solana",
