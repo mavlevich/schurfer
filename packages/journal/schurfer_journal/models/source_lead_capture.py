@@ -382,3 +382,80 @@ class FormalReadClaim(Base):
         ),
         {"schema": "app"},
     )
+
+
+_SHADOW_OUTCOMES = (
+    "'claimed', 'shadow_recorded', 'broker_rejected', 'stale_book', 'no_book_timestamp', "
+    "'below_min_order', 'insufficient_depth', 'instrument_mismatch', 'fetch_failed', "
+    "'crashed_after_claim', 'evaluation_error', 'crossed_book', 'instrument_not_tradable', "
+    "'below_min_notional', 'above_max_market_qty', 'delivery_unknown', 'instrument_rules_unknown'"
+)
+
+
+class SourceLeadShadowAttempt(Base):
+    """HYP-012 v2 shadow-execution attempt per qualified episode (migration 0055)."""
+
+    __tablename__ = "source_lead_shadow_attempts"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    capture_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("app.source_lead_captures.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    qualification_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    shadow_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    native_symbol: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    instrument_identity_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    source_first_observed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    qualified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    outcome: Mapped[str] = mapped_column(String(32), nullable=False)
+    late: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    quote_requested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    quote_received_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    book_ts_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    book_age_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    gate_to_seen_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    detect_latency_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    from_qualified_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    process_latency_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    quote_latency_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    qty_step: Mapped[Decimal | None] = mapped_column(Numeric(30, 14), nullable=True)
+    min_order_qty: Mapped[Decimal | None] = mapped_column(Numeric(30, 14), nullable=True)
+    min_notional_usd: Mapped[Decimal | None] = mapped_column(Numeric(30, 14), nullable=True)
+    max_market_qty: Mapped[Decimal | None] = mapped_column(Numeric(38, 14), nullable=True)
+    quantity: Mapped[Decimal | None] = mapped_column(Numeric(38, 14), nullable=True)
+    send_qty_vwap: Mapped[Decimal | None] = mapped_column(Numeric(30, 14), nullable=True)
+    send_notional_usd: Mapped[Decimal | None] = mapped_column(Numeric(30, 14), nullable=True)
+    capture_ask_vwap: Mapped[Decimal | None] = mapped_column(Numeric(30, 14), nullable=True)
+    send_ask_vwap: Mapped[Decimal | None] = mapped_column(Numeric(30, 14), nullable=True)
+    quote_change_bps: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), nullable=True)
+    decision_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()"), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()"), nullable=False
+    )
+
+    __table_args__ = (
+        Index(
+            "ux_source_lead_shadow_capture_version",
+            "capture_id",
+            "qualification_version",
+            unique=True,
+        ),
+        CheckConstraint(f"outcome IN ({_SHADOW_OUTCOMES})", name="ck_source_lead_shadow_outcome"),
+        CheckConstraint("attempts >= 0", name="ck_source_lead_shadow_attempts"),
+        {"schema": "app"},
+    )

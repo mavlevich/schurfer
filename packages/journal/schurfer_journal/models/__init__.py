@@ -32,6 +32,7 @@ from .source_lead_capture import (
     SourceLeadCapture,
     SourceLeadExitObservation,
     SourceLeadQualification,
+    SourceLeadShadowAttempt,
     SourceLeadTargetObservation,
 )
 from .trade import Alert, Strategy, Trade, TradeCloseFill, TradeExitLiquidityObservation
@@ -65,6 +66,7 @@ __all__ = [
     "SourceLeadCapture",
     "SourceLeadExitObservation",
     "SourceLeadQualification",
+    "SourceLeadShadowAttempt",
     "SourceLeadTargetObservation",
     "Strategy",
     "Trade",

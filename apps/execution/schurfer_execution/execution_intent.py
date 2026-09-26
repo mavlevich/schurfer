@@ -407,6 +407,17 @@ class PaperBroker:
 _SHADOW_DECISION_NAMESPACE: Final = uuid.UUID("6f1b3f8e-6c1a-4b0a-9e34-9a2f6e6a7c9d")
 
 
+def shadow_decision_id(intent: ExecutionIntent) -> str:
+    """The deterministic decision_id ShadowBroker records for an intent, so a
+    caller can link its own evidence to the trade_decisions row."""
+    return str(
+        uuid.uuid5(
+            _SHADOW_DECISION_NAMESPACE,
+            f"{intent.strategy.name}:{intent.strategy.version}:{intent.idempotency_key}",
+        )
+    )
+
+
 class ShadowBroker:
     def __init__(self, gate: WorkerReadinessGate) -> None:
         self.gate = gate
@@ -470,12 +481,7 @@ class ShadowBroker:
         # an accidental collision would silently merge two unrelated
         # strategies' evidence into one ON CONFLICT-deduped row (colleague
         # review).
-        decision_id = str(
-            uuid.uuid5(
-                _SHADOW_DECISION_NAMESPACE,
-                f"{intent.strategy.name}:{intent.strategy.version}:{intent.idempotency_key}",
-            )
-        )
+        decision_id = shadow_decision_id(intent)
         await decisions.write_decision(
             rdb,
             base=intent.instrument.base,
@@ -536,4 +542,5 @@ __all__ = [
     "build_broker",
     "parse_mode",
     "resolve_mode",
+    "shadow_decision_id",
 ]
