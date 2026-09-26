@@ -1463,6 +1463,16 @@ prod-source-lead-multi-source-report:
 			&& printf '%s' '--no-working-tree-dirty' \
 			|| printf '%s' '--working-tree-dirty') $(ARGS)
 
+# LIVE_PROBE step 1: read-only Bybit account preflight (apps/execution bybit_preflight.py).
+# GET-only allow-listed client, no order path. PURPOSE=diagnostic (read-only key, default)
+# or live_probe (the trading key). SYMBOLS=comma-separated Bybit linear symbols. Exit 2 means
+# blocked. A verdict is a snapshot, not a standing permission.
+prod-bybit-preflight:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
+	@test -n "$(SYMBOLS)" || (echo "ERROR: SYMBOLS=BTCUSDT,... is required" && exit 1)
+	@$(_PROD) run --rm --no-deps --entrypoint bybit-preflight execution \
+		--purpose $(or $(PURPOSE),diagnostic) --symbols $(SYMBOLS) $(ARGS)
+
 prod-source-lead-identity-report:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
 	@$(_PROD) run --rm --no-deps --entrypoint source-lead-identity-report analytics \
