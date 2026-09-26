@@ -358,6 +358,8 @@ class FormalReadClaim(Base):
     candidate_count: Mapped[int] = mapped_column(Integer, nullable=False)
     candidate_ids: Mapped[list[int]] = mapped_column(JSONB, nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="claimed")
+    lease_owner: Mapped[str] = mapped_column(String(64), nullable=False)
+    lease_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     result_fingerprint: Mapped[str | None] = mapped_column(String(128), nullable=True)
     candidate_ids_sha256: Mapped[str] = mapped_column(String(64), nullable=False)

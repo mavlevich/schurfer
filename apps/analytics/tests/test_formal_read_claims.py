@@ -13,6 +13,7 @@ from schurfer_analytics import source_lead_forward_cohort_report as report_mod
 from schurfer_analytics.formal_read_claims import (
     FormalReadAlreadyClaimedError,
     FormalReadClaim,
+    FormalReadLeaseHeldError,
     candidate_ids_sha256,
     complete_claim,
     existing_claim,
@@ -44,11 +45,9 @@ def _db_or_skip() -> None:
         pytest.skip(f"no local postgres: {exc}")
 
 
-def test_open_resume_complete_then_refuse() -> None:
-    _db_or_skip()
-    study = f"TEST-{uuid.uuid4().hex[:8]}"
+def _claim_kwargs(study: str) -> dict[str, Any]:
     start = datetime(2026, 9, 29, tzinfo=UTC)
-    kwargs: dict[str, Any] = {
+    return {
         "study_id": study,
         "contract_version": "v2",
         "cohort_start": start,
@@ -56,26 +55,85 @@ def test_open_resume_complete_then_refuse() -> None:
         "code_revision": "abc",
         "working_tree_dirty": False,
     }
+
+
+def test_only_one_run_owns_a_claim_and_resume_waits_for_the_lease() -> None:
+    _db_or_skip()
+    study = f"TEST-{uuid.uuid4().hex[:8]}"
+    kwargs = _claim_kwargs(study)
+
+    async def two_at_once() -> tuple[Any, ...]:
+        return await asyncio.gather(
+            open_claim(TEST_DATABASE_URL, candidate_ids=[3, 1, 2], **kwargs),
+            open_claim(TEST_DATABASE_URL, candidate_ids=[3, 1, 2], **kwargs),
+            return_exceptions=True,
+        )
+
     try:
-        first = asyncio.run(open_claim(TEST_DATABASE_URL, candidate_ids=[3, 1, 2], **kwargs))
+        results = asyncio.run(two_at_once())
+        owners = [r for r in results if isinstance(r, FormalReadClaim)]
+        refused = [r for r in results if isinstance(r, FormalReadLeaseHeldError)]
+        assert len(owners) == 1 and len(refused) == 1  # review repro: both used to proceed
+        first = owners[0]
         assert first.candidate_ids == (3, 1, 2) and not first.resumed
-        # A failed run resumes the SAME claim, even if it would now pick other ids.
-        again = asyncio.run(open_claim(TEST_DATABASE_URL, candidate_ids=[9], **kwargs))
-        assert again.id == first.id and again.candidate_ids == (3, 1, 2) and again.resumed
-        asyncio.run(complete_claim(TEST_DATABASE_URL, first.id, "f" * 64))
+
+        # The lease expires (the first run died): a new run takes over the SAME ids.
+        with psycopg.connect(TEST_DATABASE_URL, autocommit=True) as conn:
+            conn.execute(
+                "UPDATE app.formal_read_claims SET lease_expires_at = now() - interval '1 second' "
+                "WHERE id = %s",
+                (first.id,),
+            )
+        second = asyncio.run(open_claim(TEST_DATABASE_URL, candidate_ids=[9], **kwargs))
+        assert second.id == first.id and second.candidate_ids == (3, 1, 2) and second.resumed
+        assert second.owner != first.owner
+
+        # The previous owner can no longer complete; the current owner can, once.
+        with pytest.raises(FormalReadAlreadyClaimedError):
+            asyncio.run(complete_claim(TEST_DATABASE_URL, first.id, "f" * 64, owner=first.owner))
+        asyncio.run(complete_claim(TEST_DATABASE_URL, first.id, "f" * 64, owner=second.owner))
         with pytest.raises(FormalReadAlreadyClaimedError):
             asyncio.run(open_claim(TEST_DATABASE_URL, candidate_ids=[3, 1, 2], **kwargs))
-        with pytest.raises(FormalReadAlreadyClaimedError):
-            asyncio.run(complete_claim(TEST_DATABASE_URL, first.id, "f" * 64))
         existing = asyncio.run(
             existing_claim(
-                TEST_DATABASE_URL, study_id=study, contract_version="v2", cohort_start=start
+                TEST_DATABASE_URL,
+                study_id=study,
+                contract_version="v2",
+                cohort_start=kwargs["cohort_start"],
             )
         )
         assert existing is not None and existing.status == "completed"
     finally:
         with psycopg.connect(TEST_DATABASE_URL, autocommit=True) as conn:
             conn.execute("DELETE FROM app.formal_read_claims WHERE study_id = %s", (study,))
+
+
+def test_the_blind_status_never_computes_a_return(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Review repro: the blind search reached calculate_performance."""
+    from schurfer_analytics import source_lead_forward_cohort as contract
+    from schurfer_analytics.ohlcv import Candle
+
+    entry = SOURCE_LEAD_FORWARD_COHORT_START + timedelta(days=1)
+    boundary = contract.expected_exit_boundary_ms(entry)
+    episode = _episode(1, "ABC", entry)
+    bars: list[Candle | None] = [
+        Candle(ts_ms=boundary, open=1.0, high=1.0, low=1.0, close=1.1, volume=1.0),
+        None,
+        Candle(ts_ms=boundary - 60_000, open=1.0, high=1.0, low=1.0, close=1.1, volume=1.0),
+        Candle(ts_ms=boundary + 3 * 60_000, open=1.0, high=1.0, low=1.0, close=1.1, volume=1.0),
+        Candle(ts_ms=boundary, open=1.0, high=1.0, low=1.0, close=float("nan"), volume=1.0),
+    ]
+    # The full resolution (which does compute a return) defines the expected flags.
+    expected = [
+        report_mod._resolve_one(episode, bar, exit_slippage_bps=15.0).resolved for bar in bars
+    ]
+
+    def forbidden(**_: Any) -> Any:
+        raise AssertionError("the blind search computed a return")
+
+    monkeypatch.setattr(contract, "calculate_performance", forbidden)
+    assert [report_mod.episode_resolved_blind(episode, bar) for bar in bars] == expected
+    assert expected == [True, False, False, False, False]
 
 
 # --- reader protocol -------------------------------------------------------------
@@ -153,7 +211,7 @@ def _patch(
         if prior is not None:
             return prior
         return FormalReadClaim(
-            id=7, candidate_ids=tuple(candidate_ids), status="claimed", resumed=False
+            id=7, candidate_ids=tuple(candidate_ids), status="claimed", resumed=False, owner="me"
         )
 
     def aggregate(**_k: Any) -> Any:

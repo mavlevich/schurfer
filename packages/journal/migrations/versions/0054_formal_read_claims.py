@@ -6,9 +6,10 @@ Create Date: 2026-09-26
 
 A registered cohort is read exactly once. The claim is unique per (study, contract
 version, cohort start) and stores the exact ordered candidate ids of the read. It is
-committed before any return is computed. A run that fails after claiming resumes the
-SAME claim on the stored ids; once `completed` (verdict artifact written), every run
-refuses, so late rows can never produce a second verdict.
+committed before any return is computed. One run owns the claim at a time (lease owner
+and expiry); another run may resume the SAME claim on the stored ids only after the
+lease expires, and only the current owner can complete it. Once `completed` (verdict
+artifact written), every run refuses, so late rows can never produce a second verdict.
 First user: HYP-012 forward cohort v2. HYP-015 keeps its own table (0053).
 """
 
@@ -38,6 +39,9 @@ def upgrade() -> None:
         sa.Column("code_revision", sa.String(64), nullable=False),
         sa.Column("working_tree_dirty", sa.Boolean(), nullable=False),
         sa.Column("status", sa.String(16), nullable=False, server_default="claimed"),
+        # Exclusive right to compute: one owner at a time, until the lease ends.
+        sa.Column("lease_owner", sa.String(64), nullable=False),
+        sa.Column("lease_expires_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("result_fingerprint", sa.String(128), nullable=True),
         sa.Column(

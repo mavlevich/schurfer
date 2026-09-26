@@ -75,9 +75,16 @@ version, cohort start). A run goes through these steps:
    among them, it refuses before fetching anything.
 2. **Find the checkpoint without returns.** It fetches the exit bars and finds the
    registered checkpoint from resolution status alone: the first 100 resolved episodes over
-   4 weeks. Resolution depends on the exit bar's presence and gap, never on the return, and
-   no return is aggregated or shown. If the checkpoint is not reached, it refuses and
-   claims nothing, so a later run can try again.
+   4 weeks. `episode_resolution_status` checks bar presence, the boundary and gap, and
+   finite positive prices, and computes no return. The full resolution runs the same
+   checks first, and a test forbids `calculate_performance` on this path. If the checkpoint
+   is not reached, it refuses and claims nothing, so a later run can try again.
+
+   **Registered decision:** fetching the OHLCV candles, which contain prices, before the
+   claim is allowed. A "read" means computing or showing returns. The candles stay in
+   memory and are used only for resolution status, and the same fetched bars feed the
+   verdict after the claim.
+
 3. **Claim the prefix, then compute.** It commits a claim storing the exact ordered capture
    ids of that checkpoint prefix, and only then computes the verdict on exactly those ids.
    Clusters and concentration are judged at that single checkpoint: a shortfall is a
@@ -85,8 +92,11 @@ version, cohort start). A run goes through these steps:
 4. **Complete.** Once the checkpoint artifact is written, the claim is marked `completed`
    with its fingerprint. Every later run refuses.
 
-A run that fails after claiming (an exit-bar timeout, a cache error, an artifact write)
-resumes the same claim on the stored ids. It never searches for a new prefix.
+**Only one run computes at a time.** A claim carries a lease owner and a 60-minute expiry,
+longer than the 20-minute exchange-fetch budget. A run that fails after claiming (an
+exit-bar timeout, a cache error, an artifact write) can be resumed on the same stored ids,
+but only after the lease expires, by atomically taking the lease over. It never searches for
+a new prefix. Only the current lease owner can mark the claim `completed`.
 
 ## Exit-book diagnostic (not part of the verdict)
 

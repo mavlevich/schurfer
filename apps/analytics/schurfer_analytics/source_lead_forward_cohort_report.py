@@ -160,6 +160,7 @@ from .source_lead_forward_cohort import (
     EpisodeInputs,
     EpisodeResult,
     episode_is_matured,
+    episode_resolution_status,
     expected_exit_boundary_ms,
     find_earliest_checkpoint_prefix_length,
     formal_verdict,
@@ -319,15 +320,33 @@ def _resolve_one(
     )
 
 
+def episode_resolved_blind(episode: RawQualifiedEpisode, exit_bar: Candle | None) -> bool:
+    """`_resolve_one`'s resolved flag without computing any return."""
+    ask_vwap = (episode.liquidity if isinstance(episode.liquidity, dict) else {}).get("ask_vwap")
+    if not isinstance(ask_vwap, int | float) or not (ask_vwap > 0):
+        return False
+    return (
+        episode_resolution_status(
+            EpisodeInputs(
+                base=episode.base,
+                entry_at=episode.observed_at,
+                entry_price=float(ask_vwap),
+                entry_notional_usd=episode.requested_notional_usd,
+                exit_bar=exit_bar,
+            )
+        )
+        is None
+    )
+
+
 def checkpoint_prefix_length_blind(
     matured: Sequence[RawQualifiedEpisode], exit_bars: Sequence[Candle | None]
 ) -> int | None:
-    """The registered checkpoint from resolution status only. `resolved` depends on
-    the exit bar's presence and gap, never on the return, and the returns
-    `_resolve_one` computes internally are discarded here, never aggregated or shown."""
+    """The registered checkpoint from resolution status only; no return is ever
+    computed here (`episode_resolved_blind`)."""
     outcomes = []
     for episode, bar in zip(matured, exit_bars, strict=True):
-        resolved = _resolve_one(episode, bar, exit_slippage_bps=EXIT_SLIPPAGE_BPS_ASSUMED).resolved
+        resolved = episode_resolved_blind(episode, bar)
         outcomes.append((utc_week_key(episode.observed_at) if resolved else None, resolved))
     return find_earliest_checkpoint_prefix_length(outcomes)
 
@@ -764,7 +783,7 @@ async def generate_report(args: argparse.Namespace) -> SourceLeadForwardCohortRe
         if outcome in (ArtifactWriteOutcome.CREATED, ArtifactWriteOutcome.ALREADY_EXISTS):
             assert manifest is not None
             checkpoint_fingerprint = manifest.fingerprint
-            await complete_claim(db_url, claim.id, checkpoint_fingerprint)
+            await complete_claim(db_url, claim.id, checkpoint_fingerprint, owner=claim.owner)
         else:
             raise ValueError(
                 f"failed to persist the source-lead forward cohort checkpoint: {outcome.value} "
