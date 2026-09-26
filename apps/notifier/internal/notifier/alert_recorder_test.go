@@ -39,6 +39,8 @@ func (row stubAlertRow) Scan(dest ...any) error {
 			*pointer = value.(int64)
 		case *[]int64:
 			*pointer = value.([]int64)
+		case **float64:
+			*pointer = value.(*float64)
 		default:
 			return errors.New("unexpected scan destination")
 		}
@@ -198,7 +200,8 @@ func TestPostgresAlertRecorderPropagatesDatabaseError(t *testing.T) {
 }
 
 func TestPostgresAlertRecorderReadsSourceLeadHealth(t *testing.T) {
-	db := &stubAlertDB{row: stubAlertRow{values: []any{2, []int64{40, 41}}}}
+	lastAge := 3600.0
+	db := &stubAlertDB{row: stubAlertRow{values: []any{2, []int64{40, 41}, &lastAge}}}
 	recorder := &postgresAlertRecorder{pool: db}
 
 	health, err := recorder.ReadSourceLeadHealth(context.Background())
@@ -206,7 +209,8 @@ func TestPostgresAlertRecorderReadsSourceLeadHealth(t *testing.T) {
 		t.Fatal(err)
 	}
 	if health.StaleCollecting != 2 ||
-		!reflect.DeepEqual(health.CriticalAbandonedIDs, []int64{40, 41}) {
+		!reflect.DeepEqual(health.CriticalAbandonedIDs, []int64{40, 41}) ||
+		health.LastCaptureAgeSeconds == nil || *health.LastCaptureAgeSeconds != 3600 {
 		t.Fatalf("health = %#v", health)
 	}
 	if !strings.Contains(db.query, "capture_worker_failed:%") ||
