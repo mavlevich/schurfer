@@ -407,11 +407,17 @@ def _snapshots() -> dict[str, v4.SourceSnapshot]:
     payloads: dict[str, list[object]] = {
         "gate_currencies": [{"ABC": {"networks": {"BEP20": {"info": {"addr": ADDR}}}}}],
         "gate_perps": [[{"name": "ABC_USDT", "in_delisting": False}]],
-        "alpha_catalog": [{"data": [{"symbol": "ABC", "chainId": "56", "contractAddress": MIXED}]}],
-        "binance_exchange_info": [{"symbols": []}],
+        "alpha_catalog": [
+            {
+                "code": "000000",
+                "success": True,
+                "data": [{"symbol": "ABC", "chainId": "56", "contractAddress": MIXED}],
+            }
+        ],
+        "binance_exchange_info": [{"symbols": [{"symbol": "XYZUSDT"}]}],
         "bybit_instruments": [
-            {"result": {"list": [perp], "nextPageCursor": "x"}},
-            {"result": {"list": [], "nextPageCursor": ""}},
+            {"retCode": 0, "result": {"list": [perp], "nextPageCursor": "x"}},
+            {"retCode": 0, "result": {"list": [], "nextPageCursor": ""}},
         ],
         "bybit_coin_info": [
             {
@@ -493,3 +499,36 @@ def test_rpc_failures_after_retries_abort_instead_of_rejecting(
         asyncio.run(v4._decimals_with_retry(None, "bsc", ADDR))
     assert calls == v4._RPC_ATTEMPTS
     assert not issubclass(v4.TransientFetchError, v4.RuleCheckFailedError)
+
+
+@pytest.mark.parametrize(
+    ("name", "page"),
+    [
+        # Review repro: an error page must abort, not read as "no perpetual".
+        (
+            "bybit_instruments",
+            {"retCode": 10006, "retMsg": "Too many visits", "result": {"list": []}},
+        ),
+        # Review repro: an error page must abort, not read as "coin missing".
+        ("alpha_catalog", {"code": "000002", "success": False, "data": []}),
+        ("binance_exchange_info", {"code": -1003, "msg": "banned"}),
+        ("bybit_coin_info", {"retCode": 10003, "result": {}}),
+        ("gate_perps", []),
+        ("coingecko_coins", {"status": {"error_code": 429}}),
+    ],
+)
+def test_an_unsuccessful_source_response_aborts_before_classification(
+    name: str, page: object
+) -> None:
+    snapshots = _snapshots()
+    snapshots[name] = v4.SourceSnapshot(name, T0, True, (json.dumps(page).encode(),))
+    with pytest.raises(v4.SourceSnapshotError):
+        v4.sources_from_snapshots(snapshots)
+
+
+def test_a_truncated_bybit_page_sequence_aborts() -> None:
+    snapshots = _snapshots()
+    first = snapshots["bybit_instruments"].pages[0]
+    snapshots["bybit_instruments"] = v4.SourceSnapshot("bybit_instruments", T0, True, (first,))
+    with pytest.raises(v4.SourceSnapshotError, match="cursor"):
+        v4.sources_from_snapshots(snapshots)

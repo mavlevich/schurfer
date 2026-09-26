@@ -510,39 +510,94 @@ def _snapshot_fetch(snapshot: SourceSnapshot, payload: Any) -> RawFetch:
     )
 
 
+class SourceSnapshotError(ValueError):
+    """A stored response is not a successful, well-formed answer. Raised
+    before any classification, so an error page can never read as "no
+    perpetual" or "coin missing" (colleague review of PR C)."""
+
+
+def _require(condition: bool, message: str) -> None:
+    if not condition:
+        raise SourceSnapshotError(message)
+
+
 def sources_from_snapshots(snapshots: Mapping[str, SourceSnapshot]) -> RunSources:
     """The one place raw bytes become rule inputs, used both by `decide` and
-    by `recompute`, so a recomputation reads exactly what the run read."""
+    by `recompute`, so a recomputation reads exactly what the run read.
+    Every source must be a successful response with its required, non-empty
+    structure; otherwise this raises and the run aborts."""
     missing = sorted(set(SOURCE_ENDPOINTS) - set(snapshots))
-    if missing:
-        raise ValueError(f"missing source snapshots: {missing}")
+    _require(not missing, f"missing source snapshots: {missing}")
 
     def pages(name: str) -> list[Any]:
-        return [json.loads(page) for page in snapshots[name].pages]
+        _require(bool(snapshots[name].pages), f"{name}: no pages")
+        try:
+            return [json.loads(page) for page in snapshots[name].pages]
+        except ValueError as exc:
+            raise SourceSnapshotError(f"{name}: not JSON") from exc
 
+    currencies = pages("gate_currencies")[0]
+    _require(
+        isinstance(currencies, dict) and bool(currencies), "gate currencies: empty or not a map"
+    )
     perps = pages("gate_perps")[0]
-    if not isinstance(perps, list):
-        raise ValueError("gate perps snapshot is not a list")
+    _require(isinstance(perps, list) and bool(perps), "gate perps: empty or not a list")
+    alpha = pages("alpha_catalog")[0]
+    _require(
+        isinstance(alpha, dict)
+        and alpha.get("success") is True
+        and alpha.get("code") == "000000"
+        and isinstance(alpha.get("data"), list)
+        and bool(alpha["data"]),
+        "binance alpha catalog: not a successful response with a non-empty data list",
+    )
+    binance = pages("binance_exchange_info")[0]
+    _require(
+        isinstance(binance, dict)
+        and isinstance(binance.get("symbols"), list)
+        and bool(binance["symbols"]),
+        "binance exchangeInfo: no non-empty symbols list",
+    )
     bybit_items: list[Any] = []
-    for page in pages("bybit_instruments"):
+    bybit_pages = pages("bybit_instruments")
+    for index, page in enumerate(bybit_pages):
         result = page.get("result") if isinstance(page, dict) else None
-        if not isinstance(result, dict) or not isinstance(result.get("list"), list):
-            raise ValueError("bybit instruments page has no result.list")
+        _require(
+            isinstance(page, dict)
+            and page.get("retCode") == 0
+            and isinstance(result, dict)
+            and isinstance(result.get("list"), list),
+            f"bybit instruments page {index}: not a successful response with result.list",
+        )
+        assert isinstance(result, dict)
+        last = index == len(bybit_pages) - 1
+        _require(
+            bool(result.get("nextPageCursor")) != last,
+            f"bybit instruments page {index}: cursor does not match the page order",
+        )
         bybit_items.extend(result["list"])
+    _require(bool(bybit_items), "bybit instruments: no instruments")
     coin_info = pages("bybit_coin_info")[0]
-    if not isinstance(coin_info, dict) or coin_info.get("retCode") != 0:
-        raise ValueError("bybit coin-info snapshot is not a successful response")
+    coin_result = coin_info.get("result") if isinstance(coin_info, dict) else None
+    _require(
+        isinstance(coin_info, dict)
+        and coin_info.get("retCode") == 0
+        and isinstance(coin_result, dict)
+        and isinstance(coin_result.get("rows"), list)
+        and bool(coin_result["rows"]),
+        "bybit coin-info: not a successful response with non-empty rows",
+    )
+    coins = pages("coingecko_coins")[0]
+    _require(isinstance(coins, list) and bool(coins), "coingecko coins: empty or not a list")
     return RunSources(
         snapshots=snapshots,
-        gate_currencies=pages("gate_currencies")[0],
+        gate_currencies=currencies,
         gate_perps={str(item.get("name")): item for item in perps if isinstance(item, dict)},
-        alpha_catalog=_snapshot_fetch(snapshots["alpha_catalog"], pages("alpha_catalog")[0]),
-        binance_exchange_info=_snapshot_fetch(
-            snapshots["binance_exchange_info"], pages("binance_exchange_info")[0]
-        ),
+        alpha_catalog=_snapshot_fetch(snapshots["alpha_catalog"], alpha),
+        binance_exchange_info=_snapshot_fetch(snapshots["binance_exchange_info"], binance),
         bybit_instruments=_snapshot_fetch(snapshots["bybit_instruments"], {"list": bybit_items}),
         bybit_coin_info=_snapshot_fetch(snapshots["bybit_coin_info"], coin_info),
-        coingecko=coingecko_index(pages("coingecko_coins")[0]),
+        coingecko=coingecko_index(coins),
     )
 
 
