@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import asyncio
+import gzip
 import json
 from dataclasses import replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import pytest
+from schurfer_analytics import source_lead_identity_v4 as v4
 from schurfer_analytics.source_lead_identity_evidence import (
     ChainContractEvidence,
     DerivativeMarketEvidence,
@@ -292,7 +295,11 @@ def _bundle(target: str, *, coingecko_symbol: str = "abc") -> EvidenceBundle:
         source_contract=contract,
         target_contract=contract,
         gate_evidence=_fetch({"networks": {"BEP20": {"info": {"addr": ADDR}}}}),
-        target_catalog_evidence=_fetch({"contractAddress": ADDR}),
+        target_catalog_evidence=_fetch(
+            {"selected_chain": "BSC", "contractAddress": ADDR}
+            if target == "bybit"
+            else {"chainId": "56", "contractAddress": ADDR}
+        ),
         coingecko_evidence=_fetch(
             {"symbol": coingecko_symbol, "platforms": {"binance-smart-chain": ADDR}}
         ),
@@ -378,3 +385,111 @@ def test_v3_registry_assets_are_carried_over() -> None:
     bases = v3_registry_bases()
     assert len(bases) == 14
     assert {"BAS", "EDEN", "HOME", "SKYAI"} <= set(bases)
+
+
+# --- stored source snapshots and recomputation (colleague review of PR C) ---------
+
+MIXED = "0x" + "Ab" * 20  # the address as the venue reported it, mixed case
+
+
+def _snapshots() -> dict[str, v4.SourceSnapshot]:
+    def page(payload: object) -> bytes:
+        return json.dumps(payload).encode()
+
+    perp = {
+        "baseCoin": "ABC",
+        "quoteCoin": "USDT",
+        "settleCoin": "USDT",
+        "contractType": "LinearPerpetual",
+        "status": "Trading",
+        "symbol": "ABCUSDT",
+    }
+    payloads: dict[str, list[object]] = {
+        "gate_currencies": [{"ABC": {"networks": {"BEP20": {"info": {"addr": ADDR}}}}}],
+        "gate_perps": [[{"name": "ABC_USDT", "in_delisting": False}]],
+        "alpha_catalog": [{"data": [{"symbol": "ABC", "chainId": "56", "contractAddress": MIXED}]}],
+        "binance_exchange_info": [{"symbols": []}],
+        "bybit_instruments": [
+            {"result": {"list": [perp], "nextPageCursor": "x"}},
+            {"result": {"list": [], "nextPageCursor": ""}},
+        ],
+        "bybit_coin_info": [
+            {
+                "retCode": 0,
+                "result": {
+                    "rows": [
+                        {"coin": "ABC", "chains": [{"chain": "BSC", "contractAddress": MIXED}]}
+                    ]
+                },
+            }
+        ],
+        "coingecko_coins": [
+            [{"id": "abc-token", "symbol": "abc", "platforms": {"binance-smart-chain": ADDR}}]
+        ],
+    }
+    return {
+        name: v4.SourceSnapshot(name, T0, name != "gate_currencies", tuple(map(page, pages)))
+        for name, pages in payloads.items()
+    }
+
+
+def test_source_snapshots_round_trip_and_detect_tampering(tmp_path: Path) -> None:
+    snapshots = _snapshots()
+    section = v4.save_source_snapshots(snapshots, tmp_path)
+    assert v4.load_source_snapshots(tmp_path, section) == snapshots
+    bad = tmp_path / "sources" / "gate_perps.0.json.gz"
+    bad.write_bytes(gzip.compress(b"[]"))
+    with pytest.raises(ValueError, match="does not match its sha256"):
+        v4.load_source_snapshots(tmp_path, section)
+
+
+def test_recompute_rederives_every_route_from_the_stored_sources() -> None:
+    sources = v4.sources_from_snapshots(_snapshots())
+    snapshot = build_candidate_snapshot(["ABC"], T0)
+    decisions = [v4.decide_route(v4.route_inputs(sources, "ABC", t)) for t in v4.TARGET_EXCHANGES]
+    assert [(d.target_exchange, d.reason) for d in decisions] == [
+        ("bybit", "approved"),
+        ("binance", "no_target_perp"),
+    ]
+    document = decisions_document(
+        snapshot,
+        decisions,
+        [],
+        run_id="r",
+        code_revision="c",
+        working_tree_dirty=False,
+        source_hashes={},
+    )
+    problems = v4.recompute_decisions(snapshot, sources, document, [])
+    # The approved Bybit route has no bundle here, which recompute reports.
+    assert problems == ["ABC/bybit: bundle catalog entry differs from the snapshot"]
+    document["routes"][1]["reason"] = "target_catalog_missing"
+    assert "ABC/binance: recorded target_catalog_missing, recomputed no_target_perp" in (
+        v4.recompute_decisions(snapshot, sources, document, [])
+    )
+
+
+def test_target_catalog_evidence_keeps_the_address_the_venue_reported() -> None:
+    sources = v4.sources_from_snapshots(_snapshots())
+    decision = v4.decide_route(v4.route_inputs(sources, "ABC", "bybit"))
+    payload = v4._target_catalog_evidence(sources, decision).payload
+    assert payload["contractAddress"] == MIXED
+    assert payload["selected_chain"] == "BSC"
+
+
+def test_rpc_failures_after_retries_abort_instead_of_rejecting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+
+    async def flaky(*_args: object) -> object:
+        nonlocal calls
+        calls += 1
+        raise ValueError("eth_getBlockByNumber returned no usable hash")
+
+    monkeypatch.setattr(v4, "fetch_onchain_decimals", flaky)
+    monkeypatch.setattr(v4, "_RPC_RETRY_SECONDS", 0.0)
+    with pytest.raises(v4.TransientFetchError):
+        asyncio.run(v4._decimals_with_retry(None, "bsc", ADDR))
+    assert calls == v4._RPC_ATTEMPTS
+    assert not issubclass(v4.TransientFetchError, v4.RuleCheckFailedError)

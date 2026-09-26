@@ -87,11 +87,24 @@ This replaces the v3 checklist item "a second person independently confirmed the
 1. Commit the code with a clean tree.
 2. Run the candidate query read-only on prod, then `source-lead-identity-v4 candidates`,
    and commit the snapshot.
-3. The owner runs `decide` with a read-only Bybit key in the environment. It publishes
-   the bundles to `evidence/source_lead/v4/` and the decisions file all-or-nothing. It
-   refuses to publish on any fetch error, and records the code revision and whether the
-   tree was clean.
-4. Commit the evidence. The owner confirms, and the reviewer re-checks.
+3. The owner runs `decide` with a read-only Bybit key in the environment. It stores:
+   - the exact response bytes of every source the rule reads, gzipped under
+     `evidence/source_lead/v4/sources/`: Gate currencies (ccxt output) and perpetuals,
+     the Binance Alpha catalog and exchangeInfo, every Bybit instruments page, Bybit
+     coin-info, and the CoinGecko coin list with platforms;
+   - one bundle per approved route;
+   - `decisions.json` and `manifest.json`.
+
+   Before publishing, it re-derives every decision from those stored files (the same
+   check as `recompute`). Everything is then published together in one atomic swap. A
+   fetch that still fails after its retries (CoinGecko 429, an RPC node returning null)
+   aborts the run. Only a failed check on already captured evidence is recorded as a
+   rejection (`capture_rejected`). The run records the code revision and whether the tree
+   was clean.
+
+4. Commit the evidence. The owner confirms. The reviewer runs `recompute`, which re-derives
+   all routes from the stored sources and checks each bundle's catalog entry against
+   them, and re-checks the approved bundles.
 5. Commit the approval, then run `build-registry --evidence-commit <evidence commit>`. It
    writes registry v4, verifies it against the evidence, and prints the fingerprint.
 6. Activation is a separate change (PR D): new qualification and estimand versions and a

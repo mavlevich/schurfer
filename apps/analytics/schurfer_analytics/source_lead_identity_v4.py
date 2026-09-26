@@ -55,6 +55,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import gzip
 import hashlib
 import hmac
 import json
@@ -76,17 +77,19 @@ from .gate_identity_candidate_tooling import (
 from .reporting import json_ready, parse_utc_datetime
 from .source_lead_contract import IDENTITY_REGISTRY_V3_START
 from .source_lead_identity_evidence import (
+    DECISIONS_FILENAME,
     EVIDENCE_DIR_V4,
     MANIFEST_FILENAME,
     ChainContractEvidence,
     DerivativeMarketEvidence,
     EvidenceBundle,
     RawFetch,
+    _alpha_identity_fields,
     _atomic_publish,
     _bundle_filename,
+    _coingecko_headers,
     _current_git_state,
     _finalize_bundle,
-    _http_get_json,
     _sha256_bytes,
     _sha256_canonical,
     _validate_identity_class,
@@ -103,6 +106,7 @@ from .source_lead_qualification import parse_identity_registry, verify_registry_
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Mapping, Sequence
+
 
 IDENTITY_RULE_VERSION = "source_lead_identity_rule_v4"
 CANDIDATES_VERSION = "source_lead_identity_v4_candidates"
@@ -132,7 +136,6 @@ BYBIT_CHAINS: dict[str, str] = {
 
 REGISTRY_DIR = Path(__file__).parent / "registry"
 CANDIDATES_PATH = REGISTRY_DIR / "source_lead_identity_v4_candidates.json"
-DECISIONS_PATH = REGISTRY_DIR / "source_lead_identity_v4_decisions.json"
 APPROVAL_PATH = REGISTRY_DIR / "source_lead_identity_v4_approval.json"
 REGISTRY_PATH_V4 = REGISTRY_DIR / "source_lead_identity_registry_v4.json"
 
@@ -427,70 +430,66 @@ def bybit_credentials() -> tuple[str, str] | None:
     return (key, secret) if key and secret else None
 
 
-async def fetch_bybit_coin_info(client: Any, credentials: tuple[str, str]) -> RawFetch:
-    """Authenticated v5 coin-info for every coin in one call. Only the
-    response body is stored; the signed request headers are not."""
-    key, secret = credentials
-    timestamp = str(int(time.time() * 1000))
-    recv_window = "10000"
-    signature = hmac.new(
-        secret.encode(), (timestamp + key + recv_window).encode(), hashlib.sha256
-    ).hexdigest()
-    url = "https://api.bybit.com/v5/asset/coin/query-info"
-    response = await client.get(
-        url,
-        headers={
-            "X-BAPI-API-KEY": key,
-            "X-BAPI-TIMESTAMP": timestamp,
-            "X-BAPI-RECV-WINDOW": recv_window,
-            "X-BAPI-SIGN": signature,
-        },
-    )
-    response.raise_for_status()
-    raw_bytes = response.content
-    payload = json.loads(raw_bytes)
-    if payload.get("retCode") != 0:
-        raise RuntimeError(f"bybit coin-info failed: retCode={payload.get('retCode')}")
-    return RawFetch(
-        source="bybit:asset_coin_query_info",
-        endpoint=url,
-        observed_at=datetime.now(UTC),
-        raw_sha256=_sha256_bytes(raw_bytes),
-        wire_exact=True,
-        payload=payload,
-    )
+ALPHA_URL = (
+    "https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list"
+)
+GATE_PERPS_URL = "https://api.gateio.ws/api/v4/futures/usdt/contracts"
+BINANCE_EXCHANGE_INFO_URL = "https://fapi.binance.com/fapi/v1/exchangeInfo"
+BYBIT_INSTRUMENTS_URL = "https://api.bybit.com/v5/market/instruments-info"
+BYBIT_COIN_INFO_URL = "https://api.bybit.com/v5/asset/coin/query-info"
+COINGECKO_COINS_URL = "https://api.coingecko.com/api/v3/coins/list"
+
+# Every source the rule reads. A run stores each one's exact response bytes
+# (colleague review of PR C: without them, uniqueness and the rejection
+# reasons could not be recomputed independently).
+SOURCE_ENDPOINTS: dict[str, str] = {
+    "gate_currencies": "ccxt gate.fetch_currencies() over /api/v4/spot/currencies",
+    "gate_perps": GATE_PERPS_URL,
+    "alpha_catalog": ALPHA_URL,
+    "binance_exchange_info": BINANCE_EXCHANGE_INFO_URL,
+    "bybit_instruments": f"{BYBIT_INSTRUMENTS_URL}?category=linear (every cursor page)",
+    "bybit_coin_info": f"{BYBIT_COIN_INFO_URL} (authenticated, all coins)",
+    "coingecko_coins": f"{COINGECKO_COINS_URL}?include_platform=true",
+}
+SOURCES_DIRNAME = "sources"
 
 
-async def fetch_bybit_instruments(client: Any) -> RawFetch:
-    """Every linear instrument, following the cursor. Hash over the joined list."""
-    items: list[Any] = []
-    cursor = ""
-    url = "https://api.bybit.com/v5/market/instruments-info"
-    while True:
-        params = {"category": "linear", "limit": "1000"}
-        if cursor:
-            params["cursor"] = cursor
-        page = await _http_get_json(client, url, params=params)
-        result = page.payload.get("result") if isinstance(page.payload, dict) else None
-        if not isinstance(result, dict) or not isinstance(result.get("list"), list):
-            raise ValueError("bybit instruments-info page has no result.list")
-        items.extend(result["list"])
-        cursor = str(result.get("nextPageCursor") or "")
-        if not cursor:
-            break
-    payload = {"list": items}
-    return RawFetch(
-        source="bybit:instruments_info_linear",
-        endpoint=url,
-        observed_at=datetime.now(UTC),
-        raw_sha256=_sha256_canonical(payload),
-        wire_exact=False,
-        payload=payload,
-    )
+class TransientFetchError(RuntimeError):
+    """A fetch still failing after its retries. Aborts the run; never a rule
+    rejection."""
+
+
+class RuleCheckFailedError(Exception):
+    """Captured evidence fails a rule check (check 8 or revalidation). The
+    only failure recorded as a route rejection."""
+
+
+CAPTURE_REJECTED = "capture_rejected"
+
+
+@dataclass(frozen=True)
+class SourceSnapshot:
+    """The exact bytes one source returned. `wire_exact` is False only for
+    Gate currencies, which ccxt parses; those bytes are the canonical JSON
+    of ccxt's result."""
+
+    name: str
+    observed_at: datetime
+    wire_exact: bool
+    pages: tuple[bytes, ...]
+
+    @property
+    def page_sha256(self) -> tuple[str, ...]:
+        return tuple(_sha256_bytes(page) for page in self.pages)
+
+    @property
+    def sha256(self) -> str:
+        return _sha256_canonical(list(self.page_sha256))
 
 
 @dataclass(frozen=True)
 class RunSources:
+    snapshots: Mapping[str, SourceSnapshot]
     gate_currencies: dict[str, Any]
     gate_perps: dict[str, dict[str, Any]]
     alpha_catalog: RawFetch
@@ -498,6 +497,99 @@ class RunSources:
     bybit_instruments: RawFetch
     bybit_coin_info: RawFetch
     coingecko: dict[tuple[str, str], tuple[tuple[str, str], ...]]
+
+
+def _snapshot_fetch(snapshot: SourceSnapshot, payload: Any) -> RawFetch:
+    return RawFetch(
+        source=snapshot.name,
+        endpoint=SOURCE_ENDPOINTS[snapshot.name],
+        observed_at=snapshot.observed_at,
+        raw_sha256=snapshot.sha256,
+        wire_exact=snapshot.wire_exact and len(snapshot.pages) == 1,
+        payload=payload,
+    )
+
+
+def sources_from_snapshots(snapshots: Mapping[str, SourceSnapshot]) -> RunSources:
+    """The one place raw bytes become rule inputs, used both by `decide` and
+    by `recompute`, so a recomputation reads exactly what the run read."""
+    missing = sorted(set(SOURCE_ENDPOINTS) - set(snapshots))
+    if missing:
+        raise ValueError(f"missing source snapshots: {missing}")
+
+    def pages(name: str) -> list[Any]:
+        return [json.loads(page) for page in snapshots[name].pages]
+
+    perps = pages("gate_perps")[0]
+    if not isinstance(perps, list):
+        raise ValueError("gate perps snapshot is not a list")
+    bybit_items: list[Any] = []
+    for page in pages("bybit_instruments"):
+        result = page.get("result") if isinstance(page, dict) else None
+        if not isinstance(result, dict) or not isinstance(result.get("list"), list):
+            raise ValueError("bybit instruments page has no result.list")
+        bybit_items.extend(result["list"])
+    coin_info = pages("bybit_coin_info")[0]
+    if not isinstance(coin_info, dict) or coin_info.get("retCode") != 0:
+        raise ValueError("bybit coin-info snapshot is not a successful response")
+    return RunSources(
+        snapshots=snapshots,
+        gate_currencies=pages("gate_currencies")[0],
+        gate_perps={str(item.get("name")): item for item in perps if isinstance(item, dict)},
+        alpha_catalog=_snapshot_fetch(snapshots["alpha_catalog"], pages("alpha_catalog")[0]),
+        binance_exchange_info=_snapshot_fetch(
+            snapshots["binance_exchange_info"], pages("binance_exchange_info")[0]
+        ),
+        bybit_instruments=_snapshot_fetch(snapshots["bybit_instruments"], {"list": bybit_items}),
+        bybit_coin_info=_snapshot_fetch(snapshots["bybit_coin_info"], coin_info),
+        coingecko=coingecko_index(pages("coingecko_coins")[0]),
+    )
+
+
+def save_source_snapshots(
+    snapshots: Mapping[str, SourceSnapshot], directory: Path
+) -> dict[str, Any]:
+    """Gzip each page (mtime 0, so the file is deterministic) under
+    `directory/sources/`; return the manifest section naming each file's
+    uncompressed SHA-256."""
+    target = directory / SOURCES_DIRNAME
+    target.mkdir(parents=True, exist_ok=True)
+    section: dict[str, Any] = {}
+    for name, snapshot in sorted(snapshots.items()):
+        files = []
+        for index, page in enumerate(snapshot.pages):
+            filename = f"{name}.{index}.json.gz"
+            (target / filename).write_bytes(gzip.compress(page, mtime=0))
+            files.append({"file": filename, "raw_sha256": _sha256_bytes(page)})
+        section[name] = {
+            "endpoint": SOURCE_ENDPOINTS[name],
+            "observed_at": snapshot.observed_at.isoformat(),
+            "wire_exact": snapshot.wire_exact,
+            "sha256": snapshot.sha256,
+            "pages": files,
+        }
+    return section
+
+
+def load_source_snapshots(directory: Path, section: Mapping[str, Any]) -> dict[str, SourceSnapshot]:
+    snapshots: dict[str, SourceSnapshot] = {}
+    for name, meta in section.items():
+        pages = []
+        for entry in meta["pages"]:
+            raw = gzip.decompress((directory / SOURCES_DIRNAME / entry["file"]).read_bytes())
+            if _sha256_bytes(raw) != entry["raw_sha256"]:
+                raise ValueError(f"source snapshot {entry['file']} does not match its sha256")
+            pages.append(raw)
+        snapshot = SourceSnapshot(
+            name=name,
+            observed_at=parse_utc_datetime(meta["observed_at"]),
+            wire_exact=bool(meta["wire_exact"]),
+            pages=tuple(pages),
+        )
+        if snapshot.sha256 != meta["sha256"]:
+            raise ValueError(f"source snapshot {name} does not match its sha256")
+        snapshots[name] = snapshot
+    return snapshots
 
 
 def route_inputs(sources: RunSources, base: str, target_exchange: str) -> RouteInputs:
@@ -523,9 +615,10 @@ def route_inputs(sources: RunSources, base: str, target_exchange: str) -> RouteI
 
 
 def _target_catalog_evidence(sources: RunSources, decision: RouteDecision) -> RawFetch:
-    """The target's own asset entry, narrowed to identity fields (as v3 did
-    for Alpha), with the chosen chain's contract as `contractAddress` so the
-    shared v3 validator can check it."""
+    """The target's own asset entry exactly as the source reported it,
+    including its original `contractAddress` (colleague review of PR C: the
+    first version wrote the decided address here, which made the check
+    circular). Narrowed to identity fields, as v3 did for Alpha."""
     base = decision.base
     if decision.target_exchange == "bybit":
         row = bybit_coin_rows(sources.bybit_coin_info.payload, base)[0]
@@ -534,32 +627,34 @@ def _target_catalog_evidence(sources: RunSources, decision: RouteDecision) -> Ra
             for entry in row.get("chains") or []
             if isinstance(entry, dict)
         ]
+        selected = [
+            entry
+            for entry in chains
+            if BYBIT_CHAINS.get(str(entry.get("chain", "")).upper()) == decision.chain
+            and normalize_evm_address(entry.get("contractAddress")) == decision.contract_address
+        ]
+        if len(selected) != 1:
+            raise RuleCheckFailedError(
+                f"{base}: bybit coin-info has no single entry for the contract"
+            )
         payload: dict[str, Any] = {
             "coin": row.get("coin"),
             "name": row.get("name"),
             "chains": chains,
-            "chain": decision.chain,
-            "contractAddress": decision.contract_address,
-            "response_sha256": sources.bybit_coin_info.raw_sha256,
+            "selected_chain": selected[0]["chain"],
+            "contractAddress": selected[0]["contractAddress"],
         }
-        endpoint = sources.bybit_coin_info.endpoint
-        observed_at = sources.bybit_coin_info.observed_at
+        snapshot = sources.bybit_coin_info
         source = "bybit:coin_info_entry"
     else:
-        entry = alpha_entries(sources.alpha_catalog.payload, base)[0]
-        payload = {
-            key: entry.get(key)
-            for key in ("symbol", "name", "chainId", "chainName", "decimals", "offline")
-        }
-        payload["contractAddress"] = decision.contract_address
-        payload["response_sha256"] = sources.alpha_catalog.raw_sha256
-        endpoint = sources.alpha_catalog.endpoint
-        observed_at = sources.alpha_catalog.observed_at
+        payload = _alpha_identity_fields(alpha_entries(sources.alpha_catalog.payload, base)[0])
+        snapshot = sources.alpha_catalog
         source = "binance:alpha_catalog_entry"
+    payload["response_sha256"] = snapshot.raw_sha256
     return RawFetch(
         source=source,
-        endpoint=endpoint,
-        observed_at=observed_at,
+        endpoint=snapshot.endpoint,
+        observed_at=snapshot.observed_at,
         raw_sha256=_sha256_canonical(payload),
         wire_exact=False,
         payload=payload,
@@ -597,6 +692,15 @@ def revalidate_v4_bundle(bundle: EvidenceBundle) -> None:
         source_market=bundle.source_market_evidence,
         target_market=bundle.target_market_evidence,
     )
+    catalog = bundle.target_catalog_evidence
+    if catalog is None:
+        raise ValueError(f"{bundle.base}: v4 bundle without target catalog evidence")
+    if bundle.target_exchange == "bybit":
+        catalog_chain = BYBIT_CHAINS.get(str(catalog.payload.get("selected_chain", "")).upper())
+    else:
+        catalog_chain = ALPHA_CHAIN_IDS.get(str(catalog.payload.get("chainId")))
+    if catalog_chain != bundle.source_contract.chain:
+        raise ValueError(f"{bundle.base}: target catalog chain is not the chosen chain")
     coin = bundle.coingecko_evidence.payload
     if not isinstance(coin, dict) or str(coin.get("symbol", "")).upper() != bundle.base.upper():
         raise ValueError(f"{bundle.base}: coingecko symbol does not equal the base")
@@ -610,7 +714,7 @@ def revalidate_v4_bundle(bundle: EvidenceBundle) -> None:
         raise ValueError(f"{bundle.base}: coingecko does not list the chosen contract")
 
 
-async def _retry_429(label: str, fetch: Callable[[], Awaitable[RawFetch]]) -> RawFetch:
+async def _retry_429[T](label: str, fetch: Callable[[], Awaitable[T]]) -> T:
     import httpx
 
     for attempt in range(1, _COINGECKO_MAX_ATTEMPTS + 1):
@@ -632,13 +736,18 @@ async def _decimals_with_retry(
     client: Any, chain: str, contract_address: str
 ) -> ChainContractEvidence:
     """Public RPC nodes sometimes return null for a block they just
-    reported. Retried; a result still unusable after that is a rejection."""
+    reported. Retried; still failing afterwards aborts the run (colleague
+    review of PR C: it must never turn into a rule rejection)."""
+    import httpx
+
     for attempt in range(1, _RPC_ATTEMPTS + 1):
         try:
             return await fetch_onchain_decimals(client, chain, contract_address)
-        except ValueError:
+        except (ValueError, httpx.HTTPError) as exc:
             if attempt == _RPC_ATTEMPTS:
-                raise
+                raise TransientFetchError(
+                    f"decimals() for {contract_address} on {chain}: {exc}"
+                ) from exc
             await asyncio.sleep(_RPC_RETRY_SECONDS)
     raise AssertionError("unreachable")
 
@@ -654,8 +763,9 @@ async def capture_route_bundle(
     code_revision: str,
     working_tree_dirty: bool,
 ) -> EvidenceBundle:
-    """Rule check 8 plus the bundle. A ValueError means the route fails the
-    rule (recorded); any other exception aborts the run (nothing published)."""
+    """Rule check 8 plus the bundle. Only RuleCheckFailedError, raised when the
+    captured evidence fails revalidation, is a recorded rejection; every
+    fetch error propagates and aborts the run (nothing published)."""
     assert decision.chain is not None and decision.contract_address is not None
     assert decision.coingecko_id is not None
     key = (decision.chain, decision.contract_address)
@@ -673,7 +783,7 @@ async def capture_route_bundle(
     gate_evidence = RawFetch(
         source="gate:fetch_currencies",
         endpoint="https://api.gateio.ws/api/v4/spot/currencies",
-        observed_at=datetime.now(UTC),
+        observed_at=sources.snapshots["gate_currencies"].observed_at,
         raw_sha256=_sha256_canonical(currency),
         wire_exact=False,
         payload=currency,
@@ -695,7 +805,10 @@ async def capture_route_bundle(
         working_tree_dirty=working_tree_dirty,
         captured_at=datetime.now(UTC),
     )
-    revalidate_v4_bundle(bundle)
+    try:
+        revalidate_v4_bundle(bundle)
+    except ValueError as exc:
+        raise RuleCheckFailedError(str(exc)) from exc
     return _finalize_bundle(bundle)
 
 
@@ -739,6 +852,52 @@ def decisions_document(
         "routes": rows,
     }
     return {**body, "decisions_sha256": _sha256_canonical(body)}
+
+
+def recompute_decisions(
+    snapshot: Mapping[str, Any],
+    sources: RunSources,
+    decisions: Mapping[str, Any],
+    bundles: Sequence[EvidenceBundle],
+) -> list[str]:
+    """Re-derive every route from the stored snapshots with the same code
+    and compare. Returns the mismatches (empty means the decisions file is
+    exactly what the stored sources imply). Also checks that each approved
+    bundle's target catalog entry is the one in the stored snapshot."""
+    problems: list[str] = []
+    if decisions.get("candidates_sha256") != snapshot.get("candidates_sha256"):
+        problems.append("decisions name a different candidate snapshot")
+    rows = {(row["base"], row["target_exchange"]): row for row in decisions["routes"]}
+    expected = {(base, target) for base in snapshot["bases"] for target in TARGET_EXCHANGES}
+    if set(rows) != expected:
+        problems.append(f"route set differs: {len(rows)} recorded, {len(expected)} expected")
+    bundles_by_route = {(b.base, b.target_exchange): b for b in bundles}
+    for base, target in sorted(expected & set(rows)):
+        row = rows[(base, target)]
+        decision = decide_route(route_inputs(sources, base, target))
+        if row["approved"]:
+            same = decision.approved and (
+                decision.chain,
+                decision.contract_address,
+                decision.coingecko_id,
+            ) == (row["chain"], row["contract_address"], row["coingecko_id"])
+            bundle = bundles_by_route.get((base, target))
+            if same and (
+                bundle is None
+                or bundle.target_catalog_evidence is None
+                or bundle.target_catalog_evidence.payload
+                != _target_catalog_evidence(sources, decision).payload
+            ):
+                problems.append(f"{base}/{target}: bundle catalog entry differs from the snapshot")
+        elif str(row["reason"]).startswith(CAPTURE_REJECTED):
+            same = decision.approved
+        else:
+            same = not decision.approved and decision.reason == row["reason"]
+        if not same:
+            problems.append(
+                f"{base}/{target}: recorded {row['reason']}, recomputed {decision.reason}"
+            )
+    return problems
 
 
 def _evidence_url(commit: str, filename: str) -> str:
@@ -836,34 +995,100 @@ def _write_json(path: Path, payload: Any) -> None:
     )
 
 
-async def _load_sources(client: Any, gate: Any, credentials: tuple[str, str]) -> RunSources:
+def _bybit_signed_headers(credentials: tuple[str, str]) -> dict[str, str]:
+    key, secret = credentials
+    timestamp = str(int(time.time() * 1000))
+    recv_window = "10000"
+    signature = hmac.new(
+        secret.encode(), (timestamp + key + recv_window).encode(), hashlib.sha256
+    ).hexdigest()
+    return {
+        "X-BAPI-API-KEY": key,
+        "X-BAPI-TIMESTAMP": timestamp,
+        "X-BAPI-RECV-WINDOW": recv_window,
+        "X-BAPI-SIGN": signature,
+    }
+
+
+async def _get_bytes(
+    client: Any,
+    url: str,
+    *,
+    params: dict[str, str] | None = None,
+    headers: dict[str, str] | None = None,
+) -> bytes:
+    """Only the response body is kept; request headers (keys) never are."""
+    response = await client.get(url, params=params or {}, headers=headers or {})
+    response.raise_for_status()
+    content: bytes = response.content
+    return content
+
+
+async def fetch_source_snapshots(
+    client: Any, gate: Any, credentials: tuple[str, str]
+) -> dict[str, SourceSnapshot]:
+    snapshots: dict[str, SourceSnapshot] = {}
+
+    def add(name: str, pages: list[bytes], *, wire_exact: bool = True) -> None:
+        snapshots[name] = SourceSnapshot(name, datetime.now(UTC), wire_exact, tuple(pages))
+
     currencies = await gate.fetch_currencies()
-    perps_raw = await _http_get_json(client, "https://api.gateio.ws/api/v4/futures/usdt/contracts")
-    perps = {str(item.get("name")): item for item in perps_raw.payload if isinstance(item, dict)}
-    alpha = await _http_get_json(
-        client,
-        "https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list",
+    add(
+        "gate_currencies",
+        [
+            json.dumps(
+                json_ready(currencies), sort_keys=True, separators=(",", ":"), ensure_ascii=False
+            ).encode()
+        ],
+        wire_exact=False,
     )
-    binance = await _http_get_json(client, "https://fapi.binance.com/fapi/v1/exchangeInfo")
-    bybit_instruments = await fetch_bybit_instruments(client)
-    bybit_coins = await fetch_bybit_coin_info(client, credentials)
-    coingecko = await _retry_429(
-        "coins/list",
-        lambda: _http_get_json(
-            client,
-            "https://api.coingecko.com/api/v3/coins/list",
-            params={"include_platform": "true"},
-        ),
+    add("gate_perps", [await _get_bytes(client, GATE_PERPS_URL)])
+    add("alpha_catalog", [await _get_bytes(client, ALPHA_URL)])
+    add("binance_exchange_info", [await _get_bytes(client, BINANCE_EXCHANGE_INFO_URL)])
+    pages: list[bytes] = []
+    cursor = ""
+    while True:
+        params = {"category": "linear", "limit": "1000"}
+        if cursor:
+            params["cursor"] = cursor
+        raw = await _get_bytes(client, BYBIT_INSTRUMENTS_URL, params=params)
+        pages.append(raw)
+        result = json.loads(raw).get("result") or {}
+        cursor = str(result.get("nextPageCursor") or "")
+        if not cursor:
+            break
+    add("bybit_instruments", pages)
+    add(
+        "bybit_coin_info",
+        [await _get_bytes(client, BYBIT_COIN_INFO_URL, headers=_bybit_signed_headers(credentials))],
     )
-    return RunSources(
-        gate_currencies=currencies,
-        gate_perps=perps,
-        alpha_catalog=alpha,
-        binance_exchange_info=binance,
-        bybit_instruments=bybit_instruments,
-        bybit_coin_info=bybit_coins,
-        coingecko=coingecko_index(coingecko.payload),
+    add(
+        "coingecko_coins",
+        [
+            await _retry_429(
+                "coins/list",
+                lambda: _get_bytes(
+                    client,
+                    COINGECKO_COINS_URL,
+                    params={"include_platform": "true"},
+                    headers=_coingecko_headers(),
+                ),
+            )
+        ],
     )
+    return snapshots
+
+
+def _load_published(directory: Path) -> tuple[dict[str, Any], dict[str, Any], RunSources]:
+    manifest = json.loads((directory / MANIFEST_FILENAME).read_text(encoding="utf-8"))
+    decisions = json.loads((directory / DECISIONS_FILENAME).read_text(encoding="utf-8"))
+    body = {key: value for key, value in decisions.items() if key != "decisions_sha256"}
+    if _sha256_canonical(body) != decisions.get("decisions_sha256"):
+        raise ValueError("decisions file does not match its own decisions_sha256")
+    if manifest.get("decisions_sha256") != decisions["decisions_sha256"]:
+        raise ValueError("manifest names a different decisions file")
+    sources = sources_from_snapshots(load_source_snapshots(directory, manifest["sources"]))
+    return manifest, decisions, sources
 
 
 async def _decide(_args: argparse.Namespace) -> int:
@@ -884,7 +1109,8 @@ async def _decide(_args: argparse.Namespace) -> int:
     staging.mkdir()
     try:
         async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
-            sources = await _load_sources(client, gate, credentials)
+            snapshots = await fetch_source_snapshots(client, gate, credentials)
+            sources = sources_from_snapshots(snapshots)
             decisions: list[RouteDecision] = []
             bundles: list[EvidenceBundle] = []
             decimals_cache: dict[tuple[str, str], ChainContractEvidence] = {}
@@ -905,9 +1131,9 @@ async def _decide(_args: argparse.Namespace) -> int:
                                 code_revision=code_revision,
                                 working_tree_dirty=working_tree_dirty,
                             )
-                        except ValueError as exc:
+                        except RuleCheckFailedError as exc:
                             decision = RouteDecision(
-                                base, target, False, f"capture_rejected: {str(exc)[:300]}"
+                                base, target, False, f"{CAPTURE_REJECTED}: {str(exc)[:300]}"
                             )
                         else:
                             save_evidence_bundle(
@@ -916,42 +1142,47 @@ async def _decide(_args: argparse.Namespace) -> int:
                             bundles.append(bundle)
                     decisions.append(decision)
                     sys.stderr.write(f"{base:>12} -> {target:<8} {decision.reason}\n")
+
+        sources_section = save_source_snapshots(snapshots, staging)
+        document = decisions_document(
+            snapshot,
+            decisions,
+            bundles,
+            run_id=run_id,
+            code_revision=code_revision,
+            working_tree_dirty=working_tree_dirty,
+            source_hashes={name: meta["sha256"] for name, meta in sources_section.items()},
+        )
+        _write_json(staging / DECISIONS_FILENAME, document)
+        manifest = {
+            "run_id": run_id,
+            "evidence_version": EVIDENCE_VERSION_V4,
+            "rule_version": IDENTITY_RULE_VERSION,
+            "captured_at": datetime.now(UTC).isoformat(),
+            "code_revision": code_revision,
+            "working_tree_dirty": working_tree_dirty,
+            "candidate_count": len(bundles),
+            "candidates": sorted(bundle.base for bundle in bundles),
+            "bundle_fingerprint": _sha256_canonical(sorted(b.bundle_sha256 for b in bundles)),
+            "decisions_sha256": document["decisions_sha256"],
+            "sources": sources_section,
+        }
+        _write_json(staging / MANIFEST_FILENAME, manifest)
+        # Self-check from the files about to be published, before publishing.
+        _, stored, stored_sources = _load_published(staging)
+        problems = recompute_decisions(
+            snapshot, stored_sources, stored, load_all_evidence_bundles(staging)
+        )
+        if problems:
+            raise RuntimeError("recompute disagrees with the run: " + "; ".join(problems[:10]))
     except BaseException:
         shutil.rmtree(staging, ignore_errors=True)
         raise
     finally:
         await gate.close()
 
-    source_hashes = {
-        "alpha_catalog": sources.alpha_catalog.raw_sha256,
-        "binance_exchange_info": sources.binance_exchange_info.raw_sha256,
-        "bybit_instruments": sources.bybit_instruments.raw_sha256,
-        "bybit_coin_info": sources.bybit_coin_info.raw_sha256,
-    }
-    document = decisions_document(
-        snapshot,
-        decisions,
-        bundles,
-        run_id=run_id,
-        code_revision=code_revision,
-        working_tree_dirty=working_tree_dirty,
-        source_hashes=source_hashes,
-    )
-    manifest = {
-        "run_id": run_id,
-        "evidence_version": EVIDENCE_VERSION_V4,
-        "rule_version": IDENTITY_RULE_VERSION,
-        "captured_at": datetime.now(UTC).isoformat(),
-        "code_revision": code_revision,
-        "working_tree_dirty": working_tree_dirty,
-        "candidate_count": len(bundles),
-        "candidates": sorted(bundle.base for bundle in bundles),
-        "bundle_fingerprint": _sha256_canonical(sorted(b.bundle_sha256 for b in bundles)),
-        "decisions_sha256": document["decisions_sha256"],
-    }
-    _write_json(staging / MANIFEST_FILENAME, manifest)
+    # Bundles, sources, decisions and manifest move together in one swap.
     _atomic_publish(staging, EVIDENCE_DIR_V4)
-    _write_json(DECISIONS_PATH, document)
     sys.stderr.write(
         f"\n{len(bundles)} approved routes, {document['approved_asset_count']} assets; "
         f"decisions_sha256={document['decisions_sha256']}\n"
@@ -959,11 +1190,23 @@ async def _decide(_args: argparse.Namespace) -> int:
     return 0
 
 
+def _recompute(_args: argparse.Namespace) -> int:
+    _, decisions, sources = _load_published(EVIDENCE_DIR_V4)
+    bundles = load_all_evidence_bundles(EVIDENCE_DIR_V4)
+    for bundle in bundles:
+        revalidate_v4_bundle(bundle)
+    problems = recompute_decisions(load_candidate_snapshot(), sources, decisions, bundles)
+    for problem in problems:
+        sys.stdout.write(f"MISMATCH {problem}\n")
+    sys.stdout.write(
+        f"{len(decisions['routes'])} routes recomputed from stored sources, "
+        f"{len(problems)} mismatches; decisions_sha256={decisions['decisions_sha256']}\n"
+    )
+    return 1 if problems else 0
+
+
 def _build_registry(args: argparse.Namespace) -> int:
-    decisions = json.loads(DECISIONS_PATH.read_text(encoding="utf-8"))
-    body = {key: value for key, value in decisions.items() if key != "decisions_sha256"}
-    if _sha256_canonical(body) != decisions.get("decisions_sha256"):
-        raise ValueError("decisions file does not match its own decisions_sha256")
+    _, decisions, _ = _load_published(EVIDENCE_DIR_V4)
     approval = json.loads(APPROVAL_PATH.read_text(encoding="utf-8"))
     bundles = load_all_evidence_bundles(EVIDENCE_DIR_V4)
     for bundle in bundles:
@@ -984,6 +1227,7 @@ def build_parser() -> argparse.ArgumentParser:
     cands = sub.add_parser("candidates", help="snapshot bases (one per line on stdin)")
     cands.add_argument("--window-end", required=True, type=parse_utc_datetime)
     sub.add_parser("decide", help="fetch evidence, apply the rule, publish bundles")
+    sub.add_parser("recompute", help="re-derive every decision from the stored sources")
     reg = sub.add_parser("build-registry", help="build registry v4 from approved bundles")
     reg.add_argument("--evidence-commit", required=True)
     return parser
@@ -1005,6 +1249,8 @@ def main() -> None:
         return
     if args.command == "decide":
         sys.exit(asyncio.run(_decide(args)))
+    if args.command == "recompute":
+        sys.exit(_recompute(args))
     sys.exit(_build_registry(args))
 
 

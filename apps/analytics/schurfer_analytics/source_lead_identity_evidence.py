@@ -1303,6 +1303,8 @@ def render_bundle_json(bundle: EvidenceBundle) -> str:
 
 
 MANIFEST_FILENAME = "manifest.json"
+# Registry v4 publishes its decisions next to the bundles (one atomic swap).
+DECISIONS_FILENAME = "decisions.json"
 
 
 def _bundle_filename(base: str, source_exchange: str, target_exchange: str) -> str:
@@ -1406,7 +1408,11 @@ def load_all_evidence_bundles(
         if allow_empty:
             return ()
         raise EvidenceIntegrityError(f"evidence directory not found: {target_dir}")
-    paths = sorted(path for path in target_dir.glob("*.json") if path.name != MANIFEST_FILENAME)
+    paths = sorted(
+        path
+        for path in target_dir.glob("*.json")
+        if path.name not in (MANIFEST_FILENAME, DECISIONS_FILENAME)
+    )
     if not paths and not allow_empty:
         raise EvidenceIntegrityError(f"no evidence bundles found in {target_dir}")
     bundles = tuple(load_evidence_bundle(path) for path in paths)
