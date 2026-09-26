@@ -266,6 +266,7 @@ def test_a_duckdb_read_blocks_the_drop_until_its_connection_is_closed() -> None:
     from schurfer_analytics.cold_bar_export import connect
 
     admin = _connect_timescale_or_skip()
+    duck: Any = None
     try:
         _fresh_hypertable(admin)
         duck = connect(_PG_DSN)
@@ -282,6 +283,7 @@ def test_a_duckdb_read_blocks_the_drop_until_its_connection_is_closed() -> None:
                     lock_timeout="750ms",
                 )
             duck.close()
+            duck = None
             name = drop_one_chunk_under_lock(
                 conn,
                 hypertable=_HYPERTABLE,
@@ -295,6 +297,10 @@ def test_a_duckdb_read_blocks_the_drop_until_its_connection_is_closed() -> None:
         assert name
         assert _chunk_days(admin) == {"2026-01-01", "2026-01-03"}
     finally:
+        # Close the DuckDB session first: a failure before the in-test close would
+        # otherwise leave its open transaction blocking the schema cleanup below.
+        if duck is not None:
+            duck.close()
         admin.execute(f"DROP SCHEMA IF EXISTS {_SCHEMA} CASCADE")
         admin.close()
 
