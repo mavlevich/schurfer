@@ -125,6 +125,8 @@ schurfer_analytics = [
     "registry/*.json",
     "evidence/source_lead/v2/*.json",
     "evidence/source_lead/v3/*.json",
+    "evidence/source_lead/v4/*.json",
+    "evidence/source_lead/v4/sources/*.json.gz",
 ]
 
 [tool.uv]
