@@ -116,7 +116,7 @@ def test_render_markdown_and_json_and_fingerprint() -> None:
     assert "ready to read: YES" not in md
     parsed = json.loads(render_json(payload))
     assert parsed["outcome_blind"] is True
-    assert parsed["qualification_version"] == "source_lead_qualified_capture_v3"
+    assert parsed["qualification_version"] == "source_lead_qualified_capture_v4"
     assert len(parsed["fingerprint_sha256"]) == 64
     # Fingerprint is stable across renders ignoring generated_at.
     again = _report_dict(report, code_revision="test", working_tree_dirty=False)

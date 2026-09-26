@@ -22,6 +22,12 @@ after-cost economics unless explicitly labelled a paired difference.
 
 ## Confirmed facts (with references)
 
+- **HYP-012 cohort v2 registered; v1 closed (2026-09-26).** Qualification v4 selects the
+  venue only among venues the owner can trade (`TRADABLE_VENUES = ("bybit",)`), on registry
+  v4. The estimand is `standalone_early_entry_net_return_tradable_venue_v2`, and the cohort
+  starts 2026-09-29T00:00Z. Every v1 evaluation rule, floor and cap is unchanged
+  (`source-lead-forward-cohort-v2.md`). The v1 cohort (Binance, 15 of 100 episodes) is
+  closed without a formal read. A positive v2 read is the gate for a $50 live run on Bybit.
 - **HYP-012 v4 identity approval policy (2026-09-25).** Binance futures are not
   available to the owner (Poland), so v4 makes Bybit the primary execution venue and keeps
   Binance as a descriptive comparison (estimand registered in PR D). Identity for v4 is

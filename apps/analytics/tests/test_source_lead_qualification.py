@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 from schurfer_analytics.source_lead_capture import TargetObservation
-from schurfer_analytics.source_lead_contract import IDENTITY_REGISTRY_V3_START
+from schurfer_analytics.source_lead_contract import IDENTITY_REGISTRY_V4_START
 from schurfer_analytics.source_lead_identity_evidence import (
     EVIDENCE_VERSION,
     ChainContractEvidence,
@@ -27,8 +27,8 @@ from schurfer_analytics.source_lead_qualification import (
     verify_registry_against_evidence,
 )
 
-_AFTER_CUTOVER = IDENTITY_REGISTRY_V3_START + timedelta(hours=1)
-_BEFORE_CUTOVER = IDENTITY_REGISTRY_V3_START - timedelta(hours=1)
+_AFTER_CUTOVER = IDENTITY_REGISTRY_V4_START + timedelta(hours=1)
+_BEFORE_CUTOVER = IDENTITY_REGISTRY_V4_START - timedelta(hours=1)
 
 
 def _registry() -> IdentityRegistry:
@@ -82,6 +82,7 @@ def _target(exchange: str, impact: float) -> TargetObservation:
             "ask_impact_bps": impact,
             "bid_filled_notional_usd": 50.0,
             "ask_filled_notional_usd": 50.0,
+            "quote_timing": {"contract_size_source": "instrument"},
         },
         error=None,
     )
@@ -108,17 +109,16 @@ def test_registry_rejects_duplicate_asset_exchange_links() -> None:
 
 
 def test_packaged_registry_matches_frozen_contract() -> None:
-    """Proves the live registry (v3 as of research/gate-source-lead-
-    registry-activation-v3, PR 3 of 3) is valid, fully loadable, and
-    verified -- including the route-evidence cross-check
-    (_verify_link_route_evidence) PR 2 added -- via the actual live path
-    every SourceLeadCaptureWorker call goes through, not a side loader."""
+    """Proves the live registry (v4 as of HYP-012 v4 PR D) is valid, fully
+    loadable, and verified against evidence/source_lead/v4 -- including the
+    route-evidence cross-check -- via the actual live path every
+    SourceLeadCaptureWorker call goes through, not a side loader."""
     registry = load_identity_registry()
 
     assert registry.version == EXPECTED_REGISTRY_VERSION
     assert registry.fingerprint == EXPECTED_REGISTRY_FINGERPRINT
-    # Same 14 assets as v2 -- only the evidence backing each link changed.
-    assert len(registry.links_by_identity) == 28
+    # 85 Gate links plus 55 Binance and 44 Bybit routes.
+    assert len(registry.links_by_identity) == 184
 
 
 def test_registry_rejects_content_change_under_frozen_fingerprint() -> None:
@@ -151,9 +151,9 @@ def test_unapproved_source_fails_closed_before_ticker_matching() -> None:
     assert result.canonical_asset_id is None
 
 
-def test_capture_before_registry_v3_activation_is_excluded_even_with_valid_identity() -> None:
+def test_capture_before_registry_v4_activation_is_excluded_even_with_valid_identity() -> None:
     """A capture whose source_first_observed_at predates
-    IDENTITY_REGISTRY_V3_START must never be treated as v3-qualified
+    IDENTITY_REGISTRY_V4_START must never be treated as v4-qualified
     prospective evidence, even when its identity and targets would
     otherwise fully qualify -- identity was confirmed retroactively, not in
     real time (colleague review, 2026-08-28, applied again for the v3
@@ -167,7 +167,7 @@ def test_capture_before_registry_v3_activation_is_excluded_even_with_valid_ident
     )
 
     assert result.status == "excluded"
-    assert result.reason == "before_identity_registry_v3_activation"
+    assert result.reason == "before_identity_registry_v4_activation"
     assert result.canonical_asset_id is None
 
 
@@ -197,13 +197,9 @@ def test_target_not_registry_confirmed_is_excluded_despite_matching_identity_key
     assert result.details["targets"][0]["registry_confirmed"] is False
 
 
-def test_selector_uses_lowest_round_trip_impact_with_stable_tie_break() -> None:
-    """Venue selection runs the same lowest-round-trip-impact logic with a
-    stable tie-break. ROUTE_EVIDENCE_INDEPENDENTLY_VERIFIED=True as of
-    research/gate-source-lead-registry-activation-v3 (PR 3 of 3): a fully
-    eligible candidate now actually reaches status='qualified' with a
-    selected venue, not just details['would_select'] (see the monkeypatched
-    test below for the still-present pre-flip branch)."""
+def test_selector_chooses_only_among_tradable_venues() -> None:
+    """v4: Binance is cheaper here but not tradable for the owner, so Bybit
+    is selected and Binance stays in details as descriptive only."""
     result = qualify_source_lead(
         source_exchange="gate",
         source_identity_key="gate:swap:ABC_USDT:1",
@@ -215,17 +211,43 @@ def test_selector_uses_lowest_round_trip_impact_with_stable_tie_break() -> None:
     assert result.status == "qualified"
     assert result.reason == "lowest_round_trip_impact"
     assert result.canonical_asset_id == "asset:abc"
-    assert result.selected_target_exchange == "binance"
-    assert result.selected_round_trip_impact_bps == 2.0
+    assert result.selected_target_exchange == "bybit"
+    assert result.selected_round_trip_impact_bps == 4.0
+    by_exchange = {t["exchange"]: t for t in result.details["targets"]}
+    assert by_exchange["binance"]["tradable"] is False
+    assert by_exchange["binance"]["round_trip_impact_bps"] == 2.0
 
-    tied = qualify_source_lead(
+
+def test_only_a_non_tradable_venue_executable_is_excluded_with_its_own_reason() -> None:
+    result = qualify_source_lead(
         source_exchange="gate",
         source_identity_key="gate:swap:ABC_USDT:1",
         source_first_observed_at=_AFTER_CUTOVER,
-        target_observations=(_target("bybit", 1.0), _target("binance", 1.0)),
+        target_observations=(_target("binance", 1.0),),
         registry=_registry(),
     )
-    assert tied.selected_target_exchange == "binance"
+
+    assert result.status == "excluded"
+    assert result.reason == "no_tradable_executable_target"
+    assert result.selected_target_exchange is None
+
+
+def test_a_defaulted_contract_size_is_refused() -> None:
+    defaulted = _target("bybit", 1.0)
+    defaulted = replace(
+        defaulted,
+        liquidity={**defaulted.liquidity, "quote_timing": {"contract_size_source": "defaulted"}},
+    )
+    result = qualify_source_lead(
+        source_exchange="gate",
+        source_identity_key="gate:swap:ABC_USDT:1",
+        source_first_observed_at=_AFTER_CUTOVER,
+        target_observations=(defaulted,),
+        registry=_registry(),
+    )
+
+    assert result.reason == "no_approved_executable_target"
+    assert result.details["targets"][0]["reason"] == "target_contract_size_unknown"
 
 
 def test_selector_records_would_select_when_route_evidence_flag_disabled(
@@ -255,8 +277,8 @@ def test_selector_records_would_select_when_route_evidence_flag_disabled(
     assert result.selected_target_exchange is None
     assert result.selected_round_trip_impact_bps is None
     assert result.details["would_select"] == {
-        "target_exchange": "binance",
-        "round_trip_impact_bps": 2.0,
+        "target_exchange": "bybit",
+        "round_trip_impact_bps": 4.0,
     }
 
 

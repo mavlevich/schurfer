@@ -10,7 +10,7 @@ status check, not a place for narrative.
 ```
 Current primary: HYP-012 v4 toward a real-money decision: identity registry v4 built (85 assets, Bybit 44 / Binance 55, fingerprint 7d5f635a...), not yet active; HYP-015 funding capture accumulating
 State: production has no configured trading credentials and runs DRY_RUN with AUTO_TRADE off; Binance futures are not tradable for the owner, so Bybit is the execution venue; no strategy has established a scalable after-cost edge
-Next: PR D registers HYP-012 cohort v4 (venue selection among tradable venues, Bybit now; Binance descriptive; fixed start date) and deploys the capture worker; HYP-015 health checkpoint 2026-09-27 then freeze
+Next: merge PR D (HYP-012 cohort v2 on qualification v4, start 2026-09-29) and deploy the capture worker before that date; HYP-015 health checkpoint 2026-09-27 then freeze; then Bybit execution prep for a $50 run
 User decision required: approve the PR D design and the capture-worker deploy; adding execution venues goes through a new cohort version; live $50 only after the v4 formal read
 ```
 

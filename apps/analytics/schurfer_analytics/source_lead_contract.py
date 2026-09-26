@@ -43,3 +43,10 @@ IDENTITY_REGISTRY_V2_START = datetime(2026, 8, 30, tzinfo=UTC)
 # Same "bump to the actual deploy date if it lands later, never move it
 # earlier" rule as IDENTITY_REGISTRY_V2_START above.
 IDENTITY_REGISTRY_V3_START = datetime(2026, 9, 3, tzinfo=UTC)
+
+# HYP-012 v4 (PR D): registry v4 (rule-based, 85 assets, Bybit and Binance
+# routes) and qualification v4 (venue chosen only among venues the owner can
+# trade) replace v3 as the live cutover. Captures before this instant stay
+# under v3 and are never v4 evidence. Same rule as above: bump to the actual
+# deploy date if the deploy lands later; never move it earlier.
+IDENTITY_REGISTRY_V4_START = datetime(2026, 9, 29, tzinfo=UTC)

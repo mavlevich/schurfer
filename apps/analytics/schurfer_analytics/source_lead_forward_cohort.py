@@ -85,7 +85,7 @@ from .clustered_inference import (
     cluster_bootstrap_mean,
 )
 from .ohlcv import ONE_MINUTE_MS, ceil_to_timeframe
-from .source_lead_contract import IDENTITY_REGISTRY_V3_START
+from .source_lead_contract import IDENTITY_REGISTRY_V3_START, IDENTITY_REGISTRY_V4_START
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -93,7 +93,13 @@ if TYPE_CHECKING:
 
     from .ohlcv import Candle
 
-CONTRACT_VERSION = "source_lead_forward_cohort_v1"
+CONTRACT_VERSION_V1 = "source_lead_forward_cohort_v1"
+# HYP-012 v4 (PR D): the v1 cohort (qualification v3, Binance-only routes) is
+# closed at IDENTITY_REGISTRY_V4_START without a formal read: it reached 15
+# of 100 episodes, and its venue is not tradable for the owner. v2 keeps every
+# v1 evaluation rule below and changes only the candidate set (qualification
+# v4, venue chosen among tradable venues) and the start.
+CONTRACT_VERSION = "source_lead_forward_cohort_v2"
 
 # Frozen strictly at the qualification cutover: no v3-qualified capture can
 # exist before this instant (qualify_source_lead's own early-exit check
@@ -101,14 +107,19 @@ CONTRACT_VERSION = "source_lead_forward_cohort_v1"
 # cohort's clock any earlier -- and starting it later would mean discarding
 # real qualified data while we waited. Aliased, not copied, so the two
 # constants can never drift apart.
-SOURCE_LEAD_FORWARD_COHORT_START: datetime = IDENTITY_REGISTRY_V3_START
+SOURCE_LEAD_FORWARD_COHORT_START_V1: datetime = IDENTITY_REGISTRY_V3_START
+SOURCE_LEAD_FORWARD_COHORT_START: datetime = IDENTITY_REGISTRY_V4_START
 
 # --- estimand -----------------------------------------------------------
 
 # See the module docstring's "colleague review" section above for the full
 # reasoning behind registering a narrower estimand than HYP-012's original
 # 4-route paired family, rather than claiming to replicate it.
-ESTIMAND_VERSION = "standalone_early_entry_net_return_v1"
+ESTIMAND_VERSION_V1 = "standalone_early_entry_net_return_v1"
+# v2: the same standalone after-cost 30m net return, measured on the venue
+# qualification v4 selected among TRADABLE_VENUES (Bybit today). Binance
+# observations are descriptive only and never enter this estimand.
+ESTIMAND_VERSION = "standalone_early_entry_net_return_tradable_venue_v2"
 HYPOTHESIS_ORIGIN = "HYP-012"  # discovery-ledger.md -- motivation, not a claimed replication
 SECONDARY_DIAGNOSTIC_VERSION = "paired_early_minus_confirmed_entry_delta_v1"
 
@@ -123,7 +134,12 @@ SECONDARY_DIAGNOSTIC_VERSION = "paired_early_minus_confirmed_entry_delta_v1"
 # live constants cannot silently widen this frozen cohort's candidate set
 # without a deliberate, reviewed change to this file too.
 QUALIFICATION_STATUS = "qualified"
-QUALIFICATION_VERSION = "source_lead_qualified_capture_v3"
+QUALIFICATION_VERSION_V1_COHORT = "source_lead_qualified_capture_v3"
+QUALIFICATION_VERSION = "source_lead_qualified_capture_v4"
+# Literal copy of source_lead_qualification.TRADABLE_VENUES for the same
+# reason as above: widening it is a new cohort version, never a silent change.
+# The reader refuses an episode on any other venue.
+TRADABLE_VENUES: tuple[str, ...] = ("bybit",)
 
 # --- entry -----------------------------------------------------------------
 
@@ -233,6 +249,9 @@ CONFIDENCE_LEVEL = DEFAULT_CONFIDENCE_LEVEL
 # asset's idiosyncrasy from carrying the whole verdict) -- and a verdict
 # reached under this floor does NOT by itself authorize paper or live
 # execution (see SMALL_UNIVERSE_PROMOTION_NOTE).
+# v2 note: registry v4 has 85 assets (44 on Bybit), so more clusters are
+# reachable than under v3, but the floor and caps stay exactly as registered
+# for v1: changing them after seeing v1's funnel is not allowed here.
 EVIDENCE_FLOOR = {
     "min_resolved_episodes": 100,
     "min_distinct_asset_clusters": 7,
@@ -534,6 +553,7 @@ __all__ = [
     "SMALL_UNIVERSE_PROMOTION_NOTE",
     "SOURCE_LEAD_FORWARD_COHORT_START",
     "STOPPING_RULE",
+    "TRADABLE_VENUES",
     "UNRESOLVED_REASONS",
     "VERDICT_CANDIDATE",
     "VERDICT_FAIL",

@@ -150,6 +150,7 @@ from .source_lead_forward_cohort import (
     SMALL_UNIVERSE_PROMOTION_NOTE,
     SOURCE_LEAD_FORWARD_COHORT_START,
     STOPPING_RULE,
+    TRADABLE_VENUES,
     EpisodeInputs,
     EpisodeResult,
     episode_is_matured,
@@ -364,6 +365,17 @@ async def _fetch_exit_bar_guarded(
                 exc_info=True,
             )
             return None
+
+
+def check_tradable_venues(episodes: Sequence[Any]) -> None:
+    """Contract v2: every episode must be on a TRADABLE_VENUES venue. A
+    qualification bug that selected another venue refuses the read instead
+    of silently mixing venues into the estimand."""
+    others = sorted(
+        {e.target_exchange for e in episodes if e.target_exchange not in TRADABLE_VENUES}
+    )
+    if others:
+        raise ValueError(f"qualified episodes on non-tradable venues: {others}")
 
 
 async def _fetch_exit_bars_bounded(
@@ -630,6 +642,7 @@ async def generate_report(args: argparse.Namespace) -> SourceLeadForwardCohortRe
         limit=args.max_qualified_episodes + 1,
     )
     check_qualified_episode_count(len(raw_episodes), args.max_qualified_episodes)
+    check_tradable_venues(raw_episodes)
 
     matured = [
         episode for episode in raw_episodes if episode_is_matured(episode.observed_at, database_now)
