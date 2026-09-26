@@ -77,6 +77,10 @@ class ReadinessInputs:
     # delays only: prices are outcome data and are never read here.
     exit_coverage: dict[str, int] = field(default_factory=dict)
     exit_lateness_ms: tuple[int, ...] = ()
+    # Episodes whose exit window has closed (the denominator), and how many of
+    # them have no exit row at all: a stopped exit service shows up here.
+    exit_due: int = 0
+    exit_missing: int = 0
 
 
 @dataclass(frozen=True)
@@ -91,23 +95,36 @@ class CapacitySummary:
     skipped_share: float | None
 
 
+def _release_at(entry: datetime) -> float:
+    return (expected_exit_boundary_ms(entry) + 60_000) / 1000
+
+
 def capacity_summary(entries: list[datetime], slots: int) -> CapacitySummary:
     """Greedy first-come simulation: an episode is taken if a slot is free at
-    its entry; the slot is released at the end of its exit bar."""
+    its entry; the slot is released at the end of its exit bar.
+
+    `max_concurrent` is the demand: the largest number of episodes whose
+    holding windows overlap, counted over ALL signals regardless of the slot
+    limit (a separate sweep, so an overloaded minute is not capped at slots+1)."""
+    ordered = sorted(entries)
+    demand: list[float] = []
+    max_concurrent = 0
+    for entry in ordered:
+        while demand and demand[0] <= entry.timestamp():
+            heapq.heappop(demand)
+        heapq.heappush(demand, _release_at(entry))
+        max_concurrent = max(max_concurrent, len(demand))
+
     open_until: list[float] = []
-    taken = skipped = max_concurrent = 0
-    for entry in sorted(entries):
-        now = entry.timestamp()
-        while open_until and open_until[0] <= now:
+    taken = skipped = 0
+    for entry in ordered:
+        while open_until and open_until[0] <= entry.timestamp():
             heapq.heappop(open_until)
-        concurrent_demand = len(open_until) + 1
-        max_concurrent = max(max_concurrent, concurrent_demand)
         if len(open_until) >= slots:
             skipped += 1
             continue
         taken += 1
-        release = (expected_exit_boundary_ms(entry) + 60_000) / 1000
-        heapq.heappush(open_until, release)
+        heapq.heappush(open_until, _release_at(entry))
     total = taken + skipped
     return CapacitySummary(
         slots=slots,
@@ -166,6 +183,8 @@ class ReadinessReport:
     exit_coverage: dict[str, int] = field(default_factory=dict)
     exit_lateness_p50_ms: int | None = None
     exit_lateness_p90_ms: int | None = None
+    exit_due: int = 0
+    exit_missing: int = 0
 
 
 def _utc_week_key(moment: datetime) -> str:
@@ -262,6 +281,8 @@ def build_readiness(
         exit_coverage=dict(sorted(inputs.exit_coverage.items())),
         exit_lateness_p50_ms=_percentile(inputs.exit_lateness_ms, 0.5),
         exit_lateness_p90_ms=_percentile(inputs.exit_lateness_ms, 0.9),
+        exit_due=inputs.exit_due,
+        exit_missing=inputs.exit_missing,
     )
 
 

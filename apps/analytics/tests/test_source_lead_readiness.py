@@ -188,6 +188,16 @@ def test_capacity_skips_episodes_only_when_every_slot_is_busy() -> None:
     assert capacity_summary([], slots=6).skipped_share is None
 
 
+def test_peak_demand_counts_every_overlapping_signal_not_just_slots_plus_one() -> None:
+    """Review repro: 100 signals in one minute used to report max_concurrent=7."""
+    from schurfer_analytics.source_lead_readiness import capacity_summary
+
+    t0 = datetime(2026, 9, 29, 12, 0, tzinfo=UTC)
+    summary = capacity_summary([t0 + timedelta(milliseconds=500 * i) for i in range(100)], slots=6)
+    assert summary.max_concurrent == 100
+    assert (summary.taken, summary.skipped) == (6, 94)
+
+
 def test_v2_sections_render_weeks_capacity_venues_and_exit_coverage() -> None:
     eps = [_ep(NOW - timedelta(days=d), f"A{d % 3}") for d in range(10)]
     report = build_readiness(
@@ -200,6 +210,8 @@ def test_v2_sections_render_weeks_capacity_venues_and_exit_coverage() -> None:
             },
             exit_coverage={"sampled:on_time": 6, "missed:missed": 1},
             exit_lateness_ms=(100, 200, 300, 40_000),
+            exit_due=9,
+            exit_missing=2,
         )
     )
     assert sum(report.qualified_by_week.values()) == 10
@@ -213,6 +225,8 @@ def test_v2_sections_render_weeks_capacity_venues_and_exit_coverage() -> None:
         "| bybit:target_book_stale | 2 |",
         "| sampled:on_time | 6 |",
         "p50 300 ms",
+        "no exit row at all: 2",
+        "WARNING: 2 due episodes have no exit row",
     ):
         assert heading in md
     # Never a price: coverage is statuses and delays only.

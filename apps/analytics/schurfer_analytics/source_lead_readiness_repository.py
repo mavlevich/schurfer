@@ -92,8 +92,20 @@ _TARGET_REASONS = text(
     SELECT coalesce(t ->> 'exchange', 'unknown') AS venue,
            coalesce(
                t ->> 'reason',
-               CASE WHEN t ? 'round_trip_impact_bps' THEN 'executable'
-                    ELSE 'not_sampled:' || coalesce(t ->> 'observation_status', 'unknown') END
+               CASE
+                   WHEN t ? 'round_trip_impact_bps' THEN 'executable'
+                   WHEN coalesce(t ->> 'observation_status', '') <> 'sampled'
+                       THEN 'not_sampled:' || coalesce(t ->> 'observation_status', 'unknown')
+                   -- Sampled but the route was refused on identity, which the
+                   -- qualification records only through these flags.
+                   WHEN (t ->> 'identity_approved')::boolean IS NOT TRUE
+                       THEN 'identity_unapproved'
+                   WHEN (t ->> 'registry_confirmed')::boolean IS NOT TRUE
+                       THEN 'identity_unconfirmed'
+                   WHEN (t ->> 'canonical_match')::boolean IS NOT TRUE
+                       THEN 'canonical_mismatch'
+                   ELSE 'unclassified'
+               END
            ) AS reason,
            count(*) AS n
     FROM app.source_lead_qualifications q
@@ -117,6 +129,29 @@ _EXIT_COVERAGE = text(
     JOIN app.source_lead_captures c ON c.id = e.capture_id
     WHERE e.qualification_version = :qv AND c.source_first_observed_at >= :since
     GROUP BY 1, 2
+    """
+)
+
+
+# The exit window closes by entry + 30 min, ceiled to the minute, + 1 min bar
+# + 2 min lateness: at most 34 min. 35 min is a safe "exit is due" cutoff.
+_EXIT_DUE = text(
+    """
+    SELECT count(*) AS due,
+           count(*) FILTER (WHERE NOT EXISTS (
+               SELECT 1 FROM app.source_lead_exit_observations e
+               WHERE e.capture_id = q.capture_id
+                 AND e.qualification_version = q.qualification_version
+           )) AS missing
+    FROM app.source_lead_qualifications q
+    JOIN app.source_lead_captures c ON c.id = q.capture_id
+    JOIN app.source_lead_target_observations t
+      ON t.capture_id = q.capture_id
+     AND t.target_exchange = q.selected_target_exchange
+     AND t.status = 'sampled'
+    WHERE q.qualification_version = :qv AND q.status = 'qualified'
+      AND c.source_first_observed_at >= :since
+      AND t.observed_at < now() - interval '35 minutes'
     """
 )
 
@@ -198,6 +233,7 @@ async def load_readiness_inputs(
                 params = {"qv": qualification_version, "since": cohort_start}
                 target_rows = (await connection.execute(_TARGET_REASONS, params)).mappings().all()
                 exit_rows = (await connection.execute(_EXIT_COVERAGE, params)).mappings().all()
+                exit_due_row = (await connection.execute(_EXIT_DUE, params)).mappings().one()
     finally:
         await engine.dispose()
 
@@ -214,6 +250,8 @@ async def load_readiness_inputs(
         },
         target_reasons_by_venue={f"{r['venue']}:{r['reason']}": int(r["n"]) for r in target_rows},
         exit_coverage={f"{r['outcome']}:{r['timeliness']}": int(r["n"]) for r in exit_rows},
+        exit_due=int(exit_due_row["due"]),
+        exit_missing=int(exit_due_row["missing"]),
         exit_lateness_ms=tuple(
             int(value) for r in exit_rows for value in (r["lateness"] or ()) if value is not None
         ),

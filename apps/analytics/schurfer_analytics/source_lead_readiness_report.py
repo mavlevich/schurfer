@@ -174,6 +174,13 @@ def render_markdown(report: dict[str, Any]) -> str:
         "",
         "## Exit-book diagnostic coverage (statuses and delays only)",
         "",
+        f"- exit window closed: {r['exit_due']} episodes; no exit row at all: {r['exit_missing']}",
+        "",
+        *(
+            [f"> WARNING: {r['exit_missing']} due episodes have no exit row.", ""]
+            if r["exit_missing"]
+            else []
+        ),
         "| outcome:timeliness | count |",
         "| ------------------ | ----- |",
         *[f"| {key} | {count} |" for key, count in r["exit_coverage"].items()],
@@ -192,7 +199,7 @@ def _capacity_lines(capacity: dict[str, Any] | None) -> list[str]:
     return [
         f"## Capacity at {capacity['slots']} slots (USD 300 / USD 50, entry times only)",
         "",
-        f"- max concurrent demand: {capacity['max_concurrent']}",
+        f"- peak demand (overlapping holds, all signals): {capacity['max_concurrent']}",
         f"- taken: {capacity['taken']}, skipped for lack of a free slot: {capacity['skipped']}"
         f" ({_pct(capacity['skipped_share'])})",
         "",
