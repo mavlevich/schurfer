@@ -21,7 +21,7 @@ from typing import Any
 
 from schurfer_analytics.clustered_inference import ClusterObservation
 from schurfer_analytics.ohlcv import Candle
-from schurfer_analytics.source_lead_contract import IDENTITY_REGISTRY_V3_START
+from schurfer_analytics.source_lead_contract import IDENTITY_REGISTRY_V4_START
 from schurfer_analytics.source_lead_forward_cohort import (
     BOOTSTRAP_ITERATIONS,
     BOOTSTRAP_SEED,
@@ -40,6 +40,7 @@ from schurfer_analytics.source_lead_forward_cohort import (
     QUALIFICATION_STATUS,
     QUALIFICATION_VERSION,
     SOURCE_LEAD_FORWARD_COHORT_START,
+    TRADABLE_VENUES,
     VERDICT_CANDIDATE,
     VERDICT_FAIL,
     VERDICT_INSUFFICIENT_DATA,
@@ -80,17 +81,22 @@ def _inputs(*, exit_bar: Candle | None, entry_price: float = 1.0) -> EpisodeInpu
 
 
 def test_cohort_start_is_aliased_to_the_registry_cutover_not_copied() -> None:
-    assert SOURCE_LEAD_FORWARD_COHORT_START == IDENTITY_REGISTRY_V3_START
-    assert datetime(2026, 9, 3, tzinfo=UTC) == SOURCE_LEAD_FORWARD_COHORT_START
+    assert SOURCE_LEAD_FORWARD_COHORT_START == IDENTITY_REGISTRY_V4_START
+    assert datetime(2026, 9, 29, tzinfo=UTC) == SOURCE_LEAD_FORWARD_COHORT_START
 
 
 def test_candidate_set_matches_the_live_qualification_contract() -> None:
     assert QUALIFICATION_STATUS == "qualified"
-    assert QUALIFICATION_VERSION == "source_lead_qualified_capture_v3"
+    assert QUALIFICATION_VERSION == "source_lead_qualified_capture_v4"
+    from schurfer_analytics import source_lead_qualification as live
+
+    # The cohort's literal copies must equal the live qualification contract.
+    assert QUALIFICATION_VERSION == live.QUALIFICATION_VERSION
+    assert TRADABLE_VENUES == live.TRADABLE_VENUES == ("bybit",)
 
 
 def test_estimand_is_narrower_than_and_linked_to_hyp_012_not_a_replication() -> None:
-    assert ESTIMAND_VERSION == "standalone_early_entry_net_return_v1"
+    assert ESTIMAND_VERSION == "standalone_early_entry_net_return_tradable_venue_v2"
     assert HYPOTHESIS_ORIGIN == "HYP-012"
 
 

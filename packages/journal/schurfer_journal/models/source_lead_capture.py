@@ -248,6 +248,14 @@ class SourceLeadQualification(Base, TimestampMixin):
             "'9d36c41442261cfe4e608342378e2d83f96c78afd537de682698796e77733236')",
             name="ck_source_lead_qualification_v3_registry_contract",
         ),
+        # Mirrors migration 0051 (HYP-012 v4, PR D).
+        CheckConstraint(
+            "qualification_version != 'source_lead_qualified_capture_v4' OR "
+            "(identity_registry_version = 'source_lead_identity_registry_v4' AND "
+            "identity_registry_fingerprint = "
+            "'7d5f635a4ed02013ad3bd5fb7bd118f5b80979427bf059a130279fa2c3bee189')",
+            name="ck_source_lead_qualification_v4_registry_contract",
+        ),
         CheckConstraint(
             "(status = 'qualified' AND canonical_asset_id IS NOT NULL "
             "AND selected_target_exchange IS NOT NULL "

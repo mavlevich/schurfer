@@ -9,9 +9,9 @@ from dataclasses import dataclass
 from importlib.resources import files
 from typing import TYPE_CHECKING, Any
 
-from .source_lead_contract import IDENTITY_REGISTRY_V3_START
+from .source_lead_contract import IDENTITY_REGISTRY_V4_START
 from .source_lead_identity_evidence import (
-    EVIDENCE_DIR,
+    EVIDENCE_DIR_V4,
     DerivativeMarketEvidence,
     EvidenceBundle,
     EvidenceIntegrityError,
@@ -51,11 +51,29 @@ REGISTRY_FINGERPRINT_V2 = "757fd1327593d07ca27efe17a031ae0eab95bf6998aecc1ec26f0
 # prospective evidence under this version; see that constant's own
 # docstring for why it is later than v2's cutover, not merely a renamed
 # copy of it.
-QUALIFICATION_VERSION = "source_lead_qualified_capture_v3"
-VENUE_SELECTOR_VERSION = "lowest_round_trip_impact_v1"
-DEFAULT_REGISTRY_RESOURCE = "registry/source_lead_identity_registry_v3.json"
-EXPECTED_REGISTRY_VERSION = "source_lead_identity_registry_v3"
-EXPECTED_REGISTRY_FINGERPRINT = "9d36c41442261cfe4e608342378e2d83f96c78afd537de682698796e77733236"
+QUALIFICATION_VERSION_V3 = "source_lead_qualified_capture_v3"
+REGISTRY_VERSION_V3 = "source_lead_identity_registry_v3"
+REGISTRY_FINGERPRINT_V3 = "9d36c41442261cfe4e608342378e2d83f96c78afd537de682698796e77733236"
+
+# HYP-012 v4 (PR D): the live contract. Registry v4 is built by the written
+# identity rule (source_lead_identity_v4.py) and verified against
+# evidence/source_lead/v4. The venue is chosen only among TRADABLE_VENUES:
+# Binance futures are not available to the owner, so Binance observations
+# are still captured and recorded in details, but never selected. v3 above
+# is frozen history (migration 0043 still pins its rows).
+QUALIFICATION_VERSION = "source_lead_qualified_capture_v4"
+VENUE_SELECTOR_VERSION = "lowest_round_trip_impact_tradable_v2"
+TRADABLE_VENUES: tuple[str, ...] = ("bybit",)
+# v4 book freshness (colleague review of PR D): receive time minus the venue's
+# own book timestamp (#446 quote_timing.book_age_ms). 2000 ms is the limit
+# the Bybit canary used (98.2% of Bybit books fresh). A book with no venue
+# timestamp is refused; a negative age (venue clock ahead) is tolerated down
+# to -MAX_TARGET_BOOK_CLOCK_SKEW_MS.
+MAX_TARGET_BOOK_AGE_MS = 2000
+MAX_TARGET_BOOK_CLOCK_SKEW_MS = 1000
+DEFAULT_REGISTRY_RESOURCE = "registry/source_lead_identity_registry_v4.json"
+EXPECTED_REGISTRY_VERSION = "source_lead_identity_registry_v4"
+EXPECTED_REGISTRY_FINGERPRINT = "7d5f635a4ed02013ad3bd5fb7bd118f5b80979427bf059a130279fa2c3bee189"
 
 # research/gate-source-lead-registry-activation-v3 (PR 3 of 3): flipped.
 # Registry v2's evidence bundles vouched for *asset* identity only -- an
@@ -445,7 +463,7 @@ def load_identity_registry() -> IdentityRegistry:
         expected_version=EXPECTED_REGISTRY_VERSION,
         expected_fingerprint=EXPECTED_REGISTRY_FINGERPRINT,
     )
-    verify_registry_against_evidence(registry.links_by_identity, evidence_dir=EVIDENCE_DIR)
+    verify_registry_against_evidence(registry.links_by_identity, evidence_dir=EVIDENCE_DIR_V4)
     return registry
 
 
@@ -469,18 +487,18 @@ def qualify_source_lead(
     requested_notional = (
         float(target_observations[0].requested_notional_usd) if target_observations else 0.0
     )
-    # A capture from before the v3 registry existed must never be treated as
-    # v3-qualified prospective evidence, even if its identity happens to
+    # A capture from before the v4 registry existed must never be treated as
+    # v4-qualified prospective evidence, even if its identity happens to
     # satisfy the (later-populated) registry -- identity was not confirmed
     # in real time when the capture occurred, only retroactively. See
-    # IDENTITY_REGISTRY_V3_START's own docstring (colleague review,
-    # 2026-08-28, applied again for the v3 cutover in PR 3). Checked first,
+    # IDENTITY_REGISTRY_V4_START's own docstring (colleague review,
+    # 2026-08-28, applied again for the v3 and v4 cutovers). Checked first,
     # before any identity lookup, so this can never be bypassed by a
     # coincidental registry match.
-    if source_first_observed_at < IDENTITY_REGISTRY_V3_START:
+    if source_first_observed_at < IDENTITY_REGISTRY_V4_START:
         return QualificationResult(
             status="excluded",
-            reason="before_identity_registry_v3_activation",
+            reason="before_identity_registry_v4_activation",
             canonical_asset_id=None,
             selected_target_exchange=None,
             selected_round_trip_impact_bps=None,
@@ -503,6 +521,7 @@ def qualify_source_lead(
 
     diagnostics: list[dict[str, Any]] = []
     eligible: list[tuple[float, str]] = []
+    descriptive_only: list[str] = []
     for observation in target_observations:
         instrument = observation.instrument if isinstance(observation.instrument, dict) else {}
         identity_key = instrument.get("identity_key")
@@ -540,6 +559,22 @@ def qualify_source_lead(
             continue
 
         liquidity = observation.liquidity if isinstance(observation.liquidity, dict) else {}
+        timing = liquidity.get("quote_timing")
+        if not isinstance(timing, dict) or timing.get("contract_size_source") != "instrument":
+            # v4: an unknown contract size is refused, never defaulted to 1.
+            diagnostic["reason"] = "target_contract_size_unknown"
+            diagnostics.append(diagnostic)
+            continue
+        book_age_ms = timing.get("book_age_ms")
+        if isinstance(book_age_ms, bool) or not isinstance(book_age_ms, int | float):
+            diagnostic["reason"] = "target_book_timestamp_missing"
+            diagnostics.append(diagnostic)
+            continue
+        diagnostic["book_age_ms"] = book_age_ms
+        if not -MAX_TARGET_BOOK_CLOCK_SKEW_MS <= book_age_ms <= MAX_TARGET_BOOK_AGE_MS:
+            diagnostic["reason"] = "target_book_stale"
+            diagnostics.append(diagnostic)
+            continue
         bid_impact = _finite_nonnegative(liquidity.get("bid_impact_bps"))
         ask_impact = _finite_nonnegative(liquidity.get("ask_impact_bps"))
         bid_filled = _finite_nonnegative(liquidity.get("bid_filled_notional_usd"))
@@ -557,9 +592,24 @@ def qualify_source_lead(
             continue
         round_trip_impact = round(bid_impact + ask_impact, 4)
         diagnostic["round_trip_impact_bps"] = round_trip_impact
+        tradable = str(observation.target_exchange).lower() in TRADABLE_VENUES
+        diagnostic["tradable"] = tradable
         diagnostics.append(diagnostic)
-        eligible.append((round_trip_impact, str(observation.target_exchange)))
+        if tradable:
+            eligible.append((round_trip_impact, str(observation.target_exchange)))
+        else:
+            descriptive_only.append(str(observation.target_exchange))
 
+    if not eligible and descriptive_only:
+        return QualificationResult(
+            status="excluded",
+            reason="no_tradable_executable_target",
+            canonical_asset_id=source_link.canonical_asset_id,
+            selected_target_exchange=None,
+            selected_round_trip_impact_bps=None,
+            requested_notional_usd=requested_notional,
+            details={"targets": diagnostics},
+        )
     if not eligible:
         return QualificationResult(
             status="excluded",
