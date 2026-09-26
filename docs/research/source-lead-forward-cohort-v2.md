@@ -128,17 +128,25 @@ measures the real path to an order without placing one. Unset means DISABLED; on
 **How it is enabled.** The prod compose default is `disabled`. It is enabled only by an
 explicit `SOURCE_LEAD_MODE=shadow` in `.env.prod`, together with
 `source-lead-shadow=market:sourceleadshadow:health:source_lead_shadow_v1@60` in
-`SERVICE_HEARTBEATS`.
+`SERVICE_HEARTBEATS`. `shadow` also needs a mode ceiling: `DRY_RUN=true` or
+`AUTO_TRADE=true`. Otherwise the execution service refuses to start. Prod runs
+`DRY_RUN=true`.
 
 **Intent size.** The recorded intent carries the real order: the quantity rounded down to
 `qtyStep`, and its own ask VWAP and notional. It also checks `minNotionalValue` and the
 market-order quantity cap. `quote_change_bps` compares the $50-notional VWAP with the
 capture's $50 VWAP.
 
-**Crash handling.** The `decision_id` is saved before the broker call. A claim left open by
-a crash is resolved against `trade_decisions` after 10 minutes, which covers the Redis
-outbox lag: `shadow_recorded` if the decision arrived, otherwise `crashed_after_claim`. Any
-other error after the claim ends as `evaluation_error`.
+**Crash handling.** The `decision_id` is saved before the broker call. An attempt whose
+delivery is not confirmed becomes `delivery_unknown`. This covers a claim idle for 10
+minutes with a saved `decision_id`, and a broker error after it was saved. Every loop
+re-checks `delivery_unknown` against `trade_decisions` with no time limit, and turns it
+into `shadow_recorded` whenever the Redis outbox delivers. `crashed_after_claim` is only
+for a claim that never saved a `decision_id`, and any other error ends as
+`evaluation_error`.
+
+**Instrument rules.** The instrument rules are fetched per episode. A missing
+`minNotionalValue` or `maxMktOrderQty` is its own outcome, `instrument_rules_unknown`.
 
 For each qualified v2 episode it:
 

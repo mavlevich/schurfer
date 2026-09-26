@@ -104,12 +104,23 @@ def test_due_claim_finalize_and_recovery() -> None:
             assert conn.execute(
                 "SELECT outcome FROM app.source_lead_shadow_attempts WHERE id = %s", (row_id,)
             ).fetchone() == ("claimed",)  # too fresh: the outbox may still deliver
+            # The window passes with no delivery: delivery_unknown, not a crash.
+            conn.execute(
+                "UPDATE app.source_lead_shadow_attempts "
+                "SET updated_at = now() - interval '11 minutes' WHERE id = %s",
+                (row_id,),
+            )
+            await store.recover_claims(stale_after=timedelta(minutes=10))
+            assert conn.execute(
+                "SELECT outcome FROM app.source_lead_shadow_attempts WHERE id = %s", (row_id,)
+            ).fetchone() == ("delivery_unknown",)
+            # Review: the decision arrives AFTER the window; reconciliation still fixes it.
             conn.execute(
                 "INSERT INTO app.trade_decisions (decision_id, base, exchange, action, reason) "
                 "VALUES (%s, %s, 'bybit', 'shadow_recorded', 'test')",
                 (decision_id, base),
             )
-            await store.recover_claims()
+            await store.recover_claims(stale_after=timedelta(minutes=10))
             assert conn.execute(
                 "SELECT outcome FROM app.source_lead_shadow_attempts WHERE id = %s", (row_id,)
             ).fetchone() == ("shadow_recorded",)

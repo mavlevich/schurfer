@@ -128,7 +128,7 @@ class _Quotes:
         min_order: str = "1",
         qty_step: str = "1",
         min_notional: str | None = "5",
-        max_market: str | None = None,
+        max_market: str | None = "100000",
         tradable: bool = True,
         best_bid: str = "2.00",
         book_error: bool = False,
@@ -274,6 +274,7 @@ def test_the_decision_id_is_saved_before_the_broker_call() -> None:
         ({"quotes": _Quotes(best_bid="2.05")}, "crossed_book"),
         ({"quotes": _Quotes(max_market="10")}, "above_max_market_qty"),
         ({"quotes": _Quotes(min_notional="60")}, "below_min_notional"),
+        ({"quotes": _Quotes(min_notional=None)}, "instrument_rules_unknown"),
         # Review repro: a parse error after claim is terminal, not a stuck claim.
         ({"quotes": _Quotes(spec_error=RuntimeError("bad qtyStep"))}, "evaluation_error"),
         ({"broker": _Broker(ExecutionStatus.REJECTED)}, "broker_rejected"),
@@ -335,10 +336,21 @@ def test_instrument_spec_requires_step_and_minimum_and_reads_tradability() -> No
         True,
     )
     item = {**item, "symbol": "OTHERUSDT"}
-    quotes._specs.clear()
     with pytest.raises(LookupError):
         asyncio.run(quotes.spec("ABCUSDT"))
     item = {"symbol": "ABCUSDT", "status": "Settling", "lotSizeFilter": {"minOrderQty": "1"}}
     with pytest.raises(LookupError, match="qtyStep"):
         asyncio.run(quotes.spec("ABCUSDT"))
     asyncio.run(quotes.close())
+
+
+def test_a_broker_error_after_the_decision_id_is_saved_is_delivery_unknown() -> None:
+    """Review: the outbox may have accepted the decision even if its reply was lost."""
+
+    class _Failing(_Broker):
+        async def open(self, intent: Any, *, cfg: Any, rdb: Any) -> ExecutionResult:
+            raise ConnectionError("redis reply lost")
+
+    outcome, store, _q, _b = _run(broker=_Failing())
+    assert outcome == "delivery_unknown"
+    assert store.final["decision_id"] and "redis reply lost" in store.final["error"]

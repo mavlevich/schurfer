@@ -26,7 +26,7 @@ OUTCOMES = (
     "'claimed', 'shadow_recorded', 'broker_rejected', 'stale_book', 'no_book_timestamp', "
     "'below_min_order', 'insufficient_depth', 'instrument_mismatch', 'fetch_failed', "
     "'crashed_after_claim', 'evaluation_error', 'crossed_book', 'instrument_not_tradable', "
-    "'below_min_notional', 'above_max_market_qty'"
+    "'below_min_notional', 'above_max_market_qty', 'delivery_unknown', 'instrument_rules_unknown'"
 )
 
 

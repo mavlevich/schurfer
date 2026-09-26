@@ -30,7 +30,6 @@ separate change with its own order-lifecycle review. No return is computed.
 from __future__ import annotations
 
 import asyncio
-import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import ROUND_FLOOR, Decimal
@@ -273,18 +272,22 @@ class ShadowStore:
             return list(await cur.fetchall()) if cur.description else []
 
     async def recover_claims(self, *, stale_after: timedelta | None = None) -> int:
-        """Resolve claims left `claimed` by a stopped run. A claim whose
-        decision_id was saved before the broker call is `shadow_recorded` if that
-        decision reached trade_decisions (the outbox write happened); otherwise
-        it is `crashed_after_claim`, but only once `stale_after` has passed, so a
-        decision still in the Redis outbox is not misread as a crash."""
+        """Resolve attempts whose final state is not yet known.
+
+        - An open or `delivery_unknown` attempt whose saved decision_id is in
+          trade_decisions becomes `shadow_recorded`, whenever it arrives: the
+          Redis outbox may deliver late, so this re-check has no time limit.
+        - An open claim idle for `stale_after` with a saved decision_id becomes
+          `delivery_unknown` (the decision may still arrive), never a crash.
+        - An open claim idle for `stale_after` with no decision_id never reached
+          the broker, so it is `crashed_after_claim`."""
         cutoff = datetime.now(UTC) - (stale_after or timedelta(0))
         recorded = await self._execute(
             """
             UPDATE app.source_lead_shadow_attempts a
             SET outcome = 'shadow_recorded', updated_at = now(),
                 error = 'recovered: decision found in trade_decisions'
-            WHERE a.outcome = 'claimed' AND a.shadow_version = %(sv)s
+            WHERE a.outcome IN ('claimed', 'delivery_unknown') AND a.shadow_version = %(sv)s
               AND a.decision_id IS NOT NULL
               AND EXISTS (
                   SELECT 1 FROM app.trade_decisions d WHERE d.decision_id::text = a.decision_id
@@ -293,19 +296,29 @@ class ShadowStore:
             """,
             {"sv": SHADOW_VERSION},
         )
-        crashed = await self._execute(
+        unknown = await self._execute(
             """
             UPDATE app.source_lead_shadow_attempts
-            SET outcome = 'crashed_after_claim', updated_at = now(),
-                error = CASE WHEN decision_id IS NULL
-                             THEN 'process stopped between claim and final write'
-                             ELSE 'decision id saved but no trade_decisions row' END
-            WHERE outcome = 'claimed' AND shadow_version = %(sv)s AND updated_at < %(cutoff)s
+            SET outcome = 'delivery_unknown', updated_at = now(),
+                error = 'decision id saved; delivery to trade_decisions not yet seen'
+            WHERE outcome = 'claimed' AND shadow_version = %(sv)s
+              AND decision_id IS NOT NULL AND updated_at < %(cutoff)s
             RETURNING id
             """,
             {"sv": SHADOW_VERSION, "cutoff": cutoff},
         )
-        return len(recorded) + len(crashed)
+        crashed = await self._execute(
+            """
+            UPDATE app.source_lead_shadow_attempts
+            SET outcome = 'crashed_after_claim', updated_at = now(),
+                error = 'process stopped between claim and final write'
+            WHERE outcome = 'claimed' AND shadow_version = %(sv)s
+              AND decision_id IS NULL AND updated_at < %(cutoff)s
+            RETURNING id
+            """,
+            {"sv": SHADOW_VERSION, "cutoff": cutoff},
+        )
+        return len(recorded) + len(unknown) + len(crashed)
 
     async def save_decision_id(self, row_id: int, decision_id: str) -> None:
         await self._execute(
@@ -390,7 +403,6 @@ class BybitQuotes:
         import httpx
 
         self._client = httpx.AsyncClient(timeout=timeout_seconds)
-        self._specs: dict[str, tuple[float, Spec]] = {}
 
     async def close(self) -> None:
         await self._client.aclose()
@@ -413,9 +425,7 @@ class BybitQuotes:
         return payload
 
     async def spec(self, symbol: str) -> Spec:
-        cached = self._specs.get(symbol)
-        if cached and time.monotonic() - cached[0] < 3600:
-            return cached[1]
+        """Fetched per episode (no cache): the rules must be current at send time."""
         payload = await self._get(BYBIT_INSTRUMENT_URL, {"category": "linear", "symbol": symbol})
         items = payload["result"].get("list") or []
         if len(items) != 1 or items[0].get("symbol") != symbol:
@@ -433,7 +443,7 @@ class BybitQuotes:
         qty_step, min_qty = dec(lot.get("qtyStep")), dec(lot.get("minOrderQty"))
         if qty_step is None or min_qty is None or qty_step <= 0:
             raise LookupError(f"instruments-info for {symbol} lacks qtyStep/minOrderQty")
-        spec = Spec(
+        return Spec(
             qty_step=qty_step,
             min_order_qty=min_qty,
             min_notional_usd=dec(lot.get("minNotionalValue")),
@@ -441,8 +451,6 @@ class BybitQuotes:
             tradable=item.get("status") == "Trading"
             and item.get("contractType") == "LinearPerpetual",
         )
-        self._specs[symbol] = (time.monotonic(), spec)
-        return spec
 
     async def book(self, symbol: str) -> Book:
         requested_at = datetime.now(UTC)
@@ -494,10 +502,13 @@ async def shadow_episode(
     except asyncio.CancelledError:
         raise
     except Exception as exc:
-        # Any parse or calculation error is terminal and visible, never a
-        # claim left behind that `due()` would skip forever.
+        # Any parse or calculation error is terminal and visible, never a claim
+        # left behind that `due()` would skip forever. Once the decision_id is
+        # saved, the broker may have accepted the decision even though its
+        # reply was lost, so that case is `delivery_unknown` and is reconciled
+        # against trade_decisions later, never called an error.
         fields["error"] = f"{type(exc).__name__}: {exc}"[:500]
-        outcome = "evaluation_error"
+        outcome = "delivery_unknown" if "decision_id" in fields else "evaluation_error"
     fields["outcome"] = outcome
     delay = 1.0
     for attempt in range(1, WRITE_ATTEMPTS + 1):
@@ -546,6 +557,9 @@ async def _evaluate(
     }
     if not spec.tradable:
         return "instrument_not_tradable"
+    if spec.min_notional_usd is None or spec.max_market_qty is None:
+        fields["error"] = "instruments-info lacks minNotionalValue or maxMktOrderQty"
+        return "instrument_rules_unknown"
 
     fields["attempts"] = 1
     try:
@@ -585,14 +599,14 @@ async def _evaluate(
     fields["quantity"] = quantity
     if quantity <= 0 or quantity < spec.min_order_qty:
         return "below_min_order"
-    if spec.max_market_qty is not None and quantity > spec.max_market_qty:
+    if quantity > spec.max_market_qty:
         return "above_max_market_qty"
     qty_vwap = ask_vwap_for_quantity(book.asks, quantity)
     if qty_vwap is None:
         return "insufficient_depth"
     notional = qty_vwap * quantity
     fields |= {"send_qty_vwap": qty_vwap, "send_notional_usd": notional}
-    if spec.min_notional_usd is not None and notional < spec.min_notional_usd:
+    if notional < spec.min_notional_usd:
         return "below_min_notional"
 
     context = {
