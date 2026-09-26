@@ -8,7 +8,8 @@
 >    session idle in transaction, and the drop waited on it for about an hour while production
 >    bar readers queued. It was cancelled; nothing was dropped and there were no bar gaps.
 > 3. Fixed in #455: `lock_timeout` on the drop, and the DuckDB sessions are closed before it.
-> 4. The canary was repeated and verified, then the timer was switched.
+> 4. The canary was repeated and verified (2026-09-26): 44 to 43 chunks, 2026-08-14 dropped, no
+>    session waited on a lock. Then the timer was switched.
 >
 > A read-only provenance audit preceded the rollout: docs/engineering/audits/2026-09-19/.
 
