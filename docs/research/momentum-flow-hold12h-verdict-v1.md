@@ -252,7 +252,7 @@ only, never evidence.
   720m positions close and the funding capture passes its lag and one queue cycle; a schedule
   margin, not a guarantee under a capture backlog).
 - The single read is enforced by a DURABLE claim in `app.hold12h_formal_read_claims` (migration
-  0051), inserted and committed BEFORE any return is read. It is unique per cohort (contract
+  0053), inserted and committed BEFORE any return is read. It is unique per cohort (contract
   version + both frozen bounds), not per chosen output directory and not per contract sha, so
   neither another directory nor an edited contract can read the same cohort again. The local
   artifact directory is additionally created exclusively. A floor not met at the prefix is

@@ -1,7 +1,7 @@
 """Real PostgreSQL test of the durable one-read claim for the HYP-015 formal verdict.
 
 Isolated: the test owns and drops only its own schema, created with the same table
-definition as migration 0051. Skips without a local Postgres; runs in CI.
+definition as migration 0053. Skips without a local Postgres; runs in CI.
 """
 
 from __future__ import annotations

@@ -1,7 +1,7 @@
 """durable one-read claim for the HYP-015 hold12h formal verdict
 
-Revision ID: 0051
-Revises: 0050
+Revision ID: 0053
+Revises: 0052
 Create Date: 2026-09-25
 
 The hold12h verdict is read exactly once, at a pre-declared decision-time prefix. A
@@ -17,8 +17,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0051"
-down_revision: str | None = "0050"
+revision: str = "0053"
+down_revision: str | None = "0052"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
