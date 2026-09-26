@@ -167,3 +167,53 @@ def test_lower_funnel_mismatch_is_flagged() -> None:
     assert not report.lower_funnel_reconciles
     md = render_markdown(_report_dict(report, code_revision="t", working_tree_dirty=False))
     assert "do not reconcile" in md
+
+
+# --- v2 additions -----------------------------------------------------------------
+
+
+def test_capacity_skips_episodes_only_when_every_slot_is_busy() -> None:
+    from schurfer_analytics.source_lead_readiness import capacity_summary
+
+    t0 = datetime(2026, 9, 29, 12, 0, tzinfo=UTC)
+    # Seven entries within one minute: six slots take six, the seventh waits.
+    burst = [t0 + timedelta(seconds=5 * i) for i in range(7)]
+    # One more after every slot's exit bar has ended (about 32 minutes later).
+    later = [t0 + timedelta(minutes=40)]
+    summary = capacity_summary(burst + later, slots=6)
+    assert summary.max_concurrent == 7
+    assert summary.taken == 7
+    assert summary.skipped == 1
+    assert summary.skipped_share == 1 / 8
+    assert capacity_summary([], slots=6).skipped_share is None
+
+
+def test_v2_sections_render_weeks_capacity_venues_and_exit_coverage() -> None:
+    eps = [_ep(NOW - timedelta(days=d), f"A{d % 3}") for d in range(10)]
+    report = build_readiness(
+        _inputs(
+            eps,
+            target_reasons_by_venue={
+                "bybit:executable": 7,
+                "bybit:target_book_stale": 2,
+                "binance:executable": 5,
+            },
+            exit_coverage={"sampled:on_time": 6, "missed:missed": 1},
+            exit_lateness_ms=(100, 200, 300, 40_000),
+        )
+    )
+    assert sum(report.qualified_by_week.values()) == 10
+    assert report.capacity is not None and report.capacity.taken == 10
+    assert report.exit_lateness_p50_ms == 300
+    assert report.exit_lateness_p90_ms == 40_000
+    md = render_markdown(_report_dict(report, code_revision="t", working_tree_dirty=False))
+    for heading in (
+        "## Qualified by UTC week",
+        "## Capacity at 6 slots",
+        "| bybit:target_book_stale | 2 |",
+        "| sampled:on_time | 6 |",
+        "p50 300 ms",
+    ):
+        assert heading in md
+    # Never a price: coverage is statuses and delays only.
+    assert "bid_vwap" not in md

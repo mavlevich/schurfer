@@ -194,9 +194,43 @@ async def test_readiness_candidate_set_matches_formal_repository() -> None:
         )
         await _insert_capture(engine, base="READYSTUCK", observed_at=old)
 
+        # v2: per-venue target diagnostics and exit-book coverage for READYGOOD1.
+        async with engine.begin() as connection:
+            await connection.execute(
+                text("""
+                    UPDATE app.source_lead_qualifications q
+                    SET details = '{"targets": [
+                        {"exchange": "bybit", "round_trip_impact_bps": 4.0},
+                        {"exchange": "binance", "reason": "target_book_stale"},
+                        {"exchange": "okx", "observation_status": "excluded"}
+                    ]}'::jsonb
+                    FROM app.source_lead_captures c
+                    WHERE c.id = q.capture_id AND c.base = 'READYGOOD1'
+                """)
+            )
+            await connection.execute(
+                text("""
+                    INSERT INTO app.source_lead_exit_observations (
+                        capture_id, qualification_version, exit_version, target_exchange,
+                        entry_at, target_at, claimed_at, outcome, timeliness, lateness_ms
+                    )
+                    SELECT c.id, :qv, 'test', 'bybit', now(), now(), now(),
+                           'sampled', 'on_time', 1500
+                    FROM app.source_lead_captures c WHERE c.base = 'READYGOOD1'
+                """),
+                {"qv": _QV},
+            )
+
         inputs = await load_readiness_inputs(
             _RAW_DB_URL, qualification_version=_QV, cohort_start=_COHORT_START
         )
+        assert inputs.target_reasons_by_venue == {
+            "bybit:executable": 1,
+            "binance:target_book_stale": 1,
+            "okx:not_sampled:excluded": 1,
+        }
+        assert inputs.exit_coverage == {"sampled:on_time": 1}
+        assert inputs.exit_lateness_ms == (1500,)
 
         # Candidate set == formal repository's own fetch, and equals the two valid ones.
         forward = SourceLeadForwardCohortRepository.from_url(_RAW_DB_URL)

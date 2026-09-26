@@ -84,6 +84,43 @@ _QUALIFIED_WITHOUT_EPISODE = text(
 )
 
 
+# v2: every target diagnostic the qualification recorded, per venue. A target
+# with no reason and an impact passed every check ("executable"); one without
+# either never got a sampled quote ("not_sampled:<observation status>").
+_TARGET_REASONS = text(
+    """
+    SELECT coalesce(t ->> 'exchange', 'unknown') AS venue,
+           coalesce(
+               t ->> 'reason',
+               CASE WHEN t ? 'round_trip_impact_bps' THEN 'executable'
+                    ELSE 'not_sampled:' || coalesce(t ->> 'observation_status', 'unknown') END
+           ) AS reason,
+           count(*) AS n
+    FROM app.source_lead_qualifications q
+    JOIN app.source_lead_captures c ON c.id = q.capture_id
+    CROSS JOIN LATERAL jsonb_array_elements(
+        CASE WHEN jsonb_typeof(q.details -> 'targets') = 'array'
+             THEN q.details -> 'targets' ELSE '[]'::jsonb END
+    ) AS t
+    WHERE q.qualification_version = :qv AND c.source_first_observed_at >= :since
+    GROUP BY 1, 2
+    """
+)
+
+# v2 exit-book coverage: statuses and delays only, never prices.
+_EXIT_COVERAGE = text(
+    """
+    SELECT e.outcome AS outcome, coalesce(e.timeliness, 'none') AS timeliness,
+           count(*) AS n, array_agg(e.lateness_ms) FILTER (WHERE e.lateness_ms IS NOT NULL)
+             AS lateness
+    FROM app.source_lead_exit_observations e
+    JOIN app.source_lead_captures c ON c.id = e.capture_id
+    WHERE e.qualification_version = :qv AND c.source_first_observed_at >= :since
+    GROUP BY 1, 2
+    """
+)
+
+
 async def load_readiness_inputs(
     db_url: str,
     *,
@@ -158,6 +195,9 @@ async def load_readiness_inputs(
                     .mappings()
                     .all()
                 )
+                params = {"qv": qualification_version, "since": cohort_start}
+                target_rows = (await connection.execute(_TARGET_REASONS, params)).mappings().all()
+                exit_rows = (await connection.execute(_EXIT_COVERAGE, params)).mappings().all()
     finally:
         await engine.dispose()
 
@@ -172,6 +212,11 @@ async def load_readiness_inputs(
         qualified_without_episode_by_status={
             str(r["status"]): int(r["n"]) for r in without_episode_rows
         },
+        target_reasons_by_venue={f"{r['venue']}:{r['reason']}": int(r["n"]) for r in target_rows},
+        exit_coverage={f"{r['outcome']}:{r['timeliness']}": int(r["n"]) for r in exit_rows},
+        exit_lateness_ms=tuple(
+            int(value) for r in exit_rows for value in (r["lateness"] or ()) if value is not None
+        ),
     )
 
 
