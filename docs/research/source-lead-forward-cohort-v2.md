@@ -45,6 +45,26 @@ A target whose contract size was defaulted instead of read from the instrument i
 as `target_contract_size_unknown`. This uses the `quote_timing.contract_size_source` field
 added in #446.
 
+## What a verdict allows
+
+A `candidate` verdict is necessary, not sufficient. It allows:
+
+- registering a broader confirmatory cohort;
+- a separate live execution test on Bybit, approved by the owner and capped at USD 50
+  notional, to measure real fills, fees and slippage against this cohort's cost
+  assumptions.
+
+It does not establish the edge, and larger capital needs the confirmatory cohort. A `fail`
+or `insufficient_data` verdict allows neither.
+
+## Book freshness
+
+A target book older than 2000 ms, measured as receive time minus the venue's book
+timestamp (`quote_timing.book_age_ms`), is refused as `target_book_stale`. A book more than
+1000 ms ahead of the local clock is refused the same way, and a book with no venue
+timestamp is refused as `target_book_timestamp_missing`. 2000 ms is the limit the Bybit
+canary used, under which 98.2% of Bybit books were fresh.
+
 ## v1 is closed without a formal read
 
 The v1 cohort reached 15 of its 100 required episodes. Its only venue, Binance, is not

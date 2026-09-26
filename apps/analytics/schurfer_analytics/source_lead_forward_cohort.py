@@ -260,12 +260,28 @@ EVIDENCE_FLOOR = {
 MAX_SINGLE_ASSET_EPISODE_SHARE = 0.35
 MAX_SINGLE_WEEK_EPISODE_SHARE = 0.45
 
-SMALL_UNIVERSE_PROMOTION_NOTE = (
+SMALL_UNIVERSE_PROMOTION_NOTE_V1 = (
     "A 'candidate' verdict reached under this cohort's small-universe "
     "evidence floor (7 clusters, not this codebase's usual 30) authorizes "
     "only registering a broader confirmatory cohort once the identity "
     "registry covers more assets and/or exchanges -- it does not by "
     "itself authorize paper or live execution."
+)
+# v2 (colleague review of PR D): one interpretation, fixed before the cohort
+# starts. A 'candidate' verdict is a NECESSARY condition, not a sufficient
+# one: it allows (a) registering a broader confirmatory cohort and (b) a
+# separate, owner-approved live execution test on the tradable venue capped at
+# USD 50 notional, whose purpose is measuring real fills, fees and slippage
+# against this estimand's assumptions, not claiming the edge is proven. Any
+# larger capital needs the confirmatory cohort. 'fail' or 'insufficient_data'
+# allows neither.
+SMALL_UNIVERSE_PROMOTION_NOTE = (
+    "A 'candidate' verdict under this small-universe floor is necessary, not "
+    "sufficient: it allows registering a broader confirmatory cohort and a "
+    "separate, owner-approved live execution test on the tradable venue capped "
+    "at USD 50 notional to measure real fills against this estimand's cost "
+    "assumptions. It does not establish the edge; larger capital needs the "
+    "confirmatory cohort. 'fail' or 'insufficient_data' allows neither."
 )
 
 # Checkpoint / stopping rule, made unambiguous (colleague review, third
@@ -551,6 +567,7 @@ __all__ = [
     "REQUIRE_EXIT_SLIPPAGE_SENSITIVITY",
     "SECONDARY_DIAGNOSTIC_VERSION",
     "SMALL_UNIVERSE_PROMOTION_NOTE",
+    "SMALL_UNIVERSE_PROMOTION_NOTE_V1",
     "SOURCE_LEAD_FORWARD_COHORT_START",
     "STOPPING_RULE",
     "TRADABLE_VENUES",

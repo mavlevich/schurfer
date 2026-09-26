@@ -713,8 +713,10 @@ async def generate_report(args: argparse.Namespace) -> SourceLeadForwardCohortRe
         funnel=aggregate.funnel,
         result=aggregate.result,
         caveats=(
-            "Prospective, small-universe estimand (gate -> binance only, 14 canonical "
-            "assets) -- not a same-methodology confirmation of HYP-012's original "
+            f"Prospective, small-universe estimand ({ESTIMAND_VERSION}): gate -> the "
+            f"selected tradable venue ({', '.join(TRADABLE_VENUES)}), registry v4 with 85 "
+            "canonical assets of which 44 have a Bybit route; Binance observations are "
+            "descriptive only. Not a same-methodology confirmation of HYP-012's original "
             "4-route paired family; see the module docstring.",
             f"Secondary diagnostic ({SECONDARY_DIAGNOSTIC_VERSION}) is not yet computed "
             "by this report -- see this file's own 'Honest scope note'. It never gates "

@@ -82,7 +82,7 @@ def _target(exchange: str, impact: float) -> TargetObservation:
             "ask_impact_bps": impact,
             "bid_filled_notional_usd": 50.0,
             "ask_filled_notional_usd": 50.0,
-            "quote_timing": {"contract_size_source": "instrument"},
+            "quote_timing": {"contract_size_source": "instrument", "book_age_ms": 150},
         },
         error=None,
     )
@@ -236,7 +236,10 @@ def test_a_defaulted_contract_size_is_refused() -> None:
     defaulted = _target("bybit", 1.0)
     defaulted = replace(
         defaulted,
-        liquidity={**defaulted.liquidity, "quote_timing": {"contract_size_source": "defaulted"}},
+        liquidity={
+            **defaulted.liquidity,
+            "quote_timing": {"contract_size_source": "defaulted", "book_age_ms": 150},
+        },
     )
     result = qualify_source_lead(
         source_exchange="gate",
@@ -681,3 +684,54 @@ def test_registry_load_rejects_bundle_that_never_actually_passed_semantic_valida
         verify_registry_against_evidence(
             _links_for("ZED", mismatched.bundle_sha256), evidence_dir=tmp_path
         )
+
+
+@pytest.mark.parametrize(
+    ("book_age_ms", "reason"),
+    [
+        (60_000, "target_book_stale"),  # review repro: a 60 s old Bybit book
+        (2_001, "target_book_stale"),
+        (-1_001, "target_book_stale"),
+        (None, "target_book_timestamp_missing"),
+    ],
+)
+def test_a_stale_or_untimestamped_book_is_refused(book_age_ms: int | None, reason: str) -> None:
+    observation = _target("bybit", 1.0)
+    observation = replace(
+        observation,
+        liquidity={
+            **observation.liquidity,
+            "quote_timing": {"contract_size_source": "instrument", "book_age_ms": book_age_ms},
+        },
+    )
+    result = qualify_source_lead(
+        source_exchange="gate",
+        source_identity_key="gate:swap:ABC_USDT:1",
+        source_first_observed_at=_AFTER_CUTOVER,
+        target_observations=(observation,),
+        registry=_registry(),
+    )
+
+    assert result.status == "excluded"
+    assert result.details["targets"][0]["reason"] == reason
+
+
+@pytest.mark.parametrize("book_age_ms", [2_000, -1_000, 0])
+def test_a_book_within_the_freshness_limits_qualifies(book_age_ms: int) -> None:
+    observation = _target("bybit", 1.0)
+    observation = replace(
+        observation,
+        liquidity={
+            **observation.liquidity,
+            "quote_timing": {"contract_size_source": "instrument", "book_age_ms": book_age_ms},
+        },
+    )
+    result = qualify_source_lead(
+        source_exchange="gate",
+        source_identity_key="gate:swap:ABC_USDT:1",
+        source_first_observed_at=_AFTER_CUTOVER,
+        target_observations=(observation,),
+        registry=_registry(),
+    )
+
+    assert result.status == "qualified"

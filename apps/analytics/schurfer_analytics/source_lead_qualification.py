@@ -64,6 +64,13 @@ REGISTRY_FINGERPRINT_V3 = "9d36c41442261cfe4e608342378e2d83f96c78afd537de6826987
 QUALIFICATION_VERSION = "source_lead_qualified_capture_v4"
 VENUE_SELECTOR_VERSION = "lowest_round_trip_impact_tradable_v2"
 TRADABLE_VENUES: tuple[str, ...] = ("bybit",)
+# v4 book freshness (colleague review of PR D): receive time minus the venue's
+# own book timestamp (#446 quote_timing.book_age_ms). 2000 ms is the limit
+# the Bybit canary used (98.2% of Bybit books fresh). A book with no venue
+# timestamp is refused; a negative age (venue clock ahead) is tolerated down
+# to -MAX_TARGET_BOOK_CLOCK_SKEW_MS.
+MAX_TARGET_BOOK_AGE_MS = 2000
+MAX_TARGET_BOOK_CLOCK_SKEW_MS = 1000
 DEFAULT_REGISTRY_RESOURCE = "registry/source_lead_identity_registry_v4.json"
 EXPECTED_REGISTRY_VERSION = "source_lead_identity_registry_v4"
 EXPECTED_REGISTRY_FINGERPRINT = "7d5f635a4ed02013ad3bd5fb7bd118f5b80979427bf059a130279fa2c3bee189"
@@ -556,6 +563,16 @@ def qualify_source_lead(
         if not isinstance(timing, dict) or timing.get("contract_size_source") != "instrument":
             # v4: an unknown contract size is refused, never defaulted to 1.
             diagnostic["reason"] = "target_contract_size_unknown"
+            diagnostics.append(diagnostic)
+            continue
+        book_age_ms = timing.get("book_age_ms")
+        if isinstance(book_age_ms, bool) or not isinstance(book_age_ms, int | float):
+            diagnostic["reason"] = "target_book_timestamp_missing"
+            diagnostics.append(diagnostic)
+            continue
+        diagnostic["book_age_ms"] = book_age_ms
+        if not -MAX_TARGET_BOOK_CLOCK_SKEW_MS <= book_age_ms <= MAX_TARGET_BOOK_AGE_MS:
+            diagnostic["reason"] = "target_book_stale"
             diagnostics.append(diagnostic)
             continue
         bid_impact = _finite_nonnegative(liquidity.get("bid_impact_bps"))
