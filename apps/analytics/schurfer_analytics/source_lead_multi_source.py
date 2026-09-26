@@ -4,7 +4,10 @@ Registered before any return was read: docs/research/source-lead-multi-source-hy
 
 Candidate set (outcome-blind): a pump event whose unique earliest source observation is a
 family venue (ties excluded), whose source observation passes the HYP-012 identity checks,
-and whose base had a live Bybit USDT linear perpetual (launchTime before the signal).
+and whose base had exactly one Bybit USDT linear perpetual live over the whole episode
+(delisted contracts included, from their launchTime/deliveryTime). The route must then
+pass a pre-entry price identity check: the source's first price is within a factor of
+PRICE_IDENTITY_BAND of the Bybit open of the minute holding the signal.
 Unlike the HYP-012 paired design, Bybit is NOT required to confirm the pump later: that
 would condition on the future, and the standalone estimand trades at the signal.
 
@@ -18,15 +21,18 @@ p-value; Holm across the formal family; a venue survives if its mean is positive
 Holm-rejected. Stage 2 (holdout, ISO weeks 36-39): only survivors, each needing the floor
 (100 resolved episodes, 30 assets, no week above 45%); Holm across the survivors; a
 candidate needs Holm rejection and a positive mean. Exploratory venues are reported with
-no verdict. Nothing on or after 2026-09-29 (the HYP-012 v2 cohort) is ever read.
+no verdict. A mature holdout venue (at least 100 resolved) with a non-positive mean is a
+`fail` even below the diversification floor. Nothing on or after 2026-09-29 (the HYP-012
+v2 cohort) is ever read, and a stage is refused before its window end plus
+MATURATION_LAG.
 """
 
 from __future__ import annotations
 
 import math
 from collections import Counter
-from dataclasses import dataclass
-from datetime import UTC, datetime
+from dataclasses import dataclass, replace
+from datetime import UTC, datetime, timedelta
 from statistics import fmean
 from typing import TYPE_CHECKING, Any
 
@@ -41,7 +47,7 @@ from .ohlcv import ONE_MINUTE_MS, next_timeframe_after
 from .source_lead import SourceLeadEvent, _identity_reason
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Sequence
 
     from .ohlcv import Candle
 
@@ -70,6 +76,32 @@ FAMILY_ALPHA = 0.05
 BOOTSTRAP_ITERATIONS = 10_000
 BOOTSTRAP_SEED = 20_260_926
 STAGES = ("discovery", "holdout")
+MATURATION_LAG = timedelta(days=1)
+PRICE_IDENTITY_BAND = 2.0
+
+
+def assert_stage_mature(stage: str, now: datetime) -> None:
+    """Refuse a stage whose window (plus the late-data lag) has not fully passed."""
+    _, end = stage_window(stage)
+    if now < end + MATURATION_LAG:
+        raise ValueError(
+            f"{stage} window ends {end.isoformat()}; it can run from "
+            f"{(end + MATURATION_LAG).isoformat()} (now {now.isoformat()})"
+        )
+
+
+@dataclass(frozen=True)
+class BybitInstrument:
+    """One Bybit USDT linear perpetual, trading or delisted. `delivery_ms` is 0 while
+    the contract still trades."""
+
+    native_id: str
+    base: str
+    launch_ms: int
+    delivery_ms: int
+
+    def live_over(self, start_ms: int, end_ms: int) -> bool:
+        return self.launch_ms <= start_ms and (self.delivery_ms == 0 or self.delivery_ms > end_ms)
 
 
 def stage_window(stage: str) -> tuple[datetime, datetime]:
@@ -88,6 +120,12 @@ class Candidate:
     source_exchange: str
     source_at: datetime
     bybit_native_id: str
+    source_price: float | None
+
+    @property
+    def reference_ms(self) -> int:
+        """The Bybit minute holding the signal; its open predates the signal."""
+        return self.entry_ms - ONE_MINUTE_MS
 
     @property
     def entry_ms(self) -> int:
@@ -106,15 +144,17 @@ class Candidate:
 def build_candidates(
     events: Sequence[SourceLeadEvent],
     *,
-    bybit_launch_ms: Mapping[str, tuple[str, int]],
+    bybit_instruments: Sequence[BybitInstrument],
     stage: str,
     sources: Sequence[str],
 ) -> tuple[tuple[Candidate, ...], dict[str, int]]:
-    """Outcome-blind candidate set for one stage. `bybit_launch_ms` maps base ->
-    (native id, launchTime ms) from the Bybit catalogue. Returns the candidates and
-    a status count for the funnel."""
+    """Outcome-blind candidate set for one stage, before the price identity check.
+    Returns the candidates and a status count for the funnel."""
     start, end = stage_window(stage)
     wanted = {s.lower() for s in sources}
+    by_base: dict[str, list[BybitInstrument]] = {}
+    for instrument in bybit_instruments:
+        by_base.setdefault(instrument.base.upper(), []).append(instrument)
     statuses: Counter[str] = Counter()
     out: list[Candidate] = []
     for event in sorted(events, key=lambda e: (e.first_seen_at, e.event_id)):
@@ -142,13 +182,9 @@ def build_candidates(
         if reason:
             statuses[f"invalid_source:{reason}"] += 1
             continue
-        listing = bybit_launch_ms.get(event.base.strip().upper())
-        if listing is None:
+        routes = by_base.get(event.base.strip().upper())
+        if not routes:
             statuses["no_bybit_perp"] += 1
-            continue
-        native_id, launch_ms = listing
-        if launch_ms > source.first_seen_at.timestamp() * 1000:
-            statuses["bybit_not_listed_at_signal"] += 1
             continue
         candidate = Candidate(
             event_id=event.event_id,
@@ -156,15 +192,43 @@ def build_candidates(
             cluster_key=event.cluster_key,
             source_exchange=exchange,
             source_at=source.first_seen_at,
-            bybit_native_id=native_id,
+            bybit_native_id="",
+            source_price=source.first_price,
         )
         # The exit bar must close before the stage ends (no crossing into the next window).
         if candidate.exit_bar_ms + ONE_MINUTE_MS > end.timestamp() * 1000:
             statuses["exit_crosses_stage_end"] += 1
             continue
+        signal_ms = int(source.first_seen_at.timestamp() * 1000)
+        live = [r for r in routes if r.live_over(signal_ms, candidate.exit_bar_ms + ONE_MINUTE_MS)]
+        if not live:
+            statuses["bybit_not_live_over_episode"] += 1
+            continue
+        if len(live) > 1:
+            statuses["ambiguous_bybit_route"] += 1
+            continue
+        candidate = replace(candidate, bybit_native_id=live[0].native_id)
         statuses[f"candidate:{exchange}"] += 1
         out.append(candidate)
     return tuple(out), dict(statuses)
+
+
+def route_identity_reason(candidate: Candidate, reference: Candle | None) -> str | None:
+    """Pre-entry identity check of the ticker-matched route: a same-ticker different
+    project shows up as a price level far from the source's. Uses only data from before
+    the entry, so a live router can apply the same rule."""
+    if candidate.source_price is None or not math.isfinite(candidate.source_price):
+        return "no_source_price"
+    if candidate.source_price <= 0:
+        return "no_source_price"
+    if reference is None or reference.ts_ms != candidate.reference_ms:
+        return "missing_reference_bar"
+    if not math.isfinite(reference.open) or reference.open <= 0:
+        return "missing_reference_bar"
+    ratio = candidate.source_price / reference.open
+    if not (1 / PRICE_IDENTITY_BAND <= ratio <= PRICE_IDENTITY_BAND):
+        return "price_level_mismatch"
+    return None
 
 
 @dataclass(frozen=True)
@@ -257,15 +321,34 @@ def meets_holdout_floor(result: VenueResult) -> bool:
     )
 
 
+def floor_shortfalls(result: VenueResult) -> list[str]:
+    """Which holdout floor criteria a venue misses (empty when it meets the floor)."""
+    missing = []
+    if result.resolved < HOLDOUT_FLOOR["min_resolved"]:
+        missing.append("resolved")
+    if result.assets < HOLDOUT_FLOOR["min_assets"]:
+        missing.append("assets")
+    if result.max_week_share is None or result.max_week_share > HOLDOUT_FLOOR["max_week_share"]:
+        missing.append("week_share")
+    return missing
+
+
 def family_verdicts(results: Sequence[VenueResult], *, stage: str) -> dict[str, str]:
     """Stage verdict per venue in the tested family (formal venues at discovery,
     survivors at holdout). `survives`/`candidate` needs a positive mean and Holm
-    rejection; a holdout venue below the floor is `insufficient_data`."""
+    rejection. At holdout a venue below the floor is `insufficient_data`, except that a
+    mature one (at least the resolved minimum) with a non-positive mean is `fail`: a
+    missing diversification criterion cannot rescue a negative result (the artifact
+    records the shortfall)."""
     verdicts: dict[str, str] = {}
     testable: dict[str, float] = {}
     for result in results:
-        if (stage == "holdout" and not meets_holdout_floor(result)) or result.p_value is None:
+        if result.p_value is None:
             verdicts[result.source] = "insufficient_data"
+        elif stage == "holdout" and not meets_holdout_floor(result):
+            mature = result.resolved >= HOLDOUT_FLOOR["min_resolved"]
+            non_positive = (result.mean_net_pct or 0.0) <= 0
+            verdicts[result.source] = "fail" if mature and non_positive else "insufficient_data"
         else:
             testable[result.source] = result.p_value
     if testable:

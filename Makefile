@@ -1444,9 +1444,11 @@ prod-source-lead-readiness-report:
 			&& printf '%s' '--no-working-tree-dirty' \
 			|| printf '%s' '--working-tree-dirty') $(ARGS)
 
-# HYP-012b (docs/research/source-lead-multi-source-hyp012b-v1.md). Read-only. Each stage is
-# read ONCE into a write-once artifact under runtime/research/hyp012b/<stage>; the holdout
-# needs the discovery artifact. `ARGS=--funnel-only` computes no return.
+# HYP-012b (docs/research/source-lead-multi-source-hyp012b-v1.md). Read-only. PHASE=all
+# (default) freezes the inputs once, takes the durable claim, then computes the result
+# from the stored inputs; a rerun resumes a crashed read on the same inputs and refuses a
+# completed one. PHASE=funnel prints outcome-blind counts and writes nothing. Everything
+# lives under runtime/research/hyp012b/<stage>; the holdout needs the discovery result.
 prod-source-lead-multi-source-report:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
 	@test -n "$(STAGE)" || (echo "ERROR: STAGE=discovery|holdout is required" && exit 1)
@@ -1454,9 +1456,8 @@ prod-source-lead-multi-source-report:
 	@$(_PROD) run --rm --no-deps \
 		-v /opt/schurfer/runtime/research/hyp012b:/hyp012b \
 		--entrypoint source-lead-multi-source-report analytics \
-		--stage $(STAGE) \
+		--stage $(STAGE) --phase $(or $(PHASE),all) --stage-dir /hyp012b/$(STAGE) \
 		$$(test "$(STAGE)" = holdout && printf '%s' '--discovery-artifact /hyp012b/discovery') \
-		$$(case "$(ARGS)" in *--funnel-only*) ;; *) printf '%s' '--out-dir /hyp012b/$(STAGE)';; esac) \
 		--code-revision="$$(git rev-parse HEAD)" \
 		$$(test -z "$$(git status --porcelain)" \
 			&& printf '%s' '--no-working-tree-dirty' \
