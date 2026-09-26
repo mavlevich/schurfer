@@ -3,16 +3,14 @@ from __future__ import annotations
 import json
 import os
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, Any
+from pathlib import Path
+from typing import Any
 
 import pytest
 from schurfer_analytics import source_lead_multi_source as m
 from schurfer_analytics import source_lead_multi_source_report as r
 from schurfer_analytics.ohlcv import ONE_MINUTE_MS, Candle
 from schurfer_analytics.source_lead import SourceLeadEvent, SourceLeadObservation
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 T = datetime(2026, 8, 12, 10, 0, 20, tzinfo=UTC)  # discovery window
 JAN = int(datetime(2026, 1, 1, tzinfo=UTC).timestamp() * 1000)
@@ -499,3 +497,41 @@ def test_the_catalogue_parser_keeps_delisted_contracts() -> None:
         m.BybitInstrument("OLDUSDT", "OLD", 1, 9),
     )
     assert set(r.CATALOGUE_STATUSES) >= {"Trading", "Closed"}
+
+
+def test_the_holdout_refuses_a_discovery_result_without_its_digest(tmp_path: Path) -> None:
+    discovery_dir = _prepared(tmp_path, "discovery", {"mexc": [3.0] * 40})
+    r.read_stage("discovery", discovery_dir, None, NOW)
+    (discovery_dir / f"{r.RESULT_NAME}.sha256").unlink()
+    holdout_dir = _prepared(tmp_path, "holdout", {"mexc": [2.0] * 120})
+    with pytest.raises(ValueError, match="finish it with the discovery read"):
+        r.read_stage("holdout", holdout_dir, discovery_dir, NOW)
+    assert not (holdout_dir / r.CLAIM_NAME).exists()
+    assert not (discovery_dir / f"{r.RESULT_NAME}.sha256").exists()
+    # The discovery read finishes it after checking the replay; then the holdout runs.
+    r.read_stage("discovery", discovery_dir, None, NOW)
+    assert r.read_stage("holdout", holdout_dir, discovery_dir, NOW)["tested_family"] == ["mexc"]
+
+
+def test_an_interrupted_digest_publication_is_recovered(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stage_dir = _prepared(tmp_path, "discovery", {"mexc": [3.0] * 40})
+    real_replace = Path.replace
+
+    def crash(self: Path, target: Any) -> Path:
+        if str(target).endswith(f"{r.RESULT_NAME}.sha256"):
+            raise OSError("killed")
+        return real_replace(self, target)
+
+    monkeypatch.setattr(Path, "replace", crash)
+    with pytest.raises(OSError, match="killed"):
+        r.read_stage("discovery", stage_dir, None, NOW)
+    monkeypatch.undo()
+    assert (stage_dir / r.RESULT_NAME).exists()
+    assert not (stage_dir / f"{r.RESULT_NAME}.sha256").exists()
+    assert [p.name for p in stage_dir.iterdir() if p.name.endswith(".tmp")] == []
+    payload = r.read_stage("discovery", stage_dir, None, NOW)
+    stored = (stage_dir / f"{r.RESULT_NAME}.sha256").read_text().strip()
+    assert stored == r._sha((stage_dir / r.RESULT_NAME).read_bytes())
+    assert payload["verdicts"]["mexc"] == "survives"

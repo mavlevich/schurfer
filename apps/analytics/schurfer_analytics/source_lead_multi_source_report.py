@@ -317,9 +317,18 @@ def _digest_path(path: Path) -> Path:
 
 
 def _write_digest(path: Path, digest: str) -> None:
+    """Durably publish the digest: the temp bytes are fsynced before the rename, the
+    directory after it."""
     tmp = path.with_name(f".{path.name}.sha256.{uuid.uuid4().hex}.tmp")
-    tmp.write_text(digest + "\n", encoding="utf-8")
-    tmp.replace(_digest_path(path))
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(digest.encode() + b"\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        tmp.replace(_digest_path(path))
+    finally:
+        tmp.unlink(missing_ok=True)
     _fsync_dir(path.parent)
 
 
@@ -369,8 +378,13 @@ def take_claim(stage_dir: Path, expected: dict[str, Any], now: datetime) -> dict
 
 
 def discovery_survivors(discovery_dir: Path) -> tuple[list[str], str]:
-    """The ordered discovery survivors and the discovery result hash."""
-    complete_digest(discovery_dir / RESULT_NAME)
+    """The ordered discovery survivors and the discovery result hash. A discovery result
+    without its digest is refused: only the discovery read may finish it, because only it
+    checks the result against its replay from the claim and the inputs."""
+    if not _digest_path(discovery_dir / RESULT_NAME).exists():
+        raise ValueError(
+            "the discovery result has no digest; finish it with the discovery read first"
+        )
     payload, digest = load_verified(discovery_dir / RESULT_NAME)
     if payload.get("family_version") != FAMILY_VERSION or payload.get("stage") != "discovery":
         raise ValueError("not a discovery artifact of this family")
