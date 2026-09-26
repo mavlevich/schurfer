@@ -387,7 +387,8 @@ class FormalReadClaim(Base):
 _SHADOW_OUTCOMES = (
     "'claimed', 'shadow_recorded', 'broker_rejected', 'stale_book', 'no_book_timestamp', "
     "'below_min_order', 'insufficient_depth', 'instrument_mismatch', 'fetch_failed', "
-    "'crashed_after_claim'"
+    "'crashed_after_claim', 'evaluation_error', 'crossed_book', 'instrument_not_tradable', "
+    "'below_min_notional', 'above_max_market_qty'"
 )
 
 
@@ -406,6 +407,9 @@ class SourceLeadShadowAttempt(Base):
     shadow_version: Mapped[str] = mapped_column(String(64), nullable=False)
     native_symbol: Mapped[str | None] = mapped_column(String(128), nullable=True)
     instrument_identity_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    source_first_observed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     qualified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -420,13 +424,18 @@ class SourceLeadShadowAttempt(Base):
     )
     book_ts_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     book_age_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    gate_to_seen_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
     detect_latency_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
     from_qualified_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
     process_latency_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     quote_latency_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     qty_step: Mapped[Decimal | None] = mapped_column(Numeric(30, 14), nullable=True)
     min_order_qty: Mapped[Decimal | None] = mapped_column(Numeric(30, 14), nullable=True)
+    min_notional_usd: Mapped[Decimal | None] = mapped_column(Numeric(30, 14), nullable=True)
+    max_market_qty: Mapped[Decimal | None] = mapped_column(Numeric(38, 14), nullable=True)
     quantity: Mapped[Decimal | None] = mapped_column(Numeric(38, 14), nullable=True)
+    send_qty_vwap: Mapped[Decimal | None] = mapped_column(Numeric(30, 14), nullable=True)
+    send_notional_usd: Mapped[Decimal | None] = mapped_column(Numeric(30, 14), nullable=True)
     capture_ask_vwap: Mapped[Decimal | None] = mapped_column(Numeric(30, 14), nullable=True)
     send_ask_vwap: Mapped[Decimal | None] = mapped_column(Numeric(30, 14), nullable=True)
     quote_change_bps: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), nullable=True)

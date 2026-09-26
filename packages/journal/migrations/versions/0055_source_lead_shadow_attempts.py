@@ -25,7 +25,8 @@ depends_on: str | Sequence[str] | None = None
 OUTCOMES = (
     "'claimed', 'shadow_recorded', 'broker_rejected', 'stale_book', 'no_book_timestamp', "
     "'below_min_order', 'insufficient_depth', 'instrument_mismatch', 'fetch_failed', "
-    "'crashed_after_claim'"
+    "'crashed_after_claim', 'evaluation_error', 'crossed_book', 'instrument_not_tradable', "
+    "'below_min_notional', 'above_max_market_qty'"
 )
 
 
@@ -43,6 +44,7 @@ def upgrade() -> None:
         sa.Column("shadow_version", sa.String(64), nullable=False),
         sa.Column("native_symbol", sa.String(128), nullable=True),
         sa.Column("instrument_identity_key", sa.String(512), nullable=True),
+        sa.Column("source_first_observed_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("observed_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("qualified_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("first_seen_at", sa.DateTime(timezone=True), nullable=False),
@@ -53,13 +55,18 @@ def upgrade() -> None:
         sa.Column("quote_received_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("book_ts_ms", sa.BigInteger(), nullable=True),
         sa.Column("book_age_ms", sa.BigInteger(), nullable=True),
+        sa.Column("gate_to_seen_ms", sa.BigInteger(), nullable=False),
         sa.Column("detect_latency_ms", sa.BigInteger(), nullable=False),
         sa.Column("from_qualified_ms", sa.BigInteger(), nullable=False),
         sa.Column("process_latency_ms", sa.BigInteger(), nullable=True),
         sa.Column("quote_latency_ms", sa.BigInteger(), nullable=True),
         sa.Column("qty_step", sa.Numeric(30, 14), nullable=True),
         sa.Column("min_order_qty", sa.Numeric(30, 14), nullable=True),
+        sa.Column("min_notional_usd", sa.Numeric(30, 14), nullable=True),
+        sa.Column("max_market_qty", sa.Numeric(38, 14), nullable=True),
         sa.Column("quantity", sa.Numeric(38, 14), nullable=True),
+        sa.Column("send_qty_vwap", sa.Numeric(30, 14), nullable=True),
+        sa.Column("send_notional_usd", sa.Numeric(30, 14), nullable=True),
         sa.Column("capture_ask_vwap", sa.Numeric(30, 14), nullable=True),
         sa.Column("send_ask_vwap", sa.Numeric(30, 14), nullable=True),
         sa.Column("quote_change_bps", sa.Numeric(18, 4), nullable=True),

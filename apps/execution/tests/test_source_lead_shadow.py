@@ -77,9 +77,16 @@ def test_quote_math_matches_the_capture_convention() -> None:
 
 
 def test_late_is_measured_from_the_capture_observation() -> None:
-    ep = sh.Episode(1, T0, T0 + timedelta(seconds=5), Decimal(2), "bybit:swap:ABCUSDT:1")
+    ep = sh.Episode(
+        1, T0 - timedelta(seconds=2), T0, T0 + timedelta(seconds=5), Decimal(2), "bybit:swap:X:1"
+    )
     on_time = sh.timing(ep, T0 + timedelta(seconds=30))
-    assert on_time == {"detect_latency_ms": 30_000, "from_qualified_ms": 25_000, "late": False}
+    assert on_time == {
+        "gate_to_seen_ms": 32_000,
+        "detect_latency_ms": 30_000,
+        "from_qualified_ms": 25_000,
+        "late": False,
+    }
     assert sh.timing(ep, T0 + timedelta(seconds=31))["late"] is True
 
 
@@ -88,6 +95,7 @@ def test_late_is_measured_from_the_capture_observation() -> None:
 
 class _Store:
     def __init__(self) -> None:
+        self.events: list[str] = []
         self.claims = 0
         self.final: dict[str, Any] = {}
         self.write_failures = 0
@@ -97,6 +105,9 @@ class _Store:
     async def claim(self, _ep: sh.Episode, _seen: datetime) -> int | None:
         self.claims += 1
         return 1 if self.claimed else None
+
+    async def save_decision_id(self, _row: int, decision_id: str) -> None:
+        self.events.append(f"save:{decision_id}")
 
     async def finalize(self, _row: int, fields: dict[str, Any]) -> bool:
         if self.write_failures:
@@ -115,18 +126,30 @@ class _Quotes:
         age_ms: int | None = 100,
         depth: str = "1000",
         min_order: str = "1",
+        qty_step: str = "1",
+        min_notional: str | None = "5",
+        max_market: str | None = None,
+        tradable: bool = True,
+        best_bid: str = "2.00",
         book_error: bool = False,
+        spec_error: Exception | None = None,
     ) -> None:
-        self.age_ms, self.depth, self.min_order, self.book_error = (
-            age_ms,
-            depth,
-            min_order,
-            book_error,
+        self.age_ms, self.depth, self.book_error = age_ms, depth, book_error
+        self.best_bid = best_bid
+        self.spec_error = spec_error
+        self.spec_value = sh.Spec(
+            qty_step=Decimal(qty_step),
+            min_order_qty=Decimal(min_order),
+            min_notional_usd=Decimal(min_notional) if min_notional else None,
+            max_market_qty=Decimal(max_market) if max_market else None,
+            tradable=tradable,
         )
         self.book_calls = 0
 
     async def spec(self, _symbol: str) -> sh.Spec:
-        return sh.Spec(Decimal(1), Decimal(self.min_order))
+        if self.spec_error is not None:
+            raise self.spec_error
+        return self.spec_value
 
     async def book(self, _symbol: str) -> sh.Book:
         self.book_calls += 1
@@ -135,6 +158,7 @@ class _Quotes:
         received = T0 + timedelta(seconds=2)
         ts = None if self.age_ms is None else round(received.timestamp() * 1000) - self.age_ms
         return sh.Book(
+            bids=[[self.best_bid, "1000"]],
             asks=[["2.02", self.depth]],
             ts_ms=ts,
             requested_at=T0 + timedelta(seconds=1, milliseconds=900),
@@ -145,17 +169,23 @@ class _Quotes:
 class _Broker:
     mode = TradingMode.SHADOW
 
-    def __init__(self, status: ExecutionStatus = ExecutionStatus.SHADOW_RECORDED) -> None:
+    def __init__(
+        self, status: ExecutionStatus = ExecutionStatus.SHADOW_RECORDED, store: Any = None
+    ) -> None:
         self.status = status
         self.intents: list[Any] = []
+        self.store = store
 
     async def open(self, intent: Any, *, cfg: Any, rdb: Any) -> ExecutionResult:
         self.intents.append(intent)
+        if self.store is not None:
+            self.store.events.append("broker")
         return ExecutionResult(mode=self.mode, status=self.status, reason="gate closed")
 
 
 EPISODE = sh.Episode(
     capture_id=11,
+    source_first_observed_at=T0 - timedelta(seconds=5),
     observed_at=T0 - timedelta(seconds=3),
     qualified_at=T0 - timedelta(seconds=1),
     capture_ask_vwap=Decimal("2.00"),
@@ -197,13 +227,34 @@ def test_a_valid_episode_is_recorded_through_the_shadow_broker_with_its_timing()
     assert outcome == "shadow_recorded"
     intent = broker.intents[0]
     assert store.final["decision_id"] == shadow_decision_id(intent)
-    assert intent.instrument.native_market_id == "ABCUSDT" and intent.size_usd == 50.0
+    assert intent.instrument.native_market_id == "ABCUSDT"
+    assert intent.size_usd == pytest.approx(48.48)  # 24 units x 2.02, not a nominal $50
     assert intent.setup_context["detect_latency_ms"] == 3000
     assert store.final["process_latency_ms"] == 1900
     assert store.final["quote_latency_ms"] == 100
     assert store.final["book_age_ms"] == 100
     assert store.final["quote_change_bps"] == Decimal(100)  # 2.02 vs 2.00
     assert quotes.book_calls == 1
+    assert intent.setup_context["gate_to_seen_ms"] == 5000
+
+
+def test_the_intent_carries_the_rounded_quantity_and_its_real_notional() -> None:
+    """Review repro: at 2.02 with qtyStep 10 the order is 20 units, about $40.40."""
+    outcome, store, _q, broker = _run(quotes=_Quotes(qty_step="10"))
+    assert outcome == "shadow_recorded"
+    assert store.final["quantity"] == Decimal(20)
+    assert store.final["send_notional_usd"] == Decimal("40.40")
+    assert broker.intents[0].size_usd == pytest.approx(40.40)
+    # The capture comparison still uses the same $50 notional.
+    assert store.final["send_ask_vwap"] == Decimal("2.02")
+
+
+def test_the_decision_id_is_saved_before_the_broker_call() -> None:
+    store = _Store()
+    broker = _Broker(store=store)
+    outcome, store, _q, broker = _run(store=store, broker=broker)
+    assert outcome == "shadow_recorded"
+    assert store.events == [f"save:{shadow_decision_id(broker.intents[0])}", "broker"]
 
 
 @pytest.mark.parametrize(
@@ -216,9 +267,15 @@ def test_a_valid_episode_is_recorded_through_the_shadow_broker_with_its_timing()
         ({"quotes": _Quotes(book_error=True)}, "fetch_failed"),
         ({"exchange": _Exchange([])}, "instrument_mismatch"),
         (
-            {"episode": sh.Episode(11, T0, T0, Decimal(2), "binance:swap:ABCUSDT:1")},
+            {"episode": sh.Episode(11, T0, T0, T0, Decimal(2), "binance:swap:ABCUSDT:1")},
             "instrument_mismatch",
         ),
+        ({"quotes": _Quotes(tradable=False)}, "instrument_not_tradable"),
+        ({"quotes": _Quotes(best_bid="2.05")}, "crossed_book"),
+        ({"quotes": _Quotes(max_market="10")}, "above_max_market_qty"),
+        ({"quotes": _Quotes(min_notional="60")}, "below_min_notional"),
+        # Review repro: a parse error after claim is terminal, not a stuck claim.
+        ({"quotes": _Quotes(spec_error=RuntimeError("bad qtyStep"))}, "evaluation_error"),
         ({"broker": _Broker(ExecutionStatus.REJECTED)}, "broker_rejected"),
     ],
 )
@@ -228,6 +285,8 @@ def test_every_skip_is_recorded_with_its_own_outcome(kwargs: dict[str, Any], out
     assert store.final["outcome"] == outcome
     if outcome != "broker_rejected":
         assert broker.intents == []
+    if outcome == "evaluation_error":
+        assert "qtyStep" in store.final["error"]
 
 
 def test_an_existing_claim_is_never_quoted_again() -> None:
@@ -249,3 +308,37 @@ def test_a_resolved_claim_is_not_overwritten() -> None:
     store = _Store()
     store.superseded = True
     assert _run(store=store)[0] == "superseded"
+
+
+def test_instrument_spec_requires_step_and_minimum_and_reads_tradability() -> None:
+    quotes = sh.BybitQuotes()
+
+    async def fake_get(_url: str, _params: dict[str, str]) -> dict[str, Any]:
+        return {"retCode": 0, "result": {"list": [item]}}
+
+    item: dict[str, Any] = {
+        "symbol": "ABCUSDT",
+        "status": "Trading",
+        "contractType": "LinearPerpetual",
+        "lotSizeFilter": {
+            "qtyStep": "1",
+            "minOrderQty": "1",
+            "minNotionalValue": "5",
+            "maxMktOrderQty": "1000",
+        },
+    }
+    quotes._get = fake_get  # type: ignore[method-assign]
+    spec = asyncio.run(quotes.spec("ABCUSDT"))
+    assert (spec.min_notional_usd, spec.max_market_qty, spec.tradable) == (
+        Decimal(5),
+        Decimal(1000),
+        True,
+    )
+    item = {**item, "symbol": "OTHERUSDT"}
+    quotes._specs.clear()
+    with pytest.raises(LookupError):
+        asyncio.run(quotes.spec("ABCUSDT"))
+    item = {"symbol": "ABCUSDT", "status": "Settling", "lotSizeFilter": {"minOrderQty": "1"}}
+    with pytest.raises(LookupError, match="qtyStep"):
+        asyncio.run(quotes.spec("ABCUSDT"))
+    asyncio.run(quotes.close())

@@ -97,13 +97,37 @@ def test_due_claim_finalize_and_recovery() -> None:
                 (row_id,),
             ).fetchone()
             assert row == (True, 40_000)
+            # Crash window: decision_id saved, outbox not yet in trade_decisions.
+            decision_id = str(uuid.uuid4())
+            await store.save_decision_id(row_id, decision_id)
+            await store.recover_claims(stale_after=timedelta(minutes=10))
+            assert conn.execute(
+                "SELECT outcome FROM app.source_lead_shadow_attempts WHERE id = %s", (row_id,)
+            ).fetchone() == ("claimed",)  # too fresh: the outbox may still deliver
+            conn.execute(
+                "INSERT INTO app.trade_decisions (decision_id, base, exchange, action, reason) "
+                "VALUES (%s, %s, 'bybit', 'shadow_recorded', 'test')",
+                (decision_id, base),
+            )
             await store.recover_claims()
-            assert not await store.finalize(row_id, {"outcome": "shadow_recorded"})
+            assert conn.execute(
+                "SELECT outcome FROM app.source_lead_shadow_attempts WHERE id = %s", (row_id,)
+            ).fetchone() == ("shadow_recorded",)
+            assert not await store.finalize(row_id, {"outcome": "fetch_failed"})
+
+            # Without a decision in trade_decisions, a stale claim is a crash.
+            conn.execute(
+                "UPDATE app.source_lead_shadow_attempts SET outcome = 'claimed', "
+                "decision_id = NULL WHERE id = %s",
+                (row_id,),
+            )
+            await store.recover_claims()
             assert conn.execute(
                 "SELECT outcome FROM app.source_lead_shadow_attempts WHERE id = %s", (row_id,)
             ).fetchone() == ("crashed_after_claim",)
 
         asyncio.run(scenario())
     finally:
+        conn.execute("DELETE FROM app.trade_decisions WHERE base = %s", (base,))
         conn.execute("DELETE FROM app.pump_events WHERE base = %s", (base,))
         conn.close()

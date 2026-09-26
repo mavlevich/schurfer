@@ -60,6 +60,9 @@ TARGET_USD = Decimal(50)
 LATE_AFTER = timedelta(seconds=30)
 POLL_SECONDS = 1.0
 WRITE_ATTEMPTS = 5
+# A claim still open this long after its last update is resolved while running
+# (decision found in trade_decisions, or a crash); covers the Redis outbox lag.
+RECOVERY_AFTER = timedelta(minutes=10)
 HEALTH_KEY = f"market:sourceleadshadow:health:{SHADOW_VERSION}"
 BYBIT_BOOK_URL = "https://api.bybit.com/v5/market/orderbook"
 BYBIT_INSTRUMENT_URL = "https://api.bybit.com/v5/market/instruments-info"
@@ -139,6 +142,33 @@ def ask_vwap_for_notional(asks: Any, target_usd: Decimal) -> Decimal | None:
     return spent / bought
 
 
+def ask_vwap_for_quantity(asks: Any, quantity: Decimal) -> Decimal | None:
+    """Buy exactly `quantity` base units into the asks."""
+    filled = Decimal(0)
+    cost = Decimal(0)
+    for level in asks if isinstance(asks, list) else []:
+        try:
+            price, size = Decimal(str(level[0])), Decimal(str(level[1]))
+        except (ArithmeticError, IndexError, TypeError, ValueError):
+            continue
+        if not (price.is_finite() and size.is_finite()) or price <= 0 or size <= 0:
+            continue
+        take = min(size, quantity - filled)
+        if take <= 0:
+            break
+        filled += take
+        cost += take * price
+    return cost / filled if filled >= quantity and filled > 0 else None
+
+
+def best_price(side: Any) -> Decimal | None:
+    try:
+        price = Decimal(str(side[0][0]))
+    except (ArithmeticError, IndexError, TypeError, ValueError):
+        return None
+    return price if price.is_finite() and price > 0 else None
+
+
 def rounded_quantity(target_usd: Decimal, vwap: Decimal, qty_step: Decimal) -> Decimal:
     steps = (target_usd / vwap / qty_step).to_integral_value(rounding=ROUND_FLOOR)
     return steps * qty_step
@@ -147,6 +177,7 @@ def rounded_quantity(target_usd: Decimal, vwap: Decimal, qty_step: Decimal) -> D
 @dataclass(frozen=True)
 class Episode:
     capture_id: int
+    source_first_observed_at: datetime
     observed_at: datetime
     qualified_at: datetime
     capture_ask_vwap: Decimal | None
@@ -156,6 +187,9 @@ class Episode:
 def timing(episode: Episode, seen_at: datetime) -> dict[str, Any]:
     detect = seen_at - episode.observed_at
     return {
+        "gate_to_seen_ms": round(
+            (seen_at - episode.source_first_observed_at).total_seconds() * 1000
+        ),
         "detect_latency_ms": round(detect.total_seconds() * 1000),
         "from_qualified_ms": round((seen_at - episode.qualified_at).total_seconds() * 1000),
         "late": detect > LATE_AFTER,
@@ -165,7 +199,7 @@ def timing(episode: Episode, seen_at: datetime) -> dict[str, Any]:
 # --- store -----------------------------------------------------------------------
 
 _DUE = """
-SELECT q.capture_id, t.observed_at, q.qualified_at,
+SELECT q.capture_id, c.source_first_observed_at, t.observed_at, q.qualified_at,
        t.liquidity ->> 'ask_vwap' AS ask_vwap,
        t.instrument ->> 'identity_key' AS identity_key
 FROM app.source_lead_qualifications q
@@ -189,12 +223,14 @@ LIMIT 50
 _CLAIM = """
 INSERT INTO app.source_lead_shadow_attempts (
     capture_id, qualification_version, shadow_version, native_symbol,
-    instrument_identity_key, observed_at, qualified_at, first_seen_at, outcome, late,
-    detect_latency_ms, from_qualified_ms, capture_ask_vwap
+    instrument_identity_key, source_first_observed_at, observed_at, qualified_at,
+    first_seen_at, outcome, late, gate_to_seen_ms, detect_latency_ms, from_qualified_ms,
+    capture_ask_vwap
 ) VALUES (
-    %(capture_id)s, %(qv)s, %(sv)s, %(symbol)s, %(identity_key)s, %(observed_at)s,
-    %(qualified_at)s, %(first_seen_at)s, 'claimed', %(late)s, %(detect_latency_ms)s,
-    %(from_qualified_ms)s, %(capture_ask_vwap)s
+    %(capture_id)s, %(qv)s, %(sv)s, %(symbol)s, %(identity_key)s,
+    %(source_first_observed_at)s, %(observed_at)s, %(qualified_at)s, %(first_seen_at)s,
+    'claimed', %(late)s, %(gate_to_seen_ms)s, %(detect_latency_ms)s, %(from_qualified_ms)s,
+    %(capture_ask_vwap)s
 )
 ON CONFLICT (capture_id, qualification_version) DO NOTHING
 RETURNING id
@@ -212,8 +248,12 @@ _FINAL_COLUMNS = frozenset(
         "quote_latency_ms",
         "qty_step",
         "min_order_qty",
+        "min_notional_usd",
+        "max_market_qty",
         "quantity",
         "send_ask_vwap",
+        "send_qty_vwap",
+        "send_notional_usd",
         "quote_change_bps",
         "decision_id",
         "error",
@@ -232,28 +272,58 @@ class ShadowStore:
             cur = await conn.execute(sql, params)
             return list(await cur.fetchall()) if cur.description else []
 
-    async def recover_claims(self) -> int:
-        rows = await self._execute(
+    async def recover_claims(self, *, stale_after: timedelta | None = None) -> int:
+        """Resolve claims left `claimed` by a stopped run. A claim whose
+        decision_id was saved before the broker call is `shadow_recorded` if that
+        decision reached trade_decisions (the outbox write happened); otherwise
+        it is `crashed_after_claim`, but only once `stale_after` has passed, so a
+        decision still in the Redis outbox is not misread as a crash."""
+        cutoff = datetime.now(UTC) - (stale_after or timedelta(0))
+        recorded = await self._execute(
             """
-            UPDATE app.source_lead_shadow_attempts
-            SET outcome = 'crashed_after_claim', updated_at = now(),
-                error = 'process stopped between claim and final write'
-            WHERE outcome = 'claimed' AND shadow_version = %(sv)s
-            RETURNING id
+            UPDATE app.source_lead_shadow_attempts a
+            SET outcome = 'shadow_recorded', updated_at = now(),
+                error = 'recovered: decision found in trade_decisions'
+            WHERE a.outcome = 'claimed' AND a.shadow_version = %(sv)s
+              AND a.decision_id IS NOT NULL
+              AND EXISTS (
+                  SELECT 1 FROM app.trade_decisions d WHERE d.decision_id::text = a.decision_id
+              )
+            RETURNING a.id
             """,
             {"sv": SHADOW_VERSION},
         )
-        return len(rows)
+        crashed = await self._execute(
+            """
+            UPDATE app.source_lead_shadow_attempts
+            SET outcome = 'crashed_after_claim', updated_at = now(),
+                error = CASE WHEN decision_id IS NULL
+                             THEN 'process stopped between claim and final write'
+                             ELSE 'decision id saved but no trade_decisions row' END
+            WHERE outcome = 'claimed' AND shadow_version = %(sv)s AND updated_at < %(cutoff)s
+            RETURNING id
+            """,
+            {"sv": SHADOW_VERSION, "cutoff": cutoff},
+        )
+        return len(recorded) + len(crashed)
+
+    async def save_decision_id(self, row_id: int, decision_id: str) -> None:
+        await self._execute(
+            "UPDATE app.source_lead_shadow_attempts SET decision_id = %(d)s, updated_at = now() "
+            "WHERE id = %(row_id)s AND outcome = 'claimed'",
+            {"d": decision_id, "row_id": row_id},
+        )
 
     async def due(self) -> list[Episode]:
         rows = await self._execute(_DUE, {"qv": QUALIFICATION_VERSION, "since": COHORT_START})
         return [
             Episode(
                 capture_id=int(r[0]),
-                observed_at=r[1],
-                qualified_at=r[2],
-                capture_ask_vwap=Decimal(r[3]) if r[3] else None,
-                identity_key=r[4],
+                source_first_observed_at=r[1],
+                observed_at=r[2],
+                qualified_at=r[3],
+                capture_ask_vwap=Decimal(r[4]) if r[4] else None,
+                identity_key=r[5],
             )
             for r in rows
         ]
@@ -267,6 +337,7 @@ class ShadowStore:
                 "sv": SHADOW_VERSION,
                 "symbol": native_symbol(episode.identity_key),
                 "identity_key": episode.identity_key,
+                "source_first_observed_at": episode.source_first_observed_at,
                 "observed_at": episode.observed_at,
                 "qualified_at": episode.qualified_at,
                 "first_seen_at": seen_at,
@@ -300,10 +371,14 @@ class VenueError(Exception):
 class Spec:
     qty_step: Decimal
     min_order_qty: Decimal
+    min_notional_usd: Decimal | None = None
+    max_market_qty: Decimal | None = None
+    tradable: bool = True
 
 
 @dataclass(frozen=True)
 class Book:
+    bids: Any
     asks: Any
     ts_ms: int | None
     requested_at: datetime
@@ -345,8 +420,27 @@ class BybitQuotes:
         items = payload["result"].get("list") or []
         if len(items) != 1 or items[0].get("symbol") != symbol:
             raise LookupError(f"instruments-info returned {[i.get('symbol') for i in items]}")
-        lot = items[0].get("lotSizeFilter") or {}
-        spec = Spec(Decimal(str(lot["qtyStep"])), Decimal(str(lot["minOrderQty"])))
+        item = items[0]
+        lot = item.get("lotSizeFilter") or {}
+
+        def dec(value: Any) -> Decimal | None:
+            try:
+                parsed = Decimal(str(value))
+            except (ArithmeticError, ValueError):
+                return None
+            return parsed if parsed.is_finite() else None
+
+        qty_step, min_qty = dec(lot.get("qtyStep")), dec(lot.get("minOrderQty"))
+        if qty_step is None or min_qty is None or qty_step <= 0:
+            raise LookupError(f"instruments-info for {symbol} lacks qtyStep/minOrderQty")
+        spec = Spec(
+            qty_step=qty_step,
+            min_order_qty=min_qty,
+            min_notional_usd=dec(lot.get("minNotionalValue")),
+            max_market_qty=dec(lot.get("maxMktOrderQty")),
+            tradable=item.get("status") == "Trading"
+            and item.get("contractType") == "LinearPerpetual",
+        )
         self._specs[symbol] = (time.monotonic(), spec)
         return spec
 
@@ -361,6 +455,7 @@ class BybitQuotes:
             raise VenueError(f"orderbook for {result.get('s')!r}, not {symbol}")
         ts = result.get("ts")
         return Book(
+            bids=result.get("b"),
             asks=result.get("a"),
             ts_ms=int(ts) if isinstance(ts, int | str) and str(ts).isdigit() else None,
             requested_at=requested_at,
@@ -392,7 +487,17 @@ async def shadow_episode(
     if row_id is None:
         return "already_claimed"
     fields: dict[str, Any] = {"attempts": 0}
-    outcome = await _evaluate(episode, seen_at, fields, quotes, exchange, broker, cfg, rdb)
+    try:
+        outcome = await _evaluate(
+            episode, seen_at, fields, quotes, exchange, broker, cfg, rdb, store, row_id
+        )
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        # Any parse or calculation error is terminal and visible, never a
+        # claim left behind that `due()` would skip forever.
+        fields["error"] = f"{type(exc).__name__}: {exc}"[:500]
+        outcome = "evaluation_error"
     fields["outcome"] = outcome
     delay = 1.0
     for attempt in range(1, WRITE_ATTEMPTS + 1):
@@ -417,6 +522,8 @@ async def _evaluate(
     broker: execution_intent.Broker,
     cfg: Config,
     rdb: Any,
+    store: ShadowStore,
+    row_id: int,
 ) -> str:
     symbol = native_symbol(episode.identity_key)
     if symbol is None or episode.capture_ask_vwap is None:
@@ -431,7 +538,14 @@ async def _evaluate(
     except VenueError as exc:
         fields["error"] = f"instrument: {exc}"[:500]
         return "fetch_failed"
-    fields |= {"qty_step": spec.qty_step, "min_order_qty": spec.min_order_qty}
+    fields |= {
+        "qty_step": spec.qty_step,
+        "min_order_qty": spec.min_order_qty,
+        "min_notional_usd": spec.min_notional_usd,
+        "max_market_qty": spec.max_market_qty,
+    }
+    if not spec.tradable:
+        return "instrument_not_tradable"
 
     fields["attempts"] = 1
     try:
@@ -452,28 +566,55 @@ async def _evaluate(
     fields["book_age_ms"] = age
     if not -MAX_BOOK_CLOCK_SKEW_MS <= age <= MAX_BOOK_AGE_MS:
         return "stale_book"
-    vwap = ask_vwap_for_notional(book.asks, TARGET_USD)
-    if vwap is None:
+    best_bid, best_ask = best_price(book.bids), best_price(book.asks)
+    if best_bid is None or best_ask is None or best_ask < best_bid:
+        return "crossed_book"
+
+    # Comparable to capture: the same $50 notional on the same instrument.
+    notional_vwap = ask_vwap_for_notional(book.asks, TARGET_USD)
+    if notional_vwap is None:
         return "insufficient_depth"
-    quantity = rounded_quantity(TARGET_USD, vwap, spec.qty_step)
     fields |= {
-        "send_ask_vwap": vwap,
-        "quantity": quantity,
-        "quote_change_bps": (vwap - episode.capture_ask_vwap) / episode.capture_ask_vwap * 10_000,
+        "send_ask_vwap": notional_vwap,
+        "quote_change_bps": (notional_vwap - episode.capture_ask_vwap)
+        / episode.capture_ask_vwap
+        * 10_000,
     }
+    # What would actually be sent: the rounded quantity, its own VWAP and notional.
+    quantity = rounded_quantity(TARGET_USD, notional_vwap, spec.qty_step)
+    fields["quantity"] = quantity
     if quantity <= 0 or quantity < spec.min_order_qty:
         return "below_min_order"
+    if spec.max_market_qty is not None and quantity > spec.max_market_qty:
+        return "above_max_market_qty"
+    qty_vwap = ask_vwap_for_quantity(book.asks, quantity)
+    if qty_vwap is None:
+        return "insufficient_depth"
+    notional = qty_vwap * quantity
+    fields |= {"send_qty_vwap": qty_vwap, "send_notional_usd": notional}
+    if spec.min_notional_usd is not None and notional < spec.min_notional_usd:
+        return "below_min_notional"
 
     context = {
         "strategy": f"{STRATEGY_NAME}_v{STRATEGY_VERSION}",
         "shadow_version": SHADOW_VERSION,
         "capture_id": episode.capture_id,
         "qualification_version": QUALIFICATION_VERSION,
+        "source_first_observed_at": episode.source_first_observed_at.isoformat(),
         "observed_at": episode.observed_at.isoformat(),
         "qualified_at": episode.qualified_at.isoformat(),
         "first_seen_at": seen_at.isoformat(),
         **{k: fields[k] for k in ("process_latency_ms", "quote_latency_ms", "book_age_ms")},
-        **{k: str(fields[k]) for k in ("send_ask_vwap", "quantity", "quote_change_bps")},
+        **{
+            k: str(fields[k])
+            for k in (
+                "send_ask_vwap",
+                "send_qty_vwap",
+                "send_notional_usd",
+                "quantity",
+                "quote_change_bps",
+            )
+        },
         "capture_ask_vwap": str(episode.capture_ask_vwap),
         **timing(episode, seen_at),
     }
@@ -481,16 +622,20 @@ async def _evaluate(
         strategy=StrategyIdentity(name=STRATEGY_NAME, version=STRATEGY_VERSION),
         instrument=instrument,
         side="long",
-        size_usd=float(TARGET_USD),
+        size_usd=float(notional),
         leverage=1,
         score=0,
         setup_context=context,
         idempotency_key=f"source_lead:{episode.capture_id}:{QUALIFICATION_VERSION}",
-        price=float(vwap),
+        price=float(qty_vwap),
     )
+    # Saved BEFORE the broker call, so a crash between the outbox write and the
+    # final update is reconciled against trade_decisions instead of misread.
+    decision_id = execution_intent.shadow_decision_id(intent)
+    await store.save_decision_id(row_id, decision_id)
+    fields["decision_id"] = decision_id
     result = await broker.open(intent, cfg=cfg, rdb=rdb)
     if result.status is ExecutionStatus.SHADOW_RECORDED:
-        fields["decision_id"] = execution_intent.shadow_decision_id(intent)
         return "shadow_recorded"
     fields["error"] = f"{result.status.value}: {result.reason}"[:500]
     return "broker_rejected"
@@ -515,7 +660,7 @@ async def run_source_lead_shadow(
     if exchange is None:
         raise RuntimeError("source-lead shadow needs the bybit market exchange")
     store = ShadowStore(cfg.db_url)
-    recovered = await store.recover_claims()
+    recovered = await store.recover_claims(stale_after=RECOVERY_AFTER)
     if recovered:
         log.warning("source_lead_shadow.recovered_claims", count=recovered)
     quotes = BybitQuotes()
@@ -526,6 +671,7 @@ async def run_source_lead_shadow(
                 tracker.tick_started()
             error = ""
             try:
+                await store.recover_claims(stale_after=RECOVERY_AFTER)
                 for episode in await store.due():
                     outcome = await shadow_episode(
                         episode,
