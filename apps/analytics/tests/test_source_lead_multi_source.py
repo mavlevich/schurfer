@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -119,7 +120,7 @@ def test_the_route_is_the_single_bybit_perp_live_over_the_episode(
 
 
 @pytest.mark.parametrize(
-    ("source_price", "reference_open", "reason"),
+    ("source_price", "reference_close", "reason"),
     [
         (1.0, 1.0, None),
         (1.9, 1.0, None),  # a leading pump, same asset
@@ -130,15 +131,22 @@ def test_the_route_is_the_single_bybit_perp_live_over_the_episode(
         (1.0, None, "missing_reference_bar"),
     ],
 )
-def test_route_identity_compares_price_levels_before_the_entry(
-    source_price: float | None, reference_open: float | None, reason: str | None
+def test_route_identity_uses_a_bar_closed_at_or_before_the_signal(
+    source_price: float | None, reference_close: float | None, reason: str | None
 ) -> None:
     candidate = _build(_event(1, _obs("mexc", T, first_price=source_price)))[0][0]
+    # The open (9.9) is deliberately far off: only the close of a finished minute counts.
     reference = (
-        None if reference_open is None else _bar(candidate.reference_ms, reference_open, 9.9)
+        None if reference_close is None else _bar(candidate.reference_ms, 9.9, reference_close)
     )
-    assert candidate.reference_ms < _ms(T) < candidate.entry_ms
+    assert candidate.reference_ms + ONE_MINUTE_MS <= _ms(T) < candidate.entry_ms
     assert m.route_identity_reason(candidate, reference) == reason
+
+
+def test_the_reference_bar_closes_no_later_than_a_signal_on_a_minute_boundary() -> None:
+    on_boundary = datetime(2026, 8, 12, 10, 0, 0, tzinfo=UTC)
+    candidate = _build(_event(1, _obs("mexc", on_boundary)))[0][0]
+    assert candidate.reference_ms + ONE_MINUTE_MS <= _ms(on_boundary)
 
 
 def test_an_exit_crossing_the_stage_boundary_is_excluded() -> None:
@@ -332,7 +340,7 @@ def test_a_crashed_read_resumes_on_the_same_stored_inputs(tmp_path: Path) -> Non
 def test_a_claim_on_other_inputs_or_tampered_inputs_is_refused(tmp_path: Path) -> None:
     stage_dir = _prepared(tmp_path, "discovery", {"mexc": [3.0] * 40})
     (stage_dir / r.CLAIM_NAME).write_text(json.dumps({"inputs_sha256": "0" * 64}))
-    with pytest.raises(ValueError, match="other inputs"):
+    with pytest.raises(ValueError, match="another"):
         r.read_stage("discovery", stage_dir, None, NOW)
     (stage_dir / r.CLAIM_NAME).unlink()
     (stage_dir / r.INPUTS_NAME).write_text("{}")
@@ -346,31 +354,117 @@ def test_inputs_are_write_once(tmp_path: Path) -> None:
         r.write_once(tmp_path / "x.json", {"a": 2})
 
 
-def test_the_holdout_reads_only_discovery_survivors(tmp_path: Path) -> None:
-    holdout_dir = _prepared(tmp_path, "holdout", {"mexc": [2.0] * 120, "gate": [2.0] * 120})
-    with pytest.raises(ValueError, match="requires --discovery-artifact"):
-        r.read_stage("holdout", holdout_dir, None, NOW)
-    assert not (holdout_dir / r.CLAIM_NAME).exists()
-    discovery_dir = tmp_path / "disc"
-    discovery_dir.mkdir()
+def _discovery(tmp_path: Path, name: str, verdicts: dict[str, str]) -> Path:
+    directory = tmp_path / name
+    directory.mkdir()
     r.write_once(
-        discovery_dir / r.RESULT_NAME,
+        directory / r.RESULT_NAME,
         {
             "family_version": m.FAMILY_VERSION,
             "stage": "discovery",
-            "verdicts": {"mexc": "survives", "gate": "does_not_survive"},
+            "tested_family": list(m.FORMAL_SOURCES),
+            "verdicts": verdicts,
         },
     )
+    return directory
+
+
+def test_the_holdout_evaluates_only_discovery_survivors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    moves = {"mexc": [2.0] * 120, "gate": [2.0] * 120, "toobit": [2.0] * 120}
+    holdout_dir = _prepared(tmp_path, "holdout", moves)
+    with pytest.raises(ValueError, match="requires --discovery-artifact"):
+        r.read_stage("holdout", holdout_dir, None, NOW)
+    assert not (holdout_dir / r.CLAIM_NAME).exists()
+    discovery_dir = _discovery(tmp_path, "disc", {"mexc": "survives", "gate": "does_not_survive"})
+    evaluated: set[str] = set()
+    real = r.outcome_for
+
+    def spy(candidate: m.Candidate, raw: Any, fetched: bool) -> m.Outcome:
+        evaluated.add(candidate.source_exchange)
+        return real(candidate, raw, fetched)
+
+    monkeypatch.setattr(r, "outcome_for", spy)
     payload = r.read_stage("holdout", holdout_dir, discovery_dir, NOW)
+    # Neither the non-survivor nor an exploratory venue has any holdout outcome computed.
+    assert evaluated == {"mexc"}
     assert payload["tested_family"] == ["mexc"]
     assert set(payload["verdicts"]) == {"mexc"}
-    assert "gate" not in json.dumps(payload["formal_results"])
+    assert payload["exploratory_results"] == []
+
+
+def test_a_holdout_replay_with_another_discovery_result_is_refused(tmp_path: Path) -> None:
+    # The colleague's reproduction: first attempt tests mexc, the retry passes another
+    # valid discovery artifact whose survivor is gate, under the same holdout claim.
+    holdout_dir = _prepared(tmp_path, "holdout", {"mexc": [2.0] * 120, "gate": [2.0] * 120})
+    first = _discovery(tmp_path, "d1", {"mexc": "survives", "gate": "does_not_survive"})
+    other = _discovery(tmp_path, "d2", {"mexc": "does_not_survive", "gate": "survives"})
+    r.read_stage("holdout", holdout_dir, first, NOW)
+    (holdout_dir / r.RESULT_NAME).unlink()  # crash before the result
+    (holdout_dir / f"{r.RESULT_NAME}.sha256").unlink()
+    claim = json.loads((holdout_dir / r.CLAIM_NAME).read_text())
+    assert claim["tested_family"] == ["mexc"]
+    assert len(claim["discovery_sha256"]) == 64
+    with pytest.raises(ValueError, match="another tested_family"):
+        r.read_stage("holdout", holdout_dir, other, NOW)
+    # Same survivors from a different discovery file: refused on the discovery hash.
+    same_survivors = _discovery(
+        tmp_path, "d3", {"mexc": "survives", "gate": "does_not_survive", "bingx": "n/a"}
+    )
+    with pytest.raises(ValueError, match="another discovery_sha256"):
+        r.read_stage("holdout", holdout_dir, same_survivors, NOW)
+    assert r.read_stage("holdout", holdout_dir, first, NOW)["tested_family"] == ["mexc"]
+
+
+def test_files_are_published_whole_or_not_at_all(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A crash while writing the claim leaves no claim at all, never a truncated one.
+    stage_dir = _prepared(tmp_path, "discovery", {"mexc": [3.0] * 40})
+
+    def crash(*_: Any) -> None:
+        raise OSError("killed")
+
+    monkeypatch.setattr(os, "link", crash)
+    with pytest.raises(OSError, match="killed"):
+        r.read_stage("discovery", stage_dir, None, NOW)
+    monkeypatch.undo()
+    assert not (stage_dir / r.CLAIM_NAME).exists()
+    assert [p.name for p in stage_dir.iterdir() if p.name.endswith(".tmp")] == []
+    assert r.read_stage("discovery", stage_dir, None, NOW)["verdicts"]["mexc"] == "survives"
+
+
+def test_a_result_published_without_its_digest_is_finished_by_replay(tmp_path: Path) -> None:
+    stage_dir = _prepared(tmp_path, "discovery", {"mexc": [3.0] * 40})
+    first = r.read_stage("discovery", stage_dir, None, NOW)
+    digest = (stage_dir / f"{r.RESULT_NAME}.sha256").read_text()
+    (stage_dir / f"{r.RESULT_NAME}.sha256").unlink()  # crash between result and digest
+    assert r.read_stage("discovery", stage_dir, None, NOW + timedelta(hours=1)) == first
+    assert (stage_dir / f"{r.RESULT_NAME}.sha256").read_text() == digest
+    with pytest.raises(r.AlreadyReadError):
+        r.read_stage("discovery", stage_dir, None, NOW)
+    # A stored result that is not its replay is never blessed with a digest.
+    (stage_dir / f"{r.RESULT_NAME}.sha256").unlink()
+    (stage_dir / r.RESULT_NAME).write_text("{}")
+    with pytest.raises(ValueError, match="differs from its replay"):
+        r.read_stage("discovery", stage_dir, None, NOW)
+    assert not (stage_dir / f"{r.RESULT_NAME}.sha256").exists()
+
+
+def test_inputs_published_without_their_digest_are_completed(tmp_path: Path) -> None:
+    stage_dir = _prepared(tmp_path, "discovery", {"mexc": [3.0] * 40})
+    digest = (stage_dir / f"{r.INPUTS_NAME}.sha256").read_text()
+    (stage_dir / f"{r.INPUTS_NAME}.sha256").unlink()
+    r.read_stage("discovery", stage_dir, None, NOW)
+    assert (stage_dir / f"{r.INPUTS_NAME}.sha256").read_text() == digest
 
 
 def test_a_holdout_read_is_refused_before_it_matures(tmp_path: Path) -> None:
     holdout_dir = _prepared(tmp_path, "holdout", {"mexc": [2.0] * 120})
+    discovery_dir = _discovery(tmp_path, "disc", {"mexc": "survives"})
     with pytest.raises(ValueError, match="can run from"):
-        r.read_stage("holdout", holdout_dir, tmp_path, datetime(2026, 9, 27, tzinfo=UTC))
+        r.read_stage("holdout", holdout_dir, discovery_dir, datetime(2026, 9, 27, tzinfo=UTC))
     assert not (holdout_dir / r.CLAIM_NAME).exists()
 
 

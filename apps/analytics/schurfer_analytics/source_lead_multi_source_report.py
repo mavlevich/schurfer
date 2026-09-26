@@ -7,10 +7,17 @@ Files in the stage directory, each written once:
 - `inputs.json` (+ `.sha256`), from `--phase prepare`: the Bybit catalogue as fetched
   (trading and delisted contracts), the outcome-blind funnel, the candidates after the
   route identity check, and their raw Bybit 1-minute klines. No return is computed.
-- `claim.json`, taken by `--phase read` before any return is computed. It names the
-  inputs hash. A second claim is refused once `result.json` exists; a claim without a
-  result (a crashed read) is resumed on the same stored inputs, never on a new fetch.
-- `result.json` (+ `.sha256`): computed from the stored inputs only.
+- `claim.json`, taken by `--phase read` before any return is computed. It pins the
+  inputs hash, the ordered tested family and, at holdout, the discovery result hash. A
+  claim without a result (a crashed read) is resumed only on exactly what it pins, on the
+  stored inputs, never on a new fetch.
+- `result.json` (+ `.sha256`): computed from the stored inputs only. At holdout only the
+  survivors are evaluated.
+
+Every file is published atomically (temp file, fsync, hard link), so a crash leaves
+either no file or a whole one. A crash between a file and its digest is finished on the
+next run: the inputs digest is written from the whole file, and a result digest only if
+the stored result equals its replay.
 
 `--phase all` prepares when no inputs exist and then reads. `--phase funnel` prints the
 outcome-blind resolution counts and writes nothing. Every phase refuses a stage whose
@@ -25,6 +32,7 @@ import hashlib
 import json
 import os
 import sys
+import uuid
 from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -275,55 +283,99 @@ def _sha(body: bytes) -> str:
     return hashlib.sha256(body).hexdigest()
 
 
+def _body(payload: dict[str, Any]) -> bytes:
+    return json.dumps(json_ready(payload), indent=2, sort_keys=True).encode() + b"\n"
+
+
+def _fsync_dir(directory: Path) -> None:
+    fd = os.open(directory, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def _publish_once(path: Path, body: bytes) -> None:
+    """Atomic and write-once: the bytes go to a unique temp file, are fsynced, then
+    hard-linked to `path`, which fails if `path` exists. A reader sees either no file or
+    the whole file, never a partial one."""
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(body)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.link(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
+    _fsync_dir(path.parent)
+
+
+def _digest_path(path: Path) -> Path:
+    return path.with_name(path.name + ".sha256")
+
+
+def _write_digest(path: Path, digest: str) -> None:
+    tmp = path.with_name(f".{path.name}.sha256.{uuid.uuid4().hex}.tmp")
+    tmp.write_text(digest + "\n", encoding="utf-8")
+    tmp.replace(_digest_path(path))
+    _fsync_dir(path.parent)
+
+
 def write_once(path: Path, payload: dict[str, Any]) -> str:
-    """Write `path` and `path.sha256`; refuses if `path` exists."""
-    body = json.dumps(json_ready(payload), indent=2, sort_keys=True).encode() + b"\n"
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
-    with os.fdopen(fd, "wb") as handle:
-        handle.write(body)
-        handle.flush()
-        os.fsync(handle.fileno())
+    """Publish `path` once, then its `.sha256`; refuses if `path` exists."""
+    body = _body(payload)
+    _publish_once(path, body)
     digest = _sha(body)
-    path.with_name(path.name + ".sha256").write_text(digest + "\n", encoding="utf-8")
+    _write_digest(path, digest)
     return digest
+
+
+def complete_digest(path: Path) -> None:
+    """Finish a publication interrupted between the file and its digest. Safe because
+    the file itself is published atomically, so an existing one is always whole."""
+    if path.exists() and not _digest_path(path).exists():
+        _write_digest(path, _sha(path.read_bytes()))
 
 
 def load_verified(path: Path) -> tuple[dict[str, Any], str]:
     body = path.read_bytes()
-    stored = path.with_name(path.name + ".sha256").read_text(encoding="utf-8").strip()
+    stored = _digest_path(path).read_text(encoding="utf-8").strip()
     digest = _sha(body)
     if digest != stored:
         raise ValueError(f"{path} does not match its sha256")
     return json.loads(body), digest
 
 
-def take_claim(stage_dir: Path, inputs_sha: str, now: datetime) -> dict[str, Any]:
-    """The durable claim, taken before any return is computed. Returns the claim; a
-    claim left by a crashed read on the same inputs is resumed."""
+_CLAIM_KEYS = ("family_version", "stage", "inputs_sha256", "tested_family", "discovery_sha256")
+
+
+def take_claim(stage_dir: Path, expected: dict[str, Any], now: datetime) -> dict[str, Any]:
+    """The durable claim, taken before any return is computed. It pins the inputs, the
+    ordered tested family and (at holdout) the discovery result. A claim left by a
+    crashed read is resumed only if it pins exactly the same; otherwise it is refused."""
     claim_path = stage_dir / CLAIM_NAME
-    claim = {"family_version": FAMILY_VERSION, "inputs_sha256": inputs_sha, "claimed_at": now}
+    claim = {**expected, "claimed_at": now.isoformat()}
     try:
-        fd = os.open(claim_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+        _publish_once(claim_path, _body(claim))
     except FileExistsError:
-        if (stage_dir / RESULT_NAME).exists():
-            raise AlreadyReadError(f"{stage_dir} was already read") from None
         existing: dict[str, Any] = json.loads(claim_path.read_text(encoding="utf-8"))
-        if existing.get("inputs_sha256") != inputs_sha:
-            raise ValueError("the open claim names other inputs; refusing") from None
+        for key in _CLAIM_KEYS:
+            if existing.get(key) != expected[key]:
+                raise ValueError(f"the open claim pins another {key}; refusing") from None
         return existing
-    with os.fdopen(fd, "w", encoding="utf-8") as handle:
-        handle.write(json.dumps(json_ready(claim), sort_keys=True) + "\n")
-        handle.flush()
-        os.fsync(handle.fileno())
-    written: dict[str, Any] = json.loads(json.dumps(json_ready(claim)))
-    return written
+    return claim
 
 
-def discovery_survivors(discovery_dir: Path) -> list[str]:
-    payload, _ = load_verified(discovery_dir / RESULT_NAME)
+def discovery_survivors(discovery_dir: Path) -> tuple[list[str], str]:
+    """The ordered discovery survivors and the discovery result hash."""
+    complete_digest(discovery_dir / RESULT_NAME)
+    payload, digest = load_verified(discovery_dir / RESULT_NAME)
     if payload.get("family_version") != FAMILY_VERSION or payload.get("stage") != "discovery":
         raise ValueError("not a discovery artifact of this family")
-    return [s for s, v in payload["verdicts"].items() if v == "survives"]
+    survivors = [s for s in payload["tested_family"] if payload["verdicts"].get(s) == "survives"]
+    return survivors, digest
 
 
 def outcome_for(candidate: Candidate, raw: list[list[str]] | None, fetched: bool) -> Outcome:
@@ -334,10 +386,16 @@ def outcome_for(candidate: Candidate, raw: list[list[str]] | None, fetched: bool
 
 
 def compute_result(
-    inputs: dict[str, Any], inputs_sha: str, claim: dict[str, Any], formal: Sequence[str]
+    inputs: dict[str, Any], inputs_sha: str, claim: dict[str, Any]
 ) -> dict[str, Any]:
-    """Pure: the stage result from the stored inputs, so a replay gives the same bytes."""
+    """Pure: the stage result from the stored inputs and the claim, so a replay gives the
+    same bytes. Outcomes are computed only for the venues in scope: the formal family
+    and, at discovery only, the exploratory venues. At holdout nothing outside the
+    survivors is evaluated, so those windows stay unread."""
     stage = inputs["stage"]
+    formal: list[str] = list(claim["tested_family"])
+    exploratory = list(EXPLORATORY_SOURCES) if stage == "discovery" else []
+    in_scope = {*formal, *exploratory}
     outcomes = [
         outcome_for(
             candidate,
@@ -345,16 +403,18 @@ def compute_result(
             str(candidate.event_id) in inputs["bars"],
         )
         for candidate in map(_candidate_from_json, inputs["candidates"])
+        if candidate.source_exchange in in_scope
     ]
     formal_results = [venue_result(s, outcomes) for s in formal]
-    exploratory_results = [venue_result(s, outcomes) for s in EXPLORATORY_SOURCES]
+    exploratory_results = [venue_result(s, outcomes) for s in exploratory]
     verdicts = family_verdicts(formal_results, stage=stage) if formal_results else {}
     return {
         "family_version": FAMILY_VERSION,
         "stage": stage,
         "window": inputs["window"],
-        "tested_family": list(formal),
+        "tested_family": formal,
         "inputs_sha256": inputs_sha,
+        "discovery_sha256": claim["discovery_sha256"],
         "claimed_at": claim["claimed_at"],
         "code_revision": inputs["code_revision"],
         "funnel": inputs["funnel"],
@@ -370,6 +430,7 @@ def compute_result(
 def read_stage(
     stage: str, stage_dir: Path, discovery_dir: Path | None, now: datetime
 ) -> dict[str, Any]:
+    complete_digest(stage_dir / INPUTS_NAME)
     inputs, inputs_sha = load_verified(stage_dir / INPUTS_NAME)
     if inputs.get("family_version") != FAMILY_VERSION or inputs.get("stage") != stage:
         raise ValueError(f"{stage_dir} does not hold {stage} inputs of this family")
@@ -377,14 +438,31 @@ def read_stage(
     if stage == "holdout":
         if discovery_dir is None:
             raise ValueError("the holdout read requires --discovery-artifact")
-        formal = discovery_survivors(discovery_dir)
+        formal, discovery_sha = discovery_survivors(discovery_dir)
     else:
-        formal = list(FORMAL_SOURCES)
-    if (stage_dir / RESULT_NAME).exists():
-        raise AlreadyReadError(f"{stage_dir} was already read")
-    claim = take_claim(stage_dir, inputs_sha, now)
-    payload = compute_result(inputs, inputs_sha, claim, formal)
-    write_once(stage_dir / RESULT_NAME, payload)
+        formal, discovery_sha = list(FORMAL_SOURCES), None
+    expected = {
+        "family_version": FAMILY_VERSION,
+        "stage": stage,
+        "inputs_sha256": inputs_sha,
+        "tested_family": formal,
+        "discovery_sha256": discovery_sha,
+    }
+    result_path = stage_dir / RESULT_NAME
+    if result_path.exists():
+        if _digest_path(result_path).exists():
+            raise AlreadyReadError(f"{stage_dir} was already read")
+        # Interrupted between the result and its digest: finish only if the stored
+        # result is exactly what the claim and the same inputs produce.
+        claim = take_claim(stage_dir, expected, now)
+        payload = compute_result(inputs, inputs_sha, claim)
+        if _body(payload) != result_path.read_bytes():
+            raise ValueError("the stored result differs from its replay; refusing")
+        _write_digest(result_path, _sha(result_path.read_bytes()))
+        return payload
+    claim = take_claim(stage_dir, expected, now)
+    payload = compute_result(inputs, inputs_sha, claim)
+    write_once(result_path, payload)
     return payload
 
 
@@ -453,6 +531,7 @@ def main() -> None:
     if args.stage_dir is None:
         raise SystemExit("--stage-dir is required")
     inputs_path = args.stage_dir / INPUTS_NAME
+    complete_digest(inputs_path)
     if args.phase in ("prepare", "all") and not inputs_path.exists():
         inputs = prepare()
         args.stage_dir.mkdir(parents=True, exist_ok=True)

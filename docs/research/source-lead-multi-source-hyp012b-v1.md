@@ -27,8 +27,9 @@ scale.
 
 - **Exploratory, no verdict:** CoinEx (week share 0.52), Bitget (97 events), Binance as a
   source (91), OKX, HTX and XT (fewer than 100). Toobit and KuCoin are also exploratory,
-  because their capture only began on 2026-09-07. They are reported separately and never get
-  a candidate verdict in this study.
+  because their capture only began on 2026-09-07. They are reported at discovery only, with
+  no verdict, and never get a candidate verdict in this study. Their holdout outcomes are
+  never computed, so that window stays unread for a later registration.
 
 ## Candidate set (outcome-blind)
 
@@ -43,10 +44,13 @@ A pump event is a candidate when:
    closes. The catalogue is fetched with every status (Trading, PreLaunch, Delivering,
    Closed), so perpetuals delisted since the window still count. No live contract is
    `bybit_not_live_over_episode`; two are `ambiguous_bybit_route`. Neither is guessed.
-4. **Route identity (pre-entry price check).** Bybit is matched to the source by base
-   ticker, and the same ticker can be a different project. The source's first observed
-   price must be within a factor of 2 of the Bybit open of the minute that holds the signal.
-   That open predates the signal, so a live router can apply the same rule. Otherwise the
+4. **Route price filter (pre-signal).** Bybit is matched to the source by base ticker, and
+   the same ticker can be a different project. The source's first observed price must be
+   within a factor of 2 of the close of the last Bybit minute that ended at or before the
+   signal (the minute before the one holding it). A bar's open is not used: Bybit's
+   `startTime` is the start of the candle, not the time of its first trade, so the open of
+   the minute holding the signal can come after the signal. A live router can apply the
+   same rule. The filter removes gross mismatches and does not prove identity. Otherwise the
    episode is excluded as `route_identity:price_level_mismatch`, `no_source_price` or
    `missing_reference_bar`. Exclusions are counted in the funnel.
 
@@ -87,17 +91,26 @@ cohort (starting 2026-09-29):
 - **Frozen inputs, then a claim, then one read.** Phase 1 (`prepare`) writes `inputs.json`
   once, with its SHA-256. It holds the raw Bybit catalogue, a hash of the loaded event ids,
   the funnel, the candidates after the route identity check, and their raw 1-minute klines.
-  No return is computed. Phase 2 (`read`) first creates `claim.json` atomically (O_EXCL, in
-  the persistent prod research directory), naming the inputs hash. Only then does it compute
-  `result.json`, from the stored inputs alone. A completed read is never repeated. A claim
-  without a result (a crashed read) resumes on the same inputs, and a claim naming other
-  inputs is refused. So a replay gives the same bytes, and nothing is fetched again after
-  the claim. The claim is a file rather than an `app.formal_read_claims` row because the
+  No return is computed. Phase 2 (`read`) first creates `claim.json` in the persistent prod
+  research directory. The claim pins the inputs hash, the ordered tested family, and at
+  holdout the discovery result hash. Only then does it compute `result.json`, from the
+  stored inputs alone. A completed read is never repeated. A claim without a result (a
+  crashed read) resumes only when it pins exactly the same inputs, family and discovery
+  result; otherwise it is refused. So a replay gives the same bytes, and nothing is fetched
+  again after the claim.
+- **Crash safety.** Every file is published atomically: written to a temp file, fsynced,
+  then hard-linked to its name, which fails if the name exists. A crash leaves no file or
+  a whole one, never a partial one. A crash between a file and its `.sha256` is finished
+  on the next run. The inputs digest is taken from the whole file. A result digest is
+  written only if the stored result equals its replay from the claim and the same inputs;
+  otherwise the run refuses. The claim is a file rather than an `app.formal_read_claims` row because the
   run is a one-shot job on the single prod host that owns this directory. For this study
   that gives the same guarantee without depending on the unmerged v2 claim stack.
 - **Holdout scope.** The holdout inputs are prepared for every family venue, so they never
   depend on a discovery outcome. The holdout read refuses to run without the discovery
-  result (checked against its SHA-256), and it evaluates only the discovery survivors.
+  result (checked against its SHA-256). It computes outcomes only for the discovery
+  survivors: candidates of every other venue, formal or exploratory, are filtered out
+  before any outcome is computed.
 - **Never reads the v2 window.** Nothing on or after 2026-09-29 is read by this study, for any
   venue: pumps are shared across venues, so reading another venue's October outcomes would
   unblind the v2 Gate cohort.
@@ -110,7 +123,9 @@ cohort (starting 2026-09-29):
 - **Only confirmed routes are ever traded.** Any cohort, shadow or pilot order for a
   candidate venue needs the source-to-Bybit route confirmed per asset by an identity rule
   (the v4 registry rule or a versioned equivalent for that source). A ticker match plus the
-  price band is enough for this historical estimate, never for an order.
+  price band is enough for this historical estimate, never for an order. A historical
+  `candidate` is therefore a hypothesis about confirmed routes, to be tested on them. It
+  is not evidence of the economics of confirmed routes.
 - **With no candidate,** the result goes into the discovery ledger, and no execution routing is
   built for these sources.
 
@@ -118,12 +133,13 @@ cohort (starting 2026-09-29):
 
 - **First-seen resolution is one scanner cycle (60 s).** Which venue counts as "first" is partly
   scan-order dependent. The signal itself (entry at detection) is unaffected.
-- **Identity is a price-level check, not a contract-address match.** Full address
+- **Identity is a price-level filter, not a contract-address match.** Full address
   confirmation (the v4 registry rule) needs per-venue asset data that most of these sources
-  do not publish historically. A same-ticker project that passes the 2x band would add a
-  return unrelated to the source pump, pulling the mean toward minus the costs, not
-  creating a false edge. The binding restriction is in the Decision section: trading needs a
-  confirmed route.
+  do not publish historically. A same-ticker project that passes the 2x band stays in the
+  sample. Its return is not tied to the source pump, but it is not guaranteed to be neutral
+  either: two assets can rise together with the market. So the historical estimate can be
+  biased in either direction by such routes. The binding restriction is in the Decision
+  section: trading needs a confirmed route.
 - **Delisted before the run.** Delisted perpetuals are in the catalogue. If Bybit no longer
   serves a delisted contract's klines, those episodes resolve as missing bars and are
   reported as unresolved.
@@ -159,9 +175,12 @@ Versioned changes to v1, all made before any return was computed. `FAMILY_VERSIO
 `hyp012b_multi_source_lead_v1` because no read happened under the earlier text.
 
 1. **Route identity:** single live Bybit contract over the episode, with ambiguity
-   excluded; the pre-entry price check; trading only on confirmed routes.
+   excluded; the pre-signal price filter on a minute closed at or before the signal;
+   trading only on confirmed routes.
 2. **Delisted contracts** are included via every catalogue status.
-3. **Frozen inputs, a durable claim, and a replay** from stored inputs only.
+3. **Frozen inputs, a durable claim, and a replay** from stored inputs only. The claim
+   pins the inputs, the ordered family and the discovery result. Every file is published
+   atomically, with crash completion. The holdout computes survivor outcomes only.
 4. **The maturity guard**, with the holdout from 2026-09-29.
 5. **Verdict order:** a mature non-positive holdout mean is `fail` before the
    diversification floor.

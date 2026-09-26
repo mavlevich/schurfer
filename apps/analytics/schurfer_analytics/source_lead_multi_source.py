@@ -6,8 +6,9 @@ Candidate set (outcome-blind): a pump event whose unique earliest source observa
 family venue (ties excluded), whose source observation passes the HYP-012 identity checks,
 and whose base had exactly one Bybit USDT linear perpetual live over the whole episode
 (delisted contracts included, from their launchTime/deliveryTime). The route must then
-pass a pre-entry price identity check: the source's first price is within a factor of
-PRICE_IDENTITY_BAND of the Bybit open of the minute holding the signal.
+pass a pre-signal price filter: the source's first price is within a factor of
+PRICE_IDENTITY_BAND of the close of the last Bybit minute that ended at or before the
+signal. The filter removes gross same-ticker mismatches; it does not prove identity.
 Unlike the HYP-012 paired design, Bybit is NOT required to confirm the pump later: that
 would condition on the future, and the standalone estimand trades at the signal.
 
@@ -20,8 +21,9 @@ Stage 1 (discovery, ISO weeks 33-35): per formal venue, cluster-bootstrap mean a
 p-value; Holm across the formal family; a venue survives if its mean is positive and it is
 Holm-rejected. Stage 2 (holdout, ISO weeks 36-39): only survivors, each needing the floor
 (100 resolved episodes, 30 assets, no week above 45%); Holm across the survivors; a
-candidate needs Holm rejection and a positive mean. Exploratory venues are reported with
-no verdict. A mature holdout venue (at least 100 resolved) with a non-positive mean is a
+candidate needs Holm rejection and a positive mean. Exploratory venues are reported at
+discovery only, with no verdict; the holdout computes survivor outcomes only. A mature
+holdout venue (at least 100 resolved) with a non-positive mean is a
 `fail` even below the diversification floor. Nothing on or after 2026-09-29 (the HYP-012
 v2 cohort) is ever read, and a stage is refused before its window end plus
 MATURATION_LAG.
@@ -124,8 +126,10 @@ class Candidate:
 
     @property
     def reference_ms(self) -> int:
-        """The Bybit minute holding the signal; its open predates the signal."""
-        return self.entry_ms - ONE_MINUTE_MS
+        """The last Bybit minute fully closed at or before the signal. Its close is the
+        last trade before that boundary; a bar's open is not used, because the first
+        trade of the minute holding the signal can come after the signal."""
+        return self.entry_ms - 2 * ONE_MINUTE_MS
 
     @property
     def entry_ms(self) -> int:
@@ -214,18 +218,19 @@ def build_candidates(
 
 
 def route_identity_reason(candidate: Candidate, reference: Candle | None) -> str | None:
-    """Pre-entry identity check of the ticker-matched route: a same-ticker different
-    project shows up as a price level far from the source's. Uses only data from before
-    the entry, so a live router can apply the same rule."""
+    """Pre-signal price filter on the ticker-matched route: a same-ticker different
+    project usually shows up as a price level far from the source's. Uses only a bar that
+    closed at or before the signal, so a live router can apply the same rule. A filter,
+    not proof of identity."""
     if candidate.source_price is None or not math.isfinite(candidate.source_price):
         return "no_source_price"
     if candidate.source_price <= 0:
         return "no_source_price"
     if reference is None or reference.ts_ms != candidate.reference_ms:
         return "missing_reference_bar"
-    if not math.isfinite(reference.open) or reference.open <= 0:
+    if not math.isfinite(reference.close) or reference.close <= 0:
         return "missing_reference_bar"
-    ratio = candidate.source_price / reference.open
+    ratio = candidate.source_price / reference.close
     if not (1 / PRICE_IDENTITY_BAND <= ratio <= PRICE_IDENTITY_BAND):
         return "price_level_mismatch"
     return None
