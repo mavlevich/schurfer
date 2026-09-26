@@ -426,6 +426,13 @@ class TestSourceLeadCaptureModels:
         assert "ck_source_lead_qualification_v3_registry_contract" in constraints
         assert "ck_source_lead_qualification_v4_registry_contract" in constraints
 
+    def test_source_lead_exit_observation_constraints(self) -> None:
+        from schurfer_journal.models import SourceLeadExitObservation
+
+        constraints = {c.name for c in SourceLeadExitObservation.__table__.constraints}
+        assert "ck_source_lead_exit_outcome" in constraints
+        assert "ck_source_lead_exit_timeliness" in constraints
+
 
 class TestTradeDecisionModels:
     def test_decision_table(self) -> None:
