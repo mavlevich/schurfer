@@ -1209,10 +1209,14 @@ prod-deploy:
 	@$(_PROD) exec -T postgres pg_isready -U schurfer -q --timeout=30
 	@echo "-> [4/5] Migrate + deploy..."
 	@$(MAKE) prod-migrate
+	@# Silence heartbeat alerts only for services this deploy restarts, with a TTL
+	@# so a failed deploy cannot mute them for long (notifier service_heartbeat.go).
+	@$(_PROD) exec -T redis redis-cli SET notifier:maintenance:source-lead-exit-capture deploy EX 900 >/dev/null
 	$(_PROD) up -d --build --wait --wait-timeout 180
 	docker image prune -f
 	@echo "-> [5/5] Health..."
 	@$(_PROD) ps --format "table {{.Name}}\t{{.Status}}\t{{.Health}}"
+	@$(_PROD) exec -T redis redis-cli DEL notifier:maintenance:source-lead-exit-capture >/dev/null
 	@echo "-> Done. Logs: make prod-logs"
 
 prod-runtime-metrics-install:

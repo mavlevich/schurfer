@@ -20,7 +20,7 @@ import structlog
 
 from .exchange_registry import EXCHANGE_FACTORIES, ExchangeFactory
 from .instruments import instrument_metadata
-from .source_lead_contract import CAPTURE_VERSION, IDENTITY_REGISTRY_V3_START
+from .source_lead_contract import CAPTURE_VERSION, IDENTITY_REGISTRY_V4_START
 from .source_lead_qualification import (
     IDENTITY_MATCH_METHOD_REGISTRY_EXACT_V2,
     IDENTITY_MATCH_METHOD_REGISTRY_LOOKUP_V2,
@@ -499,6 +499,31 @@ def summarize_order_book(
     }
 
 
+def quote_timing(
+    book: Any,
+    ticker: Any,
+    *,
+    requested_at: datetime,
+    received_at: datetime,
+    contract_size_known: bool,
+) -> dict[str, Any]:
+    """Timing and provenance of one book/ticker sample, recorded alongside the liquidity
+    summary. ``book_age_ms`` is receive time minus the venue's own book timestamp, so a
+    stale or clock-skewed book is visible; ``None`` where the venue gave no timestamp."""
+    book_ts = _timestamp(book.get("timestamp")) if isinstance(book, dict) else None
+    ticker_ts = _timestamp(ticker.get("timestamp")) if isinstance(ticker, dict) else None
+    nonce = book.get("nonce") if isinstance(book, dict) else None
+    return {
+        "quote_requested_at": requested_at.isoformat(),
+        "quote_received_at": received_at.isoformat(),
+        "book_timestamp": book_ts.isoformat() if book_ts else None,
+        "book_nonce": nonce if isinstance(nonce, int | str) else None,
+        "ticker_timestamp": ticker_ts.isoformat() if ticker_ts else None,
+        "book_age_ms": (round((received_at - book_ts).total_seconds() * 1000) if book_ts else None),
+        "contract_size_source": "instrument" if contract_size_known else "defaulted",
+    }
+
+
 def _target_failure(
     exchange: str,
     reason: str,
@@ -708,17 +733,31 @@ async def capture_target_observation(
 
     symbol = str(metadata["unified_symbol"])
     try:
+        requested_at = datetime.now(UTC)
         ticker, book = await asyncio.wait_for(
             asyncio.gather(exchange.fetch_ticker(symbol), exchange.fetch_order_book(symbol, 50)),
             timeout=timeout_seconds,
         )
+        received_at = datetime.now(UTC)
         if not isinstance(ticker, dict):
             raise ValueError("ticker is not an object")
-        contract_size = _finite_float(metadata.get("contract_size"), positive=True) or 1.0
+        known_contract_size = _finite_float(metadata.get("contract_size"), positive=True)
+        # v3 behaviour is unchanged (a missing size still computes with 1.0); the source is
+        # recorded so a later qualification version can refuse a defaulted size explicitly.
+        contract_size = known_contract_size or 1.0
         liquidity = summarize_order_book(
             book,
             target_usd=target_usd,
             contract_size=contract_size,
+        )
+        liquidity.update(
+            quote_timing(
+                book,
+                ticker,
+                requested_at=requested_at,
+                received_at=received_at,
+                contract_size_known=known_contract_size is not None,
+            )
         )
         price = _finite_float(ticker.get("last"), positive=True)
         if price is None:
@@ -834,7 +873,7 @@ async def capture_claimed_source_leads(
     results: dict[int, list[TargetObservation]] = {item.capture_id: [] for item in claimed}
 
     # A capture from before the v3 registry existed must never be treated as
-    # v3-qualified prospective evidence (see IDENTITY_REGISTRY_V3_START's own
+    # v4-qualified prospective evidence (see IDENTITY_REGISTRY_V4_START's own
     # docstring). qualify_source_lead already enforces this at the
     # qualification layer; checked here too, before any network call, so a
     # pre-cutover candidate never gets a 'sampled'+identity_verified=True
@@ -843,12 +882,12 @@ async def capture_claimed_source_leads(
     # target_eligible without also checking the cutover would otherwise
     # still see these rows).
     pre_cutover = tuple(
-        item for item in claimed if item.candidate.source.first_seen_at < IDENTITY_REGISTRY_V3_START
+        item for item in claimed if item.candidate.source.first_seen_at < IDENTITY_REGISTRY_V4_START
     )
     network_eligible = tuple(
         item
         for item in claimed
-        if item.candidate.source.first_seen_at >= IDENTITY_REGISTRY_V3_START
+        if item.candidate.source.first_seen_at >= IDENTITY_REGISTRY_V4_START
     )
     for item in pre_cutover:
         skip_started = time.monotonic()
@@ -856,7 +895,7 @@ async def capture_claimed_source_leads(
             results[item.capture_id].append(
                 _target_failure(
                     exchange_name,
-                    "before_identity_registry_v3_activation",
+                    "before_identity_registry_v4_activation",
                     skip_started,
                     target_usd,
                 )

@@ -1,0 +1,427 @@
+{
+  "base": "ZEST",
+  "bundle_sha256": "d7117714a311788384f91dbda15190b24e879f2e78d16fdb83e7b89e4b7fffcf",
+  "captured_at": "2026-09-26T07:01:43.503913+00:00",
+  "code_revision": "4111a1661e333849fe6d0d7a5e4504bf4e8bad9d",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/zest-protocol?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-09-26T07:01:43.501559+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "binance-smart-chain",
+      "block_time_in_minutes": 0,
+      "categories": [
+        "Decentralized Finance (DeFi)",
+        "BNB Chain Ecosystem",
+        "Lending/Borrowing Protocols",
+        "Ethereum Ecosystem",
+        "Base Ecosystem",
+        "Stacks Ecosystem",
+        "YZi Labs (Prev. Binance Labs) Portfolio",
+        "BTCfi Protocol"
+      ],
+      "contract_address": "0x5506599c722389a60580b5213ea1da60d64754a1",
+      "country_origin": "",
+      "description": {
+        "en": "$ZEST is the native token of Zest Protocol, the leading lending protocol across Bitcoin L2s and now expanding to Bitcoin L1 with Bitcoin Collateral Vaults."
+      },
+      "detail_platforms": {
+        "base": {
+          "contract_address": "0x7297968ffb753dd12e4f6b1f18d9865c76707fc2",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/base/tokens/0x7297968ffb753dd12e4f6b1f18d9865c76707fc2"
+        },
+        "binance-smart-chain": {
+          "contract_address": "0x5506599c722389a60580b5213ea1da60d64754a1",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/bsc/tokens/0x5506599c722389a60580b5213ea1da60d64754a1"
+        },
+        "ethereum": {
+          "contract_address": "0xf326c8c9a691319f6330e27aa4a39f2d22c88dc5",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/eth/tokens/0xf326c8c9a691319f6330e27aa4a39f2d22c88dc5"
+        },
+        "stacks": {
+          "contract_address": "SP1A27KFY4XERQCCRCARCYD1CC5N7M6688BSYADJ7.zest-token",
+          "decimal_place": 6
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": false,
+      "hashing_algorithm": null,
+      "id": "zest-protocol",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/102173294/large/zest.jpg?1778837125",
+        "small": "https://coin-images.coingecko.com/coins/images/102173294/small/zest.jpg?1778837125",
+        "thumb": "https://coin-images.coingecko.com/coins/images/102173294/thumb/zest.jpg?1778837125"
+      },
+      "last_updated": "2026-09-26T06:59:40.000Z",
+      "links": {
+        "announcement_url": [],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://bscscan.com/token/0x5506599c722389A60580B5213ea1Da60D64754a1",
+          "https://intel.arkm.com/explorer/token/zest-protocol",
+          "https://binplorer.com/address/0x5506599c722389A60580B5213ea1Da60D64754a1",
+          "https://explorer.hiro.so/txid/SP1A27KFY4XERQCCRCARCYD1CC5N7M6688BSYADJ7.zest-token?chain=mainnet",
+          "https://etherscan.io/token/0xf326c8c9a691319f6330e27aa4a39f2d22c88dc5",
+          "https://ethplorer.io/address/0xf326c8c9a691319f6330e27aa4a39f2d22c88dc5",
+          "https://basescan.org/token/0x7297968ffb753dd12e4f6b1f18d9865c76707fc2"
+        ],
+        "chat_url": [
+          "https://discord.com/invite/zestprotocol",
+          "https://www.zestprotocol.com/blog"
+        ],
+        "facebook_username": "",
+        "homepage": ["https://www.zestprotocol.com/", "https://app.zestprotocol.com/"],
+        "official_forum_url": [],
+        "repos_url": {
+          "bitbucket": [],
+          "github": ["https://github.com/Zest-Protocol"]
+        },
+        "snapshot_url": null,
+        "subreddit_url": null,
+        "telegram_channel_identifier": "ZestProtocol_Community",
+        "twitter_screen_name": "ZestProtocol",
+        "whitepaper": ""
+      },
+      "listing_currency": null,
+      "listing_price": null,
+      "listing_source": null,
+      "listing_source_url": null,
+      "listing_timestamp": null,
+      "market_cap_rank": 785,
+      "market_cap_rank_with_rehypothecated": 991,
+      "name": "Zest Protocol",
+      "platforms": {
+        "base": "0x7297968ffb753dd12e4f6b1f18d9865c76707fc2",
+        "binance-smart-chain": "0x5506599c722389a60580b5213ea1da60d64754a1",
+        "ethereum": "0xf326c8c9a691319f6330e27aa4a39f2d22c88dc5",
+        "stacks": "SP1A27KFY4XERQCCRCARCYD1CC5N7M6688BSYADJ7.zest-token"
+      },
+      "preview_listing": false,
+      "public_notice": null,
+      "sentiment_votes_down_percentage": 50.0,
+      "sentiment_votes_up_percentage": 50.0,
+      "status_updates": [],
+      "symbol": "zest",
+      "watchlist_portfolio_users": 1171,
+      "web_slug": "zest-protocol"
+    },
+    "raw_sha256": "8628dd3924e4fb83bccd09b5a7a53c93b9bdd0292441710cfa6b0610dff6fc86",
+    "source": "https://api.coingecko.com/api/v3/coins/zest-protocol",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v4",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-09-26T06:51:16.758270+00:00",
+    "payload": {
+      "active": true,
+      "code": "ZEST",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "ZEST",
+      "info": {
+        "category": [],
+        "chain": "BSC",
+        "chains": [
+          {
+            "addr": "0x5506599c722389a60580b5213ea1da60d64754a1",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "ZEST",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "45470240.0",
+        "name": "Zest Protocol",
+        "total_supply": "1000000000",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "Zest Protocol",
+      "networks": {
+        "BEP20": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "BSC",
+          "info": {
+            "addr": "0x5506599c722389a60580b5213ea1da60d64754a1",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "BEP20",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "61416670474f4047040941878d4da24c4041ddf83439105ced466ff7a11034e8",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "exact_contract",
+  "source_contract": {
+    "block_hash": "0xa099375302064601b20e73e435ee540e791a57791f2fec2e0b5b04504080d63b",
+    "block_number": 124097302,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0x5506599c722389a60580b5213ea1da60d64754a1",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-09-26T07:01:36.026891+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "8e73d72cca28014c8646f2033e87ec712fc9eb6dbc2664092e1cf446ce4e6937",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "source_market_evidence": {
+    "exchange": "gate",
+    "inference_basis": "gate futures contract payload has no base_asset/quote_asset/settle_asset fields; base/quote split parsed from the reported native_market_id ('ZEST_USDT') on its '_' separator, settle asset inferred from the /futures/usdt/ endpoint family",
+    "inferred_base_asset": "ZEST",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "ZEST_USDT",
+    "onboarded_at_ms": 1779275010000,
+    "raw_evidence": {
+      "endpoint": "https://api.gateio.ws/api/v4/futures/usdt/contracts/ZEST_USDT",
+      "observed_at": "2026-09-26T07:01:37.169428+00:00",
+      "payload": {
+        "config_change_time": 1790228039,
+        "contract_type": "",
+        "create_time": 1779275010,
+        "cross_leverage_default": "10",
+        "enable_bonus": true,
+        "enable_circuit_breaker": false,
+        "enable_credit": true,
+        "enable_decimal": false,
+        "funding_cap_ratio": "0.75",
+        "funding_impact_value": "3000",
+        "funding_interval": 14400,
+        "funding_next_apply": 1790409600,
+        "funding_offset": 0,
+        "funding_rate": "-0.000028",
+        "funding_rate_indicative": "-0.000028",
+        "funding_rate_limit": "0.0002",
+        "in_delisting": false,
+        "index_price": "0.178273",
+        "interest_rate": "0.0003",
+        "is_pre_market": false,
+        "last_price": "0.17864",
+        "launch_time": 1779275010,
+        "leverage_max": "10",
+        "leverage_min": "1",
+        "long_users": 202,
+        "maintenance_rate": "0.08",
+        "maker_fee_rate": "-0.0001",
+        "mark_price": "0.17827",
+        "mark_price_round": "0.00001",
+        "mark_type": "index",
+        "market_order_size_max": "800000",
+        "market_order_slip_ratio": "0.04",
+        "name": "ZEST_USDT",
+        "order_price_deviate": "0.15",
+        "order_price_round": "0.00001",
+        "order_size_max": 1000000,
+        "order_size_min": 1,
+        "orderbook_id": 707438277,
+        "orders_limit": 100,
+        "position_size": 287456,
+        "quanto_multiplier": "10",
+        "ref_discount_rate": "0",
+        "ref_rebate_rate": "0.2",
+        "risk_limit_base": "5000",
+        "risk_limit_max": "2500000",
+        "risk_limit_step": "2495000",
+        "short_users": 115,
+        "status": "trading",
+        "taker_fee_rate": "0.00075",
+        "trade_id": 2488970,
+        "trade_size": 59104658,
+        "type": "direct",
+        "voucher_leverage": "0"
+      },
+      "raw_sha256": "0fb03fbb429e20fa6343c4380d6b17071ffb703067b9832f68b8d6ebd3188bb4",
+      "source": "https://api.gateio.ws/api/v4/futures/usdt/contracts/ZEST_USDT",
+      "wire_exact": true
+    },
+    "reported_base_asset": null,
+    "reported_quote_asset": null,
+    "reported_settle_asset": null,
+    "status": "trading"
+  },
+  "target_catalog_evidence": {
+    "endpoint": "https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list",
+    "observed_at": "2026-09-26T06:51:19.811887+00:00",
+    "payload": {
+      "chainId": "56",
+      "chainName": "BSC",
+      "contractAddress": "0x5506599c722389a60580b5213ea1da60d64754a1",
+      "decimals": 18,
+      "fullyDelisted": false,
+      "listingCex": false,
+      "name": "Zest Protocol",
+      "offline": false,
+      "response_sha256": "dbbe5652ba9a3ab0a09f5ee929182c884c90a35921796bd8ecd155a82c8fa73c",
+      "symbol": "ZEST"
+    },
+    "raw_sha256": "d6b648a45a57a44e21d4a1c94e0d19a757964f4dfbb50a12ac6fb709394d3df8",
+    "source": "binance:alpha_catalog_entry",
+    "wire_exact": false
+  },
+  "target_contract": {
+    "block_hash": "0xa099375302064601b20e73e435ee540e791a57791f2fec2e0b5b04504080d63b",
+    "block_number": 124097302,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0x5506599c722389a60580b5213ea1da60d64754a1",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-09-26T07:01:36.026891+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "8e73d72cca28014c8646f2033e87ec712fc9eb6dbc2664092e1cf446ce4e6937",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "target_exchange": "binance",
+  "target_market_evidence": {
+    "exchange": "binance",
+    "inference_basis": "copied verbatim from binance futures exchangeInfo's own baseAsset/quoteAsset/marginAsset fields -- genuinely reported, not parsed",
+    "inferred_base_asset": "ZEST",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "ZESTUSDT",
+    "onboarded_at_ms": 1780581600000,
+    "raw_evidence": {
+      "endpoint": "https://fapi.binance.com/fapi/v1/exchangeInfo",
+      "observed_at": "2026-09-26T06:51:20.198689+00:00",
+      "payload": {
+        "baseAsset": "ZEST",
+        "baseAssetPrecision": 8,
+        "contractType": "PERPETUAL",
+        "deliveryDate": 4133404800000,
+        "filters": [
+          {
+            "filterType": "PRICE_FILTER",
+            "maxPrice": "200",
+            "minPrice": "0.0000100",
+            "tickSize": "0.0000100"
+          },
+          {
+            "filterType": "LOT_SIZE",
+            "maxQty": "6000000",
+            "minQty": "1",
+            "stepSize": "1"
+          },
+          {
+            "filterType": "MARKET_LOT_SIZE",
+            "maxQty": "600000",
+            "minQty": "1",
+            "stepSize": "1"
+          },
+          {
+            "filterType": "MAX_NUM_ORDERS",
+            "limit": 200
+          },
+          {
+            "filterType": "MIN_NOTIONAL",
+            "notional": "5"
+          },
+          {
+            "filterType": "PERCENT_PRICE",
+            "multiplierDecimal": "4",
+            "multiplierDown": "0.8500",
+            "multiplierUp": "1.1500"
+          },
+          {
+            "filterType": "POSITION_RISK_CONTROL",
+            "positionControlSide": "NONE"
+          }
+        ],
+        "liquidationFee": "0.020000",
+        "maintMarginPercent": "2.5000",
+        "marginAsset": "USDT",
+        "marketTakeBound": "0.15",
+        "maxMoveOrderLimit": 10000,
+        "onboardDate": 1780581600000,
+        "orderTypes": [
+          "LIMIT",
+          "MARKET",
+          "STOP",
+          "STOP_MARKET",
+          "TAKE_PROFIT",
+          "TAKE_PROFIT_MARKET",
+          "TRAILING_STOP_MARKET"
+        ],
+        "pair": "ZESTUSDT",
+        "permissionSets": ["GRID", "COPY", "RPI", "DCA", "PSB"],
+        "pricePrecision": 7,
+        "quantityPrecision": 0,
+        "quoteAsset": "USDT",
+        "quotePrecision": 8,
+        "requiredMarginPercent": "5.0000",
+        "status": "TRADING",
+        "symbol": "ZESTUSDT",
+        "timeInForce": ["GTC", "IOC", "FOK", "GTX", "GTD"],
+        "triggerProtect": "0.1500",
+        "underlyingSubType": ["Crypto"],
+        "underlyingType": "COIN"
+      },
+      "raw_sha256": "eb9f0d1ce6c445def6e162de97fb2813c040b95479bbfdb81beb925e788fe281",
+      "source": "binance:futures_exchange_info_entry",
+      "wire_exact": false
+    },
+    "reported_base_asset": "ZEST",
+    "reported_quote_asset": "USDT",
+    "reported_settle_asset": "USDT",
+    "status": "TRADING"
+  },
+  "working_tree_dirty": false
+}

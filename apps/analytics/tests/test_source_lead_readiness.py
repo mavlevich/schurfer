@@ -116,8 +116,54 @@ def test_render_markdown_and_json_and_fingerprint() -> None:
     assert "ready to read: YES" not in md
     parsed = json.loads(render_json(payload))
     assert parsed["outcome_blind"] is True
-    assert parsed["qualification_version"] == "source_lead_qualified_capture_v3"
+    assert parsed["qualification_version"] == "source_lead_qualified_capture_v4"
     assert len(parsed["fingerprint_sha256"]) == 64
     # Fingerprint is stable across renders ignoring generated_at.
     again = _report_dict(report, code_revision="test", working_tree_dirty=False)
     assert again["fingerprint_sha256"] == payload["fingerprint_sha256"]
+
+
+def test_funnel_separates_expected_exclusions_from_pipeline_errors() -> None:
+    """Review P1: a capture that completed eligible but never qualified is an error, not
+    'stopped before qualification'."""
+    report = build_readiness(
+        _inputs(
+            [_ep(NOW - timedelta(hours=1), "A")],
+            captured_in_cohort=100,
+            pre_qualification_by_reason={
+                "excluded:gate_not_unique_first_source": 40,
+                "collecting:eligible": 2,
+                "abandoned:eligible": 1,
+                "complete:eligible": 3,
+                "mystery:none": 1,
+            },
+            qualification_rows=53,
+            excluded_by_reason={"source_identity_unapproved": 50},
+            qualified_without_episode_by_status={"fetch_failed": 2},
+        )
+    )
+    assert report.capture_excluded == 40
+    assert report.capture_in_flight == 2
+    assert report.capture_abandoned == 1
+    assert report.pipeline_errors == 4
+    assert report.qualified_rows == 3
+    assert report.lower_funnel_reconciles  # 3 qualified == 1 candidate + 2 without episode
+    md = render_markdown(_report_dict(report, code_revision="t", working_tree_dirty=False))
+    assert "WARNING: 4 captures never reached qualification" in md
+    assert "| fetch_failed | 2 |" in md
+
+
+def test_lower_funnel_mismatch_is_flagged() -> None:
+    """Review P2: qualified rows must equal formal candidates plus explained non-episodes."""
+    report = build_readiness(
+        _inputs(
+            [],
+            qualification_rows=5,
+            excluded_by_reason={"source_identity_unapproved": 3},
+            qualified_without_episode_by_status={},
+        )
+    )
+    assert report.qualified_rows == 2
+    assert not report.lower_funnel_reconciles
+    md = render_markdown(_report_dict(report, code_revision="t", working_tree_dirty=False))
+    assert "do not reconcile" in md

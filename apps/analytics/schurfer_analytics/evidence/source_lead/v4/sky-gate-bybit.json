@@ -1,0 +1,384 @@
+{
+  "base": "SKY",
+  "bundle_sha256": "712a8ea3ce677e1abe1b28ff61212d4a8b4be4e1944d42c21415e9ad3673e395",
+  "captured_at": "2026-09-26T06:58:57.050081+00:00",
+  "code_revision": "4111a1661e333849fe6d0d7a5e4504bf4e8bad9d",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/sky?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-09-26T06:58:57.048115+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "ethereum",
+      "block_time_in_minutes": 0,
+      "categories": [
+        "Decentralized Finance (DeFi)",
+        "Ethereum Ecosystem",
+        "Stablecoin Issuer",
+        "Hydration Ecosystem",
+        "Governance"
+      ],
+      "contract_address": "0x56072c95faa701256059aa122697b133aded9279",
+      "country_origin": "",
+      "description": {
+        "en": "SKY is a governance token, which is like a digital voting share, for Sky Protocol. This system launched in 2024 as a rebrand and upgrade of the older Maker Protocol. Sky Protocol’s main value lies in giving users a simple, secure way to trade, save, and earn rewards without ever giving up control of their funds. It is built around a stablecoin called USDS, which is always worth one US dollar, but it is completely decentralized.\n\nThe protocol is run by automated agreements called smart contracts, so there’s no middleman controlling users' money. The system uses two main tokens: USDS for stable savings, and SKY for community governance. users can help secure the network and earn rewards by staking their SKY tokens in the Staking Engine, which is like locking them in an interest-bearing account to help the system run. The protocol also uses SkyLink to seamlessly connect users' funds across different blockchains for faster and cheaper transactions.\n\nThe Sky Protocol is unique because it has no single CEO or traditional core team of investors; instead, it is managed entirely by its global community of SKY token holders. This decentralized setup means that SKY is primarily used for two core utilities: it grants essential voting power to decide on all major system changes, and it can be staked in the Staking Engine to help secure the network and earn rewards. Staking also provides holders with the ability to borrow the USDS stablecoin, making SKY the essential key for both governance and income generation within the ecosystem."
+      },
+      "detail_platforms": {
+        "ethereum": {
+          "contract_address": "0x56072c95faa701256059aa122697b133aded9279",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/eth/tokens/0x56072c95faa701256059aa122697b133aded9279"
+        },
+        "hydration": {
+          "contract_address": "asset_registry%2F1000795",
+          "decimal_place": 18
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": true,
+      "hashing_algorithm": null,
+      "id": "sky",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/39925/large/sky.jpg?1724827980",
+        "small": "https://coin-images.coingecko.com/coins/images/39925/small/sky.jpg?1724827980",
+        "thumb": "https://coin-images.coingecko.com/coins/images/39925/thumb/sky.jpg?1724827980"
+      },
+      "last_updated": "2026-09-26T06:55:30.000Z",
+      "links": {
+        "announcement_url": [],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://etherscan.io/token/0x56072c95faa701256059aa122697b133aded9279",
+          "https://intel.arkm.com/explorer/token/sky",
+          "https://ethplorer.io/address/0x56072c95faa701256059aa122697b133aded9279",
+          "https://hydration.subscan.io/custom_token?unique_id=asset_registry%2F1000795"
+        ],
+        "chat_url": [],
+        "facebook_username": "",
+        "homepage": ["https://sky.money/"],
+        "official_forum_url": [],
+        "repos_url": {
+          "bitbucket": [],
+          "github": []
+        },
+        "snapshot_url": null,
+        "subreddit_url": null,
+        "telegram_channel_identifier": "",
+        "twitter_screen_name": "SkyEcosystem",
+        "whitepaper": "https://ipfs.io/ipfs/Qmex5coqQPXqo4FvCkPqvKfH2ibBgACTsUV3YrTGaC86LQ"
+      },
+      "listing_currency": null,
+      "listing_price": null,
+      "listing_source": null,
+      "listing_source_url": null,
+      "listing_timestamp": null,
+      "market_cap_rank": 56,
+      "market_cap_rank_with_rehypothecated": 71,
+      "name": "Sky",
+      "platforms": {
+        "ethereum": "0x56072c95faa701256059aa122697b133aded9279",
+        "hydration": "asset_registry%2F1000795"
+      },
+      "preview_listing": false,
+      "public_notice": "<a href=\"https://www.coingecko.com/en/coins/maker\"target=\"_blank\">Maker (MKR)</a> has been rebranded to <a href=\"https://www.coingecko.com/en/coins/sky\"target=\"_blank\">Sky (SKY)</a>. For more information, please visit this <a href=\"https://x.com/SkyEcosystem/status/1828405625828843710\"target=\"_blank\">post</a>.<br>",
+      "sentiment_votes_down_percentage": 0.0,
+      "sentiment_votes_up_percentage": 100.0,
+      "status_updates": [],
+      "symbol": "sky",
+      "watchlist_portfolio_users": 10003,
+      "web_slug": "sky"
+    },
+    "raw_sha256": "3cf0e7a43e20c756299efb8514f43285674adbded55a49ea9fac9235d6bb412c",
+    "source": "https://api.coingecko.com/api/v3/coins/sky",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v4",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-09-26T06:51:16.758270+00:00",
+    "payload": {
+      "active": true,
+      "code": "SKY",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "SKY",
+      "info": {
+        "category": [],
+        "chain": "ETH",
+        "chains": [
+          {
+            "addr": "0x56072c95faa701256059aa122697b133aded9279",
+            "deposit_disabled": false,
+            "name": "ETH",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "SKY",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "1834880357.97297",
+        "name": "Sky",
+        "total_supply": "∞",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "Sky",
+      "networks": {
+        "ERC20": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "ETH",
+          "info": {
+            "addr": "0x56072c95faa701256059aa122697b133aded9279",
+            "deposit_disabled": false,
+            "name": "ETH",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "ERC20",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "924bddd73598334eb2555557aeff39dc70c3c342fe2aaefc49aeb6ac4195e948",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "exact_contract",
+  "source_contract": {
+    "block_hash": "0x90a7da4df3e47bde64a34cc486d8708efd5c0614b2c6d1b54bdb0119ebde83ab",
+    "block_number": 26059987,
+    "chain": "ethereum",
+    "chain_id": 1,
+    "contract_address": "0x56072c95faa701256059aa122697b133aded9279",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://ethereum-rpc.publicnode.com",
+      "observed_at": "2026-09-26T06:58:49.655447+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "a0cfb5a1c696cf1b33c6808f77538ba8fbf89fc8515499513d43ce204d7a457a",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "source_market_evidence": {
+    "exchange": "gate",
+    "inference_basis": "gate futures contract payload has no base_asset/quote_asset/settle_asset fields; base/quote split parsed from the reported native_market_id ('SKY_USDT') on its '_' separator, settle asset inferred from the /futures/usdt/ endpoint family",
+    "inferred_base_asset": "SKY",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "SKY_USDT",
+    "onboarded_at_ms": 1757396260000,
+    "raw_evidence": {
+      "endpoint": "https://api.gateio.ws/api/v4/futures/usdt/contracts/SKY_USDT",
+      "observed_at": "2026-09-26T06:58:50.823745+00:00",
+      "payload": {
+        "config_change_time": 1789354402,
+        "contract_type": "",
+        "create_time": 1757396260,
+        "cross_leverage_default": "10",
+        "enable_bonus": true,
+        "enable_circuit_breaker": false,
+        "enable_credit": true,
+        "enable_decimal": false,
+        "funding_cap_ratio": "2",
+        "funding_impact_value": "5000",
+        "funding_interval": 14400,
+        "funding_next_apply": 1790409600,
+        "funding_offset": 0,
+        "funding_rate": "0.00005",
+        "funding_rate_indicative": "0.00005",
+        "funding_rate_limit": "0.02",
+        "in_delisting": false,
+        "index_price": "0.07878",
+        "interest_rate": "0.0003",
+        "is_pre_market": false,
+        "last_price": "0.07857",
+        "launch_time": 1757396260,
+        "leverage_max": "50",
+        "leverage_min": "1",
+        "long_users": 171,
+        "maintenance_rate": "0.01",
+        "maker_fee_rate": "-0.0001",
+        "mark_price": "0.07859",
+        "mark_price_round": "0.00001",
+        "mark_type": "index",
+        "market_order_size_max": "4500",
+        "market_order_slip_ratio": "0.05",
+        "name": "SKY_USDT",
+        "order_price_deviate": "0.2",
+        "order_price_round": "0.00001",
+        "order_size_max": 6800,
+        "order_size_min": 1,
+        "orderbook_id": 203798231,
+        "orders_limit": 100,
+        "position_size": 49304,
+        "quanto_multiplier": "100",
+        "ref_discount_rate": "0",
+        "ref_rebate_rate": "0.2",
+        "risk_limit_base": "5000",
+        "risk_limit_max": "2500000",
+        "risk_limit_step": "2495000",
+        "short_users": 142,
+        "status": "trading",
+        "taker_fee_rate": "0.00075",
+        "trade_id": 1068975,
+        "trade_size": 20297411,
+        "type": "direct",
+        "voucher_leverage": "0"
+      },
+      "raw_sha256": "2a7e9cb22a3106aa987c2b6daf971b492a851b12422bf40ca13001111221cb34",
+      "source": "https://api.gateio.ws/api/v4/futures/usdt/contracts/SKY_USDT",
+      "wire_exact": true
+    },
+    "reported_base_asset": null,
+    "reported_quote_asset": null,
+    "reported_settle_asset": null,
+    "status": "trading"
+  },
+  "target_catalog_evidence": {
+    "endpoint": "https://api.bybit.com/v5/asset/coin/query-info (authenticated, all coins)",
+    "observed_at": "2026-09-26T06:51:20.869167+00:00",
+    "payload": {
+      "chains": [
+        {
+          "chain": "ETH",
+          "chainType": "Ethereum",
+          "contractAddress": "0x56072C95FAA701256059aa122697B133aDEd9279"
+        }
+      ],
+      "coin": "SKY",
+      "contractAddress": "0x56072C95FAA701256059aa122697B133aDEd9279",
+      "name": "SKY",
+      "response_sha256": "dcbb785d22323ba31ec4687e0fd25bfec51cf316dfe4d779b0815cd34bc3e7dd",
+      "selected_chain": "ETH"
+    },
+    "raw_sha256": "b77f7d470d851e985d91d7fa6a7ea37ada03359819ead590a7ceadebab53427a",
+    "source": "bybit:coin_info_entry",
+    "wire_exact": false
+  },
+  "target_contract": {
+    "block_hash": "0x90a7da4df3e47bde64a34cc486d8708efd5c0614b2c6d1b54bdb0119ebde83ab",
+    "block_number": 26059987,
+    "chain": "ethereum",
+    "chain_id": 1,
+    "contract_address": "0x56072c95faa701256059aa122697b133aded9279",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://ethereum-rpc.publicnode.com",
+      "observed_at": "2026-09-26T06:58:49.655447+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "a0cfb5a1c696cf1b33c6808f77538ba8fbf89fc8515499513d43ce204d7a457a",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "target_exchange": "bybit",
+  "target_market_evidence": {
+    "exchange": "bybit",
+    "inference_basis": "copied verbatim from bybit v5 instruments-info's own baseCoin/quoteCoin/settleCoin fields -- genuinely reported, not parsed",
+    "inferred_base_asset": "SKY",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "SKYUSDT",
+    "onboarded_at_ms": 1754900886000,
+    "raw_evidence": {
+      "endpoint": "https://api.bybit.com/v5/market/instruments-info?category=linear (every cursor page)",
+      "observed_at": "2026-09-26T06:51:20.579476+00:00",
+      "payload": {
+        "baseCoin": "SKY",
+        "contractType": "LinearPerpetual",
+        "copyTrading": "both",
+        "deliveryFeeRate": "",
+        "deliveryTime": "0",
+        "displayName": "SKYUSDT",
+        "forbidUplWithdrawal": false,
+        "fullName": "SKY",
+        "fundingInterval": 240,
+        "isPreListing": false,
+        "launchTime": "1754900886000",
+        "leverageFilter": {
+          "leverageStep": "0.01",
+          "maxLeverage": "25.00",
+          "minLeverage": "1"
+        },
+        "lotSizeFilter": {
+          "maxMktOrderQty": "680000",
+          "maxOrderQty": "3400000",
+          "minNotionalValue": "5",
+          "minOrderQty": "10",
+          "postOnlyMaxOrderQty": "3400000",
+          "qtyStep": "10"
+        },
+        "lowerFundingRate": "-0.02",
+        "marketRegion": "",
+        "preListingInfo": null,
+        "priceFilter": {
+          "maxPrice": "199.99998",
+          "minPrice": "0.00001",
+          "tickSize": "0.00001"
+        },
+        "priceScale": "5",
+        "quoteCoin": "USDT",
+        "riskParameters": {
+          "priceLimitRatioX": "0.15",
+          "priceLimitRatioY": "0.3"
+        },
+        "settleCoin": "USDT",
+        "status": "Trading",
+        "symbol": "SKYUSDT",
+        "symbolId": 2402,
+        "symbolType": "",
+        "underlyingTicker": "",
+        "unifiedMarginTrade": true,
+        "upperFundingRate": "0.02"
+      },
+      "raw_sha256": "e8247584204ef98a22b563ba534f5c6d29fe78526aee9191eb3b87d3ee22ffd0",
+      "source": "bybit:instruments_info_entry",
+      "wire_exact": false
+    },
+    "reported_base_asset": "SKY",
+    "reported_quote_asset": "USDT",
+    "reported_settle_asset": "USDT",
+    "status": "Trading"
+  },
+  "working_tree_dirty": false
+}

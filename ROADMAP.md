@@ -8,10 +8,10 @@ Update only these four lines after every merge -- this is the fast-path
 status check, not a place for narrative.
 
 ```
-Current primary: HYP-015 outcome-blind readiness/freeze; actual-funding capture is accumulating; abnormal-flow v1 is recorded as an inconclusive diagnostic on a burned window
-State: production has no configured trading credentials and runs DRY_RUN with AUTO_TRADE off; portfolio engine v2 and replay snapshots merged (#438); no strategy has established a scalable after-cost edge
-Next: HYP-015 readiness/freeze in primary; support: abnormal-flow outcome adapter + K=1..20 portfolio/coverage diagnostic (burned window, non-promotional); then exit/path diagnostics and durable research cache; let HYP-012/HYP-015 mature without peeking
-User decision required: approve any future abnormal-flow v2 mechanism and portfolio policy before freeze; broad venue/L2/live expansion is not authorized; cold-bar canary remains a separate operational task
+Current primary: HYP-012 v4 toward a real-money decision: identity registry v4 built (85 assets, Bybit 44 / Binance 55, fingerprint 7d5f635a...), not yet active; HYP-015 funding capture accumulating
+State: production has no configured trading credentials and runs DRY_RUN with AUTO_TRADE off; Binance futures are not tradable for the owner, so Bybit is the execution venue; no strategy has established a scalable after-cost edge
+Next: merge PR D (HYP-012 cohort v2 on qualification v4, start 2026-09-29) and deploy the capture worker before that date; HYP-015 health checkpoint 2026-09-27 then freeze; then Bybit execution prep for a $50 run
+User decision required: approve the PR D design and the capture-worker deploy; adding execution venues goes through a new cohort version; live $50 only after the v4 formal read
 ```
 
 ### Completed code card — ENG-024 outcome-consumer integrity
@@ -3783,6 +3783,18 @@ net performance suitable for tax or risk accounting.
 - Rate limiting on api-gateway before any public exposure.
 - `gitleaks` plus the existing `make security` in CI (Phase 1). CodeQL or Semgrep
   later.
+- **Option, not scheduled (2026-09-25): local key storage and rotation.** Research keys
+  (read-only Bybit, CoinGecko demo) expire silently; the v4 identity run hit an expired
+  Bybit key and CoinGecko rate limits.
+  - **Storage:** one file per provider in `~/.config/schurfer/*.env`, mode 600, never
+    in the repo. Production keys stay in `.env.prod` on the host.
+  - **Check:** `make keys-check` pings each key and reports whether it works, its
+    permissions and the days to expiry (Bybit `query-api` returns `expiredAt`). It warns
+    when fewer than 14 days remain.
+  - **Rotation:** create the new key, replace it in the file, run `keys-check`, then
+    delete the old key at the provider.
+
+  Deferred behind getting HYP-012 v4 to a real-money decision.
 
 ## Tech debt and DX (opportunistic)
 

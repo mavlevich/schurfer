@@ -1,0 +1,445 @@
+{
+  "base": "NEWT",
+  "bundle_sha256": "b7f568d9c12e3527e639b4f7e698d0fe9c3974dc1744c8e611cb9a5cb0948c8d",
+  "captured_at": "2026-09-26T06:57:24.199346+00:00",
+  "code_revision": "4111a1661e333849fe6d0d7a5e4504bf4e8bad9d",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/newton-protocol?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-09-26T06:57:23.857927+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "ethereum",
+      "block_time_in_minutes": 0,
+      "categories": [
+        "Artificial Intelligence (AI)",
+        "BNB Chain Ecosystem",
+        "Ethereum Ecosystem",
+        "Binance HODLer Airdrops",
+        "DeFAI"
+      ],
+      "contract_address": "0xd0ec028a3d21533fdd200838f39c85b03679285d",
+      "country_origin": "",
+      "description": {
+        "en": "The Newton Protocol is a decentralized infrastructure layer for verifiable onchain automation and secure agent authorization. It enables protocols, DAOs, and users to execute complex actions through verifiable agents, without relying on centralized bots or offchain coordination. Users can securely authorize agents to act on their behalf using programmable permissions, ensuring that actions occur only under conditions they approve. By combining trusted execution environments (TEEs), zero-knowledge proofs, and a modular agent architecture, Newton Protocol brings automation fully onchain, enhancing transparency, composability, and trust."
+      },
+      "detail_platforms": {
+        "binance-smart-chain": {
+          "contract_address": "0xb8a677e6d805c8d743e6f14c8bc9c19305b5defc",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/bsc/tokens/0xb8a677e6d805c8d743e6f14c8bc9c19305b5defc"
+        },
+        "ethereum": {
+          "contract_address": "0xd0ec028a3d21533fdd200838f39c85b03679285d",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/eth/tokens/0xd0ec028a3d21533fdd200838f39c85b03679285d"
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": false,
+      "hashing_algorithm": null,
+      "id": "newton-protocol",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/66819/large/newton.jpg?1750642513",
+        "small": "https://coin-images.coingecko.com/coins/images/66819/small/newton.jpg?1750642513",
+        "thumb": "https://coin-images.coingecko.com/coins/images/66819/thumb/newton.jpg?1750642513"
+      },
+      "last_updated": "2026-09-26T06:55:30.000Z",
+      "links": {
+        "announcement_url": [],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://etherscan.io/token/0xD0eC028a3D21533Fdd200838F39c85B03679285D",
+          "https://intel.arkm.com/explorer/token/newton-protocol",
+          "https://ethplorer.io/address/0xD0eC028a3D21533Fdd200838F39c85B03679285D",
+          "https://bscscan.com/token/0xb8a677e6d805c8d743e6f14c8bc9c19305b5defc",
+          "https://binplorer.com/address/0xb8a677e6d805c8d743e6f14c8bc9c19305b5defc"
+        ],
+        "chat_url": ["https://www.tiktok.com/@magic.newton"],
+        "facebook_username": "",
+        "homepage": ["https://newt.foundation/", "https://newton.xyz/app"],
+        "official_forum_url": [
+          "https://www.youtube.com/@MagicNewton",
+          "https://discord.com/invite/magicnewton",
+          "https://www.instagram.com/magic.newton/"
+        ],
+        "repos_url": {
+          "bitbucket": [],
+          "github": []
+        },
+        "snapshot_url": null,
+        "subreddit_url": null,
+        "telegram_channel_identifier": "",
+        "twitter_screen_name": "newtfoundation",
+        "whitepaper": "https://blog.newt.foundation/the-litepaper/"
+      },
+      "listing_currency": null,
+      "listing_price": null,
+      "listing_source": null,
+      "listing_source_url": null,
+      "listing_timestamp": null,
+      "market_cap_rank": 1236,
+      "market_cap_rank_with_rehypothecated": 1515,
+      "name": "Newton Protocol",
+      "platforms": {
+        "binance-smart-chain": "0xb8a677e6d805c8d743e6f14c8bc9c19305b5defc",
+        "ethereum": "0xd0ec028a3d21533fdd200838f39c85b03679285d"
+      },
+      "preview_listing": false,
+      "public_notice": null,
+      "sentiment_votes_down_percentage": null,
+      "sentiment_votes_up_percentage": null,
+      "status_updates": [],
+      "symbol": "newt",
+      "watchlist_portfolio_users": 2672,
+      "web_slug": "newton-protocol"
+    },
+    "raw_sha256": "66bb8450bedea8df31569017ef92bc8836caaffa5abe0cb127480a784cd360ea",
+    "source": "https://api.coingecko.com/api/v3/coins/newton-protocol",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v4",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-09-26T06:51:16.758270+00:00",
+    "payload": {
+      "active": true,
+      "code": "NEWT",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "NEWT",
+      "info": {
+        "category": [],
+        "chain": "ETH",
+        "chains": [
+          {
+            "addr": "0xd0ec028a3d21533fdd200838f39c85b03679285d",
+            "deposit_disabled": false,
+            "name": "ETH",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          {
+            "addr": "0xb8a677e6d805c8d743e6f14c8bc9c19305b5defc",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "NEWT",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "10960700.0",
+        "name": "Newton",
+        "total_supply": "1000000000",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "Newton",
+      "networks": {
+        "BEP20": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "BSC",
+          "info": {
+            "addr": "0xb8a677e6d805c8d743e6f14c8bc9c19305b5defc",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "BEP20",
+          "precision": 0.0001,
+          "withdraw": true
+        },
+        "ERC20": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "ETH",
+          "info": {
+            "addr": "0xd0ec028a3d21533fdd200838f39c85b03679285d",
+            "deposit_disabled": false,
+            "name": "ETH",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "ERC20",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "c532d44aebb27b7e6919c577abdb0086478093a3b0c0f6583d615789bd990fd7",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "exact_contract",
+  "source_contract": {
+    "block_hash": "0xaf844bb920af30f69e38ff06ebc0619199562871b0784ccf8052827022f1701e",
+    "block_number": 124096742,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0xb8a677e6d805c8d743e6f14c8bc9c19305b5defc",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-09-26T06:57:24.197549+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "8e73d72cca28014c8646f2033e87ec712fc9eb6dbc2664092e1cf446ce4e6937",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "source_market_evidence": {
+    "exchange": "gate",
+    "inference_basis": "gate futures contract payload has no base_asset/quote_asset/settle_asset fields; base/quote split parsed from the reported native_market_id ('NEWT_USDT') on its '_' separator, settle asset inferred from the /futures/usdt/ endpoint family",
+    "inferred_base_asset": "NEWT",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "NEWT_USDT",
+    "onboarded_at_ms": 1750343793000,
+    "raw_evidence": {
+      "endpoint": "https://api.gateio.ws/api/v4/futures/usdt/contracts/NEWT_USDT",
+      "observed_at": "2026-09-26T06:57:17.568826+00:00",
+      "payload": {
+        "config_change_time": 1789984713,
+        "contract_type": "",
+        "create_time": 1750343793,
+        "cross_leverage_default": "10",
+        "enable_bonus": true,
+        "enable_circuit_breaker": false,
+        "enable_credit": true,
+        "enable_decimal": false,
+        "funding_cap_ratio": "2",
+        "funding_impact_value": "5000",
+        "funding_interval": 28800,
+        "funding_next_apply": 1790409600,
+        "funding_offset": 0,
+        "funding_rate": "0.0001",
+        "funding_rate_indicative": "0.0001",
+        "funding_rate_limit": "0.02",
+        "in_delisting": false,
+        "index_price": "0.05091",
+        "interest_rate": "0.0003",
+        "is_pre_market": false,
+        "last_price": "0.0509",
+        "launch_time": 1750343793,
+        "leverage_max": "10",
+        "leverage_min": "1",
+        "long_users": 116,
+        "maintenance_rate": "0.08",
+        "maker_fee_rate": "-0.0001",
+        "mark_price": "0.0509",
+        "mark_price_round": "0.00001",
+        "mark_type": "index",
+        "market_order_size_max": "100000",
+        "market_order_slip_ratio": "0.05",
+        "name": "NEWT_USDT",
+        "order_price_deviate": "0.2",
+        "order_price_round": "0.00001",
+        "order_size_max": 150000,
+        "order_size_min": 1,
+        "orderbook_id": 347300741,
+        "orders_limit": 100,
+        "position_size": 137347,
+        "quanto_multiplier": "10",
+        "ref_discount_rate": "0",
+        "ref_rebate_rate": "0.2",
+        "risk_limit_base": "5000",
+        "risk_limit_max": "2500000",
+        "risk_limit_step": "2495000",
+        "short_users": 64,
+        "status": "trading",
+        "taker_fee_rate": "0.00075",
+        "trade_id": 2772950,
+        "trade_size": 269386556,
+        "type": "direct",
+        "voucher_leverage": "0"
+      },
+      "raw_sha256": "a03077e7df0045851d531ea8f58989c88750afa44347b3b35d8a989bf2bd0486",
+      "source": "https://api.gateio.ws/api/v4/futures/usdt/contracts/NEWT_USDT",
+      "wire_exact": true
+    },
+    "reported_base_asset": null,
+    "reported_quote_asset": null,
+    "reported_settle_asset": null,
+    "status": "trading"
+  },
+  "target_catalog_evidence": {
+    "endpoint": "https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list",
+    "observed_at": "2026-09-26T06:51:19.811887+00:00",
+    "payload": {
+      "chainId": "56",
+      "chainName": "BSC",
+      "contractAddress": "0xb8a677e6d805c8d743e6f14c8bc9c19305b5defc",
+      "decimals": 18,
+      "fullyDelisted": true,
+      "listingCex": true,
+      "name": "Newton (NEWT)",
+      "offline": true,
+      "response_sha256": "dbbe5652ba9a3ab0a09f5ee929182c884c90a35921796bd8ecd155a82c8fa73c",
+      "symbol": "NEWT"
+    },
+    "raw_sha256": "f8a3dc23f87dc76d0dcbea3fcc670827dd84676e2123540489dbd5fa7d69140e",
+    "source": "binance:alpha_catalog_entry",
+    "wire_exact": false
+  },
+  "target_contract": {
+    "block_hash": "0xaf844bb920af30f69e38ff06ebc0619199562871b0784ccf8052827022f1701e",
+    "block_number": 124096742,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0xb8a677e6d805c8d743e6f14c8bc9c19305b5defc",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-09-26T06:57:24.197549+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "8e73d72cca28014c8646f2033e87ec712fc9eb6dbc2664092e1cf446ce4e6937",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "target_exchange": "binance",
+  "target_market_evidence": {
+    "exchange": "binance",
+    "inference_basis": "copied verbatim from binance futures exchangeInfo's own baseAsset/quoteAsset/marginAsset fields -- genuinely reported, not parsed",
+    "inferred_base_asset": "NEWT",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "NEWTUSDT",
+    "onboarded_at_ms": 1750343400000,
+    "raw_evidence": {
+      "endpoint": "https://fapi.binance.com/fapi/v1/exchangeInfo",
+      "observed_at": "2026-09-26T06:51:20.198689+00:00",
+      "payload": {
+        "baseAsset": "NEWT",
+        "baseAssetPrecision": 8,
+        "contractType": "PERPETUAL",
+        "deliveryDate": 4133404800000,
+        "filters": [
+          {
+            "filterType": "PRICE_FILTER",
+            "maxPrice": "200",
+            "minPrice": "0.0000100",
+            "tickSize": "0.0000100"
+          },
+          {
+            "filterType": "LOT_SIZE",
+            "maxQty": "13000000",
+            "minQty": "1",
+            "stepSize": "1"
+          },
+          {
+            "filterType": "MARKET_LOT_SIZE",
+            "maxQty": "2000000",
+            "minQty": "1",
+            "stepSize": "1"
+          },
+          {
+            "filterType": "MAX_NUM_ORDERS",
+            "limit": 200
+          },
+          {
+            "filterType": "MIN_NOTIONAL",
+            "notional": "5"
+          },
+          {
+            "filterType": "PERCENT_PRICE",
+            "multiplierDecimal": "4",
+            "multiplierDown": "0.8500",
+            "multiplierUp": "1.1500"
+          },
+          {
+            "filterType": "POSITION_RISK_CONTROL",
+            "positionControlSide": "NONE"
+          }
+        ],
+        "liquidationFee": "0.015000",
+        "maintMarginPercent": "2.5000",
+        "marginAsset": "USDT",
+        "marketTakeBound": "0.15",
+        "maxMoveOrderLimit": 10000,
+        "onboardDate": 1750343400000,
+        "orderTypes": [
+          "LIMIT",
+          "MARKET",
+          "STOP",
+          "STOP_MARKET",
+          "TAKE_PROFIT",
+          "TAKE_PROFIT_MARKET",
+          "TRAILING_STOP_MARKET"
+        ],
+        "pair": "NEWTUSDT",
+        "permissionSets": ["GRID", "COPY", "DCA", "PSB"],
+        "pricePrecision": 7,
+        "quantityPrecision": 0,
+        "quoteAsset": "USDT",
+        "quotePrecision": 8,
+        "requiredMarginPercent": "5.0000",
+        "status": "TRADING",
+        "symbol": "NEWTUSDT",
+        "timeInForce": ["GTC", "IOC", "FOK", "GTX", "GTD"],
+        "triggerProtect": "0.1500",
+        "underlyingSubType": ["Meme", "Crypto"],
+        "underlyingType": "COIN"
+      },
+      "raw_sha256": "e87d4f5a2d3de87a78a8dc0419ef27feed39f4265ef4b7670f928488c96d880c",
+      "source": "binance:futures_exchange_info_entry",
+      "wire_exact": false
+    },
+    "reported_base_asset": "NEWT",
+    "reported_quote_asset": "USDT",
+    "reported_settle_asset": "USDT",
+    "status": "TRADING"
+  },
+  "working_tree_dirty": false
+}

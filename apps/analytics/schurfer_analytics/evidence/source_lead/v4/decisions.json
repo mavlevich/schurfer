@@ -1,0 +1,5483 @@
+{
+  "approved_asset_count": 85,
+  "candidates_sha256": "0a7eeb501a1b5694d64f3cc46db6789fd6d706a96340833fccb2d58fb73e2348",
+  "code_revision": "4111a1661e333849fe6d0d7a5e4504bf4e8bad9d",
+  "decisions_sha256": "c7f782ec2871fd2a19365441cdc54a38c57974b510fcccc17a2d32bade9d8502",
+  "routes": [
+    {
+      "approved": false,
+      "base": "4",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "4",
+      "bundle_sha256": "cda5a5a03afb5bf6e7e609968ce43faef5f6b93929b444d78e7739d137c4f42e",
+      "chain": "bsc",
+      "coingecko_id": "4-2",
+      "contract_address": "0x0a43fc31a73013089df59194872ecae4cae14444",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "4STOCK",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "4STOCK",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "A",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "A",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "ACE",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "ACE",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": true,
+      "base": "AERO",
+      "bundle_sha256": "ca313da893d0a897c97fd391e7e78295ad2ecbab9327cd5affd7f3ac7d732fbd",
+      "chain": "base",
+      "coingecko_id": "aerodrome-finance",
+      "contract_address": "0x940181a94a35a4569e4529a3cdfb74e38fd98631",
+      "reason": "approved",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "AERO",
+      "bundle_sha256": "35486f6d0786b90e2aa3d486485c24bef144faae07678e55b9f2b0583e02a153",
+      "chain": "base",
+      "coingecko_id": "aerodrome-finance",
+      "contract_address": "0x940181a94a35a4569e4529a3cdfb74e38fd98631",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "AGRIPPA",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "AGRIPPA",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "AGT",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "AGT",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "AIN",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "AIN",
+      "bundle_sha256": "27f0e7642a992cf8fafafe4985e889da32496b6f7b785114ed1177101b988e41",
+      "chain": "bsc",
+      "coingecko_id": "infinity-ground",
+      "contract_address": "0x9558a9254890b2a8b057a789f413631b9084f4a3",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "AINVDA",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "AINVDA",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "AKE",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "AKE",
+      "bundle_sha256": "3233051df38f12c637b6ffdd4012fb046da7cf91d3b6dead122734a819c80f0d",
+      "chain": "bsc",
+      "coingecko_id": "akedo",
+      "contract_address": "0x2c3a8ee94ddd97244a93bc48298f97d2c412f7db",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "ALCH",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "ALCH",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "ALLINU",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "ALLINU",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "ANDURIL",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "ANDURIL",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": true,
+      "base": "ANKR",
+      "bundle_sha256": "f4cd2df9047c2eae00cca355cd7325ae24a240f4c999ef49c41e8c3efa9df655",
+      "chain": "ethereum",
+      "coingecko_id": "ankr",
+      "contract_address": "0x8290333cef9e6d528dd5618fb97a76f268f3edd4",
+      "reason": "approved",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "ANKR",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "ANSEM",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "ANSEM",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "APR",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "APR",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "APT",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "APT",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "AR",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "AR",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": true,
+      "base": "ARB",
+      "bundle_sha256": "7bac3417d576c1d374152f27f05495df19551de07249d2248c4a54edccc77c9a",
+      "chain": "arbitrum",
+      "coingecko_id": "arbitrum",
+      "contract_address": "0x912ce59144191c1204e64559fe8253a0e49e6548",
+      "reason": "approved",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "ARB",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "ARGUS",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "ARGUS",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "ARIA",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "ARIA",
+      "bundle_sha256": "194cc17f806ef295272449e1a785391430e444628de9f8bbd03201c0b44c173b",
+      "chain": "bsc",
+      "coingecko_id": "aria-ai",
+      "contract_address": "0x5d3a12c42e5372b2cc3264ab3cdcf660a1555238",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "ARK",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "ARK",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "ASTEROID",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_gate_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "ASTEROID",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_gate_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "ASTR",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "ASTR",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": true,
+      "base": "AVA",
+      "bundle_sha256": "f049f787fdfe7384322fb07729b567af6697c9c49cea087cce9fbacb759abfe7",
+      "chain": "ethereum",
+      "coingecko_id": "concierge-io",
+      "contract_address": "0xa6c0c097741d55ecd9a3a7def3a8253fd022ceb9",
+      "reason": "approved",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "AVA",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "AVAAI",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "AVAAI",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "AVAX",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "AVAX",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": true,
+      "base": "AZTEC",
+      "bundle_sha256": "b495a69b43cb11ca62a0a9ff18033c63eabc40d073aead759987da3958a4e0ae",
+      "chain": "ethereum",
+      "coingecko_id": "aztec",
+      "contract_address": "0xa27ec0006e59f245217ff08cd52a7e8b169e62d2",
+      "reason": "approved",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "AZTEC",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "B",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "B",
+      "bundle_sha256": "bbfd8f06455dc2c5f54dcecf5759011cf6643483c9c5648771224493e22ffef0",
+      "chain": "bsc",
+      "coingecko_id": "build-on",
+      "contract_address": "0x6bdcce4a559076e37755a78ce0c06214e59e4444",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "B2",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "B2",
+      "bundle_sha256": "7cdfce5a46e70985088f861593bc9842967c677cf712e74ebeda7fbb86d4c955",
+      "chain": "bsc",
+      "coingecko_id": "bsquared-network",
+      "contract_address": "0x783c3f003f172c6ac5ac700218a357d2d66ee2a2",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "BANK",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "BANK",
+      "bundle_sha256": "54d586ad4b40979c1865c0bff8a70706f1c8821fe07c82a485e36060b511b2dc",
+      "chain": "bsc",
+      "coingecko_id": "lorenzo-protocol",
+      "contract_address": "0x3aee7602b612de36088f3ffed8c8f10e86ebf2bf",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "BAS",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "BAS",
+      "bundle_sha256": "57f84dff1b04f01c259a228c23726299ba9cbc2a4f4834238925e0b9b3ff5edf",
+      "chain": "bsc",
+      "coingecko_id": "bas",
+      "contract_address": "0x0f0df6cb17ee5e883eddfef9153fc6036bdb4e37",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "BASECAT",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "BASECAT",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": true,
+      "base": "BB",
+      "bundle_sha256": "3d92260acf45e134fad9db3c4e273809cd3726decc313e5bcffb3df3c9c1732d",
+      "chain": "bsc",
+      "coingecko_id": "bouncebit",
+      "contract_address": "0xe0620abea429a66ba69d9a0cde9ab93dc15bb9c4",
+      "reason": "approved",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "BB",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "BCH",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "BCH",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "BEAT",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "BEAT",
+      "bundle_sha256": "80891c96715c86fb8448313ca59a4ed4fbab0fa67804c7ffe779a21396308b98",
+      "chain": "bsc",
+      "coingecko_id": "audiera",
+      "contract_address": "0xcf3232b85b43bca90e51d38cc06cc8bb8c8a3e36",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "BEN",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "BEN",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "BIRB",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "BIRB",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": true,
+      "base": "BLUR",
+      "bundle_sha256": "db4a314e1f9efea70b8d6bfb3cfe3048a3bc9bda152eb5311ebb765a12657972",
+      "chain": "ethereum",
+      "coingecko_id": "blur",
+      "contract_address": "0x5283d291dbcf85356a21ba090e6db59121208b44",
+      "reason": "approved",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "BLUR",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "BONER",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "BONER",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "BP",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "BP",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": true,
+      "base": "BR",
+      "bundle_sha256": "a67a33da42abd1e2013851f24f8699569b54cffac55240046eecad44cd1e240d",
+      "chain": "bsc",
+      "coingecko_id": "bedrock-token",
+      "contract_address": "0xff7d6a96ae471bbcd7713af9cb1feeb16cf56b41",
+      "reason": "approved",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "BR",
+      "bundle_sha256": "1c4ab1821d6da974ca19008e0cbc51383eeeda4c7ad6f46dfcff91fe88b69986",
+      "chain": "bsc",
+      "coingecko_id": "bedrock-token",
+      "contract_address": "0xff7d6a96ae471bbcd7713af9cb1feeb16cf56b41",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "BREW",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "BREW",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "BROCCOLI",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "BROCCOLI",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "BSB",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "BSB",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "BTR",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "BTR",
+      "bundle_sha256": "ddb4b0e9d5854385d721880a289089c4764dc460c0f2af0838fd4f5a5905d07d",
+      "chain": "bsc",
+      "coingecko_id": "bitlayer-bitvm",
+      "contract_address": "0xfed13d0c40790220fbde712987079eda1ed75c51",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "BTW",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "BTW",
+      "bundle_sha256": "c0c0d69e5a7495481dbd62ee6068ae8791690e2f3fc8d8027549b7afe45c3e28",
+      "chain": "bsc",
+      "coingecko_id": "bitway",
+      "contract_address": "0x444045b0ee1ee319a660a5e3d604ca0ffa35acaa",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "BULLA",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "BULLA",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "C",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "C",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_shared_chain",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "CAP",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "CAP",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": true,
+      "base": "CARV",
+      "bundle_sha256": "af37c92f1d3268efcfc549c43fdf14bc6e4207572cf1c3cae766a3fddb6e7878",
+      "chain": "base",
+      "coingecko_id": "carv",
+      "contract_address": "0xc08cd26474722ce93f4d0c34d16201461c10aa8c",
+      "reason": "approved",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "CARV",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_shared_chain",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "CATE",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "CATE",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "CATI",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "CATI",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "CELR",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "CELR",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": true,
+      "base": "CFG",
+      "bundle_sha256": "194b8ab44b4cb08d6b5c73a507b4e4d68680ebc5e1c064dfd68e7e0106919eaa",
+      "chain": "ethereum",
+      "coingecko_id": "centrifuge-2",
+      "contract_address": "0xcccccccccc33d538dbc2ee4feab0a7a1ff4e8a94",
+      "reason": "approved",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "CFG",
+      "bundle_sha256": "b79718df582fc936056c81cd285be62fc60084642183f58ceebc92de29dab940",
+      "chain": "ethereum",
+      "coingecko_id": "centrifuge-2",
+      "contract_address": "0xcccccccccc33d538dbc2ee4feab0a7a1ff4e8a94",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "CHILLGUY",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "CHILLGUY",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": true,
+      "base": "CHIP",
+      "bundle_sha256": "8434085fc376865041c2cbf1a2447dbfbca284882bf1d6fb40c3bbdf5ba7e1aa",
+      "chain": "arbitrum",
+      "coingecko_id": "chip-2",
+      "contract_address": "0x0c1c1c109fe34733fca54b82d7b46b75cfb71f6e",
+      "reason": "approved",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "CHIP",
+      "bundle_sha256": "2ef8d92f086fbff3ec9adb00aa5c68a74b932ffabf8212234d29a6dc812c0b1b",
+      "chain": "arbitrum",
+      "coingecko_id": "chip-2",
+      "contract_address": "0x0c1c1c109fe34733fca54b82d7b46b75cfb71f6e",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "CHR",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "CHR",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "CNPY",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "CNPY",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "COLLECT",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "COLLECT",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "COOL",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "COOL",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "COTI",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "COTI",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "CP",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "CP",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "CROSS",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "CROSS",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "coingecko_symbol_mismatch",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "CTR",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "CTR",
+      "bundle_sha256": "cc20b0af91ac75914a27c9fdc2696ca9e881f73d5706b9ef027156ef1de94863",
+      "chain": "base",
+      "coingecko_id": "citrea",
+      "contract_address": "0x11030f79109269d796fd0fb956d6244e502757f7",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "CTSI",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "CTSI",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "CVC",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "CVC",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "CYPH",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "CYPH",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "CYS",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "CYS",
+      "bundle_sha256": "f87e260e073dc95edb0f4ec051ff013eda5073c23785501171bacc98353985b3",
+      "chain": "bsc",
+      "coingecko_id": "cysic",
+      "contract_address": "0x0c69199c1562233640e0db5ce2c399a88eb507c7",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "DASH",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "DASH",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "DELTA",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "DELTA",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "DFDVX",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "DFDVX",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "DGAI",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "DGAI",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "DOGS",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "DOGS",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "DOLO",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "DOLO",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "DOOD",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "DOOD",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "DOT",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "DOT",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "DRIFT",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "DRIFT",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "DYM",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "DYM",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "EDEN",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "EDEN",
+      "bundle_sha256": "54146c3dfc8359bc802ec07fa38427298be0e634a077c9fdd3e07da7f610aa22",
+      "chain": "bsc",
+      "coingecko_id": "openeden",
+      "contract_address": "0x235b6fe22b4642ada16d311855c49ce7de260841",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "EDGE",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_shared_chain",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "EDGE",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_shared_chain",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "EDGEX",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "EDGEX",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "EMBER",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "EMBER",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": true,
+      "base": "ENA",
+      "bundle_sha256": "a855522883e6d10f3368014a302e51ba4db985924782ef9f4e35666460f4a635",
+      "chain": "ethereum",
+      "coingecko_id": "ethena",
+      "contract_address": "0x57e114b691db790c35207b2e685d4a43181e6061",
+      "reason": "approved",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "ENA",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": true,
+      "base": "ENSO",
+      "bundle_sha256": "e22c8b46a796c9ff75f87da4c199c31b92d9d740c1f455ca470da0209bf0cc2a",
+      "chain": "ethereum",
+      "coingecko_id": "enso",
+      "contract_address": "0x699f088b5dddcafb7c4824db5b10b57b37cb0c66",
+      "reason": "approved",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "ENSO",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_shared_chain",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "EPIC",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "EPIC",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "ESP",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "ESP",
+      "bundle_sha256": "fd13ff50d69d4e2515d4a97f953356017e3858d11b78383462554672fb2e7e1f",
+      "chain": "arbitrum",
+      "coingecko_id": "espresso",
+      "contract_address": "0x3b8db18e69d6686ad9371a423afe3dd1065c94f1",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": true,
+      "base": "ETHFI",
+      "bundle_sha256": "f157be8b655755be847ba8354b54808b7a29d8cc0b83683f69099c3640f0d401",
+      "chain": "ethereum",
+      "coingecko_id": "ether-fi",
+      "contract_address": "0xfe0c30065b384f05761f15d0cc899d4f9f9cc0eb",
+      "reason": "approved",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "ETHFI",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "ETHW",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "ETHW",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "EVAA",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "EVAA",
+      "bundle_sha256": "67f7ec689239197038a2b1a8bdbdb38d89532c3519d24fd02ef24eeb19c3cadb",
+      "chain": "bsc",
+      "coingecko_id": "evaa-protocol",
+      "contract_address": "0xaa036928c9c0df07d525b55ea8ee690bb5a628c1",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": true,
+      "base": "F",
+      "bundle_sha256": "19a42a0447fbbad0e5c9f2118346f671845ff4ea23ca1bbcc487c5bd47ac29da",
+      "chain": "ethereum",
+      "coingecko_id": "synfutures",
+      "contract_address": "0x6e15a54b5ecac17e58dadeddbe8506a7560252f9",
+      "reason": "approved",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "F",
+      "bundle_sha256": "aef971704f9bec75f2f61b08a8bb756905c7297894bac6136fc2bc63ab3cfb3e",
+      "chain": "bsc",
+      "coingecko_id": "synfutures",
+      "contract_address": "0xc9ccbd76c2353e593cc975f13295e8289d04d3bb",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "FATCOIN",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "FATCOIN",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": true,
+      "base": "FF",
+      "bundle_sha256": "599516c9f4d969f4420b2b215642023ed3ba252e02620d86bb6b851272db7405",
+      "chain": "ethereum",
+      "coingecko_id": "falcon-finance-ff",
+      "contract_address": "0xfa1c09fc8b491b6a4d3ff53a10cad29381b3f949",
+      "reason": "approved",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "FF",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_shared_chain",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "FIDA",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "FIDA",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "FIGHT",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "FIGHT",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "FIL",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "FIL",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": true,
+      "base": "FLOCK",
+      "bundle_sha256": "042e595a13dfcb003da0ba3ecd355767787ca3f1a286cc439ed50d3f862ae046",
+      "chain": "base",
+      "coingecko_id": "flock-2",
+      "contract_address": "0x5ab3d4c385b400f3abb49e80de2faf6a88a7b691",
+      "reason": "approved",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "FLOCK",
+      "bundle_sha256": "b661f535195da2e4484463c1bb070a5adb51a030967f82e4b0fe267d44e302f4",
+      "chain": "base",
+      "coingecko_id": "flock-2",
+      "contract_address": "0x5ab3d4c385b400f3abb49e80de2faf6a88a7b691",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "FLORK",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "FLORK",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "FLYBRAIN",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "FLYBRAIN",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "FOLKS",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "FOLKS",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "FONE",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "FONE",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "FORM",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "FORM",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "FRONG",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "FRONG",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "G",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "G",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "GAIB",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "GAIB",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "GENIUS",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "GENIUS",
+      "bundle_sha256": "2e8f5d3b95d1a2109067f7aee393ec4f33cbda61696d4dc16e4f4f5729864d0b",
+      "chain": "bsc",
+      "coingecko_id": "genius-3",
+      "contract_address": "0x1f12b85aac097e43aa1555b2881e98a51090e9a6",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "GIGGLEMAX",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "GIGGLEMAX",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "GOAT",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "GOAT",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "GPRO",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "GPRO",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "GRASS",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "GRASS",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "GRIFFAIN",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "GRIFFAIN",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "GSTOCKBSC",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "GSTOCKBSC",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "GUN",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "GUN",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": true,
+      "base": "H",
+      "bundle_sha256": "0434664c37e38b875d64d229f7b0f8118e66b3ef889f4da4dbe9f25cddcf4e68",
+      "chain": "ethereum",
+      "coingecko_id": "humanity",
+      "contract_address": "0xe76c5b78f93909d34404e9eb4c1f19e7582a5de1",
+      "reason": "approved",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "H",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_ambiguous",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "HAEDAL",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "HAEDAL",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "HEI",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "HEI",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "HEMI",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "HEMI",
+      "bundle_sha256": "a1767ca8010207d1ca9597b29a6d75798c2f49c54f95d331056f173f2d2f3608",
+      "chain": "bsc",
+      "coingecko_id": "hemi",
+      "contract_address": "0x5ffd0eadc186af9512542d0d5e5eafc65d5afc5b",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "HIVE",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "HIVE",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "HNT",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "HNT",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": true,
+      "base": "HOME",
+      "bundle_sha256": "f68d8583255e382fe3364d5aaa71bbb9ecd7a7f716ea0c5ba9450cbfa388d7da",
+      "chain": "bsc",
+      "coingecko_id": "home",
+      "contract_address": "0x4bfaa776991e85e5f8b1255461cbbd216cfc714f",
+      "reason": "approved",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "HOME",
+      "bundle_sha256": "3a89fae32b8f1a25918e2f4368c66b27d902d2904ab2b046d13f7cddc57bd61e",
+      "chain": "bsc",
+      "coingecko_id": "home",
+      "contract_address": "0x4bfaa776991e85e5f8b1255461cbbd216cfc714f",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "ICX",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_gate_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "ICX",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_gate_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "IDOL",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "IDOL",
+      "bundle_sha256": "8211671259d9c3bdb9ccbb5baf024206db62b570f73b10e065d6b6a76700a7e7",
+      "chain": "bsc",
+      "coingecko_id": "meet48",
+      "contract_address": "0x3b4de3c7855c03bb9f50ea252cd2c9fa1125ab07",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "ILV",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "ILV",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "INDEX",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "INDEX",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "INJ",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "INJ",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "INTW",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "INTW",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "IOST",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "IOST",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "IOTX",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "IOTX",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "JOE",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "JOE",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "JUGGERNAUT",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "JUGGERNAUT",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "JUP",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "JUP",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "KALSHI",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "KALSHI",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "KAT",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "KAT",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "KERNEL",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "KERNEL",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "KMNO",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "KMNO",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "KOMA",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "KOMA",
+      "bundle_sha256": "ff84fdc24a0eadf48fe29bece9028f55572d87103bd3b8bdd7a16f311db68e0a",
+      "chain": "bsc",
+      "coingecko_id": "koma-inu",
+      "contract_address": "0xd5eaaac47bd1993d661bc087e15dfb079a7f3c19",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "KSM",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "KSM",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "LAB",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "LAB",
+      "bundle_sha256": "21f2a50c513f327a93a08e0804eaf8df0035fcb245be45655bac49370edc9080",
+      "chain": "bsc",
+      "coingecko_id": "lab",
+      "contract_address": "0x7ec43cf65f1663f820427c62a5780b8f2e25593a",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "LAPTOP",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "LAPTOP",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "LAYER",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "LAYER",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "LISTA",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "LISTA",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "LPT",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "LPT",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": true,
+      "base": "LRC",
+      "bundle_sha256": "ad7eb0cffac27c011736362e6c5173ce4b71b10390be71d6d55858581a8477e7",
+      "chain": "ethereum",
+      "coingecko_id": "loopring",
+      "contract_address": "0xbbbbca6a901c926f240b89eacb641d8aec7aeafd",
+      "reason": "approved",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "LRC",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "LSK",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "LSK",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "LTC",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "LTC",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "LUNA",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "LUNA",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "LYN",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "LYN",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "M",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "M",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "MAGMA",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "MAGMA",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "MARSCOIN",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "MARSCOIN",
+      "bundle_sha256": "6ad95b42151ed5a8787296e962ffcd1ffb399474efaf569ec4a1157d5b06f2bf",
+      "chain": "bsc",
+      "coingecko_id": "marscoin-4",
+      "contract_address": "0xfe189e97832da1573e4e4ff034f4ffc3a15c7777",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "MEMECOIN",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "MEMECOIN",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "MERL",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "MERL",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "MET",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "MET",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "METIS",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "METIS",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "METU",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "METU",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "MICRODUCK",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "MICRODUCK",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "MINA",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "MINA",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "MOO",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "MOO",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": true,
+      "base": "MOVR",
+      "bundle_sha256": "1ed1de0ae4916c684fb241b918ae5d60a74bb82bf9ed7b28bce8478eba285cef",
+      "chain": "base",
+      "coingecko_id": "moonriver",
+      "contract_address": "0x43feb74608334dda8c1a6500d185cfc3ea962b83",
+      "reason": "approved",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "MOVR",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "MTL",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "MTL",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "MUBARAK",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "MUBARAK",
+      "bundle_sha256": "98fc26ab7be1c74d1b20366217f7a0e7a52e15c53de4c83ef437b461c1256d00",
+      "chain": "bsc",
+      "coingecko_id": "mubarak",
+      "contract_address": "0x5c85d6c6825ab4032337f11ee92a72df936b46f6",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "MUSEBOOK",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "MUSEBOOK",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "MYX",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "MYX",
+      "bundle_sha256": "fee2baf08f618df620394db5529bd3aad1edff9b5361b45362384a19eddfa166",
+      "chain": "bsc",
+      "coingecko_id": "myx-finance",
+      "contract_address": "0xd82544bf0dfe8385ef8fa34d67e6e4940cc63e16",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "NAORIS",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "NAORIS",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_shared_chain",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "NEAR",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "NEAR",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "NES",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "NES",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "NEURALINK",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "NEURALINK",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": true,
+      "base": "NEWT",
+      "bundle_sha256": "ce261bc9d9e66e0a08da1c6a197102e96e92b3f0483a20ab1b898515feb5d322",
+      "chain": "ethereum",
+      "coingecko_id": "newton-protocol",
+      "contract_address": "0xd0ec028a3d21533fdd200838f39c85b03679285d",
+      "reason": "approved",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "NEWT",
+      "bundle_sha256": "b7f568d9c12e3527e639b4f7e698d0fe9c3974dc1744c8e611cb9a5cb0948c8d",
+      "chain": "bsc",
+      "coingecko_id": "newton-protocol",
+      "contract_address": "0xb8a677e6d805c8d743e6f14c8bc9c19305b5defc",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "NIL",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "NIL",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "NMR",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "NMR",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": true,
+      "base": "NOM",
+      "bundle_sha256": "a984b8b8ccb465df6d41ad71b6dbe2192b3c62775dea936b46a97b8039db57c4",
+      "chain": "ethereum",
+      "coingecko_id": "nomina",
+      "contract_address": "0x6e6f6d696e61decd6605bd4a57836c5db6923340",
+      "reason": "approved",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "NOM",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "ON",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "ON",
+      "bundle_sha256": "1ea10a349ec9e5a3e86bf5b2bda067b3115665271bc25ffd8b2fba8cf1f6c02f",
+      "chain": "bsc",
+      "coingecko_id": "orochi-network",
+      "contract_address": "0x0e4f6209ed984b21edea43ace6e09559ed051d48",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": true,
+      "base": "ONDO",
+      "bundle_sha256": "0c7bd1f6accfee95821ba27e1971f19341052710f51b6dda20b04e6e13eaf519",
+      "chain": "ethereum",
+      "coingecko_id": "ondo-finance",
+      "contract_address": "0xfaba6f8e4a5e8ab82f62fe7c39859fa577269be3",
+      "reason": "approved",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "ONDO",
+      "bundle_sha256": "82267849c687d3a3d336472df2efa118ee160b3d2d8ed5aaaa88737abef195f7",
+      "chain": "ethereum",
+      "coingecko_id": "ondo-finance",
+      "contract_address": "0xfaba6f8e4a5e8ab82f62fe7c39859fa577269be3",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "ONE",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "ONE",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": true,
+      "base": "OPG",
+      "bundle_sha256": "0f69fd39b5ab27add2ef3f8bd540b4a1289c81701965eb5e42ab2a57d7cdb6dc",
+      "chain": "base",
+      "coingecko_id": "opengradient",
+      "contract_address": "0xfbc2051ae2265686a469421b2c5a2d5462fbf5eb",
+      "reason": "approved",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "OPG",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_shared_chain",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "ORBIO",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "ORBIO",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": true,
+      "base": "ORDER",
+      "bundle_sha256": "99f608f158b6bb86fe3c8aad79e9b65068f9faf85222c7466dcb7472674b5ee3",
+      "chain": "ethereum",
+      "coingecko_id": "orderly-network",
+      "contract_address": "0xabd4c63d2616a5201454168269031355f4764337",
+      "reason": "approved",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "ORDER",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_ambiguous",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "PAID",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "PAID",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "PAIR",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "PAIR",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "PEPE",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "PEPE",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "PHA",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "PHA",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": true,
+      "base": "PIEVERSE",
+      "bundle_sha256": "db3a5983ae8dac8551023d6efda335d183906de848aff25dc5b9b693a6488df8",
+      "chain": "ethereum",
+      "coingecko_id": "pieverse",
+      "contract_address": "0x0e63b9c287e32a05e6b9ab8ee8df88a2760225a9",
+      "reason": "approved",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "PIEVERSE",
+      "bundle_sha256": "9b450cb798b6e413d3b8807f07702d169416c7b53eeaf5826e2310872bfad658",
+      "chain": "bsc",
+      "coingecko_id": "pieverse",
+      "contract_address": "0x0e63b9c287e32a05e6b9ab8ee8df88a2760225a9",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "PLAY",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "PLAY",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": true,
+      "base": "PLUME",
+      "bundle_sha256": "270f3f035f1977e6d6a20d1cc8d169a0c579c32f80821f4990c2911a20ee2845",
+      "chain": "ethereum",
+      "coingecko_id": "plume",
+      "contract_address": "0x4c1746a800d224393fe2470c70a35717ed4ea5f1",
+      "reason": "approved",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "PLUME",
+      "bundle_sha256": "8ecdb3e7c7914d3bbfa5f7f3c0e83662c0c99ce928adc29d3bba467007796ac3",
+      "chain": "ethereum",
+      "coingecko_id": "plume",
+      "contract_address": "0x4c1746a800d224393fe2470c70a35717ed4ea5f1",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "POLYMARKET",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "POLYMARKET",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "POLYX",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "POLYX",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "PONS",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "PONS",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "POWER",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "POWER",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_shared_chain",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "POWR",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "POWR",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "PROLOGUE",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "PROLOGUE",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "PROS",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "PROS",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": true,
+      "base": "PROVE",
+      "bundle_sha256": "e11eeff53ef26b7d6d0eb69c2cc803818e62efe54cd95be58524c982d869abe7",
+      "chain": "ethereum",
+      "coingecko_id": "succinct",
+      "contract_address": "0x6bef15d938d4e72056ac92ea4bdd0d76b1c4ad29",
+      "reason": "approved",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "PROVE",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_shared_chain",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "PSG",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_gate_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "PSG",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_gate_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "PTB",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "PTB",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_shared_chain",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "PUNDIX",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "PUNDIX",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "Q",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "Q",
+      "bundle_sha256": "2c16f37882e48529664071518fc4173eaaa9e9d4935938b99b08180ff76928ad",
+      "chain": "bsc",
+      "coingecko_id": "quack-ai",
+      "contract_address": "0xc07e1300dc138601fa6b0b59f8d0fa477e690589",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": true,
+      "base": "QNT",
+      "bundle_sha256": "e6218a549534efc7ac22f3215fd2d4592bfb235b8d2895e3e908f193df58f3f2",
+      "chain": "ethereum",
+      "coingecko_id": "quant-network",
+      "contract_address": "0x4a220e6096b25eadb88358cb44068a3248254675",
+      "reason": "approved",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "QNT",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "RARE",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "RARE",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "RAY",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "RAY",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "REZ",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "REZ",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "RIVER",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "RIVER",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "S",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "S",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "SAGA",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "SAGA",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "SCR",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "SCR",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "SCRT",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "SCRT",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "SECZ",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "SECZ",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "SEI",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "SEI",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": true,
+      "base": "SENT",
+      "bundle_sha256": "2fe109488394038b42e373cb9b3ef6f8ebd8a5756cc37af71d80d5db51cc148a",
+      "chain": "ethereum",
+      "coingecko_id": "sentient",
+      "contract_address": "0x56a3ba04e95d34268a19b2a4474dc979babdaf76",
+      "reason": "approved",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "SENT",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_shared_chain",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "SHROOM",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "SHROOM",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "SKL",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "SKL",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "SKR",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "SKR",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": true,
+      "base": "SKY",
+      "bundle_sha256": "712a8ea3ce677e1abe1b28ff61212d4a8b4be4e1944d42c21415e9ad3673e395",
+      "chain": "ethereum",
+      "coingecko_id": "sky",
+      "contract_address": "0x56072c95faa701256059aa122697b133aded9279",
+      "reason": "approved",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "SKY",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "SKYAI",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "SKYAI",
+      "bundle_sha256": "fba2b8ddb308c517b32a96b18a62a3325b015c373bd0a8218a1436ffa6162c2d",
+      "chain": "bsc",
+      "coingecko_id": "skyai",
+      "contract_address": "0x92aa03137385f18539301349dcfc9ebc923ffb10",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "SNXX",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "SNXX",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "SOLV",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "SOLV",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "SOPH",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "SOPH",
+      "bundle_sha256": "912042bef64135850c54975a844f00ca4476006d9d8fb50ad0de07d8cb64c282",
+      "chain": "bsc",
+      "coingecko_id": "sophon",
+      "contract_address": "0x31dba3c96481fde3cd81c2aaf51f2d8bf618c742",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "SPACEHOOD",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "SPACEHOOD",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": true,
+      "base": "SPK",
+      "bundle_sha256": "0a6ea53b67ecaf1a5a46040a45ec9d42b6b7bdd707121bad40c26d5eaac262b3",
+      "chain": "ethereum",
+      "coingecko_id": "spark-2",
+      "contract_address": "0xc20059e0317de91738d13af027dfc4a50781b066",
+      "reason": "approved",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "SPK",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_shared_chain",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "STANDARD",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "STANDARD",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "STEEM",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "STEEM",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "STG",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_gate_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "STG",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_gate_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "STONK",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "STONK",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "STONKS",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "STONKS",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "STORJ",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "STORJ",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "STRK",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "STRK",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "SUE",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "SUE",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "SUPER",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "SUPER",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": true,
+      "base": "SUSHI",
+      "bundle_sha256": "f333d43617b70da31cabca5bd335544fb6cc2349a9a837a7eae38efa3603e69b",
+      "chain": "ethereum",
+      "coingecko_id": "sushi",
+      "contract_address": "0x6b3595068778dd592e39a122f4f5a5cf09c90fe2",
+      "reason": "approved",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "SUSHI",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": true,
+      "base": "T",
+      "bundle_sha256": "71320069016288ff9af2738de1163729048fb944838fd23e287eb12c8c72592e",
+      "chain": "ethereum",
+      "coingecko_id": "threshold-network-token",
+      "contract_address": "0xcdf7028ceab81fa0c6971208e83fa7872994bee5",
+      "reason": "approved",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "T",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": true,
+      "base": "TA",
+      "bundle_sha256": "0a977685964e69c65e9bc76f63d8d2c6ced4c89d360811ef3ac53164994a0cf5",
+      "chain": "bsc",
+      "coingecko_id": "trusta-ai",
+      "contract_address": "0x539ae81a166e5e80aed211731563e549c411b140",
+      "reason": "approved",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "TA",
+      "bundle_sha256": "ac91ae39cb7b4d6500db064ae734449a521e5554ecfaf18a74fc3052d0cddd36",
+      "chain": "bsc",
+      "coingecko_id": "trusta-ai",
+      "contract_address": "0x539ae81a166e5e80aed211731563e549c411b140",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "TAC",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "TAC",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "TAG",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "TAG",
+      "bundle_sha256": "9c72a269919eaace92839c1aa65b2e48329c9352ecc663edc9493588af0de5f6",
+      "chain": "bsc",
+      "coingecko_id": "tagger",
+      "contract_address": "0x208bf3e7da9639f1eaefa2de78c23396b0682025",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "TAKE",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "TAKE",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "TAO",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "TAO",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "THETA",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "THETA",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "TOLLY",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "TOLLY",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "TRADOOR",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "TRADOOR",
+      "bundle_sha256": "9866306b3ab34c6c7c36bda56b0765920463a810d73e2dbb8979eba90c8f2f85",
+      "chain": "bsc",
+      "coingecko_id": "tradoor",
+      "contract_address": "0x9123400446a56176eb1b6be9ee5cf703e409f492",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "TRIA",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "TRIA",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "TSTBSC",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "TSTBSC",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "TUT",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "TUT",
+      "bundle_sha256": "1e0a85cf5ae094cb63aec344efaccfb9938491da4c5b9f5d1db59379b04b5d80",
+      "chain": "bsc",
+      "coingecko_id": "tutorial",
+      "contract_address": "0xcaae2a2f939f51d97cdfa9a86e79e3f085b799f3",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "UAI",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "UAI",
+      "bundle_sha256": "36d17f837700113962b25db73fc3c3eb1486a557cc082bf9d4533e5e1010b0fe",
+      "chain": "bsc",
+      "coingecko_id": "unifai-network",
+      "contract_address": "0x3e5d4f8aee0d9b3082d5f6da5d6e225d17ba9ea0",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "UB",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "UB",
+      "bundle_sha256": "02fbfb8ab1d18054c93633134710ca4b1fc2bd69155e11821e5528c62f775298",
+      "chain": "bsc",
+      "coingecko_id": "unibase",
+      "contract_address": "0x40b8129b786d766267a7a118cf8c07e31cdb6fde",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": true,
+      "base": "UNI",
+      "bundle_sha256": "cb80f3dea78f2b17f15280db523c0dc5215c9a6ec5f93a0fe3198af8ed989183",
+      "chain": "ethereum",
+      "coingecko_id": "uniswap",
+      "contract_address": "0x1f9840a85d5af5bf1d1762f925bdaddc4201f984",
+      "reason": "approved",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "UNI",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "USELESS",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "USELESS",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "VELVET",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "VELVET",
+      "bundle_sha256": "3297f601493a32f87b33ddce8e8b3627fb03850793a649799b7c369f39193994",
+      "chain": "bsc",
+      "coingecko_id": "velvet",
+      "contract_address": "0x8b194370825e37b33373e74a41009161808c1488",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "VTHO",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "VTHO",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": true,
+      "base": "VVV",
+      "bundle_sha256": "f5b014732ac314d233de60fbc601686bac94e634725d5647be3acfd1806a768c",
+      "chain": "base",
+      "coingecko_id": "venice-token",
+      "contract_address": "0xacfe6019ed1a7dc6f7b508c02d1b04ec88cc21bf",
+      "reason": "approved",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "VVV",
+      "bundle_sha256": "0ad350a1ee612fb1338189390d4d5610dfafff03e034c9141b1aa36b5fab55c3",
+      "chain": "base",
+      "coingecko_id": "venice-token",
+      "contract_address": "0xacfe6019ed1a7dc6f7b508c02d1b04ec88cc21bf",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "WAXP",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "WAXP",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "WIF",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "WIF",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": true,
+      "base": "WOO",
+      "bundle_sha256": "756218470e1c300d9b33055c6ef6d8a4c382a6320a21905bd58db977016a49ef",
+      "chain": "ethereum",
+      "coingecko_id": "woo-network",
+      "contract_address": "0x4691937a7508860f876c9c0a2a617e7d9e945d4b",
+      "reason": "approved",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "WOO",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": true,
+      "base": "XAI",
+      "bundle_sha256": "0544d6983466a0a769ce24360843d922c4b1ca2b077b6dc2685f6b2997924009",
+      "chain": "arbitrum",
+      "coingecko_id": "xai-blockchain",
+      "contract_address": "0x4cb9a7ae498cedcbb5eae9f25736ae7d428c9d66",
+      "reason": "approved",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "XAI",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": true,
+      "base": "XAN",
+      "bundle_sha256": "3193f51573ce58c8dd9148486c4237089aa4192d81d953001f226682a2255873",
+      "chain": "ethereum",
+      "coingecko_id": "anoma",
+      "contract_address": "0xcedbea37c8872c4171259cdfd5255cb8923cf8e7",
+      "reason": "approved",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "XAN",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_shared_chain",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "XCN",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "XCN",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "XNO",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "XNO",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "XNY",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "XNY",
+      "bundle_sha256": "db66f8e06e4328a30b4474e023eadbf9c4ac8f14774cc186e5bb787d548e4ab5",
+      "chain": "bsc",
+      "coingecko_id": "codatta",
+      "contract_address": "0xe3225e11cab122f1a126a28997788e5230838ab9",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "XPIN",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "XPIN",
+      "bundle_sha256": "852426497628d7b87cc9e6addf008590c95d9ffec4bbac3eacefca0ca0775574",
+      "chain": "bsc",
+      "coingecko_id": "xpin-network",
+      "contract_address": "0xd955c9ba56fb1ab30e34766e252a97ccce3d31a6",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "XPL",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "XPL",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "XTZ",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "XTZ",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": true,
+      "base": "ZAMA",
+      "bundle_sha256": "ea2049a27abbc34da6ec95624f6329cdb6736ee5eb13fdb36e524c4ab08cd3cb",
+      "chain": "ethereum",
+      "coingecko_id": "zama",
+      "contract_address": "0xa12cc123ba206d4031d1c7f6223d1c2ec249f4f3",
+      "reason": "approved",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "ZAMA",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_shared_chain",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "ZCAT",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "ZCAT",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "ZEC",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "ZEC",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "ZEST",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "ZEST",
+      "bundle_sha256": "d7117714a311788384f91dbda15190b24e879f2e78d16fdb83e7b89e4b7fffcf",
+      "chain": "bsc",
+      "coingecko_id": "zest-protocol",
+      "contract_address": "0x5506599c722389a60580b5213ea1da60d64754a1",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "ZETA",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "ZETA",
+      "bundle_sha256": "c60f9e9a26a8604fcbaa07f8c27ce1096b4ab2b41cbf6805c8ef1bf76ba9ce04",
+      "chain": "ethereum",
+      "coingecko_id": "zetachain",
+      "contract_address": "0xf091867ec603a6628ed83d274e835539d82e9cc8",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "ZIL",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "ZIL",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "ZK",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "ZK",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": true,
+      "base": "ZORA",
+      "bundle_sha256": "2d74482b1115f922b6ce0fe7e60b8629891c8b3ecfbb5c03e742c07b43d988b7",
+      "chain": "base",
+      "coingecko_id": "zora",
+      "contract_address": "0x1111111111166b7fe7bd91427724b487980afc69",
+      "reason": "approved",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "ZORA",
+      "bundle_sha256": "fbd2f8172f5baa435dd560b70e4e2871c97a466bb55a77164f1b13dd0f9b1ec4",
+      "chain": "base",
+      "coingecko_id": "zora",
+      "contract_address": "0x1111111111166b7fe7bd91427724b487980afc69",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": true,
+      "base": "ZRO",
+      "bundle_sha256": "b4b1ea0a25813b18174d878ba2acb3f65b53e57cfe4eace3cc5f9772b4693e4a",
+      "chain": "ethereum",
+      "coingecko_id": "layerzero",
+      "contract_address": "0x6985884c4392d348587b19cb9eaaf157f13271cd",
+      "reason": "approved",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "ZRO",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "target_catalog_missing",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "ZZZ",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "ZZZ",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "哈基米",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "哈基米",
+      "bundle_sha256": "fe0c3e3035a6dabef7f7beb5d43ad346725e12cb4e9cd8b8130fa041b9b9037f",
+      "chain": "bsc",
+      "coingecko_id": "hakimi",
+      "contract_address": "0x82ec31d69b3c289e541b50e30681fd1acad24444",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "币安人生",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": false,
+      "base": "币安人生",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "gate_no_supported_contract",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "牛来",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "牛来",
+      "bundle_sha256": "a9d5e7feb29998aeeee38b7d582217ba6e6e6f0b5b1d0e5a02a1e006b638d899",
+      "chain": "bsc",
+      "coingecko_id": "niu-lai",
+      "contract_address": "0xbeea1d618e533a387d941f58a7d4c9b7bd377777",
+      "reason": "approved",
+      "target_exchange": "binance"
+    },
+    {
+      "approved": false,
+      "base": "龙虾",
+      "bundle_sha256": null,
+      "chain": null,
+      "coingecko_id": null,
+      "contract_address": null,
+      "reason": "no_target_perp",
+      "target_exchange": "bybit"
+    },
+    {
+      "approved": true,
+      "base": "龙虾",
+      "bundle_sha256": "501122bf03da330c4698905c4087b7fba0cfb15e47ae105273f264bfb1c55fc7",
+      "chain": "bsc",
+      "coingecko_id": "lobster-2",
+      "contract_address": "0xeccbb861c0dda7efd964010085488b69317e4444",
+      "reason": "approved",
+      "target_exchange": "binance"
+    }
+  ],
+  "rule_version": "source_lead_identity_rule_v4",
+  "run_id": "12f66862-09fa-4148-bc6b-07fc5ea7ea70",
+  "source_hashes": {
+    "alpha_catalog": "dbbe5652ba9a3ab0a09f5ee929182c884c90a35921796bd8ecd155a82c8fa73c",
+    "binance_exchange_info": "46eecf245a3f2212cb84742363fba0d975e377890a69cf12b0e4823a15d8978e",
+    "bybit_coin_info": "dcbb785d22323ba31ec4687e0fd25bfec51cf316dfe4d779b0815cd34bc3e7dd",
+    "bybit_instruments": "1975e846d5d1b1536cfd831e627e026e40c34cb4fb405dc2def22f3fd1df8b70",
+    "coingecko_coins": "7eafdd77c022982a968d16c7b88164f6ea3a1ce2c56b3b3cff66e46d834ca54d",
+    "gate_currencies": "2d258b49727adbfd343ca6ae4fbdf4271de5e9fdb294fefbe28657f07291a835",
+    "gate_perps": "2c20f907a87a2a0caa2cdaf3e784bdbafd441e1007b88cbc8acdd44fdc5bf85e"
+  },
+  "summary_by_target": {
+    "binance": {
+      "approved": 55,
+      "coingecko_symbol_mismatch": 1,
+      "gate_no_supported_contract": 79,
+      "no_gate_perp": 4,
+      "no_shared_chain": 14,
+      "no_target_perp": 71,
+      "target_catalog_ambiguous": 2,
+      "target_catalog_missing": 45,
+      "target_no_supported_contract": 1
+    },
+    "bybit": {
+      "approved": 44,
+      "gate_no_supported_contract": 73,
+      "no_gate_perp": 4,
+      "no_shared_chain": 1,
+      "no_target_perp": 85,
+      "target_catalog_missing": 62,
+      "target_no_supported_contract": 3
+    }
+  },
+  "version": "source_lead_identity_v4_decisions",
+  "working_tree_dirty": false
+}

@@ -175,6 +175,11 @@ EVIDENCE_DIR = Path(__file__).parent / "evidence" / "source_lead" / "v3"
 # more.
 EVIDENCE_DIR_V2 = Path(__file__).parent / "evidence" / "source_lead" / "v2"
 
+# Registry v4 evidence (source_lead_identity_v4.py). Written by that module's
+# own capture run; EVIDENCE_DIR above keeps pointing at v3 until a separate
+# activation change moves the registry and this default together.
+EVIDENCE_DIR_V4 = Path(__file__).parent / "evidence" / "source_lead" / "v4"
+
 IdentityClass = Literal[
     "exact_contract",
     "same_asset_multichain_candidate",
@@ -188,6 +193,11 @@ IdentityClass = Literal[
 CHAIN_RPC: dict[str, tuple[int, str]] = {
     "bsc": (56, "https://bsc-dataseed.binance.org/"),
     "ethereum": (1, "https://ethereum-rpc.publicnode.com"),
+    # source-lead identity registry v4: the two further EVM chains Gate
+    # reports for v4 candidates often enough to matter (Base 13, Arbitrum 5
+    # of 268 bases, 2026-09-25).
+    "base": (8453, "https://mainnet.base.org"),
+    "arbitrum": (42161, "https://arb1.arbitrum.io/rpc"),
 }
 
 _DECIMALS_SELECTOR = "0x313ce567"  # keccak256("decimals()")[:4]
@@ -584,6 +594,59 @@ def find_binance_futures_market(
     )
 
 
+def find_bybit_futures_market(
+    instruments: RawFetch, symbol: str
+) -> DerivativeMarketEvidence | None:
+    """Bybit counterpart of find_binance_futures_market (registry v4).
+    `instruments` is the full paginated v5 linear instruments-info list,
+    fetched once per run; its payload is {"list": [...]}. Same
+    multiple-match fail-closed rule; None when the symbol is absent."""
+    items = instruments.payload.get("list") if isinstance(instruments.payload, dict) else None
+    if not isinstance(items, list):
+        raise ValueError("bybit instruments payload has no list array")
+    matches = [
+        item
+        for item in items
+        if isinstance(item, dict) and str(item.get("symbol", "")).upper() == symbol.upper()
+    ]
+    if len(matches) > 1:
+        raise ValueError(f"bybit instruments-info has {len(matches)} entries for {symbol!r}")
+    if not matches:
+        return None
+    entry = matches[0]
+    onboarded_ms = onboarded_at_ms("bybit", entry)
+    if onboarded_ms is None:
+        raise ValueError(f"bybit market {symbol!r} has no usable launchTime")
+    raw = RawFetch(
+        source="bybit:instruments_info_entry",
+        endpoint=instruments.endpoint,
+        observed_at=instruments.observed_at,
+        raw_sha256=_sha256_canonical(entry),
+        wire_exact=False,  # extracted from the shared paginated response
+        payload=entry,
+    )
+    base_asset = str(entry.get("baseCoin", ""))
+    quote_asset = str(entry.get("quoteCoin", ""))
+    settle_asset = str(entry.get("settleCoin", ""))
+    return DerivativeMarketEvidence(
+        exchange="bybit",
+        native_market_id=str(entry.get("symbol", "")),
+        reported_base_asset=base_asset,
+        reported_quote_asset=quote_asset,
+        reported_settle_asset=settle_asset,
+        inferred_base_asset=base_asset,
+        inferred_quote_asset=quote_asset,
+        inferred_settle_asset=settle_asset,
+        inference_basis=(
+            "copied verbatim from bybit v5 instruments-info's own "
+            "baseCoin/quoteCoin/settleCoin fields -- genuinely reported, not parsed"
+        ),
+        onboarded_at_ms=onboarded_ms,
+        status=str(entry.get("status", "")),
+        raw_evidence=raw,
+    )
+
+
 def _validate_route_evidence(
     *, base: str, source_market: DerivativeMarketEvidence, target_market: DerivativeMarketEvidence
 ) -> None:
@@ -641,6 +704,14 @@ def _validate_route_evidence(
             f"{base}: gate futures contract in_delisting={in_delisting!r}, expected false"
         )
 
+    source_status = source_market.status.lower()
+    if source_status != "trading":
+        raise ValueError(
+            f"{base}: gate futures market status is {source_market.status!r}, not trading"
+        )
+    if target_market.exchange == "bybit":
+        _validate_bybit_target_market(base, target_market)
+        return
     if target_market.native_market_id != f"{base.upper()}USDT":
         raise ValueError(
             f"{base}: binance futures native_market_id {target_market.native_market_id!r} "
@@ -666,15 +737,43 @@ def _validate_route_evidence(
         raise ValueError(
             f"{base}: binance futures contractType is {contract_type!r}, not PERPETUAL"
         )
-    source_status = source_market.status.lower()
-    if source_status != "trading":
-        raise ValueError(
-            f"{base}: gate futures market status is {source_market.status!r}, not trading"
-        )
     if target_market.status.upper() != "TRADING":
         raise ValueError(
             f"{base}: binance futures market status is {target_market.status!r}, not TRADING"
         )
+
+
+def _validate_bybit_target_market(base: str, target_market: DerivativeMarketEvidence) -> None:
+    """Bybit side of _validate_route_evidence (registry v4). Bybit's
+    instruments-info reports baseCoin/quoteCoin/settleCoin as distinct
+    fields, so, as for Binance, checking the reported base against the
+    candidate is real corroboration. The same residual ticker bridge
+    applies: Bybit's coin-info entry and its perpetual are linked only by
+    the shared symbol."""
+    if target_market.native_market_id != f"{base.upper()}USDT":
+        raise ValueError(
+            f"{base}: bybit native_market_id {target_market.native_market_id!r} "
+            f"does not match the expected {base.upper()}USDT"
+        )
+    reported_base = target_market.reported_base_asset
+    if reported_base is None or reported_base.upper() != base.upper():
+        raise ValueError(
+            f"{base}: bybit reported baseCoin {reported_base!r} does not match the candidate"
+        )
+    if (
+        target_market.reported_quote_asset != "USDT"
+        or target_market.reported_settle_asset != "USDT"
+    ):
+        raise ValueError(
+            f"{base}: bybit market is not USDT-quoted/settled "
+            f"(quote={target_market.reported_quote_asset!r}, "
+            f"settle={target_market.reported_settle_asset!r})"
+        )
+    contract_type = target_market.raw_evidence.payload.get("contractType")
+    if contract_type != "LinearPerpetual":
+        raise ValueError(f"{base}: bybit contractType is {contract_type!r}, not LinearPerpetual")
+    if target_market.status != "Trading":
+        raise ValueError(f"{base}: bybit market status is {target_market.status!r}, not Trading")
 
 
 def revalidate_bundle_route_evidence(bundle: EvidenceBundle) -> None:
@@ -1204,6 +1303,8 @@ def render_bundle_json(bundle: EvidenceBundle) -> str:
 
 
 MANIFEST_FILENAME = "manifest.json"
+# Registry v4 publishes its decisions next to the bundles (one atomic swap).
+DECISIONS_FILENAME = "decisions.json"
 
 
 def _bundle_filename(base: str, source_exchange: str, target_exchange: str) -> str:
@@ -1307,7 +1408,11 @@ def load_all_evidence_bundles(
         if allow_empty:
             return ()
         raise EvidenceIntegrityError(f"evidence directory not found: {target_dir}")
-    paths = sorted(path for path in target_dir.glob("*.json") if path.name != MANIFEST_FILENAME)
+    paths = sorted(
+        path
+        for path in target_dir.glob("*.json")
+        if path.name not in (MANIFEST_FILENAME, DECISIONS_FILENAME)
+    )
     if not paths and not allow_empty:
         raise EvidenceIntegrityError(f"no evidence bundles found in {target_dir}")
     bundles = tuple(load_evidence_bundle(path) for path in paths)

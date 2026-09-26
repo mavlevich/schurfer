@@ -55,6 +55,14 @@ class ReadinessInputs:
     episodes: tuple[QualifiedEpisode, ...]
     captured_in_cohort: int = 0
     excluded_by_reason: dict[str, int] = field(default_factory=dict)
+    # Captures with NO qualification row of this version, keyed "status:eligibility_reason"
+    # (e.g. excluded at capture because Gate was not the unique first source).
+    pre_qualification_by_reason: dict[str, int] = field(default_factory=dict)
+    # Every qualification row of this version in the cohort (qualified + excluded).
+    qualification_rows: int = 0
+    # Qualified rows that are NOT a formal episode, keyed by the selected target
+    # observation's status ("missing" when there is none).
+    qualified_without_episode_by_status: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -80,6 +88,18 @@ class ReadinessReport:
     meets_week_floor: bool
     timing_floors_met: bool
     excluded_by_reason: dict[str, int]
+    pre_qualification_by_reason: dict[str, int]
+    # Stopped before qualification, split by what it means.
+    capture_excluded: int  # expected: the capture itself was ineligible
+    capture_in_flight: int  # still collecting
+    capture_abandoned: int  # the capture process gave up (a known failure mode)
+    # A COMPLETE eligible capture never qualified, or an unknown status: a pipeline error.
+    pipeline_errors: int
+    qualification_rows: int
+    qualified_rows: int
+    qualified_without_episode_by_status: dict[str, int]
+    # qualified rows == formal candidates + qualified rows without an episode
+    lower_funnel_reconciles: bool
 
 
 def _utc_week_key(moment: datetime) -> str:
@@ -131,6 +151,12 @@ def build_readiness(
     meets_clusters = len(by_asset) >= floor_clusters
     meets_weeks = len(by_week) >= floor_weeks
 
+    stage = {"excluded": 0, "collecting": 0, "abandoned": 0, "error": 0}
+    for key, count in inputs.pre_qualification_by_reason.items():
+        status = key.split(":", 1)[0]
+        stage[status if status in ("excluded", "collecting", "abandoned") else "error"] += count
+    qualified_rows = inputs.qualification_rows - sum(inputs.excluded_by_reason.values())
+
     weeks_to_floor: float | None = None
     if not meets_episodes and rate and rate > 0:
         weeks_to_floor = (floor_episodes - matured) / rate
@@ -152,6 +178,16 @@ def build_readiness(
         meets_week_floor=meets_weeks,
         timing_floors_met=meets_episodes and meets_clusters and meets_weeks,
         excluded_by_reason=dict(inputs.excluded_by_reason),
+        pre_qualification_by_reason=dict(inputs.pre_qualification_by_reason),
+        capture_excluded=stage["excluded"],
+        capture_in_flight=stage["collecting"],
+        capture_abandoned=stage["abandoned"],
+        pipeline_errors=stage["error"],
+        qualification_rows=inputs.qualification_rows,
+        qualified_rows=qualified_rows,
+        qualified_without_episode_by_status=dict(inputs.qualified_without_episode_by_status),
+        lower_funnel_reconciles=qualified_rows
+        == candidates + sum(inputs.qualified_without_episode_by_status.values()),
     )
 
 

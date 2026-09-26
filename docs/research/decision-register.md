@@ -22,7 +22,43 @@ after-cost economics unless explicitly labelled a paired difference.
 
 ## Confirmed facts (with references)
 
+- **HYP-012 cohort v2 registered; v1 closed (2026-09-26).** Qualification v4 selects the
+  venue only among venues the owner can trade (`TRADABLE_VENUES = ("bybit",)`), on registry
+  v4. The estimand is `standalone_early_entry_net_return_tradable_venue_v2`, and the cohort
+  starts 2026-09-29T00:00Z. Every v1 evaluation rule, floor and cap is unchanged
+  (`source-lead-forward-cohort-v2.md`). The v1 cohort (Binance, 15 of 100 episodes) is
+  closed without a formal read. A `candidate` v2 verdict is necessary, not sufficient: it
+  allows a broader confirmatory cohort and a separate, owner-approved live execution test on
+  Bybit capped at USD 50, which measures real fills against the cost assumptions and does
+  not establish the edge. Larger capital needs the confirmatory cohort.
+- **HYP-012 v4 identity approval policy (2026-09-25).** Binance futures are not
+  available to the owner (Poland), so v4 makes Bybit the primary execution venue and keeps
+  Binance as a descriptive comparison (estimand registered in PR D). Identity for v4 is
+  decided by one written rule (`source_lead_identity_rule_v4`, see
+  `source-lead-identity-registry-v4.md`), fixed before any route was decided and applied
+  per route to a hashed candidate snapshot (window end 2026-09-25T20:00:00Z). The v3
+  checklist item "a second person independently confirmed the link" is replaced for v4:
+  there is no second person, so the owner confirms the rule and the full decision list
+  once, and the reviewer independently re-derives every approved route from the raw
+  evidence. `build-registry` refuses without an approval that names the exact
+  `decisions_sha256`.
+  Result (2026-09-26): 272 candidates (window plus the 14 v3 assets), 544 route decisions,
+  99 approved routes for 85 assets (Bybit 44, Binance 55), `decisions_sha256=c7f782ec...`.
+  The reviewer re-derived all 544 decisions from the stored source snapshots with an
+  independent script (0 mismatches). Registry v4 fingerprint `7d5f635a4ed0...`. Not active
+  until PR D.
 - **Abnormal-flow v1 is an inconclusive diagnostic result.** The prospective window ([2026-08-30T00:00:00Z, 2026-09-18T11:58:00Z)) was burned due to multiple reads and monkeypatched execution without the formal runner (`docs/research/evidence/abnormal-flow-v1/diagnostic-v1-burned/README.md`). Mean net +0.61%, excess +0.45%, resolved 125/252, missingness 50.4%, control coverage 53%, week concentration 52%, CI lower bounds negative, portfolio +$4.25 / maxDD $17.15. The result is non-promotional and v1 does not advance to live execution. Next step: post-hoc missingness/control-coverage diagnostic on the burned window without promotion claims.
+- **Abnormal-flow v1 post-hoc follow-up (2026-09-25): the apparent edge was missingness
+  selection; v2 is deprioritised.** The unresolved-reason taxonomy (#443) found that all 127
+  unresolved primaries had complete entry and exit bars: v1 lost them only to its rule that
+  all 721 path minutes be `price_complete`. The registered entry/exit-bars sensitivity
+  (`abnormal-flow-v1-boundary-sensitivity.md`, interpretation fixed before the read) resolves
+  251/252 episodes: mean net -0.06%, median -0.36%, 43% winners (gross +0.50% vs ~0.55%
+  costs); the 126 newly resolved average -0.72%, so the earlier +0.61% came from a
+  completeness-selected subsample. Portfolio net PnL is negative for every K = 1..20 and
+  every scenario ($300 bank). Post-hoc on a burned window, not a formal FAIL; per the
+  registered meaning it lowers the priority of an abnormal-flow v2. If the family is
+  revisited, its contract must use a bounded entry/exit-bars path rule.
 - **The executable pump-short is net negative.** `app.research_report_runs`:
   `liquid_taker_candidate_v1` = 802 eligible / 151 tradeable episodes, net expectancy
   -0.224%/episode, 95% CI [-0.455%, -0.0096%] (entirely below zero);

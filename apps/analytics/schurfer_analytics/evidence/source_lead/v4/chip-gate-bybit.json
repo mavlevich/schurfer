@@ -1,0 +1,405 @@
+{
+  "base": "CHIP",
+  "bundle_sha256": "8434085fc376865041c2cbf1a2447dbfbca284882bf1d6fb40c3bbdf5ba7e1aa",
+  "captured_at": "2026-09-26T06:54:15.402372+00:00",
+  "code_revision": "4111a1661e333849fe6d0d7a5e4504bf4e8bad9d",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/chip-2?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-09-26T06:54:15.400722+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "arbitrum-one",
+      "block_time_in_minutes": 0,
+      "categories": [
+        "Decentralized Finance (DeFi)",
+        "Solana Ecosystem",
+        "Arbitrum Ecosystem",
+        "Ethereum Ecosystem",
+        "Base Ecosystem",
+        "Stablecoin Issuer",
+        "YZi Labs (Prev. Binance Labs) Portfolio",
+        "Binance HODLer Airdrops",
+        "Binance Alpha Spotlight",
+        "Governance",
+        "CoinList Launchpad"
+      ],
+      "contract_address": "0x0c1c1c109fe34733fca54b82d7b46b75cfb71f6e",
+      "country_origin": "",
+      "description": {
+        "en": ""
+      },
+      "detail_platforms": {
+        "arbitrum-one": {
+          "contract_address": "0x0c1c1c109fe34733fca54b82d7b46b75cfb71f6e",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/arbitrum/tokens/0x0c1c1c109fe34733fca54b82d7b46b75cfb71f6e"
+        },
+        "base": {
+          "contract_address": "0x0c1c1c109fe34733fca54b82d7b46b75cfb71f6e",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/base/tokens/0x0c1c1c109fe34733fca54b82d7b46b75cfb71f6e"
+        },
+        "ethereum": {
+          "contract_address": "0x0c1c1c109fe34733fca54b82d7b46b75cfb71f6e",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/eth/tokens/0x0c1c1c109fe34733fca54b82d7b46b75cfb71f6e"
+        },
+        "solana": {
+          "contract_address": "chipCAT7vi5CZtbZsn9z7iMPXvFwyAnKz3QFu8XVuHm",
+          "decimal_place": 9,
+          "geckoterminal_url": "https://www.geckoterminal.com/solana/tokens/chipCAT7vi5CZtbZsn9z7iMPXvFwyAnKz3QFu8XVuHm"
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": false,
+      "hashing_algorithm": null,
+      "id": "chip-2",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/102171777/large/CHIP_Token_Logo_Large.png?1776777444",
+        "small": "https://coin-images.coingecko.com/coins/images/102171777/small/CHIP_Token_Logo_Large.png?1776777444",
+        "thumb": "https://coin-images.coingecko.com/coins/images/102171777/thumb/CHIP_Token_Logo_Large.png?1776777444"
+      },
+      "last_updated": "2026-09-26T06:51:40.000Z",
+      "links": {
+        "announcement_url": [],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://arbiscan.io/token/0x0C1c1C109FE34733fca54b82d7B46B75CFb71F6e",
+          "https://intel.arkm.com/explorer/token/chip-2",
+          "https://etherscan.io/token/0x0c1c1c109fe34733fca54b82d7b46b75cfb71f6e",
+          "https://ethplorer.io/address/0x0c1c1c109fe34733fca54b82d7b46b75cfb71f6e",
+          "https://basescan.org/token/0x0C1c1C109FE34733fca54b82d7B46B75CFb71F6e",
+          "https://solscan.io/token/chipCAT7vi5CZtbZsn9z7iMPXvFwyAnKz3QFu8XVuHm"
+        ],
+        "chat_url": [],
+        "facebook_username": "",
+        "homepage": ["https://usd.ai/"],
+        "official_forum_url": [],
+        "repos_url": {
+          "bitbucket": [],
+          "github": []
+        },
+        "snapshot_url": null,
+        "subreddit_url": null,
+        "telegram_channel_identifier": "usdaiofficial",
+        "twitter_screen_name": "USDai_Official",
+        "whitepaper": ""
+      },
+      "listing_currency": null,
+      "listing_price": null,
+      "listing_source": null,
+      "listing_source_url": null,
+      "listing_timestamp": null,
+      "market_cap_rank": 303,
+      "market_cap_rank_with_rehypothecated": 425,
+      "name": "USD.AI",
+      "platforms": {
+        "arbitrum-one": "0x0c1c1c109fe34733fca54b82d7b46b75cfb71f6e",
+        "base": "0x0c1c1c109fe34733fca54b82d7b46b75cfb71f6e",
+        "ethereum": "0x0c1c1c109fe34733fca54b82d7b46b75cfb71f6e",
+        "solana": "chipCAT7vi5CZtbZsn9z7iMPXvFwyAnKz3QFu8XVuHm"
+      },
+      "preview_listing": false,
+      "public_notice": null,
+      "sentiment_votes_down_percentage": 18.75,
+      "sentiment_votes_up_percentage": 81.25,
+      "status_updates": [],
+      "symbol": "chip",
+      "watchlist_portfolio_users": 4330,
+      "web_slug": "usd-ai"
+    },
+    "raw_sha256": "6448de048a05ea1cfcd82fa014b160691000d23de18fb1820c88d8ce4ac614f8",
+    "source": "https://api.coingecko.com/api/v3/coins/chip-2",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v4",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-09-26T06:51:16.758270+00:00",
+    "payload": {
+      "active": true,
+      "code": "CHIP",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "CHIP",
+      "info": {
+        "category": [],
+        "chain": "ARBEVM",
+        "chains": [
+          {
+            "addr": "0x0c1c1c109fe34733fca54b82d7b46b75cfb71f6e",
+            "deposit_disabled": false,
+            "name": "ARBEVM",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "CHIP",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "98240000.0",
+        "name": "USD.AI",
+        "total_supply": "10000000000",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "USD.AI",
+      "networks": {
+        "ARBITRUM": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "ARBEVM",
+          "info": {
+            "addr": "0x0c1c1c109fe34733fca54b82d7b46b75cfb71f6e",
+            "deposit_disabled": false,
+            "name": "ARBEVM",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "ARBITRUM",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "79f24faad7bc6ce2164f9e666fed47a06ae323ff372d683002dcbdac8522fa0a",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "exact_contract",
+  "source_contract": {
+    "block_hash": "0xd5b61fd304a2741f3c38d83e15f6015ad97bb8adbc8875422794004e45b45b8c",
+    "block_number": 509008058,
+    "chain": "arbitrum",
+    "chain_id": 42161,
+    "contract_address": "0x0c1c1c109fe34733fca54b82d7b46b75cfb71f6e",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://arb1.arbitrum.io/rpc",
+      "observed_at": "2026-09-26T06:54:07.963603+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "a0cfb5a1c696cf1b33c6808f77538ba8fbf89fc8515499513d43ce204d7a457a",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "source_market_evidence": {
+    "exchange": "gate",
+    "inference_basis": "gate futures contract payload has no base_asset/quote_asset/settle_asset fields; base/quote split parsed from the reported native_market_id ('CHIP_USDT') on its '_' separator, settle asset inferred from the /futures/usdt/ endpoint family",
+    "inferred_base_asset": "CHIP",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "CHIP_USDT",
+    "onboarded_at_ms": 1776406222000,
+    "raw_evidence": {
+      "endpoint": "https://api.gateio.ws/api/v4/futures/usdt/contracts/CHIP_USDT",
+      "observed_at": "2026-09-26T06:54:09.110641+00:00",
+      "payload": {
+        "config_change_time": 1789354400,
+        "contract_type": "",
+        "create_time": 1776406222,
+        "cross_leverage_default": "10",
+        "enable_bonus": true,
+        "enable_circuit_breaker": false,
+        "enable_credit": true,
+        "enable_decimal": false,
+        "funding_cap_ratio": "0.75",
+        "funding_impact_value": "7000",
+        "funding_interval": 14400,
+        "funding_next_apply": 1790409600,
+        "funding_offset": 0,
+        "funding_rate": "0.00005",
+        "funding_rate_indicative": "0.00005",
+        "funding_rate_limit": "0.02",
+        "in_delisting": false,
+        "index_price": "0.048453",
+        "interest_rate": "0.0003",
+        "is_pre_market": false,
+        "last_price": "0.0484",
+        "launch_time": 1776406222,
+        "leverage_max": "50",
+        "leverage_min": "1",
+        "long_users": 165,
+        "maintenance_rate": "0.01",
+        "maker_fee_rate": "-0.0001",
+        "mark_price": "0.0484",
+        "mark_price_round": "0.00001",
+        "mark_type": "index",
+        "market_order_size_max": "35000",
+        "market_order_slip_ratio": "0.035",
+        "name": "CHIP_USDT",
+        "order_price_deviate": "0.12",
+        "order_price_round": "0.00001",
+        "order_size_max": 53000,
+        "order_size_min": 1,
+        "orderbook_id": 793702262,
+        "orders_limit": 100,
+        "position_size": 57728,
+        "quanto_multiplier": "100",
+        "ref_discount_rate": "0",
+        "ref_rebate_rate": "0.2",
+        "risk_limit_base": "5000",
+        "risk_limit_max": "10000000",
+        "risk_limit_step": "9995000",
+        "short_users": 151,
+        "status": "trading",
+        "taker_fee_rate": "0.00075",
+        "trade_id": 3450040,
+        "trade_size": 100233193,
+        "type": "direct",
+        "voucher_leverage": "0"
+      },
+      "raw_sha256": "3acf47c2677e5b8981083d04395c03b85edf10098ada3e6725d12894f1b5ef8f",
+      "source": "https://api.gateio.ws/api/v4/futures/usdt/contracts/CHIP_USDT",
+      "wire_exact": true
+    },
+    "reported_base_asset": null,
+    "reported_quote_asset": null,
+    "reported_settle_asset": null,
+    "status": "trading"
+  },
+  "target_catalog_evidence": {
+    "endpoint": "https://api.bybit.com/v5/asset/coin/query-info (authenticated, all coins)",
+    "observed_at": "2026-09-26T06:51:20.869167+00:00",
+    "payload": {
+      "chains": [
+        {
+          "chain": "ARBI",
+          "chainType": "Arbitrum One",
+          "contractAddress": "0x0C1c1C109FE34733fca54b82d7B46B75CFb71F6e"
+        }
+      ],
+      "coin": "CHIP",
+      "contractAddress": "0x0C1c1C109FE34733fca54b82d7B46B75CFb71F6e",
+      "name": "CHIP",
+      "response_sha256": "dcbb785d22323ba31ec4687e0fd25bfec51cf316dfe4d779b0815cd34bc3e7dd",
+      "selected_chain": "ARBI"
+    },
+    "raw_sha256": "aafc4761c3379bc0e49a4e9777d52e6bef1283e07f7ec3c1331dcc36a30d2607",
+    "source": "bybit:coin_info_entry",
+    "wire_exact": false
+  },
+  "target_contract": {
+    "block_hash": "0xd5b61fd304a2741f3c38d83e15f6015ad97bb8adbc8875422794004e45b45b8c",
+    "block_number": 509008058,
+    "chain": "arbitrum",
+    "chain_id": 42161,
+    "contract_address": "0x0c1c1c109fe34733fca54b82d7b46b75cfb71f6e",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://arb1.arbitrum.io/rpc",
+      "observed_at": "2026-09-26T06:54:07.963603+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "a0cfb5a1c696cf1b33c6808f77538ba8fbf89fc8515499513d43ce204d7a457a",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "target_exchange": "bybit",
+  "target_market_evidence": {
+    "exchange": "bybit",
+    "inference_basis": "copied verbatim from bybit v5 instruments-info's own baseCoin/quoteCoin/settleCoin fields -- genuinely reported, not parsed",
+    "inferred_base_asset": "CHIP",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "CHIPUSDT",
+    "onboarded_at_ms": 1776331130000,
+    "raw_evidence": {
+      "endpoint": "https://api.bybit.com/v5/market/instruments-info?category=linear (every cursor page)",
+      "observed_at": "2026-09-26T06:51:20.579476+00:00",
+      "payload": {
+        "baseCoin": "CHIP",
+        "contractType": "LinearPerpetual",
+        "copyTrading": "none",
+        "deliveryFeeRate": "",
+        "deliveryTime": "0",
+        "displayName": "CHIPUSDT",
+        "forbidUplWithdrawal": false,
+        "fullName": "CHIP",
+        "fundingInterval": 240,
+        "isPreListing": false,
+        "launchTime": "1776331130000",
+        "leverageFilter": {
+          "leverageStep": "0.01",
+          "maxLeverage": "20.00",
+          "minLeverage": "1"
+        },
+        "lotSizeFilter": {
+          "maxMktOrderQty": "800000",
+          "maxOrderQty": "4000000",
+          "minNotionalValue": "5",
+          "minOrderQty": "10",
+          "postOnlyMaxOrderQty": "4000000",
+          "qtyStep": "10"
+        },
+        "lowerFundingRate": "-0.025",
+        "marketRegion": "",
+        "preListingInfo": null,
+        "priceFilter": {
+          "maxPrice": "199.99998",
+          "minPrice": "0.00001",
+          "tickSize": "0.00001"
+        },
+        "priceScale": "5",
+        "quoteCoin": "USDT",
+        "riskParameters": {
+          "priceLimitRatioX": "0.15",
+          "priceLimitRatioY": "0.3"
+        },
+        "settleCoin": "USDT",
+        "status": "Trading",
+        "symbol": "CHIPUSDT",
+        "symbolId": 2621,
+        "symbolType": "",
+        "underlyingTicker": "",
+        "unifiedMarginTrade": true,
+        "upperFundingRate": "0.025"
+      },
+      "raw_sha256": "26d41cc1bd2cb583c064050288b36b9d1c59f4ac1a08ac85cd39405d96ddc672",
+      "source": "bybit:instruments_info_entry",
+      "wire_exact": false
+    },
+    "reported_base_asset": "CHIP",
+    "reported_quote_asset": "USDT",
+    "reported_settle_asset": "USDT",
+    "status": "Trading"
+  },
+  "working_tree_dirty": false
+}

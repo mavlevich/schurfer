@@ -1,0 +1,399 @@
+{
+  "base": "IDOL",
+  "bundle_sha256": "8211671259d9c3bdb9ccbb5baf024206db62b570f73b10e065d6b6a76700a7e7",
+  "captured_at": "2026-09-26T06:56:21.292049+00:00",
+  "code_revision": "4111a1661e333849fe6d0d7a5e4504bf4e8bad9d",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/meet48?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-09-26T06:56:21.287862+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "binance-smart-chain",
+      "block_time_in_minutes": 0,
+      "categories": [
+        "Entertainment",
+        "BNB Chain Ecosystem",
+        "AI Applications",
+        "Binance Wallet IDO",
+        "Governance"
+      ],
+      "contract_address": "0x3b4de3c7855c03bb9f50ea252cd2c9fa1125ab07",
+      "country_origin": "",
+      "description": {
+        "en": ""
+      },
+      "detail_platforms": {
+        "binance-smart-chain": {
+          "contract_address": "0x3b4de3c7855c03bb9f50ea252cd2c9fa1125ab07",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/bsc/tokens/0x3b4de3c7855c03bb9f50ea252cd2c9fa1125ab07"
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": true,
+      "hashing_algorithm": null,
+      "id": "meet48",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/66490/large/meet48.jpg?1749563372",
+        "small": "https://coin-images.coingecko.com/coins/images/66490/small/meet48.jpg?1749563372",
+        "thumb": "https://coin-images.coingecko.com/coins/images/66490/thumb/meet48.jpg?1749563372"
+      },
+      "last_updated": "2026-09-26T06:54:40.000Z",
+      "links": {
+        "announcement_url": [],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://bscscan.com/token/0x3B4de3c7855C03bB9F50ea252cD2c9FA1125Ab07",
+          "https://binplorer.com/address/0x3B4de3c7855C03bB9F50ea252cD2c9FA1125Ab07"
+        ],
+        "chat_url": [],
+        "facebook_username": "",
+        "homepage": ["https://www.meet48.com/"],
+        "official_forum_url": ["https://www.instagram.com/meet48official/"],
+        "repos_url": {
+          "bitbucket": [],
+          "github": []
+        },
+        "snapshot_url": null,
+        "subreddit_url": null,
+        "telegram_channel_identifier": "Meet_48",
+        "twitter_screen_name": "meet_48",
+        "whitepaper": ""
+      },
+      "listing_currency": null,
+      "listing_price": null,
+      "listing_source": null,
+      "listing_source_url": null,
+      "listing_timestamp": null,
+      "market_cap_rank": 825,
+      "market_cap_rank_with_rehypothecated": 1038,
+      "name": "MEET48",
+      "platforms": {
+        "binance-smart-chain": "0x3b4de3c7855c03bb9f50ea252cd2c9fa1125ab07"
+      },
+      "preview_listing": false,
+      "public_notice": null,
+      "sentiment_votes_down_percentage": null,
+      "sentiment_votes_up_percentage": null,
+      "status_updates": [],
+      "symbol": "idol",
+      "watchlist_portfolio_users": 709,
+      "web_slug": "meet48"
+    },
+    "raw_sha256": "3a4536d65327d334c7e08f8acf187fa8980b1e8ee8706dfd4968ca96ddbffa24",
+    "source": "https://api.coingecko.com/api/v3/coins/meet48",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v4",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-09-26T06:51:16.758270+00:00",
+    "payload": {
+      "active": true,
+      "code": "IDOL",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "IDOL",
+      "info": {
+        "category": [],
+        "chain": "BSC",
+        "chains": [
+          {
+            "addr": "0x3b4de3c7855c03bb9f50ea252cd2c9fa1125ab07",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "IDOL",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "10007616.0",
+        "name": "MEET48 Token",
+        "total_supply": "4800000000",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "MEET48 Token",
+      "networks": {
+        "BEP20": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "BSC",
+          "info": {
+            "addr": "0x3b4de3c7855c03bb9f50ea252cd2c9fa1125ab07",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "BEP20",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "f72c6cf34ae24c7c056ed981226fe44e7cb540e598f4928efe3fab025bb8796a",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "exact_contract",
+  "source_contract": {
+    "block_hash": "0x973b7545a188a5458dd50142996932e3971c9e9cdeed64a58264741915c44575",
+    "block_number": 124096585,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0x3b4de3c7855c03bb9f50ea252cd2c9fa1125ab07",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-09-26T06:56:13.816122+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "8e73d72cca28014c8646f2033e87ec712fc9eb6dbc2664092e1cf446ce4e6937",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "source_market_evidence": {
+    "exchange": "gate",
+    "inference_basis": "gate futures contract payload has no base_asset/quote_asset/settle_asset fields; base/quote split parsed from the reported native_market_id ('IDOL_USDT') on its '_' separator, settle asset inferred from the /futures/usdt/ endpoint family",
+    "inferred_base_asset": "IDOL",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "IDOL_USDT",
+    "onboarded_at_ms": 1749643538000,
+    "raw_evidence": {
+      "endpoint": "https://api.gateio.ws/api/v4/futures/usdt/contracts/IDOL_USDT",
+      "observed_at": "2026-09-26T06:56:14.967258+00:00",
+      "payload": {
+        "config_change_time": 1789354406,
+        "contract_type": "",
+        "create_time": 1749643538,
+        "cross_leverage_default": "10",
+        "enable_bonus": true,
+        "enable_circuit_breaker": false,
+        "enable_credit": true,
+        "enable_decimal": false,
+        "funding_cap_ratio": "1",
+        "funding_impact_value": "3000",
+        "funding_interval": 14400,
+        "funding_next_apply": 1790409600,
+        "funding_offset": 0,
+        "funding_rate": "0.000656",
+        "funding_rate_indicative": "0.000656",
+        "funding_rate_limit": "0.025",
+        "in_delisting": false,
+        "index_price": "0.01135",
+        "interest_rate": "0.0003",
+        "is_pre_market": false,
+        "last_price": "0.011388",
+        "launch_time": 1749643538,
+        "leverage_max": "10",
+        "leverage_min": "1",
+        "long_users": 210,
+        "maintenance_rate": "0.08",
+        "maker_fee_rate": "-0.0001",
+        "mark_price": "0.011388",
+        "mark_price_round": "0.000001",
+        "mark_type": "index",
+        "market_order_size_max": "20000",
+        "market_order_slip_ratio": "0.05",
+        "name": "IDOL_USDT",
+        "order_price_deviate": "0.2",
+        "order_price_round": "0.000001",
+        "order_size_max": 30000,
+        "order_size_min": 1,
+        "orderbook_id": 931947917,
+        "orders_limit": 100,
+        "position_size": 235797,
+        "quanto_multiplier": "100",
+        "ref_discount_rate": "0",
+        "ref_rebate_rate": "0.2",
+        "risk_limit_base": "5000",
+        "risk_limit_max": "2500000",
+        "risk_limit_step": "2495000",
+        "short_users": 124,
+        "status": "trading",
+        "taker_fee_rate": "0.00075",
+        "trade_id": 3693112,
+        "trade_size": 128684626,
+        "type": "direct",
+        "voucher_leverage": "0"
+      },
+      "raw_sha256": "119af31fd98fbdac9698b9a9b719e92a374f98062ca8ce95ea9a9e215711b636",
+      "source": "https://api.gateio.ws/api/v4/futures/usdt/contracts/IDOL_USDT",
+      "wire_exact": true
+    },
+    "reported_base_asset": null,
+    "reported_quote_asset": null,
+    "reported_settle_asset": null,
+    "status": "trading"
+  },
+  "target_catalog_evidence": {
+    "endpoint": "https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list",
+    "observed_at": "2026-09-26T06:51:19.811887+00:00",
+    "payload": {
+      "chainId": "56",
+      "chainName": "BSC",
+      "contractAddress": "0x3b4de3c7855c03bb9f50ea252cd2c9fa1125ab07",
+      "decimals": 18,
+      "fullyDelisted": false,
+      "listingCex": false,
+      "name": "MEET48 Token",
+      "offline": false,
+      "response_sha256": "dbbe5652ba9a3ab0a09f5ee929182c884c90a35921796bd8ecd155a82c8fa73c",
+      "symbol": "IDOL"
+    },
+    "raw_sha256": "37a9364dc12ef16686a66ad37c470e8ee1c6c5079d50a48066bd5c55c12d475d",
+    "source": "binance:alpha_catalog_entry",
+    "wire_exact": false
+  },
+  "target_contract": {
+    "block_hash": "0x973b7545a188a5458dd50142996932e3971c9e9cdeed64a58264741915c44575",
+    "block_number": 124096585,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0x3b4de3c7855c03bb9f50ea252cd2c9fa1125ab07",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-09-26T06:56:13.816122+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "8e73d72cca28014c8646f2033e87ec712fc9eb6dbc2664092e1cf446ce4e6937",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "target_exchange": "binance",
+  "target_market_evidence": {
+    "exchange": "binance",
+    "inference_basis": "copied verbatim from binance futures exchangeInfo's own baseAsset/quoteAsset/marginAsset fields -- genuinely reported, not parsed",
+    "inferred_base_asset": "IDOL",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "IDOLUSDT",
+    "onboarded_at_ms": 1751620500000,
+    "raw_evidence": {
+      "endpoint": "https://fapi.binance.com/fapi/v1/exchangeInfo",
+      "observed_at": "2026-09-26T06:51:20.198689+00:00",
+      "payload": {
+        "baseAsset": "IDOL",
+        "baseAssetPrecision": 8,
+        "contractType": "PERPETUAL",
+        "deliveryDate": 4133404800000,
+        "filters": [
+          {
+            "filterType": "PRICE_FILTER",
+            "maxPrice": "200",
+            "minPrice": "0.0000100",
+            "tickSize": "0.0000100"
+          },
+          {
+            "filterType": "LOT_SIZE",
+            "maxQty": "60000000",
+            "minQty": "1",
+            "stepSize": "1"
+          },
+          {
+            "filterType": "MARKET_LOT_SIZE",
+            "maxQty": "6000000",
+            "minQty": "1",
+            "stepSize": "1"
+          },
+          {
+            "filterType": "MAX_NUM_ORDERS",
+            "limit": 200
+          },
+          {
+            "filterType": "MIN_NOTIONAL",
+            "notional": "5"
+          },
+          {
+            "filterType": "PERCENT_PRICE",
+            "multiplierDecimal": "4",
+            "multiplierDown": "0.8500",
+            "multiplierUp": "1.1500"
+          },
+          {
+            "filterType": "POSITION_RISK_CONTROL",
+            "positionControlSide": "NONE"
+          }
+        ],
+        "liquidationFee": "0.020000",
+        "maintMarginPercent": "2.5000",
+        "marginAsset": "USDT",
+        "marketTakeBound": "0.15",
+        "maxMoveOrderLimit": 10000,
+        "onboardDate": 1751620500000,
+        "orderTypes": [
+          "LIMIT",
+          "MARKET",
+          "STOP",
+          "STOP_MARKET",
+          "TAKE_PROFIT",
+          "TAKE_PROFIT_MARKET",
+          "TRAILING_STOP_MARKET"
+        ],
+        "pair": "IDOLUSDT",
+        "permissionSets": ["GRID", "COPY", "DCA", "PSB"],
+        "pricePrecision": 7,
+        "quantityPrecision": 0,
+        "quoteAsset": "USDT",
+        "quotePrecision": 8,
+        "requiredMarginPercent": "5.0000",
+        "status": "TRADING",
+        "symbol": "IDOLUSDT",
+        "timeInForce": ["GTC", "IOC", "FOK", "GTX", "GTD"],
+        "triggerProtect": "0.1500",
+        "underlyingSubType": ["AI", "Crypto"],
+        "underlyingType": "COIN"
+      },
+      "raw_sha256": "8f141ed330b52e7ba095575267bc39ba7b9b17f55fa0f2af366693af54453838",
+      "source": "binance:futures_exchange_info_entry",
+      "wire_exact": false
+    },
+    "reported_base_asset": "IDOL",
+    "reported_quote_asset": "USDT",
+    "reported_settle_asset": "USDT",
+    "status": "TRADING"
+  },
+  "working_tree_dirty": false
+}

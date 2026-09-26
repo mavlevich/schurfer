@@ -29,6 +29,7 @@ from .research_cohort_registration import ResearchCohortRegistration
 from .research_report import ResearchReportRun
 from .source_lead_capture import (
     SourceLeadCapture,
+    SourceLeadExitObservation,
     SourceLeadQualification,
     SourceLeadTargetObservation,
 )
@@ -60,6 +61,7 @@ __all__ = [
     "Side",
     "SignalSource",
     "SourceLeadCapture",
+    "SourceLeadExitObservation",
     "SourceLeadQualification",
     "SourceLeadTargetObservation",
     "Strategy",

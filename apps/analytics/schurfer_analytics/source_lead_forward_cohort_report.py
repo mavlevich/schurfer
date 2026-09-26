@@ -150,6 +150,7 @@ from .source_lead_forward_cohort import (
     SMALL_UNIVERSE_PROMOTION_NOTE,
     SOURCE_LEAD_FORWARD_COHORT_START,
     STOPPING_RULE,
+    TRADABLE_VENUES,
     EpisodeInputs,
     EpisodeResult,
     episode_is_matured,
@@ -364,6 +365,17 @@ async def _fetch_exit_bar_guarded(
                 exc_info=True,
             )
             return None
+
+
+def check_tradable_venues(episodes: Sequence[Any]) -> None:
+    """Contract v2: every episode must be on a TRADABLE_VENUES venue. A
+    qualification bug that selected another venue refuses the read instead
+    of silently mixing venues into the estimand."""
+    others = sorted(
+        {e.target_exchange for e in episodes if e.target_exchange not in TRADABLE_VENUES}
+    )
+    if others:
+        raise ValueError(f"qualified episodes on non-tradable venues: {others}")
 
 
 async def _fetch_exit_bars_bounded(
@@ -630,6 +642,7 @@ async def generate_report(args: argparse.Namespace) -> SourceLeadForwardCohortRe
         limit=args.max_qualified_episodes + 1,
     )
     check_qualified_episode_count(len(raw_episodes), args.max_qualified_episodes)
+    check_tradable_venues(raw_episodes)
 
     matured = [
         episode for episode in raw_episodes if episode_is_matured(episode.observed_at, database_now)
@@ -700,8 +713,10 @@ async def generate_report(args: argparse.Namespace) -> SourceLeadForwardCohortRe
         funnel=aggregate.funnel,
         result=aggregate.result,
         caveats=(
-            "Prospective, small-universe estimand (gate -> binance only, 14 canonical "
-            "assets) -- not a same-methodology confirmation of HYP-012's original "
+            f"Prospective, small-universe estimand ({ESTIMAND_VERSION}): gate -> the "
+            f"selected tradable venue ({', '.join(TRADABLE_VENUES)}), registry v4 with 85 "
+            "canonical assets of which 44 have a Bybit route; Binance observations are "
+            "descriptive only. Not a same-methodology confirmation of HYP-012's original "
             "4-route paired family; see the module docstring.",
             f"Secondary diagnostic ({SECONDARY_DIAGNOSTIC_VERSION}) is not yet computed "
             "by this report -- see this file's own 'Honest scope note'. It never gates "
