@@ -1268,7 +1268,7 @@ prod-cold-bar-export-install:
 prod-cold-bar-gated-deletion-install:
 	@test "$$(git branch --show-current)" = "main" || (echo "ERROR: not on main (on '$$(git branch --show-current)'). Install only from main." && exit 1)
 	@test -z "$$(git status --porcelain)" || (echo "ERROR: working tree not clean. Commit or stash first." && exit 1)
-	@# Installs the DRY-RUN timer only (PR 1): it reports and deletes nothing.
+	@# Installs the gated-deletion timer; the unit runs prod-cold-bar-gated-deletion-execute.
 	sudo install -m 0644 infra/systemd/schurfer-cold-bar-gated-deletion.service /etc/systemd/system/schurfer-cold-bar-gated-deletion.service
 	sudo install -m 0644 infra/systemd/schurfer-cold-bar-gated-deletion.timer /etc/systemd/system/schurfer-cold-bar-gated-deletion.timer
 	sudo systemctl daemon-reload
@@ -1622,6 +1622,14 @@ prod-cold-bar-gated-deletion-dry-run:
 	@# cutoff 25 (< the 35-day Timescale retention) so the dry-run has real eligible
 	@# chunks to validate; PR 2 raises it to 40 once the automatic retention is removed.
 	@# Commissioning (first run) should add ARGS='--fail-if-empty' to catch a broken setup.
+
+# Scheduled REAL deletion (the timer's target since the 2026-09 canary): the same gated job
+# with --execute at the full 40-day buffer (the CLI refuses less). Each day is dropped only
+# after every gate passes and the source fingerprint is re-verified under the mutation lock;
+# the drop fails fast on any lock (lock_timeout, #455) and retries the next day. At most 3
+# days per run bounds the Borg extract work after a backlog.
+prod-cold-bar-gated-deletion-execute:
+	@$(MAKE) prod-cold-bar-gated-deletion-dry-run ARGS='--execute --cutoff-days 40 --max-eval-days 3'
 
 prod-paper-replay-reconciliation:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
