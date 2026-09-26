@@ -224,3 +224,88 @@ def test_concurrent_lock_holder_blocks_the_drop() -> None:
         holder.close()
         admin.execute(f"DROP SCHEMA IF EXISTS {_SCHEMA} CASCADE")
         admin.close()
+
+
+def test_an_open_reader_makes_the_drop_time_out_instead_of_queueing() -> None:
+    """2026-09-26 canary: a reader left idle in transaction on the chunk must make the drop
+    fail fast (lock_timeout), never queue an AccessExclusive request ahead of prod readers."""
+    import psycopg
+
+    admin = _connect_timescale_or_skip()
+    reader = _drop_conn()
+    try:
+        _fresh_hypertable(admin)
+        reader.autocommit = False
+        reader.execute(f"SELECT count(*) FROM {_HYPERTABLE}").fetchone()  # AccessShare held
+        conn = _drop_conn()
+        try:
+            with pytest.raises(psycopg.errors.LockNotAvailable):
+                drop_one_chunk_under_lock(
+                    conn,
+                    hypertable=_HYPERTABLE,
+                    range_start=_D2,
+                    range_end=_D2 + _DAY,
+                    verify_unchanged=lambda: True,
+                    lock_timeout="750ms",
+                )
+        finally:
+            conn.close()
+        assert _chunk_days(admin) == {"2026-01-01", "2026-01-02", "2026-01-03"}
+    finally:
+        reader.rollback()
+        reader.close()
+        admin.execute(f"DROP SCHEMA IF EXISTS {_SCHEMA} CASCADE")
+        admin.close()
+
+
+def test_a_duckdb_read_blocks_the_drop_until_its_connection_is_closed() -> None:
+    """Reproduces the canary self-block: the DuckDB postgres attachment keeps its Postgres
+    transaction open after a read. With that connection open the drop times out; once it is
+    closed (what drop_chunk now does first) the same drop succeeds."""
+    import psycopg
+    from schurfer_analytics.cold_bar_export import connect
+
+    admin = _connect_timescale_or_skip()
+    try:
+        _fresh_hypertable(admin)
+        duck = connect(_PG_DSN)
+        duck.execute(f"SELECT count(*) FROM pg.{_HYPERTABLE}").fetchone()
+        conn = _drop_conn()
+        try:
+            with pytest.raises(psycopg.errors.LockNotAvailable):
+                drop_one_chunk_under_lock(
+                    conn,
+                    hypertable=_HYPERTABLE,
+                    range_start=_D2,
+                    range_end=_D2 + _DAY,
+                    verify_unchanged=lambda: True,
+                    lock_timeout="750ms",
+                )
+            duck.close()
+            name = drop_one_chunk_under_lock(
+                conn,
+                hypertable=_HYPERTABLE,
+                range_start=_D2,
+                range_end=_D2 + _DAY,
+                verify_unchanged=lambda: True,
+                lock_timeout="750ms",
+            )
+        finally:
+            conn.close()
+        assert name
+        assert _chunk_days(admin) == {"2026-01-01", "2026-01-03"}
+    finally:
+        admin.execute(f"DROP SCHEMA IF EXISTS {_SCHEMA} CASCADE")
+        admin.close()
+
+
+def test_a_malformed_lock_timeout_is_refused_before_any_sql() -> None:
+    with pytest.raises(ValueError, match="lock_timeout"):
+        drop_one_chunk_under_lock(
+            None,
+            hypertable=_HYPERTABLE,
+            range_start=_D2,
+            range_end=_D2 + _DAY,
+            verify_unchanged=lambda: True,
+            lock_timeout="5s; DROP TABLE x",
+        )
