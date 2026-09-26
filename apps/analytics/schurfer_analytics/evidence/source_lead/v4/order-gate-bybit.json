@@ -1,0 +1,454 @@
+{
+  "base": "ORDER",
+  "bundle_sha256": "99f608f158b6bb86fe3c8aad79e9b65068f9faf85222c7466dcb7472674b5ee3",
+  "captured_at": "2026-09-26T06:58:02.974660+00:00",
+  "code_revision": "4111a1661e333849fe6d0d7a5e4504bf4e8bad9d",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/orderly-network?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-09-26T06:58:02.972726+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "ethereum",
+      "block_time_in_minutes": 0,
+      "categories": [
+        "Smart Contract Platform",
+        "Decentralized Finance (DeFi)",
+        "BNB Chain Ecosystem",
+        "Perpetuals",
+        "Solana Ecosystem",
+        "Avalanche Ecosystem",
+        "Polygon Ecosystem",
+        "Arbitrum Ecosystem",
+        "Ethereum Ecosystem",
+        "Optimism Ecosystem",
+        "Layer 2 (L2)",
+        "Base Ecosystem",
+        "DragonFly Capital Portfolio",
+        "Pantera Capital Portfolio",
+        "Sequoia Capital Portfolio",
+        "OKX Ventures Portfolio",
+        "Optimism Superchain Ecosystem",
+        "Binance Alpha Spotlight",
+        "Abstract Ecosystem",
+        "Base Native"
+      ],
+      "contract_address": "0xabd4c63d2616a5201454168269031355f4764337",
+      "country_origin": "",
+      "description": {
+        "en": "Orderly Network is a L2 built on OP stack delivering a permissionless liquidity layer for Web3 trading, with one shared orderbook across different blockchains — powered by Orderly Chain and LayerZero. Our mission is to empower trading on any chain, any asset, any interface. Orderly offers spot and perpetual futures orderbooks trading across Arbitrum, Optimism, Polygon, Base ,Mantle and Near, while expanding to other blockchains."
+      },
+      "detail_platforms": {
+        "abstract": {
+          "contract_address": "0x9a4c8cd493cf0bf8e14bda5890e3f03a1cded719",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/abstract/tokens/0x9a4c8cd493cf0bf8e14bda5890e3f03a1cded719"
+        },
+        "arbitrum-one": {
+          "contract_address": "0x4e200fe2f3efb977d5fd9c430a41531fb04d97b8",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/arbitrum/tokens/0x4e200fe2f3efb977d5fd9c430a41531fb04d97b8"
+        },
+        "avalanche": {
+          "contract_address": "0x4e200fe2f3efb977d5fd9c430a41531fb04d97b8",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/avax/tokens/0x4e200fe2f3efb977d5fd9c430a41531fb04d97b8"
+        },
+        "base": {
+          "contract_address": "0x4e200fe2f3efb977d5fd9c430a41531fb04d97b8",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/base/tokens/0x4e200fe2f3efb977d5fd9c430a41531fb04d97b8"
+        },
+        "binance-smart-chain": {
+          "contract_address": "0x4e200fe2f3efb977d5fd9c430a41531fb04d97b8",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/bsc/tokens/0x4e200fe2f3efb977d5fd9c430a41531fb04d97b8"
+        },
+        "ethereum": {
+          "contract_address": "0xabd4c63d2616a5201454168269031355f4764337",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/eth/tokens/0xabd4c63d2616a5201454168269031355f4764337"
+        },
+        "optimistic-ethereum": {
+          "contract_address": "0x4e200fe2f3efb977d5fd9c430a41531fb04d97b8",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/optimism/tokens/0x4e200fe2f3efb977d5fd9c430a41531fb04d97b8"
+        },
+        "polygon-pos": {
+          "contract_address": "0x4e200fe2f3efb977d5fd9c430a41531fb04d97b8",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/polygon_pos/tokens/0x4e200fe2f3efb977d5fd9c430a41531fb04d97b8"
+        },
+        "solana": {
+          "contract_address": "ABt79MkRXUsoHuV2CVQT32YMXQhTparKFjmidQxgiQ6E",
+          "decimal_place": 10,
+          "geckoterminal_url": "https://www.geckoterminal.com/solana/tokens/ABt79MkRXUsoHuV2CVQT32YMXQhTparKFjmidQxgiQ6E"
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": true,
+      "hashing_algorithm": null,
+      "id": "orderly-network",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/38501/large/Orderly_Network_Coingecko_200*200.png?1717751359",
+        "small": "https://coin-images.coingecko.com/coins/images/38501/small/Orderly_Network_Coingecko_200*200.png?1717751359",
+        "thumb": "https://coin-images.coingecko.com/coins/images/38501/thumb/Orderly_Network_Coingecko_200*200.png?1717751359"
+      },
+      "last_updated": "2026-09-26T06:55:30.000Z",
+      "links": {
+        "announcement_url": [],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://etherscan.io/token/0xabd4c63d2616a5201454168269031355f4764337",
+          "https://ethplorer.io/address/0xabd4c63d2616a5201454168269031355f4764337",
+          "https://arbiscan.io/token/0x4e200fe2f3efb977d5fd9c430a41531fb04d97b8",
+          "https://optimistic.etherscan.io/token/0x4e200fe2f3efb977d5fd9c430a41531fb04d97b8",
+          "https://polygonscan.com/token/0x4e200fe2f3efb977d5fd9c430a41531fb04d97b8",
+          "https://basescan.org/token/0x4e200fe2f3efb977d5fd9c430a41531fb04d97b8",
+          "https://solscan.io/token/ABt79MkRXUsoHuV2CVQT32YMXQhTparKFjmidQxgiQ6E",
+          "https://bscscan.com/token/0x4e200fe2f3efb977d5fd9c430a41531fb04d97b8",
+          "https://binplorer.com/address/0x4e200fe2f3efb977d5fd9c430a41531fb04d97b8",
+          "https://abscan.org/token/0x9A4c8cD493CF0Bf8e14BdA5890e3F03A1cDed719"
+        ],
+        "chat_url": [
+          "https://discord.com/invite/orderlynetwork",
+          "https://medium.com/@orderlynetwork"
+        ],
+        "facebook_username": "",
+        "homepage": ["https://orderly.network/", "https://link3.to/orderlynetwork"],
+        "official_forum_url": [
+          "https://www.linkedin.com/company/orderly-network/",
+          "https://t.me/OrderlyNetworkAnnouncements"
+        ],
+        "repos_url": {
+          "bitbucket": [],
+          "github": ["https://github.com/OrderlyNetwork"]
+        },
+        "snapshot_url": null,
+        "subreddit_url": null,
+        "telegram_channel_identifier": "OrderlyNetworkAnnouncements",
+        "twitter_screen_name": "",
+        "whitepaper": ""
+      },
+      "listing_currency": null,
+      "listing_price": null,
+      "listing_source": null,
+      "listing_source_url": null,
+      "listing_timestamp": null,
+      "market_cap_rank": 988,
+      "market_cap_rank_with_rehypothecated": 1229,
+      "name": "Orderly",
+      "platforms": {
+        "abstract": "0x9a4c8cd493cf0bf8e14bda5890e3f03a1cded719",
+        "arbitrum-one": "0x4e200fe2f3efb977d5fd9c430a41531fb04d97b8",
+        "avalanche": "0x4e200fe2f3efb977d5fd9c430a41531fb04d97b8",
+        "base": "0x4e200fe2f3efb977d5fd9c430a41531fb04d97b8",
+        "binance-smart-chain": "0x4e200fe2f3efb977d5fd9c430a41531fb04d97b8",
+        "ethereum": "0xabd4c63d2616a5201454168269031355f4764337",
+        "optimistic-ethereum": "0x4e200fe2f3efb977d5fd9c430a41531fb04d97b8",
+        "polygon-pos": "0x4e200fe2f3efb977d5fd9c430a41531fb04d97b8",
+        "solana": "ABt79MkRXUsoHuV2CVQT32YMXQhTparKFjmidQxgiQ6E"
+      },
+      "preview_listing": false,
+      "public_notice": null,
+      "sentiment_votes_down_percentage": 0.0,
+      "sentiment_votes_up_percentage": 100.0,
+      "status_updates": [],
+      "symbol": "order",
+      "watchlist_portfolio_users": 12134,
+      "web_slug": "orderly-network"
+    },
+    "raw_sha256": "e01bae37aa362d1ca00bbb312c581f3627c896b77b96a164bcf5e82b28e89e63",
+    "source": "https://api.coingecko.com/api/v3/coins/orderly-network",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v4",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-09-26T06:51:16.758270+00:00",
+    "payload": {
+      "active": true,
+      "code": "ORDER",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "ORDER",
+      "info": {
+        "category": [],
+        "chain": "ETH",
+        "chains": [
+          {
+            "addr": "0xabd4c63d2616a5201454168269031355f4764337",
+            "deposit_disabled": false,
+            "name": "ETH",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "ORDER",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "8821171.63984",
+        "name": "Orderly Network",
+        "total_supply": "1000000000",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "Orderly Network",
+      "networks": {
+        "ERC20": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "ETH",
+          "info": {
+            "addr": "0xabd4c63d2616a5201454168269031355f4764337",
+            "deposit_disabled": false,
+            "name": "ETH",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "ERC20",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "fe898ff76d8b201d18431b49c28397b8c108aeb3532cdfe33f44be82101692cd",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "exact_contract",
+  "source_contract": {
+    "block_hash": "0x50ecacaa3976dc9c9c0b3086ec4b9a8afc19414206dd7c6c1f1fc58e7afa4234",
+    "block_number": 26059982,
+    "chain": "ethereum",
+    "chain_id": 1,
+    "contract_address": "0xabd4c63d2616a5201454168269031355f4764337",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://ethereum-rpc.publicnode.com",
+      "observed_at": "2026-09-26T06:57:55.528898+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "a0cfb5a1c696cf1b33c6808f77538ba8fbf89fc8515499513d43ce204d7a457a",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "source_market_evidence": {
+    "exchange": "gate",
+    "inference_basis": "gate futures contract payload has no base_asset/quote_asset/settle_asset fields; base/quote split parsed from the reported native_market_id ('ORDER_USDT') on its '_' separator, settle asset inferred from the /futures/usdt/ endpoint family",
+    "inferred_base_asset": "ORDER",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "ORDER_USDT",
+    "onboarded_at_ms": 1724766663000,
+    "raw_evidence": {
+      "endpoint": "https://api.gateio.ws/api/v4/futures/usdt/contracts/ORDER_USDT",
+      "observed_at": "2026-09-26T06:57:56.675927+00:00",
+      "payload": {
+        "config_change_time": 1789023759,
+        "contract_type": "",
+        "create_time": 1724766663,
+        "cross_leverage_default": "10",
+        "enable_bonus": true,
+        "enable_circuit_breaker": false,
+        "enable_credit": true,
+        "enable_decimal": false,
+        "funding_cap_ratio": "2",
+        "funding_impact_value": "5000",
+        "funding_interval": 14400,
+        "funding_next_apply": 1790409600,
+        "funding_offset": 0,
+        "funding_rate": "0.00005",
+        "funding_rate_indicative": "0.00005",
+        "funding_rate_limit": "0.02",
+        "in_delisting": false,
+        "index_price": "0.04168",
+        "interest_rate": "0.0003",
+        "is_pre_market": false,
+        "last_price": "0.0418",
+        "launch_time": 1724766663,
+        "leverage_max": "20",
+        "leverage_min": "1",
+        "long_users": 89,
+        "maintenance_rate": "0.04",
+        "maker_fee_rate": "-0.0001",
+        "mark_price": "0.04177",
+        "mark_price_round": "0.00001",
+        "mark_type": "index",
+        "market_order_size_max": "200000",
+        "market_order_slip_ratio": "0.05",
+        "name": "ORDER_USDT",
+        "order_price_deviate": "0.2",
+        "order_price_round": "0.00001",
+        "order_size_max": 300000,
+        "order_size_min": 1,
+        "orderbook_id": 727471435,
+        "orders_limit": 100,
+        "position_size": 85944,
+        "quanto_multiplier": "10",
+        "ref_discount_rate": "0",
+        "ref_rebate_rate": "0.2",
+        "risk_limit_base": "5000",
+        "risk_limit_max": "2500000",
+        "risk_limit_step": "2495000",
+        "short_users": 84,
+        "status": "trading",
+        "taker_fee_rate": "0.00075",
+        "trade_id": 4173360,
+        "trade_size": 287019482,
+        "type": "direct",
+        "voucher_leverage": "0"
+      },
+      "raw_sha256": "8d9a23268544062c256a01b840bbb51c1c99bf8e7b88c60f7bac0b8e28dfc05a",
+      "source": "https://api.gateio.ws/api/v4/futures/usdt/contracts/ORDER_USDT",
+      "wire_exact": true
+    },
+    "reported_base_asset": null,
+    "reported_quote_asset": null,
+    "reported_settle_asset": null,
+    "status": "trading"
+  },
+  "target_catalog_evidence": {
+    "endpoint": "https://api.bybit.com/v5/asset/coin/query-info (authenticated, all coins)",
+    "observed_at": "2026-09-26T06:51:20.869167+00:00",
+    "payload": {
+      "chains": [
+        {
+          "chain": "ETH",
+          "chainType": "Ethereum",
+          "contractAddress": "0xABD4C63d2616A5201454168269031355f4764337"
+        }
+      ],
+      "coin": "ORDER",
+      "contractAddress": "0xABD4C63d2616A5201454168269031355f4764337",
+      "name": "ORDER",
+      "response_sha256": "dcbb785d22323ba31ec4687e0fd25bfec51cf316dfe4d779b0815cd34bc3e7dd",
+      "selected_chain": "ETH"
+    },
+    "raw_sha256": "bb4de5d11350e5d7e1d70c012eab5f4af79923f16815524d0851121ddb3c64a2",
+    "source": "bybit:coin_info_entry",
+    "wire_exact": false
+  },
+  "target_contract": {
+    "block_hash": "0x50ecacaa3976dc9c9c0b3086ec4b9a8afc19414206dd7c6c1f1fc58e7afa4234",
+    "block_number": 26059982,
+    "chain": "ethereum",
+    "chain_id": 1,
+    "contract_address": "0xabd4c63d2616a5201454168269031355f4764337",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://ethereum-rpc.publicnode.com",
+      "observed_at": "2026-09-26T06:57:55.528898+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "a0cfb5a1c696cf1b33c6808f77538ba8fbf89fc8515499513d43ce204d7a457a",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "target_exchange": "bybit",
+  "target_market_evidence": {
+    "exchange": "bybit",
+    "inference_basis": "copied verbatim from bybit v5 instruments-info's own baseCoin/quoteCoin/settleCoin fields -- genuinely reported, not parsed",
+    "inferred_base_asset": "ORDER",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "ORDERUSDT",
+    "onboarded_at_ms": 1724749336000,
+    "raw_evidence": {
+      "endpoint": "https://api.bybit.com/v5/market/instruments-info?category=linear (every cursor page)",
+      "observed_at": "2026-09-26T06:51:20.579476+00:00",
+      "payload": {
+        "baseCoin": "ORDER",
+        "contractType": "LinearPerpetual",
+        "copyTrading": "both",
+        "deliveryFeeRate": "",
+        "deliveryTime": "0",
+        "displayName": "ORDERUSDT",
+        "forbidUplWithdrawal": false,
+        "fullName": "Orderly Network",
+        "fundingInterval": 480,
+        "isPreListing": false,
+        "launchTime": "1724749336000",
+        "leverageFilter": {
+          "leverageStep": "0.01",
+          "maxLeverage": "20.00",
+          "minLeverage": "1"
+        },
+        "lotSizeFilter": {
+          "maxMktOrderQty": "80000",
+          "maxOrderQty": "400000",
+          "minNotionalValue": "5",
+          "minOrderQty": "1",
+          "postOnlyMaxOrderQty": "400000",
+          "qtyStep": "1"
+        },
+        "lowerFundingRate": "-0.025",
+        "marketRegion": "",
+        "preListingInfo": null,
+        "priceFilter": {
+          "maxPrice": "199.99998",
+          "minPrice": "0.00001",
+          "tickSize": "0.00001"
+        },
+        "priceScale": "5",
+        "quoteCoin": "USDT",
+        "riskParameters": {
+          "priceLimitRatioX": "0.2",
+          "priceLimitRatioY": "0.4"
+        },
+        "settleCoin": "USDT",
+        "status": "Trading",
+        "symbol": "ORDERUSDT",
+        "symbolId": 592,
+        "symbolType": "",
+        "underlyingTicker": "",
+        "unifiedMarginTrade": true,
+        "upperFundingRate": "0.025"
+      },
+      "raw_sha256": "47e3cc67861950d66f6ae9e18f268179f76a0dacc34d35e3d548094a21f9107e",
+      "source": "bybit:instruments_info_entry",
+      "wire_exact": false
+    },
+    "reported_base_asset": "ORDER",
+    "reported_quote_asset": "USDT",
+    "reported_settle_asset": "USDT",
+    "status": "Trading"
+  },
+  "working_tree_dirty": false
+}

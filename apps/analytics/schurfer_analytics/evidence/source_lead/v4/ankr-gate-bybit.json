@@ -1,0 +1,507 @@
+{
+  "base": "ANKR",
+  "bundle_sha256": "f4cd2df9047c2eae00cca355cd7325ae24a240f4c999ef49c41e8c3efa9df655",
+  "captured_at": "2026-09-26T06:51:59.755475+00:00",
+  "code_revision": "4111a1661e333849fe6d0d7a5e4504bf4e8bad9d",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/ankr?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-09-26T06:51:59.754134+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "ethereum",
+      "block_time_in_minutes": 0,
+      "categories": [
+        "BNB Chain Ecosystem",
+        "Avalanche Ecosystem",
+        "Polygon Ecosystem",
+        "Fantom Ecosystem",
+        "Arbitrum Ecosystem",
+        "Ethereum Ecosystem",
+        "Optimism Ecosystem",
+        "Liquid Staking Governance Tokens",
+        "Linea Ecosystem",
+        "DePIN",
+        "Scroll Ecosystem",
+        "Rollups-as-a-Service (RaaS)",
+        "Blast Ecosystem",
+        "Mode Ecosystem",
+        "Pantera Capital Portfolio",
+        "Polygon zkEVM Ecosystem",
+        "YZi Labs (Prev. Binance Labs) Portfolio",
+        "Liquid Staking",
+        "Made in USA",
+        "Governance"
+      ],
+      "contract_address": "0x8290333cef9e6d528dd5618fb97a76f268f3edd4",
+      "country_origin": "US",
+      "description": {
+        "en": "Ankr is a Web3 decentralized infrastructure provider that helps developers, dapps, and stakers easily interact with multiple blockchains. It allows you to create DApps using API and RPC, staking on Ankr Earn, and use customized blockchain solutions for businesses."
+      },
+      "detail_platforms": {
+        "arbitrum-one": {
+          "contract_address": "0xaeaeed23478c3a4b798e4ed40d8b7f41366ae861",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/arbitrum/tokens/0xaeaeed23478c3a4b798e4ed40d8b7f41366ae861"
+        },
+        "avalanche": {
+          "contract_address": "0xdf474b7109b73b7d57926d43598d5934131136b2",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/avax/tokens/0xdf474b7109b73b7d57926d43598d5934131136b2"
+        },
+        "binance-smart-chain": {
+          "contract_address": "0xf307910a4c7bbc79691fd374889b36d8531b08e3",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/bsc/tokens/0xf307910a4c7bbc79691fd374889b36d8531b08e3"
+        },
+        "blast": {
+          "contract_address": "0x3580ac35bed2981d6bdd671a5982c2467d301241",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/blast/tokens/0x3580ac35bed2981d6bdd671a5982c2467d301241"
+        },
+        "ethereum": {
+          "contract_address": "0x8290333cef9e6d528dd5618fb97a76f268f3edd4",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/eth/tokens/0x8290333cef9e6d528dd5618fb97a76f268f3edd4"
+        },
+        "fantom": {
+          "contract_address": "0xdf474b7109b73b7d57926d43598d5934131136b2",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/ftm/tokens/0xdf474b7109b73b7d57926d43598d5934131136b2"
+        },
+        "linea": {
+          "contract_address": "0xa8ae6365383eb907e6b4b1b7e82a35752cc5ef8c",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/linea/tokens/0xa8ae6365383eb907e6b4b1b7e82a35752cc5ef8c"
+        },
+        "mode": {
+          "contract_address": "0xdf474b7109b73b7d57926d43598d5934131136b2",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/mode/tokens/0xdf474b7109b73b7d57926d43598d5934131136b2"
+        },
+        "optimistic-ethereum": {
+          "contract_address": "0xaeaeed23478c3a4b798e4ed40d8b7f41366ae861",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/optimism/tokens/0xaeaeed23478c3a4b798e4ed40d8b7f41366ae861"
+        },
+        "polygon-pos": {
+          "contract_address": "0x101a023270368c0d50bffb62780f4afd4ea79c35",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/polygon_pos/tokens/0x101a023270368c0d50bffb62780f4afd4ea79c35"
+        },
+        "polygon-zkevm": {
+          "contract_address": "0xdf474b7109b73b7d57926d43598d5934131136b2",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/polygon-zkevm/tokens/0xdf474b7109b73b7d57926d43598d5934131136b2"
+        },
+        "scroll": {
+          "contract_address": "0xdf474b7109b73b7d57926d43598d5934131136b2",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/scroll/tokens/0xdf474b7109b73b7d57926d43598d5934131136b2"
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": false,
+      "hashing_algorithm": null,
+      "ico_data": {
+        "accepting_currencies": "3500000000",
+        "amount_for_sale": null,
+        "base_pre_sale_amount": "1.0",
+        "base_public_sale_amount": 1.0,
+        "bounty_detail_url": "",
+        "country_origin": "US",
+        "description": "",
+        "hardcap_amount": "18700000.0",
+        "hardcap_currency": "USD",
+        "ico_end_date": "2018-09-22T00:00:00.000Z",
+        "ico_start_date": "2018-09-16T00:00:00.000Z",
+        "kyc_required": true,
+        "links": {},
+        "pre_sale_available": null,
+        "pre_sale_end_date": null,
+        "pre_sale_ended": true,
+        "pre_sale_start_date": null,
+        "quote_pre_sale_amount": "0.0044",
+        "quote_pre_sale_currency": "USD",
+        "quote_public_sale_amount": 0.0066,
+        "quote_public_sale_currency": "USD",
+        "short_desc": "Distributed Cloud Computing on Trusted Hardware",
+        "softcap_amount": null,
+        "softcap_currency": "",
+        "total_raised": "18700000.0",
+        "total_raised_currency": "USD",
+        "whitelist_available": null,
+        "whitelist_end_date": null,
+        "whitelist_start_date": null,
+        "whitelist_url": ""
+      },
+      "id": "ankr",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/4324/large/Ankr_Blue_Symbol.png?1754623142",
+        "small": "https://coin-images.coingecko.com/coins/images/4324/small/Ankr_Blue_Symbol.png?1754623142",
+        "thumb": "https://coin-images.coingecko.com/coins/images/4324/thumb/Ankr_Blue_Symbol.png?1754623142"
+      },
+      "last_updated": "2026-09-26T06:49:40.000Z",
+      "links": {
+        "announcement_url": ["https://t.me/anrknetworkann"],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://etherscan.io/token/0x8290333cef9e6d528dd5618fb97a76f268f3edd4",
+          "https://ethplorer.io/address/0x8290333cef9e6d528dd5618fb97a76f268f3edd4",
+          "https://bscscan.com/token/0xf307910a4c7bbc79691fd374889b36d8531b08e3",
+          "https://modescan.io/token/0xdf474b7109b73b7d57926d43598d5934131136b2",
+          "https://polygonscan.com/token/0x101a023270368c0d50bffb62780f4afd4ea79c35",
+          "https://blastplorer.info/address/0x3580ac35bed2981d6bdd671a5982c2467d301241",
+          "https://arbiscan.io/token/0xaeaeed23478c3a4b798e4ed40d8b7f41366ae861",
+          "https://binplorer.com/address/0xf307910a4c7bbc79691fd374889b36d8531b08e3"
+        ],
+        "chat_url": ["https://discord.gg/GGzJ6A6fEg", "https://medium.com/ankr-network"],
+        "facebook_username": "",
+        "homepage": ["https://www.ankr.com/"],
+        "official_forum_url": [
+          "https://www.instagram.com/ankr/",
+          "https://www.linkedin.com/company/ankr",
+          "https://www.youtube.com/@AnkrOfficial"
+        ],
+        "repos_url": {
+          "bitbucket": [],
+          "github": [
+            "https://github.com/Ankr-network",
+            "https://github.com/Ankr-network/dccn-common",
+            "https://github.com/Ankr-network/dccn-ui",
+            "https://github.com/Ankr-network/dccn-hub",
+            "https://github.com/Ankr-network/dccn-daemon",
+            "https://github.com/Ankr-network/dccn-cli"
+          ]
+        },
+        "snapshot_url": null,
+        "subreddit_url": "https://www.reddit.com/r/Ankrofficial",
+        "telegram_channel_identifier": "ankrnetwork",
+        "twitter_screen_name": "ankr",
+        "whitepaper": "https://ankr.com/ankr-whitepaper-2.0.pdf"
+      },
+      "listing_currency": null,
+      "listing_price": null,
+      "listing_source": null,
+      "listing_source_url": null,
+      "listing_timestamp": null,
+      "market_cap_rank": 482,
+      "market_cap_rank_with_rehypothecated": 639,
+      "name": "Ankr Network",
+      "platforms": {
+        "arbitrum-one": "0xaeaeed23478c3a4b798e4ed40d8b7f41366ae861",
+        "avalanche": "0xdf474b7109b73b7d57926d43598d5934131136b2",
+        "binance-smart-chain": "0xf307910a4c7bbc79691fd374889b36d8531b08e3",
+        "blast": "0x3580ac35bed2981d6bdd671a5982c2467d301241",
+        "ethereum": "0x8290333cef9e6d528dd5618fb97a76f268f3edd4",
+        "fantom": "0xdf474b7109b73b7d57926d43598d5934131136b2",
+        "linea": "0xa8ae6365383eb907e6b4b1b7e82a35752cc5ef8c",
+        "mode": "0xdf474b7109b73b7d57926d43598d5934131136b2",
+        "optimistic-ethereum": "0xaeaeed23478c3a4b798e4ed40d8b7f41366ae861",
+        "polygon-pos": "0x101a023270368c0d50bffb62780f4afd4ea79c35",
+        "polygon-zkevm": "0xdf474b7109b73b7d57926d43598d5934131136b2",
+        "scroll": "0xdf474b7109b73b7d57926d43598d5934131136b2"
+      },
+      "preview_listing": false,
+      "public_notice": null,
+      "sentiment_votes_down_percentage": 0.0,
+      "sentiment_votes_up_percentage": 100.0,
+      "status_updates": [],
+      "symbol": "ankr",
+      "watchlist_portfolio_users": 90780,
+      "web_slug": "ankr-network"
+    },
+    "raw_sha256": "fdce0dfd14c732bb7b5049a1a62f26b6b0d5bb76d852273339bac2009ac54d92",
+    "source": "https://api.coingecko.com/api/v3/coins/ankr",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v4",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-09-26T06:51:16.758270+00:00",
+    "payload": {
+      "active": true,
+      "code": "ANKR",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "ANKR",
+      "info": {
+        "category": [],
+        "chain": "ETH",
+        "chains": [
+          {
+            "addr": "0x8290333ceF9e6D528dD5618Fb97a76f268f3EDD4",
+            "deposit_disabled": false,
+            "name": "ETH",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "ANKR",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "50870000.00000001",
+        "name": "AnkrNetwork",
+        "total_supply": "10000000000",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "AnkrNetwork",
+      "networks": {
+        "ERC20": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "ETH",
+          "info": {
+            "addr": "0x8290333ceF9e6D528dD5618Fb97a76f268f3EDD4",
+            "deposit_disabled": false,
+            "name": "ETH",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "ERC20",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "c4d6c78189311dfa7fa70ef7e40897f959f4b51f267dfcca56cc59ae4baac876",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "exact_contract",
+  "source_contract": {
+    "block_hash": "0x877e6f214c74216f907f78005013024bc4cb3ed46d93668ec13167cc4fef05f8",
+    "block_number": 26059953,
+    "chain": "ethereum",
+    "chain_id": 1,
+    "contract_address": "0x8290333cef9e6d528dd5618fb97a76f268f3edd4",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://ethereum-rpc.publicnode.com",
+      "observed_at": "2026-09-26T06:51:52.331652+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "a0cfb5a1c696cf1b33c6808f77538ba8fbf89fc8515499513d43ce204d7a457a",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "source_market_evidence": {
+    "exchange": "gate",
+    "inference_basis": "gate futures contract payload has no base_asset/quote_asset/settle_asset fields; base/quote split parsed from the reported native_market_id ('ANKR_USDT') on its '_' separator, settle asset inferred from the /futures/usdt/ endpoint family",
+    "inferred_base_asset": "ANKR",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "ANKR_USDT",
+    "onboarded_at_ms": 1616889600000,
+    "raw_evidence": {
+      "endpoint": "https://api.gateio.ws/api/v4/futures/usdt/contracts/ANKR_USDT",
+      "observed_at": "2026-09-26T06:51:53.460519+00:00",
+      "payload": {
+        "config_change_time": 1790227754,
+        "contract_type": "",
+        "create_time": 1616889600,
+        "cross_leverage_default": "10",
+        "enable_bonus": true,
+        "enable_circuit_breaker": false,
+        "enable_credit": true,
+        "enable_decimal": false,
+        "funding_cap_ratio": "0.8",
+        "funding_impact_value": "2000",
+        "funding_interval": 14400,
+        "funding_next_apply": 1790409600,
+        "funding_offset": 0,
+        "funding_rate": "-0.00008",
+        "funding_rate_indicative": "-0.00008",
+        "funding_rate_limit": "0.02",
+        "in_delisting": false,
+        "index_price": "0.005148",
+        "interest_rate": "0.0003",
+        "is_pre_market": false,
+        "last_price": "0.005141",
+        "launch_time": 1616889600,
+        "leverage_max": "25",
+        "leverage_min": "1",
+        "long_users": 168,
+        "maintenance_rate": "0.025",
+        "maker_fee_rate": "-0.0001",
+        "mark_price": "0.005141",
+        "mark_price_round": "0.000001",
+        "mark_type": "index",
+        "market_order_size_max": "2000000",
+        "market_order_slip_ratio": "0.05",
+        "name": "ANKR_USDT",
+        "order_price_deviate": "0.2",
+        "order_price_round": "0.000001",
+        "order_size_max": 3000000,
+        "order_size_min": 1,
+        "orderbook_id": 2742469128,
+        "orders_limit": 100,
+        "position_size": 2727022,
+        "quanto_multiplier": "10",
+        "ref_discount_rate": "0",
+        "ref_rebate_rate": "0.2",
+        "risk_limit_base": "10000",
+        "risk_limit_max": "2500000",
+        "risk_limit_step": "2490000",
+        "short_users": 99,
+        "status": "trading",
+        "taker_fee_rate": "0.00075",
+        "trade_id": 6782532,
+        "trade_size": 2326180097,
+        "type": "direct",
+        "voucher_leverage": "0"
+      },
+      "raw_sha256": "a606e8b6f19fea4250bf5ed544c0dba248a3d6be6857899d505e9b8c1570f864",
+      "source": "https://api.gateio.ws/api/v4/futures/usdt/contracts/ANKR_USDT",
+      "wire_exact": true
+    },
+    "reported_base_asset": null,
+    "reported_quote_asset": null,
+    "reported_settle_asset": null,
+    "status": "trading"
+  },
+  "target_catalog_evidence": {
+    "endpoint": "https://api.bybit.com/v5/asset/coin/query-info (authenticated, all coins)",
+    "observed_at": "2026-09-26T06:51:20.869167+00:00",
+    "payload": {
+      "chains": [
+        {
+          "chain": "ETH",
+          "chainType": "Ethereum",
+          "contractAddress": "0x8290333cef9e6d528dd5618fb97a76f268f3edd4"
+        }
+      ],
+      "coin": "ANKR",
+      "contractAddress": "0x8290333cef9e6d528dd5618fb97a76f268f3edd4",
+      "name": "ANKR",
+      "response_sha256": "dcbb785d22323ba31ec4687e0fd25bfec51cf316dfe4d779b0815cd34bc3e7dd",
+      "selected_chain": "ETH"
+    },
+    "raw_sha256": "5dd5be6caf80d9d97be2ef42c8f5d9328f341058f0a4b4e89deabd1125c368b4",
+    "source": "bybit:coin_info_entry",
+    "wire_exact": false
+  },
+  "target_contract": {
+    "block_hash": "0x877e6f214c74216f907f78005013024bc4cb3ed46d93668ec13167cc4fef05f8",
+    "block_number": 26059953,
+    "chain": "ethereum",
+    "chain_id": 1,
+    "contract_address": "0x8290333cef9e6d528dd5618fb97a76f268f3edd4",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://ethereum-rpc.publicnode.com",
+      "observed_at": "2026-09-26T06:51:52.331652+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "a0cfb5a1c696cf1b33c6808f77538ba8fbf89fc8515499513d43ce204d7a457a",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "target_exchange": "bybit",
+  "target_market_evidence": {
+    "exchange": "bybit",
+    "inference_basis": "copied verbatim from bybit v5 instruments-info's own baseCoin/quoteCoin/settleCoin fields -- genuinely reported, not parsed",
+    "inferred_base_asset": "ANKR",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "ANKRUSDT",
+    "onboarded_at_ms": 1637712000000,
+    "raw_evidence": {
+      "endpoint": "https://api.bybit.com/v5/market/instruments-info?category=linear (every cursor page)",
+      "observed_at": "2026-09-26T06:51:20.579476+00:00",
+      "payload": {
+        "baseCoin": "ANKR",
+        "contractType": "LinearPerpetual",
+        "copyTrading": "both",
+        "deliveryFeeRate": "",
+        "deliveryTime": "0",
+        "displayName": "ANKRUSDT",
+        "forbidUplWithdrawal": false,
+        "fullName": "Ankr",
+        "fundingInterval": 480,
+        "isPreListing": false,
+        "launchTime": "1637712000000",
+        "leverageFilter": {
+          "leverageStep": "0.01",
+          "maxLeverage": "25.00",
+          "minLeverage": "1"
+        },
+        "lotSizeFilter": {
+          "maxMktOrderQty": "4400000",
+          "maxOrderQty": "22000000",
+          "minNotionalValue": "5",
+          "minOrderQty": "1",
+          "postOnlyMaxOrderQty": "22000000",
+          "qtyStep": "1"
+        },
+        "lowerFundingRate": "-0.02",
+        "marketRegion": "",
+        "preListingInfo": null,
+        "priceFilter": {
+          "maxPrice": "19.999998",
+          "minPrice": "0.000001",
+          "tickSize": "0.000001"
+        },
+        "priceScale": "6",
+        "quoteCoin": "USDT",
+        "riskParameters": {
+          "priceLimitRatioX": "0.1",
+          "priceLimitRatioY": "0.2"
+        },
+        "settleCoin": "USDT",
+        "status": "Trading",
+        "symbol": "ANKRUSDT",
+        "symbolId": 110,
+        "symbolType": "",
+        "underlyingTicker": "",
+        "unifiedMarginTrade": true,
+        "upperFundingRate": "0.02"
+      },
+      "raw_sha256": "00b6e049d8e982d7c61e50cd815f8452133b86e3d11309e1e580713efbbb941e",
+      "source": "bybit:instruments_info_entry",
+      "wire_exact": false
+    },
+    "reported_base_asset": "ANKR",
+    "reported_quote_asset": "USDT",
+    "reported_settle_asset": "USDT",
+    "status": "Trading"
+  },
+  "working_tree_dirty": false
+}

@@ -1,0 +1,198 @@
+{
+  "bundle_fingerprint": "bf30fa1c6c07569a9a9c2f26ce0d80f773916b9a6bf6b34c7264b083406a1f17",
+  "candidate_count": 99,
+  "candidates": [
+    "4",
+    "AERO",
+    "AERO",
+    "AIN",
+    "AKE",
+    "ANKR",
+    "ARB",
+    "ARIA",
+    "AVA",
+    "AZTEC",
+    "B",
+    "B2",
+    "BANK",
+    "BAS",
+    "BB",
+    "BEAT",
+    "BLUR",
+    "BR",
+    "BR",
+    "BTR",
+    "BTW",
+    "CARV",
+    "CFG",
+    "CFG",
+    "CHIP",
+    "CHIP",
+    "CTR",
+    "CYS",
+    "EDEN",
+    "ENA",
+    "ENSO",
+    "ESP",
+    "ETHFI",
+    "EVAA",
+    "F",
+    "F",
+    "FF",
+    "FLOCK",
+    "FLOCK",
+    "GENIUS",
+    "H",
+    "HEMI",
+    "HOME",
+    "HOME",
+    "IDOL",
+    "KOMA",
+    "LAB",
+    "LRC",
+    "MARSCOIN",
+    "MOVR",
+    "MUBARAK",
+    "MYX",
+    "NEWT",
+    "NEWT",
+    "NOM",
+    "ON",
+    "ONDO",
+    "ONDO",
+    "OPG",
+    "ORDER",
+    "PIEVERSE",
+    "PIEVERSE",
+    "PLUME",
+    "PLUME",
+    "PROVE",
+    "Q",
+    "QNT",
+    "SENT",
+    "SKY",
+    "SKYAI",
+    "SOPH",
+    "SPK",
+    "SUSHI",
+    "T",
+    "TA",
+    "TA",
+    "TAG",
+    "TRADOOR",
+    "TUT",
+    "UAI",
+    "UB",
+    "UNI",
+    "VELVET",
+    "VVV",
+    "VVV",
+    "WOO",
+    "XAI",
+    "XAN",
+    "XNY",
+    "XPIN",
+    "ZAMA",
+    "ZEST",
+    "ZETA",
+    "ZORA",
+    "ZORA",
+    "ZRO",
+    "哈基米",
+    "牛来",
+    "龙虾"
+  ],
+  "captured_at": "2026-09-26T07:02:31.293561+00:00",
+  "code_revision": "4111a1661e333849fe6d0d7a5e4504bf4e8bad9d",
+  "decisions_sha256": "c7f782ec2871fd2a19365441cdc54a38c57974b510fcccc17a2d32bade9d8502",
+  "evidence_version": "source_lead_identity_evidence_v4",
+  "rule_version": "source_lead_identity_rule_v4",
+  "run_id": "12f66862-09fa-4148-bc6b-07fc5ea7ea70",
+  "sources": {
+    "alpha_catalog": {
+      "endpoint": "https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list",
+      "observed_at": "2026-09-26T06:51:19.811887+00:00",
+      "pages": [
+        {
+          "file": "alpha_catalog.0.json.gz",
+          "raw_sha256": "9fddc529f5265eb85945f602155c0dc269c2895dc336d87d2e59c19068aa8a56"
+        }
+      ],
+      "sha256": "dbbe5652ba9a3ab0a09f5ee929182c884c90a35921796bd8ecd155a82c8fa73c",
+      "wire_exact": true
+    },
+    "binance_exchange_info": {
+      "endpoint": "https://fapi.binance.com/fapi/v1/exchangeInfo",
+      "observed_at": "2026-09-26T06:51:20.198689+00:00",
+      "pages": [
+        {
+          "file": "binance_exchange_info.0.json.gz",
+          "raw_sha256": "ee678436c43797df6c83d793465978512b7b16b75a4021e935614be5a187df30"
+        }
+      ],
+      "sha256": "46eecf245a3f2212cb84742363fba0d975e377890a69cf12b0e4823a15d8978e",
+      "wire_exact": true
+    },
+    "bybit_coin_info": {
+      "endpoint": "https://api.bybit.com/v5/asset/coin/query-info (authenticated, all coins)",
+      "observed_at": "2026-09-26T06:51:20.869167+00:00",
+      "pages": [
+        {
+          "file": "bybit_coin_info.0.json.gz",
+          "raw_sha256": "18a95abd4fb160e6597e74c70eb60156472b419134dd70982b23d39808cf6d53"
+        }
+      ],
+      "sha256": "dcbb785d22323ba31ec4687e0fd25bfec51cf316dfe4d779b0815cd34bc3e7dd",
+      "wire_exact": true
+    },
+    "bybit_instruments": {
+      "endpoint": "https://api.bybit.com/v5/market/instruments-info?category=linear (every cursor page)",
+      "observed_at": "2026-09-26T06:51:20.579476+00:00",
+      "pages": [
+        {
+          "file": "bybit_instruments.0.json.gz",
+          "raw_sha256": "186bab6eb6e35aab19b31cf6e2d8e77c9703960135ff01f57a06114cb643fb8d"
+        }
+      ],
+      "sha256": "1975e846d5d1b1536cfd831e627e026e40c34cb4fb405dc2def22f3fd1df8b70",
+      "wire_exact": true
+    },
+    "coingecko_coins": {
+      "endpoint": "https://api.coingecko.com/api/v3/coins/list?include_platform=true",
+      "observed_at": "2026-09-26T06:51:21.091602+00:00",
+      "pages": [
+        {
+          "file": "coingecko_coins.0.json.gz",
+          "raw_sha256": "e701c4c28802982d97b0f77494559cb920ac507a4c76d632d6ac324cfcea0a34"
+        }
+      ],
+      "sha256": "7eafdd77c022982a968d16c7b88164f6ea3a1ce2c56b3b3cff66e46d834ca54d",
+      "wire_exact": true
+    },
+    "gate_currencies": {
+      "endpoint": "ccxt gate.fetch_currencies() over /api/v4/spot/currencies",
+      "observed_at": "2026-09-26T06:51:16.758270+00:00",
+      "pages": [
+        {
+          "file": "gate_currencies.0.json.gz",
+          "raw_sha256": "5289a3b51e76cc435752045357a58e8a20ac2eb51fdcbff79a4ed8a248985d79"
+        }
+      ],
+      "sha256": "2d258b49727adbfd343ca6ae4fbdf4271de5e9fdb294fefbe28657f07291a835",
+      "wire_exact": false
+    },
+    "gate_perps": {
+      "endpoint": "https://api.gateio.ws/api/v4/futures/usdt/contracts",
+      "observed_at": "2026-09-26T06:51:19.671490+00:00",
+      "pages": [
+        {
+          "file": "gate_perps.0.json.gz",
+          "raw_sha256": "6d653e0059ecdc586ef90b1a3fa0663d8362e831063dcd825b5d62e97fada87d"
+        }
+      ],
+      "sha256": "2c20f907a87a2a0caa2cdaf3e784bdbafd441e1007b88cbc8acdd44fdc5bf85e",
+      "wire_exact": true
+    }
+  },
+  "working_tree_dirty": false
+}

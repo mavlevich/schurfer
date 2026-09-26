@@ -1,0 +1,479 @@
+{
+  "base": "UNI",
+  "bundle_sha256": "cb80f3dea78f2b17f15280db523c0dc5215c9a6ec5f93a0fe3198af8ed989183",
+  "captured_at": "2026-09-26T07:00:32.412947+00:00",
+  "code_revision": "4111a1661e333849fe6d0d7a5e4504bf4e8bad9d",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/uniswap?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-09-26T07:00:32.411574+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "ethereum",
+      "block_time_in_minutes": 0,
+      "categories": [
+        "Decentralized Exchange (DEX)",
+        "Exchange-based Tokens",
+        "Decentralized Finance (DeFi)",
+        "Yield Farming",
+        "Automated Market Maker (AMM)",
+        "BNB Chain Ecosystem",
+        "Avalanche Ecosystem",
+        "Polygon Ecosystem",
+        "Near Protocol Ecosystem",
+        "Gnosis Chain Ecosystem",
+        "Harmony Ecosystem",
+        "Arbitrum Ecosystem",
+        "Ethereum Ecosystem",
+        "Optimism Ecosystem",
+        "Paradigm Portfolio",
+        "Coinbase Ventures Portfolio",
+        "Index Coop Defi Index",
+        "Andreessen Horowitz (a16z) Portfolio",
+        "Energi Ecosystem",
+        "Sora Ecosystem",
+        "Huobi ECO Chain Ecosystem",
+        "GMCI DeFi Index",
+        "GMCI 30 Index",
+        "Blockchain Capital Portfolio",
+        "GMCI Index",
+        "Polychain Capital Portfolio",
+        "Made in USA",
+        "Unichain Ecosystem",
+        "Coinbase 50 Index",
+        "Governance"
+      ],
+      "contract_address": "0x1f9840a85d5af5bf1d1762f925bdaddc4201f984",
+      "country_origin": "",
+      "description": {
+        "en": "UNI is the governance token for Uniswap, an Automated Market Marker DEX on the Ethereum blockchain. The UNI token allows token holders to participate in the governance of the protocol. Key decisions such as usage of the treasury or future upgrades can be decided through a governance vote."
+      },
+      "detail_platforms": {
+        "arbitrum-one": {
+          "contract_address": "0xfa7f8980b0f1e64a2062791cc3b0871572f1f7f0",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/arbitrum/tokens/0xfa7f8980b0f1e64a2062791cc3b0871572f1f7f0"
+        },
+        "avalanche": {
+          "contract_address": "0x8ebaf22b6f053dffeaf46f4dd9efa95d89ba8580",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/avax/tokens/0x8ebaf22b6f053dffeaf46f4dd9efa95d89ba8580"
+        },
+        "binance-smart-chain": {
+          "contract_address": "0xbf5140a22578168fd562dccf235e5d43a02ce9b1",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/bsc/tokens/0xbf5140a22578168fd562dccf235e5d43a02ce9b1"
+        },
+        "energi": {
+          "contract_address": "0x665b3a802979ec24e076c80025bff33c18eb6007",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/nrg/tokens/0x665b3a802979ec24e076c80025bff33c18eb6007"
+        },
+        "ethereum": {
+          "contract_address": "0x1f9840a85d5af5bf1d1762f925bdaddc4201f984",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/eth/tokens/0x1f9840a85d5af5bf1d1762f925bdaddc4201f984"
+        },
+        "harmony-shard-0": {
+          "contract_address": "0x90d81749da8867962c760414c1c25ec926e889b6",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/one/tokens/0x90d81749da8867962c760414c1c25ec926e889b6"
+        },
+        "huobi-token": {
+          "contract_address": "0x22c54ce8321a4015740ee1109d9cbc25815c46e6",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/heco/tokens/0x22c54ce8321a4015740ee1109d9cbc25815c46e6"
+        },
+        "near-protocol": {
+          "contract_address": "1f9840a85d5af5bf1d1762f925bdaddc4201f984.factory.bridge.near",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/near/tokens/1f9840a85d5af5bf1d1762f925bdaddc4201f984.factory.bridge.near"
+        },
+        "optimistic-ethereum": {
+          "contract_address": "0x6fd9d7ad17242c41f7131d257212c54a0e816691",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/optimism/tokens/0x6fd9d7ad17242c41f7131d257212c54a0e816691"
+        },
+        "polygon-pos": {
+          "contract_address": "0xb33eaad8d922b1083446dc23f610c2567fb5180f",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/polygon_pos/tokens/0xb33eaad8d922b1083446dc23f610c2567fb5180f"
+        },
+        "sora": {
+          "contract_address": "0x009be848df92a400da2f217256c88d1a9b1a0304f9b3e90991a67418e1d3b08c",
+          "decimal_place": 18
+        },
+        "unichain": {
+          "contract_address": "0x8f187aa05619a017077f5308904739877ce9ea21",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/unichain/tokens/0x8f187aa05619a017077f5308904739877ce9ea21"
+        },
+        "xdai": {
+          "contract_address": "0x4537e328bf7e4efa29d05caea260d7fe26af9d74",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/xdai/tokens/0x4537e328bf7e4efa29d05caea260d7fe26af9d74"
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": true,
+      "hashing_algorithm": null,
+      "id": "uniswap",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/12504/large/uniswap-logo.png?1720676669",
+        "small": "https://coin-images.coingecko.com/coins/images/12504/small/uniswap-logo.png?1720676669",
+        "thumb": "https://coin-images.coingecko.com/coins/images/12504/thumb/uniswap-logo.png?1720676669"
+      },
+      "last_updated": "2026-09-26T06:57:40.000Z",
+      "links": {
+        "announcement_url": ["https://uniswap.org/blog/"],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://etherscan.io/token/0x1f9840a85d5af5bf1d1762f925bdaddc4201f984",
+          "https://ethplorer.io/address/0x1f9840a85d5af5bf1d1762f925bdaddc4201f984",
+          "https://nearblocks.io/token/1f9840a85d5af5bf1d1762f925bdaddc4201f984.factory.bridge.near",
+          "https://bscscan.com/token/0xbf5140a22578168fd562dccf235e5d43a02ce9b1",
+          "https://polygonscan.com/token/0xb33eaad8d922b1083446dc23f610c2567fb5180f",
+          "https://snowtrace.io/token/0x8ebaf22b6f053dffeaf46f4dd9efa95d89ba8580",
+          "https://arbiscan.io/token/0xfa7f8980b0f1e64a2062791cc3b0871572f1f7f0",
+          "https://explorer.energi.network/token/0x665b3a802979ec24e076c80025bff33c18eb6007"
+        ],
+        "chat_url": ["https://discord.gg/FCfyBSbCU5"],
+        "facebook_username": "",
+        "homepage": ["https://uniswap.org/"],
+        "official_forum_url": [],
+        "repos_url": {
+          "bitbucket": [],
+          "github": ["https://github.com/Uniswap/uniswap-v3-core"]
+        },
+        "snapshot_url": "https://snapshot.org/#/uniswap",
+        "subreddit_url": "https://www.reddit.com/r/Uniswap",
+        "telegram_channel_identifier": "",
+        "twitter_screen_name": "Uniswap",
+        "whitepaper": "https://blog.uniswap.org/uni"
+      },
+      "listing_currency": null,
+      "listing_price": null,
+      "listing_source": null,
+      "listing_source_url": null,
+      "listing_timestamp": null,
+      "market_cap_rank": 23,
+      "market_cap_rank_with_rehypothecated": 30,
+      "name": "Uniswap",
+      "platforms": {
+        "arbitrum-one": "0xfa7f8980b0f1e64a2062791cc3b0871572f1f7f0",
+        "avalanche": "0x8ebaf22b6f053dffeaf46f4dd9efa95d89ba8580",
+        "binance-smart-chain": "0xbf5140a22578168fd562dccf235e5d43a02ce9b1",
+        "energi": "0x665b3a802979ec24e076c80025bff33c18eb6007",
+        "ethereum": "0x1f9840a85d5af5bf1d1762f925bdaddc4201f984",
+        "harmony-shard-0": "0x90d81749da8867962c760414c1c25ec926e889b6",
+        "huobi-token": "0x22c54ce8321a4015740ee1109d9cbc25815c46e6",
+        "near-protocol": "1f9840a85d5af5bf1d1762f925bdaddc4201f984.factory.bridge.near",
+        "optimistic-ethereum": "0x6fd9d7ad17242c41f7131d257212c54a0e816691",
+        "polygon-pos": "0xb33eaad8d922b1083446dc23f610c2567fb5180f",
+        "sora": "0x009be848df92a400da2f217256c88d1a9b1a0304f9b3e90991a67418e1d3b08c",
+        "unichain": "0x8f187aa05619a017077f5308904739877ce9ea21",
+        "xdai": "0x4537e328bf7e4efa29d05caea260d7fe26af9d74"
+      },
+      "preview_listing": false,
+      "public_notice": null,
+      "sentiment_votes_down_percentage": 0.0,
+      "sentiment_votes_up_percentage": 100.0,
+      "status_updates": [],
+      "symbol": "uni",
+      "watchlist_portfolio_users": 310612,
+      "web_slug": "uniswap"
+    },
+    "raw_sha256": "74a64101e29fad1591720335430f4b32152702a8f3d61a1e8a26e9ef6d99cfd5",
+    "source": "https://api.coingecko.com/api/v3/coins/uniswap",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v4",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-09-26T06:51:16.758270+00:00",
+    "payload": {
+      "active": true,
+      "code": "UNI",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "UNI",
+      "info": {
+        "category": [],
+        "chain": "ETH",
+        "chains": [
+          {
+            "addr": "0x1f9840a85d5af5bf1d1762f925bdaddc4201f984",
+            "deposit_disabled": false,
+            "name": "ETH",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "UNI",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "5924862667.084816",
+        "name": "Uniswap",
+        "total_supply": "1000000000",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "Uniswap",
+      "networks": {
+        "ERC20": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "ETH",
+          "info": {
+            "addr": "0x1f9840a85d5af5bf1d1762f925bdaddc4201f984",
+            "deposit_disabled": false,
+            "name": "ETH",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "ERC20",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "67dfdde5bb7e5f9d8c9568ca4da3601212aa800fa6ae7a994d76c08cbf5cd3fb",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "exact_contract",
+  "source_contract": {
+    "block_hash": "0x5fa59c1aac55e27dad0bd60dc769248c02c03fe0cd234c76a0dafe4d2891cc66",
+    "block_number": 26059995,
+    "chain": "ethereum",
+    "chain_id": 1,
+    "contract_address": "0x1f9840a85d5af5bf1d1762f925bdaddc4201f984",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://ethereum-rpc.publicnode.com",
+      "observed_at": "2026-09-26T07:00:24.881698+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "69640378441910e713ebf1ec0431af5fd0a4658949332e49d674b3ddf1b12877",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "source_market_evidence": {
+    "exchange": "gate",
+    "inference_basis": "gate futures contract payload has no base_asset/quote_asset/settle_asset fields; base/quote split parsed from the reported native_market_id ('UNI_USDT') on its '_' separator, settle asset inferred from the /futures/usdt/ endpoint family",
+    "inferred_base_asset": "UNI",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "UNI_USDT",
+    "onboarded_at_ms": 1600300800000,
+    "raw_evidence": {
+      "endpoint": "https://api.gateio.ws/api/v4/futures/usdt/contracts/UNI_USDT",
+      "observed_at": "2026-09-26T07:00:26.172912+00:00",
+      "payload": {
+        "config_change_time": 1788234101,
+        "contract_type": "",
+        "create_time": 1600300800,
+        "cross_leverage_default": "10",
+        "enable_bonus": true,
+        "enable_circuit_breaker": false,
+        "enable_credit": true,
+        "enable_decimal": false,
+        "funding_cap_ratio": "0.75",
+        "funding_impact_value": "7000",
+        "funding_interval": 28800,
+        "funding_next_apply": 1790409600,
+        "funding_offset": 0,
+        "funding_rate": "0.0001",
+        "funding_rate_indicative": "0.0001",
+        "funding_rate_limit": "0.0075",
+        "in_delisting": false,
+        "index_price": "9.6956",
+        "interest_rate": "0.0003",
+        "is_pre_market": false,
+        "last_price": "9.694",
+        "launch_time": 1600300800,
+        "leverage_max": "75",
+        "leverage_min": "1",
+        "long_users": 1181,
+        "maintenance_rate": "0.007",
+        "maker_fee_rate": "-0.0001",
+        "mark_price": "9.693",
+        "mark_price_round": "0.001",
+        "mark_type": "index",
+        "market_order_size_max": "450000",
+        "market_order_slip_ratio": "0.02",
+        "name": "UNI_USDT",
+        "order_price_deviate": "0.05",
+        "order_price_round": "0.001",
+        "order_size_max": 680000,
+        "order_size_min": 1,
+        "orderbook_id": 10923689062,
+        "orders_limit": 100,
+        "position_size": 5511870,
+        "quanto_multiplier": "1",
+        "ref_discount_rate": "0",
+        "ref_rebate_rate": "0.2",
+        "risk_limit_base": "20000",
+        "risk_limit_max": "50000000",
+        "risk_limit_step": "49980000",
+        "short_users": 769,
+        "status": "trading",
+        "taker_fee_rate": "0.00075",
+        "trade_id": 41146000,
+        "trade_size": 1951187166,
+        "type": "direct",
+        "voucher_leverage": "0"
+      },
+      "raw_sha256": "a2bab14c03f197b68cb1780f0f1297832b23b0036aa34279ee25c5f3dbef07de",
+      "source": "https://api.gateio.ws/api/v4/futures/usdt/contracts/UNI_USDT",
+      "wire_exact": true
+    },
+    "reported_base_asset": null,
+    "reported_quote_asset": null,
+    "reported_settle_asset": null,
+    "status": "trading"
+  },
+  "target_catalog_evidence": {
+    "endpoint": "https://api.bybit.com/v5/asset/coin/query-info (authenticated, all coins)",
+    "observed_at": "2026-09-26T06:51:20.869167+00:00",
+    "payload": {
+      "chains": [
+        {
+          "chain": "ETH",
+          "chainType": "Ethereum",
+          "contractAddress": "0x1f9840a85d5af5bf1d1762f925bdaddc4201f984"
+        }
+      ],
+      "coin": "UNI",
+      "contractAddress": "0x1f9840a85d5af5bf1d1762f925bdaddc4201f984",
+      "name": "UNI",
+      "response_sha256": "dcbb785d22323ba31ec4687e0fd25bfec51cf316dfe4d779b0815cd34bc3e7dd",
+      "selected_chain": "ETH"
+    },
+    "raw_sha256": "0d26c9506b5c19f015c40120b77982e44a83d4f267dcce2cc12b0d1f6b873329",
+    "source": "bybit:coin_info_entry",
+    "wire_exact": false
+  },
+  "target_contract": {
+    "block_hash": "0x5fa59c1aac55e27dad0bd60dc769248c02c03fe0cd234c76a0dafe4d2891cc66",
+    "block_number": 26059995,
+    "chain": "ethereum",
+    "chain_id": 1,
+    "contract_address": "0x1f9840a85d5af5bf1d1762f925bdaddc4201f984",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://ethereum-rpc.publicnode.com",
+      "observed_at": "2026-09-26T07:00:24.881698+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "69640378441910e713ebf1ec0431af5fd0a4658949332e49d674b3ddf1b12877",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "target_exchange": "bybit",
+  "target_market_evidence": {
+    "exchange": "bybit",
+    "inference_basis": "copied verbatim from bybit v5 instruments-info's own baseCoin/quoteCoin/settleCoin fields -- genuinely reported, not parsed",
+    "inferred_base_asset": "UNI",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "UNIUSDT",
+    "onboarded_at_ms": 1638230400000,
+    "raw_evidence": {
+      "endpoint": "https://api.bybit.com/v5/market/instruments-info?category=linear (every cursor page)",
+      "observed_at": "2026-09-26T06:51:20.579476+00:00",
+      "payload": {
+        "baseCoin": "UNI",
+        "contractType": "LinearPerpetual",
+        "copyTrading": "both",
+        "deliveryFeeRate": "",
+        "deliveryTime": "0",
+        "displayName": "UNIUSDT",
+        "forbidUplWithdrawal": false,
+        "fullName": "Uniswap",
+        "fundingInterval": 480,
+        "isPreListing": false,
+        "launchTime": "1638230400000",
+        "leverageFilter": {
+          "leverageStep": "0.01",
+          "maxLeverage": "75.00",
+          "minLeverage": "1"
+        },
+        "lotSizeFilter": {
+          "maxMktOrderQty": "11000.0",
+          "maxOrderQty": "32000.0",
+          "minNotionalValue": "5",
+          "minOrderQty": "0.1",
+          "postOnlyMaxOrderQty": "32000.0",
+          "qtyStep": "0.1"
+        },
+        "lowerFundingRate": "-0.0066",
+        "marketRegion": "",
+        "preListingInfo": null,
+        "priceFilter": {
+          "maxPrice": "19999.998",
+          "minPrice": "0.001",
+          "tickSize": "0.001"
+        },
+        "priceScale": "3",
+        "quoteCoin": "USDT",
+        "riskParameters": {
+          "priceLimitRatioX": "0.05",
+          "priceLimitRatioY": "0.1"
+        },
+        "settleCoin": "USDT",
+        "status": "Trading",
+        "symbol": "UNIUSDT",
+        "symbolId": 29,
+        "symbolType": "",
+        "underlyingTicker": "",
+        "unifiedMarginTrade": true,
+        "upperFundingRate": "0.0066"
+      },
+      "raw_sha256": "d8303acc67c987d3fbbdb59a888163347dfe9ebab6c7b05af2ff2d0d82b40c96",
+      "source": "bybit:instruments_info_entry",
+      "wire_exact": false
+    },
+    "reported_base_asset": "UNI",
+    "reported_quote_asset": "USDT",
+    "reported_settle_asset": "USDT",
+    "status": "Trading"
+  },
+  "working_tree_dirty": false
+}

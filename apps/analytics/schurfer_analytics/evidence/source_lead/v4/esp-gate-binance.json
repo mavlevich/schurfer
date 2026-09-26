@@ -1,0 +1,446 @@
+{
+  "base": "ESP",
+  "bundle_sha256": "fd13ff50d69d4e2515d4a97f953356017e3858d11b78383462554672fb2e7e1f",
+  "captured_at": "2026-09-26T06:55:02.912669+00:00",
+  "code_revision": "4111a1661e333849fe6d0d7a5e4504bf4e8bad9d",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/espresso?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-09-26T06:55:02.910635+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "ethereum",
+      "block_time_in_minutes": 0,
+      "categories": [
+        "Infrastructure",
+        "Arbitrum Ecosystem",
+        "Ethereum Ecosystem",
+        "Rollups-as-a-Service (RaaS)",
+        "Binance Wallet IDO",
+        "Capital Launchpad (Kaito)"
+      ],
+      "contract_address": "0x031de51f3e8016514bd0963d0b2ab825a591db9a",
+      "country_origin": "",
+      "description": {
+        "en": "Espresso is a global confirmation layer that provides L2 chains with fast, reliable transaction confirmations backed by BFT consensus.\n\nEspresso confirmations can improve cross-chain composability, as they provide chains with near-instant access to reliable, credibly neutral information about what’s happening not just on their own chain, but on all chains plugged into the network. Espresso's confirmation layer can prevent sequencer equivocation, protect against reorgs, and reduce finality risk for solvers in intent-based systems. Its versatility means chains can also use it as a decentralized sequencer and low-cost data availability layer."
+      },
+      "detail_platforms": {
+        "arbitrum-one": {
+          "contract_address": "0x3b8db18e69d6686ad9371a423afe3dd1065c94f1",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/arbitrum/tokens/0x3b8db18e69d6686ad9371a423afe3dd1065c94f1"
+        },
+        "ethereum": {
+          "contract_address": "0x031de51f3e8016514bd0963d0b2ab825a591db9a",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/eth/tokens/0x031de51f3e8016514bd0963d0b2ab825a591db9a"
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": false,
+      "hashing_algorithm": null,
+      "id": "espresso",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/67626/large/espresso.jpg?1753324525",
+        "small": "https://coin-images.coingecko.com/coins/images/67626/small/espresso.jpg?1753324525",
+        "thumb": "https://coin-images.coingecko.com/coins/images/67626/thumb/espresso.jpg?1753324525"
+      },
+      "last_updated": "2026-09-26T06:52:40.000Z",
+      "links": {
+        "announcement_url": [],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://explorer.main.net.espresso.network/",
+          "https://intel.arkm.com/explorer/token/espresso",
+          "https://etherscan.io/token/0x031de51f3e8016514bd0963d0b2ab825a591db9a",
+          "https://ethplorer.io/address/0x031de51f3e8016514bd0963d0b2ab825a591db9a",
+          "https://arbiscan.io/token/0x3b8db18e69d6686ad9371a423afe3dd1065c94f1"
+        ],
+        "chat_url": [],
+        "facebook_username": "",
+        "homepage": ["https://www.espresso.foundation/", "https://www.espressosys.com/"],
+        "official_forum_url": [
+          "https://www.youtube.com/@espressosys",
+          "https://medium.com/@espressosys",
+          "https://farcaster.xyz/espressosys"
+        ],
+        "repos_url": {
+          "bitbucket": [],
+          "github": ["https://github.com/EspressoSystems"]
+        },
+        "snapshot_url": null,
+        "subreddit_url": null,
+        "telegram_channel_identifier": "",
+        "twitter_screen_name": "EspressoSys",
+        "whitepaper": "https://docs.espressosys.com/network"
+      },
+      "listing_currency": null,
+      "listing_price": null,
+      "listing_source": null,
+      "listing_source_url": null,
+      "listing_timestamp": null,
+      "market_cap_rank": 390,
+      "market_cap_rank_with_rehypothecated": 528,
+      "name": "Espresso",
+      "platforms": {
+        "arbitrum-one": "0x3b8db18e69d6686ad9371a423afe3dd1065c94f1",
+        "ethereum": "0x031de51f3e8016514bd0963d0b2ab825a591db9a"
+      },
+      "preview_listing": false,
+      "public_notice": null,
+      "sentiment_votes_down_percentage": null,
+      "sentiment_votes_up_percentage": null,
+      "status_updates": [],
+      "symbol": "esp",
+      "watchlist_portfolio_users": 2748,
+      "web_slug": "espresso"
+    },
+    "raw_sha256": "8e6b57682b2df233777318c6890a29faf8193cea8fc5eee6eea27c1c57249100",
+    "source": "https://api.coingecko.com/api/v3/coins/espresso",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v4",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-09-26T06:51:16.758270+00:00",
+    "payload": {
+      "active": true,
+      "code": "ESP",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "ESP",
+      "info": {
+        "category": [],
+        "chain": "ETH",
+        "chains": [
+          {
+            "addr": "0x031de51f3e8016514bd0963d0b2ab825a591db9a",
+            "deposit_disabled": false,
+            "name": "ETH",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          {
+            "addr": "0x3b8db18e69d6686ad9371a423afe3dd1065c94f1",
+            "deposit_disabled": false,
+            "name": "ARBEVM",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "ESP",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "53522951.0",
+        "name": "Espresso",
+        "total_supply": "3590000000",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "Espresso",
+      "networks": {
+        "ARBITRUM": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "ARBEVM",
+          "info": {
+            "addr": "0x3b8db18e69d6686ad9371a423afe3dd1065c94f1",
+            "deposit_disabled": false,
+            "name": "ARBEVM",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "ARBITRUM",
+          "precision": 0.0001,
+          "withdraw": true
+        },
+        "ERC20": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "ETH",
+          "info": {
+            "addr": "0x031de51f3e8016514bd0963d0b2ab825a591db9a",
+            "deposit_disabled": false,
+            "name": "ETH",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "ERC20",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "4cfb248c73ec0d611a40dca3464227024864445f08330c5115170363130db603",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "exact_contract",
+  "source_contract": {
+    "block_hash": "0x52c0419327c55ed6def051256eb90f6a5cacbfb843a54db6d4b37c500e9b767d",
+    "block_number": 509008229,
+    "chain": "arbitrum",
+    "chain_id": 42161,
+    "contract_address": "0x3b8db18e69d6686ad9371a423afe3dd1065c94f1",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://arb1.arbitrum.io/rpc",
+      "observed_at": "2026-09-26T06:54:55.286856+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "a0cfb5a1c696cf1b33c6808f77538ba8fbf89fc8515499513d43ce204d7a457a",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "source_market_evidence": {
+    "exchange": "gate",
+    "inference_basis": "gate futures contract payload has no base_asset/quote_asset/settle_asset fields; base/quote split parsed from the reported native_market_id ('ESP_USDT') on its '_' separator, settle asset inferred from the /futures/usdt/ endpoint family",
+    "inferred_base_asset": "ESP",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "ESP_USDT",
+    "onboarded_at_ms": 1770712023000,
+    "raw_evidence": {
+      "endpoint": "https://api.gateio.ws/api/v4/futures/usdt/contracts/ESP_USDT",
+      "observed_at": "2026-09-26T06:54:56.570494+00:00",
+      "payload": {
+        "config_change_time": 1789376326,
+        "contract_type": "",
+        "create_time": 1770712023,
+        "cross_leverage_default": "10",
+        "enable_bonus": true,
+        "enable_circuit_breaker": false,
+        "enable_credit": true,
+        "enable_decimal": false,
+        "funding_cap_ratio": "0.75",
+        "funding_impact_value": "5000",
+        "funding_interval": 28800,
+        "funding_next_apply": 1790409600,
+        "funding_offset": 0,
+        "funding_rate": "-0.001249",
+        "funding_rate_indicative": "-0.001249",
+        "funding_rate_limit": "0.02",
+        "in_delisting": false,
+        "index_price": "0.10075",
+        "interest_rate": "0.0003",
+        "is_pre_market": false,
+        "last_price": "0.1006",
+        "launch_time": 1770712023,
+        "leverage_max": "50",
+        "leverage_min": "1",
+        "long_users": 98,
+        "maintenance_rate": "0.01",
+        "maker_fee_rate": "-0.0001",
+        "mark_price": "0.10066",
+        "mark_price_round": "0.00001",
+        "mark_type": "index",
+        "market_order_size_max": "200000",
+        "market_order_slip_ratio": "0.035",
+        "name": "ESP_USDT",
+        "order_price_deviate": "0.1",
+        "order_price_round": "0.00001",
+        "order_size_max": 300000,
+        "order_size_min": 1,
+        "orderbook_id": 680760436,
+        "orders_limit": 100,
+        "position_size": 93932,
+        "quanto_multiplier": "10",
+        "ref_discount_rate": "0",
+        "ref_rebate_rate": "0.2",
+        "risk_limit_base": "5000",
+        "risk_limit_max": "3000000",
+        "risk_limit_step": "2995000",
+        "short_users": 119,
+        "status": "trading",
+        "taker_fee_rate": "0.00075",
+        "trade_id": 5508685,
+        "trade_size": 514693361,
+        "type": "direct",
+        "voucher_leverage": "0"
+      },
+      "raw_sha256": "2fb4d985d8d206a036946496b874e48f9d0b812ce973dcbd3461a411b9e30b59",
+      "source": "https://api.gateio.ws/api/v4/futures/usdt/contracts/ESP_USDT",
+      "wire_exact": true
+    },
+    "reported_base_asset": null,
+    "reported_quote_asset": null,
+    "reported_settle_asset": null,
+    "status": "trading"
+  },
+  "target_catalog_evidence": {
+    "endpoint": "https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list",
+    "observed_at": "2026-09-26T06:51:19.811887+00:00",
+    "payload": {
+      "chainId": "42161",
+      "chainName": "Arbitrum",
+      "contractAddress": "0x3b8db18e69d6686ad9371a423afe3dd1065c94f1",
+      "decimals": 18,
+      "fullyDelisted": true,
+      "listingCex": true,
+      "name": "Espresso",
+      "offline": true,
+      "response_sha256": "dbbe5652ba9a3ab0a09f5ee929182c884c90a35921796bd8ecd155a82c8fa73c",
+      "symbol": "ESP"
+    },
+    "raw_sha256": "a12bf4b26f145af423794362014a53e331ace7a8e28b578ede8df1cc96740b05",
+    "source": "binance:alpha_catalog_entry",
+    "wire_exact": false
+  },
+  "target_contract": {
+    "block_hash": "0x52c0419327c55ed6def051256eb90f6a5cacbfb843a54db6d4b37c500e9b767d",
+    "block_number": 509008229,
+    "chain": "arbitrum",
+    "chain_id": 42161,
+    "contract_address": "0x3b8db18e69d6686ad9371a423afe3dd1065c94f1",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://arb1.arbitrum.io/rpc",
+      "observed_at": "2026-09-26T06:54:55.286856+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "a0cfb5a1c696cf1b33c6808f77538ba8fbf89fc8515499513d43ce204d7a457a",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "target_exchange": "binance",
+  "target_market_evidence": {
+    "exchange": "binance",
+    "inference_basis": "copied verbatim from binance futures exchangeInfo's own baseAsset/quoteAsset/marginAsset fields -- genuinely reported, not parsed",
+    "inferred_base_asset": "ESP",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "ESPUSDT",
+    "onboarded_at_ms": 1770711000000,
+    "raw_evidence": {
+      "endpoint": "https://fapi.binance.com/fapi/v1/exchangeInfo",
+      "observed_at": "2026-09-26T06:51:20.198689+00:00",
+      "payload": {
+        "baseAsset": "ESP",
+        "baseAssetPrecision": 8,
+        "contractType": "PERPETUAL",
+        "deliveryDate": 4133404800000,
+        "filters": [
+          {
+            "filterType": "PRICE_FILTER",
+            "maxPrice": "200",
+            "minPrice": "0.0000100",
+            "tickSize": "0.0000100"
+          },
+          {
+            "filterType": "LOT_SIZE",
+            "maxQty": "10000000",
+            "minQty": "1",
+            "stepSize": "1"
+          },
+          {
+            "filterType": "MARKET_LOT_SIZE",
+            "maxQty": "1000000",
+            "minQty": "1",
+            "stepSize": "1"
+          },
+          {
+            "filterType": "MAX_NUM_ORDERS",
+            "limit": 200
+          },
+          {
+            "filterType": "MIN_NOTIONAL",
+            "notional": "5"
+          },
+          {
+            "filterType": "PERCENT_PRICE",
+            "multiplierDecimal": "4",
+            "multiplierDown": "0.8500",
+            "multiplierUp": "1.1500"
+          },
+          {
+            "filterType": "POSITION_RISK_CONTROL",
+            "positionControlSide": "NONE"
+          }
+        ],
+        "liquidationFee": "0.015000",
+        "maintMarginPercent": "2.5000",
+        "marginAsset": "USDT",
+        "marketTakeBound": "0.15",
+        "maxMoveOrderLimit": 10000,
+        "onboardDate": 1770711000000,
+        "orderTypes": [
+          "LIMIT",
+          "MARKET",
+          "STOP",
+          "STOP_MARKET",
+          "TAKE_PROFIT",
+          "TAKE_PROFIT_MARKET",
+          "TRAILING_STOP_MARKET"
+        ],
+        "pair": "ESPUSDT",
+        "permissionSets": ["GRID", "COPY", "RPI", "DCA", "PSB"],
+        "pricePrecision": 7,
+        "quantityPrecision": 0,
+        "quoteAsset": "USDT",
+        "quotePrecision": 8,
+        "requiredMarginPercent": "5.0000",
+        "status": "TRADING",
+        "symbol": "ESPUSDT",
+        "timeInForce": ["GTC", "IOC", "FOK", "GTX", "GTD"],
+        "triggerProtect": "0.1500",
+        "underlyingSubType": ["Alpha", "Crypto"],
+        "underlyingType": "COIN"
+      },
+      "raw_sha256": "f9552057c324c4620dbfcb4590cc00ca7dd591a697b86e5cf1205a086c6edc64",
+      "source": "binance:futures_exchange_info_entry",
+      "wire_exact": false
+    },
+    "reported_base_asset": "ESP",
+    "reported_quote_asset": "USDT",
+    "reported_settle_asset": "USDT",
+    "status": "TRADING"
+  },
+  "working_tree_dirty": false
+}

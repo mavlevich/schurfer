@@ -1,0 +1,399 @@
+{
+  "base": "UAI",
+  "bundle_sha256": "36d17f837700113962b25db73fc3c3eb1486a557cc082bf9d4533e5e1010b0fe",
+  "captured_at": "2026-09-26T07:00:16.849286+00:00",
+  "code_revision": "4111a1661e333849fe6d0d7a5e4504bf4e8bad9d",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/unifai-network?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-09-26T07:00:16.845496+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "binance-smart-chain",
+      "block_time_in_minutes": 0,
+      "categories": [
+        "Artificial Intelligence (AI)",
+        "BNB Chain Ecosystem",
+        "Binance Alpha Spotlight",
+        "AI Framework",
+        "Prediction Market Tools"
+      ],
+      "contract_address": "0x3e5d4f8aee0d9b3082d5f6da5d6e225d17ba9ea0",
+      "country_origin": "",
+      "description": {
+        "en": "UnifAI is an Infrastructure of autonomous AI agents that simplifies DeFi for users and developers alike. For end-users, UnifAI executes strategies on their behalf, allowing them to benefit from DeFi opportunities without being online constantly or needing deep technical knowledge. For developers and projects, UniFAI provides a modular, secure, and interoperable infrastructure to build, deploy, and scale AI agents across DeFi protocols.\n\nUnifAI empowers agents to go beyond static, predefined functions: they can discover, compose, and execute tools at runtime, making them adaptive, autonomous, and powerful."
+      },
+      "detail_platforms": {
+        "binance-smart-chain": {
+          "contract_address": "0x3e5d4f8aee0d9b3082d5f6da5d6e225d17ba9ea0",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/bsc/tokens/0x3e5d4f8aee0d9b3082d5f6da5d6e225d17ba9ea0"
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": false,
+      "hashing_algorithm": null,
+      "id": "unifai-network",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/70521/large/uai.png?1762323485",
+        "small": "https://coin-images.coingecko.com/coins/images/70521/small/uai.png?1762323485",
+        "thumb": "https://coin-images.coingecko.com/coins/images/70521/thumb/uai.png?1762323485"
+      },
+      "last_updated": "2026-09-26T06:57:40.000Z",
+      "links": {
+        "announcement_url": [],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://bscscan.com/token/0x3E5d4f8aee0D9B3082d5f6DA5D6e225D17ba9ea0",
+          "https://binplorer.com/address/0x3E5d4f8aee0D9B3082d5f6DA5D6e225D17ba9ea0"
+        ],
+        "chat_url": [],
+        "facebook_username": "",
+        "homepage": ["https://chat.unifai.network/"],
+        "official_forum_url": ["https://unifainetwork.medium.com/"],
+        "repos_url": {
+          "bitbucket": [],
+          "github": ["https://github.com/unifai-network"]
+        },
+        "snapshot_url": null,
+        "subreddit_url": null,
+        "telegram_channel_identifier": "unifai_network",
+        "twitter_screen_name": "UnifaiNetwork",
+        "whitepaper": "https://docs.unifai.network/"
+      },
+      "listing_currency": null,
+      "listing_price": null,
+      "listing_source": null,
+      "listing_source_url": null,
+      "listing_timestamp": null,
+      "market_cap_rank": 333,
+      "market_cap_rank_with_rehypothecated": 462,
+      "name": "UnifAI Network",
+      "platforms": {
+        "binance-smart-chain": "0x3e5d4f8aee0d9b3082d5f6da5d6e225d17ba9ea0"
+      },
+      "preview_listing": false,
+      "public_notice": null,
+      "sentiment_votes_down_percentage": 0.0,
+      "sentiment_votes_up_percentage": 100.0,
+      "status_updates": [],
+      "symbol": "uai",
+      "watchlist_portfolio_users": 2271,
+      "web_slug": "unifai-network"
+    },
+    "raw_sha256": "cbe88fb57b05d07ad22317107ad55a37a3aa828db91c76c72acc82295a842760",
+    "source": "https://api.coingecko.com/api/v3/coins/unifai-network",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v4",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-09-26T06:51:16.758270+00:00",
+    "payload": {
+      "active": true,
+      "code": "UAI",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "UAI",
+      "info": {
+        "category": [],
+        "chain": "BSC",
+        "chains": [
+          {
+            "addr": "0x3e5d4f8aee0d9b3082d5f6da5d6e225d17ba9ea0",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "UAI",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "80476080.0",
+        "name": "UnifAI",
+        "total_supply": "1000000000",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "UnifAI",
+      "networks": {
+        "BEP20": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "BSC",
+          "info": {
+            "addr": "0x3e5d4f8aee0d9b3082d5f6da5d6e225d17ba9ea0",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "BEP20",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "69b37fb8ebd540b080e32a16849a1909c6f5e4a4fcbe3cf0108e2cb5c78038ed",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "exact_contract",
+  "source_contract": {
+    "block_hash": "0x804d739cc179c47ec94da996eca2b029c149e33298a2353fda8760bee13aaa24",
+    "block_number": 124097108,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0x3e5d4f8aee0d9b3082d5f6da5d6e225d17ba9ea0",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-09-26T07:00:09.094322+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "8e73d72cca28014c8646f2033e87ec712fc9eb6dbc2664092e1cf446ce4e6937",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "source_market_evidence": {
+    "exchange": "gate",
+    "inference_basis": "gate futures contract payload has no base_asset/quote_asset/settle_asset fields; base/quote split parsed from the reported native_market_id ('UAI_USDT') on its '_' separator, settle asset inferred from the /futures/usdt/ endpoint family",
+    "inferred_base_asset": "UAI",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "UAI_USDT",
+    "onboarded_at_ms": 1762428600000,
+    "raw_evidence": {
+      "endpoint": "https://api.gateio.ws/api/v4/futures/usdt/contracts/UAI_USDT",
+      "observed_at": "2026-09-26T07:00:10.294352+00:00",
+      "payload": {
+        "config_change_time": 1789378043,
+        "contract_type": "",
+        "create_time": 1762427186,
+        "cross_leverage_default": "10",
+        "enable_bonus": true,
+        "enable_circuit_breaker": false,
+        "enable_credit": true,
+        "enable_decimal": false,
+        "funding_cap_ratio": "0.75",
+        "funding_impact_value": "10000",
+        "funding_interval": 28800,
+        "funding_next_apply": 1790409600,
+        "funding_offset": 0,
+        "funding_rate": "0.00031",
+        "funding_rate_indicative": "0.00031",
+        "funding_rate_limit": "0.02",
+        "in_delisting": false,
+        "index_price": "0.34381",
+        "interest_rate": "0.0003",
+        "is_pre_market": false,
+        "last_price": "0.34381",
+        "launch_time": 1762428600,
+        "leverage_max": "50",
+        "leverage_min": "1",
+        "long_users": 336,
+        "maintenance_rate": "0.01",
+        "maker_fee_rate": "-0.0001",
+        "mark_price": "0.34382",
+        "mark_price_round": "0.00001",
+        "mark_type": "index",
+        "market_order_size_max": "30000",
+        "market_order_slip_ratio": "0.025",
+        "name": "UAI_USDT",
+        "order_price_deviate": "0.15",
+        "order_price_round": "0.00001",
+        "order_size_max": 45000,
+        "order_size_min": 1,
+        "orderbook_id": 1887770708,
+        "orders_limit": 100,
+        "position_size": 315691,
+        "quanto_multiplier": "10",
+        "ref_discount_rate": "0",
+        "ref_rebate_rate": "0.2",
+        "risk_limit_base": "5000",
+        "risk_limit_max": "2500000",
+        "risk_limit_step": "2495000",
+        "short_users": 257,
+        "status": "trading",
+        "taker_fee_rate": "0.00075",
+        "trade_id": 10747611,
+        "trade_size": 416180543,
+        "type": "direct",
+        "voucher_leverage": "0"
+      },
+      "raw_sha256": "a7a79bfa4b690d3c57e3bf29db5b49197cdbaef59d0a7119f063576a4c3eeba6",
+      "source": "https://api.gateio.ws/api/v4/futures/usdt/contracts/UAI_USDT",
+      "wire_exact": true
+    },
+    "reported_base_asset": null,
+    "reported_quote_asset": null,
+    "reported_settle_asset": null,
+    "status": "trading"
+  },
+  "target_catalog_evidence": {
+    "endpoint": "https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list",
+    "observed_at": "2026-09-26T06:51:19.811887+00:00",
+    "payload": {
+      "chainId": "56",
+      "chainName": "BSC",
+      "contractAddress": "0x3e5d4f8aee0d9b3082d5f6da5d6e225d17ba9ea0",
+      "decimals": 18,
+      "fullyDelisted": false,
+      "listingCex": false,
+      "name": "UnifAI Network",
+      "offline": false,
+      "response_sha256": "dbbe5652ba9a3ab0a09f5ee929182c884c90a35921796bd8ecd155a82c8fa73c",
+      "symbol": "UAI"
+    },
+    "raw_sha256": "96dd9359b3c9081a3f8b5aaca019898c1c68835a0e9b69d3c14b9cb33cf123b3",
+    "source": "binance:alpha_catalog_entry",
+    "wire_exact": false
+  },
+  "target_contract": {
+    "block_hash": "0x804d739cc179c47ec94da996eca2b029c149e33298a2353fda8760bee13aaa24",
+    "block_number": 124097108,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0x3e5d4f8aee0d9b3082d5f6da5d6e225d17ba9ea0",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-09-26T07:00:09.094322+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "8e73d72cca28014c8646f2033e87ec712fc9eb6dbc2664092e1cf446ce4e6937",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "target_exchange": "binance",
+  "target_market_evidence": {
+    "exchange": "binance",
+    "inference_basis": "copied verbatim from binance futures exchangeInfo's own baseAsset/quoteAsset/marginAsset fields -- genuinely reported, not parsed",
+    "inferred_base_asset": "UAI",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "UAIUSDT",
+    "onboarded_at_ms": 1762428600000,
+    "raw_evidence": {
+      "endpoint": "https://fapi.binance.com/fapi/v1/exchangeInfo",
+      "observed_at": "2026-09-26T06:51:20.198689+00:00",
+      "payload": {
+        "baseAsset": "UAI",
+        "baseAssetPrecision": 8,
+        "contractType": "PERPETUAL",
+        "deliveryDate": 4133404800000,
+        "filters": [
+          {
+            "filterType": "PRICE_FILTER",
+            "maxPrice": "200",
+            "minPrice": "0.0001000",
+            "tickSize": "0.0001000"
+          },
+          {
+            "filterType": "LOT_SIZE",
+            "maxQty": "2000000",
+            "minQty": "1",
+            "stepSize": "1"
+          },
+          {
+            "filterType": "MARKET_LOT_SIZE",
+            "maxQty": "400000",
+            "minQty": "1",
+            "stepSize": "1"
+          },
+          {
+            "filterType": "MAX_NUM_ORDERS",
+            "limit": 200
+          },
+          {
+            "filterType": "MIN_NOTIONAL",
+            "notional": "5"
+          },
+          {
+            "filterType": "PERCENT_PRICE",
+            "multiplierDecimal": "4",
+            "multiplierDown": "0.8500",
+            "multiplierUp": "1.1500"
+          },
+          {
+            "filterType": "POSITION_RISK_CONTROL",
+            "positionControlSide": "NONE"
+          }
+        ],
+        "liquidationFee": "0.020000",
+        "maintMarginPercent": "2.5000",
+        "marginAsset": "USDT",
+        "marketTakeBound": "0.15",
+        "maxMoveOrderLimit": 10000,
+        "onboardDate": 1762428600000,
+        "orderTypes": [
+          "LIMIT",
+          "MARKET",
+          "STOP",
+          "STOP_MARKET",
+          "TAKE_PROFIT",
+          "TAKE_PROFIT_MARKET",
+          "TRAILING_STOP_MARKET"
+        ],
+        "pair": "UAIUSDT",
+        "permissionSets": ["GRID", "COPY", "DCA", "PSB"],
+        "pricePrecision": 7,
+        "quantityPrecision": 0,
+        "quoteAsset": "USDT",
+        "quotePrecision": 8,
+        "requiredMarginPercent": "5.0000",
+        "status": "TRADING",
+        "symbol": "UAIUSDT",
+        "timeInForce": ["GTC", "IOC", "FOK", "GTX", "GTD"],
+        "triggerProtect": "0.1500",
+        "underlyingSubType": ["Alpha", "Crypto"],
+        "underlyingType": "COIN"
+      },
+      "raw_sha256": "6eb71fc5c3eadbdb0968a195743a379396b2f093bf7585d45d0800c3eb8f4e53",
+      "source": "binance:futures_exchange_info_entry",
+      "wire_exact": false
+    },
+    "reported_base_asset": "UAI",
+    "reported_quote_asset": "USDT",
+    "reported_settle_asset": "USDT",
+    "status": "TRADING"
+  },
+  "working_tree_dirty": false
+}

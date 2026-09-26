@@ -1,0 +1,446 @@
+{
+  "base": "ARB",
+  "bundle_sha256": "7bac3417d576c1d374152f27f05495df19551de07249d2248c4a54edccc77c9a",
+  "captured_at": "2026-09-26T06:52:07.734897+00:00",
+  "code_revision": "4111a1661e333849fe6d0d7a5e4504bf4e8bad9d",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/arbitrum?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-09-26T06:52:07.730407+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "arbitrum-one",
+      "block_time_in_minutes": 0,
+      "categories": [
+        "Smart Contract Platform",
+        "Arbitrum Ecosystem",
+        "Ethereum Ecosystem",
+        "Arbitrum Nova Ecosystem",
+        "Layer 2 (L2)",
+        "eGirl Capital Portfolio",
+        "Rollup",
+        "Alameda Research Portfolio",
+        "Pantera Capital Portfolio",
+        "GMCI Layer 2 Index",
+        "GMCI 30 Index",
+        "GMCI Index",
+        "Polychain Capital Portfolio",
+        "Made in USA",
+        "Governance"
+      ],
+      "contract_address": "0x912ce59144191c1204e64559fe8253a0e49e6548",
+      "country_origin": "",
+      "description": {
+        "en": "Arbitrum is one of the leading Ethereum scaling solutions bringing cheap transactions to tens of thousands of users in an environment that feels very similar to Ethereum. It is an optimistic rollup and the leading L2 in terms of TVL. Some of the largest dApps live on Arbitrum include GMX, Radiant, Uniswap V3, and Gains Network."
+      },
+      "detail_platforms": {
+        "arbitrum-nova": {
+          "contract_address": "0xf823c3cd3cebe0a1fa952ba88dc9eef8e0bf46ad",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/arbitrum_nova/tokens/0xf823c3cd3cebe0a1fa952ba88dc9eef8e0bf46ad"
+        },
+        "arbitrum-one": {
+          "contract_address": "0x912ce59144191c1204e64559fe8253a0e49e6548",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/arbitrum/tokens/0x912ce59144191c1204e64559fe8253a0e49e6548"
+        },
+        "ethereum": {
+          "contract_address": "0xb50721bcf8d664c30412cfbc6cf7a15145234ad1",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/eth/tokens/0xb50721bcf8d664c30412cfbc6cf7a15145234ad1"
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": false,
+      "hashing_algorithm": null,
+      "id": "arbitrum",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/16547/large/arb.jpg?1721358242",
+        "small": "https://coin-images.coingecko.com/coins/images/16547/small/arb.jpg?1721358242",
+        "thumb": "https://coin-images.coingecko.com/coins/images/16547/thumb/arb.jpg?1721358242"
+      },
+      "last_updated": "2026-09-26T06:49:40.000Z",
+      "links": {
+        "announcement_url": [],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://arbiscan.io/token/0x912ce59144191c1204e64559fe8253a0e49e6548",
+          "https://intel.arkm.com/explorer/token/arbitrum",
+          "https://etherscan.io/token/0xb50721bcf8d664c30412cfbc6cf7a15145234ad1",
+          "https://ethplorer.io/address/0xb50721bcf8d664c30412cfbc6cf7a15145234ad1",
+          "https://nova.arbiscan.io/token/0xf823c3cd3cebe0a1fa952ba88dc9eef8e0bf46ad",
+          "https://www.oklink.com/arbitrum",
+          "https://3xpl.com/arbitrum-one",
+          "https://nova.dex.guru/token/0xf823c3cd3cebe0a1fa952ba88dc9eef8e0bf46ad",
+          "https://arbitrum.dex.guru/token/0x912ce59144191c1204e64559fe8253a0e49e6548",
+          "https://intel.arkm.com/explorer/token/<api_symbol>"
+        ],
+        "chat_url": ["https://discord.com/invite/Arbitrum"],
+        "facebook_username": "",
+        "homepage": ["https://arbitrum.io/", "http://arbitrum.foundation"],
+        "official_forum_url": [],
+        "repos_url": {
+          "bitbucket": [],
+          "github": [
+            "https://github.com/ArbitrumFoundation/docs",
+            "https://github.com/ArbitrumFoundation",
+            "https://github.com/ArbitrumFoundation/governance-seatbelt",
+            "https://github.com/ArbitrumFoundation/sybil-detection",
+            "https://github.com/ArbitrumFoundation/governance"
+          ]
+        },
+        "snapshot_url": null,
+        "subreddit_url": null,
+        "telegram_channel_identifier": "arbitrum",
+        "twitter_screen_name": "arbitrum",
+        "whitepaper": ""
+      },
+      "listing_currency": null,
+      "listing_price": null,
+      "listing_source": null,
+      "listing_source_url": null,
+      "listing_timestamp": null,
+      "market_cap_rank": 62,
+      "market_cap_rank_with_rehypothecated": 78,
+      "name": "Arbitrum",
+      "platforms": {
+        "arbitrum-nova": "0xf823c3cd3cebe0a1fa952ba88dc9eef8e0bf46ad",
+        "arbitrum-one": "0x912ce59144191c1204e64559fe8253a0e49e6548",
+        "ethereum": "0xb50721bcf8d664c30412cfbc6cf7a15145234ad1"
+      },
+      "preview_listing": false,
+      "public_notice": null,
+      "sentiment_votes_down_percentage": 9.09,
+      "sentiment_votes_up_percentage": 90.91,
+      "status_updates": [],
+      "symbol": "arb",
+      "watchlist_portfolio_users": 215072,
+      "web_slug": "arbitrum"
+    },
+    "raw_sha256": "42070fdf5c25f8bf9c65e04abd159103e77da7bf73940785fc04ddf5d1f943c2",
+    "source": "https://api.coingecko.com/api/v3/coins/arbitrum",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v4",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-09-26T06:51:16.758270+00:00",
+    "payload": {
+      "active": true,
+      "code": "ARB",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "ARB",
+      "info": {
+        "category": [],
+        "chain": "ETH",
+        "chains": [
+          {
+            "addr": "0xb50721bcf8d664c30412cfbc6cf7a15145234ad1",
+            "deposit_disabled": false,
+            "name": "ETH",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          {
+            "addr": "0x912CE59144191C1204E64559FE8253a0e49E6548",
+            "deposit_disabled": false,
+            "name": "ARBEVM",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "ARB",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "1516575924.2175",
+        "name": "Arbitrum",
+        "total_supply": "10000000000",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "Arbitrum",
+      "networks": {
+        "ARBITRUM": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "ARBEVM",
+          "info": {
+            "addr": "0x912CE59144191C1204E64559FE8253a0e49E6548",
+            "deposit_disabled": false,
+            "name": "ARBEVM",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "ARBITRUM",
+          "precision": 0.0001,
+          "withdraw": true
+        },
+        "ERC20": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "ETH",
+          "info": {
+            "addr": "0xb50721bcf8d664c30412cfbc6cf7a15145234ad1",
+            "deposit_disabled": false,
+            "name": "ETH",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "ERC20",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "c55110a6069de77aff59db8c2d59e07f7b25da6c0c1a77784b9d92321337b4da",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "exact_contract",
+  "source_contract": {
+    "block_hash": "0x2798aa8dffb9e5c57c83045a8e6416a80e25e0a16e371e503d07e6fdfbb373fe",
+    "block_number": 509007603,
+    "chain": "arbitrum",
+    "chain_id": 42161,
+    "contract_address": "0x912ce59144191c1204e64559fe8253a0e49e6548",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://arb1.arbitrum.io/rpc",
+      "observed_at": "2026-09-26T06:52:00.308125+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "a0cfb5a1c696cf1b33c6808f77538ba8fbf89fc8515499513d43ce204d7a457a",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "source_market_evidence": {
+    "exchange": "gate",
+    "inference_basis": "gate futures contract payload has no base_asset/quote_asset/settle_asset fields; base/quote split parsed from the reported native_market_id ('ARB_USDT') on its '_' separator, settle asset inferred from the /futures/usdt/ endpoint family",
+    "inferred_base_asset": "ARB",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "ARB_USDT",
+    "onboarded_at_ms": 1679578112000,
+    "raw_evidence": {
+      "endpoint": "https://api.gateio.ws/api/v4/futures/usdt/contracts/ARB_USDT",
+      "observed_at": "2026-09-26T06:52:01.488980+00:00",
+      "payload": {
+        "config_change_time": 1788517744,
+        "contract_type": "",
+        "create_time": 1679578112,
+        "cross_leverage_default": "10",
+        "enable_bonus": true,
+        "enable_circuit_breaker": false,
+        "enable_credit": true,
+        "enable_decimal": false,
+        "funding_cap_ratio": "1.282",
+        "funding_impact_value": "7000",
+        "funding_interval": 28800,
+        "funding_next_apply": 1790409600,
+        "funding_offset": 0,
+        "funding_rate": "-0.000052",
+        "funding_rate_indicative": "-0.000052",
+        "funding_rate_limit": "0.02",
+        "in_delisting": false,
+        "index_price": "0.222",
+        "interest_rate": "0.0003",
+        "is_pre_market": false,
+        "last_price": "0.22188",
+        "launch_time": 1679578112,
+        "leverage_max": "50",
+        "leverage_min": "1",
+        "long_users": 750,
+        "maintenance_rate": "0.01",
+        "maker_fee_rate": "-0.0001",
+        "mark_price": "0.22188",
+        "mark_price_round": "0.00001",
+        "mark_type": "index",
+        "market_order_size_max": "4500000",
+        "market_order_slip_ratio": "0.025",
+        "name": "ARB_USDT",
+        "order_price_deviate": "0.1",
+        "order_price_round": "0.00001",
+        "order_size_max": 6800000,
+        "order_size_min": 1,
+        "orderbook_id": 7214160215,
+        "orders_limit": 100,
+        "position_size": 15110878,
+        "quanto_multiplier": "1",
+        "ref_discount_rate": "0",
+        "ref_rebate_rate": "0.2",
+        "risk_limit_base": "50000",
+        "risk_limit_max": "20000000",
+        "risk_limit_step": "19950000",
+        "short_users": 448,
+        "status": "trading",
+        "taker_fee_rate": "0.00075",
+        "trade_id": 38716746,
+        "trade_size": 34746756377,
+        "type": "direct",
+        "voucher_leverage": "2"
+      },
+      "raw_sha256": "4a85406a49e6d008f26a684f855675092336203739987210f10d19567da7ce58",
+      "source": "https://api.gateio.ws/api/v4/futures/usdt/contracts/ARB_USDT",
+      "wire_exact": true
+    },
+    "reported_base_asset": null,
+    "reported_quote_asset": null,
+    "reported_settle_asset": null,
+    "status": "trading"
+  },
+  "target_catalog_evidence": {
+    "endpoint": "https://api.bybit.com/v5/asset/coin/query-info (authenticated, all coins)",
+    "observed_at": "2026-09-26T06:51:20.869167+00:00",
+    "payload": {
+      "chains": [
+        {
+          "chain": "ARBI",
+          "chainType": "Arbitrum One",
+          "contractAddress": "0x912CE59144191C1204E64559FE8253a0e49E6548"
+        }
+      ],
+      "coin": "ARB",
+      "contractAddress": "0x912CE59144191C1204E64559FE8253a0e49E6548",
+      "name": "ARB",
+      "response_sha256": "dcbb785d22323ba31ec4687e0fd25bfec51cf316dfe4d779b0815cd34bc3e7dd",
+      "selected_chain": "ARBI"
+    },
+    "raw_sha256": "4cc156b9a56ec3ad076a8a1c6e1681ee8a131011be52f2a97f710c1e0ae5606e",
+    "source": "bybit:coin_info_entry",
+    "wire_exact": false
+  },
+  "target_contract": {
+    "block_hash": "0x2798aa8dffb9e5c57c83045a8e6416a80e25e0a16e371e503d07e6fdfbb373fe",
+    "block_number": 509007603,
+    "chain": "arbitrum",
+    "chain_id": 42161,
+    "contract_address": "0x912ce59144191c1204e64559fe8253a0e49e6548",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://arb1.arbitrum.io/rpc",
+      "observed_at": "2026-09-26T06:52:00.308125+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "a0cfb5a1c696cf1b33c6808f77538ba8fbf89fc8515499513d43ce204d7a457a",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "target_exchange": "bybit",
+  "target_market_evidence": {
+    "exchange": "bybit",
+    "inference_basis": "copied verbatim from bybit v5 instruments-info's own baseCoin/quoteCoin/settleCoin fields -- genuinely reported, not parsed",
+    "inferred_base_asset": "ARB",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "ARBUSDT",
+    "onboarded_at_ms": 1679563660000,
+    "raw_evidence": {
+      "endpoint": "https://api.bybit.com/v5/market/instruments-info?category=linear (every cursor page)",
+      "observed_at": "2026-09-26T06:51:20.579476+00:00",
+      "payload": {
+        "baseCoin": "ARB",
+        "contractType": "LinearPerpetual",
+        "copyTrading": "both",
+        "deliveryFeeRate": "",
+        "deliveryTime": "0",
+        "displayName": "ARBUSDT",
+        "forbidUplWithdrawal": false,
+        "fullName": "Arbitrum",
+        "fundingInterval": 480,
+        "isPreListing": false,
+        "launchTime": "1679563660000",
+        "leverageFilter": {
+          "leverageStep": "0.01",
+          "maxLeverage": "50.00",
+          "minLeverage": "1"
+        },
+        "lotSizeFilter": {
+          "maxMktOrderQty": "4300000.0",
+          "maxOrderQty": "21500000.0",
+          "minNotionalValue": "5",
+          "minOrderQty": "0.1",
+          "postOnlyMaxOrderQty": "21500000.0",
+          "qtyStep": "0.1"
+        },
+        "lowerFundingRate": "-0.01",
+        "marketRegion": "",
+        "preListingInfo": null,
+        "priceFilter": {
+          "maxPrice": "199.99998",
+          "minPrice": "0.00001",
+          "tickSize": "0.00001"
+        },
+        "priceScale": "5",
+        "quoteCoin": "USDT",
+        "riskParameters": {
+          "priceLimitRatioX": "0.05",
+          "priceLimitRatioY": "0.1"
+        },
+        "settleCoin": "USDT",
+        "status": "Trading",
+        "symbol": "ARBUSDT",
+        "symbolId": 305,
+        "symbolType": "",
+        "underlyingTicker": "",
+        "unifiedMarginTrade": true,
+        "upperFundingRate": "0.01"
+      },
+      "raw_sha256": "d8c04ca152c6d5e82b6ca808c48d1d8649ad469cedfd9d1c63d9381afea9baee",
+      "source": "bybit:instruments_info_entry",
+      "wire_exact": false
+    },
+    "reported_base_asset": "ARB",
+    "reported_quote_asset": "USDT",
+    "reported_settle_asset": "USDT",
+    "status": "Trading"
+  },
+  "working_tree_dirty": false
+}

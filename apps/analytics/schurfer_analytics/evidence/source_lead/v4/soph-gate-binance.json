@@ -1,0 +1,474 @@
+{
+  "base": "SOPH",
+  "bundle_sha256": "912042bef64135850c54975a844f00ca4476006d9d8fb50ad0de07d8cb64c282",
+  "captured_at": "2026-09-26T06:59:12.765324+00:00",
+  "code_revision": "4111a1661e333849fe6d0d7a5e4504bf4e8bad9d",
+  "coingecko_evidence": {
+    "endpoint": "https://api.coingecko.com/api/v3/coins/sophon?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
+    "observed_at": "2026-09-26T06:59:12.763373+00:00",
+    "payload": {
+      "additional_notices": [],
+      "asset_platform_id": "ethereum",
+      "block_time_in_minutes": 0,
+      "categories": [
+        "Smart Contract Platform",
+        "BNB Chain Ecosystem",
+        "Polygon Ecosystem",
+        "Arbitrum Ecosystem",
+        "Ethereum Ecosystem",
+        "Layer 2 (L2)",
+        "Base Ecosystem",
+        "Binance HODLer Airdrops",
+        "Binance Alpha Spotlight",
+        "Base Native"
+      ],
+      "contract_address": "0x6b7774cb12ed7573a7586e7d0e62a2a563ddd3f0",
+      "country_origin": "",
+      "description": {
+        "en": "What is Sophon?\nSophon is an innovative consumer entertainment platform dedicated to onboarding the next generation of crypto users through everyday useful products that monetize and reward the data we all naturally produce.\nBuilt as a modular rollup powered by the ZK Stack, Sophon creates an intuitive ecosystem where users can engage with gaming, social, AI, prediction markets, and more without the typical complexities of blockchain technology. Through zkTLS technology, Sophon transforms everyday online activities into valuable assets that users can control and benefit from while maintaining privacy.\nThis consumer-focused platform bridges traditional applications and blockchain benefits, providing both a developer framework and a user hub for crypto-powered consumer experiences.\n\nWhat is the project about?\nSophon differentiates itself through several key innovations:\nUser-Centric Design: Sophon prioritizes beautiful, simple, and accessible experiences, making blockchain technology invisible to end users while delivering its benefits.\nSocial Oracle: Leveraging zkTLS technology, Sophon's Social Oracle verifies and brings online achievements, reputation, and social influence onchain without revealing personal data. This transforms scattered social signals into collective intelligence that powers applications.\nNative Account Abstraction: Users can sign up with familiar methods like Google or Apple accounts, creating self-custodial wallets in the background without the complexities of traditional crypto onboarding.\nGasless Experience: Through paymasters from the ZKsync codebase, Sophon offers a seamless platform that eliminates transaction fees for end users, significantly enhancing the overall experience.\nEntertainment Focus: Rather than competing solely for existing crypto users, Sophon targets entertainment verticals that already have proven traction, including gaming, gambling, sports betting, ticketing, and consumer AI.\n\nAbout the SOPH Token\nThe SOPH token serves as the foundation of the Sophon Network, playing essential roles in both current and future operations:\nGas Fee Payments: All transactions on the Sophon Network require gas paid in SOPH. However, thanks to native paymaster technology, end users don't necessarily need to hold SOPH themselves, as transactions can be subsidized by applications or the network.\nNetwork Security: SOPH enables the decentralization of Sophon's sequencer through staking. This mechanism supports the cryptoeconomic security of the network while distributing rewards to participants.\nStaking Rewards: Token holders can stake SOPH directly or delegate to Full Nodes (Guardian NFT holders with sufficient delegations). Stakers receive a portion of gas fees and potentially additional ecosystem rewards, with rewards compounding automatically.\nDeflationary Model: SOPH staking utilises an inverse square root reward model, inspired by Ethereum, which means that a portion of rewards are unutilised when less than 100% of the total circulating supply is staked. These unutilised rewards are sent to a separate contract where they are either burnt or redistributed as rewards to users. With a portion of unutilized rewards being burned and no ability to mint new tokens, the supply gradually decreases over time.\n\nSOPH Tokenomics\nSOPH has a fixed total supply of 10,000,000,000 SOPH tokens. At TGE 2,000,000,000 tokens will be in circulation, with the remainder subject to vesting schedules.\n"
+      },
+      "detail_platforms": {
+        "arbitrum-one": {
+          "contract_address": "0x31dba3c96481fde3cd81c2aaf51f2d8bf618c742",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/arbitrum/tokens/0x31dba3c96481fde3cd81c2aaf51f2d8bf618c742"
+        },
+        "base": {
+          "contract_address": "0x31dba3c96481fde3cd81c2aaf51f2d8bf618c742",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/base/tokens/0x31dba3c96481fde3cd81c2aaf51f2d8bf618c742"
+        },
+        "binance-smart-chain": {
+          "contract_address": "0x31dba3c96481fde3cd81c2aaf51f2d8bf618c742",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/bsc/tokens/0x31dba3c96481fde3cd81c2aaf51f2d8bf618c742"
+        },
+        "ethereum": {
+          "contract_address": "0x6b7774cb12ed7573a7586e7d0e62a2a563ddd3f0",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/eth/tokens/0x6b7774cb12ed7573a7586e7d0e62a2a563ddd3f0"
+        },
+        "polygon-pos": {
+          "contract_address": "0xeb971fd26783f32694dbb392dd7289de23109148",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/polygon_pos/tokens/0xeb971fd26783f32694dbb392dd7289de23109148"
+        },
+        "sophon": {
+          "contract_address": "0x000000000000000000000000000000000000800a",
+          "decimal_place": 18,
+          "geckoterminal_url": "https://www.geckoterminal.com/sophon/tokens/0x000000000000000000000000000000000000800a"
+        }
+      },
+      "genesis_date": null,
+      "has_supply_breakdown": false,
+      "hashing_algorithm": null,
+      "id": "sophon",
+      "image": {
+        "large": "https://coin-images.coingecko.com/coins/images/38680/large/sophon_logo_200.png?1747898236",
+        "small": "https://coin-images.coingecko.com/coins/images/38680/small/sophon_logo_200.png?1747898236",
+        "thumb": "https://coin-images.coingecko.com/coins/images/38680/thumb/sophon_logo_200.png?1747898236"
+      },
+      "last_updated": "2026-09-26T06:57:40.000Z",
+      "links": {
+        "announcement_url": [],
+        "bitcointalk_thread_identifier": null,
+        "blockchain_site": [
+          "https://etherscan.io/token/0x6B7774CB12ed7573a7586E7D0e62a2A563dDd3f0",
+          "https://intel.arkm.com/explorer/token/sophon ",
+          "https://bscscan.com/token/0x31DbA3c96481FDe3CD81C2aaF51F2D8bf618C742",
+          "https://basescan.org/token/0x31DbA3c96481FDe3CD81C2aaF51F2D8bf618C742",
+          "https://arbiscan.io/token/0x31DbA3c96481FDe3CD81C2aaF51F2D8bf618C742",
+          "https://polygonscan.com/token/0xEb971Fd26783f32694dbB392dD7289de23109148",
+          "https://ethplorer.io/address/0x6B7774CB12ed7573a7586E7D0e62a2A563dDd3f0",
+          "https://binplorer.com/address/0x31DbA3c96481FDe3CD81C2aaF51F2D8bf618C742",
+          "https://explorer.sophon.xyz/address/0x000000000000000000000000000000000000800A"
+        ],
+        "chat_url": [],
+        "facebook_username": "",
+        "homepage": ["https://sophon.xyz/"],
+        "official_forum_url": [],
+        "repos_url": {
+          "bitbucket": [],
+          "github": ["https://github.com/sophon-org"]
+        },
+        "snapshot_url": null,
+        "subreddit_url": null,
+        "telegram_channel_identifier": "",
+        "twitter_screen_name": "sophon",
+        "whitepaper": "https://docs.sophon.xyz/"
+      },
+      "listing_currency": null,
+      "listing_price": null,
+      "listing_source": null,
+      "listing_source_url": null,
+      "listing_timestamp": null,
+      "market_cap_rank": 953,
+      "market_cap_rank_with_rehypothecated": 1191,
+      "name": "Sophon",
+      "platforms": {
+        "arbitrum-one": "0x31dba3c96481fde3cd81c2aaf51f2d8bf618c742",
+        "base": "0x31dba3c96481fde3cd81c2aaf51f2d8bf618c742",
+        "binance-smart-chain": "0x31dba3c96481fde3cd81c2aaf51f2d8bf618c742",
+        "ethereum": "0x6b7774cb12ed7573a7586e7d0e62a2a563ddd3f0",
+        "polygon-pos": "0xeb971fd26783f32694dbb392dd7289de23109148",
+        "sophon": "0x000000000000000000000000000000000000800a"
+      },
+      "preview_listing": false,
+      "public_notice": null,
+      "sentiment_votes_down_percentage": null,
+      "sentiment_votes_up_percentage": null,
+      "status_updates": [],
+      "symbol": "soph",
+      "watchlist_portfolio_users": 4411,
+      "web_slug": "sophon"
+    },
+    "raw_sha256": "4b498aee48991570fecee0174a900d27024d0b6df39866d1d1b637c5d3ab9e8e",
+    "source": "https://api.coingecko.com/api/v3/coins/sophon",
+    "wire_exact": true
+  },
+  "evidence_version": "source_lead_identity_evidence_v4",
+  "gate_evidence": {
+    "endpoint": "https://api.gateio.ws/api/v4/spot/currencies",
+    "observed_at": "2026-09-26T06:51:16.758270+00:00",
+    "payload": {
+      "active": true,
+      "code": "SOPH",
+      "deposit": true,
+      "fee": null,
+      "fees": {},
+      "id": "SOPH",
+      "info": {
+        "category": [],
+        "chain": "BSC",
+        "chains": [
+          {
+            "addr": "0x31dba3c96481fde3cd81c2aaf51f2d8bf618c742",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          {
+            "addr": "0x6b7774cb12ed7573a7586e7d0e62a2a563ddd3f0",
+            "deposit_disabled": false,
+            "name": "ETH",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          }
+        ],
+        "currency": "SOPH",
+        "delisted": false,
+        "deposit_disabled": false,
+        "fixed_rate": "",
+        "market_cap": "7642000.0",
+        "name": "Sophon",
+        "total_supply": "10000000000",
+        "trade_disabled": false,
+        "withdraw_delayed": false,
+        "withdraw_disabled": false
+      },
+      "limits": {
+        "deposit": {
+          "max": null,
+          "min": null
+        },
+        "withdraw": {
+          "max": null,
+          "min": null
+        }
+      },
+      "name": "Sophon",
+      "networks": {
+        "BEP20": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "BSC",
+          "info": {
+            "addr": "0x31dba3c96481fde3cd81c2aaf51f2d8bf618c742",
+            "deposit_disabled": false,
+            "name": "BSC",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "BEP20",
+          "precision": 0.0001,
+          "withdraw": true
+        },
+        "ERC20": {
+          "active": null,
+          "deposit": true,
+          "fee": null,
+          "id": "ETH",
+          "info": {
+            "addr": "0x6b7774cb12ed7573a7586e7d0e62a2a563ddd3f0",
+            "deposit_disabled": false,
+            "name": "ETH",
+            "withdraw_delayed": false,
+            "withdraw_disabled": false
+          },
+          "limits": {
+            "deposit": {
+              "max": null,
+              "min": null
+            },
+            "withdraw": {
+              "max": null,
+              "min": null
+            }
+          },
+          "network": "ERC20",
+          "precision": 0.0001,
+          "withdraw": true
+        }
+      },
+      "numericId": null,
+      "precision": 0.0001,
+      "type": "crypto",
+      "withdraw": true
+    },
+    "raw_sha256": "593d58e27351a1a8791ed63df24989031d9fb1a43b949ec2f78c036c19b35bd2",
+    "source": "gate:fetch_currencies",
+    "wire_exact": false
+  },
+  "identity_class": "exact_contract",
+  "source_contract": {
+    "block_hash": "0xd3e94dd6298dbb866ff1c22569beeaa0ed437f601f55ce43089f6ebb89a9c67b",
+    "block_number": 124096966,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0x31dba3c96481fde3cd81c2aaf51f2d8bf618c742",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-09-26T06:59:05.173278+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "8e73d72cca28014c8646f2033e87ec712fc9eb6dbc2664092e1cf446ce4e6937",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "source_exchange": "gate",
+  "source_market_evidence": {
+    "exchange": "gate",
+    "inference_basis": "gate futures contract payload has no base_asset/quote_asset/settle_asset fields; base/quote split parsed from the reported native_market_id ('SOPH_USDT') on its '_' separator, settle asset inferred from the /futures/usdt/ endpoint family",
+    "inferred_base_asset": "SOPH",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "SOPH_USDT",
+    "onboarded_at_ms": 1748437214000,
+    "raw_evidence": {
+      "endpoint": "https://api.gateio.ws/api/v4/futures/usdt/contracts/SOPH_USDT",
+      "observed_at": "2026-09-26T06:59:06.412025+00:00",
+      "payload": {
+        "config_change_time": 1789354398,
+        "contract_type": "",
+        "create_time": 1748437214,
+        "cross_leverage_default": "10",
+        "enable_bonus": true,
+        "enable_circuit_breaker": false,
+        "enable_credit": true,
+        "enable_decimal": false,
+        "funding_cap_ratio": "2",
+        "funding_impact_value": "5000",
+        "funding_interval": 14400,
+        "funding_next_apply": 1790409600,
+        "funding_offset": 0,
+        "funding_rate": "0.00005",
+        "funding_rate_indicative": "0.00005",
+        "funding_rate_limit": "0.02",
+        "in_delisting": false,
+        "index_price": "0.003807",
+        "interest_rate": "0.0003",
+        "is_pre_market": false,
+        "last_price": "0.003799",
+        "launch_time": 1748437214,
+        "leverage_max": "25",
+        "leverage_min": "1",
+        "long_users": 190,
+        "maintenance_rate": "0.02",
+        "maker_fee_rate": "-0.0001",
+        "mark_price": "0.003799",
+        "mark_price_round": "0.000001",
+        "mark_type": "index",
+        "market_order_size_max": "60000",
+        "market_order_slip_ratio": "0.05",
+        "name": "SOPH_USDT",
+        "order_price_deviate": "0.2",
+        "order_price_round": "0.000001",
+        "order_size_max": 90000,
+        "order_size_min": 1,
+        "orderbook_id": 787609456,
+        "orders_limit": 100,
+        "position_size": 776169,
+        "quanto_multiplier": "100",
+        "ref_discount_rate": "0",
+        "ref_rebate_rate": "0.2",
+        "risk_limit_base": "5000",
+        "risk_limit_max": "10000000",
+        "risk_limit_step": "9995000",
+        "short_users": 116,
+        "status": "trading",
+        "taker_fee_rate": "0.00075",
+        "trade_id": 4562440,
+        "trade_size": 344042559,
+        "type": "direct",
+        "voucher_leverage": "0"
+      },
+      "raw_sha256": "388b41dde8f7c4ab6cfac3b763b846591978a20b40644ea5ec327cffcc8c744a",
+      "source": "https://api.gateio.ws/api/v4/futures/usdt/contracts/SOPH_USDT",
+      "wire_exact": true
+    },
+    "reported_base_asset": null,
+    "reported_quote_asset": null,
+    "reported_settle_asset": null,
+    "status": "trading"
+  },
+  "target_catalog_evidence": {
+    "endpoint": "https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list",
+    "observed_at": "2026-09-26T06:51:19.811887+00:00",
+    "payload": {
+      "chainId": "56",
+      "chainName": "BSC",
+      "contractAddress": "0x31dba3c96481fde3cd81c2aaf51f2d8bf618c742",
+      "decimals": 18,
+      "fullyDelisted": true,
+      "listingCex": false,
+      "name": "Sophon",
+      "offline": true,
+      "response_sha256": "dbbe5652ba9a3ab0a09f5ee929182c884c90a35921796bd8ecd155a82c8fa73c",
+      "symbol": "SOPH"
+    },
+    "raw_sha256": "dd96662ddcf9b0ebd8a4b3e79e914f54daa6c49ca3ca61918ce24193aaddf60c",
+    "source": "binance:alpha_catalog_entry",
+    "wire_exact": false
+  },
+  "target_contract": {
+    "block_hash": "0xd3e94dd6298dbb866ff1c22569beeaa0ed437f601f55ce43089f6ebb89a9c67b",
+    "block_number": 124096966,
+    "chain": "bsc",
+    "chain_id": 56,
+    "contract_address": "0x31dba3c96481fde3cd81c2aaf51f2d8bf618c742",
+    "decimals": 18,
+    "decimals_evidence": {
+      "endpoint": "https://bsc-dataseed.binance.org/",
+      "observed_at": "2026-09-26T06:59:05.173278+00:00",
+      "payload": {
+        "id": 3,
+        "jsonrpc": "2.0",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "raw_sha256": "8e73d72cca28014c8646f2033e87ec712fc9eb6dbc2664092e1cf446ce4e6937",
+      "source": "rpc:eth_call",
+      "wire_exact": true
+    }
+  },
+  "target_exchange": "binance",
+  "target_market_evidence": {
+    "exchange": "binance",
+    "inference_basis": "copied verbatim from binance futures exchangeInfo's own baseAsset/quoteAsset/marginAsset fields -- genuinely reported, not parsed",
+    "inferred_base_asset": "SOPH",
+    "inferred_quote_asset": "USDT",
+    "inferred_settle_asset": "USDT",
+    "native_market_id": "SOPHUSDT",
+    "onboarded_at_ms": 1748437200000,
+    "raw_evidence": {
+      "endpoint": "https://fapi.binance.com/fapi/v1/exchangeInfo",
+      "observed_at": "2026-09-26T06:51:20.198689+00:00",
+      "payload": {
+        "baseAsset": "SOPH",
+        "baseAssetPrecision": 8,
+        "contractType": "PERPETUAL",
+        "deliveryDate": 4133404800000,
+        "filters": [
+          {
+            "filterType": "PRICE_FILTER",
+            "maxPrice": "200",
+            "minPrice": "0.0000010",
+            "tickSize": "0.0000010"
+          },
+          {
+            "filterType": "LOT_SIZE",
+            "maxQty": "70000000",
+            "minQty": "1",
+            "stepSize": "1"
+          },
+          {
+            "filterType": "MARKET_LOT_SIZE",
+            "maxQty": "11000000",
+            "minQty": "1",
+            "stepSize": "1"
+          },
+          {
+            "filterType": "MAX_NUM_ORDERS",
+            "limit": 200
+          },
+          {
+            "filterType": "MIN_NOTIONAL",
+            "notional": "5"
+          },
+          {
+            "filterType": "PERCENT_PRICE",
+            "multiplierDecimal": "4",
+            "multiplierDown": "0.8500",
+            "multiplierUp": "1.1500"
+          },
+          {
+            "filterType": "POSITION_RISK_CONTROL",
+            "positionControlSide": "NONE"
+          }
+        ],
+        "liquidationFee": "0.015000",
+        "maintMarginPercent": "2.5000",
+        "marginAsset": "USDT",
+        "marketTakeBound": "0.15",
+        "maxMoveOrderLimit": 10000,
+        "onboardDate": 1748437200000,
+        "orderTypes": [
+          "LIMIT",
+          "MARKET",
+          "STOP",
+          "STOP_MARKET",
+          "TAKE_PROFIT",
+          "TAKE_PROFIT_MARKET",
+          "TRAILING_STOP_MARKET"
+        ],
+        "pair": "SOPHUSDT",
+        "permissionSets": ["GRID", "COPY", "DCA", "PSB"],
+        "pricePrecision": 7,
+        "quantityPrecision": 0,
+        "quoteAsset": "USDT",
+        "quotePrecision": 8,
+        "requiredMarginPercent": "5.0000",
+        "status": "TRADING",
+        "symbol": "SOPHUSDT",
+        "timeInForce": ["GTC", "IOC", "FOK", "GTX", "GTD"],
+        "triggerProtect": "0.1500",
+        "underlyingSubType": ["Layer-2", "Crypto"],
+        "underlyingType": "COIN"
+      },
+      "raw_sha256": "066ed95bc8db1c420da8a80870351afc43e39b2e616e3477df267b18c7588b9d",
+      "source": "binance:futures_exchange_info_entry",
+      "wire_exact": false
+    },
+    "reported_base_asset": "SOPH",
+    "reported_quote_asset": "USDT",
+    "reported_settle_asset": "USDT",
+    "status": "TRADING"
+  },
+  "working_tree_dirty": false
+}
