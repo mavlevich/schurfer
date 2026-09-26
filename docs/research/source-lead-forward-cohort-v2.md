@@ -65,6 +65,27 @@ timestamp (`quote_timing.book_age_ms`), is refused as `target_book_stale`. A boo
 timestamp is refused as `target_book_timestamp_missing`. 2000 ms is the limit the Bybit
 canary used, under which 98.2% of Bybit books were fresh.
 
+## Exit-book diagnostic (not part of the verdict)
+
+`source-lead-exit-capture`, a separate service writing to `app.source_lead_exit_observations`
+(migration 0052), samples the raw Bybit book (50 levels) of every qualified v2 episode's
+entered instrument.
+
+- **When.** At the end of the v2 exit bar, `ceil_minute(entry + 30m) + 60s`. That is the
+  instant the verdict's OHLCV close refers to, so a later calibration compares like with
+  like.
+- **Claim first.** Each episode is claimed before the request. A crash between request and
+  write becomes `crashed_after_claim` and is never re-requested.
+- **Quantity.** A hypothetical quantity, `notional / entry ask VWAP`, rounded down to
+  `qtyStep`, with the raw value also stored.
+- **Timeliness vs outcome.** Timeliness is `on_time` up to 30 s, `late` up to 120 s, and
+  `missed` after that. It is recorded separately from the fetch outcome.
+- **Book freshness.** Same limits as qualification.
+- **What is stored.** The book snapshot with `ts`, `cts`, `seq`, `u` and a SHA-256.
+
+The v2 verdict never reads this table. Until a registered diagnostic read, only coverage,
+statuses and delays may be shown. It feeds cost calibration for the next contract version.
+
 ## v1 is closed without a formal read
 
 The v1 cohort reached 15 of its 100 required episodes. Its only venue, Binance, is not

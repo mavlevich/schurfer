@@ -9,6 +9,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     Numeric,
     String,
     Text,
@@ -264,5 +265,78 @@ class SourceLeadQualification(Base, TimestampMixin):
             "AND selected_round_trip_impact_bps IS NULL)",
             name="ck_source_lead_qualification_selection",
         ),
+        {"schema": "app"},
+    )
+
+
+_EXIT_OUTCOMES = (
+    "'claimed', 'sampled', 'stale_book', 'fetch_failed', 'missed', "
+    "'crashed_after_claim', 'unsupported_venue', 'instrument_unresolved'"
+)
+
+
+class SourceLeadExitObservation(Base, TimestampMixin):
+    """Exit-bar-end order book of one qualified HYP-012 v4 episode (migration 0052).
+
+    Diagnostic only; the registered v2 verdict never reads it."""
+
+    __tablename__ = "source_lead_exit_observations"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    capture_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("app.source_lead_captures.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    qualification_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    exit_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    target_exchange: Mapped[str] = mapped_column(String(32), nullable=False)
+    instrument_identity_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    native_symbol: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    entry_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    target_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    claimed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    outcome: Mapped[str] = mapped_column(String(32), nullable=False)
+    timeliness: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    received_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    lateness_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    book_ts_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    book_cts_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    book_seq: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    book_update_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    book_age_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    entry_ask_vwap: Mapped[Decimal | None] = mapped_column(Numeric(30, 14), nullable=True)
+    entry_notional_usd: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), nullable=True)
+    contract_size: Mapped[Decimal | None] = mapped_column(Numeric(30, 14), nullable=True)
+    contract_size_source: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    qty_step: Mapped[Decimal | None] = mapped_column(Numeric(30, 14), nullable=True)
+    hypothetical_qty_raw: Mapped[Decimal | None] = mapped_column(Numeric(38, 14), nullable=True)
+    hypothetical_qty: Mapped[Decimal | None] = mapped_column(Numeric(38, 14), nullable=True)
+    best_bid: Mapped[Decimal | None] = mapped_column(Numeric(30, 14), nullable=True)
+    best_ask: Mapped[Decimal | None] = mapped_column(Numeric(30, 14), nullable=True)
+    bid_vwap: Mapped[Decimal | None] = mapped_column(Numeric(30, 14), nullable=True)
+    bid_filled_qty: Mapped[Decimal | None] = mapped_column(Numeric(38, 14), nullable=True)
+    spread_bps: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), nullable=True)
+    impact_bps: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), nullable=True)
+    book_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    book_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        Index(
+            "ux_source_lead_exit_capture_version",
+            "capture_id",
+            "qualification_version",
+            unique=True,
+        ),
+        Index("ix_source_lead_exit_outcome", "outcome"),
+        CheckConstraint(f"outcome IN ({_EXIT_OUTCOMES})", name="ck_source_lead_exit_outcome"),
+        CheckConstraint(
+            "timeliness IS NULL OR timeliness IN ('on_time', 'late', 'missed')",
+            name="ck_source_lead_exit_timeliness",
+        ),
+        CheckConstraint("attempts >= 0", name="ck_source_lead_exit_attempts"),
         {"schema": "app"},
     )
