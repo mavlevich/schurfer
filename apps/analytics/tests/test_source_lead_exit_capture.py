@@ -86,6 +86,9 @@ class FakeStore:
         self.claims: list[tuple[int, str, str | None]] = []
         self.final: dict[int, dict[str, Any]] = {}
         self.already = False
+        self.write_failures = 0
+        self.writes = 0
+        self.superseded = False
 
     async def claim(
         self, episode: ex.DueEpisode, *, outcome: str, timeliness: str | None
@@ -95,24 +98,50 @@ class FakeStore:
         self.claims.append((episode.capture_id, outcome, timeliness))
         return len(self.claims)
 
-    async def finalize(self, row_id: int, fields: dict[str, Any]) -> None:
-        self.final[row_id] = fields
+    async def finalize(self, row_id: int, fields: dict[str, Any]) -> bool:
+        self.writes += 1
+        if self.write_failures:
+            self.write_failures -= 1
+            raise OSError("db down")
+        if self.superseded:
+            return False
+        self.final[row_id] = dict(fields)
+        return True
 
 
 class FakeClient:
-    def __init__(self, clock: Clock, *, failures: int = 0, book_delay_ms: int = 100) -> None:
+    def __init__(
+        self,
+        clock: Clock,
+        *,
+        failures: int = 0,
+        book_delay_ms: int = 100,
+        instrument_failures: int = 0,
+        min_order: str = "1",
+        depth: str = "100",
+        mismatch: bool = False,
+    ) -> None:
         self.clock = clock
         self.failures = failures
+        self.instrument_failures = instrument_failures
         self.calls = 0
         self.book_delay_ms = book_delay_ms
+        self.min_order = Decimal(min_order)
+        self.depth = depth
+        self.mismatch = mismatch
 
-    async def qty_step(self, _symbol: str) -> Decimal:
-        return Decimal(1)
+    async def instrument(self, _symbol: str) -> ex.InstrumentSpec:
+        if self.mismatch:
+            raise ex.InstrumentMismatchError("returned ['OTHERUSDT']")
+        if self.instrument_failures:
+            self.instrument_failures -= 1
+            raise ex.TransientVenueError("retCode=10006")
+        return ex.InstrumentSpec(qty_step=Decimal(1), min_order_qty=self.min_order)
 
     async def book(self, _symbol: str) -> ex.RawBook:
         self.calls += 1
         if self.calls <= self.failures:
-            raise RuntimeError("timeout")
+            raise ex.TransientVenueError("timeout")
         now = self.clock.now()
         ts = round(now.timestamp() * 1000) - self.book_delay_ms
         payload = {
@@ -120,7 +149,7 @@ class FakeClient:
             "time": ts,
             "result": {
                 "s": "ABCUSDT",
-                "b": [["1.99", "100"]],
+                "b": [["1.99", self.depth]],
                 "a": [["2.01", "100"]],
                 "ts": ts,
                 "u": 7,
@@ -229,3 +258,76 @@ def test_unusable_episodes_are_recorded_not_skipped(
     assert _run(episode, store, client, clock) == outcome
     assert store.claims[0][1] == outcome
     assert client.calls == 0
+
+
+# --- review of #450: regressions -------------------------------------------------
+
+
+def test_a_failed_write_retries_the_same_snapshot_and_never_refetches() -> None:
+    episode = _episode()
+    clock = Clock(episode.target_at)
+    store, client = FakeStore(), FakeClient(clock)
+    store.write_failures = 2
+    assert _run(episode, store, client, clock) == "sampled"
+    assert client.calls == 1  # one venue request only
+    assert store.writes == 3
+
+
+def test_a_write_that_never_succeeds_raises_instead_of_refetching() -> None:
+    episode = _episode()
+    clock = Clock(episode.target_at)
+    store, client = FakeStore(), FakeClient(clock)
+    store.write_failures = 99
+    with pytest.raises(ex.ExitWriteError):
+        _run(episode, store, client, clock)
+    assert client.calls == 1
+
+
+def test_a_claim_already_resolved_by_recovery_is_not_overwritten() -> None:
+    episode = _episode()
+    clock = Clock(episode.target_at)
+    store, client = FakeStore(), FakeClient(clock)
+    store.superseded = True
+    assert _run(episode, store, client, clock) == "superseded"
+
+
+def test_a_quantity_below_the_minimum_order_is_its_own_outcome() -> None:
+    episode = _episode()
+    clock = Clock(episode.target_at)
+    store, client = FakeStore(), FakeClient(clock, min_order="100")
+    assert _run(episode, store, client, clock) == "below_min_order"
+    assert "minOrderQty" in store.final[1]["error"]
+    assert store.final[1]["book_snapshot"] is not None  # the book is still kept
+
+
+def test_a_fresh_book_too_thin_for_the_quantity_is_insufficient_depth() -> None:
+    episode = _episode()
+    clock = Clock(episode.target_at)
+    store, client = FakeStore(), FakeClient(clock, depth="5")
+    assert _run(episode, store, client, clock) == "insufficient_depth"
+    assert store.final[1]["bid_vwap"] is None
+
+
+def test_transient_instrument_errors_are_retried_inside_the_window() -> None:
+    episode = _episode()
+    clock = Clock(episode.target_at - timedelta(seconds=15))
+    store, client = FakeStore(), FakeClient(clock, instrument_failures=2)
+    assert _run(episode, store, client, clock) == "sampled"
+
+
+def test_an_instrument_answer_for_another_symbol_is_unresolved() -> None:
+    episode = _episode()
+    clock = Clock(episode.target_at)
+    store, client = FakeStore(), FakeClient(clock, mismatch=True)
+    assert _run(episode, store, client, clock) == "instrument_unresolved"
+    assert client.calls == 0
+
+
+def test_target_uses_the_formal_reader_boundary_at_sub_millisecond_entries() -> None:
+    """Review repro: round() put this entry's exit a minute later than the reader."""
+    from schurfer_analytics.source_lead_forward_cohort import expected_exit_boundary_ms
+
+    entry = datetime(2026, 9, 29, 12, 0, 0, 600, tzinfo=UTC)
+    boundary = datetime.fromtimestamp(expected_exit_boundary_ms(entry) / 1000, tz=UTC)
+    assert ex.exit_target_at(entry) == boundary + timedelta(minutes=1)
+    assert ex.exit_target_at(entry) == datetime(2026, 9, 29, 12, 31, tzinfo=UTC)

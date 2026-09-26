@@ -110,15 +110,8 @@ def test_due_claim_finalize_and_crash_recovery() -> None:
             # A claimed episode is no longer due.
             assert capture_id not in {e.capture_id for e in await store.due_episodes()}
 
-            # Crash between claim and write: recovery marks it, never re-requests.
-            await store.recover_claims()
-            outcome = connection.execute(
-                "SELECT outcome, timeliness FROM app.source_lead_exit_observations WHERE id = %s",
-                (row_id,),
-            ).fetchone()
-            assert outcome == ("crashed_after_claim", "missed")
-
-            await store.finalize(
+            # The final write only resolves an open claim, exactly once.
+            assert await store.finalize(
                 row_id,
                 {
                     "outcome": "sampled",
@@ -134,6 +127,30 @@ def test_due_claim_finalize_and_crash_recovery() -> None:
                 (row_id,),
             ).fetchone()
             assert stored == ("sampled", {"b": [["1.99", "1"]]}, Decimal("1.99"))
+            assert not await store.finalize(row_id, {"outcome": "fetch_failed"})
+
+            # Crash between claim and write: startup recovery marks it; a late
+            # task then cannot overwrite the recovered result.
+            connection.execute(
+                "UPDATE app.source_lead_exit_observations SET outcome = 'claimed' WHERE id = %s",
+                (row_id,),
+            )
+            await store.recover_claims()
+            assert connection.execute(
+                "SELECT outcome, timeliness FROM app.source_lead_exit_observations WHERE id = %s",
+                (row_id,),
+            ).fetchone() == ("crashed_after_claim", "missed")
+            assert not await store.finalize(row_id, {"outcome": "sampled"})
+
+            # Runtime recovery: an open claim long past its target and not in
+            # flight is recovered; one still in flight is left alone.
+            connection.execute(
+                "UPDATE app.source_lead_exit_observations "
+                "SET outcome = 'claimed', target_at = now() - interval '1 hour' WHERE id = %s",
+                (row_id,),
+            )
+            assert await store.recover_stuck({capture_id}) == 0
+            assert await store.recover_stuck(set()) == 1
 
             with pytest.raises(ValueError, match="unknown exit columns"):
                 await store.finalize(row_id, {"capture_id": 1})

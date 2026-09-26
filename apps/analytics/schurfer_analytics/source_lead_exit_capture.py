@@ -42,12 +42,13 @@ import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import ROUND_FLOOR, Decimal
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 import structlog
 
-from .ohlcv import ONE_MINUTE_MS, ceil_to_timeframe
+from .ohlcv import ONE_MINUTE_MS
 from .source_lead_contract import IDENTITY_REGISTRY_V4_START
+from .source_lead_forward_cohort import expected_exit_boundary_ms
 from .source_lead_qualification import (
     MAX_TARGET_BOOK_AGE_MS,
     MAX_TARGET_BOOK_CLOCK_SKEW_MS,
@@ -61,10 +62,14 @@ log = structlog.get_logger()
 
 EXIT_VERSION = "source_lead_exit_book_v1"
 HEALTH_KEY = f"market:sourceleadexit:health:{EXIT_VERSION}"
-OUTCOME_HORIZON = timedelta(minutes=30)
 ON_TIME_LIMIT = timedelta(seconds=30)
 LATE_LIMIT = timedelta(seconds=120)
 RETRY_SECONDS = 5.0
+WRITE_ATTEMPTS = 5
+# A claim still `claimed` this long after its target, and not in flight, is
+# recovered while running (not only at start) and marks the worker degraded.
+STUCK_CLAIM_AFTER = timedelta(minutes=10)
+DEGRADED_FOR = timedelta(minutes=10)
 POLL_SECONDS = 2.0
 BOOK_LEVELS = 50
 BYBIT_BOOK_URL = "https://api.bybit.com/v5/market/orderbook"
@@ -76,12 +81,11 @@ SUPPORTED_VENUES = ("bybit",)
 
 
 def exit_target_at(entry_at: datetime) -> datetime:
-    """End of the v2 exit bar: the instant its OHLCV close refers to."""
-    entry_ms = round(entry_at.timestamp() * 1000)
-    boundary_ms = ceil_to_timeframe(
-        entry_ms + int(OUTCOME_HORIZON.total_seconds() * 1000), ONE_MINUTE_MS
+    """End of the v2 exit bar: the instant its OHLCV close refers to. Uses the
+    formal reader's own boundary function, so the two can never disagree."""
+    return datetime.fromtimestamp(
+        (expected_exit_boundary_ms(entry_at) + ONE_MINUTE_MS) / 1000, tz=UTC
     )
-    return datetime.fromtimestamp((boundary_ms + ONE_MINUTE_MS) / 1000, tz=UTC)
 
 
 def native_symbol(identity_key: Any) -> str | None:
@@ -340,7 +344,10 @@ class ExitStore:
         )
         return int(rows[0][0]) if rows else None
 
-    async def finalize(self, row_id: int, fields: dict[str, Any]) -> None:
+    async def finalize(self, row_id: int, fields: dict[str, Any]) -> bool:
+        """Resolve a claim. Only a row still `claimed` is updated, so a late
+        task can never overwrite a result recovery already wrote. False means
+        the claim was no longer open."""
         unknown = set(fields) - set(_FINAL_COLUMNS)
         if unknown:
             raise ValueError(f"unknown exit columns: {sorted(unknown)}")
@@ -351,11 +358,33 @@ class ExitStore:
             for key, value in fields.items()
         }
         assignments = ", ".join(f"{key} = %({key})s" for key in params)
-        await self._execute(
+        rows = await self._execute(
             f"UPDATE app.source_lead_exit_observations SET {assignments}, updated_at = now() "  # noqa: S608 -- column names come from the fixed _FINAL_COLUMNS allowlist
-            "WHERE id = %(row_id)s",
+            "WHERE id = %(row_id)s AND outcome = 'claimed' RETURNING id",
             {**params, "row_id": row_id},
         )
+        return bool(rows)
+
+    async def recover_stuck(self, in_flight: set[int]) -> int:
+        """While running: claims left `claimed` well past their target by a
+        task that is no longer in flight (it failed) become crashed_after_claim."""
+        rows = await self._execute(
+            """
+            UPDATE app.source_lead_exit_observations
+            SET outcome = 'crashed_after_claim', timeliness = 'missed', updated_at = now(),
+                error = 'claim still open after its window; task no longer running'
+            WHERE outcome = 'claimed' AND exit_version = %(ev)s
+              AND target_at < %(cutoff)s
+              AND NOT (capture_id = ANY(%(in_flight)s))
+            RETURNING id
+            """,
+            {
+                "ev": EXIT_VERSION,
+                "cutoff": datetime.now(UTC) - STUCK_CLAIM_AFTER,
+                "in_flight": list(in_flight),
+            },
+        )
+        return len(rows)
 
 
 # --- venue -----------------------------------------------------------------------
@@ -368,46 +397,83 @@ class RawBook:
     received_at: datetime
 
 
+class TransientVenueError(Exception):
+    """Timeout, HTTP error or a non-zero retCode: retried inside the window."""
+
+
+class InstrumentMismatchError(Exception):
+    """Bybit answered successfully but not with exactly the entered instrument."""
+
+
+@dataclass(frozen=True)
+class InstrumentSpec:
+    qty_step: Decimal
+    min_order_qty: Decimal
+
+
 class BybitBookClient:
     def __init__(self, timeout_seconds: float = 5.0) -> None:
         import httpx
 
         self._client = httpx.AsyncClient(timeout=timeout_seconds)
-        self._qty_step: dict[str, tuple[float, Decimal]] = {}
+        self._specs: dict[str, tuple[float, InstrumentSpec]] = {}
 
     async def close(self) -> None:
         await self._client.aclose()
 
-    async def qty_step(self, symbol: str) -> Decimal:
-        cached = self._qty_step.get(symbol)
+    async def _get(self, url: str, params: dict[str, str]) -> dict[str, Any]:
+        import httpx
+
+        try:
+            response = await self._client.get(url, params=params)
+            response.raise_for_status()
+            payload = response.json()
+        except (httpx.HTTPError, ValueError) as exc:
+            raise TransientVenueError(f"{type(exc).__name__}: {exc}") from exc
+        if not isinstance(payload, dict) or payload.get("retCode") != 0:
+            code = payload.get("retCode") if isinstance(payload, dict) else None
+            raise TransientVenueError(f"bybit retCode={code}")
+        if not isinstance(payload.get("result"), dict):
+            raise TransientVenueError("bybit response has no result")
+        return payload
+
+    async def instrument(self, symbol: str) -> InstrumentSpec:
+        cached = self._specs.get(symbol)
         if cached and time.monotonic() - cached[0] < 3600:
             return cached[1]
-        response = await self._client.get(
-            BYBIT_INSTRUMENT_URL, params={"category": "linear", "symbol": symbol}
+        payload = await self._get(BYBIT_INSTRUMENT_URL, {"category": "linear", "symbol": symbol})
+        items = payload["result"].get("list") or []
+        if len(items) != 1 or items[0].get("symbol") != symbol:
+            raise InstrumentMismatchError(
+                f"instruments-info returned {[i.get('symbol') for i in items]} for {symbol}"
+            )
+        lot = items[0].get("lotSizeFilter") or {}
+        spec = InstrumentSpec(
+            qty_step=Decimal(str(lot["qtyStep"])), min_order_qty=Decimal(str(lot["minOrderQty"]))
         )
-        response.raise_for_status()
-        items = (response.json().get("result") or {}).get("list") or []
-        if len(items) != 1:
-            raise LookupError(f"bybit instruments-info returned {len(items)} rows for {symbol}")
-        step = Decimal(str(items[0]["lotSizeFilter"]["qtyStep"]))
-        self._qty_step[symbol] = (time.monotonic(), step)
-        return step
+        self._specs[symbol] = (time.monotonic(), spec)
+        return spec
 
     async def book(self, symbol: str) -> RawBook:
         requested_at = datetime.now(UTC)
-        response = await self._client.get(
-            BYBIT_BOOK_URL,
-            params={"category": "linear", "symbol": symbol, "limit": str(BOOK_LEVELS)},
+        payload = await self._get(
+            BYBIT_BOOK_URL, {"category": "linear", "symbol": symbol, "limit": str(BOOK_LEVELS)}
         )
         received_at = datetime.now(UTC)
-        response.raise_for_status()
-        payload = response.json()
-        if payload.get("retCode") != 0 or not isinstance(payload.get("result"), dict):
-            raise RuntimeError(f"bybit orderbook retCode={payload.get('retCode')}")
-        return RawBook(cast("dict[str, Any]", payload), requested_at, received_at)
+        if payload["result"].get("s") != symbol:
+            raise TransientVenueError(f"orderbook for {payload['result'].get('s')!r}, not {symbol}")
+        return RawBook(payload, requested_at, received_at)
 
 
 # --- capture ---------------------------------------------------------------------
+
+
+def exit_outcome(*, fresh: bool, executable: bool) -> str:
+    """A stale book is reported first; a fresh book too thin for the
+    quantity is `insufficient_depth`, never `sampled` without a price."""
+    if not fresh:
+        return "stale_book"
+    return "sampled" if executable else "insufficient_depth"
 
 
 def book_fields(raw: RawBook, target_at: datetime, quantity: Decimal) -> dict[str, Any]:
@@ -429,7 +495,9 @@ def book_fields(raw: RawBook, target_at: datetime, quantity: Decimal) -> dict[st
     when, lateness_ms = timeliness(target_at, raw.received_at)
     summary = summarize_exit_book(result.get("b"), result.get("a"), quantity)
     return {
-        "outcome": "sampled" if book_is_fresh(book_age_ms) else "stale_book",
+        "outcome": exit_outcome(
+            fresh=book_is_fresh(book_age_ms), executable=summary.bid_vwap is not None
+        ),
         "timeliness": when,
         "requested_at": raw.requested_at,
         "received_at": raw.received_at,
@@ -452,6 +520,28 @@ def book_fields(raw: RawBook, target_at: datetime, quantity: Decimal) -> dict[st
     }
 
 
+class ExitWriteError(RuntimeError):
+    """The fetched snapshot could not be written after retries."""
+
+
+async def _write_final(
+    store: ExitStore, row_id: int, fields: dict[str, Any], sleep: Callable[[float], Awaitable[None]]
+) -> bool:
+    """Write the SAME fields until it succeeds; a write failure never causes a
+    new venue request. False means the claim was already resolved elsewhere."""
+    delay = 1.0
+    for attempt in range(1, WRITE_ATTEMPTS + 1):
+        try:
+            return await store.finalize(row_id, fields)
+        except Exception as exc:
+            if attempt == WRITE_ATTEMPTS:
+                raise ExitWriteError(f"final write failed: {exc}") from exc
+            log.warning("source_lead_exit.write_retry", row_id=row_id, error=str(exc)[:200])
+            await sleep(delay)
+            delay *= 2
+    raise AssertionError("unreachable")
+
+
 async def capture_episode(
     episode: DueEpisode,
     store: ExitStore,
@@ -460,10 +550,12 @@ async def capture_episode(
     now: Callable[[], datetime] = lambda: datetime.now(UTC),
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
 ) -> str:
-    """Claim, wait for the target, fetch with retries inside the window, write
-    once. Returns the final outcome."""
+    """Claim, resolve the instrument, wait for the target, fetch (retrying
+    transient venue errors inside the window), then write that one snapshot.
+    Returns the final outcome."""
     target_at = episode.target_at
-    if now() > target_at + LATE_LIMIT:
+    deadline = target_at + LATE_LIMIT
+    if now() > deadline:
         # Discovered too late (worker down): record the gap, never fetch.
         await store.claim(episode, outcome="missed", timeliness="missed")
         return "missed"
@@ -477,42 +569,69 @@ async def capture_episode(
     row_id = await store.claim(episode, outcome="claimed", timeliness=None)
     if row_id is None:
         return "already_claimed"
+
     fields: dict[str, Any] = {"contract_size": Decimal(1), "contract_size_source": "bybit_linear"}
-    try:
-        step = await client.qty_step(symbol)
-        raw_qty, qty = hypothetical_quantity(episode.notional_usd, episode.ask_vwap, step)
-        fields |= {"qty_step": step, "hypothetical_qty_raw": raw_qty, "hypothetical_qty": qty}
-    except Exception as exc:
-        fields |= {"outcome": "instrument_unresolved", "attempts": 0, "error": str(exc)[:500]}
-        await store.finalize(row_id, fields)
-        return "instrument_unresolved"
+    last_error = ""
+    spec: InstrumentSpec | None = None
+    while spec is None and now() <= deadline:
+        try:
+            spec = await client.instrument(symbol)
+        except InstrumentMismatchError as exc:
+            fields |= {"outcome": "instrument_unresolved", "attempts": 0, "error": str(exc)[:500]}
+            return (
+                "instrument_unresolved"
+                if await _write_final(store, row_id, fields, sleep)
+                else "superseded"
+            )
+        except TransientVenueError as exc:
+            last_error = f"instrument: {exc}"[:500]
+            await sleep(RETRY_SECONDS)
+    if spec is None:
+        fields |= {
+            "outcome": "fetch_failed",
+            "timeliness": "missed",
+            "attempts": 0,
+            "error": last_error,
+        }
+        return "fetch_failed" if await _write_final(store, row_id, fields, sleep) else "superseded"
+    raw_qty, qty = hypothetical_quantity(episode.notional_usd, episode.ask_vwap, spec.qty_step)
+    fields |= {"qty_step": spec.qty_step, "hypothetical_qty_raw": raw_qty, "hypothetical_qty": qty}
+    below_minimum = qty <= 0 or qty < spec.min_order_qty
 
     wait = (target_at - now()).total_seconds()
     if wait > 0:
         await sleep(wait)
     attempts = 0
-    last_error = ""
-    while now() <= target_at + LATE_LIMIT:
+    raw: RawBook | None = None
+    while raw is None and now() <= deadline:
         attempts += 1
         try:
             raw = await client.book(symbol)
-            fields |= book_fields(raw, target_at, qty) | {"attempts": attempts}
-            await store.finalize(row_id, fields)
-            return str(fields["outcome"])
-        except Exception as exc:
-            last_error = f"{type(exc).__name__}: {exc}"[:500]
+        except TransientVenueError as exc:
+            last_error = f"{exc}"[:500]
             log.warning(
                 "source_lead_exit.fetch_failed", capture_id=episode.capture_id, error=last_error
             )
             await sleep(RETRY_SECONDS)
-    fields |= {
-        "outcome": "fetch_failed",
-        "timeliness": "missed",
-        "attempts": attempts,
-        "error": last_error or "window elapsed before any fetch",
-    }
-    await store.finalize(row_id, fields)
-    return "fetch_failed"
+    if raw is None:
+        fields |= {
+            "outcome": "fetch_failed",
+            "timeliness": "missed",
+            "attempts": attempts,
+            "error": last_error or "window elapsed before any fetch",
+        }
+        return "fetch_failed" if await _write_final(store, row_id, fields, sleep) else "superseded"
+
+    if below_minimum:
+        fields |= book_fields(raw, target_at, max(qty, Decimal(0))) | {
+            "outcome": "below_min_order",
+            "error": f"quantity {qty} below minOrderQty {spec.min_order_qty}",
+        }
+    else:
+        fields |= book_fields(raw, target_at, qty)
+    fields["attempts"] = attempts
+    written = await _write_final(store, row_id, fields, sleep)
+    return str(fields["outcome"]) if written else "superseded"
 
 
 # --- worker ----------------------------------------------------------------------
@@ -549,6 +668,8 @@ async def run_worker(database_url: str, redis_addr: str, *, once: bool = False) 
     redis = Redis.from_url(url, decode_responses=True)
     in_flight: dict[int, asyncio.Task[str]] = {}
     counts: dict[str, int] = {}
+    degraded_until: datetime | None = None
+    degraded_reason = ""
     try:
         while True:
             error = ""
@@ -556,35 +677,52 @@ async def run_worker(database_url: str, redis_addr: str, *, once: bool = False) 
                 for episode in await store.due_episodes():
                     if episode.capture_id in in_flight:
                         continue
-                    # Start the task a little before the target so the claim and
-                    # qty lookup are done when the target arrives.
+                    # Start a little before the target so the claim and the
+                    # instrument lookup are done when the target arrives.
                     if (episode.target_at - datetime.now(UTC)).total_seconds() > 20:
                         continue
                     in_flight[episode.capture_id] = asyncio.create_task(
                         capture_episode(episode, store, client)
                     )
                 for capture_id, task in list(in_flight.items()):
-                    if task.done():
-                        del in_flight[capture_id]
-                        outcome = task.result() if task.exception() is None else "task_error"
-                        if task.exception() is not None:
-                            log.error(
-                                "source_lead_exit.task_failed",
-                                capture_id=capture_id,
-                                error=str(task.exception()),
-                            )
-                        counts[outcome] = counts.get(outcome, 0) + 1
+                    if not task.done():
+                        continue
+                    del in_flight[capture_id]
+                    exc = task.exception()
+                    if exc is not None:
+                        # A failed task is an incident, not a log line: the
+                        # heartbeat stays degraded long enough to alert.
+                        counts["task_error"] = counts.get("task_error", 0) + 1
+                        degraded_until = datetime.now(UTC) + DEGRADED_FOR
+                        degraded_reason = f"capture {capture_id}: {type(exc).__name__}: {exc}"[:500]
+                        log.error(
+                            "source_lead_exit.task_failed",
+                            capture_id=capture_id,
+                            error=degraded_reason,
+                        )
+                        continue
+                    outcome = task.result()
+                    counts[outcome] = counts.get(outcome, 0) + 1
+                stuck = await store.recover_stuck(set(in_flight))
+                if stuck:
+                    counts["recovered_stuck"] = counts.get("recovered_stuck", 0) + stuck
+                    degraded_until = datetime.now(UTC) + DEGRADED_FOR
+                    degraded_reason = f"{stuck} stuck claim(s) recovered while running"
+                    log.error("source_lead_exit.stuck_claims_recovered", count=stuck)
             except Exception as exc:
                 error = f"{type(exc).__name__}: {exc}"[:500]
                 log.error("source_lead_exit.tick_failed", error=error)
+            degraded = bool(error) or (
+                degraded_until is not None and datetime.now(UTC) < degraded_until
+            )
             await _write_health(
                 redis,
                 {
-                    "status": "degraded" if error else "ok",
+                    "status": "degraded" if degraded else "ok",
                     "exit_version": EXIT_VERSION,
                     "generated_at": datetime.now(UTC).isoformat(),
                     "in_flight": len(in_flight),
-                    "last_error": error,
+                    "last_error": error or (degraded_reason if degraded else ""),
                     **{f"outcomes_{key}": value for key, value in counts.items()},
                 },
             )

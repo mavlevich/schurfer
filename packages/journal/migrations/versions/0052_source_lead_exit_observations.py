@@ -25,7 +25,8 @@ depends_on: str | Sequence[str] | None = None
 
 OUTCOMES = (
     "'claimed', 'sampled', 'stale_book', 'fetch_failed', 'missed', "
-    "'crashed_after_claim', 'unsupported_venue', 'instrument_unresolved'"
+    "'crashed_after_claim', 'unsupported_venue', 'instrument_unresolved', "
+    "'below_min_order', 'insufficient_depth'"
 )
 
 
