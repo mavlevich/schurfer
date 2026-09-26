@@ -31,13 +31,16 @@ from __future__ import annotations
 # ruff: noqa: S608 -- the only interpolations into SQL are schema names, validated as
 # plain identifiers by Schemas.__post_init__; every VALUE is a bound parameter.
 import argparse
+import hashlib
 import json
 import os
 import re
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from . import momentum_flow_hold12h_verdict as verdict_module
 from .momentum_flow_hold12h_verdict import (
     HOLD12H_VERDICT_CONTRACT,
     Hold12hVerdictContract,
@@ -49,6 +52,7 @@ from .momentum_flow_hold12h_verdict_report import (
     CohortEvaluation,
     HorizonOutcome,
     InstrumentRoute,
+    PortfolioResult,
     ProbeClass,
     ProbeRecord,
     WatchDecision,
@@ -56,9 +60,10 @@ from .momentum_flow_hold12h_verdict_report import (
     evaluate_cohort,
     filter_to_cohort,
     formal_cohort_start,
+    formal_decision_prefix_end,
     verdict_fingerprint,
 )
-from .momentum_flow_paper_contract import HOLD12H_PAPER_CONTRACT
+from .momentum_flow_paper_contract import FROZEN_PAPER_CONTRACT, HOLD12H_PAPER_CONTRACT
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -251,6 +256,207 @@ async def load_readiness(
     )
 
 
+# Operational health rule, registered before the cohort (colleague review): over every
+# eligible WATCH, the hold12h lost-entry fraction (stale or never claimed) may exceed the
+# baseline worker's by at most 2 percentage points, and never exceed 5% absolute. Checked
+# outcome-blind on a fixed schedule; a breach is logged, never a reason to change
+# thresholds or restart the cohort.
+HEALTH_MAX_STALE_EXCESS = 0.02
+HEALTH_MAX_STALE_FRACTION = 0.05
+# Funding for a closed position is only expected once the settlement lag has passed.
+HEALTH_FUNDING_LAG = timedelta(hours=8)
+
+
+@dataclass(frozen=True)
+class HealthCheckpoint:
+    """Outcome-blind operational counts for one window over EVERY eligible WATCH (the
+    verdict denominator), per worker. A WATCH a worker never claimed counts as lost, so a
+    stopped worker cannot drop out of the check. NO return/fee/PnL column is read."""
+
+    since: datetime
+    until: datetime
+    eligible_watches: int
+    baseline_unclaimed: int
+    baseline_stale: int
+    hold12h_unclaimed: int
+    hold12h_stale: int
+    hold12h_claim_p50_seconds: float | None
+    hold12h_claim_p90_seconds: float | None
+    closed_positions_past_lag: int
+    funding_covered: int
+    accounting_complete: int
+
+    def _fraction(self, count: int) -> float:
+        return count / self.eligible_watches if self.eligible_watches else 0.0
+
+    @property
+    def baseline_lost_fraction(self) -> float:
+        return self._fraction(self.baseline_unclaimed + self.baseline_stale)
+
+    @property
+    def hold12h_lost_fraction(self) -> float:
+        return self._fraction(self.hold12h_unclaimed + self.hold12h_stale)
+
+    @property
+    def funding_covered_fraction(self) -> float:
+        if not self.closed_positions_past_lag:
+            return 0.0
+        return self.funding_covered / self.closed_positions_past_lag
+
+
+def health_breaches(checkpoint: HealthCheckpoint) -> list[str]:
+    """The registered rule on LOST entries (stale or never claimed); an empty list means
+    healthy. A window with no eligible WATCH rows is itself a breach."""
+    if checkpoint.eligible_watches == 0:
+        return ["no eligible WATCH rows in the window"]
+    breaches: list[str] = []
+    excess = checkpoint.hold12h_lost_fraction - checkpoint.baseline_lost_fraction
+    if excess > HEALTH_MAX_STALE_EXCESS:
+        breaches.append(f"hold12h lost entries exceed baseline by {excess:.4f}")
+    if checkpoint.hold12h_lost_fraction > HEALTH_MAX_STALE_FRACTION:
+        breaches.append(f"hold12h lost-entry fraction {checkpoint.hold12h_lost_fraction:.4f}")
+    return breaches
+
+
+async def load_health_checkpoint(
+    db_url: str,
+    *,
+    since: datetime,
+    until: datetime,
+    funding_version: str,
+    schemas: Schemas = _DEFAULT_SCHEMAS,
+) -> HealthCheckpoint:
+    """Outcome-blind: statuses, timestamps and coverage runs only."""
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from .outcome_repository import async_database_url
+
+    ts, app = schemas.timeseries, schemas.app
+    params = {
+        **_watch_params(since, until),
+        "base": FROZEN_PAPER_CONTRACT.paper_version,
+        "hold": HOLD12H_PAPER_CONTRACT.paper_version,
+        "fv": funding_version,
+        "lag_cutoff": until - HEALTH_FUNDING_LAG,
+    }
+    engine = create_async_engine(async_database_url(db_url), pool_pre_ping=True, pool_size=1)
+    try:
+        async with engine.connect() as conn:
+            entries = (
+                (
+                    await conn.execute(
+                        text(
+                            f"""
+                            WITH w AS (SELECT w.watch_id {_watch_filter_sql(ts)}),
+                            per AS (
+                                SELECT w.watch_id,
+                                    coalesce(bool_or(p.paper_version = :base), false) AS b_seen,
+                                    coalesce(bool_or(p.paper_version = :base
+                                        AND p.entry_status = 'rejected_stale'), false) AS b_stale,
+                                    coalesce(bool_or(p.paper_version = :hold), false) AS h_seen,
+                                    coalesce(bool_or(p.paper_version = :hold
+                                        AND p.entry_status = 'rejected_stale'), false) AS h_stale
+                                FROM w
+                                LEFT JOIN {app}.momentum_flow_paper_probes p
+                                  ON p.watch_id = w.watch_id
+                                 AND p.paper_version IN (:base, :hold)
+                                GROUP BY w.watch_id
+                            )
+                            SELECT count(*) AS eligible,
+                                count(*) FILTER (WHERE NOT b_seen) AS baseline_unclaimed,
+                                count(*) FILTER (WHERE b_stale) AS baseline_stale,
+                                count(*) FILTER (WHERE NOT h_seen) AS hold12h_unclaimed,
+                                count(*) FILTER (WHERE h_stale) AS hold12h_stale
+                            FROM per
+                            """
+                        ),
+                        params,
+                    )
+                )
+                .mappings()
+                .one()
+            )
+            latency = (
+                (
+                    await conn.execute(
+                        text(
+                            f"""
+                            WITH w AS (SELECT w.watch_id {_watch_filter_sql(ts)})
+                            SELECT
+                                percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(
+                                    epoch FROM p.claimed_at - p.watch_decision_at)) AS p50,
+                                percentile_cont(0.9) WITHIN GROUP (ORDER BY extract(
+                                    epoch FROM p.claimed_at - p.watch_decision_at)) AS p90
+                            FROM {app}.momentum_flow_paper_probes p
+                            JOIN w ON w.watch_id = p.watch_id
+                            WHERE p.paper_version = :hold
+                            """
+                        ),
+                        params,
+                    )
+                )
+                .mappings()
+                .one()
+            )
+            funding = (
+                (
+                    await conn.execute(
+                        text(
+                            f"""
+                            WITH w AS (SELECT w.watch_id {_watch_filter_sql(ts)})
+                            SELECT count(*) AS closed,
+                                count(*) FILTER (WHERE EXISTS (
+                                    SELECT 1 FROM {app}.hold12h_funding_coverage_runs r
+                                    WHERE r.exchange = p.exchange
+                                      AND r.native_market_id = p.market_id
+                                      AND r.source_version = :fv AND r.status = 'complete'
+                                      AND r.requested_since <= p.entry_at
+                                      AND r.requested_until >= p.exit_at)
+                                  AND NOT EXISTS (
+                                    SELECT 1 FROM {app}.hold12h_funding_coverage_runs c
+                                    WHERE c.exchange = p.exchange
+                                      AND c.native_market_id = p.market_id
+                                      AND c.source_version = :fv
+                                      AND c.status = 'integrity_conflict'
+                                      AND c.requested_since < p.exit_at
+                                      AND c.requested_until > p.entry_at)) AS covered,
+                                count(*) FILTER (
+                                    WHERE p.accounting_status = 'complete') AS accounting_complete
+                            FROM {app}.momentum_flow_paper_probes p
+                            JOIN w ON w.watch_id = p.watch_id
+                            WHERE p.paper_version = :hold AND p.position_status = 'closed'
+                              AND p.exit_at < :lag_cutoff
+                            """
+                        ),
+                        params,
+                    )
+                )
+                .mappings()
+                .one()
+            )
+    finally:
+        await engine.dispose()
+
+    def _seconds(value: Any) -> float | None:
+        return None if value is None else float(value)
+
+    return HealthCheckpoint(
+        since=since,
+        until=until,
+        eligible_watches=int(entries["eligible"] or 0),
+        baseline_unclaimed=int(entries["baseline_unclaimed"] or 0),
+        baseline_stale=int(entries["baseline_stale"] or 0),
+        hold12h_unclaimed=int(entries["hold12h_unclaimed"] or 0),
+        hold12h_stale=int(entries["hold12h_stale"] or 0),
+        hold12h_claim_p50_seconds=_seconds(latency["p50"]),
+        hold12h_claim_p90_seconds=_seconds(latency["p90"]),
+        closed_positions_past_lag=int(funding["closed"] or 0),
+        funding_covered=int(funding["covered"] or 0),
+        accounting_complete=int(funding["accounting_complete"] or 0),
+    )
+
+
 async def load_cohort(
     db_url: str,
     *,
@@ -288,7 +494,8 @@ async def load_cohort(
                         text(
                             f"""
                             SELECT p.paper_id, p.watch_id, p.exchange, p.market_type, p.symbol,
-                                   p.market_id, p.entry_status, p.position_status, p.exit_reason,
+                                   p.unified_symbol, p.market_id, p.entry_status,
+                                   p.position_status, p.exit_reason,
                                    p.entry_at, p.exit_at, p.gross_return_pct, p.fees_usd,
                                    p.max_adverse_return_pct, p.entry_filled_notional_usd
                             FROM {app}.momentum_flow_paper_probes p
@@ -366,7 +573,7 @@ async def load_cohort(
                 exchange=str(row["exchange"]),
                 market_type=str(row["market_type"]),
                 market_id=str(row["market_id"] or ""),
-                unified_symbol=str(row["symbol"]),
+                unified_symbol=str(row["unified_symbol"] or ""),
             ),
             entry_at=_utc(row["entry_at"]) or cohort_start,
             entry_ok=row["entry_status"] == _FILLED_ENTRY,
@@ -407,6 +614,7 @@ def _formal_artifact(
     working_tree_dirty: bool,
 ) -> dict[str, Any]:
     result = decide_verdict(contract, evaluation.inputs)
+    window_hours = (decision_prefix_end - cohort_start).total_seconds() / 3600.0
     return {
         "mode": "formal",
         "contract_sha256": contract.sha256_hex(),
@@ -417,11 +625,131 @@ def _formal_artifact(
         "fingerprint": fingerprint,
         "funnel": {cls.value: evaluation.funnel[cls] for cls in ProbeClass},
         "analyzable_pairs": evaluation.inputs.analyzable_pairs,
-        "adverse_from_entry_720_usd": evaluation.portfolio_720.adverse_from_entry_usd,
+        "portfolio": {
+            "720m": portfolio_summary(
+                evaluation.portfolio_720,
+                max_slots=contract.max_concurrent_slots,
+                window_hours=window_hours,
+            ),
+            "240m": portfolio_summary(
+                evaluation.portfolio_240,
+                max_slots=contract.max_concurrent_slots,
+                window_hours=window_hours,
+            ),
+        },
         "verdict": result.outcome.value,
         "gate": result.gate,
         "reason": result.reason,
     }
+
+
+def portfolio_summary(
+    result: PortfolioResult, *, max_slots: int, window_hours: float
+) -> dict[str, Any]:
+    """Capital-time view of one policy: displacement (``skipped_slots_full``) and slot
+    occupancy explain the dollar difference between the two holds on a fixed bank."""
+    capacity_hours = max_slots * window_hours
+    return {
+        "window_pnl_usd": result.window_pnl_usd,
+        "taken": result.taken,
+        "skipped_slots_full": result.skipped_slots_full,
+        "incomplete_taken": result.incomplete_taken,
+        "incomplete_taken_fraction": result.incomplete_taken_fraction,
+        "slot_hours": result.slot_hours,
+        "occupancy_fraction": result.slot_hours / capacity_hours if capacity_hours > 0 else 0.0,
+        "longest_losing_streak": result.longest_losing_streak,
+        "adverse_from_entry_usd_diagnostic": result.adverse_from_entry_usd,
+        "window_pnl_zero_funding_sensitivity_usd": (result.window_pnl_zero_funding_sensitivity_usd),
+    }
+
+
+def formal_read_window(
+    contract: Hold12hVerdictContract,
+    *,
+    registered: bool,
+    requested_prefix_end: datetime,
+    now: datetime,
+) -> tuple[datetime, datetime]:
+    """Refuse any formal read that is not THE single pre-declared one: the contract must be
+    registered with both frozen bounds, the requested prefix must equal the frozen one,
+    and the read must wait until the last positions and their funding can be complete."""
+    if not registered:
+        raise SystemExit("formal-run refused: the verdict contract is not registered")
+    cohort_start = formal_cohort_start(contract)
+    prefix_end = formal_decision_prefix_end(contract)
+    if cohort_start is None or prefix_end is None:
+        raise SystemExit("formal-run refused: cohort bounds are not frozen in the contract")
+    if requested_prefix_end != prefix_end:
+        raise SystemExit(
+            f"formal-run refused: prefix {requested_prefix_end.isoformat()} is not the frozen "
+            f"{prefix_end.isoformat()}"
+        )
+    earliest = prefix_end + timedelta(hours=contract.min_read_delay_hours)
+    if now < earliest:
+        raise SystemExit(f"formal-run refused: too early, the read opens at {earliest.isoformat()}")
+    return cohort_start, prefix_end
+
+
+def claim_formal_output(output_dir: Path) -> None:
+    """Exclusive local artifact directory, so a run never overwrites another's artifact.
+    Not the one-read guarantee: that is the durable database claim below."""
+    output_dir.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        output_dir.mkdir()
+    except FileExistsError as exc:
+        raise SystemExit(
+            f"formal-run refused: {output_dir} exists; the single formal read was already claimed"
+        ) from exc
+
+
+async def claim_formal_read(
+    db_url: str,
+    contract: Hold12hVerdictContract,
+    *,
+    cohort_start: datetime,
+    decision_prefix_end: datetime,
+    code_revision: str,
+    working_tree_dirty: bool,
+    output_dir: Path,
+    schemas: Schemas = _DEFAULT_SCHEMAS,
+) -> None:
+    """The durable one-read claim, committed BEFORE any return is read. Unique per cohort
+    (contract version + both frozen bounds) rather than per contract sha, so neither another
+    output directory nor an edited contract can read the same cohort twice."""
+    from sqlalchemy import text
+    from sqlalchemy.exc import IntegrityError
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from .outcome_repository import async_database_url
+
+    engine = create_async_engine(async_database_url(db_url), pool_pre_ping=True, pool_size=1)
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(
+                text(
+                    f"""
+                    INSERT INTO {schemas.app}.hold12h_formal_read_claims
+                        (contract_version, contract_sha256, cohort_start, decision_prefix_end,
+                         code_revision, working_tree_dirty, output_dir)
+                    VALUES (:cv, :sha, :start, :end, :rev, :dirty, :out)
+                    """
+                ),
+                {
+                    "cv": contract.contract_version,
+                    "sha": contract.sha256_hex(),
+                    "start": cohort_start,
+                    "end": decision_prefix_end,
+                    "rev": code_revision[:64],
+                    "dirty": working_tree_dirty,
+                    "out": str(output_dir),
+                },
+            )
+    except IntegrityError as exc:
+        raise SystemExit(
+            "formal-run refused: this cohort's single formal read was already claimed"
+        ) from exc
+    finally:
+        await engine.dispose()
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -436,6 +764,17 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
         help="UTC ISO upper bound (exclusive) of the decision window",
     )
+    parser.add_argument(
+        "--health-since",
+        default=None,
+        help="outcome-blind health checkpoint: UTC ISO lower bound; the prefix end is the upper",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=None,
+        help="formal only: artifact directory, claimed exclusively before returns are read",
+    )
     parser.add_argument("--code-revision", default=os.getenv("SCHURFER_GIT_SHA", "unknown"))
     parser.add_argument("--working-tree-dirty", action=argparse.BooleanOptionalAction, default=True)
     return parser
@@ -448,6 +787,33 @@ async def _run(args: argparse.Namespace) -> str:
         raise ValueError("DATABASE_URL is required for the hold12h verdict reader")
     decision_prefix_end = datetime.fromisoformat(args.decision_prefix_end).astimezone(UTC)
 
+    if args.health_since is not None:
+        if args.formal_run:
+            raise SystemExit("--health-since is outcome-blind and cannot be combined")
+        checkpoint = await load_health_checkpoint(
+            db_url,
+            since=datetime.fromisoformat(args.health_since).astimezone(UTC),
+            until=decision_prefix_end,
+            funding_version=contract.actual_funding_version,
+        )
+        breaches = health_breaches(checkpoint)
+        return json.dumps(
+            {
+                "mode": "health_checkpoint",
+                **{
+                    key: value.isoformat() if isinstance(value, datetime) else value
+                    for key, value in checkpoint.__dict__.items()
+                },
+                "baseline_lost_fraction": checkpoint.baseline_lost_fraction,
+                "hold12h_lost_fraction": checkpoint.hold12h_lost_fraction,
+                "funding_covered_fraction": checkpoint.funding_covered_fraction,
+                "healthy": not breaches,
+                "breaches": breaches,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+
     if not args.formal_run:
         # Outcome-blind readiness -- no returns read. Before registration the window opens
         # at the epoch (readiness spans all accrued operational probes).
@@ -457,14 +823,70 @@ async def _run(args: argparse.Namespace) -> str:
         )
         return json.dumps({"mode": "readiness", **summary.__dict__}, indent=2, sort_keys=True)
 
-    # FORMAL -- fail-closed prerequisite gate.
-    if formal_cohort_start(contract) is None:
-        raise SystemExit("formal-run refused: contract has no registered cohort_start_iso")
-    # No registered actual-funding source exists yet (prospective capture is a separate PR).
-    raise SystemExit(
-        "formal-run refused: no registered actual-funding source (prospective capture "
-        "prerequisite not yet deployed) -- returns must not enter formal evidence"
+    # FORMAL -- every refusal happens before a return is read.
+    if args.output_dir is None:
+        raise SystemExit("formal-run refused: --output-dir is required")
+    cohort_start, prefix_end = formal_read_window(
+        contract,
+        registered=verdict_module.REGISTERED,
+        requested_prefix_end=decision_prefix_end,
+        now=datetime.now(UTC),
     )
+    output_dir: Path = args.output_dir
+    if output_dir.exists():
+        raise SystemExit(f"formal-run refused: {output_dir} already exists")
+    await claim_formal_read(
+        db_url,
+        contract,
+        cohort_start=cohort_start,
+        decision_prefix_end=prefix_end,
+        code_revision=args.code_revision,
+        working_tree_dirty=args.working_tree_dirty,
+        output_dir=output_dir,
+    )
+    claim_formal_output(output_dir)
+
+    from .momentum_flow_hold12h_funding import load_stored_funding
+
+    watches, probes = await load_cohort(
+        db_url, cohort_start=cohort_start, decision_prefix_end=prefix_end
+    )
+    watches = filter_to_cohort(watches, cohort_start=cohort_start, decision_prefix_end=prefix_end)
+    routes = sorted(
+        {probe.route for probe in probes.values()},
+        key=lambda route: (route.exchange, route.market_type, route.market_id),
+    )
+    funding = await load_stored_funding(
+        db_url, routes, source_version=contract.actual_funding_version
+    )
+    evaluation = evaluate_cohort(contract, watches, probes, funding)
+    fingerprint = verdict_fingerprint(
+        contract_sha256=contract.sha256_hex(),
+        cohort_start=cohort_start,
+        decision_prefix_end=prefix_end,
+        code_revision=args.code_revision,
+        working_tree_dirty=args.working_tree_dirty,
+        funding_source_id=f"StoredFundingSource:{contract.actual_funding_version}",
+        data_versions={"paper_contract": contract.paper_contract_sha256},
+        rows_digest=cohort_rows_digest(watches, probes, funding),
+        funnel=evaluation.funnel,
+        inputs=evaluation.inputs,
+    )
+    artifact = _formal_artifact(
+        contract,
+        evaluation,
+        cohort_start=cohort_start,
+        decision_prefix_end=prefix_end,
+        fingerprint=fingerprint,
+        code_revision=args.code_revision,
+        working_tree_dirty=args.working_tree_dirty,
+    )
+    text = json.dumps(artifact, indent=2, sort_keys=True, allow_nan=False) + "\n"
+    report_path = output_dir / "hold12h_verdict.json"
+    report_path.write_text(text)
+    digest = hashlib.sha256(text.encode()).hexdigest()
+    (output_dir / "hold12h_verdict.sha256").write_text(f"sha256:{digest}\n")
+    return text
 
 
 async def run_formal_for_test(

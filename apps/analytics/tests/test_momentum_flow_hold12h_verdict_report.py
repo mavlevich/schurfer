@@ -312,14 +312,22 @@ def test_replay_skips_when_slots_full_using_only_arrival_order() -> None:
     result = replay_fixed_bank(entries, max_slots=2)
     assert result.taken == 2
     assert result.skipped_slots_full == 1
-    assert abs(result.window_pnl_usd - 10.0) < 1e-9
+    assert result.window_pnl_usd == pytest.approx(10.0)
     assert result.complete
 
 
 def test_replay_incomplete_when_a_taken_slot_is_unresolved() -> None:
-    result = replay_fixed_bank([_entry("a", 0, 50, None, None)], max_slots=1)
+    result = replay_fixed_bank(
+        [_entry("a", 0, 50, None, None), _entry("b", 60, 60, 4.0)], max_slots=1
+    )
     assert not result.complete
-    assert result.window_pnl_usd != result.window_pnl_usd  # NaN
+    # Undetermined, not NaN: a NaN would trip the integrity gate ahead of Gate B.
+    assert result.window_pnl_usd is None
+    assert result.incomplete_taken == 1
+    assert result.incomplete_taken_fraction == 0.5
+    assert abs(result.slot_hours - (50 + 60) / 60) < 1e-9
+    # Zero-funding sensitivity needs a known price leg for the incomplete slot.
+    assert result.window_pnl_zero_funding_sensitivity_usd is None
 
 
 def test_replay_window_and_losing_streak_are_chronological_by_exit() -> None:
@@ -330,7 +338,7 @@ def test_replay_window_and_losing_streak_are_chronological_by_exit() -> None:
         _entry("d", 3, 10, 3.0),
     ]
     result = replay_fixed_bank(entries, max_slots=10)
-    assert abs(result.window_pnl_usd - 3.0) < 1e-9
+    assert result.window_pnl_usd == pytest.approx(3.0)
     assert result.longest_losing_streak == 2
 
 
@@ -369,7 +377,7 @@ def test_evaluate_cohort_binds_contract_params_and_enforces_invariants() -> None
     assert sum(ev.funnel.values()) == len(watches)
     assert ev.funnel[ProbeClass.ANALYZABLE] == len(ev.pairs) == 1
     # PnL used the contract's frozen $50 position, not an arbitrary size.
-    assert abs(ev.portfolio_720.window_pnl_usd - 1.0) < 1e-9
+    assert ev.portfolio_720.window_pnl_usd == pytest.approx(1.0)
 
 
 # --- formal window (both bounds) -----------------------------------------------
@@ -393,15 +401,26 @@ def test_formal_cohort_start_rejects_naive_or_non_utc() -> None:
 
     from schurfer_analytics.momentum_flow_hold12h_verdict import Hold12hVerdictContract
 
-    naive = dataclasses.replace(Hold12hVerdictContract(), cohort_start_iso="2026-10-01T00:00:00")
+    end = "2026-10-29T00:00:00+00:00"
+    naive = dataclasses.replace(
+        Hold12hVerdictContract(),
+        cohort_start_iso="2026-10-01T00:00:00",
+        decision_prefix_end_iso=end,
+    )
     with pytest.raises(ValueError, match="explicit UTC"):
         formal_cohort_start(naive)
     offset = dataclasses.replace(
-        Hold12hVerdictContract(), cohort_start_iso="2026-10-01T00:00:00+02:00"
+        Hold12hVerdictContract(),
+        cohort_start_iso="2026-10-01T00:00:00+02:00",
+        decision_prefix_end_iso=end,
     )
     with pytest.raises(ValueError, match="explicit UTC"):
         formal_cohort_start(offset)
-    ok = dataclasses.replace(Hold12hVerdictContract(), cohort_start_iso="2026-10-01T00:00:00+00:00")
+    ok = dataclasses.replace(
+        Hold12hVerdictContract(),
+        cohort_start_iso="2026-10-01T00:00:00+00:00",
+        decision_prefix_end_iso=end,
+    )
     assert formal_cohort_start(ok) == datetime(2026, 10, 1, tzinfo=UTC)
     assert formal_cohort_start(Hold12hVerdictContract()) is None  # unset -> fail-closed later
 
@@ -482,3 +501,44 @@ def test_rows_digest_is_sensitive_to_route_and_funding() -> None:
     assert cohort_rows_digest(w, {"w1": base_probe}, f1) != cohort_rows_digest(
         w, {"w1": base_probe}, f2
     )
+
+
+def test_unproven_funding_slot_releases_240m_at_its_own_mark() -> None:
+    """Regression: an incomplete pair used to hold the 240m slot until the 720m exit."""
+    watches = [WatchDecision("w-unfunded", "FOO", _BASE)]
+    probes = {"w-unfunded": _probe("w-unfunded")}
+    unfunded = _StubFunding((), proven=False)
+    (slot_240,) = build_eligible_portfolio(
+        watches, probes, unfunded, position_usd=50.0, policy_720=False
+    )
+    (slot_720,) = build_eligible_portfolio(
+        watches, probes, unfunded, position_usd=50.0, policy_720=True
+    )
+    assert slot_240.pnl_usd is None and slot_720.pnl_usd is None
+    assert slot_240.exit_at == _BASE + timedelta(minutes=240)
+    assert slot_720.exit_at == _BASE + timedelta(minutes=720)
+    # Ex-funding legs feed only the labelled zero-funding sensitivity.
+    assert slot_240.pnl_zero_funding_usd is not None
+    assert abs(slot_240.pnl_zero_funding_usd - 0.5) < 1e-9  # 1.0% of $50
+    assert slot_720.pnl_zero_funding_usd is not None
+    assert abs(slot_720.pnl_zero_funding_usd - 1.0) < 1e-9  # 2.0% of $50
+
+
+def test_unproven_240m_mark_falls_back_to_the_nominal_240m_bound() -> None:
+    watches = [WatchDecision("w", "FOO", _BASE)]
+    probes = {"w": _probe("w", horizon_240_resolved=False, horizon_240_gross=None)}
+    (slot_240,) = build_eligible_portfolio(
+        watches, probes, _ZERO_FUNDING, position_usd=50.0, policy_720=False
+    )
+    assert slot_240.exit_at == _BASE + timedelta(minutes=240)
+    assert slot_240.pnl_zero_funding_usd is None
+
+
+def test_zero_funding_sensitivity_sums_known_price_legs() -> None:
+    entries = [
+        PortfolioEntry("a", "A", _BASE, _BASE + timedelta(hours=1), None, None, 2.0),
+        _entry("b", 120, 60, 3.0),
+    ]
+    result = replay_fixed_bank(entries, max_slots=1)
+    assert result.window_pnl_usd is None
+    assert result.window_pnl_zero_funding_sensitivity_usd == 5.0

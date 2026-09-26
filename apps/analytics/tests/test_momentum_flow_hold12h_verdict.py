@@ -28,7 +28,7 @@ def _passing() -> VerdictInputs:
         standalone_720_mean_net=0.010,
         standalone_720_ci_lower=0.005,
         paired_diff_ci_lower=0.003,
-        distinct_asset_clusters=25,
+        distinct_asset_clusters=40,
         distinct_utc_weeks=6,
         max_single_asset_fraction=0.10,
         max_single_week_fraction=0.20,
@@ -181,3 +181,48 @@ def test_contract_rejects_portfolio_exceeding_the_bank() -> None:
     # 6 x $100 = $600 cannot fit a $300 bank.
     with pytest.raises(ValueError, match="must not exceed bank_usd"):
         Hold12hVerdictContract(position_usd=100.0, max_concurrent_slots=6)
+
+
+def test_undetermined_portfolio_never_masks_a_mature_negative_ev() -> None:
+    """Regression: an incomplete taken slot used to make the window PnL NaN, which tripped
+    Gate 0 BEFORE Gate B and hid a mature losing sample as insufficient_data."""
+    result = decide_verdict(
+        _CONTRACT,
+        dataclasses.replace(
+            _passing(),
+            standalone_720_mean_net=-0.01,
+            portfolio_720_window_pnl_usd=None,
+            portfolio_240_window_pnl_usd=None,
+        ),
+    )
+    assert result.outcome is VerdictOutcome.REJECT_HOLD12H
+    assert result.gate == "B"
+
+
+def test_undetermined_portfolio_cannot_pass_gate_e() -> None:
+    result = decide_verdict(
+        _CONTRACT, dataclasses.replace(_passing(), portfolio_720_window_pnl_usd=None)
+    )
+    assert result.outcome is VerdictOutcome.INSUFFICIENT_DATA
+    assert result.gate == "E"
+
+
+def test_missing_paired_edge_still_decides_with_an_undetermined_portfolio() -> None:
+    assert (
+        _decide(paired_diff_ci_lower=0.0, portfolio_240_window_pnl_usd=None)
+        is VerdictOutcome.NO_DURATION_IMPROVEMENT
+    )
+
+
+def test_incomplete_taken_slot_fraction_above_ceiling_is_insufficient_data() -> None:
+    result = decide_verdict(
+        _CONTRACT, dataclasses.replace(_passing(), portfolio_incomplete_slot_fraction=0.06)
+    )
+    assert result.outcome is VerdictOutcome.INSUFFICIENT_DATA
+    assert result.gate == "C"
+    assert _decide(portfolio_incomplete_slot_fraction=0.05) is VerdictOutcome.CANDIDATE
+
+
+def test_cohort_bounds_are_frozen_together() -> None:
+    with pytest.raises(ValueError, match="set together"):
+        Hold12hVerdictContract(cohort_start_iso="2026-10-05T00:00:00+00:00")
