@@ -828,6 +828,8 @@ services:
       MIN_RETRACE_PCT: ${MIN_RETRACE_PCT:-0}
       AUTO_TRADE: ${AUTO_TRADE:-false}
       DRY_RUN: ${DRY_RUN:-false}
+      # HYP-012 v2 shadow execution: records intents, never places an order.
+      SOURCE_LEAD_MODE: ${SOURCE_LEAD_MODE:-shadow}
       SIGNAL_POSITION_USD: ${SIGNAL_POSITION_USD:-50}
       SIGNAL_LEVERAGE: ${SIGNAL_LEVERAGE:-3}
       STRATEGY_VERSION: ${STRATEGY_VERSION:-pump_short_v1_market_quality}
@@ -875,7 +877,7 @@ services:
       NOTIFY_MIN_PCT: ${NOTIFY_MIN_PCT:-60}
       LIQUIDATION_CAPTURE_MONITORED_EXCHANGES: ${LIQUIDATION_CAPTURE_MONITORED_EXCHANGES:-}
       # name=redis_key@max_age_seconds (service_heartbeat.go).
-      SERVICE_HEARTBEATS: ${SERVICE_HEARTBEATS:-source-lead-exit-capture=market:sourceleadexit:health:source_lead_exit_book_v1@60}
+      SERVICE_HEARTBEATS: ${SERVICE_HEARTBEATS:-source-lead-exit-capture=market:sourceleadexit:health:source_lead_exit_book_v1@60,source-lead-shadow=market:sourceleadshadow:health:source_lead_shadow_v1@60}
       # Same flag and default as the analytics service: no quiet warning when off.
       SOURCE_LEAD_CAPTURE_ENABLED: ${SOURCE_LEAD_CAPTURE_ENABLED:-true}
       LIQUIDATION_CAPTURE_MONITOR_START_GRACE_SECONDS: ${LIQUIDATION_CAPTURE_MONITOR_START_GRACE_SECONDS:-90}

@@ -42,6 +42,7 @@ from .paper import run_paper_monitor
 from .reconciliation import STARTUP_BLOCKER
 from .reconciliation_worker import ReconciliationWorker
 from .routers import account, control, health, orders
+from .source_lead_shadow import resolve_source_lead_mode, run_source_lead_shadow
 from .supervisor import (
     WorkerRestartPolicy,
     WorkerSpec,
@@ -103,6 +104,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     pump_short_mode = resolve_mode(cfg, STRATEGY_PUMP_SHORT)
     early_momentum_mode = resolve_mode(cfg, STRATEGY_EARLY_MOMENTUM)
     liquidation_cascade_mode = resolve_mode(cfg, STRATEGY_LIQUIDATION_CASCADE)
+    # Validated before any worker starts: an invalid SOURCE_LEAD_MODE stops startup.
+    source_lead_mode = resolve_source_lead_mode(cfg)
 
     early_momentum_cohort_started_at = None
     early_momentum_enabled = early_momentum_mode is not TradingMode.DISABLED
@@ -153,6 +156,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     pump_short_broker: Broker
     early_momentum_broker: Broker
     liquidation_cascade_broker: Broker
+    source_lead_broker: Broker
     reconciliation_worker: ReconciliationWorker
 
     reconciliation_enabled = bool(cfg.db_url and trading_exchanges)
@@ -270,6 +274,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
             ),
         ),
         WorkerSpec(
+            name="source_lead_shadow",
+            factory=lambda tr: run_source_lead_shadow(
+                market_exchanges, rdb, cfg, source_lead_broker, tr
+            ),
+            policy=WorkerRestartPolicy.BOUNDED_DEGRADED,
+            is_critical=False,
+            restart_budget=3,
+            stale_timeout_seconds=120.0,
+            enabled=bool(cfg.db_url) and source_lead_mode is TradingMode.SHADOW,
+        ),
+        WorkerSpec(
             name="early_momentum_scanner",
             factory=lambda tr: run_early_momentum_scanner(rdb, cfg, tr),
             policy=WorkerRestartPolicy.BOUNDED_DEGRADED,
@@ -319,6 +334,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     )
     liquidation_cascade_broker = build_broker(
         liquidation_cascade_mode, exchanges=market_exchanges, gate=worker_gate
+    )
+    source_lead_broker = build_broker(
+        source_lead_mode, exchanges=market_exchanges, gate=worker_gate
     )
 
     app.state.supervisor = supervisor

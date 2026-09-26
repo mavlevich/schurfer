@@ -119,6 +119,35 @@ entered instrument.
 The v2 verdict never reads this table. Until a registered diagnostic read, only coverage,
 statuses and delays may be shown. It feeds cost calibration for the next contract version.
 
+## Shadow execution (not part of the verdict)
+
+The execution service's `source_lead` strategy (`source_lead_shadow.py`, `SOURCE_LEAD_MODE`)
+measures the real path to an order without placing one. Unset means DISABLED; only
+`shadow` or `disabled` are accepted.
+
+For each qualified v2 episode it:
+
+- **Claims first.** It claims a row in `app.source_lead_shadow_attempts` (migration 0055)
+  before any quote.
+- **Resolves the instrument from the registered native id.** It must be exactly one active
+  USDT linear swap.
+- **Takes a fresh raw Bybit book at the intended send time.** The book carries its native
+  `ts`, with the same freshness limits as qualification.
+- **Records every skip with its own outcome.**
+- **Records a valid intent** through `ShadowBroker` into `trade_decisions`.
+
+**Timing chain:**
+
+- capture to first seen (`late` over 30 s, never dropped);
+- `qualified_at` to first seen;
+- first seen to quote request;
+- quote request to response.
+
+`quote_change_bps` is the change of the executable $50 ask VWAP over that delay, on the
+same instrument and notional. No order was sent, so it is not slippage.
+
+A live broker (`LIVE_PROBE`) is a separate change with its own order-lifecycle review.
+
 ## v1 is closed without a formal read
 
 The v1 cohort reached 15 of its 100 required episodes. Its only venue, Binance, is not
