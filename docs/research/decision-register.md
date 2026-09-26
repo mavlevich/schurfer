@@ -33,6 +33,11 @@ after-cost economics unless explicitly labelled a paired difference.
   once, and the reviewer independently re-derives every approved route from the raw
   evidence. `build-registry` refuses without an approval that names the exact
   `decisions_sha256`.
+  Result (2026-09-26): 272 candidates (window plus the 14 v3 assets), 544 route decisions,
+  99 approved routes for 85 assets (Bybit 44, Binance 55), `decisions_sha256=c7f782ec...`.
+  The reviewer re-derived all 544 decisions from the stored source snapshots with an
+  independent script (0 mismatches). Registry v4 fingerprint `7d5f635a4ed0...`. Not active
+  until PR D.
 - **Abnormal-flow v1 is an inconclusive diagnostic result.** The prospective window ([2026-08-30T00:00:00Z, 2026-09-18T11:58:00Z)) was burned due to multiple reads and monkeypatched execution without the formal runner (`docs/research/evidence/abnormal-flow-v1/diagnostic-v1-burned/README.md`). Mean net +0.61%, excess +0.45%, resolved 125/252, missingness 50.4%, control coverage 53%, week concentration 52%, CI lower bounds negative, portfolio +$4.25 / maxDD $17.15. The result is non-promotional and v1 does not advance to live execution. Next step: post-hoc missingness/control-coverage diagnostic on the burned window without promotion claims.
 - **Abnormal-flow v1 post-hoc follow-up (2026-09-25): the apparent edge was missingness
   selection; v2 is deprioritised.** The unresolved-reason taxonomy (#443) found that all 127

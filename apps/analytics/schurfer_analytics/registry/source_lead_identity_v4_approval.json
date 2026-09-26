@@ -1,0 +1,7 @@
+{
+  "confirmed_at": "2026-09-26T09:30:00Z",
+  "confirmed_by": "owner (mavlevich): rule source_lead_identity_rule_v4 and the full decision list, 85 assets / 99 routes",
+  "decisions_sha256": "c7f782ec2871fd2a19365441cdc54a38c57974b510fcccc17a2d32bade9d8502",
+  "technical_review_by": "reviewer: independent recomputation of all 544 decisions from the stored snapshots, 0 mismatches, hashes confirmed for this decisions_sha256",
+  "evidence_commit": "2645baabf237dce3465f86c0117b09bd86eb24db"
+}
