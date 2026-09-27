@@ -60,7 +60,7 @@ from .source_lead_multi_source import (
 from .source_lead_repository import SourceLeadRepository
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
 INPUTS_NAME = "inputs.json"
 CLAIM_NAME = "claim.json"
@@ -208,7 +208,12 @@ def _candidate_from_json(row: dict[str, Any]) -> Candidate:
 
 
 async def prepare_inputs(
-    stage: str, *, now: datetime, code_revision: str, working_tree_dirty: bool
+    stage: str,
+    *,
+    now: datetime,
+    code_revision: str,
+    working_tree_dirty: bool,
+    family_version: str = FAMILY_VERSION,
 ) -> dict[str, Any]:
     """Fetch and freeze everything a stage read needs. Computes no return."""
     assert_stage_mature(stage, now)
@@ -233,8 +238,20 @@ async def prepare_inputs(
     raw_bars = await fetch_klines(candidates) if candidates else {}
     kept, identity = apply_route_identity(candidates, raw_bars)
     funnel = {**funnel, **identity}
+    kept_ids = {c.event_id for c in kept}
+    identity_excluded = [
+        {
+            "source": c.source_exchange,
+            "week": c.week,
+            "reason": route_identity_reason(
+                c, candles(raw_bars.get(c.event_id)).get(c.reference_ms)
+            ),
+        }
+        for c in candidates
+        if c.event_id not in kept_ids
+    ]
     return {
-        "family_version": FAMILY_VERSION,
+        "family_version": family_version,
         "stage": stage,
         "window": [start.isoformat(), end.isoformat()],
         "prepared_at": now.isoformat(),
@@ -244,6 +261,8 @@ async def prepare_inputs(
         "bybit_instruments_sha256": _sha(json.dumps(raw_instruments, sort_keys=True).encode()),
         "event_ids_sha256": _sha(json.dumps(sorted(e.event_id for e in events)).encode()),
         "funnel": dict(sorted(funnel.items())),
+        # Per candidate, so a later family can bound missingness by source and week.
+        "route_identity_excluded": identity_excluded,
         "candidates": [_candidate_json(c) for c in kept],
         "bars": {str(c.event_id): raw_bars.get(c.event_id) for c in kept},
     }
@@ -362,15 +381,16 @@ _CLAIM_KEYS = ("family_version", "stage", "inputs_sha256", "tested_family", "dis
 
 def take_claim(stage_dir: Path, expected: dict[str, Any], now: datetime) -> dict[str, Any]:
     """The durable claim, taken before any return is computed. It pins the inputs, the
-    ordered tested family and (at holdout) the discovery result. A claim left by a
-    crashed read is resumed only if it pins exactly the same; otherwise it is refused."""
+    ordered tested family, (at holdout) the discovery result, and any extra pins the
+    family adds (its contract digest and the reader's revision). A claim left by a crashed
+    read is resumed only if it pins exactly the same; otherwise it is refused."""
     claim_path = stage_dir / CLAIM_NAME
     claim = {**expected, "claimed_at": now.isoformat()}
     try:
         _publish_once(claim_path, _body(claim))
     except FileExistsError:
         existing: dict[str, Any] = json.loads(claim_path.read_text(encoding="utf-8"))
-        for key in _CLAIM_KEYS:
+        for key in (*_CLAIM_KEYS, *sorted(set(expected) - set(_CLAIM_KEYS))):
             if existing.get(key) != expected[key]:
                 raise ValueError(f"the open claim pins another {key}; refusing") from None
         return existing
@@ -444,23 +464,49 @@ def compute_result(
 def read_stage(
     stage: str, stage_dir: Path, discovery_dir: Path | None, now: datetime
 ) -> dict[str, Any]:
+    def family() -> tuple[list[str], str | None]:
+        if stage == "holdout":
+            if discovery_dir is None:
+                raise ValueError("the holdout read requires --discovery-artifact")
+            return discovery_survivors(discovery_dir)
+        return list(FORMAL_SOURCES), None
+
+    return read_frozen_stage(
+        stage,
+        stage_dir,
+        now,
+        family_version=FAMILY_VERSION,
+        tested_family=family,
+        compute=compute_result,
+    )
+
+
+def read_frozen_stage(
+    stage: str,
+    stage_dir: Path,
+    now: datetime,
+    *,
+    family_version: str,
+    tested_family: Callable[[], tuple[list[str], str | None]],
+    compute: Callable[[dict[str, Any], str, dict[str, Any]], dict[str, Any]],
+    pins: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """One claimed read of frozen inputs, shared by the source-lead families: verified
+    inputs, maturity, the claim pinning inputs, family and discovery, then ``compute`` on
+    the stored inputs only, with crash completion by an exact replay."""
     complete_digest(stage_dir / INPUTS_NAME)
     inputs, inputs_sha = load_verified(stage_dir / INPUTS_NAME)
-    if inputs.get("family_version") != FAMILY_VERSION or inputs.get("stage") != stage:
+    if inputs.get("family_version") != family_version or inputs.get("stage") != stage:
         raise ValueError(f"{stage_dir} does not hold {stage} inputs of this family")
     assert_stage_mature(stage, now)
-    if stage == "holdout":
-        if discovery_dir is None:
-            raise ValueError("the holdout read requires --discovery-artifact")
-        formal, discovery_sha = discovery_survivors(discovery_dir)
-    else:
-        formal, discovery_sha = list(FORMAL_SOURCES), None
+    formal, discovery_sha = tested_family()
     expected = {
-        "family_version": FAMILY_VERSION,
+        "family_version": family_version,
         "stage": stage,
         "inputs_sha256": inputs_sha,
         "tested_family": formal,
         "discovery_sha256": discovery_sha,
+        **(pins or {}),
     }
     result_path = stage_dir / RESULT_NAME
     if result_path.exists():
@@ -469,13 +515,13 @@ def read_stage(
         # Interrupted between the result and its digest: finish only if the stored
         # result is exactly what the claim and the same inputs produce.
         claim = take_claim(stage_dir, expected, now)
-        payload = compute_result(inputs, inputs_sha, claim)
+        payload = compute(inputs, inputs_sha, claim)
         if _body(payload) != result_path.read_bytes():
             raise ValueError("the stored result differs from its replay; refusing")
         _write_digest(result_path, _sha(result_path.read_bytes()))
         return payload
     claim = take_claim(stage_dir, expected, now)
-    payload = compute_result(inputs, inputs_sha, claim)
+    payload = compute(inputs, inputs_sha, claim)
     write_once(result_path, payload)
     return payload
 

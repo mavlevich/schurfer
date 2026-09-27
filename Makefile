@@ -1463,6 +1463,21 @@ prod-source-lead-multi-source-report:
 			&& printf '%s' '--no-working-tree-dirty' \
 			|| printf '%s' '--working-tree-dirty') $(ARGS)
 
+# HYP-012c (docs/research/source-lead-gap-hyp012c-v1.md): one pooled hypothesis on the unread
+# HYP-012b holdout. PHASE=all (default) freezes the inputs once, takes the claim, then computes
+# the result from the stored inputs; refused before 2026-09-29. Read ONCE.
+prod-source-lead-gap-hyp012c:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
+	@mkdir -p /opt/schurfer/runtime/research/hyp012c
+	@$(_PROD) run --rm --no-deps \
+		-v /opt/schurfer/runtime/research/hyp012c:/hyp012c \
+		--entrypoint source-lead-gap-hyp012c analytics \
+		--phase $(or $(PHASE),all) --stage-dir /hyp012c/holdout \
+		--code-revision="$$(git rev-parse HEAD)" \
+		$$(test -z "$$(git status --porcelain)" \
+			&& printf '%s' '--no-working-tree-dirty' \
+			|| printf '%s' '--working-tree-dirty') $(ARGS)
+
 # LIVE_PROBE step 1: read-only Bybit account preflight (apps/execution bybit_preflight.py).
 # GET-only allow-listed client, no order path. PURPOSE=diagnostic (read-only key, default)
 # or live_probe (the trading key). SYMBOLS=comma-separated Bybit linear symbols. Exit 2 means
