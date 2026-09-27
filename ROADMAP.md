@@ -1,6 +1,6 @@
 # Roadmap
 
-> Living document. Updated as we progress. Last refreshed 2026-09-25.
+> Living document. Updated as we progress. Last refreshed 2026-09-27.
 
 ## Current focus
 
@@ -8,10 +8,10 @@ Update only these four lines after every merge -- this is the fast-path
 status check, not a place for narrative.
 
 ```
-Current primary: HYP-012 v4 toward a real-money decision: identity registry v4 built (85 assets, Bybit 44 / Binance 55, fingerprint 7d5f635a...), not yet active; HYP-015 funding capture accumulating
-State: production has no configured trading credentials and runs DRY_RUN with AUTO_TRADE off; Binance futures are not tradable for the owner, so Bybit is the execution venue; no strategy has established a scalable after-cost edge
-Next: merge PR D (HYP-012 cohort v2 on qualification v4, start 2026-09-29) and deploy the capture worker before that date; HYP-015 health checkpoint 2026-09-27 then freeze; then Bybit execution prep for a $50 run
-User decision required: approve the PR D design and the capture-worker deploy; adding execution venues goes through a new cohort version; live $50 only after the v4 formal read
+Current primary: source-venue early detection (MEXC): archive the expiring MEXC 1m bars, then a 5m exploratory screen on the burnt 2026-08-10..31 window; passive: HYP-012c single read 2026-09-29, HYP-012 v2 cohort from 2026-09-29 with shadow execution, HYP-015 registered cohort 2026-10-05..11-02 (read from 2026-11-04 12:00Z)
+State: DRY_RUN, AUTO_TRADE off, no trading credentials; Bybit is the only confirmed execution venue; HYP-012b and HYP-028 rejected; no after-cost edge established; the scanner detects every pump only at +20% 24h change on a 60s poll, so every tested entry came after the first 20%
+Next: MEXC 5m early-trigger screen (frequency, false positives, remaining move, net at measured costs); execution costs measured from shadow books; ENG-025 narrow restore drill; only if the screen survives, a bounded MEXC websocket canary and one registered rule
+User decision required: which venues the owner can trade futures on (MEXC, BingX, Bitget, OKX?); the HYP-012c read is approved and scheduled for 2026-09-29 00:30Z
 ```
 
 ### Completed code card — ENG-024 outcome-consumer integrity
@@ -265,6 +265,72 @@ Older Phase 2 pilot and scaling entries below preserve their original chronology
 Before selecting one, reconcile its status against current implementations and
 closed research decisions; a historical unchecked box is not authority to rerun a
 closed pilot or to block an already established capture lane.
+
+### Source-venue early detection (2026-09-27)
+
+**Why this, now.** Every hypothesis tested so far entered after the pump was already
+visible to everyone:
+
+- **Late detection.** All 15,325 scanner events (2026-08-09..09-26) were detected at a 24h
+  change of about +20% (median 20.5%, p90 23.0%), because the scanner polls tickers every
+  60 s and fires at +20%.
+- **Nothing left after it.** After that point the average move on Bybit is about zero
+  before costs, and it fades over hours (median -2.9% at 24h). This is why HYP-012b,
+  HYP-028 and the earlier Bybit/Binance replays found no after-cost edge.
+- **Where pumps start.** 59% of pumps happen on one venue only. MEXC is first in 68% of
+  the pumps it sees, LBank in 45%, BingX in 49%.
+
+The untested space is earlier detection (a few percent into the move, within seconds to
+minutes) on the venue where the pump starts. The edge program above already says a failed
+Bybit/Binance minute replay does not close unobserved venues or pre-event book state.
+This line takes the single new-discovery slot left free by the negative abnormal-flow v1.
+
+**Steps.** Each one stops the line if it fails.
+
+1. **Archive what expires.** MEXC serves 1m contract bars for about 30 days only.
+   `mexc_kline_archive` stores all USDT perpetuals from 2026-08-28 up to the v2 blind
+   (2026-09-29, exclusive), write-once with a manifest. It does no analysis.
+   - Bars inside the unread HYP-012b holdout (weeks 36-39) are analysed only after the
+     HYP-012c read.
+   - Nothing on or after 2026-09-29 is read for any venue before the v2 formal read.
+2. **5m exploratory screen** on the burnt 2026-08-10..31 window, over every MEXC USDT
+   perpetual, on a verified archive only (every file `complete` or `empty` and matching its
+   sha256). Before any result it reports coverage by symbol and day. It then reports:
+   - trigger frequency per 1,000 eligible instrument-hours;
+   - false triggers (no +15% within 6h), against a control matched by symbol, week and
+     prior turnover;
+   - an approximate lead over the +20% scanner;
+   - one entry-delay sensitivity (reported, never used to choose a cell).
+
+   It reads the result in two ways. The MEXC-bar move is only a source signal. The
+   executable question is the Bybit leg: the same trigger entered on the Bybit USDT
+   perpetual right after the MEXC bar closes, with the 2x price-level identity band, net
+   at cost scenarios. It is exploration: it nominates at most one rule and proves nothing.
+
+3. **Measured execution costs** from the shadow and capture books (outcome-blind), so any
+   new rule is priced at the real spread, impact and fees, not the fixed 0.40%.
+4. **1m re-check** on the archived September bars, after the HYP-012c read. The screen
+   must survive at the finer resolution.
+5. **Bounded MEXC websocket canary** (trades and top of book): compact per-second
+   features, raw data only around triggers, a hard disk cap. It measures the true move
+   start and the detection latency. It runs only after ENG-025 and the disk forecast show
+   headroom and restorability.
+6. **One registered rule and an untouched forward cohort.** It must clear the four gates
+   of the edge program, including business materiality at the real bank size. Whether it
+   trades on MEXC or only on Bybit depends on the owner's venue access.
+
+**Stop conditions.**
+
+- If the 5m screen shows no positive gross edge after an early trigger, or its false
+  positives make the net negative at measured costs, the minute-scale early-detection
+  line closes. A seconds-scale canary is then justified only by a specific finding that
+  latency decides the outcome.
+- The existing reassessment checkpoint (2026-10-31) applies to this line too.
+
+**Relation to parked work.** The monster-precursor line (parked 2026-09-14) used
+Bybit/Binance hour-scale activity with retracted buggy scripts. This line uses a different
+venue, a different resolution, a new tested simulator and untouched forward data, so it
+is not a replay of that window.
 
 ### Monster pump precursor discovery — parked 2026-09-14
 
@@ -3797,6 +3863,21 @@ net performance suitable for tax or risk accounting.
   Deferred behind getting HYP-012 v4 to a real-money decision.
 
 ## Tech debt and DX (opportunistic)
+
+Priority order as of 2026-09-27 (support slot, one at a time):
+
+1. **ENG-025 narrow restore drill.** Restore critical tables from the offsite backup into
+   an isolated environment, read the restored rows and reconcile fingerprints and counts,
+   with an alert on failure. Not a full drill on the prod disk.
+2. **Deploy hygiene.** `make prod-deploy` leaves the Docker build cache growing (3.3 GB
+   reclaimable on 2026-09-27, with 19 GB free), and runs its backup before `git pull` (see
+   below). Prune the build cache in the deploy and swap the order.
+3. **Flaky `make verify`.** The first run sometimes fails without a clear error and the
+   rerun passes. Find the cause, since it slows every PR.
+4. **Roadmap size.** At 3,876 lines, move historical interleaving sections to an archive
+   file and keep this document current.
+5. **App-table growth forecast.** Daily growth per table, remaining headroom, and a
+   dry-run cleanup of recoverable data. Not urgent above the 15 GB alert threshold.
 
 - **`make prod-deploy`'s own step order runs the backup before the git
   pull.** Found 2026-09-03 running the disk-safety PR's (#328) own first
