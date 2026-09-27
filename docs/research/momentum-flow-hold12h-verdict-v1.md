@@ -1,6 +1,20 @@
-# Momentum-flow hold12h verdict v1 -- DRAFT, NOT FROZEN
+# Momentum-flow hold12h verdict v1 -- REGISTERED
 
-> **STATUS: DRAFT FOR REVIEW -- NOT FROZEN, NOT REGISTERED.** This document is a methodology
+> **STATUS: REGISTERED 2026-09-27 (#442).**
+>
+> - **Cohort window.** `[2026-10-05T00:00Z, 2026-11-02T00:00Z)`, four full ISO weeks.
+> - **Read.** Once, from 2026-11-04 12:00 UTC (60h delay), on a resumable durable claim over a
+>   pinned input snapshot.
+> - **Registration gate.** The outcome-blind 48h health checkpoint after the worker fix
+>   (2026-09-25T13:18Z..09-27T13:18Z): 345 eligible WATCH, 0 lost entries for both workers, claim
+>   latency p50 2.9 s / p90 7.2 s. Funding coverage was 100% for positions closed more than 36h
+>   earlier.
+> - **Frozen from here on.** The constants in the code are frozen, and so is the funding version
+>   `hold12h_actual_funding_v2`.
+>
+> The text below is the design history that led here.
+>
+> **Earlier status: DRAFT FOR REVIEW -- NOT FROZEN, NOT REGISTERED.** This document is a methodology
 > proposal for the HYP-015 hold-duration verdict. No constant here is authoritative yet; nothing
 > may read returns against it. It is published only so the design can be reviewed before any
 > contract/reader/verdict code is written. The formal cohort does not start until registration
@@ -248,15 +262,38 @@ only, never evidence.
 
 - The contract freezes BOTH `cohort_start_iso` and `decision_prefix_end_iso` (four full ISO weeks,
   Monday 00:00 UTC to Monday 00:00 UTC). The formal CLI refuses an unregistered contract, any other
-  prefix, and any read earlier than `decision_prefix_end + min_read_delay_hours` (36h: the last
-  720m positions close and the funding capture passes its lag and one queue cycle; a schedule
-  margin, not a guarantee under a capture backlog).
+  prefix, and any read earlier than `decision_prefix_end + min_read_delay_hours` (60h). The
+  last 720m positions close 12h after the prefix. On 2026-09-27 funding coverage measured 100%
+  only for positions closed more than 36h earlier, so the delay is 12h + 36h plus a 12h margin,
+  and the read opens at 2026-11-04 12:00 UTC. It is a schedule margin, not a guarantee: before
+  it claims, the reader also checks outcome-blind that every filled position is closed, funded
+  and accounted, and otherwise refuses, unless the operator passes
+  `--accept-incomplete-coverage`, which is recorded in the claim.
 - The single read is enforced by a DURABLE claim in `app.hold12h_formal_read_claims` (migration
   0053), inserted and committed BEFORE any return is read. It is unique per cohort (contract
   version + both frozen bounds), not per chosen output directory and not per contract sha, so
-  neither another directory nor an edited contract can read the same cohort again. The local
-  artifact directory is additionally created exclusively. A floor not met at the prefix is
-  `insufficient_data`, never a later, friendlier prefix.
+  neither another directory nor an edited contract can read the same cohort again. A floor not
+  met at the prefix is `insufficient_data`, never a later, friendlier prefix.
+- The claim is resumable, so a crash after it never burns the read (review of #442). It pins
+  the ordered WATCH ids of the cohort (loaded with no return). It carries a 60-minute lease.
+- **Input snapshot.** Before any verdict is computed, every input goes into a canonical
+  snapshot, written once and fsynced as `inputs.<sha256>.json`:
+  - each WATCH;
+  - each probe with every field;
+  - the funding settlements and coverage runs that overlap the holdings.
+
+  Its digest is pinned in the claim. The verdict is computed only from that snapshot, never
+  from live rows.
+
+- **Resume.** A later run takes over an open claim only after the lease expired, and only on
+  the same contract sha and WATCH ids. It recomputes from the pinned snapshot file. If that
+  file is gone, a reload must give the same digest, otherwise the run refuses and the claim
+  stays open.
+- **Publication.** Every attempt writes its own immutable, fsynced artifact
+  (`hold12h_verdict.attempt-<owner>.json`). Only the lease owner can complete the claim,
+  which records that artifact's name and sha256. Only then does it publish
+  `hold12h_verdict.json`, write-once. A stale owner that lost its lease cannot complete, so
+  it never publishes or overwrites. A completed claim refuses every later run.
 - Outcome-blind health checkpoints (`hold12h-verdict-reader --health-since ... --decision-prefix-end
 ...`) run every Monday of the cohort and once over a fixed 48h window after the worker fix is
   deployed (before the cohort boundary is frozen). They read statuses, claim latency, funding

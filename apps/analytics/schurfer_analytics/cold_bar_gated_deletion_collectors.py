@@ -15,6 +15,7 @@ targeted, lock-guarded drop; it runs only when the gated-deletion job is invoked
 from __future__ import annotations
 
 import hashlib
+import re
 import subprocess
 import tempfile
 from datetime import UTC, date
@@ -80,6 +81,11 @@ def validate_execute_cutoff(*, execute: bool, cutoff_days: int) -> None:
         )
 
 
+# The drop never waits longer than this for any lock (advisory or chunk).
+DROP_LOCK_TIMEOUT = "5s"
+_LOCK_TIMEOUT_RE = re.compile(r"[1-9][0-9]{0,4}(ms|s)")
+
+
 def drop_one_chunk_under_lock(
     pg_conn: Any,
     *,
@@ -88,6 +94,7 @@ def drop_one_chunk_under_lock(
     range_end: datetime,
     verify_unchanged: Callable[[], bool],
     lock_key: int = COLD_BAR_MUTATION_LOCK_KEY,
+    lock_timeout: str = DROP_LOCK_TIMEOUT,
 ) -> str:
     """Drop EXACTLY the one chunk ``[range_start, range_end)`` of ``hypertable``, atomically
     and fail-closed. In a single transaction: take ``pg_advisory_xact_lock(lock_key)``
@@ -100,7 +107,14 @@ def drop_one_chunk_under_lock(
     chunk, the transaction is ROLLED BACK and it raises; nothing is deleted. Returns the
     dropped chunk's name. ``verify_unchanged`` may read the live source over a separate session
     because the lock blocks concurrent lock-takers (writers/repair), not readers."""
+    if not _LOCK_TIMEOUT_RE.fullmatch(lock_timeout):
+        raise ValueError(f"lock_timeout {lock_timeout!r} must look like '5s' or '750ms'")
     with pg_conn.transaction():
+        # Fail fast instead of queueing: a pending AccessExclusive request on the chunk
+        # blocks every later reader of the hypertable, so waiting behind a slow or stuck
+        # reader would stall production reads (2026-09-26 canary). Timing out rolls the
+        # transaction back; nothing is dropped and the next run retries.
+        pg_conn.execute(f"SET LOCAL lock_timeout = '{lock_timeout}'")
         pg_conn.execute("SELECT pg_advisory_xact_lock(%s)", (lock_key,))
         if not verify_unchanged():
             raise ColdBarSourceChangedError(
@@ -176,6 +190,19 @@ def parse_env_file(text: str) -> dict[str, str]:
 # ---------- concrete collectors ----------
 
 
+def fresh_source_fingerprint(dsn: str, day: str) -> str | None:
+    """The day's source fingerprint over a DuckDB connection that is opened and closed
+    here, so no Postgres transaction (and no chunk lock) outlives the call."""
+    start, until = day_bounds(date.fromisoformat(day))
+    connection = connect(dsn)
+    try:
+        return source_fingerprint(connection, start, until)
+    except ValueError:
+        return None
+    finally:
+        connection.close()
+
+
 class BorgDbCollectors:
     """Gathers gated-deletion evidence from Borg + the manifest/receipt dir + the source
     database (read-only), and performs the real targeted ``drop_chunk`` (write) when the run
@@ -198,11 +225,24 @@ class BorgDbCollectors:
         # A receipt written today is archived by the NEXT backup, so this is the
         # most recent bars archive at run time (resolved by the CLI).
         self._newest_bars_archive = newest_bars_archive
-        self._connection = connect(dsn)  # DuckDB attached to Postgres READ_ONLY
+        self._connection_handle: Any = None  # DuckDB attached to Postgres READ_ONLY, lazy
         self._archive_names_cache: frozenset[str] | None = None
         self._newest_members_cache: frozenset[str] | None = None
 
     # --- database ---
+
+    @property
+    def _connection(self) -> Any:
+        if self._connection_handle is None:
+            self._connection_handle = connect(self._dsn)
+        return self._connection_handle
+
+    def _close_connection(self) -> None:
+        """Closing the DuckDB connection closes its Postgres session, which ends the
+        transaction the postgres extension left open after the last read."""
+        if self._connection_handle is not None:
+            self._connection_handle.close()
+            self._connection_handle = None
 
     def list_chunks(self) -> tuple[ChunkCandidate, ...]:
         """The ACTUAL Timescale chunks of the source hypertable, from
@@ -247,6 +287,12 @@ class BorgDbCollectors:
 
         from .cold_bar_export import SOURCE_TABLE
 
+        # The DuckDB postgres attachment keeps its Postgres transaction open after a
+        # read, holding AccessShare on the chunk; a drop on another session would then
+        # wait on this very process forever (2026-09-26 canary). So the long-lived
+        # connection is closed first, and the under-lock re-check uses a fresh one that is
+        # closed before drop_chunks runs.
+        self._close_connection()
         with psycopg.connect(self._dsn, autocommit=True) as conn:
             drop_one_chunk_under_lock(
                 conn,
@@ -254,7 +300,8 @@ class BorgDbCollectors:
                 range_start=candidate.range_start,
                 range_end=candidate.range_end,
                 verify_unchanged=lambda: (
-                    self.recompute_source_fingerprint(candidate.day) == expected_source_fingerprint
+                    fresh_source_fingerprint(self._dsn, candidate.day)
+                    == expected_source_fingerprint
                 ),
             )
 

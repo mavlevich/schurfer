@@ -422,7 +422,10 @@ def test_formal_cohort_start_rejects_naive_or_non_utc() -> None:
         decision_prefix_end_iso=end,
     )
     assert formal_cohort_start(ok) == datetime(2026, 10, 1, tzinfo=UTC)
-    assert formal_cohort_start(Hold12hVerdictContract()) is None  # unset -> fail-closed later
+    unset = dataclasses.replace(
+        Hold12hVerdictContract(), cohort_start_iso=None, decision_prefix_end_iso=None
+    )
+    assert formal_cohort_start(unset) is None  # unset -> fail-closed later
 
 
 # --- registration (atomic first-writer) ----------------------------------------

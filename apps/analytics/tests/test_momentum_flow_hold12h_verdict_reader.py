@@ -4,21 +4,17 @@ from __future__ import annotations
 
 import dataclasses
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING
 
 import pytest
 from schurfer_analytics.momentum_flow_hold12h_verdict import Hold12hVerdictContract
 from schurfer_analytics.momentum_flow_hold12h_verdict_reader import (
+    FormalCoverage,
     HealthCheckpoint,
-    claim_formal_output,
     formal_read_window,
     health_breaches,
     portfolio_summary,
 )
 from schurfer_analytics.momentum_flow_hold12h_verdict_report import PortfolioResult
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 _START = datetime(2026, 10, 5, tzinfo=UTC)
 _END = datetime(2026, 11, 2, tzinfo=UTC)
@@ -44,9 +40,10 @@ def test_formal_read_refuses_an_unregistered_contract() -> None:
 
 def test_formal_read_refuses_missing_bounds() -> None:
     with pytest.raises(SystemExit, match="not frozen"):
-        formal_read_window(
-            Hold12hVerdictContract(), registered=True, requested_prefix_end=_END, now=_OPEN
+        unfrozen = dataclasses.replace(
+            Hold12hVerdictContract(), cohort_start_iso=None, decision_prefix_end_iso=None
         )
+        formal_read_window(unfrozen, registered=True, requested_prefix_end=_END, now=_OPEN)
 
 
 def test_formal_read_refuses_any_other_prefix() -> None:
@@ -66,12 +63,24 @@ def test_formal_read_refuses_before_positions_and_funding_can_be_complete() -> N
         )
 
 
-def test_the_output_claim_allows_exactly_one_formal_read(tmp_path: Path) -> None:
-    target = tmp_path / "formal" / "hold12h"
-    claim_formal_output(target)
-    assert target.is_dir()
-    with pytest.raises(SystemExit, match="already claimed"):
-        claim_formal_output(target)
+def test_the_read_opens_60h_after_the_prefix() -> None:
+    assert Hold12hVerdictContract().min_read_delay_hours == 60.0
+    assert datetime(2026, 11, 4, 12, tzinfo=UTC) == _OPEN
+
+
+def test_formal_coverage_names_every_shortfall() -> None:
+    complete = FormalCoverage(
+        filled=10, open_positions=0, closed=10, funding_covered=10, accounting_complete=10
+    )
+    assert complete.shortfalls() == []
+    partial = FormalCoverage(
+        filled=10, open_positions=1, closed=9, funding_covered=7, accounting_complete=8
+    )
+    assert partial.shortfalls() == [
+        "1 filled positions are not closed",
+        "funding covered for 7/9 closed",
+        "accounting complete for 8/9 closed",
+    ]
 
 
 def test_portfolio_summary_reports_capital_time() -> None:

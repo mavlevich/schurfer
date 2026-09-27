@@ -38,7 +38,7 @@ def _report_dict(
     report: ReadinessReport, *, code_revision: str, working_tree_dirty: bool
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
-        "report": "source_lead_readiness_v1",
+        "report": "source_lead_readiness_v2",
         "outcome_blind": True,
         "generated_at_utc": datetime.now(UTC).isoformat(),
         "code_revision": code_revision,
@@ -159,9 +159,51 @@ def render_markdown(report: dict[str, Any]) -> str:
             else "- projected weeks to episode count floor: n/a (rate 0 or floor met)"
         ),
         "",
+        "## Qualified by UTC week",
+        "",
+        "| week | qualified |",
+        "| ---- | --------- |",
+        *[f"| {week} | {count} |" for week, count in r["qualified_by_week"].items()],
+        "",
+        *_capacity_lines(r["capacity"]),
+        "## Target checks by venue (qualification details)",
+        "",
+        "| venue:reason | count |",
+        "| ------------ | ----- |",
+        *[f"| {key} | {count} |" for key, count in r["target_reasons_by_venue"].items()],
+        "",
+        "## Exit-book diagnostic coverage (statuses and delays only)",
+        "",
+        f"- exit window closed: {r['exit_due']} episodes; no exit row at all: {r['exit_missing']}",
+        "",
+        *(
+            [f"> WARNING: {r['exit_missing']} due episodes have no exit row.", ""]
+            if r["exit_missing"]
+            else []
+        ),
+        "| outcome:timeliness | count |",
+        "| ------------------ | ----- |",
+        *[f"| {key} | {count} |" for key, count in r["exit_coverage"].items()],
+        "",
+        f"- lateness vs target: p50 {r['exit_lateness_p50_ms']} ms,"
+        f" p90 {r['exit_lateness_p90_ms']} ms",
+        "",
         f"> {report['formal_read_note']}",
     ]
     return "\n".join(lines) + "\n"
+
+
+def _capacity_lines(capacity: dict[str, Any] | None) -> list[str]:
+    if not capacity:
+        return []
+    return [
+        f"## Capacity at {capacity['slots']} slots (USD 300 / USD 50, entry times only)",
+        "",
+        f"- peak demand (overlapping holds, all signals): {capacity['max_concurrent']}",
+        f"- taken: {capacity['taken']}, skipped for lack of a free slot: {capacity['skipped']}"
+        f" ({_pct(capacity['skipped_share'])})",
+        "",
+    ]
 
 
 def build_parser() -> argparse.ArgumentParser:

@@ -1,6 +1,9 @@
-"""HYP-015 hold12h verdict -- the DRAFT contract and the pure verdict rule.
+"""HYP-015 hold12h verdict -- the REGISTERED contract and the pure verdict rule.
 
-**DRAFT / NOT FROZEN, NOT REGISTERED.** This module fixes the FORM of how the
+**REGISTERED 2026-09-27 (#442).** The formal cohort is [2026-10-05, 2026-11-02) UTC and
+is read once, from 2026-11-04 12:00 UTC. The history below records how it got here.
+
+This module fixes the FORM of how the
 720m-vs-240m hold-duration question is answered (thresholds shape, gate order, the
 pure decision), but the overall HYP-015 contract is NOT registered: the diversity /
 concentration / improvement constants are PROVISIONAL (to be sized from an
@@ -130,14 +133,17 @@ class Hold12hVerdictContract:
     # PR sets a concrete FUTURE instant; while None a formal_run fail-closes because the
     # contract is not registered. Runtime first-writer registration is a DRAFT/readiness
     # convenience only and never substitutes for this frozen literal.
-    cohort_start_iso: str | None = None
+    cohort_start_iso: str | None = "2026-10-05T00:00:00+00:00"
     # The ONE pre-declared decision-time prefix (exclusive upper bound) at which the
     # economic read happens. A formal run with any other prefix is refused; if the floor
     # is not met there the result is insufficient_data, never a later, friendlier prefix.
-    decision_prefix_end_iso: str | None = None
+    decision_prefix_end_iso: str | None = "2026-11-02T00:00:00+00:00"
     # A formal read is refused until this long after the prefix: the last 720m positions
-    # must close and the funding capture must pass its settlement lag and queue.
-    min_read_delay_hours: float = 36.0
+    # (entered just before the prefix) close 12h later, and their funding capture must pass
+    # its settlement lag and queue. Measured 2026-09-27: full coverage for positions closed
+    # more than 36h earlier, so 12h + 36h plus a 12h margin. The reader also checks the
+    # coverage, outcome-blind, before it claims.
+    min_read_delay_hours: float = 60.0
 
     def __post_init__(self) -> None:
         if self.min_analyzable_pairs <= 0:
@@ -407,9 +413,9 @@ def decide_verdict(contract: Hold12hVerdictContract, inputs: VerdictInputs) -> V
     )
 
 
-# DRAFT contract instance. NOT registered/frozen: the provisional constants above and
-# the unimplemented actual-funding prerequisite keep the overall HYP-015 contract
-# unregistered. A small freeze PR fixes the final constants, the funding version, and a
-# literal future UTC cohort boundary before any formal run is allowed.
-REGISTERED = False
+# REGISTERED 2026-09-27 by the freeze PR (#442), after the outcome-blind 48h health
+# checkpoint passed (2026-09-25T13:18Z..09-27T13:18Z: 345 eligible WATCH, 0 lost entries
+# for either worker). The constants above, the actual-funding version and the literal
+# cohort window [2026-10-05, 2026-11-02) are frozen in the contract sha from here on.
+REGISTERED = True
 HOLD12H_VERDICT_CONTRACT = Hold12hVerdictContract()

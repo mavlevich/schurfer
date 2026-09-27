@@ -7,6 +7,8 @@ Borg-output parsing, newest-archive selection, and env-file parsing.
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 from schurfer_analytics.cold_bar_gated_deletion_collectors import (
     MIN_EXECUTE_CUTOFF_DAYS,
@@ -84,3 +86,50 @@ def test_parse_env_file() -> None:
     assert env["BORG_PASSPHRASE"] == "se cret"  # noqa: S105
     assert env["QUOTED"] == "v"
     assert "EMPTYLINE_IGNORED" not in env
+
+
+def test_drop_chunk_closes_the_duckdb_session_before_dropping(monkeypatch: Any) -> None:
+    """2026-09-26 canary: the long-lived DuckDB session must be closed (ending its open
+    Postgres transaction) before drop_chunks, and the under-lock re-check uses a fresh one."""
+    from datetime import UTC, datetime
+
+    import psycopg
+    from schurfer_analytics import cold_bar_gated_deletion_collectors as mod
+    from schurfer_analytics.cold_bar_gated_deletion_job import ChunkCandidate
+
+    events: list[str] = []
+
+    class _Duck:
+        def close(self) -> None:
+            events.append("close_long_lived")
+
+    class _Conn:
+        def __enter__(self) -> _Conn:
+            return self
+
+        def __exit__(self, *_: Any) -> None:
+            return None
+
+    def fake_drop(_conn: Any, **kwargs: Any) -> str:
+        events.append("drop")
+        assert kwargs["verify_unchanged"]() is True
+        return "chunk"
+
+    def fake_fresh(_dsn: str, day: str) -> str:
+        events.append(f"fresh:{day}")
+        return "fp"
+
+    monkeypatch.setattr(psycopg, "connect", lambda *_a, **_k: _Conn())
+    monkeypatch.setattr(mod, "drop_one_chunk_under_lock", fake_drop)
+    monkeypatch.setattr(mod, "fresh_source_fingerprint", fake_fresh)
+    collectors = object.__new__(mod.BorgDbCollectors)
+    collectors._dsn = "postgresql://x"
+    collectors._connection_handle = _Duck()
+    candidate = ChunkCandidate(
+        day="2026-08-14",
+        range_start=datetime(2026, 8, 14, tzinfo=UTC),
+        range_end=datetime(2026, 8, 15, tzinfo=UTC),
+    )
+    collectors.drop_chunk(candidate, expected_source_fingerprint="fp")
+    assert events == ["close_long_lived", "drop", "fresh:2026-08-14"]
+    assert collectors._connection_handle is None

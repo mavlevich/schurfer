@@ -225,4 +225,16 @@ def test_incomplete_taken_slot_fraction_above_ceiling_is_insufficient_data() -> 
 
 def test_cohort_bounds_are_frozen_together() -> None:
     with pytest.raises(ValueError, match="set together"):
-        Hold12hVerdictContract(cohort_start_iso="2026-10-05T00:00:00+00:00")
+        Hold12hVerdictContract(decision_prefix_end_iso=None)
+    with pytest.raises(ValueError, match="set together"):
+        Hold12hVerdictContract(cohort_start_iso=None)
+
+
+def test_the_registered_contract_freezes_four_full_iso_weeks() -> None:
+    from schurfer_analytics import momentum_flow_hold12h_verdict as verdict
+
+    assert verdict.REGISTERED is True
+    contract = verdict.HOLD12H_VERDICT_CONTRACT
+    assert contract.cohort_start_iso == "2026-10-05T00:00:00+00:00"
+    assert contract.decision_prefix_end_iso == "2026-11-02T00:00:00+00:00"
+    assert contract.min_read_delay_hours == 60.0
