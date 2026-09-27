@@ -51,6 +51,7 @@ gate-identity-candidate-tooling = "schurfer_analytics.gate_identity_candidate_to
 source-lead-identity-evidence = "schurfer_analytics.source_lead_identity_evidence:main"
 source-lead-identity-v4 = "schurfer_analytics.source_lead_identity_v4:main"
 source-lead-multi-source-report = "schurfer_analytics.source_lead_multi_source_report:main"
+source-lead-gap-hyp012c = "schurfer_analytics.source_lead_gap_hyp012c:main"
 source-lead-exit-capture = "schurfer_analytics.source_lead_exit_capture:main"
 episode-replay = "schurfer_analytics.episode_replay:main"
 virtual-strategy-report = "schurfer_analytics.virtual_strategy_report:main"

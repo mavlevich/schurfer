@@ -217,6 +217,20 @@ def build_candidates(
     return tuple(out), dict(statuses)
 
 
+def reference_gap(candidate: Candidate, reference: Candle | None) -> float | None:
+    """How far the source's first price is above Bybit's last close at or before the signal
+    (0.01 = 1%). Pre-signal data only; None when either price is unusable."""
+    if candidate.source_price is None or not math.isfinite(candidate.source_price):
+        return None
+    if candidate.source_price <= 0 or reference is None:
+        return None
+    if reference.ts_ms != candidate.reference_ms:
+        return None
+    if not math.isfinite(reference.close) or reference.close <= 0:
+        return None
+    return candidate.source_price / reference.close - 1
+
+
 def route_identity_reason(candidate: Candidate, reference: Candle | None) -> str | None:
     """Pre-signal price filter on the ticker-matched route: a same-ticker different
     project usually shows up as a price level far from the source's. Uses only a bar that
@@ -282,11 +296,17 @@ class VenueResult:
 
 def venue_result(source: str, outcomes: Sequence[Outcome]) -> VenueResult:
     mine = [o for o in outcomes if o.candidate.source_exchange == source]
+    return group_result(source, mine, seed_key=f"{FAMILY_VERSION}:{source}")
+
+
+def group_result(label: str, mine: Sequence[Outcome], *, seed_key: str) -> VenueResult:
+    """Cluster-bootstrap statistics for one group of outcomes (a venue, or a pooled rule);
+    the bootstrap seed is derived from ``seed_key``."""
     resolved = [o for o in mine if o.resolved and o.net_return_pct is not None]
     unresolved = Counter(o.reason for o in mine if not o.resolved)
     weeks = Counter(o.candidate.week for o in resolved)
     base: dict[str, Any] = {
-        "source": source,
+        "source": label,
         "candidates": len(mine),
         "resolved": len(resolved),
         "assets": len({o.candidate.cluster_key for o in resolved}),
@@ -301,7 +321,7 @@ def venue_result(source: str, outcomes: Sequence[Outcome]) -> VenueResult:
         ClusterObservation(o.candidate.cluster_key, float(o.net_return_pct or 0.0))
         for o in resolved
     )
-    seed = derived_seed(BOOTSTRAP_SEED, f"{FAMILY_VERSION}:{source}")
+    seed = derived_seed(BOOTSTRAP_SEED, seed_key)
     estimate = cluster_bootstrap_mean(
         observations, iterations=BOOTSTRAP_ITERATIONS, seed=seed
     ).estimate
