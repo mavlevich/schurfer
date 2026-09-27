@@ -171,6 +171,9 @@ same instrument and notional. No order was sent, so it is not slippage.
 
 A live broker (`LIVE_PROBE`) is a separate change with its own order-lifecycle review.
 
+How this timing chain is decomposed and reported, registered before any shadow metric was
+viewed: `source-lead-v2-latency-diagnostic-v1.md`. It never changes this cohort.
+
 ## v1 is closed without a formal read
 
 The v1 cohort reached 15 of its 100 required episodes. Its only venue, Binance, is not
