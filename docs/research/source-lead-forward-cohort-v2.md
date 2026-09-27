@@ -119,6 +119,58 @@ entered instrument.
 The v2 verdict never reads this table. Until a registered diagnostic read, only coverage,
 statuses and delays may be shown. It feeds cost calibration for the next contract version.
 
+## Shadow execution (not part of the verdict)
+
+The execution service's `source_lead` strategy (`source_lead_shadow.py`, `SOURCE_LEAD_MODE`)
+measures the real path to an order without placing one. Unset means DISABLED; only
+`shadow` or `disabled` are accepted.
+
+**How it is enabled.** The prod compose default is `disabled`. It is enabled only by an
+explicit `SOURCE_LEAD_MODE=shadow` in `.env.prod`, together with
+`source-lead-shadow=market:sourceleadshadow:health:source_lead_shadow_v1@60` in
+`SERVICE_HEARTBEATS`. `shadow` also needs a mode ceiling: `DRY_RUN=true` or
+`AUTO_TRADE=true`. Otherwise the execution service refuses to start. Prod runs
+`DRY_RUN=true`.
+
+**Intent size.** The recorded intent carries the real order: the quantity rounded down to
+`qtyStep`, and its own ask VWAP and notional. It also checks `minNotionalValue` and the
+market-order quantity cap. `quote_change_bps` compares the $50-notional VWAP with the
+capture's $50 VWAP.
+
+**Crash handling.** The `decision_id` is saved before the broker call. An attempt whose
+delivery is not confirmed becomes `delivery_unknown`. This covers a claim idle for 10
+minutes with a saved `decision_id`, and a broker error after it was saved. Every loop
+re-checks `delivery_unknown` against `trade_decisions` with no time limit, and turns it
+into `shadow_recorded` whenever the Redis outbox delivers. `crashed_after_claim` is only
+for a claim that never saved a `decision_id`, and any other error ends as
+`evaluation_error`.
+
+**Instrument rules.** The instrument rules are fetched per episode. A missing
+`minNotionalValue` or `maxMktOrderQty` is its own outcome, `instrument_rules_unknown`.
+
+For each qualified v2 episode it:
+
+- **Claims first.** It claims a row in `app.source_lead_shadow_attempts` (migration 0055)
+  before any quote.
+- **Resolves the instrument from the registered native id.** It must be exactly one active
+  USDT linear swap.
+- **Takes a fresh raw Bybit book at the intended send time.** The book carries its native
+  `ts`, with the same freshness limits as qualification.
+- **Records every skip with its own outcome.**
+- **Records a valid intent** through `ShadowBroker` into `trade_decisions`.
+
+**Timing chain:**
+
+- capture to first seen (`late` over 30 s, never dropped);
+- `qualified_at` to first seen;
+- first seen to quote request;
+- quote request to response.
+
+`quote_change_bps` is the change of the executable $50 ask VWAP over that delay, on the
+same instrument and notional. No order was sent, so it is not slippage.
+
+A live broker (`LIVE_PROBE`) is a separate change with its own order-lifecycle review.
+
 ## v1 is closed without a formal read
 
 The v1 cohort reached 15 of its 100 required episodes. Its only venue, Binance, is not

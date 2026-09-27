@@ -193,6 +193,9 @@ class Config:
     liquidation_cascade_mode: str | None = field(
         default_factory=lambda: _env("LIQUIDATION_CASCADE_MODE")
     )
+    # HYP-012 v2 shadow execution (source_lead_shadow.py). Unset means DISABLED,
+    # never PAPER; only 'shadow' or 'disabled' are accepted.
+    source_lead_mode: str | None = field(default_factory=lambda: _env("SOURCE_LEAD_MODE"))
 
     def __post_init__(self) -> None:
         if self.auto_trade and self.dry_run:
