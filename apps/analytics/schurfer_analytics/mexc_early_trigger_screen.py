@@ -42,6 +42,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import csv
+import hashlib
 import json
 import sys
 from bisect import bisect_left
@@ -50,10 +51,13 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from statistics import fmean, median
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .clustered_inference import ClusterObservation, cluster_bootstrap_mean, derived_seed
 from .mexc_kline_archive import read_rows
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 WINDOW_START = datetime(2026, 8, 10, tzinfo=UTC)
 WINDOW_END = datetime(2026, 8, 31, tzinfo=UTC)  # exclusive; outcome bars close before it
@@ -89,6 +93,8 @@ class Episode:
     scanner_reach: bool
     mae_4h: float
     bybit: dict[str, float] = field(default_factory=dict)
+    # The Bybit leg entered one 5m bar later (diagnostic only, never used to choose).
+    bybit_delayed: dict[str, float] = field(default_factory=dict)
 
 
 def verify_archive(archive_dir: Path) -> dict[str, Any]:
@@ -245,62 +251,135 @@ def summarize(label: str, eps: list[Episode], eligible_bars: int) -> dict[str, A
     return row
 
 
-async def attach_bybit_legs(episodes: list[Episode]) -> dict[str, int]:
-    """Bybit 5m bars for each trigger's base, entered at the open right after the MEXC bar
-    closes. Only a Bybit USDT perpetual live at the trigger, passing the 2x price band."""
+async def fetch_bybit_inputs(episodes: list[Episode]) -> dict[str, Any]:
+    """Fetch the Bybit catalogue and, per trigger with a single live route, the raw 5m bars
+    of its hold. Retries on HTTP and API errors; an exhausted retry aborts the whole run,
+    so a snapshot never freezes a transient gap."""
     import httpx
 
-    from .source_lead_multi_source_report import fetch_bybit_instruments, parse_instruments
+    from .source_lead_multi_source_report import (
+        BYBIT_KLINE_URL,
+        _get_json,
+        fetch_bybit_instruments,
+        parse_instruments,
+    )
 
-    instruments = parse_instruments(await fetch_bybit_instruments())
-    by_base: dict[str, list[Any]] = defaultdict(list)
-    for inst in instruments:
-        by_base[inst.base].append(inst)
-    status: dict[str, int] = defaultdict(int)
+    catalogue = await fetch_bybit_instruments()
+    instruments = parse_instruments(catalogue)
+    rows: dict[str, list[list[str]]] = {}
     semaphore = asyncio.Semaphore(6)
     async with httpx.AsyncClient(timeout=30) as client:
 
         async def one(e: Episode) -> None:
-            base = e.symbol.removesuffix("_USDT").upper()
-            entry_ms = (e.t + BAR) * 1000
-            end_ms = entry_ms + (LONGEST * BAR) * 1000
-            live = [x for x in by_base.get(base, []) if x.live_over(entry_ms, end_ms)]
-            if len(live) != 1:
-                status["no_single_bybit_perp" if not live else "ambiguous_bybit"] += 1
+            native = route(e, instruments)
+            if native is None:
                 return
+            entry_ms = (e.t + BAR) * 1000
             params = {
                 "category": "linear",
-                "symbol": live[0].native_id,
+                "symbol": native,
                 "interval": "5",
                 "start": str(entry_ms),
-                "end": str(end_ms),
+                "end": str(entry_ms + LONGEST * BAR * 1000),
                 "limit": "400",
             }
-            try:
-                async with semaphore:
-                    payload = (
-                        await client.get("https://api.bybit.com/v5/market/kline", params=params)
-                    ).json()
-            except Exception:
-                status["bybit_fetch_failed"] += 1
-                return
-            rows = {int(r[0]): r for r in (payload.get("result") or {}).get("list") or []}
-            first = rows.get(entry_ms)
-            if first is None or float(first[1]) <= 0:
-                status["bybit_missing_entry"] += 1
-                return
-            open_ = float(first[1])
-            if not 1 / IDENTITY_BAND <= e.entry / open_ <= IDENTITY_BAND:
-                status["bybit_price_level_mismatch"] += 1
-                return
-            for k, n in HORIZONS.items():
-                bar = rows.get(entry_ms + (n - 1) * BAR * 1000)
-                if bar is not None:
-                    e.bybit[k] = (float(bar[4]) / open_ - 1) * 100
-            status["bybit_leg"] += 1
+            async with semaphore:
+                payload = await _get_json(client, BYBIT_KLINE_URL, params)
+            listed = (payload.get("result") or {}).get("list") or []
+            rows[f"{native}:{entry_ms}"] = sorted(
+                ([str(v) for v in r[:6]] for r in listed), key=lambda r: int(r[0])
+            )
 
         await asyncio.gather(*(one(e) for e in episodes))
+    return {"bybit_catalogue": catalogue, "bybit_rows": dict(sorted(rows.items()))}
+
+
+def route(e: Episode, instruments: Sequence[Any]) -> str | None:
+    base = e.symbol.removesuffix("_USDT").upper()
+    entry_ms = (e.t + BAR) * 1000
+    end_ms = entry_ms + (LONGEST * BAR) * 1000
+    live = [x for x in instruments if x.base == base and x.live_over(entry_ms, end_ms)]
+    return live[0].native_id if len(live) == 1 else None
+
+
+def attach_bybit_legs(episodes: list[Episode], inputs: dict[str, Any]) -> dict[str, int]:
+    """Bybit legs from stored inputs only: entered at the Bybit 5m open right after the
+    MEXC bar closes, on the single live route, inside the 2x price band."""
+    from .source_lead_multi_source_report import parse_instruments
+
+    instruments = parse_instruments(inputs["bybit_catalogue"])
+    status: dict[str, int] = defaultdict(int)
+    for e in episodes:
+        native = route(e, instruments)
+        if native is None:
+            status["no_single_bybit_perp"] += 1
+            continue
+        entry_ms = (e.t + BAR) * 1000
+        stored = inputs["bybit_rows"].get(f"{native}:{entry_ms}")
+        if stored is None:
+            raise ValueError(f"snapshot lacks the Bybit bars of {native} at {entry_ms}")
+        rows = {int(r[0]): r for r in stored}
+        first = rows.get(entry_ms)
+        if first is None or float(first[1]) <= 0:
+            status["bybit_missing_entry"] += 1
+            continue
+        open_ = float(first[1])
+        if not 1 / IDENTITY_BAND <= e.entry / open_ <= IDENTITY_BAND:
+            status["bybit_price_level_mismatch"] += 1
+            continue
+        for k, n in HORIZONS.items():
+            bar = rows.get(entry_ms + (n - 1) * BAR * 1000)
+            if bar is not None:
+                e.bybit[k] = (float(bar[4]) / open_ - 1) * 100
+        delayed = rows.get(entry_ms + BAR * 1000)
+        if delayed is not None and float(delayed[1]) > 0:
+            for k, n in HORIZONS.items():
+                bar = rows.get(entry_ms + n * BAR * 1000)
+                if bar is not None:
+                    e.bybit_delayed[k] = (float(bar[4]) / float(delayed[1]) - 1) * 100
+        status["bybit_leg"] += 1
     return dict(status)
+
+
+def diagnostics(eps: list[Episode], key: str = "1h", cost: float = 0.2) -> dict[str, Any]:
+    """Concentration and robustness of a cell's Bybit leg (diagnostic only): the largest
+    events and symbols, the mean without each symbol, and the one-bar-delayed entry."""
+    legs = [(e, e.bybit[key] - cost) for e in eps if key in e.bybit]
+    if len(legs) < 2:
+        return {"legs": len(legs)}
+    total = sum(v for _, v in legs)
+    by_symbol: dict[str, list[float]] = defaultdict(list)
+    for e, v in legs:
+        by_symbol[e.symbol].append(v)
+    events = sorted(legs, key=lambda ev: -ev[1])
+    symbols = sorted(by_symbol.items(), key=lambda kv: -sum(kv[1]))
+    without_each = {
+        s: fmean(v for e, v in legs if e.symbol != s) for s in by_symbol if len(by_symbol) > 1
+    }
+    top5 = {id(e) for e, _ in events[:5]}
+    delayed = [e.bybit_delayed[key] - cost for e in eps if key in e.bybit_delayed]
+    return {
+        "legs": len(legs),
+        "mean_net": round(fmean(v for _, v in legs), 3),
+        "top5_events": [
+            [e.symbol, datetime.fromtimestamp(e.t, UTC).isoformat(), round(v, 2)]
+            for e, v in events[:5]
+        ],
+        "top5_events_share_of_total": round(sum(v for _, v in events[:5]) / total, 3)
+        if total
+        else None,
+        "mean_without_top5_events": (
+            round(fmean(v for e, v in legs if id(e) not in top5), 3) if len(legs) > 5 else None
+        ),
+        "top5_symbols": [[s, round(sum(v), 2), len(v)] for s, v in symbols[:5]],
+        "mean_without_top_symbol": round(without_each[symbols[0][0]], 3),
+        "mean_without_each_symbol_min_max": [
+            round(min(without_each.values()), 3),
+            round(max(without_each.values()), 3),
+        ],
+        "median_net": round(median(v for _, v in legs), 3),
+        "delayed_one_bar_mean_net": round(fmean(delayed), 3) if delayed else None,
+    }
 
 
 def scanner_lead(episodes: list[Episode], events_csv: Path) -> dict[str, Any]:
@@ -328,7 +407,36 @@ def scanner_lead(episodes: list[Episode], events_csv: Path) -> dict[str, Any]:
     }
 
 
-def run(archive_dir: Path, events_csv: Path | None, bybit: bool) -> dict[str, Any]:
+def bybit_inputs(
+    episodes: list[Episode], snapshot_dir: Path | None, archive_dir: Path
+) -> tuple[dict[str, Any], str | None]:
+    """The Bybit catalogue and bars, from a write-once snapshot when one exists; otherwise
+    fetched live and, with a snapshot directory, frozen before use."""
+    from .source_lead_multi_source_report import complete_digest, load_verified, write_once
+
+    path = snapshot_dir / "bybit_inputs.json" if snapshot_dir is not None else None
+    if path is not None:
+        complete_digest(path)
+        if path.exists():
+            inputs, digest = load_verified(path)
+            manifest_sha = hashlib.sha256((archive_dir / "manifest.json").read_bytes()).hexdigest()
+            if inputs.get("archive_manifest_sha256") != manifest_sha:
+                raise ValueError("the snapshot was taken on another archive manifest")
+            return inputs, digest
+    inputs = asyncio.run(fetch_bybit_inputs(episodes))
+    if path is None:
+        return inputs, None
+    inputs["archive_manifest_sha256"] = hashlib.sha256(
+        (archive_dir / "manifest.json").read_bytes()
+    ).hexdigest()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    digest = write_once(path, inputs)
+    return inputs, digest
+
+
+def run(
+    archive_dir: Path, events_csv: Path | None, bybit: bool, snapshot_dir: Path | None = None
+) -> dict[str, Any]:
     coverage = verify_archive(archive_dir)
     manifest = json.loads((archive_dir / "manifest.json").read_text())
     triggers: dict[str, list[Episode]] = defaultdict(list)
@@ -348,9 +456,13 @@ def run(archive_dir: Path, events_csv: Path | None, bybit: bool) -> dict[str, An
         controls, _ = episodes_for(symbol, bars, *CONTROL_RETURN)
         pool[symbol] = controls
     bybit_status: dict[str, dict[str, int]] = {}
+    snapshot_sha: str | None = None
     if bybit:
+        inputs, snapshot_sha = bybit_inputs(
+            [e for eps in triggers.values() for e in eps], snapshot_dir, archive_dir
+        )
         for label, eps in triggers.items():
-            bybit_status[label] = asyncio.run(attach_bybit_legs(eps))
+            bybit_status[label] = attach_bybit_legs(eps, inputs)
     cells = []
     for label, eps in triggers.items():
         cells.append(summarize(label, eps, eligible_bars))
@@ -366,6 +478,10 @@ def run(archive_dir: Path, events_csv: Path | None, bybit: bool) -> dict[str, An
         "symbols_per_day": dict(sorted(daily_symbols.items())),
         "cells": cells,
         "bybit_leg_status": bybit_status,
+        "bybit_snapshot_sha256": snapshot_sha,
+        "diagnostics_bybit_1h_cost0.2": {
+            label: diagnostics(eps) for label, eps in triggers.items()
+        },
     }
     if events_csv is not None:
         result["scanner_lead"] = {
@@ -379,8 +495,14 @@ def main() -> None:
     parser.add_argument("--archive-dir", type=Path, required=True, help=".../Min5")
     parser.add_argument("--events-csv", type=Path, default=None)
     parser.add_argument("--no-bybit", dest="bybit", action="store_false")
+    parser.add_argument(
+        "--snapshot-dir",
+        type=Path,
+        default=None,
+        help="freeze the Bybit catalogue and bars here once; later runs reuse them",
+    )
     args = parser.parse_args()
-    result = run(args.archive_dir, args.events_csv, args.bybit)
+    result = run(args.archive_dir, args.events_csv, args.bybit, args.snapshot_dir)
     sys.stdout.write(json.dumps(result, indent=1) + "\n")
 
 
