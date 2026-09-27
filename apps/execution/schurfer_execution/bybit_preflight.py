@@ -17,12 +17,16 @@ Purposes (the key is checked for the purpose it is used for):
 Account checks, for both purposes:
 
 - margin mode ISOLATED_MARGIN (`GET /v5/account/info`);
-- isolated-available USDT covers the probe notional plus a fee reserve (wallet balance
-  minus position IM, order IM, locked and bonus, as Bybit documents for isolated margin);
-- the dedicated account is empty: no open linear position and no active or conditional
-  order in any settle coin, read through every page;
-- each target symbol reads back as one-way (`positionIdx` 0) with leverage at most 1x;
-  a symbol that cannot be confirmed by a read is `unverified`, never `ready`.
+- isolated-available USDT covers at least MIN_REQUIRED_USDT, the probe notional plus a fee
+  reserve (wallet balance minus position IM, order IM, locked and bonus, as Bybit documents
+  for isolated margin); the CLI can raise that floor, never lower it;
+- the dedicated account is empty: no position in any category (linear USDT and USDC,
+  inverse, option) and no open order of any kind in any category (linear, inverse, spot,
+  option, with every order filter), each list read through every page;
+- each target symbol reads back as one-way (`positionIdx` 0) with leverage at most 1x.
+
+Fail closed: a field the verdict depends on that is missing or not a number, and any
+pagination the walk cannot prove complete, give `blocked`, never a default value.
 """
 
 from __future__ import annotations
@@ -59,9 +63,31 @@ ALLOWED_GET_PATHS = frozenset(
 PURPOSES = ("diagnostic", "live_probe")
 PROBE_NOTIONAL_USD = Decimal(50)
 FEE_RESERVE_USD = Decimal(5)
+MIN_REQUIRED_USDT = PROBE_NOTIONAL_USD + FEE_RESERVE_USD
 MAX_LEVERAGE = Decimal(1)
-SETTLE_COINS = ("USDT", "USDC")
-ORDER_FILTERS = ("Order", "StopOrder")
+# Every position list and every open-order list the account can hold. The linear lists
+# need a settle coin; each (category, filter) pair below was checked against the live API.
+POSITION_SCOPES: tuple[dict[str, str], ...] = (
+    {"category": "linear", "settleCoin": "USDT"},
+    {"category": "linear", "settleCoin": "USDC"},
+    {"category": "inverse"},
+    {"category": "option"},
+)
+_DERIVATIVE_FILTERS = ("", "StopOrder", "tpslOrder")
+ORDER_SCOPES: tuple[dict[str, str], ...] = (
+    *(
+        {"category": "linear", "settleCoin": coin, **({"orderFilter": f} if f else {})}
+        for coin in ("USDT", "USDC")
+        for f in _DERIVATIVE_FILTERS
+    ),
+    *({"category": "inverse", **({"orderFilter": f} if f else {})} for f in _DERIVATIVE_FILTERS),
+    *(
+        {"category": "spot", **({"orderFilter": f} if f else {})}
+        for f in ("", "StopOrder", "tpslOrder", "OcoOrder")
+    ),
+    {"category": "option"},
+)
+BALANCE_FIELDS = ("walletBalance", "totalPositionIM", "totalOrderIM", "locked", "bonus")
 RECV_WINDOW_MS = 5000
 _MAX_PAGES = 50
 
@@ -124,19 +150,23 @@ class BybitReadOnlyClient:
     async def get_all(
         self, path: str, params: dict[str, str], key: Callable[[dict[str, Any]], object]
     ) -> list[dict[str, Any]]:
-        """Every item of a cursor-paginated list, deduplicated by `key`. Bybit returns a
-        cursor even after the last page and then repeats rows, so the walk ends at an
-        empty cursor or at a page that adds nothing new; it never stops early otherwise."""
+        """Every item of a cursor-paginated list, deduplicated by `key` (Bybit repeats rows
+        on a trailing page). The walk follows the cursor until Bybit returns none. A cursor
+        seen before or more than _MAX_PAGES pages cannot be proven complete and raises,
+        which the caller turns into `blocked`."""
         items: dict[object, dict[str, Any]] = {}
         cursor = ""
+        seen: set[str] = set()
         for _ in range(_MAX_PAGES):
             page = await self.get(path, {**params, **({"cursor": cursor} if cursor else {})})
-            rows = page.get("list") or []
-            new = [row for row in rows if key(row) not in items]
-            items.update((key(row), row) for row in new)
+            for row in page.get("list") or []:
+                items.setdefault(key(row), row)
             cursor = str(page.get("nextPageCursor") or "")
-            if not cursor or not new:
+            if not cursor:
                 return list(items.values())
+            if cursor in seen:
+                raise BybitApiError(path, "pagination", "cursor repeated")
+            seen.add(cursor)
         raise BybitApiError(path, "pagination", f"more than {_MAX_PAGES} pages")
 
 
@@ -146,7 +176,7 @@ class Snapshot:
     api_key: dict[str, Any]
     account: dict[str, Any]
     usdt: dict[str, Any] | None
-    open_positions: list[dict[str, Any]]
+    positions: list[dict[str, Any]]
     open_orders: list[dict[str, Any]]
     symbol_positions: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
 
@@ -162,25 +192,15 @@ async def take_snapshot(
     coins = [c for a in wallet.get("list") or [] for c in a.get("coin") or []]
     usdt = next((c for c in coins if c.get("coin") == "USDT"), None)
     positions: list[dict[str, Any]] = []
-    orders: dict[str, dict[str, Any]] = {}
-    for settle in SETTLE_COINS:
-        positions += await client.get_all(
-            "/v5/position/list",
-            {"category": "linear", "settleCoin": settle, "limit": "200"},
-            _position_key,
-        )
-        for order_filter in ORDER_FILTERS:
-            for order in await client.get_all(
-                "/v5/order/realtime",
-                {
-                    "category": "linear",
-                    "settleCoin": settle,
-                    "orderFilter": order_filter,
-                    "limit": "50",
-                },
-                _order_key,
-            ):
-                orders[str(_order_key(order))] = order
+    for scope in POSITION_SCOPES:
+        rows = await client.get_all("/v5/position/list", {**scope, "limit": "200"}, _position_key)
+        positions += [{**row, "_category": scope["category"]} for row in rows]
+    orders: dict[object, dict[str, Any]] = {}
+    for scope in ORDER_SCOPES:
+        for order in await client.get_all(
+            "/v5/order/realtime", {**scope, "limit": "50"}, _order_key
+        ):
+            orders[(scope["category"], _order_key(order))] = order
     symbol_positions = {
         symbol: await client.get_all(
             "/v5/position/list", {"category": "linear", "symbol": symbol}, _position_key
@@ -192,7 +212,7 @@ async def take_snapshot(
         api_key=api_key,
         account=account,
         usdt=usdt,
-        open_positions=[p for p in positions if _dec(p.get("size")) != 0],
+        positions=positions,
         open_orders=list(orders.values()),
         symbol_positions=symbol_positions,
     )
@@ -206,42 +226,48 @@ def _order_key(row: dict[str, Any]) -> object:
     return row.get("orderId")
 
 
-def _dec(value: object) -> Decimal:
-    """Bybit sends numbers as strings, and "" for an absent amount."""
-    if value in (None, ""):
-        return Decimal(0)
+def _dec(value: object) -> Decimal | None:
+    """A finite number sent as a string, or None when missing, empty or not a number:
+    a field the verdict depends on is never defaulted."""
+    if value is None or isinstance(value, bool) or str(value).strip() == "":
+        return None
     try:
-        return Decimal(str(value))
+        number = Decimal(str(value))
     except InvalidOperation:
-        return Decimal("NaN")
+        return None
+    return number if number.is_finite() else None
 
 
-def isolated_available_usdt(coin: dict[str, Any]) -> Decimal:
+def isolated_available_usdt(coin: dict[str, Any]) -> Decimal | None:
     """Bybit's isolated-margin available balance for one coin: wallet balance minus
-    position IM, order IM, locked and bonus."""
-    return (
-        _dec(coin.get("walletBalance"))
-        - _dec(coin.get("totalPositionIM"))
-        - _dec(coin.get("totalOrderIM"))
-        - _dec(coin.get("locked"))
-        - _dec(coin.get("bonus"))
-    )
+    position IM, order IM, locked and bonus. None when any component is unreadable."""
+    parts = [_dec(coin.get(name)) for name in BALANCE_FIELDS]
+    if any(part is None for part in parts):
+        return None
+    wallet, position_im, order_im, locked, bonus = (p for p in parts if p is not None)
+    return wallet - position_im - order_im - locked - bonus
 
 
 def _key_reasons(api_key: dict[str, Any], purpose: str) -> tuple[list[str], dict[str, Any]]:
-    permissions: dict[str, list[str]] = api_key.get("permissions") or {}
+    permissions = api_key.get("permissions")
+    read_only_raw = str(api_key.get("readOnly"))
+    reasons = []
+    if not isinstance(permissions, dict):
+        reasons.append("key_permissions_unverified")
+        permissions = {}
+    if read_only_raw not in ("0", "1"):
+        reasons.append("key_read_only_unverified")
     granted = {p for values in permissions.values() for p in values or []}
-    read_only = str(api_key.get("readOnly")) == "1"
+    read_only = read_only_raw == "1"
     ips = [ip for ip in api_key.get("ips") or [] if ip]
     whitelisted = bool(ips) and "*" not in ips
     contract_trade = set(permissions.get("ContractTrade") or [])
-    reasons = []
     if "Withdraw" in granted:
         reasons.append("key_can_withdraw")
-    if purpose == "diagnostic" and not read_only:
+    if purpose == "diagnostic" and read_only_raw == "0":
         reasons.append("key_not_read_only")
     if purpose == "live_probe":
-        if read_only:
+        if read_only_raw == "1":
             reasons.append("key_read_only")
         if not {"Order", "Position"} <= contract_trade:
             reasons.append("key_missing_contract_trade")
@@ -262,23 +288,25 @@ def evaluate(
 ) -> dict[str, Any]:
     if purpose not in PURPOSES:
         raise ValueError(f"unknown purpose {purpose!r}")
+    if required_usdt < MIN_REQUIRED_USDT:
+        raise ValueError(f"required_usdt may not go below {MIN_REQUIRED_USDT}")
     reasons, key_facts = _key_reasons(snapshot.api_key, purpose)
 
     margin_mode = snapshot.account.get("marginMode")
     if margin_mode != "ISOLATED_MARGIN":
         reasons.append(f"margin_mode_not_isolated:{margin_mode}")
 
-    available: Decimal | None = None
-    if snapshot.usdt is None:
+    available = None if snapshot.usdt is None else isolated_available_usdt(snapshot.usdt)
+    if available is None:
         reasons.append("usdt_balance_unverified")
-    else:
-        available = isolated_available_usdt(snapshot.usdt)
-        if not available.is_finite():
-            reasons.append("usdt_balance_unverified")
-        elif available < required_usdt:
-            reasons.append("insufficient_isolated_usdt")
+    elif available < required_usdt:
+        reasons.append("insufficient_isolated_usdt")
 
-    if snapshot.open_positions:
+    sizes = [_dec(p.get("size")) for p in snapshot.positions]
+    open_positions = sum(1 for size in sizes if size is not None and size != 0)
+    if any(size is None for size in sizes):
+        reasons.append("position_size_unverified")
+    if open_positions:
         reasons.append("account_not_empty:positions")
     if snapshot.open_orders:
         reasons.append("account_not_empty:orders")
@@ -292,14 +320,18 @@ def evaluate(
             reasons.append(f"symbol_unverified:{symbol}")
             symbol_facts[symbol] = None
             continue
-        indexes = sorted({int(_dec(p.get("positionIdx"))) for p in rows})
+        raw_indexes = [_dec(p.get("positionIdx")) for p in rows]
         leverages = [_dec(p.get("leverage")) for p in rows]
-        symbol_facts[symbol] = {"position_idx": indexes, "leverage": [str(x) for x in leverages]}
-        if indexes != [0]:
-            reasons.append(f"symbol_not_one_way:{symbol}")
-        if any(not x.is_finite() or x <= 0 for x in leverages):
+        symbol_facts[symbol] = {
+            "position_idx": [None if x is None else str(x) for x in raw_indexes],
+            "leverage": [None if x is None else str(x) for x in leverages],
+        }
+        if any(x is None for x in raw_indexes) or any(x is None or x <= 0 for x in leverages):
             reasons.append(f"symbol_unverified:{symbol}")
-        elif any(x > MAX_LEVERAGE for x in leverages):
+            continue
+        if {x for x in raw_indexes if x is not None} != {Decimal(0)}:
+            reasons.append(f"symbol_not_one_way:{symbol}")
+        if any(x is not None and x > MAX_LEVERAGE for x in leverages):
             reasons.append(f"symbol_leverage_above_1x:{symbol}")
 
     return {
@@ -313,7 +345,7 @@ def evaluate(
             "margin_mode": margin_mode,
             "isolated_available_usdt": None if available is None else str(available),
             "required_usdt": str(required_usdt),
-            "open_positions": len(snapshot.open_positions),
+            "open_positions": open_positions,
             "open_orders": len(snapshot.open_orders),
             "symbols": symbol_facts,
         },
@@ -351,9 +383,14 @@ def main() -> None:
     parser.add_argument("--purpose", choices=PURPOSES, default="diagnostic")
     parser.add_argument("--symbols", default="", help="comma-separated Bybit linear symbols")
     parser.add_argument(
-        "--required-usdt", type=Decimal, default=PROBE_NOTIONAL_USD + FEE_RESERVE_USD
+        "--required-usdt",
+        type=Decimal,
+        default=MIN_REQUIRED_USDT,
+        help=f"raise the isolated USDT floor; it never goes below {MIN_REQUIRED_USDT}",
     )
     args = parser.parse_args()
+    if args.required_usdt < MIN_REQUIRED_USDT:
+        parser.error(f"--required-usdt may not go below {MIN_REQUIRED_USDT}")
     api_key = os.environ.get("BYBIT_API_KEY", "").strip()
     api_secret = os.environ.get("BYBIT_API_SECRET", "").strip()
     if not (api_key and api_secret):

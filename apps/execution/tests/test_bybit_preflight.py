@@ -88,23 +88,43 @@ def test_an_api_error_is_raised_not_swallowed() -> None:
         asyncio.run(client.get("/v5/account/info", {}))
 
 
-def test_pagination_reads_every_page_and_ignores_bybits_repeated_last_page() -> None:
-    pages = {
-        "": {"list": [{"symbol": "A", "positionIdx": 0}], "nextPageCursor": "c1"},
-        "c1": {"list": [{"symbol": "B", "positionIdx": 0}], "nextPageCursor": "c2"},
-        # Bybit hands out a cursor after the last page and then repeats rows.
-        "c2": {"list": [{"symbol": "B", "positionIdx": 0}], "nextPageCursor": "c3"},
-    }
-
+def _paged(pages: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
     def handler(request: httpx.Request) -> httpx.Response:
         cursor = dict(parse_qsl(request.url.query.decode())).get("cursor", "")
         return httpx.Response(200, json={"retCode": 0, "result": pages[cursor]})
 
     client, _ = _client(handler)
-    rows = asyncio.run(
+    return asyncio.run(
         client.get_all("/v5/position/list", {"category": "linear"}, bp._position_key)
     )
+
+
+def test_pagination_follows_the_cursor_past_a_page_of_repeated_rows() -> None:
+    # The colleague's case: a page that only repeats rows still hands out a cursor, and the
+    # next page holds a new position. Stopping at the repeat would miss it.
+    rows = _paged(
+        {
+            "": {"list": [{"symbol": "A", "positionIdx": 0}], "nextPageCursor": "c1"},
+            "c1": {"list": [{"symbol": "A", "positionIdx": 0}], "nextPageCursor": "c2"},
+            "c2": {"list": [{"symbol": "B", "positionIdx": 0}], "nextPageCursor": "c3"},
+            # Bybit's observed tail: the last row again, then no cursor.
+            "c3": {"list": [{"symbol": "B", "positionIdx": 0}], "nextPageCursor": ""},
+        }
+    )
     assert [r["symbol"] for r in rows] == ["A", "B"]
+
+
+def test_pagination_that_cannot_be_proven_complete_raises() -> None:
+    loop = {
+        "": {"list": [{"symbol": "A", "positionIdx": 0}], "nextPageCursor": "c1"},
+        "c1": {"list": [], "nextPageCursor": "c1"},
+    }
+    with pytest.raises(bp.BybitApiError, match="cursor repeated"):
+        _paged(loop)
+    endless = {"": {"list": [], "nextPageCursor": "p1"}}
+    endless.update({f"p{i}": {"list": [], "nextPageCursor": f"p{i + 1}"} for i in range(1, 60)})
+    with pytest.raises(bp.BybitApiError, match="pages"):
+        _paged(endless)
 
 
 # --- the verdict ---------------------------------------------------------------------
@@ -124,11 +144,11 @@ def _snapshot(**overrides: Any) -> bp.Snapshot:
             "coin": "USDT",
             "walletBalance": "80",
             "totalPositionIM": "0",
-            "totalOrderIM": "",
+            "totalOrderIM": "0",
             "locked": "0",
-            "bonus": "",
+            "bonus": "0",
         },
-        "open_positions": [],
+        "positions": [],
         "open_orders": [],
         "symbol_positions": {
             "BTCUSDT": [{"symbol": "BTCUSDT", "positionIdx": 0, "leverage": "1", "size": "0"}]
@@ -155,7 +175,16 @@ def test_a_clean_isolated_one_way_1x_account_is_ready_as_a_dated_snapshot() -> N
     [
         ({"account": {"marginMode": "REGULAR_MARGIN"}}, "margin_mode_not_isolated:REGULAR_MARGIN"),
         ({"usdt": None}, "usdt_balance_unverified"),
-        ({"open_positions": [{"symbol": "ETHUSDT", "size": "1"}]}, "account_not_empty:positions"),
+        ({"positions": [{"symbol": "ETHUSDT", "size": "1"}]}, "account_not_empty:positions"),
+        (
+            {"positions": [{"symbol": "ETHUSDT", "size": "0"}, {"symbol": "X"}]},
+            "position_size_unverified",
+        ),
+        ({"positions": [{"symbol": "X", "size": ""}]}, "position_size_unverified"),
+        (
+            {"symbol_positions": {"BTCUSDT": [{"symbol": "BTCUSDT", "leverage": "1"}]}},
+            "symbol_unverified:BTCUSDT",
+        ),
         ({"open_orders": [{"orderId": "o1"}]}, "account_not_empty:orders"),
         ({"symbol_positions": {}}, "symbol_unverified:BTCUSDT"),
         (
@@ -206,6 +235,50 @@ def test_isolated_available_subtracts_margin_locks_and_bonus_not_total_available
     assert bp.isolated_available_usdt(usdt) == Decimal(52)
     verdict = _verdict(_snapshot(usdt=usdt))
     assert "insufficient_isolated_usdt" in verdict["reasons"]  # 52 < 50 + 5 fee reserve
+
+
+@pytest.mark.parametrize("missing", bp.BALANCE_FIELDS)
+def test_a_missing_or_empty_balance_component_is_unverified_not_zero(missing: str) -> None:
+    for value in (None, ""):
+        usdt = {
+            "coin": "USDT",
+            "walletBalance": "80",
+            "totalPositionIM": "0",
+            "totalOrderIM": "0",
+            "locked": "0",
+            "bonus": "0",
+        }
+        if value is None:
+            del usdt[missing]
+        else:
+            usdt[missing] = value
+        assert bp.isolated_available_usdt(usdt) is None
+        assert "usdt_balance_unverified" in _verdict(_snapshot(usdt=usdt))["reasons"]
+
+
+def test_the_colleagues_incomplete_snapshot_is_blocked_for_live_probe() -> None:
+    # No readOnly, no balance components: previously read as a trading key with a zero-free
+    # balance, and came out `ready`.
+    snapshot = _snapshot(
+        api_key={"permissions": {"ContractTrade": ["Order", "Position"]}, "ips": ["203.0.113.7"]},
+        usdt={"coin": "USDT", "walletBalance": "80"},
+    )
+    verdict = _verdict(snapshot, purpose="live_probe")
+    assert verdict["verdict"] == "blocked"
+    assert {"key_read_only_unverified", "usdt_balance_unverified"} <= set(verdict["reasons"])
+    no_permissions = _snapshot(api_key={"readOnly": 0, "ips": ["203.0.113.7"]})
+    assert "key_permissions_unverified" in _verdict(no_permissions, "live_probe")["reasons"]
+
+
+def test_the_usdt_floor_cannot_be_lowered() -> None:
+    with pytest.raises(ValueError, match="may not go below"):
+        bp.evaluate(
+            _snapshot(), purpose="live_probe", symbols=["BTCUSDT"], required_usdt=Decimal(0)
+        )
+    raised = bp.evaluate(
+        _snapshot(), purpose="diagnostic", symbols=["BTCUSDT"], required_usdt=Decimal(100)
+    )
+    assert "insufficient_isolated_usdt" in raised["reasons"]
 
 
 def test_no_target_symbol_is_never_ready() -> None:
@@ -266,7 +339,7 @@ def test_a_failed_read_is_blocked_unverified_not_ready(monkeypatch: pytest.Monke
     assert verdict["reasons"] == ["unverified:/v5/account/info:10003"]
 
 
-def test_the_snapshot_reads_every_settle_coin_and_order_kind() -> None:
+def test_the_snapshot_reads_every_position_and_order_list_of_the_account() -> None:
     requested: list[tuple[str, dict[str, str]]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -275,6 +348,14 @@ def test_the_snapshot_reads_every_settle_coin_and_order_kind() -> None:
         result: dict[str, Any] = {"list": []}
         if request.url.path == "/v5/account/wallet-balance":
             result = {"list": [{"coin": [{"coin": "USDT", "walletBalance": "60"}]}]}
+        if request.url.path == "/v5/position/list" and params.get("category") == "option":
+            result = {"list": [{"symbol": "BTC-27SEP26-90000-C", "size": "0.01"}]}
+        if request.url.path == "/v5/order/realtime" and params.get("category") == "spot":
+            result = (
+                {"list": [{"orderId": "spot-oco-1"}]}
+                if params.get("orderFilter") == "OcoOrder"
+                else result
+            )
         if request.url.path == "/v5/position/list" and params.get("symbol") == "BTCUSDT":
             result = {
                 "list": [{"symbol": "BTCUSDT", "positionIdx": 0, "leverage": "1", "size": "0"}]
@@ -287,12 +368,28 @@ def test_the_snapshot_reads_every_settle_coin_and_order_kind() -> None:
 
     client, _ = _client(handler)
     snapshot = asyncio.run(bp.take_snapshot(client, ["BTCUSDT"], lambda: NOW))
-    order_reads = {
-        (p["settleCoin"], p["orderFilter"]) for path, p in requested if path == "/v5/order/realtime"
+
+    def scopes(path: str) -> set[tuple[tuple[str, str], ...]]:
+        return {
+            tuple(sorted((k, v) for k, v in p.items() if k not in ("limit", "cursor")))
+            for q, p in requested
+            if q == path and "symbol" not in p
+        }
+
+    expected_orders = {tuple(sorted(s.items())) for s in bp.ORDER_SCOPES}
+    expected_positions = {tuple(sorted(s.items())) for s in bp.POSITION_SCOPES}
+    assert scopes("/v5/order/realtime") == expected_orders
+    assert scopes("/v5/position/list") == expected_positions
+    assert {c for s in bp.ORDER_SCOPES for k, c in s.items() if k == "category"} == {
+        "linear",
+        "inverse",
+        "spot",
+        "option",
     }
-    assert order_reads == {(c, f) for c in bp.SETTLE_COINS for f in bp.ORDER_FILTERS}
-    assert [p["symbol"] for p in snapshot.open_positions] == ["ETHPERP"]
-    assert [o["orderId"] for o in snapshot.open_orders] == ["stop-1"]
+    open_symbols = sorted(p["symbol"] for p in snapshot.positions if p.get("size") not in ("0",))
+    assert open_symbols == ["BTC-27SEP26-90000-C", "ETHPERP"]
+    # A stop order with the same id in several categories is kept once per category.
+    assert {o["orderId"] for o in snapshot.open_orders} == {"spot-oco-1", "stop-1"}
     assert snapshot.usdt == {"coin": "USDT", "walletBalance": "60"}
     verdict = bp.evaluate(
         snapshot, purpose="diagnostic", symbols=["BTCUSDT"], required_usdt=REQUIRED
