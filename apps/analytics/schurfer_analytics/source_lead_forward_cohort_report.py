@@ -119,6 +119,12 @@ from typing import TYPE_CHECKING, Any
 
 from .clustered_inference import ClusterObservation, cluster_bootstrap_mean
 from .exchange_registry import EXCHANGE_FACTORIES
+from .formal_read_claims import (
+    FormalReadAlreadyClaimedError,
+    complete_claim,
+    existing_claim,
+    open_claim,
+)
 from .market_path_cache import MarketPathCacheCorruptError
 from .momentum_flow_bidirectional_burst_study import utc_week_key
 from .ohlcv import fetch_symbol_candles
@@ -154,6 +160,7 @@ from .source_lead_forward_cohort import (
     EpisodeInputs,
     EpisodeResult,
     episode_is_matured,
+    episode_resolution_status,
     expected_exit_boundary_ms,
     find_earliest_checkpoint_prefix_length,
     formal_verdict,
@@ -311,6 +318,37 @@ def _resolve_one(
         ),
         exit_slippage_bps=exit_slippage_bps,
     )
+
+
+def episode_resolved_blind(episode: RawQualifiedEpisode, exit_bar: Candle | None) -> bool:
+    """`_resolve_one`'s resolved flag without computing any return."""
+    ask_vwap = (episode.liquidity if isinstance(episode.liquidity, dict) else {}).get("ask_vwap")
+    if not isinstance(ask_vwap, int | float) or not (ask_vwap > 0):
+        return False
+    return (
+        episode_resolution_status(
+            EpisodeInputs(
+                base=episode.base,
+                entry_at=episode.observed_at,
+                entry_price=float(ask_vwap),
+                entry_notional_usd=episode.requested_notional_usd,
+                exit_bar=exit_bar,
+            )
+        )
+        is None
+    )
+
+
+def checkpoint_prefix_length_blind(
+    matured: Sequence[RawQualifiedEpisode], exit_bars: Sequence[Candle | None]
+) -> int | None:
+    """The registered checkpoint from resolution status only; no return is ever
+    computed here (`episode_resolved_blind`)."""
+    outcomes = []
+    for episode, bar in zip(matured, exit_bars, strict=True):
+        resolved = episode_resolved_blind(episode, bar)
+        outcomes.append((utc_week_key(episode.observed_at) if resolved else None, resolved))
+    return find_earliest_checkpoint_prefix_length(outcomes)
 
 
 async def _fetch_exit_bar(
@@ -626,6 +664,9 @@ def aggregate_cohort(
     )
 
 
+FORMAL_READ_STUDY_ID = "HYP-012"
+
+
 async def generate_report(args: argparse.Namespace) -> SourceLeadForwardCohortReport:
     if args.since != SOURCE_LEAD_FORWARD_COHORT_START:
         raise ValueError(
@@ -643,25 +684,82 @@ async def generate_report(args: argparse.Namespace) -> SourceLeadForwardCohortRe
     )
     check_qualified_episode_count(len(raw_episodes), args.max_qualified_episodes)
     check_tradable_venues(raw_episodes)
-
-    matured = [
-        episode for episode in raw_episodes if episode_is_matured(episode.observed_at, database_now)
-    ]
+    # One formal read per cohort (formal_read_claims.py). The registered checkpoint
+    # is located first WITHOUT computing any return (resolution status depends only
+    # on the exit bar's presence and gap), the claim then stores that exact prefix,
+    # and a run that fails after claiming resumes the same prefix.
+    db_url = os.environ["DATABASE_URL"]
+    prior = await existing_claim(
+        db_url,
+        study_id=FORMAL_READ_STUDY_ID,
+        contract_version=CONTRACT_VERSION,
+        cohort_start=SOURCE_LEAD_FORWARD_COHORT_START,
+    )
+    if prior is not None and prior.status == "completed":
+        raise FormalReadAlreadyClaimedError(
+            "formal read refused: this cohort's single formal read is already completed"
+        )
+    if prior is not None:
+        by_id = {e.capture_id: e for e in raw_episodes}
+        missing = [i for i in prior.candidate_ids if i not in by_id]
+        if missing:
+            raise ValueError(f"cannot resume the claimed read: {len(missing)} ids are gone")
+        candidates = [by_id[i] for i in prior.candidate_ids]
+    else:
+        matured_all = [e for e in raw_episodes if episode_is_matured(e.observed_at, database_now)]
+        matured_weeks = {utc_week_key(e.observed_at) for e in matured_all}
+        if (
+            len(matured_all) < EVIDENCE_FLOOR["min_resolved_episodes"]
+            or len(matured_weeks) < EVIDENCE_FLOOR["min_distinct_utc_weeks"]
+        ):
+            raise ValueError(
+                "formal read refused before fetching: only "
+                f"{len(matured_all)} matured episodes over {len(matured_weeks)} weeks; run "
+                "source-lead-readiness-report instead"
+            )
+        candidates = matured_all
 
     clients = {exchange: factory() for exchange, factory in EXCHANGE_FACTORIES.items()}
     try:
         exit_bars = await _fetch_exit_bars_bounded(
             clients,
-            matured,
+            candidates,
             max_concurrency=args.max_concurrent_exchange_fetches,
             wall_seconds=args.exchange_fetch_wall_seconds,
         )
     finally:
         await asyncio.gather(*(client.close() for client in clients.values()))
 
+    if prior is None:
+        prefix_length = checkpoint_prefix_length_blind(candidates, exit_bars)
+        if prefix_length is None:
+            raise ValueError(
+                "formal read refused before claiming: the registered checkpoint (first "
+                f"{EVIDENCE_FLOOR['min_resolved_episodes']} resolved episodes over "
+                f"{EVIDENCE_FLOOR['min_distinct_utc_weeks']} weeks) is not reached yet; "
+                "no return was computed and nothing was claimed"
+            )
+        candidates = candidates[:prefix_length]
+        exit_bars = exit_bars[:prefix_length]
+    claim = await open_claim(
+        db_url,
+        study_id=FORMAL_READ_STUDY_ID,
+        contract_version=CONTRACT_VERSION,
+        cohort_start=SOURCE_LEAD_FORWARD_COHORT_START,
+        database_now=database_now,
+        candidate_ids=[e.capture_id for e in candidates],
+        code_revision=code_revision,
+        working_tree_dirty=args.working_tree_dirty,
+    )
+    if list(claim.candidate_ids) != [e.capture_id for e in candidates]:
+        raise ValueError("the open claim names a different prefix; refusing to compute")
+    matured = candidates
+
     aggregate = aggregate_cohort(
         raw_episodes_count=len(raw_episodes), matured=matured, exit_bars=exit_bars
     )
+    if aggregate.funnel.checkpoint_prefix_length != len(matured):
+        raise ValueError("the claimed prefix is not exactly the registered checkpoint")
 
     checkpoint_fingerprint: str | None = None
     checkpoint_artifact_outcome: str | None = None
@@ -685,6 +783,7 @@ async def generate_report(args: argparse.Namespace) -> SourceLeadForwardCohortRe
         if outcome in (ArtifactWriteOutcome.CREATED, ArtifactWriteOutcome.ALREADY_EXISTS):
             assert manifest is not None
             checkpoint_fingerprint = manifest.fingerprint
+            await complete_claim(db_url, claim.id, checkpoint_fingerprint, owner=claim.owner)
         else:
             raise ValueError(
                 f"failed to persist the source-lead forward cohort checkpoint: {outcome.value} "

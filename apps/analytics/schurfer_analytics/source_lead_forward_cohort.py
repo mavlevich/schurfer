@@ -379,6 +379,29 @@ def episode_is_matured(entry_at: datetime, database_now: datetime) -> bool:
     return database_now_ms >= boundary_ms + EXIT_BAR_TIMEFRAME_MS
 
 
+def episode_resolution_status(inputs: EpisodeInputs) -> str | None:
+    """Whether an episode resolves, WITHOUT computing any return: the unresolved
+    reason, or None when it resolves. Resolution depends only on the exit bar's
+    presence, its boundary and gap, and price validity (the same finite-positive
+    checks `calculate_performance` enforces), never on the return. The formal read
+    uses this to find its registered checkpoint before claiming; the full
+    resolution below applies the same checks first, so the two cannot disagree."""
+    if inputs.exit_bar is None:
+        return "missing_exit_bar"
+    expected_boundary_ms = expected_exit_boundary_ms(inputs.entry_at)
+    if inputs.exit_bar.ts_ms < expected_boundary_ms:
+        # Never accept a bar that closes before the frozen ceil boundary --
+        # would mean inspecting the outcome before it is fully known yet.
+        return "exit_bar_before_boundary"
+    gap_minutes = (inputs.exit_bar.ts_ms - expected_boundary_ms) / 60_000
+    if gap_minutes > MAX_EXIT_BAR_GAP_MINUTES:
+        return "exit_bar_gap_exceeded"
+    for value in (inputs.entry_notional_usd, inputs.entry_price, inputs.exit_bar.close):
+        if not math.isfinite(value) or value <= 0:
+            return "invalid_market_data"
+    return None
+
+
 def resolve_episode_at_exit_slippage(
     inputs: EpisodeInputs, *, exit_slippage_bps: float, costs: CostParameters = COSTS
 ) -> EpisodeResult:
@@ -392,17 +415,10 @@ def resolve_episode_at_exit_slippage(
     contract to, without a second, independently-maintained copy of this
     resolution logic (colleague review, 2026-09-03: the frozen requirement
     existed but nothing computed it)."""
-    if inputs.exit_bar is None:
-        return EpisodeResult(inputs.base, False, "missing_exit_bar", None)
-
-    expected_boundary_ms = expected_exit_boundary_ms(inputs.entry_at)
-    if inputs.exit_bar.ts_ms < expected_boundary_ms:
-        # Never accept a bar that closes before the frozen ceil boundary --
-        # would mean inspecting the outcome before it is fully known yet.
-        return EpisodeResult(inputs.base, False, "exit_bar_before_boundary", None)
-    gap_minutes = (inputs.exit_bar.ts_ms - expected_boundary_ms) / 60_000
-    if gap_minutes > MAX_EXIT_BAR_GAP_MINUTES:
-        return EpisodeResult(inputs.base, False, "exit_bar_gap_exceeded", None)
+    status = episode_resolution_status(inputs)
+    if status is not None:
+        return EpisodeResult(inputs.base, False, status, None)
+    assert inputs.exit_bar is not None
 
     try:
         result = calculate_performance(
@@ -578,6 +594,7 @@ __all__ = [
     "EpisodeInputs",
     "EpisodeResult",
     "episode_is_matured",
+    "episode_resolution_status",
     "expected_exit_boundary_ms",
     "find_earliest_checkpoint_prefix_length",
     "formal_verdict",

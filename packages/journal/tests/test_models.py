@@ -433,6 +433,12 @@ class TestSourceLeadCaptureModels:
         assert "ck_source_lead_exit_outcome" in constraints
         assert "ck_source_lead_exit_timeliness" in constraints
 
+    def test_formal_read_claim_is_unique_per_cohort(self) -> None:
+        from schurfer_journal.models import FormalReadClaim
+
+        constraints = {c.name for c in FormalReadClaim.__table__.constraints}
+        assert "uq_formal_read_claim_cohort" in constraints
+
 
 class TestTradeDecisionModels:
     def test_decision_table(self) -> None:
