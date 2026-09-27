@@ -1,6 +1,20 @@
-# Momentum-flow hold12h verdict v1 -- DRAFT, NOT FROZEN
+# Momentum-flow hold12h verdict v1 -- REGISTERED
 
-> **STATUS: DRAFT FOR REVIEW -- NOT FROZEN, NOT REGISTERED.** This document is a methodology
+> **STATUS: REGISTERED 2026-09-27 (#442).**
+>
+> - **Cohort window.** `[2026-10-05T00:00Z, 2026-11-02T00:00Z)`, four full ISO weeks.
+> - **Read.** Once, from 2026-11-04 12:00 UTC (60h delay), on a resumable durable claim over a
+>   pinned input snapshot.
+> - **Registration gate.** The outcome-blind 48h health checkpoint after the worker fix
+>   (2026-09-25T13:18Z..09-27T13:18Z): 345 eligible WATCH, 0 lost entries for both workers, claim
+>   latency p50 2.9 s / p90 7.2 s. Funding coverage was 100% for positions closed more than 36h
+>   earlier.
+> - **Frozen from here on.** The constants in the code are frozen, and so is the funding version
+>   `hold12h_actual_funding_v2`.
+>
+> The text below is the design history that led here.
+>
+> **Earlier status: DRAFT FOR REVIEW -- NOT FROZEN, NOT REGISTERED.** This document is a methodology
 > proposal for the HYP-015 hold-duration verdict. No constant here is authoritative yet; nothing
 > may read returns against it. It is published only so the design can be reviewed before any
 > contract/reader/verdict code is written. The formal cohort does not start until registration

@@ -40,9 +40,10 @@ def test_formal_read_refuses_an_unregistered_contract() -> None:
 
 def test_formal_read_refuses_missing_bounds() -> None:
     with pytest.raises(SystemExit, match="not frozen"):
-        formal_read_window(
-            Hold12hVerdictContract(), registered=True, requested_prefix_end=_END, now=_OPEN
+        unfrozen = dataclasses.replace(
+            Hold12hVerdictContract(), cohort_start_iso=None, decision_prefix_end_iso=None
         )
+        formal_read_window(unfrozen, registered=True, requested_prefix_end=_END, now=_OPEN)
 
 
 def test_formal_read_refuses_any_other_prefix() -> None:
