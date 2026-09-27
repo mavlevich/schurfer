@@ -16,6 +16,7 @@ is visible as still gated.
 
 from __future__ import annotations
 
+import heapq
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -24,6 +25,7 @@ from .source_lead_forward_cohort import (
     MAX_SINGLE_ASSET_EPISODE_SHARE,
     MAX_SINGLE_WEEK_EPISODE_SHARE,
     episode_is_matured,
+    expected_exit_boundary_ms,
 )
 
 if TYPE_CHECKING:
@@ -32,6 +34,11 @@ if TYPE_CHECKING:
 FLOOR_EPISODES: int = EVIDENCE_FLOOR["min_resolved_episodes"]
 FLOOR_CLUSTERS: int = EVIDENCE_FLOOR["min_distinct_asset_clusters"]
 FLOOR_WEEKS: int = EVIDENCE_FLOOR["min_distinct_utc_weeks"]
+
+# Capacity view (owner economics): a USD 300 pot in USD 50 positions is six
+# concurrent slots. A position is held from entry to the end of its exit bar.
+CAPACITY_CAPITAL_USD = 300
+CAPACITY_POSITION_USD = 50
 
 
 @dataclass(frozen=True)
@@ -63,6 +70,76 @@ class ReadinessInputs:
     # Qualified rows that are NOT a formal episode, keyed by the selected target
     # observation's status ("missing" when there is none).
     qualified_without_episode_by_status: dict[str, int] = field(default_factory=dict)
+    # v2: per-venue target outcomes from qualification details, keyed "venue:reason"
+    # ("executable" when the venue passed every check; tradable or not).
+    target_reasons_by_venue: dict[str, int] = field(default_factory=dict)
+    # v2 exit-book diagnostic coverage, keyed "outcome:timeliness". Statuses and
+    # delays only: prices are outcome data and are never read here.
+    exit_coverage: dict[str, int] = field(default_factory=dict)
+    exit_lateness_ms: tuple[int, ...] = ()
+    # Episodes whose exit window has closed (the denominator), and how many of
+    # them have no exit row at all: a stopped exit service shows up here.
+    exit_due: int = 0
+    exit_missing: int = 0
+
+
+@dataclass(frozen=True)
+class CapacitySummary:
+    """How many qualified episodes a fixed pot could actually have taken,
+    from entry times alone (outcome-blind)."""
+
+    slots: int
+    max_concurrent: int
+    taken: int
+    skipped: int
+    skipped_share: float | None
+
+
+def _release_at(entry: datetime) -> float:
+    return (expected_exit_boundary_ms(entry) + 60_000) / 1000
+
+
+def capacity_summary(entries: list[datetime], slots: int) -> CapacitySummary:
+    """Greedy first-come simulation: an episode is taken if a slot is free at
+    its entry; the slot is released at the end of its exit bar.
+
+    `max_concurrent` is the demand: the largest number of episodes whose
+    holding windows overlap, counted over ALL signals regardless of the slot
+    limit (a separate sweep, so an overloaded minute is not capped at slots+1)."""
+    ordered = sorted(entries)
+    demand: list[float] = []
+    max_concurrent = 0
+    for entry in ordered:
+        while demand and demand[0] <= entry.timestamp():
+            heapq.heappop(demand)
+        heapq.heappush(demand, _release_at(entry))
+        max_concurrent = max(max_concurrent, len(demand))
+
+    open_until: list[float] = []
+    taken = skipped = 0
+    for entry in ordered:
+        while open_until and open_until[0] <= entry.timestamp():
+            heapq.heappop(open_until)
+        if len(open_until) >= slots:
+            skipped += 1
+            continue
+        taken += 1
+        heapq.heappush(open_until, _release_at(entry))
+    total = taken + skipped
+    return CapacitySummary(
+        slots=slots,
+        max_concurrent=max_concurrent,
+        taken=taken,
+        skipped=skipped,
+        skipped_share=skipped / total if total else None,
+    )
+
+
+def _percentile(values: tuple[int, ...], q: float) -> int | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    return ordered[min(len(ordered) - 1, int(q * len(ordered)))]
 
 
 @dataclass(frozen=True)
@@ -100,6 +177,14 @@ class ReadinessReport:
     qualified_without_episode_by_status: dict[str, int]
     # qualified rows == formal candidates + qualified rows without an episode
     lower_funnel_reconciles: bool
+    qualified_by_week: dict[str, int] = field(default_factory=dict)
+    capacity: CapacitySummary | None = None
+    target_reasons_by_venue: dict[str, int] = field(default_factory=dict)
+    exit_coverage: dict[str, int] = field(default_factory=dict)
+    exit_lateness_p50_ms: int | None = None
+    exit_lateness_p90_ms: int | None = None
+    exit_due: int = 0
+    exit_missing: int = 0
 
 
 def _utc_week_key(moment: datetime) -> str:
@@ -188,6 +273,16 @@ def build_readiness(
         qualified_without_episode_by_status=dict(inputs.qualified_without_episode_by_status),
         lower_funnel_reconciles=qualified_rows
         == candidates + sum(inputs.qualified_without_episode_by_status.values()),
+        qualified_by_week=dict(sorted(by_week.items())),
+        capacity=capacity_summary(
+            [e.entry_at for e in episodes], CAPACITY_CAPITAL_USD // CAPACITY_POSITION_USD
+        ),
+        target_reasons_by_venue=dict(sorted(inputs.target_reasons_by_venue.items())),
+        exit_coverage=dict(sorted(inputs.exit_coverage.items())),
+        exit_lateness_p50_ms=_percentile(inputs.exit_lateness_ms, 0.5),
+        exit_lateness_p90_ms=_percentile(inputs.exit_lateness_ms, 0.9),
+        exit_due=inputs.exit_due,
+        exit_missing=inputs.exit_missing,
     )
 
 
@@ -195,8 +290,10 @@ __all__ = [
     "FLOOR_CLUSTERS",
     "FLOOR_EPISODES",
     "FLOOR_WEEKS",
+    "CapacitySummary",
     "QualifiedEpisode",
     "ReadinessInputs",
     "ReadinessReport",
     "build_readiness",
+    "capacity_summary",
 ]

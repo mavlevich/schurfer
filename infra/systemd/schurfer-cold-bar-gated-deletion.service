@@ -1,5 +1,5 @@
 [Unit]
-Description=Cold-bar gated deletion (DRY-RUN) - reports which chunks would be dropped, deletes nothing
+Description=Cold-bar gated deletion - drops a 40-day-old bar chunk only after every gate passes
 After=docker.service
 Requires=docker.service
 
@@ -11,7 +11,7 @@ Type=oneshot
 User=deploy
 Group=deploy
 WorkingDirectory=/opt/schurfer
-ExecStart=/usr/bin/make prod-cold-bar-gated-deletion-dry-run
+ExecStart=/usr/bin/make prod-cold-bar-gated-deletion-execute
 TimeoutStartSec=1h
 
 # No in-target sudo: this unit is hardened (NoNewPrivileges), which is exactly what
@@ -23,8 +23,8 @@ PrivateTmp=true
 # The analytics image ships borg; the make target mounts the offsite credentials/config
 # (backup.env, the SSH identity, known_hosts, the passphrase file, BORG_BASE_DIR) at their
 # same host paths so BORG_RSH/BORG_PASSCOMMAND/BORG_BASE_DIR resolve unchanged. Read-only:
-# borg list/extract only, and drop_chunk is disabled until PR 2. End-to-end reachability
-# (container -> storagebox over SSH) is validated the first time this runs after deploy.
+# borg list/extract only against the offsite repo. The drop itself is targeted to one chunk,
+# re-verified under the mutation lock, and bounded by lock_timeout (#455).
 
 [Install]
 WantedBy=multi-user.target

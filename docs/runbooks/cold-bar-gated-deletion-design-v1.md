@@ -1,15 +1,17 @@
 # Cold-bar gated deletion — design v1 (DRAFT, NOT FROZEN)
 
-> **STATUS: PR2 CODE LANDED (pending review); deletion NOT yet enabled in production.** The pure
-> gate, export fingerprint, dry-run job/collectors (PR1), and now the PR2 code — migration 0050
-> removing the automatic 35-day retention, the real targeted `drop_chunk` (advisory-lock-guarded,
-> re-fingerprint-before-drop, exactly-one-chunk with rollback), the `--execute` flag, and real-PG
-> tests — are all in. Deletion stays OFF by default: the CLI is dry-run unless `--execute`, and the
-> systemd timer remains dry-run. The three enablement gates (legacy fingerprint backfill,
-> daily-volume benchmark, real Postgres→DuckDB parity test) are DONE. Turning deletion on is an
-> OPERATIONAL rollout (verified backup → migrate → confirm the old job is gone → prod dry-run → one
-> authorised canary drop → verify → enable the 40-day timer), gated separately. A read-only
-> provenance audit precedes it: docs/engineering/audits/2026-09-19/.
+> **STATUS: deletion ENABLED in production (timer runs `--execute --cutoff-days 40
+--max-eval-days 3`).** Rollout, all owner-authorised:
+>
+> 1. Prod dry-run: all 18 eligible days passed every gate.
+> 2. First canary (2026-09-26) self-deadlocked. The DuckDB fingerprint read left its Postgres
+>    session idle in transaction, and the drop waited on it for about an hour while production
+>    bar readers queued. It was cancelled; nothing was dropped and there were no bar gaps.
+> 3. Fixed in #455: `lock_timeout` on the drop, and the DuckDB sessions are closed before it.
+> 4. The canary was repeated and verified (2026-09-26): 44 to 43 chunks, 2026-08-14 dropped, no
+>    session waited on a lock. Then the timer was switched.
+>
+> A read-only provenance audit preceded the rollout: docs/engineering/audits/2026-09-19/.
 
 ## Problem
 

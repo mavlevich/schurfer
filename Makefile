@@ -1268,7 +1268,7 @@ prod-cold-bar-export-install:
 prod-cold-bar-gated-deletion-install:
 	@test "$$(git branch --show-current)" = "main" || (echo "ERROR: not on main (on '$$(git branch --show-current)'). Install only from main." && exit 1)
 	@test -z "$$(git status --porcelain)" || (echo "ERROR: working tree not clean. Commit or stash first." && exit 1)
-	@# Installs the DRY-RUN timer only (PR 1): it reports and deletes nothing.
+	@# Installs the gated-deletion timer; the unit runs prod-cold-bar-gated-deletion-execute.
 	sudo install -m 0644 infra/systemd/schurfer-cold-bar-gated-deletion.service /etc/systemd/system/schurfer-cold-bar-gated-deletion.service
 	sudo install -m 0644 infra/systemd/schurfer-cold-bar-gated-deletion.timer /etc/systemd/system/schurfer-cold-bar-gated-deletion.timer
 	sudo systemctl daemon-reload
@@ -1443,6 +1443,35 @@ prod-source-lead-readiness-report:
 		$$(test -z "$$(git status --porcelain)" \
 			&& printf '%s' '--no-working-tree-dirty' \
 			|| printf '%s' '--working-tree-dirty') $(ARGS)
+
+# HYP-012b (docs/research/source-lead-multi-source-hyp012b-v1.md). Read-only. PHASE=all
+# (default) freezes the inputs once, takes the durable claim, then computes the result
+# from the stored inputs; a rerun resumes a crashed read on the same inputs and refuses a
+# completed one. PHASE=funnel prints outcome-blind counts and writes nothing. Everything
+# lives under runtime/research/hyp012b/<stage>; the holdout needs the discovery result.
+prod-source-lead-multi-source-report:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
+	@test -n "$(STAGE)" || (echo "ERROR: STAGE=discovery|holdout is required" && exit 1)
+	@mkdir -p /opt/schurfer/runtime/research/hyp012b
+	@$(_PROD) run --rm --no-deps \
+		-v /opt/schurfer/runtime/research/hyp012b:/hyp012b \
+		--entrypoint source-lead-multi-source-report analytics \
+		--stage $(STAGE) --phase $(or $(PHASE),all) --stage-dir /hyp012b/$(STAGE) \
+		$$(test "$(STAGE)" = holdout && printf '%s' '--discovery-artifact /hyp012b/discovery') \
+		--code-revision="$$(git rev-parse HEAD)" \
+		$$(test -z "$$(git status --porcelain)" \
+			&& printf '%s' '--no-working-tree-dirty' \
+			|| printf '%s' '--working-tree-dirty') $(ARGS)
+
+# LIVE_PROBE step 1: read-only Bybit account preflight (apps/execution bybit_preflight.py).
+# GET-only allow-listed client, no order path. PURPOSE=diagnostic (read-only key, default)
+# or live_probe (the trading key). SYMBOLS=comma-separated Bybit linear symbols. Exit 2 means
+# blocked. A verdict is a snapshot, not a standing permission.
+prod-bybit-preflight:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
+	@test -n "$(SYMBOLS)" || (echo "ERROR: SYMBOLS=BTCUSDT,... is required" && exit 1)
+	@$(_PROD) run --rm --no-deps --entrypoint bybit-preflight execution \
+		--purpose $(or $(PURPOSE),diagnostic) --symbols $(SYMBOLS) $(ARGS)
 
 prod-source-lead-identity-report:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
@@ -1622,6 +1651,14 @@ prod-cold-bar-gated-deletion-dry-run:
 	@# cutoff 25 (< the 35-day Timescale retention) so the dry-run has real eligible
 	@# chunks to validate; PR 2 raises it to 40 once the automatic retention is removed.
 	@# Commissioning (first run) should add ARGS='--fail-if-empty' to catch a broken setup.
+
+# Scheduled REAL deletion (the timer's target since the 2026-09 canary): the same gated job
+# with --execute at the full 40-day buffer (the CLI refuses less). Each day is dropped only
+# after every gate passes and the source fingerprint is re-verified under the mutation lock;
+# the drop fails fast on any lock (lock_timeout, #455) and retries the next day. At most 3
+# days per run bounds the Borg extract work after a backlog.
+prod-cold-bar-gated-deletion-execute:
+	@$(MAKE) prod-cold-bar-gated-deletion-dry-run ARGS='--execute --cutoff-days 40 --max-eval-days 3'
 
 prod-paper-replay-reconciliation:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)

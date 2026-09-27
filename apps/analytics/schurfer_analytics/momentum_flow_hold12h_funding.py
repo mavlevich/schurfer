@@ -17,7 +17,7 @@ from __future__ import annotations
 
 # ruff: noqa: S608 -- app_schema is a caller constant; every value is bound.
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from .momentum_flow_hold12h_verdict import ACTUAL_FUNDING_VERSION as ACTUAL_FUNDING_VERSION
 from .momentum_flow_hold12h_verdict_report import (
@@ -105,6 +105,69 @@ class StoredFundingSource:
         self._settlements = settlements
         self._runs = runs
         self._source_version = source_version
+
+    def to_payload(self, window: tuple[datetime, datetime] | None) -> dict[str, Any]:
+        """Settlements and coverage runs overlapping ``window``, canonically ordered, for
+        the formal input snapshot. A coverage answer for any interval inside the window
+        depends only on these, so the restriction does not change the verdict."""
+        keys = sorted(set(self._settlements) | set(self._runs))
+
+        def settlement_in(e: SettlementEvent) -> bool:
+            return window is None or window[0] <= e.settlement_at <= window[1]
+
+        def run_in(r: CoverageRun) -> bool:
+            return window is None or (
+                r.requested_since <= window[1] and r.requested_until >= window[0]
+            )
+
+        return {
+            "source_version": self._source_version,
+            "routes": [
+                {
+                    "key": list(key),
+                    "settlements": [
+                        [e.settlement_at.isoformat(), e.rate, e.source_version]
+                        for e in sorted(
+                            filter(settlement_in, self._settlements.get(key, ())),
+                            key=lambda e: (e.settlement_at, e.rate),
+                        )
+                    ],
+                    "runs": [
+                        [
+                            r.requested_since.isoformat(),
+                            r.requested_until.isoformat(),
+                            r.status,
+                            r.source_version,
+                        ]
+                        for r in sorted(
+                            filter(run_in, self._runs.get(key, ())),
+                            key=lambda r: (r.requested_since, r.requested_until, r.status),
+                        )
+                    ],
+                }
+                for key in keys
+            ],
+        }
+
+    @classmethod
+    def from_payload(cls, payload: dict[str, Any]) -> StoredFundingSource:
+        from datetime import datetime as _datetime
+
+        settlements: dict[tuple[str, str], tuple[SettlementEvent, ...]] = {}
+        runs: dict[tuple[str, str], tuple[CoverageRun, ...]] = {}
+        for route in payload["routes"]:
+            key = (str(route["key"][0]), str(route["key"][1]))
+            settlements[key] = tuple(
+                SettlementEvent(_datetime.fromisoformat(at), rate, version)
+                for at, rate, version in route["settlements"]
+            )
+            runs[key] = tuple(
+                CoverageRun(
+                    _datetime.fromisoformat(since), _datetime.fromisoformat(until), status, version
+                )
+                for since, until, status, version in route["runs"]
+            )
+        return cls(settlements, runs, source_version=str(payload["source_version"]))
 
     def coverage(
         self, route: InstrumentRoute, entry_at: datetime, exit_at: datetime
