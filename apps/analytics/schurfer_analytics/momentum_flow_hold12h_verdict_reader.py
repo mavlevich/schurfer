@@ -41,6 +41,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from . import momentum_flow_hold12h_verdict as verdict_module
+from .momentum_flow_hold12h_snapshot import (
+    holdings_window,
+    inputs_from_snapshot,
+    publish_once,
+    publish_once_or_same,
+    snapshot_bytes,
+    snapshot_digest,
+)
 from .momentum_flow_hold12h_verdict import (
     HOLD12H_VERDICT_CONTRACT,
     Hold12hVerdictContract,
@@ -318,6 +326,26 @@ def health_breaches(checkpoint: HealthCheckpoint) -> list[str]:
     return breaches
 
 
+def _funding_covered_sql(app: str) -> str:
+    """A closed probe's funding is covered: a `complete` run of the registered version
+    spans its whole holding interval and no overlapping run is an integrity conflict."""
+    return f"""EXISTS (
+            SELECT 1 FROM {app}.hold12h_funding_coverage_runs r
+            WHERE r.exchange = p.exchange
+              AND r.native_market_id = p.market_id
+              AND r.source_version = :fv AND r.status = 'complete'
+              AND r.requested_since <= p.entry_at
+              AND r.requested_until >= p.exit_at)
+          AND NOT EXISTS (
+            SELECT 1 FROM {app}.hold12h_funding_coverage_runs c
+            WHERE c.exchange = p.exchange
+              AND c.native_market_id = p.market_id
+              AND c.source_version = :fv
+              AND c.status = 'integrity_conflict'
+              AND c.requested_since < p.exit_at
+              AND c.requested_until > p.entry_at)"""
+
+
 async def load_health_checkpoint(
     db_url: str,
     *,
@@ -406,21 +434,7 @@ async def load_health_checkpoint(
                             f"""
                             WITH w AS (SELECT w.watch_id {_watch_filter_sql(ts)})
                             SELECT count(*) AS closed,
-                                count(*) FILTER (WHERE EXISTS (
-                                    SELECT 1 FROM {app}.hold12h_funding_coverage_runs r
-                                    WHERE r.exchange = p.exchange
-                                      AND r.native_market_id = p.market_id
-                                      AND r.source_version = :fv AND r.status = 'complete'
-                                      AND r.requested_since <= p.entry_at
-                                      AND r.requested_until >= p.exit_at)
-                                  AND NOT EXISTS (
-                                    SELECT 1 FROM {app}.hold12h_funding_coverage_runs c
-                                    WHERE c.exchange = p.exchange
-                                      AND c.native_market_id = p.market_id
-                                      AND c.source_version = :fv
-                                      AND c.status = 'integrity_conflict'
-                                      AND c.requested_since < p.exit_at
-                                      AND c.requested_until > p.entry_at)) AS covered,
+                                count(*) FILTER (WHERE {_funding_covered_sql(app)}) AS covered,
                                 count(*) FILTER (
                                     WHERE p.accounting_status = 'complete') AS accounting_complete
                             FROM {app}.momentum_flow_paper_probes p
@@ -690,34 +704,281 @@ def formal_read_window(
     return cohort_start, prefix_end
 
 
-def claim_formal_output(output_dir: Path) -> None:
-    """Exclusive local artifact directory, so a run never overwrites another's artifact.
-    Not the one-read guarantee: that is the durable database claim below."""
-    output_dir.parent.mkdir(parents=True, exist_ok=True)
+CLAIM_LEASE = timedelta(minutes=60)
+
+
+@dataclass(frozen=True)
+class FormalCoverage:
+    """Outcome-blind readiness of the whole cohort for the single read: statuses and
+    coverage runs only, NO return column."""
+
+    filled: int
+    open_positions: int
+    closed: int
+    funding_covered: int
+    accounting_complete: int
+
+    def shortfalls(self) -> list[str]:
+        missing = []
+        if self.open_positions:
+            missing.append(f"{self.open_positions} filled positions are not closed")
+        if self.funding_covered < self.closed:
+            missing.append(f"funding covered for {self.funding_covered}/{self.closed} closed")
+        if self.accounting_complete < self.closed:
+            missing.append(
+                f"accounting complete for {self.accounting_complete}/{self.closed} closed"
+            )
+        return missing
+
+
+async def load_cohort_watch_ids(
+    db_url: str,
+    *,
+    cohort_start: datetime,
+    decision_prefix_end: datetime,
+    schemas: Schemas = _DEFAULT_SCHEMAS,
+) -> list[str]:
+    """The cohort's WATCH denominator, ordered, with no return read: the claim pins it."""
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from .outcome_repository import async_database_url
+
+    engine = create_async_engine(async_database_url(db_url), pool_pre_ping=True, pool_size=1)
     try:
-        output_dir.mkdir()
-    except FileExistsError as exc:
-        raise SystemExit(
-            f"formal-run refused: {output_dir} exists; the single formal read was already claimed"
-        ) from exc
+        async with engine.connect() as conn:
+            rows = await conn.execute(
+                text(
+                    "SELECT w.watch_id"
+                    + _watch_filter_sql(schemas.timeseries)
+                    + " ORDER BY w.decision_at, w.watch_id"
+                ),
+                _watch_params(cohort_start, decision_prefix_end),
+            )
+            return [str(r[0]) for r in rows]
+    finally:
+        await engine.dispose()
 
 
-async def claim_formal_read(
+async def load_formal_coverage(
+    db_url: str,
+    *,
+    cohort_start: datetime,
+    decision_prefix_end: datetime,
+    funding_version: str,
+    schemas: Schemas = _DEFAULT_SCHEMAS,
+) -> FormalCoverage:
+    """Checked before the claim, so a read is never claimed on data still in flight."""
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from .outcome_repository import async_database_url
+
+    ts, app = schemas.timeseries, schemas.app
+    engine = create_async_engine(async_database_url(db_url), pool_pre_ping=True, pool_size=1)
+    try:
+        async with engine.connect() as conn:
+            row = (
+                (
+                    await conn.execute(
+                        text(
+                            f"""
+                            WITH w AS (SELECT w.watch_id {_watch_filter_sql(ts)})
+                            SELECT
+                                count(*) FILTER (WHERE p.entry_status = :filled) AS filled,
+                                count(*) FILTER (WHERE p.entry_status = :filled
+                                    AND p.position_status IS DISTINCT FROM :closed) AS open,
+                                count(*) FILTER (WHERE p.position_status = :closed) AS closed,
+                                count(*) FILTER (WHERE p.position_status = :closed
+                                    AND {_funding_covered_sql(app)}) AS covered,
+                                count(*) FILTER (WHERE p.position_status = :closed
+                                    AND p.accounting_status = 'complete') AS accounting
+                            FROM {app}.momentum_flow_paper_probes p
+                            JOIN w ON w.watch_id = p.watch_id
+                            WHERE p.paper_version = :hold
+                            """
+                        ),
+                        {
+                            **_watch_params(cohort_start, decision_prefix_end),
+                            "hold": HOLD12H_PAPER_CONTRACT.paper_version,
+                            "fv": funding_version,
+                            "filled": _FILLED_ENTRY,
+                            "closed": _CLOSED_POSITION,
+                        },
+                    )
+                )
+                .mappings()
+                .one()
+            )
+    finally:
+        await engine.dispose()
+    return FormalCoverage(
+        filled=int(row["filled"] or 0),
+        open_positions=int(row["open"] or 0),
+        closed=int(row["closed"] or 0),
+        funding_covered=int(row["covered"] or 0),
+        accounting_complete=int(row["accounting"] or 0),
+    )
+
+
+@dataclass(frozen=True)
+class FormalClaim:
+    id: int
+    owner: str
+    watch_ids: tuple[str, ...]
+    inputs_digest: str | None
+    resumed: bool
+
+
+def _watch_ids_sha256(watch_ids: list[str]) -> str:
+    return hashlib.sha256(json.dumps(watch_ids, separators=(",", ":")).encode()).hexdigest()
+
+
+async def open_formal_claim(
     db_url: str,
     contract: Hold12hVerdictContract,
     *,
     cohort_start: datetime,
     decision_prefix_end: datetime,
+    watch_ids: list[str],
+    coverage: FormalCoverage,
+    accepted_incomplete_coverage: bool,
     code_revision: str,
     working_tree_dirty: bool,
     output_dir: Path,
     schemas: Schemas = _DEFAULT_SCHEMAS,
-) -> None:
+) -> FormalClaim:
     """The durable one-read claim, committed BEFORE any return is read. Unique per cohort
     (contract version + both frozen bounds) rather than per contract sha, so neither another
-    output directory nor an edited contract can read the same cohort twice."""
+    output directory nor an edited contract can read the same cohort twice.
+
+    A new claim is inserted with this run as the lease owner. An existing OPEN claim is
+    taken over only after its lease expired and only on the same contract sha and the same
+    ordered WATCH ids; a completed claim, a held lease or any mismatch refuses."""
+    import uuid
+
     from sqlalchemy import text
-    from sqlalchemy.exc import IntegrityError
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from .outcome_repository import async_database_url
+
+    owner = uuid.uuid4().hex
+    table = f"{schemas.app}.hold12h_formal_read_claims"
+    key = {
+        "cv": contract.contract_version,
+        "start": cohort_start,
+        "end": decision_prefix_end,
+    }
+    pins = {"sha": contract.sha256_hex(), "wsha": _watch_ids_sha256(watch_ids)}
+    lease = {"owner": owner, "lease": CLAIM_LEASE.total_seconds()}
+    returning = "RETURNING id, watch_ids, inputs_digest"
+    engine = create_async_engine(async_database_url(db_url), pool_pre_ping=True, pool_size=1)
+    try:
+        async with engine.begin() as conn:
+            row = (
+                await conn.execute(
+                    text(
+                        f"""
+                        INSERT INTO {table}
+                            (contract_version, contract_sha256, cohort_start,
+                             decision_prefix_end, code_revision, working_tree_dirty, output_dir,
+                             watch_ids, watch_ids_sha256, coverage_closed,
+                             coverage_funding_covered, coverage_accounting_complete,
+                             coverage_open_positions, accepted_incomplete_coverage,
+                             lease_owner, lease_expires_at)
+                        VALUES (:cv, :sha, :start, :end, :rev, :dirty, :out,
+                                CAST(:wids AS jsonb), :wsha, :closed, :covered, :accounting,
+                                :open, :accepted, :owner,
+                                now() + make_interval(secs => :lease))
+                        ON CONFLICT ON CONSTRAINT uq_hold12h_formal_read_claim_cohort
+                        DO NOTHING
+                        {returning}
+                        """
+                    ),
+                    {
+                        **key,
+                        **pins,
+                        **lease,
+                        "rev": code_revision[:64],
+                        "dirty": working_tree_dirty,
+                        "out": str(output_dir),
+                        "wids": json.dumps(watch_ids),
+                        "closed": coverage.closed,
+                        "covered": coverage.funding_covered,
+                        "accounting": coverage.accounting_complete,
+                        "open": coverage.open_positions,
+                        "accepted": accepted_incomplete_coverage,
+                    },
+                )
+            ).first()
+            resumed = False
+            if row is None:
+                resumed = True
+                row = (
+                    await conn.execute(
+                        text(
+                            f"""
+                            UPDATE {table}
+                            SET lease_owner = :owner,
+                                lease_expires_at = now() + make_interval(secs => :lease)
+                            WHERE contract_version = :cv AND cohort_start = :start
+                              AND decision_prefix_end = :end AND status = 'claimed'
+                              AND lease_expires_at < now()
+                              AND contract_sha256 = :sha AND watch_ids_sha256 = :wsha
+                            {returning}
+                            """
+                        ),
+                        {**key, **pins, **lease},
+                    )
+                ).first()
+            if row is None:
+                existing = (
+                    await conn.execute(
+                        text(
+                            f"""
+                            SELECT status, lease_expires_at < now() AS expired,
+                                   contract_sha256 = :sha AS same_sha,
+                                   watch_ids_sha256 = :wsha AS same_watches
+                            FROM {table}
+                            WHERE contract_version = :cv AND cohort_start = :start
+                              AND decision_prefix_end = :end
+                            """
+                        ),
+                        {**key, **pins},
+                    )
+                ).one()
+    finally:
+        await engine.dispose()
+    if row is None:
+        if existing.status == "completed":
+            raise SystemExit(
+                "formal-run refused: this cohort's single formal read was already claimed "
+                "and completed"
+            )
+        if not existing.same_sha:
+            raise SystemExit("formal-run refused: the open claim pins another contract sha")
+        if not existing.same_watches:
+            raise SystemExit(
+                "formal-run refused: the cohort's WATCH set changed since the open claim"
+            )
+        raise SystemExit(
+            "formal-run refused: another run holds the open claim's lease; it resumes only "
+            f"after that run finishes or its lease ({CLAIM_LEASE}) expires"
+        )
+    stored = row[1] if isinstance(row[1], list) else json.loads(row[1])
+    return FormalClaim(
+        id=int(row[0]),
+        owner=owner,
+        watch_ids=tuple(str(w) for w in stored),
+        inputs_digest=row[2],
+        resumed=resumed,
+    )
+
+
+async def _owned_update(
+    db_url: str, claim: FormalClaim, sql_set: str, params: dict[str, Any], schemas: Schemas
+) -> bool:
+    from sqlalchemy import text
     from sqlalchemy.ext.asyncio import create_async_engine
 
     from .outcome_repository import async_database_url
@@ -725,31 +986,156 @@ async def claim_formal_read(
     engine = create_async_engine(async_database_url(db_url), pool_pre_ping=True, pool_size=1)
     try:
         async with engine.begin() as conn:
-            await conn.execute(
-                text(
-                    f"""
-                    INSERT INTO {schemas.app}.hold12h_formal_read_claims
-                        (contract_version, contract_sha256, cohort_start, decision_prefix_end,
-                         code_revision, working_tree_dirty, output_dir)
-                    VALUES (:cv, :sha, :start, :end, :rev, :dirty, :out)
-                    """
-                ),
-                {
-                    "cv": contract.contract_version,
-                    "sha": contract.sha256_hex(),
-                    "start": cohort_start,
-                    "end": decision_prefix_end,
-                    "rev": code_revision[:64],
-                    "dirty": working_tree_dirty,
-                    "out": str(output_dir),
-                },
-            )
-    except IntegrityError as exc:
-        raise SystemExit(
-            "formal-run refused: this cohort's single formal read was already claimed"
-        ) from exc
+            row = (
+                await conn.execute(
+                    text(
+                        f"""
+                        UPDATE {schemas.app}.hold12h_formal_read_claims SET {sql_set}
+                        WHERE id = :id AND lease_owner = :owner AND status = 'claimed'
+                          AND lease_expires_at > now()
+                        RETURNING id
+                        """
+                    ),
+                    {**params, "id": claim.id, "owner": claim.owner},
+                )
+            ).first()
     finally:
         await engine.dispose()
+    return row is not None
+
+
+async def pin_inputs_digest(
+    db_url: str, claim: FormalClaim, digest: str, *, schemas: Schemas = _DEFAULT_SCHEMAS
+) -> None:
+    """Pin the loaded inputs on the first attempt; a resumed attempt must load the same."""
+    if claim.inputs_digest is not None and claim.inputs_digest != digest:
+        raise SystemExit(
+            "formal-run refused: the cohort's inputs changed since the claim was pinned; "
+            "the claim is kept open and nothing is published"
+        )
+    if not await _owned_update(
+        db_url,
+        claim,
+        "inputs_digest = :digest",
+        {"digest": digest},
+        schemas,
+    ):
+        raise SystemExit("formal-run refused: this run no longer owns the claim's lease")
+
+
+async def complete_formal_claim(
+    db_url: str,
+    claim: FormalClaim,
+    fingerprint: str,
+    *,
+    artifact_name: str,
+    artifact_sha256: str,
+    schemas: Schemas = _DEFAULT_SCHEMAS,
+) -> None:
+    """Only the current lease owner completes the claim, naming its durable artifact."""
+    if not await _owned_update(
+        db_url,
+        claim,
+        "status = 'completed', completed_at = now(), result_fingerprint = :fp, "
+        "artifact_name = :artifact, artifact_sha256 = :artifact_sha",
+        {"fp": fingerprint, "artifact": artifact_name, "artifact_sha": artifact_sha256},
+        schemas,
+    ):
+        raise SystemExit("formal-run refused: this run no longer owns the claim's lease")
+
+
+async def load_snapshot_from_db(
+    db_url: str,
+    contract: Hold12hVerdictContract,
+    claim: FormalClaim,
+    *,
+    cohort_start: datetime,
+    decision_prefix_end: datetime,
+) -> bytes:
+    """Load the cohort and its funding and serialize them into the input snapshot. The
+    funding part keeps only settlements and runs overlapping the cohort's holdings, so
+    later captures of the same instruments do not change it."""
+    from .momentum_flow_hold12h_funding import load_stored_funding
+
+    watches, probes = await load_cohort(
+        db_url, cohort_start=cohort_start, decision_prefix_end=decision_prefix_end
+    )
+    if sorted(w.watch_id for w in watches) != sorted(claim.watch_ids):
+        raise SystemExit(
+            "formal-run refused: the loaded WATCH set differs from the claim's pinned ids"
+        )
+    routes = sorted(
+        {probe.route for probe in probes.values()},
+        key=lambda route: (route.exchange, route.market_type, route.market_id),
+    )
+    funding = await load_stored_funding(
+        db_url, routes, source_version=contract.actual_funding_version
+    )
+    return snapshot_bytes(watches, probes, funding, window=holdings_window(probes))
+
+
+async def pinned_inputs(
+    db_url: str,
+    contract: Hold12hVerdictContract,
+    claim: FormalClaim,
+    output_dir: Path,
+    *,
+    cohort_start: datetime,
+    decision_prefix_end: datetime,
+    schemas: Schemas = _DEFAULT_SCHEMAS,
+) -> bytes:
+    """The snapshot the verdict is computed from, pinned in the claim BEFORE any verdict.
+    A resumed attempt reads the pinned snapshot file; only if that file is gone does it
+    reload, and then it must produce the same digest or refuse."""
+    if claim.inputs_digest is not None:
+        stored = output_dir / f"inputs.{claim.inputs_digest}.json"
+        if stored.exists():
+            body = stored.read_bytes()
+            if snapshot_digest(body) != claim.inputs_digest:
+                raise SystemExit(f"formal-run refused: {stored} does not match its digest")
+            return body
+    body = await load_snapshot_from_db(
+        db_url,
+        contract,
+        claim,
+        cohort_start=cohort_start,
+        decision_prefix_end=decision_prefix_end,
+    )
+    digest = snapshot_digest(body)
+    if claim.inputs_digest is not None and digest != claim.inputs_digest:
+        raise SystemExit(
+            "formal-run refused: the cohort's inputs changed since the claim was pinned; "
+            "the claim is kept open and nothing is published"
+        )
+    publish_once_or_same(output_dir / f"inputs.{digest}.json", body)
+    await pin_inputs_digest(db_url, claim, digest, schemas=schemas)
+    return body
+
+
+async def publish_formal_result(
+    db_url: str,
+    claim: FormalClaim,
+    output_dir: Path,
+    body: bytes,
+    fingerprint: str,
+    *,
+    schemas: Schemas = _DEFAULT_SCHEMAS,
+) -> Path:
+    """Every attempt writes its OWN immutable, fsynced artifact first; the claim is then
+    completed only by the lease owner, naming that artifact; only after that does the
+    winner publish the result under the stable name. A stale owner that lost its lease
+    cannot complete and so never publishes or overwrites anything."""
+    sha = hashlib.sha256(body).hexdigest()
+    attempt = output_dir / f"hold12h_verdict.attempt-{claim.owner}.json"
+    publish_once(attempt, body)
+    publish_once(attempt.with_name(attempt.name + ".sha256"), f"sha256:{sha}\n".encode())
+    await complete_formal_claim(
+        db_url, claim, fingerprint, artifact_name=attempt.name, artifact_sha256=sha, schemas=schemas
+    )
+    final = output_dir / "hold12h_verdict.json"
+    publish_once_or_same(final, body)
+    publish_once_or_same(output_dir / "hold12h_verdict.sha256", f"sha256:{sha}\n".encode())
+    return final
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -774,6 +1160,14 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         help="formal only: artifact directory, claimed exclusively before returns are read",
+    )
+    parser.add_argument(
+        "--accept-incomplete-coverage",
+        action="store_true",
+        help=(
+            "formal run only: claim even though some positions are open or lack funding or "
+            "accounting (recorded in the claim); by default such a read is refused"
+        ),
     )
     parser.add_argument("--code-revision", default=os.getenv("SCHURFER_GIT_SHA", "unknown"))
     parser.add_argument("--working-tree-dirty", action=argparse.BooleanOptionalAction, default=True)
@@ -833,32 +1227,47 @@ async def _run(args: argparse.Namespace) -> str:
         now=datetime.now(UTC),
     )
     output_dir: Path = args.output_dir
-    if output_dir.exists():
-        raise SystemExit(f"formal-run refused: {output_dir} already exists")
-    await claim_formal_read(
+    # Outcome-blind, before the claim: the pinned denominator and the coverage it is read on.
+    watch_ids = await load_cohort_watch_ids(
+        db_url, cohort_start=cohort_start, decision_prefix_end=prefix_end
+    )
+    coverage = await load_formal_coverage(
+        db_url,
+        cohort_start=cohort_start,
+        decision_prefix_end=prefix_end,
+        funding_version=contract.actual_funding_version,
+    )
+    shortfalls = coverage.shortfalls()
+    if shortfalls and not args.accept_incomplete_coverage:
+        raise SystemExit(
+            "formal-run refused before the claim: cohort not complete yet ("
+            + "; ".join(shortfalls)
+            + "). Retry later, or pass --accept-incomplete-coverage to read it as it is."
+        )
+    claim = await open_formal_claim(
         db_url,
         contract,
         cohort_start=cohort_start,
         decision_prefix_end=prefix_end,
+        watch_ids=watch_ids,
+        coverage=coverage,
+        accepted_incomplete_coverage=bool(shortfalls),
         code_revision=args.code_revision,
         working_tree_dirty=args.working_tree_dirty,
         output_dir=output_dir,
     )
-    claim_formal_output(output_dir)
-
-    from .momentum_flow_hold12h_funding import load_stored_funding
-
-    watches, probes = await load_cohort(
-        db_url, cohort_start=cohort_start, decision_prefix_end=prefix_end
+    output_dir.mkdir(parents=True, exist_ok=True)
+    body = await pinned_inputs(
+        db_url,
+        contract,
+        claim,
+        output_dir,
+        cohort_start=cohort_start,
+        decision_prefix_end=prefix_end,
     )
+    # From here on the verdict sees only the pinned snapshot, never live rows.
+    watches, probes, funding = inputs_from_snapshot(body)
     watches = filter_to_cohort(watches, cohort_start=cohort_start, decision_prefix_end=prefix_end)
-    routes = sorted(
-        {probe.route for probe in probes.values()},
-        key=lambda route: (route.exchange, route.market_type, route.market_id),
-    )
-    funding = await load_stored_funding(
-        db_url, routes, source_version=contract.actual_funding_version
-    )
     evaluation = evaluate_cohort(contract, watches, probes, funding)
     fingerprint = verdict_fingerprint(
         contract_sha256=contract.sha256_hex(),
@@ -882,10 +1291,7 @@ async def _run(args: argparse.Namespace) -> str:
         working_tree_dirty=args.working_tree_dirty,
     )
     text = json.dumps(artifact, indent=2, sort_keys=True, allow_nan=False) + "\n"
-    report_path = output_dir / "hold12h_verdict.json"
-    report_path.write_text(text)
-    digest = hashlib.sha256(text.encode()).hexdigest()
-    (output_dir / "hold12h_verdict.sha256").write_text(f"sha256:{digest}\n")
+    await publish_formal_result(db_url, claim, output_dir, text.encode(), fingerprint)
     return text
 
 

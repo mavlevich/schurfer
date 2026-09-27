@@ -136,8 +136,11 @@ class Hold12hVerdictContract:
     # is not met there the result is insufficient_data, never a later, friendlier prefix.
     decision_prefix_end_iso: str | None = None
     # A formal read is refused until this long after the prefix: the last 720m positions
-    # must close and the funding capture must pass its settlement lag and queue.
-    min_read_delay_hours: float = 36.0
+    # (entered just before the prefix) close 12h later, and their funding capture must pass
+    # its settlement lag and queue. Measured 2026-09-27: full coverage for positions closed
+    # more than 36h earlier, so 12h + 36h plus a 12h margin. The reader also checks the
+    # coverage, outcome-blind, before it claims.
+    min_read_delay_hours: float = 60.0
 
     def __post_init__(self) -> None:
         if self.min_analyzable_pairs <= 0:

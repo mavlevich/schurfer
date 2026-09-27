@@ -881,9 +881,11 @@ def cohort_rows_digest(
                 None if probe is None else probe.entry_ok,
                 None if probe is None else _iso_or_none(probe.entry_at),
                 None if probe is None else _iso_or_none(probe.exit_at),
+                None if probe is None else probe.exit_resolved,
                 None if probe is None else probe.exit_reason,
                 None if probe is None else probe.actual_gross_return_pct,
                 None if probe is None else probe.actual_notional_usd,
+                None if probe is None else probe.max_adverse_return_pct,
                 horizon_rows,
                 funding_rows,
             )
