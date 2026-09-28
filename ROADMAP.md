@@ -3869,9 +3869,11 @@ Priority order as of 2026-09-27 (support slot, one at a time):
 1. **ENG-025 narrow restore drill.** Restore critical tables from the offsite backup into
    an isolated environment, read the restored rows and reconcile fingerprints and counts,
    with an alert on failure. Not a full drill on the prod disk.
-2. **Deploy hygiene.** `make prod-deploy` leaves the Docker build cache growing (3.3 GB
-   reclaimable on 2026-09-27, with 19 GB free), and runs its backup before `git pull` (see
-   below). Prune the build cache in the deploy and swap the order.
+2. ~~**Deploy hygiene.**~~ **Done 2026-09-28.** `make prod-deploy` pulls before anything
+   else and runs the full offsite backup only when a migration is pending. The nightly
+   receipted backup and the weekly restore drill (ENG-025) cover everything else, and
+   skipping the dump saves about 25 minutes per deploy. The deploy also prunes Docker
+   build cache older than a day.
 3. **Flaky `make verify`.** The first run sometimes fails without a clear error and the
    rerun passes. Find the cause, since it slows every PR.
 4. **Roadmap size.** At 3,876 lines, move historical interleaving sections to an archive

@@ -1,5 +1,5 @@
 .PHONY: help install install-golangci-lint install-deadcode dev dev-init dev-stop dev-reset dev-logs dev-test migrate measurement-report exchange-coverage-report pump-recurrence-integrity-report exchange-source-economics-report source-lead-report source-lead-readiness-report source-lead-identity-report gate-identity-candidate-tooling episode-replay virtual-strategy-report virtual-entry-challenger-report virtual-threshold-challenger-report virtual-exit-policy-report virtual-exit-discovery-report virtual-score-challenger-report virtual-banded-price-extent-report candle-anomaly-report derivatives-context-report decision-quality-report derivatives-regime-feasibility-report long-short-ratio-regime-report liquid-taker-report long-horizon-report open-ended-margin-report maker-entry-report source-lead-forward-cohort-report pump-magnitude-report extreme-mover-replay-report orderflow-pilot-report orderflow-endpoint-sensitivity-report exit-liquidity-calibration-report exit-liquidity-adjusted-net-economics-report pump-short-failure-attribution-report pump-short-reentry-audit-report oi-growth-filter-report token-history-identity-preflight-report token-history-ohlcv-sample-report token-history-parquet-dataset token-behavior-discovery-report momentum-universe-identity-match token-universe-coverage-report serial-pump-regimes-report liquidation-cascade-validation-report liquidation-maker-upper-bound-report early-momentum-net-evidence-report early-momentum-prospective-cohort-report orderflow-start orderflow-stop orderflow-health momentum-capture-start momentum-capture-stop momentum-capture-health momentum-capture-binance-start momentum-capture-binance-stop momentum-capture-binance-health momentum-watch-start momentum-watch-stop momentum-watch-health momentum-watch-binance-start momentum-watch-binance-stop momentum-watch-binance-health momentum-paper-start momentum-paper-stop momentum-paper-health momentum-paper-binance-start momentum-paper-binance-stop momentum-paper-binance-health momentum-paper-lev3-start momentum-paper-lev3-stop momentum-paper-lev3-health momentum-paper-hold12h-start momentum-paper-hold12h-stop momentum-paper-hold12h-health momentum-flow-episode-study-report binance-watch-input-coverage-report bidirectional-burst-study-report test lint ci-lint format clean security deadcode check verify typecheck verify-docker \
-		prod-deploy prod-runtime-metrics-install prod-runtime-metrics-health prod-disk-usage-install prod-disk-usage-health prod-docker-prune-install prod-docker-prune-run prod-docker-prune-health prod-offsite-backup-install prod-offsite-backup-run prod-offsite-backup-health prod-restore-check-install prod-restore-check-run prod-research-checkpoints-install prod-research-checkpoints-run prod-research-checkpoints-health prod-measurement-report prod-exchange-coverage-report prod-pump-recurrence-integrity-report prod-exchange-source-economics-report prod-source-lead-report prod-source-lead-readiness-report prod-source-lead-identity-report prod-gate-identity-candidate-tooling prod-source-lead-capture-health prod-episode-replay prod-virtual-strategy-report prod-virtual-entry-challenger-report prod-virtual-threshold-challenger-report prod-virtual-exit-policy-report prod-paper-replay-reconciliation prod-cold-bar-export prod-score-component-study prod-pump-age-readiness prod-pump-age-read _pump-age-resolution-study prod-cold-bar-export-install prod-virtual-exit-discovery-report prod-virtual-score-challenger-report prod-virtual-banded-price-extent-report prod-candle-anomaly-report prod-derivatives-context-report prod-decision-quality-report prod-derivatives-regime-feasibility-report prod-long-short-ratio-regime-report prod-liquid-taker-report prod-long-horizon-report prod-open-ended-margin-report prod-open-ended-margin-health prod-maker-entry-report prod-source-lead-forward-cohort-report prod-pump-magnitude-report prod-extreme-mover-replay-report prod-orderflow-pilot-report prod-orderflow-endpoint-sensitivity-report prod-exit-liquidity-calibration-report prod-research-dataset-artifact-validate prod-exit-liquidity-adjusted-net-economics-report prod-pump-short-failure-attribution-report prod-pump-short-reentry-audit-report prod-oi-growth-filter-report prod-token-history-identity-preflight-report prod-token-history-ohlcv-sample-report prod-token-history-parquet-dataset prod-token-behavior-discovery-report prod-momentum-universe-identity-match prod-token-universe-coverage-report prod-serial-pump-regimes-report prod-liquidation-cascade-validation-report prod-liquidation-maker-upper-bound-report prod-early-momentum-net-evidence-report prod-early-momentum-prospective-cohort-report prod-orderflow-start prod-orderflow-stop prod-orderflow-health prod-momentum-capture-start prod-momentum-capture-stop prod-momentum-capture-health prod-momentum-capture-binance-start prod-momentum-capture-binance-stop prod-momentum-capture-binance-health prod-momentum-watch-start prod-momentum-watch-stop prod-momentum-watch-health prod-momentum-watch-binance-start prod-momentum-watch-binance-stop prod-momentum-watch-binance-health prod-momentum-paper-start prod-momentum-paper-stop prod-momentum-paper-health prod-momentum-paper-binance-start prod-momentum-paper-binance-stop prod-momentum-paper-binance-health prod-momentum-paper-lev3-start prod-momentum-paper-lev3-stop prod-momentum-paper-lev3-health prod-momentum-paper-hold12h-start prod-momentum-paper-hold12h-stop prod-momentum-paper-hold12h-health prod-momentum-canary-checkpoints-install prod-momentum-canary-checkpoints-run prod-momentum-canary-checkpoints-health prod-hold12h-funding-capture prod-hold12h-funding-capture-install prod-hold12h-funding-capture-run prod-hold12h-funding-capture-health prod-momentum-flow-episode-study-report prod-binance-watch-input-coverage-report prod-bidirectional-burst-study-report prod-logs prod-backup prod-restore-local prod-health
+		prod-deploy prod-runtime-metrics-install prod-runtime-metrics-health prod-disk-usage-install prod-disk-usage-health prod-docker-prune-install prod-docker-prune-run prod-docker-prune-health prod-offsite-backup-install prod-offsite-backup-run prod-offsite-backup-health prod-restore-check-install prod-restore-check-run prod-research-checkpoints-install prod-research-checkpoints-run prod-research-checkpoints-health prod-measurement-report prod-exchange-coverage-report prod-pump-recurrence-integrity-report prod-exchange-source-economics-report prod-source-lead-report prod-source-lead-readiness-report prod-source-lead-identity-report prod-gate-identity-candidate-tooling prod-source-lead-capture-health prod-episode-replay prod-virtual-strategy-report prod-virtual-entry-challenger-report prod-virtual-threshold-challenger-report prod-virtual-exit-policy-report prod-paper-replay-reconciliation prod-cold-bar-export prod-score-component-study prod-pump-age-readiness prod-pump-age-read _pump-age-resolution-study prod-cold-bar-export-install prod-cold-bar-fetch prod-virtual-exit-discovery-report prod-virtual-score-challenger-report prod-virtual-banded-price-extent-report prod-candle-anomaly-report prod-derivatives-context-report prod-decision-quality-report prod-derivatives-regime-feasibility-report prod-long-short-ratio-regime-report prod-liquid-taker-report prod-long-horizon-report prod-open-ended-margin-report prod-open-ended-margin-health prod-maker-entry-report prod-source-lead-forward-cohort-report prod-pump-magnitude-report prod-extreme-mover-replay-report prod-orderflow-pilot-report prod-orderflow-endpoint-sensitivity-report prod-exit-liquidity-calibration-report prod-research-dataset-artifact-validate prod-exit-liquidity-adjusted-net-economics-report prod-pump-short-failure-attribution-report prod-pump-short-reentry-audit-report prod-oi-growth-filter-report prod-token-history-identity-preflight-report prod-token-history-ohlcv-sample-report prod-token-history-parquet-dataset prod-token-behavior-discovery-report prod-momentum-universe-identity-match prod-token-universe-coverage-report prod-serial-pump-regimes-report prod-liquidation-cascade-validation-report prod-liquidation-maker-upper-bound-report prod-early-momentum-net-evidence-report prod-early-momentum-prospective-cohort-report prod-orderflow-start prod-orderflow-stop prod-orderflow-health prod-momentum-capture-start prod-momentum-capture-stop prod-momentum-capture-health prod-momentum-capture-binance-start prod-momentum-capture-binance-stop prod-momentum-capture-binance-health prod-momentum-watch-start prod-momentum-watch-stop prod-momentum-watch-health prod-momentum-watch-binance-start prod-momentum-watch-binance-stop prod-momentum-watch-binance-health prod-momentum-paper-start prod-momentum-paper-stop prod-momentum-paper-health prod-momentum-paper-binance-start prod-momentum-paper-binance-stop prod-momentum-paper-binance-health prod-momentum-paper-lev3-start prod-momentum-paper-lev3-stop prod-momentum-paper-lev3-health prod-momentum-paper-hold12h-start prod-momentum-paper-hold12h-stop prod-momentum-paper-hold12h-health prod-momentum-canary-checkpoints-install prod-momentum-canary-checkpoints-run prod-momentum-canary-checkpoints-health prod-hold12h-funding-capture prod-hold12h-funding-capture-install prod-hold12h-funding-capture-run prod-hold12h-funding-capture-health prod-momentum-flow-episode-study-report prod-binance-watch-input-coverage-report prod-bidirectional-burst-study-report prod-logs prod-backup prod-restore-local prod-health
 .PHONY: momentum-flow-discovery-report prod-momentum-flow-discovery-report
 .PHONY: ai-rules-check
 .PHONY: early-momentum-unused-flow-features-report prod-early-momentum-unused-flow-features-report
@@ -1185,25 +1185,22 @@ prod-deploy:
 	@# being deployed, so a broken backup script fails its own deploy rather
 	@# than the next person's.
 	git pull --ff-only origin main
-	@echo "-> [2/5] Backup (offsite)..."
-	@# The gate is unchanged in purpose and changed in source of truth: a
-	@# migration still refuses to run without a fresh backup, but the backup it
-	@# demands is now the offsite archive rather than a 12 GB dump on the same
-	@# disk as the database it protects.
-	@#
-	@# The local path blocked three deploys on 2026-09-08 alone -- short by 136
-	@# MB, 320 MB and 372 MB -- because it needs free space worth twice the
-	@# previous dump before it will start. Streaming into Borg removes that
-	@# artifact entirely, so the deploy stops competing with the thing it is
-	@# protecting.
-	@#
-	@# Switched only after a restore was actually performed from that archive
-	@# into a throwaway instance, covering schema, policies, application data,
-	@# uncompressed chunks and the columnstore path
-	@# (docs/runbooks/offsite-backup-restore.md, verification log 2026-09-08).
-	@# An unverified archive would not have been a reason to drop a verified
-	@# one.
-	@sudo /opt/schurfer/infra/scripts/offsite-backup.sh
+	@echo "-> [2/5] Backup (offsite), only before a migration..."
+	@# The backup here guards MIGRATIONS (step 4), nothing else: the nightly offsite
+	@# backup, with its receipt and the weekly restore drill (ENG-025), covers
+	@# everything else. A full dump streams the whole database (about 40 GB, about
+	@# 25 minutes), so it runs only when this deploy will change the schema: when the
+	@# database's alembic revision is below the newest migration file. Revisions are
+	@# zero-padded and linear, so a string comparison is enough. If the database
+	@# revision cannot be read, the backup runs: when in doubt, back up.
+	@head=$$(grep -h '^revision' packages/journal/migrations/versions/*.py | sed -E 's/.*"([0-9]+)".*/\1/' | sort | tail -1); \
+	current=$$(docker exec schurfer-postgres psql -U schurfer -d schurfer -Atc "SELECT version_num FROM app.alembic_version" 2>/dev/null || true); \
+	if [ -n "$$current" ] && [ -n "$$head" ] && [ "$$current" = "$$head" ]; then \
+		echo "   schema at $$current = head: no migration, backup skipped (nightly offsite backup covers it)"; \
+	else \
+		echo "   schema $${current:-unknown} -> head $$head: backing up before migrating"; \
+		sudo /opt/schurfer/infra/scripts/offsite-backup.sh; \
+	fi
 	@echo "-> [3/5] Start DB..."
 	$(_PROD) up -d postgres redis nats
 	@$(_PROD) exec -T postgres pg_isready -U schurfer -q --timeout=30
@@ -1213,6 +1210,9 @@ prod-deploy:
 	@# so a failed deploy cannot mute them for long (notifier service_heartbeat.go).
 	@$(_PROD) exec -T redis redis-cli SET notifier:maintenance:source-lead-exit-capture deploy EX 900 >/dev/null
 	$(_PROD) up -d --build --wait --wait-timeout 180
+	@# Each --build leaves build cache behind (2 to 3 GB within days on this 75 GB
+	@# disk). Keep only the last day's, which the next build may still reuse.
+	@docker builder prune -f --filter until=24h > /dev/null || echo "   warning: build cache prune failed"
 	docker image prune -f
 	@echo "-> [5/5] Health..."
 	@$(_PROD) ps --format "table {{.Name}}\t{{.Status}}\t{{.Health}}"
@@ -1665,33 +1665,66 @@ prod-cold-bar-export-refresh-fingerprints:
 		--entrypoint cold-bar-export analytics --out-dir /cold-bars \
 		--refresh-fingerprints --max-days 2 $(ARGS)
 
+# The gated-deletion job with its mounts and no cutoff: each target below states its own
+# arguments, so the dry-run's arguments can never leak into a real deletion. No in-target
+# sudo (the systemd unit is NoNewPrivileges). The analytics image ships borg; the offsite
+# credentials/config are MOUNTED (not baked) at their same host paths so BORG_RSH /
+# BORG_PASSCOMMAND / BORG_BASE_DIR from backup.env resolve unchanged.
+_COLD_BAR_GATED_DELETION = $(_PROD) run --rm --no-deps \
+	-v /opt/schurfer/runtime/cold-bars:/cold-bars \
+	-v /opt/schurfer/runtime/backup.env:/backup.env:ro \
+	-v /opt/schurfer/runtime/borg-home:/opt/schurfer/runtime/borg-home \
+	-v /opt/schurfer/runtime/borg-passphrase:/opt/schurfer/runtime/borg-passphrase:ro \
+	-v /opt/schurfer/runtime/storagebox_known_hosts:/opt/schurfer/runtime/storagebox_known_hosts:ro \
+	-v /home/deploy/.ssh/schurfer_storagebox:/home/deploy/.ssh/schurfer_storagebox:ro \
+	--entrypoint cold-bar-gated-deletion analytics \
+	--cold-bars-dir /cold-bars --backup-env /backup.env
+
 prod-cold-bar-gated-deletion-dry-run:
+	@case " $(ARGS) " in *" --execute"*) \
+		echo "ERROR: the dry-run target never deletes; use prod-cold-bar-gated-deletion-execute" && exit 1;; esac
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
-	@# DRY-RUN ONLY (PR 1): prints which cold-bar chunks would be dropped; deletes nothing.
-	@# No in-target sudo (the systemd unit is NoNewPrivileges). The analytics image ships
-	@# borg; the offsite credentials/config are MOUNTED (not baked) at their same host paths
-	@# so BORG_RSH / BORG_PASSCOMMAND / BORG_BASE_DIR from backup.env resolve unchanged. The
-	@# job is read-only (borg list/extract; drop_chunk is disabled until PR 2).
+	@# DRY-RUN ONLY: prints which cold-bar chunks would be dropped; deletes nothing, and
+	@# refuses --execute (real deletion is prod-cold-bar-gated-deletion-execute). Without
+	@# --cutoff-days the job uses its reconciliation cutoff (25 days); a planned buffer is
+	@# checked with ARGS='--cutoff-days N'. Commissioning should add --fail-if-empty.
+	@$(_COLD_BAR_GATED_DELETION) $(ARGS)
+
+# Scheduled REAL deletion (the timer's target since the 2026-09 canary): the same gated job
+# with --execute. Each day is dropped only after every gate passes and the source fingerprint
+# is re-verified under the mutation lock; the drop fails fast on any lock (lock_timeout, #455)
+# and retries the next day. At most 3 days per run bounds the Borg extract work, and also
+# makes a lowered buffer converge in nightly portions, each followed by the hourly health check.
+#
+# The buffer (days of bars kept hot in PostgreSQL) is read from
+# runtime/cold-bar-cutoff-days, default 40. The CLI refuses less than 14. Lowering it is a
+# deliberate operator step, taken only after a dry-run at the new value and a verified
+# cold-bar-fetch of a day older than it (docs/runbooks/offsite-backup-restore.md).
+# It takes no ARGS.
+COLD_BAR_CUTOFF_DAYS = $(shell cat /opt/schurfer/runtime/cold-bar-cutoff-days 2>/dev/null || echo 40)
+prod-cold-bar-gated-deletion-execute:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
+	@$(_COLD_BAR_GATED_DELETION) --execute --cutoff-days $(COLD_BAR_CUTOFF_DAYS) --max-eval-days 3
+
+# Fetch archived cold bars back from Borg, verified against each day's receipt (sha256 and
+# row count), into runtime/cold-bar-fetch. FROM and TO are UTC days (YYYY-MM-DD). Bounded
+# for this host's disk: at most 3 days per run and a 10 GiB free-space reserve kept
+# (the CLI's defaults, not overridable here). Larger extractions run on a separate machine.
+prod-cold-bar-fetch:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
+	@test -n "$(FROM)" -a -n "$(TO)" || (echo "ERROR: FROM=YYYY-MM-DD TO=YYYY-MM-DD are required" && exit 1)
+	@mkdir -p /opt/schurfer/runtime/cold-bar-fetch
 	@$(_PROD) run --rm --no-deps \
-		-v /opt/schurfer/runtime/cold-bars:/cold-bars \
+		-v /opt/schurfer/runtime/cold-bars:/cold-bars:ro \
+		-v /opt/schurfer/runtime/cold-bar-fetch:/cold-bar-fetch \
 		-v /opt/schurfer/runtime/backup.env:/backup.env:ro \
 		-v /opt/schurfer/runtime/borg-home:/opt/schurfer/runtime/borg-home \
 		-v /opt/schurfer/runtime/borg-passphrase:/opt/schurfer/runtime/borg-passphrase:ro \
 		-v /opt/schurfer/runtime/storagebox_known_hosts:/opt/schurfer/runtime/storagebox_known_hosts:ro \
 		-v /home/deploy/.ssh/schurfer_storagebox:/home/deploy/.ssh/schurfer_storagebox:ro \
-		--entrypoint cold-bar-gated-deletion analytics \
-		--cold-bars-dir /cold-bars --backup-env /backup.env --cutoff-days 25 $(ARGS)
-	@# cutoff 25 (< the 35-day Timescale retention) so the dry-run has real eligible
-	@# chunks to validate; PR 2 raises it to 40 once the automatic retention is removed.
-	@# Commissioning (first run) should add ARGS='--fail-if-empty' to catch a broken setup.
-
-# Scheduled REAL deletion (the timer's target since the 2026-09 canary): the same gated job
-# with --execute at the full 40-day buffer (the CLI refuses less). Each day is dropped only
-# after every gate passes and the source fingerprint is re-verified under the mutation lock;
-# the drop fails fast on any lock (lock_timeout, #455) and retries the next day. At most 3
-# days per run bounds the Borg extract work after a backlog.
-prod-cold-bar-gated-deletion-execute:
-	@$(MAKE) prod-cold-bar-gated-deletion-dry-run ARGS='--execute --cutoff-days 40 --max-eval-days 3'
+		--entrypoint cold-bar-fetch analytics \
+		--cold-bars-dir /cold-bars --backup-env /backup.env --from $(FROM) --to $(TO) \
+		--out-dir /cold-bar-fetch
 
 prod-paper-replay-reconciliation:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)

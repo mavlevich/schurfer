@@ -63,20 +63,25 @@ class ColdBarDropSetError(RuntimeError):
     the transaction is rolled back and nothing is deleted."""
 
 
-# Real deletion (--execute) is only ever allowed at or beyond the 40-day retention buffer, so
+# Real deletion (--execute) is only ever allowed at or beyond the 14-day retention buffer, so
 # a day that failed a check waits for repair rather than racing a deadline. A reconciliation
 # dry-run may use a smaller cutoff (it deletes nothing), but execute below this is refused.
-MIN_EXECUTE_CUTOFF_DAYS = 40
+MIN_EXECUTE_CUTOFF_DAYS = 14
+# The dry-run default when no --cutoff-days is given (reconciliation only).
+RECONCILIATION_CUTOFF_DAYS = 25
 
 
-def validate_execute_cutoff(*, execute: bool, cutoff_days: int) -> None:
-    """Guard: refuse ``--execute`` at a cutoff below the 40-day buffer. Dry-run is unbounded
+def validate_execute_cutoff(*, execute: bool, cutoff_days: int | None) -> None:
+    """Guard: refuse ``--execute`` at a cutoff below the 14-day buffer. Dry-run is unbounded
     (it deletes nothing), so a reconciliation run may use a smaller cutoff, but real deletion
     must keep the full margin."""
-    if execute and cutoff_days < MIN_EXECUTE_CUTOFF_DAYS:
+    if execute and cutoff_days is None:
+        # Never inherit the reconciliation default: real deletion names its buffer.
+        raise ValueError("--execute requires an explicit --cutoff-days")
+    if execute and cutoff_days is not None and cutoff_days < MIN_EXECUTE_CUTOFF_DAYS:
         raise ValueError(
             f"--execute requires --cutoff-days >= {MIN_EXECUTE_CUTOFF_DAYS} "
-            f"(got {cutoff_days}); the 40-day buffer must hold for real deletion. Use a dry-run "
+            f"(got {cutoff_days}); the 14-day buffer must hold for real deletion. Use a dry-run "
             "for reconciliation at a smaller cutoff."
         )
 
@@ -381,7 +386,7 @@ class BorgDbCollectors:
 
 def main() -> None:
     """CLI entrypoint. Dry-run by default (computes and prints the drop plan, deletes
-    nothing); ``--execute`` performs the real targeted drops and is refused below the 40-day
+    nothing); ``--execute`` performs the real targeted drops and is refused below the 14-day
     cutoff. A file-lock keeps a single run at a time; each real drop additionally takes the
     Postgres mutation advisory lock."""
     import argparse
@@ -391,7 +396,11 @@ def main() -> None:
 
     from .cold_bar_gated_deletion_job import render_plan, run_gated_deletion
 
-    parser = argparse.ArgumentParser(description="Cold-bar gated deletion (dry-run)")
+    # allow_abbrev=False: `--exec` must not silently mean --execute, so the Makefile's
+    # dry-run guard (which refuses --execute) cannot be sidestepped by a prefix.
+    parser = argparse.ArgumentParser(
+        description="Cold-bar gated deletion (dry-run)", allow_abbrev=False
+    )
     parser.add_argument("--cold-bars-dir", type=Path, required=True)
     parser.add_argument(
         "--backup-env", type=Path, required=True, help="path to backup.env (BORG_*)"
@@ -399,7 +408,9 @@ def main() -> None:
     # PR 1 dry-run uses a RECONCILIATION cutoff below the 35-day Timescale retention
     # so there are real eligible chunks to validate against; PR 2 raises it to 40 once
     # the automatic retention is removed. The buffer must stay a positive integer.
-    parser.add_argument("--cutoff-days", type=int, default=25)
+    # No default: a dry-run falls back to RECONCILIATION_CUTOFF_DAYS, while --execute must
+    # name its buffer explicitly (validate_execute_cutoff), so it can never inherit 25.
+    parser.add_argument("--cutoff-days", type=int, default=None)
     parser.add_argument(
         "--max-eval-days",
         type=int,
@@ -420,6 +431,8 @@ def main() -> None:
     )
     args = parser.parse_args()
     validate_execute_cutoff(execute=args.execute, cutoff_days=args.cutoff_days)
+    if args.cutoff_days is None:
+        args.cutoff_days = RECONCILIATION_CUTOFF_DAYS
 
     dsn = os.getenv("DATABASE_URL")
     if not dsn:

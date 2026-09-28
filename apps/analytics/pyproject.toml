@@ -62,6 +62,7 @@ virtual-exit-policy-report = "schurfer_analytics.virtual_exit_policy_report:main
 paper-replay-reconciliation = "schurfer_analytics.paper_replay_reconciliation:main"
 cold-bar-export = "schurfer_analytics.cold_bar_export:main"
 cold-bar-gated-deletion = "schurfer_analytics.cold_bar_gated_deletion_collectors:main"
+cold-bar-fetch = "schurfer_analytics.cold_bar_fetch:main"
 cold-bar-write-receipts = "schurfer_analytics.cold_bar_gated_deletion_job:write_receipts_main"
 score-component-study = "schurfer_analytics.score_component_study:main"
 pump-age-resolution-study = "schurfer_analytics.pump_age_resolution_study:main"

@@ -197,6 +197,54 @@ temporary server and failed.
 - the disk reserve refused before any container started;
 - nothing was left behind.
 
+## Fetching archived bars, and the hot window
+
+Minute bars stay in PostgreSQL for a buffer of days (`runtime/cold-bar-cutoff-days`,
+default 40, never below 14). Older days are dropped by the gated deletion only after their
+Parquet is exported and confirmed offsite. From then on, the Parquet inside a `bars-*`
+archive is the only copy.
+
+**Fetching bars back.**
+
+```bash
+make prod-cold-bar-fetch FROM=2026-09-01 TO=2026-09-03
+```
+
+This writes `runtime/cold-bar-fetch/bars-<day>.parquet`. Each day is accepted only if its
+sha256 and row count equal the day's offsite receipt. A file already there must pass the
+same two checks, and is never overwritten. A day is published by hard link, so two
+concurrent fetches cannot replace each other's file. Research reads the files with DuckDB
+`read_parquet`.
+
+This host's disk also holds the live database, so a fetch here is bounded: at most 3 days
+per run, and a day is fetched only if at least 10 GiB stays free after it. Its size comes
+from the day's manifest, trusted only when its sha256 matches the receipt, and the stream
+is cut off if it grows past that size. Delete fetched files when the research is done. Larger
+extractions (weeks of bars) run on a separate machine with its own Borg access, using the
+same tool (`cold-bar-fetch --max-days N`) against a copy of `runtime/cold-bars` receipts
+and manifests.
+
+**Lowering the hot window** (for example 40 to 14 days), in this order:
+
+1. On prod, run a dry-run at the new value and check that its candidates and gates are
+   clean:
+
+   ```bash
+   make prod-cold-bar-gated-deletion-dry-run ARGS='--cutoff-days 14 --max-eval-days 3'
+   ```
+
+2. Fetch one day older than the new value with `make prod-cold-bar-fetch`, and check that it
+   verifies.
+3. Write the value: `echo 14 > /opt/schurfer/runtime/cold-bar-cutoff-days`.
+4. Let the nightly timer converge. It drops at most 3 days per run, so the change happens in
+   nightly portions, each followed by the hourly offsite health check. Watch the free disk
+   space after each.
+
+The dry-run and the real deletion build their arguments separately. The dry-run target
+refuses `--execute`, and the execute target takes no `ARGS`: its only buffer is the value
+in `runtime/cold-bar-cutoff-days`. The job itself refuses `--execute` without an explicit
+`--cutoff-days`, so a deletion can never inherit the dry-run's reconciliation default of 25.
+
 ## Restoring research inputs
 
 Paths inside the archive are relative (`runtime/...`, `backups/...`). Extract
