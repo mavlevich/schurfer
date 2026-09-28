@@ -22,18 +22,20 @@ from schurfer_analytics.cold_bar_gated_deletion_collectors import (
 )
 
 
-def test_execute_requires_the_full_40_day_cutoff() -> None:
-    # Dry-run is unbounded (deletes nothing): any cutoff is fine.
-    validate_execute_cutoff(execute=False, cutoff_days=25)
+def test_execute_requires_an_explicit_cutoff_of_at_least_14_days() -> None:
+    # Dry-run is unbounded (deletes nothing): any cutoff, or none, is fine.
+    validate_execute_cutoff(execute=False, cutoff_days=None)
     validate_execute_cutoff(execute=False, cutoff_days=1)
     # Execute at/above the buffer is allowed.
     validate_execute_cutoff(execute=True, cutoff_days=MIN_EXECUTE_CUTOFF_DAYS)
-    validate_execute_cutoff(execute=True, cutoff_days=MIN_EXECUTE_CUTOFF_DAYS + 5)
-    # Execute below the buffer (e.g. inheriting the reconciliation default 25) is refused.
-    with pytest.raises(ValueError, match="requires --cutoff-days >= 40"):
-        validate_execute_cutoff(execute=True, cutoff_days=25)
-    with pytest.raises(ValueError, match="requires --cutoff-days >= 40"):
-        validate_execute_cutoff(execute=True, cutoff_days=39)
+    validate_execute_cutoff(execute=True, cutoff_days=40)
+    # Execute must name its buffer: it never inherits the reconciliation default.
+    with pytest.raises(ValueError, match="explicit --cutoff-days"):
+        validate_execute_cutoff(execute=True, cutoff_days=None)
+    # Execute below the buffer is refused.
+    with pytest.raises(ValueError, match="requires --cutoff-days >= 14"):
+        validate_execute_cutoff(execute=True, cutoff_days=13)
+    assert MIN_EXECUTE_CUTOFF_DAYS == 14
 
 
 def test_borg_command_builders() -> None:

@@ -431,9 +431,14 @@ def newest_verified_archive() -> tuple[str, dict[str, Any]]:
 def stream(archive: str, consumer: list[str]) -> subprocess.CompletedProcess[str]:
     """borg extract --stdout into a consumer. A consumer that stops reading early makes
     borg fail with a broken pipe, so both exit codes are returned to the caller."""
+    # borg's stderr is discarded: pg_restore stops reading once it has what it needs,
+    # and borg then prints a BrokenPipeError traceback that is expected and alarming.
+    # pg_restore's own result decides; a truly failed extract shows up there as a
+    # truncated or unreadable archive.
     producer = subprocess.Popen(  # noqa: S603 -- fixed argv
         ["borg", "extract", "--stdout", f"::{archive}"],  # noqa: S607 -- borg from PATH
         stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
     )
     assert producer.stdout is not None
     result = subprocess.run(  # noqa: S603 -- fixed argv
