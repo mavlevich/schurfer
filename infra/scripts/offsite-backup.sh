@@ -46,6 +46,10 @@ RESEARCH_PATHS=(
     "runtime/market-path-cache"
     "runtime/research-dataset-artifacts"
     "backups/reports"
+    # Formal research reads: frozen inputs, claims and results (HYP-012b, HYP-012c,
+    # HYP-029) plus the archived MEXC klines that the exchange no longer serves. None
+    # of it can be recreated: a formal read is never repeated.
+    "runtime/research"
 )
 
 # Written only after an archive actually succeeded. The alert watches THIS,

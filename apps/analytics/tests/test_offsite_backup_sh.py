@@ -85,6 +85,7 @@ def _fake_env(
     for relative in (
         "runtime/market-path-cache",
         "runtime/research-dataset-artifacts",
+        "runtime/research/hyp012b/discovery",
         "backups/reports",
     ):
         (repo / relative).mkdir(parents=True)
@@ -94,6 +95,7 @@ def _fake_env(
     (repo / "runtime/market-path-cache/a.json").write_text("a")
     (repo / "runtime/research-dataset-artifacts/b.json").write_text("b")
     (repo / "backups/reports/c.md").write_text("c")
+    (repo / "runtime/research/hyp012b/discovery/result.json").write_text("{}")
 
     state = tmp_path / "state"
     state.mkdir()
@@ -291,7 +293,9 @@ def test_archive_missing_a_requested_file_is_deleted(tmp_path: Path) -> None:
     assert not (state / "offsite-backup-research.stamp").exists()
 
 
-@pytest.mark.parametrize("missing", ["runtime/market-path-cache", "backups/reports"])
+@pytest.mark.parametrize(
+    "missing", ["runtime/market-path-cache", "backups/reports", "runtime/research"]
+)
 def test_missing_research_path_does_not_silently_shrink_the_archive(
     tmp_path: Path, missing: str
 ) -> None:
@@ -301,6 +305,21 @@ def test_missing_research_path_does_not_silently_shrink_the_archive(
     result = _run(env)
     assert result.returncode != 0
     assert not (state / "offsite-backup-research.stamp").exists()
+
+
+def test_formal_research_reads_are_in_the_research_archive(tmp_path: Path) -> None:
+    """Frozen inputs, claims and results of formal reads cannot be recreated, so the
+    research archive must carry runtime/research."""
+    recording_borg = _HONEST_BORG.replace(
+        'cat > "${BORG_TRACE}.paths"',
+        'tee -a "${BORG_TRACE}.all" > "${BORG_TRACE}.paths"',
+    )
+    state, env = _fake_env(tmp_path, borg_body=recording_borg)
+    result = _run(env)
+    assert result.returncode == 0, result.stderr
+    archived = Path(env["BORG_TRACE"] + ".all").read_text().splitlines()
+    assert "runtime/research/hyp012b/discovery/result.json" in archived
+    assert (state / "offsite-backup-research.stamp").exists()
 
 
 def test_archived_cold_bars_are_reclaimed_but_their_manifests_are_kept(tmp_path: Path) -> None:
