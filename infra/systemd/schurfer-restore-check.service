@@ -1,0 +1,23 @@
+[Unit]
+Description=Schurfer weekly restore drill of the offsite database backup (ENG-025)
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+# Root for the same reasons as schurfer-offsite-backup.service: it reads the Borg
+# repository with the same key and environment, and it starts and removes the
+# throwaway drill container.
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/opt/schurfer
+ExecStart=/opt/schurfer/infra/scripts/restore-check.sh
+# Two streamed passes over the dump plus the restore of the selected set.
+TimeoutStartSec=3h
+EnvironmentFile=-/opt/schurfer/.env.prod
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

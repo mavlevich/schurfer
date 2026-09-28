@@ -118,6 +118,85 @@ A restore is not verified because it finished without errors. Check at minimum:
 Record the date, the archive name and the outcome. An untested backup and a
 backup tested a year ago are close to the same thing.
 
+## Automated restore drill (ENG-025)
+
+A weekly, narrow, automated version of the procedure above:
+`infra/scripts/restore_check.py`, run by `schurfer-restore-check.timer` (Sundays 06:00 UTC)
+through `infra/scripts/restore-check.sh`.
+
+**The receipt, at backup time.** `offsite-backup.sh` calls `restore_check.py backup`
+for the database archive. That process:
+
+1. opens one `REPEATABLE READ READ ONLY` transaction and exports its snapshot;
+2. inside that snapshot, resolves the critical table set: the seed tables in the script
+   plus every foreign-key parent, transitively (23 tables at the time of writing, about
+   3.5 GB with indexes). A missing seed table refuses the receipt (exit 3), so a table
+   that disappears cannot silently drop out of both the receipt and the drill;
+3. records per table the row count and an md5 over every full row in primary-key order,
+   plus the owned sequences, index names, total size and schema revision;
+4. keeps the transaction open while `pg_dump --snapshot` streams the dump through the same
+   `borg create --content-from-command` as before;
+5. only after that archive succeeds, stores the receipt as its own archive,
+   `dbreceipt-<same timestamp>`.
+
+If the dump fails, nothing changes from before: the partial archive is deleted. If only
+the receipt fails, the database archive still counts as a backup and the run reports the
+failure.
+
+**The drill.** `restore_check.py check`:
+
+1. takes the newest `db-*` archive that has a matching receipt. It fails if that restore
+   point is older than 48 hours, because receipts have then stopped and a green drill on
+   an ever older copy would be false. It refuses to start unless free space covers twice
+   the set's size plus a 10 GB reserve;
+2. starts a throwaway container of the production image by digest (`--network none`, its
+   own volume, no port);
+3. streams the dump once for its table of contents and keeps only the set's entries
+   (schema, extensions, types, the tables, their data, defaults, constraints, triggers,
+   owned sequences and indexes; no hypertable);
+4. streams it again into `pg_restore -L ... --exit-on-error`;
+5. recomputes every row hash and the schema revision and compares them with the receipt.
+
+A disk watchdog stops the drill if free space falls under the reserve.
+
+The container and its volume are removed before the run (a leftover would hand the drill
+an old database) and after it. Removal is confirmed with `docker ... inspect`. A container
+or volume that survives is recorded as `cleanup_error`, and the run fails without a stamp.
+
+**Output.**
+
+- A JSON record per run in `runtime/restore-check/`. It has the archive, the verified
+  restore point, the restore time of the selected set (not the system RTO), row counts and
+  any mismatch.
+- `runtime/restore-check.stamp` on success, which `offsite-backup-health.sh` requires to
+  be under 8 days old once the timer is installed.
+- A Telegram alert on failure.
+
+**Not covered** (use the full manual restore above, on a separate host):
+
+- the hypertables and their compressed chunks;
+- `trade_decisions` and the other large tables outside the set;
+- the full volume and its duration.
+
+**Readiness race, found while testing.** The image's entrypoint first runs a temporary
+server on the unix socket only for its init scripts, then restarts. The drill waits with
+`pg_isready -h 127.0.0.1`, because checking the socket started the restore against the
+temporary server and failed.
+
+**First run.**
+
+1. Deploy.
+2. Wait for one nightly backup, so a receipt exists.
+3. Run `make prod-restore-check-run` and check that the record says `"ok": true`.
+4. `make prod-restore-check-install`, which refuses without a passing stamp.
+
+**Verified locally on 2026-09-28** against the production image digest:
+
+- 23 tables and 199 restore-list entries, every row hash matching, in 8.9 s;
+- a tampered receipt was caught three times out of three;
+- the disk reserve refused before any container started;
+- nothing was left behind.
+
 ## Restoring research inputs
 
 Paths inside the archive are relative (`runtime/...`, `backups/...`). Extract
