@@ -75,7 +75,7 @@ def _state(
     return state
 
 
-def _run(state: Path) -> subprocess.CompletedProcess[str]:
+def _run(state: Path, **extra: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(  # noqa: S603
         [_BASH, str(_SCRIPT)],
         capture_output=True,
@@ -83,6 +83,7 @@ def _run(state: Path) -> subprocess.CompletedProcess[str]:
         check=False,
         env={
             **os.environ,
+            **extra,
             "STATE_DIR": str(state),
             "COLD_BARS_DIR": str(state / "cold-bars"),
             # Disk runway is a separate signal with its own test surface; take it
@@ -226,3 +227,37 @@ def test_a_manifest_alone_counts_as_covered(tmp_path: Path) -> None:
     state = _state(tmp_path, exported=[_day(index) for index in range(2, 20)])
     assert not list((state / "cold-bars").glob("*.parquet"))
     assert _run(state).returncode == 0
+
+
+def _healthy_state(tmp_path: Path) -> Path:
+    return _state(tmp_path, exported=[_day(index) for index in range(2, 20)])
+
+
+def test_the_restore_drill_is_ignored_until_its_timer_is_installed(tmp_path: Path) -> None:
+    state = _healthy_state(tmp_path)
+    result = _run(state, RESTORE_TIMER=str(tmp_path / "not-installed.timer"))
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_an_installed_drill_that_never_passed_is_a_problem(tmp_path: Path) -> None:
+    state = _healthy_state(tmp_path)
+    timer = tmp_path / "schurfer-restore-check.timer"
+    timer.write_text("[Timer]\n")
+    result = _run(state, RESTORE_TIMER=str(timer))
+    assert result.returncode != 0
+    assert "restore drill has never passed" in result.stdout + result.stderr
+
+
+@pytest.mark.parametrize(("age_days", "healthy"), [(1, True), (9, False)])
+def test_the_last_passing_drill_must_be_recent(
+    tmp_path: Path, age_days: int, healthy: bool
+) -> None:
+    state = _healthy_state(tmp_path)
+    timer = tmp_path / "schurfer-restore-check.timer"
+    timer.write_text("[Timer]\n")
+    stamp = state / "restore-check.stamp"
+    stamp.write_text("passed\n")
+    old = (datetime.now(UTC) - timedelta(days=age_days)).timestamp()
+    os.utime(stamp, (old, old))
+    result = _run(state, RESTORE_TIMER=str(timer))
+    assert (result.returncode == 0) is healthy, result.stdout + result.stderr

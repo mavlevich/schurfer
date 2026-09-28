@@ -1,0 +1,12 @@
+[Unit]
+Description=Weekly Schurfer restore drill (ENG-025)
+
+[Timer]
+# Sunday 06:00 UTC: after the nightly offsite backup (04:00 plus up to 15 min of
+# jitter, about 15 min of work) and the cold-bar gated deletion (05:00). The
+# script also takes the backup lock, so an overrun backup delays it, never races it.
+OnCalendar=Sun *-*-* 06:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

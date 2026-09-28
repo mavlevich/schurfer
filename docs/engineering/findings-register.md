@@ -642,6 +642,13 @@ verify`, `make deadcode`, `pre-commit run --all-files`, and 13 black-box tests t
 
 ### ENG-025 — Establish recovery evidence and capture continuity
 
+- **Update 2026-09-28:** the narrow automated restore drill is in code
+  (`infra/scripts/restore_check.py`, weekly timer, receipt archive per db backup,
+  row-hash comparison, health stamp). It was verified end to end locally against the
+  production image, and `runtime/research` was added to the offsite archive. Installing
+  the timer follows one passing manual run on production. The full-volume restore of
+  hypertables and the large tables remains open.
+
 - **Status / priority:** `confirmed` script defaults, `reported` production coverage;
   `P1` before unattended live; C-2/M-6/M-11/P-7, B03. Inventory/isolated preparation
   is queued; production actions require their own authorization.

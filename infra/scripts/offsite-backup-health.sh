@@ -72,6 +72,23 @@ check_stamp "database" "$DB_STAMP"
 check_stamp "research" "$RESEARCH_STAMP"
 check_stamp "cold bars" "$BARS_STAMP"
 
+# The weekly restore drill (ENG-025), once its timer is installed: a drill that
+# stopped passing, or stopped running, is as much a backup failure as a missing
+# archive. Eight days allows one missed Sunday run to be retried.
+RESTORE_TIMER="${RESTORE_TIMER:-/etc/systemd/system/schurfer-restore-check.timer}"
+RESTORE_STAMP="${STATE_DIR}/restore-check.stamp"
+RESTORE_MAX_AGE_HOURS="${RESTORE_MAX_AGE_HOURS:-192}"
+if [[ -f "$RESTORE_TIMER" ]]; then
+    if [[ ! -f "$RESTORE_STAMP" ]]; then
+        problems+=("the restore drill has never passed (${RESTORE_STAMP} missing)")
+    else
+        restore_age=$(( ( $(date +%s) - $(date -r "$RESTORE_STAMP" +%s) ) / 3600 ))
+        if [[ "$restore_age" -gt "$RESTORE_MAX_AGE_HOURS" ]]; then
+            problems+=("the last passing restore drill is ${restore_age}h old (limit ${RESTORE_MAX_AGE_HOURS}h)")
+        fi
+    fi
+fi
+
 # Bar coverage, from the manifests rather than the Parquet files. The backup
 # reclaims each `.parquet` once it is confirmed inside a `bars-*` archive and
 # leaves the `.manifest.json` beside it, so the manifests are a permanent local

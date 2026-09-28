@@ -107,6 +107,18 @@ def _fake_env(
     _write(bin_dir / "borg", borg_body)
     _write(bin_dir / "docker", docker_body)
     _write(bin_dir / "curl", "#!/usr/bin/env bash\nexit 0\n")
+    # Stands in for restore_check.py backup: the same borg call for the db archive,
+    # then an exit code the test chooses (0 ok, 2 db archive failed, 3 receipt failed).
+    _write(
+        bin_dir / "restore-check-helper",
+        """\
+        #!/usr/bin/env bash
+        while [[ $# -gt 0 ]]; do [[ "$1" == --db-archive ]] && name=$2; shift; done
+        borg create --content-from-command --stdin-name schurfer.dump "::${name}" -- \\
+            docker exec schurfer-postgres pg_dump -Fc -Z0 || exit 2
+        exit "${FAKE_RECEIPT_RC:-0}"
+        """,
+    )
 
     # The fake tools shadow the real ones, but the rest of PATH stays: the
     # script needs real `find`, `sort`, `flock` and friends.
@@ -116,6 +128,7 @@ def _fake_env(
         "REPO_ROOT": str(repo),
         "STATE_DIR": str(state),
         "BORG_TRACE": str(tmp_path / "borg-calls.log"),
+        "RESTORE_CHECK_HELPER": str(bin_dir / "restore-check-helper"),
     }
     return state, env
 
@@ -435,3 +448,24 @@ def test_a_failed_receipt_writer_keeps_every_parquet(tmp_path: Path) -> None:
     assert (state / "offsite-backup-bars.stamp").exists()
     assert (repo / "runtime/cold-bars/bars-2026-08-20.parquet").exists()
     assert "keeping all Parquet" in result.stdout
+
+
+def test_a_failed_receipt_keeps_the_database_backup_but_reports_the_failure(
+    tmp_path: Path,
+) -> None:
+    """Exit 3: the db archive is a real backup, so it is stamped; the missing receipt
+    is still a failure, because the restore drill will skip that archive."""
+    state, env = _fake_env(tmp_path, borg_body=_HONEST_BORG)
+    env["FAKE_RECEIPT_RC"] = "3"
+    result = _run(env)
+    assert result.returncode != 0
+    assert (state / "offsite-backup-db.stamp").exists()
+    assert "receipt" in result.stderr
+
+
+def test_the_database_archive_goes_through_the_receipt_helper(tmp_path: Path) -> None:
+    _, env = _fake_env(tmp_path, borg_body=_HONEST_BORG)
+    result = _run(env)
+    assert result.returncode == 0, result.stderr
+    trace = Path(env["BORG_TRACE"]).read_text()
+    assert "--stdin-name schurfer.dump ::db-" in trace

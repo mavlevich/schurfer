@@ -28,6 +28,7 @@
 # a backup that reports success while being empty in the part that mattered.
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${OFFSITE_BACKUP_ENV:-/opt/schurfer/runtime/backup.env}"
 REPO_ROOT="${REPO_ROOT:-/opt/schurfer}"
 STATE_DIR="${STATE_DIR:-/opt/schurfer/runtime}"
@@ -141,13 +142,29 @@ drop_archive() {
 # and exiting 3 makes borg exit 2 and leave no archive at all.
 db_archive="db-$(date -u +%Y-%m-%dT%H:%M:%S)"
 log "database: starting ${db_archive}"
-if borg create --stats --compression zstd,3 \
-    --content-from-command --stdin-name schurfer.dump \
-    "::${db_archive}" -- \
-    docker exec "$CONTAINER" pg_dump -U "$DB_USER" -d "$DB_NAME" -Fc -Z0
-then
+# restore_check.py backup holds one REPEATABLE READ READ ONLY transaction with an
+# exported snapshot, fingerprints the critical tables inside it, and dumps with
+# `pg_dump --snapshot` through the same --content-from-command call as before. Only
+# after the db archive succeeds does it add `dbreceipt-<timestamp>`, which the weekly
+# restore drill (ENG-025) verifies against. Exit 2: the db archive failed. Exit 3:
+# the db archive is fine but its receipt failed, so the backup counts and the drill
+# will skip this archive.
+db_rc=0
+if [[ -n "${RESTORE_CHECK_HELPER:-}" ]]; then
+    restore_check=("$RESTORE_CHECK_HELPER")  # tests substitute the helper
+else
+    restore_check=(python3 "${SCRIPT_DIR}/restore_check.py")
+fi
+"${restore_check[@]}" backup \
+    --container "$CONTAINER" --db-user "$DB_USER" --db-name "$DB_NAME" \
+    --db-archive "$db_archive" || db_rc=$?
+if [[ $db_rc -eq 0 ]]; then
+    log "database: ${db_archive} complete, with its receipt"
+    date -Iseconds > "$DB_STAMP"
+elif [[ $db_rc -eq 3 ]]; then
     log "database: ${db_archive} complete"
     date -Iseconds > "$DB_STAMP"
+    part_failed "the receipt of ${db_archive} failed; the restore drill will skip it"
 else
     drop_archive "$db_archive"
     part_failed "borg create failed for ${db_archive}"
