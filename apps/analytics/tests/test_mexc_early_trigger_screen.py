@@ -133,3 +133,53 @@ def test_matched_controls_share_symbol_week_and_turnover_and_are_never_reused() 
     assert (control.symbol, control.i) == ("AAA_USDT", SPIKE + s.COOLDOWN + 1)
     again = _episode("AAA_USDT", SPIKE + 1, 10_000.0)
     assert len(s.matched_controls([trig, again], pool)) == 1  # a control is used once
+
+
+def _stored(entry_open: float, closes: dict[int, float], native: str = "AAAUSDT") -> dict[str, Any]:
+    """Stored Bybit inputs: one live route and 5m rows from the entry bar onwards."""
+    entry_ms = (T0 + SPIKE * s.BAR + s.BAR) * 1000
+    rows = []
+    for k in range(s.LONGEST + 2):
+        ts = entry_ms + k * s.BAR * 1000
+        price = entry_open if k == 0 else closes.get(k, 1.0)
+        rows.append([str(ts), str(entry_open if k in (0, 1) else 1.0), "1", "1", str(price), "1"])
+    catalogue = [{"symbol": native, "baseCoin": "AAA", "launchTime": "0", "deliveryTime": "0"}]
+    return {"bybit_catalogue": catalogue, "bybit_rows": {f"{native}:{entry_ms}": rows}}
+
+
+def _trigger() -> s.Episode:
+    bars = _bars(N, **{str(SPIKE): _spike()})
+    [e], _ = s.episodes_for("AAA_USDT", bars, 0.05, 10.0)
+    return e
+
+
+def test_bybit_legs_come_from_stored_inputs_only() -> None:
+    e = _trigger()
+    status = s.attach_bybit_legs([e], _stored(1.0, {11: 1.05, 12: 1.08}))
+    assert status == {"bybit_leg": 1}
+    assert e.bybit["1h"] == pytest.approx(5.0)  # close of the 12th bar from the entry
+    assert e.bybit_delayed["1h"] == pytest.approx(8.0)  # entered one bar later
+    missing = _stored(1.0, {})
+    missing["bybit_rows"] = {}
+    with pytest.raises(ValueError, match="snapshot lacks"):
+        s.attach_bybit_legs([_trigger()], missing)
+
+
+def test_the_price_band_rejects_another_asset_on_the_same_ticker() -> None:
+    e = _trigger()
+    assert s.attach_bybit_legs([e], _stored(5.0, {})) == {"bybit_price_level_mismatch": 1}
+    assert e.bybit == {}
+
+
+def test_diagnostics_show_concentration_and_the_mean_without_each_symbol() -> None:
+    eps = []
+    for k, (symbol, value) in enumerate([("A", 10.0), ("B", 1.0), ("B", -1.0), ("C", 0.0)]):
+        e = _episode(f"{symbol}_USDT", SPIKE + k, 10_000.0)
+        e.bybit["1h"] = value + 0.2  # net at 0.2 cost equals `value`
+        eps.append(e)
+    d = s.diagnostics(eps)
+    assert d["legs"] == 4 and d["mean_net"] == pytest.approx(2.5)
+    assert d["top5_symbols"][0][0] == "A_USDT"
+    assert d["mean_without_top_symbol"] == pytest.approx(0.0)
+    assert d["mean_without_each_symbol_min_max"] == [pytest.approx(0.0), pytest.approx(5.0)]
+    assert d["median_net"] == pytest.approx(0.5)
