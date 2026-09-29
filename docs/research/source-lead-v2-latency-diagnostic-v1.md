@@ -107,3 +107,27 @@ The rule is applied once, at the first scheduled weekly report after the window 
   first. The report names which condition failed.
 
 Neither branch changes v2. Both only choose the next engineering PR.
+
+## Reader implementation note (2026-09-29)
+
+`source-lead-shadow-diagnostic --week-end YYYY-MM-DD` reads a closed UTC-week
+prefix through Monday 00:00 UTC. It prints weekly counts and timing
+distributions, and applies the engineering rule to the first complete-week
+prefix with at least 30 `shadow_recorded` attempts. A later run keeps that
+same first eligible prefix rather than selecting a favorable later week.
+
+The report reads only qualifications, capture/target timestamps and shadow
+attempt status, timestamps and `quote_change_bps`. It never reads prices,
+returns, exit observations or `trade_decisions`. The `quote_change_bps` field
+is descriptive and is not an estimate of realized slippage or profit.
+
+The existing Redis heartbeat contains current health, not a durable history of
+outage intervals. The reader therefore reports `no_attempt` from the database
+and labels historical heartbeat-gap attribution unavailable; it never infers a
+specific outage from a missing attempt. This limits diagnosis of missingness
+but cannot make the 90% quote-coverage gate pass. The report's JSON contains a
+SHA-256 of the rows read. Attempt status can later change through recovery,
+so that digest identifies this read snapshot, not an immutable formal result.
+
+Run the first complete week no earlier than 2026-10-05T00:00Z. The CLI does
+not send orders, persist a claim or trigger a formal cohort read.
