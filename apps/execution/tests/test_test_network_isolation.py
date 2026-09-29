@@ -43,7 +43,7 @@ def test_production_database_fails_before_contact() -> None:
         psycopg.connect("postgresql://schurfer@db.example.invalid:5432/schurfer")
 
 
-def test_sqlalchemy_database_path_fails_before_contact() -> None:
+def test_psycopg_class_connect_fails_before_contact() -> None:
     with pytest.raises(pytest.fail.Exception, match="outside local schurfer Postgres"):
         psycopg.Connection.connect("postgresql://schurfer@db.example.invalid:5432/schurfer")
 

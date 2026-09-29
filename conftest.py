@@ -1,8 +1,11 @@
 """Fail fast if a Python test accidentally reaches an external service.
 
-Integration tests use the local PostgreSQL service on port 5432. Everything
-else should be replaced with a test double. In particular, a truthy MagicMock
-config must never turn a unit test into a real database or Telegram request.
+Integration tests use TCP localhost/127.0.0.1:5432 for PostgreSQL. The database
+guard intentionally rejects IPv6 and Unix-socket DSNs; the generic socket guard
+allows other loopback traffic. Everything external should use a test double.
+In particular, a truthy MagicMock config must never turn a unit test into a
+real database or Telegram request. Imports such as ``from socket import
+getaddrinfo`` made before this fixture runs retain the original function.
 """
 
 from __future__ import annotations

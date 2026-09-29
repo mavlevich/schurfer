@@ -806,8 +806,16 @@ verify` accepts, and the tree passes it with no baseline file or blanket nolint.
   unmocked external sockets, DNS lookups, and psycopg connections outside the
   local test database. Two tests with unintended database/Telegram calls were
   corrected. This does not isolate the shared local PostgreSQL database or
-  cover subprocess and Go network calls; the first-run `make verify` flake is
-  not yet attributed to a specific cause.
+  cover subprocess and Go network calls.
+- **Confirmed shared-DB failure (2026-09-28):** migration integration tests
+  repeatedly downgrade and upgrade the same local database. PostgreSQL does
+  not reuse dropped column slots; after repeated runs,
+  `app.pump_event_sources` hit the 1600-column limit (`TooManyColumns`). The
+  failed migration left the shared schema downgraded, so later integration
+  tests failed with `UndefinedTable`. Recreating the local database with
+  `init-db.sql` and `make migrate` restored the suite. Give each verification
+  run a disposable database so its migration tests cannot accumulate schema
+  history or break another run.
 - **Evidence:** a test in `apps/execution/tests/test_orders.py` reached
   `order_attempts.mark_completed` with an unpatched database call and opened a
   connection to the production PostgreSQL host, failing only on a socket timeout after
