@@ -9,8 +9,8 @@ status check, not a place for narrative.
 
 ```
 Current primary: preserve the HYP-012 v2 cohort from 2026-09-29 with shadow execution and the HYP-015 cohort 2026-10-05..11-02 (formal read from 2026-11-04 12:00Z); HYP-012c and HYP-029 each had one formal read on 2026-09-29 and failed their registered gates
-State: DRY_RUN, AUTO_TRADE off, no trading credentials; Bybit is the only confirmed execution venue; no after-cost edge established; HYP-012c's mature mean net was negative and HYP-029's positive mean had a wide interval crossing zero
-Next: measure v2 shadow quote quality and costs without changing either cohort, repair the flaky make verify gate, and confirm disk headroom after cold-bar retention converges; consider a bounded, outcome-blind pre-move data feasibility canary before any new research registration
+State: DRY_RUN, AUTO_TRADE off, no trading credentials; Bybit is the only confirmed execution venue; no after-cost edge established; HYP-012c's holdout mean net was negative and HYP-029's positive mean had a wide interval crossing zero
+Next: measure v2 shadow quote quality and costs without changing either cohort, repair the flaky make verify gate, and confirm disk headroom after cold-bar retention converges; discuss the next research direction before registering another rule
 User decision required: none for the active cohorts; confirm accessible futures venues only before designing a source-native execution route
 ```
 
@@ -267,6 +267,13 @@ closed research decisions; a historical unchecked box is not authority to rerun 
 closed pilot or to block an already established capture lane.
 
 ### Source-venue early detection (2026-09-27)
+
+**Status as of 2026-09-29.** Steps 1-2 are complete. Step 4 was the single
+registered HYP-029 read on September 1m bars; it failed its candidate gate, so
+this MEXC early-trigger line is closed. Step 3 did not replace the registered
+0.4% cost assumption. Steps 5-6 have not started and are not authorized by this
+line's result: the descriptive 60s-to-120s delay difference does not establish
+that latency decides the outcome.
 
 **Why this, now.** Every hypothesis tested so far entered after the pump was already
 visible to everyone:
