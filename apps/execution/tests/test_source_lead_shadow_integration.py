@@ -16,6 +16,11 @@ TEST_DATABASE_URL = "postgresql://schurfer:schurfer_dev@localhost:5432/schurfer"
 REGISTRY_V4 = "source_lead_identity_registry_v4"
 FINGERPRINT_V4 = "7d5f635a4ed02013ad3bd5fb7bd118f5b80979427bf059a130279fa2c3bee189"
 ENTRY = sh.COHORT_START + timedelta(days=1)
+_COSTS_SQL = (
+    "SELECT send_cost_capture_version, send_spread_bps, "
+    "send_notional_ask_impact_bps, send_qty_ask_impact_bps "
+    "FROM app.source_lead_shadow_attempts WHERE id = %s"
+)
 
 
 def _connect_or_skip() -> psycopg.Connection:
@@ -140,5 +145,44 @@ def test_due_claim_finalize_and_recovery() -> None:
         asyncio.run(scenario())
     finally:
         conn.execute("DELETE FROM app.trade_decisions WHERE base = %s", (base,))
+        conn.execute("DELETE FROM app.pump_events WHERE base = %s", (base,))
+        conn.close()
+
+
+def test_send_book_cost_fields_are_nullable_and_persisted_with_the_attempt() -> None:
+    conn = _connect_or_skip()
+    base = f"S{uuid.uuid4().hex[:10].upper()}"
+    store = sh.ShadowStore(TEST_DATABASE_URL)
+    try:
+        capture_id = _seed(conn, base)
+
+        async def scenario() -> None:
+            episode = next(e for e in await store.due() if e.capture_id == capture_id)
+            row_id = await store.claim(episode, ENTRY + timedelta(seconds=5))
+            assert row_id is not None
+            assert conn.execute(_COSTS_SQL, (row_id,)).fetchone() == (
+                sh.SEND_COST_CAPTURE_VERSION,
+                None,
+                None,
+                None,
+            )
+            assert await store.finalize(
+                row_id,
+                {
+                    "outcome": "shadow_recorded",
+                    "send_spread_bps": Decimal("11.25"),
+                    "send_notional_ask_impact_bps": Decimal("6.5"),
+                    "send_qty_ask_impact_bps": Decimal("6.75"),
+                },
+            )
+            assert conn.execute(_COSTS_SQL, (row_id,)).fetchone() == (
+                sh.SEND_COST_CAPTURE_VERSION,
+                Decimal("11.2500"),
+                Decimal("6.5000"),
+                Decimal("6.7500"),
+            )
+
+        asyncio.run(scenario())
+    finally:
         conn.execute("DELETE FROM app.pump_events WHERE base = %s", (base,))
         conn.close()

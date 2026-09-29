@@ -74,6 +74,10 @@ def test_quote_math_matches_the_capture_convention() -> None:
     assert vwap == Decimal(50) / (Decimal(10) + Decimal(30) / Decimal("2.10"))
     assert sh.ask_vwap_for_notional([["2.00", "1"]], Decimal(50)) is None
     assert sh.rounded_quantity(Decimal(50), Decimal("2.01"), Decimal(10)) == Decimal(20)
+    assert sh.mid_to_ask_vwap_bps(Decimal("2.02"), Decimal("2.01")) == (
+        Decimal("0.01") / Decimal("2.01") * 10_000
+    )
+    assert sh.mid_to_ask_vwap_bps(Decimal("2.00"), Decimal("2.01")) is None
 
 
 def test_late_is_measured_from_the_capture_observation() -> None:
@@ -234,6 +238,11 @@ def test_a_valid_episode_is_recorded_through_the_shadow_broker_with_its_timing()
     assert store.final["quote_latency_ms"] == 100
     assert store.final["book_age_ms"] == 100
     assert store.final["quote_change_bps"] == Decimal(100)  # 2.02 vs 2.00
+    assert store.final["send_spread_bps"] == (Decimal("0.02") / Decimal("2.01") * 10_000)
+    assert store.final["send_notional_ask_impact_bps"] == (
+        Decimal("0.01") / Decimal("2.01") * 10_000
+    )
+    assert store.final["send_qty_ask_impact_bps"] == (Decimal("0.01") / Decimal("2.01") * 10_000)
     assert quotes.book_calls == 1
     assert intent.setup_context["gate_to_seen_ms"] == 5000
 
@@ -247,6 +256,23 @@ def test_the_intent_carries_the_rounded_quantity_and_its_real_notional() -> None
     assert broker.intents[0].size_usd == pytest.approx(40.40)
     # The capture comparison still uses the same $50 notional.
     assert store.final["send_ask_vwap"] == Decimal("2.02")
+    assert store.final["send_qty_ask_impact_bps"] == store.final["send_notional_ask_impact_bps"]
+
+
+def test_ineligible_quantity_keeps_book_cost_without_inventing_order_cost() -> None:
+    outcome, store, _quotes, broker = _run(quotes=_Quotes(min_order="100"))
+    assert outcome == "below_min_order" and broker.intents == []
+    assert store.final["send_spread_bps"] is not None
+    assert store.final["send_notional_ask_impact_bps"] is not None
+    assert "send_qty_ask_impact_bps" not in store.final
+
+
+def test_stale_book_has_no_executable_cost_measurement() -> None:
+    outcome, store, _quotes, _broker = _run(quotes=_Quotes(age_ms=5000))
+    assert outcome == "stale_book"
+    assert "send_spread_bps" not in store.final
+    assert "send_notional_ask_impact_bps" not in store.final
+    assert "send_qty_ask_impact_bps" not in store.final
 
 
 def test_the_decision_id_is_saved_before_the_broker_call() -> None:
