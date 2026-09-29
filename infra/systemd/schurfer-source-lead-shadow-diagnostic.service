@@ -1,0 +1,18 @@
+[Unit]
+Description=Write the registered HYP-012 v2 weekly shadow latency diagnostic
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=deploy
+Group=deploy
+WorkingDirectory=/opt/schurfer
+ExecStart=/usr/bin/make prod-source-lead-shadow-diagnostic ARGS=--latest-closed-week
+TimeoutStartSec=20min
+Nice=10
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

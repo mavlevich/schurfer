@@ -9,8 +9,10 @@ from typing import TYPE_CHECKING, Any
 import pytest
 from schurfer_analytics.source_lead_shadow_diagnostic import (
     _ROWS,
+    READ_GRACE,
     SHADOW_VERSION,
     ShadowRow,
+    build_parser,
     build_report,
     render_markdown,
     report_once,
@@ -151,9 +153,9 @@ async def test_weekly_artifact_pins_decision_when_old_attempts_change(
         nonlocal calls
         calls += 1
         if until == FIRST_WEEK_END:
-            return until, first_rows
+            return until + READ_GRACE, first_rows
         # Recovery changed every old attempt to a failure after the first read.
-        return until, [replace(row, outcome="evaluation_error") for row in first_rows]
+        return until + READ_GRACE, [replace(row, outcome="evaluation_error") for row in first_rows]
 
     monkeypatch.setattr(diagnostic, "load_rows", load)
     first = await _run_week(tmp_path, FIRST_WEEK_END)
@@ -176,7 +178,7 @@ async def test_weekly_artifact_requires_prior_and_rejects_corruption(
     from schurfer_analytics import source_lead_shadow_diagnostic as diagnostic
 
     async def load(_db_url: str, *, until: datetime) -> tuple[datetime, list[ShadowRow]]:
-        return until, [_row(1)]
+        return until + READ_GRACE, [_row(1)]
 
     monkeypatch.setattr(diagnostic, "load_rows", load)
     with pytest.raises(ValueError, match="preceding weekly report is missing"):
@@ -186,6 +188,28 @@ async def test_weekly_artifact_requires_prior_and_rejects_corruption(
     path.write_text(path.read_text().replace('"rows": 1', '"rows": 2'))
     with pytest.raises(ValueError, match="does not match"):
         await _run_week(tmp_path, FIRST_WEEK_END)
+
+
+@pytest.mark.asyncio
+async def test_first_week_refuses_read_during_grace_without_pinning_an_artifact(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from schurfer_analytics import source_lead_shadow_diagnostic as diagnostic
+
+    async def load(_db_url: str, *, until: datetime) -> tuple[datetime, list[ShadowRow]]:
+        return until + timedelta(minutes=1), [_row(i) for i in range(1, 31)]
+
+    monkeypatch.setattr(diagnostic, "load_rows", load)
+    with pytest.raises(ValueError, match="registered read grace"):
+        await _run_week(tmp_path, FIRST_WEEK_END)
+    assert not list(tmp_path.glob("week-*.json"))
+
+
+def test_cli_uses_fixed_artifact_location(tmp_path: Path) -> None:
+    parser = build_parser()
+    assert parser.parse_args(["--latest-closed-week"]).latest_closed_week
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--week-end", "2026-10-05", "--artifact-dir", str(tmp_path)])
 
 
 def test_quote_change_without_received_book_is_flagged_and_not_reported() -> None:

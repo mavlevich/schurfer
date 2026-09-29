@@ -24,7 +24,7 @@ async def test_query_retains_missing_attempt_and_separates_versions() -> None:
         pytest.skip(f"no local postgres reachable: {exc}")
     qv = f"test_shadow_diag_{uuid4().hex[:12]}"
     base = f"SDG{uuid4().hex[:8].upper()}"
-    source_at = datetime.now(UTC) - timedelta(minutes=5)
+    source_at = datetime.now(UTC) - timedelta(hours=7)
     if source_at < datetime(2026, 9, 29, tzinfo=UTC):
         await engine.dispose()
         pytest.skip("test database clock precedes the registered cohort")
@@ -152,6 +152,12 @@ async def test_query_retains_missing_attempt_and_separates_versions() -> None:
         assert rows[1].shadow_version is None
         assert rows[1].observed_at is not None
         assert rows[2].shadow_version == "unexpected_v2"
+        with pytest.raises(ValueError, match="registered read grace"):
+            await load_rows(
+                TEST_DATABASE_URL,
+                until=datetime.now(UTC) - timedelta(minutes=1),
+                qualification_version=qv,
+            )
     finally:
         if event_ids:
             async with engine.begin() as connection:

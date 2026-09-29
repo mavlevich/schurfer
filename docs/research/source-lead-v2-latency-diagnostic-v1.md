@@ -4,6 +4,15 @@ Status: REGISTERED 2026-09-27, before any shadow latency, quote or outcome count
 Shadow execution (#454) was enabled on prod at 2026-09-27T17:50:23Z (see below). Only the service's
 liveness (heartbeat timestamp) was checked at enablement.
 
+Amendment A1, 2026-09-29, before the first diagnostic run: the weekly read is scheduled
+for Monday 06:00 UTC and refuses until the database clock reaches week end plus six hours.
+The six-hour grace is fixed in code, exceeds the shadow worker's ten-minute claim recovery
+age, and is recorded in each artifact. The canonical CLI always writes under
+`/runtime/research/source_lead_shadow_latency`; its path cannot be overridden.
+Historical heartbeat-gap attribution is unavailable because Redis retains only current
+health. This is an explicit deviation from the original coverage requirement below;
+`no_attempt` remains in the full denominator, with no invented outage explanation.
+
 ## What it is for
 
 The HYP-012b exploration found that Bybit's catch-up after a source pump is fast and small. It
@@ -73,9 +82,10 @@ and V. It is not slippage, because no order was sent.
 
 Reported per UTC week, never imputed:
 
-- **Coverage.** Qualified episodes after 2026-09-27T17:50:23Z, with and without an attempt row. A
-  qualified episode without a row is `no_attempt` (for example, the worker was down), and the
-  heartbeat gaps covering it are listed.
+- **Coverage.** Qualified episodes from 2026-09-29T00:00Z, with and without an attempt row. A
+  qualified episode without a row is `no_attempt` (for example, the worker was down).
+  Historical heartbeat gaps cannot be listed under Amendment A1; the report marks
+  attribution unavailable. The pre-cohort service warm-up had no eligible worker attempts.
 - **Outcomes.** The attempt outcome counts, by the existing codes (`shadow_recorded`,
   `stale_book`, `no_book_timestamp`, `delivery_unknown`, `instrument_rules_unknown`,
   `evaluation_error` and the rest). A segment is computed only over the rows whose marks exist;
@@ -91,6 +101,9 @@ and p90, split by `late`. Weekly, next to the v2 operational health check.
 
 The rule is applied once, at the first scheduled weekly report after the window holds at least
 30 `shadow_recorded` attempts. It is never applied to an ad hoc look.
+The scheduled report runs Monday at 06:00 UTC, no earlier than six hours after that
+week's end by the database clock. A missed timer firing is recorded with its actual read
+time and cannot skip an earlier weekly artifact.
 
 - **Scope of V - S.** V - S is computed over every attempt in the population that has a V, not
   only over `shadow_recorded` ones.
@@ -119,6 +132,9 @@ week returns that saved report without querying the database. A later week
 requires the immediately preceding saved report and carries its decision
 forward, even if old attempt statuses have since changed. Missed weeks must be
 recorded in order; the report records when each read actually occurred.
+The timer invokes `--latest-closed-week` on Mondays at 06:00 UTC. Both modes use
+the same fixed canonical directory. The production Make target accepts a week
+argument but cannot redirect the artifact path through `ARGS`.
 
 The report reads only qualifications, capture/target timestamps and shadow
 attempt status, timestamps and `quote_change_bps`. It never reads prices,
@@ -135,5 +151,5 @@ so that digest identifies the read snapshot pinned in that week's operational
 artifact, not an immutable formal v2 result. On production, the artifacts live
 under `/runtime/research/source_lead_shadow_latency`.
 
-Run the first complete week no earlier than 2026-10-05T00:00Z. The CLI does
+Run the first closed cohort week no earlier than 2026-10-05T06:00Z. The CLI does
 not send orders or trigger a formal cohort read.

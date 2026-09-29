@@ -33,6 +33,8 @@ from .source_lead_multi_source_report import complete_digest, load_verified, wri
 SHADOW_VERSION = "source_lead_shadow_v1"
 REPORT_VERSION = "source_lead_shadow_diagnostic_v1"
 MAX_ROWS = 100_000
+READ_GRACE = timedelta(hours=6)
+CANONICAL_ARTIFACT_DIR = Path("/runtime/research/source_lead_shadow_latency")
 
 _ROWS = text("""
     SELECT c.id AS capture_id, c.source_first_observed_at,
@@ -278,8 +280,8 @@ async def load_rows(
             )
             async with conn.begin():
                 database_now = (await conn.execute(text("SELECT now()"))).scalar_one()
-                if until > database_now:
-                    raise ValueError("requested UTC week has not ended in the database clock")
+                if database_now < until + READ_GRACE:
+                    raise ValueError("requested UTC week is inside the registered read grace")
                 result = await conn.execute(
                     _ROWS,
                     {
@@ -326,6 +328,10 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"- qualified: {report['rows']}",
         f"- engineering rule: {decision['status']}",
         f"- heartbeat gap history: {report['heartbeat_gap_history']}",
+        f"- database read: {report.get('database_now_utc', 'not supplied')}; "
+        f"eligible from: {report.get('read_eligible_at_utc', 'not supplied')} "
+        f"({report.get('read_grace_hours', 'not supplied')} h grace)",
+        f"- canonical artifact: {report.get('canonical_artifact', 'not supplied')}",
         f"- code revision: {report.get('code_revision', 'unknown')}; "
         f"working tree dirty: {report.get('working_tree_dirty', 'unknown')}",
         f"- row snapshot SHA-256: {report.get('snapshot_sha256', 'not supplied')}",
@@ -383,11 +389,10 @@ def render_markdown(report: dict[str, Any]) -> str:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--week-end", required=True, help="Monday UTC date, YYYY-MM-DD")
-    parser.add_argument(
-        "--artifact-dir",
-        default="runtime/research/source_lead_shadow_latency",
-        help="persistent directory for write-once weekly JSON reports",
+    week = parser.add_mutually_exclusive_group(required=True)
+    week.add_argument("--week-end", help="Monday UTC date, YYYY-MM-DD")
+    week.add_argument(
+        "--latest-closed-week", action="store_true", help="most recent Monday 00:00 UTC"
     )
     parser.add_argument("--format", choices=("json", "markdown"), default="markdown")
     parser.add_argument("--code-revision", default="unknown")
@@ -445,9 +450,15 @@ async def report_once(
                 raise ValueError(f"preceding weekly report is missing: {prior_path}")
             prior_report, prior_digest = _load_week(prior_path, prior_end)
         database_now, rows = await load_rows(db_url, until=until)
+        if database_now < until + READ_GRACE:
+            raise ValueError("requested UTC week is inside the registered read grace")
         report = build_report(rows, until=until, prior_report=prior_report)
         report["generated_at_utc"] = datetime.now(UTC).isoformat()
         report["database_now_utc"] = database_now.isoformat()
+        report["read_grace_hours"] = READ_GRACE.total_seconds() / 3600
+        report["read_eligible_at_utc"] = (until + READ_GRACE).isoformat()
+        report["artifact_dir"] = str(artifact_dir.resolve())
+        report["canonical_artifact"] = artifact_dir.resolve() == CANONICAL_ARTIFACT_DIR
         report["code_revision"] = code_revision
         report["working_tree_dirty"] = dirty
         report["prior_report_sha256"] = prior_digest
@@ -463,11 +474,15 @@ async def _run(args: argparse.Namespace) -> str:
     db_url = os.getenv("DATABASE_URL")
     if not db_url:
         raise ValueError("DATABASE_URL is required")
-    until = datetime.combine(date.fromisoformat(args.week_end), time.min, tzinfo=UTC)
+    until = (
+        _week_start(datetime.now(UTC))
+        if args.latest_closed_week
+        else datetime.combine(date.fromisoformat(args.week_end), time.min, tzinfo=UTC)
+    )
     report = await report_once(
         db_url,
         until=until,
-        artifact_dir=Path(args.artifact_dir),
+        artifact_dir=CANONICAL_ARTIFACT_DIR,
         code_revision=args.code_revision,
         dirty=args.dirty,
     )

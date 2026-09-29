@@ -643,15 +643,7 @@ source-lead-readiness-report:
 			&& printf '%s' '--no-working-tree-dirty' \
 			|| printf '%s' '--working-tree-dirty') $(ARGS)
 
-.PHONY: source-lead-shadow-diagnostic prod-source-lead-shadow-diagnostic
-
-source-lead-shadow-diagnostic:
-	@DATABASE_URL="$${DATABASE_URL:-postgresql://schurfer:schurfer_dev@localhost:5432/schurfer}" \
-		uv run --package schurfer-analytics source-lead-shadow-diagnostic \
-		--code-revision="$$(git rev-parse HEAD)" \
-		$$(test -z "$$(git status --porcelain)" \
-			&& printf '%s' '--no-working-tree-dirty' \
-			|| printf '%s' '--working-tree-dirty') $(ARGS)
+.PHONY: prod-source-lead-shadow-diagnostic prod-source-lead-shadow-diagnostic-install
 
 source-lead-identity-report:
 	@DATABASE_URL="$${DATABASE_URL:-postgresql://schurfer:schurfer_dev@localhost:5432/schurfer}" \
@@ -1475,11 +1467,20 @@ prod-source-lead-readiness-report:
 prod-source-lead-shadow-diagnostic:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
 	@$(_PROD) run --rm --no-deps --entrypoint source-lead-shadow-diagnostic analytics \
-		--artifact-dir=/runtime/research/source_lead_shadow_latency \
 		--code-revision="$$(git rev-parse HEAD)" \
 		$$(test -z "$$(git status --porcelain)" \
 			&& printf '%s' '--no-working-tree-dirty' \
 			|| printf '%s' '--working-tree-dirty') $(ARGS)
+
+prod-source-lead-shadow-diagnostic-install:
+	@test "$$(git branch --show-current)" = "main" || (echo "ERROR: install only from main." && exit 1)
+	@test -z "$$(git status --porcelain)" || (echo "ERROR: working tree not clean." && exit 1)
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	sudo install -m 0644 infra/systemd/schurfer-source-lead-shadow-diagnostic.service /etc/systemd/system/schurfer-source-lead-shadow-diagnostic.service
+	sudo install -m 0644 infra/systemd/schurfer-source-lead-shadow-diagnostic.timer /etc/systemd/system/schurfer-source-lead-shadow-diagnostic.timer
+	sudo systemctl daemon-reload
+	sudo systemctl enable --now schurfer-source-lead-shadow-diagnostic.timer
+	@systemctl list-timers schurfer-source-lead-shadow-diagnostic.timer --no-pager
 
 # HYP-012b (docs/research/source-lead-multi-source-hyp012b-v1.md). Read-only. PHASE=all
 # (default) freezes the inputs once, takes the durable claim, then computes the result
