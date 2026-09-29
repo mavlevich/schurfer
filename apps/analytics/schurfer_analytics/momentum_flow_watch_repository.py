@@ -314,7 +314,9 @@ class MomentumFlowWatchRepository:
             await connection.close()
             self._lock_connection = None
             self._lock_backend_identity = None
-            raise RuntimeError("momentum WATCH worker lock session was lost") from exc
+            if isinstance(exc, Exception):
+                raise RuntimeError("momentum WATCH worker lock session was lost") from exc
+            raise
         if (int(backend_pid), backend_started_at) != expected:
             await connection.invalidate()
             await connection.close()
