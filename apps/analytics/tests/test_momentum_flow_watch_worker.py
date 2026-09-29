@@ -79,6 +79,9 @@ class FakeStore:
     async def acquire_worker_lock(self, watch_version: str) -> bool:
         return True
 
+    async def assert_worker_lock(self) -> None:
+        return None
+
     async def register_run(
         self, *, contract: WatchContract, contract_sha256: str, now: datetime
     ) -> WatchRun:
@@ -333,6 +336,9 @@ class RecordingStore:
         self.lock_calls.append(watch_version)
         return True
 
+    async def assert_worker_lock(self) -> None:
+        return None
+
     async def register_run(
         self, *, contract: WatchContract, contract_sha256: str, now: datetime
     ) -> WatchRun:
@@ -391,6 +397,22 @@ async def test_run_watch_worker_defaults_to_the_live_bybit_contract(
     key, mapping = fake_redis.hset_calls[-1]
     assert key == health_key(FROZEN_WATCH_CONTRACT.watch_version)
     assert mapping["watch_version"] == FROZEN_WATCH_CONTRACT.watch_version
+
+
+async def test_run_watch_worker_stops_before_tick_when_lock_is_lost(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class LostLockStore(RecordingStore):
+        async def assert_worker_lock(self) -> None:
+            raise RuntimeError("worker lock session was lost")
+
+    _install_fake_redis(monkeypatch)
+    store = LostLockStore()
+    with pytest.raises(RuntimeError, match="worker lock session was lost"):
+        await run_watch_worker(
+            WatchWorkerConfig("postgresql://example", "redis:6379"), once=True, store=store
+        )
+    assert store.due_buckets_calls == []
 
 
 async def test_run_watch_worker_threads_a_different_contract_through(

@@ -96,6 +96,9 @@ class FakeStore:
     async def acquire_worker_lock(self, paper_version: str) -> bool:
         return True
 
+    async def assert_worker_lock(self) -> None:
+        return None
+
     async def register_run(self, **_: Any) -> PaperRun:
         return PaperRun(FROZEN_PAPER_CONTRACT.paper_version, "hash", {}, T0, "active")
 
@@ -358,6 +361,9 @@ class RecordingStore:
         self.lock_calls.append(paper_version)
         return True
 
+    async def assert_worker_lock(self) -> None:
+        return None
+
     async def register_run(
         self, *, contract: PaperContract, contract_sha256: str, now: datetime
     ) -> PaperRun:
@@ -444,6 +450,26 @@ async def test_run_paper_worker_defaults_to_the_live_bybit_contract(
     key, mapping = fake_redis.hset_calls[-1]
     assert key == health_key(FROZEN_PAPER_CONTRACT.paper_version)
     assert mapping["paper_version"] == FROZEN_PAPER_CONTRACT.paper_version
+
+
+async def test_run_paper_worker_stops_before_tick_when_lock_is_lost(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class LostLockStore(RecordingStore):
+        async def assert_worker_lock(self) -> None:
+            raise RuntimeError("worker lock session was lost")
+
+    _install_fake_redis(monkeypatch)
+    store = LostLockStore()
+    market = FakeMarket([])
+    with pytest.raises(RuntimeError, match="worker lock session was lost"):
+        await run_paper_worker(
+            PaperWorkerConfig("postgresql://example", "redis:6379"),
+            once=True,
+            store=store,
+            market=market,
+        )
+    assert store.due_fresh_watches_calls == []
 
 
 async def test_run_paper_worker_threads_a_different_contract_through(
