@@ -1,0 +1,10 @@
+[Unit]
+Description=HYP-012 v2 shadow latency diagnostic after the six-hour read grace
+
+[Timer]
+OnCalendar=Mon *-*-* 06:00:00 UTC
+Persistent=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target
